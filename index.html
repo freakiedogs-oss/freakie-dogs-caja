@@ -118,6 +118,17 @@ const fmtPct = n=>`${parseFloat(n||0).toFixed(2)}%`;
 const n = v=>parseFloat(v)||0;
 const dentro18h = ts=>ts?(Date.now()-new Date(ts).getTime())<18*3600*1000:false;
 
+// ── Supabase Storage upload ────────────────────────────────────
+const BUCKET = 'cierres-fotos';
+const uploadFoto = async (file, folder) => {
+  const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2,7)}.${ext}`;
+  const {error} = await db.storage.from(BUCKET).upload(path, file, {cacheControl:'3600',upsert:false});
+  if(error) throw new Error(error.message);
+  const {data} = db.storage.from(BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+};
+
 // ── Toast ─────────────────────────────────────────────────────
 function useToast(){
   const [msg,setMsg]=useState('');
@@ -508,7 +519,17 @@ function CierreForm({user,existingCierre,isAdminEdit,onBack,onSuccess}){
       if(error){show('❌ '+error.message);setLoading(false);return;}
       cierreId=cierre.id;
     }
-    if(egresos.length>0) await db.from('egresos_cierre').insert(egresos.map(e=>({cierre_id:cierreId,motivo_id:e.motivo_id,motivo_nombre:e.motivo_nombre,monto:n(e.monto),persona_recibe:e.persona_recibe||null,comentario:e.comentario||null,foto_url:e.foto_url||null})));
+    if(egresos.length>0){
+      const egresosConFoto=await Promise.all(egresos.map(async e=>{
+        let fotoUrl=e.foto_url||null;
+        if(e.foto_file){
+          try{fotoUrl=await uploadFoto(e.foto_file,`egresos/${user.store_code}`);}
+          catch(err){console.warn('foto egreso no subida:',err.message);}
+        }
+        return {cierre_id:cierreId,motivo_id:e.motivo_id,motivo_nombre:e.motivo_nombre,monto:n(e.monto),persona_recibe:e.persona_recibe||null,comentario:e.comentario||null,foto_url:fotoUrl};
+      }));
+      await db.from('egresos_cierre').insert(egresosConFoto);
+    }
     if(ingresos.length>0) await db.from('ingresos_cierre').insert(ingresos.map(e=>({cierre_id:cierreId,motivo_id:e.motivo_id,motivo_nombre:e.motivo_nombre,monto:n(e.monto),nombre_evento:e.nombre_evento||null,comentario:e.comentario||null})));
     if(ajustes.length>0) await db.from('ajustes_metodo').insert(ajustes.map(a=>({cierre_id:cierreId,monto:n(a.monto),de_metodo:a.de_metodo,a_metodo:a.a_metodo,nota:a.nota||null})));
     setLoading(false);
@@ -694,11 +715,16 @@ function Deposito({user,onBack}){
   const submit=async()=>{
     if(!n(monto)){show('⚠️ Ingresa el monto');return;}
     if(dias.length===0){show('⚠️ Selecciona al menos un día');return;}
+    if(fotos.length===0){show('⚠️ Agrega al menos una foto del voucher');return;}
     setLoading(true);
-    const {error}=await db.from('depositos_bancarios').insert({store_code:user.store_code,monto:n(monto),fecha_deposito:fechaDep,dias_cubiertos:dias,fotos_urls:[],notas:notas.trim()||null,creado_por:`${user.nombre} ${user.apellido}`,creado_por_id:user.id});
+    let fotosUrls=[];
+    try{
+      fotosUrls=await Promise.all(fotos.map(f=>uploadFoto(f,`depositos/${user.store_code}`)));
+    }catch(e){show('❌ Error subiendo foto: '+e.message);setLoading(false);return;}
+    const {error}=await db.from('depositos_bancarios').insert({store_code:user.store_code,monto:n(monto),fecha_deposito:fechaDep,dias_cubiertos:dias,fotos_urls:fotosUrls,notas:notas.trim()||null,creado_por:`${user.nombre} ${user.apellido}`,creado_por_id:user.id});
     setLoading(false);
     if(error){show('❌ '+error.message);return;}
-    show('✓ Depósito registrado');
+    show('✓ Depósito registrado con '+fotosUrls.length+' foto(s)');
     setTimeout(onBack,1500);
   };
   return(
