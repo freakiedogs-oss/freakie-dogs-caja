@@ -9,6 +9,33 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="FD Caja">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <script>
+    // Registro del service worker (necesario para que Chrome ofrezca instalar la PWA)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+    // Captura el evento de instalación para mostrarlo en el botón interno
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // Notifica a React que ya puede mostrar el botón
+      window.__pwaReady = true;
+      window.dispatchEvent(new Event('pwaready'));
+    });
+    window.addEventListener('appinstalled', () => {
+      deferredPrompt = null;
+      window.__pwaReady = false;
+      window.dispatchEvent(new Event('pwainstalled'));
+    });
+    window.__installPWA = () => {
+      if (deferredPrompt) { deferredPrompt.prompt(); }
+    };
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -136,6 +163,14 @@ function Login({onLogin}){
   const [pin,setPin]=useState('');
   const [err,setErr]=useState('');
   const [loading,setLoading]=useState(false);
+  const [canInstall,setCanInstall]=useState(!!window.__pwaReady);
+  useEffect(()=>{
+    const on=()=>setCanInstall(true);
+    const off=()=>setCanInstall(false);
+    window.addEventListener('pwaready',on);
+    window.addEventListener('pwainstalled',off);
+    return()=>{window.removeEventListener('pwaready',on);window.removeEventListener('pwainstalled',off);};
+  },[]);
   const press=async(k)=>{
     if(loading)return;
     if(k==='del'){setPin(p=>p.slice(0,-1));setErr('');return;}
@@ -163,6 +198,20 @@ function Login({onLogin}){
         {keys.map((k,i)=>k===''?<div key={i}/>:
           <div key={i} className="key" onClick={()=>press(k)}>{k==='del'?'⌫':k}</div>)}
       </div>
+      {canInstall&&(
+        <button
+          onClick={()=>window.__installPWA()}
+          style={{marginTop:28,background:'#e63946',color:'#fff',border:'none',borderRadius:12,
+            padding:'12px 24px',fontSize:15,fontWeight:700,cursor:'pointer',
+            display:'flex',alignItems:'center',gap:8}}>
+          📲 Instalar app en este dispositivo
+        </button>
+      )}
+      {!canInstall&&(
+        <div style={{marginTop:24,color:'#444',fontSize:12,textAlign:'center',maxWidth:220}}>
+          En iOS: toca <b style={{color:'#888'}}>Compartir →</b> "Añadir a pantalla de inicio"
+        </div>
+      )}
     </div>
   );
 }
