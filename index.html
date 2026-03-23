@@ -759,7 +759,7 @@ function Home({user,onCierre,onEditCierre,onDeposito,onAdmin,onReporte,onLogout}
           </div>
         )}
         <button className="btn btn-ghost" onClick={onDeposito} style={{marginBottom:12}}>🏦 Registrar Depósito Bancario</button>
-        {user.rol==='gerente'&&(
+        {(user.rol==='gerente'||user.rol==='cocina')&&(
           <button className="btn btn-ghost" onClick={()=>onReporte()} style={{marginBottom:12}}>📋 Reporte de Turno</button>
         )}
       </>}
