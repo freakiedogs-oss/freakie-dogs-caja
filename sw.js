@@ -1,5 +1,5 @@
-// Freakie Dogs Cierre de Caja — Service Worker v1
-const CACHE = 'fd-caja-v1';
+// Freakie Dogs ERP — Service Worker v3
+const CACHE = 'fd-erp-v3';
 
 // Al instalar: cachea el shell de la app
 self.addEventListener('install', e => {

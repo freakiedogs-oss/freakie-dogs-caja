@@ -1,10 +1,10 @@
 {
-  "name": "Freakie Dogs — Cierre de Caja",
-  "short_name": "FD Caja",
-  "description": "Registro diario de cierres de caja para Freakie Dogs",
+  "name": "Freakie Dogs ERP",
+  "short_name": "Freakie Dogs",
+  "description": "Sistema ERP para Freakie Dogs — Operaciones, Finanzas, RRHH",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#e8231a",
+  "background_color": "#111111",
   "theme_color": "#e8231a",
   "orientation": "portrait",
   "icons": [

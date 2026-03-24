@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Freakie Dogs — Cierre de Caja</title>
+  <title>Freakie Dogs ERP</title>
   <meta name="theme-color" content="#111111">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="FD Caja">
+  <meta name="apple-mobile-web-app-title" content="Freakie Dogs">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <script>
@@ -220,8 +220,8 @@ function Login({onLogin}){
   const keys=['1','2','3','4','5','6','7','8','9','','0','del'];
   return(
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'0 24px'}}>
-      <div style={{fontSize:42,marginBottom:8}}>🐕</div>
-      <div style={{fontWeight:800,fontSize:22}}>Freakie Dogs ERP</div>
+      <img src="/icon.png" alt="Freakie Dogs" style={{width:160,height:160,borderRadius:20,marginBottom:12,objectFit:'contain'}}/>
+      <div style={{fontWeight:800,fontSize:22}}>Freakie Dogs</div>
       <div style={{color:'#555',fontSize:13,marginTop:4,marginBottom:32}}>Ingresa tu PIN</div>
       <div className="pin-box">
         {[0,1,2,3].map(i=><div key={i} className={`pin-dot${pin.length>i?' filled':''}`}/>)}
