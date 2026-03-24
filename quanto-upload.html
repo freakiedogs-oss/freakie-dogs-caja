@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUANTO CSV → Supabase</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d0d0d;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.container{max-width:500px;width:100%;text-align:center}
+h1{font-size:20px;margin-bottom:4px;color:#4ade80}
+.sub{font-size:12px;color:#555;margin-bottom:24px}
+.drop{border:2px dashed #333;border-radius:16px;padding:48px 24px;cursor:pointer;transition:all .2s;background:#111;margin-bottom:16px}
+.drop:hover,.drop.over{border-color:#4ade80;background:#0a1a0a}
+.drop.over{transform:scale(1.02)}
+.drop-icon{font-size:48px;margin-bottom:12px}
+.drop-text{font-size:14px;color:#888}
+.drop-hint{font-size:11px;color:#444;margin-top:8px}
+input[type=file]{display:none}
+.store-row{display:flex;gap:8px;margin-bottom:16px;justify-content:center;flex-wrap:wrap}
+.store-btn{padding:6px 14px;border-radius:8px;border:1px solid #333;background:#111;color:#888;font-size:12px;cursor:pointer;transition:all .15s}
+.store-btn.active{border-color:#4ade80;color:#4ade80;background:#0a1a0a}
+.store-btn:hover{border-color:#4ade80}
+#status{margin-top:16px;padding:16px;border-radius:12px;font-size:13px;display:none;text-align:left;line-height:1.6}
+#status.ok{display:block;background:#0a1a0a;border:1px solid #14532d;color:#4ade80}
+#status.err{display:block;background:#1a0a0a;border:1px solid #532d14;color:#f87171}
+#status.loading{display:block;background:#0a0a1a;border:1px solid #1e3a5f;color:#60a5fa}
+.progress{height:4px;background:#1a1a1a;border-radius:2px;margin-top:8px;overflow:hidden}
+.progress-bar{height:100%;background:#4ade80;border-radius:2px;transition:width .3s;width:0}
+.history{margin-top:24px;text-align:left}
+.history h3{font-size:13px;color:#555;margin-bottom:8px}
+.history-item{padding:8px 12px;background:#111;border:1px solid #1a1a1a;border-radius:8px;margin-bottom:6px;font-size:12px}
+.history-item .ok{color:#4ade80}
+.history-item .fail{color:#f87171}
+.history-item .meta{color:#555;font-size:11px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔄 QUANTO CSV → Supabase</h1>
+  <div class="sub">Arrastra un CSV exportado de QUANTO y se importa automáticamente</div>
+
+  <div class="store-row">
+    <button class="store-btn" data-sc="">Auto-detectar</button>
+    <button class="store-btn" data-sc="M001">M001</button>
+    <button class="store-btn" data-sc="S001">S001</button>
+    <button class="store-btn" data-sc="S002">S002</button>
+    <button class="store-btn" data-sc="S003">S003</button>
+    <button class="store-btn" data-sc="S004">S004</button>
+  </div>
+
+  <div class="drop" id="dropzone">
+    <div class="drop-icon">📂</div>
+    <div class="drop-text">Arrastra CSV aquí o haz clic</div>
+    <div class="drop-hint">Soporta: .csv (comma o semicolon separated)</div>
+  </div>
+  <input type="file" id="fileInput" accept=".csv,.txt">
+
+  <div id="status"></div>
+  <div class="progress" id="progressWrap" style="display:none"><div class="progress-bar" id="progressBar"></div></div>
+
+  <div class="history" id="historySection" style="display:none">
+    <h3>Historial de importaciones</h3>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<script>
+const WEBHOOK_URL = 'https://hook.us2.make.com/tekwspl79dcwnuw1xh7ftrlq183gl4ar';
+const EF_URL = 'https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/importar-quanto-csv';
+const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzk2NzIzNCwiZXhwIjoyMDg5NTQzMjM0fQ.NRoswQj7Xyziczwj7SKHKJsiRI6LABb1FYPORLBlGCY';
+
+let selectedStore = '';
+const history = JSON.parse(localStorage.getItem('quanto_history') || '[]');
+
+// Store buttons
+document.querySelectorAll('.store-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.store-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedStore = btn.dataset.sc;
+  });
+});
+document.querySelector('.store-btn').classList.add('active');
+
+// Drop zone
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const status = document.getElementById('status');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('over');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+async function handleFile(file) {
+  if (!file.name.match(/\.(csv|txt)$/i)) {
+    showStatus('err', '❌ Solo archivos .csv o .txt');
+    return;
+  }
+
+  showStatus('loading', `⏳ Leyendo ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
+  showProgress(10);
+
+  const text = await file.text();
+  const lineCount = text.split('\n').filter(l => l.trim()).length;
+  showStatus('loading', `⏳ Enviando ${lineCount} líneas a Supabase...`);
+  showProgress(30);
+
+  try {
+    // Send directly to Edge Function (faster, bypasses Make.com)
+    const body = { csv: text };
+    if (selectedStore) body.store_code = selectedStore;
+
+    const resp = await fetch(EF_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SERVICE_KEY}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    showProgress(80);
+    const result = await resp.json();
+    showProgress(100);
+
+    if (result.ok) {
+      const msg = `✅ <strong>${result.insertadas}</strong> transacciones importadas
+📅 ${result.fecha_min} → ${result.fecha_max}
+🏪 Sucursales: ${(result.store_codes||[]).join(', ')}
+${result.errores > 0 ? `⚠️ ${result.errores} errores` : ''}
+${result.saltadas_csv > 0 ? `⏭️ ${result.saltadas_csv} filas saltadas` : ''}`;
+      showStatus('ok', msg);
+      addHistory(file.name, true, `${result.insertadas} filas, ${result.fecha_min}→${result.fecha_max}`);
+
+      // Also notify webhook for logging
+      fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({event:'import_complete', file: file.name, ...result})
+      }).catch(()=>{});
+    } else {
+      showStatus('err', `❌ ${result.error}\n${result.columnas_mapeadas ? JSON.stringify(result.columnas_mapeadas, null, 2) : ''}`);
+      addHistory(file.name, false, result.error);
+    }
+  } catch (err) {
+    showStatus('err', `❌ Error de conexión: ${err.message}`);
+    addHistory(file.name, false, err.message);
+  }
+
+  fileInput.value = '';
+}
+
+function showStatus(type, html) {
+  status.className = type;
+  status.innerHTML = html;
+}
+
+function showProgress(pct) {
+  const wrap = document.getElementById('progressWrap');
+  const bar = document.getElementById('progressBar');
+  wrap.style.display = 'block';
+  bar.style.width = pct + '%';
+  if (pct >= 100) setTimeout(() => { wrap.style.display = 'none'; bar.style.width = '0'; }, 2000);
+}
+
+function addHistory(name, ok, detail) {
+  history.unshift({ name, ok, detail, date: new Date().toLocaleString('es-SV') });
+  if (history.length > 20) history.pop();
+  localStorage.setItem('quanto_history', JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  if (!history.length) return;
+  document.getElementById('historySection').style.display = 'block';
+  document.getElementById('historyList').innerHTML = history.map(h =>
+    `<div class="history-item"><span class="${h.ok?'ok':'fail'}">${h.ok?'✅':'❌'}</span> <strong>${h.name}</strong> — ${h.detail}<div class="meta">${h.date}</div></div>`
+  ).join('');
+}
+renderHistory();
+</script>
+</body>
+</html>
