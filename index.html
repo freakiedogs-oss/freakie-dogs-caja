@@ -135,7 +135,7 @@ const INCIDENTES_CATS = [
   ]},
 ];
 
-const today = ()=>new Date().toISOString().split('T')[0];
+const today = ()=>new Date(Date.now()-6*3600*1000).toISOString().split('T')[0];
 const fmt$ = n=>`$${parseFloat(n||0).toFixed(2)}`;
 const fmtPct = n=>`${parseFloat(n||0).toFixed(2)}%`;
 const n = v=>parseFloat(v)||0;
@@ -1169,7 +1169,7 @@ function Deposito({user,onBack}){
   const [fotos,setFotos]=useState([]);
   const [loading,setLoading]=useState(false);
   const fRef=useRef();
-  const lastDays=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-i);return d.toISOString().split('T')[0];});
+  const lastDays=Array.from({length:7},(_,i)=>{return new Date(Date.now()-6*3600*1000-i*86400*1000).toISOString().split('T')[0];});
   const submit=async()=>{
     if(!n(monto)){show('⚠️ Ingresa el monto');return;}
     if(dias.length===0){show('⚠️ Selecciona al menos un día');return;}
@@ -1459,8 +1459,8 @@ function AdminView({user,onEditCierre,onBack}){
         <div style={{display:'flex',gap:6,marginTop:10,flexWrap:'wrap'}}>
           {[
             {lbl:'Hoy',fn:()=>{setFechaDesde(today());setFechaHasta(today());}},
-            {lbl:'7 días',fn:()=>{const d=new Date();d.setDate(d.getDate()-6);setFechaDesde(d.toISOString().split('T')[0]);setFechaHasta(today());}},
-            {lbl:'Este mes',fn:()=>{const d=new Date();setFechaDesde(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`);setFechaHasta(today());}},
+            {lbl:'7 días',fn:()=>{const d=new Date(Date.now()-6*3600*1000);d.setUTCDate(d.getUTCDate()-6);setFechaDesde(d.toISOString().split('T')[0]);setFechaHasta(today());}},
+            {lbl:'Este mes',fn:()=>{const d=new Date(Date.now()-6*3600*1000);setFechaDesde(`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-01`);setFechaHasta(today());}},
           ].map(({lbl,fn})=>(
             <button key={lbl} onClick={fn} style={{padding:'4px 12px',borderRadius:16,fontSize:12,background:'#1e1e1e',border:'1px solid #333',color:'#aaa',cursor:'pointer'}}>{lbl}</button>
           ))}
