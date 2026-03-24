@@ -1847,7 +1847,7 @@ function DashboardEjecutivo({user,onBack}){
   const [tab,setTab]=useState('resumen');
 
   const COLORES={'M001':'#4ade80','S001':'#60a5fa','S002':'#f472b6','S003':'#facc15','S004':'#fb923c'};
-  const NOMBRES={'M001':'Plaza Mundo','S001':'Santa Tecla','S002':'Usulután','S003':'Gran Plaza Lourdes','S004':'Paseo Venecia'};
+  const mesActual=new Date().toLocaleDateString('es-SV',{month:'long',year:'numeric'});
 
   useEffect(()=>{
     const load=async()=>{
@@ -1899,7 +1899,7 @@ function DashboardEjecutivo({user,onBack}){
 
         // Ordenar sucursales por ventas mes
         const sucArr=Object.entries(porSuc)
-          .map(([sc,v])=>({sc,nombre:NOMBRES[sc]||sc,mes:v.mes,hoy:v.hoy,pct:totalMes>0?((v.mes/totalMes)*100).toFixed(1):0}))
+          .map(([sc,v])=>({sc,nombre:STORES[sc]||sc,mes:v.mes,hoy:v.hoy,pct:totalMes>0?((v.mes/totalMes)*100).toFixed(1):0}))
           .sort((a,b)=>b.mes-a.mes);
 
         setKpis({totalMes,totalHoy,totalCompras});
@@ -1979,7 +1979,7 @@ function DashboardEjecutivo({user,onBack}){
             <div className="card" style={{textAlign:'center',borderColor:'#14532d',background:'#0a1a0a'}}>
               <div style={{fontSize:10,color:'#555',marginBottom:4}}>VENTAS MES</div>
               <div style={{fontSize:22,fontWeight:800,color:'#4ade80'}}>{fmt$(kpis?.totalMes)}</div>
-              <div style={{fontSize:10,color:'#555',marginTop:2}}>Marzo 2026</div>
+              <div style={{fontSize:10,color:'#555',marginTop:2,textTransform:'capitalize'}}>{mesActual}</div>
             </div>
             <div className="card" style={{textAlign:'center',borderColor:'#1e3a5f',background:'#0a0f1a'}}>
               <div style={{fontSize:10,color:'#555',marginBottom:4}}>COMPRAS MES</div>
