@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QUANTO CSV → Supabase</title>
+<title>QUANTO → Supabase</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d0d0d;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
-.container{max-width:500px;width:100%;text-align:center}
+.container{max-width:540px;width:100%;text-align:center}
 h1{font-size:20px;margin-bottom:4px;color:#4ade80}
 .sub{font-size:12px;color:#555;margin-bottom:24px}
 .drop{border:2px dashed #333;border-radius:16px;padding:48px 24px;cursor:pointer;transition:all .2s;background:#111;margin-bottom:16px}
@@ -21,7 +21,7 @@ input[type=file]{display:none}
 .store-btn{padding:6px 14px;border-radius:8px;border:1px solid #333;background:#111;color:#888;font-size:12px;cursor:pointer;transition:all .15s}
 .store-btn.active{border-color:#4ade80;color:#4ade80;background:#0a1a0a}
 .store-btn:hover{border-color:#4ade80}
-#status{margin-top:16px;padding:16px;border-radius:12px;font-size:13px;display:none;text-align:left;line-height:1.6}
+#status{margin-top:16px;padding:16px;border-radius:12px;font-size:13px;display:none;text-align:left;line-height:1.6;white-space:pre-wrap}
 #status.ok{display:block;background:#0a1a0a;border:1px solid #14532d;color:#4ade80}
 #status.err{display:block;background:#1a0a0a;border:1px solid #532d14;color:#f87171}
 #status.loading{display:block;background:#0a0a1a;border:1px solid #1e3a5f;color:#60a5fa}
@@ -33,28 +33,31 @@ input[type=file]{display:none}
 .history-item .ok{color:#4ade80}
 .history-item .fail{color:#f87171}
 .history-item .meta{color:#555;font-size:11px}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px}
+.badge-csv{background:#1e3a5f;color:#60a5fa}
+.badge-dte{background:#3a1e5f;color:#c084fc}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>🔄 QUANTO CSV → Supabase</h1>
-  <div class="sub">Arrastra un CSV exportado de QUANTO y se importa automáticamente</div>
+  <h1>QUANTO / DTE  Supabase</h1>
+  <div class="sub">Arrastra un CSV de QUANTO o un ZIP de DTEs (JSON) para importar transacciones</div>
 
-  <div class="store-row">
-    <button class="store-btn" data-sc="">Auto-detectar</button>
-    <button class="store-btn" data-sc="M001">M001</button>
-    <button class="store-btn" data-sc="S001">S001</button>
-    <button class="store-btn" data-sc="S002">S002</button>
-    <button class="store-btn" data-sc="S003">S003</button>
-    <button class="store-btn" data-sc="S004">S004</button>
+  <div class="store-row" id="storeRow">
+    <button class="store-btn active" data-sc="">Auto-detectar</button>
+    <button class="store-btn" data-sc="M001">M001 Cafet.</button>
+    <button class="store-btn" data-sc="S001">S001 Soya</button>
+    <button class="store-btn" data-sc="S002">S002 Usul.</button>
+    <button class="store-btn" data-sc="S003">S003 Lour.</button>
+    <button class="store-btn" data-sc="S004">S004 Venec.</button>
   </div>
 
   <div class="drop" id="dropzone">
     <div class="drop-icon">📂</div>
-    <div class="drop-text">Arrastra CSV aquí o haz clic</div>
-    <div class="drop-hint">Soporta: .csv (comma o semicolon separated)</div>
+    <div class="drop-text">Arrastra archivo aqui o haz clic</div>
+    <div class="drop-hint">Soporta: .csv (QUANTO export) &nbsp;|&nbsp; .zip (DTEs JSON)</div>
   </div>
-  <input type="file" id="fileInput" accept=".csv,.txt">
+  <input type="file" id="fileInput" accept=".csv,.txt,.zip">
 
   <div id="status"></div>
   <div class="progress" id="progressWrap" style="display:none"><div class="progress-bar" id="progressBar"></div></div>
@@ -65,10 +68,18 @@ input[type=file]{display:none}
   </div>
 </div>
 
+<!-- JSZip for ZIP extraction -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <script>
 const WEBHOOK_URL = 'https://hook.us2.make.com/tekwspl79dcwnuw1xh7ftrlq183gl4ar';
 const EF_URL = 'https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/importar-quanto-csv';
 const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzk2NzIzNCwiZXhwIjoyMDg5NTQzMjM0fQ.NRoswQj7Xyziczwj7SKHKJsiRI6LABb1FYPORLBlGCY';
+
+// DTE payment code mapping
+const PAGO_MAP = {'01':'Efectivo','02':'Tarjeta','03':'Cheque','04':'Transferencia','05':'Dinero Electronico','14':'Bitcoin','99':'Otro'};
+// DTE store cluster mapping
+const CLUSTER_MAP = {'M001':'cafetaon','S001':'soyapango','S002':'usulutan','S003':'lourdes','S004':'venecia'};
 
 let selectedStore = '';
 const history = JSON.parse(localStorage.getItem('quanto_history') || '[]');
@@ -81,12 +92,11 @@ document.querySelectorAll('.store-btn').forEach(btn => {
     selectedStore = btn.dataset.sc;
   });
 });
-document.querySelector('.store-btn').classList.add('active');
 
 // Drop zone
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
-const status = document.getElementById('status');
+const statusEl = document.getElementById('status');
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
@@ -99,21 +109,29 @@ dropzone.addEventListener('drop', e => {
 fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
 
 async function handleFile(file) {
-  if (!file.name.match(/\.(csv|txt)$/i)) {
-    showStatus('err', '❌ Solo archivos .csv o .txt');
-    return;
-  }
+  const ext = file.name.split('.').pop().toLowerCase();
 
+  if (ext === 'zip') {
+    await handleDTEZip(file);
+  } else if (ext === 'csv' || ext === 'txt') {
+    await handleCSV(file);
+  } else {
+    showStatus('err', '❌ Formato no soportado. Usa .csv o .zip');
+  }
+  fileInput.value = '';
+}
+
+// ==================== CSV HANDLER ====================
+async function handleCSV(file) {
   showStatus('loading', `⏳ Leyendo ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
   showProgress(10);
 
   const text = await file.text();
   const lineCount = text.split('\n').filter(l => l.trim()).length;
-  showStatus('loading', `⏳ Enviando ${lineCount} líneas a Supabase...`);
+  showStatus('loading', `⏳ Enviando ${lineCount} lineas a Supabase...`);
   showProgress(30);
 
   try {
-    // Send directly to Edge Function (faster, bypasses Make.com)
     const body = { csv: text };
     if (selectedStore) body.store_code = selectedStore;
 
@@ -131,42 +149,184 @@ async function handleFile(file) {
     showProgress(100);
 
     if (result.ok) {
-      const msg = `✅ <strong>${result.insertadas}</strong> transacciones importadas
-📅 ${result.fecha_min} → ${result.fecha_max}
-🏪 Sucursales: ${(result.store_codes||[]).join(', ')}
-${result.errores > 0 ? `⚠️ ${result.errores} errores` : ''}
-${result.saltadas_csv > 0 ? `⏭️ ${result.saltadas_csv} filas saltadas` : ''}`;
+      const msg = `✅ ${result.insertadas} transacciones importadas <span class="badge badge-csv">CSV</span>\n📅 ${result.fecha_min} → ${result.fecha_max}\n🏪 Sucursales: ${(result.store_codes||[]).join(', ')}\n${result.errores > 0 ? `⚠️ ${result.errores} errores` : ''}${result.saltadas_csv > 0 ? `\n⏭️ ${result.saltadas_csv} filas saltadas` : ''}${result.sample_errors ? '\n🔍 ' + result.sample_errors.join('\n🔍 ') : ''}`;
       showStatus('ok', msg);
-      addHistory(file.name, true, `${result.insertadas} filas, ${result.fecha_min}→${result.fecha_max}`);
-
-      // Also notify webhook for logging
-      fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({event:'import_complete', file: file.name, ...result})
-      }).catch(()=>{});
+      addHistory(file.name, true, `CSV: ${result.insertadas} filas, ${result.fecha_min}→${result.fecha_max}`);
+      notifyWebhook(file.name, result);
     } else {
-      showStatus('err', `❌ ${result.error}\n${result.columnas_mapeadas ? JSON.stringify(result.columnas_mapeadas, null, 2) : ''}`);
+      showStatus('err', `❌ ${result.error}${result.sample_errors ? '\n🔍 ' + result.sample_errors.join('\n🔍 ') : ''}`);
       addHistory(file.name, false, result.error);
     }
   } catch (err) {
-    showStatus('err', `❌ Error de conexión: ${err.message}`);
+    showStatus('err', `❌ Error de conexion: ${err.message}`);
     addHistory(file.name, false, err.message);
   }
-
-  fileInput.value = '';
 }
 
+// ==================== DTE ZIP HANDLER ====================
+async function handleDTEZip(file) {
+  showStatus('loading', `⏳ Descomprimiendo ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
+  showProgress(5);
+
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const jsonFiles = Object.keys(zip.files).filter(f => f.endsWith('.json') && !f.startsWith('__MACOSX'));
+
+    if (jsonFiles.length === 0) {
+      showStatus('err', '❌ No se encontraron archivos .json en el ZIP');
+      return;
+    }
+
+    showStatus('loading', `⏳ Procesando ${jsonFiles.length} DTEs...`);
+    showProgress(10);
+
+    const rows = [];
+    let parseErrors = 0;
+    const errorSamples = [];
+
+    for (let i = 0; i < jsonFiles.length; i++) {
+      try {
+        const content = await zip.files[jsonFiles[i]].async('string');
+        const dte = JSON.parse(content);
+        const row = parseDTE(dte);
+        if (row) rows.push(row);
+        else { parseErrors++; }
+      } catch (e) {
+        parseErrors++;
+        if (errorSamples.length < 3) errorSamples.push(`${jsonFiles[i]}: ${e.message}`);
+      }
+
+      if (i % 100 === 0) {
+        showProgress(10 + (i / jsonFiles.length) * 40);
+        showStatus('loading', `⏳ Procesando DTEs... ${i}/${jsonFiles.length}`);
+      }
+    }
+
+    if (rows.length === 0) {
+      showStatus('err', `❌ No se extrajeron transacciones validas de ${jsonFiles.length} DTEs.\n${errorSamples.join('\n')}`);
+      return;
+    }
+
+    showStatus('loading', `⏳ Enviando ${rows.length} transacciones a Supabase...`);
+    showProgress(55);
+
+    // Send in chunks of 500 to avoid payload limits
+    const CHUNK = 500;
+    let totalInserted = 0;
+    let totalErrors = 0;
+    let allSampleErrors = [];
+    let allStoreCodes = new Set();
+    let fechaMin = '', fechaMax = '';
+
+    for (let c = 0; c < rows.length; c += CHUNK) {
+      const chunk = rows.slice(c, c + CHUNK);
+      const resp = await fetch(EF_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SERVICE_KEY}`
+        },
+        body: JSON.stringify({ rows: chunk, mode: 'dte' })
+      });
+
+      const result = await resp.json();
+      if (result.ok) {
+        totalInserted += result.insertadas || 0;
+        totalErrors += result.errores || 0;
+        (result.store_codes || []).forEach(s => allStoreCodes.add(s));
+        if (!fechaMin || result.fecha_min < fechaMin) fechaMin = result.fecha_min;
+        if (!fechaMax || result.fecha_max > fechaMax) fechaMax = result.fecha_max;
+        if (result.sample_errors) allSampleErrors.push(...result.sample_errors);
+      } else {
+        totalErrors += chunk.length;
+        if (result.error) allSampleErrors.push(result.error);
+      }
+
+      showProgress(55 + ((c + CHUNK) / rows.length) * 40);
+      showStatus('loading', `⏳ Insertando... ${Math.min(c + CHUNK, rows.length)}/${rows.length}`);
+    }
+
+    showProgress(100);
+
+    const msg = `✅ ${totalInserted} transacciones importadas <span class="badge badge-dte">DTE</span>\n📄 ${jsonFiles.length} DTEs procesados\n📅 ${fechaMin} → ${fechaMax}\n🏪 Sucursales: ${[...allStoreCodes].join(', ')}\n${totalErrors > 0 ? `⚠️ ${totalErrors} errores de insercion` : ''}${parseErrors > 0 ? `\n⏭️ ${parseErrors} DTEs no parseados` : ''}${allSampleErrors.length > 0 ? '\n🔍 ' + allSampleErrors.slice(0,3).join('\n🔍 ') : ''}`;
+    showStatus('ok', msg);
+    addHistory(file.name, true, `DTE: ${totalInserted}/${jsonFiles.length}, ${fechaMin}→${fechaMax}`);
+    notifyWebhook(file.name, { mode:'dte', insertadas: totalInserted, errores: totalErrors, dtes: jsonFiles.length });
+
+  } catch (err) {
+    showStatus('err', `❌ Error procesando ZIP: ${err.message}`);
+    addHistory(file.name, false, err.message);
+  }
+}
+
+function parseDTE(dte) {
+  try {
+    const id = dte.identificacion || {};
+    const resumen = dte.resumen || {};
+    const receptor = dte.receptor || {};
+
+    const fecEmi = id.fecEmi; // "2026-03-22"
+    const horEmi = id.horEmi; // "11:23:51"
+    if (!fecEmi || !resumen.totalPagar) return null;
+
+    // Build timestamp in El Salvador timezone
+    const fecha = `${fecEmi}T${horEmi || '00:00:00'}-06:00`;
+
+    // Extract store_code from numeroControl: "DTE-01-M001P001-000000000011579" -> "M001"
+    const nc = id.numeroControl || '';
+    const ncParts = nc.split('-');
+    let store_code = null;
+    if (ncParts.length >= 3) {
+      const storePart = ncParts[2]; // "M001P001"
+      store_code = storePart.substring(0, 4); // "M001"
+    }
+
+    // Override with selected store if set
+    if (selectedStore) store_code = selectedStore;
+
+    // Extract order number from DTE: use last segment as integer
+    let numero_orden = null;
+    if (ncParts.length >= 4) {
+      numero_orden = parseInt(ncParts[3], 10) || null;
+    }
+
+    // Payment method
+    const pagos = resumen.pagos || [];
+    let metodo_pago = null;
+    if (pagos.length > 0) {
+      const codigo = pagos[0].codigo || '';
+      metodo_pago = PAGO_MAP[codigo] || codigo;
+    }
+
+    // Client name
+    const cliente = receptor.nombre && receptor.nombre !== 'Consumidor Final' ? receptor.nombre : null;
+
+    return {
+      fecha,
+      numero_orden,
+      store_code,
+      store_cluster: CLUSTER_MAP[store_code] || null,
+      cliente,
+      metodo_pago,
+      propina: 0,
+      total: resumen.totalPagar
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// ==================== UI HELPERS ====================
 function showStatus(type, html) {
-  status.className = type;
-  status.innerHTML = html;
+  statusEl.className = type;
+  statusEl.innerHTML = html;
 }
 
 function showProgress(pct) {
   const wrap = document.getElementById('progressWrap');
   const bar = document.getElementById('progressBar');
   wrap.style.display = 'block';
-  bar.style.width = pct + '%';
+  bar.style.width = Math.min(pct, 100) + '%';
   if (pct >= 100) setTimeout(() => { wrap.style.display = 'none'; bar.style.width = '0'; }, 2000);
 }
 
@@ -184,6 +344,15 @@ function renderHistory() {
     `<div class="history-item"><span class="${h.ok?'ok':'fail'}">${h.ok?'✅':'❌'}</span> <strong>${h.name}</strong> — ${h.detail}<div class="meta">${h.date}</div></div>`
   ).join('');
 }
+
+function notifyWebhook(filename, result) {
+  fetch(WEBHOOK_URL, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({event:'import_complete', file: filename, ...result})
+  }).catch(()=>{});
+}
+
 renderHistory();
 </script>
 </body>
