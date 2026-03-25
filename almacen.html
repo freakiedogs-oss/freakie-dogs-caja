@@ -979,14 +979,13 @@ function HistorialTab({user,show}){
 
   useEffect(()=>{
     db.from('recepciones').select('*')
-      .in('estado',['completada','con_diferencias'])
       .order('created_at',{ascending:false}).limit(30)
       .then(({data})=>{setRecs(data||[]);setLoading(false);});
   },[]);
 
   return(
     <div style={{padding:'16px 16px 100px'}}>
-      <div className="sec-title">Últimas 30 recepciones</div>
+      <div className="sec-title">Últimas recepciones</div>
       {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
       {!loading&&recs.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Sin historial aún</div></div>}
       {recs.map(r=>(
