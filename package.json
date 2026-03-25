@@ -1,0 +1,16 @@
+{
+  "name": "freakie-dogs-caja",
+  "version": "1.0.0",
+  "description": "Freakie Dogs ERP - Automatizacion de caja y DTEs",
+  "private": true,
+  "scripts": {
+    "quanto-download": "node scripts/quanto-download.js"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "playwright": "^1.43.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
