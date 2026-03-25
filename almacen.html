@@ -483,7 +483,7 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
         sucursal_destino_id:cmId,
         proveedor:proveedorNombre.trim(),
         recibido_por:user.id,
-        estado:'pendiente',
+        estado:'verificada',
         foto_dte_url:fotoDbUrl,
         notas:notas.trim()||null,
       }).select().single();
@@ -499,7 +499,32 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
       }));
       const {error:itmErr}=await db.from('recepcion_items').insert(rows);
       if(itmErr) throw itmErr;
-      show('✅ Recepción registrada');
+
+      // Auto-actualizar inventario para cada producto con ID
+      for(const it of validItems){
+        if(!it.prodId) continue;
+        const qty=n(it.qty);
+        // Intentar obtener registro existente
+        const {data:existing}=await db.from('inventario')
+          .select('id,stock_actual')
+          .eq('producto_id',it.prodId).eq('sucursal_id',cmId).maybeSingle();
+        if(existing){
+          await db.from('inventario').update({
+            stock_actual:n(existing.stock_actual)+qty,
+            ultima_actualizacion:new Date().toISOString()
+          }).eq('id',existing.id);
+        }else{
+          await db.from('inventario').insert({
+            producto_id:it.prodId,
+            sucursal_id:cmId,
+            stock_actual:qty,
+            stock_minimo:0,
+            stock_maximo:999,
+            ultima_actualizacion:new Date().toISOString()
+          });
+        }
+      }
+      show('✅ Recepción verificada e inventario actualizado');
       onBack();
     }catch(e){
       show('❌ Error: '+e.message);
@@ -976,30 +1001,116 @@ function InventarioTab({user,show}){
 function HistorialTab({user,show}){
   const [recs,setRecs]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [expandedId,setExpandedId]=useState(null);
+  const [items,setItems]=useState([]);
+  const [loadingItems,setLoadingItems]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [cmId,setCmId]=useState(null);
 
-  useEffect(()=>{
+  const cargar=()=>{
     db.from('recepciones').select('*')
       .order('created_at',{ascending:false}).limit(30)
       .then(({data})=>{setRecs(data||[]);setLoading(false);});
+  };
+  useEffect(()=>{
+    cargar();
+    db.from('sucursales').select('id').eq('store_code','CM001').maybeSingle().then(({data})=>{if(data)setCmId(data.id);});
   },[]);
+
+  const horasDesde=(d)=>(Date.now()-new Date(d).getTime())/3600000;
+  const esEditable=(r)=>horasDesde(r.created_at)<72;
+
+  const toggleExpand=async(recId)=>{
+    if(expandedId===recId){setExpandedId(null);return;}
+    setExpandedId(recId);
+    setLoadingItems(true);
+    const {data}=await db.from('recepcion_items').select('*').eq('recepcion_id',recId);
+    setItems((data||[]).map(it=>({...it,qty_edit:String(it.cantidad_recibida)})));
+    setLoadingItems(false);
+  };
+
+  const updItem=(idx,val)=>setItems(prev=>prev.map((it,i)=>i===idx?{...it,qty_edit:val}:it));
+
+  const guardarCambios=async(rec)=>{
+    setSaving(true);
+    try{
+      for(const it of items){
+        const newQty=parseFloat(it.qty_edit)||0;
+        const oldQty=parseFloat(it.cantidad_recibida)||0;
+        const diff=newQty-oldQty;
+        if(diff===0) continue;
+        // Actualizar recepcion_item
+        await db.from('recepcion_items').update({cantidad_recibida:newQty}).eq('id',it.id);
+        // Ajustar inventario
+        if(it.producto_id&&cmId){
+          const {data:inv}=await db.from('inventario').select('id,stock_actual')
+            .eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
+          if(inv){
+            await db.from('inventario').update({
+              stock_actual:parseFloat(inv.stock_actual)+diff,
+              ultima_actualizacion:new Date().toISOString()
+            }).eq('id',inv.id);
+          }
+        }
+      }
+      show('✅ Recepción corregida');
+      setExpandedId(null);
+      cargar();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
 
   return(
     <div style={{padding:'16px 16px 100px'}}>
       <div className="sec-title">Últimas recepciones</div>
       {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
       {!loading&&recs.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Sin historial aún</div></div>}
-      {recs.map(r=>(
-        <div key={r.id} className="card" style={{padding:'12px 14px'}}>
+      {recs.map(r=>{
+        const editable=esEditable(r);
+        const horas=Math.round(72-horasDesde(r.created_at));
+        return(
+        <div key={r.id} className="card" style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>toggleExpand(r.id)}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-            <div>
+            <div style={{flex:1}}>
               <div style={{fontWeight:600,fontSize:14}}>{r.proveedor||'Sin nombre'}</div>
               <div style={{fontSize:12,color:'#666',marginTop:2}}>{fmtDate(r.fecha)}</div>
+              {editable&&<div style={{fontSize:11,color:'#4ade80',marginTop:2}}>✏️ Editable — {horas}h restantes</div>}
+              {!editable&&<div style={{fontSize:11,color:'#555',marginTop:2}}>🔒 Bloqueada</div>}
             </div>
-            <Badge estado={r.estado}/>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <Badge estado={r.estado}/>
+              <span style={{color:'#555',fontSize:16}}>{expandedId===r.id?'▲':'▼'}</span>
+            </div>
           </div>
           {r.foto_dte_url&&<div style={{marginTop:8}}><img src={r.foto_dte_url} style={{width:60,height:45,objectFit:'cover',borderRadius:6}} alt="DTE"/></div>}
+
+          {expandedId===r.id&&(
+            <div style={{marginTop:12,borderTop:'1px solid #2a2a2a',paddingTop:12}} onClick={e=>e.stopPropagation()}>
+              {loadingItems&&<div className="spin" style={{width:20,height:20,margin:'8px auto'}}/>}
+              {!loadingItems&&items.map((it,idx)=>(
+                <div key={it.id} style={{padding:'8px 0',borderBottom:'1px solid #1a1a1a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:500}}>{it.descripcion||'Producto'}</div>
+                    <div style={{fontSize:11,color:'#555'}}>{it.unidad}</div>
+                  </div>
+                  {editable?(
+                    <input type="number" value={it.qty_edit} onChange={e=>updItem(idx,e.target.value)}
+                      style={{width:70,textAlign:'center',background:'#1a1a1a',border:'1px solid #333',borderRadius:6,color:'#f0f0f0',padding:'6px',fontSize:14}}
+                      min="0" step="0.01"/>
+                  ):(
+                    <div style={{fontWeight:600,fontSize:14}}>{it.cantidad_recibida}</div>
+                  )}
+                </div>
+              ))}
+              {editable&&!loadingItems&&items.length>0&&(
+                <button className="btn btn-green" style={{marginTop:10,fontSize:13,padding:'10px'}} onClick={()=>guardarCambios(r)} disabled={saving}>
+                  {saving?'Guardando...':'💾 Guardar correcciones'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
-      ))}
+      );})}
     </div>
   );
 }
