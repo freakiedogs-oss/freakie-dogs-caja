@@ -525,6 +525,12 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
           });
         }
       }
+      // Actualizar precio en proveedor_productos con el último precio ingresado
+      for(const it of validItems){
+        if(!it.prodId||!proveedorId||!n(it.precio)) continue;
+        await db.from('proveedor_productos').update({precio_unitario:n(it.precio)})
+          .eq('proveedor_id',proveedorId).eq('producto_id',it.prodId);
+      }
       show('✅ Recepción verificada e inventario actualizado');
       onBack();
     }catch(e){
@@ -1130,6 +1136,12 @@ function EditarRecepcion({rec,cmId,show,onBack}){
         }else{
           await db.from('inventario').insert({producto_id:it.prodId,sucursal_id:cmId,stock_actual:qty,stock_minimo:0,stock_maximo:999,ultima_actualizacion:new Date().toISOString()});
         }
+      }
+      // Actualizar precio en proveedor_productos con el último precio ingresado
+      for(const it of validItems){
+        if(!it.prodId||!proveedorId||!n(it.precio)) continue;
+        await db.from('proveedor_productos').update({precio_unitario:n(it.precio)})
+          .eq('proveedor_id',proveedorId).eq('producto_id',it.prodId);
       }
       show('✅ Recepción actualizada');
       onBack();
