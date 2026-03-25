@@ -479,7 +479,7 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
       }
       const {data:rec,error:recErr}=await db.from('recepciones').insert({
         fecha:today(),
-        tipo_recepcion:'bodega',
+        tipo_recepcion:'bodega_proveedor',
         sucursal_destino_id:cmId,
         proveedor:proveedorNombre.trim(),
         recibido_por:user.id,
