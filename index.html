@@ -777,6 +777,12 @@ function Home({user,onCierre,onEditCierre,onDeposito,onAdmin,onReporte,onDashboa
           🏆 Dashboard Ejecutivo
         </button>
       )}
+      {(isAdmin||user.rol==='bodeguero'||user.rol==='produccion')&&(
+        <button className="btn btn-ghost" onClick={()=>window.location.href='/almacen.html'}
+          style={{marginBottom:12,borderColor:'#2d9cdb',color:'#2d9cdb'}}>
+          🏭 Módulo Almacén
+        </button>
+      )}
     </div>
   );
 }

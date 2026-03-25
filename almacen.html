@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Freakie Dogs — Almacén</title>
+  <meta name="theme-color" content="#111111">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="FD Almacén">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    body{background:#111;color:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+    #root{max-width:480px;margin:0 auto}
+    .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:16px;margin-bottom:12px}
+    .btn{display:block;width:100%;padding:14px;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s;text-align:center}
+    .btn-red{background:#e63946;color:#fff}
+    .btn-red:active{background:#c1121f}
+    .btn-green{background:#2d6a4f;color:#fff}
+    .btn-green:active{background:#1b4332}
+    .btn-orange{background:#e07c00;color:#fff}
+    .btn-orange:active{background:#b56200}
+    .btn-ghost{background:#1e1e1e;color:#ccc;border:1px solid #333}
+    .btn-ghost:active{background:#2a2a2a}
+    .btn-danger{background:#7f1d1d;color:#f87171;border:1px solid #991b1b}
+    .btn-sm{padding:8px 12px;font-size:13px;width:auto;display:inline-block}
+    .btn:disabled{opacity:.45;pointer-events:none}
+    .row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222}
+    .row:last-child{border-bottom:none}
+    .sec-title{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px}
+    .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+    .badge-yellow{background:#78350f;color:#fbbf24}
+    .badge-green{background:#14532d;color:#4ade80}
+    .badge-blue{background:#1e3a5f;color:#60a5fa}
+    .badge-orange{background:#7c2d12;color:#fb923c}
+    .badge-gray{background:#222;color:#666}
+    .spin{border:3px solid #333;border-top-color:#e63946;border-radius:50%;animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e1e1e;color:#f0f0f0;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid #333;z-index:9999;max-width:320px;text-align:center;pointer-events:none}
+    .tab-bar{display:flex;background:#161616;border-bottom:1px solid #222;position:sticky;top:0;z-index:100}
+    .tab{flex:1;padding:12px 6px;text-align:center;font-size:12px;font-weight:700;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:.15s}
+    .tab.active{color:#e63946;border-bottom-color:#e63946}
+    input[type=text],input[type=number],textarea,select{background:#1e1e1e;border:1px solid #333;color:#f0f0f0;border-radius:8px;padding:10px 12px;font-size:15px;width:100%}
+    input[type=number]{-moz-appearance:textfield}
+    input:focus,textarea:focus,select:focus{outline:none;border-color:#e63946}
+    label{font-size:13px;color:#888;display:block;margin-bottom:4px}
+    .field{margin-bottom:14px}
+    .item-row{background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px;margin-bottom:8px}
+    .num-input{display:flex;align-items:center;gap:8px}
+    .num-btn{width:36px;height:36px;border-radius:8px;border:1px solid #333;background:#2a2a2a;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+    .num-btn:active{background:#3a3a3a}
+    .num-field{flex:1;text-align:center;font-size:18px;font-weight:700;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:6px 0;color:#fff}
+    .photo-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px;border:2px dashed #333;border-radius:10px;cursor:pointer;color:#888;font-size:13px}
+    .photo-btn.has-photo{border-color:#2d6a4f;color:#4ade80}
+    .empty{text-align:center;padding:40px 20px;color:#444}
+    .empty-icon{font-size:40px;margin-bottom:10px}
+    .empty-text{font-size:14px}
+    .status-bar{height:env(safe-area-inset-top,0);background:#111}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;flex-direction:column;justify-content:flex-end}
+    .modal{background:#161616;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto}
+    .header{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid #1e1e1e}
+    .back-btn{background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 8px}
+  </style>
+</head>
+<body>
+<div class="status-bar"></div>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef,useMemo}=React;
+
+// ── CONFIG ────────────────────────────────────────────────────
+const URL_SB='https://btboxlwfqcbrdfrlnwln.supabase.co';
+const KEY_SB='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI2OTA4MzEsImV4cCI6MjA1ODI2NjgzMX0.qMuHVI2a0m3zBE3y2gVcRE0qbzDFMjdPmGN6IQs0qiU';
+const db = supabase.createClient(URL_SB, KEY_SB);
+const BUCKET = 'cierres-fotos';
+
+const STORES={M001:'Cafetalón',S001:'Soyapango',S002:'Usulután',S003:'Lourdes',S004:'Venecia',CM001:'Casa Matriz'};
+const today=()=>new Date(Date.now()-6*3600*1000).toISOString().split('T')[0];
+const fmtDate=d=>new Date(d+'T12:00:00').toLocaleDateString('es-SV',{day:'2-digit',month:'short',year:'numeric'});
+const n=v=>parseFloat(v)||0;
+
+// ── TOAST ────────────────────────────────────────────────────
+function useToast(){
+  const [msg,setMsg]=useState('');
+  const show=useCallback(m=>{setMsg(m);setTimeout(()=>setMsg(''),3200)},[]);
+  const Toast=()=>msg?<div className="toast">{msg}</div>:null;
+  return {show,Toast};
+}
+
+// ── STATUS BADGE ─────────────────────────────────────────────
+function Badge({estado}){
+  const map={
+    pendiente:{cls:'badge-yellow',label:'Pendiente'},
+    en_proceso:{cls:'badge-blue',label:'En proceso'},
+    completada:{cls:'badge-green',label:'Completada'},
+    con_diferencias:{cls:'badge-orange',label:'Con diferencias'},
+    borrador:{cls:'badge-gray',label:'Borrador'},
+    enviada:{cls:'badge-yellow',label:'Enviada'},
+    aprobada:{cls:'badge-green',label:'Aprobada'},
+    despachado:{cls:'badge-blue',label:'Despachado'},
+    recibido:{cls:'badge-green',label:'Recibido'},
+    preparando:{cls:'badge-yellow',label:'Preparando'},
+    parcial:{cls:'badge-orange',label:'Parcial'},
+  };
+  const s=map[estado]||{cls:'badge-gray',label:estado||'—'};
+  return <span className={`badge ${s.cls}`}>{s.label}</span>;
+}
+
+// ── LOGIN ────────────────────────────────────────────────────
+function Login({onLogin}){
+  const [pin,setPin]=useState('');
+  const [err,setErr]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  const press=async(k)=>{
+    if(k==='DEL'){setPin(p=>p.slice(0,-1));return;}
+    const np=pin+k; setPin(np);
+    if(np.length>=4){
+      setLoading(true);
+      const {data}=await db.from('usuarios_erp').select('*').eq('pin',np).eq('activo',true).maybeSingle();
+      setLoading(false);
+      if(!data){setErr('PIN incorrecto');setPin('');return;}
+      if(!['bodeguero','produccion','admin','compras'].includes(data.rol)){
+        setErr('Este acceso es solo para almacén'); setPin(''); return;
+      }
+      onLogin(data);
+    }
+  };
+
+  return(
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'0 32px'}}>
+      <div style={{fontSize:36,marginBottom:8}}>🏭</div>
+      <div style={{fontWeight:800,fontSize:22,marginBottom:4}}>Freakie Dogs</div>
+      <div style={{color:'#666',fontSize:14,marginBottom:32}}>Módulo Almacén</div>
+      <div style={{display:'flex',gap:16,marginBottom:8}}>
+        {[1,2,3,4].map(i=>(
+          <div key={i} style={{width:14,height:14,borderRadius:'50%',background:pin.length>=i?'#e63946':'#2a2a2a',transition:'.15s'}}/>
+        ))}
+      </div>
+      {err&&<div style={{color:'#e63946',fontSize:13,marginBottom:12,marginTop:8}}>{err}</div>}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginTop:24,width:220}}>
+        {['1','2','3','4','5','6','7','8','9','','0','DEL'].map(k=>(
+          <button key={k||'sp'} onClick={()=>k&&press(k)} disabled={!k||loading}
+            style={{height:60,borderRadius:12,border:'1px solid #2a2a2a',background:k==='DEL'?'#2a2a2a':'#1a1a1a',color:k==='DEL'?'#e63946':'#f0f0f0',fontSize:k==='DEL'?18:22,fontWeight:700,cursor:k?'pointer':'default',opacity:k?1:0}}>
+            {loading&&k==='0'?<div className="spin" style={{width:20,height:20,margin:'0 auto'}}/>:k}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── RECEPCIÓN PROVEEDOR (Flujo A) ────────────────────────────
+function RecepcionTab({user,show}){
+  const [view,setView]=useState('lista'); // lista | detalle | nueva
+  const [receps,setReceps]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [sel,setSel]=useState(null);
+  const [sucursales,setSucursales]=useState([]);
+
+  const cargar=async()=>{
+    setLoading(true);
+    const {data}=await db.from('recepciones')
+      .select('*')
+      .in('estado',['pendiente','en_proceso'])
+      .eq('tipo_recepcion','bodega')
+      .order('created_at',{ascending:false});
+    setReceps(data||[]);
+    const {data:suc}=await db.from('sucursales').select('id,nombre,store_code').eq('activa',true);
+    setSucursales(suc||[]);
+    setLoading(false);
+  };
+
+  useEffect(()=>{cargar();},[]);
+
+  if(view==='detalle'&&sel) return <RecepcionDetalle rec={sel} user={user} show={show} onBack={()=>{setSel(null);setView('lista');cargar();}} />;
+  if(view==='nueva') return <NuevaRecepcion user={user} sucursales={sucursales} show={show} onBack={()=>{setView('lista');cargar();}}/>;
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <button className="btn btn-red" style={{marginBottom:16}} onClick={()=>setView('nueva')}>
+        + Nueva Recepción de Proveedor
+      </button>
+
+      <div className="sec-title">Pendientes de Confirmar</div>
+      {loading&&<div style={{textAlign:'center',padding:20}}><div className="spin" style={{width:28,height:28,margin:'0 auto'}}/></div>}
+      {!loading&&receps.length===0&&(
+        <div className="empty"><div className="empty-icon">📦</div><div className="empty-text">No hay recepciones pendientes</div></div>
+      )}
+      {receps.map(r=>(
+        <div key={r.id} className="card" style={{cursor:'pointer'}} onClick={()=>{setSel(r);setView('detalle');}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:15}}>{r.proveedor||'Proveedor sin nombre'}</div>
+              <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(r.fecha)}</div>
+            </div>
+            <Badge estado={r.estado}/>
+          </div>
+          {r.notas&&<div style={{fontSize:13,color:'#888',marginTop:4}}>{r.notas}</div>}
+          <div style={{marginTop:10,fontSize:13,color:'#e63946',fontWeight:600}}>Tap para confirmar →</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── NUEVA RECEPCIÓN ───────────────────────────────────────────
+function NuevaRecepcion({user,sucursales,show,onBack}){
+  const [proveedor,setProveedor]=useState('');
+  const [notas,setNotas]=useState('');
+  const [items,setItems]=useState([{desc:'',qty:'',unidad:'unidad'}]);
+  const [foto,setFoto]=useState(null);
+  const [fotoUrl,setFotoUrl]=useState('');
+  const [loading,setLoading]=useState(false);
+  const fRef=useRef();
+  const cmId=sucursales.find(s=>s.store_code==='CM001')?.id;
+
+  const addItem=()=>setItems(prev=>[...prev,{desc:'',qty:'',unidad:'unidad'}]);
+  const updItem=(i,f,v)=>setItems(prev=>prev.map((it,idx)=>idx===i?{...it,[f]:v}:it));
+  const delItem=(i)=>setItems(prev=>prev.filter((_,idx)=>idx!==i));
+
+  const handleFoto=async(e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    setFoto(f);
+    const reader=new FileReader();
+    reader.onload=ev=>setFotoUrl(ev.target.result);
+    reader.readAsDataURL(f);
+  };
+
+  const guardar=async()=>{
+    if(!proveedor.trim()){show('⚠️ Ingresa el nombre del proveedor');return;}
+    const validItems=items.filter(i=>i.desc.trim()&&n(i.qty)>0);
+    if(validItems.length===0){show('⚠️ Agrega al menos un ítem con cantidad');return;}
+    if(!cmId){show('⚠️ Casa Matriz no encontrada en BD');return;}
+    setLoading(true);
+    try{
+      // Subir foto si existe
+      let fotoDbUrl=null;
+      if(foto){
+        const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
+        const path=`recepciones/dte_${Date.now()}.${ext}`;
+        const {error:upErr}=await db.storage.from(BUCKET).upload(path,foto,{cacheControl:'3600',upsert:false});
+        if(!upErr){
+          const {data:pu}=db.storage.from(BUCKET).getPublicUrl(path);
+          fotoDbUrl=pu?.publicUrl;
+        }
+      }
+      // Crear recepción
+      const {data:rec,error:recErr}=await db.from('recepciones').insert({
+        fecha:today(),
+        tipo_recepcion:'bodega',
+        sucursal_destino_id:cmId,
+        proveedor:proveedor.trim(),
+        recibido_por:user.id,
+        estado:'en_proceso',
+        foto_dte_url:fotoDbUrl,
+        notas:notas.trim()||null,
+      }).select().single();
+      if(recErr) throw recErr;
+      // Crear items
+      const rows=validItems.map(it=>({
+        recepcion_id:rec.id,
+        descripcion:it.desc.trim(),
+        cantidad_esperada:n(it.qty),
+        cantidad_recibida:n(it.qty),
+        unidad:it.unidad,
+      }));
+      const {error:itmErr}=await db.from('recepcion_items').insert(rows);
+      if(itmErr) throw itmErr;
+      show('✅ Recepción registrada');
+      onBack();
+    }catch(e){
+      show('❌ Error: '+e.message);
+    }
+    setLoading(false);
+  };
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <div className="header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <div style={{fontWeight:700,fontSize:16}}>Nueva Recepción</div>
+      </div>
+      <div style={{padding:'16px 16px 100px'}}>
+        <div className="field">
+          <label>Proveedor *</label>
+          <input type="text" value={proveedor} onChange={e=>setProveedor(e.target.value)} placeholder="Ej: Corte Argentino, BELCA..."/>
+        </div>
+        <div className="field">
+          <label>Notas (opcional)</label>
+          <input type="text" value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Observaciones generales"/>
+        </div>
+
+        {/* Foto DTE */}
+        <div className="field">
+          <label>Foto del DTE físico</label>
+          <div className={`photo-btn ${foto?'has-photo':''}`} onClick={()=>fRef.current.click()}>
+            {foto
+              ? <><img src={fotoUrl} style={{width:120,height:90,objectFit:'cover',borderRadius:8}} alt="DTE"/><span style={{marginTop:4}}>✅ DTE adjunto — tap para cambiar</span></>
+              : <><span style={{fontSize:28}}>📷</span><span>Tomar foto del DTE</span></>
+            }
+          </div>
+          <input type="file" ref={fRef} accept="image/*" capture="environment" onChange={handleFoto} style={{display:'none'}}/>
+        </div>
+
+        {/* Items */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div className="sec-title" style={{marginBottom:0}}>PRODUCTOS RECIBIDOS</div>
+          <button className="btn btn-ghost btn-sm" onClick={addItem}>+ Agregar</button>
+        </div>
+
+        {items.map((it,i)=>(
+          <div key={i} className="item-row">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <span style={{fontSize:13,color:'#666'}}>Producto {i+1}</span>
+              {items.length>1&&<button onClick={()=>delItem(i)} style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>×</button>}
+            </div>
+            <div className="field" style={{marginBottom:8}}>
+              <input type="text" value={it.desc} onChange={e=>updItem(i,'desc',e.target.value)} placeholder="Descripción del producto"/>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <div>
+                <label>Cantidad</label>
+                <input type="number" value={it.qty} onChange={e=>updItem(i,'qty',e.target.value)} placeholder="0" min="0" step="0.01"/>
+              </div>
+              <div>
+                <label>Unidad</label>
+                <select value={it.unidad} onChange={e=>updItem(i,'unidad',e.target.value)}>
+                  <option value="unidad">Unidad</option>
+                  <option value="kg">Kilogramo</option>
+                  <option value="lb">Libra</option>
+                  <option value="litro">Litro</option>
+                  <option value="caja">Caja</option>
+                  <option value="bolsa">Bolsa</option>
+                  <option value="rollo">Rollo</option>
+                  <option value="paquete">Paquete</option>
+                  <option value="galón">Galón</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <button className="btn btn-green" style={{marginTop:8}} onClick={guardar} disabled={loading}>
+          {loading?'Guardando...':'✅ Confirmar Recepción'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── DETALLE RECEPCIÓN (editar/confirmar) ──────────────────────
+function RecepcionDetalle({rec,user,show,onBack}){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [foto,setFoto]=useState(null);
+  const [fotoUrl,setFotoUrl]=useState(rec.foto_dte_url||'');
+  const fRef=useRef();
+
+  useEffect(()=>{
+    db.from('recepcion_items').select('*').eq('recepcion_id',rec.id)
+      .then(({data})=>{ setItems((data||[]).map(it=>({...it,qty_input:String(it.cantidad_recibida)}))); setLoading(false); });
+  },[rec.id]);
+
+  const handleFoto=async(e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    setFoto(f);
+    const reader=new FileReader(); reader.onload=ev=>setFotoUrl(ev.target.result); reader.readAsDataURL(f);
+  };
+
+  const confirmar=async()=>{
+    setSaving(true);
+    try{
+      let fotoDbUrl=rec.foto_dte_url;
+      if(foto){
+        const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
+        const path=`recepciones/dte_${Date.now()}.${ext}`;
+        const {error:upErr}=await db.storage.from(BUCKET).upload(path,foto,{cacheControl:'3600',upsert:false});
+        if(!upErr){const {data:pu}=db.storage.from(BUCKET).getPublicUrl(path); fotoDbUrl=pu?.publicUrl;}
+      }
+      // Actualizar items
+      for(const it of items){
+        await db.from('recepcion_items').update({cantidad_recibida:n(it.qty_input)}).eq('id',it.id);
+      }
+      // Actualizar recepción
+      const hasDiff=items.some(it=>Math.abs(n(it.qty_input)-n(it.cantidad_esperada))>0.01);
+      await db.from('recepciones').update({
+        estado:hasDiff?'con_diferencias':'completada',
+        foto_dte_url:fotoDbUrl,
+        updated_at:new Date().toISOString(),
+      }).eq('id',rec.id);
+
+      // Actualizar inventario (upsert stock Casa Matriz)
+      const cmId=rec.sucursal_destino_id;
+      for(const it of items){
+        if(it.producto_id){
+          await db.from('inventario').upsert({
+            sucursal_id:cmId, producto_id:it.producto_id,
+            stock_actual:n(it.qty_input), ultima_actualizacion:new Date().toISOString()
+          },{onConflict:'sucursal_id,producto_id',ignoreDuplicates:false});
+        }
+      }
+      show(hasDiff?'⚠️ Recepción confirmada con diferencias':'✅ Recepción completada');
+      onBack();
+    }catch(e){ show('❌ '+e.message); }
+    setSaving(false);
+  };
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <div className="header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:15}}>{rec.proveedor||'Proveedor'}</div>
+          <div style={{fontSize:12,color:'#666'}}>{fmtDate(rec.fecha)}</div>
+        </div>
+        <Badge estado={rec.estado}/>
+      </div>
+      <div style={{padding:'16px 16px 100px'}}>
+        {/* Foto DTE */}
+        <div className="field">
+          <label>Foto del DTE</label>
+          <div className={`photo-btn ${fotoUrl?'has-photo':''}`} onClick={()=>fRef.current.click()}>
+            {fotoUrl
+              ? <><img src={fotoUrl} style={{width:120,height:90,objectFit:'cover',borderRadius:8}} alt="DTE"/><span style={{marginTop:4}}>✅ Tap para reemplazar</span></>
+              : <><span style={{fontSize:28}}>📷</span><span>Sin foto — tap para agregar</span></>
+            }
+          </div>
+          <input type="file" ref={fRef} accept="image/*" capture="environment" onChange={handleFoto} style={{display:'none'}}/>
+        </div>
+
+        <div className="sec-title">CONFIRMAR CANTIDADES RECIBIDAS</div>
+        {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+        {items.map((it,i)=>(
+          <div key={it.id} className="item-row">
+            <div style={{fontWeight:600,fontSize:14,marginBottom:8}}>{it.descripcion||`Ítem ${i+1}`}</div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#666',marginBottom:10}}>
+              <span>Esperado: <strong style={{color:'#f0f0f0'}}>{it.cantidad_esperada} {it.unidad||''}</strong></span>
+            </div>
+            <div>
+              <label>Cantidad recibida</label>
+              <div className="num-input">
+                <button className="num-btn" onClick={()=>{const v=Math.max(0,n(it.qty_input)-1);setItems(p=>p.map((x,j)=>j===i?{...x,qty_input:String(v)}:x));}}>−</button>
+                <input type="number" className="num-field" value={it.qty_input}
+                  onChange={e=>setItems(p=>p.map((x,j)=>j===i?{...x,qty_input:e.target.value}:x))} min="0" step="0.01"/>
+                <button className="num-btn" onClick={()=>{const v=n(it.qty_input)+1;setItems(p=>p.map((x,j)=>j===i?{...x,qty_input:String(v)}:x));}}>+</button>
+              </div>
+              {Math.abs(n(it.qty_input)-n(it.cantidad_esperada))>0.01&&(
+                <div style={{fontSize:12,color:'#fb923c',marginTop:4}}>
+                  ⚠️ Diferencia: {(n(it.qty_input)-n(it.cantidad_esperada)).toFixed(2)} {it.unidad}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {!loading&&<button className="btn btn-green" style={{marginTop:12}} onClick={confirmar} disabled={saving}>
+          {saving?'Confirmando...':'✅ Confirmar Recepción'}
+        </button>}
+      </div>
+    </div>
+  );
+}
+
+// ── DESPACHO A SUCURSALES (Flujo C) ──────────────────────────
+function DespachoTab({user,show}){
+  const [view,setView]=useState('lista');
+  const [pedidos,setPedidos]=useState([]);
+  const [despachos,setDespachos]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [sel,setSel]=useState(null);
+  const [tab,setTab]=useState('pendientes'); // pendientes | despachados
+
+  const cargar=async()=>{
+    setLoading(true);
+    const [{data:ped},{data:des}]=await Promise.all([
+      db.from('pedidos_sucursal').select('*,sucursales(nombre)').in('estado',['enviado','aprobado']).order('created_at',{ascending:false}),
+      db.from('despachos_sucursal').select('*,sucursales(nombre)').in('estado',['despachado','en_camino']).order('fecha_despacho',{ascending:false}).limit(20),
+    ]);
+    setPedidos(ped||[]);
+    setDespachos(des||[]);
+    setLoading(false);
+  };
+
+  useEffect(()=>{cargar();},[]);
+
+  if(view==='preparar'&&sel) return <PrepararDespacho pedido={sel} user={user} show={show} onBack={()=>{setSel(null);setView('lista');cargar();}}/>;
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
+        <button className={`btn btn-sm ${tab==='pendientes'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('pendientes')}>📋 Pedidos</button>
+        <button className={`btn btn-sm ${tab==='despachados'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('despachados')}>🚚 En camino</button>
+      </div>
+      {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+
+      {!loading&&tab==='pendientes'&&<>
+        {pedidos.length===0&&<div className="empty"><div className="empty-icon">🛒</div><div className="empty-text">No hay pedidos pendientes de despacho</div></div>}
+        {pedidos.map(p=>(
+          <div key={p.id} className="card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:15}}>{p.sucursales?.nombre||p.sucursal_id}</div>
+                <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}</div>
+                {p.fecha_entrega_estimada&&<div style={{color:'#fbbf24',fontSize:12}}>Entrega: {fmtDate(p.fecha_entrega_estimada)}</div>}
+              </div>
+              <Badge estado={p.estado}/>
+            </div>
+            {p.notas&&<div style={{fontSize:13,color:'#888',marginBottom:8}}>{p.notas}</div>}
+            <button className="btn btn-orange btn-sm" onClick={()=>{setSel(p);setView('preparar');}}>
+              📦 Preparar Despacho
+            </button>
+          </div>
+        ))}
+      </>}
+
+      {!loading&&tab==='despachados'&&<>
+        {despachos.length===0&&<div className="empty"><div className="empty-icon">🚚</div><div className="empty-text">No hay despachos en camino</div></div>}
+        {despachos.map(d=>(
+          <div key={d.id} className="card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div>
+                <div style={{fontWeight:700}}>{d.sucursales?.nombre}</div>
+                <div style={{color:'#666',fontSize:12}}>{fmtDate(d.fecha_despacho)}</div>
+              </div>
+              <Badge estado={d.estado}/>
+            </div>
+          </div>
+        ))}
+      </>}
+    </div>
+  );
+}
+
+// ── PREPARAR DESPACHO ─────────────────────────────────────────
+function PrepararDespacho({pedido,user,show,onBack}){
+  const [pitems,setPitems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const cmId=null; // will be set after loading sucursales
+
+  useEffect(()=>{
+    db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida)').eq('pedido_id',pedido.id)
+      .then(({data})=>{
+        setPitems((data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0)})));
+        setLoading(false);
+      });
+  },[pedido.id]);
+
+  const despachar=async()=>{
+    setSaving(true);
+    try{
+      // 1. Crear despacho
+      const {data:des,error:desErr}=await db.from('despachos_sucursal').insert({
+        sucursal_id:pedido.sucursal_id,
+        pedido_id:pedido.id,
+        fecha_despacho:today(),
+        estado:'despachado',
+        preparado_por:user.id,
+      }).select().single();
+      if(desErr) throw desErr;
+      // 2. Crear despacho_items
+      const rows=pitems.filter(it=>n(it.qty_despacho)>0).map(it=>({
+        despacho_id:des.id,
+        producto_id:it.producto_id||null,
+        descripcion:it.catalogo_productos?.nombre||`Producto`,
+        cantidad_despachada:n(it.qty_despacho),
+        unidad_medida:it.catalogo_productos?.unidad_medida||it.unidad||'unidad',
+      }));
+      if(rows.length>0){
+        const {error:itmErr}=await db.from('despacho_items').insert(rows);
+        if(itmErr) throw itmErr;
+      }
+      // 3. Actualizar pedido a despachado
+      await db.from('pedidos_sucursal').update({estado:'despachado'}).eq('id',pedido.id);
+      show('✅ Despacho confirmado — en camino a '+pedido.sucursales?.nombre);
+      onBack();
+    }catch(e){ show('❌ '+e.message); }
+    setSaving(false);
+  };
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <div className="header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:15}}>Despacho a {pedido.sucursales?.nombre}</div>
+          <div style={{fontSize:12,color:'#666'}}>Pedido del {fmtDate(pedido.fecha_pedido)}</div>
+        </div>
+      </div>
+      <div style={{padding:'16px 16px 100px'}}>
+        <div className="sec-title">ÍTEMS A DESPACHAR</div>
+        {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+        {!loading&&pitems.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Este pedido no tiene ítems</div></div>}
+        {pitems.map((it,i)=>(
+          <div key={it.id} className="item-row">
+            <div style={{fontWeight:600,fontSize:14,marginBottom:8}}>
+              {it.catalogo_productos?.nombre||`Ítem ${i+1}`}
+            </div>
+            <div style={{fontSize:12,color:'#666',marginBottom:10}}>
+              Solicitado: <strong style={{color:'#f0f0f0'}}>{it.cantidad_solicitada} {it.catalogo_productos?.unidad_medida||it.unidad||''}</strong>
+            </div>
+            <div>
+              <label>Cantidad a despachar</label>
+              <div className="num-input">
+                <button className="num-btn" onClick={()=>{const v=Math.max(0,n(it.qty_despacho)-1);setPitems(p=>p.map((x,j)=>j===i?{...x,qty_despacho:String(v)}:x));}}>−</button>
+                <input type="number" className="num-field" value={it.qty_despacho}
+                  onChange={e=>setPitems(p=>p.map((x,j)=>j===i?{...x,qty_despacho:e.target.value}:x))} min="0" step="0.01"/>
+                <button className="num-btn" onClick={()=>{const v=n(it.qty_despacho)+1;setPitems(p=>p.map((x,j)=>j===i?{...x,qty_despacho:String(v)}:x));}}>+</button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {!loading&&<>
+          {pitems.length>0&&<button className="btn btn-orange" style={{marginTop:12}} onClick={despachar} disabled={saving}>
+            {saving?'Despachando...':'🚚 Confirmar Despacho'}
+          </button>}
+        </>}
+      </div>
+    </div>
+  );
+}
+
+// ── INVENTARIO ───────────────────────────────────────────────
+function InventarioTab({user,show}){
+  const [inv,setInv]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [busqueda,setBusqueda]=useState('');
+  const [cmId,setCmId]=useState(null);
+
+  useEffect(()=>{
+    db.from('sucursales').select('id').eq('store_code','CM001').maybeSingle().then(({data})=>{
+      if(!data) return;
+      setCmId(data.id);
+      db.from('inventario').select('*,catalogo_productos(nombre,categoria,unidad_medida)')
+        .eq('sucursal_id',data.id).order('stock_actual',{ascending:true})
+        .then(({data:inv})=>{ setInv(inv||[]); setLoading(false); });
+    });
+  },[]);
+
+  const filtrado=useMemo(()=>{
+    if(!busqueda.trim()) return inv;
+    const q=busqueda.toLowerCase();
+    return inv.filter(i=>i.catalogo_productos?.nombre?.toLowerCase().includes(q)||i.catalogo_productos?.categoria?.toLowerCase().includes(q));
+  },[inv,busqueda]);
+
+  const alertas=inv.filter(i=>i.alerta_activa||i.stock_actual<=i.stock_minimo);
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      {alertas.length>0&&(
+        <div className="card" style={{borderColor:'#7c2d12',marginBottom:16}}>
+          <div style={{fontWeight:700,color:'#fb923c',marginBottom:6}}>⚠️ {alertas.length} producto(s) bajo mínimo</div>
+          {alertas.map(a=>(
+            <div key={a.id} style={{fontSize:13,color:'#f0f0f0',padding:'4px 0',borderBottom:'1px solid #2a2a2a'}}>
+              {a.catalogo_productos?.nombre||a.id}: <strong>{a.stock_actual}</strong> / mín {a.stock_minimo}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="field">
+        <input type="text" value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="🔍 Buscar producto..."/>
+      </div>
+      {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+      {!loading&&filtrado.length===0&&(
+        <div className="empty">
+          <div className="empty-icon">📦</div>
+          <div className="empty-text">{busqueda?'Sin resultados':'Inventario vacío — carga mercadería primero'}</div>
+        </div>
+      )}
+      {filtrado.map(it=>(
+        <div key={it.id} className="card" style={{padding:'12px 14px',borderColor:it.stock_actual<=it.stock_minimo?'#7c2d12':'#2a2a2a'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:14}}>{it.catalogo_productos?.nombre||it.id}</div>
+              <div style={{fontSize:12,color:'#666',marginTop:2}}>{it.catalogo_productos?.categoria||'Sin categoría'}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontWeight:700,fontSize:18,color:it.stock_actual<=it.stock_minimo?'#fb923c':'#4ade80'}}>
+                {it.stock_actual}
+              </div>
+              <div style={{fontSize:11,color:'#555'}}>{it.catalogo_productos?.unidad_medida||'unid'}</div>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:16,marginTop:8,fontSize:12,color:'#555'}}>
+            <span>Mín: {it.stock_minimo}</span>
+            <span>Máx: {it.stock_maximo}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── HISTORIAL DE RECEPCIONES ──────────────────────────────────
+function HistorialTab({user,show}){
+  const [recs,setRecs]=useState([]);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    db.from('recepciones').select('*')
+      .in('estado',['completada','con_diferencias'])
+      .order('created_at',{ascending:false}).limit(30)
+      .then(({data})=>{setRecs(data||[]);setLoading(false);});
+  },[]);
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <div className="sec-title">Últimas 30 recepciones</div>
+      {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+      {!loading&&recs.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Sin historial aún</div></div>}
+      {recs.map(r=>(
+        <div key={r.id} className="card" style={{padding:'12px 14px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:14}}>{r.proveedor||'Sin nombre'}</div>
+              <div style={{fontSize:12,color:'#666',marginTop:2}}>{fmtDate(r.fecha)}</div>
+            </div>
+            <Badge estado={r.estado}/>
+          </div>
+          {r.foto_dte_url&&<div style={{marginTop:8}}><img src={r.foto_dte_url} style={{width:60,height:45,objectFit:'cover',borderRadius:6}} alt="DTE"/></div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── HOME / APP ────────────────────────────────────────────────
+function App(){
+  const [user,setUser]=useState(null);
+  const [tab,setTab]=useState('recepcion');
+  const {show,Toast}=useToast();
+
+  if(!user) return <Login onLogin={u=>setUser(u)}/>;
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <Toast/>
+      {/* Header */}
+      <div style={{padding:'16px 16px 12px',background:'#111',borderBottom:'1px solid #1e1e1e',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontWeight:800,fontSize:17}}>🏭 Almacén FD</div>
+          <div style={{fontSize:12,color:'#555',marginTop:1}}>{user.nombre} {user.apellido} · {user.rol}</div>
+        </div>
+        <button onClick={()=>setUser(null)} style={{background:'none',border:'1px solid #2a2a2a',color:'#666',padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer'}}>Salir</button>
+      </div>
+      {/* Tabs */}
+      <div className="tab-bar">
+        <div className={`tab ${tab==='recepcion'?'active':''}`} onClick={()=>setTab('recepcion')}>📥 Recepción</div>
+        <div className={`tab ${tab==='despacho'?'active':''}`} onClick={()=>setTab('despacho')}>🚚 Despacho</div>
+        <div className={`tab ${tab==='inventario'?'active':''}`} onClick={()=>setTab('inventario')}>📦 Inventario</div>
+        <div className={`tab ${tab==='historial'?'active':''}`} onClick={()=>setTab('historial')}>📋 Historial</div>
+      </div>
+      {/* Content */}
+      {tab==='recepcion'&&<RecepcionTab user={user} show={show}/>}
+      {tab==='despacho'&&<DespachoTab user={user} show={show}/>}
+      {tab==='inventario'&&<InventarioTab user={user} show={show}/>}
+      {tab==='historial'&&<HistorialTab user={user} show={show}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
