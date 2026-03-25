@@ -122,8 +122,9 @@ function Login({onLogin}){
     const np=pin+k; setPin(np);
     if(np.length>=4){
       setLoading(true);
-      const {data}=await db.from('usuarios_erp').select('*').eq('pin',np).eq('activo',true).maybeSingle();
+      const {data,error}=await db.from('usuarios_erp').select('*').eq('pin',np).eq('activo',true).maybeSingle();
       setLoading(false);
+      if(error){setErr('Error: '+error.message);setPin('');return;}
       if(!data){setErr('PIN incorrecto');setPin('');return;}
       if(!['bodeguero','produccion','admin','compras'].includes(data.rol)){
         setErr('Este acceso es solo para almacén'); setPin(''); return;
