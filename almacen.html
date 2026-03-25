@@ -373,6 +373,7 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
   const [productos,setProductos]=useState([]);
   const [showNewProdModal,setShowNewProdModal]=useState(false);
   const [notas,setNotas]=useState('');
+  const [dteCodigo,setDteCodigo]=useState('');
   const [items,setItems]=useState([{prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad'}]);
   const [foto,setFoto]=useState(null);
   const [fotoUrl,setFotoUrl]=useState('');
@@ -486,6 +487,7 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
         estado:'verificada',
         foto_dte_url:fotoDbUrl,
         notas:notas.trim()||null,
+        dte_codigo:dteCodigo.trim()||null,
       }).select().single();
       if(recErr) throw recErr;
 
@@ -570,6 +572,14 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
         <div className="field">
           <label>Notas (opcional)</label>
           <input type="text" value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Observaciones generales"/>
+        </div>
+
+        <div className="field">
+          <label>Últimos 4 dígitos del DTE</label>
+          <input type="text" value={dteCodigo} onChange={e=>setDteCodigo(e.target.value.replace(/\D/g,'').slice(0,4))}
+            placeholder="Ej: 2345" maxLength={4} inputMode="numeric"
+            style={{width:120,fontSize:20,fontWeight:700,textAlign:'center',letterSpacing:8}}/>
+          <div style={{fontSize:11,color:'#555',marginTop:4}}>Del número de control del DTE</div>
         </div>
 
         {/* Foto DTE */}
@@ -1015,6 +1025,7 @@ function EditarRecepcion({rec,cmId,show,onBack}){
   const [productos,setProductos]=useState([]);
   const [showNewProdModal,setShowNewProdModal]=useState(false);
   const [notas,setNotas]=useState(rec.notas||'');
+  const [dteCodigo,setDteCodigo]=useState(rec.dte_codigo||'');
   const [items,setItems]=useState([]);
   const [origItems,setOrigItems]=useState([]);
   const [foto,setFoto]=useState(null);
@@ -1111,6 +1122,7 @@ function EditarRecepcion({rec,cmId,show,onBack}){
       await db.from('recepciones').update({
         proveedor:proveedorNombre.trim(),
         notas:notas.trim()||null,
+        dte_codigo:dteCodigo.trim()||null,
         foto_dte_url:fotoDbUrl,
         updated_at:new Date().toISOString()
       }).eq('id',rec.id);
@@ -1178,6 +1190,14 @@ function EditarRecepcion({rec,cmId,show,onBack}){
         <div className="field">
           <label>Notas (opcional)</label>
           <input type="text" value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Observaciones generales"/>
+        </div>
+        {/* DTE código */}
+        <div className="field">
+          <label>Últimos 4 dígitos del DTE</label>
+          <input type="text" value={dteCodigo} onChange={e=>setDteCodigo(e.target.value.replace(/\D/g,'').slice(0,4))}
+            placeholder="Ej: 2345" maxLength={4} inputMode="numeric"
+            style={{width:120,fontSize:20,fontWeight:700,textAlign:'center',letterSpacing:8}}/>
+          <div style={{fontSize:11,color:'#555',marginTop:4}}>Del número de control del DTE</div>
         </div>
         {/* Foto */}
         <div className="field">
@@ -1254,12 +1274,58 @@ function HistorialTab({user,show}){
   const [saving,setSaving]=useState(false);
   const [cmId,setCmId]=useState(null);
   const [editRec,setEditRec]=useState(null);
+  // Cruces pendientes
+  const [pendientes,setPendientes]=useState([]);
+  const [showPendientes,setShowPendientes]=useState(false);
+  const [loadingPend,setLoadingPend]=useState(false);
 
   const cargar=()=>{
     db.from('recepciones').select('*')
       .order('created_at',{ascending:false}).limit(30)
       .then(({data})=>{setRecs(data||[]);setLoading(false);});
+    // Cargar count de pendientes
+    db.from('compras_dte').select('id',{count:'exact',head:true})
+      .eq('revision_manual',true).eq('cruzado',false)
+      .then(({count})=>setPendientes(prev=>count>0?prev:[]));
   };
+  const cargarPendientes=async()=>{
+    setLoadingPend(true);
+    const {data}=await db.from('compras_dte').select('*,recepcion_candidata:recepciones!compras_dte_recepcion_candidata_id_fkey(*)')
+      .eq('revision_manual',true).eq('cruzado',false)
+      .order('fecha_emision',{ascending:false});
+    setPendientes(data||[]);
+    setLoadingPend(false);
+  };
+  const aprobarCruce=async(dte)=>{
+    setSaving(true);
+    try{
+      await db.from('compras_dte').update({
+        cruzado:true,
+        recepcion_id:dte.recepcion_candidata_id,
+        revision_manual:false,
+        notas_revision:'Aprobado manualmente',
+        updated_at:new Date().toISOString()
+      }).eq('id',dte.id);
+      show('✅ Cruce aprobado');
+      cargarPendientes();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+  const rechazarCruce=async(dte)=>{
+    setSaving(true);
+    try{
+      await db.from('compras_dte').update({
+        revision_manual:false,
+        recepcion_candidata_id:null,
+        notas_revision:'Rechazado — no son el mismo DTE',
+        updated_at:new Date().toISOString()
+      }).eq('id',dte.id);
+      show('❌ Cruce rechazado');
+      cargarPendientes();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
   useEffect(()=>{
     cargar();
     db.from('sucursales').select('id').eq('store_code','CM001').maybeSingle().then(({data})=>{if(data)setCmId(data.id);});
@@ -1309,8 +1375,67 @@ function HistorialTab({user,show}){
   // Si estamos editando, mostrar EditarRecepcion
   if(editRec) return <EditarRecepcion rec={editRec} cmId={cmId} show={show} onBack={()=>{setEditRec(null);setExpandedId(null);cargar();}}/>;
 
+  // Cargar count de pendientes al inicio
+  const [pendCount,setPendCount]=useState(0);
+  useEffect(()=>{
+    db.from('compras_dte').select('id',{count:'exact',head:true})
+      .eq('revision_manual',true).eq('cruzado',false)
+      .then(({count})=>setPendCount(count||0));
+  },[pendientes]);
+
   return(
     <div style={{padding:'16px 16px 100px'}}>
+      {/* Banner de cruces pendientes */}
+      {pendCount>0&&(
+        <div style={{background:'linear-gradient(135deg,#2a1800,#3d2200)',border:'1px solid #f4a261',borderRadius:12,padding:'12px 14px',marginBottom:14,cursor:'pointer'}}
+          onClick={()=>{setShowPendientes(!showPendientes);if(!showPendientes&&pendientes.length===0)cargarPendientes();}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#f4a261'}}>⚠️ {pendCount} cruce{pendCount>1?'s':''} pendiente{pendCount>1?'s':''}</div>
+              <div style={{fontSize:11,color:'#b8860b',marginTop:2}}>DTE de correo con match parcial — requiere tu revisión</div>
+            </div>
+            <span style={{color:'#f4a261',fontSize:16}}>{showPendientes?'▲':'▼'}</span>
+          </div>
+        </div>
+      )}
+      {/* Lista de cruces pendientes */}
+      {showPendientes&&(
+        <div style={{marginBottom:16}}>
+          {loadingPend&&<div className="spin" style={{width:24,height:24,margin:'12px auto'}}/>}
+          {!loadingPend&&pendientes.map(dte=>{
+            const cand=dte.recepcion_candidata;
+            return(
+              <div key={dte.id} className="card" style={{padding:'12px 14px',borderLeft:'3px solid #f4a261',marginBottom:8}}>
+                <div style={{fontSize:11,color:'#888',marginBottom:4}}>DTE del correo</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600}}>{dte.proveedor_nombre||'Proveedor'}</div>
+                    <div style={{fontSize:11,color:'#666'}}>{fmtDate(dte.fecha_emision)} · DTE ****{dte.dte_codigo}</div>
+                    {dte.monto_total&&<div style={{fontSize:12,color:'#4ade80',marginTop:2}}>${Number(dte.monto_total).toFixed(2)}</div>}
+                  </div>
+                </div>
+                {cand&&(
+                  <div style={{background:'#1a1a1a',borderRadius:8,padding:'8px 10px',marginTop:8}}>
+                    <div style={{fontSize:11,color:'#888',marginBottom:2}}>Recepción candidata</div>
+                    <div style={{fontSize:13,fontWeight:500}}>{cand.proveedor||'—'}</div>
+                    <div style={{fontSize:11,color:'#666'}}>{fmtDate(cand.fecha)}{cand.dte_codigo?' · DTE ****'+cand.dte_codigo:' · Sin DTE'}</div>
+                  </div>
+                )}
+                <div style={{display:'flex',gap:8,marginTop:10}}>
+                  <button className="btn btn-green" style={{flex:1,fontSize:13,padding:'10px'}} onClick={()=>aprobarCruce(dte)} disabled={saving}>
+                    ✅ Sí, es el mismo
+                  </button>
+                  <button className="btn" style={{flex:1,fontSize:13,padding:'10px',background:'#333',border:'1px solid #555'}} onClick={()=>rechazarCruce(dte)} disabled={saving}>
+                    ❌ No coincide
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {!loadingPend&&pendientes.length===0&&<div style={{textAlign:'center',color:'#555',fontSize:13,padding:8}}>No hay cruces pendientes</div>}
+        </div>
+      )}
+
       <div className="sec-title">Últimas recepciones</div>
       {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
       {!loading&&recs.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Sin historial aún</div></div>}
@@ -1336,6 +1461,7 @@ function HistorialTab({user,show}){
 
           {expandedId===r.id&&(
             <div style={{marginTop:12,borderTop:'1px solid #2a2a2a',paddingTop:12}} onClick={e=>e.stopPropagation()}>
+              {r.dte_codigo&&<div style={{fontSize:12,color:'#f4a261',marginBottom:8}}>🔖 DTE: ****{r.dte_codigo}</div>}
               {loadingItems&&<div className="spin" style={{width:20,height:20,margin:'8px auto'}}/>}
               {!loadingItems&&items.map((it,idx)=>(
                 <div key={it.id} style={{padding:'8px 0',borderBottom:'1px solid #1a1a1a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
