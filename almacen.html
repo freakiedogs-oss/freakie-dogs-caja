@@ -65,6 +65,14 @@
     .modal{background:#161616;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto}
     .header{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid #1e1e1e}
     .back-btn{background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 8px}
+    .autocomplete-container{position:relative;width:100%}
+    .autocomplete-dropdown{position:absolute;top:100%;left:0;right:0;background:#1e1e1e;border:1px solid #333;border-top:none;border-radius:0 0 8px 8px;max-height:200px;overflow-y:auto;z-index:10;display:none}
+    .autocomplete-dropdown.active{display:block}
+    .autocomplete-item{padding:10px 12px;border-bottom:1px solid #222;cursor:pointer;color:#f0f0f0;font-size:14px}
+    .autocomplete-item:hover{background:#2a2a2a}
+    .autocomplete-item:last-child{border-bottom:none}
+    .autocomplete-item.selected{background:#2d6a4f;color:#4ade80}
+    .price-alert{padding:8px 10px;background:#7c2d12;border:1px solid #991b1b;border-radius:6px;margin-top:6px;font-size:12px;color:#fbbf24;font-weight:600}
   </style>
 </head>
 <body>
@@ -210,18 +218,130 @@ function RecepcionTab({user,show}){
   );
 }
 
+// ── NUEVO PROVEEDOR MODAL ────────────────────────────────────────
+function NuevoProveedorModal({onSave,onClose}){
+  const [nombre,setNombre]=useState('');
+  const [telefono,setTelefono]=useState('');
+  const [correo,setCorreo]=useState('');
+  const [contacto,setContacto]=useState('');
+  const [nit,setNit]=useState('');
+  const [direccion,setDireccion]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  const guardar=async()=>{
+    if(!nombre.trim()){alert('Ingresa el nombre del proveedor');return;}
+    setLoading(true);
+    try{
+      const {data,error}=await db.from('proveedores').insert({
+        nombre:nombre.trim(),
+        telefono:telefono.trim()||null,
+        correo:correo.trim()||null,
+        contacto:contacto.trim()||null,
+        nit:nit.trim()||null,
+        direccion:direccion.trim()||null,
+        activo:true,
+      }).select().single();
+      if(error) throw error;
+      onSave(data);
+    }catch(e){
+      alert('Error: '+e.message);
+    }
+    setLoading(false);
+  };
+
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:16}}>+ Agregar Proveedor</div>
+        <div className="field">
+          <label>Nombre *</label>
+          <input type="text" value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Nombre del proveedor"/>
+        </div>
+        <div className="field">
+          <label>Teléfono</label>
+          <input type="text" value={telefono} onChange={e=>setTelefono(e.target.value)} placeholder="Ej: 2501-5555"/>
+        </div>
+        <div className="field">
+          <label>Correo</label>
+          <input type="text" value={correo} onChange={e=>setCorreo(e.target.value)} placeholder="Ej: info@proveedor.com"/>
+        </div>
+        <div className="field">
+          <label>Contacto</label>
+          <input type="text" value={contacto} onChange={e=>setContacto(e.target.value)} placeholder="Nombre del contacto"/>
+        </div>
+        <div className="field">
+          <label>NIT</label>
+          <input type="text" value={nit} onChange={e=>setNit(e.target.value)} placeholder="NIT"/>
+        </div>
+        <div className="field">
+          <label>Dirección</label>
+          <input type="text" value={direccion} onChange={e=>setDireccion(e.target.value)} placeholder="Dirección física"/>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="btn btn-green" onClick={guardar} disabled={loading}>
+            {loading?'Guardando...':'✅ Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── NUEVA RECEPCIÓN ───────────────────────────────────────────
 function NuevaRecepcion({user,sucursales,show,onBack}){
-  const [proveedor,setProveedor]=useState('');
+  const [proveedorId,setProveedorId]=useState(null);
+  const [proveedorNombre,setProveedorNombre]=useState('');
+  const [proveedorSearch,setProveedorSearch]=useState('');
+  const [proveedores,setProveedores]=useState([]);
+  const [showProvSearch,setShowProvSearch]=useState(false);
+  const [showNewProvModal,setShowNewProvModal]=useState(false);
+  const [productos,setProductos]=useState([]);
   const [notas,setNotas]=useState('');
-  const [items,setItems]=useState([{desc:'',qty:'',unidad:'unidad'}]);
+  const [items,setItems]=useState([{prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad'}]);
   const [foto,setFoto]=useState(null);
   const [fotoUrl,setFotoUrl]=useState('');
   const [loading,setLoading]=useState(false);
   const fRef=useRef();
   const cmId=sucursales.find(s=>s.store_code==='CM001')?.id;
 
-  const addItem=()=>setItems(prev=>[...prev,{desc:'',qty:'',unidad:'unidad'}]);
+  // Cargar proveedores activos
+  useEffect(()=>{
+    db.from('proveedores').select('id,nombre').eq('activo',true).then(({data})=>setProveedores(data||[]));
+  },[]);
+
+  // Cargar productos insumo
+  useEffect(()=>{
+    db.from('catalogo_productos')
+      .select('id,codigo,nombre,categoria,unidad_medida,precio_referencia')
+      .eq('activo',true)
+      .then(({data})=>{
+        const filtered=(data||[]).filter(p=>
+          p.categoria?.toLowerCase().startsWith('insumo')||
+          ['bebidas','condimentos','desechables','carnes','lácteos','limpieza','panadería','salsas'].includes(p.categoria?.toLowerCase())
+        );
+        setProductos(filtered);
+      });
+  },[]);
+
+  const filteredProveedores=proveedorSearch.trim()
+    ?proveedores.filter(p=>p.nombre.toLowerCase().includes(proveedorSearch.toLowerCase()))
+    :proveedores;
+
+  const selectProveedor=(p)=>{
+    setProveedorId(p.id);
+    setProveedorNombre(p.nombre);
+    setProveedorSearch(p.nombre);
+    setShowProvSearch(false);
+  };
+
+  const handleNewProveedor=(p)=>{
+    selectProveedor(p);
+    setProveedores(prev=>[...prev,p]);
+    setShowNewProvModal(false);
+  };
+
+  const addItem=()=>setItems(prev=>[...prev,{prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad'}]);
   const updItem=(i,f,v)=>setItems(prev=>prev.map((it,idx)=>idx===i?{...it,[f]:v}:it));
   const delItem=(i)=>setItems(prev=>prev.filter((_,idx)=>idx!==i));
 
@@ -233,14 +353,25 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
     reader.readAsDataURL(f);
   };
 
+  const getPriceAlert=(itemPrice,prodId)=>{
+    if(!proveedorId||!itemPrice) return null;
+    const prod=productos.find(p=>p.id===prodId);
+    if(!prod) return null;
+    const refPrice=n(prod.precio_referencia);
+    const diff=(n(itemPrice)-refPrice)/refPrice*100;
+    if(Math.abs(diff)>5){
+      return `⚠️ Último precio: $${refPrice.toFixed(2)} — Diferencia: ${diff>0?'+':''}${diff.toFixed(1)}%`;
+    }
+    return null;
+  };
+
   const guardar=async()=>{
-    if(!proveedor.trim()){show('⚠️ Ingresa el nombre del proveedor');return;}
-    const validItems=items.filter(i=>i.desc.trim()&&n(i.qty)>0);
+    if(!proveedorId||!proveedorNombre.trim()){show('⚠️ Selecciona un proveedor');return;}
+    const validItems=items.filter(i=>(i.prodId||i.desc.trim())&&n(i.qty)>0);
     if(validItems.length===0){show('⚠️ Agrega al menos un ítem con cantidad');return;}
     if(!cmId){show('⚠️ Casa Matriz no encontrada en BD');return;}
     setLoading(true);
     try{
-      // Subir foto si existe
       let fotoDbUrl=null;
       if(foto){
         const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
@@ -251,22 +382,22 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
           fotoDbUrl=pu?.publicUrl;
         }
       }
-      // Crear recepción
       const {data:rec,error:recErr}=await db.from('recepciones').insert({
         fecha:today(),
         tipo_recepcion:'bodega',
         sucursal_destino_id:cmId,
-        proveedor:proveedor.trim(),
+        proveedor:proveedorNombre.trim(),
         recibido_por:user.id,
         estado:'en_proceso',
         foto_dte_url:fotoDbUrl,
         notas:notas.trim()||null,
       }).select().single();
       if(recErr) throw recErr;
-      // Crear items
+
       const rows=validItems.map(it=>({
         recepcion_id:rec.id,
-        descripcion:it.desc.trim(),
+        producto_id:it.prodId||null,
+        descripcion:it.prodId?productos.find(p=>p.id===it.prodId)?.nombre||it.desc:it.desc.trim(),
         cantidad_esperada:n(it.qty),
         cantidad_recibida:n(it.qty),
         unidad:it.unidad,
@@ -288,10 +419,27 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
         <div style={{fontWeight:700,fontSize:16}}>Nueva Recepción</div>
       </div>
       <div style={{padding:'16px 16px 100px'}}>
+        {/* Proveedor con autocomplete */}
         <div className="field">
           <label>Proveedor *</label>
-          <input type="text" value={proveedor} onChange={e=>setProveedor(e.target.value)} placeholder="Ej: Corte Argentino, BELCA..."/>
+          <div className="autocomplete-container">
+            <input type="text" value={proveedorSearch} onChange={e=>{setProveedorSearch(e.target.value);setShowProvSearch(true);}}
+              onFocus={()=>setShowProvSearch(true)} placeholder="Buscar proveedor..."/>
+            {showProvSearch&&(
+              <div className={`autocomplete-dropdown ${showProvSearch?'active':''}`}>
+                {filteredProveedores.length>0?filteredProveedores.map(p=>(
+                  <div key={p.id} className="autocomplete-item" onClick={()=>selectProveedor(p)}>
+                    {p.nombre}
+                  </div>
+                )):<div style={{padding:'10px 12px',color:'#666'}}>Sin resultados</div>}
+                <div className="autocomplete-item" style={{background:'#1b4332',color:'#4ade80',borderTop:'1px solid #222'}} onClick={()=>setShowNewProvModal(true)}>
+                  + Agregar nuevo proveedor
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
         <div className="field">
           <label>Notas (opcional)</label>
           <input type="text" value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Observaciones generales"/>
@@ -322,7 +470,19 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
               {items.length>1&&<button onClick={()=>delItem(i)} style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>×</button>}
             </div>
             <div className="field" style={{marginBottom:8}}>
-              <input type="text" value={it.desc} onChange={e=>updItem(i,'desc',e.target.value)} placeholder="Descripción del producto"/>
+              <label style={{fontSize:12}}>Producto</label>
+              <input type="text" value={it.prodNombre} onChange={e=>updItem(i,'prodNombre',e.target.value)}
+                onFocus={()=>updItem(i,'searchOpen',true)} placeholder="Buscar o describir producto..."/>
+              {it.searchOpen&&productos.length>0&&(
+                <div style={{background:'#1e1e1e',border:'1px solid #333',borderTop:'none',maxHeight:150,overflowY:'auto',borderRadius:'0 0 8px 8px',marginTop:-4}}>
+                  {productos.filter(p=>p.nombre.toLowerCase().includes(it.prodNombre.toLowerCase())).slice(0,5).map(p=>(
+                    <div key={p.id} style={{padding:'8px 12px',borderBottom:'1px solid #222',cursor:'pointer',fontSize:13,color:'#f0f0f0'}}
+                      onClick={()=>{updItem(i,'prodId',p.id);updItem(i,'prodNombre',p.nombre);updItem(i,'unidad',p.unidad_medida||'unidad');updItem(i,'searchOpen',false);}}>
+                      {p.nombre}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               <div>
@@ -344,6 +504,11 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
                 </select>
               </div>
             </div>
+            <div className="field" style={{marginTop:8,marginBottom:0}}>
+              <label>Precio unitario</label>
+              <input type="number" value={it.precio} onChange={e=>updItem(i,'precio',e.target.value)} placeholder="0.00" min="0" step="0.01"/>
+              {getPriceAlert(it.precio,it.prodId)&&<div className="price-alert">{getPriceAlert(it.precio,it.prodId)}</div>}
+            </div>
           </div>
         ))}
 
@@ -351,6 +516,8 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
           {loading?'Guardando...':'✅ Confirmar Recepción'}
         </button>
       </div>
+
+      {showNewProvModal&&<NuevoProveedorModal onSave={handleNewProveedor} onClose={()=>setShowNewProvModal(false)}/>}
     </div>
   );
 }
