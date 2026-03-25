@@ -496,6 +496,7 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
         cantidad_esperada:n(it.qty),
         cantidad_recibida:n(it.qty),
         unidad:it.unidad,
+        precio_unitario:n(it.precio)||null,
       }));
       const {error:itmErr}=await db.from('recepcion_items').insert(rows);
       if(itmErr) throw itmErr;
@@ -1042,7 +1043,7 @@ function EditarRecepcion({rec,cmId,show,onBack}){
     db.from('recepcion_items').select('*').eq('recepcion_id',rec.id).then(({data})=>{
       const mapped=(data||[]).map(it=>({
         dbId:it.id, prodId:it.producto_id, prodNombre:it.descripcion||'', desc:it.descripcion||'',
-        qty:String(it.cantidad_recibida), precio:'', unidad:it.unidad||'unidad', origQty:it.cantidad_recibida
+        qty:String(it.cantidad_recibida), precio:it.precio_unitario?String(it.precio_unitario):'', unidad:it.unidad||'unidad', origQty:it.cantidad_recibida
       }));
       setItems(mapped);
       setOrigItems(data||[]);
@@ -1115,6 +1116,7 @@ function EditarRecepcion({rec,cmId,show,onBack}){
         cantidad_esperada:n(it.qty),
         cantidad_recibida:n(it.qty),
         unidad:it.unidad,
+        precio_unitario:n(it.precio)||null,
       }));
       await db.from('recepcion_items').insert(rows);
       // 6. Sumar inventario nuevo
@@ -1213,6 +1215,10 @@ function EditarRecepcion({rec,cmId,show,onBack}){
                   <option value="rollo">Rollo</option><option value="paquete">Paquete</option><option value="galón">Galón</option>
                 </select>
               </div>
+            </div>
+            <div className="field" style={{marginTop:8,marginBottom:0}}>
+              <label>Precio unitario</label>
+              <input type="number" value={it.precio} onChange={e=>updItem(i,'precio',e.target.value)} placeholder="0.00" min="0" step="0.01"/>
             </div>
           </div>
         ))}
@@ -1323,7 +1329,7 @@ function HistorialTab({user,show}){
                 <div key={it.id} style={{padding:'8px 0',borderBottom:'1px solid #1a1a1a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:13,fontWeight:500}}>{it.descripcion||'Producto'}</div>
-                    <div style={{fontSize:11,color:'#555'}}>{it.unidad}</div>
+                    <div style={{fontSize:11,color:'#555'}}>{it.unidad}{it.precio_unitario?' · $'+Number(it.precio_unitario).toFixed(2):''}</div>
                   </div>
                   <div style={{fontWeight:600,fontSize:14}}>{it.cantidad_recibida}</div>
                 </div>
