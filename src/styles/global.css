@@ -87,6 +87,25 @@ body { background: #111; color: #f0f0f0; font-family: -apple-system, BlinkMacSys
 .badge-blue { background: #1e3a5f; color: #60a5fa; }
 .badge-orange { background: #7c2d12; color: #fb923c; }
 .badge-gray { background: #222; color: #666; }
+.tag { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.tag-green { background: #14532d; color: #4ade80; }
+.tag-yellow { background: #713f12; color: #facc15; }
+.tag-orange { background: #431c03; color: #f97316; }
+.tag-red { background: #7f1d1d; color: #f87171; }
+.tag-gray { background: #1e1e1e; color: #666; }
+.tag-blue { background: #1e3a5f; color: #60a5fa; }
+.line-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #141414; border-radius: 10px; margin-bottom: 8px; border: 1px solid #222; }
+.method-btn { flex: 1; padding: 10px 6px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1.5px solid #333; background: #1e1e1e; color: #888; text-align: center; transition: all .15s; }
+.method-btn.active { background: #e63946; border-color: #e63946; color: #fff; }
+.diff-bar { padding: 14px 16px; border-radius: 12px; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; }
+.diff-ok { background: #14532d33; border: 1px solid #14532d; }
+.diff-warn { background: #71400033; border: 1px solid #713f12; }
+.diff-err { background: #7f1d1d33; border: 1px solid #7f1d1d; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1.5px solid #333; background: #1a1a1a; color: #888; transition: all .15s; white-space: nowrap; }
+.chip.on { background: #e63946; border-color: #e63946; color: #fff; }
+.stat-card { flex: 1; background: #1a1a1a; border-radius: 12px; padding: 10px 6px; text-align: center; border: 1px solid #2a2a2a; min-width: 0; }
+.btn-primary { background: #e63946; color: #fff; }
 .spin { border: 3px solid #333; border-top-color: #e63946; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1e1e1e; color: #f0f0f0; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; border: 1px solid #333; z-index: 9999; max-width: 320px; text-align: center; pointer-events: none; }
@@ -97,6 +116,10 @@ input[type=number] { -moz-appearance: textfield; }
 input:focus, textarea:focus, select:focus { outline: none; border-color: #e63946; }
 label { font-size: 13px; color: #888; display: block; margin-bottom: 4px; }
 .field { margin-bottom: 14px; }
+.inp { background: #1e1e1e; border: 1.5px solid #333; border-radius: 10px; color: #fff; padding: 12px 16px; width: 100%; font-size: 16px; transition: border-color .2s; }
+.inp:focus { outline: none; border-color: #e63946; }
+.inp::placeholder { color: #555; }
+.inp-dollar { padding-left: 28px; }
 
 /* Item rows */
 .item-row { background: #1e1e1e; border: 1px solid #282828; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
@@ -147,19 +170,12 @@ label { font-size: 13px; color: #888; display: block; margin-bottom: 4px; }
 .login-logo { font-size: 48px; margin-bottom: 8px; }
 .login-title { font-size: 22px; font-weight: 800; color: #e63946; margin-bottom: 4px; }
 .login-subtitle { font-size: 13px; color: #666; margin-bottom: 24px; }
-.pin-display {
-  background: #111; border: 2px solid #333; border-radius: 10px; padding: 14px;
-  font-size: 32px; font-weight: 700; letter-spacing: 12px; text-align: center;
-  margin-bottom: 20px; min-height: 60px; color: #f0f0f0;
-}
-.pin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
-.pin-key {
-  background: #1e1e1e; border: 1px solid #333; border-radius: 10px; padding: 16px;
-  font-size: 22px; font-weight: 700; color: #f0f0f0; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; transition: .12s;
-}
-.pin-key:active { background: #2a2a2a; }
-.pin-key.danger { color: #e63946; }
+.pin-box { display: flex; gap: 12px; justify-content: center; margin: 20px 0; }
+.pin-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #555; transition: all .15s; }
+.pin-dot.filled { background: #e63946; border-color: #e63946; }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 260px; margin: 0 auto; }
+.key { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 12px; padding: 18px; font-size: 22px; font-weight: 600; cursor: pointer; text-align: center; transition: background .1s; color: #fff; }
+.key:active { background: #2a2a2a; }
 
 /* Responsive: desktop sidebar always visible */
 @media (min-width: 768px) {
