@@ -51,6 +51,7 @@ export default function LoginScreen({ onLogin }) {
     <div
       style={{
         minHeight: '100vh',
+        width: '100%',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

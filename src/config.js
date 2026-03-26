@@ -7,6 +7,15 @@ export const STORES = {
   CM001: 'Casa Matriz'
 }
 
+export const STORES_SHORT = {
+  M001: 'Cafetalón',
+  S001: 'Soyapango',
+  S002: 'Usulután',
+  S003: 'Lourdes',
+  S004: 'Venecia',
+  CM001: 'Casa Matriz'
+}
+
 export const BUCKET_CIERRES = 'cierres-fotos'
 export const BUCKET_DESPACHOS = 'despachos-fotos'
 

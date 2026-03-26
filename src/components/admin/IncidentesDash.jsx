@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
-import { STORES, today, n } from '../../config';
+import { STORES, STORES_SHORT, today, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
