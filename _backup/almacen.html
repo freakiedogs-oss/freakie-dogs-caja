@@ -1,0 +1,2178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Freakie Dogs — Almacén</title>
+  <meta name="theme-color" content="#111111">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="FD Almacén">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    body{background:#111;color:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+    #root{max-width:480px;margin:0 auto}
+    .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:16px;margin-bottom:12px}
+    .btn{display:block;width:100%;padding:14px;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s;text-align:center}
+    .btn-red{background:#e63946;color:#fff}
+    .btn-red:active{background:#c1121f}
+    .btn-green{background:#2d6a4f;color:#fff}
+    .btn-green:active{background:#1b4332}
+    .btn-orange{background:#e07c00;color:#fff}
+    .btn-orange:active{background:#b56200}
+    .btn-ghost{background:#1e1e1e;color:#ccc;border:1px solid #333}
+    .btn-ghost:active{background:#2a2a2a}
+    .btn-danger{background:#7f1d1d;color:#f87171;border:1px solid #991b1b}
+    .btn-sm{padding:8px 12px;font-size:13px;width:auto;display:inline-block}
+    .btn:disabled{opacity:.45;pointer-events:none}
+    .row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222}
+    .row:last-child{border-bottom:none}
+    .sec-title{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px}
+    .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+    .badge-yellow{background:#78350f;color:#fbbf24}
+    .badge-green{background:#14532d;color:#4ade80}
+    .badge-blue{background:#1e3a5f;color:#60a5fa}
+    .badge-orange{background:#7c2d12;color:#fb923c}
+    .badge-gray{background:#222;color:#666}
+    .spin{border:3px solid #333;border-top-color:#e63946;border-radius:50%;animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e1e1e;color:#f0f0f0;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid #333;z-index:9999;max-width:320px;text-align:center;pointer-events:none}
+    .tab-bar{display:flex;background:#161616;border-bottom:1px solid #222;position:sticky;top:0;z-index:100}
+    .tab{flex:1;padding:12px 6px;text-align:center;font-size:12px;font-weight:700;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:.15s}
+    .tab.active{color:#e63946;border-bottom-color:#e63946}
+    input[type=text],input[type=number],textarea,select{background:#1e1e1e;border:1px solid #333;color:#f0f0f0;border-radius:8px;padding:10px 12px;font-size:15px;width:100%}
+    input[type=number]{-moz-appearance:textfield}
+    input:focus,textarea:focus,select:focus{outline:none;border-color:#e63946}
+    label{font-size:13px;color:#888;display:block;margin-bottom:4px}
+    .field{margin-bottom:14px}
+    .item-row{background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px;margin-bottom:8px}
+    .num-input{display:flex;align-items:center;gap:8px}
+    .num-btn{width:36px;height:36px;border-radius:8px;border:1px solid #333;background:#2a2a2a;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+    .num-btn:active{background:#3a3a3a}
+    .num-field{flex:1;text-align:center;font-size:18px;font-weight:700;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:6px 0;color:#fff}
+    .photo-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px;border:2px dashed #333;border-radius:10px;cursor:pointer;color:#888;font-size:13px}
+    .photo-btn.has-photo{border-color:#2d6a4f;color:#4ade80}
+    .empty{text-align:center;padding:40px 20px;color:#444}
+    .empty-icon{font-size:40px;margin-bottom:10px}
+    .empty-text{font-size:14px}
+    .status-bar{height:env(safe-area-inset-top,0);background:#111}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;flex-direction:column;justify-content:flex-end}
+    .modal{background:#161616;border-radius:16px 16px 0 0;padding:20px;max-height:90vh;overflow-y:auto}
+    .header{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid #1e1e1e}
+    .back-btn{background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 8px}
+    .autocomplete-container{position:relative;width:100%}
+    .autocomplete-dropdown{position:absolute;top:100%;left:0;right:0;background:#1e1e1e;border:1px solid #333;border-top:none;border-radius:0 0 8px 8px;max-height:200px;overflow-y:auto;z-index:10;display:none}
+    .autocomplete-dropdown.active{display:block}
+    .autocomplete-item{padding:10px 12px;border-bottom:1px solid #222;cursor:pointer;color:#f0f0f0;font-size:14px}
+    .autocomplete-item:hover{background:#2a2a2a}
+    .autocomplete-item:last-child{border-bottom:none}
+    .autocomplete-item.selected{background:#2d6a4f;color:#4ade80}
+    .price-alert{padding:8px 10px;background:#7c2d12;border:1px solid #991b1b;border-radius:6px;margin-top:6px;font-size:12px;color:#fbbf24;font-weight:600}
+  </style>
+</head>
+<body>
+<div class="status-bar"></div>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef,useMemo}=React;
+
+// ── CONFIG ────────────────────────────────────────────────────
+const URL_SB='https://btboxlwfqcbrdfrlnwln.supabase.co';
+const KEY_SB='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjcyMzQsImV4cCI6MjA4OTU0MzIzNH0.NpBQZgxbajgOVvw3FOwIUiOkgmh7rEuPQMRi0ZcFKe4';
+const db = supabase.createClient(URL_SB, KEY_SB);
+const BUCKET = 'cierres-fotos';
+
+const STORES={M001:'Cafetalón',S001:'Soyapango',S002:'Usulután',S003:'Lourdes',S004:'Venecia',CM001:'Casa Matriz'};
+const today=()=>new Date(Date.now()-6*3600*1000).toISOString().split('T')[0];
+const fmtDate=d=>new Date(d+'T12:00:00').toLocaleDateString('es-SV',{day:'2-digit',month:'short',year:'numeric'});
+const n=v=>parseFloat(v)||0;
+
+// ── TOAST ────────────────────────────────────────────────────
+function useToast(){
+  const [msg,setMsg]=useState('');
+  const show=useCallback(m=>{setMsg(m);setTimeout(()=>setMsg(''),3200)},[]);
+  const Toast=()=>msg?<div className="toast">{msg}</div>:null;
+  return {show,Toast};
+}
+
+// ── STATUS BADGE ─────────────────────────────────────────────
+function Badge({estado}){
+  const map={
+    pendiente:{cls:'badge-yellow',label:'Pendiente'},
+    en_proceso:{cls:'badge-blue',label:'En proceso'},
+    completada:{cls:'badge-green',label:'Completada'},
+    con_diferencias:{cls:'badge-orange',label:'Con diferencias'},
+    borrador:{cls:'badge-gray',label:'Borrador'},
+    enviada:{cls:'badge-yellow',label:'Enviada'},
+    aprobada:{cls:'badge-green',label:'Aprobada'},
+    despachado:{cls:'badge-blue',label:'Despachado'},
+    recibido:{cls:'badge-green',label:'Recibido'},
+    preparando:{cls:'badge-yellow',label:'Preparando'},
+    parcial:{cls:'badge-orange',label:'Parcial'},
+    enviado:{cls:'badge-yellow',label:'Enviado'},
+    en_ruta:{cls:'badge-blue',label:'En ruta'},
+  };
+  const s=map[estado]||{cls:'badge-gray',label:estado||'—'};
+  return <span className={`badge ${s.cls}`}>{s.label}</span>;
+}
+
+// ── LOGIN ────────────────────────────────────────────────────
+function Login({onLogin}){
+  const [pin,setPin]=useState('');
+  const [err,setErr]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  const press=async(k)=>{
+    if(k==='DEL'){setPin(p=>p.slice(0,-1));return;}
+    const np=pin+k; setPin(np);
+    if(np.length>=4){
+      setLoading(true);
+      const {data,error}=await db.from('usuarios_erp').select('*').eq('pin',np).eq('activo',true).maybeSingle();
+      setLoading(false);
+      if(error){setErr('Error: '+error.message);setPin('');return;}
+      if(!data){setErr('PIN incorrecto');setPin('');return;}
+      if(!['bodeguero','produccion','admin','compras'].includes(data.rol)){
+        setErr('Este acceso es solo para almacén'); setPin(''); return;
+      }
+      onLogin(data);
+    }
+  };
+
+  return(
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'0 32px'}}>
+      <div style={{fontSize:36,marginBottom:8}}>🏭</div>
+      <div style={{fontWeight:800,fontSize:22,marginBottom:4}}>Freakie Dogs</div>
+      <div style={{color:'#666',fontSize:14,marginBottom:32}}>Módulo Almacén</div>
+      <div style={{display:'flex',gap:16,marginBottom:8}}>
+        {[1,2,3,4].map(i=>(
+          <div key={i} style={{width:14,height:14,borderRadius:'50%',background:pin.length>=i?'#e63946':'#2a2a2a',transition:'.15s'}}/>
+        ))}
+      </div>
+      {err&&<div style={{color:'#e63946',fontSize:13,marginBottom:12,marginTop:8}}>{err}</div>}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginTop:24,width:220}}>
+        {['1','2','3','4','5','6','7','8','9','','0','DEL'].map(k=>(
+          <button key={k||'sp'} onClick={()=>k&&press(k)} disabled={!k||loading}
+            style={{height:60,borderRadius:12,border:'1px solid #2a2a2a',background:k==='DEL'?'#2a2a2a':'#1a1a1a',color:k==='DEL'?'#e63946':'#f0f0f0',fontSize:k==='DEL'?18:22,fontWeight:700,cursor:k?'pointer':'default',opacity:k?1:0}}>
+            {loading&&k==='0'?<div className="spin" style={{width:20,height:20,margin:'0 auto'}}/>:k}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── RECEPCIÓN PROVEEDOR (Flujo A) ────────────────────────────
+function RecepcionTab({user,show}){
+  const [view,setView]=useState('lista'); // lista | detalle | nueva
+  const [receps,setReceps]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [sel,setSel]=useState(null);
+  const [sucursales,setSucursales]=useState([]);
+
+  const cargar=async()=>{
+    setLoading(true);
+    const {data}=await db.from('recepciones')
+      .select('*')
+      .in('estado',['pendiente','en_proceso'])
+      .eq('tipo_recepcion','bodega')
+      .order('created_at',{ascending:false});
+    setReceps(data||[]);
+    const {data:suc}=await db.from('sucursales').select('id,nombre,store_code').eq('activa',true);
+    setSucursales(suc||[]);
+    setLoading(false);
+  };
+
+  useEffect(()=>{cargar();},[]);
+
+  if(view==='detalle'&&sel) return <RecepcionDetalle rec={sel} user={user} show={show} onBack={()=>{setSel(null);setView('lista');cargar();}} />;
+  if(view==='nueva') return <NuevaRecepcion user={user} sucursales={sucursales} show={show} onBack={()=>{setView('lista');cargar();}}/>;
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <button className="btn btn-red" style={{marginBottom:16}} onClick={()=>setView('nueva')}>
+        + Nueva Recepción de Proveedor
+      </button>
+
+      <div className="sec-title">Pendientes de Confirmar</div>
+      {loading&&<div style={{textAlign:'center',padding:20}}><div className="spin" style={{width:28,height:28,margin:'0 auto'}}/></div>}
+      {!loading&&receps.length===0&&(
+        <div className="empty"><div className="empty-icon">📦</div><div className="empty-text">No hay recepciones pendientes</div></div>
+      )}
+      {receps.map(r=>(
+        <div key={r.id} className="card" style={{cursor:'pointer'}} onClick={()=>{setSel(r);setView('detalle');}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:15}}>{r.proveedor||'Proveedor sin nombre'}</div>
+              <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(r.fecha)}</div>
+            </div>
+            <Badge estado={r.estado}/>
+          </div>
+          {r.notas&&<div style={{fontSize:13,color:'#888',marginTop:4}}>{r.notas}</div>}
+          <div style={{marginTop:10,fontSize:13,color:'#e63946',fontWeight:600}}>Tap para confirmar →</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── NUEVO PROVEEDOR MODAL ────────────────────────────────────────
+function NuevoProveedorModal({onSave,onClose}){
+  const [nombre,setNombre]=useState('');
+  const [telefono,setTelefono]=useState('');
+  const [correo,setCorreo]=useState('');
+  const [contacto,setContacto]=useState('');
+  const [nit,setNit]=useState('');
+  const [direccion,setDireccion]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  const guardar=async()=>{
+    if(!nombre.trim()){alert('Ingresa el nombre del proveedor');return;}
+    setLoading(true);
+    try{
+      const {data,error}=await db.from('proveedores').insert({
+        nombre:nombre.trim(),
+        telefono:telefono.trim()||null,
+        correo:correo.trim()||null,
+        contacto:contacto.trim()||null,
+        nit:nit.trim()||null,
+        direccion:direccion.trim()||null,
+        activo:true,
+      }).select().single();
+      if(error) throw error;
+      onSave(data);
+    }catch(e){
+      alert('Error: '+e.message);
+    }
+    setLoading(false);
+  };
+
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:16}}>+ Agregar Proveedor</div>
+        <div className="field">
+          <label>Nombre *</label>
+          <input type="text" value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Nombre del proveedor"/>
+        </div>
+        <div className="field">
+          <label>Teléfono</label>
+          <input type="text" value={telefono} onChange={e=>setTelefono(e.target.value)} placeholder="Ej: 2501-5555"/>
+        </div>
+        <div className="field">
+          <label>Correo</label>
+          <input type="text" value={correo} onChange={e=>setCorreo(e.target.value)} placeholder="Ej: info@proveedor.com"/>
+        </div>
+        <div className="field">
+          <label>Contacto</label>
+          <input type="text" value={contacto} onChange={e=>setContacto(e.target.value)} placeholder="Nombre del contacto"/>
+        </div>
+        <div className="field">
+          <label>NIT</label>
+          <input type="text" value={nit} onChange={e=>setNit(e.target.value)} placeholder="NIT"/>
+        </div>
+        <div className="field">
+          <label>Dirección</label>
+          <input type="text" value={direccion} onChange={e=>setDireccion(e.target.value)} placeholder="Dirección física"/>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="btn btn-green" onClick={guardar} disabled={loading}>
+            {loading?'Guardando...':'✅ Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── NUEVO PRODUCTO MODAL ──────────────────────────────────────
+function NuevoProductoModal({onSave,onClose}){
+  const [nombre,setNombre]=useState('');
+  const [categoria,setCategoria]=useState('');
+  const [subcategoria,setSubcategoria]=useState('');
+  const [unidad_medida,setUnidad_medida]=useState('unidad');
+  const [precio_referencia,setPrecio_referencia]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  const guardar=async()=>{
+    if(!nombre.trim()){alert('Ingresa el nombre del producto');return;}
+    setLoading(true);
+    try{
+      const {data,error}=await db.from('catalogo_productos').insert({
+        nombre:nombre.trim(),
+        categoria:categoria.trim()||null,
+        subcategoria:subcategoria.trim()||null,
+        unidad_medida:unidad_medida.trim()||'unidad',
+        precio_referencia:precio_referencia?parseFloat(precio_referencia):null,
+        activo:true,
+      }).select().single();
+      if(error) throw error;
+      onSave(data);
+    }catch(e){
+      alert('Error: '+e.message);
+    }
+    setLoading(false);
+  };
+
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:16}}>+ Nuevo Producto</div>
+        <div className="field">
+          <label>Nombre *</label>
+          <input type="text" value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Nombre del producto"/>
+        </div>
+        <div className="field">
+          <label>Categoría</label>
+          <input type="text" value={categoria} onChange={e=>setCategoria(e.target.value)} placeholder="Ej: Insumo, Bebidas"/>
+        </div>
+        <div className="field">
+          <label>Subcategoría</label>
+          <input type="text" value={subcategoria} onChange={e=>setSubcategoria(e.target.value)} placeholder="Subcategoría (opcional)"/>
+        </div>
+        <div className="field">
+          <label>Unidad de Medida</label>
+          <select value={unidad_medida} onChange={e=>setUnidad_medida(e.target.value)}>
+            <option value="unidad">Unidad</option>
+            <option value="kg">Kilogramo</option>
+            <option value="lb">Libra</option>
+            <option value="litro">Litro</option>
+            <option value="caja">Caja</option>
+            <option value="bolsa">Bolsa</option>
+            <option value="rollo">Rollo</option>
+            <option value="paquete">Paquete</option>
+            <option value="galón">Galón</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Precio de Referencia</label>
+          <input type="number" value={precio_referencia} onChange={e=>setPrecio_referencia(e.target.value)} placeholder="0.00" min="0" step="0.01"/>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="btn btn-green" onClick={guardar} disabled={loading}>
+            {loading?'Guardando...':'✅ Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── NUEVA RECEPCIÓN ───────────────────────────────────────────
+function NuevaRecepcion({user,sucursales,show,onBack}){
+  const [proveedorId,setProveedorId]=useState(null);
+  const [proveedorNombre,setProveedorNombre]=useState('');
+  const [proveedorSearch,setProveedorSearch]=useState('');
+  const [proveedores,setProveedores]=useState([]);
+  const [showProvSearch,setShowProvSearch]=useState(false);
+  const [showNewProvModal,setShowNewProvModal]=useState(false);
+  const [productos,setProductos]=useState([]);
+  const [showNewProdModal,setShowNewProdModal]=useState(false);
+  const [notas,setNotas]=useState('');
+  const [dteCodigo,setDteCodigo]=useState('');
+  const [items,setItems]=useState([{prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad'}]);
+  const [foto,setFoto]=useState(null);
+  const [fotoUrl,setFotoUrl]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [ocVinculada,setOcVinculada]=useState(null); // OC aprobada precargada
+  const fRef=useRef();
+  const cmId=sucursales.find(s=>s.store_code==='CM001')?.id;
+
+  // Cargar proveedores activos
+  useEffect(()=>{
+    db.from('proveedores').select('id,nombre').eq('activo',true).then(({data})=>setProveedores(data||[]));
+  },[]);
+
+  // Cargar productos del proveedor seleccionado
+  useEffect(()=>{
+    if(!proveedorId){setProductos([]);return;}
+    db.from('proveedor_productos')
+      .select('producto_id,precio_unitario,unidad_compra,catalogo_productos(id,codigo,nombre,categoria,unidad_medida,precio_referencia)')
+      .eq('proveedor_id',proveedorId)
+      .eq('activo',true)
+      .then(({data})=>{
+        const prods=(data||[]).map(pp=>({
+          ...pp.catalogo_productos,
+          precio_proveedor:pp.precio_unitario,
+          unidad_compra:pp.unidad_compra
+        })).filter(Boolean);
+        setProductos(prods);
+      });
+  },[proveedorId]);
+
+  const filteredProveedores=proveedorSearch.trim()
+    ?proveedores.filter(p=>p.nombre.toLowerCase().includes(proveedorSearch.toLowerCase()))
+    :proveedores;
+
+  const selectProveedor=async(p)=>{
+    setProveedorId(p.id);
+    setProveedorNombre(p.nombre);
+    setProveedorSearch(p.nombre);
+    setShowProvSearch(false);
+    // Buscar OC aprobada para este proveedor
+    const {data:ocs}=await db.from('ordenes_compra').select('*')
+      .eq('proveedor_id',p.id).eq('estado','aprobada')
+      .order('fecha_aprobacion',{ascending:false}).limit(1);
+    if(ocs&&ocs.length>0){
+      const oc=ocs[0];
+      // Cargar items de la OC
+      const {data:ocItems}=await db.from('ordenes_compra_items').select('*').eq('orden_id',oc.id);
+      if(ocItems&&ocItems.length>0){
+        setOcVinculada(oc);
+        setItems(ocItems.map(it=>({
+          prodId:it.producto_id, prodNombre:it.descripcion, desc:it.descripcion,
+          qty:String(it.cantidad_solicitada), precio:it.precio_unitario_estimado?String(it.precio_unitario_estimado):'',
+          unidad:it.unidad||'unidad'
+        })));
+        show('📋 OC-'+String(oc.numero_oc).padStart(4,'0')+' precargada');
+        return;
+      }
+    }
+    setOcVinculada(null);
+    setItems([{prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad'}]);
+  };
+
+  const handleNewProveedor=(p)=>{
+    selectProveedor(p);
+    setProveedores(prev=>[...prev,p]);
+    setShowNewProvModal(false);
+  };
+
+  const handleNewProducto=async(p)=>{
+    // Vincular producto al proveedor actual en proveedor_productos
+    if(proveedorId&&p.id){
+      await db.from('proveedor_productos').upsert({
+        proveedor_id:proveedorId,
+        producto_id:p.id,
+        precio_unitario:p.precio_referencia||null,
+        unidad_compra:p.unidad_medida||'Unidad',
+        es_proveedor_principal:true,
+        activo:true
+      },{onConflict:'proveedor_id,producto_id'});
+    }
+    setProductos(prev=>[...prev,{...p,precio_proveedor:p.precio_referencia}]);
+    setShowNewProdModal(false);
+  };
+
+  const addItem=()=>setItems(prev=>[...prev,{prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad'}]);
+  const updItem=(i,f,v)=>setItems(prev=>prev.map((it,idx)=>idx===i?{...it,[f]:v}:it));
+  const delItem=(i)=>setItems(prev=>prev.filter((_,idx)=>idx!==i));
+
+  const handleFoto=async(e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    setFoto(f);
+    const reader=new FileReader();
+    reader.onload=ev=>setFotoUrl(ev.target.result);
+    reader.readAsDataURL(f);
+  };
+
+  const getPriceAlert=(itemPrice,prodId)=>{
+    if(!proveedorId||!itemPrice) return null;
+    const prod=productos.find(p=>p.id===prodId);
+    if(!prod) return null;
+    const refPrice=n(prod.precio_referencia);
+    const diff=(n(itemPrice)-refPrice)/refPrice*100;
+    if(Math.abs(diff)>5){
+      return `⚠️ Último precio: $${refPrice.toFixed(2)} — Diferencia: ${diff>0?'+':''}${diff.toFixed(1)}%`;
+    }
+    return null;
+  };
+
+  const guardar=async()=>{
+    if(!proveedorId||!proveedorNombre.trim()){show('⚠️ Selecciona un proveedor');return;}
+    const validItems=items.filter(i=>(i.prodId||i.desc.trim())&&n(i.qty)>0);
+    if(validItems.length===0){show('⚠️ Agrega al menos un ítem con cantidad');return;}
+    if(!cmId){show('⚠️ Casa Matriz no encontrada en BD');return;}
+    setLoading(true);
+    try{
+      let fotoDbUrl=null;
+      if(foto){
+        const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
+        const path=`recepciones/dte_${Date.now()}.${ext}`;
+        const {error:upErr}=await db.storage.from(BUCKET).upload(path,foto,{cacheControl:'3600',upsert:false});
+        if(!upErr){
+          const {data:pu}=db.storage.from(BUCKET).getPublicUrl(path);
+          fotoDbUrl=pu?.publicUrl;
+        }
+      }
+      const {data:rec,error:recErr}=await db.from('recepciones').insert({
+        fecha:today(),
+        tipo_recepcion:'bodega_proveedor',
+        sucursal_destino_id:cmId,
+        proveedor:proveedorNombre.trim(),
+        recibido_por:user.id,
+        estado:'verificada',
+        foto_dte_url:fotoDbUrl,
+        notas:notas.trim()||null,
+        dte_codigo:dteCodigo.trim()||null,
+      }).select().single();
+      if(recErr) throw recErr;
+
+      const rows=validItems.map(it=>({
+        recepcion_id:rec.id,
+        producto_id:it.prodId||null,
+        descripcion:it.prodId?productos.find(p=>p.id===it.prodId)?.nombre||it.desc:it.desc.trim(),
+        cantidad_esperada:n(it.qty),
+        cantidad_recibida:n(it.qty),
+        unidad:it.unidad,
+        precio_unitario:n(it.precio)||null,
+      }));
+      const {error:itmErr}=await db.from('recepcion_items').insert(rows);
+      if(itmErr) throw itmErr;
+
+      // Auto-actualizar inventario para cada producto con ID
+      for(const it of validItems){
+        if(!it.prodId) continue;
+        const qty=n(it.qty);
+        // Intentar obtener registro existente
+        const {data:existing}=await db.from('inventario')
+          .select('id,stock_actual')
+          .eq('producto_id',it.prodId).eq('sucursal_id',cmId).maybeSingle();
+        if(existing){
+          await db.from('inventario').update({
+            stock_actual:n(existing.stock_actual)+qty,
+            ultima_actualizacion:new Date().toISOString()
+          }).eq('id',existing.id);
+        }else{
+          await db.from('inventario').insert({
+            producto_id:it.prodId,
+            sucursal_id:cmId,
+            stock_actual:qty,
+            stock_minimo:0,
+            stock_maximo:999,
+            ultima_actualizacion:new Date().toISOString()
+          });
+        }
+      }
+      // Actualizar precio en proveedor_productos con el último precio ingresado
+      for(const it of validItems){
+        if(!it.prodId||!proveedorId||!n(it.precio)) continue;
+        await db.from('proveedor_productos').update({precio_unitario:n(it.precio)})
+          .eq('proveedor_id',proveedorId).eq('producto_id',it.prodId);
+      }
+      // Si hay OC vinculada, marcarla como recibida y vincular recepción
+      if(ocVinculada){
+        await db.from('ordenes_compra').update({
+          estado:'recibida',
+          recepcion_id:rec.id,
+          fecha_recepcion:new Date().toISOString(),
+          updated_at:new Date().toISOString()
+        }).eq('id',ocVinculada.id);
+        // Actualizar cantidades recibidas en items de la OC
+        for(const it of validItems){
+          if(!it.prodId) continue;
+          await db.from('ordenes_compra_items').update({
+            cantidad_recibida:n(it.qty),
+            precio_unitario_real:n(it.precio)||null
+          }).eq('orden_id',ocVinculada.id).eq('producto_id',it.prodId);
+        }
+      }
+      show('✅ Recepción verificada e inventario actualizado'+(ocVinculada?' · OC cerrada':''));
+      onBack();
+    }catch(e){
+      show('❌ Error: '+e.message);
+    }
+    setLoading(false);
+  };
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <div className="header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <div style={{fontWeight:700,fontSize:16}}>Nueva Recepción</div>
+      </div>
+      <div style={{padding:'16px 16px 100px'}}>
+        {/* Proveedor con autocomplete */}
+        <div className="field">
+          <label>Proveedor *</label>
+          <div className="autocomplete-container">
+            <input type="text" value={proveedorSearch} onChange={e=>{setProveedorSearch(e.target.value);setShowProvSearch(true);}}
+              onFocus={()=>setShowProvSearch(true)} placeholder="Buscar proveedor..."/>
+            {showProvSearch&&(
+              <div className={`autocomplete-dropdown ${showProvSearch?'active':''}`}>
+                {filteredProveedores.length>0?filteredProveedores.map(p=>(
+                  <div key={p.id} className="autocomplete-item" onClick={()=>selectProveedor(p)}>
+                    {p.nombre}
+                  </div>
+                )):<div style={{padding:'10px 12px',color:'#666'}}>Sin resultados</div>}
+                <div className="autocomplete-item" style={{background:'#1b4332',color:'#4ade80',borderTop:'1px solid #222'}} onClick={()=>setShowNewProvModal(true)}>
+                  + Agregar nuevo proveedor
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Banner OC vinculada */}
+        {ocVinculada&&(
+          <div style={{background:'linear-gradient(135deg,#1b4332,#2d6a4f)',border:'1px solid #40916c',borderRadius:12,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
+            <span style={{fontSize:24}}>📋</span>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,color:'#95d5b2',fontSize:14}}>OC-{String(ocVinculada.numero_oc).padStart(4,'0')} precargada</div>
+              <div style={{fontSize:12,color:'#b7e4c7',marginTop:2}}>{items.length} items cargados desde orden aprobada</div>
+            </div>
+            <button onClick={()=>{setOcVinculada(null);setItems([{prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad'}]);show('OC desvinculada');}}
+              style={{background:'none',border:'1px solid #52b788',color:'#52b788',borderRadius:8,padding:'4px 10px',fontSize:12,cursor:'pointer'}}>✕ Desvincular</button>
+          </div>
+        )}
+
+        <div className="field">
+          <label>Notas (opcional)</label>
+          <input type="text" value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Observaciones generales"/>
+        </div>
+
+        <div className="field">
+          <label>Últimos 4 dígitos del DTE</label>
+          <input type="text" value={dteCodigo} onChange={e=>setDteCodigo(e.target.value.replace(/\D/g,'').slice(0,4))}
+            placeholder="Ej: 2345" maxLength={4} inputMode="numeric"
+            style={{width:120,fontSize:20,fontWeight:700,textAlign:'center',letterSpacing:8}}/>
+          <div style={{fontSize:11,color:'#555',marginTop:4}}>Del número de control del DTE</div>
+        </div>
+
+        {/* Foto DTE */}
+        <div className="field">
+          <label>Foto del DTE físico</label>
+          <div className={`photo-btn ${foto?'has-photo':''}`} onClick={()=>fRef.current.click()}>
+            {foto
+              ? <><img src={fotoUrl} style={{width:120,height:90,objectFit:'cover',borderRadius:8}} alt="DTE"/><span style={{marginTop:4}}>✅ DTE adjunto — tap para cambiar</span></>
+              : <><span style={{fontSize:28}}>📷</span><span>Tomar foto del DTE</span></>
+            }
+          </div>
+          <input type="file" ref={fRef} accept="image/*" capture="environment" onChange={handleFoto} style={{display:'none'}}/>
+        </div>
+
+        {/* Items */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div className="sec-title" style={{marginBottom:0}}>PRODUCTOS RECIBIDOS</div>
+          <button className="btn btn-ghost btn-sm" onClick={addItem}>+ Agregar</button>
+        </div>
+
+        {items.map((it,i)=>(
+          <div key={i} className="item-row">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <span style={{fontSize:13,color:'#666'}}>Producto {i+1}</span>
+              {items.length>1&&<button onClick={()=>delItem(i)} style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>×</button>}
+            </div>
+            <div className="field" style={{marginBottom:8}}>
+              <label style={{fontSize:12}}>Producto</label>
+              <input type="text" value={it.prodNombre} onChange={e=>updItem(i,'prodNombre',e.target.value)}
+                onFocus={()=>{if(proveedorId)updItem(i,'searchOpen',true);}}
+                placeholder={proveedorId?'Buscar producto...':'⬆️ Selecciona proveedor primero'}
+                disabled={!proveedorId}
+                style={!proveedorId?{opacity:0.5,cursor:'not-allowed'}:{}}/>
+              {it.searchOpen&&proveedorId&&(
+                <div style={{background:'#1e1e1e',border:'1px solid #333',borderTop:'none',maxHeight:180,overflowY:'auto',borderRadius:'0 0 8px 8px',marginTop:-4}}>
+                  {productos.filter(p=>p.nombre.toLowerCase().includes((it.prodNombre||'').toLowerCase())).slice(0,8).map(p=>(
+                    <div key={p.id} style={{padding:'8px 12px',borderBottom:'1px solid #222',cursor:'pointer',fontSize:13,color:'#f0f0f0',display:'flex',justifyContent:'space-between'}}
+                      onClick={()=>{updItem(i,'prodId',p.id);updItem(i,'prodNombre',p.nombre);updItem(i,'unidad',p.unidad_compra||p.unidad_medida||'unidad');updItem(i,'precio',p.precio_proveedor||p.precio_referencia||'');updItem(i,'searchOpen',false);}}>
+                      <span>{p.nombre}</span>
+                      {p.precio_proveedor&&<span style={{color:'#4ade80',fontSize:11}}>${Number(p.precio_proveedor).toFixed(2)}</span>}
+                    </div>
+                  ))}
+                  {productos.filter(p=>p.nombre.toLowerCase().includes((it.prodNombre||'').toLowerCase())).length===0&&(
+                    <div style={{padding:'10px 12px',color:'#666',fontSize:13}}>No hay productos de este proveedor</div>
+                  )}
+                  <div className="autocomplete-item" style={{background:'#1b4332',color:'#4ade80',borderTop:'1px solid #222'}} onClick={()=>setShowNewProdModal(true)}>
+                    + Nuevo Producto
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <div>
+                <label>Cantidad</label>
+                <input type="number" value={it.qty} onChange={e=>updItem(i,'qty',e.target.value)} placeholder="0" min="0" step="0.01"/>
+              </div>
+              <div>
+                <label>Unidad</label>
+                <select value={it.unidad} onChange={e=>updItem(i,'unidad',e.target.value)}>
+                  <option value="unidad">Unidad</option>
+                  <option value="kg">Kilogramo</option>
+                  <option value="lb">Libra</option>
+                  <option value="litro">Litro</option>
+                  <option value="caja">Caja</option>
+                  <option value="bolsa">Bolsa</option>
+                  <option value="rollo">Rollo</option>
+                  <option value="paquete">Paquete</option>
+                  <option value="galón">Galón</option>
+                </select>
+              </div>
+            </div>
+            <div className="field" style={{marginTop:8,marginBottom:0}}>
+              <label>Precio unitario</label>
+              <input type="number" value={it.precio} onChange={e=>updItem(i,'precio',e.target.value)} placeholder="0.00" min="0" step="0.01"/>
+              {getPriceAlert(it.precio,it.prodId)&&<div className="price-alert">{getPriceAlert(it.precio,it.prodId)}</div>}
+            </div>
+          </div>
+        ))}
+
+        <button className="btn btn-green" style={{marginTop:8}} onClick={guardar} disabled={loading}>
+          {loading?'Guardando...':'✅ Confirmar Recepción'}
+        </button>
+      </div>
+
+      {showNewProvModal&&<NuevoProveedorModal onSave={handleNewProveedor} onClose={()=>setShowNewProvModal(false)}/>}
+      {showNewProdModal&&<NuevoProductoModal onSave={handleNewProducto} onClose={()=>setShowNewProdModal(false)}/>}
+    </div>
+  );
+}
+
+// ── DETALLE RECEPCIÓN (editar/confirmar) ──────────────────────
+function RecepcionDetalle({rec,user,show,onBack}){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [foto,setFoto]=useState(null);
+  const [fotoUrl,setFotoUrl]=useState(rec.foto_dte_url||'');
+  const fRef=useRef();
+
+  useEffect(()=>{
+    db.from('recepcion_items').select('*').eq('recepcion_id',rec.id)
+      .then(({data})=>{ setItems((data||[]).map(it=>({...it,qty_input:String(it.cantidad_recibida)}))); setLoading(false); });
+  },[rec.id]);
+
+  const handleFoto=async(e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    setFoto(f);
+    const reader=new FileReader(); reader.onload=ev=>setFotoUrl(ev.target.result); reader.readAsDataURL(f);
+  };
+
+  const confirmar=async()=>{
+    setSaving(true);
+    try{
+      let fotoDbUrl=rec.foto_dte_url;
+      if(foto){
+        const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
+        const path=`recepciones/dte_${Date.now()}.${ext}`;
+        const {error:upErr}=await db.storage.from(BUCKET).upload(path,foto,{cacheControl:'3600',upsert:false});
+        if(!upErr){const {data:pu}=db.storage.from(BUCKET).getPublicUrl(path); fotoDbUrl=pu?.publicUrl;}
+      }
+      // Actualizar items
+      for(const it of items){
+        await db.from('recepcion_items').update({cantidad_recibida:n(it.qty_input)}).eq('id',it.id);
+      }
+      // Actualizar recepción
+      const hasDiff=items.some(it=>Math.abs(n(it.qty_input)-n(it.cantidad_esperada))>0.01);
+      await db.from('recepciones').update({
+        estado:hasDiff?'con_diferencias':'completada',
+        foto_dte_url:fotoDbUrl,
+        updated_at:new Date().toISOString(),
+      }).eq('id',rec.id);
+
+      // Actualizar inventario (upsert stock Casa Matriz)
+      const cmId=rec.sucursal_destino_id;
+      for(const it of items){
+        if(it.producto_id){
+          await db.from('inventario').upsert({
+            sucursal_id:cmId, producto_id:it.producto_id,
+            stock_actual:n(it.qty_input), ultima_actualizacion:new Date().toISOString()
+          },{onConflict:'sucursal_id,producto_id',ignoreDuplicates:false});
+        }
+      }
+      show(hasDiff?'⚠️ Recepción confirmada con diferencias':'✅ Recepción completada');
+      onBack();
+    }catch(e){ show('❌ '+e.message); }
+    setSaving(false);
+  };
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <div className="header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:15}}>{rec.proveedor||'Proveedor'}</div>
+          <div style={{fontSize:12,color:'#666'}}>{fmtDate(rec.fecha)}</div>
+        </div>
+        <Badge estado={rec.estado}/>
+      </div>
+      <div style={{padding:'16px 16px 100px'}}>
+        {/* Foto DTE */}
+        <div className="field">
+          <label>Foto del DTE</label>
+          <div className={`photo-btn ${fotoUrl?'has-photo':''}`} onClick={()=>fRef.current.click()}>
+            {fotoUrl
+              ? <><img src={fotoUrl} style={{width:120,height:90,objectFit:'cover',borderRadius:8}} alt="DTE"/><span style={{marginTop:4}}>✅ Tap para reemplazar</span></>
+              : <><span style={{fontSize:28}}>📷</span><span>Sin foto — tap para agregar</span></>
+            }
+          </div>
+          <input type="file" ref={fRef} accept="image/*" capture="environment" onChange={handleFoto} style={{display:'none'}}/>
+        </div>
+
+        <div className="sec-title">CONFIRMAR CANTIDADES RECIBIDAS</div>
+        {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+        {items.map((it,i)=>(
+          <div key={it.id} className="item-row">
+            <div style={{fontWeight:600,fontSize:14,marginBottom:8}}>{it.descripcion||`Ítem ${i+1}`}</div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#666',marginBottom:10}}>
+              <span>Esperado: <strong style={{color:'#f0f0f0'}}>{it.cantidad_esperada} {it.unidad||''}</strong></span>
+            </div>
+            <div>
+              <label>Cantidad recibida</label>
+              <div className="num-input">
+                <button className="num-btn" onClick={()=>{const v=Math.max(0,n(it.qty_input)-1);setItems(p=>p.map((x,j)=>j===i?{...x,qty_input:String(v)}:x));}}>−</button>
+                <input type="number" className="num-field" value={it.qty_input}
+                  onChange={e=>setItems(p=>p.map((x,j)=>j===i?{...x,qty_input:e.target.value}:x))} min="0" step="0.01"/>
+                <button className="num-btn" onClick={()=>{const v=n(it.qty_input)+1;setItems(p=>p.map((x,j)=>j===i?{...x,qty_input:String(v)}:x));}}>+</button>
+              </div>
+              {Math.abs(n(it.qty_input)-n(it.cantidad_esperada))>0.01&&(
+                <div style={{fontSize:12,color:'#fb923c',marginTop:4}}>
+                  ⚠️ Diferencia: {(n(it.qty_input)-n(it.cantidad_esperada)).toFixed(2)} {it.unidad}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {!loading&&<button className="btn btn-green" style={{marginTop:12}} onClick={confirmar} disabled={saving}>
+          {saving?'Confirmando...':'✅ Confirmar Recepción'}
+        </button>}
+      </div>
+    </div>
+  );
+}
+
+// ── DESPACHO A SUCURSALES (Flujo C) ──────────────────────────
+function DespachoTab({user,show}){
+  const [view,setView]=useState('lista');
+  const [pedidos,setPedidos]=useState([]);
+  const [despachos,setDespachos]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [sel,setSel]=useState(null);
+  const [tab,setTab]=useState('pendientes'); // pendientes | proceso | historial
+
+  const cargar=async()=>{
+    setLoading(true);
+    try{
+      const [{data:ped},{data:des}]=await Promise.all([
+        db.from('pedidos_sucursal').select('*,sucursales(nombre)').eq('estado','enviado').order('created_at',{ascending:false}),
+        db.from('despachos_sucursal').select('*,sucursales(nombre)').in('estado',['preparando','despachado','en_ruta','recibido']).order('created_at',{ascending:false}).limit(50),
+      ]);
+      setPedidos(ped||[]);
+      setDespachos(des||[]);
+    }catch(e){show('❌ '+e.message);}
+    setLoading(false);
+  };
+
+  useEffect(()=>{cargar();},[]);
+
+  if(view==='preparar'&&sel) return <PrepararDespacho pedido={sel} user={user} show={show} onBack={()=>{setSel(null);setView('lista');cargar();}}/>;
+
+  const despachosEnProceso=despachos.filter(d=>['preparando','despachado'].includes(d.estado));
+  const despachosHistorial=despachos.filter(d=>['en_ruta','recibido'].includes(d.estado));
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto',flexWrap:'nowrap'}}>
+        <button className={`btn btn-sm ${tab==='pendientes'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('pendientes')}>📋 Pendientes</button>
+        <button className={`btn btn-sm ${tab==='proceso'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('proceso')}>⚙️ En proceso</button>
+        <button className={`btn btn-sm ${tab==='historial'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('historial')}>✅ Historial</button>
+      </div>
+      {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+
+      {!loading&&tab==='pendientes'&&<>
+        {pedidos.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">No hay pedidos pendientes</div></div>}
+        {pedidos.map(p=>(
+          <div key={p.id} className="card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:15}}>{p.sucursales?.nombre||p.sucursal_id}</div>
+                <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}</div>
+                {p.fecha_entrega_estimada&&<div style={{color:'#fbbf24',fontSize:12}}>Entrega: {fmtDate(p.fecha_entrega_estimada)}</div>}
+              </div>
+              <Badge estado={p.estado}/>
+            </div>
+            {p.notas&&<div style={{fontSize:13,color:'#888',marginBottom:8}}>📝 {p.notas}</div>}
+            <button className="btn btn-orange btn-sm" onClick={()=>{setSel(p);setView('preparar');}}>
+              📦 Preparar Despacho
+            </button>
+          </div>
+        ))}
+      </>}
+
+      {!loading&&tab==='proceso'&&<>
+        {despachosEnProceso.length===0&&<div className="empty"><div className="empty-icon">⚙️</div><div className="empty-text">No hay despachos en proceso</div></div>}
+        {despachosEnProceso.map(d=>(
+          <DespachoEnProcesoCard key={d.id} despacho={d} user={user} show={show} onUpdate={cargar}/>
+        ))}
+      </>}
+
+      {!loading&&tab==='historial'&&<>
+        {despachosHistorial.length===0&&<div className="empty"><div className="empty-icon">✅</div><div className="empty-text">Sin historial aún</div></div>}
+        {despachosHistorial.map(d=>(
+          <div key={d.id} className="card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div>
+                <div style={{fontWeight:700}}>{d.sucursales?.nombre}</div>
+                <div style={{color:'#666',fontSize:12}}>{fmtDate(d.fecha_despacho)}</div>
+                {d.motorista_nombre&&<div style={{fontSize:12,color:'#60a5fa',marginTop:2}}>🚚 {d.motorista_nombre}</div>}
+              </div>
+              <Badge estado={d.estado}/>
+            </div>
+            {d.hora_salida&&<div style={{fontSize:11,color:'#888',marginTop:4}}>Salida: {new Date(d.hora_salida).toLocaleString('es-SV')}</div>}
+            {d.hora_recepcion&&<div style={{fontSize:11,color:'#4ade80',marginTop:2}}>Recibido: {new Date(d.hora_recepcion).toLocaleString('es-SV')}</div>}
+            {d.notas_despacho&&<div style={{fontSize:12,color:'#888',marginTop:4}}>📝 {d.notas_despacho}</div>}
+          </div>
+        ))}
+      </>}
+    </div>
+  );
+}
+
+// ── DESPACHO EN PROCESO CARD ──────────────────────────────────
+function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
+  const [expand,setExpand]=useState(false);
+  const [items,setItems]=useState([]);
+  const [loadingItems,setLoadingItems]=useState(false);
+  const [saving,setSaving]=useState(false);
+
+  const cargarItems=async()=>{
+    setLoadingItems(true);
+    try{
+      const {data}=await db.from('despacho_items').select('*').eq('despacho_id',despacho.id);
+      setItems(data||[]);
+    }catch(e){show('❌ '+e.message);}
+    setLoadingItems(false);
+  };
+
+  const marcarDespachado=async()=>{
+    setSaving(true);
+    try{
+      await db.from('despachos_sucursal').update({estado:'despachado',hora_salida:new Date().toISOString()}).eq('id',despacho.id);
+      show('✅ Despacho marcado como despachado');
+      onUpdate();
+      setExpand(false);
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
+  const handleToggle=()=>{
+    if(!expand) cargarItems();
+    setExpand(!expand);
+  };
+
+  const reimprimir=async()=>{
+    if(items.length===0) await cargarItems();
+    const its=items.length>0?items:[];
+    const groups={};
+    its.forEach(it=>{const cat='General';if(!groups[cat])groups[cat]=[];groups[cat].push(it);});
+    const grouped=Object.entries(groups).map(([cat,arr])=>[cat,arr.map(it=>({qty_despacho:it.cantidad_despachada,catalogo_productos:{nombre:it.descripcion,unidad_medida:it.unidad_medida}}))]);
+    imprimirHojaDespacho({
+      sucursal:despacho.sucursales?.nombre||'',
+      fecha:fmtDate(despacho.fecha_despacho),
+      motorista:despacho.motorista_nombre||'—',
+      items:its,
+      grouped
+    });
+  };
+
+  return(
+    <div className="card" style={{cursor:'pointer'}} onClick={handleToggle}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+        <div>
+          <div style={{fontWeight:700}}>{despacho.sucursales?.nombre}</div>
+          <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(despacho.fecha_despacho)}</div>
+          {despacho.motorista_nombre&&<div style={{fontSize:12,color:'#60a5fa',marginTop:2}}>🚚 {despacho.motorista_nombre}</div>}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <Badge estado={despacho.estado}/>
+          <span style={{color:'#555',fontSize:14}}>{expand?'▲':'▼'}</span>
+        </div>
+      </div>
+
+      {expand&&(
+        <div style={{marginTop:12,borderTop:'1px solid #2a2a2a',paddingTop:12}} onClick={e=>e.stopPropagation()}>
+          <div className="sec-title">ÍTEMS EN DESPACHO</div>
+          {loadingItems&&<div className="spin" style={{width:20,height:20,margin:'8px auto'}}/>}
+          {!loadingItems&&items.length===0&&<div style={{color:'#555',fontSize:13,paddingBottom:8}}>Sin ítems</div>}
+          {!loadingItems&&items.map(it=>(
+            <div key={it.id} style={{padding:'8px 0',borderBottom:'1px solid #1a1a1a',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:500}}>{it.descripcion||'Producto'}</div>
+                <div style={{fontSize:11,color:'#555'}}>{it.cantidad_despachada} {it.unidad_medida||'unidad'}</div>
+              </div>
+            </div>
+          ))}
+          <div style={{display:'flex',gap:8,marginTop:12}}>
+            {despacho.estado==='preparando'&&(
+              <button className="btn btn-green" style={{flex:1}} onClick={marcarDespachado} disabled={saving}>
+                {saving?'Marcando...':'🚚 Marcar Despachado'}
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={reimprimir}>🖨️ Reimprimir</button>
+          </div>
+          {despacho.hora_salida&&<div style={{fontSize:11,color:'#4ade80',marginTop:8}}>Salida: {new Date(despacho.hora_salida).toLocaleString('es-SV')}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── IMPRIMIR HOJA DE DESPACHO ─────────────────────────────────
+function imprimirHojaDespacho({sucursal,fecha,motorista,items,grouped}){
+  const rows=grouped.map(([cat,its])=>
+    `<tr><td colspan="4" style="background:#eee;font-weight:700;padding:6px 8px;font-size:13px">${cat}</td></tr>`+
+    its.filter(it=>parseFloat(it.qty_despacho)>0).map(it=>
+      `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd">${it.catalogo_productos?.nombre||'Producto'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center">${it.qty_despacho} ${it.catalogo_productos?.unidad_medida||''}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;width:80px"></td>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd;width:120px"></td>
+      </tr>`
+    ).join('')
+  ).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Despacho ${sucursal}</title>
+    <style>@media print{@page{margin:12mm}body{font-family:Arial,sans-serif;font-size:14px;color:#000}}
+    body{font-family:Arial,sans-serif;font-size:14px}table{width:100%;border-collapse:collapse;margin-top:12px}
+    th{background:#333;color:#fff;padding:8px;text-align:left;font-size:13px}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+    .logo{font-size:22px;font-weight:900}.firma{margin-top:40px;display:flex;justify-content:space-between;gap:40px}
+    .firma-box{flex:1;text-align:center;border-top:1px solid #000;padding-top:8px;font-size:12px}</style></head>
+    <body>
+    <div class="header"><div><div class="logo">🍔 FREAKIE DOGS</div><div style="font-size:12px;color:#666">Hoja de Despacho</div></div>
+    <div style="text-align:right"><div><strong>Destino:</strong> ${sucursal}</div>
+    <div><strong>Fecha:</strong> ${fecha}</div>
+    <div><strong>Motorista:</strong> ${motorista||'—'}</div></div></div>
+    <table><thead><tr><th>Producto</th><th style="text-align:center">Cant. Despachada</th><th style="text-align:center">Recibido</th><th>Observaciones</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div style="margin-top:20px;padding:10px;border:1px dashed #999;border-radius:6px;font-size:12px;color:#666">
+    <strong>Notas generales:</strong>_______________________________________________</div>
+    <div class="firma"><div class="firma-box">Preparado por (Bodega)</div><div class="firma-box">Motorista</div><div class="firma-box">Recibido por (Sucursal)</div></div>
+    <div style="text-align:center;margin-top:20px;font-size:10px;color:#999">Documento generado por Freakie Dogs ERP — ${new Date().toLocaleString('es-SV')}</div>
+    </body></html>`;
+  const w=window.open('','_blank','width=800,height=600');
+  if(w){w.document.write(html);w.document.close();setTimeout(()=>w.print(),400);}
+}
+
+// ── PREPARAR DESPACHO ─────────────────────────────────────────
+function PrepararDespacho({pedido,user,show,onBack}){
+  const [pitems,setPitems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [cmId,setCmId]=useState(null);
+  const [motorista,setMotorista]=useState('');
+
+  useEffect(()=>{
+    // Get CM001 sucursal ID
+    db.from('sucursales').select('id').eq('store_code','CM001').maybeSingle()
+      .then(({data})=>{
+        if(data) setCmId(data.id);
+      });
+    // Load pedido items
+    db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,precio_referencia)').eq('pedido_id',pedido.id)
+      .then(({data})=>{
+        setPitems((data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0)})));
+        setLoading(false);
+      });
+  },[pedido.id]);
+
+  const despachar=async()=>{
+    if(!cmId){show('❌ No se encontró Casa Matriz');return;}
+    if(!motorista.trim()){show('⚠️ Ingresa el nombre del motorista');return;}
+    setSaving(true);
+    try{
+      // 1. Crear despacho_sucursal
+      const {data:des,error:desErr}=await db.from('despachos_sucursal').insert({
+        sucursal_id:pedido.sucursal_id,
+        pedido_id:pedido.id,
+        fecha_despacho:today(),
+        estado:'preparando',
+        preparado_por:user.id,
+        motorista_nombre:motorista.trim(),
+      }).select().single();
+      if(desErr) throw desErr;
+
+      // 2. Crear despacho_items (with pricing)
+      const rows=[];
+      for(const it of pitems){
+        const qty=n(it.qty_despacho);
+        if(qty<=0) continue;
+
+        // Get costo_unitario from inventario or use precio_referencia
+        let costo=it.catalogo_productos?.precio_referencia||0;
+        if(it.producto_id&&cmId){
+          const {data:inv}=await db.from('inventario').select('stock_actual').eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
+          // For now, use catalogo price; real cost tracking could be more sophisticated
+        }
+
+        rows.push({
+          despacho_id:des.id,
+          producto_id:it.producto_id||null,
+          descripcion:it.catalogo_productos?.nombre||'Producto',
+          cantidad_despachada:qty,
+          unidad_medida:it.catalogo_productos?.unidad_medida||it.unidad||'unidad',
+          costo_unitario:costo,
+        });
+      }
+
+      if(rows.length>0){
+        const {error:itmErr}=await db.from('despacho_items').insert(rows);
+        if(itmErr) throw itmErr;
+
+        // 3. Decrement inventario.stock_actual for CM001
+        for(const it of pitems){
+          if(!it.producto_id||n(it.qty_despacho)<=0) continue;
+          await db.from('inventario').update({
+            stock_actual:db.raw('stock_actual - ?',[n(it.qty_despacho)])
+          }).eq('producto_id',it.producto_id).eq('sucursal_id',cmId);
+        }
+      }
+
+      // 4. Update pedido_items.cantidad_despachada and pedido estado
+      for(const it of pitems){
+        if(n(it.qty_despacho)>0){
+          await db.from('pedido_items').update({cantidad_despachada:n(it.qty_despacho)}).eq('id',it.id);
+        }
+      }
+      await db.from('pedidos_sucursal').update({estado:'despachado'}).eq('id',pedido.id);
+
+      show('✅ Despacho creado — en proceso');
+      onBack();
+    }catch(e){ show('❌ '+e.message); }
+    setSaving(false);
+  };
+
+  // Group items by category
+  const grouped=useMemo(()=>{
+    const groups={};
+    pitems.forEach(it=>{
+      const cat=it.catalogo_productos?.categoria||'Otros';
+      if(!groups[cat]) groups[cat]=[];
+      groups[cat].push(it);
+    });
+    return Object.entries(groups);
+  },[pitems]);
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <div className="header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:15}}>Preparar Despacho</div>
+          <div style={{fontSize:12,color:'#666'}}>{pedido.sucursales?.nombre}</div>
+        </div>
+      </div>
+      <div style={{padding:'16px 16px 100px'}}>
+        <div style={{marginBottom:12,padding:'10px',background:'#1e3a5f',borderRadius:8,borderLeft:'3px solid #60a5fa'}}>
+          <div style={{fontSize:12,color:'#60a5fa',fontWeight:600}}>Pedido: {fmtDate(pedido.fecha_pedido)}</div>
+          {pedido.fecha_entrega_estimada&&<div style={{fontSize:11,color:'#888',marginTop:2}}>Entrega estimada: {fmtDate(pedido.fecha_entrega_estimada)}</div>}
+        </div>
+
+        {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+        {!loading&&pitems.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Este pedido no tiene ítems</div></div>}
+
+        {!loading&&grouped.map(([categoria,items])=>(
+          <div key={categoria} style={{marginBottom:16}}>
+            <div className="sec-title">{categoria}</div>
+            {items.map((it,i)=>(
+              <div key={it.id} className="item-row">
+                <div style={{fontWeight:600,fontSize:14,marginBottom:8}}>
+                  {it.catalogo_productos?.nombre||`Ítem ${i+1}`}
+                </div>
+                <div style={{fontSize:12,color:'#666',marginBottom:10}}>
+                  Solicitado: <strong style={{color:'#f0f0f0'}}>{it.cantidad_solicitada} {it.catalogo_productos?.unidad_medida||''}</strong>
+                </div>
+                <div>
+                  <label>Cantidad a despachar</label>
+                  <div className="num-input">
+                    <button className="num-btn" onClick={()=>{
+                      const idx=pitems.findIndex(x=>x.id===it.id);
+                      const v=Math.max(0,n(pitems[idx].qty_despacho)-1);
+                      setPitems(p=>p.map((x,j)=>j===idx?{...x,qty_despacho:String(v)}:x));
+                    }}>−</button>
+                    <input type="number" className="num-field" value={it.qty_despacho}
+                      onChange={e=>{
+                        const idx=pitems.findIndex(x=>x.id===it.id);
+                        setPitems(p=>p.map((x,j)=>j===idx?{...x,qty_despacho:e.target.value}:x));
+                      }} min="0" step="0.01"/>
+                    <button className="num-btn" onClick={()=>{
+                      const idx=pitems.findIndex(x=>x.id===it.id);
+                      const v=n(pitems[idx].qty_despacho)+1;
+                      setPitems(p=>p.map((x,j)=>j===idx?{...x,qty_despacho:String(v)}:x));
+                    }}>+</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {!loading&&pitems.length>0&&<>
+          <div className="field" style={{marginTop:16}}>
+            <label>🚚 Motorista asignado</label>
+            <input type="text" value={motorista} onChange={e=>setMotorista(e.target.value)} placeholder="Nombre del motorista"/>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-orange" style={{flex:1}} onClick={despachar} disabled={saving||!motorista.trim()}>
+              {saving?'Creando despacho...':'📦 Crear Despacho'}
+            </button>
+            <button className="btn btn-ghost" style={{flex:'0 0 auto',padding:'14px 18px'}} onClick={()=>{
+              imprimirHojaDespacho({
+                sucursal:pedido.sucursales?.nombre||pedido.sucursal_id,
+                fecha:new Date().toLocaleDateString('es-SV',{day:'2-digit',month:'short',year:'numeric'}),
+                motorista,
+                items:pitems,
+                grouped
+              });
+            }}>🖨️</button>
+          </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+// ── INVENTARIO ───────────────────────────────────────────────
+function InventarioTab({user,show}){
+  const [inv,setInv]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [busqueda,setBusqueda]=useState('');
+  const [cmId,setCmId]=useState(null);
+
+  useEffect(()=>{
+    db.from('sucursales').select('id').eq('store_code','CM001').maybeSingle().then(({data})=>{
+      if(!data) return;
+      setCmId(data.id);
+      db.from('inventario').select('*,catalogo_productos(nombre,categoria,unidad_medida)')
+        .eq('sucursal_id',data.id).order('stock_actual',{ascending:true})
+        .then(({data:inv})=>{ setInv(inv||[]); setLoading(false); });
+    });
+  },[]);
+
+  const filtrado=useMemo(()=>{
+    if(!busqueda.trim()) return inv;
+    const q=busqueda.toLowerCase();
+    return inv.filter(i=>i.catalogo_productos?.nombre?.toLowerCase().includes(q)||i.catalogo_productos?.categoria?.toLowerCase().includes(q));
+  },[inv,busqueda]);
+
+  const alertas=inv.filter(i=>i.alerta_activa||i.stock_actual<=i.stock_minimo);
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      {alertas.length>0&&(
+        <div className="card" style={{borderColor:'#7c2d12',marginBottom:16}}>
+          <div style={{fontWeight:700,color:'#fb923c',marginBottom:6}}>⚠️ {alertas.length} producto(s) bajo mínimo</div>
+          {alertas.map(a=>(
+            <div key={a.id} style={{fontSize:13,color:'#f0f0f0',padding:'4px 0',borderBottom:'1px solid #2a2a2a'}}>
+              {a.catalogo_productos?.nombre||a.id}: <strong>{a.stock_actual}</strong> / mín {a.stock_minimo}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="field">
+        <input type="text" value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="🔍 Buscar producto..."/>
+      </div>
+      {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+      {!loading&&filtrado.length===0&&(
+        <div className="empty">
+          <div className="empty-icon">📦</div>
+          <div className="empty-text">{busqueda?'Sin resultados':'Inventario vacío — carga mercadería primero'}</div>
+        </div>
+      )}
+      {filtrado.map(it=>(
+        <div key={it.id} className="card" style={{padding:'12px 14px',borderColor:it.stock_actual<=it.stock_minimo?'#7c2d12':'#2a2a2a'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:14}}>{it.catalogo_productos?.nombre||it.id}</div>
+              <div style={{fontSize:12,color:'#666',marginTop:2}}>{it.catalogo_productos?.categoria||'Sin categoría'}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontWeight:700,fontSize:18,color:it.stock_actual<=it.stock_minimo?'#fb923c':'#4ade80'}}>
+                {it.stock_actual}
+              </div>
+              <div style={{fontSize:11,color:'#555'}}>{it.catalogo_productos?.unidad_medida||'unid'}</div>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:16,marginTop:8,fontSize:12,color:'#555'}}>
+            <span>Mín: {it.stock_minimo}</span>
+            <span>Máx: {it.stock_maximo}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── EDITAR RECEPCIÓN COMPLETA ─────────────────────────────────
+function EditarRecepcion({rec,cmId,show,onBack}){
+  const [proveedorId,setProveedorId]=useState(null);
+  const [proveedorNombre,setProveedorNombre]=useState(rec.proveedor||'');
+  const [proveedorSearch,setProveedorSearch]=useState(rec.proveedor||'');
+  const [proveedores,setProveedores]=useState([]);
+  const [showProvSearch,setShowProvSearch]=useState(false);
+  const [showNewProvModal,setShowNewProvModal]=useState(false);
+  const [productos,setProductos]=useState([]);
+  const [showNewProdModal,setShowNewProdModal]=useState(false);
+  const [notas,setNotas]=useState(rec.notas||'');
+  const [dteCodigo,setDteCodigo]=useState(rec.dte_codigo||'');
+  const [items,setItems]=useState([]);
+  const [origItems,setOrigItems]=useState([]);
+  const [foto,setFoto]=useState(null);
+  const [fotoUrl,setFotoUrl]=useState(rec.foto_dte_url||'');
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const fRef=useRef();
+
+  // Cargar proveedores
+  useEffect(()=>{
+    db.from('proveedores').select('id,nombre').eq('activo',true).then(({data})=>{
+      setProveedores(data||[]);
+      const match=(data||[]).find(p=>p.nombre===rec.proveedor);
+      if(match) setProveedorId(match.id);
+    });
+  },[]);
+
+  // Cargar productos del proveedor
+  useEffect(()=>{
+    if(!proveedorId){setProductos([]);return;}
+    db.from('proveedor_productos')
+      .select('producto_id,precio_unitario,unidad_compra,catalogo_productos(id,codigo,nombre,categoria,unidad_medida,precio_referencia)')
+      .eq('proveedor_id',proveedorId).eq('activo',true)
+      .then(({data})=>{
+        const prods=(data||[]).map(pp=>({...pp.catalogo_productos,precio_proveedor:pp.precio_unitario,unidad_compra:pp.unidad_compra})).filter(Boolean);
+        setProductos(prods);
+      });
+  },[proveedorId]);
+
+  // Cargar items existentes
+  useEffect(()=>{
+    db.from('recepcion_items').select('*').eq('recepcion_id',rec.id).then(({data})=>{
+      const mapped=(data||[]).map(it=>({
+        dbId:it.id, prodId:it.producto_id, prodNombre:it.descripcion||'', desc:it.descripcion||'',
+        qty:String(it.cantidad_recibida), precio:it.precio_unitario?String(it.precio_unitario):'', unidad:it.unidad||'unidad', origQty:it.cantidad_recibida
+      }));
+      setItems(mapped);
+      setOrigItems(data||[]);
+      setLoading(false);
+    });
+  },[rec.id]);
+
+  const filteredProveedores=proveedorSearch.trim()
+    ?proveedores.filter(p=>p.nombre.toLowerCase().includes(proveedorSearch.toLowerCase()))
+    :proveedores;
+
+  const selectProveedor=(p)=>{
+    setProveedorId(p.id);setProveedorNombre(p.nombre);setProveedorSearch(p.nombre);setShowProvSearch(false);
+  };
+  const handleNewProveedor=(p)=>{selectProveedor(p);setProveedores(prev=>[...prev,p]);setShowNewProvModal(false);};
+  const handleNewProducto=async(p)=>{
+    if(proveedorId&&p.id){
+      await db.from('proveedor_productos').upsert({proveedor_id:proveedorId,producto_id:p.id,precio_unitario:p.precio_referencia||null,unidad_compra:p.unidad_medida||'Unidad',es_proveedor_principal:true,activo:true},{onConflict:'proveedor_id,producto_id'});
+    }
+    setProductos(prev=>[...prev,{...p,precio_proveedor:p.precio_referencia}]);setShowNewProdModal(false);
+  };
+
+  const addItem=()=>setItems(prev=>[...prev,{dbId:null,prodId:null,prodNombre:'',desc:'',qty:'',precio:'',unidad:'unidad',origQty:0}]);
+  const updItem=(i,f,v)=>setItems(prev=>prev.map((it,idx)=>idx===i?{...it,[f]:v}:it));
+  const delItem=(i)=>setItems(prev=>prev.filter((_,idx)=>idx!==i));
+
+  const handleFoto=async(e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    setFoto(f);
+    const reader=new FileReader(); reader.onload=ev=>setFotoUrl(ev.target.result); reader.readAsDataURL(f);
+  };
+
+  const guardar=async()=>{
+    if(!proveedorNombre.trim()){show('⚠️ Selecciona un proveedor');return;}
+    const validItems=items.filter(i=>(i.prodId||i.desc.trim()||i.prodNombre.trim())&&n(i.qty)>0);
+    if(validItems.length===0){show('⚠️ Agrega al menos un ítem con cantidad');return;}
+    setSaving(true);
+    try{
+      // 1. Foto
+      let fotoDbUrl=rec.foto_dte_url;
+      if(foto){
+        const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
+        const path=`recepciones/dte_${Date.now()}.${ext}`;
+        const {error:upErr}=await db.storage.from(BUCKET).upload(path,foto,{cacheControl:'3600',upsert:false});
+        if(!upErr){const {data:pu}=db.storage.from(BUCKET).getPublicUrl(path);fotoDbUrl=pu?.publicUrl;}
+      }
+      // 2. Revertir inventario de items originales
+      for(const oi of origItems){
+        if(!oi.producto_id||!cmId) continue;
+        const {data:inv}=await db.from('inventario').select('id,stock_actual')
+          .eq('producto_id',oi.producto_id).eq('sucursal_id',cmId).maybeSingle();
+        if(inv){
+          await db.from('inventario').update({stock_actual:Math.max(0,n(inv.stock_actual)-n(oi.cantidad_recibida)),ultima_actualizacion:new Date().toISOString()}).eq('id',inv.id);
+        }
+      }
+      // 3. Borrar items viejos
+      await db.from('recepcion_items').delete().eq('recepcion_id',rec.id);
+      // 4. Actualizar recepción
+      await db.from('recepciones').update({
+        proveedor:proveedorNombre.trim(),
+        notas:notas.trim()||null,
+        dte_codigo:dteCodigo.trim()||null,
+        foto_dte_url:fotoDbUrl,
+        updated_at:new Date().toISOString()
+      }).eq('id',rec.id);
+      // 5. Insertar nuevos items
+      const rows=validItems.map(it=>({
+        recepcion_id:rec.id,
+        producto_id:it.prodId||null,
+        descripcion:it.prodId?(productos.find(p=>p.id===it.prodId)?.nombre||it.prodNombre):it.desc.trim()||it.prodNombre.trim(),
+        cantidad_esperada:n(it.qty),
+        cantidad_recibida:n(it.qty),
+        unidad:it.unidad,
+        precio_unitario:n(it.precio)||null,
+      }));
+      await db.from('recepcion_items').insert(rows);
+      // 6. Sumar inventario nuevo
+      for(const it of validItems){
+        if(!it.prodId||!cmId) continue;
+        const qty=n(it.qty);
+        const {data:existing}=await db.from('inventario').select('id,stock_actual')
+          .eq('producto_id',it.prodId).eq('sucursal_id',cmId).maybeSingle();
+        if(existing){
+          await db.from('inventario').update({stock_actual:n(existing.stock_actual)+qty,ultima_actualizacion:new Date().toISOString()}).eq('id',existing.id);
+        }else{
+          await db.from('inventario').insert({producto_id:it.prodId,sucursal_id:cmId,stock_actual:qty,stock_minimo:0,stock_maximo:999,ultima_actualizacion:new Date().toISOString()});
+        }
+      }
+      // Actualizar precio en proveedor_productos con el último precio ingresado
+      for(const it of validItems){
+        if(!it.prodId||!proveedorId||!n(it.precio)) continue;
+        await db.from('proveedor_productos').update({precio_unitario:n(it.precio)})
+          .eq('proveedor_id',proveedorId).eq('producto_id',it.prodId);
+      }
+      show('✅ Recepción actualizada');
+      onBack();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
+  if(loading) return <div style={{padding:40,textAlign:'center'}}><div className="spin" style={{width:28,height:28,margin:'0 auto'}}/></div>;
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <div className="header">
+        <button className="back-btn" onClick={onBack}>←</button>
+        <div style={{fontWeight:700,fontSize:16}}>Editar Recepción</div>
+      </div>
+      <div style={{padding:'16px 16px 100px'}}>
+        {/* Proveedor */}
+        <div className="field">
+          <label>Proveedor *</label>
+          <div className="autocomplete-container">
+            <input type="text" value={proveedorSearch} onChange={e=>{setProveedorSearch(e.target.value);setProveedorNombre(e.target.value);setShowProvSearch(true);}}
+              onFocus={()=>setShowProvSearch(true)} placeholder="Buscar proveedor..."/>
+            {showProvSearch&&(
+              <div className={`autocomplete-dropdown active`}>
+                {filteredProveedores.length>0?filteredProveedores.slice(0,8).map(p=>(
+                  <div key={p.id} className="autocomplete-item" onClick={()=>selectProveedor(p)}>{p.nombre}</div>
+                )):<div style={{padding:'10px 12px',color:'#666'}}>Sin resultados</div>}
+                <div className="autocomplete-item" style={{background:'#1b4332',color:'#4ade80',borderTop:'1px solid #222'}} onClick={()=>setShowNewProvModal(true)}>+ Agregar nuevo proveedor</div>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Notas */}
+        <div className="field">
+          <label>Notas (opcional)</label>
+          <input type="text" value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Observaciones generales"/>
+        </div>
+        {/* DTE código */}
+        <div className="field">
+          <label>Últimos 4 dígitos del DTE</label>
+          <input type="text" value={dteCodigo} onChange={e=>setDteCodigo(e.target.value.replace(/\D/g,'').slice(0,4))}
+            placeholder="Ej: 2345" maxLength={4} inputMode="numeric"
+            style={{width:120,fontSize:20,fontWeight:700,textAlign:'center',letterSpacing:8}}/>
+          <div style={{fontSize:11,color:'#555',marginTop:4}}>Del número de control del DTE</div>
+        </div>
+        {/* Foto */}
+        <div className="field">
+          <label>Foto del DTE</label>
+          <div className={`photo-btn ${fotoUrl?'has-photo':''}`} onClick={()=>fRef.current.click()}>
+            {fotoUrl
+              ?<><img src={fotoUrl} style={{width:120,height:90,objectFit:'cover',borderRadius:8}} alt="DTE"/><span style={{marginTop:4}}>Tap para cambiar</span></>
+              :<><span style={{fontSize:28}}>📷</span><span>Tomar foto del DTE</span></>}
+          </div>
+          <input type="file" ref={fRef} accept="image/*" capture="environment" onChange={handleFoto} style={{display:'none'}}/>
+        </div>
+        {/* Items */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div className="sec-title" style={{marginBottom:0}}>PRODUCTOS</div>
+          <button className="btn btn-ghost btn-sm" onClick={addItem}>+ Agregar</button>
+        </div>
+        {items.map((it,i)=>(
+          <div key={i} className="item-row">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <span style={{fontSize:13,color:'#666'}}>Producto {i+1}</span>
+              {items.length>1&&<button onClick={()=>delItem(i)} style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>×</button>}
+            </div>
+            <div className="field" style={{marginBottom:8}}>
+              <label style={{fontSize:12}}>Producto</label>
+              <input type="text" value={it.prodNombre} onChange={e=>{updItem(i,'prodNombre',e.target.value);updItem(i,'desc',e.target.value);}}
+                onFocus={()=>{if(proveedorId)updItem(i,'searchOpen',true);}}
+                placeholder={proveedorId?'Buscar producto...':'Escribir descripción'}/>
+              {it.searchOpen&&proveedorId&&(
+                <div style={{background:'#1e1e1e',border:'1px solid #333',borderTop:'none',maxHeight:180,overflowY:'auto',borderRadius:'0 0 8px 8px',marginTop:-4}}>
+                  {productos.filter(p=>p.nombre.toLowerCase().includes((it.prodNombre||'').toLowerCase())).slice(0,8).map(p=>(
+                    <div key={p.id} style={{padding:'8px 12px',borderBottom:'1px solid #222',cursor:'pointer',fontSize:13,color:'#f0f0f0',display:'flex',justifyContent:'space-between'}}
+                      onClick={()=>{updItem(i,'prodId',p.id);updItem(i,'prodNombre',p.nombre);updItem(i,'desc',p.nombre);updItem(i,'unidad',p.unidad_compra||p.unidad_medida||'unidad');updItem(i,'precio',p.precio_proveedor||p.precio_referencia||'');updItem(i,'searchOpen',false);}}>
+                      <span>{p.nombre}</span>
+                      {p.precio_proveedor&&<span style={{color:'#4ade80',fontSize:11}}>${Number(p.precio_proveedor).toFixed(2)}</span>}
+                    </div>
+                  ))}
+                  <div className="autocomplete-item" style={{background:'#1b4332',color:'#4ade80',borderTop:'1px solid #222'}} onClick={()=>setShowNewProdModal(true)}>+ Nuevo Producto</div>
+                </div>
+              )}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <div><label>Cantidad</label><input type="number" value={it.qty} onChange={e=>updItem(i,'qty',e.target.value)} placeholder="0" min="0" step="0.01"/></div>
+              <div><label>Unidad</label>
+                <select value={it.unidad} onChange={e=>updItem(i,'unidad',e.target.value)}>
+                  <option value="unidad">Unidad</option><option value="kg">Kilogramo</option><option value="lb">Libra</option>
+                  <option value="litro">Litro</option><option value="caja">Caja</option><option value="bolsa">Bolsa</option>
+                  <option value="rollo">Rollo</option><option value="paquete">Paquete</option><option value="galón">Galón</option>
+                </select>
+              </div>
+            </div>
+            <div className="field" style={{marginTop:8,marginBottom:0}}>
+              <label>Precio unitario</label>
+              <input type="number" value={it.precio} onChange={e=>updItem(i,'precio',e.target.value)} placeholder="0.00" min="0" step="0.01"/>
+            </div>
+          </div>
+        ))}
+        <button className="btn btn-green" style={{marginTop:8}} onClick={guardar} disabled={saving}>
+          {saving?'Guardando...':'💾 Guardar cambios'}
+        </button>
+      </div>
+      {showNewProvModal&&<NuevoProveedorModal onSave={handleNewProveedor} onClose={()=>setShowNewProvModal(false)}/>}
+      {showNewProdModal&&<NuevoProductoModal onSave={handleNewProducto} onClose={()=>setShowNewProdModal(false)}/>}
+    </div>
+  );
+}
+
+// ── COMPRAS / ÓRDENES DE COMPRA ───────────────────────────────
+function ComprasTab({user,show}){
+  const [vista,setVista]=useState('lista'); // lista | nueva | detalle
+  const [ordenes,setOrdenes]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [ocSeleccionada,setOcSeleccionada]=useState(null);
+
+  const cargar=()=>{
+    setLoading(true);
+    db.from('ordenes_compra').select('*')
+      .order('created_at',{ascending:false}).limit(30)
+      .then(({data})=>{setOrdenes(data||[]);setLoading(false);});
+  };
+  useEffect(()=>{cargar();},[]);
+
+  if(vista==='nueva') return <NuevaOC user={user} show={show} onBack={()=>{setVista('lista');cargar();}}/>;
+  if(vista==='detalle'&&ocSeleccionada) return <DetalleOC oc={ocSeleccionada} user={user} show={show} onBack={()=>{setVista('lista');setOcSeleccionada(null);cargar();}}/>;
+
+  const badgeColor=(e)=>({borrador:'#555',pendiente_aprobacion:'#f4a261',aprobada:'#4ade80',parcial_recibida:'#60a5fa',recibida:'#22c55e',cancelada:'#e63946'}[e]||'#555');
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+        <div className="sec-title" style={{marginBottom:0}}>Órdenes de Compra</div>
+        <button className="btn btn-green btn-sm" onClick={()=>setVista('nueva')}>+ Nueva OC</button>
+      </div>
+      {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+      {!loading&&ordenes.length===0&&(
+        <div className="empty"><div className="empty-icon">📝</div><div className="empty-text">Sin órdenes aún</div>
+        <div style={{fontSize:12,color:'#555',marginTop:8}}>Crea tu primera orden de compra</div></div>
+      )}
+      {ordenes.map(oc=>(
+        <div key={oc.id} className="card" style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{setOcSeleccionada(oc);setVista('detalle');}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:14}}>{oc.proveedor||'Sin proveedor'}</div>
+              <div style={{fontSize:12,color:'#666',marginTop:2}}>OC-{String(oc.numero_oc||'').padStart(4,'0')} · {fmtDate(oc.fecha_emision)}</div>
+              {oc.total_items>0&&<div style={{fontSize:11,color:'#888',marginTop:2}}>{oc.total_items} items · ${Number(oc.total_estimado||0).toFixed(2)}</div>}
+            </div>
+            <span style={{fontSize:11,fontWeight:600,padding:'3px 8px',borderRadius:6,color:'#fff',background:badgeColor(oc.estado)}}>
+              {oc.estado==='pendiente_aprobacion'?'Pendiente':oc.estado.charAt(0).toUpperCase()+oc.estado.slice(1).replace('_',' ')}
+            </span>
+          </div>
+          {oc.notas&&<div style={{fontSize:12,color:'#888',marginTop:4}}>{oc.notas}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── NUEVA ORDEN DE COMPRA ─────────────────────────────────────
+function NuevaOC({user,show,onBack}){
+  const [proveedorId,setProveedorId]=useState('');
+  const [proveedorNombre,setProveedorNombre]=useState('');
+  const [provSearch,setProvSearch]=useState('');
+  const [provResults,setProvResults]=useState([]);
+  const [items,setItems]=useState([]);
+  const [notas,setNotas]=useState('');
+  const [fechaEntrega,setFechaEntrega]=useState('');
+  const [saving,setSaving]=useState(false);
+  const [loadingSugerencias,setLoadingSugerencias]=useState(false);
+
+  // Buscar proveedores
+  useEffect(()=>{
+    if(provSearch.length<2){setProvResults([]);return;}
+    const t=setTimeout(()=>{
+      db.from('proveedores').select('id,nombre').eq('activo',true)
+        .ilike('nombre','%'+provSearch+'%').limit(8)
+        .then(({data})=>setProvResults(data||[]));
+    },300);
+    return ()=>clearTimeout(t);
+  },[provSearch]);
+
+  // Al seleccionar proveedor, cargar sugerencias
+  const seleccionarProveedor=async(prov)=>{
+    setProveedorId(prov.id);
+    setProveedorNombre(prov.nombre);
+    setProvSearch('');
+    setProvResults([]);
+    setLoadingSugerencias(true);
+    const {data}=await db.rpc('sugerir_compra_proveedor',{p_proveedor_id:prov.id});
+    if(data&&data.length>0){
+      setItems(data.map(d=>({
+        prodId:d.producto_id, nombre:d.nombre, unidad:d.unidad||'',
+        cantidad:d.cantidad_sugerida>0?String(d.cantidad_sugerida):'',
+        precio:d.precio_unitario>0?String(d.precio_unitario):'',
+        stockActual:d.stock_actual, stockMin:d.stock_minimo, sugerido:d.cantidad_sugerida,
+        incluir:d.cantidad_sugerida>0 // pre-check solo los que necesitan reposición
+      })));
+    } else {
+      setItems([]);
+      show('Este proveedor no tiene productos asociados');
+    }
+    setLoadingSugerencias(false);
+  };
+
+  const toggleItem=(idx)=>{
+    const u=[...items]; u[idx].incluir=!u[idx].incluir; setItems(u);
+  };
+  const setCantidad=(idx,v)=>{
+    const u=[...items]; u[idx].cantidad=v; setItems(u);
+  };
+
+  const n=(v)=>parseFloat(v)||0;
+  const itemsIncluidos=items.filter(it=>it.incluir&&n(it.cantidad)>0);
+  const totalEstimado=itemsIncluidos.reduce((s,it)=>s+n(it.cantidad)*n(it.precio),0);
+
+  const guardar=async()=>{
+    if(!proveedorId){show('Selecciona un proveedor');return;}
+    if(itemsIncluidos.length===0){show('Agrega al menos un item');return;}
+    setSaving(true);
+    try{
+      // 1. Crear OC
+      const {data:oc,error:e1}=await db.from('ordenes_compra').insert({
+        proveedor:proveedorNombre,
+        proveedor_id:proveedorId,
+        fecha_emision:new Date().toISOString().slice(0,10),
+        fecha_entrega_esperada:fechaEntrega||null,
+        estado:'pendiente_aprobacion',
+        total_estimado:totalEstimado,
+        total_items:itemsIncluidos.length,
+        creada_por:user.id,
+        notas:notas.trim()||null
+      }).select().single();
+      if(e1) throw e1;
+
+      // 2. Insertar items
+      const rows=itemsIncluidos.map(it=>({
+        orden_id:oc.id,
+        producto_id:it.prodId,
+        descripcion:it.nombre,
+        unidad:it.unidad,
+        cantidad_solicitada:n(it.cantidad),
+        precio_unitario_estimado:n(it.precio)||null,
+        stock_actual_al_crear:n(it.stockActual),
+        stock_minimo:n(it.stockMin),
+        cantidad_sugerida:n(it.sugerido)
+      }));
+      const {error:e2}=await db.from('ordenes_compra_items').insert(rows);
+      if(e2) throw e2;
+
+      show('✅ OC-'+String(oc.numero_oc).padStart(4,'0')+' creada — pendiente de aprobación');
+      onBack();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← Volver</button>
+        <div className="sec-title" style={{marginBottom:0}}>Nueva Orden de Compra</div>
+      </div>
+
+      {/* Proveedor */}
+      <div className="field">
+        <label>Proveedor *</label>
+        {proveedorId?(
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{flex:1,padding:'10px 12px',background:'#1a1a1a',borderRadius:8,fontWeight:600}}>{proveedorNombre}</div>
+            <button className="btn btn-ghost btn-sm" onClick={()=>{setProveedorId('');setProveedorNombre('');setItems([]);}}>Cambiar</button>
+          </div>
+        ):(
+          <div style={{position:'relative'}}>
+            <input type="text" value={provSearch} onChange={e=>setProvSearch(e.target.value)} placeholder="Buscar proveedor..." autoFocus/>
+            {provResults.length>0&&(
+              <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#1a1a1a',border:'1px solid #333',borderRadius:8,zIndex:10,maxHeight:200,overflowY:'auto'}}>
+                {provResults.map(p=>(
+                  <div key={p.id} style={{padding:'10px 12px',borderBottom:'1px solid #222',cursor:'pointer'}} onClick={()=>seleccionarProveedor(p)}>
+                    {p.nombre}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Fecha entrega */}
+      <div className="field">
+        <label>Fecha entrega esperada</label>
+        <input type="date" value={fechaEntrega} onChange={e=>setFechaEntrega(e.target.value)}/>
+      </div>
+
+      {/* Notas */}
+      <div className="field">
+        <label>Notas (opcional)</label>
+        <input type="text" value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Observaciones"/>
+      </div>
+
+      {/* Loading sugerencias */}
+      {loadingSugerencias&&<div style={{textAlign:'center',padding:20}}><div className="spin" style={{width:24,height:24,margin:'0 auto'}}/><div style={{fontSize:12,color:'#555',marginTop:8}}>Cargando productos del proveedor...</div></div>}
+
+      {/* Items del proveedor */}
+      {!loadingSugerencias&&items.length>0&&(
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div className="sec-title" style={{marginBottom:0}}>PRODUCTOS ({itemsIncluidos.length} seleccionados)</div>
+          </div>
+          <div style={{fontSize:11,color:'#f4a261',marginBottom:8}}>
+            Items con stock bajo mínimo están pre-seleccionados con cantidad sugerida
+          </div>
+          {items.map((it,i)=>(
+            <div key={i} style={{padding:'10px 12px',background:it.incluir?'#1a2a1a':'#111',border:'1px solid '+(it.incluir?'#2a4a2a':'#1e1e1e'),borderRadius:10,marginBottom:6}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <input type="checkbox" checked={it.incluir} onChange={()=>toggleItem(i)} style={{width:18,height:18}}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:500}}>{it.nombre}</div>
+                  <div style={{fontSize:11,color:'#666'}}>
+                    {it.unidad} · Stock: {it.stockActual}{it.stockMin>0?' · Mín: '+it.stockMin:''}
+                    {it.precio>0?' · $'+Number(it.precio).toFixed(2):''}
+                  </div>
+                </div>
+              </div>
+              {it.incluir&&(
+                <div style={{display:'flex',gap:8,marginTop:8,marginLeft:26}}>
+                  <div style={{flex:1}}>
+                    <input type="number" value={it.cantidad} onChange={e=>setCantidad(i,e.target.value)}
+                      placeholder="Cant." inputMode="decimal" style={{textAlign:'center',fontWeight:600}}/>
+                  </div>
+                  {it.sugerido>0&&n(it.cantidad)!==n(it.sugerido)&&(
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={()=>setCantidad(i,String(it.sugerido))}>
+                      Sugerido: {it.sugerido}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Total y botón guardar */}
+          <div style={{marginTop:16,padding:'12px',background:'#1a1a1a',borderRadius:10,textAlign:'center'}}>
+            <div style={{fontSize:12,color:'#888'}}>Total estimado</div>
+            <div style={{fontSize:22,fontWeight:800,color:'#4ade80'}}>${totalEstimado.toFixed(2)}</div>
+            <div style={{fontSize:11,color:'#555'}}>{itemsIncluidos.length} items</div>
+          </div>
+          <button className="btn btn-green" style={{width:'100%',padding:'14px',fontSize:15,fontWeight:700,marginTop:12}}
+            onClick={guardar} disabled={saving||itemsIncluidos.length===0}>
+            {saving?'Guardando...':'📝 Crear OC — Enviar a Aprobación'}
+          </button>
+        </div>
+      )}
+
+      {!loadingSugerencias&&proveedorId&&items.length===0&&(
+        <div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Sin productos para este proveedor</div></div>
+      )}
+    </div>
+  );
+}
+
+// ── DETALLE ORDEN DE COMPRA ───────────────────────────────────
+function DetalleOC({oc,user,show,onBack}){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [estado,setEstado]=useState(oc.estado);
+
+  useEffect(()=>{
+    db.from('ordenes_compra_items').select('*').eq('orden_id',oc.id)
+      .order('created_at').then(({data})=>{setItems(data||[]);setLoading(false);});
+  },[]);
+
+  const aprobar=async()=>{
+    if(!confirm('¿Aprobar esta orden de compra?')) return;
+    setSaving(true);
+    try{
+      await db.from('ordenes_compra').update({
+        estado:'aprobada',
+        fecha_aprobacion:new Date().toISOString(),
+        aprobada_por:user.id,
+        updated_at:new Date().toISOString()
+      }).eq('id',oc.id);
+      setEstado('aprobada');
+      show('✅ OC aprobada — disponible para recepción');
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
+  const cancelar=async()=>{
+    if(!confirm('¿Cancelar esta orden de compra?')) return;
+    setSaving(true);
+    try{
+      await db.from('ordenes_compra').update({
+        estado:'cancelada',
+        updated_at:new Date().toISOString()
+      }).eq('id',oc.id);
+      setEstado('cancelada');
+      show('❌ OC cancelada');
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
+  const badgeColor=(e)=>({borrador:'#555',pendiente_aprobacion:'#f4a261',aprobada:'#4ade80',parcial_recibida:'#60a5fa',recibida:'#22c55e',cancelada:'#e63946'}[e]||'#555');
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← Volver</button>
+        <div className="sec-title" style={{marginBottom:0}}>OC-{String(oc.numero_oc||'').padStart(4,'0')}</div>
+        <span style={{fontSize:11,fontWeight:600,padding:'3px 8px',borderRadius:6,color:'#fff',background:badgeColor(estado)}}>
+          {estado==='pendiente_aprobacion'?'Pendiente':estado.charAt(0).toUpperCase()+estado.slice(1).replace('_',' ')}
+        </span>
+      </div>
+
+      {/* Info */}
+      <div className="card" style={{padding:'12px 14px',marginBottom:12}}>
+        <div style={{fontWeight:600,fontSize:15}}>{oc.proveedor}</div>
+        <div style={{fontSize:12,color:'#666',marginTop:4}}>
+          Creada: {fmtDate(oc.fecha_emision)}
+          {oc.fecha_entrega_esperada&&' · Entrega: '+fmtDate(oc.fecha_entrega_esperada)}
+        </div>
+        {oc.fecha_aprobacion&&<div style={{fontSize:12,color:'#4ade80',marginTop:2}}>Aprobada: {fmtDate(oc.fecha_aprobacion)}</div>}
+        {oc.notas&&<div style={{fontSize:12,color:'#888',marginTop:4}}>{oc.notas}</div>}
+        <div style={{fontSize:14,fontWeight:700,color:'#4ade80',marginTop:8}}>${Number(oc.total_estimado||0).toFixed(2)} · {oc.total_items} items</div>
+      </div>
+
+      {/* Items */}
+      <div className="sec-title">PRODUCTOS</div>
+      {loading&&<div className="spin" style={{width:24,height:24,margin:'12px auto'}}/>}
+      {items.map(it=>(
+        <div key={it.id} style={{padding:'8px 0',borderBottom:'1px solid #1a1a1a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:500}}>{it.descripcion}</div>
+            <div style={{fontSize:11,color:'#555'}}>
+              {it.unidad}{it.precio_unitario_estimado?' · $'+Number(it.precio_unitario_estimado).toFixed(2):''}
+              {it.stock_actual_al_crear!=null?' · Stock era: '+it.stock_actual_al_crear:''}
+            </div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontWeight:600,fontSize:14}}>{it.cantidad_solicitada}</div>
+            {it.cantidad_recibida>0&&<div style={{fontSize:11,color:'#4ade80'}}>Recibido: {it.cantidad_recibida}</div>}
+          </div>
+        </div>
+      ))}
+
+      {/* Acciones */}
+      {estado==='pendiente_aprobacion'&&(user.rol==='admin'||user.rol==='bodeguero')&&(
+        <div style={{display:'flex',gap:8,marginTop:16}}>
+          <button className="btn btn-green" style={{flex:1,padding:'12px',fontSize:14}} onClick={aprobar} disabled={saving}>
+            ✅ Aprobar OC
+          </button>
+          <button className="btn btn-danger" style={{flex:1,padding:'12px',fontSize:14}} onClick={cancelar} disabled={saving}>
+            ❌ Cancelar
+          </button>
+        </div>
+      )}
+      {estado==='aprobada'&&(
+        <div style={{marginTop:16,padding:'12px',background:'#1a2a1a',border:'1px solid #2a4a2a',borderRadius:10,textAlign:'center'}}>
+          <div style={{fontSize:13,color:'#4ade80',fontWeight:600}}>✅ OC Aprobada — Lista para recepción</div>
+          <div style={{fontSize:11,color:'#555',marginTop:4}}>Al crear una nueva recepción con este proveedor, los items se precargarán</div>
+        </div>
+      )}
+      {estado==='recibida'&&oc.recepcion_id&&(
+        <div style={{marginTop:16,padding:'12px',background:'#1a2a1a',border:'1px solid #2a4a2a',borderRadius:10,textAlign:'center'}}>
+          <div style={{fontSize:13,color:'#22c55e',fontWeight:600}}>📦 Recepción completada</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── HISTORIAL DE RECEPCIONES ──────────────────────────────────
+function HistorialTab({user,show}){
+  const [recs,setRecs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [expandedId,setExpandedId]=useState(null);
+  const [items,setItems]=useState([]);
+  const [loadingItems,setLoadingItems]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [cmId,setCmId]=useState(null);
+  const [editRec,setEditRec]=useState(null);
+  // Cruces pendientes
+  const [pendientes,setPendientes]=useState([]);
+  const [showPendientes,setShowPendientes]=useState(false);
+  const [loadingPend,setLoadingPend]=useState(false);
+
+  const cargar=()=>{
+    db.from('recepciones').select('*')
+      .order('created_at',{ascending:false}).limit(30)
+      .then(({data})=>{setRecs(data||[]);setLoading(false);});
+    // Cargar count de pendientes
+    db.from('compras_dte').select('id',{count:'exact',head:true})
+      .eq('revision_manual',true).eq('cruzado',false)
+      .then(({count})=>setPendientes(prev=>count>0?prev:[]));
+  };
+  const cargarPendientes=async()=>{
+    setLoadingPend(true);
+    const {data}=await db.from('compras_dte').select('*,recepcion_candidata:recepciones!compras_dte_recepcion_candidata_id_fkey(*)')
+      .eq('revision_manual',true).eq('cruzado',false)
+      .order('fecha_emision',{ascending:false});
+    setPendientes(data||[]);
+    setLoadingPend(false);
+  };
+  const aprobarCruce=async(dte)=>{
+    setSaving(true);
+    try{
+      await db.from('compras_dte').update({
+        cruzado:true,
+        recepcion_id:dte.recepcion_candidata_id,
+        revision_manual:false,
+        notas_revision:'Aprobado manualmente',
+        updated_at:new Date().toISOString()
+      }).eq('id',dte.id);
+      show('✅ Cruce aprobado');
+      cargarPendientes();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+  const rechazarCruce=async(dte)=>{
+    setSaving(true);
+    try{
+      await db.from('compras_dte').update({
+        revision_manual:false,
+        recepcion_candidata_id:null,
+        notas_revision:'Rechazado — no son el mismo DTE',
+        updated_at:new Date().toISOString()
+      }).eq('id',dte.id);
+      show('❌ Cruce rechazado');
+      cargarPendientes();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
+  useEffect(()=>{
+    cargar();
+    db.from('sucursales').select('id').eq('store_code','CM001').maybeSingle().then(({data})=>{if(data)setCmId(data.id);});
+  },[]);
+
+  const horasDesde=(d)=>(Date.now()-new Date(d).getTime())/3600000;
+  const esEditable=(r)=>horasDesde(r.created_at)<72;
+
+  const toggleExpand=async(recId)=>{
+    if(expandedId===recId){setExpandedId(null);return;}
+    setExpandedId(recId);
+    setLoadingItems(true);
+    const {data}=await db.from('recepcion_items').select('*').eq('recepcion_id',recId);
+    setItems((data||[]).map(it=>({...it,qty_edit:String(it.cantidad_recibida)})));
+    setLoadingItems(false);
+  };
+
+  const eliminarRecepcion=async(rec)=>{
+    if(!confirm('¿Eliminar esta recepción por completo? Se revertirá el inventario.')){return;}
+    setSaving(true);
+    try{
+      // 1. Obtener items para revertir inventario
+      const {data:recItems}=await db.from('recepcion_items').select('*').eq('recepcion_id',rec.id);
+      // 2. Revertir inventario
+      for(const it of (recItems||[])){
+        if(!it.producto_id||!cmId) continue;
+        const {data:inv}=await db.from('inventario').select('id,stock_actual')
+          .eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
+        if(inv){
+          await db.from('inventario').update({
+            stock_actual:Math.max(0,parseFloat(inv.stock_actual)-parseFloat(it.cantidad_recibida)),
+            ultima_actualizacion:new Date().toISOString()
+          }).eq('id',inv.id);
+        }
+      }
+      // 3. Borrar items
+      await db.from('recepcion_items').delete().eq('recepcion_id',rec.id);
+      // 4. Borrar recepción
+      await db.from('recepciones').delete().eq('id',rec.id);
+      show('🗑️ Recepción eliminada e inventario revertido');
+      setExpandedId(null);
+      cargar();
+    }catch(e){show('❌ '+e.message);}
+    setSaving(false);
+  };
+
+  // Si estamos editando, mostrar EditarRecepcion
+  if(editRec) return <EditarRecepcion rec={editRec} cmId={cmId} show={show} onBack={()=>{setEditRec(null);setExpandedId(null);cargar();}}/>;
+
+  // Cargar count de pendientes al inicio
+  const [pendCount,setPendCount]=useState(0);
+  useEffect(()=>{
+    db.from('compras_dte').select('id',{count:'exact',head:true})
+      .eq('revision_manual',true).eq('cruzado',false)
+      .then(({count})=>setPendCount(count||0));
+  },[pendientes]);
+
+  return(
+    <div style={{padding:'16px 16px 100px'}}>
+      {/* Banner de cruces pendientes */}
+      {pendCount>0&&(
+        <div style={{background:'linear-gradient(135deg,#2a1800,#3d2200)',border:'1px solid #f4a261',borderRadius:12,padding:'12px 14px',marginBottom:14,cursor:'pointer'}}
+          onClick={()=>{setShowPendientes(!showPendientes);if(!showPendientes&&pendientes.length===0)cargarPendientes();}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#f4a261'}}>⚠️ {pendCount} cruce{pendCount>1?'s':''} pendiente{pendCount>1?'s':''}</div>
+              <div style={{fontSize:11,color:'#b8860b',marginTop:2}}>DTE de correo con match parcial — requiere tu revisión</div>
+            </div>
+            <span style={{color:'#f4a261',fontSize:16}}>{showPendientes?'▲':'▼'}</span>
+          </div>
+        </div>
+      )}
+      {/* Lista de cruces pendientes */}
+      {showPendientes&&(
+        <div style={{marginBottom:16}}>
+          {loadingPend&&<div className="spin" style={{width:24,height:24,margin:'12px auto'}}/>}
+          {!loadingPend&&pendientes.map(dte=>{
+            const cand=dte.recepcion_candidata;
+            return(
+              <div key={dte.id} className="card" style={{padding:'12px 14px',borderLeft:'3px solid #f4a261',marginBottom:8}}>
+                <div style={{fontSize:11,color:'#888',marginBottom:4}}>DTE del correo</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600}}>{dte.proveedor_nombre||'Proveedor'}</div>
+                    <div style={{fontSize:11,color:'#666'}}>{fmtDate(dte.fecha_emision)} · DTE ****{dte.dte_codigo}</div>
+                    {dte.monto_total&&<div style={{fontSize:12,color:'#4ade80',marginTop:2}}>${Number(dte.monto_total).toFixed(2)}</div>}
+                  </div>
+                </div>
+                {cand&&(
+                  <div style={{background:'#1a1a1a',borderRadius:8,padding:'8px 10px',marginTop:8}}>
+                    <div style={{fontSize:11,color:'#888',marginBottom:2}}>Recepción candidata</div>
+                    <div style={{fontSize:13,fontWeight:500}}>{cand.proveedor||'—'}</div>
+                    <div style={{fontSize:11,color:'#666'}}>{fmtDate(cand.fecha)}{cand.dte_codigo?' · DTE ****'+cand.dte_codigo:' · Sin DTE'}</div>
+                  </div>
+                )}
+                <div style={{display:'flex',gap:8,marginTop:10}}>
+                  <button className="btn btn-green" style={{flex:1,fontSize:13,padding:'10px'}} onClick={()=>aprobarCruce(dte)} disabled={saving}>
+                    ✅ Sí, es el mismo
+                  </button>
+                  <button className="btn" style={{flex:1,fontSize:13,padding:'10px',background:'#333',border:'1px solid #555'}} onClick={()=>rechazarCruce(dte)} disabled={saving}>
+                    ❌ No coincide
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {!loadingPend&&pendientes.length===0&&<div style={{textAlign:'center',color:'#555',fontSize:13,padding:8}}>No hay cruces pendientes</div>}
+        </div>
+      )}
+
+      <div className="sec-title">Últimas recepciones</div>
+      {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
+      {!loading&&recs.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Sin historial aún</div></div>}
+      {recs.map(r=>{
+        const editable=esEditable(r);
+        const horas=Math.round(72-horasDesde(r.created_at));
+        return(
+        <div key={r.id} className="card" style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>toggleExpand(r.id)}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:14}}>{r.proveedor||'Sin nombre'}</div>
+              <div style={{fontSize:12,color:'#666',marginTop:2}}>{fmtDate(r.fecha)}</div>
+              {editable&&<div style={{fontSize:11,color:'#4ade80',marginTop:2}}>✏️ Editable — {horas}h restantes</div>}
+              {!editable&&<div style={{fontSize:11,color:'#555',marginTop:2}}>🔒 Bloqueada</div>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <Badge estado={r.estado}/>
+              <span style={{color:'#555',fontSize:16}}>{expandedId===r.id?'▲':'▼'}</span>
+            </div>
+          </div>
+          {r.foto_dte_url&&<div style={{marginTop:8}}><img src={r.foto_dte_url} style={{width:60,height:45,objectFit:'cover',borderRadius:6}} alt="DTE"/></div>}
+          {r.notas&&<div style={{fontSize:12,color:'#888',marginTop:4}}>{r.notas}</div>}
+
+          {expandedId===r.id&&(
+            <div style={{marginTop:12,borderTop:'1px solid #2a2a2a',paddingTop:12}} onClick={e=>e.stopPropagation()}>
+              {r.dte_codigo&&<div style={{fontSize:12,color:'#f4a261',marginBottom:8}}>🔖 DTE: ****{r.dte_codigo}</div>}
+              {loadingItems&&<div className="spin" style={{width:20,height:20,margin:'8px auto'}}/>}
+              {!loadingItems&&items.map((it,idx)=>(
+                <div key={it.id} style={{padding:'8px 0',borderBottom:'1px solid #1a1a1a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:500}}>{it.descripcion||'Producto'}</div>
+                    <div style={{fontSize:11,color:'#555'}}>{it.unidad}{it.precio_unitario?' · $'+Number(it.precio_unitario).toFixed(2):''}</div>
+                  </div>
+                  <div style={{fontWeight:600,fontSize:14}}>{it.cantidad_recibida}</div>
+                </div>
+              ))}
+              {editable&&!loadingItems&&(
+                <div style={{display:'flex',gap:8,marginTop:10}}>
+                  <button className="btn btn-green" style={{flex:1,fontSize:13,padding:'10px'}} onClick={()=>setEditRec(r)} disabled={saving}>
+                    ✏️ Editar completa
+                  </button>
+                  <button className="btn btn-danger" style={{flex:1,fontSize:13,padding:'10px'}} onClick={()=>eliminarRecepcion(r)} disabled={saving}>
+                    {saving?'Eliminando...':'🗑️ Eliminar'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );})}
+    </div>
+  );
+}
+
+// ── HOME / APP ────────────────────────────────────────────────
+function App(){
+  const [user,setUser]=useState(null);
+  const [tab,setTab]=useState('recepcion');
+  const {show,Toast}=useToast();
+
+  if(!user) return <Login onLogin={u=>setUser(u)}/>;
+
+  return(
+    <div style={{minHeight:'100vh'}}>
+      <Toast/>
+      {/* Header */}
+      <div style={{padding:'16px 16px 12px',background:'#111',borderBottom:'1px solid #1e1e1e',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontWeight:800,fontSize:17}}>🏭 Almacén FD</div>
+          <div style={{fontSize:12,color:'#555',marginTop:1}}>{user.nombre} {user.apellido} · {user.rol}</div>
+        </div>
+        <button onClick={()=>setUser(null)} style={{background:'none',border:'1px solid #2a2a2a',color:'#666',padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer'}}>Salir</button>
+      </div>
+      {/* Tabs */}
+      <div className="tab-bar" style={{overflowX:'auto',flexWrap:'nowrap'}}>
+        <div className={`tab ${tab==='recepcion'?'active':''}`} onClick={()=>setTab('recepcion')}>📥 Recepción</div>
+        <div className={`tab ${tab==='compras'?'active':''}`} onClick={()=>setTab('compras')}>📝 Compras</div>
+        <div className={`tab ${tab==='despacho'?'active':''}`} onClick={()=>setTab('despacho')}>🚚 Despacho</div>
+        <div className={`tab ${tab==='inventario'?'active':''}`} onClick={()=>setTab('inventario')}>📦 Inventario</div>
+        <div className={`tab ${tab==='historial'?'active':''}`} onClick={()=>setTab('historial')}>📋 Historial</div>
+      </div>
+      {/* Content */}
+      {tab==='recepcion'&&<RecepcionTab user={user} show={show}/>}
+      {tab==='compras'&&<ComprasTab user={user} show={show}/>}
+      {tab==='despacho'&&<DespachoTab user={user} show={show}/>}
+      {tab==='inventario'&&<InventarioTab user={user} show={show}/>}
+      {tab==='historial'&&<HistorialTab user={user} show={show}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

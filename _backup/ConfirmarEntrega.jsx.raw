@@ -1,0 +1,274 @@
+function ConfirmarEntrega({user,onBack}){
+  const {show,Toast}=useToast();
+  const [despachos,setDespachos]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selectedDespacho,setSelectedDespacho]=useState(null);
+  const [items,setItems]=useState([]);
+  const [foto,setFoto]=useState(null);
+  const [fotoPreview,setFotoPreview]=useState(null);
+  const [notas,setNotas]=useState('');
+  const [itemsNotas,setItemsNotas]=useState({});
+  const [actualizando,setActualizando]=useState(false);
+  const fotoRef=useRef();
+
+  const isMotorist=user.rol==='despachador'||user.rol==='motorista';
+  const isAdmin=user.rol==='admin';
+
+  useEffect(()=>{
+    if(!isMotorist&&!isAdmin){show('⚠️ Acceso no permitido');onBack();return;}
+    loadDespachos();
+  },[]);
+
+  const loadDespachos=async()=>{
+    setLoading(true);
+    try{
+      const query=db.from('despachos_sucursal').select(`
+        id,sucursal_id,pedido_id,fecha_despacho,estado,preparado_por,
+        recibido_por,fecha_recepcion,notas_despacho,notas_recepcion,
+        costo_total,hora_salida,hora_recepcion,foto_recepcion_url,
+        motorista_id,motorista_nombre,created_at,updated_at,
+        sucursales(id,nombre,store_code)
+      `);
+      query.in('estado',['despachado','en_ruta']);
+      if(!isAdmin&&user.id){
+        query.eq('motorista_id',user.id);
+      }
+      query.order('fecha_despacho',{ascending:true});
+      const {data,error}=await query;
+      if(error)throw error;
+      setDespachos(data||[]);
+    }catch(e){
+      show('❌ Error al cargar entregas: '+e.message);
+    }finally{
+      setLoading(false);
+    }
+  };
+
+  const iniciarRuta=async()=>{
+    if(!despachos.length){show('⚠️ No hay entregas');return;}
+    try{
+      setActualizando(true);
+      const {error}=await db.from('despachos_sucursal')
+        .update({estado:'en_ruta',hora_salida:new Date().toISOString()})
+        .eq('motorista_id',user.id)
+        .eq('estado','despachado');
+      if(error)throw error;
+      show('✅ Ruta iniciada');
+      loadDespachos();
+    }catch(e){
+      show('❌ Error: '+e.message);
+    }finally{
+      setActualizando(false);
+    }
+  };
+
+  const selectDespacho=async(desp)=>{
+    setSelectedDespacho(desp);
+    setFoto(null);
+    setFotoPreview(null);
+    setNotas(desp.notas_recepcion||'');
+    setItemsNotas({});
+    try{
+      const {data,error}=await db.from('despacho_items')
+        .select('*')
+        .eq('despacho_id',desp.id)
+        .order('id');
+      if(error)throw error;
+      setItems(data||[]);
+    }catch(e){
+      show('❌ Error al cargar items: '+e.message);
+    }
+  };
+
+  const onFotoChange=(e)=>{
+    const f=e.target.files?.[0];
+    if(!f)return;
+    setFoto(f);
+    const reader=new FileReader();
+    reader.onload=(ev)=>setFotoPreview(ev.target.result);
+    reader.readAsDataURL(f);
+  };
+
+  const updateItemQuantity=(idx,qty)=>{
+    const updated=[...items];
+    updated[idx].cantidad_recibida=Math.max(0,qty);
+    setItems(updated);
+  };
+
+  const updateItemNota=(idx,txt)=>{
+    setItemsNotas({...itemsNotas,[idx]:txt});
+  };
+
+  const confirmarEntrega=async()=>{
+    if(!selectedDespacho||!foto){show('⚠️ Falta foto de recepción');return;}
+    try{
+      setActualizando(true);
+      let fotoUrl='';
+      const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
+      const path=`despachos/${selectedDespacho.id}/${Date.now()}_${Math.random().toString(36).slice(2,7)}.${ext}`;
+      const {error:uploadErr}=await db.storage.from('despachos-fotos').upload(path,foto,{cacheControl:'3600',upsert:false});
+      if(uploadErr)throw new Error(uploadErr.message);
+      const {data:pubData}=db.storage.from('despachos-fotos').getPublicUrl(path);
+      fotoUrl=pubData.publicUrl;
+
+      const {error:despErr}=await db.from('despachos_sucursal')
+        .update({
+          estado:'recibido',
+          hora_recepcion:new Date().toISOString(),
+          foto_recepcion_url:fotoUrl,
+          notas_recepcion:notas,
+          recibido_por:user.id
+        })
+        .eq('id',selectedDespacho.id);
+      if(despErr)throw despErr;
+
+      for(let i=0;i<items.length;i++){
+        const item=items[i];
+        const {error:itemErr}=await db.from('despacho_items')
+          .update({
+            cantidad_recibida:item.cantidad_recibida,
+            notas:itemsNotas[i]||''
+          })
+          .eq('id',item.id);
+        if(itemErr)throw itemErr;
+      }
+
+      for(let i=0;i<items.length;i++){
+        const item=items[i];
+        if(item.producto_id){
+          const {data:invData,error:invFetchErr}=await db.from('inventario')
+            .select('stock_actual')
+            .eq('sucursal_id',selectedDespacho.sucursal_id)
+            .eq('producto_id',item.producto_id)
+            .maybeSingle();
+          if(invFetchErr)throw invFetchErr;
+          const currentStock=invData?.stock_actual||0;
+          const {error:invErr}=await db.from('inventario')
+            .upsert({
+              sucursal_id:selectedDespacho.sucursal_id,
+              producto_id:item.producto_id,
+              stock_actual:currentStock+item.cantidad_recibida
+            })
+            .eq('sucursal_id',selectedDespacho.sucursal_id)
+            .eq('producto_id',item.producto_id);
+          if(invErr)throw invErr;
+        }
+      }
+
+      show('✅ Entrega confirmada');
+      setSelectedDespacho(null);
+      setItems([]);
+      loadDespachos();
+    }catch(e){
+      show('❌ Error: '+e.message);
+    }finally{
+      setActualizando(false);
+    }
+  };
+
+  if(loading)return <div style={{minHeight:'100vh',padding:'20px',display:'flex',alignItems:'center',justifyContent:'center'}}><div className="spin"/></div>;
+
+  if(!selectedDespacho)return(
+    <div style={{minHeight:'100vh',padding:'0 16px 40px'}}>
+      <Toast/>
+      <div style={{padding:'20px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{fontWeight:800,fontSize:18}}>🚚 Mis Entregas</div>
+        <button onClick={onBack} style={{background:'none',border:'none',fontSize:18,cursor:'pointer'}}>✕</button>
+      </div>
+
+      {despachos.length===0?(
+        <div style={{textAlign:'center',padding:'40px 20px',color:'#666'}}>
+          <div style={{fontSize:48,marginBottom:10}}>📦</div>
+          <div style={{fontSize:15,fontWeight:600}}>No hay entregas pendientes</div>
+        </div>
+      ):(
+        <>
+          {despachos.some(d=>d.estado==='despachado')&&(
+            <button onClick={iniciarRuta} disabled={actualizando} className="btn btn-red" style={{marginBottom:16,fontSize:15,padding:14,width:'100%'}}>
+              {actualizando?'...':'🚗 Iniciar Ruta'}
+            </button>
+          )}
+          {despachos.map(d=>(
+            <div key={d.id} className="card" style={{marginBottom:12,padding:'14px 16px',cursor:'pointer'}} onClick={()=>selectDespacho(d)}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{fontWeight:700,fontSize:14}}>{d.sucursales?.nombre||'Sucursal'}</div>
+                <div style={{fontSize:11,background:d.estado==='en_ruta'?'#1e3a8a':'#1a3a2a',color:d.estado==='en_ruta'?'#60a5fa':'#4ade80',padding:'3px 8px',borderRadius:6,fontWeight:600}}>
+                  {d.estado==='en_ruta'?'En ruta':'Preparado'}
+                </div>
+              </div>
+              <div style={{fontSize:12,color:'#888',marginBottom:8}}>{d.fecha_despacho}</div>
+              <div style={{fontSize:13,color:'#aaa'}}>📦 {(d.despacho_items||[]).length} artículos</div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+
+  const sucName=selectedDespacho.sucursales?.nombre||'Sucursal';
+
+  return(
+    <div style={{minHeight:'100vh',padding:'0 16px 40px'}}>
+      <Toast/>
+      <div style={{padding:'20px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontWeight:800,fontSize:16}}>Entrega — {sucName}</div>
+          <div style={{fontSize:12,color:'#666',marginTop:4}}>{selectedDespacho.fecha_despacho}</div>
+        </div>
+        <button onClick={()=>setSelectedDespacho(null)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer'}}>✕</button>
+      </div>
+
+      <div style={{marginTop:20,marginBottom:20}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#888',marginBottom:10}}>📦 ITEMS</div>
+        {items.map((it,idx)=>{
+          const isDiff=it.cantidad_recibida!==it.cantidad_despachada;
+          return(
+            <div key={it.id} style={{marginBottom:12,padding:'12px 14px',background:isDiff?'#4a3a1a':'#1a1a1a',borderRadius:10,border:`1px solid ${isDiff?'#713f12':'#2a2a2a'}`}}>
+              <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>{it.descripcion}</div>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                <div style={{flex:1,fontSize:12,color:'#888'}}>
+                  <div>Despachado: {it.cantidad_despachada} {it.unidad_medida}</div>
+                </div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <button onClick={()=>updateItemQuantity(idx,Math.max(0,(it.cantidad_recibida||0)-1))} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>−</button>
+                <input type="number" value={it.cantidad_recibida||0} onChange={(e)=>updateItemQuantity(idx,parseFloat(e.target.value)||0)} style={{flex:1,padding:'8px 10px',background:'#141414',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',textAlign:'center',fontSize:14}}/>
+                <button onClick={()=>updateItemQuantity(idx,(it.cantidad_recibida||0)+1)} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>+</button>
+              </div>
+              {isDiff&&<div style={{fontSize:11,color:'#f97316',marginTop:6}}>Diferencia: {(it.cantidad_recibida||0)-it.cantidad_despachada} {it.unidad_medida}</div>}
+              <input type="text" placeholder="Notas para este ítem..." value={itemsNotas[idx]||''} onChange={(e)=>updateItemNota(idx,e.target.value)} style={{width:'100%',marginTop:8,padding:'8px 10px',background:'#0a0a0a',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',fontSize:12}}/>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{marginBottom:20}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#888',marginBottom:10}}>📷 FOTO RECEPCIÓN</div>
+        {!fotoPreview?(
+          <label style={{display:'block',padding:'30px 20px',background:'#1a1a1a',border:'2px dashed #2a2a2a',borderRadius:10,textAlign:'center',cursor:'pointer'}}>
+            <div style={{fontSize:28,marginBottom:8}}>📸</div>
+            <div style={{fontSize:13,color:'#aaa',fontWeight:600}}>Tomar foto del documento firmado</div>
+            <input ref={fotoRef} type="file" accept="image/*" capture="environment" onChange={onFotoChange} style={{display:'none'}}/>
+          </label>
+        ):(
+          <div style={{position:'relative',borderRadius:10,overflow:'hidden',background:'#0a0a0a'}}>
+            <img src={fotoPreview} style={{width:'100%',display:'block',maxHeight:'300px',objectFit:'cover'}}/>
+            <button onClick={()=>{setFoto(null);setFotoPreview(null)}} style={{position:'absolute',top:8,right:8,background:'#e63946',border:'none',borderRadius:6,padding:'6px 10px',color:'#fff',cursor:'pointer',fontSize:12,fontWeight:600}}>Cambiar</button>
+          </div>
+        )}
+      </div>
+
+      <div style={{marginBottom:20}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#888',marginBottom:8}}>📝 NOTAS GENERALES</div>
+        <textarea value={notas} onChange={(e)=>setNotas(e.target.value)} placeholder="Observaciones sobre la entrega..." style={{width:'100%',padding:'12px 14px',background:'#1a1a1a',border:'1px solid #2a2a2a',borderRadius:10,color:'#fff',fontSize:13,minHeight:'80px',fontFamily:'inherit',resize:'vertical'}}/>
+      </div>
+
+      <button onClick={confirmarEntrega} disabled={actualizando||!foto} className="btn btn-red" style={{width:'100%',fontSize:15,padding:16,marginBottom:12}}>
+        {actualizando?'Confirmando...':'✅ Confirmar Entrega'}
+      </button>
+      <button onClick={()=>setSelectedDespacho(null)} className="btn btn-ghost" style={{width:'100%',fontSize:15,padding:14}}>
+        Cancelar
+      </button>
+    </div>
+  );
+}
