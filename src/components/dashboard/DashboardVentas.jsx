@@ -89,6 +89,13 @@ export default function DashboardVentas({user,onBack}){
   },[isAdmin,semanal,tendencia]);
   const maxSemanal=useMemo(()=>Math.max(...semanalData.map(x=>n(x.venta_promedio)),1),[semanalData]);
 
+  // Filtrar solo la fecha más reciente para tab "Hoy"
+  const perfHoy=useMemo(()=>{
+    if(!perf.length) return [];
+    const maxFecha=perf.reduce((mx,r)=>r.fecha>mx?r.fecha:mx,perf[0].fecha);
+    return perf.filter(r=>r.fecha===maxFecha);
+  },[perf]);
+
   return(
     <div style={{minHeight:'100vh',padding:'0 0 40px'}}>
       <Toast/>
@@ -118,9 +125,9 @@ export default function DashboardVentas({user,onBack}){
       {/* TAB: HOY — Performance vs Meta */}
       {!loading&&tab==='hoy'&&(
         <div style={{padding:'16px'}}>
-          <div style={{fontSize:12,color:'#555',marginBottom:12}}>Últimos días con datos · vs metas configuradas</div>
-          {perf.length===0&&<div style={{textAlign:'center',color:'#555',padding:20}}>Sin datos. Verifica que existan metas en metas_ventas.</div>}
-          {perf.map((r,i)=>(
+          <div style={{fontSize:12,color:'#555',marginBottom:12}}>{perfHoy.length>0?`${perfHoy[0].fecha} · vs metas configuradas`:'Sin datos para hoy'}</div>
+          {perfHoy.length===0&&<div style={{textAlign:'center',color:'#555',padding:20}}>Sin datos. Verifica que existan metas en metas_ventas.</div>}
+          {perfHoy.map((r,i)=>(
             <div key={i} className="card" style={{marginBottom:10,borderColor:estadoColor[r.estado]||'#222',background:estadoBg[r.estado]||'#161616'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
                 <span style={{fontWeight:700,fontSize:14}}>{r.sucursal}</span>

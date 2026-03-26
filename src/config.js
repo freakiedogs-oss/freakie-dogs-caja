@@ -41,9 +41,9 @@ export const NAV_SECTIONS = [
   {
     label: 'Caja',
     items: [
-      { key: 'cierre', label: 'Cierre de Caja', icon: '💰', roles: ['cajero', 'gerente', 'admin'] },
-      { key: 'reporte', label: 'Reporte de Turno', icon: '📝', roles: ['cajero', 'cocina', 'gerente', 'admin'] },
-      { key: 'deposito', label: 'Depósitos', icon: '🏦', roles: ['cajero', 'gerente', 'admin'] },
+      { key: 'cierre', label: 'Cierre de Caja', icon: '💰', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
+      { key: 'reporte', label: 'Reporte de Turno', icon: '📝', roles: ['cajero', 'cajera', 'cocina', 'gerente', 'admin'] },
+      { key: 'deposito', label: 'Depósitos', icon: '🏦', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
     ],
   },
   {
@@ -73,7 +73,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Admin',
     items: [
-      { key: 'admin', label: 'Panel Admin', icon: '⚙️', roles: ['admin'] },
+      { key: 'admin', label: 'Dashboard de Cierres', icon: '⚙️', roles: ['admin'] },
       { key: 'incidentes', label: 'Incidentes', icon: '🚨', roles: ['gerente', 'admin'] },
     ],
   },
