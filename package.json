@@ -1,16 +1,22 @@
 {
-  "name": "freakie-dogs-caja",
-  "version": "1.0.0",
-  "description": "Freakie Dogs ERP - Automatizacion de caja y DTEs",
+  "name": "freakie-dogs-erp",
+  "version": "2.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "quanto-download": "node scripts/quanto-download.js"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "jszip": "^3.10.1",
-    "playwright": "^1.43.1"
+    "@supabase/supabase-js": "^2.49.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
   },
-  "engines": {
-    "node": ">=20"
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.0"
   }
 }

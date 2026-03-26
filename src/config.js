@@ -1,0 +1,77 @@
+export const STORES = {
+  M001: 'Cafetalón',
+  S001: 'Soyapango',
+  S002: 'Usulután',
+  S003: 'Lourdes',
+  S004: 'Venecia',
+  CM001: 'Casa Matriz'
+}
+
+export const BUCKET_CIERRES = 'cierres-fotos'
+export const BUCKET_DESPACHOS = 'despachos-fotos'
+
+export const today = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('T')[0]
+
+export const fmtDate = (d) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('es-SV', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+
+export const n = (v) => parseFloat(v) || 0
+
+// Role-based navigation config
+export const NAV_SECTIONS = [
+  {
+    label: 'Principal',
+    items: [
+      { key: 'home', label: 'Inicio', icon: '🏠', roles: ['*'] },
+    ],
+  },
+  {
+    label: 'Caja',
+    items: [
+      { key: 'cierre', label: 'Cierre de Caja', icon: '💰', roles: ['cajero', 'gerente', 'admin'] },
+      { key: 'reporte', label: 'Reporte de Turno', icon: '📝', roles: ['cajero', 'cocina', 'gerente', 'admin'] },
+      { key: 'deposito', label: 'Depósitos', icon: '🏦', roles: ['cajero', 'gerente', 'admin'] },
+    ],
+  },
+  {
+    label: 'Dashboards',
+    items: [
+      { key: 'dashboard', label: 'Ventas', icon: '📊', roles: ['gerente', 'admin', 'ejecutivo'] },
+      { key: 'ejecutivo', label: 'Ejecutivo', icon: '👔', roles: ['ejecutivo', 'admin'] },
+    ],
+  },
+  {
+    label: 'Almacén',
+    items: [
+      { key: 'recepcion', label: 'Recepción', icon: '📥', roles: ['bodeguero', 'admin'] },
+      { key: 'despacho', label: 'Despacho', icon: '🚚', roles: ['bodeguero', 'admin'] },
+      { key: 'inventario', label: 'Inventario', icon: '📦', roles: ['bodeguero', 'admin'] },
+      { key: 'historial', label: 'Historial', icon: '📋', roles: ['bodeguero', 'admin'] },
+      { key: 'compras', label: 'Órdenes de Compra', icon: '🛒', roles: ['compras', 'admin'] },
+    ],
+  },
+  {
+    label: 'Supply Chain',
+    items: [
+      { key: 'conteo', label: 'Conteo Nocturno', icon: '🌙', roles: ['cocina', 'gerente', 'admin'] },
+      { key: 'entregas', label: 'Confirmar Entregas', icon: '✅', roles: ['despachador', 'admin'] },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { key: 'admin', label: 'Panel Admin', icon: '⚙️', roles: ['admin'] },
+      { key: 'incidentes', label: 'Incidentes', icon: '🚨', roles: ['gerente', 'admin'] },
+    ],
+  },
+  {
+    label: 'Herramientas',
+    items: [
+      { key: 'quanto-upload', label: 'Importar QUANTO', icon: '📤', roles: ['admin'] },
+    ],
+  },
+]
