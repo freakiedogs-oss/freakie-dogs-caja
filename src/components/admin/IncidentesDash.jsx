@@ -1,9 +1,18 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
-import { STORES, STORES_SHORT, today, n } from '../../config';
+import { STORES, STORES_SHORT, today, n, BUCKET_CIERRES } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
+
+const uploadFoto = async (file, folder) => {
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+  const { error } = await db.storage.from(BUCKET_CIERRES).upload(path, file, { cacheControl: '3600', upsert: false });
+  if (error) throw new Error(error.message);
+  const { data } = db.storage.from(BUCKET_CIERRES).getPublicUrl(path);
+  return data.publicUrl;
+};
 
 
 export default function IncidentesDash({user,onBack,defaultTab}){

@@ -4,7 +4,18 @@ import { STORES, STORES_SHORT, today, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
+const fmtPct = (n) => `${parseFloat(n || 0).toFixed(2)}%`;
 
+function EstadoBadge({estado}){
+  const map={
+    aprobado:{cls:'tag-green',txt:'✓ Aprobado'},
+    enviado:{cls:'tag-yellow',txt:'En revisión'},
+    borrador:{cls:'tag-gray',txt:'Borrador'},
+    requiere_correccion:{cls:'tag-orange',txt:'⚠ Corrección'}
+  };
+  const s=map[estado]||{cls:'tag-gray',txt:estado};
+  return <span className={`tag ${s.cls}`}>{s.txt}</span>;
+}
 
 export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   const {show,Toast}=useToast();
