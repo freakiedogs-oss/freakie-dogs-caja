@@ -4,7 +4,7 @@ body { background: #111; color: #f0f0f0; font-family: -apple-system, BlinkMacSys
 #root { display: flex; min-height: 100vh; }
 
 /* Layout */
-.app-layout { display: flex; flex: 1; min-height: 100vh; }
+.app-layout { display: flex; flex-direction: column; flex: 1; min-height: 100vh; }
 .main-content { flex: 1; max-width: 520px; margin: 0 auto; padding-bottom: 20px; }
 .main-content.with-sidebar { margin: 0; max-width: 100%; }
 
@@ -181,6 +181,6 @@ label { font-size: 13px; color: #888; display: block; margin-bottom: 4px; }
 @media (min-width: 768px) {
   .sidebar { transform: translateX(0); position: fixed; }
   .sidebar-overlay { display: none !important; }
+  .topbar { display: none; }
   .main-content.with-sidebar { margin-left: 280px; }
-  .hamburger { display: none; }
 }
