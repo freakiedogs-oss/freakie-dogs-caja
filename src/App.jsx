@@ -16,6 +16,8 @@ import InventarioTab from './components/almacen/InventarioTab'
 import HistorialTab from './components/almacen/HistorialTab'
 import ComprasTab from './components/almacen/ComprasTab'
 import RecetasView from './components/admin/RecetasView'
+import PlanillaView from './components/admin/PlanillaView'
+import RRHHView from './components/admin/RRHHView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -127,6 +129,10 @@ export default function App() {
         return <IncidentesDash user={user} onBack={() => setScreen('home')} />
       case 'recetas':
         return <RecetasView user={user} />
+      case 'planilla':
+        return <PlanillaView user={user} />
+      case 'rrhh':
+        return <RRHHView user={user} />
 
       default:
         return <HomeScreen user={user} />

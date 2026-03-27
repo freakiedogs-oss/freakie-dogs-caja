@@ -86,6 +86,13 @@ export const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'RRHH / Planilla',
+    items: [
+      { key: 'rrhh', label: 'Recursos Humanos', icon: '👥', roles: ['ejecutivo', 'rrhh', 'admin'] },
+      { key: 'planilla', label: 'Nómina / Planilla', icon: '💵', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
+    ],
+  },
+  {
     label: 'Herramientas',
     items: [
       { key: 'quanto-upload', label: 'Importar QUANTO', icon: '📤', roles: ['admin'] },
