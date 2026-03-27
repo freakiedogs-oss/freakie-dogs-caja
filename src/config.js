@@ -80,6 +80,12 @@ export const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'Producción',
+    items: [
+      { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin'] },
+    ],
+  },
+  {
     label: 'Herramientas',
     items: [
       { key: 'quanto-upload', label: 'Importar QUANTO', icon: '📤', roles: ['admin'] },
