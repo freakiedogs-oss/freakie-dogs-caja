@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
-import { STORES, STORES_SHORT, today, n, BUCKET_CIERRES } from '../../config';
+import { STORES, STORES_SHORT, today, yesterday, shiftDate, n, BUCKET_CIERRES } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
@@ -120,12 +120,18 @@ export default function IncidentesDash({user,onBack,defaultTab}){
       {tab==='reportes'&&<>
       {/* Filtros fecha */}
       <div className="card">
-        <div style={{display:'flex',gap:8,marginBottom:10}}>
-          {[['Hoy',today(),today()],['7 días',new Date(Date.now()-6*864e5).toISOString().split('T')[0],today()],
+        <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
+          {[['Hoy',today(),today()],['Ayer',yesterday(),yesterday()],['7 días',shiftDate(today(),-6),today()],
             ['Este mes',today().slice(0,7)+'-01',today()]].map(([l,d,h])=>(
             <div key={l} onClick={()=>{setFechaDesde(d);setFechaHasta(h);}}
               className={`chip${fechaDesde===d&&fechaHasta===h?' on':''}`}>{l}</div>
           ))}
+          <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+            <button onClick={()=>{setFechaDesde(shiftDate(fechaDesde,-1));setFechaHasta(shiftDate(fechaHasta,-1));}}
+              style={{background:'#1e1e1e',border:'1px solid #333',color:'#aaa',borderRadius:8,width:36,height:36,fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>◀</button>
+            <button onClick={()=>{const nd=shiftDate(fechaDesde,1);const nh=shiftDate(fechaHasta,1);if(nh<=today()){setFechaDesde(nd);setFechaHasta(nh);}}}
+              style={{background:'#1e1e1e',border:'1px solid #333',color:'#aaa',borderRadius:8,width:36,height:36,fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>▶</button>
+          </div>
         </div>
         <div style={{display:'flex',gap:8}}>
           <div style={{flex:1}}><div style={{fontSize:11,color:'#555',marginBottom:4}}>Desde</div>

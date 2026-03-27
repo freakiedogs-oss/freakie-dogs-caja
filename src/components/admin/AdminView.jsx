@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../supabase';
-import { STORES, STORES_SHORT, today, n } from '../../config';
+import { STORES, STORES_SHORT, today, yesterday, shiftDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
@@ -301,6 +301,22 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
       {/* Rango de fechas */}
       <div className="card">
         <div className="sec-title">Rango de Fechas</div>
+        <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
+          {[
+            {lbl:'Hoy',fn:()=>{setFechaDesde(today());setFechaHasta(today());}},
+            {lbl:'Ayer',fn:()=>{setFechaDesde(yesterday());setFechaHasta(yesterday());}},
+            {lbl:'7 días',fn:()=>{setFechaDesde(shiftDate(today(),-6));setFechaHasta(today());}},
+            {lbl:'Este mes',fn:()=>{setFechaDesde(today().slice(0,7)+'-01');setFechaHasta(today());}},
+          ].map(({lbl,fn})=>(
+            <button key={lbl} onClick={fn} style={{padding:'4px 12px',borderRadius:16,fontSize:12,background:'#1e1e1e',border:'1px solid #333',color:'#aaa',cursor:'pointer'}}>{lbl}</button>
+          ))}
+          <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+            <button onClick={()=>{setFechaDesde(shiftDate(fechaDesde,-1));setFechaHasta(shiftDate(fechaHasta,-1));}}
+              style={{background:'#1e1e1e',border:'1px solid #333',color:'#aaa',borderRadius:8,width:36,height:36,fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>◀</button>
+            <button onClick={()=>{const nd=shiftDate(fechaDesde,1);const nh=shiftDate(fechaHasta,1);if(nh<=today()){setFechaDesde(nd);setFechaHasta(nh);}}}
+              style={{background:'#1e1e1e',border:'1px solid #333',color:'#aaa',borderRadius:8,width:36,height:36,fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>▶</button>
+          </div>
+        </div>
         <div style={{display:'flex',gap:8}}>
           <div style={{flex:1}}>
             <div style={{fontSize:12,color:'#555',marginBottom:4}}>Desde</div>
@@ -310,16 +326,6 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
             <div style={{fontSize:12,color:'#555',marginBottom:4}}>Hasta</div>
             <input type="date" className="inp" value={fechaHasta} onChange={e=>setFechaHasta(e.target.value)} style={{fontSize:14,padding:'10px 12px'}}/>
           </div>
-        </div>
-        {/* Accesos rápidos */}
-        <div style={{display:'flex',gap:6,marginTop:10,flexWrap:'wrap'}}>
-          {[
-            {lbl:'Hoy',fn:()=>{setFechaDesde(today());setFechaHasta(today());}},
-            {lbl:'7 días',fn:()=>{const d=new Date(Date.now()-6*3600*1000);d.setUTCDate(d.getUTCDate()-6);setFechaDesde(d.toISOString().split('T')[0]);setFechaHasta(today());}},
-            {lbl:'Este mes',fn:()=>{const d=new Date(Date.now()-6*3600*1000);setFechaDesde(`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-01`);setFechaHasta(today());}},
-          ].map(({lbl,fn})=>(
-            <button key={lbl} onClick={fn} style={{padding:'4px 12px',borderRadius:16,fontSize:12,background:'#1e1e1e',border:'1px solid #333',color:'#aaa',cursor:'pointer'}}>{lbl}</button>
-          ))}
         </div>
       </div>
 

@@ -20,6 +20,8 @@ export const BUCKET_CIERRES = 'cierres-fotos'
 export const BUCKET_DESPACHOS = 'despachos-fotos'
 
 export const today = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('T')[0]
+export const yesterday = () => { const d = new Date(Date.now() - 6 * 3600 * 1000); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; }
+export const shiftDate = (dateStr, days) => { const d = new Date(dateStr + 'T12:00:00'); d.setDate(d.getDate() + days); return d.toISOString().split('T')[0]; }
 
 export const fmtDate = (d) =>
   new Date(d + 'T12:00:00').toLocaleDateString('es-SV', {
