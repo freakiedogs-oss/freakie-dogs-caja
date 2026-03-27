@@ -442,6 +442,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
   const [egresos, setEgresos] = useState([]);
   const [ingresos, setIngresos] = useState([]);
   const [ajustes, setAjustes] = useState([]);
+  const [depInfo, setDepInfo] = useState(null); // depósito vinculado (solo lectura en edit)
   const [showEg, setShowEg] = useState(false);
   const [showIn, setShowIn] = useState(false);
   const [showAj, setShowAj] = useState(false);
@@ -491,14 +492,20 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
 
     if (isEdit) {
       setLoadingRelated(true);
+      // Limpiar state antes de cargar para evitar duplicados
+      setEgresos([]); setIngresos([]); setAjustes([]); setDepInfo(null);
       Promise.all([
         db.from('egresos_cierre').select('*').eq('cierre_id', existingCierre.id),
         db.from('ingresos_cierre').select('*').eq('cierre_id', existingCierre.id),
         db.from('ajustes_metodo').select('*').eq('cierre_id', existingCierre.id),
-      ]).then(([eg, ing, aj]) => {
-        setEgresos(eg.data || []);
-        setIngresos(ing.data || []);
+        db.from('depositos_bancarios').select('*').eq('store_code', existingCierre.store_code).contains('dias_cubiertos', [existingCierre.fecha]).limit(1),
+      ]).then(([eg, ing, aj, dep]) => {
+        // Deduplicar por id para prevenir duplicados
+        const dedupe = (arr) => { const seen = new Set(); return (arr||[]).filter(r => r.id && !seen.has(r.id) && seen.add(r.id)); };
+        setEgresos(dedupe(eg.data));
+        setIngresos(dedupe(ing.data));
         setAjustes(aj.data || []);
+        setDepInfo((dep.data || [])[0] || null);
         setLoadingRelated(false);
       });
     }
@@ -892,6 +899,43 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
           </div>
         )}
       </div>
+
+      {/* Depósito bancario vinculado (solo lectura) */}
+      {depInfo && (
+        <div className="card" style={{ border: '1px solid #14532d' }}>
+          <div className="sec-title">🏦 Depósito Bancario Vinculado</div>
+          <div className="row">
+            <span style={{ color: '#888', fontSize: 13 }}>Monto depositado</span>
+            <span style={{ fontWeight: 800, fontSize: 17 }}>{fmt$(depInfo.monto)}</span>
+          </div>
+          {depInfo.monto_esperado != null && (
+            <div className="row">
+              <span style={{ color: '#888', fontSize: 13 }}>Monto esperado</span>
+              <span style={{ fontWeight: 600 }}>{fmt$(depInfo.monto_esperado)}</span>
+            </div>
+          )}
+          {depInfo.diferencia_deposito != null && (
+            <div className="row">
+              <span style={{ color: '#888', fontSize: 13 }}>Diferencia depósito</span>
+              <span style={{ fontWeight: 700, color: Math.abs(depInfo.diferencia_deposito) < 1 ? '#4ade80' : '#f87171' }}>
+                {Math.abs(depInfo.diferencia_deposito) < 0.01 ? '✓ OK' : fmt$(depInfo.diferencia_deposito)}
+              </span>
+            </div>
+          )}
+          <div className="row">
+            <span style={{ color: '#888', fontSize: 13 }}>Estado</span>
+            <span style={{ fontWeight: 700, color: depInfo.estado === 'confirmado' ? '#4ade80' : '#facc15' }}>
+              {depInfo.estado === 'confirmado' ? '✓ Confirmado' : '⏳ Pendiente'}
+            </span>
+          </div>
+          {(depInfo.fotos_urls || []).map((url, i) => (
+            <a key={i} href={url} target="_blank" rel="noopener" style={{ display: 'block', marginTop: 8 }}>
+              <img src={url} style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 8, border: '1px solid #333', background: '#111' }} alt={`Foto depósito ${i + 1}`} />
+            </a>
+          ))}
+          {depInfo.notas && <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic', marginTop: 6 }}>📝 {depInfo.notas}</div>}
+        </div>
+      )}
 
       <div className="card">
         <div className="sec-title">Observaciones</div>
