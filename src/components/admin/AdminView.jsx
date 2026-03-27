@@ -1,7 +1,21 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../../supabase';
 import { STORES, STORES_SHORT, today, yesterday, shiftDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
+
+// Helper: horas restantes de las 72h desde aprobado_at
+function horasRestantes72(aprobadoAt){
+  if(!aprobadoAt) return -1;
+  const ms=new Date(aprobadoAt).getTime()+72*3600*1000-Date.now();
+  return ms>0?ms/3600000:-1;
+}
+function fmtTimer(horas){
+  if(horas<=0) return null;
+  const h=Math.floor(horas);
+  const m=Math.floor((horas-h)*60);
+  if(h>=24) return `${Math.floor(h/24)}d ${h%24}h`;
+  return `${h}h ${m}m`;
+}
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
 const fmtPct = (n) => `${parseFloat(n || 0).toFixed(2)}%`;
@@ -30,6 +44,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   const [selected,setSelected]=useState(null);
   const [comentario,setComentario]=useState('');
   const [saving,setSaving]=useState(false);
+  const [depDetalle,setDepDetalle]=useState(null); // depósito vinculado al cierre seleccionado
   // Filtros
   const [filtroEstados,setFiltroEstados]=useState(new Set(['todos']));
   const [filtroSucursales,setFiltroSucursales]=useState(new Set(['todas']));
@@ -50,15 +65,26 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     setLoading(false);
   };
 
-  // Cargar egresos/ingresos al seleccionar un cierre
+  // Cargar egresos/ingresos/depósito al seleccionar un cierre
   const abrirDetalle=async(cierre)=>{
-    setSelected(cierre);setComentario(cierre.comentario_aprobacion||'');
-    const [egRes,inRes]=await Promise.all([
+    setSelected(cierre);setComentario(cierre.comentario_aprobacion||'');setDepDetalle(null);
+    const [egRes,inRes,depRes]=await Promise.all([
       db.from('egresos_cierre').select('*').eq('cierre_id',cierre.id),
-      db.from('ingresos_cierre').select('*').eq('cierre_id',cierre.id)
+      db.from('ingresos_cierre').select('*').eq('cierre_id',cierre.id),
+      db.from('depositos_bancarios').select('*').eq('store_code',cierre.store_code).contains('dias_cubiertos',[cierre.fecha]).limit(1)
     ]);
     setEgresosDetalle(egRes.data||[]);
     setIngresosDetalle(inRes.data||[]);
+    setDepDetalle((depRes.data||[])[0]||null);
+  };
+
+  const confirmarDeposito=async()=>{
+    if(!depDetalle)return;
+    setSaving(true);
+    await db.from('depositos_bancarios').update({estado:'confirmado'}).eq('id',depDetalle.id);
+    setSaving(false);
+    setDepDetalle({...depDetalle,estado:'confirmado'});
+    show('✓ Depósito confirmado');
   };
 
   useEffect(()=>{cargar();},[fechaDesde,fechaHasta]);
@@ -257,6 +283,66 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
                 ))}
               </div>
             )}
+
+            {/* Sección depósito con foto */}
+            {depDetalle&&(
+              <div style={{marginTop:14}}>
+                <div className="sec-title">🏦 Depósito Bancario</div>
+                <div style={{background:'#1a1a1a',borderRadius:10,padding:12,border:'1px solid #2a2a2a'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+                    <span style={{color:'#888',fontSize:13}}>Monto depositado</span>
+                    <span style={{fontWeight:800,fontSize:17}}>{fmt$(depDetalle.monto)}</span>
+                  </div>
+                  {depDetalle.monto_esperado!=null&&(
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+                      <span style={{color:'#888',fontSize:13}}>Monto esperado</span>
+                      <span style={{fontWeight:600}}>{fmt$(depDetalle.monto_esperado)}</span>
+                    </div>
+                  )}
+                  {depDetalle.diferencia_deposito!=null&&(
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}>
+                      <span style={{color:'#888',fontSize:13}}>Diferencia</span>
+                      {tagDif(depDetalle.diferencia_deposito)}
+                    </div>
+                  )}
+                  {(depDetalle.fotos_urls||[]).map((url,i)=>(
+                    <a key={i} href={url} target="_blank" rel="noopener" style={{display:'block',marginBottom:8}}>
+                      <img src={url} style={{width:'100%',maxHeight:280,objectFit:'contain',borderRadius:8,border:'1px solid #333',background:'#111'}} alt={`Foto depósito ${i+1}`}/>
+                    </a>
+                  ))}
+                  {depDetalle.notas&&<div style={{fontSize:12,color:'#888',fontStyle:'italic',marginTop:4}}>📝 {depDetalle.notas}</div>}
+                  {depDetalle.estado==='pendiente'?(
+                    <button className="btn btn-red" onClick={confirmarDeposito} disabled={saving}
+                      style={{width:'100%',marginTop:10,fontSize:14}}>
+                      {saving?<span className="spin"/>:'✓ Confirmo: monto coincide con la foto'}
+                    </button>
+                  ):(
+                    <div style={{textAlign:'center',padding:'8px 0',color:'#4ade80',fontWeight:700,fontSize:13,marginTop:6}}>
+                      ✓ Depósito confirmado
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Timer 72h para aprobados */}
+            {selected.estado==='aprobado'&&selected.aprobado_at&&(()=>{
+              const hr=horasRestantes72(selected.aprobado_at);
+              const timer=fmtTimer(hr);
+              return timer?(
+                <div style={{marginTop:12,padding:'8px 12px',background:'#1e3a5f33',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',border:'1px solid #1e3a5f'}}>
+                  <span style={{fontSize:12,color:'#60a5fa'}}>⏱ Editable por: <strong>{timer}</strong></span>
+                  <button className="btn btn-ghost" onClick={()=>{setSelected(null);onEditCierre(selected);}}
+                    style={{fontSize:12,color:'#60a5fa',borderColor:'#1e3a5f',padding:'4px 12px'}}>
+                    ✏️ Editar
+                  </button>
+                </div>
+              ):(
+                <div style={{marginTop:12,padding:'8px 12px',background:'#1a1a1a',borderRadius:8,fontSize:12,color:'#555',textAlign:'center'}}>
+                  🔒 Período de edición (72h) expirado
+                </div>
+              );
+            })()}
 
             {/* Edición completa → navega a CierreForm */}
             {selected.estado!=='aprobado'&&(
