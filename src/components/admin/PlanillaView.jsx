@@ -46,7 +46,7 @@ export default function PlanillaView({ user }) {
   const [calculating, setCalculating] = useState(false);
 
   // Check acceso
-  const canView = ALLOWED_ROLES.includes(user?.role);
+  const canView = ALLOWED_ROLES.includes(user?.rol);
   const canApprove = EDIT_PINS.includes(user?.pin);
 
   // Cargar planillas
