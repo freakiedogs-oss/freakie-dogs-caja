@@ -182,5 +182,5 @@ label { font-size: 13px; color: #888; display: block; margin-bottom: 4px; }
   .sidebar { transform: translateX(0); position: fixed; }
   .sidebar-overlay { display: none !important; }
   .topbar { display: none; }
-  .main-content.with-sidebar { margin-left: 280px; }
+  .main-content.with-sidebar { margin-left: 280px; max-width: 720px; padding: 0 24px 20px; }
 }
