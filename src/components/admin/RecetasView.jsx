@@ -4,7 +4,7 @@ import { n } from '../../config';
 
 // ── Usuarios con acceso de edición ──
 const EDIT_EMAILS = ['joseisart2008@gmail.com'];
-const EDIT_PINS = ['5002', '1234']; // Cesar Rodriguez, Jose Isart
+const EDIT_PINS = ['2000', '1000']; // Cesar Rodriguez, Jose Isart
 
 // ── RECETAS / BOM ──────────────────────────────────────────
 export default function RecetasView({ user }) {
