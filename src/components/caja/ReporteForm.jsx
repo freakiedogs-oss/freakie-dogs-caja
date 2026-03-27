@@ -107,6 +107,15 @@ export default function ReporteForm({ user, onBack }) {
       });
   }, []);
 
+  // Auto-calcular estado del turno según la severidad más alta de incidentes
+  useEffect(() => {
+    const incs = Object.values(incSel);
+    if (incs.length === 0) { setEstadoTurno('sin_novedad'); return; }
+    if (incs.some(i => i.severidad === 'grave')) { setEstadoTurno('grave'); return; }
+    if (incs.some(i => i.severidad === 'moderado')) { setEstadoTurno('moderado'); return; }
+    setEstadoTurno('novedades_menores');
+  }, [incSel]);
+
   const toggleInc = (id, cat, label) => {
     setIncSel((prev) => {
       if (prev[id]) {
@@ -255,15 +264,15 @@ export default function ReporteForm({ user, onBack }) {
 
       <div className="card">
         <div className="sec-title">Estado del turno</div>
+        <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>Se calcula automáticamente según los incidentes reportados</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {ESTADO_OPTS.map((o) => (
             <div
               key={o.v}
-              onClick={() => !yaEnviado && setEstadoTurno(o.v)}
               style={{
                 padding: '12px 10px',
                 borderRadius: 10,
-                cursor: yaEnviado ? 'default' : 'pointer',
+                cursor: 'default',
                 textAlign: 'center',
                 background: estadoTurno === o.v ? o.color + '66' : '#1a1a1a',
                 border: `1.5px solid ${estadoTurno === o.v ? o.tc : '#2a2a2a'}`,
@@ -271,6 +280,7 @@ export default function ReporteForm({ user, onBack }) {
                 fontWeight: 700,
                 fontSize: 13,
                 transition: 'all .15s',
+                opacity: estadoTurno === o.v ? 1 : 0.4,
               }}
             >
               {o.icon} {o.label}
