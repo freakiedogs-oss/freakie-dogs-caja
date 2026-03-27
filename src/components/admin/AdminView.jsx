@@ -114,17 +114,18 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     const c=cierres.find(x=>x.store_code===sc&&x.fecha===fecha);
     if(!c) return {tipo:'faltante'};
     const dep=depositos.find(d=>d.store_code===sc&&(d.fotos_urls||[]).length>0);
-    if(c.estado==='aprobado'&&dep) return {tipo:'completo',cierre:c,dep};
-    if(c.estado==='aprobado') return {tipo:'aprobado',cierre:c};
-    if(c.estado==='requiere_correccion') return {tipo:'correccion',cierre:c};
-    if(c.estado==='enviado') return {tipo:'revision',cierre:c};
-    return {tipo:'borrador',cierre:c};
+    if(c.estado==='aprobado'&&dep&&dep.estado==='confirmado') return {tipo:'completo',cierre:c,dep};
+    if(c.estado==='aprobado') return {tipo:'aprobado',cierre:c,dep:dep||null};
+    if(c.estado==='requiere_correccion') return {tipo:'correccion',cierre:c,dep:dep||null};
+    if(c.estado==='enviado') return {tipo:'revision',cierre:c,dep:dep||null};
+    return {tipo:'borrador',cierre:c,dep:dep||null};
   };
 
   // Filtrar cierres para el listado
   const filteredCierres=useMemo(()=>{
     return cierres.filter(c=>{
-      const estadoOk=filtroEstados.has('todos')||filtroEstados.has(c.estado)||(filtroEstados.has('completo')&&c.estado==='aprobado'&&depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0));
+      const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
+      const estadoOk=filtroEstados.has('todos')||filtroEstados.has(c.estado)||(filtroEstados.has('completo')&&c.estado==='aprobado'&&dep&&dep.estado==='confirmado');
       const sucOk=filtroSucursales.has('todas')||filtroSucursales.has(c.store_code);
       return estadoOk&&sucOk;
     });
@@ -151,7 +152,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     } else {
       cierres.forEach(c=>{
         const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
-        if(c.estado==='aprobado'&&dep)out.completo++;
+        if(c.estado==='aprobado'&&dep&&dep.estado==='confirmado')out.completo++;
         else if(c.estado==='aprobado')out.aprobado++;
         else if(c.estado==='requiere_correccion')out.correccion++;
         else if(c.estado==='enviado')out.revision++;
@@ -204,8 +205,8 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
       // Mostrar lista de cierres filtrados
       return filteredCierres.map(c=>{
         const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
-        let tipo=c.estado==='aprobado'&&dep?'completo':c.estado==='aprobado'?'aprobado':c.estado==='requiere_correccion'?'correccion':c.estado==='enviado'?'revision':'borrador';
-        return {sc:c.store_code,s:{tipo,cierre:c,dep}};
+        let tipo=c.estado==='aprobado'&&dep&&dep.estado==='confirmado'?'completo':c.estado==='aprobado'?'aprobado':c.estado==='requiere_correccion'?'correccion':c.estado==='enviado'?'revision':'borrador';
+        return {sc:c.store_code,s:{tipo,cierre:c,dep:dep||null}};
       });
     }
   },[esRangoSimple,cierres,depositos,filtroSucursales,filtroEstados,fechaDesde]);
@@ -525,8 +526,10 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
                     <div style={{fontSize:12}}><span style={{color:'#666'}}>Depósito: </span><span style={{fontWeight:600}}>{fmt$(c.efectivo_real_depositar)}</span></div>
                   </div>
                 )}
-                {s.tipo==='completo'&&s.dep&&(
-                  <div style={{marginTop:6,fontSize:12,color:'#4ade80'}}>🏦 Depósito {fmt$(s.dep.monto)} confirmado con foto</div>
+                {s.dep&&(
+                  s.dep.estado==='confirmado'
+                    ? <div style={{marginTop:6,fontSize:12,color:'#4ade80'}}>🏦 Depósito {fmt$(s.dep.monto)} confirmado con foto</div>
+                    : <div style={{marginTop:6,fontSize:12,color:'#facc15',background:'rgba(250,204,21,0.10)',borderRadius:6,padding:'3px 8px',display:'inline-block'}}>🏦 Depósito reportado, falta confirmación</div>
                 )}
               </div>
             );
