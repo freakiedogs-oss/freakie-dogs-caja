@@ -82,7 +82,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Producción',
     items: [
-      { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin'] },
+      { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo'] },
     ],
   },
   {
