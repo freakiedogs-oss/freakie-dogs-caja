@@ -83,6 +83,19 @@ export const NAV_SECTIONS = [
     label: 'Producción',
     items: [
       { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo'] },
+      { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'admin'] },
+    ],
+  },
+  {
+    label: 'Finanzas',
+    items: [
+      { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },
+    ],
+  },
+  {
+    label: 'Delivery',
+    items: [
+      { key: 'delivery', label: 'Panel Delivery', icon: '🛵', roles: ['ejecutivo', 'despachador', 'gerente', 'admin'] },
     ],
   },
   {

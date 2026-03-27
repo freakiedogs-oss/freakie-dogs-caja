@@ -1,695 +1,1204 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
-import { n } from '../../config';
+import { fmtDate, n, STORES } from '../../config';
 
-// ── Usuarios con acceso de edición ──
-const EDIT_PINS = ['2000', '1000']; // Cesar Rodriguez, Jose Isart (ejecutivos)
-const CARGOS = ['gerente', 'cajera', 'cocinero', 'repartidor', 'bodeguero', 'produccion', 'limpieza', 'auxiliar'];
-const TIPOS_CONTRATO = ['permanente', 'temporal', 'medio_tiempo'];
-const CONCEPTOS_DESCUENTOS = ['préstamo', 'uniforme', 'adelanto', 'daño'];
+// ── Control de acceso ──
+const EDIT_PINS = ['1000', '2000']; // Jose y Cesar
+const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'admin'];
 
-// ── Helper: formato moneda ──
-const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
+// ── Cargos reales en producción ──
+const CARGOS_REALES = [
+  'Cajera', 'Cocina', 'Cocinero', 'Encargada de cocina', 'Mesera', 'Mesero',
+  'Motorista', 'Plancha', 'Tablet', 'Produccion', 'Auxiliar de Produccion',
+  'Talento Humano', 'Mercadeo', 'Ingeniera en Alimentos', 'Gerente',
+  'Encargada de Tablet', 'Motorista Interno', 'Encargada de meseros'
+];
 
-// ── Badge para estado activo ──
-function EstadoBadge({ activo }) {
-  return (
-    <span className={`px-2 py-1 rounded text-xs font-600 ${
-      activo ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'
-    }`}>
-      {activo ? '✓ Activo' : '✗ Inactivo'}
-    </span>
-  );
-}
+// ── TIPOS DE DESCUENTOS ──
+const TIPOS_DESCUENTOS = ['prestamo', 'uniforme', 'adelanto', 'daño', 'otro'];
 
-// ── Modal formulario empleado ──
-function ModalEmpleado({ empleado, sucursales, onSave, onCancel, canEdit }) {
-  const [form, setForm] = useState(empleado || {
-    nombre: '', dui: '', cargo: '', sucursal_id: '', salario_base: '', tipo_contrato: '',
-    banco: '', numero_cuenta: '', telefono: '', email: '', contacto_emergencia: '', fecha_ingreso: ''
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+// ── Colores del tema ──
+const colors = {
+  bg: '#1a1a2e',
+  bgCard: '#16213e',
+  red: '#e63946',
+  green: '#4ade80',
+  yellow: '#f59e0b',
+  border: '#333',
+  text: '#eee',
+  textDim: '#888',
+};
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-    setError('');
-  };
-
-  const handleSave = async () => {
-    if (!form.nombre || !form.cargo || !form.sucursal_id) {
-      setError('Nombre, cargo y sucursal son requeridos');
-      return;
-    }
-    if (!form.dui.match(/^\d{9}$/)) {
-      setError('DUI debe tener 9 dígitos');
-      return;
-    }
-    setSaving(true);
-    try {
-      const data = {
-        nombre: form.nombre, dui: form.dui, cargo: form.cargo, sucursal_id: form.sucursal_id,
-        salario_base: n(form.salario_base) || 0, tipo_contrato: form.tipo_contrato,
-        banco: form.banco, numero_cuenta: form.numero_cuenta, telefono: form.telefono,
-        email: form.email, contacto_emergencia: form.contacto_emergencia, fecha_ingreso: form.fecha_ingreso || new Date().toISOString().split('T')[0]
-      };
-      if (form.id) {
-        await db.from('empleados').update(data).eq('id', form.id);
-      } else {
-        // Generar código con RPC
-        const { data: codeData } = await db.rpc('gen_codigo_empleado');
-        data.codigo = codeData;
-        await db.from('empleados').insert(data);
-      }
-      onSave();
-    } catch (err) {
-      setError('Error al guardar: ' + (err.message || ''));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full max-h-96 overflow-y-auto">
-        <div className="p-6">
-          <h2 className="text-xl font-700 mb-4">{form.id ? 'Editar Empleado' : 'Nuevo Empleado'}</h2>
-          {error && <div className="bg-red-100 text-red-800 p-2 rounded mb-4 text-sm">{error}</div>}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-600 mb-1">Nombre *</label>
-              <input type="text" name="nombre" value={form.nombre} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" placeholder="Nombre completo" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">DUI *</label>
-              <input type="text" name="dui" value={form.dui} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" placeholder="123456789" maxLength="9" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Cargo *</label>
-              <select name="cargo" value={form.cargo} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm">
-                <option value="">Seleccionar</option>
-                {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Sucursal *</label>
-              <select name="sucursal_id" value={form.sucursal_id} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm">
-                <option value="">Seleccionar</option>
-                {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Salario Base (USD)</label>
-              <input type="number" name="salario_base" value={form.salario_base} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" step="0.01" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Tipo Contrato</label>
-              <select name="tipo_contrato" value={form.tipo_contrato} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm">
-                <option value="">Seleccionar</option>
-                {TIPOS_CONTRATO.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Banco</label>
-              <input type="text" name="banco" value={form.banco} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" placeholder="Ej: Banco Agrícola" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Número Cuenta</label>
-              <input type="text" name="numero_cuenta" value={form.numero_cuenta} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Teléfono</label>
-              <input type="tel" name="telefono" value={form.telefono} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Email</label>
-              <input type="email" name="email" value={form.email} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-sm font-600 mb-1">Contacto Emergencia</label>
-              <input type="text" name="contacto_emergencia" value={form.contacto_emergencia} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Fecha Ingreso</label>
-              <input type="date" name="fecha_ingreso" value={form.fecha_ingreso} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" />
-            </div>
-          </div>
-
-          <div className="flex gap-2 justify-end mt-6">
-            <button onClick={onCancel} className="px-4 py-2 border rounded text-sm font-600 hover:bg-gray-100">Cancelar</button>
-            <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-600 hover:bg-blue-700 disabled:opacity-50">
-              {saving ? 'Guardando...' : 'Guardar'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Modal descuento ──
-function ModalDescuento({ empleados, onSave, onCancel }) {
-  const [form, setForm] = useState({ empleado_id: '', concepto: '', monto_cuota: '', cuotas_totales: '' });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-    setError('');
-  };
-
-  const handleSave = async () => {
-    if (!form.empleado_id || !form.concepto || !form.monto_cuota || !form.cuotas_totales) {
-      setError('Todos los campos son requeridos');
-      return;
-    }
-    setSaving(true);
-    try {
-      await db.from('descuentos_empleado').insert({
-        empleado_id: form.empleado_id, concepto: form.concepto,
-        monto_cuota: n(form.monto_cuota), cuotas_totales: parseInt(form.cuotas_totales),
-        cuotas_pagadas: 0, activo: true
-      });
-      onSave();
-    } catch (err) {
-      setError('Error: ' + (err.message || ''));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-md w-full">
-        <div className="p-6">
-          <h2 className="text-xl font-700 mb-4">Nuevo Descuento</h2>
-          {error && <div className="bg-red-100 text-red-800 p-2 rounded mb-4 text-sm">{error}</div>}
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-600 mb-1">Empleado *</label>
-              <select name="empleado_id" value={form.empleado_id} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm">
-                <option value="">Seleccionar</option>
-                {empleados.map(e => <option key={e.id} value={e.id}>{e.nombre} ({e.codigo})</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Concepto *</label>
-              <select name="concepto" value={form.concepto} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm">
-                <option value="">Seleccionar o escribir</option>
-                {CONCEPTOS_DESCUENTOS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <input type="text" value={form.concepto} onChange={(e) => setForm(prev => ({ ...prev, concepto: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm mt-1" placeholder="Otro concepto" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Monto por Cuota (USD) *</label>
-              <input type="number" name="monto_cuota" value={form.monto_cuota} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" step="0.01" />
-            </div>
-            <div>
-              <label className="block text-sm font-600 mb-1">Total de Cuotas *</label>
-              <input type="number" name="cuotas_totales" value={form.cuotas_totales} onChange={handleChange} className="w-full border rounded px-3 py-2 text-sm" min="1" />
-            </div>
-          </div>
-
-          <div className="flex gap-2 justify-end mt-6">
-            <button onClick={onCancel} className="px-4 py-2 border rounded text-sm font-600 hover:bg-gray-100">Cancelar</button>
-            <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-600 hover:bg-blue-700 disabled:opacity-50">
-              {saving ? 'Guardando...' : 'Guardar'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Tab: Empleados ──
-function TabEmpleados({ canEdit }) {
-  const [empleados, setEmpleados] = useState([]);
+// ── MAIN COMPONENT ──
+export default function RRHHView({ user }) {
+  const [tab, setTab] = useState('empleados'); // empleados, asistencia, descuentos
   const [sucursales, setSucursales] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const canEdit = EDIT_PINS.includes(user?.pin);
+
+  // Cargar sucursales al montar
+  useEffect(() => {
+    db.from('sucursales')
+      .select('id, nombre')
+      .eq('activa', true)
+      .order('nombre')
+      .then(({ data }) => setSucursales(data || []))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <div style={{ padding: 20, textAlign: 'center', color: colors.textDim }}>Cargando RRHH...</div>;
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: colors.bg, padding: '16px', color: colors.text }}>
+      {/* Encabezado */}
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 4px', color: colors.text }}>👥 Gestión RRHH</h1>
+        <div style={{ fontSize: 13, color: colors.textDim }}>Empleados, Asistencia y Descuentos</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { id: 'empleados', label: '👤 Empleados', icon: '👤' },
+          { id: 'asistencia', label: '📋 Asistencia', icon: '📋' },
+          { id: 'descuentos', label: '💰 Descuentos', icon: '💰' },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: tab === t.id ? colors.red : colors.bgCard,
+              color: tab === t.id ? '#fff' : colors.textDim,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 600,
+              transition: 'all 0.2s',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Contenido por tab */}
+      {tab === 'empleados' && <TabEmpleados canEdit={canEdit} sucursales={sucursales} />}
+      {tab === 'asistencia' && <TabAsistencia sucursales={sucursales} />}
+      {tab === 'descuentos' && <TabDescuentos canEdit={canEdit} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB 1: EMPLEADOS
+// ═══════════════════════════════════════════════════════════════
+function TabEmpleados({ canEdit, sucursales }) {
+  const [empleados, setEmpleados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroSucursal, setFiltroSucursal] = useState('');
   const [filtroCargo, setFiltroCargo] = useState('');
-  const [filtroActivo, setFiltroActivo] = useState('todos');
-  const [showModal, setShowModal] = useState(false);
-  const [editEmpleado, setEditEmpleado] = useState(null);
-  const [mensaje, setMensaje] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('todos'); // todos, activos, inactivos
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState(null);
+  const [cargosUnicos, setCargosUnicos] = useState([]);
 
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const [eRes, sRes] = await Promise.all([
-        db.from('empleados').select('*').order('nombre'),
-        db.from('sucursales').select('*').eq('activo', true).order('nombre')
-      ]);
-      setEmpleados(eRes.data || []);
-      setSucursales(sRes.data || []);
+      const { data } = await db
+        .from('empleados')
+        .select('*, sucursales(nombre)')
+        .order('nombre_completo');
+
+      setEmpleados(data || []);
+
+      // Extraer cargos únicos
+      const cargos = [...new Set((data || []).map(e => e.cargo).filter(Boolean))].sort();
+      setCargosUnicos(cargos);
     } catch (err) {
-      setMensaje('Error cargando: ' + (err.message || ''));
+      console.error('Error cargando empleados:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
 
-  const filtrados = empleados.filter(e => {
+  const filtrados = empleados.filter((e) => {
     if (filtroSucursal && e.sucursal_id !== filtroSucursal) return false;
     if (filtroCargo && e.cargo !== filtroCargo) return false;
-    if (filtroActivo === 'activos' && !e.activo) return false;
-    if (filtroActivo === 'inactivos' && e.activo) return false;
+    if (filtroEstado === 'activos' && !e.activo) return false;
+    if (filtroEstado === 'inactivos' && e.activo) return false;
     return true;
   });
 
-  const handleToggleActivo = async (id, activo) => {
+  const openForm = (emp = null) => {
+    if (emp) {
+      setFormData({ ...emp });
+      setEditingId(emp.id);
+    } else {
+      setFormData({
+        nombre_completo: '',
+        codigo_empleado: '',
+        dui: '',
+        nit: '',
+        cargo: '',
+        tipo_empleado: '',
+        sucursal_id: '',
+        salario_mensual: '',
+        tipo_contrato: '',
+        banco: '',
+        cuenta_bancaria: '',
+        telefono: '',
+        contacto_emergencia: '',
+        fecha_ingreso: new Date().toISOString().split('T')[0],
+        recibe_propina: false,
+        es_delivery_driver: false,
+        activo: true,
+      });
+      setEditingId(null);
+    }
+    setShowForm(true);
+  };
+
+  const saveEmpleado = async () => {
+    if (!formData.nombre_completo || !formData.cargo || !formData.sucursal_id) {
+      alert('Nombre, cargo y sucursal son requeridos');
+      return;
+    }
+
     try {
-      await db.from('empleados').update({ activo: !activo }).eq('id', id);
+      const data = {
+        nombre_completo: formData.nombre_completo,
+        codigo_empleado: formData.codigo_empleado,
+        dui: formData.dui,
+        nit: formData.nit,
+        cargo: formData.cargo,
+        tipo_empleado: formData.tipo_empleado,
+        sucursal_id: formData.sucursal_id,
+        salario_mensual: n(formData.salario_mensual) || 0,
+        tipo_contrato: formData.tipo_contrato,
+        banco: formData.banco,
+        cuenta_bancaria: formData.cuenta_bancaria,
+        telefono: formData.telefono,
+        contacto_emergencia: formData.contacto_emergencia,
+        fecha_ingreso: formData.fecha_ingreso,
+        recibe_propina: !!formData.recibe_propina,
+        es_delivery_driver: !!formData.es_delivery_driver,
+        activo: !!formData.activo,
+      };
+
+      if (editingId) {
+        await db.from('empleados').update(data).eq('id', editingId);
+      } else {
+        await db.from('empleados').insert(data);
+      }
+
+      setShowForm(false);
+      setFormData(null);
+      setEditingId(null);
       await cargar();
-      setMensaje('✓ Actualizado');
     } catch (err) {
-      setMensaje('Error: ' + (err.message || ''));
+      alert('Error: ' + err.message);
     }
   };
 
-  const handleSaveEmpleado = async () => {
-    setShowModal(false);
-    setEditEmpleado(null);
-    await cargar();
-    setMensaje('✓ Empleado guardado');
+  const toggleActivo = async (id, activo) => {
+    try {
+      await db.from('empleados').update({ activo: !activo }).eq('id', id);
+      await cargar();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
   };
+
+  if (loading) {
+    return <div style={{ color: colors.textDim }}>Cargando empleados...</div>;
+  }
 
   return (
     <div>
-      {mensaje && <div className="bg-green-100 text-green-800 p-2 rounded mb-4 text-sm">{mensaje}</div>}
-
-      <div className="flex gap-4 mb-6 flex-wrap">
-        <select value={filtroSucursal} onChange={(e) => setFiltroSucursal(e.target.value)} className="border rounded px-3 py-2 text-sm">
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <select
+          value={filtroSucursal}
+          onChange={(e) => setFiltroSucursal(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: `1px solid ${colors.border}`,
+            background: colors.bgCard,
+            color: colors.text,
+            fontSize: 13,
+          }}
+        >
           <option value="">Todas sucursales</option>
-          {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          {sucursales.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.nombre}
+            </option>
+          ))}
         </select>
-        <select value={filtroCargo} onChange={(e) => setFiltroCargo(e.target.value)} className="border rounded px-3 py-2 text-sm">
+
+        <select
+          value={filtroCargo}
+          onChange={(e) => setFiltroCargo(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: `1px solid ${colors.border}`,
+            background: colors.bgCard,
+            color: colors.text,
+            fontSize: 13,
+          }}
+        >
           <option value="">Todos cargos</option>
-          {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+          {cargosUnicos.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
         </select>
-        <select value={filtroActivo} onChange={(e) => setFiltroActivo(e.target.value)} className="border rounded px-3 py-2 text-sm">
+
+        <select
+          value={filtroEstado}
+          onChange={(e) => setFiltroEstado(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: `1px solid ${colors.border}`,
+            background: colors.bgCard,
+            color: colors.text,
+            fontSize: 13,
+          }}
+        >
           <option value="todos">Todos</option>
           <option value="activos">Activos</option>
           <option value="inactivos">Inactivos</option>
         </select>
+
         {canEdit && (
-          <button onClick={() => { setEditEmpleado(null); setShowModal(true); }} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-600 hover:bg-blue-700 ml-auto">
+          <button
+            onClick={() => openForm()}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: colors.green,
+              color: '#000',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
             + Nuevo Empleado
           </button>
         )}
       </div>
 
-      {loading ? (
-        <div className="text-center py-4 text-gray-600">Cargando...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-gray-100 border-b">
-                <th className="px-4 py-2 text-left font-600">Código</th>
-                <th className="px-4 py-2 text-left font-600">Nombre</th>
-                <th className="px-4 py-2 text-left font-600">Cargo</th>
-                <th className="px-4 py-2 text-left font-600">Sucursal</th>
-                <th className="px-4 py-2 text-left font-600">Salario</th>
-                <th className="px-4 py-2 text-left font-600">Estado</th>
-                {canEdit && <th className="px-4 py-2 text-center font-600">Acciones</th>}
+      {/* Tabla */}
+      <div style={{ overflowX: 'auto', marginBottom: 20 }}>
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            minWidth: 600,
+          }}
+        >
+          <thead>
+            <tr style={{ borderBottom: `2px solid ${colors.border}` }}>
+              <th style={thStyle}>Código</th>
+              <th style={thStyle}>Nombre</th>
+              <th style={thStyle}>Cargo</th>
+              <th style={thStyle}>Sucursal</th>
+              <th style={thStyle}>Salario</th>
+              <th style={thStyle}>Estado</th>
+              {canEdit && <th style={thStyle}>Acciones</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filtrados.map((emp) => (
+              <tr key={emp.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                <td style={tdStyle}>{emp.codigo_empleado || '—'}</td>
+                <td style={tdStyle}>{emp.nombre_completo}</td>
+                <td style={tdStyle}>{emp.cargo || '—'}</td>
+                <td style={tdStyle}>{emp.sucursales?.nombre || '—'}</td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  ${n(emp.salario_mensual).toFixed(2)}
+                </td>
+                <td style={tdStyle}>
+                  <span
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      background: emp.activo ? colors.green + '33' : colors.red + '33',
+                      color: emp.activo ? colors.green : colors.red,
+                    }}
+                  >
+                    {emp.activo ? '✓ Activo' : '✗ Inactivo'}
+                  </span>
+                </td>
+                {canEdit && (
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() => openForm(emp)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: colors.yellow,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        marginRight: 8,
+                      }}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => toggleActivo(emp.id, emp.activo)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: emp.activo ? colors.red : colors.green,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                      }}
+                    >
+                      {emp.activo ? '▼' : '▲'}
+                    </button>
+                  </td>
+                )}
               </tr>
-            </thead>
-            <tbody>
-              {filtrados.length === 0 ? (
-                <tr><td colSpan="7" className="px-4 py-4 text-center text-gray-500">Sin empleados</td></tr>
-              ) : (
-                filtrados.map(e => (
-                  <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => canEdit && (setEditEmpleado(e), setShowModal(true))}>
-                    <td className="px-4 py-2 font-600">{e.codigo}</td>
-                    <td className="px-4 py-2">{e.nombre}</td>
-                    <td className="px-4 py-2">{e.cargo}</td>
-                    <td className="px-4 py-2">{sucursales.find(s => s.id === e.sucursal_id)?.nombre || '-'}</td>
-                    <td className="px-4 py-2 text-right">{fmt$(e.salario_base)}</td>
-                    <td className="px-4 py-2"><EstadoBadge activo={e.activo} /></td>
-                    {canEdit && (
-                      <td className="px-4 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => handleToggleActivo(e.id, e.activo)} className="text-xs text-blue-600 hover:underline">
-                          {e.activo ? 'Desactivar' : 'Activar'}
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {filtrados.length === 0 && (
+        <div style={{ textAlign: 'center', color: colors.textDim, padding: 20 }}>
+          No hay empleados que coincidan con los filtros
         </div>
       )}
 
-      {showModal && <ModalEmpleado empleado={editEmpleado} sucursales={sucursales} onSave={handleSaveEmpleado} onCancel={() => setShowModal(false)} canEdit={canEdit} />}
+      {/* Modal Formulario */}
+      {showForm && formData && (
+        <ModalEmpleado
+          formData={formData}
+          setFormData={setFormData}
+          onSave={saveEmpleado}
+          onCancel={() => {
+            setShowForm(false);
+            setFormData(null);
+          }}
+          sucursales={sucursales}
+        />
+      )}
     </div>
   );
 }
 
-// ── Tab: Asistencia ──
-function TabAsistencia() {
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
-  const [sucursales, setSucursales] = useState([]);
-  const [filtroSucursal, setFiltroSucursal] = useState('');
-  const [asistencias, setAsistencias] = useState([]);
-  const [empleadosSucursal, setEmpleadosSucursal] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [mensaje, setMensaje] = useState('');
-  const [editAsistencia, setEditAsistencia] = useState(null);
-  const [editForm, setEditForm] = useState({});
+// ═══════════════════════════════════════════════════════════════
+// TAB 2: ASISTENCIA
+// ═══════════════════════════════════════════════════════════════
+function TabAsistencia({ sucursales }) {
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(
+    new Date().toISOString().split('T')[0]
+  );
+  const [sucursalSel, setSucursalSel] = useState(sucursales[0]?.id || '');
+  const [empleados, setEmpleados] = useState([]);
+  const [asistencia, setAsistencia] = useState({});
+  const [loading, setLoading] = useState(false);
 
-  const cargar = useCallback(async () => {
+  const cargarEmpleados = useCallback(async () => {
+    if (!sucursalSel) return;
     setLoading(true);
     try {
-      const sRes = await db.from('sucursales').select('*').eq('activo', true).order('nombre');
-      setSucursales(sRes.data || []);
-      if (!filtroSucursal && sRes.data?.length > 0) {
-        setFiltroSucursal(sRes.data[0].id);
-      }
+      const { data } = await db
+        .from('empleados')
+        .select('id, nombre_completo, cargo')
+        .eq('sucursal_id', sucursalSel)
+        .eq('activo', true)
+        .order('nombre_completo');
+
+      setEmpleados(data || []);
+
+      // Cargar asistencia del día
+      const { data: asistData } = await db
+        .from('asistencia_diaria')
+        .select('empleado_id, estado, hora_entrada')
+        .eq('fecha', fechaSeleccionada)
+        .in('empleado_id', (data || []).map(e => e.id));
+
+      const asistMap = {};
+      (asistData || []).forEach(a => {
+        asistMap[a.empleado_id] = { estado: a.estado, hora: a.hora_entrada };
+      });
+      setAsistencia(asistMap);
     } catch (err) {
-      setMensaje('Error: ' + (err.message || ''));
+      console.error('Error:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sucursalSel, fechaSeleccionada]);
 
-  const cargarAsistencia = useCallback(async () => {
-    if (!filtroSucursal) return;
+  useEffect(() => {
+    cargarEmpleados();
+  }, [cargarEmpleados]);
+
+  const marcarPresente = async (empId, nuevoEstado) => {
     try {
-      const [aRes, eRes] = await Promise.all([
-        db.from('asistencia_diaria').select('*').eq('fecha', fecha),
-        db.from('empleados').select('*').eq('sucursal_id', filtroSucursal).eq('activo', true).order('nombre')
-      ]);
-      setAsistencias(aRes.data || []);
-      setEmpleadosSucursal(eRes.data || []);
-    } catch (err) {
-      setMensaje('Error: ' + (err.message || ''));
-    }
-  }, [fecha, filtroSucursal]);
+      const hora = new Date().toISOString().substring(11, 16);
 
-  useEffect(() => { cargar(); }, [cargar]);
-  useEffect(() => { cargarAsistencia(); }, [cargarAsistencia]);
+      // Verificar si ya existe
+      const { data: existe } = await db
+        .from('asistencia_diaria')
+        .select('id')
+        .eq('empleado_id', empId)
+        .eq('fecha', fechaSeleccionada)
+        .maybeSingle();
 
-  const marcarPresente = async (empleadoId) => {
-    try {
-      const existe = asistencias.find(a => a.empleado_id === empleadoId && a.fecha === fecha);
-      const hora = new Date().toTimeString().split(' ')[0];
       if (existe) {
-        await db.from('asistencia_diaria').update({ hora_entrada: hora }).eq('id', existe.id);
-      } else {
+        if (nuevoEstado === 'presente') {
+          await db
+            .from('asistencia_diaria')
+            .update({ estado: 'presente', hora_entrada: hora })
+            .eq('id', existe.id);
+        } else {
+          await db.from('asistencia_diaria').delete().eq('id', existe.id);
+        }
+      } else if (nuevoEstado === 'presente') {
         await db.from('asistencia_diaria').insert({
-          empleado_id: empleadoId, fecha, hora_entrada: hora, estado: 'presente'
+          empleado_id: empId,
+          fecha: fechaSeleccionada,
+          estado: 'presente',
+          hora_entrada: hora,
         });
       }
-      await cargarAsistencia();
-      setMensaje('✓ Asistencia registrada');
-    } catch (err) {
-      setMensaje('Error: ' + (err.message || ''));
-    }
-  };
 
-  const guardarEdicion = async () => {
-    try {
-      await db.from('asistencia_diaria').update(editForm).eq('id', editAsistencia.id);
-      setEditAsistencia(null);
-      await cargarAsistencia();
-      setMensaje('✓ Guardado');
+      setAsistencia(prev => ({
+        ...prev,
+        [empId]: nuevoEstado === 'presente' ? { estado: 'presente', hora } : undefined,
+      }));
     } catch (err) {
-      setMensaje('Error: ' + (err.message || ''));
+      alert('Error: ' + err.message);
     }
-  };
-
-  const resumen = {
-    presentes: asistencias.filter(a => a.estado === 'presente').length,
-    ausentes: asistencias.filter(a => a.estado === 'ausente').length,
-    tardanzas: asistencias.filter(a => a.estado === 'tardanza').length,
   };
 
   return (
     <div>
-      {mensaje && <div className="bg-green-100 text-green-800 p-2 rounded mb-4 text-sm">{mensaje}</div>}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <input
+          type="date"
+          value={fechaSeleccionada}
+          onChange={(e) => setFechaSeleccionada(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: `1px solid ${colors.border}`,
+            background: colors.bgCard,
+            color: colors.text,
+            fontSize: 13,
+          }}
+        />
 
-      <div className="flex gap-4 mb-6 flex-wrap items-center">
-        <div>
-          <label className="block text-sm font-600 mb-1">Fecha</label>
-          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="border rounded px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label className="block text-sm font-600 mb-1">Sucursal</label>
-          <select value={filtroSucursal} onChange={(e) => setFiltroSucursal(e.target.value)} className="border rounded px-3 py-2 text-sm">
-            {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
-        </div>
+        <select
+          value={sucursalSel}
+          onChange={(e) => setSucursalSel(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: `1px solid ${colors.border}`,
+            background: colors.bgCard,
+            color: colors.text,
+            fontSize: 13,
+          }}
+        >
+          {sucursales.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.nombre}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {!loading && (
-        <div className="bg-gray-50 p-4 rounded mb-6 grid grid-cols-3 gap-4">
-          <div>
-            <div className="text-3xl font-700 text-green-600">{resumen.presentes}</div>
-            <div className="text-sm text-gray-600">Presentes</div>
-          </div>
-          <div>
-            <div className="text-3xl font-700 text-red-600">{resumen.ausentes}</div>
-            <div className="text-sm text-gray-600">Ausentes</div>
-          </div>
-          <div>
-            <div className="text-3xl font-700 text-yellow-600">{resumen.tardanzas}</div>
-            <div className="text-sm text-gray-600">Tardanzas</div>
-          </div>
-        </div>
-      )}
-
       {loading ? (
-        <div className="text-center py-4 text-gray-600">Cargando...</div>
+        <div style={{ color: colors.textDim }}>Cargando...</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-gray-100 border-b">
-                <th className="px-4 py-2 text-left font-600">Empleado</th>
-                <th className="px-4 py-2 text-left font-600">Entrada</th>
-                <th className="px-4 py-2 text-left font-600">Salida</th>
-                <th className="px-4 py-2 text-left font-600">Estado</th>
-                <th className="px-4 py-2 text-left font-600">H. Extra</th>
-                <th className="px-4 py-2 text-left font-600">Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {empleadosSucursal.length === 0 ? (
-                <tr><td colSpan="6" className="px-4 py-4 text-center text-gray-500">Sin empleados</td></tr>
-              ) : (
-                empleadosSucursal.map(e => {
-                  const asist = asistencias.find(a => a.empleado_id === e.id);
-                  return (
-                    <tr key={e.id} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-2 font-600">{e.nombre}</td>
-                      <td className="px-4 py-2 cursor-pointer" onClick={() => asist && (setEditAsistencia(asist), setEditForm({ ...asist }))}>
-                        {asist?.hora_entrada || '-'}
-                      </td>
-                      <td className="px-4 py-2 cursor-pointer" onClick={() => asist && (setEditAsistencia(asist), setEditForm({ ...asist }))}>
-                        {asist?.hora_salida || '-'}
-                      </td>
-                      <td className="px-4 py-2">{asist?.estado || '-'}</td>
-                      <td className="px-4 py-2 text-right">{asist?.horas_extra || '0'}</td>
-                      <td className="px-4 py-2">
-                        <button onClick={() => marcarPresente(e.id)} className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">
-                          {asist ? 'Editar' : 'Marcar'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        <div>
+          {empleados.map((emp) => {
+            const asist = asistencia[emp.id];
+            const presente = asist?.estado === 'presente';
+
+            return (
+              <div
+                key={emp.id}
+                style={{
+                  background: colors.bgCard,
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 8,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  border: `1px solid ${colors.border}`,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, color: colors.text }}>
+                    {emp.nombre_completo}
+                  </div>
+                  <div style={{ fontSize: 12, color: colors.textDim }}>
+                    {emp.cargo}
+                  </div>
+                  {asist?.hora && (
+                    <div style={{ fontSize: 11, color: colors.green, marginTop: 4 }}>
+                      Entrada: {asist.hora}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => marcarPresente(emp.id, presente ? 'ausente' : 'presente')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: presente ? colors.green : colors.bgCard,
+                    color: presente ? '#000' : colors.text,
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  {presente ? '✓ Presente' : 'Marcar'}
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {editAsistencia && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full">
-            <h3 className="text-lg font-700 mb-4">Editar Asistencia</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-600 mb-1">Hora Entrada</label>
-                <input type="time" value={editForm.hora_entrada || ''} onChange={(e) => setEditForm(prev => ({ ...prev, hora_entrada: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-600 mb-1">Hora Salida</label>
-                <input type="time" value={editForm.hora_salida || ''} onChange={(e) => setEditForm(prev => ({ ...prev, hora_salida: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-600 mb-1">Estado</label>
-                <select value={editForm.estado || ''} onChange={(e) => setEditForm(prev => ({ ...prev, estado: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm">
-                  <option value="presente">Presente</option>
-                  <option value="ausente">Ausente</option>
-                  <option value="tardanza">Tardanza</option>
-                  <option value="permiso">Permiso</option>
-                  <option value="vacacion">Vacación</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end mt-6">
-              <button onClick={() => setEditAsistencia(null)} className="px-4 py-2 border rounded text-sm font-600 hover:bg-gray-100">Cancelar</button>
-              <button onClick={guardarEdicion} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-600 hover:bg-blue-700">Guardar</button>
-            </div>
-          </div>
+      {empleados.length === 0 && (
+        <div style={{ textAlign: 'center', color: colors.textDim, padding: 20 }}>
+          No hay empleados activos en esta sucursal
         </div>
       )}
     </div>
   );
 }
 
-// ── Tab: Descuentos ──
+// ═══════════════════════════════════════════════════════════════
+// TAB 3: DESCUENTOS
+// ═══════════════════════════════════════════════════════════════
 function TabDescuentos({ canEdit }) {
   const [descuentos, setDescuentos] = useState([]);
   const [empleados, setEmpleados] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [mensaje, setMensaje] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const [dRes, eRes] = await Promise.all([
-        db.from('descuentos_empleado').select('*').eq('activo', true).order('fecha_inicio', { ascending: false }),
-        db.from('empleados').select('*').eq('activo', true).order('nombre')
+      const [descRes, empRes] = await Promise.all([
+        db
+          .from('descuentos_empleado')
+          .select('*, empleados(id, nombre_completo, codigo_empleado)')
+          .eq('activo', true)
+          .order('created_at', { ascending: false }),
+        db
+          .from('empleados')
+          .select('id, nombre_completo, codigo_empleado')
+          .eq('activo', true)
+          .order('nombre_completo'),
       ]);
-      setDescuentos(dRes.data || []);
-      setEmpleados(eRes.data || []);
+
+      setDescuentos(descRes.data || []);
+      setEmpleados(empRes.data || []);
     } catch (err) {
-      setMensaje('Error: ' + (err.message || ''));
+      console.error('Error:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
 
-  const marcarCuotaPagada = async (id, cuotasPagadas, cuotasTotales) => {
+  const openForm = (desc = null) => {
+    if (desc) {
+      setFormData({ ...desc });
+    } else {
+      setFormData({
+        empleado_id: '',
+        tipo: '',
+        descripcion: '',
+        monto_total: '',
+        monto_cuota: '',
+        cuotas_totales: '',
+        cuotas_pagadas: 0,
+      });
+    }
+    setShowForm(true);
+  };
+
+  const saveDescuento = async () => {
+    if (!formData.empleado_id || !formData.tipo || !formData.monto_total || !formData.cuotas_totales) {
+      alert('Empleado, tipo, monto total y cuotas son requeridos');
+      return;
+    }
+
     try {
-      const nuevas = cuotasPagadas + 1;
-      await db.from('descuentos_empleado').update({
-        cuotas_pagadas: nuevas,
-        activo: nuevas < cuotasTotales
-      }).eq('id', id);
+      const data = {
+        empleado_id: formData.empleado_id,
+        tipo: formData.tipo,
+        descripcion: formData.descripcion,
+        monto_total: n(formData.monto_total),
+        monto_cuota: n(formData.monto_total) / parseInt(formData.cuotas_totales),
+        cuotas_totales: parseInt(formData.cuotas_totales),
+        cuotas_pagadas: parseInt(formData.cuotas_pagadas) || 0,
+        activo: true,
+      };
+
+      if (formData.id) {
+        await db.from('descuentos_empleado').update(data).eq('id', formData.id);
+      } else {
+        await db.from('descuentos_empleado').insert(data);
+      }
+
+      setShowForm(false);
+      setFormData(null);
       await cargar();
-      setMensaje('✓ Cuota registrada');
     } catch (err) {
-      setMensaje('Error: ' + (err.message || ''));
+      alert('Error: ' + err.message);
     }
   };
 
+  if (loading) {
+    return <div style={{ color: colors.textDim }}>Cargando descuentos...</div>;
+  }
+
   return (
     <div>
-      {mensaje && <div className="bg-green-100 text-green-800 p-2 rounded mb-4 text-sm">{mensaje}</div>}
-
       {canEdit && (
-        <button onClick={() => setShowModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-600 hover:bg-blue-700 mb-6">
+        <button
+          onClick={() => openForm()}
+          style={{
+            padding: '8px 16px',
+            borderRadius: 8,
+            border: 'none',
+            background: colors.green,
+            color: '#000',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 700,
+            marginBottom: 16,
+          }}
+        >
           + Nuevo Descuento
         </button>
       )}
 
-      {loading ? (
-        <div className="text-center py-4 text-gray-600">Cargando...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-gray-100 border-b">
-                <th className="px-4 py-2 text-left font-600">Empleado</th>
-                <th className="px-4 py-2 text-left font-600">Concepto</th>
-                <th className="px-4 py-2 text-left font-600">Cuota</th>
-                <th className="px-4 py-2 text-left font-600">Progreso</th>
-                <th className="px-4 py-2 text-left font-600">Estado</th>
-                {canEdit && <th className="px-4 py-2 text-center font-600">Acción</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {descuentos.length === 0 ? (
-                <tr><td colSpan="6" className="px-4 py-4 text-center text-gray-500">Sin descuentos activos</td></tr>
-              ) : (
-                descuentos.map(d => {
-                  const emp = empleados.find(e => e.id === d.empleado_id);
-                  return (
-                    <tr key={d.id} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-2 font-600">{emp?.nombre || '-'}</td>
-                      <td className="px-4 py-2">{d.concepto}</td>
-                      <td className="px-4 py-2 text-right">{fmt$(d.monto_cuota)}</td>
-                      <td className="px-4 py-2">{d.cuotas_pagadas}/{d.cuotas_totales}</td>
-                      <td className="px-4 py-2"><EstadoBadge activo={d.activo} /></td>
-                      {canEdit && (
-                        <td className="px-4 py-2 text-center">
-                          {d.cuotas_pagadas < d.cuotas_totales && (
-                            <button onClick={() => marcarCuotaPagada(d.id, d.cuotas_pagadas, d.cuotas_totales)} className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">
-                              Pagar
-                            </button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {descuentos.map((desc) => {
+        const pct = (desc.cuotas_pagadas / desc.cuotas_totales) * 100;
+
+        return (
+          <div
+            key={desc.id}
+            style={{
+              background: colors.bgCard,
+              borderRadius: 8,
+              padding: 12,
+              marginBottom: 8,
+              border: `1px solid ${colors.border}`,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div>
+                <div style={{ fontWeight: 600, color: colors.text }}>
+                  {desc.empleados?.nombre_completo}
+                </div>
+                <div style={{ fontSize: 12, color: colors.textDim }}>
+                  {desc.tipo} - {desc.descripcion || '—'}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: colors.yellow }}>
+                  ${n(desc.monto_total).toFixed(2)}
+                </div>
+                <div style={{ fontSize: 11, color: colors.textDim }}>
+                  {desc.cuotas_pagadas}/{desc.cuotas_totales} cuotas
+                </div>
+              </div>
+            </div>
+
+            {/* Barra de progreso */}
+            <div
+              style={{
+                width: '100%',
+                height: 8,
+                background: colors.border,
+                borderRadius: 4,
+                overflow: 'hidden',
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  width: `${pct}%`,
+                  height: '100%',
+                  background: pct === 100 ? colors.green : colors.yellow,
+                  transition: 'width 0.3s',
+                }}
+              />
+            </div>
+
+            {canEdit && (
+              <button
+                onClick={() => openForm(desc)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: colors.yellow,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  textDecoration: 'underline',
+                }}
+              >
+                Editar
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      {descuentos.length === 0 && (
+        <div style={{ textAlign: 'center', color: colors.textDim, padding: 20 }}>
+          No hay descuentos activos
         </div>
       )}
 
-      {showModal && <ModalDescuento empleados={empleados} onSave={() => { setShowModal(false); cargar(); }} onCancel={() => setShowModal(false)} />}
+      {showForm && formData && (
+        <ModalDescuento
+          formData={formData}
+          setFormData={setFormData}
+          empleados={empleados}
+          onSave={saveDescuento}
+          onCancel={() => {
+            setShowForm(false);
+            setFormData(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-// ── COMPONENTE PRINCIPAL ──
-export default function RRHHView({ user, onBack }) {
-  const [tab, setTab] = useState('empleados');
-  const canEdit = EDIT_PINS.includes(user?.pin);
-
-  if (!canEdit) {
-    return (
-      <div className="p-6 bg-red-100 text-red-800 rounded">
-        <p className="font-600">Acceso denegado</p>
-        <p className="text-sm">Solo roles ejecutivos/RRHH pueden ver este módulo.</p>
-        <button onClick={onBack} className="mt-4 px-4 py-2 bg-red-600 text-white rounded text-sm font-600 hover:bg-red-700">Volver</button>
-      </div>
-    );
-  }
-
+// ═══════════════════════════════════════════════════════════════
+// MODALES
+// ═══════════════════════════════════════════════════════════════
+function ModalEmpleado({ formData, setFormData, onSave, onCancel, sucursales }) {
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-700">Recursos Humanos</h1>
-        <button onClick={onBack} className="px-4 py-2 border rounded text-sm font-600 hover:bg-gray-100">← Volver</button>
-      </div>
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 999,
+        padding: 16,
+      }}
+      onClick={onCancel}
+    >
+      <div
+        style={{
+          background: colors.bg,
+          borderRadius: 12,
+          padding: 20,
+          maxWidth: 500,
+          width: '100%',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          border: `1px solid ${colors.border}`,
+          color: colors.text,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
+          {formData.id ? 'Editar Empleado' : 'Nuevo Empleado'}
+        </h2>
 
-      <div className="flex gap-2 mb-6 border-b">
-        {['empleados', 'asistencia', 'descuentos'].map(t => (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <InputField
+            label="Nombre Completo *"
+            value={formData.nombre_completo}
+            onChange={(e) => setFormData({ ...formData, nombre_completo: e.target.value })}
+          />
+          <InputField
+            label="Código"
+            value={formData.codigo_empleado}
+            onChange={(e) => setFormData({ ...formData, codigo_empleado: e.target.value })}
+          />
+          <InputField
+            label="DUI"
+            value={formData.dui}
+            onChange={(e) => setFormData({ ...formData, dui: e.target.value })}
+            placeholder="123456789"
+          />
+          <InputField
+            label="NIT"
+            value={formData.nit}
+            onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
+          />
+          <SelectField
+            label="Cargo *"
+            value={formData.cargo}
+            onChange={(e) => setFormData({ ...formData, cargo: e.target.value })}
+            options={CARGOS_REALES}
+          />
+          <InputField
+            label="Tipo Empleado"
+            value={formData.tipo_empleado}
+            onChange={(e) => setFormData({ ...formData, tipo_empleado: e.target.value })}
+          />
+          <SelectField
+            label="Sucursal *"
+            value={formData.sucursal_id}
+            onChange={(e) => setFormData({ ...formData, sucursal_id: e.target.value })}
+            options={sucursales}
+            optionKey="id"
+            optionLabel="nombre"
+          />
+          <InputField
+            label="Salario Mensual"
+            type="number"
+            value={formData.salario_mensual}
+            onChange={(e) => setFormData({ ...formData, salario_mensual: e.target.value })}
+          />
+          <InputField
+            label="Tipo Contrato"
+            value={formData.tipo_contrato}
+            onChange={(e) => setFormData({ ...formData, tipo_contrato: e.target.value })}
+          />
+          <InputField
+            label="Banco"
+            value={formData.banco}
+            onChange={(e) => setFormData({ ...formData, banco: e.target.value })}
+          />
+          <InputField
+            label="Cuenta Bancaria"
+            value={formData.cuenta_bancaria}
+            onChange={(e) => setFormData({ ...formData, cuenta_bancaria: e.target.value })}
+          />
+          <InputField
+            label="Teléfono"
+            type="tel"
+            value={formData.telefono}
+            onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
+          />
+          <InputField
+            label="Contacto Emergencia"
+            value={formData.contacto_emergencia}
+            onChange={(e) => setFormData({ ...formData, contacto_emergencia: e.target.value })}
+          />
+          <InputField
+            label="Fecha Ingreso"
+            type="date"
+            value={formData.fecha_ingreso}
+            onChange={(e) => setFormData({ ...formData, fecha_ingreso: e.target.value })}
+          />
+
+          <div style={{ gridColumn: '1 / -1' }}>
+            <CheckboxField
+              label="Recibe Propina"
+              checked={formData.recibe_propina}
+              onChange={(e) => setFormData({ ...formData, recibe_propina: e.target.checked })}
+            />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <CheckboxField
+              label="Es Delivery Driver"
+              checked={formData.es_delivery_driver}
+              onChange={(e) => setFormData({ ...formData, es_delivery_driver: e.target.checked })}
+            />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <CheckboxField
+              label="Activo"
+              checked={formData.activo}
+              onChange={(e) => setFormData({ ...formData, activo: e.target.checked })}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-3 font-600 text-sm border-b-2 transition ${
-              tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: '10px',
+              borderRadius: 8,
+              border: `1px solid ${colors.border}`,
+              background: colors.bgCard,
+              color: colors.text,
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
           >
-            {t === 'empleados' ? 'Empleados' : t === 'asistencia' ? 'Asistencia' : 'Descuentos'}
+            Cancelar
           </button>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        {tab === 'empleados' && <TabEmpleados canEdit={canEdit} />}
-        {tab === 'asistencia' && <TabAsistencia />}
-        {tab === 'descuentos' && <TabDescuentos canEdit={canEdit} />}
+          <button
+            onClick={onSave}
+            style={{
+              flex: 1,
+              padding: '10px',
+              borderRadius: 8,
+              border: 'none',
+              background: colors.green,
+              color: '#000',
+              cursor: 'pointer',
+              fontWeight: 700,
+            }}
+          >
+            Guardar
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
+function ModalDescuento({ formData, setFormData, empleados, onSave, onCancel }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 999,
+        padding: 16,
+      }}
+      onClick={onCancel}
+    >
+      <div
+        style={{
+          background: colors.bg,
+          borderRadius: 12,
+          padding: 20,
+          maxWidth: 400,
+          width: '100%',
+          border: `1px solid ${colors.border}`,
+          color: colors.text,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
+          {formData.id ? 'Editar Descuento' : 'Nuevo Descuento'}
+        </h2>
+
+        <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+          <SelectField
+            label="Empleado *"
+            value={formData.empleado_id}
+            onChange={(e) => setFormData({ ...formData, empleado_id: e.target.value })}
+            options={empleados}
+            optionKey="id"
+            optionLabel="nombre_completo"
+          />
+          <SelectField
+            label="Tipo *"
+            value={formData.tipo}
+            onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
+            options={TIPOS_DESCUENTOS}
+          />
+          <InputField
+            label="Descripción"
+            value={formData.descripcion}
+            onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+          />
+          <InputField
+            label="Monto Total *"
+            type="number"
+            value={formData.monto_total}
+            onChange={(e) => setFormData({ ...formData, monto_total: e.target.value })}
+          />
+          <InputField
+            label="Cuotas Totales *"
+            type="number"
+            value={formData.cuotas_totales}
+            onChange={(e) => setFormData({ ...formData, cuotas_totales: e.target.value })}
+            min="1"
+          />
+          <InputField
+            label="Cuotas Pagadas"
+            type="number"
+            value={formData.cuotas_pagadas}
+            onChange={(e) => setFormData({ ...formData, cuotas_pagadas: e.target.value })}
+            min="0"
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: '10px',
+              borderRadius: 8,
+              border: `1px solid ${colors.border}`,
+              background: colors.bgCard,
+              color: colors.text,
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onSave}
+            style={{
+              flex: 1,
+              padding: '10px',
+              borderRadius: 8,
+              border: 'none',
+              background: colors.green,
+              color: '#000',
+              cursor: 'pointer',
+              fontWeight: 700,
+            }}
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMPONENTES REUTILIZABLES
+// ═══════════════════════════════════════════════════════════════
+function InputField({ label, value, onChange, type = 'text', placeholder = '', min = undefined }) {
+  return (
+    <div>
+      {label && (
+        <label style={{ display: 'block', fontSize: 12, color: colors.textDim, marginBottom: 4 }}>
+          {label}
+        </label>
+      )}
+      <input
+        type={type}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        min={min}
+        style={{
+          width: '100%',
+          padding: '8px 10px',
+          borderRadius: 8,
+          border: `1px solid ${colors.border}`,
+          background: colors.bgCard,
+          color: colors.text,
+          fontSize: 13,
+          boxSizing: 'border-box',
+        }}
+      />
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options, optionKey = null, optionLabel = null }) {
+  return (
+    <div>
+      {label && (
+        <label style={{ display: 'block', fontSize: 12, color: colors.textDim, marginBottom: 4 }}>
+          {label}
+        </label>
+      )}
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          width: '100%',
+          padding: '8px 10px',
+          borderRadius: 8,
+          border: `1px solid ${colors.border}`,
+          background: colors.bgCard,
+          color: colors.text,
+          fontSize: 13,
+          boxSizing: 'border-box',
+        }}
+      >
+        <option value="">— Seleccionar —</option>
+        {options.map((opt) => {
+          if (optionKey) {
+            return (
+              <option key={opt[optionKey]} value={opt[optionKey]}>
+                {opt[optionLabel]}
+              </option>
+            );
+          }
+          return (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          );
+        })}
+      </select>
+    </div>
+  );
+}
+
+function CheckboxField({ label, checked, onChange }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        style={{ width: 18, height: 18, cursor: 'pointer' }}
+      />
+      <span style={{ fontSize: 13 }}>{label}</span>
+    </label>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// ESTILOS GLOBALES
+// ─────────────────────────────────────────────────────────────
+const thStyle = {
+  padding: '8px 12px',
+  textAlign: 'left',
+  fontSize: 12,
+  fontWeight: 700,
+  color: colors.textDim,
+  borderBottom: `2px solid ${colors.border}`,
+};
+
+const tdStyle = {
+  padding: '10px 12px',
+  fontSize: 13,
+  color: colors.text,
+  borderBottom: `1px solid ${colors.border}`,
+};

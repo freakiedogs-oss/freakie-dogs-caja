@@ -18,6 +18,9 @@ import ComprasTab from './components/almacen/ComprasTab'
 import RecetasView from './components/admin/RecetasView'
 import PlanillaView from './components/admin/PlanillaView'
 import RRHHView from './components/admin/RRHHView'
+import ProduccionDiaria from './components/admin/ProduccionDiaria'
+import ConciliacionView from './components/admin/ConciliacionView'
+import DeliveryView from './components/delivery/DeliveryView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -133,6 +136,12 @@ export default function App() {
         return <PlanillaView user={user} />
       case 'rrhh':
         return <RRHHView user={user} />
+      case 'produccion':
+        return <ProduccionDiaria user={user} />
+      case 'conciliacion':
+        return <ConciliacionView user={user} />
+      case 'delivery':
+        return <DeliveryView user={user} />
 
       default:
         return <HomeScreen user={user} />
