@@ -21,6 +21,7 @@ import RRHHView from './components/admin/RRHHView'
 import ProduccionDiaria from './components/admin/ProduccionDiaria'
 import ConciliacionView from './components/admin/ConciliacionView'
 import DeliveryView from './components/delivery/DeliveryView'
+import VentasDashboard from './components/dashboard/VentasDashboard'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -142,6 +143,8 @@ export default function App() {
         return <ConciliacionView user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
+      case 'ventas-dash':
+        return <VentasDashboard user={user} onBack={() => setScreen('home')} />
 
       default:
         return <HomeScreen user={user} />

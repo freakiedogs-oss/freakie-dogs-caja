@@ -24,6 +24,7 @@ const colors = {
   red: '#e63946',
   green: '#4ade80',
   yellow: '#f59e0b',
+  blue: '#3b82f6',
   border: '#333',
   text: '#eee',
   textDim: '#888',
@@ -52,32 +53,33 @@ export default function RRHHView({ user }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: colors.bg, padding: '16px', color: colors.text }}>
-      {/* Encabezado */}
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 4px', color: colors.text }}>👥 Gestión RRHH</h1>
-        <div style={{ fontSize: 13, color: colors.textDim }}>Empleados, Asistencia y Descuentos</div>
+    <div style={{ minHeight: '100vh', padding: '0 0 40px' }}>
+      {/* Header */}
+      <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid #1a1a1a' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: colors.text }}>👥 Gestión RRHH</h1>
+        <div style={{ fontSize: 12, color: colors.textDim, marginTop: 4 }}>Empleados, Asistencia y Descuentos</div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '1px solid #1a1a1a', padding: '0 8px' }}>
         {[
-          { id: 'empleados', label: '👤 Empleados', icon: '👤' },
-          { id: 'asistencia', label: '📋 Asistencia', icon: '📋' },
-          { id: 'descuentos', label: '💰 Descuentos', icon: '💰' },
+          { id: 'empleados', label: '👤 Empleados' },
+          { id: 'asistencia', label: '📋 Asistencia' },
+          { id: 'descuentos', label: '💰 Descuentos' },
         ].map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             style={{
-              padding: '8px 16px',
-              borderRadius: 8,
+              background: 'none',
               border: 'none',
-              background: tab === t.id ? colors.red : colors.bgCard,
-              color: tab === t.id ? '#fff' : colors.textDim,
+              color: tab === t.id ? colors.green : colors.textDim,
+              padding: '10px 10px',
+              fontSize: 12,
               cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              borderBottom: tab === t.id ? `2px solid ${colors.green}` : '2px solid transparent',
+              fontWeight: tab === t.id ? 700 : 400,
               transition: 'all 0.2s',
             }}
           >
@@ -87,9 +89,11 @@ export default function RRHHView({ user }) {
       </div>
 
       {/* Contenido por tab */}
-      {tab === 'empleados' && <TabEmpleados canEdit={canEdit} sucursales={sucursales} />}
-      {tab === 'asistencia' && <TabAsistencia sucursales={sucursales} />}
-      {tab === 'descuentos' && <TabDescuentos canEdit={canEdit} />}
+      <div style={{ padding: '16px' }}>
+        {tab === 'empleados' && <TabEmpleados canEdit={canEdit} sucursales={sucursales} />}
+        {tab === 'asistencia' && <TabAsistencia sucursales={sucursales} />}
+        {tab === 'descuentos' && <TabDescuentos canEdit={canEdit} />}
+      </div>
     </div>
   );
 }
@@ -233,7 +237,7 @@ function TabEmpleados({ canEdit, sucursales }) {
           onChange={(e) => setFiltroSucursal(e.target.value)}
           style={{
             padding: '8px 12px',
-            borderRadius: 8,
+            borderRadius: 6,
             border: `1px solid ${colors.border}`,
             background: colors.bgCard,
             color: colors.text,
@@ -253,7 +257,7 @@ function TabEmpleados({ canEdit, sucursales }) {
           onChange={(e) => setFiltroCargo(e.target.value)}
           style={{
             padding: '8px 12px',
-            borderRadius: 8,
+            borderRadius: 6,
             border: `1px solid ${colors.border}`,
             background: colors.bgCard,
             color: colors.text,
@@ -273,7 +277,7 @@ function TabEmpleados({ canEdit, sucursales }) {
           onChange={(e) => setFiltroEstado(e.target.value)}
           style={{
             padding: '8px 12px',
-            borderRadius: 8,
+            borderRadius: 6,
             border: `1px solid ${colors.border}`,
             background: colors.bgCard,
             color: colors.text,
@@ -290,7 +294,7 @@ function TabEmpleados({ canEdit, sucursales }) {
             onClick={() => openForm()}
             style={{
               padding: '8px 16px',
-              borderRadius: 8,
+              borderRadius: 6,
               border: 'none',
               background: colors.green,
               color: '#000',
@@ -299,13 +303,13 @@ function TabEmpleados({ canEdit, sucursales }) {
               fontWeight: 700,
             }}
           >
-            + Nuevo Empleado
+            + Nuevo
           </button>
         )}
       </div>
 
       {/* Tabla */}
-      <div style={{ overflowX: 'auto', marginBottom: 20 }}>
+      <div className="card" style={{ overflowX: 'auto', padding: 0, marginBottom: 20 }}>
         <table
           style={{
             width: '100%',
@@ -337,11 +341,11 @@ function TabEmpleados({ canEdit, sucursales }) {
                 <td style={tdStyle}>
                   <span
                     style={{
-                      padding: '4px 8px',
-                      borderRadius: 6,
+                      padding: '3px 8px',
+                      borderRadius: 4,
                       fontSize: 11,
                       fontWeight: 600,
-                      background: emp.activo ? colors.green + '33' : colors.red + '33',
+                      background: emp.activo ? colors.green + '26' : colors.red + '26',
                       color: emp.activo ? colors.green : colors.red,
                     }}
                   >
@@ -502,7 +506,7 @@ function TabAsistencia({ sucursales }) {
           onChange={(e) => setFechaSeleccionada(e.target.value)}
           style={{
             padding: '8px 12px',
-            borderRadius: 8,
+            borderRadius: 6,
             border: `1px solid ${colors.border}`,
             background: colors.bgCard,
             color: colors.text,
@@ -515,7 +519,7 @@ function TabAsistencia({ sucursales }) {
           onChange={(e) => setSucursalSel(e.target.value)}
           style={{
             padding: '8px 12px',
-            borderRadius: 8,
+            borderRadius: 6,
             border: `1px solid ${colors.border}`,
             background: colors.bgCard,
             color: colors.text,
@@ -541,22 +545,20 @@ function TabAsistencia({ sucursales }) {
             return (
               <div
                 key={emp.id}
+                className="card"
                 style={{
-                  background: colors.bgCard,
-                  borderRadius: 8,
-                  padding: 12,
+                  padding: '12px 14px',
                   marginBottom: 8,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  border: `1px solid ${colors.border}`,
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 600, color: colors.text }}>
+                  <div style={{ fontWeight: 600, color: colors.text, fontSize: 13 }}>
                     {emp.nombre_completo}
                   </div>
-                  <div style={{ fontSize: 12, color: colors.textDim }}>
+                  <div style={{ fontSize: 12, color: colors.textDim, marginTop: 2 }}>
                     {emp.cargo}
                   </div>
                   {asist?.hora && (
@@ -569,14 +571,14 @@ function TabAsistencia({ sucursales }) {
                 <button
                   onClick={() => marcarPresente(emp.id, presente ? 'ausente' : 'presente')}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: 8,
+                    padding: '6px 14px',
+                    borderRadius: 6,
                     border: 'none',
                     background: presente ? colors.green : colors.bgCard,
                     color: presente ? '#000' : colors.text,
                     cursor: 'pointer',
                     fontWeight: 600,
-                    fontSize: 13,
+                    fontSize: 12,
                   }}
                 >
                   {presente ? '✓ Presente' : 'Marcar'}
@@ -587,7 +589,7 @@ function TabAsistencia({ sucursales }) {
         </div>
       )}
 
-      {empleados.length === 0 && (
+      {empleados.length === 0 && !loading && (
         <div style={{ textAlign: 'center', color: colors.textDim, padding: 20 }}>
           No hay empleados activos en esta sucursal
         </div>
@@ -695,7 +697,7 @@ function TabDescuentos({ canEdit }) {
           onClick={() => openForm()}
           style={{
             padding: '8px 16px',
-            borderRadius: 8,
+            borderRadius: 6,
             border: 'none',
             background: colors.green,
             color: '#000',
@@ -705,7 +707,7 @@ function TabDescuentos({ canEdit }) {
             marginBottom: 16,
           }}
         >
-          + Nuevo Descuento
+          + Nuevo
         </button>
       )}
 
@@ -715,20 +717,18 @@ function TabDescuentos({ canEdit }) {
         return (
           <div
             key={desc.id}
+            className="card"
             style={{
-              background: colors.bgCard,
-              borderRadius: 8,
-              padding: 12,
+              padding: '12px 14px',
               marginBottom: 8,
-              border: `1px solid ${colors.border}`,
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <div>
-                <div style={{ fontWeight: 600, color: colors.text }}>
+                <div style={{ fontWeight: 600, color: colors.text, fontSize: 13 }}>
                   {desc.empleados?.nombre_completo}
                 </div>
-                <div style={{ fontSize: 12, color: colors.textDim }}>
+                <div style={{ fontSize: 12, color: colors.textDim, marginTop: 2 }}>
                   {desc.tipo} - {desc.descripcion || '—'}
                 </div>
               </div>
@@ -736,7 +736,7 @@ function TabDescuentos({ canEdit }) {
                 <div style={{ fontSize: 14, fontWeight: 700, color: colors.yellow }}>
                   ${n(desc.monto_total).toFixed(2)}
                 </div>
-                <div style={{ fontSize: 11, color: colors.textDim }}>
+                <div style={{ fontSize: 11, color: colors.textDim, marginTop: 2 }}>
                   {desc.cuotas_pagadas}/{desc.cuotas_totales} cuotas
                 </div>
               </div>
@@ -746,9 +746,9 @@ function TabDescuentos({ canEdit }) {
             <div
               style={{
                 width: '100%',
-                height: 8,
+                height: 6,
                 background: colors.border,
-                borderRadius: 4,
+                borderRadius: 3,
                 overflow: 'hidden',
                 marginBottom: 8,
               }}
@@ -826,20 +826,17 @@ function ModalEmpleado({ formData, setFormData, onSave, onCancel, sucursales }) 
       onClick={onCancel}
     >
       <div
+        className="modal"
         style={{
-          background: colors.bg,
-          borderRadius: 12,
-          padding: 20,
           maxWidth: 500,
           width: '100%',
           maxHeight: '90vh',
           overflowY: 'auto',
-          border: `1px solid ${colors.border}`,
-          color: colors.text,
+          padding: 20,
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px', color: colors.text }}>
           {formData.id ? 'Editar Empleado' : 'Nuevo Empleado'}
         </h2>
 
@@ -952,12 +949,13 @@ function ModalEmpleado({ formData, setFormData, onSave, onCancel, sucursales }) 
             style={{
               flex: 1,
               padding: '10px',
-              borderRadius: 8,
+              borderRadius: 6,
               border: `1px solid ${colors.border}`,
               background: colors.bgCard,
               color: colors.text,
               cursor: 'pointer',
               fontWeight: 600,
+              fontSize: 13,
             }}
           >
             Cancelar
@@ -967,12 +965,13 @@ function ModalEmpleado({ formData, setFormData, onSave, onCancel, sucursales }) 
             style={{
               flex: 1,
               padding: '10px',
-              borderRadius: 8,
+              borderRadius: 6,
               border: 'none',
               background: colors.green,
               color: '#000',
               cursor: 'pointer',
               fontWeight: 700,
+              fontSize: 13,
             }}
           >
             Guardar
@@ -1002,18 +1001,15 @@ function ModalDescuento({ formData, setFormData, empleados, onSave, onCancel }) 
       onClick={onCancel}
     >
       <div
+        className="modal"
         style={{
-          background: colors.bg,
-          borderRadius: 12,
-          padding: 20,
           maxWidth: 400,
           width: '100%',
-          border: `1px solid ${colors.border}`,
-          color: colors.text,
+          padding: 20,
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px', color: colors.text }}>
           {formData.id ? 'Editar Descuento' : 'Nuevo Descuento'}
         </h2>
 
@@ -1065,12 +1061,13 @@ function ModalDescuento({ formData, setFormData, empleados, onSave, onCancel }) 
             style={{
               flex: 1,
               padding: '10px',
-              borderRadius: 8,
+              borderRadius: 6,
               border: `1px solid ${colors.border}`,
               background: colors.bgCard,
               color: colors.text,
               cursor: 'pointer',
               fontWeight: 600,
+              fontSize: 13,
             }}
           >
             Cancelar
@@ -1080,12 +1077,13 @@ function ModalDescuento({ formData, setFormData, empleados, onSave, onCancel }) 
             style={{
               flex: 1,
               padding: '10px',
-              borderRadius: 8,
+              borderRadius: 6,
               border: 'none',
               background: colors.green,
               color: '#000',
               cursor: 'pointer',
               fontWeight: 700,
+              fontSize: 13,
             }}
           >
             Guardar
@@ -1116,7 +1114,7 @@ function InputField({ label, value, onChange, type = 'text', placeholder = '', m
         style={{
           width: '100%',
           padding: '8px 10px',
-          borderRadius: 8,
+          borderRadius: 6,
           border: `1px solid ${colors.border}`,
           background: colors.bgCard,
           color: colors.text,
@@ -1142,7 +1140,7 @@ function SelectField({ label, value, onChange, options, optionKey = null, option
         style={{
           width: '100%',
           padding: '8px 10px',
-          borderRadius: 8,
+          borderRadius: 6,
           border: `1px solid ${colors.border}`,
           background: colors.bgCard,
           color: colors.text,
@@ -1179,7 +1177,7 @@ function CheckboxField({ label, checked, onChange }) {
         onChange={onChange}
         style={{ width: 18, height: 18, cursor: 'pointer' }}
       />
-      <span style={{ fontSize: 13 }}>{label}</span>
+      <span style={{ fontSize: 13, color: colors.text }}>{label}</span>
     </label>
   );
 }
