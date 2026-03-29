@@ -40,7 +40,7 @@ export default function ConteoNocturno({user,onBack}){
 
         // Cargar productos del inventario de esta sucursal
         const {data:invData}=await db.from('inventario')
-          .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad, categoria)')
+          .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria)')
           .eq('sucursal_id',suc.id).order('catalogo_productos(categoria)', {ascending: true});
 
         if(invData&&invData.length>0){
@@ -48,7 +48,7 @@ export default function ConteoNocturno({user,onBack}){
             inventario_id: inv.id,
             producto_id: inv.producto_id,
             nombre: inv.catalogo_productos?.nombre||'Sin nombre',
-            unidad: inv.catalogo_productos?.unidad||'',
+            unidad: inv.catalogo_productos?.unidad_medida||'unidad',
             categoria: inv.catalogo_productos?.categoria||'Otros',
             stock_teorico: inv.stock_actual,
             stock_minimo: inv.stock_minimo,
