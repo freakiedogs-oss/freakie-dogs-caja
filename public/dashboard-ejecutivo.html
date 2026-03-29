@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Ejecutivo - Freakie Dogs</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 1.5rem;
+            border-bottom: 2px solid #ff6b35;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        header .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #ff6b35;
+            letter-spacing: 1px;
+        }
+
+        .header-info {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .current-date {
+            font-size: 0.95rem;
+            color: #b0b0b0;
+        }
+
+        .refresh-status {
+            font-size: 0.85rem;
+            color: #4ade80;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .refresh-dot {
+            width: 8px;
+            height: 8px;
+            background: #4ade80;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .grid-2 {
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        }
+
+        .grid-full {
+            grid-template-columns: 1fr;
+        }
+
+        /* Card Styles */
+        .card {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            border: 1px solid #2d2d44;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .card:hover {
+            border-color: #ff6b35;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(255, 107, 53, 0.1);
+        }
+
+        .card-title {
+            font-size: 0.9rem;
+            color: #b0b0b0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+        }
+
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-subtitle {
+            font-size: 0.85rem;
+            color: #707080;
+        }
+
+        .card-change {
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .change-positive {
+            color: #4ade80;
+        }
+
+        .change-negative {
+            color: #ef4444;
+        }
+
+        /* Chart Containers */
+        .chart-card {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            border: 1px solid #2d2d44;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .chart-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 1.5rem;
+            border-bottom: 2px solid #ff6b35;
+            padding-bottom: 0.5rem;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+            margin-bottom: 1rem;
+        }
+
+        .chart-wrapper.large {
+            height: 400px;
+        }
+
+        /* Loading & Error */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            color: #ff6b35;
+            font-size: 0.9rem;
+        }
+
+        .loading-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ff6b35;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #7f1d1d;
+            border: 1px solid #dc2626;
+            color: #fca5a5;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        /* Stat Grid */
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #ff6b35;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #808090;
+            text-transform: uppercase;
+        }
+
+        /* Top Sucursales */
+        .top-sucursal {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.8rem 0;
+            border-bottom: 1px solid #2d2d44;
+        }
+
+        .top-sucursal:last-child {
+            border-bottom: none;
+        }
+
+        .sucursal-name {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .sucursal-value {
+            color: #ff6b35;
+            font-weight: 700;
+        }
+
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            background: #ff6b35;
+            color: #0f0f23;
+            border-radius: 50%;
+            font-size: 0.8rem;
+            font-weight: 700;
+            margin-right: 0.5rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header .container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+
+            .header-info {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .card-value {
+                font-size: 1.5rem;
+            }
+
+            .container {
+                padding: 1rem 0.75rem;
+            }
+        }
+
+        /* Severity Badges */
+        .severity-badge {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+
+        .severity-critical {
+            background: #7f1d1d;
+            color: #fca5a5;
+        }
+
+        .severity-high {
+            background: #92400e;
+            color: #fcd34d;
+        }
+
+        .severity-medium {
+            background: #1e40af;
+            color: #93c5fd;
+        }
+
+        .severity-low {
+            background: #065f46;
+            color: #86efac;
+        }
+
+        /* No Data */
+        .no-data {
+            text-align: center;
+            color: #707080;
+            padding: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="logo">FREAKIE DOGS</div>
+            <div class="header-info">
+                <div class="current-date" id="currentDate"></div>
+                <div class="refresh-status">
+                    <span class="refresh-dot"></span>
+                    <span>Auto-refresh activo</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Row 1: KPIs Principales -->
+        <div class="grid">
+            <div class="card">
+                <div class="card-title">Ventas Mes Actual</div>
+                <div class="card-value" id="ventasMesActual">-</div>
+                <div class="card-subtitle">$</div>
+                <div class="card-change" id="ventasMesChange"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Ventas Hoy</div>
+                <div class="card-value" id="ventasHoy">-</div>
+                <div class="card-subtitle">vs Meta: <span id="ventasHoyMeta">-</span></div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Ticket Promedio</div>
+                <div class="card-value" id="ticketPromedio">-</div>
+                <div class="card-subtitle">Últimos 30 días</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Empleados Activos</div>
+                <div class="card-value" id="empleadosActivos">-</div>
+                <div class="card-subtitle">Costo nómina: <span id="costoNomina">-</span></div>
+            </div>
+        </div>
+
+        <!-- Row 2: Charts & Analytics -->
+        <div class="grid grid-2">
+            <!-- Ventas Últimos 30 días -->
+            <div class="chart-card">
+                <div class="chart-title">Ventas Últimos 30 Días</div>
+                <div class="chart-wrapper large">
+                    <canvas id="ventasDiariasChart"></canvas>
+                </div>
+                <div id="ventasDiariasLoader" class="loading">
+                    <span class="loading-spinner"></span>
+                    Cargando datos...
+                </div>
+            </div>
+
+            <!-- Distribución Métodos de Pago -->
+            <div class="chart-card">
+                <div class="chart-title">Distribución Métodos de Pago</div>
+                <div class="chart-wrapper">
+                    <canvas id="metodoPagoChart"></canvas>
+                </div>
+                <div id="metodoPagoLoader" class="loading">
+                    <span class="loading-spinner"></span>
+                    Cargando datos...
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3: Detalles -->
+        <div class="grid grid-2">
+            <!-- Top 5 Sucursales -->
+            <div class="chart-card">
+                <div class="chart-title">Top 5 Sucursales por Ventas</div>
+                <div id="topSucursalesLoader" class="loading">
+                    <span class="loading-spinner"></span>
+                    Cargando datos...
+                </div>
+                <div id="topSucursales"></div>
+            </div>
+
+            <!-- Incidentes por Severidad -->
+            <div class="chart-card">
+                <div class="chart-title">Incidentes del Mes por Severidad</div>
+                <div id="incidentesLoader" class="loading">
+                    <span class="loading-spinner"></span>
+                    Cargando datos...
+                </div>
+                <div id="incidentesContent"></div>
+            </div>
+        </div>
+
+        <!-- Row 4: Ticket Promedio por Sucursal -->
+        <div class="grid grid-full">
+            <div class="chart-card">
+                <div class="chart-title">Ticket Promedio por Sucursal</div>
+                <div class="chart-wrapper">
+                    <canvas id="ticketPorSucursalChart"></canvas>
+                </div>
+                <div id="ticketSucursalLoader" class="loading">
+                    <span class="loading-spinner"></span>
+                    Cargando datos...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Supabase Config
+        const SUPABASE_URL = 'https://btboxlwfqcbrdfrlnwln.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI0MjQ4MzQsImV4cCI6MjA1ODAwMDgzNH0.SYNfcAFHqSdPJrEYe-D05hsBSr-0FgDPx-IvxUbFLk0';
+
+        // Chart instances
+        let charts = {};
+
+        // Utility: Format currency
+        function formatCurrency(value) {
+            if (!value) return '$0.00';
+            return '$' + parseFloat(value).toLocaleString('en-US', { maximumFractionDigits: 2 });
+        }
+
+        // Utility: Format percentage
+        function formatPercent(value) {
+            if (!value) return '0%';
+            return (Math.abs(value) >= 1000 ? (value / 1000).toFixed(1) + 'k' : value.toFixed(0)) + '%';
+        }
+
+        // Utility: Get month name
+        function getMonthName(date) {
+            return date.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+        }
+
+        // Utility: Get date range
+        function getDateRange(days) {
+            const end = new Date();
+            const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+            return { start, end };
+        }
+
+        // Update current date
+        function updateCurrentDate() {
+            const today = new Date();
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('currentDate').textContent =
+                today.toLocaleDateString('es-ES', options);
+        }
+
+        // Fetch from Supabase
+        async function supabaseQuery(table, filters = {}) {
+            try {
+                let url = `${SUPABASE_URL}/rest/v1/${table}?`;
+                const params = new URLSearchParams();
+
+                Object.entries(filters).forEach(([key, value]) => {
+                    if (Array.isArray(value)) {
+                        params.append(key, `in.(${value.join(',')})`);
+                    } else if (typeof value === 'object' && value.operator) {
+                        params.append(key, `${value.operator}.${value.value}`);
+                    } else {
+                        params.append(key, `eq.${value}`);
+                    }
+                });
+
+                url += params.toString();
+
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    console.error(`Supabase error: ${response.status}`);
+                    return [];
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Fetch error:', error);
+                return [];
+            }
+        }
+
+        // Load main KPIs
+        async function loadMainKPIs() {
+            try {
+                const today = new Date();
+                const currentMonth = today.getMonth();
+                const currentYear = today.getFullYear();
+                const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+                const previousYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
+                // Current month sales
+                const currentMonthStart = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
+                const currentMonthEnd = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
+
+                // Previous month sales
+                const previousMonthStart = new Date(previousYear, previousMonth, 1).toISOString().split('T')[0];
+                const previousMonthEnd = new Date(previousYear, previousMonth + 1, 0).toISOString().split('T')[0];
+
+                // Today's sales
+                const todayStart = today.toISOString().split('T')[0];
+
+                const [currentVentas, previousVentas, todayVentas, empleados] = await Promise.all([
+                    supabaseQuery('ventas_diarias', {
+                        fecha: { operator: 'gte', value: currentMonthStart },
+                        'fecha': { operator: 'lte', value: currentMonthEnd }
+                    }),
+                    supabaseQuery('ventas_diarias', {
+                        fecha: { operator: 'gte', value: previousMonthStart },
+                        'fecha': { operator: 'lte', value: previousMonthEnd }
+                    }),
+                    supabaseQuery('ventas_diarias', { fecha: todayStart }),
+                    supabaseQuery('empleados', { activo: true })
+                ]);
+
+                // Calculate current month total
+                const ventasMesActualTotal = currentVentas.reduce((sum, v) => sum + (v.total_neto || 0), 0);
+                document.getElementById('ventasMesActual').textContent =
+                    formatCurrency(ventasMesActualTotal);
+
+                // Calculate previous month total and percentage change
+                const ventasMesAnteriorTotal = previousVentas.reduce((sum, v) => sum + (v.total_neto || 0), 0);
+                const cambio = ventasMesAnteriorTotal ?
+                    ((ventasMesActualTotal - ventasMesAnteriorTotal) / ventasMesAnteriorTotal * 100) : 0;
+
+                const cambioElement = document.getElementById('ventasMesChange');
+                cambioElement.innerHTML = `
+                    <span class="${cambio >= 0 ? 'change-positive' : 'change-negative'}">
+                        ${cambio >= 0 ? '▲' : '▼'} ${Math.abs(cambio).toFixed(1)}% vs mes anterior
+                    </span>
+                `;
+
+                // Today's sales
+                const ventasHoyTotal = todayVentas.reduce((sum, v) => sum + (v.total_neto || 0), 0);
+                document.getElementById('ventasHoy').textContent = formatCurrency(ventasHoyTotal);
+                document.getElementById('ventasHoyMeta').textContent = '-'; // Sin meta definida aún
+
+                // Ticket promedio últimos 30 días
+                const { start, end } = getDateRange(30);
+                const ventasUltimos30 = await fetch(
+                    `${SUPABASE_URL}/rest/v1/ventas_diarias?fecha=gte.${start.toISOString().split('T')[0]}&fecha=lte.${end.toISOString().split('T')[0]}`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                ).then(r => r.json());
+
+                const ticketPromedio = ventasUltimos30.length ?
+                    ventasUltimos30.reduce((sum, v) => sum + (v.ticket_promedio || 0), 0) / ventasUltimos30.length : 0;
+                document.getElementById('ticketPromedio').textContent = formatCurrency(ticketPromedio);
+
+                // Empleados activos
+                document.getElementById('empleadosActivos').textContent = empleados.length;
+                const costoNomina = empleados.reduce((sum, e) => sum + (e.salario_mensual || 0), 0);
+                document.getElementById('costoNomina').textContent = formatCurrency(costoNomina);
+
+            } catch (error) {
+                console.error('Error loading main KPIs:', error);
+            }
+        }
+
+        // Load 30-day sales chart
+        async function loadVentasDiariasChart() {
+            try {
+                const { start, end } = getDateRange(30);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = end.toISOString().split('T')[0];
+
+                const ventas = await fetch(
+                    `${SUPABASE_URL}/rest/v1/ventas_diarias?fecha=gte.${startStr}&fecha=lte.${endStr}&order=fecha.asc`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                ).then(r => r.json());
+
+                const labels = ventas.map(v => {
+                    const date = new Date(v.fecha);
+                    return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+                });
+                const data = ventas.map(v => v.total_neto || 0);
+
+                const canvas = document.getElementById('ventasDiariasChart');
+                if (charts.ventasDiarias) charts.ventasDiarias.destroy();
+
+                charts.ventasDiarias = new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Ventas Netas',
+                            data,
+                            borderColor: '#ff6b35',
+                            backgroundColor: 'rgba(255, 107, 53, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#ff6b35',
+                            pointBorderColor: '#1a1a2e',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    color: '#b0b0b0',
+                                    callback: function(value) {
+                                        return '$' + (value / 1000).toFixed(0) + 'k';
+                                    }
+                                },
+                                grid: { color: '#2d2d44' }
+                            },
+                            x: {
+                                ticks: { color: '#b0b0b0' },
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                document.getElementById('ventasDiariasLoader').style.display = 'none';
+            } catch (error) {
+                console.error('Error loading sales chart:', error);
+            }
+        }
+
+        // Load payment methods chart
+        async function loadMetodoPagoChart() {
+            try {
+                const { start, end } = getDateRange(30);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = end.toISOString().split('T')[0];
+
+                const ventas = await fetch(
+                    `${SUPABASE_URL}/rest/v1/ventas_diarias?fecha=gte.${startStr}&fecha=lte.${endStr}`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                ).then(r => r.json());
+
+                const efectivo = ventas.reduce((sum, v) => sum + (v.efectivo || 0), 0);
+                const tarjeta = ventas.reduce((sum, v) => sum + (v.tarjeta || 0), 0);
+                const transferencia = ventas.reduce((sum, v) => sum + (v.transferencia || 0), 0);
+
+                const canvas = document.getElementById('metodoPagoChart');
+                if (charts.metodoPago) charts.metodoPago.destroy();
+
+                charts.metodoPago = new Chart(canvas, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Efectivo', 'Tarjeta', 'Transferencia'],
+                        datasets: [{
+                            data: [efectivo, tarjeta, transferencia],
+                            backgroundColor: ['#ff6b35', '#4ade80', '#3b82f6'],
+                            borderColor: '#1a1a2e',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: '#b0b0b0', padding: 15 }
+                            }
+                        }
+                    }
+                });
+
+                document.getElementById('metodoPagoLoader').style.display = 'none';
+            } catch (error) {
+                console.error('Error loading payment methods chart:', error);
+            }
+        }
+
+        // Load top 5 sucursales
+        async function loadTopSucursales() {
+            try {
+                const { start, end } = getDateRange(30);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = end.toISOString().split('T')[0];
+
+                const ventas = await fetch(
+                    `${SUPABASE_URL}/rest/v1/ventas_diarias?fecha=gte.${startStr}&fecha=lte.${endStr}`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                ).then(r => r.json());
+
+                const sucursalesMap = {};
+                ventas.forEach(v => {
+                    if (!sucursalesMap[v.store_code]) {
+                        sucursalesMap[v.store_code] = 0;
+                    }
+                    sucursalesMap[v.store_code] += v.total_neto || 0;
+                });
+
+                const sorted = Object.entries(sucursalesMap)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 5);
+
+                const sucursales = await supabaseQuery('sucursales', {});
+                const sucursalMap = Object.fromEntries(sucursales.map(s => [s.store_code, s.nombre]));
+
+                const html = sorted.map((([code, total], index) => `
+                    <div class="top-sucursal">
+                        <div>
+                            <span class="rank-badge">${index + 1}</span>
+                            <span class="sucursal-name">${sucursalMap[code] || code}</span>
+                        </div>
+                        <span class="sucursal-value">${formatCurrency(total)}</span>
+                    </div>
+                `)).join('');
+
+                document.getElementById('topSucursales').innerHTML = html || '<div class="no-data">No hay datos</div>';
+                document.getElementById('topSucursalesLoader').style.display = 'none';
+            } catch (error) {
+                console.error('Error loading top sucursales:', error);
+            }
+        }
+
+        // Load incidentes por severidad
+        async function loadIncidentes() {
+            try {
+                const { start, end } = getDateRange(30);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = end.toISOString().split('T')[0];
+
+                const incidentes = await fetch(
+                    `${SUPABASE_URL}/rest/v1/incidentes_turno?created_at=gte.${startStr}T00:00:00&created_at=lte.${endStr}T23:59:59`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                ).then(r => r.json());
+
+                const severidadMap = {};
+                incidentes.forEach(i => {
+                    if (!severidadMap[i.severidad]) {
+                        severidadMap[i.severidad] = 0;
+                    }
+                    severidadMap[i.severidad]++;
+                });
+
+                const severidades = ['critical', 'high', 'medium', 'low'];
+                const html = severidades.map(sev => {
+                    const count = severidadMap[sev] || 0;
+                    const badgeClass = `severity-${sev}`;
+                    return `
+                        <div style="margin-bottom: 0.8rem;">
+                            <span class="severity-badge ${badgeClass}">${sev.toUpperCase()}</span>
+                            <span style="color: #fff; font-weight: 600;">${count} incidentes</span>
+                        </div>
+                    `;
+                }).join('');
+
+                document.getElementById('incidentesContent').innerHTML = html || '<div class="no-data">No hay incidentes</div>';
+                document.getElementById('incidentesLoader').style.display = 'none';
+            } catch (error) {
+                console.error('Error loading incidentes:', error);
+            }
+        }
+
+        // Load ticket promedio por sucursal
+        async function loadTicketPorSucursal() {
+            try {
+                const { start, end } = getDateRange(30);
+                const startStr = start.toISOString().split('T')[0];
+                const endStr = end.toISOString().split('T')[0];
+
+                const ventas = await fetch(
+                    `${SUPABASE_URL}/rest/v1/ventas_diarias?fecha=gte.${startStr}&fecha=lte.${endStr}`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                ).then(r => r.json());
+
+                const sucursalesMap = {};
+                ventas.forEach(v => {
+                    if (!sucursalesMap[v.store_code]) {
+                        sucursalesMap[v.store_code] = { total: 0, count: 0 };
+                    }
+                    sucursalesMap[v.store_code].total += v.ticket_promedio || 0;
+                    sucursalesMap[v.store_code].count++;
+                });
+
+                const labels = [];
+                const data = [];
+
+                Object.entries(sucursalesMap).forEach(([code, stats]) => {
+                    const sucursales = await supabaseQuery('sucursales', { store_code: code });
+                    labels.push(sucursales[0]?.nombre || code);
+                    data.push(stats.total / stats.count);
+                });
+
+                const canvas = document.getElementById('ticketPorSucursalChart');
+                if (charts.ticketSucursal) charts.ticketSucursal.destroy();
+
+                charts.ticketSucursal = new Chart(canvas, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Ticket Promedio',
+                            data,
+                            backgroundColor: '#ff6b35',
+                            borderColor: '#ff6b35',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    color: '#b0b0b0',
+                                    callback: function(value) {
+                                        return '$' + value.toFixed(2);
+                                    }
+                                },
+                                grid: { color: '#2d2d44' }
+                            },
+                            y: {
+                                ticks: { color: '#b0b0b0' },
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                document.getElementById('ticketSucursalLoader').style.display = 'none';
+            } catch (error) {
+                console.error('Error loading ticket por sucursal:', error);
+            }
+        }
+
+        // Initialize all data
+        async function initializeDashboard() {
+            updateCurrentDate();
+            await Promise.all([
+                loadMainKPIs(),
+                loadVentasDiariasChart(),
+                loadMetodoPagoChart(),
+                loadTopSucursales(),
+                loadIncidentes(),
+                loadTicketPorSucursal()
+            ]);
+        }
+
+        // Auto-refresh every 5 minutes
+        setInterval(() => {
+            initializeDashboard();
+        }, 5 * 60 * 1000);
+
+        // Load on page load
+        window.addEventListener('load', initializeDashboard);
+    </script>
+</body>
+</html>
