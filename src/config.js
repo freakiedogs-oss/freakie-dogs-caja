@@ -69,7 +69,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Supply Chain',
     items: [
-      { key: 'conteo', label: 'Conteo Nocturno', icon: '🌙', roles: ['cocina', 'gerente', 'admin'] },
+      { key: 'conteo', label: 'Conteo Nocturno', icon: '🌙', roles: ['cocina', 'gerente', 'admin', 'ejecutivo'] },
       { key: 'entregas', label: 'Confirmar Entregas', icon: '✅', roles: ['despachador', 'admin'] },
     ],
   },

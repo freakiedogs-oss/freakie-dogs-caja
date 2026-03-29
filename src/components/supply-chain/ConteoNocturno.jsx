@@ -6,10 +6,14 @@ import { useToast } from '../../hooks/useToast';
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
 
 
+const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin'];
+
 export default function ConteoNocturno({user,onBack}){
   const {show,Toast}=useToast();
-  const [screen,setScreen]=useState(1); // 1=conteo, 2=pedido
+  const [screen,setScreen]=useState(1); // 0=seleccionar sucursal, 1=conteo, 2=pedido
   const [sucursalId,setSucursalId]=useState(null);
+  const [sucursalNombre,setSucursalNombre]=useState('');
+  const [sucursales,setSucursales]=useState([]);
   const [productos,setProductos]=useState([]); // {id, nombre, unidad, stock_actual, categoria, cantidad_real}
   const [loading,setLoading]=useState(true);
   const [guardando,setGuardando]=useState(false);
@@ -18,46 +22,71 @@ export default function ConteoNocturno({user,onBack}){
   const [pedidoItems,setPedidoItems]=useState([]); // {producto_id, nombre, cantidad_real, stock_minimo, stock_maximo, cantidad_sugerida}
   const [pedidoQtys,setPedidoQtys]=useState({}); // {producto_id: cantidad}
 
+  const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
+
+  // Cargar inventario para una sucursal específica
+  const cargarInventario = async (sucId) => {
+    setSucursalId(sucId);
+    setLoading(true);
+    try {
+      const hoy = today();
+      const {data:existente} = await db.from('inventario_conteo_nocturno')
+        .select('*').eq('sucursal_id', sucId).eq('fecha', hoy).maybeSingle();
+      if (existente) {
+        setConteoHoy(existente);
+        setScreen(2);
+        show('⏭ Conteo ya realizado, mostrando pedido sugerido');
+      } else {
+        setScreen(1);
+      }
+
+      const {data:invData} = await db.from('inventario')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria)')
+        .eq('sucursal_id', sucId).order('catalogo_productos(categoria)', {ascending: true});
+
+      if (invData && invData.length > 0) {
+        const prods = invData.map(inv => ({
+          inventario_id: inv.id,
+          producto_id: inv.producto_id,
+          nombre: inv.catalogo_productos?.nombre || 'Sin nombre',
+          unidad: inv.catalogo_productos?.unidad_medida || 'unidad',
+          categoria: inv.catalogo_productos?.categoria || 'Otros',
+          stock_teorico: inv.stock_actual,
+          stock_minimo: inv.stock_minimo,
+          stock_maximo: inv.stock_maximo,
+          cantidad_real: null
+        }));
+        setProductos(prods);
+      }
+      setLoading(false);
+    } catch(e) {
+      show('❌ Error cargando datos: ' + e.message);
+      setLoading(false);
+    }
+  };
+
   // Obtener sucursal_id y cargar inventario
   useEffect(()=>{
     const init=async()=>{
       try{
-        // Resolver sucursal_id desde store_code (igual que ReporteForm)
+        if (needsSucursalPicker) {
+          // Ejecutivo/admin: mostrar selector de sucursales (excluir Casa Matriz)
+          const {data:allSucs} = await db.from('sucursales')
+            .select('id, nombre, store_code')
+            .neq('store_code', 'CM001')
+            .order('nombre');
+          setSucursales(allSucs || []);
+          setScreen(0); // pantalla de selección
+          setLoading(false);
+          return;
+        }
+
+        // Usuario con store_code: ir directo
         const {data:suc}=await db.from('sucursales')
-          .select('id').eq('store_code',user.store_code).maybeSingle();
+          .select('id, nombre').eq('store_code',user.store_code).maybeSingle();
         if(!suc){show('❌ No se encontró sucursal');setLoading(false);return;}
-        setSucursalId(suc.id);
-
-        // Verificar si ya existe conteo hoy
-        const hoy=today();
-        const {data:existente}=await db.from('inventario_conteo_nocturno')
-          .select('*').eq('sucursal_id',suc.id).eq('fecha',hoy).maybeSingle();
-        if(existente){
-          setConteoHoy(existente);
-          setScreen(2); // Ir directo al pedido si ya existe
-          show('⏭ Conteo ya realizado, mostrando pedido sugerido');
-        }
-
-        // Cargar productos del inventario de esta sucursal
-        const {data:invData}=await db.from('inventario')
-          .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria)')
-          .eq('sucursal_id',suc.id).order('catalogo_productos(categoria)', {ascending: true});
-
-        if(invData&&invData.length>0){
-          const prods=invData.map(inv=>({
-            inventario_id: inv.id,
-            producto_id: inv.producto_id,
-            nombre: inv.catalogo_productos?.nombre||'Sin nombre',
-            unidad: inv.catalogo_productos?.unidad_medida||'unidad',
-            categoria: inv.catalogo_productos?.categoria||'Otros',
-            stock_teorico: inv.stock_actual,
-            stock_minimo: inv.stock_minimo,
-            stock_maximo: inv.stock_maximo,
-            cantidad_real: null
-          }));
-          setProductos(prods);
-        }
-        setLoading(false);
+        setSucursalNombre(suc.nombre);
+        await cargarInventario(suc.id);
       }catch(e){
         show('❌ Error cargando datos: '+e.message);
         setLoading(false);
@@ -212,8 +241,8 @@ export default function ConteoNocturno({user,onBack}){
     );
   }
 
-  // ── SCREEN 1: CONTEO ──
-  if(screen===1){
+  // ── SCREEN 0: SELECTOR DE SUCURSAL (ejecutivo/admin) ──
+  if(screen===0){
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
         <Toast/>
@@ -221,7 +250,30 @@ export default function ConteoNocturno({user,onBack}){
           <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
             <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
-            <div style={{color:'#555',fontSize:12}}>{new Date(Date.now()-6*3600*1000).toLocaleDateString('es-SV',{weekday:'short',month:'short',day:'numeric'})}</div>
+            <div style={{color:'#555',fontSize:12}}>Seleccionar sucursal</div>
+          </div>
+        </div>
+        {sucursales.map(s=>(
+          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);cargarInventario(s.id);}}
+            style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
+            <div style={{fontWeight:600,fontSize:15}}>{s.nombre}</div>
+            <div style={{color:'#666',fontSize:12}}>{s.store_code}</div>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // ── SCREEN 1: CONTEO ──
+  if(screen===1){
+    return(
+      <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
+        <Toast/>
+        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={needsSucursalPicker?()=>setScreen(0):onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <div>
+            <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · {new Date(Date.now()-6*3600*1000).toLocaleDateString('es-SV',{weekday:'short',month:'short',day:'numeric'})}</div>
           </div>
         </div>
 
