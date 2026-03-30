@@ -693,7 +693,10 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
         );
 
     setLoading(false);
-    onSuccess({ ...payload, diferencia: difDeposito, cierre_id: cierreId });
+    show(isEdit ? '✅ Cierre actualizado correctamente' : '✅ Cierre enviado correctamente');
+    setTimeout(() => {
+      if (onSuccess) onSuccess({ ...payload, diferencia: difDeposito, cierre_id: cierreId });
+    }, 1500);
   };
 
   const storeLabel = existingCierre ? STORES[existingCierre.store_code] || existingCierre.store_code : STORES[user.store_code] || '-';

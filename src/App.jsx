@@ -89,6 +89,7 @@ export default function App() {
             user={user}
             existingCierre={editCierre}
             onBack={() => setScreen('home')}
+            onSuccess={() => { setEditCierre(null); setScreen('home'); }}
           />
         )
       case 'reporte':
