@@ -431,20 +431,19 @@ function ModalAjuste({ onSave, onClose }) {
 }
 
 export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, onSuccess }) {
-  // Bloquear cierre para Casa Matriz y usuarios sin sucursal asignada
-  const noSucursal = !isAdminEdit && !existingCierre && (!user.store_code || user.store_code === 'CM001');
-  if (noSucursal) {
+  // Roles que pueden elegir sucursal (no tienen sucursal fija o son CM001)
+  const esRolLibre = ['ejecutivo', 'admin'].includes(user.rol);
+  const necesitaElegir = !isAdminEdit && !existingCierre && (!user.store_code || user.store_code === 'CM001');
+
+  // Si no es ejecutivo/admin Y no tiene sucursal → bloquear
+  if (necesitaElegir && !esRolLibre) {
     return (
       <div style={{ padding: 20, maxWidth: 480, margin: '0 auto' }}>
         <button className="btn btn-ghost" onClick={onBack} style={{ marginBottom: 16 }}>← Volver</button>
         <div className="card" style={{ textAlign: 'center', padding: 32 }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🚫</div>
           <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Cierre no disponible</div>
-          <div style={{ color: '#aaa', fontSize: 14 }}>
-            {user.store_code === 'CM001'
-              ? 'Casa Matriz no realiza cierres de caja.'
-              : 'No tienes una sucursal asignada. Contacta al administrador.'}
-          </div>
+          <div style={{ color: '#aaa', fontSize: 14 }}>No tienes una sucursal asignada. Contacta al administrador.</div>
         </div>
       </div>
     );
@@ -454,6 +453,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
   const { show, Toast } = useToast();
   const [fecha, setFecha] = useState(existingCierre?.fecha || today());
   const [turno, setTurno] = useState(existingCierre?.turno || 'completo');
+  const [selectedStore, setSelectedStore] = useState(necesitaElegir ? '' : (user.store_code || ''));
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [motEg, setMotEg] = useState([]);
@@ -492,7 +492,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       .order('orden')
       .then(({ data }) => setMotIn(data || []));
 
-    const storeCode = existingCierre?.store_code || user.store_code;
+    const storeCode = existingCierre?.store_code || selectedStore;
     if (storeCode) {
       db.from('sucursales')
         .select('id')
@@ -531,7 +531,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
   }, []);
 
   useEffect(() => {
-    if (isEdit || !fecha || !user.store_code) return;
+    if (isEdit || !fecha || !selectedStore) return;
     setFetching(true);
     db.rpc('exec_sql_batch', {
       sql_text: `
@@ -541,7 +541,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
         COALESCE(SUM(CASE WHEN metodo_pago ILIKE '%transfer%' THEN total ELSE 0 END),0)::numeric(10,2) as tra,
         COALESCE(SUM(CASE WHEN metodo_pago ILIKE '%link%' THEN total ELSE 0 END),0)::numeric(10,2) as lnk
       FROM quanto_transacciones
-      WHERE store_code='${user.store_code}' AND fecha::date='${fecha}'
+      WHERE store_code='${selectedStore}' AND fecha::date='${fecha}'
     `,
     }).then(({ data, error }) => {
       if (!error && data) {
@@ -558,7 +558,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       }
       setFetching(false);
     });
-  }, [fecha, user.store_code]);
+  }, [fecha, selectedStore]);
 
   const ef = n(ventas.efectivo_quanto);
   const totalEg = egresos.reduce((s, e) => s + n(e.monto), 0);
@@ -584,8 +584,12 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       show('⚠️ Ingresa el efectivo real a depositar');
       return;
     }
+    if (!selectedStore && !existingCierre?.store_code) {
+      show('⚠️ Selecciona una sucursal');
+      return;
+    }
     setLoading(true);
-    const storeCode = existingCierre?.store_code || user.store_code;
+    const storeCode = existingCierre?.store_code || selectedStore;
     const payload = {
       fecha,
       store_code: storeCode,
@@ -645,7 +649,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
           let fotoUrl = e.foto_url || null;
           if (e.foto_file) {
             try {
-              fotoUrl = await uploadFoto(e.foto_file, `egresos/${user.store_code}`);
+              fotoUrl = await uploadFoto(e.foto_file, `egresos/${selectedStore}`);
             } catch (err) {
               console.warn('foto egreso no subida:', err.message);
             }
@@ -699,7 +703,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
     }, 1500);
   };
 
-  const storeLabel = existingCierre ? STORES[existingCierre.store_code] || existingCierre.store_code : STORES[user.store_code] || '-';
+  const storeLabel = existingCierre ? STORES[existingCierre.store_code] || existingCierre.store_code : STORES[selectedStore] || 'Seleccionar sucursal';
 
   if (loadingRelated)
     return (
@@ -754,6 +758,33 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
         </div>
         {fetching && <div className="spin" style={{ marginLeft: 'auto' }} />}
       </div>
+
+      {/* Selector de sucursal para ejecutivos/admin sin sucursal fija */}
+      {necesitaElegir && esRolLibre && !isEdit && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="sec-title">Sucursal</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {Object.entries(STORES).filter(([sc]) => sc !== 'CM001').map(([sc, name]) => (
+              <div
+                key={sc}
+                onClick={() => setSelectedStore(sc)}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: 10,
+                  border: selectedStore === sc ? '2px solid #e63946' : '1.5px solid #333',
+                  background: selectedStore === sc ? '#e6394622' : '#1a1a1a',
+                  color: selectedStore === sc ? '#fff' : '#888',
+                  fontWeight: selectedStore === sc ? 700 : 400,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                }}
+              >
+                {name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isEdit && existingCierre.estado === 'requiere_correccion' && existingCierre.comentario_aprobacion && (
         <div style={{ background: '#2a1500', border: '1px solid #7c2d12', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#f97316' }}>
