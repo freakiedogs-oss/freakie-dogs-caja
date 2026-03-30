@@ -49,7 +49,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   const [filtroEstados,setFiltroEstados]=useState(new Set(['todos']));
   const [filtroSucursales,setFiltroSucursales]=useState(new Set(['todas']));
 
-  const allStoreCodes=Object.keys(STORES);
+  const allStoreCodes=Object.keys(STORES).filter(sc=>sc!=='CM001');
   const esRangoSimple=fechaDesde===fechaHasta;
 
   const cargar=async()=>{
@@ -121,25 +121,21 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     return {tipo:'borrador',cierre:c,dep:dep||null};
   };
 
-  // Filtrar cierres para el listado
-  const filteredCierres=useMemo(()=>{
-    return cierres.filter(c=>{
+  // KPIs basados en filtros actuales (inline filtering, same logic as displayItems)
+  const kpi=useMemo(()=>{
+    const filtered=cierres.filter(c=>{
       const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
       const estadoOk=filtroEstados.has('todos')||filtroEstados.has(c.estado)||(filtroEstados.has('completo')&&c.estado==='aprobado'&&dep&&dep.estado==='confirmado');
       const sucOk=filtroSucursales.has('todas')||filtroSucursales.has(c.store_code);
       return estadoOk&&sucOk;
     });
-  },[cierres,depositos,filtroEstados,filtroSucursales]);
-
-  // KPIs basados en filtros actuales
-  const kpi=useMemo(()=>{
-    const base=filteredCierres.filter(c=>c.diferencia_deposito!=null);
+    const base=filtered.filter(c=>c.diferencia_deposito!=null);
     const totalDif=base.reduce((s,c)=>s+n(c.diferencia_deposito),0);
     const totalAbsDif=base.reduce((s,c)=>s+Math.abs(n(c.diferencia_deposito)),0);
     const totalEfCalc=base.reduce((s,c)=>s+n(c.efectivo_calculado),0);
     const pct=totalEfCalc>0?(totalAbsDif/totalEfCalc)*100:0;
     return {totalDif,totalAbsDif,totalEfCalc,pct,count:base.length};
-  },[filteredCierres]);
+  },[cierres,depositos,filtroEstados,filtroSucursales]);
 
   // Stats del rango completo (sin filtro sucursal/estado) para la barra superior
   const statsBase=useMemo(()=>{
@@ -202,8 +198,13 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
         return {sc,s};
       }).filter(Boolean);
     } else {
-      // Mostrar lista de cierres filtrados
-      return filteredCierres.map(c=>{
+      // Multi-día: filtrar directamente aquí para evitar stale closures
+      return cierres.filter(c=>{
+        const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
+        const estadoOk=filtroEstados.has('todos')||filtroEstados.has(c.estado)||(filtroEstados.has('completo')&&c.estado==='aprobado'&&dep&&dep.estado==='confirmado');
+        const sucOk=filtroSucursales.has('todas')||filtroSucursales.has(c.store_code);
+        return estadoOk&&sucOk;
+      }).map(c=>{
         const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
         let tipo=c.estado==='aprobado'&&dep&&dep.estado==='confirmado'?'completo':c.estado==='aprobado'?'aprobado':c.estado==='requiere_correccion'?'correccion':c.estado==='enviado'?'revision':'borrador';
         return {sc:c.store_code,s:{tipo,cierre:c,dep:dep||null}};
@@ -487,7 +488,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
         <div style={{fontSize:11,color:'#555',marginBottom:6,fontWeight:700,letterSpacing:1,marginTop:8}}>SUCURSAL</div>
         <div className="chips">
           <div className={`chip${filtroSucursales.has('todas')?' on':''}`} onClick={()=>toggleSucursal('todas')}>Todas</div>
-          {allStoreCodes.map(sc=>(
+          {allStoreCodes.filter(sc=>sc!=='CM001').map(sc=>(
             <div key={sc} className={`chip${filtroSucursales.has(sc)?' on':''}`} onClick={()=>toggleSucursal(sc)}>
               {STORES_SHORT[sc]||sc}
             </div>
