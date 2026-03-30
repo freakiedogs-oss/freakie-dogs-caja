@@ -431,6 +431,25 @@ function ModalAjuste({ onSave, onClose }) {
 }
 
 export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, onSuccess }) {
+  // Bloquear cierre para Casa Matriz y usuarios sin sucursal asignada
+  const noSucursal = !isAdminEdit && !existingCierre && (!user.store_code || user.store_code === 'CM001');
+  if (noSucursal) {
+    return (
+      <div style={{ padding: 20, maxWidth: 480, margin: '0 auto' }}>
+        <button className="btn btn-ghost" onClick={onBack} style={{ marginBottom: 16 }}>← Volver</button>
+        <div className="card" style={{ textAlign: 'center', padding: 32 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🚫</div>
+          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Cierre no disponible</div>
+          <div style={{ color: '#aaa', fontSize: 14 }}>
+            {user.store_code === 'CM001'
+              ? 'Casa Matriz no realiza cierres de caja.'
+              : 'No tienes una sucursal asignada. Contacta al administrador.'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isEdit = !!existingCierre;
   const { show, Toast } = useToast();
   const [fecha, setFecha] = useState(existingCierre?.fecha || today());
