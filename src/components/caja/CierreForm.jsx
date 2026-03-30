@@ -456,6 +456,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
   const [selectedStore, setSelectedStore] = useState(necesitaElegir ? '' : (user.store_code || ''));
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [cierresDelDia, setCierresDelDia] = useState([]); // turnos ya enviados para fecha+sucursal
   const [motEg, setMotEg] = useState([]);
   const [motIn, setMotIn] = useState([]);
   const [egresos, setEgresos] = useState([]);
@@ -530,6 +531,23 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
     }
   }, []);
 
+  // Consultar cierres ya existentes para esta fecha+sucursal
+  useEffect(() => {
+    if (isEdit || !fecha || !selectedStore) return;
+    db.from('ventas_diarias')
+      .select('turno,estado')
+      .eq('store_code', selectedStore)
+      .eq('fecha', fecha)
+      .then(({ data }) => {
+        const existentes = data || [];
+        setCierresDelDia(existentes);
+        // Si ya hay un cierre "completo", sugerir "tarde" para el segundo
+        if (existentes.some(c => c.turno === 'completo')) {
+          setTurno('tarde');
+        }
+      });
+  }, [fecha, selectedStore]);
+
   useEffect(() => {
     if (isEdit || !fecha || !selectedStore) return;
     setFetching(true);
@@ -586,6 +604,14 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
     }
     if (!selectedStore && !existingCierre?.store_code) {
       show('⚠️ Selecciona una sucursal');
+      return;
+    }
+    if (!isEdit && cierresDelDia.length >= 2) {
+      show('⚠️ Ya hay 2 cierres para esta fecha. Máximo permitido.');
+      return;
+    }
+    if (!isEdit && cierresDelDia.some(c => c.turno === turno)) {
+      show(`⚠️ Ya existe un cierre "${turno}" para esta fecha`);
       return;
     }
     setLoading(true);
@@ -806,17 +832,32 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
           />
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {['mañana', 'tarde', 'completo'].map((t) => (
-            <button
-              key={t}
-              className={`method-btn${turno === t ? ' active' : ''}`}
-              onClick={() => !isEdit && setTurno(t)}
-              style={{ padding: '12px 6px', fontSize: 14, opacity: isEdit ? 0.5 : 1, cursor: isEdit ? 'default' : 'pointer' }}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
+          {['mañana', 'tarde', 'completo'].map((t) => {
+            const yaExiste = !isEdit && cierresDelDia.some(c => c.turno === t);
+            return (
+              <button
+                key={t}
+                className={`method-btn${turno === t ? ' active' : ''}`}
+                onClick={() => !isEdit && !yaExiste && setTurno(t)}
+                style={{
+                  padding: '12px 6px', fontSize: 14, flex: 1,
+                  opacity: isEdit ? 0.5 : yaExiste ? 0.3 : 1,
+                  cursor: isEdit || yaExiste ? 'default' : 'pointer',
+                  textDecoration: yaExiste ? 'line-through' : 'none',
+                }}
+              >
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {yaExiste && ' ✓'}
+              </button>
+            );
+          })}
         </div>
+        {!isEdit && cierresDelDia.length > 0 && (
+          <div style={{ fontSize: 12, color: '#facc15', marginTop: 8, background: 'rgba(250,204,21,0.08)', borderRadius: 8, padding: '6px 10px' }}>
+            Ya {cierresDelDia.length === 1 ? 'hay 1 cierre' : `hay ${cierresDelDia.length} cierres`} para esta fecha.
+            {cierresDelDia.length < 2 ? ' Puedes agregar un segundo turno.' : ' Máximo 2 cierres por día.'}
+          </div>
+        )}
         {isEdit && (
           <div style={{ fontSize: 11, color: '#555', marginTop: 8 }}>* Fecha y turno no se pueden cambiar al editar</div>
         )}
