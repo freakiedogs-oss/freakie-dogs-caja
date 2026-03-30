@@ -256,8 +256,8 @@ export default function ConteoNocturno({user,onBack}){
         {sucursales.map(s=>(
           <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);cargarInventario(s.id);}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
-            <div style={{fontWeight:600,fontSize:15}}>{s.nombre}</div>
-            <div style={{color:'#666',fontSize:12}}>{s.store_code}</div>
+            <div style={{fontWeight:600,fontSize:15,color:'#fff'}}>{s.nombre}</div>
+            <div style={{color:'#888',fontSize:12}}>{s.store_code}</div>
           </button>
         ))}
       </div>
