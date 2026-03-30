@@ -3,10 +3,17 @@ import { db } from '../../supabase';
 import { today, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
-const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
-
-
 const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin'];
+
+/* ── Stepper button style (48px touch target) ── */
+const stepBtn={
+  width:48,height:48,borderRadius:12,border:'1px solid #333',
+  background:'#1a1a1a',color:'#fff',fontSize:22,fontWeight:700,
+  display:'flex',alignItems:'center',justifyContent:'center',
+  cursor:'pointer',userSelect:'none',flexShrink:0,
+  WebkitTapHighlightColor:'transparent'
+};
+const stepBtnActive={...stepBtn,background:'#e63946',border:'1px solid #e63946'};
 
 export default function ConteoNocturno({user,onBack}){
   const {show,Toast}=useToast();
@@ -14,13 +21,13 @@ export default function ConteoNocturno({user,onBack}){
   const [sucursalId,setSucursalId]=useState(null);
   const [sucursalNombre,setSucursalNombre]=useState('');
   const [sucursales,setSucursales]=useState([]);
-  const [productos,setProductos]=useState([]); // {id, nombre, unidad, stock_actual, categoria, cantidad_real}
+  const [productos,setProductos]=useState([]);
   const [loading,setLoading]=useState(true);
   const [guardando,setGuardando]=useState(false);
   const [generandoPedido,setGenerandoPedido]=useState(false);
   const [conteoHoy,setConteoHoy]=useState(null);
-  const [pedidoItems,setPedidoItems]=useState([]); // {producto_id, nombre, cantidad_real, stock_minimo, stock_maximo, cantidad_sugerida}
-  const [pedidoQtys,setPedidoQtys]=useState({}); // {producto_id: cantidad}
+  const [pedidoItems,setPedidoItems]=useState([]);
+  const [pedidoQtys,setPedidoQtys]=useState({});
 
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
 
@@ -98,6 +105,23 @@ export default function ConteoNocturno({user,onBack}){
   const updateCantidadReal=(prodId,val)=>{
     setProductos(prev=>prev.map(p=>p.producto_id===prodId?{...p,cantidad_real:val===''?null:n(val)}:p));
   };
+
+  const stepCantidad=(prodId,delta)=>{
+    setProductos(prev=>prev.map(p=>{
+      if(p.producto_id!==prodId)return p;
+      const cur=p.cantidad_real===null?p.stock_teorico:p.cantidad_real;
+      return {...p,cantidad_real:Math.max(0,cur+delta)};
+    }));
+  };
+
+  const setIgualTeorico=(prodId)=>{
+    setProductos(prev=>prev.map(p=>p.producto_id===prodId?{...p,cantidad_real:p.stock_teorico}:p));
+  };
+
+  // Progreso del conteo
+  const contados=productos.filter(p=>p.cantidad_real!==null).length;
+  const totalProds=productos.length;
+  const pctContado=totalProds>0?Math.round(contados/totalProds*100):0;
 
   const getDiferencia=(prod)=>{
     if(prod.cantidad_real===null)return null;
@@ -267,47 +291,84 @@ export default function ConteoNocturno({user,onBack}){
   // ── SCREEN 1: CONTEO ──
   if(screen===1){
     return(
-      <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
+      <div style={{minHeight:'100vh',padding:'0 16px 100px'}}>
         <Toast/>
-        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+        {/* Header */}
+        <div style={{padding:'20px 0 8px',display:'flex',alignItems:'center',gap:12}}>
           <button onClick={needsSucursalPicker?()=>setScreen(0):onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
-          <div>
+          <div style={{flex:1}}>
             <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
             <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · {new Date(Date.now()-6*3600*1000).toLocaleDateString('es-SV',{weekday:'short',month:'short',day:'numeric'})}</div>
           </div>
         </div>
 
-        {categorias.map(cat=>(
+        {/* ── Barra de progreso sticky ── */}
+        <div style={{position:'sticky',top:0,zIndex:20,background:'#0d0d0d',padding:'10px 0 12px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <span style={{fontSize:13,color:'#aaa'}}>{contados} de {totalProds} contados</span>
+            <span style={{fontSize:13,fontWeight:700,color:pctContado===100?'#4ade80':'#e63946'}}>{pctContado}%</span>
+          </div>
+          <div style={{height:6,background:'#222',borderRadius:3,overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${pctContado}%`,background:pctContado===100?'#4ade80':'#e63946',borderRadius:3,transition:'width 0.3s ease'}}/>
+          </div>
+        </div>
+
+        {categorias.map(cat=>{
+          const catContados=porCategoria[cat].filter(p=>p.cantidad_real!==null).length;
+          const catTotal=porCategoria[cat].length;
+          return(
           <div key={cat}>
-            <div style={{fontWeight:700,fontSize:13,color:'#888',padding:'14px 0 8px',textTransform:'uppercase',letterSpacing:'0.5px'}}>
-              {cat}
+            <div style={{fontWeight:700,fontSize:13,color:'#888',padding:'14px 0 8px',textTransform:'uppercase',letterSpacing:'0.5px',display:'flex',justifyContent:'space-between'}}>
+              <span>{cat}</span>
+              <span style={{color:catContados===catTotal?'#4ade80':'#555',fontWeight:400,fontSize:11}}>{catContados}/{catTotal}</span>
             </div>
-            {porCategoria[cat].map(p=>(
-              <div key={p.producto_id} className="card">
-                <div style={{fontWeight:600,fontSize:14,marginBottom:8}}>{p.nombre}</div>
-                <div className="row"><span style={{fontSize:12,color:'#888'}}>Stock teórico</span><span>{p.stock_teorico} {p.unidad}</span></div>
-                <div style={{display:'flex',gap:8,marginTop:10}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:11,color:'#666',marginBottom:4}}>Cantidad Real</div>
-                    <input type="number" min="0" step="1" value={p.cantidad_real??''}
-                      onChange={e=>updateCantidadReal(p.producto_id, e.target.value)}
-                      style={{width:'100%',padding:'10px',background:'#0a0a0a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:14}}
-                      placeholder="0"/>
-                  </div>
-                  {p.cantidad_real!==null&&(
-                    <div style={{flex:1,textAlign:'center',padding:'10px',borderRadius:8,background:getDifColor(p)+'20',border:'1px solid '+getDifColor(p),color:getDifColor(p),fontWeight:600,fontSize:13}}>
-                      {getDiferencia(p)>0?'+':''}{getDiferencia(p)}<br/><span style={{fontSize:10}}>diferencia</span>
+            {porCategoria[cat].map(p=>{
+              const contado=p.cantidad_real!==null;
+              const diff=getDiferencia(p);
+              return(
+              <div key={p.producto_id} className="card" style={{borderLeft:contado?'3px solid #4ade80':'3px solid #333',transition:'border 0.2s'}}>
+                {/* Nombre + stock teórico en línea */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                  <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
+                  <div style={{fontSize:12,color:'#888',flexShrink:0,marginLeft:8}}>teórico: <b style={{color:'#ccc'}}>{p.stock_teorico}</b> {p.unidad}</div>
+                </div>
+
+                {/* ── Stepper: [-] input [+] ── */}
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,-1)}>−</button>
+                  <input type="number" inputMode="numeric" min="0" step="1" value={p.cantidad_real??''}
+                    onChange={e=>updateCantidadReal(p.producto_id, e.target.value)}
+                    style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}
+                    placeholder="—"/>
+                  <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,1)}>+</button>
+                </div>
+
+                {/* ── Botón "= Teórico" + diferencia ── */}
+                <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+                  {!contado&&(
+                    <button onClick={()=>setIgualTeorico(p.producto_id)}
+                      style={{padding:'8px 14px',borderRadius:8,border:'1px solid #333',background:'#1a1a1a',color:'#aaa',fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}>
+                      = Teórico ({p.stock_teorico})
+                    </button>
+                  )}
+                  {contado&&(
+                    <div style={{flex:1,textAlign:'center',padding:'6px 10px',borderRadius:8,background:getDifColor(p)+'20',border:'1px solid '+getDifColor(p),color:getDifColor(p),fontWeight:600,fontSize:13}}>
+                      {diff>0?'+':''}{diff} <span style={{fontSize:10,fontWeight:400}}>diferencia</span>
                     </div>
                   )}
                 </div>
               </div>
-            ))}
+            );})}
           </div>
-        ))}
+        );})}
 
-        <button className="btn btn-red" onClick={guardarConteo} disabled={guardando} style={{fontSize:17,padding:18,marginTop:20}}>
-          {guardando?<span className="spin"/>:'✓ Guardar Conteo'}
-        </button>
+        {/* ── Botón Guardar sticky ── */}
+        <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
+          <button className="btn btn-red" onClick={guardarConteo} disabled={guardando||contados<totalProds}
+            style={{fontSize:17,padding:18,width:'100%',opacity:contados<totalProds?0.5:1}}>
+            {guardando?<span className="spin"/>:contados<totalProds?`Faltan ${totalProds-contados} productos`:'✓ Guardar Conteo'}
+          </button>
+        </div>
       </div>
     );
   }
@@ -331,29 +392,33 @@ export default function ConteoNocturno({user,onBack}){
         </div>
       ):(
         <>
-          {pedidoItems.map(p=>(
+          {pedidoItems.map(p=>{
+            const qty=n(pedidoQtys[p.producto_id]||0);
+            return(
             <div key={p.producto_id} className="card">
-              <div style={{fontWeight:600,fontSize:14,marginBottom:8}}>{p.nombre}</div>
-              <div className="row"><span style={{fontSize:12,color:'#888'}}>Contado (real)</span><span>{p.cantidad_real} {p.unidad}</span></div>
-              <div className="row"><span style={{fontSize:12,color:'#888'}}>Stock mínimo</span><span>{p.stock_minimo} {p.unidad}</span></div>
-              <div className="row"><span style={{fontSize:12,color:'#888'}}>Stock máximo</span><span>{p.stock_maximo} {p.unidad}</span></div>
-              <div style={{display:'flex',gap:8,marginTop:10}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:11,color:'#666',marginBottom:4}}>Cantidad a ordenar</div>
-                  <input type="number" min="0" step="1"
-                    value={pedidoQtys[p.producto_id]??0}
-                    onChange={e=>setPedidoQtys(prev=>({...prev,[p.producto_id]:e.target.value}))}
-                    style={{width:'100%',padding:'10px',background:'#0a0a0a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:14}}/>
-                </div>
-                <div style={{flex:1,display:'flex',alignItems:'flex-end'}}>
-                  <button className="btn btn-danger btn-sm" onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:0}))}
-                    style={{width:'100%',padding:'10px'}}>
-                    ✕
-                  </button>
-                </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
+                {qty===0&&<span style={{fontSize:11,color:'#f87171'}}>omitido</span>}
+              </div>
+              <div style={{display:'flex',gap:6,fontSize:12,color:'#888',marginBottom:10,flexWrap:'wrap'}}>
+                <span>Real: <b style={{color:'#ccc'}}>{p.cantidad_real}</b></span>
+                <span>·</span>
+                <span>Mín: <b style={{color:'#facc15'}}>{p.stock_minimo}</b></span>
+                <span>·</span>
+                <span>Máx: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
+              </div>
+              {/* ── Stepper pedido ── */}
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:Math.max(0,qty-1)}))}>−</button>
+                <input type="number" inputMode="numeric" min="0" step="1"
+                  value={pedidoQtys[p.producto_id]??0}
+                  onChange={e=>setPedidoQtys(prev=>({...prev,[p.producto_id]:e.target.value}))}
+                  style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}/>
+                <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:qty+1}))}>+</button>
               </div>
             </div>
-          ))}
+          );}
+          )}
         </>
       )}
 
