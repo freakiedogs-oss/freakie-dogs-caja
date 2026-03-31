@@ -30,10 +30,12 @@ export default function ConfirmarEntrega({user,onBack}){
   const fotoRef=useRef();
 
   const isMotorist=user.rol==='despachador'||user.rol==='motorista';
-  const isAdmin=user.rol==='admin';
+  const isAdmin=user.rol==='admin'||user.rol==='ejecutivo';
+  const isReceiver=user.rol==='gerente'||user.rol==='cocina';
+  const canAccess=isMotorist||isAdmin||isReceiver;
 
   useEffect(()=>{
-    if(!isMotorist&&!isAdmin){show('⚠️ Acceso no permitido');onBack();return;}
+    if(!canAccess){show('⚠️ Acceso no permitido');onBack();return;}
     loadDespachos();
   },[]);
 
@@ -48,7 +50,12 @@ export default function ConfirmarEntrega({user,onBack}){
         sucursales(id,nombre,store_code)
       `);
       query.in('estado',['despachado','en_ruta']);
-      if(!isAdmin&&user.id){
+      if(isReceiver&&user.store_code){
+        // Gerente/cocina: solo ve entregas destinadas a su sucursal
+        const {data:suc}=await db.from('sucursales').select('id').eq('store_code',user.store_code).maybeSingle();
+        if(suc) query.eq('sucursal_id',suc.id);
+      } else if(!isAdmin&&user.id){
+        // Motorista/despachador: solo ve sus propias entregas
         query.eq('motorista_id',user.id);
       }
       query.order('fecha_despacho',{ascending:true});
@@ -201,7 +208,7 @@ export default function ConfirmarEntrega({user,onBack}){
         </div>
       ):(
         <>
-          {despachos.some(d=>d.estado==='despachado')&&(
+          {isMotorist&&despachos.some(d=>d.estado==='despachado')&&(
             <button onClick={iniciarRuta} disabled={actualizando} className="btn btn-red" style={{marginBottom:16,fontSize:15,padding:14,width:'100%'}}>
               {actualizando?'...':'🚗 Iniciar Ruta'}
             </button>
