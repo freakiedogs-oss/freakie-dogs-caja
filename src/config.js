@@ -59,10 +59,10 @@ export const NAV_SECTIONS = [
   {
     label: 'Almacén',
     items: [
-      { key: 'recepcion', label: 'Recepción', icon: '📥', roles: ['bodeguero', 'admin'] },
-      { key: 'despacho', label: 'Despacho', icon: '🚚', roles: ['bodeguero', 'admin'] },
-      { key: 'inventario', label: 'Inventario', icon: '📦', roles: ['bodeguero', 'admin'] },
-      { key: 'historial', label: 'Historial', icon: '📋', roles: ['bodeguero', 'admin'] },
+      { key: 'recepcion', label: 'Recepción', icon: '📥', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
+      { key: 'despacho', label: 'Despacho', icon: '🚚', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
+      { key: 'inventario', label: 'Inventario', icon: '📦', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
+      { key: 'historial', label: 'Historial', icon: '📋', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'compras', label: 'Órdenes de Compra', icon: '🛒', roles: ['compras', 'admin'] },
     ],
   },

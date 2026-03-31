@@ -28,8 +28,27 @@ export default function ConteoNocturno({user,onBack}){
   const [conteoHoy,setConteoHoy]=useState(null);
   const [pedidoItems,setPedidoItems]=useState([]);
   const [pedidoQtys,setPedidoQtys]=useState({});
+  const [isEdit,setIsEdit]=useState(false);        // editando conteo existente
+  const [editExpira,setEditExpira]=useState(null);  // Date cuando expira la ventana de edición
+  const [tiempoRestante,setTiempoRestante]=useState('');
 
+  const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
+
+  // Timer para mostrar tiempo restante de edición
+  useEffect(()=>{
+    if(!editExpira) return;
+    const tick=()=>{
+      const ms=editExpira.getTime()-Date.now();
+      if(ms<=0){setTiempoRestante('expirado');return;}
+      const h=Math.floor(ms/3600000);
+      const m=Math.floor((ms%3600000)/60000);
+      setTiempoRestante(`${h}h ${m}m restantes`);
+    };
+    tick();
+    const iv=setInterval(tick,60000);
+    return ()=>clearInterval(iv);
+  },[editExpira]);
 
   // Cargar inventario para una sucursal específica
   const cargarInventario = async (sucId) => {
@@ -37,34 +56,63 @@ export default function ConteoNocturno({user,onBack}){
     setLoading(true);
     try {
       const hoy = today();
-      const {data:existente} = await db.from('inventario_conteo_nocturno')
-        .select('*').eq('sucursal_id', sucId).eq('fecha', hoy).maybeSingle();
-      if (existente) {
-        setConteoHoy(existente);
-        setScreen(2);
-        show('⏭ Conteo ya realizado, mostrando pedido sugerido');
-      } else {
-        setScreen(1);
-      }
 
+      // 1. Verificar si ya existe conteo hoy (múltiples filas, una por producto)
+      const {data:conteoRows} = await db.from('inventario_conteo_nocturno')
+        .select('producto_id, cantidad_real, cantidad_teorica, created_at')
+        .eq('sucursal_id', sucId).eq('fecha', hoy);
+
+      // 2. Cargar inventario siempre
       const {data:invData} = await db.from('inventario')
         .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria)')
         .eq('sucursal_id', sucId).order('catalogo_productos(categoria)', {ascending: true});
 
-      if (invData && invData.length > 0) {
-        const prods = invData.map(inv => ({
-          inventario_id: inv.id,
-          producto_id: inv.producto_id,
-          nombre: inv.catalogo_productos?.nombre || 'Sin nombre',
-          unidad: inv.catalogo_productos?.unidad_medida || 'unidad',
-          categoria: inv.catalogo_productos?.categoria || 'Otros',
-          stock_teorico: inv.stock_actual,
-          stock_minimo: inv.stock_minimo,
-          stock_maximo: inv.stock_maximo,
-          cantidad_real: null
-        }));
+      const prods = (invData||[]).map(inv => ({
+        inventario_id: inv.id,
+        producto_id: inv.producto_id,
+        nombre: inv.catalogo_productos?.nombre || 'Sin nombre',
+        unidad: inv.catalogo_productos?.unidad_medida || 'unidad',
+        categoria: inv.catalogo_productos?.categoria || 'Otros',
+        stock_teorico: inv.stock_actual,
+        stock_minimo: inv.stock_minimo,
+        stock_maximo: inv.stock_maximo,
+        cantidad_real: null
+      }));
+
+      if (conteoRows && conteoRows.length > 0) {
+        // Conteo ya existe — verificar ventana de 6h
+        const oldest = conteoRows.reduce((min,r)=> r.created_at<min?r.created_at:min, conteoRows[0].created_at);
+        const createdAt = new Date(oldest);
+        const expira = new Date(createdAt.getTime() + EDIT_WINDOW_MS);
+        const dentroDeVentana = Date.now() < expira.getTime();
+
+        // Mapa de cantidades guardadas
+        const conteoMap = Object.fromEntries(conteoRows.map(r=>[r.producto_id, r.cantidad_real]));
+
+        if (dentroDeVentana) {
+          // Dentro de 6h → permitir edición, pre-llenar cantidades
+          const prodsConDatos = prods.map(p=>({...p, cantidad_real: conteoMap[p.producto_id] ?? null}));
+          setProductos(prodsConDatos);
+          setIsEdit(true);
+          setEditExpira(expira);
+          setConteoHoy(conteoRows);
+          setScreen(1);
+          show('✏️ Editando conteo existente');
+        } else {
+          // >6h → bloqueado, ir a pedido
+          setProductos(prods);
+          setConteoHoy(conteoRows);
+          setScreen(2);
+          show('🔒 Conteo cerrado (más de 6h), mostrando pedido');
+        }
+      } else {
+        // Sin conteo → formulario nuevo
         setProductos(prods);
+        setIsEdit(false);
+        setEditExpira(null);
+        setScreen(1);
       }
+
       setLoading(false);
     } catch(e) {
       show('❌ Error cargando datos: ' + e.message);
@@ -144,9 +192,23 @@ export default function ConteoNocturno({user,onBack}){
       return;
     }
 
+    // Si es edición, verificar que aún estemos dentro de la ventana
+    if(isEdit && editExpira && Date.now()>=editExpira.getTime()){
+      show('🔒 La ventana de edición (6h) ha expirado');
+      return;
+    }
+
     setGuardando(true);
     try{
       const hoy=today();
+
+      if(isEdit){
+        // Edición: borrar registros anteriores y reinsertar
+        const {error:delErr}=await db.from('inventario_conteo_nocturno')
+          .delete().eq('sucursal_id',sucursalId).eq('fecha',hoy);
+        if(delErr)throw delErr;
+      }
+
       // Insertar conteo para cada producto
       const conteos=productos.map(p=>({
         sucursal_id: sucursalId,
@@ -156,7 +218,7 @@ export default function ConteoNocturno({user,onBack}){
         cantidad_teorica: p.stock_teorico,
         diferencia: p.cantidad_real-p.stock_teorico,
         contado_por: user.id,
-        notas: null
+        notas: isEdit?'Editado':'Conteo inicial'
       }));
 
       const {data:conteoData,error:conteoErr}=await db.from('inventario_conteo_nocturno')
@@ -172,7 +234,7 @@ export default function ConteoNocturno({user,onBack}){
 
       setConteoHoy({});
       setGuardando(false);
-      show('✓ Conteo guardado');
+      show(isEdit?'✅ Conteo actualizado correctamente':'✅ Conteo guardado correctamente');
 
       // Preparar pedido sugerido
       const sugerencias=productos
@@ -304,6 +366,13 @@ export default function ConteoNocturno({user,onBack}){
 
         {/* ── Barra de progreso sticky ── */}
         <div style={{position:'sticky',top:0,zIndex:20,background:'#0d0d0d',padding:'10px 0 12px'}}>
+          {/* Banner modo edición */}
+          {isEdit&&(
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#facc1520',border:'1px solid #facc15'}}>
+              <span style={{fontSize:12,color:'#facc15',fontWeight:600}}>✏️ Editando conteo</span>
+              <span style={{fontSize:11,color:'#facc15'}}>{tiempoRestante}</span>
+            </div>
+          )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
             <span style={{fontSize:13,color:'#aaa'}}>{contados} de {totalProds} contados</span>
             <span style={{fontSize:13,fontWeight:700,color:pctContado===100?'#4ade80':'#e63946'}}>{pctContado}%</span>
@@ -366,7 +435,7 @@ export default function ConteoNocturno({user,onBack}){
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
           <button className="btn btn-red" onClick={guardarConteo} disabled={guardando||contados<totalProds}
             style={{fontSize:17,padding:18,width:'100%',opacity:contados<totalProds?0.5:1}}>
-            {guardando?<span className="spin"/>:contados<totalProds?`Faltan ${totalProds-contados} productos`:'✓ Guardar Conteo'}
+            {guardando?<span className="spin"/>:contados<totalProds?`Faltan ${totalProds-contados} productos`:isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
           </button>
         </div>
       </div>

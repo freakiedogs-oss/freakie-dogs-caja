@@ -338,7 +338,7 @@ function DetalleOC({oc,user,show,onBack}){
       ))}
 
       {/* Acciones */}
-      {estado==='pendiente_aprobacion'&&(user.rol==='admin'||user.rol==='bodeguero')&&(
+      {estado==='pendiente_aprobacion'&&(user.rol==='admin'||user.rol==='bodeguero'||user.rol==='jefe_casa_matriz')&&(
         <div style={{display:'flex',gap:8,marginTop:16}}>
           <button className="btn btn-green" style={{flex:1,padding:'12px',fontSize:14}} onClick={aprobar} disabled={saving}>
             ✅ Aprobar OC
