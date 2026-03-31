@@ -287,9 +287,9 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
         {/* Proveedor con autocomplete */}
         <div className="field">
           <label>Proveedor *</label>
-          <div className="autocomplete-container">
+          <div className="autocomplete-container" style={{position:'relative'}}>
             <input type="text" value={proveedorSearch} onChange={e=>{setProveedorSearch(e.target.value);setShowProvSearch(true);}}
-              onFocus={()=>setShowProvSearch(true)} placeholder="Buscar proveedor..."/>
+              onFocus={()=>setShowProvSearch(true)} onBlur={()=>setTimeout(()=>setShowProvSearch(false),200)} placeholder="Buscar proveedor..."/>
             {showProvSearch&&(
               <div className={`autocomplete-dropdown ${showProvSearch?'active':''}`}>
                 {filteredProveedores.length>0?filteredProveedores.map(p=>(
