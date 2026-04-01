@@ -240,27 +240,28 @@ export default function ConteoNocturno({user,onBack}){
       setConteoHoy({});
       show(isEdit?'✅ Conteo actualizado':'✅ Conteo guardado');
 
-      // 4. Preparar pedido sugerido
-      const sugerencias=productos
-        .filter(p=>p.cantidad_real<p.stock_minimo && p.stock_minimo>0)
-        .map(p=>({
+      // 4. Preparar pedido sugerido — mostrar TODOS los productos
+      // Los que están bajo mínimo tienen cantidad sugerida, el resto qty=0
+      const todosParaPedido=productos.map(p=>{
+        const bajominimo=p.stock_minimo>0 && p.cantidad_real<p.stock_minimo;
+        return {
           producto_id: p.producto_id,
           nombre: p.nombre,
           unidad: p.unidad,
+          categoria: p.categoria,
           cantidad_real: p.cantidad_real,
           stock_minimo: p.stock_minimo,
           stock_maximo: p.stock_maximo,
-          cantidad_sugerida: Math.max(0, p.stock_maximo-p.cantidad_real)
-        }));
+          cantidad_sugerida: bajominimo ? Math.max(0, p.stock_maximo-p.cantidad_real) : 0,
+          bajominimo
+        };
+      });
+      // Ordenar: bajo mínimo primero, luego el resto
+      todosParaPedido.sort((a,b)=>(b.bajominimo?1:0)-(a.bajominimo?1:0));
 
-      setPedidoItems(sugerencias);
-      if(sugerencias.length===0){
-        show('✓ Stock OK — no se requieren pedidos');
-        setTimeout(()=>onBack(), 2000);
-      }else{
-        setPedidoQtys(Object.fromEntries(sugerencias.map(s=>[s.producto_id, s.cantidad_sugerida])));
-        setScreen(2);
-      }
+      setPedidoItems(todosParaPedido);
+      setPedidoQtys(Object.fromEntries(todosParaPedido.map(s=>[s.producto_id, s.cantidad_sugerida])));
+      setScreen(2);
     }catch(e){
       show('❌ Error: '+e.message);
     }finally{
@@ -455,7 +456,7 @@ export default function ConteoNocturno({user,onBack}){
         <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div>
           <div style={{fontWeight:800,fontSize:18}}>📦 Pedido Sugerido</div>
-          <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos</div>
+          <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo mínimo</span></div>
         </div>
       </div>
 
@@ -479,10 +480,11 @@ export default function ConteoNocturno({user,onBack}){
           {pedidoItems.filter(p=>!ocultarCero||n(pedidoQtys[p.producto_id]||0)>0).map(p=>{
             const qty=n(pedidoQtys[p.producto_id]||0);
             return(
-            <div key={p.producto_id} className="card">
+            <div key={p.producto_id} className="card" style={p.bajominimo?{borderLeft:'3px solid #e63946'}:{}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                 <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
-                {qty===0&&<span style={{fontSize:11,color:'#f87171'}}>omitido</span>}
+                {p.bajominimo&&qty>0&&<span style={{fontSize:10,color:'#e63946',fontWeight:600}}>BAJO MÍNIMO</span>}
+                {qty===0&&<span style={{fontSize:11,color:'#555'}}>sin pedido</span>}
               </div>
               <div style={{display:'flex',gap:6,fontSize:12,color:'#888',marginBottom:10,flexWrap:'wrap'}}>
                 <span>Real: <b style={{color:'#ccc'}}>{p.cantidad_real}</b></span>
