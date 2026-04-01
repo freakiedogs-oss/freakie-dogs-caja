@@ -216,7 +216,6 @@ export default function ConteoNocturno({user,onBack}){
         fecha: hoy,
         cantidad_real: p.cantidad_real,
         cantidad_teorica: p.stock_teorico,
-        diferencia: p.cantidad_real-p.stock_teorico,
         contado_por: user.id,
         notas: isEdit?'Editado':'Conteo inicial'
       }));
