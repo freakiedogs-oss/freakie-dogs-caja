@@ -42,6 +42,9 @@ function StatusBar({ counts, total }) {
 }
 
 /* ─── Location card ─── */
+// Labels for merged locations
+const MERGE_LABELS = { S003: '(incluye Drive Thru)' };
+
 function LocationCard({ name, storeCode, items, onSelect, selected }) {
   const counts = {};
   for (const it of items) { const s = classify(it); counts[s] = (counts[s] || 0) + 1; }
@@ -61,6 +64,7 @@ function LocationCard({ name, storeCode, items, onSelect, selected }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: 15, color: '#f0f0f0' }}>{name}</div>
+          {MERGE_LABELS[storeCode] && <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>{MERGE_LABELS[storeCode]}</div>}
           <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{total} productos registrados</div>
         </div>
         {alertas > 0 ? (
@@ -244,11 +248,17 @@ function DetailView({ storeCode, storeName, items, onClose }) {
 /* ═══════════════════════════════════════════ */
 /*  MAIN DASHBOARD                             */
 /* ═══════════════════════════════════════════ */
+// S005 (Driver Thru Lourdes) shares kitchen/inventory with S003 (Lourdes)
+const MERGE_MAP = { S005: 'S003' };
+// Sucursales to always show (bodega) even without sales
+const ALWAYS_SHOW = ['CM001'];
+
 export default function InventarioDashboard({ user, onBack }) {
   const [loading, setLoading] = useState(true);
   const [sucursales, setSucursales] = useState([]);
   const [allInv, setAllInv] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [activeCodes, setActiveCodes] = useState(new Set());
 
   useEffect(() => { loadAll(); }, []);
 
@@ -258,6 +268,15 @@ export default function InventarioDashboard({ user, onBack }) {
       const { data: sucs } = await db.from('sucursales').select('id, nombre, store_code').eq('activa', true).order('nombre');
       if (!sucs) { setLoading(false); return; }
       setSucursales(sucs);
+
+      // Determine which store_codes have actual sales (= operational)
+      const { data: salesData } = await db.from('ventas_diarias')
+        .select('store_code')
+        .limit(1000);
+      const codesWithSales = new Set((salesData || []).map(r => r.store_code));
+      // Also include ALWAYS_SHOW codes
+      ALWAYS_SHOW.forEach(c => codesWithSales.add(c));
+      setActiveCodes(codesWithSales);
 
       // Load ALL inventory in one query
       const { data: inv, error } = await db.from('inventario')
@@ -272,23 +291,38 @@ export default function InventarioDashboard({ user, onBack }) {
     }
   };
 
-  // Group inventory by sucursal
+  // Group inventory by sucursal, merging Driver Thru into Lourdes
   const bySucursal = useMemo(() => {
     const map = {};
-    for (const suc of sucursales) { map[suc.store_code] = { ...suc, items: [] }; }
+    // Only create entries for active sucursales (with sales or in ALWAYS_SHOW), excluding merged ones
+    for (const suc of sucursales) {
+      const code = suc.store_code;
+      if (MERGE_MAP[code]) continue; // skip merged sucursales (e.g. S005)
+      if (!activeCodes.has(code)) continue; // skip sucursales without sales
+      map[code] = { ...suc, items: [] };
+    }
+    // Assign inventory items, merging where needed
     for (const it of allInv) {
       const suc = sucursales.find(s => s.id === it.sucursal_id);
-      if (suc && map[suc.store_code]) map[suc.store_code].items.push(it);
+      if (!suc) continue;
+      const targetCode = MERGE_MAP[suc.store_code] || suc.store_code;
+      if (map[targetCode]) map[targetCode].items.push(it);
     }
     return map;
-  }, [sucursales, allInv]);
+  }, [sucursales, allInv, activeCodes]);
 
-  // Global summary
+  // Global summary (only count items in visible locations)
+  const visibleItems = useMemo(() => {
+    const items = [];
+    for (const loc of Object.values(bySucursal)) items.push(...loc.items);
+    return items;
+  }, [bySucursal]);
+
   const globalStats = useMemo(() => {
     const counts = { agotado: 0, critico: 0, bajo: 0, ok: 0, exceso: 0, sin_min: 0 };
-    for (const it of allInv) { counts[classify(it)]++; }
+    for (const it of visibleItems) { counts[classify(it)]++; }
     return counts;
-  }, [allInv]);
+  }, [visibleItems]);
 
   const totalAlertas = globalStats.agotado + globalStats.critico + globalStats.bajo;
 
