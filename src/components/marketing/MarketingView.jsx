@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../../supabase'
+import { db } from '../../supabase'
 import { today, fmtDate, n } from '../../config'
 
 const TABS = ['Feed', 'Correlación', 'Horarios', 'Campañas', 'Métricas Diarias']
@@ -39,13 +39,13 @@ export default function MarketingView({ user }) {
   const loadData = useCallback(async () => {
     setLoading(true)
     const [postsR, corrR, horR, tipoR, campR, metR, sucR] = await Promise.all([
-      supabase.from('posts_redes').select('*').order('fecha_publicacion', { ascending: false }).limit(100),
-      supabase.from('marketing_ventas_correlacion').select('*').order('fecha_publicacion', { ascending: false }).limit(100),
-      supabase.from('v_mejores_horarios_publicacion').select('*'),
-      supabase.from('v_rendimiento_tipo_contenido').select('*'),
-      supabase.from('campanas_marketing').select('*').order('fecha_inicio', { ascending: false }),
-      supabase.from('metricas_redes_diarias').select('*').order('fecha', { ascending: false }).limit(60),
-      supabase.from('sucursales').select('id, nombre, store_code').eq('activa', true)
+      db.from('posts_redes').select('*').order('fecha_publicacion', { ascending: false }).limit(100),
+      db.from('marketing_ventas_correlacion').select('*').order('fecha_publicacion', { ascending: false }).limit(100),
+      db.from('v_mejores_horarios_publicacion').select('*'),
+      db.from('v_rendimiento_tipo_contenido').select('*'),
+      db.from('campanas_marketing').select('*').order('fecha_inicio', { ascending: false }),
+      db.from('metricas_redes_diarias').select('*').order('fecha', { ascending: false }).limit(60),
+      db.from('sucursales').select('id, nombre, store_code').eq('activa', true)
     ])
     setPosts(postsR.data || [])
     setCorrelacion(corrR.data || [])
@@ -73,7 +73,7 @@ export default function MarketingView({ user }) {
       hashtags: newPost.hashtags ? newPost.hashtags.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean) : null,
       fecha_publicacion: newPost.fecha_publicacion || new Date().toISOString()
     }
-    const { error } = await supabase.from('posts_redes').insert(payload)
+    const { error } = await db.from('posts_redes').insert(payload)
     if (error) return alert('Error: ' + error.message)
     setShowNewPost(false)
     setNewPost({ plataforma: 'instagram', tipo_contenido: 'reel', fecha_publicacion: '', caption: '', url: '', likes: 0, comentarios: 0, compartidos: 0, guardados: 0, reproducciones: 0, alcance: 0, impresiones: 0, sucursal_id: '', producto_mencionado: '', hashtags: '' })
@@ -82,7 +82,7 @@ export default function MarketingView({ user }) {
 
   const guardarCampana = async () => {
     const payload = { ...newCampana, presupuesto: newCampana.presupuesto ? n(newCampana.presupuesto) : null, fecha_fin: newCampana.fecha_fin || null }
-    const { error } = await supabase.from('campanas_marketing').insert(payload)
+    const { error } = await db.from('campanas_marketing').insert(payload)
     if (error) return alert('Error: ' + error.message)
     setShowNewCampana(false)
     setNewCampana({ nombre: '', descripcion: '', fecha_inicio: today(), fecha_fin: '', objetivo: 'engagement', presupuesto: '' })
@@ -90,7 +90,7 @@ export default function MarketingView({ user }) {
   }
 
   const refreshCorrelacion = async () => {
-    await supabase.rpc('refresh_marketing_correlacion')
+    await db.rpc('refresh_marketing_correlacion')
     loadData()
   }
 
