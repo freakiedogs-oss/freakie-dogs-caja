@@ -54,6 +54,7 @@ export const NAV_SECTIONS = [
       { key: 'dashboard', label: 'Ventas', icon: '📊', roles: ['gerente', 'admin', 'ejecutivo'] },
       { key: 'ejecutivo', label: 'Ejecutivo', icon: '👔', roles: ['ejecutivo', 'admin'] },
       { key: 'ventas-dash', label: 'Ventas Diarias', icon: '📊', roles: ['ejecutivo', 'admin'] },
+      { key: 'inventario-dash', label: 'Inventario Global', icon: '📦', roles: ['ejecutivo', 'admin'] },
     ],
   },
   {

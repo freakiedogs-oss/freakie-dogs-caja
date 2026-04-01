@@ -23,6 +23,7 @@ import ProduccionDiaria from './components/admin/ProduccionDiaria'
 import ConciliacionView from './components/admin/ConciliacionView'
 import DeliveryView from './components/delivery/DeliveryView'
 import MarketingView from './components/marketing/MarketingView'
+import InventarioDashboard from './components/dashboard/InventarioDashboard'
 import VentasDashboard from './components/dashboard/VentasDashboard'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
@@ -150,6 +151,8 @@ export default function App() {
         return <DeliveryView user={user} />
       case 'ventas-dash':
         return <VentasDashboard user={user} onBack={() => setScreen('home')} />
+      case 'inventario-dash':
+        return <InventarioDashboard user={user} onBack={() => setScreen('home')} />
       case 'marketing':
         return <MarketingView user={user} />
 
