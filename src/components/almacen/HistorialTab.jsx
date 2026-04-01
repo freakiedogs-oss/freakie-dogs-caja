@@ -19,6 +19,7 @@ export default function HistorialTab({user,show}){
   const [pendientes,setPendientes]=useState([]);
   const [showPendientes,setShowPendientes]=useState(false);
   const [loadingPend,setLoadingPend]=useState(false);
+  const [pendCount,setPendCount]=useState(0);
 
   const cargar=()=>{
     db.from('recepciones').select('*')
@@ -113,16 +114,14 @@ export default function HistorialTab({user,show}){
     setSaving(false);
   };
 
-  // Si estamos editando, mostrar EditarRecepcion
-  if(editRec) return <EditarRecepcion rec={editRec} cmId={cmId} show={show} onBack={()=>{setEditRec(null);setExpandedId(null);cargar();}}/>;
-
-  // Cargar count de pendientes al inicio
-  const [pendCount,setPendCount]=useState(0);
   useEffect(()=>{
     db.from('compras_dte').select('id',{count:'exact',head:true})
       .eq('revision_manual',true).eq('cruzado',false)
       .then(({count})=>setPendCount(count||0));
   },[pendientes]);
+
+  // Si estamos editando, mostrar EditarRecepcion (DESPUÉS de todos los hooks)
+  if(editRec) return <EditarRecepcion rec={editRec} cmId={cmId} show={show} onBack={()=>{setEditRec(null);setExpandedId(null);cargar();}}/>;
 
   return(
     <div style={{padding:'16px 16px 100px'}}>
