@@ -17,7 +17,8 @@ export default function DespachoTab({user,show}){
     setLoading(true);
     try{
       const [{data:ped},{data:des}]=await Promise.all([
-        db.from('pedidos_sucursal').select('*,sucursales(nombre)').eq('estado','enviado').order('created_at',{ascending:false}),
+        // Pedidos 'enviado' (pendientes) o 'preparando' (ya tienen despacho preparándose)
+        db.from('pedidos_sucursal').select('*,sucursales(nombre)').in('estado',['enviado','preparando']).order('created_at',{ascending:false}),
         db.from('despachos_sucursal').select('*,sucursales(nombre)').in('estado',['preparando','despachado','en_ruta','recibido']).order('created_at',{ascending:false}).limit(50),
       ]);
       setPedidos(ped||[]);
@@ -43,8 +44,9 @@ export default function DespachoTab({user,show}){
       {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
 
       {!loading&&tab==='pendientes'&&<>
-        {pedidos.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">No hay pedidos pendientes</div></div>}
-        {pedidos.map(p=>(
+        {pedidos.filter(p=>p.estado==='enviado').length===0&&pedidos.filter(p=>p.estado==='preparando').length===0&&
+          <div className="empty"><div className="empty-icon">📋</div><div className="empty-text">No hay pedidos pendientes</div></div>}
+        {pedidos.filter(p=>p.estado==='enviado').map(p=>(
           <div key={p.id} className="card">
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
               <div>
@@ -58,6 +60,20 @@ export default function DespachoTab({user,show}){
             <button className="btn btn-orange btn-sm" onClick={()=>{setSel(p);setView('preparar');}}>
               📦 Preparar Despacho
             </button>
+          </div>
+        ))}
+        {/* Pedidos preparando: ya tienen despacho preparándose, no se pueden volver a preparar */}
+        {pedidos.filter(p=>p.estado==='preparando').map(p=>(
+          <div key={p.id} className="card" style={{borderLeft:'3px solid #facc15'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:15}}>{p.sucursales?.nombre||p.sucursal_id}</div>
+                <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}</div>
+              </div>
+              <span style={{fontSize:11,padding:'4px 10px',borderRadius:6,background:'#facc1520',color:'#facc15',fontWeight:600}}>⚙️ Preparando</span>
+            </div>
+            {p.notas&&<div style={{fontSize:13,color:'#888',marginBottom:8}}>📝 {p.notas}</div>}
+            <div style={{fontSize:12,color:'#facc15'}}>Ya tiene despacho en preparación — ver pestaña "En proceso"</div>
           </div>
         ))}
       </>}
@@ -110,8 +126,13 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
   const marcarDespachado=async()=>{
     setSaving(true);
     try{
+      // 1. Marcar despacho como despachado + hora_salida
       await db.from('despachos_sucursal').update({estado:'despachado',hora_salida:new Date().toISOString()}).eq('id',despacho.id);
-      show('✅ Despacho marcado como despachado');
+      // 2. Ahora sí marcar el pedido como 'despachado' (motorista ya salió)
+      if(despacho.pedido_id){
+        await db.from('pedidos_sucursal').update({estado:'despachado'}).eq('id',despacho.pedido_id);
+      }
+      show('✅ Despachado — motorista en camino');
       onUpdate();
       setExpand(false);
     }catch(e){show('❌ '+e.message);}
@@ -247,7 +268,21 @@ function PrepararDespacho({pedido,user,show,onBack}){
     if(!motorista.trim()){show('⚠️ Ingresa el nombre del motorista');return;}
     setSaving(true);
     try{
-      // 1. Crear despacho_sucursal
+      // 0. Protección anti-duplicado: verificar que no exista despacho activo para este pedido
+      const {data:existente}=await db.from('despachos_sucursal')
+        .select('id').eq('pedido_id',pedido.id)
+        .in('estado',['preparando','despachado','en_ruta'])
+        .limit(1);
+      if(existente&&existente.length>0){
+        show('⚠️ Este pedido ya tiene un despacho en proceso');
+        setSaving(false);
+        return;
+      }
+
+      // 1. Marcar pedido como 'preparando' (NO 'despachado' todavía — eso es cuando el motorista sale)
+      await db.from('pedidos_sucursal').update({estado:'preparando'}).eq('id',pedido.id);
+
+      // 2. Crear despacho_sucursal
       const {data:des,error:desErr}=await db.from('despachos_sucursal').insert({
         sucursal_id:pedido.sucursal_id,
         pedido_id:pedido.id,
@@ -258,7 +293,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
       }).select().single();
       if(desErr) throw desErr;
 
-      // 2. Crear despacho_items (with pricing)
+      // 3. Crear despacho_items (with pricing)
       const rows=[];
       for(const it of pitems){
         const qty=n(it.qty_despacho);
@@ -280,7 +315,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
         const {error:itmErr}=await db.from('despacho_items').insert(rows);
         if(itmErr) throw itmErr;
 
-        // 3. Batch decrement inventario.stock_actual for CM001
+        // 4. Batch decrement inventario.stock_actual for CM001
         const validItems=pitems.filter(it=>it.producto_id&&n(it.qty_despacho)>0);
         const batchSize=10;
         for(let i=0;i<validItems.length;i+=batchSize){
@@ -295,14 +330,13 @@ function PrepararDespacho({pedido,user,show,onBack}){
         }
       }
 
-      // 4. Batch update pedido_items.cantidad_despachada
+      // 5. Batch update pedido_items.cantidad_despachada
       const itemsToUpdate=pitems.filter(it=>n(it.qty_despacho)>0);
       await Promise.all(itemsToUpdate.map(it=>
         db.from('pedido_items').update({cantidad_despachada:n(it.qty_despacho)}).eq('id',it.id)
       ));
-      await db.from('pedidos_sucursal').update({estado:'despachado'}).eq('id',pedido.id);
 
-      show('✅ Despacho creado — en proceso');
+      show('✅ Despacho creado — preparando');
       onBack();
     }catch(e){ show('❌ '+e.message); }
     setSaving(false);
