@@ -108,6 +108,12 @@ export const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'Marketing',
+    items: [
+      { key: 'marketing', label: 'Analytics Redes', icon: '📱', roles: ['ejecutivo', 'marketing', 'admin'] },
+    ],
+  },
+  {
     label: 'Herramientas',
     items: [
       { key: 'quanto-upload', label: 'Importar QUANTO', icon: '📤', roles: ['admin'] },
