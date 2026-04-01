@@ -170,8 +170,8 @@ export default function ConfirmarEntrega({user,onBack}){
           db.from('inventario').upsert({
             sucursal_id:selectedDespacho.sucursal_id,
             producto_id:it.producto_id,
-            stock_actual:(stocks[j]?.data?.stock_actual||0)+it.cantidad_recibida
-          }).eq('sucursal_id',selectedDespacho.sucursal_id).eq('producto_id',it.producto_id).then(res=>{if(res.error)throw res.error;})
+            stock_actual:(stocks[j]?.data?.stock_actual||0)+(it.cantidad_recibida||0)
+          },{onConflict:'producto_id,sucursal_id'}).then(res=>{if(res.error)throw res.error;})
         ));
       }
 
