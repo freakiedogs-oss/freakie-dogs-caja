@@ -223,6 +223,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
   const [saving,setSaving]=useState(false);
   const [cmId,setCmId]=useState(null);
   const [motorista,setMotorista]=useState('');
+  const [motoristas,setMotoristas]=useState([]);
 
   useEffect(()=>{
     // Get CM001 sucursal ID
@@ -230,6 +231,9 @@ function PrepararDespacho({pedido,user,show,onBack}){
       .then(({data})=>{
         if(data) setCmId(data.id);
       });
+    // Load motoristas
+    db.from('usuarios_erp').select('id,nombre').in('rol',['despachador','motorista']).order('nombre')
+      .then(({data})=>setMotoristas(data||[]));
     // Load pedido items
     db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,precio_referencia)').eq('pedido_id',pedido.id)
       .then(({data})=>{
@@ -260,12 +264,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
         const qty=n(it.qty_despacho);
         if(qty<=0) continue;
 
-        // Get costo_unitario from inventario or use precio_referencia
         let costo=it.catalogo_productos?.precio_referencia||0;
-        if(it.producto_id&&cmId){
-          const {data:inv}=await db.from('inventario').select('stock_actual').eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
-          // For now, use catalogo price; real cost tracking could be more sophisticated
-        }
 
         rows.push({
           despacho_id:des.id,
@@ -281,24 +280,26 @@ function PrepararDespacho({pedido,user,show,onBack}){
         const {error:itmErr}=await db.from('despacho_items').insert(rows);
         if(itmErr) throw itmErr;
 
-        // 3. Decrement inventario.stock_actual for CM001
-        for(const it of pitems){
-          if(!it.producto_id||n(it.qty_despacho)<=0) continue;
-          // Fetch current stock and decrement (Supabase JS v2 does not support db.raw())
-          const {data:current}=await db.from('inventario').select('stock_actual').eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
-          const newStock=n(current?.stock_actual||0)-n(it.qty_despacho);
-          await db.from('inventario').update({
-            stock_actual:newStock
-          }).eq('producto_id',it.producto_id).eq('sucursal_id',cmId);
+        // 3. Batch decrement inventario.stock_actual for CM001
+        const validItems=pitems.filter(it=>it.producto_id&&n(it.qty_despacho)>0);
+        const batchSize=10;
+        for(let i=0;i<validItems.length;i+=batchSize){
+          const batch=validItems.slice(i,i+batchSize);
+          const stocks=await Promise.all(batch.map(it=>
+            db.from('inventario').select('stock_actual').eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle()
+          ));
+          await Promise.all(batch.map((it,j)=>{
+            const newStock=n(stocks[j]?.data?.stock_actual||0)-n(it.qty_despacho);
+            return db.from('inventario').update({stock_actual:newStock}).eq('producto_id',it.producto_id).eq('sucursal_id',cmId);
+          }));
         }
       }
 
-      // 4. Update pedido_items.cantidad_despachada and pedido estado
-      for(const it of pitems){
-        if(n(it.qty_despacho)>0){
-          await db.from('pedido_items').update({cantidad_despachada:n(it.qty_despacho)}).eq('id',it.id);
-        }
-      }
+      // 4. Batch update pedido_items.cantidad_despachada
+      const itemsToUpdate=pitems.filter(it=>n(it.qty_despacho)>0);
+      await Promise.all(itemsToUpdate.map(it=>
+        db.from('pedido_items').update({cantidad_despachada:n(it.qty_despacho)}).eq('id',it.id)
+      ));
       await db.from('pedidos_sucursal').update({estado:'despachado'}).eq('id',pedido.id);
 
       show('✅ Despacho creado — en proceso');
@@ -335,6 +336,17 @@ function PrepararDespacho({pedido,user,show,onBack}){
 
         {loading&&<div className="spin" style={{width:28,height:28,margin:'20px auto'}}/>}
         {!loading&&pitems.length===0&&<div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Este pedido no tiene ítems</div></div>}
+
+        {!loading&&pitems.length>0&&(
+          <div style={{display:'flex',gap:8,marginBottom:12}}>
+            <button className="btn btn-ghost btn-sm" style={{flex:1}} onClick={()=>{
+              setPitems(p=>p.map(x=>({...x,qty_despacho:String(x.cantidad_solicitada||0)})));
+            }}>✅ Todo Solicitado</button>
+            <button className="btn btn-ghost btn-sm" style={{flex:1}} onClick={()=>{
+              setPitems(p=>p.map(x=>({...x,qty_despacho:'0'})));
+            }}>🔄 Limpiar</button>
+          </div>
+        )}
 
         {!loading&&grouped.map(([categoria,items])=>(
           <div key={categoria} style={{marginBottom:16}}>
@@ -375,7 +387,10 @@ function PrepararDespacho({pedido,user,show,onBack}){
         {!loading&&pitems.length>0&&<>
           <div className="field" style={{marginTop:16}}>
             <label>🚚 Motorista asignado</label>
-            <input type="text" value={motorista} onChange={e=>setMotorista(e.target.value)} placeholder="Nombre del motorista"/>
+            <select value={motorista} onChange={e=>setMotorista(e.target.value)} style={{width:'100%',padding:'12px',background:'#1a1a1a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:14}}>
+              <option value="">— Seleccionar motorista —</option>
+              {motoristas.map(m=><option key={m.id} value={m.nombre}>{m.nombre}</option>)}
+            </select>
           </div>
           <div style={{display:'flex',gap:8}}>
             <button className="btn btn-orange" style={{flex:1}} onClick={despachar} disabled={saving||!motorista.trim()}>

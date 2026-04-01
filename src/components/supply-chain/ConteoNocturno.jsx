@@ -30,6 +30,7 @@ export default function ConteoNocturno({user,onBack}){
   const [pedidoQtys,setPedidoQtys]=useState({});
   const [isEdit,setIsEdit]=useState(false);        // editando conteo existente
   const [editExpira,setEditExpira]=useState(null);  // Date cuando expira la ventana de edición
+  const [ocultarCero,setOcultarCero]=useState(false); // toggle para ocultar pedido=0 en Screen 2
   const [tiempoRestante,setTiempoRestante]=useState('');
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
@@ -62,22 +63,27 @@ export default function ConteoNocturno({user,onBack}){
         .select('producto_id, cantidad_real, cantidad_teorica, created_at')
         .eq('sucursal_id', sucId).eq('fecha', hoy);
 
-      // 2. Cargar inventario siempre
+      // 2. Cargar solo productos marcados para conteo nocturno
       const {data:invData} = await db.from('inventario')
-        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria)')
-        .eq('sucursal_id', sucId).order('catalogo_productos(categoria)', {ascending: true});
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden)')
+        .eq('sucursal_id', sucId)
+        .eq('catalogo_productos.incluir_conteo', true);
 
-      const prods = (invData||[]).map(inv => ({
-        inventario_id: inv.id,
-        producto_id: inv.producto_id,
-        nombre: inv.catalogo_productos?.nombre || 'Sin nombre',
-        unidad: inv.catalogo_productos?.unidad_medida || 'unidad',
-        categoria: inv.catalogo_productos?.categoria || 'Otros',
-        stock_teorico: inv.stock_actual,
-        stock_minimo: inv.stock_minimo,
-        stock_maximo: inv.stock_maximo,
-        cantidad_real: null
-      }));
+      const prods = (invData||[])
+        .filter(inv => inv.catalogo_productos?.incluir_conteo)
+        .map(inv => ({
+          inventario_id: inv.id,
+          producto_id: inv.producto_id,
+          nombre: inv.catalogo_productos?.nombre || 'Sin nombre',
+          unidad: inv.catalogo_productos?.unidad_medida || 'unidad',
+          categoria: inv.catalogo_productos?.conteo_categoria || inv.catalogo_productos?.categoria || 'Otros',
+          conteo_orden: inv.catalogo_productos?.conteo_orden || 999,
+          stock_teorico: inv.stock_actual,
+          stock_minimo: inv.stock_minimo,
+          stock_maximo: inv.stock_maximo,
+          cantidad_real: null
+        }))
+        .sort((a,b) => a.conteo_orden - b.conteo_orden);
 
       if (conteoRows && conteoRows.length > 0) {
         // Conteo ya existe — verificar ventana de 6h
@@ -188,7 +194,7 @@ export default function ConteoNocturno({user,onBack}){
     // Validar que todos tengan cantidad_real
     const sinCantidad=productos.filter(p=>p.cantidad_real===null);
     if(sinCantidad.length>0){
-      show('⚠️ Faltan cantidades para: '+sinCantidad.map(p=>p.nombre).join(', '));
+      show('⚠️ Faltan '+sinCantidad.length+' productos sin contar');
       return;
     }
 
@@ -202,14 +208,11 @@ export default function ConteoNocturno({user,onBack}){
     try{
       const hoy=today();
 
-      if(isEdit){
-        // Edición: borrar registros anteriores y reinsertar
-        const {error:delErr}=await db.from('inventario_conteo_nocturno')
-          .delete().eq('sucursal_id',sucursalId).eq('fecha',hoy);
-        if(delErr)throw delErr;
-      }
+      // 1. Siempre borrar registros previos de hoy (por si quedaron parciales)
+      await db.from('inventario_conteo_nocturno')
+        .delete().eq('sucursal_id',sucursalId).eq('fecha',hoy);
 
-      // Insertar conteo para cada producto
+      // 2. Insertar conteo (sin "diferencia" — es columna generada en DB)
       const conteos=productos.map(p=>({
         sucursal_id: sucursalId,
         producto_id: p.producto_id,
@@ -220,24 +223,26 @@ export default function ConteoNocturno({user,onBack}){
         notas: isEdit?'Editado':'Conteo inicial'
       }));
 
-      const {data:conteoData,error:conteoErr}=await db.from('inventario_conteo_nocturno')
-        .insert(conteos).select();
-
+      const {error:conteoErr}=await db.from('inventario_conteo_nocturno')
+        .insert(conteos);
       if(conteoErr)throw conteoErr;
 
-      // Actualizar stock_actual en inventario con la cantidad real
-      for(const p of productos){
-        await db.from('inventario').update({stock_actual:p.cantidad_real})
-          .eq('producto_id',p.producto_id).eq('sucursal_id',sucursalId);
+      // 3. Actualizar stock_actual en inventario (en lotes de 20 para velocidad)
+      const batchSize=20;
+      for(let i=0;i<productos.length;i+=batchSize){
+        const batch=productos.slice(i,i+batchSize);
+        await Promise.all(batch.map(p=>
+          db.from('inventario').update({stock_actual:p.cantidad_real})
+            .eq('producto_id',p.producto_id).eq('sucursal_id',sucursalId)
+        ));
       }
 
       setConteoHoy({});
-      setGuardando(false);
-      show(isEdit?'✅ Conteo actualizado correctamente':'✅ Conteo guardado correctamente');
+      show(isEdit?'✅ Conteo actualizado':'✅ Conteo guardado');
 
-      // Preparar pedido sugerido
+      // 4. Preparar pedido sugerido
       const sugerencias=productos
-        .filter(p=>p.cantidad_real<p.stock_minimo)
+        .filter(p=>p.cantidad_real<p.stock_minimo && p.stock_minimo>0)
         .map(p=>({
           producto_id: p.producto_id,
           nombre: p.nombre,
@@ -245,19 +250,20 @@ export default function ConteoNocturno({user,onBack}){
           cantidad_real: p.cantidad_real,
           stock_minimo: p.stock_minimo,
           stock_maximo: p.stock_maximo,
-          cantidad_sugerida: p.stock_maximo-p.cantidad_real
+          cantidad_sugerida: Math.max(0, p.stock_maximo-p.cantidad_real)
         }));
 
       setPedidoItems(sugerencias);
       if(sugerencias.length===0){
-        show('✓ No se requieren pedidos (stock OK)');
+        show('✓ Stock OK — no se requieren pedidos');
         setTimeout(()=>onBack(), 2000);
       }else{
         setPedidoQtys(Object.fromEntries(sugerencias.map(s=>[s.producto_id, s.cantidad_sugerida])));
         setScreen(2);
       }
     }catch(e){
-      show('❌ Error guardando: '+e.message);
+      show('❌ Error: '+e.message);
+    }finally{
       setGuardando(false);
     }
   };
@@ -460,7 +466,17 @@ export default function ConteoNocturno({user,onBack}){
         </div>
       ):(
         <>
-          {pedidoItems.map(p=>{
+          {/* Toggle ocultar productos con pedido 0 */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:'#1a1a1a',borderRadius:10,marginBottom:12,border:'1px solid #333'}}>
+            <span style={{fontSize:13,color:'#aaa'}}>Ocultar productos con pedido 0</span>
+            <button onClick={()=>setOcultarCero(!ocultarCero)}
+              style={{width:48,height:28,borderRadius:14,border:'none',cursor:'pointer',position:'relative',
+                background:ocultarCero?'#4ade80':'#333',transition:'background 0.2s'}}>
+              <div style={{width:22,height:22,borderRadius:11,background:'#fff',position:'absolute',top:3,
+                left:ocultarCero?23:3,transition:'left 0.2s'}}/>
+            </button>
+          </div>
+          {pedidoItems.filter(p=>!ocultarCero||n(pedidoQtys[p.producto_id]||0)>0).map(p=>{
             const qty=n(pedidoQtys[p.producto_id]||0);
             return(
             <div key={p.producto_id} className="card">

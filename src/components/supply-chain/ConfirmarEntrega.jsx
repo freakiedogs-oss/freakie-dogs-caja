@@ -28,6 +28,7 @@ export default function ConfirmarEntrega({user,onBack}){
   const [itemsNotas,setItemsNotas]=useState({});
   const [actualizando,setActualizando]=useState(false);
   const fotoRef=useRef();
+  const bottomRef=useRef();
 
   const isMotorist=user.rol==='despachador'||user.rol==='motorista';
   const isAdmin=user.rol==='admin'||user.rol==='ejecutivo';
@@ -147,37 +148,31 @@ export default function ConfirmarEntrega({user,onBack}){
         .eq('id',selectedDespacho.id);
       if(despErr)throw despErr;
 
-      for(let i=0;i<items.length;i++){
-        const item=items[i];
-        const {error:itemErr}=await db.from('despacho_items')
-          .update({
-            cantidad_recibida:item.cantidad_recibida,
-            notas:itemsNotas[i]||''
-          })
-          .eq('id',item.id);
-        if(itemErr)throw itemErr;
-      }
+      // Batch update despacho_items
+      await Promise.all(items.map((item,i)=>
+        db.from('despacho_items').update({
+          cantidad_recibida:item.cantidad_recibida,
+          notas:itemsNotas[i]||''
+        }).eq('id',item.id).then(res=>{if(res.error)throw res.error;})
+      ));
 
-      for(let i=0;i<items.length;i++){
-        const item=items[i];
-        if(item.producto_id){
-          const {data:invData,error:invFetchErr}=await db.from('inventario')
-            .select('stock_actual')
+      // Batch update inventario
+      const itemsWithProduct=items.filter(it=>it.producto_id);
+      const batchSize=10;
+      for(let b=0;b<itemsWithProduct.length;b+=batchSize){
+        const batch=itemsWithProduct.slice(b,b+batchSize);
+        const stocks=await Promise.all(batch.map(it=>
+          db.from('inventario').select('stock_actual')
             .eq('sucursal_id',selectedDespacho.sucursal_id)
-            .eq('producto_id',item.producto_id)
-            .maybeSingle();
-          if(invFetchErr)throw invFetchErr;
-          const currentStock=invData?.stock_actual||0;
-          const {error:invErr}=await db.from('inventario')
-            .upsert({
-              sucursal_id:selectedDespacho.sucursal_id,
-              producto_id:item.producto_id,
-              stock_actual:currentStock+item.cantidad_recibida
-            })
-            .eq('sucursal_id',selectedDespacho.sucursal_id)
-            .eq('producto_id',item.producto_id);
-          if(invErr)throw invErr;
-        }
+            .eq('producto_id',it.producto_id).maybeSingle()
+        ));
+        await Promise.all(batch.map((it,j)=>
+          db.from('inventario').upsert({
+            sucursal_id:selectedDespacho.sucursal_id,
+            producto_id:it.producto_id,
+            stock_actual:(stocks[j]?.data?.stock_actual||0)+it.cantidad_recibida
+          }).eq('sucursal_id',selectedDespacho.sucursal_id).eq('producto_id',it.producto_id).then(res=>{if(res.error)throw res.error;})
+        ));
       }
 
       show('✅ Entrega confirmada');
@@ -245,6 +240,12 @@ export default function ConfirmarEntrega({user,onBack}){
 
       <div style={{marginTop:20,marginBottom:20}}>
         <div style={{fontWeight:700,fontSize:13,color:'#888',marginBottom:10}}>📦 ITEMS</div>
+        <button className="btn btn-ghost" onClick={()=>{
+          setItems(prev=>prev.map(it=>({...it,cantidad_recibida:it.cantidad_despachada})));
+          setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),100);
+        }} style={{width:'100%',marginBottom:16,padding:12,fontSize:14}}>
+          ✅ Todo Completo — Recibí todo conforme
+        </button>
         {items.map((it,idx)=>{
           const isDiff=it.cantidad_recibida!==it.cantidad_despachada;
           return(
@@ -287,6 +288,8 @@ export default function ConfirmarEntrega({user,onBack}){
         <div style={{fontWeight:700,fontSize:13,color:'#888',marginBottom:8}}>📝 NOTAS GENERALES</div>
         <textarea value={notas} onChange={(e)=>setNotas(e.target.value)} placeholder="Observaciones sobre la entrega..." style={{width:'100%',padding:'12px 14px',background:'#1a1a1a',border:'1px solid #2a2a2a',borderRadius:10,color:'#fff',fontSize:13,minHeight:'80px',fontFamily:'inherit',resize:'vertical'}}/>
       </div>
+
+      <div ref={bottomRef}/>
 
       <button onClick={confirmarEntrega} disabled={actualizando||!foto} className="btn btn-red" style={{width:'100%',fontSize:15,padding:16,marginBottom:12}}>
         {actualizando?'Confirmando...':'✅ Confirmar Entrega'}
