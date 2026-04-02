@@ -1,524 +1,466 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 
-// ── Colores consistentes con el resto del ERP ──
 const c = {
-  bg: '#111',
-  card: '#1a1a1a',
-  cardBorder: '#2a2a2a',
-  input: '#1e1e1e',
-  red: '#e63946',
-  green: '#4ade80',
-  greenDark: '#2d6a4f',
-  yellow: '#fbbf24',
-  orange: '#f97316',
-  blue: '#60a5fa',
-  border: '#333',
-  text: '#f0f0f0',
-  textDim: '#888',
-  textOff: '#555',
+  bg: '#111', card: '#1a1a1a', cardBorder: '#2a2a2a', input: '#1e1e1e',
+  red: '#e63946', green: '#4ade80', greenDark: '#2d6a4f',
+  yellow: '#fbbf24', orange: '#f97316', blue: '#60a5fa',
+  border: '#333', text: '#f0f0f0', textDim: '#888', textOff: '#555',
 };
-
-const cardStyle = {
-  background: c.card,
-  border: `1px solid ${c.cardBorder}`,
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 12,
-};
-
-const inputStyle = {
-  width: '100%',
-  background: c.input,
-  border: `1px solid ${c.border}`,
-  borderRadius: 8,
-  color: c.text,
-  padding: '10px 12px',
-  fontSize: 15,
-  fontFamily: 'inherit',
-  boxSizing: 'border-box',
-};
-
-const labelStyle = { fontSize: 13, color: c.textDim, display: 'block', marginBottom: 4 };
-
-const btnPrimary = {
-  width: '100%',
-  padding: 14,
-  borderRadius: 10,
-  background: c.red,
-  color: '#fff',
-  border: 'none',
-  cursor: 'pointer',
-  fontSize: 15,
-  fontWeight: 700,
-  transition: '0.15s',
-};
-
+const cardStyle = { background: c.card, border: `1px solid ${c.cardBorder}`, borderRadius: 12, padding: 16, marginBottom: 12 };
+const inputStyle = { width: '100%', background: c.input, border: `1px solid ${c.border}`, borderRadius: 8, color: c.text, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box' };
+const labelStyle = { fontSize: 12, color: c.textDim, display: 'block', marginBottom: 4 };
+const btnPrimary = { width: '100%', padding: 12, borderRadius: 10, background: c.red, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700 };
 const btnGreen = { ...btnPrimary, background: c.greenDark };
-const btnGhost = {
-  ...btnPrimary,
-  background: c.input,
-  color: '#ccc',
-  border: `1px solid ${c.border}`,
-  fontWeight: 600,
-};
 
-// ── Helpers ──
-const fmtDateTime = (iso) => {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('es-SV', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  });
-};
+const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' }) : '—';
+const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-SV', { day: '2-digit', month: 'short' }) : '—';
 
-const fmtTime = (iso) => {
-  if (!iso) return null;
-  return new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' });
-};
-
-// ═══════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════════
 export default function AsistenciaDigital({ sucursales, user }) {
-  const [view, setView] = useState('checkin');
-  const [selectedSucursal, setSelectedSucursal] = useState(sucursales[0]?.id || '');
+  const [tab, setTab] = useState('historial');
+  const [selectedSuc, setSelectedSuc] = useState(sucursales[0]?.store_code || '');
 
-  const views = [
-    { id: 'checkin', label: 'Check-in' },
-    { id: 'historia', label: 'Historial' },
+  const tabs = [
+    { id: 'alertas', label: '🚨 Alertas' },
+    { id: 'historial', label: 'Historial' },
     { id: 'correcciones', label: 'Ajustes' },
+    { id: 'geofence', label: '📍 Config' },
   ];
 
   return (
     <div>
-      {/* Sub-navigation — estilo tab underline como el resto de la app */}
-      <div style={{
-        display: 'flex',
-        borderBottom: `1px solid ${c.cardBorder}`,
-        marginBottom: 16,
-        gap: 0,
-      }}>
-        {views.map(v => (
-          <button
-            key={v.id}
-            onClick={() => setView(v.id)}
-            style={{
-              flex: 1,
-              padding: '12px 6px',
-              textAlign: 'center',
-              fontSize: 13,
-              fontWeight: 700,
-              color: view === v.id ? c.red : c.textOff,
-              cursor: 'pointer',
-              borderBottom: view === v.id ? `2px solid ${c.red}` : '2px solid transparent',
-              background: 'none',
-              border: 'none',
-              borderBottomWidth: 2,
-              borderBottomStyle: 'solid',
-              borderBottomColor: view === v.id ? c.red : 'transparent',
-              transition: '0.15s',
-            }}
-          >
-            {v.label}
-          </button>
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${c.border}`, marginBottom: 16 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            flex: 1, padding: '10px 4px', background: 'none', border: 'none', cursor: 'pointer',
+            color: tab === t.id ? c.red : c.textOff, fontSize: 12, fontWeight: tab === t.id ? 700 : 400,
+            borderBottom: tab === t.id ? `2px solid ${c.red}` : '2px solid transparent',
+          }}>{t.label}</button>
         ))}
       </div>
 
-      {/* Sucursal Selector */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={labelStyle}>Sucursal</label>
-        <select
-          value={selectedSucursal}
-          onChange={(e) => setSelectedSucursal(e.target.value)}
-          style={inputStyle}
-        >
-          {sucursales.map(s => (
-            <option key={s.id} value={s.id}>{s.nombre}</option>
-          ))}
-        </select>
-      </div>
+      {/* Selector sucursal (para historial y alertas) */}
+      {(tab === 'historial' || tab === 'alertas') && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Sucursal</label>
+          <select value={selectedSuc} onChange={e => setSelectedSuc(e.target.value)} style={inputStyle}>
+            <option value="">Todas</option>
+            {sucursales.map(s => <option key={s.id} value={s.store_code}>{s.nombre}</option>)}
+          </select>
+        </div>
+      )}
 
-      {/* Views */}
-      {view === 'checkin' && <CheckinWidget sucursal={selectedSucursal} user={user} />}
-      {view === 'historia' && <HistorialAsistencia sucursal={selectedSucursal} />}
-      {view === 'correcciones' && <CorrecionesPanel sucursal={selectedSucursal} user={user} />}
+      {tab === 'alertas'    && <AlertasPanel selectedSuc={selectedSuc} user={user} />}
+      {tab === 'historial'  && <HistorialPanel selectedSuc={selectedSuc} />}
+      {tab === 'correcciones' && <CorreccionesPanel sucursales={sucursales} user={user} />}
+      {tab === 'geofence'   && <GeofenceConfig sucursales={sucursales} />}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CHECK-IN / CHECK-OUT
+// ALERTAS — lo que Majo necesita para detectar irregularidades
 // ═══════════════════════════════════════════════════════════════
-function CheckinWidget({ sucursal, user }) {
-  const [position, setPosition] = useState(null);
-  const [gpsLoading, setGpsLoading] = useState(false);
-  const [estado, setEstado] = useState('checkin');
-  const [loading, setLoading] = useState(false);
-  const [lastCheckin, setLastCheckin] = useState(null);
+function AlertasPanel({ selectedSuc, user }) {
+  const [alertas, setAlertas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('todas');
 
-  // GPS
-  const getLocation = useCallback(() => {
-    if (!navigator.geolocation) return;
-    setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setPosition({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy });
-        setGpsLoading(false);
-      },
-      () => { setGpsLoading(false); },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  }, []);
-
-  // Auto-get GPS on mount
-  useEffect(() => { getLocation(); }, [getLocation]);
-
-  // Último check-in
-  useEffect(() => {
-    if (!user?.id) return;
-    db.from('asistencia_gps')
-      .select('*')
-      .eq('empleado_id', user.id)
-      .order('timestamp_checkin', { ascending: false })
-      .limit(1)
-      .then(({ data }) => {
-        if (data?.[0]?.timestamp_checkout === null) {
-          setEstado('checkout');
-          setLastCheckin(data[0]);
-        }
-      });
-  }, [user?.id]);
-
-  // Guardar
-  const handleSave = async () => {
-    if (!position) return alert('Esperando ubicación GPS...');
+  const load = useCallback(async () => {
     setLoading(true);
-    try {
-      if (estado === 'checkin') {
-        await db.from('asistencia_gps').insert({
-          empleado_id: user.id,
-          sucursal_id: sucursal,
-          timestamp_checkin: new Date().toISOString(),
-          lat_checkin: position.lat,
-          lon_checkin: position.lon,
-          distancia_metros: Math.round(position.accuracy),
-        });
-        alert('Check-in registrado ✅');
-      } else if (lastCheckin) {
-        await db.from('asistencia_gps').update({
-          timestamp_checkout: new Date().toISOString(),
-          lat_checkout: position.lat,
-          lon_checkout: position.lon,
-        }).eq('id', lastCheckin.id);
-        alert('Check-out registrado ✅');
-        setEstado('checkin');
-        setLastCheckin(null);
-      }
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    let q = db.from('asistencia')
+      .select('*, usuarios_erp(nombre, apellido, store_code)')
+      .order('fecha', { ascending: false })
+      .limit(100);
+
+    if (selectedSuc) q = q.eq('sucursal', selectedSuc);
+
+    const { data } = await q;
+    setAlertas(data || []);
+    setLoading(false);
+  }, [selectedSuc]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const aprobar = async (id) => {
+    await db.from('asistencia').update({ alerta_rrhh: false, notas: 'Revisado por RRHH - OK' }).eq('id', id);
+    load();
   };
 
-  const isCheckout = estado === 'checkout';
-  const canSave = !!position && !loading;
+  const filtered = alertas.filter(r => {
+    if (filter === 'fuera') return r.fuera_geofence;
+    if (filter === 'sin_salida') return r.hora_entrada && !r.hora_salida;
+    if (filter === 'alerta') return r.alerta_rrhh;
+    return r.fuera_geofence || r.alerta_rrhh || !r.hora_salida;
+  });
+
+  const conteos = {
+    fuera: alertas.filter(r => r.fuera_geofence).length,
+    sin_salida: alertas.filter(r => r.hora_entrada && !r.hora_salida).length,
+    alerta: alertas.filter(r => r.alerta_rrhh).length,
+  };
 
   return (
     <div>
-      {/* Estado badge */}
-      <div style={{
-        ...cardStyle,
-        borderLeft: `3px solid ${isCheckout ? c.orange : c.green}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: c.text }}>
-            {isCheckout ? 'Tienes un turno activo' : 'Nuevo turno'}
+      {/* Resumen */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
+        {[
+          { label: 'Fuera de rango', val: conteos.fuera, color: c.orange },
+          { label: 'Sin salida', val: conteos.sin_salida, color: c.yellow },
+          { label: 'Con alerta', val: conteos.alerta, color: c.red },
+        ].map((s, i) => (
+          <div key={i} style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', padding: 12 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.val}</div>
+            <div style={{ fontSize: 11, color: c.textDim, marginTop: 2 }}>{s.label}</div>
           </div>
-          <div style={{ fontSize: 12, color: c.textDim, marginTop: 2 }}>
-            {isCheckout
-              ? `Entrada: ${fmtTime(lastCheckin?.timestamp_checkin)}`
-              : 'Registra tu entrada con GPS y foto'}
-          </div>
-        </div>
-        <span style={{
-          display: 'inline-block',
-          padding: '3px 9px',
-          borderRadius: 20,
-          fontSize: 11,
-          fontWeight: 700,
-          background: isCheckout ? '#7c2d12' : '#14532d',
-          color: isCheckout ? '#fb923c' : '#4ade80',
-        }}>
-          {isCheckout ? 'Check-out' : 'Check-in'}
-        </span>
+        ))}
       </div>
 
-      {/* GPS */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: c.textDim }}>Ubicación GPS</span>
-          <button
-            onClick={getLocation}
-            disabled={gpsLoading}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 8,
-              background: c.input,
-              color: c.text,
-              border: `1px solid ${c.border}`,
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            {gpsLoading ? '...' : '↻ Actualizar'}
-          </button>
-        </div>
-        {position ? (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <span style={{
-              padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-              background: '#14532d', color: '#4ade80',
-            }}>GPS OK</span>
-            <span style={{ fontSize: 12, color: c.textDim }}>
-              {position.lat.toFixed(5)}, {position.lon.toFixed(5)} · ±{position.accuracy.toFixed(0)}m
-            </span>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{
-              padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-              background: '#7f1d1d', color: '#f87171',
-            }}>Sin GPS</span>
-            <span style={{ fontSize: 12, color: c.textDim }}>Esperando permisos de ubicación</span>
-          </div>
-        )}
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[
+          { id: 'todas', label: 'Todas' },
+          { id: 'fuera', label: '📍 Fuera de rango' },
+          { id: 'sin_salida', label: '⏰ Sin salida' },
+          { id: 'alerta', label: '🚨 Con alerta' },
+        ].map(f => (
+          <button key={f.id} onClick={() => setFilter(f.id)} style={{
+            padding: '5px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: 'none',
+            background: filter === f.id ? c.red : c.input,
+            color: filter === f.id ? '#fff' : c.textDim, fontWeight: filter === f.id ? 700 : 400,
+          }}>{f.label}</button>
+        ))}
       </div>
 
-      {/* Botón guardar */}
-      <button
-        onClick={handleSave}
-        disabled={!canSave}
-        style={{
-          ...btnPrimary,
-          background: canSave ? (isCheckout ? '#e07c00' : c.greenDark) : c.textOff,
-          cursor: canSave ? 'pointer' : 'not-allowed',
-          opacity: loading ? 0.5 : 1,
-          marginTop: 4,
-        }}
-      >
-        {loading
-          ? '⏳ Registrando...'
-          : isCheckout ? '🔴 Registrar Check-out' : '🟢 Registrar Check-in'}
-      </button>
+      {loading ? (
+        <div style={{ textAlign: 'center', color: c.textDim, padding: 32 }}>Cargando...</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ ...cardStyle, textAlign: 'center', padding: 32, borderColor: c.greenDark }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+          <div style={{ fontSize: 14, color: c.green }}>Sin irregularidades</div>
+        </div>
+      ) : (
+        filtered.map((r, i) => {
+          const emp = r.usuarios_erp;
+          const nombre = emp ? `${emp.nombre} ${emp.apellido}` : '—';
+          const fueraRango = r.fuera_geofence;
+          const sinSalida = r.hora_entrada && !r.hora_salida;
+
+          return (
+            <div key={i} style={{
+              ...cardStyle,
+              borderLeft: `3px solid ${fueraRango ? c.orange : sinSalida ? c.yellow : c.red}`,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: c.text }}>{nombre}</div>
+                  <div style={{ fontSize: 12, color: c.textDim, marginTop: 2 }}>
+                    {fmtDate(r.fecha)} · Entrada: {fmtTime(r.hora_entrada)} · Salida: {fmtTime(r.hora_salida)}
+                  </div>
+
+                  {/* Badges de alerta */}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    {fueraRango && (
+                      <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(249,115,22,0.15)', color: c.orange }}>
+                        📍 {r.distancia_entrada_m}m del local
+                      </span>
+                    )}
+                    {sinSalida && (
+                      <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(251,191,36,0.15)', color: c.yellow }}>
+                        ⏰ Sin salida
+                      </span>
+                    )}
+                    {r.alerta_rrhh && (
+                      <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(230,57,70,0.15)', color: c.red }}>
+                        🚨 Alerta activa
+                      </span>
+                    )}
+                    {r.notas && (
+                      <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 11, background: c.input, color: c.textDim }}>
+                        {r.notas}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Coordenadas GPS */}
+                {r.gps_entrada?.lat && (
+                  <a
+                    href={`https://maps.google.com/?q=${r.gps_entrada.lat},${r.gps_entrada.lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 20, textDecoration: 'none', marginLeft: 8, flexShrink: 0 }}
+                    title="Ver en Google Maps"
+                  >🗺️</a>
+                )}
+              </div>
+
+              {r.alerta_rrhh && (
+                <button onClick={() => aprobar(r.id)} style={{
+                  marginTop: 10, padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                  background: c.greenDark, color: c.green, border: 'none', cursor: 'pointer',
+                }}>
+                  ✓ Marcar revisado
+                </button>
+              )}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// HISTORIAL
+// HISTORIAL GENERAL
 // ═══════════════════════════════════════════════════════════════
-function HistorialAsistencia({ sucursal }) {
+function HistorialPanel({ selectedSuc }) {
   const [registros, setRegistros] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fecha, setFecha] = useState(new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('T')[0]);
 
   useEffect(() => {
     setLoading(true);
-    db.from('asistencia_gps')
-      .select('*, empleados(nombre_completo)')
-      .eq('sucursal_id', sucursal)
-      .order('timestamp_checkin', { ascending: false })
-      .limit(50)
-      .then(({ data }) => setRegistros(data || []))
-      .finally(() => setLoading(false));
-  }, [sucursal]);
-
-  if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '40px 20px', color: c.textOff }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
-        <div style={{ fontSize: 14 }}>Cargando historial...</div>
-      </div>
-    );
-  }
-
-  if (registros.length === 0) {
-    return (
-      <div style={{ textAlign: 'center', padding: '40px 20px', color: c.textOff }}>
-        <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
-        <div style={{ fontSize: 14 }}>No hay registros de asistencia para esta sucursal</div>
-      </div>
-    );
-  }
+    let q = db.from('asistencia')
+      .select('*, usuarios_erp(nombre, apellido)')
+      .eq('fecha', fecha)
+      .order('hora_entrada', { ascending: true })
+      .limit(100);
+    if (selectedSuc) q = q.eq('sucursal', selectedSuc);
+    q.then(({ data }) => { setRegistros(data || []); setLoading(false); });
+  }, [selectedSuc, fecha]);
 
   return (
-    <div style={{ ...cardStyle, padding: 0, overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            {['Empleado', 'Entrada', 'Salida', 'Precisión'].map((h, i) => (
-              <th key={i} style={{
-                padding: '8px 12px',
-                textAlign: 'left',
-                fontSize: 12,
-                fontWeight: 700,
-                color: c.textDim,
-                borderBottom: `2px solid ${c.border}`,
-              }}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {registros.map(r => (
-            <tr key={r.id}>
-              <td style={{ padding: '10px 12px', fontSize: 13, color: c.text, borderBottom: `1px solid ${c.border}` }}>
-                {r.empleados?.nombre_completo || '-'}
-              </td>
-              <td style={{ padding: '10px 12px', fontSize: 13, color: c.text, borderBottom: `1px solid ${c.border}` }}>
-                {fmtDateTime(r.timestamp_checkin)}
-              </td>
-              <td style={{ padding: '10px 12px', fontSize: 13, borderBottom: `1px solid ${c.border}` }}>
-                {r.timestamp_checkout ? (
-                  <span style={{ color: c.text }}>{fmtTime(r.timestamp_checkout)}</span>
-                ) : (
-                  <span style={{
-                    padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                    background: '#7c2d12', color: '#fb923c',
-                  }}>Activo</span>
-                )}
-              </td>
-              <td style={{ padding: '10px 12px', fontSize: 13, color: c.textDim, borderBottom: `1px solid ${c.border}` }}>
-                {r.distancia_metros ? `±${r.distancia_metros}m` : '-'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={labelStyle}>Fecha</label>
+        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+          style={{ ...inputStyle, width: 'auto' }} />
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', color: c.textDim, padding: 32 }}>Cargando...</div>
+      ) : registros.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.textOff, padding: 32 }}>Sin registros para esta fecha</div>
+      ) : (
+        <div style={{ ...cardStyle, padding: 0, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {['Empleado', 'Entrada', 'Salida', 'Distancia', 'Estado'].map((h, i) => (
+                  <th key={i} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: c.textDim, borderBottom: `2px solid ${c.border}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {registros.map((r, i) => {
+                const emp = r.usuarios_erp;
+                const nombre = emp ? `${emp.nombre} ${emp.apellido}` : '—';
+                return (
+                  <tr key={i}>
+                    <td style={{ padding: '9px 10px', fontSize: 13, color: c.text, borderBottom: `1px solid ${c.border}` }}>{nombre}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, color: c.green, borderBottom: `1px solid ${c.border}` }}>{fmtTime(r.hora_entrada)}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, color: r.hora_salida ? c.red : c.textOff, borderBottom: `1px solid ${c.border}` }}>{fmtTime(r.hora_salida)}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 12, borderBottom: `1px solid ${c.border}` }}>
+                      {r.distancia_entrada_m != null ? (
+                        <span style={{ color: r.fuera_geofence ? c.orange : c.textDim }}>
+                          {r.distancia_entrada_m}m {r.fuera_geofence ? '⚠️' : ''}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td style={{ padding: '9px 10px', borderBottom: `1px solid ${c.border}` }}>
+                      {r.fuera_geofence ? (
+                        <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(249,115,22,0.15)', color: c.orange, fontWeight: 700 }}>Fuera rango</span>
+                      ) : (
+                        <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: c.green, fontWeight: 700 }}>OK</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CORRECCIONES / AJUSTES MANUALES
+// CORRECCIONES MANUALES
 // ═══════════════════════════════════════════════════════════════
-function CorrecionesPanel({ sucursal, user }) {
+function CorreccionesPanel({ sucursales, user }) {
+  const [empleadoPin, setEmpleadoPin] = useState('');
+  const [empleado, setEmpleado] = useState(null);
   const [registros, setRegistros] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState('');
   const [razon, setRazon] = useState('');
   const [saving, setSaving] = useState(false);
+  const [buscando, setBuscando] = useState(false);
 
-  const loadRegistros = useCallback(() => {
-    setLoading(true);
-    db.from('asistencia_gps')
-      .select('*, empleados(nombre_completo)')
-      .eq('sucursal_id', sucursal)
-      .order('timestamp_checkin', { ascending: false })
-      .limit(30)
-      .then(({ data }) => setRegistros(data || []))
-      .finally(() => setLoading(false));
-  }, [sucursal]);
-
-  useEffect(() => { loadRegistros(); }, [loadRegistros]);
-
-  const handleAjuste = async () => {
-    if (!selectedId || !razon.trim()) return alert('Selecciona registro y escribe razón');
-    setSaving(true);
-    try {
-      await db.from('asistencia_gps').update({
-        ajuste_manual_por: user?.id,
-        ajuste_manual_timestamp: new Date().toISOString(),
-        ajuste_razon: razon,
-      }).eq('id', selectedId);
-      alert('Ajuste registrado ✅');
-      setSelectedId('');
-      setRazon('');
-      loadRegistros();
-    } catch (err) {
-      alert('Error: ' + err.message);
-    } finally {
-      setSaving(false);
+  const buscarEmpleado = async () => {
+    if (!empleadoPin) return;
+    setBuscando(true);
+    const { data } = await db.from('usuarios_erp').select('*').eq('pin', empleadoPin).maybeSingle();
+    setEmpleado(data);
+    if (data) {
+      const { data: regs } = await db.from('asistencia')
+        .select('*').eq('usuario_id', data.id)
+        .order('fecha', { ascending: false }).limit(10);
+      setRegistros(regs || []);
     }
+    setBuscando(false);
   };
 
-  if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '40px 20px', color: c.textOff }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
-        <div style={{ fontSize: 14 }}>Cargando registros...</div>
-      </div>
-    );
-  }
-
-  const selected = registros.find(r => r.id === selectedId);
+  const handleAjuste = async () => {
+    if (!selectedId || !razon.trim()) return;
+    setSaving(true);
+    const { error } = await db.from('asistencia').update({ notas: razon, alerta_rrhh: false }).eq('id', selectedId);
+    if (!error) { setRazon(''); setSelectedId(''); alert('Ajuste guardado ✅'); }
+    setSaving(false);
+  };
 
   return (
     <div>
-      {/* Info card */}
-      <div style={{ ...cardStyle, borderLeft: `3px solid ${c.yellow}` }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: c.text, marginBottom: 4 }}>
-          Correcciones de asistencia
-        </div>
-        <div style={{ fontSize: 12, color: c.textDim }}>
-          Selecciona un registro para agregar una nota de ajuste. Solo personal RRHH puede realizar correcciones.
+      <div style={cardStyle}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: c.yellow, marginBottom: 10 }}>🔍 Buscar empleado por PIN</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input value={empleadoPin} onChange={e => setEmpleadoPin(e.target.value)}
+            placeholder="PIN del empleado" style={{ ...inputStyle, flex: 1 }}
+            onKeyDown={e => e.key === 'Enter' && buscarEmpleado()} />
+          <button onClick={buscarEmpleado} disabled={buscando} style={{
+            padding: '10px 16px', borderRadius: 8, background: c.red, color: '#fff',
+            border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+          }}>{buscando ? '...' : 'Buscar'}</button>
         </div>
       </div>
 
-      {/* Form */}
+      {empleado && (
+        <div>
+          <div style={{ ...cardStyle, borderLeft: `3px solid ${c.blue}` }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: c.text }}>{empleado.nombre} {empleado.apellido}</div>
+            <div style={{ fontSize: 12, color: c.textDim }}>PIN {empleado.pin} · {empleado.rol} · {empleado.store_code}</div>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={labelStyle}>Registro a corregir</label>
+            <select value={selectedId} onChange={e => setSelectedId(e.target.value)} style={inputStyle}>
+              <option value="">Selecciona una fecha...</option>
+              {registros.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.fecha} · Entrada {fmtTime(r.hora_entrada)} · Salida {fmtTime(r.hora_salida)}
+                  {r.fuera_geofence ? ' ⚠️' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={labelStyle}>Nota / razón de corrección</label>
+            <textarea value={razon} onChange={e => setRazon(e.target.value)}
+              placeholder="Ej: Empleado trabajó en otra sucursal ese día por apoyo..." rows={3}
+              style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} />
+          </div>
+
+          <button onClick={handleAjuste} disabled={saving || !selectedId || !razon.trim()}
+            style={{ ...btnGreen, opacity: saving || !selectedId || !razon.trim() ? 0.5 : 1 }}>
+            {saving ? 'Guardando...' : '💾 Guardar corrección'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIG GEOFENCE — coordenadas y radio por sucursal
+// ═══════════════════════════════════════════════════════════════
+function GeofenceConfig({ sucursales }) {
+  const [selected, setSelected] = useState(sucursales[0]?.store_code || '');
+  const [form, setForm] = useState({ lat: '', lng: '', radio_metros: 200 });
+  const [saving, setSaving] = useState(false);
+  const [gpsActual, setGpsActual] = useState(null);
+
+  useEffect(() => {
+    const suc = sucursales.find(s => s.store_code === selected);
+    if (suc) setForm({ lat: suc.lat || '', lng: suc.lng || '', radio_metros: suc.radio_metros || 200 });
+  }, [selected, sucursales]);
+
+  const capturarGPS = () => {
+    navigator.geolocation.getCurrentPosition(
+      p => { setForm(f => ({ ...f, lat: p.coords.latitude.toFixed(6), lng: p.coords.longitude.toFixed(6) })); setGpsActual({ acc: Math.round(p.coords.accuracy) }); },
+      () => alert('No se pudo obtener GPS'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const guardar = async () => {
+    const suc = sucursales.find(s => s.store_code === selected);
+    if (!suc) return;
+    setSaving(true);
+    const { error } = await db.from('sucursales').update({
+      lat: parseFloat(form.lat), lng: parseFloat(form.lng), radio_metros: parseInt(form.radio_metros),
+    }).eq('id', suc.id);
+    setSaving(false);
+    if (!error) alert(`✅ Coordenadas guardadas para ${suc.nombre}`);
+    else alert('Error: ' + error.message);
+  };
+
+  return (
+    <div>
+      <div style={{ ...cardStyle, borderLeft: `3px solid ${c.blue}` }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: c.blue, marginBottom: 4 }}>📍 Configurar geofence por sucursal</div>
+        <div style={{ fontSize: 12, color: c.textDim, lineHeight: 1.5 }}>
+          Define las coordenadas GPS del centro de cada local y el radio máximo aceptado.
+          El sistema alertará cuando alguien marque asistencia fuera de ese radio.
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={labelStyle}>Sucursal</label>
+        <select value={selected} onChange={e => setSelected(e.target.value)} style={inputStyle}>
+          {sucursales.map(s => <option key={s.id} value={s.store_code}>{s.nombre}</option>)}
+        </select>
+      </div>
+
       <div style={cardStyle}>
-        <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Registro a ajustar</label>
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-            style={inputStyle}
-          >
-            <option value="">Selecciona un registro...</option>
-            {registros.map(r => (
-              <option key={r.id} value={r.id}>
-                {r.empleados?.nombre_completo} — {fmtDateTime(r.timestamp_checkin)}
-                {r.ajuste_razon ? ' (ya ajustado)' : ''}
-              </option>
-            ))}
-          </select>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={labelStyle}>Latitud</label>
+            <input value={form.lat} onChange={e => setForm(f => ({ ...f, lat: e.target.value }))}
+              placeholder="13.6803" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Longitud</label>
+            <input value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))}
+              placeholder="-89.2539" style={inputStyle} />
+          </div>
         </div>
 
-        {selected?.ajuste_razon && (
-          <div style={{
-            background: '#78350f20', border: '1px solid #78350f',
-            borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12, color: c.yellow,
-          }}>
-            Ajuste previo: {selected.ajuste_razon}
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle}>Radio permitido (metros)</label>
+          <input type="number" value={form.radio_metros} onChange={e => setForm(f => ({ ...f, radio_metros: e.target.value }))}
+            min={50} max={1000} style={{ ...inputStyle, width: 'auto' }} />
+          <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
+            Recomendado: 150-250m para locales en plaza · 300m+ para local con estacionamiento
           </div>
+        </div>
+
+        <button onClick={capturarGPS} style={{ ...btnPrimary, background: c.input, color: c.text, border: `1px solid ${c.border}`, marginBottom: 8 }}>
+          📱 Capturar mi GPS actual {gpsActual ? `(±${gpsActual.acc}m)` : ''}
+        </button>
+
+        {form.lat && form.lng && (
+          <a href={`https://maps.google.com/?q=${form.lat},${form.lng}`} target="_blank" rel="noreferrer"
+            style={{ display: 'block', textAlign: 'center', fontSize: 12, color: c.blue, marginBottom: 10 }}>
+            🗺️ Verificar en Google Maps
+          </a>
         )}
 
-        <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Razón del ajuste</label>
-          <textarea
-            value={razon}
-            onChange={(e) => setRazon(e.target.value)}
-            placeholder="Ej: Empleado olvidó marcar salida, se confirma hora real con supervisor..."
-            rows={3}
-            style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }}
-          />
-        </div>
-
-        <button
-          onClick={handleAjuste}
-          disabled={saving || !selectedId || !razon.trim()}
-          style={{
-            ...btnGreen,
-            opacity: (saving || !selectedId || !razon.trim()) ? 0.45 : 1,
-            cursor: (selectedId && razon.trim() && !saving) ? 'pointer' : 'not-allowed',
-          }}
-        >
-          {saving ? '⏳ Guardando...' : '💾 Guardar ajuste'}
+        <button onClick={guardar} disabled={saving || !form.lat || !form.lng}
+          style={{ ...btnGreen, opacity: saving || !form.lat || !form.lng ? 0.5 : 1 }}>
+          {saving ? 'Guardando...' : '💾 Guardar coordenadas'}
         </button>
       </div>
     </div>
