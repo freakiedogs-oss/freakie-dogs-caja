@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { fmtDate, n, STORES } from '../../config';
+import AsistenciaDigital from './AsistenciaDigital';
 
 // ── Control de acceso ──
 const EDIT_PINS = ['1000', '2000', '7700']; // Jose, Cesar, Maria Jose (RRHH)
@@ -32,7 +33,7 @@ const colors = {
 
 // ── MAIN COMPONENT ──
 export default function RRHHView({ user }) {
-  const [tab, setTab] = useState('empleados'); // empleados, asistencia, descuentos
+  const [tab, setTab] = useState('empleados'); // empleados, asistencia-digital, asistencia, descuentos
   const [sucursales, setSucursales] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,7 +65,8 @@ export default function RRHHView({ user }) {
       <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '1px solid #1a1a1a', padding: '0 8px' }}>
         {[
           { id: 'empleados', label: '👤 Empleados' },
-          { id: 'asistencia', label: '📋 Asistencia' },
+          { id: 'asistencia-digital', label: '📍 GPS Asistencia' },
+          { id: 'asistencia', label: '📋 Asistencia Manual' },
           { id: 'descuentos', label: '💰 Descuentos' },
         ].map((t) => (
           <button
@@ -91,6 +93,7 @@ export default function RRHHView({ user }) {
       {/* Contenido por tab */}
       <div style={{ padding: '16px' }}>
         {tab === 'empleados' && <TabEmpleados canEdit={canEdit} sucursales={sucursales} />}
+        {tab === 'asistencia-digital' && <AsistenciaDigital sucursales={sucursales} user={user} />}
         {tab === 'asistencia' && <TabAsistencia sucursales={sucursales} />}
         {tab === 'descuentos' && <TabDescuentos canEdit={canEdit} />}
       </div>
