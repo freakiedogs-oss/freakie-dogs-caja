@@ -42,8 +42,7 @@ export default function RRHHView({ user }) {
   // Cargar sucursales al montar
   useEffect(() => {
     db.from('sucursales')
-      .select('id, nombre')
-      .eq('activa', true)
+      .select('id, nombre, store_code, lat, lng, radio_metros')
       .order('nombre')
       .then(({ data }) => setSucursales(data || []))
       .finally(() => setLoading(false));
