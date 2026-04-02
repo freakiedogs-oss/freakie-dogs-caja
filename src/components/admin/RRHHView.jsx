@@ -3,7 +3,7 @@ import { db } from '../../supabase';
 import { fmtDate, n, STORES } from '../../config';
 
 // ── Control de acceso ──
-const EDIT_PINS = ['1000', '2000']; // Jose y Cesar
+const EDIT_PINS = ['1000', '2000', '7700']; // Jose, Cesar, Maria Jose (RRHH)
 const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'admin'];
 
 // ── Cargos reales en producción ──
