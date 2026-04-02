@@ -108,6 +108,7 @@ export const NAV_SECTIONS = [
     label: 'RRHH / Planilla',
     items: [
       { key: 'rrhh', label: 'Recursos Humanos', icon: '👥', roles: ['ejecutivo', 'rrhh', 'admin'] },
+      { key: 'horarios', label: 'Horarios', icon: '📅', roles: ['ejecutivo', 'rrhh', 'admin', 'gerente', 'cocina'] },
       { key: 'planilla', label: 'Nómina / Planilla', icon: '💵', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
     ],
   },

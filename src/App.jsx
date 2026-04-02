@@ -28,6 +28,7 @@ import InventarioDashboard from './components/dashboard/InventarioDashboard'
 import VentasDashboard from './components/dashboard/VentasDashboard'
 import MiAsistencia from './components/empleado/MiAsistencia'
 import MiBoleta from './components/empleado/MiBoleta'
+import HorariosView from './components/rrhh/HorariosView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -152,6 +153,8 @@ export default function App() {
         return <PlanillaView user={user} />
       case 'rrhh':
         return <RRHHView user={user} />
+      case 'horarios':
+        return <HorariosView user={user} />
       case 'produccion':
         return <ProduccionDiaria user={user} />
       case 'conciliacion':
