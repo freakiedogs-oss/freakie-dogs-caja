@@ -298,12 +298,14 @@ function CorreccionesPanel({ sucursales, user }) {
   const [razon, setRazon] = useState('');
   const [saving, setSaving] = useState(false);
   const [buscando, setBuscando] = useState(false);
+  const [msg, setMsg] = useState(null);
 
   const buscarEmpleado = async () => {
     if (!empleadoPin) return;
     setBuscando(true);
+    setEmpleado(null);
     const { data } = await db.from('usuarios_erp').select('*').eq('pin', empleadoPin).maybeSingle();
-    setEmpleado(data);
+    setEmpleado(data || false);
     if (data) {
       const { data: regs } = await db.from('asistencia')
         .select('*').eq('usuario_id', data.id)
@@ -316,8 +318,10 @@ function CorreccionesPanel({ sucursales, user }) {
   const handleAjuste = async () => {
     if (!selectedId || !razon.trim()) return;
     setSaving(true);
+    setMsg(null);
     const { error } = await db.from('asistencia').update({ notas: razon, alerta_rrhh: false }).eq('id', selectedId);
-    if (!error) { setRazon(''); setSelectedId(''); alert('Ajuste guardado ✅'); }
+    if (!error) { setRazon(''); setSelectedId(''); setMsg({ ok: true, text: '✓ Corrección guardada' }); }
+    else setMsg({ ok: false, text: error.message });
     setSaving(false);
   };
 
@@ -367,7 +371,17 @@ function CorreccionesPanel({ sucursales, user }) {
             style={{ ...btnGreen, opacity: saving || !selectedId || !razon.trim() ? 0.5 : 1 }}>
             {saving ? 'Guardando...' : '💾 Guardar corrección'}
           </button>
+          {msg && (
+            <div style={{ marginTop: 10, padding: 10, borderRadius: 8, fontSize: 13, textAlign: 'center',
+              background: msg.ok ? 'rgba(74,222,128,0.1)' : 'rgba(230,57,70,0.1)',
+              color: msg.ok ? c.green : c.red }}>
+              {msg.text}
+            </div>
+          )}
         </div>
+      )}
+      {empleado === false && (
+        <div style={{ ...cardStyle, textAlign: 'center', color: c.textDim }}>PIN no encontrado</div>
       )}
     </div>
   );
@@ -381,16 +395,23 @@ function GeofenceConfig({ sucursales }) {
   const [form, setForm] = useState({ lat: '', lng: '', radio_metros: 200 });
   const [saving, setSaving] = useState(false);
   const [gpsActual, setGpsActual] = useState(null);
+  const [msg, setMsg] = useState(null);
 
   useEffect(() => {
     const suc = sucursales.find(s => s.store_code === selected);
     if (suc) setForm({ lat: suc.lat || '', lng: suc.lng || '', radio_metros: suc.radio_metros || 200 });
+    setMsg(null);
   }, [selected, sucursales]);
 
   const capturarGPS = () => {
+    setMsg(null);
     navigator.geolocation.getCurrentPosition(
-      p => { setForm(f => ({ ...f, lat: p.coords.latitude.toFixed(6), lng: p.coords.longitude.toFixed(6) })); setGpsActual({ acc: Math.round(p.coords.accuracy) }); },
-      () => alert('No se pudo obtener GPS'),
+      p => {
+        setForm(f => ({ ...f, lat: p.coords.latitude.toFixed(6), lng: p.coords.longitude.toFixed(6) }));
+        setGpsActual({ acc: Math.round(p.coords.accuracy) });
+        setMsg({ ok: true, text: `GPS capturado (±${Math.round(p.coords.accuracy)}m)` });
+      },
+      () => setMsg({ ok: false, text: 'No se pudo obtener GPS — verificá permisos' }),
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
@@ -403,8 +424,8 @@ function GeofenceConfig({ sucursales }) {
       lat: parseFloat(form.lat), lng: parseFloat(form.lng), radio_metros: parseInt(form.radio_metros),
     }).eq('id', suc.id);
     setSaving(false);
-    if (!error) alert(`✅ Coordenadas guardadas para ${suc.nombre}`);
-    else alert('Error: ' + error.message);
+    if (!error) setMsg({ ok: true, text: `✓ Coordenadas guardadas para ${suc.nombre}` });
+    else setMsg({ ok: false, text: `Error: ${error.message}` });
   };
 
   return (
@@ -462,6 +483,15 @@ function GeofenceConfig({ sucursales }) {
           style={{ ...btnGreen, opacity: saving || !form.lat || !form.lng ? 0.5 : 1 }}>
           {saving ? 'Guardando...' : '💾 Guardar coordenadas'}
         </button>
+
+        {msg && (
+          <div style={{ marginTop: 10, padding: 12, borderRadius: 8, fontSize: 13, textAlign: 'center',
+            background: msg.ok ? 'rgba(74,222,128,0.1)' : 'rgba(230,57,70,0.1)',
+            color: msg.ok ? c.green : c.red,
+            border: `1px solid ${msg.ok ? c.greenDark : c.red}` }}>
+            {msg.text}
+          </div>
+        )}
       </div>
     </div>
   );
