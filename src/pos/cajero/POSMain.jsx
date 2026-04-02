@@ -1,25 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
 import { STORES, today } from '../../config'
-import OrderTypeSelector from './OrderTypeSelector'
-import FloorPlanSelector from './FloorPlanSelector'
 import PaymentModal from './PaymentModal'
 
-// Tipo de orden a canal BD
-const TYPE_TO_CANAL = {
-  local:           'local',
-  para_llevar:     'para_llevar',
-  delivery:        'delivery_propio',
-  pedidos_ya:      'pedidos_ya',
-  drive_thru:      'drive_through',
-}
-
-const TYPE_LABELS = {
-  local:       { icon: '🪑', label: 'Mesa',        color: '#4ade80' },
-  para_llevar: { icon: '🥡', label: 'Para Llevar',  color: '#f4a261' },
-  delivery:    { icon: '🛵', label: 'Delivery',     color: '#60a5fa' },
-  pedidos_ya:  { icon: '📱', label: 'PedidosYa',    color: '#a78bfa' },
-  drive_thru:  { icon: '🚗', label: 'Drive Thru',   color: '#fbbf24' },
+// ──────────────────────────────────────────────
+// Constantes de display
+// ──────────────────────────────────────────────
+const TIPO_INFO = {
+  'mesa':           { icon: '🪑', label: 'Mesa',        color: '#4ade80', canal: 'local'          },
+  'para_llevar':    { icon: '🥡', label: 'Para Llevar', color: '#f4a261', canal: 'para_llevar'     },
+  'delivery_propio':{ icon: '🛵', label: 'Delivery',    color: '#60a5fa', canal: 'delivery_propio' },
+  'pedidos_ya':     { icon: '📱', label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
+  'drive_through':  { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24', canal: 'drive_through'   },
 }
 
 // Reloj
@@ -27,8 +19,8 @@ function Clock() {
   const [t, setT] = useState('')
   useEffect(() => {
     const tick = () => {
-      const now = new Date(Date.now() - 6*3600*1000)
-      setT(now.toISOString().split('T')[1].slice(0,8))
+      const now = new Date(Date.now() - 6 * 3600 * 1000)
+      setT(now.toISOString().split('T')[1].slice(0, 8))
     }
     tick()
     const id = setInterval(tick, 1000)
@@ -37,34 +29,45 @@ function Clock() {
   return <span className="pos-header-clock">{t}</span>
 }
 
-export default function POSMain({ user, onLogout }) {
+// ──────────────────────────────────────────────
+// POSMain
+// ──────────────────────────────────────────────
+export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
+  // Contexto de la cuenta actual
+  const tipo     = cuentaCtx?.tipo     || 'para_llevar'
+  const mesaRef  = cuentaCtx?.mesa_ref || null
+  const mesaId   = cuentaCtx?.mesa_id  || null
+  const tipoInfo = TIPO_INFO[tipo] || TIPO_INFO['para_llevar']
+
   // Menú data
-  const [menus, setMenus]       = useState({})   // canal → {id, categorias:[{id,nombre,color,icono,items:[]}]}
+  const [menus,       setMenus]       = useState({})
   const [loadingMenu, setLoadingMenu] = useState(true)
 
-  // UI estado
-  const [orderType, setOrderType]   = useState(null)   // null = selector abierto
-  const [mesaRef, setMesaRef]       = useState('')
-  const [mesaId, setMesaId]         = useState(null)   // UUID de pos_mesas (si aplica)
-  const [activeCat, setActiveCat]   = useState(null)
-  const [items, setItems]           = useState([])      // [{id,nombre,precio,qty,nota}]
-  const [showTypeModal, setShowTypeModal]   = useState(false)
-  const [showFloorModal, setShowFloorModal] = useState(false) // plano modal (cambio de mesa)
-  const [showPayModal, setShowPayModal]     = useState(false)
-  const [showNoteModal, setShowNoteModal]   = useState(null) // item index
-  const [noteText, setNoteText]     = useState('')
-  const [cuentaNum, setCuentaNum]   = useState(null)
-  const [saving, setSaving]         = useState(false)
-  // Paso intermedio cuando aún no hay orderType y se eligió 'local'
-  const [pendingLocal, setPendingLocal] = useState(false)
+  // Cuenta activa en DB
+  const [cuentaId,   setCuentaId]   = useState(cuentaCtx?.cuentaId || null)
+  const [cuentaNum,  setCuentaNum]  = useState(null)
 
-  // Cargar menús de Supabase
+  // Ítems: los ya guardados (comandados) + los nuevos (pendientes de comandar)
+  const [items,         setItems]         = useState([])    // [{id,nombre,precio,qty,nota,saved}]
+  const [commandedCount,setCommandedCount]= useState(0)     // cuántos al inicio son ya guardados
+
+  // UI
+  const [activeCat,      setActiveCat]      = useState(null)
+  const [showPayModal,   setShowPayModal]   = useState(false)
+  const [showNoteModal,  setShowNoteModal]  = useState(null)
+  const [noteText,       setNoteText]       = useState('')
+  const [saving,         setSaving]         = useState(false)
+  const [commanding,     setCommanding]     = useState(false)
+  const [loadingCuenta,  setLoadingCuenta]  = useState(!!cuentaCtx?.cuentaId)
+
+  // ── Cargar menú ──
   useEffect(() => {
     const load = async () => {
       setLoadingMenu(true)
+      const canal = tipoInfo.canal
       const { data: menuData } = await db
         .from('pos_menus')
         .select(`
@@ -77,7 +80,7 @@ export default function POSMain({ user, onLogout }) {
           )
         `)
         .eq('activo', true)
-        .is('sucursal_id', null) // menús globales + por sucursal
+        .is('sucursal_id', null)
         .order('nombre')
 
       if (menuData) {
@@ -89,7 +92,7 @@ export default function POSMain({ user, onLogout }) {
               ...c,
               items: (c.pos_menu_items || [])
                 .filter(i => i.disponible)
-                .sort((a, b) => a.orden - b.orden)
+                .sort((a, b) => a.orden - b.orden),
             }))
           map[m.canal] = { id: m.id, nombre: m.nombre, categorias: cats }
         })
@@ -98,10 +101,44 @@ export default function POSMain({ user, onLogout }) {
       setLoadingMenu(false)
     }
     load()
-  }, [])
+  }, [tipoInfo.canal])
 
-  // Obtener siguiente número de cuenta
+  // ── Cargar cuenta existente ──
   useEffect(() => {
+    if (!cuentaCtx?.cuentaId) {
+      setLoadingCuenta(false)
+      return
+    }
+    const loadCuenta = async () => {
+      setLoadingCuenta(true)
+      const { data: itemsData } = await db
+        .from('pos_cuenta_items')
+        .select('id, menu_item_id, nombre_snapshot, precio_unitario, cantidad, notas')
+        .eq('cuenta_id', cuentaCtx.cuentaId)
+        .order('created_at')
+
+      if (itemsData) {
+        const loaded = itemsData.map(it => ({
+          id:     it.menu_item_id,
+          dbId:   it.id,
+          nombre: it.nombre_snapshot,
+          precio: parseFloat(it.precio_unitario),
+          qty:    it.cantidad,
+          nota:   it.notas || '',
+          saved:  true,
+        }))
+        setItems(loaded)
+        setCommandedCount(loaded.length)
+      }
+      setCuentaId(cuentaCtx.cuentaId)
+      setLoadingCuenta(false)
+    }
+    loadCuenta()
+  }, [cuentaCtx?.cuentaId])
+
+  // ── Número de orden siguiente ──
+  useEffect(() => {
+    if (cuentaCtx?.cuentaId) return  // ya existe
     const getNum = async () => {
       const { count } = await db
         .from('pos_cuentas')
@@ -110,14 +147,13 @@ export default function POSMain({ user, onLogout }) {
       setCuentaNum((count || 0) + 1)
     }
     getNum()
-  }, [])
+  }, [cuentaCtx?.cuentaId])
 
-  // Menú activo
-  const canal = orderType ? TYPE_TO_CANAL[orderType] : null
-  const menuActivo = canal ? (menus[canal] || menus['local'] || null) : null
+  // ── Menú activo ──
+  const canal      = tipoInfo.canal
+  const menuActivo = menus[canal] || menus['local'] || null
   const categorias = menuActivo?.categorias || []
 
-  // Categoría activa (auto-select primera)
   useEffect(() => {
     if (categorias.length > 0 && !activeCat) {
       setActiveCat(categorias[0].id)
@@ -126,23 +162,23 @@ export default function POSMain({ user, onLogout }) {
 
   const itemsActivaCat = categorias.find(c => c.id === activeCat)?.items || []
 
-  // ── ACCIONES DE ORDEN ──
-
+  // ── Acciones de orden ──
   const addItem = useCallback((product) => {
-    if (!product.disponible) return
     setItems(prev => {
-      const idx = prev.findIndex(i => i.id === product.id && !i.nota)
+      // Agrupar solo con ítems nuevos (no guardados) sin nota
+      const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved)
       if (idx >= 0) {
         const next = [...prev]
         next[idx] = { ...next[idx], qty: next[idx].qty + 1 }
         return next
       }
       return [...prev, {
-        id: product.id,
+        id:     product.id,
         nombre: product.nombre,
         precio: parseFloat(product.precio),
-        qty: 1,
-        nota: ''
+        qty:    1,
+        nota:   '',
+        saved:  false,
       }]
     })
   }, [])
@@ -150,20 +186,17 @@ export default function POSMain({ user, onLogout }) {
   const removeItem = useCallback((idx) => {
     setItems(prev => {
       const next = [...prev]
-      if (next[idx].qty > 1) {
-        next[idx] = { ...next[idx], qty: next[idx].qty - 1 }
+      const item = next[idx]
+      // No permitir borrar ítems ya guardados (haría falta una lógica de void)
+      if (item.saved) return prev
+      if (item.qty > 1) {
+        next[idx] = { ...next[idx], qty: item.qty - 1 }
       } else {
         next.splice(idx, 1)
       }
       return next
     })
   }, [])
-
-  const clearOrder = () => {
-    if (items.length === 0) return
-    if (!confirm('¿Limpiar la orden?')) return
-    setItems([])
-  }
 
   const saveNota = () => {
     if (showNoteModal === null) return
@@ -176,157 +209,230 @@ export default function POSMain({ user, onLogout }) {
     setNoteText('')
   }
 
-  // Totales
-  const subtotal = items.reduce((s, i) => s + i.precio * i.qty, 0)
-  const total = subtotal
+  const clearNewItems = () => {
+    const newItems = items.filter(i => !i.saved)
+    if (newItems.length === 0) return
+    if (!confirm('¿Quitar los ítems no comandados?')) return
+    setItems(prev => prev.filter(i => i.saved))
+  }
 
-  // ── GUARDAR CUENTA en BD ──
+  // Totales
+  const subtotal  = items.reduce((s, i) => s + i.precio * i.qty, 0)
+  const total     = subtotal
+  const newItems  = items.filter(i => !i.saved)
+  const hasNew    = newItems.length > 0
+
+  // ── COMANDAR — guarda en BD y envía a cocina ──
+  const handleComandar = async () => {
+    if (!hasNew) return
+    setCommanding(true)
+    try {
+      let currentCuentaId = cuentaId
+
+      // Si no existe cuenta aún → crearla
+      if (!currentCuentaId) {
+        const { data: cuenta, error } = await db
+          .from('pos_cuentas')
+          .insert({
+            store_code:  storeCode,
+            cajero_id:   user.id,
+            tipo:        tipo,
+            mesa_ref:    mesaRef,
+            menu_id:     menuActivo?.id || null,
+            estado:      'enviada_cocina',
+            subtotal:    subtotal,
+            iva:         0,
+            total:       total,
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+        currentCuentaId = cuenta.id
+        setCuentaId(currentCuentaId)
+      } else {
+        // Actualizar subtotal de la cuenta existente
+        await db
+          .from('pos_cuentas')
+          .update({ subtotal, total, estado: 'enviada_cocina', updated_at: new Date().toISOString() })
+          .eq('id', currentCuentaId)
+      }
+
+      // Insertar solo los ítems nuevos
+      const toInsert = newItems.map(it => ({
+        cuenta_id:        currentCuentaId,
+        menu_item_id:     it.id,
+        nombre_snapshot:  it.nombre,
+        precio_unitario:  it.precio,
+        cantidad:         it.qty,
+        notas:            it.nota || null,
+      }))
+      await db.from('pos_cuenta_items').insert(toInsert)
+
+      // Enviar a cocina
+      await db.from('pos_cocina_queue').insert(
+        newItems.map(it => ({
+          cuenta_id:   currentCuentaId,
+          sucursal_id: null,
+          nombre_item: it.nombre + (mesaRef ? ` [Mesa ${mesaRef}]` : ''),
+          cantidad:    it.qty,
+          notas:       it.nota || null,
+          estado:      'pendiente',
+          prioridad:   5,
+        }))
+      )
+
+      // Marcar todos como guardados
+      setItems(prev => prev.map(i => ({ ...i, saved: true })))
+      setCommandedCount(items.length)
+
+      // Volver al inicio automáticamente para que el mesero vea el plano actualizado
+      // pero solo si es mesa (para el mesero pueda ir a otra mesa)
+      // Para otros tipos, quedarse en pantalla
+
+    } catch (err) {
+      console.error('Error al comandar:', err)
+      alert('Error al comandar: ' + err.message)
+    } finally {
+      setCommanding(false)
+    }
+  }
+
+  // ── COBRAR — guarda cuenta + pago ──
   const saveCuenta = async (paymentData) => {
     setSaving(true)
     try {
-      const { data: cuenta, error: cuentaErr } = await db
-        .from('pos_cuentas')
-        .insert({
-          sucursal_id: storeCode,
-          menu_id: menuActivo?.id || null,
-          cajero_id: user.id,
-          tipo: orderType || 'para_llevar',
-          mesa_ref: mesaRef || null,
-          estado: 'pagada',
-          subtotal: subtotal,
-          descuento: 0,
-          propina: paymentData.propina || 0,
-          total: total + (paymentData.propina || 0),
-          tipo_dte: paymentData.tipoDte || 'ticket',
-        })
-        .select()
-        .single()
+      let currentCuentaId = cuentaId
 
-      if (cuentaErr) throw cuentaErr
+      // Si hay ítems nuevos no comandados, los guardamos ahora
+      const itemsToSave = currentCuentaId ? newItems : items
 
-      // Insertar items
-      const itemsToInsert = items.map(it => ({
-        cuenta_id: cuenta.id,
-        menu_item_id: it.id,
-        nombre_snapshot: it.nombre,
-        precio_unitario: it.precio,
-        cantidad: it.qty,
-        notas: it.nota || null,
-      }))
-      await db.from('pos_cuenta_items').insert(itemsToInsert)
+      if (!currentCuentaId) {
+        const { data: cuenta, error: cuentaErr } = await db
+          .from('pos_cuentas')
+          .insert({
+            store_code:  storeCode,
+            cajero_id:   user.id,
+            tipo:        tipo,
+            mesa_ref:    mesaRef,
+            menu_id:     menuActivo?.id || null,
+            estado:      'cobrada',
+            subtotal:    subtotal,
+            iva:         0,
+            propina:     paymentData.propina || 0,
+            total:       total + (paymentData.propina || 0),
+            dte_tipo:    paymentData.dteTipo || null,
+            cobrada_at:  new Date().toISOString(),
+          })
+          .select()
+          .single()
 
-      // Insertar pago
-      await db.from('pos_cuenta_pagos').insert({
-        cuenta_id: cuenta.id,
-        metodo: paymentData.metodo,
-        monto: total + (paymentData.propina || 0),
-        monto_efectivo: paymentData.efectivo || null,
-        monto_tarjeta: paymentData.tarjeta || null,
-        cambio: paymentData.cambio || 0,
-        referencia: paymentData.referencia || null,
-        cajero_id: user.id,
-      })
+        if (cuentaErr) throw cuentaErr
+        currentCuentaId = cuenta.id
+        setCuentaId(currentCuentaId)
+      } else {
+        // Actualizar cuenta existente a cobrada
+        await db
+          .from('pos_cuentas')
+          .update({
+            estado:     'cobrada',
+            subtotal,
+            iva:        0,
+            propina:    paymentData.propina || 0,
+            total:      total + (paymentData.propina || 0),
+            dte_tipo:   paymentData.dteTipo || null,
+            cobrada_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentCuentaId)
+      }
 
-      // Enviar a cocina queue
-      const kitchenItems = items.filter(i => i.qty > 0)
-      if (kitchenItems.length > 0) {
-        await db.from('pos_cocina_queue').insert(
-          kitchenItems.map(it => ({
-            cuenta_id: cuenta.id,
-            cuenta_item_id: null,
-            sucursal_id: storeCode,
-            nombre_item: it.nombre,
-            cantidad: it.qty,
-            notas: it.nota || null,
-            estado: 'pendiente',
-            prioridad: 5,
+      // Insertar ítems no guardados
+      if (itemsToSave.length > 0) {
+        await db.from('pos_cuenta_items').insert(
+          itemsToSave.map(it => ({
+            cuenta_id:       currentCuentaId,
+            menu_item_id:    it.id,
+            nombre_snapshot: it.nombre,
+            precio_unitario: it.precio,
+            cantidad:        it.qty,
+            notas:           it.nota || null,
           }))
         )
       }
 
-      setCuentaNum(n => (n || 1) + 1)
-      return cuenta
+      // Insertar pago
+      await db.from('pos_cuenta_pagos').insert({
+        cuenta_id:     currentCuentaId,
+        metodo:        paymentData.metodo,
+        monto:         total + (paymentData.propina || 0),
+        monto_efectivo:paymentData.efectivo || null,
+        monto_tarjeta: paymentData.tarjeta  || null,
+        cambio:        paymentData.cambio   || 0,
+        referencia:    paymentData.referencia || null,
+        cajero_id:     user.id,
+      })
+
+      // Cocina (para ítems no comandados)
+      if (itemsToSave.length > 0) {
+        await db.from('pos_cocina_queue').insert(
+          itemsToSave.map(it => ({
+            cuenta_id:   currentCuentaId,
+            sucursal_id: null,
+            nombre_item: it.nombre + (mesaRef ? ` [Mesa ${mesaRef}]` : ''),
+            cantidad:    it.qty,
+            notas:       it.nota || null,
+            estado:      'pendiente',
+            prioridad:   5,
+          }))
+        )
+      }
+
+      return { id: currentCuentaId }
     } finally {
       setSaving(false)
     }
   }
 
   const handlePaymentConfirm = async (paymentData) => {
-    const cuenta = await saveCuenta(paymentData)
+    await saveCuenta(paymentData)
     setItems([])
     setShowPayModal(false)
-    return cuenta
+    onBack()  // Volver al inicio tras cobrar
   }
 
-  // ── Flujo inicial sin orderType ──
-  // Paso 1: elegir tipo de canal
-  if (!orderType && !pendingLocal) {
+  // ── Render cargando cuenta ──
+  if (loadingCuenta) {
     return (
-      <OrderTypeSelector
-        onSelect={(type) => {
-          if (type === 'local') {
-            // Paso 2: mostrar plano del piso
-            setPendingLocal(true)
-          } else {
-            setOrderType(type)
-            setMesaRef('')
-            setMesaId(null)
-            setActiveCat(null)
-          }
-        }}
-      />
+      <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+        <div className="spin" />
+        <span style={{ color: '#555', fontSize: 14 }}>Cargando cuenta...</span>
+      </div>
     )
   }
-
-  // Paso 2 (solo local): plano del piso
-  if (!orderType && pendingLocal) {
-    return (
-      <FloorPlanSelector
-        storeCode={storeCode}
-        storeName={storeName}
-        onSelectMesa={(mesa) => {
-          setOrderType('local')
-          setMesaRef(mesa.numero)
-          setMesaId(mesa.id)
-          setActiveCat(null)
-          setPendingLocal(false)
-        }}
-        onBack={() => setPendingLocal(false)}
-      />
-    )
-  }
-
-  const typeInfo = TYPE_LABELS[orderType]
 
   return (
     <div className="pos-layout">
-      {/* Header */}
+      {/* ── HEADER ── */}
       <header className="pos-header">
-        <span className="pos-header-brand">🍔 FREAKIE POS</span>
-        <span className="pos-header-store">{storeName}</span>
         <button
           className="pos-header-btn"
-          style={{ background: '#1a0a0d', borderColor: typeInfo.color, color: typeInfo.color }}
-          onClick={() => {
-            if (orderType === 'local') {
-              setShowFloorModal(true)
-            } else {
-              setShowTypeModal(true)
-            }
-          }}
+          style={{ background: '#111', borderColor: '#333', color: '#888' }}
+          onClick={onBack}
+          title="Volver al inicio"
         >
-          {typeInfo.icon} {typeInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
+          ← Inicio
         </button>
-        {/* Botón cambiar tipo de canal (solo cuando es local, para no confundir con cambiar mesa) */}
-        {orderType === 'local' && (
-          <button
-            className="pos-header-btn"
-            style={{ background: '#0d0d0d', borderColor: '#333', color: '#555', fontSize: 11 }}
-            onClick={() => setShowTypeModal(true)}
-          >
-            ⇄ Tipo
-          </button>
-        )}
+        <span className="pos-header-store">{storeName}</span>
+
+        {/* Badge tipo / mesa */}
+        <span
+          className="pos-header-btn"
+          style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
+        >
+          {tipoInfo.icon} {tipoInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
+        </span>
+
         <span className="pos-header-user">👤 {user.nombre?.split(' ')[0]}</span>
         <Clock />
         <button className="pos-header-btn danger" onClick={onLogout}>Salir</button>
@@ -350,8 +456,7 @@ export default function POSMain({ user, onLogout }) {
                     className={`pos-cat-btn${activeCat === cat.id ? ' active' : ''}`}
                     style={activeCat === cat.id
                       ? { background: cat.color + '22', color: cat.color, borderColor: cat.color }
-                      : {}
-                    }
+                      : {}}
                     onClick={() => setActiveCat(cat.id)}
                   >
                     <span className="pos-cat-icon">{cat.icono}</span>
@@ -365,13 +470,10 @@ export default function POSMain({ user, onLogout }) {
                 {itemsActivaCat.map(product => (
                   <button
                     key={product.id}
-                    className={`pos-product-btn${!product.disponible ? ' unavailable' : ''}`}
+                    className="pos-product-btn"
                     onClick={() => addItem(product)}
-                    disabled={!product.disponible}
                   >
-                    <div className="pos-product-name">
-                      {product.nombre}
-                    </div>
+                    <div className="pos-product-name">{product.nombre}</div>
                     <div className="pos-product-price">
                       ${parseFloat(product.precio).toFixed(2)}
                     </div>
@@ -393,34 +495,44 @@ export default function POSMain({ user, onLogout }) {
         {/* ── RIGHT: Order Panel ── */}
         <div className="pos-order-panel">
           <div className="pos-order-header">
-            <div>
-              <span
-                className="pos-order-type-badge"
-                style={{ background: typeInfo.color + '22', color: typeInfo.color, cursor: 'pointer' }}
-                onClick={() => orderType === 'local' ? setShowFloorModal(true) : setShowTypeModal(true)}
-                title={orderType === 'local' ? 'Cambiar mesa' : 'Cambiar tipo de orden'}
-              >
-                {typeInfo.icon} {typeInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
-              </span>
-            </div>
-            <div className="pos-order-num">
-              Orden #{String(cuentaNum || 1).padStart(4, '0')}
-            </div>
+            <span
+              className="pos-order-type-badge"
+              style={{ background: tipoInfo.color + '22', color: tipoInfo.color }}
+            >
+              {tipoInfo.icon} {tipoInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
+            </span>
+            {cuentaId && (
+              <span className="pos-order-open-badge">Cuenta Abierta</span>
+            )}
+            {!cuentaId && (
+              <div className="pos-order-num">
+                Orden #{String(cuentaNum || 1).padStart(4, '0')}
+              </div>
+            )}
           </div>
 
-          {/* Items */}
+          {/* Lista de ítems */}
           <div className="pos-order-items">
             {items.length === 0 ? (
               <div className="pos-order-empty">
                 <div className="pos-order-empty-icon">🛒</div>
                 <div>Orden vacía</div>
-                <div style={{ fontSize: 11, color: '#2a2a2a' }}>
-                  Toca un producto para agregar
-                </div>
+                <div style={{ fontSize: 11, color: '#2a2a2a' }}>Toca un producto</div>
               </div>
             ) : (
               items.map((item, idx) => (
-                <div key={idx} className="pos-order-item">
+                <div
+                  key={idx}
+                  className={`pos-order-item${item.saved ? ' saved' : ' new'}`}
+                >
+                  {/* Indicador guardado/nuevo */}
+                  <div
+                    className="pos-order-item-status"
+                    title={item.saved ? 'Comandado' : 'Pendiente de comandar'}
+                    style={{ color: item.saved ? '#4ade8066' : '#fbbf24' }}
+                  >
+                    {item.saved ? '✓' : '●'}
+                  </div>
                   <div className="pos-order-item-qty">{item.qty}</div>
                   <div className="pos-order-item-info">
                     <div className="pos-order-item-name">{item.nombre}</div>
@@ -432,22 +544,23 @@ export default function POSMain({ user, onLogout }) {
                     <div className="pos-order-item-price">
                       ${(item.precio * item.qty).toFixed(2)}
                     </div>
-                    <div style={{ display: 'flex', gap: 2 }}>
-                      <button
-                        className="pos-order-item-del"
-                        title="Nota"
-                        onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
-                        style={{ color: '#555', fontSize: 12 }}
-                      >
-                        📝
-                      </button>
-                      <button
-                        className="pos-order-item-del"
-                        onClick={() => removeItem(idx)}
-                      >
-                        ✕
-                      </button>
-                    </div>
+                    {!item.saved && (
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        <button
+                          className="pos-order-item-del"
+                          style={{ color: '#555', fontSize: 12 }}
+                          onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
+                        >
+                          📝
+                        </button>
+                        <button
+                          className="pos-order-item-del"
+                          onClick={() => removeItem(idx)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -457,13 +570,27 @@ export default function POSMain({ user, onLogout }) {
           {/* Footer */}
           <div className="pos-order-footer">
             <div className="pos-order-subtotal">
-              <span>{items.reduce((s,i) => s + i.qty, 0)} artículos</span>
+              <span>{items.reduce((s, i) => s + i.qty, 0)} artículos</span>
               <span>${subtotal.toFixed(2)}</span>
             </div>
             <div className="pos-order-total">
               <span>TOTAL</span>
               <span>${total.toFixed(2)}</span>
             </div>
+
+            {/* COMANDAR — envía a cocina, deja cuenta abierta */}
+            <button
+              className="pos-comandar-btn"
+              disabled={!hasNew || commanding}
+              onClick={handleComandar}
+            >
+              {commanding
+                ? '⏳ Comandando...'
+                : `🔔 COMANDAR${newItems.length > 0 ? ` (${newItems.reduce((s,i)=>s+i.qty,0)})` : ''}`
+              }
+            </button>
+
+            {/* COBRAR */}
             <button
               className="pos-cobrar-btn"
               disabled={items.length === 0 || saving}
@@ -471,64 +598,25 @@ export default function POSMain({ user, onLogout }) {
             >
               {saving ? '...' : `💳 COBRAR $${total.toFixed(2)}`}
             </button>
-            <button className="pos-clear-btn" onClick={clearOrder}>
-              🗑 Limpiar orden
-            </button>
+
+            {hasNew && (
+              <button className="pos-clear-btn" onClick={clearNewItems}>
+                🗑 Limpiar nuevos
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Modal: Cambiar tipo de orden */}
-      {showTypeModal && !showFloorModal && (
-        <OrderTypeSelector
-          current={orderType}
-          currentMesa={mesaRef}
-          modal
-          onSelect={(type) => {
-            if (type === 'local') {
-              // Abrir plano para elegir mesa
-              setShowFloorModal(true)
-            } else {
-              setOrderType(type)
-              setMesaRef('')
-              setMesaId(null)
-              setActiveCat(null)
-              setShowTypeModal(false)
-            }
-          }}
-          onClose={() => setShowTypeModal(false)}
-        />
-      )}
-
-      {/* Modal: Plano del piso (desde cambio de tipo o cambio de mesa) */}
-      {showFloorModal && (
-        <FloorPlanSelector
-          storeCode={storeCode}
-          storeName={storeName}
-          onSelectMesa={(mesa) => {
-            setOrderType('local')
-            setMesaRef(mesa.numero)
-            setMesaId(mesa.id)
-            setShowFloorModal(false)
-            setShowTypeModal(false)
-          }}
-          onBack={() => {
-            setShowFloorModal(false)
-          }}
-        />
-      )}
-
-      {/* Modal: Nota de item */}
+      {/* Modal: Nota de ítem */}
       {showNoteModal !== null && (
         <div className="pos-modal-overlay" onClick={() => setShowNoteModal(null)}>
           <div className="pos-modal" onClick={e => e.stopPropagation()}>
             <div className="pos-modal-title">📝 Nota para cocina</div>
-            <div className="pos-modal-sub">
-              {items[showNoteModal]?.nombre}
-            </div>
+            <div className="pos-modal-sub">{items[showNoteModal]?.nombre}</div>
             <textarea
               className="pos-note-textarea"
-              placeholder="Ej: Sin cebolla, bien cocido, sin sal..."
+              placeholder="Ej: Sin cebolla, bien cocido..."
               value={noteText}
               onChange={e => setNoteText(e.target.value)}
               autoFocus

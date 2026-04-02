@@ -731,3 +731,220 @@
   letter-spacing: 4px;
 }
 .pos-dte-opt.active { border-color: #e07c00; color: #f4a261; background: #1a1000; }
+
+/* ============================================================
+   POS HOME — Pantalla de inicio
+   ============================================================ */
+.poshome-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #0a0a0a;
+  overflow: hidden;
+}
+.poshome-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.poshome-badge {
+  font-size: 12px;
+  color: #555;
+  white-space: nowrap;
+}
+
+/* ── Secciones ── */
+.poshome-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.poshome-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.poshome-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.poshome-zona-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.poshome-zona-tab {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #555;
+  padding: 4px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.poshome-zona-tab.active {
+  background: #e6394618;
+  border-color: #e63946;
+  color: #e63946;
+  font-weight: 600;
+}
+
+/* ── Grid de mesas ── */
+.poshome-mesas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+.poshome-mesa-tile {
+  border: 1.5px solid;
+  border-radius: 10px;
+  padding: 10px 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 80px;
+}
+.poshome-mesa-tile:hover { filter: brightness(1.3); transform: scale(1.03); }
+.poshome-mesa-num {
+  font-size: 26px;
+  font-weight: 900;
+  font-family: monospace;
+  line-height: 1;
+}
+.poshome-mesa-status {
+  font-size: 11px;
+}
+.poshome-mesa-status.libre { color: #4ade8066; }
+.poshome-mesa-total {
+  font-size: 15px;
+  font-weight: 700;
+}
+.poshome-mesa-meta {
+  font-size: 10px;
+  color: #888;
+}
+.poshome-mesa-ready {
+  font-size: 10px;
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+/* ── Lista de cuentas rápidas ── */
+.poshome-cuentas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.poshome-cuenta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #141414;
+  border: 1px solid #222;
+  border-left: 3px solid;
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+.poshome-cuenta-row:hover { background: #1a1a1a; }
+.poshome-cuenta-icon  { font-size: 18px; }
+.poshome-cuenta-label { font-size: 13px; font-weight: 700; }
+.poshome-cuenta-items { font-size: 12px; color: #666; flex: 1; }
+.poshome-cuenta-total { font-size: 14px; font-weight: 700; color: #eee; }
+.poshome-cuenta-time  { font-size: 11px; color: #444; }
+.poshome-cuenta-arrow { font-size: 14px; color: #333; }
+
+/* ── Empty state ── */
+.poshome-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+}
+
+/* ── Barra inferior de acciones rápidas ── */
+.poshome-quick-bar {
+  display: flex;
+  gap: 0;
+  border-top: 1px solid #1a1a1a;
+  flex-shrink: 0;
+}
+.poshome-quick-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 6px;
+  background: #111;
+  border: none;
+  border-right: 1px solid #1a1a1a;
+  cursor: pointer;
+  transition: background 0.15s;
+  color: var(--qt-color, #888);
+}
+.poshome-quick-btn:last-child { border-right: none; }
+.poshome-quick-btn:hover { background: #181818; filter: brightness(1.2); }
+.poshome-quick-icon { font-size: 20px; }
+.poshome-quick-label { font-size: 11px; font-weight: 600; }
+
+/* ── Orden panel: badges ── */
+.pos-order-open-badge {
+  font-size: 10px;
+  background: #4ade8018;
+  border: 1px solid #4ade8033;
+  color: #4ade80;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* ── Ítems guardados vs nuevos ── */
+.pos-order-item.saved { opacity: 0.75; }
+.pos-order-item.new   { border-left: 2px solid #fbbf24; }
+.pos-order-item-status {
+  font-size: 10px;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+/* ── Botón COMANDAR ── */
+.pos-comandar-btn {
+  width: 100%;
+  padding: 12px;
+  background: #1a1200;
+  border: 2px solid #fbbf24;
+  color: #fbbf24;
+  font-size: 15px;
+  font-weight: 800;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.5px;
+}
+.pos-comandar-btn:hover:not(:disabled) {
+  background: #fbbf2415;
+}
+.pos-comandar-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+  border-color: #333;
+  color: #555;
+}
