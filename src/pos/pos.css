@@ -1,0 +1,575 @@
+/* ============================================================
+   Freakie Dogs POS — Estilos específicos
+   Layout: landscape tablet, touch-first
+   ============================================================ */
+
+/* Reset para POS */
+#pos-root {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: #0d0d0d;
+}
+
+/* ── HEADER ── */
+.pos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #111;
+  border-bottom: 1px solid #222;
+  padding: 0 16px;
+  height: 52px;
+  flex-shrink: 0;
+  gap: 12px;
+}
+.pos-header-brand {
+  font-size: 16px;
+  font-weight: 800;
+  color: #e63946;
+  white-space: nowrap;
+}
+.pos-header-store {
+  font-size: 12px;
+  color: #4ade80;
+  font-weight: 600;
+  background: #0d2818;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.pos-header-user {
+  font-size: 12px;
+  color: #aaa;
+  white-space: nowrap;
+}
+.pos-header-clock {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f0f0f0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pos-header-btn {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #ccc;
+  font-size: 13px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pos-header-btn:hover { background: #2a2a2a; }
+.pos-header-btn.danger { color: #f87171; border-color: #991b1b; }
+
+/* ── LAYOUT PRINCIPAL ── */
+.pos-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100vh;
+  overflow: hidden;
+}
+.pos-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── LEFT: MENU AREA ── */
+.pos-menu-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ── CATEGORY BAR ── */
+.pos-categories {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #111;
+  border-bottom: 1px solid #1e1e1e;
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+.pos-categories::-webkit-scrollbar { display: none; }
+.pos-cat-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  background: #1e1e1e;
+  color: #888;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.pos-cat-btn:hover { background: #2a2a2a; color: #f0f0f0; }
+.pos-cat-btn.active { color: #fff; }
+.pos-cat-icon { font-size: 16px; }
+
+/* ── PRODUCT GRID ── */
+.pos-products {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+.pos-products::-webkit-scrollbar { width: 4px; }
+.pos-products::-webkit-scrollbar-track { background: #111; }
+.pos-products::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+.pos-product-btn {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 12px 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 80px;
+  position: relative;
+}
+.pos-product-btn:hover {
+  background: #222;
+  border-color: #e63946;
+  transform: scale(1.01);
+}
+.pos-product-btn:active {
+  transform: scale(0.98);
+  background: #1e0a0d;
+}
+.pos-product-btn.unavailable {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pos-product-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f0f0f0;
+  line-height: 1.3;
+}
+.pos-product-price {
+  font-size: 15px;
+  font-weight: 800;
+  color: #4ade80;
+}
+.pos-product-desc {
+  font-size: 10px;
+  color: #555;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── RIGHT: ORDER PANEL ── */
+.pos-order-panel {
+  width: 300px;
+  min-width: 280px;
+  max-width: 340px;
+  background: #111;
+  border-left: 1px solid #1e1e1e;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+@media (max-width: 700px) {
+  .pos-order-panel { width: 50%; min-width: 160px; }
+  .pos-products { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+}
+
+.pos-order-header {
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #1e1e1e;
+  flex-shrink: 0;
+}
+.pos-order-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.pos-order-num {
+  font-size: 11px;
+  color: #555;
+  margin-top: 2px;
+}
+
+.pos-order-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #333 #111;
+}
+.pos-order-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 6px;
+  border-radius: 8px;
+  transition: background 0.1s;
+}
+.pos-order-item:hover { background: #1a1a1a; }
+.pos-order-item-qty {
+  min-width: 22px;
+  height: 22px;
+  background: #e63946;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pos-order-item-info { flex: 1; min-width: 0; }
+.pos-order-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f0f0f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pos-order-item-note {
+  font-size: 10px;
+  color: #888;
+  font-style: italic;
+}
+.pos-order-item-price {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4ade80;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pos-order-item-del {
+  background: none;
+  border: none;
+  color: #444;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.pos-order-item-del:hover { color: #f87171; }
+
+.pos-order-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  font-size: 13px;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+}
+.pos-order-empty-icon { font-size: 36px; }
+
+.pos-order-footer {
+  padding: 10px 14px;
+  border-top: 1px solid #1e1e1e;
+  flex-shrink: 0;
+}
+.pos-order-subtotal {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+.pos-order-total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 18px;
+  font-weight: 800;
+  color: #f0f0f0;
+  margin-bottom: 10px;
+}
+.pos-cobrar-btn {
+  width: 100%;
+  padding: 14px;
+  background: #e63946;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pos-cobrar-btn:hover { background: #c1121f; }
+.pos-cobrar-btn:active { transform: scale(0.98); }
+.pos-cobrar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pos-clear-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  background: none;
+  color: #555;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pos-clear-btn:hover { color: #f87171; border-color: #991b1b; }
+
+/* ── ORDER TYPE SELECTOR (Modal) ── */
+.pos-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.pos-modal {
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.pos-modal-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #f0f0f0;
+  margin-bottom: 6px;
+}
+.pos-modal-sub {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 20px;
+}
+
+/* Order type grid */
+.pos-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.pos-type-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 8px;
+  background: #1e1e1e;
+  border: 2px solid #2a2a2a;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #aaa;
+}
+.pos-type-btn:hover { background: #2a2a2a; border-color: #444; color: #fff; }
+.pos-type-btn.selected { border-color: #e63946; background: #1e0a0d; color: #fff; }
+.pos-type-icon { font-size: 28px; }
+.pos-type-label { font-size: 12px; font-weight: 700; text-align: center; }
+
+/* Mesa input */
+.pos-mesa-input {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #f0f0f0;
+  font-size: 15px;
+  padding: 10px 14px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.pos-mesa-input:focus { outline: none; border-color: #e63946; }
+
+/* ── PAYMENT MODAL ── */
+.pos-payment-total {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.pos-payment-total-label { font-size: 13px; color: #666; margin-bottom: 4px; }
+.pos-payment-total-amount { font-size: 36px; font-weight: 900; color: #4ade80; }
+
+.pos-method-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.pos-method-tab {
+  flex: 1;
+  padding: 10px;
+  background: #1e1e1e;
+  border: 2px solid #2a2a2a;
+  border-radius: 10px;
+  color: #888;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+}
+.pos-method-tab:hover { background: #2a2a2a; }
+.pos-method-tab.active { border-color: #e63946; color: #fff; background: #1e0a0d; }
+
+.pos-payment-field {
+  margin-bottom: 14px;
+}
+.pos-payment-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 5px;
+  display: block;
+}
+.pos-payment-input {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #f0f0f0;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 10px 14px;
+  width: 100%;
+}
+.pos-payment-input:focus { outline: none; border-color: #4ade80; }
+.pos-cambio {
+  background: #0d2818;
+  border: 1px solid #2d6a4f;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+.pos-cambio-label { font-size: 12px; color: #4ade80; }
+.pos-cambio-value { font-size: 18px; font-weight: 800; color: #4ade80; }
+
+.pos-confirmar-btn {
+  width: 100%;
+  padding: 15px;
+  background: #4ade80;
+  color: #0d2818;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: background 0.15s;
+}
+.pos-confirmar-btn:hover { background: #22c55e; }
+.pos-confirmar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.pos-cancelar-btn {
+  width: 100%;
+  padding: 10px;
+  background: none;
+  color: #666;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 6px;
+}
+.pos-cancelar-btn:hover { color: #f87171; }
+
+/* ── TICKET CONFIRMADO ── */
+.pos-ticket {
+  text-align: center;
+  padding: 10px 0;
+}
+.pos-ticket-icon { font-size: 48px; margin-bottom: 8px; }
+.pos-ticket-title { font-size: 20px; font-weight: 800; color: #4ade80; margin-bottom: 4px; }
+.pos-ticket-sub { font-size: 13px; color: #666; margin-bottom: 16px; }
+.pos-ticket-detail {
+  background: #1a1a1a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+.pos-ticket-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.pos-ticket-row .lbl { color: #666; }
+.pos-ticket-row .val { color: #f0f0f0; font-weight: 600; }
+
+/* ── LOADING SPINNER ── */
+.pos-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  color: #555;
+  font-size: 14px;
+}
+
+/* ── NOTE MODAL ── */
+.pos-note-textarea {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #f0f0f0;
+  font-size: 14px;
+  padding: 10px 14px;
+  width: 100%;
+  resize: none;
+  height: 80px;
+  margin-bottom: 10px;
+}
+.pos-note-textarea:focus { outline: none; border-color: #e63946; }
+
+/* ── DTE SELECTOR ── */
+.pos-dte-options {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.pos-dte-opt {
+  flex: 1;
+  padding: 8px;
+  background: #1e1e1e;
+  border: 2px solid #2a2a2a;
+  border-radius: 8px;
+  color: #888;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.pos-dte-opt.active { border-color: #e07c00; color: #f4a261; background: #1a1000; }

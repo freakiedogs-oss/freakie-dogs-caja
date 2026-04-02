@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 
 // ── Colores consistentes con el resto del ERP ──
@@ -152,14 +152,9 @@ export default function AsistenciaDigital({ sucursales, user }) {
 function CheckinWidget({ sucursal, user }) {
   const [position, setPosition] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
-  const [photo, setPhoto] = useState(null);
-  const [cameraActive, setCameraActive] = useState(false);
   const [estado, setEstado] = useState('checkin');
   const [loading, setLoading] = useState(false);
   const [lastCheckin, setLastCheckin] = useState(null);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
 
   // GPS
   const getLocation = useCallback(() => {
@@ -177,36 +172,6 @@ function CheckinWidget({ sucursal, user }) {
 
   // Auto-get GPS on mount
   useEffect(() => { getLocation(); }, [getLocation]);
-
-  // Cámara
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-      setCameraActive(true);
-    } catch { /* ignore */ }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    setCameraActive(false);
-  }, []);
-
-  const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const ctx = canvasRef.current.getContext('2d');
-    canvasRef.current.width = 640;
-    canvasRef.current.height = 480;
-    ctx.drawImage(videoRef.current, 0, 0, 640, 480);
-    setPhoto(canvasRef.current.toDataURL('image/jpeg', 0.8));
-    stopCamera();
-  };
 
   // Último check-in
   useEffect(() => {
@@ -229,18 +194,6 @@ function CheckinWidget({ sucursal, user }) {
     if (!position) return alert('Esperando ubicación GPS...');
     setLoading(true);
     try {
-      let photoUrl = null;
-      if (photo) {
-        const filename = `asistencia/${user.id}/${Date.now()}.jpg`;
-        const { error: upErr } = await db.storage
-          .from('asistencia-fotos')
-          .upload(filename, await fetch(photo).then(r => r.blob()), { contentType: 'image/jpeg' });
-        if (!upErr) {
-          const { data } = db.storage.from('asistencia-fotos').getPublicUrl(filename);
-          photoUrl = data?.publicUrl;
-        }
-      }
-
       if (estado === 'checkin') {
         await db.from('asistencia_gps').insert({
           empleado_id: user.id,
@@ -248,7 +201,6 @@ function CheckinWidget({ sucursal, user }) {
           timestamp_checkin: new Date().toISOString(),
           lat_checkin: position.lat,
           lon_checkin: position.lon,
-          foto_url: photoUrl,
           distancia_metros: Math.round(position.accuracy),
         });
         alert('Check-in registrado ✅');
@@ -262,7 +214,6 @@ function CheckinWidget({ sucursal, user }) {
         setEstado('checkin');
         setLastCheckin(null);
       }
-      setPhoto(null);
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -271,7 +222,7 @@ function CheckinWidget({ sucursal, user }) {
   };
 
   const isCheckout = estado === 'checkout';
-  const canSave = position && !loading;
+  const canSave = !!position && !loading;
 
   return (
     <div>
@@ -348,50 +299,6 @@ function CheckinWidget({ sucursal, user }) {
         )}
       </div>
 
-      {/* Cámara / Foto */}
-      <div style={cardStyle}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: c.textDim, display: 'block', marginBottom: 12 }}>
-          Foto de verificación {!isCheckout && <span style={{ color: c.textOff, fontWeight: 400 }}>(opcional)</span>}
-        </span>
-
-        {photo ? (
-          <div style={{ position: 'relative', marginBottom: 12 }}>
-            <img
-              src={photo}
-              alt="Captura"
-              style={{ width: '100%', borderRadius: 10, maxHeight: 240, objectFit: 'cover' }}
-            />
-            <button
-              onClick={() => setPhoto(null)}
-              style={{
-                position: 'absolute', top: 8, right: 8,
-                background: 'rgba(0,0,0,0.7)', color: '#fff', border: 'none',
-                borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 12,
-              }}
-            >
-              ✕ Retomar
-            </button>
-          </div>
-        ) : cameraActive ? (
-          <div style={{ marginBottom: 12 }}>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              style={{ width: '100%', borderRadius: 10, maxHeight: 240, objectFit: 'cover', background: '#000' }}
-            />
-            <button onClick={capturePhoto} style={{ ...btnPrimary, marginTop: 8, background: c.red }}>
-              📸 Capturar
-            </button>
-          </div>
-        ) : (
-          <button onClick={startCamera} style={btnGhost}>
-            📷 Abrir cámara
-          </button>
-        )}
-        <canvas ref={canvasRef} style={{ display: 'none' }} />
-      </div>
-
       {/* Botón guardar */}
       <button
         onClick={handleSave}
@@ -453,7 +360,7 @@ function HistorialAsistencia({ sucursal }) {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            {['Empleado', 'Entrada', 'Salida', 'Dist.', ''].map((h, i) => (
+            {['Empleado', 'Entrada', 'Salida', 'Precisión'].map((h, i) => (
               <th key={i} style={{
                 padding: '8px 12px',
                 textAlign: 'left',
@@ -487,17 +394,7 @@ function HistorialAsistencia({ sucursal }) {
                 )}
               </td>
               <td style={{ padding: '10px 12px', fontSize: 13, color: c.textDim, borderBottom: `1px solid ${c.border}` }}>
-                {r.distancia_metros ? `${r.distancia_metros}m` : '-'}
-              </td>
-              <td style={{ padding: '10px 12px', borderBottom: `1px solid ${c.border}`, textAlign: 'center' }}>
-                {r.foto_url ? (
-                  <a href={r.foto_url} target="_blank" rel="noopener noreferrer"
-                    style={{ color: c.blue, fontSize: 12, textDecoration: 'none' }}>
-                    Ver foto
-                  </a>
-                ) : (
-                  <span style={{ color: c.textOff, fontSize: 12 }}>—</span>
-                )}
+                {r.distancia_metros ? `±${r.distancia_metros}m` : '-'}
               </td>
             </tr>
           ))}

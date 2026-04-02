@@ -6,6 +6,7 @@
   "outputDirectory": "dist",
   "routes": [
     { "handle": "filesystem" },
+    { "src": "/pos(/.*)?", "dest": "/pos.html" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
