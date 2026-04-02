@@ -38,8 +38,12 @@ export default function POSLogin({ onLogin }) {
       minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', background: '#111', padding: '0 24px'
     }}>
-      <div style={{ fontSize: 56, marginBottom: 8 }}>🐶</div>
-      <div style={{ fontWeight: 800, fontSize: 22, color: '#e63946', letterSpacing: 1 }}>
+      <img
+        src="/icon-192.png"
+        alt="Freakie Dogs"
+        style={{ width: 120, height: 120, borderRadius: 20, marginBottom: 12, objectFit: 'contain' }}
+      />
+      <div style={{ fontWeight: 800, fontSize: 22, color: '#e63946' }}>
         Freakie Dogs
       </div>
       <div style={{ color: '#555', fontSize: 12, marginTop: 3, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
