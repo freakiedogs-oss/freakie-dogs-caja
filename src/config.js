@@ -68,6 +68,7 @@ export const NAV_SECTIONS = [
       { key: 'historial', label: 'Historial', icon: '📋', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'compras', label: 'Órdenes de Compra', icon: '🛒', roles: ['compras', 'admin'] },
       { key: 'stock-levels', label: 'Stock Mín/Máx', icon: '📊', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
+      { key: 'inventario-fisico', label: 'Inventario Físico', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
     ],
   },
   {

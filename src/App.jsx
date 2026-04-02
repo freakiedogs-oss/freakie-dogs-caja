@@ -15,6 +15,7 @@ import DespachoTab from './components/almacen/DespachoTab'
 import InventarioTab from './components/almacen/InventarioTab'
 import HistorialTab from './components/almacen/HistorialTab'
 import StockLevelsView from './components/almacen/StockLevelsView'
+import InventarioFisico from './components/almacen/InventarioFisico'
 import ComprasTab from './components/almacen/ComprasTab'
 import RecetasView from './components/admin/RecetasView'
 import PlanillaView from './components/admin/PlanillaView'
@@ -125,6 +126,8 @@ export default function App() {
         return <ComprasTab user={user} show={show} />
       case 'stock-levels':
         return <StockLevelsView user={user} onBack={() => setScreen('home')} />
+      case 'inventario-fisico':
+        return <InventarioFisico user={user} onBack={() => setScreen('home')} />
 
       // Supply Chain
       case 'conteo':
