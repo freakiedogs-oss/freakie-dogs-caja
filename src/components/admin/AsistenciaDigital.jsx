@@ -397,11 +397,18 @@ function GeofenceConfig({ sucursales }) {
   const [gpsActual, setGpsActual] = useState(null);
   const [msg, setMsg] = useState(null);
 
+  // Leer siempre desde Supabase para tener datos frescos
   useEffect(() => {
-    const suc = sucursales.find(s => s.store_code === selected);
-    if (suc) setForm({ lat: suc.lat || '', lng: suc.lng || '', radio_metros: suc.radio_metros || 200 });
+    if (!selected) return;
     setMsg(null);
-  }, [selected, sucursales]);
+    db.from('sucursales')
+      .select('lat, lng, radio_metros')
+      .eq('store_code', selected)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setForm({ lat: data.lat || '', lng: data.lng || '', radio_metros: data.radio_metros || 200 });
+      });
+  }, [selected]);
 
   const capturarGPS = () => {
     setMsg(null);
