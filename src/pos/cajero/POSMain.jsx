@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../../supabase'
 import { STORES, today } from '../../config'
 import OrderTypeSelector from './OrderTypeSelector'
+import FloorPlanSelector from './FloorPlanSelector'
 import PaymentModal from './PaymentModal'
 
 // Tipo de orden a canal BD
@@ -47,14 +48,18 @@ export default function POSMain({ user, onLogout }) {
   // UI estado
   const [orderType, setOrderType]   = useState(null)   // null = selector abierto
   const [mesaRef, setMesaRef]       = useState('')
+  const [mesaId, setMesaId]         = useState(null)   // UUID de pos_mesas (si aplica)
   const [activeCat, setActiveCat]   = useState(null)
   const [items, setItems]           = useState([])      // [{id,nombre,precio,qty,nota}]
   const [showTypeModal, setShowTypeModal]   = useState(false)
+  const [showFloorModal, setShowFloorModal] = useState(false) // plano modal (cambio de mesa)
   const [showPayModal, setShowPayModal]     = useState(false)
   const [showNoteModal, setShowNoteModal]   = useState(null) // item index
   const [noteText, setNoteText]     = useState('')
   const [cuentaNum, setCuentaNum]   = useState(null)
   const [saving, setSaving]         = useState(false)
+  // Paso intermedio cuando aún no hay orderType y se eligió 'local'
+  const [pendingLocal, setPendingLocal] = useState(false)
 
   // Cargar menús de Supabase
   useEffect(() => {
@@ -253,15 +258,40 @@ export default function POSMain({ user, onLogout }) {
     return cuenta
   }
 
-  // ── Si no hay tipo de orden: mostrar selector ──
-  if (!orderType) {
+  // ── Flujo inicial sin orderType ──
+  // Paso 1: elegir tipo de canal
+  if (!orderType && !pendingLocal) {
     return (
       <OrderTypeSelector
-        onSelect={(type, mesa) => {
-          setOrderType(type)
-          setMesaRef(mesa || '')
-          setActiveCat(null)
+        onSelect={(type) => {
+          if (type === 'local') {
+            // Paso 2: mostrar plano del piso
+            setPendingLocal(true)
+          } else {
+            setOrderType(type)
+            setMesaRef('')
+            setMesaId(null)
+            setActiveCat(null)
+          }
         }}
+      />
+    )
+  }
+
+  // Paso 2 (solo local): plano del piso
+  if (!orderType && pendingLocal) {
+    return (
+      <FloorPlanSelector
+        storeCode={storeCode}
+        storeName={storeName}
+        onSelectMesa={(mesa) => {
+          setOrderType('local')
+          setMesaRef(mesa.numero)
+          setMesaId(mesa.id)
+          setActiveCat(null)
+          setPendingLocal(false)
+        }}
+        onBack={() => setPendingLocal(false)}
       />
     )
   }
@@ -277,10 +307,26 @@ export default function POSMain({ user, onLogout }) {
         <button
           className="pos-header-btn"
           style={{ background: '#1a0a0d', borderColor: typeInfo.color, color: typeInfo.color }}
-          onClick={() => setShowTypeModal(true)}
+          onClick={() => {
+            if (orderType === 'local') {
+              setShowFloorModal(true)
+            } else {
+              setShowTypeModal(true)
+            }
+          }}
         >
           {typeInfo.icon} {typeInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
         </button>
+        {/* Botón cambiar tipo de canal (solo cuando es local, para no confundir con cambiar mesa) */}
+        {orderType === 'local' && (
+          <button
+            className="pos-header-btn"
+            style={{ background: '#0d0d0d', borderColor: '#333', color: '#555', fontSize: 11 }}
+            onClick={() => setShowTypeModal(true)}
+          >
+            ⇄ Tipo
+          </button>
+        )}
         <span className="pos-header-user">👤 {user.nombre?.split(' ')[0]}</span>
         <Clock />
         <button className="pos-header-btn danger" onClick={onLogout}>Salir</button>
@@ -350,8 +396,9 @@ export default function POSMain({ user, onLogout }) {
             <div>
               <span
                 className="pos-order-type-badge"
-                style={{ background: typeInfo.color + '22', color: typeInfo.color }}
-                onClick={() => setShowTypeModal(true)}
+                style={{ background: typeInfo.color + '22', color: typeInfo.color, cursor: 'pointer' }}
+                onClick={() => orderType === 'local' ? setShowFloorModal(true) : setShowTypeModal(true)}
+                title={orderType === 'local' ? 'Cambiar mesa' : 'Cambiar tipo de orden'}
               >
                 {typeInfo.icon} {typeInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
               </span>
@@ -432,18 +479,42 @@ export default function POSMain({ user, onLogout }) {
       </div>
 
       {/* Modal: Cambiar tipo de orden */}
-      {showTypeModal && (
+      {showTypeModal && !showFloorModal && (
         <OrderTypeSelector
           current={orderType}
           currentMesa={mesaRef}
           modal
-          onSelect={(type, mesa) => {
-            setOrderType(type)
-            setMesaRef(mesa || '')
-            setActiveCat(null)
-            setShowTypeModal(false)
+          onSelect={(type) => {
+            if (type === 'local') {
+              // Abrir plano para elegir mesa
+              setShowFloorModal(true)
+            } else {
+              setOrderType(type)
+              setMesaRef('')
+              setMesaId(null)
+              setActiveCat(null)
+              setShowTypeModal(false)
+            }
           }}
           onClose={() => setShowTypeModal(false)}
+        />
+      )}
+
+      {/* Modal: Plano del piso (desde cambio de tipo o cambio de mesa) */}
+      {showFloorModal && (
+        <FloorPlanSelector
+          storeCode={storeCode}
+          storeName={storeName}
+          onSelectMesa={(mesa) => {
+            setOrderType('local')
+            setMesaRef(mesa.numero)
+            setMesaId(mesa.id)
+            setShowFloorModal(false)
+            setShowTypeModal(false)
+          }}
+          onBack={() => {
+            setShowFloorModal(false)
+          }}
         />
       )}
 

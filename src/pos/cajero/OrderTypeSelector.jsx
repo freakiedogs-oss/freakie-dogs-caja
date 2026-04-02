@@ -40,21 +40,15 @@ export default function OrderTypeSelector({ onSelect, onClose, current, currentM
         ))}
       </div>
 
-      {/* Mesa input: solo para local */}
+      {/* Mesa: el plano del piso se abre en POSMain — solo mostramos aviso */}
       {selected === 'local' && (
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
-            Número de mesa (opcional)
-          </label>
-          <input
-            className="pos-mesa-input"
-            type="text"
-            placeholder="Ej: 5, A3, Terraza 2..."
-            value={mesa}
-            onChange={e => setMesa(e.target.value)}
-            maxLength={10}
-            autoFocus
-          />
+        <div style={{
+          marginBottom: 12, padding: '8px 12px',
+          background: '#4ade8010', border: '1px solid #4ade8030',
+          borderRadius: 8, fontSize: 12, color: '#4ade80',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          🪑 Se abrirá el plano del piso para elegir mesa
         </div>
       )}
 
