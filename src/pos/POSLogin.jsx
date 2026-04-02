@@ -36,14 +36,14 @@ export default function POSLogin({ onLogin }) {
   return (
     <div style={{
       minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', background: '#0d0d0d', padding: '0 24px'
+      alignItems: 'center', justifyContent: 'center', background: '#111', padding: '0 24px'
     }}>
-      <div style={{ fontSize: 56, marginBottom: 10 }}>🍔</div>
-      <div style={{ fontWeight: 900, fontSize: 24, color: '#e63946', letterSpacing: 1 }}>
-        FREAKIE DOGS
+      <div style={{ fontSize: 56, marginBottom: 8 }}>🐶</div>
+      <div style={{ fontWeight: 800, fontSize: 22, color: '#e63946', letterSpacing: 1 }}>
+        Freakie Dogs
       </div>
-      <div style={{ color: '#555', fontSize: 13, marginTop: 4, marginBottom: 8, fontWeight: 600 }}>
-        PUNTO DE VENTA
+      <div style={{ color: '#555', fontSize: 12, marginTop: 3, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+        Punto de Venta
       </div>
       <div style={{ color: '#444', fontSize: 12, marginBottom: 32 }}>
         Ingresa tu PIN
