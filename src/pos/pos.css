@@ -948,3 +948,87 @@
   border-color: #333;
   color: #555;
 }
+
+/* ── Barra de filtros ── */
+.poshome-filters {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  border-bottom: 1px solid #161616;
+  scrollbar-width: none;
+}
+.poshome-filters::-webkit-scrollbar { display: none; }
+
+.poshome-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  background: #161616;
+  border: 1px solid #222;
+  border-radius: 20px;
+  color: #555;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.poshome-filter-btn:hover {
+  color: #aaa;
+  border-color: #444;
+  background: #1e1e1e;
+}
+.poshome-filter-btn.active {
+  background: #e6394618;
+  border-color: #e63946;
+  color: #fff;
+}
+.poshome-filter-icon { font-size: 14px; }
+.poshome-filter-label { font-size: 12px; }
+.poshome-filter-badge {
+  background: #e63946;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ── Info en fila de cuenta ── */
+.poshome-cuenta-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+}
+.poshome-cuenta-estado {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.poshome-cuenta-estado[data-estado="enviada_cocina"] { background: #f4a26118; color: #f4a261; }
+.poshome-cuenta-estado[data-estado="lista"]          { background: #4ade8018; color: #4ade80; }
+.poshome-cuenta-estado[data-estado="entregada"]      { background: #60a5fa18; color: #60a5fa; }
+.poshome-cuenta-estado[data-estado="abierta"]        { background: #ffffff08; color: #555; }
+
+/* ── Botón nueva orden (en estado vacío) ── */
+.poshome-nueva-btn {
+  margin-top: 8px;
+  padding: 10px 24px;
+  background: color-mix(in srgb, var(--color) 15%, transparent);
+  border: 1px solid var(--color);
+  color: var(--color);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.poshome-nueva-btn:hover { filter: brightness(1.2); }
