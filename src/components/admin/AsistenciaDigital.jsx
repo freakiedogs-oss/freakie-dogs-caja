@@ -1,340 +1,420 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../../supabase';
 
-const colors = {
-  bg: '#1a1a2e',
-  bgCard: '#16213e',
+// ── Colores consistentes con el resto del ERP ──
+const c = {
+  bg: '#111',
+  card: '#1a1a1a',
+  cardBorder: '#2a2a2a',
+  input: '#1e1e1e',
   red: '#e63946',
   green: '#4ade80',
-  yellow: '#f59e0b',
-  blue: '#3b82f6',
+  greenDark: '#2d6a4f',
+  yellow: '#fbbf24',
+  orange: '#f97316',
+  blue: '#60a5fa',
   border: '#333',
-  text: '#eee',
+  text: '#f0f0f0',
   textDim: '#888',
+  textOff: '#555',
 };
 
-/**
- * AsistenciaDigital Component
- * GPS-based attendance tracking with photo capture and real-time mapping
- * Supports check-in/check-out with location verification and corrections
- */
+const cardStyle = {
+  background: c.card,
+  border: `1px solid ${c.cardBorder}`,
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 12,
+};
+
+const inputStyle = {
+  width: '100%',
+  background: c.input,
+  border: `1px solid ${c.border}`,
+  borderRadius: 8,
+  color: c.text,
+  padding: '10px 12px',
+  fontSize: 15,
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+};
+
+const labelStyle = { fontSize: 13, color: c.textDim, display: 'block', marginBottom: 4 };
+
+const btnPrimary = {
+  width: '100%',
+  padding: 14,
+  borderRadius: 10,
+  background: c.red,
+  color: '#fff',
+  border: 'none',
+  cursor: 'pointer',
+  fontSize: 15,
+  fontWeight: 700,
+  transition: '0.15s',
+};
+
+const btnGreen = { ...btnPrimary, background: c.greenDark };
+const btnGhost = {
+  ...btnPrimary,
+  background: c.input,
+  color: '#ccc',
+  border: `1px solid ${c.border}`,
+  fontWeight: 600,
+};
+
+// ── Helpers ──
+const fmtDateTime = (iso) => {
+  if (!iso) return '-';
+  return new Date(iso).toLocaleString('es-SV', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+};
+
+const fmtTime = (iso) => {
+  if (!iso) return null;
+  return new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' });
+};
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════
 export default function AsistenciaDigital({ sucursales, user }) {
-  const [view, setView] = useState('checkin'); // checkin, historia, mapa, correcciones
+  const [view, setView] = useState('checkin');
   const [selectedSucursal, setSelectedSucursal] = useState(sucursales[0]?.id || '');
-  const [loading, setLoading] = useState(false);
+
+  const views = [
+    { id: 'checkin', label: 'Check-in' },
+    { id: 'historia', label: 'Historial' },
+    { id: 'correcciones', label: 'Ajustes' },
+  ];
 
   return (
-    <div style={{ minHeight: '100vh', paddingBottom: 40 }}>
-      {/* Sub-tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {[
-          { id: 'checkin', label: '✅ Check-in/Out' },
-          { id: 'historia', label: '📊 Historial' },
-          { id: 'mapa', label: '🗺️ Mapa Sucursales' },
-          { id: 'correcciones', label: '✏️ Ajustes' },
-        ].map(t => (
+    <div>
+      {/* Sub-navigation — estilo tab underline como el resto de la app */}
+      <div style={{
+        display: 'flex',
+        borderBottom: `1px solid ${c.cardBorder}`,
+        marginBottom: 16,
+        gap: 0,
+      }}>
+        {views.map(v => (
           <button
-            key={t.id}
-            onClick={() => setView(t.id)}
+            key={v.id}
+            onClick={() => setView(v.id)}
             style={{
-              padding: '8px 12px',
-              borderRadius: 6,
-              background: view === t.id ? colors.green : colors.bgCard,
-              color: view === t.id ? '#000' : colors.text,
-              border: `1px solid ${view === t.id ? colors.green : colors.border}`,
+              flex: 1,
+              padding: '12px 6px',
+              textAlign: 'center',
+              fontSize: 13,
+              fontWeight: 700,
+              color: view === v.id ? c.red : c.textOff,
               cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: view === t.id ? 700 : 400,
-              transition: 'all 0.2s',
+              borderBottom: view === v.id ? `2px solid ${c.red}` : '2px solid transparent',
+              background: 'none',
+              border: 'none',
+              borderBottomWidth: 2,
+              borderBottomStyle: 'solid',
+              borderBottomColor: view === v.id ? c.red : 'transparent',
+              transition: '0.15s',
             }}
           >
-            {t.label}
+            {v.label}
           </button>
         ))}
       </div>
 
       {/* Sucursal Selector */}
-      {view !== 'mapa' && (
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 11, color: colors.textDim }}>Sucursal:</label>
-          <select
-            value={selectedSucursal}
-            onChange={(e) => setSelectedSucursal(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              borderRadius: 6,
-              border: `1px solid ${colors.border}`,
-              background: colors.bgCard,
-              color: colors.text,
-              fontSize: 13,
-              marginTop: 4,
-            }}
-          >
-            {sucursales.map(s => (
-              <option key={s.id} value={s.id}>{s.nombre}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div style={{ marginBottom: 14 }}>
+        <label style={labelStyle}>Sucursal</label>
+        <select
+          value={selectedSucursal}
+          onChange={(e) => setSelectedSucursal(e.target.value)}
+          style={inputStyle}
+        >
+          {sucursales.map(s => (
+            <option key={s.id} value={s.id}>{s.nombre}</option>
+          ))}
+        </select>
+      </div>
 
-      {/* View Content */}
+      {/* Views */}
       {view === 'checkin' && <CheckinWidget sucursal={selectedSucursal} user={user} />}
       {view === 'historia' && <HistorialAsistencia sucursal={selectedSucursal} />}
-      {view === 'mapa' && <MapaSucursales sucursales={sucursales} />}
-      {view === 'correcciones' && <CorrecionesModal sucursal={selectedSucursal} user={user} />}
+      {view === 'correcciones' && <CorrecionesPanel sucursal={selectedSucursal} user={user} />}
     </div>
   );
 }
 
-/**
- * CheckinWidget: GPS + Camera capture for check-in/out
- */
+// ═══════════════════════════════════════════════════════════════
+// CHECK-IN / CHECK-OUT
+// ═══════════════════════════════════════════════════════════════
 function CheckinWidget({ sucursal, user }) {
   const [position, setPosition] = useState(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
   const [photo, setPhoto] = useState(null);
-  const [timestamp, setTimestamp] = useState(new Date());
-  const [estado, setEstado] = useState('checkin'); // checkin o checkout
+  const [cameraActive, setCameraActive] = useState(false);
+  const [estado, setEstado] = useState('checkin');
   const [loading, setLoading] = useState(false);
   const [lastCheckin, setLastCheckin] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const streamRef = useRef(null);
 
-  // Obtener ubicación GPS
+  // GPS
   const getLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      alert('Geolocalización no disponible en este dispositivo');
-      return;
-    }
-
+    if (!navigator.geolocation) return;
+    setGpsLoading(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setPosition({
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        });
+        setPosition({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setGpsLoading(false);
       },
-      (err) => {
-        console.error('Error de GPS:', err);
-        alert('No se pudo obtener la ubicación. Verifica permisos de localización.');
-      },
+      () => { setGpsLoading(false); },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }, []);
 
-  // Iniciar cámara
+  // Auto-get GPS on mount
+  useEffect(() => { getLocation(); }, [getLocation]);
+
+  // Cámara
   const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      console.error('Error de cámara:', err);
-      alert('No se pudo acceder a la cámara.');
-    }
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setCameraActive(true);
+    } catch { /* ignore */ }
   }, []);
 
-  // Capturar foto
-  const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
-      const photoData = canvasRef.current.toDataURL('image/jpeg');
-      setPhoto(photoData);
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
     }
+    setCameraActive(false);
+  }, []);
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    canvasRef.current.width = 640;
+    canvasRef.current.height = 480;
+    ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+    setPhoto(canvasRef.current.toDataURL('image/jpeg', 0.8));
+    stopCamera();
   };
 
-  // Cargar último check-in para saber si es check-out
+  // Último check-in
   useEffect(() => {
     if (!user?.id) return;
-
     db.from('asistencia_gps')
       .select('*')
       .eq('empleado_id', user.id)
       .order('timestamp_checkin', { ascending: false })
       .limit(1)
       .then(({ data }) => {
-        if (data?.length > 0) {
-          const last = data[0];
-          if (last.timestamp_checkout === null) {
-            setEstado('checkout');
-            setLastCheckin(last);
-          }
+        if (data?.[0]?.timestamp_checkout === null) {
+          setEstado('checkout');
+          setLastCheckin(data[0]);
         }
-      })
-      .catch(err => console.error('Error cargando último check-in:', err));
+      });
   }, [user?.id]);
 
-  // Guardar registro
+  // Guardar
   const handleSave = async () => {
-    if (!position || !photo) {
-      alert('Por favor obtén ubicación y captura foto');
-      return;
-    }
-
+    if (!position) return alert('Esperando ubicación GPS...');
     setLoading(true);
     try {
-      // Upload foto a Supabase Storage
       let photoUrl = null;
       if (photo) {
         const filename = `asistencia/${user.id}/${Date.now()}.jpg`;
-        const { error: uploadErr } = await db.storage
+        const { error: upErr } = await db.storage
           .from('asistencia-fotos')
-          .upload(filename, await fetch(photo).then(r => r.blob()), {
-            contentType: 'image/jpeg',
-          });
-
-        if (!uploadErr) {
+          .upload(filename, await fetch(photo).then(r => r.blob()), { contentType: 'image/jpeg' });
+        if (!upErr) {
           const { data } = db.storage.from('asistencia-fotos').getPublicUrl(filename);
           photoUrl = data?.publicUrl;
         }
       }
 
-      // Guardar registro en asistencia_gps
       if (estado === 'checkin') {
         await db.from('asistencia_gps').insert({
           empleado_id: user.id,
           sucursal_id: sucursal,
-          timestamp_checkin: timestamp.toISOString(),
+          timestamp_checkin: new Date().toISOString(),
           lat_checkin: position.lat,
           lon_checkin: position.lon,
           foto_url: photoUrl,
           distancia_metros: Math.round(position.accuracy),
         });
+        alert('Check-in registrado ✅');
       } else if (lastCheckin) {
         await db.from('asistencia_gps').update({
-          timestamp_checkout: timestamp.toISOString(),
+          timestamp_checkout: new Date().toISOString(),
           lat_checkout: position.lat,
           lon_checkout: position.lon,
         }).eq('id', lastCheckin.id);
+        alert('Check-out registrado ✅');
+        setEstado('checkin');
+        setLastCheckin(null);
       }
-
-      alert(`${estado === 'checkin' ? 'Check-in' : 'Check-out'} registrado ✅`);
       setPhoto(null);
-      setPosition(null);
-      if (estado === 'checkin') setEstado('checkin');
     } catch (err) {
-      console.error('Error:', err);
-      alert('Error al guardar: ' + err.message);
+      alert('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div style={{ maxWidth: 500 }}>
-      <div style={{ background: colors.bgCard, borderRadius: 8, padding: 16, marginBottom: 16 }}>
-        <h3 style={{ margin: '0 0 12px 0', color: colors.text, fontSize: 14 }}>
-          {estado === 'checkin' ? '✅ Check-in' : '❌ Check-out'}
-        </h3>
+  const isCheckout = estado === 'checkout';
+  const canSave = position && !loading;
 
-        {/* Video Preview */}
-        <div style={{
-          position: 'relative',
-          width: '100%',
-          aspectRatio: '16/9',
-          background: '#000',
-          borderRadius: 6,
-          overflow: 'hidden',
-          marginBottom: 12,
+  return (
+    <div>
+      {/* Estado badge */}
+      <div style={{
+        ...cardStyle,
+        borderLeft: `3px solid ${isCheckout ? c.orange : c.green}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: c.text }}>
+            {isCheckout ? 'Tienes un turno activo' : 'Nuevo turno'}
+          </div>
+          <div style={{ fontSize: 12, color: c.textDim, marginTop: 2 }}>
+            {isCheckout
+              ? `Entrada: ${fmtTime(lastCheckin?.timestamp_checkin)}`
+              : 'Registra tu entrada con GPS y foto'}
+          </div>
+        </div>
+        <span style={{
+          display: 'inline-block',
+          padding: '3px 9px',
+          borderRadius: 20,
+          fontSize: 11,
+          fontWeight: 700,
+          background: isCheckout ? '#7c2d12' : '#14532d',
+          color: isCheckout ? '#fb923c' : '#4ade80',
         }}>
-          {photo ? (
-            <img src={photo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Foto capturada" />
-          ) : (
+          {isCheckout ? 'Check-out' : 'Check-in'}
+        </span>
+      </div>
+
+      {/* GPS */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: c.textDim }}>Ubicación GPS</span>
+          <button
+            onClick={getLocation}
+            disabled={gpsLoading}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: c.input,
+              color: c.text,
+              border: `1px solid ${c.border}`,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {gpsLoading ? '...' : '↻ Actualizar'}
+          </button>
+        </div>
+        {position ? (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span style={{
+              padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+              background: '#14532d', color: '#4ade80',
+            }}>GPS OK</span>
+            <span style={{ fontSize: 12, color: c.textDim }}>
+              {position.lat.toFixed(5)}, {position.lon.toFixed(5)} · ±{position.accuracy.toFixed(0)}m
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{
+              padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+              background: '#7f1d1d', color: '#f87171',
+            }}>Sin GPS</span>
+            <span style={{ fontSize: 12, color: c.textDim }}>Esperando permisos de ubicación</span>
+          </div>
+        )}
+      </div>
+
+      {/* Cámara / Foto */}
+      <div style={cardStyle}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: c.textDim, display: 'block', marginBottom: 12 }}>
+          Foto de verificación {!isCheckout && <span style={{ color: c.textOff, fontWeight: 400 }}>(opcional)</span>}
+        </span>
+
+        {photo ? (
+          <div style={{ position: 'relative', marginBottom: 12 }}>
+            <img
+              src={photo}
+              alt="Captura"
+              style={{ width: '100%', borderRadius: 10, maxHeight: 240, objectFit: 'cover' }}
+            />
+            <button
+              onClick={() => setPhoto(null)}
+              style={{
+                position: 'absolute', top: 8, right: 8,
+                background: 'rgba(0,0,0,0.7)', color: '#fff', border: 'none',
+                borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 12,
+              }}
+            >
+              ✕ Retomar
+            </button>
+          </div>
+        ) : cameraActive ? (
+          <div style={{ marginBottom: 12 }}>
             <video
               ref={videoRef}
               autoPlay
               playsInline
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              style={{ width: '100%', borderRadius: 10, maxHeight: 240, objectFit: 'cover', background: '#000' }}
             />
-          )}
-          <canvas ref={canvasRef} style={{ display: 'none' }} width={1280} height={720} />
-        </div>
-
-        {/* Botones */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-          <button
-            onClick={startCamera}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 6,
-              background: colors.blue,
-              color: '#fff',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            📹 Iniciar Cámara
+            <button onClick={capturePhoto} style={{ ...btnPrimary, marginTop: 8, background: c.red }}>
+              📸 Capturar
+            </button>
+          </div>
+        ) : (
+          <button onClick={startCamera} style={btnGhost}>
+            📷 Abrir cámara
           </button>
-          <button
-            onClick={capturePhoto}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 6,
-              background: colors.yellow,
-              color: '#000',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            📸 Capturar Foto
-          </button>
-        </div>
-
-        {/* GPS Info */}
-        <div style={{
-          background: colors.bg,
-          padding: 10,
-          borderRadius: 6,
-          marginBottom: 12,
-          fontSize: 11,
-          color: colors.textDim,
-        }}>
-          {position ? (
-            <>
-              <div>✅ GPS: {position.lat.toFixed(6)}, {position.lon.toFixed(6)}</div>
-              <div>📍 Precisión: {position.accuracy.toFixed(0)}m</div>
-            </>
-          ) : (
-            <div>❌ GPS no disponible</div>
-          )}
-        </div>
-
-        {/* Guardar */}
-        <button
-          onClick={handleSave}
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '12px',
-            borderRadius: 6,
-            background: photo && position ? colors.green : colors.textDim,
-            color: '#000',
-            border: 'none',
-            cursor: photo && position ? 'pointer' : 'not-allowed',
-            fontSize: 12,
-            fontWeight: 700,
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {loading ? '⏳ Guardando...' : `💾 Guardar ${estado === 'checkin' ? 'Check-in' : 'Check-out'}`}
-        </button>
+        )}
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
       </div>
+
+      {/* Botón guardar */}
+      <button
+        onClick={handleSave}
+        disabled={!canSave}
+        style={{
+          ...btnPrimary,
+          background: canSave ? (isCheckout ? '#e07c00' : c.greenDark) : c.textOff,
+          cursor: canSave ? 'pointer' : 'not-allowed',
+          opacity: loading ? 0.5 : 1,
+          marginTop: 4,
+        }}
+      >
+        {loading
+          ? '⏳ Registrando...'
+          : isCheckout ? '🔴 Registrar Check-out' : '🟢 Registrar Check-in'}
+      </button>
     </div>
   );
 }
 
-/**
- * HistorialAsistencia: Table de registros GPS
- */
+// ═══════════════════════════════════════════════════════════════
+// HISTORIAL
+// ═══════════════════════════════════════════════════════════════
 function HistorialAsistencia({ sucursal }) {
   const [registros, setRegistros] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -347,88 +427,97 @@ function HistorialAsistencia({ sucursal }) {
       .order('timestamp_checkin', { ascending: false })
       .limit(50)
       .then(({ data }) => setRegistros(data || []))
-      .catch(err => console.error('Error:', err))
       .finally(() => setLoading(false));
   }, [sucursal]);
 
-  if (loading) return <div style={{ color: colors.textDim }}>⏳ Cargando...</div>;
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 20px', color: c.textOff }}>
+        <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
+        <div style={{ fontSize: 14 }}>Cargando historial...</div>
+      </div>
+    );
+  }
+
+  if (registros.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 20px', color: c.textOff }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
+        <div style={{ fontSize: 14 }}>No hay registros de asistencia para esta sucursal</div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{
-        width: '100%',
-        borderCollapse: 'collapse',
-        fontSize: 11,
-      }}>
+    <div style={{ ...cardStyle, padding: 0, overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
-          <tr style={{ background: colors.bgCard, borderBottom: `1px solid ${colors.border}` }}>
-            <th style={{ padding: 8, textAlign: 'left', color: colors.textDim }}>Empleado</th>
-            <th style={{ padding: 8, textAlign: 'left', color: colors.textDim }}>Check-in</th>
-            <th style={{ padding: 8, textAlign: 'left', color: colors.textDim }}>Check-out</th>
-            <th style={{ padding: 8, textAlign: 'left', color: colors.textDim }}>Distancia</th>
-            <th style={{ padding: 8, textAlign: 'left', color: colors.textDim }}>Foto</th>
+          <tr>
+            {['Empleado', 'Entrada', 'Salida', 'Dist.', ''].map((h, i) => (
+              <th key={i} style={{
+                padding: '8px 12px',
+                textAlign: 'left',
+                fontSize: 12,
+                fontWeight: 700,
+                color: c.textDim,
+                borderBottom: `2px solid ${c.border}`,
+              }}>
+                {h}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {registros.map(r => (
-            <tr key={r.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
-              <td style={{ padding: 8, color: colors.text }}>{r.empleados?.nombre_completo || '-'}</td>
-              <td style={{ padding: 8, color: colors.text, fontSize: 10 }}>
-                {new Date(r.timestamp_checkin).toLocaleString('es-SV')}
+            <tr key={r.id}>
+              <td style={{ padding: '10px 12px', fontSize: 13, color: c.text, borderBottom: `1px solid ${c.border}` }}>
+                {r.empleados?.nombre_completo || '-'}
               </td>
-              <td style={{ padding: 8, color: colors.text, fontSize: 10 }}>
-                {r.timestamp_checkout ? new Date(r.timestamp_checkout).toLocaleTimeString('es-SV') : '🔴 Activo'}
+              <td style={{ padding: '10px 12px', fontSize: 13, color: c.text, borderBottom: `1px solid ${c.border}` }}>
+                {fmtDateTime(r.timestamp_checkin)}
               </td>
-              <td style={{ padding: 8, color: colors.text }}>
+              <td style={{ padding: '10px 12px', fontSize: 13, borderBottom: `1px solid ${c.border}` }}>
+                {r.timestamp_checkout ? (
+                  <span style={{ color: c.text }}>{fmtTime(r.timestamp_checkout)}</span>
+                ) : (
+                  <span style={{
+                    padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                    background: '#7c2d12', color: '#fb923c',
+                  }}>Activo</span>
+                )}
+              </td>
+              <td style={{ padding: '10px 12px', fontSize: 13, color: c.textDim, borderBottom: `1px solid ${c.border}` }}>
                 {r.distancia_metros ? `${r.distancia_metros}m` : '-'}
               </td>
-              <td style={{ padding: 8, textAlign: 'center' }}>
-                {r.foto_url ? <a href={r.foto_url} target="_blank" rel="noopener noreferrer" style={{ color: colors.blue }}>🖼️</a> : '-'}
+              <td style={{ padding: '10px 12px', borderBottom: `1px solid ${c.border}`, textAlign: 'center' }}>
+                {r.foto_url ? (
+                  <a href={r.foto_url} target="_blank" rel="noopener noreferrer"
+                    style={{ color: c.blue, fontSize: 12, textDecoration: 'none' }}>
+                    Ver foto
+                  </a>
+                ) : (
+                  <span style={{ color: c.textOff, fontSize: 12 }}>—</span>
+                )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {registros.length === 0 && (
-        <div style={{ padding: 16, textAlign: 'center', color: colors.textDim }}>No hay registros</div>
-      )}
     </div>
   );
 }
 
-/**
- * MapaSucursales: Google Maps (placeholder - requires API key)
- */
-function MapaSucursales({ sucursales }) {
-  return (
-    <div style={{ background: colors.bgCard, borderRadius: 8, padding: 16, minHeight: 300 }}>
-      <h3 style={{ margin: '0 0 16px 0', color: colors.text, fontSize: 14 }}>🗺️ Ubicaciones de Sucursales</h3>
-      <div style={{ color: colors.textDim, fontSize: 12 }}>
-        ⚠️ Requiere configuración de Google Maps API
-      </div>
-      <div style={{ marginTop: 12, fontSize: 11, color: colors.textDim }}>
-        <p>Sucursales activas:</p>
-        {sucursales.map(s => (
-          <div key={s.id} style={{ padding: '4px 0' }}>
-            📍 {s.nombre} (ID: {s.store_code})
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/**
- * CorrecionesModal: Manual adjustments for attendance
- */
-function CorrecionesModal({ sucursal, user }) {
+// ═══════════════════════════════════════════════════════════════
+// CORRECCIONES / AJUSTES MANUALES
+// ═══════════════════════════════════════════════════════════════
+function CorrecionesPanel({ sucursal, user }) {
   const [registros, setRegistros] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState('');
   const [razon, setRazon] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const loadRegistros = useCallback(() => {
     setLoading(true);
     db.from('asistencia_gps')
       .select('*, empleados(nombre_completo)')
@@ -436,16 +525,13 @@ function CorrecionesModal({ sucursal, user }) {
       .order('timestamp_checkin', { ascending: false })
       .limit(30)
       .then(({ data }) => setRegistros(data || []))
-      .catch(err => console.error('Error:', err))
       .finally(() => setLoading(false));
   }, [sucursal]);
 
-  const handleAjuste = async () => {
-    if (!selectedId || !razon.trim()) {
-      alert('Selecciona registro y proporciona razón');
-      return;
-    }
+  useEffect(() => { loadRegistros(); }, [loadRegistros]);
 
+  const handleAjuste = async () => {
+    if (!selectedId || !razon.trim()) return alert('Selecciona registro y escribe razón');
     setSaving(true);
     try {
       await db.from('asistencia_gps').update({
@@ -453,18 +539,10 @@ function CorrecionesModal({ sucursal, user }) {
         ajuste_manual_timestamp: new Date().toISOString(),
         ajuste_razon: razon,
       }).eq('id', selectedId);
-
       alert('Ajuste registrado ✅');
-      setSelectedId(null);
+      setSelectedId('');
       setRazon('');
-
-      // Recargar
-      const { data } = await db.from('asistencia_gps')
-        .select('*, empleados(nombre_completo)')
-        .eq('sucursal_id', sucursal)
-        .order('timestamp_checkin', { ascending: false })
-        .limit(30);
-      setRegistros(data || []);
+      loadRegistros();
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -472,70 +550,78 @@ function CorrecionesModal({ sucursal, user }) {
     }
   };
 
-  if (loading) return <div style={{ color: colors.textDim }}>⏳ Cargando...</div>;
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 20px', color: c.textOff }}>
+        <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
+        <div style={{ fontSize: 14 }}>Cargando registros...</div>
+      </div>
+    );
+  }
+
+  const selected = registros.find(r => r.id === selectedId);
 
   return (
     <div>
-      <div style={{ background: colors.bgCard, borderRadius: 8, padding: 16, marginBottom: 16 }}>
-        <h3 style={{ margin: '0 0 12px 0', color: colors.text, fontSize: 14 }}>✏️ Ajustes Manuales</h3>
+      {/* Info card */}
+      <div style={{ ...cardStyle, borderLeft: `3px solid ${c.yellow}` }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: c.text, marginBottom: 4 }}>
+          Correcciones de asistencia
+        </div>
+        <div style={{ fontSize: 12, color: c.textDim }}>
+          Selecciona un registro para agregar una nota de ajuste. Solo personal RRHH puede realizar correcciones.
+        </div>
+      </div>
 
-        <select
-          value={selectedId || ''}
-          onChange={(e) => setSelectedId(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: 6,
-            border: `1px solid ${colors.border}`,
-            background: colors.bg,
-            color: colors.text,
-            fontSize: 12,
-            marginBottom: 12,
-          }}
-        >
-          <option value="">Selecciona un registro...</option>
-          {registros.map(r => (
-            <option key={r.id} value={r.id}>
-              {r.empleados?.nombre_completo} - {new Date(r.timestamp_checkin).toLocaleString('es-SV')}
-            </option>
-          ))}
-        </select>
+      {/* Form */}
+      <div style={cardStyle}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Registro a ajustar</label>
+          <select
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+            style={inputStyle}
+          >
+            <option value="">Selecciona un registro...</option>
+            {registros.map(r => (
+              <option key={r.id} value={r.id}>
+                {r.empleados?.nombre_completo} — {fmtDateTime(r.timestamp_checkin)}
+                {r.ajuste_razon ? ' (ya ajustado)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <textarea
-          value={razon}
-          onChange={(e) => setRazon(e.target.value)}
-          placeholder="Razón del ajuste..."
-          style={{
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: 6,
-            border: `1px solid ${colors.border}`,
-            background: colors.bg,
-            color: colors.text,
-            fontSize: 12,
-            minHeight: 60,
-            marginBottom: 12,
-            fontFamily: 'inherit',
-          }}
-        />
+        {selected?.ajuste_razon && (
+          <div style={{
+            background: '#78350f20', border: '1px solid #78350f',
+            borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12, color: c.yellow,
+          }}>
+            Ajuste previo: {selected.ajuste_razon}
+          </div>
+        )}
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Razón del ajuste</label>
+          <textarea
+            value={razon}
+            onChange={(e) => setRazon(e.target.value)}
+            placeholder="Ej: Empleado olvidó marcar salida, se confirma hora real con supervisor..."
+            rows={3}
+            style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }}
+          />
+        </div>
 
         <button
           onClick={handleAjuste}
-          disabled={saving || !selectedId}
+          disabled={saving || !selectedId || !razon.trim()}
           style={{
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: 6,
-            background: selectedId ? colors.green : colors.textDim,
-            color: '#000',
-            border: 'none',
-            cursor: selectedId ? 'pointer' : 'not-allowed',
-            fontSize: 12,
-            fontWeight: 700,
-            opacity: saving ? 0.6 : 1,
+            ...btnGreen,
+            opacity: (saving || !selectedId || !razon.trim()) ? 0.45 : 1,
+            cursor: (selectedId && razon.trim() && !saving) ? 'pointer' : 'not-allowed',
           }}
         >
-          {saving ? '⏳ Guardando...' : '💾 Guardar Ajuste'}
+          {saving ? '⏳ Guardando...' : '💾 Guardar ajuste'}
         </button>
       </div>
     </div>
