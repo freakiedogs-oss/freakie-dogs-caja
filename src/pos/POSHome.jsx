@@ -172,16 +172,12 @@ export default function POSHome({ user, onStartOrder, onLogout }) {
   return (
     <div className="poshome-root">
 
-      {/* ── HEADER ── */}
+      {/* ── HEADER (igual a .topbar del ERP) ── */}
       <header className="pos-header">
-        <span className="pos-header-brand">🍔 FREAKIE POS</span>
+        <span className="pos-header-brand">🍔 Freakie POS</span>
         <span className="pos-header-store">{storeName}</span>
-        <span className="poshome-badge">
-          {cuentas.length > 0
-            ? <><span style={{ color: '#fbbf24' }}>●</span> {cuentas.length} abiert{cuentas.length === 1 ? 'a' : 'as'}</>
-            : <><span style={{ color: '#4ade80' }}>●</span> Sin órdenes</>}
-        </span>
-        <span className="pos-header-user">👤 {user.nombre?.split(' ')[0]}</span>
+        <span className="pos-header-sep" />
+        <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
         <button className="pos-header-btn danger" onClick={onLogout}>Salir</button>
       </header>

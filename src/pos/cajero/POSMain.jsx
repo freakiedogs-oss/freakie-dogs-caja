@@ -413,16 +413,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
 
   return (
     <div className="pos-layout">
-      {/* ── HEADER ── */}
+      {/* ── HEADER (igual a .topbar del ERP) ── */}
       <header className="pos-header">
-        <button
-          className="pos-header-btn"
-          style={{ background: '#111', borderColor: '#333', color: '#888' }}
-          onClick={onBack}
-          title="Volver al inicio"
-        >
-          ← Inicio
-        </button>
+        <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
+        <span className="pos-header-brand">🍔 Freakie POS</span>
         <span className="pos-header-store">{storeName}</span>
 
         {/* Badge tipo / mesa */}
@@ -433,7 +427,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           {tipoInfo.icon} {tipoInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
         </span>
 
-        <span className="pos-header-user">👤 {user.nombre?.split(' ')[0]}</span>
+        <span className="pos-header-sep" />
+        <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
         <button className="pos-header-btn danger" onClick={onLogout}>Salir</button>
       </header>
