@@ -25,6 +25,8 @@ import DeliveryView from './components/delivery/DeliveryView'
 import MarketingView from './components/marketing/MarketingView'
 import InventarioDashboard from './components/dashboard/InventarioDashboard'
 import VentasDashboard from './components/dashboard/VentasDashboard'
+import MiAsistencia from './components/empleado/MiAsistencia'
+import MiBoleta from './components/empleado/MiBoleta'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -84,6 +86,10 @@ export default function App() {
     switch (screen) {
       case 'home':
         return <HomeScreen user={user} />
+      case 'mi-asistencia':
+        return <MiAsistencia user={user} />
+      case 'mi-boleta':
+        return <MiBoleta user={user} />
 
       // Caja
       case 'cierre':

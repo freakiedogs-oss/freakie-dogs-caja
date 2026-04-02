@@ -38,6 +38,8 @@ export const NAV_SECTIONS = [
     label: 'Principal',
     items: [
       { key: 'home', label: 'Inicio', icon: '🏠', roles: ['*'] },
+      { key: 'mi-asistencia', label: 'Mi Asistencia', icon: '📍', roles: ['*'] },
+      { key: 'mi-boleta', label: 'Mi Boleta', icon: '🧾', roles: ['*'] },
     ],
   },
   {
@@ -72,7 +74,7 @@ export const NAV_SECTIONS = [
     label: 'Supply Chain',
     items: [
       { key: 'conteo', label: 'Conteo Nocturno', icon: '🌙', roles: ['cocina', 'gerente', 'admin', 'ejecutivo'] },
-      { key: 'entregas', label: 'Confirmar Entregas', icon: '✅', roles: ['despachador', 'motorista', 'gerente', 'cocina', 'admin', 'ejecutivo'] },
+      { key: 'entregas', label: 'Confirmar Entregas', icon: '✅', roles: ['despachador', 'motorista', 'motorista_interno', 'domicilios', 'gerente', 'cocina', 'admin', 'ejecutivo'] },
     ],
   },
   {
@@ -98,7 +100,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Delivery',
     items: [
-      { key: 'delivery', label: 'Panel Delivery', icon: '🛵', roles: ['ejecutivo', 'despachador', 'gerente', 'admin'] },
+      { key: 'delivery', label: 'Panel Delivery', icon: '🛵', roles: ['ejecutivo', 'despachador', 'domicilios', 'motorista', 'motorista_interno', 'gerente', 'admin'] },
     ],
   },
   {
