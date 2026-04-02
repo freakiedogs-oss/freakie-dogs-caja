@@ -32,6 +32,7 @@ export default function ConteoNocturno({user,onBack}){
   const [editExpira,setEditExpira]=useState(null);  // Date cuando expira la ventana de edición
   const [ocultarCero,setOcultarCero]=useState(false); // toggle para ocultar pedido=0 en Screen 2
   const [tiempoRestante,setTiempoRestante]=useState('');
+  const [conteoCerrado,setConteoCerrado]=useState(false); // true cuando hay conteo >6h
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
@@ -105,11 +106,16 @@ export default function ConteoNocturno({user,onBack}){
           setScreen(1);
           show('✏️ Editando conteo existente');
         } else {
-          // >6h → bloqueado, ir a pedido
-          setProductos(prods);
+          // >6h → conteo anterior cerrado, permitir nuevo conteo (turno PM)
+          // Pre-llenar con datos del conteo anterior como referencia
+          const prodsConDatos = prods.map(p=>({...p, cantidad_real: null}));
+          setProductos(prodsConDatos);
           setConteoHoy(conteoRows);
-          setScreen(2);
-          show('🔒 Conteo cerrado (más de 6h), mostrando pedido');
+          setConteoCerrado(true);
+          setIsEdit(false);
+          setEditExpira(null);
+          setScreen(1);
+          show('📋 Nuevo conteo — el anterior se guardó hace >6h');
         }
       } else {
         // Sin conteo → formulario nuevo
@@ -377,6 +383,11 @@ export default function ConteoNocturno({user,onBack}){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#facc1520',border:'1px solid #facc15'}}>
               <span style={{fontSize:12,color:'#facc15',fontWeight:600}}>✏️ Editando conteo</span>
               <span style={{fontSize:11,color:'#facc15'}}>{tiempoRestante}</span>
+            </div>
+          )}
+          {conteoCerrado&&!isEdit&&(
+            <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80'}}>
+              <span style={{fontSize:12,color:'#4ade80',fontWeight:600}}>📋 Nuevo conteo — reemplaza el anterior (>6h)</span>
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
