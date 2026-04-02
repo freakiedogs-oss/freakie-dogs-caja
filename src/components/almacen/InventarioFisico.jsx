@@ -288,6 +288,19 @@ export default function InventarioFisico({user, onBack}){
   },[prodsFiltrados]);
   const catKeys=Object.keys(porCategoria).sort();
 
+  /* ── Resumen por categoría para review (MUST be before any return) ── */
+  const resumenCategorias=useMemo(()=>{
+    const map={};
+    conDiferencia.forEach(p=>{
+      if(!map[p.categoria])map[p.categoria]={cat:p.categoria,count:0,faltantes:0,sobrantes:0};
+      map[p.categoria].count++;
+      const diff=p.cantidad_contada-p.stock_sistema;
+      if(diff<0)map[p.categoria].faltantes++;
+      else map[p.categoria].sobrantes++;
+    });
+    return Object.values(map).sort((a,b)=>b.count-a.count);
+  },[conDiferencia]);
+
   // ── LOADING ──
   if(loading){
     return(
@@ -334,19 +347,6 @@ export default function InventarioFisico({user, onBack}){
     URL.revokeObjectURL(url);
     show('📥 Reporte descargado');
   };
-
-  /* ── Resumen por categoría para review ── */
-  const resumenCategorias=useMemo(()=>{
-    const map={};
-    conDiferencia.forEach(p=>{
-      if(!map[p.categoria])map[p.categoria]={cat:p.categoria,count:0,faltantes:0,sobrantes:0};
-      map[p.categoria].count++;
-      const diff=p.cantidad_contada-p.stock_sistema;
-      if(diff<0)map[p.categoria].faltantes++;
-      else map[p.categoria].sobrantes++;
-    });
-    return Object.values(map).sort((a,b)=>b.count-a.count);
-  },[conDiferencia]);
 
   // ── SCREEN: REVIEW (post-finalización) ──
   if(screen==='review'){
