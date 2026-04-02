@@ -99,7 +99,11 @@ export default function InventarioFisico({user, onBack}){
       }));
 
       setProductos(prods);
-      setScreen('count');
+
+      // Si el inventario ya está completado, ir a review
+      const {data:headerData}=await db.from('inventario_fisico')
+        .select('estado').eq('id',id).maybeSingle();
+      setScreen(headerData?.estado==='completado'?'review':'count');
       setLoading(false);
     }catch(e){
       show('❌ '+e.message);setLoading(false);
@@ -293,39 +297,132 @@ export default function InventarioFisico({user, onBack}){
     );
   }
 
+  /* ── Generar reporte CSV de diferencias ── */
+  const descargarReporte = () => {
+    const fecha=today();
+    const rows=[['Producto','Categoría','Unidad','Stock Sistema','Contado','Diferencia','% Diferencia']];
+    const sorted=[...productos].sort((a,b)=>{
+      const da=a.cantidad_contada!==null?a.cantidad_contada-a.stock_sistema:0;
+      const db2=b.cantidad_contada!==null?b.cantidad_contada-b.stock_sistema:0;
+      return Math.abs(db2)-Math.abs(da);
+    });
+    sorted.forEach(p=>{
+      if(p.cantidad_contada===null)return;
+      const diff=p.cantidad_contada-p.stock_sistema;
+      const pctDiff=p.stock_sistema>0?Math.round(diff/p.stock_sistema*100):diff!==0?'N/A':'0';
+      rows.push([
+        `"${p.nombre}"`,p.categoria,p.unidad,
+        p.stock_sistema,p.cantidad_contada,diff,pctDiff+'%'
+      ]);
+    });
+    // Resumen al final
+    rows.push([]);
+    rows.push(['RESUMEN']);
+    rows.push(['Total productos',totalProds]);
+    rows.push(['Con diferencia',conDiferencia.length]);
+    rows.push(['Sin diferencia',totalProds-conDiferencia.length]);
+    rows.push(['Faltantes (diff < 0)',conDiferencia.filter(p=>p.cantidad_contada<p.stock_sistema).length]);
+    rows.push(['Sobrantes (diff > 0)',conDiferencia.filter(p=>p.cantidad_contada>p.stock_sistema).length]);
+
+    const csv=rows.map(r=>r.join(',')).join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`Inventario_Fisico_CM001_${fecha}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    show('📥 Reporte descargado');
+  };
+
+  /* ── Resumen por categoría para review ── */
+  const resumenCategorias=useMemo(()=>{
+    const map={};
+    conDiferencia.forEach(p=>{
+      if(!map[p.categoria])map[p.categoria]={cat:p.categoria,count:0,faltantes:0,sobrantes:0};
+      map[p.categoria].count++;
+      const diff=p.cantidad_contada-p.stock_sistema;
+      if(diff<0)map[p.categoria].faltantes++;
+      else map[p.categoria].sobrantes++;
+    });
+    return Object.values(map).sort((a,b)=>b.count-a.count);
+  },[conDiferencia]);
+
   // ── SCREEN: REVIEW (post-finalización) ──
   if(screen==='review'){
+    const faltantes=conDiferencia.filter(p=>p.cantidad_contada<p.stock_sistema);
+    const sobrantes=conDiferencia.filter(p=>p.cantidad_contada>p.stock_sistema);
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
         <Toast/>
         <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
           <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
-          <div>
-            <div style={{fontWeight:800,fontSize:18}}>✅ Inventario Completado</div>
-            <div style={{color:'#4ade80',fontSize:12}}>Casa Matriz · {new Date().toLocaleDateString('es-SV')}</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:18}}>Reporte Inventario Físico</div>
+            <div style={{color:'#4ade80',fontSize:12}}>Casa Matriz · {today()}</div>
           </div>
         </div>
 
-        <div className="card" style={{textAlign:'center',padding:24}}>
-          <div style={{fontSize:40,marginBottom:8}}>📦</div>
-          <div style={{fontSize:22,fontWeight:800,color:'#4ade80'}}>{totalProds} productos contados</div>
-          <div style={{color:'#888',fontSize:14,marginTop:4}}>{conDiferencia.length} con diferencias</div>
+        {/* Resumen general */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:16}}>
+          <div className="card" style={{textAlign:'center',padding:14}}>
+            <div style={{fontSize:22,fontWeight:800,color:'#4ade80'}}>{totalProds}</div>
+            <div style={{fontSize:10,color:'#888'}}>Contados</div>
+          </div>
+          <div className="card" style={{textAlign:'center',padding:14}}>
+            <div style={{fontSize:22,fontWeight:800,color:'#e63946'}}>{faltantes.length}</div>
+            <div style={{fontSize:10,color:'#888'}}>Faltantes</div>
+          </div>
+          <div className="card" style={{textAlign:'center',padding:14}}>
+            <div style={{fontSize:22,fontWeight:800,color:'#facc15'}}>{sobrantes.length}</div>
+            <div style={{fontSize:10,color:'#888'}}>Sobrantes</div>
+          </div>
         </div>
 
+        {/* Botón descargar reporte */}
+        <button className="btn btn-red" onClick={descargarReporte}
+          style={{width:'100%',padding:14,fontSize:15,marginBottom:16}}>
+          📥 Descargar Reporte CSV
+        </button>
+
+        {/* Resumen por categoría */}
+        {resumenCategorias.length>0&&(
+          <>
+            <div style={{fontWeight:700,fontSize:13,color:'#888',marginBottom:8}}>Diferencias por categoría</div>
+            {resumenCategorias.map(c=>(
+              <div key={c.cat} className="card" style={{padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:13,fontWeight:600}}>{c.cat}</span>
+                <div style={{display:'flex',gap:10,fontSize:12}}>
+                  {c.faltantes>0&&<span style={{color:'#e63946'}}>-{c.faltantes}</span>}
+                  {c.sobrantes>0&&<span style={{color:'#facc15'}}>+{c.sobrantes}</span>}
+                  <span style={{color:'#888'}}>{c.count} dif</span>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* Detalle de diferencias */}
         {conDiferencia.length>0&&(
           <>
-            <div style={{fontWeight:700,fontSize:14,color:'#e63946',margin:'16px 0 8px'}}>
-              ⚠️ Productos con diferencia ({conDiferencia.length})
+            <div style={{fontWeight:700,fontSize:13,color:'#e63946',margin:'16px 0 8px'}}>
+              Detalle de diferencias ({conDiferencia.length})
             </div>
-            {conDiferencia.sort((a,b)=>Math.abs(b.cantidad_contada-b.stock_sistema)-Math.abs(a.cantidad_contada-a.stock_sistema)).slice(0,30).map(p=>{
+            {conDiferencia.sort((a,b)=>Math.abs(b.cantidad_contada-b.stock_sistema)-Math.abs(a.cantidad_contada-a.stock_sistema)).map(p=>{
               const diff=p.cantidad_contada-p.stock_sistema;
+              const pctDiff=p.stock_sistema>0?Math.round(diff/p.stock_sistema*100):0;
               return(
                 <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${diff<0?'#e63946':'#facc15'}`}}>
-                  <div style={{fontWeight:600,fontSize:13}}>{p.nombre}</div>
-                  <div style={{display:'flex',gap:12,fontSize:12,color:'#888',marginTop:4}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div style={{fontWeight:600,fontSize:13}}>{p.nombre}</div>
+                    <span style={{fontSize:12,color:'#555'}}>{p.categoria}</span>
+                  </div>
+                  <div style={{display:'flex',gap:12,fontSize:12,color:'#888',marginTop:6}}>
                     <span>Sistema: <b style={{color:'#ccc'}}>{p.stock_sistema}</b></span>
                     <span>Contado: <b style={{color:'#fff'}}>{p.cantidad_contada}</b></span>
-                    <span style={{color:diff<0?'#e63946':'#facc15',fontWeight:700}}>{diff>0?'+':''}{diff}</span>
+                    <span style={{color:diff<0?'#e63946':'#facc15',fontWeight:700}}>
+                      {diff>0?'+':''}{diff} ({pctDiff>0?'+':''}{pctDiff}%)
+                    </span>
                   </div>
                 </div>
               );
@@ -333,7 +430,15 @@ export default function InventarioFisico({user, onBack}){
           </>
         )}
 
-        <button className="btn btn-red" onClick={onBack} style={{width:'100%',marginTop:20,padding:16}}>
+        {conDiferencia.length===0&&(
+          <div className="card" style={{textAlign:'center',padding:30}}>
+            <div style={{fontSize:22,marginBottom:6}}>✅</div>
+            <div style={{fontWeight:700}}>Sin diferencias</div>
+            <div style={{color:'#888',fontSize:13}}>El inventario físico coincide con el sistema</div>
+          </div>
+        )}
+
+        <button className="btn btn-ghost" onClick={onBack} style={{width:'100%',marginTop:16,padding:14}}>
           ← Volver al menú
         </button>
       </div>
@@ -367,7 +472,7 @@ export default function InventarioFisico({user, onBack}){
           return(
             <div key={h.id} className="card" style={{cursor:esProgreso?'pointer':'default',
               borderLeft:`3px solid ${esProgreso?'#facc15':h.estado==='completado'?'#4ade80':'#555'}`}}
-              onClick={esProgreso?()=>cargarInventario(h.id, sucursalId):undefined}>
+              onClick={()=>cargarInventario(h.id, sucursalId)}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
                   <div style={{fontWeight:600,fontSize:14}}>
