@@ -36,7 +36,9 @@ function generarHTMLBoleta(det, planilla) {
   const descuentos  = n(det.total_descuentos);
   const neto        = n(det.neto_a_pagar);
   const propina     = n(det.propina_mensual);
-  const bono        = n(det.bono_delivery);
+  const viatico     = n(det.viatico_quincenal);
+  const bonoDelivery= n(det.bono_delivery);
+  const bonoExtra   = n(det.bono_extra);
   const hrsExtra    = n(det.monto_horas_extra);
   const isss        = n(det.descuento_isss);
   const afp         = n(det.descuento_afp);
@@ -109,8 +111,10 @@ function generarHTMLBoleta(det, planilla) {
   <table>
     ${row('Salario base quincenal', salarioBase)}
     ${row('Horas extra', hrsExtra, '#2d6a4f')}
+    ${row('Viático quincenal', viatico, '#2d6a4f')}
+    ${row('Bono delivery', bonoDelivery, '#2d6a4f')}
     ${row('Propinas', propina, '#2d6a4f')}
-    ${row('Bono delivery', bono, '#2d6a4f')}
+    ${row('Bono extra', bonoExtra, '#2d6a4f')}
     <tr style="font-weight:700;">
       <td style="padding:6px 0;font-size:13px;border-top:1px solid #eee;">Total devengado</td>
       <td style="text-align:right;font-family:monospace;font-size:13px;border-top:1px solid #eee;">${fmt$(devengado)}</td>
@@ -215,7 +219,9 @@ export default function RecibosDigitales({ user, onBack }) {
     setEditando(det);
     setEditForm({
       propina_mensual:     String(n(det.propina_mensual)),
+      viatico_quincenal:   String(n(det.viatico_quincenal)),
       bono_delivery:       String(n(det.bono_delivery)),
+      bono_extra:          String(n(det.bono_extra)),
       descuento_adelantos: String(n(det.descuento_adelantos)),
       descuento_otros:     String(n(det.descuento_otros)),
       descuento_prestamos: String(n(det.descuento_prestamos)),
@@ -227,21 +233,25 @@ export default function RecibosDigitales({ user, onBack }) {
     if (!editando) return;
     setGuardando(true);
     try {
-      const propina  = n(editForm.propina_mensual);
-      const bono     = n(editForm.bono_delivery);
-      const adelanto = n(editForm.descuento_adelantos);
-      const otros    = n(editForm.descuento_otros);
-      const prestamo = n(editForm.descuento_prestamos);
+      const propina   = n(editForm.propina_mensual);
+      const viatico   = n(editForm.viatico_quincenal);
+      const delivery  = n(editForm.bono_delivery);
+      const bonoExtra = n(editForm.bono_extra);
+      const adelanto  = n(editForm.descuento_adelantos);
+      const otros     = n(editForm.descuento_otros);
+      const prestamo  = n(editForm.descuento_prestamos);
 
-      // Recalcular totales
-      const devengado  = n(editando.salario_base_quincenal) + n(editando.monto_horas_extra) + propina + bono;
+      const devengado  = n(editando.salario_base_quincenal) + n(editando.monto_horas_extra)
+                       + propina + viatico + delivery + bonoExtra;
       const descuentos = n(editando.descuento_isss) + n(editando.descuento_afp) + n(editando.descuento_isr)
                        + adelanto + otros + prestamo + n(editando.descuento_faltas) + n(editando.descuento_tardanzas);
       const neto = devengado - descuentos;
 
       const { error } = await db.from('planilla_detalle').update({
         propina_mensual:     propina,
-        bono_delivery:       bono,
+        viatico_quincenal:   viatico,
+        bono_delivery:       delivery,
+        bono_extra:          bonoExtra,
         descuento_adelantos: adelanto,
         descuento_otros:     otros,
         descuento_prestamos: prestamo,
@@ -252,10 +262,10 @@ export default function RecibosDigitales({ user, onBack }) {
 
       if (error) throw error;
 
-      // Actualizar estado local
       setDetalles(prev => prev.map(d =>
         d.id === editando.id ? {
-          ...d, propina_mensual: propina, bono_delivery: bono,
+          ...d, propina_mensual: propina, viatico_quincenal: viatico,
+          bono_delivery: delivery, bono_extra: bonoExtra,
           descuento_adelantos: adelanto, descuento_otros: otros, descuento_prestamos: prestamo,
           total_devengado: devengado, total_descuentos: descuentos, neto_a_pagar: neto,
         } : d
@@ -285,7 +295,7 @@ export default function RecibosDigitales({ user, onBack }) {
         periodo:           selected.periodo,
         salario_base:      n(d.salario_base_quincenal),
         horas_extra:       n(d.monto_horas_extra),
-        bonificaciones:    n(d.bono_delivery),
+        bonificaciones:    n(d.viatico_quincenal) + n(d.bono_delivery) + n(d.bono_extra),
         propinas:          n(d.propina_mensual),
         isss:              n(d.descuento_isss),
         afp:               n(d.descuento_afp),
@@ -481,8 +491,10 @@ export default function RecibosDigitales({ user, onBack }) {
             </div>
 
             {[
-              { key: 'propina_mensual',     label: '🤑 Propinas',         color: c.green },
+              { key: 'viatico_quincenal',   label: '🚗 Viático',          color: c.green },
               { key: 'bono_delivery',       label: '🛵 Bono delivery',    color: c.green },
+              { key: 'propina_mensual',     label: '🤑 Propinas',         color: c.green },
+              { key: 'bono_extra',          label: '⭐ Bono extra',       color: c.green },
               { key: 'descuento_adelantos', label: '💸 Adelantos',        color: c.red },
               { key: 'descuento_prestamos', label: '🏦 Préstamos',        color: c.red },
               { key: 'descuento_otros',     label: '➖ Otros descuentos', color: c.red },
@@ -509,7 +521,8 @@ export default function RecibosDigitales({ user, onBack }) {
               <div style={{ fontSize: 18, fontWeight: 700, color: c.green, fontFamily: 'monospace' }}>
                 {fmt$(
                   n(editando.salario_base_quincenal) + n(editando.monto_horas_extra)
-                  + n(editForm.propina_mensual) + n(editForm.bono_delivery)
+                  + n(editForm.viatico_quincenal) + n(editForm.bono_delivery)
+                  + n(editForm.propina_mensual) + n(editForm.bono_extra)
                   - n(editando.descuento_isss) - n(editando.descuento_afp) - n(editando.descuento_isr)
                   - n(editForm.descuento_adelantos) - n(editForm.descuento_prestamos) - n(editForm.descuento_otros)
                   - n(editando.descuento_faltas) - n(editando.descuento_tardanzas)
