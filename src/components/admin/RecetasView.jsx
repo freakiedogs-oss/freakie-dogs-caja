@@ -4,7 +4,7 @@ import { n } from '../../config';
 
 // ── Usuarios con acceso de edición ──
 const EDIT_EMAILS = ['joseisart2008@gmail.com'];
-const EDIT_PINS = ['2000', '1000']; // Cesar Rodriguez, Jose Isart
+const EDIT_PINS = ['2000', '1000', '4844']; // Cesar Rodriguez, Jose Isart, Denny Stefany
 
 // ── RECETAS / BOM ──────────────────────────────────────────
 export default function RecetasView({ user }) {
@@ -19,6 +19,7 @@ export default function RecetasView({ user }) {
   const [editIngredients, setEditIngredients] = useState([]);
   const [editReceta, setEditReceta] = useState(null);
   const [showNewReceta, setShowNewReceta] = useState(false);
+  const [editRend, setEditRend] = useState(null); // { valor, unidad } for inline rendimiento edit
 
   const canEdit = EDIT_PINS.includes(user?.pin);
 
@@ -130,6 +131,17 @@ export default function RecetasView({ user }) {
     }
     setShowNewReceta(false);
     setEditReceta(null);
+    await cargar();
+  };
+
+  // ── Guardar rendimiento inline ──
+  const guardarRendimiento = async () => {
+    if (!sel || !editRend) return;
+    const rend = n(editRend.valor) || 1;
+    const unid = editRend.unidad || 'porcion';
+    await db.from('recetas').update({ rendimiento: rend, unidad_rendimiento: unid }).eq('id', sel.id);
+    setSel({ ...sel, rendimiento: rend, unidad_rendimiento: unid });
+    setEditRend(null);
     await cargar();
   };
 
@@ -277,7 +289,29 @@ export default function RecetasView({ user }) {
           <div>
             <h2 style={{ margin: 0, fontSize: 18, color: '#fff' }}>{sel.nombre}</h2>
             <div style={{ marginTop: 4 }}>{tipoBadge(sel.tipo)}</div>
-            <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{sel.categoria} · Rinde {n(sel.rendimiento)} {sel.unidad_rendimiento}</div>
+            {canEdit && editRend ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+                <span style={{ fontSize: 12, color: '#888' }}>Rinde:</span>
+                <input type="number" step="0.1" value={editRend.valor}
+                  onChange={e => setEditRend({ ...editRend, valor: e.target.value })}
+                  style={{ width: 60, padding: '3px 6px', borderRadius: 4, border: '1px solid #e63946', background: '#16213e', color: '#fff', fontSize: 12 }}
+                  autoFocus />
+                <input value={editRend.unidad}
+                  onChange={e => setEditRend({ ...editRend, unidad: e.target.value })}
+                  style={{ width: 70, padding: '3px 6px', borderRadius: 4, border: '1px solid #444', background: '#16213e', color: '#fff', fontSize: 12 }}
+                  placeholder="unidad" />
+                <button onClick={guardarRendimiento}
+                  style={{ background: '#4ade80', color: '#000', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>✓</button>
+                <button onClick={() => setEditRend(null)}
+                  style={{ background: '#444', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✕</button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: '#888', marginTop: 4, cursor: canEdit ? 'pointer' : 'default' }}
+                onClick={() => canEdit && setEditRend({ valor: n(sel.rendimiento) || 1, unidad: sel.unidad_rendimiento || 'porcion' })}>
+                {sel.categoria} · Rinde {n(sel.rendimiento)} {sel.unidad_rendimiento}
+                {canEdit && <span style={{ marginLeft: 4, fontSize: 10, color: '#e63946' }}>✏️</span>}
+              </div>
+            )}
             {sel.notas && <div style={{ fontSize: 12, color: '#666', marginTop: 4, fontStyle: 'italic' }}>{sel.notas}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
