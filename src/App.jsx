@@ -32,6 +32,7 @@ import VentasDashboard from './components/dashboard/VentasDashboard'
 import MiAsistencia from './components/empleado/MiAsistencia'
 import MiBoleta from './components/empleado/MiBoleta'
 import HorariosView from './components/rrhh/HorariosView'
+import Amonestaciones from './components/rrhh/Amonestaciones'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -160,6 +161,8 @@ export default function App() {
         return <RRHHView user={user} />
       case 'horarios':
         return <HorariosView user={user} />
+      case 'amonestaciones':
+        return <Amonestaciones user={user} onBack={() => setScreen('home')} />
       case 'produccion':
         return <ProduccionDiaria user={user} />
       case 'incidentes-cm':

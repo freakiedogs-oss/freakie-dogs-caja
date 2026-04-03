@@ -113,6 +113,7 @@ export const NAV_SECTIONS = [
       { key: 'horarios', label: 'Horarios', icon: '📅', roles: ['ejecutivo', 'rrhh', 'admin', 'gerente', 'cocina'] },
       { key: 'planilla', label: 'Nómina / Planilla', icon: '💵', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
       { key: 'recibos-digitales', label: 'Recibos Digitales', icon: '🧾', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
+      { key: 'amonestaciones', label: 'Amonestaciones', icon: '⚖️', roles: ['ejecutivo', 'rrhh', 'admin', 'gerente'] },
     ],
   },
   {
