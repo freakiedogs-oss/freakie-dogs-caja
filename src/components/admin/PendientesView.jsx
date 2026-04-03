@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../../supabaseClient'
+import { db } from '../../supabase'
 import { STORES, fmtDate } from '../../config'
 
 /* ── helpers ────────────────────────────────────────────────── */
@@ -107,7 +107,7 @@ export default function PendientesView({ user, onNavigate }) {
         rEntregas,
       ] = await Promise.all([
         // 1. Recepciones huérfanas (sin DTE)
-        supabase.rpc('get_recepciones_huerfanas').then(r => r.data || []).catch(() =>
+        db.rpc('get_recepciones_huerfanas').then(r => r.data || []).catch(() =>
           // Fallback: manual query if RPC doesn't exist
           supabase
             .from('recepciones')
