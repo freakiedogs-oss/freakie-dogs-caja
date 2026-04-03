@@ -89,7 +89,9 @@ export const NAV_SECTIONS = [
     label: 'Producción',
     items: [
       { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo'] },
-      { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'admin'] },
+      { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'] },
+      { key: 'incidentes-cm', label: 'Incidentes CM', icon: '🚨', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'] },
+      { key: 'devoluciones', label: 'Devoluciones', icon: '🔄', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'gerente', 'cocina', 'admin'] },
     ],
   },
   {
@@ -110,6 +112,7 @@ export const NAV_SECTIONS = [
       { key: 'rrhh', label: 'Recursos Humanos', icon: '👥', roles: ['ejecutivo', 'rrhh', 'admin'] },
       { key: 'horarios', label: 'Horarios', icon: '📅', roles: ['ejecutivo', 'rrhh', 'admin', 'gerente', 'cocina'] },
       { key: 'planilla', label: 'Nómina / Planilla', icon: '💵', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
+      { key: 'recibos-digitales', label: 'Recibos Digitales', icon: '🧾', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
     ],
   },
   {

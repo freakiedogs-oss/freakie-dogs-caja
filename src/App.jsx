@@ -20,10 +20,13 @@ import ComprasTab from './components/almacen/ComprasTab'
 import RecetasView from './components/admin/RecetasView'
 import PlanillaView from './components/admin/PlanillaView'
 import RRHHView from './components/admin/RRHHView'
+import RecibosDigitales from './components/rrhh/RecibosDigitales'
 import ProduccionDiaria from './components/admin/ProduccionDiaria'
 import ConciliacionView from './components/admin/ConciliacionView'
 import DeliveryView from './components/delivery/DeliveryView'
 import MarketingView from './components/marketing/MarketingView'
+import IncidentesProduccion from './components/produccion/IncidentesProduccion'
+import DevolucionesView from './components/produccion/DevolucionesView'
 import InventarioDashboard from './components/dashboard/InventarioDashboard'
 import VentasDashboard from './components/dashboard/VentasDashboard'
 import MiAsistencia from './components/empleado/MiAsistencia'
@@ -151,12 +154,18 @@ export default function App() {
         return <RecetasView user={user} />
       case 'planilla':
         return <PlanillaView user={user} />
+      case 'recibos-digitales':
+        return <RecibosDigitales user={user} onBack={() => setScreen('home')} />
       case 'rrhh':
         return <RRHHView user={user} />
       case 'horarios':
         return <HorariosView user={user} />
       case 'produccion':
         return <ProduccionDiaria user={user} />
+      case 'incidentes-cm':
+        return <IncidentesProduccion user={user} />
+      case 'devoluciones':
+        return <DevolucionesView user={user} />
       case 'conciliacion':
         return <ConciliacionView user={user} />
       case 'delivery':
