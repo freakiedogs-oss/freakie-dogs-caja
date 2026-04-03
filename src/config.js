@@ -38,6 +38,7 @@ export const NAV_SECTIONS = [
     label: 'Principal',
     items: [
       { key: 'home', label: 'Inicio', icon: '🏠', roles: ['*'] },
+      { key: 'pendientes', label: 'Mis Pendientes', icon: '📋', roles: ['ejecutivo', 'admin'] },
       { key: 'mi-asistencia', label: 'Mi Asistencia', icon: '📍', roles: ['*'] },
       { key: 'mi-boleta', label: 'Mi Boleta', icon: '🧾', roles: ['*'] },
     ],

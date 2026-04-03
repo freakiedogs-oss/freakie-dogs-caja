@@ -33,6 +33,7 @@ import MiAsistencia from './components/empleado/MiAsistencia'
 import MiBoleta from './components/empleado/MiBoleta'
 import HorariosView from './components/rrhh/HorariosView'
 import Amonestaciones from './components/rrhh/Amonestaciones'
+import PendientesView from './components/admin/PendientesView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -92,6 +93,8 @@ export default function App() {
     switch (screen) {
       case 'home':
         return <HomeScreen user={user} />
+      case 'pendientes':
+        return <PendientesView user={user} onNavigate={handleNavigate} />
       case 'mi-asistencia':
         return <MiAsistencia user={user} />
       case 'mi-boleta':
