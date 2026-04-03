@@ -11,12 +11,14 @@ const c = {
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const DIAS_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
-const TURNOS = {
-  mañana:   { label: 'Mañana',   color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  tarde:    { label: 'Tarde',    color: '#60a5fa', bg: 'rgba(96,165,250,0.15)' },
-  noche:    { label: 'Noche',    color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' },
-  completo: { label: 'Completo', color: '#4ade80', bg: 'rgba(74,222,128,0.15)' },
-  descanso: { label: 'Descanso', color: '#6b7280', bg: 'rgba(107,114,128,0.15)' },
+// Etiquetas de bloque con colores y horas default
+const ETIQUETAS = {
+  'Mañana':  { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  icon: '🌅', inicio: '06:00', fin: '12:00' },
+  'Tarde':   { color: '#60a5fa', bg: 'rgba(96,165,250,0.15)',  icon: '☀️',  inicio: '12:00', fin: '18:00' },
+  'Noche':   { color: '#a78bfa', bg: 'rgba(167,139,250,0.15)', icon: '🌙', inicio: '18:00', fin: '22:00' },
+  'Almuerzo':{ color: '#6b7280', bg: 'rgba(107,114,128,0.15)', icon: '☕', inicio: '',      fin: ''      },
+  'Extra':   { color: '#4ade80', bg: 'rgba(74,222,128,0.15)',  icon: '⭐', inicio: '',      fin: ''      },
+  'Descanso':{ color: '#6b7280', bg: 'rgba(107,114,128,0.10)', icon: '😴', inicio: '',      fin: ''      },
 };
 
 const ROLES_ADMIN = ['rrhh', 'ejecutivo', 'admin'];
@@ -48,10 +50,25 @@ const inputStyle = {
   fontFamily: 'inherit', boxSizing: 'border-box', width: '100%',
 };
 
+// Obtener tramos de un registro (compatible con legacy)
+function getTramos(h) {
+  if (!h) return [];
+  if (h.tramos && Array.isArray(h.tramos) && h.tramos.length > 0) return h.tramos;
+  // fallback legacy
+  if (h.hora_inicio) return [{ orden: 1, hora_inicio: h.hora_inicio.slice(0,5), hora_fin: h.hora_fin?.slice(0,5) || '', etiqueta: h.turno || '' }];
+  return [];
+}
+
+// Resumen de tramos para modal
+function resumenTramos(h) {
+  const tramos = getTramos(h);
+  if (!tramos.length) return '—';
+  return tramos.map(t => `${t.etiqueta ? t.etiqueta + ' ' : ''}${t.hora_inicio}–${t.hora_fin}`).join(', ');
+}
+
 // Modal: permanente o solo esta semana?
 function ModalTipoCambio({ empleado, dia, horarioActual, semana, onElegir, onCerrar }) {
   const h = horarioActual;
-  const fuenteLabel = h ? (h._fuente === 'override' ? '⚡ override esta semana' : '🔒 plantilla permanente') : null;
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
       <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, padding: 20, maxWidth: 320, width: '100%' }}>
@@ -61,7 +78,7 @@ function ModalTipoCambio({ empleado, dia, horarioActual, semana, onElegir, onCer
         <div style={{ fontSize: 13, color: c.textDim, marginBottom: h ? 4 : 14 }}>{DIAS_FULL[dia]}</div>
         {h && (
           <div style={{ fontSize: 11, color: c.textOff, marginBottom: 14, padding: '4px 8px', background: '#222', borderRadius: 6 }}>
-            Actual: {TURNOS[h.turno]?.label || h.turno} · {fuenteLabel}
+            Actual: {resumenTramos(h)} · {h._fuente === 'override' ? '⚡ esta semana' : '🔒 permanente'}
           </div>
         )}
         <div style={{ fontSize: 13, color: c.textDim, marginBottom: 12 }}>
@@ -95,8 +112,8 @@ export default function HorariosView({ user }) {
   const [horarios, setHorarios] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
-  const [editCell, setEditCell] = useState(null); // { usuario_id, dia } — esperando elegir modo
-  const [editMode, setEditMode] = useState(null); // { usuario_id, dia, esPermanente } — modo elegido
+  const [editCell, setEditCell] = useState(null);
+  const [editMode, setEditMode] = useState(null);
   const [toast, setToast] = useState(null);
 
   const esAdmin = ROLES_ADMIN.includes(user?.rol);
@@ -151,18 +168,28 @@ export default function HorariosView({ user }) {
     setSaving(key);
     try {
       if (data === null) {
+        // Eliminar
         const existing = horarios[key];
         if (existing?.id) await db.from('horarios_empleados').delete().eq('id', existing.id);
         setHorarios(prev => { const n = { ...prev }; delete n[key]; return n; });
         showToast('Horario eliminado');
       } else {
+        // Construir payload con tramos + compat legacy
+        const tramos = data.tramos || [];
+        const primerTramo = tramos[0];
+        const ultimoTramo = tramos[tramos.length - 1];
         const payload = {
           usuario_id, sucursal: sucursalSel,
           semana_inicio: esPermanente ? null : semana,
           dia_semana: dia, es_plantilla: esPermanente,
-          creado_por: user.id, ...data,
+          creado_por: user.id,
+          tramos,
+          notas: data.notas || null,
+          // compat legacy: primer entrada, última salida
+          hora_inicio: primerTramo?.hora_inicio || null,
+          hora_fin: ultimoTramo?.hora_fin || null,
+          turno: primerTramo?.etiqueta || null,
         };
-        // Buscar si ya existe el registro concreto (plantilla o override)
         const existente = Object.values(horarios).find(h =>
           h.usuario_id === usuario_id && h.dia_semana === dia &&
           h._fuente === (esPermanente ? 'plantilla' : 'override')
@@ -185,7 +212,13 @@ export default function HorariosView({ user }) {
     const semanaAnterior = addDays(semana, -7);
     const { data } = await db.from('horarios_empleados').select('*').eq('sucursal', sucursalSel).eq('semana_inicio', semanaAnterior);
     if (!data?.length) { showToast('La semana anterior no tiene horarios', false); return; }
-    const inserts = data.map(h => ({ usuario_id: h.usuario_id, sucursal: h.sucursal, semana_inicio: semana, dia_semana: h.dia_semana, hora_inicio: h.hora_inicio, hora_fin: h.hora_fin, turno: h.turno, notas: h.notas, es_plantilla: false, creado_por: user.id }));
+    const inserts = data.map(h => ({
+      usuario_id: h.usuario_id, sucursal: h.sucursal,
+      semana_inicio: semana, dia_semana: h.dia_semana,
+      tramos: h.tramos, notas: h.notas,
+      hora_inicio: h.hora_inicio, hora_fin: h.hora_fin, turno: h.turno,
+      es_plantilla: false, creado_por: user.id,
+    }));
     await db.from('horarios_empleados').upsert(inserts, { onConflict: 'usuario_id,sucursal,dia_semana,semana_inicio' });
     await loadHorarios();
     showToast(`${inserts.length} turnos copiados`);
@@ -198,7 +231,7 @@ export default function HorariosView({ user }) {
     <div style={{ padding: '16px 12px' }}>
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: c.text }}>📅 Horarios</div>
-        <div style={{ fontSize: 12, color: c.textDim, marginTop: 2 }}>🔒 permanente · ⚡ override semanal</div>
+        <div style={{ fontSize: 12, color: c.textDim, marginTop: 2 }}>🔒 permanente · ⚡ override semanal · múltiples bloques por día</div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -220,14 +253,6 @@ export default function HorariosView({ user }) {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {Object.entries(TURNOS).map(([k, v]) => (
-          <span key={k} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: v.bg, color: v.color, fontWeight: 600 }}>{v.label}</span>
-        ))}
-        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(96,165,250,0.1)', color: c.blue, fontWeight: 600 }}>🔒 Permanente</span>
-        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(249,115,22,0.1)', color: c.orange, fontWeight: 600 }}>⚡ Esta semana</span>
-      </div>
-
       {loading ? (
         <div style={{ textAlign: 'center', color: c.textDim, padding: 40 }}>Cargando...</div>
       ) : empleados.length === 0 ? (
@@ -242,7 +267,7 @@ export default function HorariosView({ user }) {
                   const fechaDia = addDays(semana, i);
                   const esHoy = fechaDia === new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('T')[0];
                   return (
-                    <th key={i} style={{ padding: '6px 8px', textAlign: 'center', fontSize: 12, color: esHoy ? c.red : c.textDim, fontWeight: 700, borderBottom: `2px solid ${c.border}`, minWidth: 90, background: c.bg }}>
+                    <th key={i} style={{ padding: '6px 8px', textAlign: 'center', fontSize: 12, color: esHoy ? c.red : c.textDim, fontWeight: 700, borderBottom: `2px solid ${c.border}`, minWidth: 100, background: c.bg }}>
                       <div>{d}</div>
                       <div style={{ fontSize: 10, fontWeight: 400, color: c.textOff }}>{new Date(fechaDia + 'T12:00:00').toLocaleDateString('es-SV', { day: '2-digit', month: 'short' })}</div>
                     </th>
@@ -253,7 +278,7 @@ export default function HorariosView({ user }) {
             <tbody>
               {empleados.map((emp, ei) => (
                 <tr key={emp.id} style={{ background: ei % 2 === 0 ? c.bg : '#141414' }}>
-                  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${c.border}`, position: 'sticky', left: 0, zIndex: 1, background: ei % 2 === 0 ? c.bg : '#141414' }}>
+                  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${c.border}`, position: 'sticky', left: 0, zIndex: 1, background: ei % 2 === 0 ? c.bg : '#141414', verticalAlign: 'top' }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>{emp.nombre} {emp.apellido}</div>
                     <div style={{ fontSize: 11, color: c.textOff }}>{emp.rol}</div>
                   </td>
@@ -262,7 +287,7 @@ export default function HorariosView({ user }) {
                     const h = horarios[key];
                     const isSaving = saving === key;
                     const isEditing = editMode?.usuario_id === emp.id && editMode?.dia === di;
-                    const turnoInfo = h?.turno ? TURNOS[h.turno] : null;
+                    const tramos = getTramos(h);
                     return (
                       <td key={di} style={{ padding: 4, borderBottom: `1px solid ${c.border}`, verticalAlign: 'top' }}>
                         {isEditing ? (
@@ -272,20 +297,42 @@ export default function HorariosView({ user }) {
                             onCancel={() => { setEditCell(null); setEditMode(null); }}
                           />
                         ) : (
-                          <div onClick={() => handleClickCelda(emp.id, di)}
+                          <div
+                            onClick={() => handleClickCelda(emp.id, di)}
                             style={{
-                              minHeight: 52, borderRadius: 6, padding: '4px 6px',
+                              minHeight: 52, borderRadius: 6, padding: '4px 5px',
                               cursor: canEdit(user) ? 'pointer' : 'default',
-                              background: turnoInfo ? turnoInfo.bg : 'transparent',
-                              border: `1px solid ${h?._fuente === 'override' ? c.orange + '88' : h?._fuente === 'plantilla' ? c.blue + '55' : (turnoInfo ? turnoInfo.color + '44' : c.border)}`,
+                              border: `1px solid ${h?._fuente === 'override' ? c.orange + '88' : h?._fuente === 'plantilla' ? c.blue + '55' : c.border}`,
                               opacity: isSaving ? 0.5 : 1,
                             }}>
-                            {h ? (
+                            {tramos.length > 0 ? (
                               <>
-                                {turnoInfo && <div style={{ fontSize: 11, fontWeight: 700, color: turnoInfo.color }}>{turnoInfo.label}</div>}
-                                {h.hora_inicio && <div style={{ fontSize: 11, color: c.textDim }}>{h.hora_inicio?.slice(0,5)} – {h.hora_fin?.slice(0,5)}</div>}
-                                {h.notas && <div style={{ fontSize: 10, color: c.textOff, marginTop: 2 }}>{h.notas}</div>}
-                                <div style={{ fontSize: 9, color: h._fuente === 'override' ? c.orange : c.blue, marginTop: 2 }}>{h._fuente === 'override' ? '⚡' : '🔒'}</div>
+                                {tramos.map((t, ti) => {
+                                  const info = ETIQUETAS[t.etiqueta];
+                                  const esDescanso = t.etiqueta === 'Descanso';
+                                  return (
+                                    <div key={ti} style={{
+                                      marginBottom: ti < tramos.length - 1 ? 3 : 0,
+                                      background: info?.bg || 'rgba(255,255,255,0.04)',
+                                      borderRadius: 4, padding: '2px 4px',
+                                    }}>
+                                      {t.etiqueta && (
+                                        <div style={{ fontSize: 9, fontWeight: 700, color: info?.color || c.textDim, lineHeight: 1.3 }}>
+                                          {info?.icon || ''} {t.etiqueta}
+                                        </div>
+                                      )}
+                                      {!esDescanso && t.hora_inicio && (
+                                        <div style={{ fontSize: 10, color: c.textDim, lineHeight: 1.3 }}>
+                                          {t.hora_inicio} – {t.hora_fin}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                                {h?.notas && <div style={{ fontSize: 9, color: c.textOff, marginTop: 2, fontStyle: 'italic' }}>{h.notas}</div>}
+                                <div style={{ fontSize: 8, color: h._fuente === 'override' ? c.orange : c.blue, marginTop: 2 }}>
+                                  {h._fuente === 'override' ? '⚡' : '🔒'}
+                                </div>
                               </>
                             ) : canEdit(user) ? (
                               <div style={{ fontSize: 18, color: c.textOff, textAlign: 'center', marginTop: 8 }}>+</div>
@@ -320,40 +367,125 @@ export default function HorariosView({ user }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// Editor de celda con múltiples bloques horarios
+// ─────────────────────────────────────────────
 function CeldaEditor({ initial, onSave, onCancel }) {
-  const [turno, setTurno] = useState(initial?.turno || '');
-  const [horaInicio, setHoraInicio] = useState(initial?.hora_inicio?.slice(0, 5) || '');
-  const [horaFin, setHoraFin] = useState(initial?.hora_fin?.slice(0, 5) || '');
+  const initTramos = () => {
+    const t = getTramos(initial);
+    if (t.length) return t.map(tr => ({ ...tr }));
+    return [{ orden: 1, hora_inicio: '', hora_fin: '', etiqueta: '' }];
+  };
+
+  const [tramos, setTramos] = useState(initTramos);
   const [notas, setNotas] = useState(initial?.notas || '');
 
-  const handleTurno = (t) => {
-    setTurno(t);
-    if (t === 'mañana'   && !horaInicio) { setHoraInicio('06:00'); setHoraFin('14:00'); }
-    if (t === 'tarde'    && !horaInicio) { setHoraInicio('14:00'); setHoraFin('22:00'); }
-    if (t === 'noche'    && !horaInicio) { setHoraInicio('22:00'); setHoraFin('06:00'); }
-    if (t === 'completo' && !horaInicio) { setHoraInicio('08:00'); setHoraFin('18:00'); }
-    if (t === 'descanso') { setHoraInicio(''); setHoraFin(''); }
+  const addTramo = () => {
+    setTramos(prev => [...prev, { orden: prev.length + 1, hora_inicio: '', hora_fin: '', etiqueta: '' }]);
+  };
+
+  const removeTramo = (idx) => {
+    if (tramos.length === 1) return; // mínimo 1
+    setTramos(prev => prev.filter((_, i) => i !== idx).map((t, i) => ({ ...t, orden: i + 1 })));
+  };
+
+  const updateTramo = (idx, field, val) => {
+    setTramos(prev => prev.map((t, i) => i === idx ? { ...t, [field]: val } : t));
+  };
+
+  const aplicarEtiqueta = (idx, etiqueta) => {
+    const info = ETIQUETAS[etiqueta];
+    setTramos(prev => prev.map((t, i) => {
+      if (i !== idx) return t;
+      return {
+        ...t, etiqueta,
+        hora_inicio: t.hora_inicio || info?.inicio || '',
+        hora_fin: t.hora_fin || info?.fin || '',
+      };
+    }));
+  };
+
+  const handleSave = () => {
+    const valid = tramos.filter(t => t.hora_inicio && t.hora_fin || t.etiqueta === 'Descanso');
+    if (!valid.length) { onSave(null); return; }
+    onSave({ tramos: valid.map((t, i) => ({ ...t, orden: i + 1 })), notas: notas || null });
   };
 
   const small = { ...inputStyle, padding: '5px 7px', fontSize: 12 };
+
   return (
-    <div style={{ background: c.card, border: `1px solid ${c.red}`, borderRadius: 8, padding: 8, minWidth: 130 }} onClick={e => e.stopPropagation()}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 6 }}>
-        {Object.entries(TURNOS).map(([k, v]) => (
-          <button key={k} onClick={() => handleTurno(k)} style={{ padding: '2px 7px', borderRadius: 20, fontSize: 10, fontWeight: 700, border: 'none', cursor: 'pointer', background: turno === k ? v.bg : c.input, color: turno === k ? v.color : c.textDim }}>{v.label}</button>
-        ))}
-      </div>
-      {turno !== 'descanso' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
-          <div><div style={{ fontSize: 10, color: c.textDim, marginBottom: 2 }}>Entrada</div><input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)} style={small} /></div>
-          <div><div style={{ fontSize: 10, color: c.textDim, marginBottom: 2 }}>Salida</div><input type="time" value={horaFin} onChange={e => setHoraFin(e.target.value)} style={small} /></div>
-        </div>
-      )}
+    <div
+      style={{ background: c.card, border: `1px solid ${c.red}`, borderRadius: 8, padding: 8, minWidth: 200, maxWidth: 280 }}
+      onClick={e => e.stopPropagation()}
+    >
+      {/* Lista de tramos */}
+      {tramos.map((t, idx) => {
+        const info = ETIQUETAS[t.etiqueta];
+        const esDescanso = t.etiqueta === 'Descanso';
+        return (
+          <div key={idx} style={{ marginBottom: 8, background: info?.bg || 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '6px 8px', border: `1px solid ${info?.color ? info.color + '44' : c.border}` }}>
+            {/* Header del tramo */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+              <div style={{ fontSize: 10, color: info?.color || c.textDim, fontWeight: 700 }}>
+                {info?.icon || '⏱'} Bloque {idx + 1}
+              </div>
+              {tramos.length > 1 && (
+                <button onClick={() => removeTramo(idx)} style={{ background: 'none', border: 'none', color: c.red, cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}>✕</button>
+              )}
+            </div>
+
+            {/* Chips de etiqueta */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 5 }}>
+              {Object.entries(ETIQUETAS).map(([k, v]) => (
+                <button key={k} onClick={() => aplicarEtiqueta(idx, k)}
+                  style={{ padding: '1px 6px', borderRadius: 12, fontSize: 9, fontWeight: 700, border: 'none', cursor: 'pointer', background: t.etiqueta === k ? v.bg : c.input, color: t.etiqueta === k ? v.color : c.textOff }}>
+                  {v.icon} {k}
+                </button>
+              ))}
+            </div>
+
+            {/* Horas (solo si no es Descanso) */}
+            {!esDescanso && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                <div>
+                  <div style={{ fontSize: 9, color: c.textDim, marginBottom: 2 }}>Entrada</div>
+                  <input type="time" value={t.hora_inicio} onChange={e => updateTramo(idx, 'hora_inicio', e.target.value)} style={small} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: c.textDim, marginBottom: 2 }}>Salida</div>
+                  <input type="time" value={t.hora_fin} onChange={e => updateTramo(idx, 'hora_fin', e.target.value)} style={small} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Agregar bloque */}
+      <button onClick={addTramo}
+        style={{ width: '100%', padding: '4px 0', borderRadius: 6, background: 'rgba(96,165,250,0.08)', color: c.blue, border: `1px dashed ${c.blue + '66'}`, cursor: 'pointer', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+        + Agregar bloque
+      </button>
+
+      {/* Notas */}
       <input value={notas} onChange={e => setNotas(e.target.value)} placeholder="Nota (opcional)" style={{ ...small, marginBottom: 6 }} />
+
+      {/* Acciones */}
       <div style={{ display: 'flex', gap: 4 }}>
-        <button onClick={() => onSave({ turno: turno || null, hora_inicio: horaInicio || null, hora_fin: horaFin || null, notas: notas || null })} style={{ flex: 1, padding: '5px 0', borderRadius: 6, background: c.greenDark, color: c.green, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>✓ Guardar</button>
-        {initial?.id && <button onClick={() => onSave(null)} style={{ padding: '5px 8px', borderRadius: 6, background: 'rgba(230,57,70,0.15)', color: c.red, border: 'none', cursor: 'pointer', fontSize: 11 }}>🗑</button>}
-        <button onClick={onCancel} style={{ padding: '5px 8px', borderRadius: 6, background: c.input, color: c.textDim, border: `1px solid ${c.border}`, cursor: 'pointer', fontSize: 11 }}>✕</button>
+        <button onClick={handleSave}
+          style={{ flex: 1, padding: '5px 0', borderRadius: 6, background: c.greenDark, color: c.green, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+          ✓ Guardar
+        </button>
+        {initial?.id && (
+          <button onClick={() => onSave(null)}
+            style={{ padding: '5px 8px', borderRadius: 6, background: 'rgba(230,57,70,0.15)', color: c.red, border: 'none', cursor: 'pointer', fontSize: 11 }}>
+            🗑
+          </button>
+        )}
+        <button onClick={onCancel}
+          style={{ padding: '5px 8px', borderRadius: 6, background: c.input, color: c.textDim, border: `1px solid ${c.border}`, cursor: 'pointer', fontSize: 11 }}>
+          ✕
+        </button>
       </div>
     </div>
   );
