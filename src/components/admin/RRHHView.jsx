@@ -31,9 +31,20 @@ const colors = {
   textDim: '#888',
 };
 
+// ── Roles que NO se pueden editar ──
+const ROLES_PROTEGIDOS = ['ejecutivo', 'admin'];
+
+// ── Roles disponibles para asignar (excluye protegidos) ──
+const ROLES_EDITABLES = [
+  'gerente', 'cajero', 'cajera', 'cocina', 'mesero', 'mesera',
+  'motorista', 'motorista_interno', 'despachador', 'domicilios',
+  'bodeguero', 'jefe_casa_matriz', 'compras', 'produccion',
+  'contador', 'marketing', 'rrhh', 'tablet',
+];
+
 // ── MAIN COMPONENT ──
 export default function RRHHView({ user }) {
-  const [tab, setTab] = useState('empleados'); // empleados, asistencia-digital, asistencia, descuentos
+  const [tab, setTab] = useState('empleados'); // empleados, asistencia-digital, asistencia, descuentos, usuarios-pin
   const [sucursales, setSucursales] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -67,6 +78,7 @@ export default function RRHHView({ user }) {
           { id: 'asistencia-digital', label: '📍 GPS Asistencia' },
           { id: 'asistencia', label: '📋 Asistencia Manual' },
           { id: 'descuentos', label: '💰 Descuentos' },
+          ...(canEdit ? [{ id: 'usuarios-pin', label: '🔑 Usuarios PIN' }] : []),
         ].map((t) => (
           <button
             key={t.id}
@@ -95,6 +107,7 @@ export default function RRHHView({ user }) {
         {tab === 'asistencia-digital' && <AsistenciaDigital sucursales={sucursales} user={user} />}
         {tab === 'asistencia' && <TabAsistencia sucursales={sucursales} />}
         {tab === 'descuentos' && <TabDescuentos canEdit={canEdit} />}
+        {tab === 'usuarios-pin' && <TabUsuariosPIN canEdit={canEdit} sucursales={sucursales} />}
       </div>
     </div>
   );
@@ -1181,6 +1194,187 @@ function CheckboxField({ label, checked, onChange }) {
       />
       <span style={{ fontSize: 13, color: colors.text }}>{label}</span>
     </label>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB 5: USUARIOS PIN (usuarios_erp)
+// ═══════════════════════════════════════════════════════════════
+function TabUsuariosPIN({ canEdit, sucursales }) {
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filtroSucursal, setFiltroSucursal] = useState('');
+  const [filtroRol, setFiltroRol] = useState('');
+  const [editando, setEditando] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (text, ok = true) => {
+    setToast({ text, ok });
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    const { data } = await db.from('usuarios_erp')
+      .select('id, nombre, apellido, pin, rol, store_code, activo')
+      .order('nombre');
+    setUsuarios(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const filtrados = usuarios.filter(u => {
+    if (filtroSucursal && u.store_code !== filtroSucursal) return false;
+    if (filtroRol && u.rol !== filtroRol) return false;
+    return true;
+  });
+
+  const rolesUnicos = [...new Set(usuarios.map(u => u.rol).filter(Boolean))].sort();
+
+  const guardar = async () => {
+    if (!editando.store_code || !editando.rol) {
+      showToast('Sucursal y rol son requeridos', false); return;
+    }
+    setSaving(true);
+    try {
+      await db.from('usuarios_erp').update({
+        store_code: editando.store_code,
+        rol: editando.rol,
+        nombre: editando.nombre,
+        apellido: editando.apellido,
+      }).eq('id', editando.id);
+      showToast('✓ Usuario actualizado');
+      setEditando(null);
+      await cargar();
+    } catch (e) { showToast(e.message, false); }
+    setSaving(false);
+  };
+
+  const inputSm = {
+    padding: '6px 8px', borderRadius: 6, border: `1px solid ${colors.border}`,
+    background: colors.bg, color: colors.text, fontSize: 12,
+    fontFamily: 'inherit', boxSizing: 'border-box', width: '100%',
+  };
+
+  if (loading) return <div style={{ color: colors.textDim }}>Cargando usuarios...</div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <select value={filtroSucursal} onChange={e => setFiltroSucursal(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: 6, border: `1px solid ${colors.border}`, background: colors.bgCard, color: colors.text, fontSize: 13 }}>
+          <option value="">Todas las sucursales</option>
+          {sucursales.map(s => <option key={s.store_code} value={s.store_code}>{s.nombre}</option>)}
+        </select>
+        <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: 6, border: `1px solid ${colors.border}`, background: colors.bgCard, color: colors.text, fontSize: 13 }}>
+          <option value="">Todos los roles</option>
+          {rolesUnicos.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+
+      <div style={{ fontSize: 11, color: colors.textDim, marginBottom: 12, padding: '6px 10px', background: 'rgba(230,57,70,0.08)', borderRadius: 6, border: '1px solid rgba(230,57,70,0.2)' }}>
+        🔒 Los usuarios con rol <strong>ejecutivo</strong> y <strong>admin</strong> no se pueden editar desde aquí.
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+          <thead>
+            <tr style={{ borderBottom: `2px solid ${colors.border}` }}>
+              <th style={thStyle}>Nombre</th>
+              <th style={thStyle}>PIN</th>
+              <th style={thStyle}>Rol</th>
+              <th style={thStyle}>Sucursal</th>
+              {canEdit && <th style={thStyle}>Acciones</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filtrados.map(u => {
+              const esProtegido = ROLES_PROTEGIDOS.includes(u.rol);
+              const isEditing = editando?.id === u.id;
+              return (
+                <tr key={u.id} style={{ borderBottom: `1px solid ${colors.border}`, opacity: u.activo ? 1 : 0.5 }}>
+                  <td style={tdStyle}>
+                    {isEditing ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input value={editando.nombre} onChange={e => setEditando({ ...editando, nombre: e.target.value })} style={inputSm} placeholder="Nombre" />
+                        <input value={editando.apellido} onChange={e => setEditando({ ...editando, apellido: e.target.value })} style={inputSm} placeholder="Apellido" />
+                      </div>
+                    ) : (
+                      <span style={{ fontWeight: 600 }}>{u.nombre} {u.apellido}</span>
+                    )}
+                  </td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', color: colors.yellow }}>{u.pin}</td>
+                  <td style={tdStyle}>
+                    {isEditing ? (
+                      <select value={editando.rol} onChange={e => setEditando({ ...editando, rol: e.target.value })} style={inputSm}>
+                        {ROLES_EDITABLES.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    ) : (
+                      <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                        background: esProtegido ? 'rgba(230,57,70,0.15)' : 'rgba(96,165,250,0.15)',
+                        color: esProtegido ? colors.red : colors.blue }}>
+                        {esProtegido ? '🔒 ' : ''}{u.rol}
+                      </span>
+                    )}
+                  </td>
+                  <td style={tdStyle}>
+                    {isEditing ? (
+                      <select value={editando.store_code} onChange={e => setEditando({ ...editando, store_code: e.target.value })} style={inputSm}>
+                        <option value="">— Seleccionar —</option>
+                        {sucursales.map(s => <option key={s.store_code} value={s.store_code}>{s.nombre}</option>)}
+                      </select>
+                    ) : (
+                      <span style={{ color: colors.textDim, fontSize: 12 }}>
+                        {sucursales.find(s => s.store_code === u.store_code)?.nombre || u.store_code || '—'}
+                      </span>
+                    )}
+                  </td>
+                  {canEdit && (
+                    <td style={tdStyle}>
+                      {esProtegido ? (
+                        <span style={{ fontSize: 11, color: colors.textDim }}>—</span>
+                      ) : isEditing ? (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={guardar} disabled={saving}
+                            style={{ padding: '4px 10px', borderRadius: 6, background: colors.green, color: '#000', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                            {saving ? '...' : '✓ Guardar'}
+                          </button>
+                          <button onClick={() => setEditando(null)}
+                            style={{ padding: '4px 8px', borderRadius: 6, background: colors.bgCard, color: colors.textDim, border: `1px solid ${colors.border}`, cursor: 'pointer', fontSize: 11 }}>
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setEditando({ ...u })}
+                          style={{ background: 'none', border: 'none', color: colors.yellow, cursor: 'pointer', fontSize: 14 }}>
+                          ✏️
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {filtrados.length === 0 && (
+        <div style={{ textAlign: 'center', color: colors.textDim, padding: 20 }}>Sin resultados</div>
+      )}
+
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600, zIndex: 1000,
+          background: toast.ok ? 'rgba(74,222,128,0.15)' : 'rgba(230,57,70,0.15)',
+          color: toast.ok ? colors.green : colors.red,
+          border: `1px solid ${toast.ok ? colors.green : colors.red}` }}>
+          {toast.text}
+        </div>
+      )}
+    </div>
   );
 }
 
