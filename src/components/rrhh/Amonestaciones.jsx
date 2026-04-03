@@ -286,6 +286,17 @@ export default function Amonestaciones({ user, onBack }) {
     finally { setGuardando(false); }
   };
 
+  // ── Borrar incidente ──
+  const borrarIncidente = async (e, incId) => {
+    e.stopPropagation();
+    if (!window.confirm('¿Eliminar este incidente? Esta acción no se puede deshacer.')) return;
+    const { error } = await db.from('incidentes_disciplinarios').delete().eq('id', incId);
+    if (error) { show('Error: ' + error.message); return; }
+    setIncidentes(prev => prev.filter(i => i.id !== incId));
+    if (empHistorial) setEmpHistorial(prev => ({ ...prev, incidentes: prev.incidentes.filter(i => i.id !== incId) }));
+    show('🗑️ Incidente eliminado');
+  };
+
   // ── Preparar modal de amonestación ──
   const abrirModalAmon = async (incidente) => {
     // Calcular nivel sugerido
@@ -436,6 +447,11 @@ export default function Amonestaciones({ user, onBack }) {
                         style={{ background: c.red, color: '#fff', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: 10 }}
                       >Amonestar</button>
                     )}
+                    <button
+                      onClick={e => borrarIncidente(e, inc.id)}
+                      style={{ background: 'transparent', color: c.textOff, border: `1px solid ${c.border}`, borderRadius: 8, padding: '4px 9px', fontSize: 13, cursor: 'pointer', marginLeft: 6 }}
+                      title="Eliminar incidente"
+                    >🗑️</button>
                   </div>
                   {amons.length > 0 && (
                     <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -554,6 +570,11 @@ export default function Amonestaciones({ user, onBack }) {
                       style={{ background: c.red, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
                     >Amonestar</button>
                   )}
+                  <button
+                    onClick={e => borrarIncidente(e, inc.id)}
+                    style={{ background: 'transparent', color: c.textOff, border: `1px solid ${c.border}`, borderRadius: 6, padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}
+                    title="Eliminar incidente"
+                  >🗑️</button>
                 </div>
               </div>
             </div>
