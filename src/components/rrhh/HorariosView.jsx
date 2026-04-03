@@ -22,7 +22,7 @@ const ETIQUETAS = {
 };
 
 const ROLES_ADMIN = ['rrhh', 'ejecutivo', 'admin'];
-const canEdit = (user) => [...ROLES_ADMIN, 'gerente', 'cocina'].includes(user?.rol);
+const canEdit = (user) => [...ROLES_ADMIN, 'gerente', 'cocina', 'jefe_casa_matriz'].includes(user?.rol);
 
 function getLunes(date) {
   const d = new Date(date);
