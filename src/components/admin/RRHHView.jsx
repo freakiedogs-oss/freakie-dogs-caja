@@ -39,7 +39,7 @@ const ROLES_EDITABLES = [
   'gerente', 'cajero', 'cajera', 'cocina', 'mesero', 'mesera',
   'motorista', 'motorista_interno', 'despachador', 'domicilios',
   'bodeguero', 'jefe_casa_matriz', 'compras', 'produccion',
-  'contador', 'marketing', 'rrhh', 'tablet',
+  'contador', 'marketing', 'rrhh', 'tablet', 'telefono', 'empleado',
 ];
 
 // ── MAIN COMPONENT ──
@@ -1226,7 +1226,8 @@ function TabUsuariosPIN({ canEdit, sucursales }) {
   useEffect(() => { cargar(); }, [cargar]);
 
   const filtrados = usuarios.filter(u => {
-    if (filtroSucursal && u.store_code !== filtroSucursal) return false;
+    if (filtroSucursal === '__sin_sucursal__') { if (u.store_code) return false; }
+    else if (filtroSucursal && u.store_code !== filtroSucursal) return false;
     if (filtroRol && u.rol !== filtroRol) return false;
     return true;
   });
@@ -1239,12 +1240,13 @@ function TabUsuariosPIN({ canEdit, sucursales }) {
     }
     setSaving(true);
     try {
-      await db.from('usuarios_erp').update({
+      const { error } = await db.from('usuarios_erp').update({
         store_code: editando.store_code,
         rol: editando.rol,
         nombre: editando.nombre,
         apellido: editando.apellido,
       }).eq('id', editando.id);
+      if (error) { showToast('Error: ' + error.message, false); setSaving(false); return; }
       showToast('✓ Usuario actualizado');
       setEditando(null);
       await cargar();
@@ -1266,6 +1268,7 @@ function TabUsuariosPIN({ canEdit, sucursales }) {
         <select value={filtroSucursal} onChange={e => setFiltroSucursal(e.target.value)}
           style={{ padding: '8px 12px', borderRadius: 6, border: `1px solid ${colors.border}`, background: colors.bgCard, color: colors.text, fontSize: 13 }}>
           <option value="">Todas las sucursales</option>
+          <option value="__sin_sucursal__">⚠️ Sin sucursal asignada</option>
           {sucursales.map(s => <option key={s.store_code} value={s.store_code}>{s.nombre}</option>)}
         </select>
         <select value={filtroRol} onChange={e => setFiltroRol(e.target.value)}
