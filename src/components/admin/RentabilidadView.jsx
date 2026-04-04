@@ -175,23 +175,34 @@ export default function RentabilidadView({ user }) {
     setLoading(false)
   }, [desde, hasta])
 
-  // Cargar DTEs sin clasificar para la pestaña de clasificación
+  // Cargar DTEs sin clasificar AGRUPADOS POR PROVEEDOR
   const cargarSinClasificar = useCallback(async () => {
     const { data } = await db
       .from('compras_dte')
       .select('id, proveedor_nombre, monto_total, fecha_emision')
       .gte('fecha_emision', desde)
       .lt('fecha_emision', hasta)
-      .order('monto_total', { ascending: false })
 
-    // Filtrar los que ya tienen clasificación
+    // IDs ya clasificados (solo del mes)
     const { data: clasificados } = await db
       .from('dte_clasificacion')
       .select('dte_id')
 
     const clasifSet = new Set((clasificados || []).map(c => c.dte_id))
     const sinClasif = (data || []).filter(d => !clasifSet.has(d.id))
-    setSinClasificar(sinClasif)
+
+    // Agrupar por proveedor
+    const porProv = {}
+    sinClasif.forEach(d => {
+      const key = d.proveedor_nombre
+      if (!porProv[key]) porProv[key] = { proveedor: key, dtes: [], total: 0 }
+      porProv[key].dtes.push(d)
+      porProv[key].total += parseFloat(d.monto_total) || 0
+    })
+
+    // Ordenar por total descendente
+    const agrupados = Object.values(porProv).sort((a, b) => b.total - a.total)
+    setSinClasificar(agrupados)
   }, [desde, hasta])
 
   useEffect(() => {
@@ -204,20 +215,41 @@ export default function RentabilidadView({ user }) {
     }
   }, [vista, cargarSinClasificar])
 
-  const clasificarDTE = async (dteId, categoriaId, sucursalCode, monto) => {
+  // Clasificar TODOS los DTEs de un proveedor de un solo clic
+  const clasificarProveedor = async (grupo, categoriaId, sucursalCode) => {
     setSaving(true)
-    const { error } = await db.from('dte_clasificacion').insert({
-      dte_id: dteId,
+    const rows = grupo.dtes.map(d => ({
+      dte_id: d.id,
       categoria_gasto_id: categoriaId,
       sucursal_code: sucursalCode || null,
-      monto: monto,
+      monto: d.monto_total,
       es_automatico: false,
       clasificado_por: user?.nombre || 'usuario'
-    })
+    }))
+
+    // Upsert en batches de 50
+    let errCount = 0
+    for (let i = 0; i < rows.length; i += 50) {
+      const batch = rows.slice(i, i + 50)
+      const { error } = await db
+        .from('dte_clasificacion')
+        .upsert(batch, { onConflict: 'dte_id' })
+      if (error) errCount++
+    }
     setSaving(false)
-    if (error) { showToast('Error: ' + error.message, 'error'); return }
-    showToast('Clasificado')
-    setSinClasificar(prev => prev.filter(d => d.id !== dteId))
+    if (errCount) { showToast(`Error en ${errCount} batches`, 'error'); return }
+    showToast(`${grupo.dtes.length} DTEs de ${grupo.proveedor} clasificados`)
+    setSinClasificar(prev => prev.filter(g => g.proveedor !== grupo.proveedor))
+
+    // También crear regla para el futuro
+    await db.from('dte_reglas_proveedor').upsert({
+      proveedor_nombre: grupo.proveedor,
+      categoria_gasto_id: categoriaId,
+      sucursal_code: sucursalCode || null,
+      notas: 'Regla creada desde Rentabilidad',
+      prioridad: 5,
+      activo: true
+    }, { onConflict: 'proveedor_nombre' }).catch(() => {})
   }
 
   // Selector de período
@@ -495,12 +527,13 @@ export default function RentabilidadView({ user }) {
             </div>
           )}
 
-          {/* ===== TAB: CLASIFICAR DTEs ===== */}
+          {/* ===== TAB: CLASIFICAR DTEs (agrupado por proveedor) ===== */}
           {vista === 'clasificar' && (
             <div>
               <div style={{ marginBottom: 16, padding: '10px 16px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 10, fontSize: 12, color: '#78350F' }}>
-                <strong>{sinClasificar.length} DTEs sin clasificar</strong> en {mesLabel}.
-                Asigna una categoria contable y sucursal para incluirlos en el P&L.
+                <strong>{sinClasificar.length} proveedores sin clasificar</strong> en {mesLabel}
+                ({sinClasificar.reduce((s, g) => s + g.dtes.length, 0)} DTEs, {fmt(sinClasificar.reduce((s, g) => s + g.total, 0))}).
+                Al clasificar un proveedor se aplica a todos sus DTEs y se crea regla para el futuro.
               </div>
 
               {sinClasificar.length === 0 ? (
@@ -509,14 +542,10 @@ export default function RentabilidadView({ user }) {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {sinClasificar.slice(0, 50).map(dte => (
-                    <ClasificarRow key={dte.id} dte={dte} categorias={categorias} onClasificar={clasificarDTE} saving={saving} />
+                  {sinClasificar.map(grupo => (
+                    <ClasificarProveedorRow key={grupo.proveedor} grupo={grupo} categorias={categorias}
+                      onClasificar={clasificarProveedor} saving={saving} />
                   ))}
-                  {sinClasificar.length > 50 && (
-                    <div style={{ textAlign: 'center', padding: 12, color: '#6B7280', fontSize: 12 }}>
-                      ... y {sinClasificar.length - 50} mas
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -527,50 +556,56 @@ export default function RentabilidadView({ user }) {
   )
 }
 
-/* Row para clasificar un DTE individual */
-function ClasificarRow({ dte, categorias, onClasificar, saving }) {
+/* Row para clasificar TODOS los DTEs de un proveedor */
+function ClasificarProveedorRow({ grupo, categorias, onClasificar, saving }) {
   const [catId, setCatId] = useState('')
   const [sucCode, setSucCode] = useState('')
   const [open, setOpen] = useState(false)
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, padding: '8px 14px' }}>
+    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, padding: '10px 14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: 2, minWidth: 200 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: '#111827' }}>{dte.proveedor_nombre}</div>
-          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{dte.fecha_emision}</div>
+        <div style={{ flex: 2, minWidth: 220 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{grupo.proveedor}</div>
+          <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+            {grupo.dtes.length} DTE{grupo.dtes.length > 1 ? 's' : ''} ·
+            desde {grupo.dtes[grupo.dtes.length - 1]?.fecha_emision} hasta {grupo.dtes[0]?.fecha_emision}
+          </div>
         </div>
-        <div style={{ fontWeight: 700, fontSize: 14, color: '#1D4ED8', minWidth: 80, textAlign: 'right' }}>
-          ${n(dte.monto_total).toFixed(2)}
+        <div style={{ textAlign: 'right', minWidth: 100 }}>
+          <div style={{ fontWeight: 800, fontSize: 15, color: '#1D4ED8' }}>
+            ${grupo.total.toFixed(2)}
+          </div>
+          <div style={{ fontSize: 10, color: '#9CA3AF' }}>{grupo.dtes.length} facturas</div>
         </div>
         {!open ? (
           <button onClick={() => setOpen(true)} style={{
-            padding: '5px 14px', background: '#EFF6FF', color: '#1D4ED8',
-            border: '1px solid #BFDBFE', borderRadius: 7, cursor: 'pointer', fontWeight: 600, fontSize: 12
-          }}>Clasificar</button>
+            padding: '6px 16px', background: '#EFF6FF', color: '#1D4ED8',
+            border: '1px solid #BFDBFE', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 12
+          }}>Clasificar todo</button>
         ) : (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <select value={catId} onChange={e => setCatId(e.target.value)}
-              style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 11, maxWidth: 200 }}>
+              style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 12, minWidth: 180 }}>
               <option value="">Categoria...</option>
-              {categorias.map(c => <option key={c.id} value={c.id}>{c.id} - {c.nombre}</option>)}
+              {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
             <select value={sucCode} onChange={e => setSucCode(e.target.value)}
-              style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 11 }}>
+              style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 12 }}>
               <option value="">Corporativo</option>
               {Object.entries(STORES).filter(([k]) => k !== 'CM001').map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
-            <button onClick={() => { if (catId) onClasificar(dte.id, catId, sucCode, dte.monto_total) }}
+            <button onClick={() => { if (catId) onClasificar(grupo, catId, sucCode) }}
               disabled={!catId || saving}
               style={{
-                padding: '5px 12px', background: catId ? '#059669' : '#D1D5DB', color: '#fff',
-                border: 'none', borderRadius: 6, cursor: catId ? 'pointer' : 'default', fontWeight: 700, fontSize: 11
-              }}>OK</button>
+                padding: '6px 14px', background: catId ? '#059669' : '#D1D5DB', color: '#fff',
+                border: 'none', borderRadius: 6, cursor: catId ? 'pointer' : 'default', fontWeight: 700, fontSize: 12
+              }}>{saving ? '...' : `OK (${grupo.dtes.length})`}</button>
             <button onClick={() => setOpen(false)} style={{
-              padding: '5px 8px', background: '#F3F4F6', color: '#6B7280',
-              border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 11
+              padding: '6px 10px', background: '#F3F4F6', color: '#6B7280',
+              border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12
             }}>X</button>
           </div>
         )}
