@@ -56,25 +56,36 @@ export default function RentabilidadView({ user }) {
     // 1. Ventas por sucursal del mes
     const { data: ventas } = await db
       .from('ventas_diarias')
-      .select('store_code, venta_total, fecha')
+      .select('store_code, total_ventas_quanto, fecha')
       .gte('fecha', desde)
       .lt('fecha', hasta)
 
     const ventasPorSuc = {}
     ;(ventas || []).forEach(v => {
       if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
-      ventasPorSuc[v.store_code] += n(v.venta_total)
+      ventasPorSuc[v.store_code] += n(v.total_ventas_quanto)
     })
 
-    // 2. Gastos clasificados del mes (por categoría y sucursal)
-    const { data: gastos } = await db
-      .from('dte_clasificacion')
-      .select(`
-        categoria_gasto_id, sucursal_code, monto,
-        compras_dte!inner(fecha_emision)
-      `)
-      .gte('compras_dte.fecha_emision', desde)
-      .lt('compras_dte.fecha_emision', hasta)
+    // 2. Gastos clasificados del mes - get DTE IDs first, then clasificaciones
+    const { data: dteMes } = await db
+      .from('compras_dte')
+      .select('id')
+      .gte('fecha_emision', desde)
+      .lt('fecha_emision', hasta)
+
+    const dteIds = (dteMes || []).map(d => d.id)
+    let gastos = []
+    if (dteIds.length > 0) {
+      // Batch in chunks of 200 to avoid URL length limits
+      for (let i = 0; i < dteIds.length; i += 200) {
+        const chunk = dteIds.slice(i, i + 200)
+        const { data: batch } = await db
+          .from('dte_clasificacion')
+          .select('categoria_gasto_id, sucursal_code, monto, dte_id')
+          .in('dte_id', chunk)
+        if (batch) gastos = gastos.concat(batch)
+      }
+    }
 
     // 3. Categorías
     const { data: cats } = await db
@@ -159,20 +170,6 @@ export default function RentabilidadView({ user }) {
         margenOperativo: ventaSuc > 0 ? (utilidadOperativa / ventaSuc) * 100 : 0
       }
     })
-
-    // 4. DTEs sin clasificar del mes
-    const { data: noClasif } = await db
-      .from('compras_dte')
-      .select('id, proveedor_nombre, monto_total, fecha_emision')
-      .gte('fecha_emision', desde)
-      .lt('fecha_emision', hasta)
-      .not('id', 'in', `(${(gastos || []).map(g => {
-        // This won't work with PostgREST syntax, so let's do it differently
-        return ''
-      }).join(',')})`)
-
-    // Better approach: query sin clasificar separately
-    const { data: noClasif2 } = await db.rpc('get_dtes_sin_clasificar', { fecha_desde: desde, fecha_hasta: hasta }).catch(() => ({ data: null }))
 
     setDatos({ pnl, ventasPorSuc, gastosPorCat, gastosPorSucCat, totalVentasGlobal, totalGastos, catMap })
     setLoading(false)
