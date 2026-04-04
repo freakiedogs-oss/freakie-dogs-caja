@@ -34,6 +34,7 @@ import MiBoleta from './components/empleado/MiBoleta'
 import HorariosView from './components/rrhh/HorariosView'
 import Amonestaciones from './components/rrhh/Amonestaciones'
 import PendientesView from './components/admin/PendientesView'
+import DTEMapeoView from './components/admin/DTEMapeoView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -174,6 +175,8 @@ export default function App() {
         return <DevolucionesView user={user} />
       case 'conciliacion':
         return <ConciliacionView user={user} />
+      case 'dte-mapeo':
+        return <DTEMapeoView user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
       case 'ventas-dash':

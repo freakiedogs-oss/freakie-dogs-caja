@@ -20,15 +20,29 @@ export default function HistorialTab({user,show}){
   const [showPendientes,setShowPendientes]=useState(false);
   const [loadingPend,setLoadingPend]=useState(false);
   const [pendCount,setPendCount]=useState(0);
+  // Recepciones huérfanas (sin DTE en compras)
+  const [huerfanas,setHuerfanas]=useState([]);
+  const [showHuerfanas,setShowHuerfanas]=useState(false);
 
-  const cargar=()=>{
-    db.from('recepciones').select('*')
-      .order('created_at',{ascending:false}).limit(30)
-      .then(({data})=>{setRecs(data||[]);setLoading(false);});
+  const cargar=async()=>{
+    const {data:allRecs}=await db.from('recepciones').select('*')
+      .order('created_at',{ascending:false}).limit(30);
+    setRecs(allRecs||[]);setLoading(false);
     // Cargar count de pendientes
     db.from('compras_dte').select('id',{count:'exact',head:true})
       .eq('revision_manual',true).eq('cruzado',false)
       .then(({count})=>setPendientes(prev=>count>0?prev:[]));
+    // Detectar huérfanas: recepciones con dte_codigo que NO existe en compras_dte
+    if(allRecs&&allRecs.length>0){
+      const conDte=(allRecs||[]).filter(r=>r.dte_codigo);
+      if(conDte.length>0){
+        const codigos=[...new Set(conDte.map(r=>r.dte_codigo))];
+        const {data:dtes}=await db.from('compras_dte').select('dte_codigo').in('dte_codigo',codigos);
+        const existentes=new Set((dtes||[]).map(d=>d.dte_codigo));
+        const sinDte=conDte.filter(r=>!existentes.has(r.dte_codigo));
+        setHuerfanas(sinDte);
+      }
+    }
   };
   const cargarPendientes=async()=>{
     setLoadingPend(true);
@@ -138,6 +152,32 @@ export default function HistorialTab({user,show}){
           </div>
         </div>
       )}
+      {/* Banner recepciones sin DTE contabilizado */}
+      {huerfanas.length>0&&(
+        <div style={{background:'linear-gradient(135deg,#2a0000,#3d0000)',border:'1px solid #e63946',borderRadius:12,padding:'12px 14px',marginBottom:14,cursor:'pointer'}}
+          onClick={()=>setShowHuerfanas(!showHuerfanas)}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#e63946'}}>🔴 {huerfanas.length} recepción{huerfanas.length>1?'es':''} sin DTE contabilizado</div>
+              <div style={{fontSize:11,color:'#b44',marginTop:2}}>Tienen foto y código DTE pero no llegó el DTE por email</div>
+            </div>
+            <span style={{color:'#e63946',fontSize:16}}>{showHuerfanas?'▲':'▼'}</span>
+          </div>
+        </div>
+      )}
+      {showHuerfanas&&huerfanas.map(r=>(
+        <div key={r.id} className="card" style={{padding:'12px 14px',borderLeft:'3px solid #e63946',marginBottom:8}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{r.proveedor||'Sin nombre'}</div>
+              <div style={{fontSize:11,color:'#666'}}>{fmtDate(r.fecha)} · DTE ****{r.dte_codigo}</div>
+            </div>
+            {r.foto_dte_url&&<img src={r.foto_dte_url} style={{width:50,height:38,objectFit:'cover',borderRadius:6}} alt="DTE"/>}
+          </div>
+          <div style={{fontSize:11,color:'#888',marginTop:6}}>💡 Este proveedor no envía DTE por email. Verificar con contador si necesita registro manual.</div>
+        </div>
+      ))}
+
       {/* Lista de cruces pendientes */}
       {showPendientes&&(
         <div style={{marginBottom:16}}>

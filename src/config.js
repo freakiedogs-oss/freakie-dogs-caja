@@ -99,6 +99,7 @@ export const NAV_SECTIONS = [
     label: 'Finanzas',
     items: [
       { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },
+      { key: 'dte-mapeo', label: 'Mapeo DTE → Catálogo', icon: '🔗', roles: ['ejecutivo', 'admin'] },
     ],
   },
   {

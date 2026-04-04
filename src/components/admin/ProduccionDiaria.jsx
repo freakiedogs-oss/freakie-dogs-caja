@@ -33,6 +33,8 @@ export default function ProduccionDiaria({ user }) {
   const [filtroReceta, setFiltroReceta] = useState('');
   const [prodSelId, setProdSelId] = useState(null);
   const [prodItems, setProdItems] = useState([]);
+  const [prodSelData, setProdSelData] = useState(null);
+  const [loadingDetalle, setLoadingDetalle] = useState(false);
 
   // Inventario CM001
   const [inventarioCM, setInventarioCM] = useState({});
@@ -76,7 +78,7 @@ export default function ProduccionDiaria({ user }) {
   const cargarHistorial = useCallback(async () => {
     try {
       let query = db.from('produccion_diaria')
-        .select('*, recetas(id,nombre,tipo)')
+        .select('*, recetas(id,nombre,tipo,rendimiento,unidad_rendimiento,costo_calculado)')
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -211,16 +213,36 @@ export default function ProduccionDiaria({ user }) {
     setSaving(false);
   };
 
-  // ── Cargar detalle producción ──
-  const cargarDetalle = async (prodId) => {
+  // ── Cargar detalle producción (BOM on-the-fly) ──
+  const cargarDetalle = async (prod) => {
+    setProdSelId(prod.id);
+    setProdSelData(prod);
+    setProdItems([]);
+    setLoadingDetalle(true);
     try {
-      const res = await db.from('produccion_diaria_items')
-        .select('*, catalogo_productos(nombre,unidad_medida)')
-        .eq('produccion_id', prodId);
-      setProdItems(res.data || []);
-      setProdSelId(prodId);
+      const { data: bom, error: bomErr } = await db
+        .from('receta_ingredientes')
+        .select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub_receta:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,costo_calculado,rendimiento)')
+        .eq('receta_id', prod.receta_id);
+
+      if (bomErr) throw bomErr;
+
+      const tandas = n(prod.cantidad_producida);
+      const items = (bom || []).map(ri => {
+        const cantConsum = n(ri.cantidad) * tandas;
+        const esMP = ri.tipo_ingrediente === 'materia_prima';
+        const nombre  = esMP ? ri.catalogo_productos?.nombre : ri.sub_receta?.nombre;
+        const unidad  = ri.unidad_medida || (esMP ? ri.catalogo_productos?.unidad_medida : '');
+        const precioU = esMP
+          ? n(ri.catalogo_productos?.precio_referencia)
+          : n(ri.sub_receta?.costo_calculado);
+        return { nombre, unidad, tipo: ri.tipo_ingrediente, cantidad_receta: n(ri.cantidad), cantidad_consumida: cantConsum, precio_unitario: precioU, costo_linea: cantConsum * precioU };
+      });
+      setProdItems(items);
     } catch (err) {
-      console.error('Error cargando detalle:', err);
+      console.error('Error cargando detalle BOM:', err);
+    } finally {
+      setLoadingDetalle(false);
     }
   };
 
@@ -452,47 +474,83 @@ export default function ProduccionDiaria({ user }) {
             style={{ background: 'none', border: 'none', color: '#e63946', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
             ← Volver
           </button>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, color: '#fff' }}>Detalle de Lote</h3>
-          {prodItems.length === 0 ? (
-            <div style={{ color: '#666', fontSize: 13 }}>Sin items</div>
+          {/* Header del detalle */}
+          {prodSelData && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>
+                {prodSelData.recetas?.nombre}
+              </div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                {fmtDate(prodSelData.fecha)} · {prodSelData.turno} · {prodSelData.lote || ''}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                <span style={{ background: '#1a3a52', color: '#60a5fa', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>
+                  🏭 {n(prodSelData.cantidad_producida)} tandas producidas
+                </span>
+                <span style={{ background: '#1a2e1a', color: '#4ade80', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>
+                  📦 {(n(prodSelData.cantidad_producida) * n(prodSelData.recetas?.rendimiento)).toFixed(1)} {prodSelData.recetas?.unidad_rendimiento || 'unidades'}
+                </span>
+              </div>
+            </div>
+          )}
+          <h3 style={{ margin: '0 0 10px', fontSize: 14, color: '#aaa', fontWeight: 600 }}>💰 Costo de Ingredientes</h3>
+          {loadingDetalle ? (
+            <div style={{ color: '#666', fontSize: 13, padding: '10px 0' }}>Calculando costos...</div>
+          ) : prodItems.length === 0 ? (
+            <div style={{ color: '#555', fontSize: 13 }}>Esta receta no tiene ingredientes cargados aún.</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #333' }}>
-                  <th style={th}>Producto</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Consumido</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Costo U.</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {prodItems.map((item, idx) => {
-                  const sub = n(item.cantidad_consumida) * n(item.costo_unitario);
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid #222' }}>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#ddd' }}>
-                        {item.es_subproducto ? '↳ ' : ''}{item.catalogo_productos?.nombre || `ID ${item.producto_id}`}
+            <>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #333' }}>
+                    <th style={th}>Ingrediente</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Cant./tanda</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Total usado</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Precio u.</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {prodItems.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #1e1e1e' }}>
+                      <td style={{ padding: '7px 4px', fontSize: 12, color: item.tipo === 'sub_receta' ? '#60a5fa' : '#ddd' }}>
+                        {item.tipo === 'sub_receta' ? '🔗 ' : ''}{item.nombre || '—'}
                       </td>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#aaa', textAlign: 'right' }}>
-                        {n(item.cantidad_consumida).toFixed(2)} {item.catalogo_productos?.unidad_medida || ''}
+                      <td style={{ padding: '7px 4px', fontSize: 11, color: '#666', textAlign: 'right' }}>
+                        {n(item.cantidad_receta).toFixed(2)} {item.unidad}
                       </td>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#e9c46a', textAlign: 'right' }}>
-                        ${n(item.costo_unitario).toFixed(2)}
+                      <td style={{ padding: '7px 4px', fontSize: 12, color: '#aaa', textAlign: 'right' }}>
+                        {n(item.cantidad_consumida).toFixed(2)} {item.unidad}
                       </td>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#4ade80', textAlign: 'right', fontWeight: 600 }}>
-                        ${sub.toFixed(2)}
+                      <td style={{ padding: '7px 4px', fontSize: 12, color: '#e9c46a', textAlign: 'right' }}>
+                        ${n(item.precio_unitario).toFixed(2)}
+                      </td>
+                      <td style={{ padding: '7px 4px', fontSize: 12, color: n(item.costo_linea) > 0 ? '#4ade80' : '#555', textAlign: 'right', fontWeight: 600 }}>
+                        ${n(item.costo_linea).toFixed(2)}
                       </td>
                     </tr>
-                  );
-                })}
-                <tr style={{ borderTop: '2px solid #444' }}>
-                  <td colSpan="3" style={{ padding: '8px 4px', fontWeight: 700, color: '#fff', fontSize: 13, textAlign: 'right' }}>Total:</td>
-                  <td style={{ padding: '8px 4px', fontWeight: 700, color: '#4ade80', fontSize: 14, textAlign: 'right' }}>
-                    ${prodItems.reduce((s, i) => s + n(i.cantidad_consumida) * n(i.costo_unitario), 0).toFixed(2)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+              {/* Totales */}
+              {(() => {
+                const totalCosto = prodItems.reduce((s, i) => s + n(i.costo_linea), 0);
+                const totalUnidades = n(prodSelData?.cantidad_producida) * n(prodSelData?.recetas?.rendimiento);
+                const costoPorUnidad = totalUnidades > 0 ? totalCosto / totalUnidades : 0;
+                return (
+                  <div style={{ marginTop: 12, borderTop: '2px solid #333', paddingTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, color: '#aaa' }}>Costo total de producción:</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: '#4ade80' }}>${totalCosto.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: '#666' }}>Costo por unidad ({prodSelData?.recetas?.unidad_rendimiento || 'u.'}):</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#e9c46a' }}>${costoPorUnidad.toFixed(4)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
           )}
         </div>
       ) : (
@@ -514,7 +572,7 @@ export default function ProduccionDiaria({ user }) {
             <div style={{ textAlign: 'center', color: '#666', padding: 20 }}>No hay registros</div>
           ) : (
             producciones.map(p => (
-              <div key={p.id} className="card" onClick={() => cargarDetalle(p.id)}
+              <div key={p.id} className="card" onClick={() => cargarDetalle(p)}
                 style={{ cursor: 'pointer', padding: '12px 14px', marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
