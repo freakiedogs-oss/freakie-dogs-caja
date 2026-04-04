@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../../supabaseClient'
+import { db as supabase } from '../../supabase'
 import { today, fmtDate, n } from '../../config'
 
 const colors = { bg: '#1a1a2e', card: '#16213e', accent: '#e63946', gold: '#ffd60a', green: '#4ade80', blue: '#60a5fa' }
