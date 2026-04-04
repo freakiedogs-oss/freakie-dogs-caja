@@ -182,6 +182,11 @@ export default function FinanzasGastosView({ user }) {
     if (selEgreso?.id === egresoId) { setSelEgreso(null); setDtesCand([]) }
   }
 
+  const revertirPendiente = async (egresoId) => {
+    await supabase.from('egresos_cierre').update({ estado_cruce: 'pendiente', compras_dte_id: null }).eq('id', egresoId)
+    cargarPendientesCruce()
+  }
+
   // ── Editar egreso (categoría + estado_cruce)
   const guardarEgreso = async () => {
     if (!editEgreso) return
@@ -450,6 +455,12 @@ export default function FinanzasGastosView({ user }) {
                           style={{ ...st.btn('#7c3aed'), padding: '4px 8px', fontSize: 10 }}>
                           Ticket CF
                         </button>
+                        {r.estado_cruce !== 'pendiente' && (
+                          <button onClick={e => { e.stopPropagation(); revertirPendiente(r.id) }}
+                            style={{ ...st.btn('#374151'), padding: '4px 8px', fontSize: 10 }}>
+                            ↩ Revertir
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
