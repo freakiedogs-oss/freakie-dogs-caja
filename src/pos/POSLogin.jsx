@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { db } from '../supabase'
 
 // Roles que pueden usar el POS
-const POS_ROLES = ['cajero', 'cajera', 'gerente', 'admin', 'ejecutivo']
+const POS_ROLES = ['cajero', 'cajera', 'mesero', 'mesera', 'cocina', 'gerente', 'admin', 'ejecutivo']
 
 export default function POSLogin({ onLogin }) {
   const [pin, setPin] = useState('')

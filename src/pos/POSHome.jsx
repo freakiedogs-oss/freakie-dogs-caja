@@ -66,7 +66,10 @@ function elapsed(isoStr) {
 // ──────────────────────────────────────────────
 // Componente
 // ──────────────────────────────────────────────
-export default function POSHome({ user, onStartOrder, onLogout }) {
+const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo']
+const MESERO_ROLES = ['mesero', 'mesera']
+
+export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
@@ -344,18 +347,27 @@ export default function POSHome({ user, onStartOrder, onLogout }) {
             <span className="poshome-quick-label">Mesas</span>
           </button>
         )}
-        <button className="poshome-quick-btn" style={{ '--qt-color': '#f4a261' }} onClick={() => handleNueva('para_llevar')}>
-          <span className="poshome-quick-icon">🥡</span><span className="poshome-quick-label">Para Llevar</span>
-        </button>
-        <button className="poshome-quick-btn" style={{ '--qt-color': '#60a5fa' }} onClick={() => handleNueva('delivery_propio')}>
-          <span className="poshome-quick-icon">🛵</span><span className="poshome-quick-label">Delivery</span>
-        </button>
-        <button className="poshome-quick-btn" style={{ '--qt-color': '#a78bfa' }} onClick={() => handleNueva('pedidos_ya')}>
-          <span className="poshome-quick-icon">📱</span><span className="poshome-quick-label">PedidosYa</span>
-        </button>
-        <button className="poshome-quick-btn" style={{ '--qt-color': '#fbbf24' }} onClick={() => handleNueva('drive_through')}>
-          <span className="poshome-quick-icon">🚗</span><span className="poshome-quick-label">Drive Thru</span>
-        </button>
+        {/* Para Llevar / Delivery / PedidosYa / Drive: solo cajero+ (no mesero) */}
+        {!MESERO_ROLES.includes(user.rol) && (<>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#f4a261' }} onClick={() => handleNueva('para_llevar')}>
+            <span className="poshome-quick-icon">🥡</span><span className="poshome-quick-label">Para Llevar</span>
+          </button>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#60a5fa' }} onClick={() => handleNueva('delivery_propio')}>
+            <span className="poshome-quick-icon">🛵</span><span className="poshome-quick-label">Delivery</span>
+          </button>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#a78bfa' }} onClick={() => handleNueva('pedidos_ya')}>
+            <span className="poshome-quick-icon">📱</span><span className="poshome-quick-label">PedidosYa</span>
+          </button>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#fbbf24' }} onClick={() => handleNueva('drive_through')}>
+            <span className="poshome-quick-icon">🚗</span><span className="poshome-quick-label">Drive Thru</span>
+          </button>
+        </>)}
+        {/* KDS: acceso rápido para cocina / gerente / admin / ejecutivo */}
+        {KDS_ROLES.includes(user.rol) && onGoToKDS && (
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#e63946' }} onClick={onGoToKDS}>
+            <span className="poshome-quick-icon">🍳</span><span className="poshome-quick-label">Cocina KDS</span>
+          </button>
+        )}
       </div>
 
     </div>

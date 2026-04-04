@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
 import { STORES, today } from '../../config'
 import PaymentModal from './PaymentModal'
+import MesaTransferModal from './MesaTransferModal'
 
 // ──────────────────────────────────────────────
 // Constantes de display
@@ -13,6 +14,18 @@ const TIPO_INFO = {
   'pedidos_ya':     { icon: '📱', label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
   'drive_through':  { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24', canal: 'drive_through'   },
 }
+
+// ── Permisos por rol ──
+const PERMISOS_POR_ROL = {
+  mesero:    { comandar: true,  moverMesa: true,  preCuenta: true,  anular: false, editarGuardado: false, cobrar: false, descuento: false },
+  mesera:    { comandar: true,  moverMesa: true,  preCuenta: true,  anular: false, editarGuardado: false, cobrar: false, descuento: false },
+  cajero:    { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: false },
+  cajera:    { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: false },
+  gerente:   { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
+  admin:     { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
+  ejecutivo: { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
+}
+const DEFAULT_PERMS = { comandar: false, moverMesa: false, preCuenta: false, anular: false, editarGuardado: false, cobrar: false, descuento: false }
 
 // Reloj
 function Clock() {
@@ -36,10 +49,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
+  // Permisos del rol activo
+  const perms = PERMISOS_POR_ROL[user.rol] || DEFAULT_PERMS
+
   // Contexto de la cuenta actual
   const tipo     = cuentaCtx?.tipo     || 'para_llevar'
   const mesaRef  = cuentaCtx?.mesa_ref || null
-  const mesaId   = cuentaCtx?.mesa_id  || null
   const tipoInfo = TIPO_INFO[tipo] || TIPO_INFO['para_llevar']
 
   // Menú data
@@ -49,19 +64,22 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // Cuenta activa en DB
   const [cuentaId,   setCuentaId]   = useState(cuentaCtx?.cuentaId || null)
   const [cuentaNum,  setCuentaNum]  = useState(null)
+  const [mesaActual, setMesaActual] = useState(mesaRef)  // puede cambiar con transfer
+  const [comandaSeq, setComandaSeq] = useState(1)        // secuencia local de comandas
 
   // Ítems: los ya guardados (comandados) + los nuevos (pendientes de comandar)
-  const [items,         setItems]         = useState([])    // [{id,nombre,precio,qty,nota,saved}]
-  const [commandedCount,setCommandedCount]= useState(0)     // cuántos al inicio son ya guardados
+  const [items,          setItems]         = useState([])
+  const [commandedCount, setCommandedCount] = useState(0)
 
   // UI
-  const [activeCat,      setActiveCat]      = useState(null)
-  const [showPayModal,   setShowPayModal]   = useState(false)
-  const [showNoteModal,  setShowNoteModal]  = useState(null)
-  const [noteText,       setNoteText]       = useState('')
-  const [saving,         setSaving]         = useState(false)
-  const [commanding,     setCommanding]     = useState(false)
-  const [loadingCuenta,  setLoadingCuenta]  = useState(!!cuentaCtx?.cuentaId)
+  const [activeCat,         setActiveCat]         = useState(null)
+  const [showPayModal,      setShowPayModal]       = useState(false)
+  const [showNoteModal,     setShowNoteModal]      = useState(null)
+  const [noteText,          setNoteText]           = useState('')
+  const [showTransferModal, setShowTransferModal]  = useState(false)
+  const [saving,            setSaving]             = useState(false)
+  const [commanding,        setCommanding]         = useState(false)
+  const [loadingCuenta,     setLoadingCuenta]      = useState(!!cuentaCtx?.cuentaId)
 
   // ── Cargar menú ──
   useEffect(() => {
@@ -75,7 +93,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           pos_menu_categorias (
             id, nombre, color, icono, orden,
             pos_menu_items (
-              id, nombre, nombre_corto, descripcion, precio, disponible, orden
+              id, nombre, nombre_corto, descripcion, precio, disponible, orden, estacion
             )
           )
         `)
@@ -113,15 +131,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       setLoadingCuenta(true)
       const { data: itemsData } = await db
         .from('pos_cuenta_items')
-        .select('id, menu_item_id, nombre_snapshot, precio_unitario, cantidad, notas')
+        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas')
         .eq('cuenta_id', cuentaCtx.cuentaId)
+        .is('cancelado_motivo', null)
         .order('created_at')
 
       if (itemsData) {
         const loaded = itemsData.map(it => ({
           id:     it.menu_item_id,
           dbId:   it.id,
-          nombre: it.nombre_snapshot,
+          nombre: it.nombre,
           precio: parseFloat(it.precio_unitario),
           qty:    it.cantidad,
           nota:   it.notas || '',
@@ -138,7 +157,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
 
   // ── Número de orden siguiente ──
   useEffect(() => {
-    if (cuentaCtx?.cuentaId) return  // ya existe
+    if (cuentaCtx?.cuentaId) return
     const getNum = async () => {
       const { count } = await db
         .from('pos_cuentas')
@@ -165,7 +184,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // ── Acciones de orden ──
   const addItem = useCallback((product) => {
     setItems(prev => {
-      // Agrupar solo con ítems nuevos (no guardados) sin nota
       const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved)
       if (idx >= 0) {
         const next = [...prev]
@@ -179,24 +197,24 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         qty:    1,
         nota:   '',
         saved:  false,
+        estacion: product.estacion || 'general',
       }]
     })
   }, [])
 
   const removeItem = useCallback((idx) => {
     setItems(prev => {
+      const item = prev[idx]
+      if (item.saved && !perms.anular) return prev  // mesero no puede anular guardados
       const next = [...prev]
-      const item = next[idx]
-      // No permitir borrar ítems ya guardados (haría falta una lógica de void)
-      if (item.saved) return prev
-      if (item.qty > 1) {
+      if (item.qty > 1 && !item.saved) {
         next[idx] = { ...next[idx], qty: item.qty - 1 }
       } else {
         next.splice(idx, 1)
       }
       return next
     })
-  }, [])
+  }, [perms.anular])
 
   const saveNota = () => {
     if (showNoteModal === null) return
@@ -217,32 +235,85 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   }
 
   // Totales
-  const subtotal  = items.reduce((s, i) => s + i.precio * i.qty, 0)
-  const total     = subtotal
-  const newItems  = items.filter(i => !i.saved)
-  const hasNew    = newItems.length > 0
+  const subtotal = items.reduce((s, i) => s + i.precio * i.qty, 0)
+  const total    = subtotal
+  const newItems = items.filter(i => !i.saved)
+  const hasNew   = newItems.length > 0
 
-  // ── COMANDAR — guarda en BD y envía a cocina ──
+  // ── PRE-CUENTA ──
+  const handlePreCuenta = () => {
+    if (items.length === 0) return
+    const storeName_ = storeName
+    const mesaStr    = mesaActual ? `Mesa #${mesaActual}` : (tipoInfo.label)
+    const now        = new Date(Date.now() - 6 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 16)
+
+    const rows = items.map(i =>
+      `<tr>
+        <td>${i.qty}x</td>
+        <td>${i.nombre}${i.nota ? ` <span style="color:#888;font-size:11px">(${i.nota})</span>` : ''}</td>
+        <td style="text-align:right">$${(i.precio * i.qty).toFixed(2)}</td>
+      </tr>`
+    ).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Pre-Cuenta</title>
+    <style>
+      body { font-family: monospace; font-size: 13px; margin: 20px; max-width: 320px; }
+      h2 { text-align: center; margin: 0; font-size: 16px; }
+      .sub { text-align: center; color: #555; font-size: 11px; margin-bottom: 12px; }
+      table { width: 100%; border-collapse: collapse; }
+      td { padding: 3px 2px; vertical-align: top; }
+      .total { border-top: 1px dashed #333; margin-top: 8px; padding-top: 8px;
+               display:flex; justify-content:space-between; font-weight:bold; font-size:15px; }
+      .aviso { text-align:center; color:#888; font-size:10px; margin-top:14px; }
+      hr { border: none; border-top: 1px dashed #999; }
+    </style></head><body>
+    <h2>🍔 FREAKIE DOGS</h2>
+    <p class="sub">${storeName_} · ${mesaStr}<br>${now}</p>
+    <hr>
+    <table>${rows}</table>
+    <hr>
+    <div class="total"><span>SUBTOTAL</span><span>$${subtotal.toFixed(2)}</span></div>
+    <p class="aviso">— PRE-CUENTA —<br>No es documento fiscal</p>
+    <script>window.onload=()=>{window.print();}</script>
+    </body></html>`
+
+    const w = window.open('', '_blank', 'width=400,height=600')
+    w.document.write(html)
+    w.document.close()
+  }
+
+  // ── MOVER MESA ──
+  const handleMesaTransfer = async (nuevaMesaRef) => {
+    if (!cuentaId) return
+    const { error } = await db
+      .from('pos_cuentas')
+      .update({ mesa_ref: nuevaMesaRef, updated_at: new Date().toISOString() })
+      .eq('id', cuentaId)
+    if (!error) setMesaActual(nuevaMesaRef)
+    setShowTransferModal(false)
+  }
+
+  // ── COMANDAR ──
   const handleComandar = async () => {
-    if (!hasNew) return
+    if (!hasNew || !perms.comandar) return
     setCommanding(true)
     try {
       let currentCuentaId = cuentaId
 
-      // Si no existe cuenta aún → crearla
       if (!currentCuentaId) {
         const { data: cuenta, error } = await db
           .from('pos_cuentas')
           .insert({
-            store_code:  storeCode,
-            cajero_id:   user.id,
-            tipo:        tipo,
-            mesa_ref:    mesaRef,
-            menu_id:     menuActivo?.id || null,
-            estado:      'enviada_cocina',
-            subtotal:    subtotal,
-            iva:         0,
-            total:       total,
+            store_code: storeCode,
+            cajero_id:  user.id,
+            tipo:       tipo,
+            mesa_ref:   mesaActual,
+            menu_id:    menuActivo?.id || null,
+            estado:     'enviada_cocina',
+            subtotal:   subtotal,
+            iva:        0,
+            total:      total,
           })
           .select()
           .single()
@@ -251,44 +322,46 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         currentCuentaId = cuenta.id
         setCuentaId(currentCuentaId)
       } else {
-        // Actualizar subtotal de la cuenta existente
         await db
           .from('pos_cuentas')
           .update({ subtotal, total, estado: 'enviada_cocina', updated_at: new Date().toISOString() })
           .eq('id', currentCuentaId)
       }
 
-      // Insertar solo los ítems nuevos
+      // Insertar ítems y capturar IDs
       const toInsert = newItems.map(it => ({
-        cuenta_id:        currentCuentaId,
-        menu_item_id:     it.id,
-        nombre_snapshot:  it.nombre,
-        precio_unitario:  it.precio,
-        cantidad:         it.qty,
-        notas:            it.nota || null,
+        cuenta_id:       currentCuentaId,
+        menu_item_id:    it.id,
+        nombre:          it.nombre,
+        precio_unitario: it.precio,
+        cantidad:        it.qty,
+        notas:           it.nota || null,
+        comanda_numero:  comandaSeq,
+        enviado_cocina_at: new Date().toISOString(),
       }))
-      await db.from('pos_cuenta_items').insert(toInsert)
+      const { data: insertedItems } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
 
-      // Enviar a cocina
+      // Enviar a cocina (con todos los campos)
       await db.from('pos_cocina_queue').insert(
-        newItems.map(it => ({
-          cuenta_id:   currentCuentaId,
-          sucursal_id: null,
-          nombre_item: it.nombre + (mesaRef ? ` [Mesa ${mesaRef}]` : ''),
-          cantidad:    it.qty,
-          notas:       it.nota || null,
-          estado:      'pendiente',
-          prioridad:   5,
+        newItems.map((it, idx) => ({
+          cuenta_id:      currentCuentaId,
+          cuenta_item_id: insertedItems?.[idx]?.id || null,
+          store_code:     storeCode,
+          canal:          tipo,
+          mesa_ref:       mesaActual,
+          nombre_item:    it.nombre,
+          cantidad:       it.qty,
+          nota:           it.nota || null,
+          estacion:       it.estacion || 'general',
+          estado:         'pendiente',
+          prioridad:      tipo === 'pedidos_ya' ? 8 : tipo === 'drive_through' ? 7 : 5,
+          comanda_numero: comandaSeq,
         }))
       )
 
-      // Marcar todos como guardados
+      setComandaSeq(s => s + 1)
       setItems(prev => prev.map(i => ({ ...i, saved: true })))
       setCommandedCount(items.length)
-
-      // Volver al inicio automáticamente para que el mesero vea el plano actualizado
-      // pero solo si es mesa (para el mesero pueda ir a otra mesa)
-      // Para otros tipos, quedarse en pantalla
 
     } catch (err) {
       console.error('Error al comandar:', err)
@@ -298,14 +371,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     }
   }
 
-  // ── COBRAR — guarda cuenta + pago ──
+  // ── COBRAR ──
   const saveCuenta = async (paymentData) => {
     setSaving(true)
     try {
       let currentCuentaId = cuentaId
-
-      // Si hay ítems nuevos no comandados, los guardamos ahora
-      const itemsToSave = currentCuentaId ? newItems : items
+      const itemsToSave   = currentCuentaId ? newItems : items
 
       if (!currentCuentaId) {
         const { data: cuenta, error: cuentaErr } = await db
@@ -314,7 +385,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             store_code:  storeCode,
             cajero_id:   user.id,
             tipo:        tipo,
-            mesa_ref:    mesaRef,
+            mesa_ref:    mesaActual,
             menu_id:     menuActivo?.id || null,
             estado:      'cobrada',
             subtotal:    subtotal,
@@ -331,7 +402,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         currentCuentaId = cuenta.id
         setCuentaId(currentCuentaId)
       } else {
-        // Actualizar cuenta existente a cobrada
         await db
           .from('pos_cuentas')
           .update({
@@ -347,46 +417,47 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .eq('id', currentCuentaId)
       }
 
-      // Insertar ítems no guardados
       if (itemsToSave.length > 0) {
-        await db.from('pos_cuenta_items').insert(
-          itemsToSave.map(it => ({
-            cuenta_id:       currentCuentaId,
-            menu_item_id:    it.id,
-            nombre_snapshot: it.nombre,
-            precio_unitario: it.precio,
-            cantidad:        it.qty,
-            notas:           it.nota || null,
-          }))
-        )
-      }
+        const toInsert = itemsToSave.map(it => ({
+          cuenta_id:       currentCuentaId,
+          menu_item_id:    it.id,
+          nombre:          it.nombre,
+          precio_unitario: it.precio,
+          cantidad:        it.qty,
+          notas:           it.nota || null,
+          comanda_numero:  comandaSeq,
+          enviado_cocina_at: new Date().toISOString(),
+        }))
+        const { data: insertedItems } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
 
-      // Insertar pago
-      await db.from('pos_cuenta_pagos').insert({
-        cuenta_id:     currentCuentaId,
-        metodo:        paymentData.metodo,
-        monto:         total + (paymentData.propina || 0),
-        monto_efectivo:paymentData.efectivo || null,
-        monto_tarjeta: paymentData.tarjeta  || null,
-        cambio:        paymentData.cambio   || 0,
-        referencia:    paymentData.referencia || null,
-        cajero_id:     user.id,
-      })
-
-      // Cocina (para ítems no comandados)
-      if (itemsToSave.length > 0) {
         await db.from('pos_cocina_queue').insert(
-          itemsToSave.map(it => ({
-            cuenta_id:   currentCuentaId,
-            sucursal_id: null,
-            nombre_item: it.nombre + (mesaRef ? ` [Mesa ${mesaRef}]` : ''),
-            cantidad:    it.qty,
-            notas:       it.nota || null,
-            estado:      'pendiente',
-            prioridad:   5,
+          itemsToSave.map((it, idx) => ({
+            cuenta_id:      currentCuentaId,
+            cuenta_item_id: insertedItems?.[idx]?.id || null,
+            store_code:     storeCode,
+            canal:          tipo,
+            mesa_ref:       mesaActual,
+            nombre_item:    it.nombre,
+            cantidad:       it.qty,
+            nota:           it.nota || null,
+            estacion:       it.estacion || 'general',
+            estado:         'pendiente',
+            prioridad:      5,
+            comanda_numero: comandaSeq,
           }))
         )
       }
+
+      await db.from('pos_cuenta_pagos').insert({
+        cuenta_id:      currentCuentaId,
+        metodo:         paymentData.metodo,
+        monto:          total + (paymentData.propina || 0),
+        monto_efectivo: paymentData.efectivo || null,
+        monto_tarjeta:  paymentData.tarjeta  || null,
+        cambio:         paymentData.cambio   || 0,
+        referencia:     paymentData.referencia || null,
+        cajero_id:      user.id,
+      })
 
       return { id: currentCuentaId }
     } finally {
@@ -398,13 +469,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     await saveCuenta(paymentData)
     setItems([])
     setShowPayModal(false)
-    onBack()  // Volver al inicio tras cobrar
+    onBack()
   }
 
-  // ── Render cargando cuenta ──
+  // ── Loading ──
   if (loadingCuenta) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+      <div style={{ minHeight: '100vh', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
         <div className="spin" />
         <span style={{ color: '#555', fontSize: 14 }}>Cargando cuenta...</span>
       </div>
@@ -413,7 +484,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
 
   return (
     <div className="pos-layout">
-      {/* ── HEADER (igual a .topbar del ERP) ── */}
+
+      {/* ── HEADER ── */}
       <header className="pos-header">
         <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
         <span className="pos-header-brand">🍔 Freakie POS</span>
@@ -424,8 +496,30 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           className="pos-header-btn"
           style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
         >
-          {tipoInfo.icon} {tipoInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
+          {tipoInfo.icon} {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
         </span>
+
+        {/* Cambiar mesa — solo si es mesa y tiene permiso */}
+        {tipo === 'mesa' && perms.moverMesa && (
+          <button
+            className="pos-header-btn"
+            onClick={() => setShowTransferModal(true)}
+            title="Mover a otra mesa"
+          >
+            ↔ Mesa
+          </button>
+        )}
+
+        {/* Pre-cuenta — si tiene permiso */}
+        {perms.preCuenta && items.length > 0 && (
+          <button
+            className="pos-header-btn"
+            onClick={handlePreCuenta}
+            title="Imprimir pre-cuenta"
+          >
+            🖨 Pre-cuenta
+          </button>
+        )}
 
         <span className="pos-header-sep" />
         <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
@@ -434,6 +528,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       </header>
 
       <div className="pos-body">
+
         {/* ── LEFT: Menú ── */}
         <div className="pos-menu-area">
           {loadingMenu ? (
@@ -443,7 +538,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             </div>
           ) : (
             <>
-              {/* Categorías */}
               <div className="pos-categories">
                 {categorias.map(cat => (
                   <button
@@ -460,7 +554,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                 ))}
               </div>
 
-              {/* Productos */}
               <div className="pos-products">
                 {itemsActivaCat.map(product => (
                   <button
@@ -494,16 +587,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               className="pos-order-type-badge"
               style={{ background: tipoInfo.color + '22', color: tipoInfo.color }}
             >
-              {tipoInfo.icon} {tipoInfo.label}{mesaRef ? ` #${mesaRef}` : ''}
+              {tipoInfo.icon} {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
             </span>
-            {cuentaId && (
-              <span className="pos-order-open-badge">Cuenta Abierta</span>
-            )}
-            {!cuentaId && (
-              <div className="pos-order-num">
-                Orden #{String(cuentaNum || 1).padStart(4, '0')}
-              </div>
-            )}
+            {cuentaId
+              ? <span className="pos-order-open-badge">Cuenta Abierta</span>
+              : <div className="pos-order-num">Orden #{String(cuentaNum || 1).padStart(4, '0')}</div>
+            }
           </div>
 
           {/* Lista de ítems */}
@@ -520,7 +609,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                   key={idx}
                   className={`pos-order-item${item.saved ? ' saved' : ' new'}`}
                 >
-                  {/* Indicador guardado/nuevo */}
                   <div
                     className="pos-order-item-status"
                     title={item.saved ? 'Comandado' : 'Pendiente de comandar'}
@@ -539,22 +627,31 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                     <div className="pos-order-item-price">
                       ${(item.precio * item.qty).toFixed(2)}
                     </div>
+                    {/* Botones de edición */}
                     {!item.saved && (
                       <div style={{ display: 'flex', gap: 2 }}>
                         <button
                           className="pos-order-item-del"
                           style={{ color: '#555', fontSize: 12 }}
                           onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
-                        >
-                          📝
-                        </button>
-                        <button
-                          className="pos-order-item-del"
-                          onClick={() => removeItem(idx)}
-                        >
-                          ✕
-                        </button>
+                        >📝</button>
+                        <button className="pos-order-item-del" onClick={() => removeItem(idx)}>✕</button>
                       </div>
+                    )}
+                    {/* Guardado pero con permiso de anular */}
+                    {item.saved && perms.anular && (
+                      <button
+                        className="pos-order-item-del"
+                        style={{ color: '#f8717130', fontSize: 11 }}
+                        title="Anular ítem (requiere cajera)"
+                        onClick={() => {
+                          if (confirm(`¿Anular "${item.nombre}"?`)) removeItem(idx)
+                        }}
+                      >🚫</button>
+                    )}
+                    {/* Guardado sin permiso — ícono de candado */}
+                    {item.saved && !perms.anular && (
+                      <span style={{ fontSize: 10, color: '#333', marginTop: 2 }} title="Solo cajera puede anular">🔒</span>
                     )}
                   </div>
                 </div>
@@ -573,26 +670,34 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               <span>${total.toFixed(2)}</span>
             </div>
 
-            {/* COMANDAR — envía a cocina, deja cuenta abierta */}
-            <button
-              className="pos-comandar-btn"
-              disabled={!hasNew || commanding}
-              onClick={handleComandar}
-            >
-              {commanding
-                ? '⏳ Comandando...'
-                : `🔔 COMANDAR${newItems.length > 0 ? ` (${newItems.reduce((s,i)=>s+i.qty,0)})` : ''}`
-              }
-            </button>
+            {/* COMANDAR */}
+            {perms.comandar && (
+              <button
+                className="pos-comandar-btn"
+                disabled={!hasNew || commanding}
+                onClick={handleComandar}
+              >
+                {commanding
+                  ? '⏳ Comandando...'
+                  : `🔔 COMANDAR${newItems.length > 0 ? ` (${newItems.reduce((s, i) => s + i.qty, 0)})` : ''}`
+                }
+              </button>
+            )}
 
-            {/* COBRAR */}
-            <button
-              className="pos-cobrar-btn"
-              disabled={items.length === 0 || saving}
-              onClick={() => setShowPayModal(true)}
-            >
-              {saving ? '...' : `💳 COBRAR $${total.toFixed(2)}`}
-            </button>
+            {/* COBRAR — solo cajera/gerente */}
+            {perms.cobrar ? (
+              <button
+                className="pos-cobrar-btn"
+                disabled={items.length === 0 || saving}
+                onClick={() => setShowPayModal(true)}
+              >
+                {saving ? '...' : `💳 COBRAR $${total.toFixed(2)}`}
+              </button>
+            ) : (
+              <div style={{ textAlign: 'center', fontSize: 12, color: '#333', padding: '8px 0' }}>
+                🔒 Cobro solo por cajera/gerente
+              </div>
+            )}
 
             {hasNew && (
               <button className="pos-clear-btn" onClick={clearNewItems}>
@@ -603,7 +708,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         </div>
       </div>
 
-      {/* Modal: Nota de ítem */}
+      {/* Modal: Nota */}
       {showNoteModal !== null && (
         <div className="pos-modal-overlay" onClick={() => setShowNoteModal(null)}>
           <div className="pos-modal" onClick={e => e.stopPropagation()}>
@@ -617,12 +722,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               autoFocus
               maxLength={200}
             />
-            <button className="pos-confirmar-btn" onClick={saveNota}>
-              Guardar nota
-            </button>
-            <button className="pos-cancelar-btn" onClick={() => setShowNoteModal(null)}>
-              Cancelar
-            </button>
+            <button className="pos-confirmar-btn" onClick={saveNota}>Guardar nota</button>
+            <button className="pos-cancelar-btn" onClick={() => setShowNoteModal(null)}>Cancelar</button>
           </div>
         </div>
       )}
@@ -635,6 +736,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           onConfirm={handlePaymentConfirm}
           onClose={() => setShowPayModal(false)}
           saving={saving}
+        />
+      )}
+
+      {/* Modal: Transfer de mesa */}
+      {showTransferModal && (
+        <MesaTransferModal
+          storeCode={storeCode}
+          mesaActual={mesaActual}
+          onTransfer={handleMesaTransfer}
+          onClose={() => setShowTransferModal(false)}
         />
       )}
     </div>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import POSLogin from './POSLogin'
 import POSHome from './POSHome'
 import POSMain from './cajero/POSMain'
+import KDSScreen from './KDSScreen'
 
 /**
  * POSApp — Router principal del POS
@@ -9,6 +10,7 @@ import POSMain from './cajero/POSMain'
  * Pantallas:
  *   'home'     → POSHome: plano de mesas + cuentas abiertas + botones rápidos
  *   'ordering' → POSMain: menú + orden activa (nueva o existente)
+ *   'kds'      → KDSScreen: pantalla de cocina / kitchen display
  *
  * cuentaCtx: { tipo, mesa_ref, mesa_id, cuentaId }
  *   - cuentaId = null  → nueva orden
@@ -35,8 +37,15 @@ export default function POSApp() {
     setScreen('home')
   }
 
+  const handleGoToKDS = () => setScreen('kds')
+
   // ── Login ──
   if (!user) return <POSLogin onLogin={setUser} />
+
+  // ── KDS ──
+  if (screen === 'kds') {
+    return <KDSScreen user={user} onBack={handleBack} />
+  }
 
   // ── Home ──
   if (screen === 'home') {
@@ -45,6 +54,7 @@ export default function POSApp() {
         user={user}
         onStartOrder={handleStartOrder}
         onLogout={handleLogout}
+        onGoToKDS={handleGoToKDS}
       />
     )
   }
