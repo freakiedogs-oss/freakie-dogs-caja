@@ -98,6 +98,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Finanzas',
     items: [
+      { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'dte-mapeo', label: 'Mapeo DTE → Catálogo', icon: '🔗', roles: ['ejecutivo', 'admin'] },
       { key: 'rentabilidad', label: 'Rentabilidad x Sucursal', icon: '💹', roles: ['ejecutivo', 'admin'] },
