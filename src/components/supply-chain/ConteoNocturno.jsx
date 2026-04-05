@@ -31,6 +31,8 @@ export default function ConteoNocturno({user,onBack}){
   const [isEdit,setIsEdit]=useState(false);        // editando conteo existente
   const [editExpira,setEditExpira]=useState(null);  // Date cuando expira la ventana de edición
   const [ocultarCero,setOcultarCero]=useState(false); // toggle para ocultar pedido=0 en Screen 2
+  const [gruposAbiertos,setGruposAbiertos]=useState({}); // {cat: bool} — todos cerrados al inicio
+  const toggleGrupo=(cat)=>setGruposAbiertos(prev=>({...prev,[cat]:!prev[cat]}));
   const [tiempoRestante,setTiempoRestante]=useState('');
   const [conteoCerrado,setConteoCerrado]=useState(false); // true cuando hay conteo >6h
 
@@ -322,13 +324,32 @@ export default function ConteoNocturno({user,onBack}){
     onBack();
   };
 
+  // Orden fijo de grupos según hoja de control de inventario
+  const ORDEN_GRUPOS=[
+    'CARNES Y COMPLEMENTOS',
+    'VEGETALES - VERDURAS',
+    'QUESOS - LACTEOS',
+    'PANES',
+    'PAPAS - CONGELADOS',
+    'SALSAS Y ADEREZOS',
+    'EMPAQUES Y DESECHABLES',
+    'BEBIDAS',
+    'EXTRAS',
+    'UTENSILIOS DE LIMPIEZA',
+  ];
+
   // Agrupar productos por categoría
   const porCategoria={};
   productos.forEach(p=>{
     if(!porCategoria[p.categoria])porCategoria[p.categoria]=[];
     porCategoria[p.categoria].push(p);
   });
-  const categorias=Object.keys(porCategoria).sort();
+  // Ordenar grupos por lista fija; desconocidos al final
+  const categorias=Object.keys(porCategoria).sort((a,b)=>{
+    const ia=ORDEN_GRUPOS.indexOf(a);
+    const ib=ORDEN_GRUPOS.indexOf(b);
+    return (ia===-1?999:ia)-(ib===-1?999:ib);
+  });
 
   if(loading){
     return(
@@ -402,18 +423,40 @@ export default function ConteoNocturno({user,onBack}){
         {categorias.map(cat=>{
           const catContados=porCategoria[cat].filter(p=>p.cantidad_real!==null).length;
           const catTotal=porCategoria[cat].length;
+          const catCompleta=catContados===catTotal;
+          const abierto=!!gruposAbiertos[cat];
           return(
-          <div key={cat}>
-            <div style={{fontWeight:700,fontSize:13,color:'#888',padding:'14px 0 8px',textTransform:'uppercase',letterSpacing:'0.5px',display:'flex',justifyContent:'space-between'}}>
-              <span>{cat}</span>
-              <span style={{color:catContados===catTotal?'#4ade80':'#555',fontWeight:400,fontSize:11}}>{catContados}/{catTotal}</span>
-            </div>
-            {porCategoria[cat].map(p=>{
+          <div key={cat} style={{marginBottom:4}}>
+            {/* Cabecera colapsable */}
+            <button onClick={()=>toggleGrupo(cat)}
+              style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',
+                padding:'12px 14px',borderRadius:10,border:'1px solid #222',cursor:'pointer',
+                background:catCompleta?'#0d2a1a':'#13131f',
+                borderColor:catCompleta?'#4ade8040':'#222',
+                marginBottom:abierto?6:0,transition:'all 0.15s'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:14,color:catCompleta?'#4ade80':'#888',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px'}}>
+                  {cat}
+                </span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:12,fontWeight:600,
+                  color:catCompleta?'#4ade80':catContados>0?'#facc15':'#555',
+                  background:catCompleta?'#4ade8020':catContados>0?'#facc1520':'#1a1a1a',
+                  padding:'2px 8px',borderRadius:99,border:`1px solid ${catCompleta?'#4ade8040':catContados>0?'#facc1540':'#333'}`}}>
+                  {catContados}/{catTotal}
+                </span>
+                <span style={{fontSize:16,color:'#555',lineHeight:1}}>{abierto?'▲':'▼'}</span>
+              </div>
+            </button>
+
+            {/* Items — solo si abierto */}
+            {abierto && porCategoria[cat].map(p=>{
               const contado=p.cantidad_real!==null;
               const diff=getDiferencia(p);
               return(
               <div key={p.producto_id} className="card" style={{borderLeft:contado?'3px solid #4ade80':'3px solid #333',transition:'border 0.2s'}}>
-                {/* Nombre + stock teórico en línea */}
+                {/* Nombre + stock teórico */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                   <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
                   <div style={{fontSize:12,color:'#888',flexShrink:0,marginLeft:8}}>teórico: <b style={{color:'#ccc'}}>{p.stock_teorico}</b> {p.unidad}</div>
@@ -444,7 +487,8 @@ export default function ConteoNocturno({user,onBack}){
                   )}
                 </div>
               </div>
-            );})}
+            );})
+            }
           </div>
         );})}
 
