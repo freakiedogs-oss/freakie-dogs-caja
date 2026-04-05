@@ -532,34 +532,80 @@ export default function ConteoNocturno({user,onBack}){
                 left:ocultarCero?23:3,transition:'left 0.2s'}}/>
             </button>
           </div>
-          {pedidoItems.filter(p=>!ocultarCero||n(pedidoQtys[p.producto_id]||0)>0).map(p=>{
-            const qty=n(pedidoQtys[p.producto_id]||0);
-            return(
-            <div key={p.producto_id} className="card" style={p.bajominimo?{borderLeft:'3px solid #e63946'}:{}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
-                {p.bajominimo&&qty>0&&<span style={{fontSize:10,color:'#e63946',fontWeight:600}}>BAJO MÍNIMO</span>}
-                {qty===0&&<span style={{fontSize:11,color:'#555'}}>sin pedido</span>}
-              </div>
-              <div style={{display:'flex',gap:6,fontSize:12,color:'#888',marginBottom:10,flexWrap:'wrap'}}>
-                <span>Real: <b style={{color:'#ccc'}}>{p.cantidad_real}</b></span>
-                <span>·</span>
-                <span>Mín: <b style={{color:'#facc15'}}>{p.stock_minimo}</b></span>
-                <span>·</span>
-                <span>Máx: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
-              </div>
-              {/* ── Stepper pedido ── */}
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:Math.max(0,qty-1)}))}>−</button>
-                <input type="number" inputMode="numeric" min="0" step="1"
-                  value={pedidoQtys[p.producto_id]??0}
-                  onChange={e=>setPedidoQtys(prev=>({...prev,[p.producto_id]:e.target.value}))}
-                  style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}/>
-                <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:qty+1}))}>+</button>
-              </div>
-            </div>
-          );}
-          )}
+          {(()=>{
+            // Agrupar pedidoItems por categoría con el mismo orden fijo
+            const itemsFiltrados=pedidoItems.filter(p=>!ocultarCero||n(pedidoQtys[p.producto_id]||0)>0);
+            const porCatPedido={};
+            itemsFiltrados.forEach(p=>{
+              const cat=p.categoria||'Otros';
+              if(!porCatPedido[cat])porCatPedido[cat]=[];
+              porCatPedido[cat].push(p);
+            });
+            const catsPedido=Object.keys(porCatPedido).sort((a,b)=>{
+              const ia=ORDEN_GRUPOS.indexOf(a);
+              const ib=ORDEN_GRUPOS.indexOf(b);
+              return (ia===-1?999:ia)-(ib===-1?999:ib);
+            });
+            return catsPedido.map(cat=>{
+              const items=porCatPedido[cat];
+              const tieneUrgentes=items.some(p=>p.bajominimo&&n(pedidoQtys[p.producto_id]||0)>0);
+              const abiertoPed=!!gruposAbiertos['ped_'+cat];
+              const totalPedido=items.reduce((s,p)=>s+n(pedidoQtys[p.producto_id]||0),0);
+              return(
+                <div key={cat} style={{marginBottom:4}}>
+                  <button onClick={()=>toggleGrupo('ped_'+cat)}
+                    style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',
+                      padding:'12px 14px',borderRadius:10,border:'1px solid #222',cursor:'pointer',
+                      background:tieneUrgentes?'#2a0d0d':abiertoPed?'#13131f':'#13131f',
+                      borderColor:tieneUrgentes?'#e6394640':'#222',
+                      marginBottom:abiertoPed?6:0,transition:'all 0.15s'}}>
+                    <span style={{fontSize:14,color:tieneUrgentes?'#e63946':'#888',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px'}}>
+                      {cat}
+                    </span>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      {tieneUrgentes&&(
+                        <span style={{fontSize:10,color:'#e63946',fontWeight:700,background:'#e6394620',padding:'2px 6px',borderRadius:99,border:'1px solid #e6394640'}}>
+                          BAJO MÍN
+                        </span>
+                      )}
+                      {totalPedido>0&&(
+                        <span style={{fontSize:12,fontWeight:600,color:'#60a5fa',background:'#60a5fa20',padding:'2px 8px',borderRadius:99,border:'1px solid #60a5fa40'}}>
+                          {totalPedido} uds
+                        </span>
+                      )}
+                      <span style={{fontSize:16,color:'#555',lineHeight:1}}>{abiertoPed?'▲':'▼'}</span>
+                    </div>
+                  </button>
+                  {abiertoPed && items.map(p=>{
+                    const qty=n(pedidoQtys[p.producto_id]||0);
+                    return(
+                    <div key={p.producto_id} className="card" style={p.bajominimo?{borderLeft:'3px solid #e63946'}:{}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                        <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
+                        {p.bajominimo&&qty>0&&<span style={{fontSize:10,color:'#e63946',fontWeight:600}}>BAJO MÍNIMO</span>}
+                        {qty===0&&<span style={{fontSize:11,color:'#555'}}>sin pedido</span>}
+                      </div>
+                      <div style={{display:'flex',gap:6,fontSize:12,color:'#888',marginBottom:10,flexWrap:'wrap'}}>
+                        <span>Real: <b style={{color:'#ccc'}}>{p.cantidad_real}</b></span>
+                        <span>·</span>
+                        <span>Mín: <b style={{color:'#facc15'}}>{p.stock_minimo}</b></span>
+                        <span>·</span>
+                        <span>Máx: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                        <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:Math.max(0,qty-1)}))}>−</button>
+                        <input type="number" inputMode="numeric" min="0" step="1"
+                          value={pedidoQtys[p.producto_id]??0}
+                          onChange={e=>setPedidoQtys(prev=>({...prev,[p.producto_id]:e.target.value}))}
+                          style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}/>
+                        <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:qty+1}))}>+</button>
+                      </div>
+                    </div>
+                  );})}
+                </div>
+              );
+            });
+          })()}
         </>
       )}
 
