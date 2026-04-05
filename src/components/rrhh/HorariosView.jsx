@@ -195,9 +195,11 @@ export default function HorariosView({ user }) {
           h._fuente === (esPermanente ? 'plantilla' : 'override')
         );
         if (existente?.id) {
-          await db.from('horarios_empleados').update(payload).eq('id', existente.id);
+          const { error: updErr } = await db.from('horarios_empleados').update(payload).eq('id', existente.id);
+          if (updErr) throw updErr;
         } else {
-          await db.from('horarios_empleados').insert(payload);
+          const { error: insErr } = await db.from('horarios_empleados').insert(payload);
+          if (insErr) throw insErr;
         }
         showToast(esPermanente ? '🔒 Horario permanente guardado' : '⚡ Cambio solo esta semana');
         await loadHorarios();
