@@ -57,6 +57,10 @@ export default function FinanzasGastosView({ user }) {
   const [selEgreso, setSelEgreso]     = useState(null)
   const [dtesCand, setDtesCand]       = useState([])
   const [loadCand, setLoadCand]       = useState(false)
+  const [matchMap, setMatchMap]       = useState({})   // egreso_id → {confianza, dte, diffPct, diffDias, candidatos}
+  const [loadingMatches, setLoadingMatches] = useState(false)
+  const [expandido, setExpandido]     = useState(new Set()) // egresos con panel manual abierto
+  const [confirmandoBulk, setConfirmandoBulk] = useState(false)
 
   // Tab 3 — Registrar Sin DTE
   const [proveedores, setProveedores] = useState([])
@@ -138,6 +142,97 @@ export default function FinanzasGastosView({ user }) {
 
   useEffect(() => { if (tab === 'conciliar') cargarPendientes() }, [tab, cargarPendientes])
 
+  // ── Calcular matches en batch para todos los pendientes
+  const calcularMatches = useCallback(async (lista) => {
+    if (!lista || lista.length === 0) return
+    setLoadingMatches(true)
+    const fechas = lista.map(p => p.ventas_diarias?.fecha).filter(Boolean)
+    if (!fechas.length) { setLoadingMatches(false); return }
+    const minFecha = new Date(Math.min(...fechas.map(f => new Date(f + 'T12:00:00'))))
+    const maxFecha = new Date(Math.max(...fechas.map(f => new Date(f + 'T12:00:00'))))
+    minFecha.setDate(minFecha.getDate() - 8)
+    maxFecha.setDate(maxFecha.getDate() + 4)
+    const { data: dtes } = await supabase
+      .from('compras_dte')
+      .select('id, proveedor_nombre, fecha_emision, monto_total, tipo_dte, numero_control')
+      .eq('cruzado', false)
+      .gte('fecha_emision', minFecha.toISOString().split('T')[0])
+      .lte('fecha_emision', maxFecha.toISOString().split('T')[0])
+    const pool = dtes || []
+    const usados = new Set()
+    const newMap = {}
+    // Ordenar por monto desc para que montos grandes tengan prioridad en la asignación
+    const sorted = [...lista].sort((a,b) => n(b.monto) - n(a.monto))
+    for (const eg of sorted) {
+      const fecha = eg.ventas_diarias?.fecha
+      const monto = n(eg.monto)
+      if (!fecha || !monto) { newMap[eg.id] = { confianza: 'ninguna', dte: null }; continue }
+      const egDate = new Date(fecha + 'T12:00:00')
+      const scored = pool
+        .filter(d => !usados.has(d.id))
+        .map(d => {
+          const diffPct = Math.abs(n(d.monto_total) - monto) / monto
+          const diffDias = Math.abs((new Date(d.fecha_emision + 'T12:00:00') - egDate) / 86400000)
+          return { dte: d, diffPct, diffDias }
+        })
+        .filter(x => x.diffPct <= 0.12 && x.diffDias <= 7)
+        .sort((a,b) => (a.diffPct * 3 + a.diffDias * 0.5) - (b.diffPct * 3 + b.diffDias * 0.5))
+      if (scored.length === 0) {
+        newMap[eg.id] = { confianza: 'ninguna', dte: null, candidatos: 0 }
+      } else {
+        const best = scored[0]
+        let confianza
+        if (best.diffPct <= 0.03 && best.diffDias <= 1) confianza = 'alta'
+        else if (best.diffPct <= 0.08 && best.diffDias <= 3) confianza = 'media'
+        else confianza = 'baja'
+        newMap[eg.id] = { confianza, dte: best.dte, diffPct: best.diffPct, diffDias: best.diffDias, candidatos: scored.length }
+        if (confianza === 'alta') usados.add(best.dte.id)
+      }
+    }
+    setMatchMap(newMap)
+    setLoadingMatches(false)
+  }, [])
+
+  useEffect(() => { if (pendientes.length) calcularMatches(pendientes) }, [pendientes, calcularMatches])
+
+  // Confirmar un match sugerido (1-click)
+  const confirmarMatch = async (egresoId) => {
+    const m = matchMap[egresoId]
+    if (!m?.dte) return
+    await Promise.all([
+      supabase.from('egresos_cierre').update({ estado_cruce: 'cruzado', compras_dte_id: m.dte.id }).eq('id', egresoId),
+      supabase.from('compras_dte').update({ cruzado: true }).eq('id', m.dte.id),
+    ])
+    setPendientes(p => p.filter(x => x.id !== egresoId))
+    setMatchMap(prev => { const n = {...prev}; delete n[egresoId]; return n })
+  }
+
+  // Confirmar TODOS los matches de alta confianza
+  const confirmarTodosVerdes = async () => {
+    setConfirmandoBulk(true)
+    const verdes = pendientes.filter(p => matchMap[p.id]?.confianza === 'alta')
+    await Promise.all(verdes.flatMap(eg => {
+      const dteId = matchMap[eg.id].dte.id
+      return [
+        supabase.from('egresos_cierre').update({ estado_cruce: 'cruzado', compras_dte_id: dteId }).eq('id', eg.id),
+        supabase.from('compras_dte').update({ cruzado: true }).eq('id', dteId),
+      ]
+    }))
+    const verdeIds = new Set(verdes.map(v => v.id))
+    setPendientes(p => p.filter(x => !verdeIds.has(x.id)))
+    setMatchMap(prev => { const n = {...prev}; verdes.forEach(v => delete n[v.id]); return n })
+    setConfirmandoBulk(false)
+  }
+
+  // Toggle panel manual de candidatos
+  const toggleExpandido = async (egreso) => {
+    const newSet = new Set(expandido)
+    if (newSet.has(egreso.id)) { newSet.delete(egreso.id); setExpandido(newSet); return }
+    newSet.add(egreso.id)
+    setExpandido(newSet)
+    await buscarCandidatos(egreso)
+  }
+
   // Buscar DTEs candidatos para un egreso
   const buscarCandidatos = async (egreso) => {
     setSelEgreso(egreso)
@@ -165,15 +260,18 @@ export default function FinanzasGastosView({ user }) {
     setLoadCand(false)
   }
 
-  const cruzarConDte = async (dteId) => {
-    if (!selEgreso) return
+  const cruzarConDte = async (dteId, egresoIdOverride) => {
+    const egresoId = egresoIdOverride || selEgreso?.id
+    if (!egresoId) return
     await Promise.all([
-      supabase.from('egresos_cierre').update({ estado_cruce: 'cruzado', compras_dte_id: dteId }).eq('id', selEgreso.id),
+      supabase.from('egresos_cierre').update({ estado_cruce: 'cruzado', compras_dte_id: dteId }).eq('id', egresoId),
       supabase.from('compras_dte').update({ cruzado: true, recepcion_candidata_id: null }).eq('id', dteId),
     ])
-    setPendientes(p => p.filter(x => x.id !== selEgreso.id))
+    setPendientes(p => p.filter(x => x.id !== egresoId))
+    setMatchMap(prev => { const n = {...prev}; delete n[egresoId]; return n })
     setSelEgreso(null)
     setDtesCand([])
+    setExpandido(prev => { const n = new Set(prev); n.delete(egresoId); return n })
   }
 
   const marcarTicketCF = async (egresoId) => {
@@ -419,97 +517,145 @@ export default function FinanzasGastosView({ user }) {
       )}
 
       {/* ═══════════════════════════════════════════════
-          TAB 2 — CONCILIAR DTEs
+          TAB 2 — CONCILIAR DTEs (SMART MATCHING)
       ═══════════════════════════════════════════════ */}
-      {tab === 'conciliar' && (
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {/* Lista de egresos pendientes */}
-          <div style={{ flex: '1 1 320px' }}>
-            <div style={st.card}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: colors.gold, marginBottom: 10 }}>
-                Gastos con Factura — Pendientes de cruce ({pendientes.length})
+      {tab === 'conciliar' && (() => {
+        const verdes    = pendientes.filter(p => matchMap[p.id]?.confianza === 'alta')
+        const amarillos = pendientes.filter(p => matchMap[p.id]?.confianza === 'media')
+        const bajos     = pendientes.filter(p => matchMap[p.id]?.confianza === 'baja')
+        const rojos     = pendientes.filter(p => matchMap[p.id]?.confianza === 'ninguna' || !matchMap[p.id])
+        const CONF_STYLE = {
+          alta:   { icon: '🟢', label: 'Coincidencia exacta', border: '#16a34a', bg: '#052e16', badgeBg: 'rgba(74,222,128,0.15)', badgeColor: '#4ade80' },
+          media:  { icon: '🟡', label: 'Sugerido',            border: '#b45309', bg: '#1c1200', badgeBg: 'rgba(251,191,36,0.15)',  badgeColor: '#fbbf24' },
+          baja:   { icon: '🟠', label: 'Posible',             border: '#9a3412', bg: '#1c0a00', badgeBg: 'rgba(249,115,22,0.15)',  badgeColor: '#f97316' },
+          ninguna:{ icon: '🔴', label: 'Sin match',           border: '#7f1d1d', bg: '#1a0000', badgeBg: 'rgba(230,57,70,0.15)',   badgeColor: '#e63946' },
+        }
+        const renderDteCand = (dte, egresoId, isSelected) => (
+          <div key={dte.id} style={{ background: '#0f172a', borderRadius: 8, padding: 10, marginBottom: 6, border: '1px solid #2a2a3e', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: colors.gold }}>{fmt$(dte.monto_total)}</div>
+              <div style={{ fontSize: 12, color: '#f0f0f0' }}>{dte.proveedor_nombre}</div>
+              <div style={{ fontSize: 11, color: '#888' }}>{fmtDate(dte.fecha_emision)} · {dte.tipo_dte} · {dte.numero_control?.slice(-8)}</div>
+            </div>
+            <button onClick={() => cruzarConDte(dte.id, egresoId)}
+              style={{ ...st.btn(colors.green), color:'#000', padding:'6px 12px', fontSize:12, whiteSpace:'nowrap' }}>
+              ✓ Cruzar
+            </button>
+          </div>
+        )
+        return (
+          <div>
+            {/* Barra resumen */}
+            <div style={{ ...st.card, display:'flex', gap:16, alignItems:'center', flexWrap:'wrap' }}>
+              <div style={{ display:'flex', gap:12, fontSize:13, flexWrap:'wrap' }}>
+                <span>🟢 <strong style={{color:'#4ade80'}}>{verdes.length}</strong> exactas</span>
+                <span>🟡 <strong style={{color:'#fbbf24'}}>{amarillos.length}</strong> sugeridas</span>
+                <span>🟠 <strong style={{color:'#f97316'}}>{bajos.length}</strong> posibles</span>
+                <span>🔴 <strong style={{color:'#e63946'}}>{rojos.length}</strong> sin match</span>
               </div>
-              {loading && <div style={{ color: '#888', fontSize: 12 }}>Cargando…</div>}
-              {pendientes.map(r => {
-                const vd = r.ventas_diarias || {}
-                const isSelected = selEgreso?.id === r.id
-                return (
-                  <div key={r.id}
-                    style={{ background: isSelected ? '#1e2d1e' : '#0f172a', borderRadius: 8, padding: 12, marginBottom: 8,
-                             border: `1px solid ${isSelected ? colors.green : '#2a2a3e'}`, cursor: 'pointer' }}
-                    onClick={() => buscarCandidatos(r)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontSize: 12, color: '#888' }}>{vd.fecha ? fmtDate(vd.fecha) : '—'} · {vd.store_code || '—'}</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: colors.gold }}>{fmt$(r.monto)}</div>
-                        {r.comentario && <div style={{ fontSize: 11, color: '#aaa' }}>{r.comentario.slice(0,40)}</div>}
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexDirection: 'column' }}>
-                        {r.foto_url && (
-                          <a href={r.foto_url} target="_blank" rel="noreferrer"
-                             style={{ ...st.btn('#1e293b'), padding: '4px 8px', fontSize: 11 }} onClick={e => e.stopPropagation()}>
-                            📷 Ver foto
-                          </a>
+              {verdes.length > 0 && (
+                <button onClick={confirmarTodosVerdes} disabled={confirmandoBulk}
+                  style={{ ...st.btn(colors.green), color:'#000', fontSize:13, opacity: confirmandoBulk ? 0.6 : 1 }}>
+                  {confirmandoBulk ? 'Confirmando…' : `✓ Confirmar ${verdes.length} exactas de un solo`}
+                </button>
+              )}
+              {loadingMatches && <span style={{color:'#888', fontSize:12}}>⏳ Analizando DTEs…</span>}
+              {loading && <span style={{color:'#888', fontSize:12}}>Cargando pendientes…</span>}
+            </div>
+
+            {pendientes.length === 0 && !loading && (
+              <div style={{ color: colors.green, fontSize: 13, textAlign: 'center', padding: 30 }}>
+                ✅ Sin pendientes de cruce en el período
+              </div>
+            )}
+
+            {/* Cards por cada egreso */}
+            {pendientes.map(r => {
+              const vd = r.ventas_diarias || {}
+              const m = matchMap[r.id]
+              const conf = m?.confianza || 'ninguna'
+              const cs = CONF_STYLE[conf]
+              const isExp = expandido.has(r.id)
+              const isSel = selEgreso?.id === r.id
+
+              return (
+                <div key={r.id} style={{ background: cs.bg, borderRadius: 10, padding: 12, marginBottom: 10, border: `1px solid ${cs.border}` }}>
+                  {/* Fila principal */}
+                  <div style={{ display:'flex', gap:10, alignItems:'flex-start', flexWrap:'wrap' }}>
+                    {/* Info egreso */}
+                    <div style={{ flex: '1 1 180px' }}>
+                      <div style={{ fontSize: 11, color: '#888', marginBottom: 2 }}>{vd.fecha ? fmtDate(vd.fecha) : '—'} · {vd.store_code || '—'}</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: colors.gold }}>{fmt$(r.monto)}</div>
+                      {r.comentario && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{r.comentario.slice(0,50)}</div>}
+                    </div>
+
+                    {/* Badge de confianza + match sugerido */}
+                    <div style={{ flex: '2 1 240px' }}>
+                      <div style={{ display:'inline-flex', alignItems:'center', gap:6, background: cs.badgeBg, borderRadius:6, padding:'3px 8px', marginBottom: m?.dte ? 6 : 0 }}>
+                        <span style={{ fontSize:11, fontWeight:700, color: cs.badgeColor }}>{cs.icon} {cs.label}</span>
+                        {m?.candidatos > 0 && conf !== 'alta' && (
+                          <span style={{ fontSize:10, color:'#888' }}>({m.candidatos} candidato{m.candidatos>1?'s':''})</span>
                         )}
-                        <button onClick={e => { e.stopPropagation(); marcarTicketCF(r.id) }}
-                          style={{ ...st.btn('#7c3aed'), padding: '4px 8px', fontSize: 10 }}>
-                          Ticket CF
+                      </div>
+                      {m?.dte && (
+                        <div style={{ background:'rgba(255,255,255,0.04)', borderRadius:8, padding:'8px 10px' }}>
+                          <div style={{ fontSize:13, fontWeight:700, color: colors.gold }}>{fmt$(m.dte.monto_total)}</div>
+                          <div style={{ fontSize:12, color:'#f0f0f0' }}>{m.dte.proveedor_nombre}</div>
+                          <div style={{ fontSize:11, color:'#888' }}>
+                            {fmtDate(m.dte.fecha_emision)} · {m.dte.tipo_dte}
+                            {m.diffPct > 0 && <span style={{color:'#666'}}> · ±{(m.diffPct*100).toFixed(1)}%</span>}
+                            {m.diffDias > 0 && <span style={{color:'#666'}}> · {m.diffDias.toFixed(0)}d</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botones de acción */}
+                    <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'flex-end' }}>
+                      {r.foto_url && (
+                        <a href={r.foto_url} target="_blank" rel="noreferrer"
+                           style={{ ...st.btn('#1e293b'), padding:'4px 10px', fontSize:11, textDecoration:'none' }}>
+                          📷 Ver foto
+                        </a>
+                      )}
+                      {m?.dte && (conf === 'alta' || conf === 'media') && (
+                        <button onClick={() => confirmarMatch(r.id)}
+                          style={{ ...st.btn(conf==='alta' ? colors.green : '#b45309'), color: conf==='alta' ? '#000':'#fff', padding:'5px 12px', fontSize:12 }}>
+                          ✓ {conf==='alta' ? 'Confirmar' : 'Sí, es este'}
                         </button>
-                        {r.estado_cruce !== 'pendiente' && (
-                          <button onClick={e => { e.stopPropagation(); revertirPendiente(r.id) }}
-                            style={{ ...st.btn('#374151'), padding: '4px 8px', fontSize: 10 }}>
-                            ↩ Revertir
-                          </button>
-                        )}
-                      </div>
+                      )}
+                      <button onClick={() => toggleExpandido(r)}
+                        style={{ ...st.btn('#1e293b'), padding:'4px 10px', fontSize:11, border:'1px solid #334' }}>
+                        {isExp ? '▲ Cerrar' : '🔍 Ver DTEs'}
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); marcarTicketCF(r.id) }}
+                        style={{ ...st.btn('#7c3aed'), padding:'4px 10px', fontSize:11 }}>
+                        Ticket CF
+                      </button>
                     </div>
                   </div>
-                )
-              })}
-              {pendientes.length === 0 && !loading && (
-                <div style={{ color: colors.green, fontSize: 13, textAlign: 'center', padding: 20 }}>
-                  ✅ Sin pendientes de cruce en el período
-                </div>
-              )}
-            </div>
-          </div>
 
-          {/* DTEs candidatos */}
-          <div style={{ flex: '1 1 320px' }}>
-            <div style={st.card}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: colors.blue, marginBottom: 10 }}>
-                DTEs candidatos {selEgreso ? `— ${fmt$(selEgreso.monto)} ± 12%` : ''}
-              </div>
-              {!selEgreso && (
-                <div style={{ color: '#888', fontSize: 12, textAlign: 'center', padding: 20 }}>
-                  👈 Selecciona un egreso para ver DTEs candidatos
+                  {/* Panel manual expandible */}
+                  {isExp && (
+                    <div style={{ marginTop: 10, borderTop:'1px solid #333', paddingTop:10 }}>
+                      <div style={{ fontSize:12, color:'#888', marginBottom:8 }}>
+                        DTEs disponibles — {fmt$(r.monto)} ±12% · ±7 días
+                      </div>
+                      {isSel && loadCand && <div style={{color:'#888',fontSize:12}}>Buscando…</div>}
+                      {isSel && !loadCand && dtesCand.length === 0 && (
+                        <div style={{color:'#888',fontSize:12,textAlign:'center',padding:12}}>
+                          Sin DTEs en ese rango. ¿Es Ticket CF?
+                        </div>
+                      )}
+                      {isSel && dtesCand.map(dte => renderDteCand(dte, r.id, true))}
+                    </div>
+                  )}
                 </div>
-              )}
-              {loadCand && <div style={{ color: '#888', fontSize: 12 }}>Buscando DTEs cercanos…</div>}
-              {dtesCand.map(dte => (
-                <div key={dte.id} style={{ background: '#0f172a', borderRadius: 8, padding: 12, marginBottom: 8, border: '1px solid #2a2a3e' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: colors.gold }}>{fmt$(dte.monto_total)}</div>
-                  <div style={{ fontSize: 12, color: '#f0f0f0', marginBottom: 2 }}>{dte.proveedor_nombre}</div>
-                  <div style={{ fontSize: 11, color: '#888' }}>{fmtDate(dte.fecha_emision)} · {dte.tipo_dte} · {dte.numero_control?.slice(-8)}</div>
-                  <button onClick={() => cruzarConDte(dte.id)}
-                    style={{ ...st.btn(colors.green), marginTop: 8, color: '#000', padding: '6px 12px', fontSize: 12 }}>
-                    ✓ Cruzar
-                  </button>
-                </div>
-              ))}
-              {selEgreso && !loadCand && dtesCand.length === 0 && (
-                <div style={{ color: '#888', fontSize: 12, textAlign: 'center', padding: 20 }}>
-                  No se encontraron DTEs candidatos en rango ±12% y ±7 días.<br/>
-                  <button onClick={() => marcarTicketCF(selEgreso.id)}
-                    style={{ ...st.btn('#7c3aed'), marginTop: 10, fontSize: 12 }}>
-                    Marcar como Ticket CF (sin DTE email)
-                  </button>
-                </div>
-              )}
-            </div>
+              )
+            })}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ═══════════════════════════════════════════════
           TAB 3 — REGISTRAR SIN DTE
