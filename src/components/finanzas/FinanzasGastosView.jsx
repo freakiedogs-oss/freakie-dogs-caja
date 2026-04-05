@@ -62,6 +62,16 @@ export default function FinanzasGastosView({ user }) {
   const [expandido, setExpandido]     = useState(new Set()) // egresos con panel manual abierto
   const [confirmandoBulk, setConfirmandoBulk] = useState(false)
 
+  // Tab 4 — Recepciones CM
+  const [recepciones, setRecepciones]     = useState([])
+  const [matchMapRec, setMatchMapRec]     = useState({}) // recepcion_id → {confianza, dte, score}
+  const [loadingRec, setLoadingRec]       = useState(false)
+  const [regRecepcion, setRegRecepcion]   = useState(null) // recepcion abierta en mini-form
+  const [regForm, setRegForm]             = useState({ monto: '', notas: '', categoria_gasto_id: '' })
+  const [savingRec, setSavingRec]         = useState(false)
+  const [expandidoRec, setExpandidoRec]   = useState(new Set())
+  const [dtesCandRec, setDtesCandRec]     = useState([])
+
   // Tab 3 — Registrar Sin DTE
   const [proveedores, setProveedores] = useState([])
   const [formSDte, setFormSDte] = useState({
@@ -307,6 +317,135 @@ export default function FinanzasGastosView({ user }) {
     setEditEgreso(null)
   }
 
+  // ── Tab 4: Recepciones CM
+  const cargarRecepciones = useCallback(async () => {
+    setLoadingRec(true)
+    const { data } = await supabase
+      .from('recepciones')
+      .select('id, fecha, proveedor, tipo_recepcion, estado, foto_dte_url, dte_codigo, notas, compras_dte_id, compras_sin_dte_id')
+      .is('compras_dte_id', null)
+      .is('compras_sin_dte_id', null)
+      .order('fecha', { ascending: false })
+    setRecepciones(data || [])
+    setLoadingRec(false)
+    if (data?.length) calcularMatchesRec(data)
+  }, [])
+
+  useEffect(() => { if (tab === 'recepciones') cargarRecepciones() }, [tab, cargarRecepciones])
+
+  // Normalizar nombre proveedor para comparación
+  const normProv = (s) => (s || '').toLowerCase()
+    .replace(/s\.?\s*a\.?\s*de\s*c\.?\s*v\.?/gi, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
+
+  // Score de similitud entre dos nombres de proveedor (0-1)
+  const provScore = (a, b) => {
+    const na = normProv(a), nb = normProv(b)
+    if (!na || !nb) return 0
+    const words = na.split(' ').filter(w => w.length > 3)
+    if (!words.length) return 0
+    return words.filter(w => nb.includes(w)).length / words.length
+  }
+
+  // dte_codigo (ej: "5537") vs numero_control del DTE email
+  const dteCodigoMatch = (codigo, numeroControl) => {
+    if (!codigo || !numeroControl) return false
+    const last = numeroControl.slice(-codigo.length)
+    return last === codigo || numeroControl.endsWith(codigo.padStart(15, '0'))
+  }
+
+  const calcularMatchesRec = useCallback(async (lista) => {
+    if (!lista?.length) return
+    const fechas = lista.map(r => r.fecha).filter(Boolean)
+    const minF = new Date(Math.min(...fechas.map(f => new Date(f + 'T12:00:00'))))
+    const maxF = new Date(Math.max(...fechas.map(f => new Date(f + 'T12:00:00'))))
+    minF.setDate(minF.getDate() - 5)
+    maxF.setDate(maxF.getDate() + 3)
+    const { data: dtes } = await supabase
+      .from('compras_dte')
+      .select('id, proveedor_nombre, fecha_emision, monto_total, tipo_dte, numero_control')
+      .eq('cruzado', false)
+      .gte('fecha_emision', minF.toISOString().split('T')[0])
+      .lte('fecha_emision', maxF.toISOString().split('T')[0])
+    const pool = dtes || []
+    const usados = new Set()
+    const newMap = {}
+    for (const rec of lista) {
+      const recDate = new Date(rec.fecha + 'T12:00:00')
+      const scored = pool
+        .filter(d => !usados.has(d.id))
+        .map(d => {
+          const diffDias = Math.abs((new Date(d.fecha_emision + 'T12:00:00') - recDate) / 86400000)
+          const ps = provScore(rec.proveedor, d.proveedor_nombre)
+          const codigoOk = dteCodigoMatch(rec.dte_codigo, d.numero_control)
+          const score = (codigoOk ? 3 : 0) + ps * 2 - diffDias * 0.3
+          return { dte: d, score, diffDias, ps, codigoOk }
+        })
+        .filter(x => x.diffDias <= 5 && (x.ps >= 0.4 || x.codigoOk))
+        .sort((a, b) => b.score - a.score)
+      if (!scored.length) {
+        newMap[rec.id] = { confianza: 'ninguna', dte: null }
+      } else {
+        const best = scored[0]
+        let confianza
+        if (best.codigoOk && best.ps >= 0.4) confianza = 'alta'
+        else if (best.ps >= 0.6 && best.diffDias <= 3) confianza = 'media'
+        else confianza = 'baja'
+        newMap[rec.id] = { confianza, dte: best.dte, score: best.score, diffDias: best.diffDias, candidatos: scored.length }
+        if (confianza === 'alta') usados.add(best.dte.id)
+      }
+    }
+    setMatchMapRec(newMap)
+  }, [])
+
+  const cruzarRecepcionConDte = async (recepcionId, dteId) => {
+    await Promise.all([
+      supabase.from('recepciones').update({ compras_dte_id: dteId }).eq('id', recepcionId),
+      supabase.from('compras_dte').update({ cruzado: true }).eq('id', dteId),
+    ])
+    setRecepciones(r => r.filter(x => x.id !== recepcionId))
+    setMatchMapRec(prev => { const n = {...prev}; delete n[recepcionId]; return n })
+    setExpandidoRec(prev => { const n = new Set(prev); n.delete(recepcionId); return n })
+  }
+
+  const buscarDtesCandRec = async (rec) => {
+    setDtesCandRec([])
+    const recDate = new Date(rec.fecha + 'T12:00:00')
+    const desde = new Date(recDate); desde.setDate(desde.getDate() - 7)
+    const hasta = new Date(recDate); hasta.setDate(hasta.getDate() + 4)
+    const { data } = await supabase
+      .from('compras_dte')
+      .select('id, proveedor_nombre, fecha_emision, monto_total, tipo_dte, numero_control')
+      .eq('cruzado', false)
+      .gte('fecha_emision', desde.toISOString().split('T')[0])
+      .lte('fecha_emision', hasta.toISOString().split('T')[0])
+      .order('fecha_emision', { ascending: false })
+      .limit(20)
+    setDtesCandRec(data || [])
+  }
+
+  const registrarSinDteDesdeRecepcion = async (rec) => {
+    if (!regForm.monto) return
+    setSavingRec(true)
+    const { data: sinDte, error } = await supabase.from('compras_sin_dte').insert({
+      fecha: rec.fecha,
+      proveedor_nombre: rec.proveedor,
+      monto_total: parseFloat(regForm.monto),
+      tipo: 'foto_dte_pendiente',
+      forma_pago: 'efectivo',
+      descripcion: regForm.notas || `Recepción bodega - DTE #${rec.dte_codigo || '?'}`,
+      categoria_gasto_id: regForm.categoria_gasto_id || null,
+      recibido_en: 'casa_matriz',
+      foto_url: rec.foto_dte_url,
+    }).select('id').single()
+    if (!error && sinDte) {
+      await supabase.from('recepciones').update({ compras_sin_dte_id: sinDte.id }).eq('id', rec.id)
+      setRecepciones(r => r.filter(x => x.id !== rec.id))
+    }
+    setSavingRec(false)
+    setRegRecepcion(null)
+    setRegForm({ monto: '', notas: '', categoria_gasto_id: '' })
+  }
+
   // ── Tab 3: Guardar compra sin DTE
   const guardarSinDte = async () => {
     setSavingSDte(true)
@@ -359,9 +498,10 @@ export default function FinanzasGastosView({ user }) {
       {/* TABS */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
         {[
-          { key: 'egresos',   label: '📊 Egresos de Caja' },
-          { key: 'conciliar', label: '🔗 Conciliar DTEs' },
-          { key: 'sin-dte',   label: '📥 Registrar Sin DTE' },
+          { key: 'egresos',     label: '📊 Egresos de Caja' },
+          { key: 'conciliar',   label: '🔗 Conciliar DTEs' },
+          { key: 'recepciones', label: '📦 Recepciones CM' },
+          { key: 'sin-dte',     label: '📥 Registrar Sin DTE' },
         ].map(t => (
           <button key={t.key}
             onClick={() => setTab(t.key)}
@@ -397,7 +537,7 @@ export default function FinanzasGastosView({ user }) {
               </select>
             </div>
           )}
-          <button style={st.btn()} onClick={tab === 'egresos' ? cargarEgresos : cargarPendientes}>
+          <button style={st.btn()} onClick={tab === 'egresos' ? cargarEgresos : tab === 'recepciones' ? cargarRecepciones : cargarPendientes}>
             🔄 Filtrar
           </button>
         </div>
@@ -648,6 +788,174 @@ export default function FinanzasGastosView({ user }) {
                         </div>
                       )}
                       {isSel && dtesCand.map(dte => renderDteCand(dte, r.id, true))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
+      {/* ═══════════════════════════════════════════════
+          TAB 4 — RECEPCIONES CM
+      ═══════════════════════════════════════════════ */}
+      {tab === 'recepciones' && (() => {
+        const CONF = {
+          alta:   { icon:'🟢', label:'DTE encontrado',  border:'#16a34a', bg:'#052e16', badgeColor:'#4ade80' },
+          media:  { icon:'🟡', label:'Probable match',  border:'#b45309', bg:'#1c1200', badgeColor:'#fbbf24' },
+          baja:   { icon:'🟠', label:'Posible match',   border:'#9a3412', bg:'#1c0a00', badgeColor:'#f97316' },
+          ninguna:{ icon:'🔴', label:'Sin DTE en email',border:'#7f1d1d', bg:'#1a0000', badgeColor:'#e63946' },
+        }
+        const verdes = recepciones.filter(r => matchMapRec[r.id]?.confianza === 'alta')
+        return (
+          <div>
+            {/* Resumen */}
+            <div style={{ ...st.card, display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
+              <div style={{ fontSize:13, color:'#aaa' }}>
+                <strong style={{color:'#f0f0f0'}}>{recepciones.length}</strong> recepciones sin cruzar ·{' '}
+                🟢 <strong style={{color:'#4ade80'}}>{verdes.length}</strong> con DTE email ·{' '}
+                🔴 <strong style={{color:'#e63946'}}>{recepciones.filter(r=>matchMapRec[r.id]?.confianza==='ninguna'||!matchMapRec[r.id]).length}</strong> sin DTE email (registrar monto)
+              </div>
+              {verdes.length > 0 && (
+                <button style={{ ...st.btn(colors.green), color:'#000', fontSize:12 }}
+                  onClick={async () => {
+                    for (const r of verdes) await cruzarRecepcionConDte(r.id, matchMapRec[r.id].dte.id)
+                  }}>
+                  ✓ Cruzar {verdes.length} exactas
+                </button>
+              )}
+              {loadingRec && <span style={{color:'#888',fontSize:12}}>Cargando…</span>}
+            </div>
+
+            {recepciones.length === 0 && !loadingRec && (
+              <div style={{color:colors.green, textAlign:'center', padding:30, fontSize:13}}>✅ Todas las recepciones están cruzadas</div>
+            )}
+
+            {recepciones.map(r => {
+              const m = matchMapRec[r.id]
+              const conf = m?.confianza || 'ninguna'
+              const cs = CONF[conf]
+              const isExp = expandidoRec.has(r.id)
+              const isReg = regRecepcion?.id === r.id
+              return (
+                <div key={r.id} style={{ background:cs.bg, borderRadius:10, padding:12, marginBottom:10, border:`1px solid ${cs.border}` }}>
+                  <div style={{ display:'flex', gap:10, alignItems:'flex-start', flexWrap:'wrap' }}>
+                    {/* Info recepción */}
+                    <div style={{ flex:'1 1 180px' }}>
+                      <div style={{ fontSize:11, color:'#888' }}>{fmtDate(r.fecha)} · CM001</div>
+                      <div style={{ fontSize:15, fontWeight:800, color:'#f0f0f0', marginTop:2 }}>{r.proveedor}</div>
+                      {r.dte_codigo && <div style={{ fontSize:11, color:'#888', marginTop:2 }}>DTE #{r.dte_codigo}</div>}
+                      {r.notas && <div style={{ fontSize:11, color:'#aaa', marginTop:2 }}>{r.notas.slice(0,50)}</div>}
+                    </div>
+
+                    {/* Match sugerido */}
+                    <div style={{ flex:'2 1 220px' }}>
+                      <div style={{ display:'inline-flex', gap:6, alignItems:'center', background:`rgba(255,255,255,0.05)`, borderRadius:6, padding:'3px 8px', marginBottom: m?.dte ? 6 : 0 }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:cs.badgeColor }}>{cs.icon} {cs.label}</span>
+                      </div>
+                      {m?.dte && (
+                        <div style={{ background:'rgba(255,255,255,0.04)', borderRadius:8, padding:'8px 10px' }}>
+                          <div style={{ fontSize:13, fontWeight:700, color:colors.gold }}>{fmt$(m.dte.monto_total)}</div>
+                          <div style={{ fontSize:12, color:'#f0f0f0' }}>{m.dte.proveedor_nombre}</div>
+                          <div style={{ fontSize:11, color:'#888' }}>
+                            {fmtDate(m.dte.fecha_emision)} · {m.dte.tipo_dte} · #{m.dte.numero_control?.slice(-6)}
+                            {m.diffDias > 0 && <span style={{color:'#666'}}> · {m.diffDias.toFixed(0)}d</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botones */}
+                    <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'flex-end' }}>
+                      {r.foto_dte_url && (
+                        <a href={r.foto_dte_url} target="_blank" rel="noreferrer"
+                           style={{ ...st.btn('#1e293b'), padding:'4px 10px', fontSize:11, textDecoration:'none' }}>
+                          📷 Ver DTE
+                        </a>
+                      )}
+                      {m?.dte && (conf === 'alta' || conf === 'media') && (
+                        <button onClick={() => cruzarRecepcionConDte(r.id, m.dte.id)}
+                          style={{ ...st.btn(conf==='alta'?colors.green:'#b45309'), color:conf==='alta'?'#000':'#fff', padding:'5px 12px', fontSize:12 }}>
+                          ✓ {conf==='alta'?'Confirmar':'Sí, es este'}
+                        </button>
+                      )}
+                      <button onClick={() => {
+                          const newSet = new Set(expandidoRec)
+                          if (newSet.has(r.id)) { newSet.delete(r.id) } else { newSet.add(r.id); buscarDtesCandRec(r) }
+                          setExpandidoRec(newSet)
+                        }}
+                        style={{ ...st.btn('#1e293b'), padding:'4px 10px', fontSize:11, border:'1px solid #334' }}>
+                        {isExp ? '▲ Cerrar' : '🔍 Ver DTEs'}
+                      </button>
+                      {conf === 'ninguna' && (
+                        <button onClick={() => { setRegRecepcion(r); setRegForm({ monto:'', notas:'', categoria_gasto_id:'' }) }}
+                          style={{ ...st.btn('#7c3aed'), padding:'4px 10px', fontSize:11 }}>
+                          📋 Registrar monto
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Panel DTEs manuales */}
+                  {isExp && (
+                    <div style={{ marginTop:10, borderTop:'1px solid #333', paddingTop:10 }}>
+                      <div style={{ fontSize:12, color:'#888', marginBottom:8 }}>DTEs disponibles ±7 días · todos los montos</div>
+                      {dtesCandRec.length === 0 && <div style={{color:'#888',fontSize:12}}>Sin DTEs en ese período sin cruzar.</div>}
+                      {dtesCandRec.map(dte => (
+                        <div key={dte.id} style={{ background:'#0f172a', borderRadius:8, padding:10, marginBottom:6, border:'1px solid #2a2a3e', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:700, color:colors.gold }}>{fmt$(dte.monto_total)}</div>
+                            <div style={{ fontSize:12, color:'#f0f0f0' }}>{dte.proveedor_nombre}</div>
+                            <div style={{ fontSize:11, color:'#888' }}>{fmtDate(dte.fecha_emision)} · #{dte.numero_control?.slice(-6)}</div>
+                          </div>
+                          <button onClick={() => cruzarRecepcionConDte(r.id, dte.id)}
+                            style={{ ...st.btn(colors.green), color:'#000', padding:'6px 12px', fontSize:12, whiteSpace:'nowrap' }}>
+                            ✓ Cruzar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Mini-form registrar monto */}
+                  {isReg && (
+                    <div style={{ marginTop:10, borderTop:'1px solid #7c3aed', paddingTop:10, background:'rgba(124,58,237,0.08)', borderRadius:8, padding:12 }}>
+                      <div style={{ fontSize:12, fontWeight:700, color:'#a78bfa', marginBottom:10 }}>
+                        📋 Registrar como "DTE físico pendiente email" — {r.proveedor}
+                      </div>
+                      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-end' }}>
+                        <div style={{ flex:'0 0 130px' }}>
+                          <span style={st.label}>Monto total ($) *</span>
+                          <input type="number" step="0.01" placeholder="0.00" style={st.input}
+                            value={regForm.monto} onChange={e => setRegForm(f => ({...f, monto: e.target.value}))} />
+                        </div>
+                        <div style={{ flex:'1 1 160px' }}>
+                          <span style={st.label}>Categoría P&L</span>
+                          <select style={st.input} value={regForm.categoria_gasto_id}
+                            onChange={e => setRegForm(f => ({...f, categoria_gasto_id: e.target.value}))}>
+                            <option value="">— Sin categoría —</option>
+                            {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                          </select>
+                        </div>
+                        <div style={{ flex:'1 1 160px' }}>
+                          <span style={st.label}>Nota (opcional)</span>
+                          <input style={st.input} placeholder={`DTE #${r.dte_codigo || '?'}`}
+                            value={regForm.notas} onChange={e => setRegForm(f => ({...f, notas: e.target.value}))} />
+                        </div>
+                        <button onClick={() => registrarSinDteDesdeRecepcion(r)}
+                          disabled={!regForm.monto || savingRec}
+                          style={{ ...st.btn('#7c3aed'), padding:'8px 14px', fontSize:13, opacity: !regForm.monto ? 0.5 : 1 }}>
+                          {savingRec ? 'Guardando…' : '✓ Guardar'}
+                        </button>
+                        <button onClick={() => setRegRecepcion(null)}
+                          style={{ ...st.btn('#1e293b'), padding:'8px 10px', fontSize:12, border:'1px solid #334' }}>
+                          ✕
+                        </button>
+                      </div>
+                      <div style={{ fontSize:10, color:'#666', marginTop:8 }}>
+                        Queda en P&L como "foto_dte_pendiente". Cuando llegue el JSON por email se cruzará automáticamente.
+                      </div>
                     </div>
                   )}
                 </div>
