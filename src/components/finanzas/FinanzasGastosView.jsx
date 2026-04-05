@@ -322,13 +322,23 @@ export default function FinanzasGastosView({ user }) {
     setLoadingRec(true)
     const { data } = await supabase
       .from('recepciones')
-      .select('id, fecha, proveedor, tipo_recepcion, estado, foto_dte_url, dte_codigo, notas, compras_dte_id, compras_sin_dte_id')
+      .select(`
+        id, fecha, proveedor, tipo_recepcion, estado, foto_dte_url, dte_codigo, notas, compras_dte_id, compras_sin_dte_id,
+        recepcion_items(cantidad_recibida, precio_unitario)
+      `)
       .is('compras_dte_id', null)
       .is('compras_sin_dte_id', null)
       .order('fecha', { ascending: false })
-    setRecepciones(data || [])
+    // Calcular monto_estimado = Σ(cantidad_recibida × precio_unitario) por recepción
+    const rows = (data || []).map(r => ({
+      ...r,
+      monto_estimado: (r.recepcion_items || []).reduce(
+        (sum, it) => sum + (n(it.cantidad_recibida) * n(it.precio_unitario)), 0
+      )
+    }))
+    setRecepciones(rows)
     setLoadingRec(false)
-    if (data?.length) calcularMatchesRec(data)
+    if (rows.length) calcularMatchesRec(rows)
   }, [])
 
   useEffect(() => { if (tab === 'recepciones') cargarRecepciones() }, [tab, cargarRecepciones])
@@ -369,28 +379,47 @@ export default function FinanzasGastosView({ user }) {
     const pool = dtes || []
     const usados = new Set()
     const newMap = {}
-    for (const rec of lista) {
+    // Priorizar recepciones con mayor monto para evitar colisiones
+    const sorted = [...lista].sort((a, b) => n(b.monto_estimado) - n(a.monto_estimado))
+    for (const rec of sorted) {
       const recDate = new Date(rec.fecha + 'T12:00:00')
+      const hasMonto = rec.monto_estimado > 0
       const scored = pool
         .filter(d => !usados.has(d.id))
         .map(d => {
           const diffDias = Math.abs((new Date(d.fecha_emision + 'T12:00:00') - recDate) / 86400000)
           const ps = provScore(rec.proveedor, d.proveedor_nombre)
           const codigoOk = dteCodigoMatch(rec.dte_codigo, d.numero_control)
-          const score = (codigoOk ? 3 : 0) + ps * 2 - diffDias * 0.3
-          return { dte: d, score, diffDias, ps, codigoOk }
+          // Matching por monto cuando hay estimado (±15% — más tolerante que Tab2 por precios desactualizados)
+          let diffPct = 1, montoOk = false
+          if (hasMonto && rec.monto_estimado > 0) {
+            diffPct = Math.abs(n(d.monto_total) - rec.monto_estimado) / rec.monto_estimado
+            montoOk = diffPct <= 0.15
+          }
+          // Score compuesto: código > monto > nombre > fecha
+          const score = (codigoOk ? 4 : 0) + (montoOk ? 2.5 - diffPct * 5 : 0) + ps * 2 - diffDias * 0.3
+          return { dte: d, score, diffDias, ps, codigoOk, diffPct, montoOk }
         })
-        .filter(x => x.diffDias <= 5 && (x.ps >= 0.4 || x.codigoOk))
+        .filter(x => {
+          if (x.diffDias > 7) return false
+          // Aceptar si código coincide, nombre similar, monto similar, o nombre+fecha razonables
+          return x.codigoOk || (hasMonto && x.montoOk && x.ps >= 0.2) || x.ps >= 0.4
+        })
         .sort((a, b) => b.score - a.score)
       if (!scored.length) {
         newMap[rec.id] = { confianza: 'ninguna', dte: null }
       } else {
         const best = scored[0]
         let confianza
-        if (best.codigoOk && best.ps >= 0.4) confianza = 'alta'
+        if (best.codigoOk && (best.ps >= 0.3 || best.montoOk)) confianza = 'alta'
+        else if (hasMonto && best.montoOk && best.diffPct <= 0.05 && best.diffDias <= 2) confianza = 'alta'
+        else if (hasMonto && best.montoOk && best.diffDias <= 4 && best.ps >= 0.3) confianza = 'media'
         else if (best.ps >= 0.6 && best.diffDias <= 3) confianza = 'media'
         else confianza = 'baja'
-        newMap[rec.id] = { confianza, dte: best.dte, score: best.score, diffDias: best.diffDias, candidatos: scored.length }
+        newMap[rec.id] = {
+          confianza, dte: best.dte, score: best.score, diffDias: best.diffDias,
+          diffPct: best.diffPct, montoOk: best.montoOk, candidatos: scored.length
+        }
         if (confianza === 'alta') usados.add(best.dte.id)
       }
     }
@@ -412,14 +441,18 @@ export default function FinanzasGastosView({ user }) {
     const recDate = new Date(rec.fecha + 'T12:00:00')
     const desde = new Date(recDate); desde.setDate(desde.getDate() - 7)
     const hasta = new Date(recDate); hasta.setDate(hasta.getDate() + 4)
-    const { data } = await supabase
+    let q = supabase
       .from('compras_dte')
       .select('id, proveedor_nombre, fecha_emision, monto_total, tipo_dte, numero_control')
       .eq('cruzado', false)
       .gte('fecha_emision', desde.toISOString().split('T')[0])
       .lte('fecha_emision', hasta.toISOString().split('T')[0])
-      .order('fecha_emision', { ascending: false })
-      .limit(20)
+    // Si hay monto estimado, filtrar por rango ±20% para reducir lista
+    if (rec.monto_estimado > 0) {
+      q = q.gte('monto_total', rec.monto_estimado * 0.80)
+           .lte('monto_total', rec.monto_estimado * 1.20)
+    }
+    const { data } = await q.order('fecha_emision', { ascending: false }).limit(20)
     setDtesCandRec(data || [])
   }
 
@@ -845,6 +878,12 @@ export default function FinanzasGastosView({ user }) {
                     <div style={{ flex:'1 1 180px' }}>
                       <div style={{ fontSize:11, color:'#888' }}>{fmtDate(r.fecha)} · CM001</div>
                       <div style={{ fontSize:15, fontWeight:800, color:'#f0f0f0', marginTop:2 }}>{r.proveedor}</div>
+                      {r.monto_estimado > 0 && (
+                        <div style={{ fontSize:13, fontWeight:700, color:colors.gold, marginTop:3 }}>
+                          {fmt$(r.monto_estimado)}
+                          <span style={{ fontSize:10, color:'#888', fontWeight:400 }}> estimado</span>
+                        </div>
+                      )}
                       {r.dte_codigo && <div style={{ fontSize:11, color:'#888', marginTop:2 }}>DTE #{r.dte_codigo}</div>}
                       {r.notas && <div style={{ fontSize:11, color:'#aaa', marginTop:2 }}>{r.notas.slice(0,50)}</div>}
                     </div>
@@ -861,6 +900,11 @@ export default function FinanzasGastosView({ user }) {
                           <div style={{ fontSize:11, color:'#888' }}>
                             {fmtDate(m.dte.fecha_emision)} · {m.dte.tipo_dte} · #{m.dte.numero_control?.slice(-6)}
                             {m.diffDias > 0 && <span style={{color:'#666'}}> · {m.diffDias.toFixed(0)}d</span>}
+                            {r.monto_estimado > 0 && m.diffPct !== undefined && (
+                              <span style={{ color: m.diffPct <= 0.05 ? '#4ade80' : m.diffPct <= 0.12 ? '#fbbf24' : '#f97316' }}>
+                                {' '}· Δ{(m.diffPct*100).toFixed(1)}%
+                              </span>
+                            )}
                           </div>
                         </div>
                       )}
@@ -889,9 +933,13 @@ export default function FinanzasGastosView({ user }) {
                         {isExp ? '▲ Cerrar' : '🔍 Ver DTEs'}
                       </button>
                       {conf === 'ninguna' && (
-                        <button onClick={() => { setRegRecepcion(r); setRegForm({ monto:'', notas:'', categoria_gasto_id:'' }) }}
+                        <button onClick={() => {
+                            setRegRecepcion(r)
+                            // Auto-rellenar monto estimado si está disponible
+                            setRegForm({ monto: r.monto_estimado > 0 ? r.monto_estimado.toFixed(2) : '', notas:'', categoria_gasto_id:'' })
+                          }}
                           style={{ ...st.btn('#7c3aed'), padding:'4px 10px', fontSize:11 }}>
-                          📋 Registrar monto
+                          📋 Registrar{r.monto_estimado > 0 ? ` ${fmt$(r.monto_estimado)}` : ' monto'}
                         </button>
                       )}
                     </div>
@@ -900,7 +948,9 @@ export default function FinanzasGastosView({ user }) {
                   {/* Panel DTEs manuales */}
                   {isExp && (
                     <div style={{ marginTop:10, borderTop:'1px solid #333', paddingTop:10 }}>
-                      <div style={{ fontSize:12, color:'#888', marginBottom:8 }}>DTEs disponibles ±7 días · todos los montos</div>
+                      <div style={{ fontSize:12, color:'#888', marginBottom:8 }}>
+                        DTEs disponibles ±7 días{r.monto_estimado > 0 ? ` · ${fmt$(r.monto_estimado * 0.80)}–${fmt$(r.monto_estimado * 1.20)} (±20%)` : ' · todos los montos'}
+                      </div>
                       {dtesCandRec.length === 0 && <div style={{color:'#888',fontSize:12}}>Sin DTEs en ese período sin cruzar.</div>}
                       {dtesCandRec.map(dte => (
                         <div key={dte.id} style={{ background:'#0f172a', borderRadius:8, padding:10, marginBottom:6, border:'1px solid #2a2a3e', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
@@ -923,6 +973,9 @@ export default function FinanzasGastosView({ user }) {
                     <div style={{ marginTop:10, borderTop:'1px solid #7c3aed', paddingTop:10, background:'rgba(124,58,237,0.08)', borderRadius:8, padding:12 }}>
                       <div style={{ fontSize:12, fontWeight:700, color:'#a78bfa', marginBottom:10 }}>
                         📋 Registrar como "DTE físico pendiente email" — {r.proveedor}
+                        {r.monto_estimado > 0 && (
+                          <span style={{ fontSize:11, color:'#888', fontWeight:400 }}> · estimado {fmt$(r.monto_estimado)}</span>
+                        )}
                       </div>
                       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-end' }}>
                         <div style={{ flex:'0 0 130px' }}>
