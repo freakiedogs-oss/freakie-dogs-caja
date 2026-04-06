@@ -6,6 +6,12 @@ import { n } from '../../config';
 const EDIT_EMAILS = ['joseisart2008@gmail.com'];
 const EDIT_PINS = ['2000', '1000', '4844']; // Cesar Rodriguez, Jose Isart, Denny Stefany
 
+// ── Unidades fijas ──
+const UNIDADES = [
+  'porcion', 'unidad', 'libra', 'onza', 'gramo', 'kilogramo',
+  'litro', 'mililitro', 'taza', 'cucharada', 'cucharadita', 'bolsa', 'bote', 'caja',
+];
+
 // ── RECETAS / BOM ──────────────────────────────────────────
 export default function RecetasView({ user }) {
   const [recetas, setRecetas] = useState([]);
@@ -166,6 +172,50 @@ export default function RecetasView({ user }) {
   // ── Render ──
   if (loading) return <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>Cargando recetas...</div>;
 
+  // ── Detalle: variables usadas si sel existe ──
+  const ings = sel ? (ingredientes[sel.id] || []) : [];
+  const costo = sel ? calcCosto(sel.id) : 0;
+
+  // ── Modal receta (compartido entre lista y detalle) ──
+  const recetaModal = showNewReceta && (
+    <div className="modal-bg" onClick={() => setShowNewReceta(false)}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ padding: 20 }}>
+        <h3 style={{ margin: '0 0 12px', color: '#fff' }}>{editReceta?.id ? 'Editar' : 'Nueva'} Receta</h3>
+        <label style={lbl}>Nombre</label>
+        <input style={inp} value={editReceta?.nombre || ''} onChange={e => setEditReceta({ ...editReceta, nombre: e.target.value })} />
+        <label style={lbl}>Tipo</label>
+        <select style={inp} value={editReceta?.tipo || 'sub_receta'} onChange={e => setEditReceta({ ...editReceta, tipo: e.target.value })}>
+          <option value="plato_menu">Plato del Menú</option>
+          <option value="sub_receta">Sub-receta</option>
+          <option value="porcionado">Porcionado</option>
+        </select>
+        <label style={lbl}>Categoría</label>
+        <input style={inp} value={editReceta?.categoria || ''} onChange={e => setEditReceta({ ...editReceta, categoria: e.target.value })}
+          placeholder="Ej: Salsas, Preparaciones, Combos..." />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <label style={lbl}>Rendimiento</label>
+            <input style={inp} type="number" value={editReceta?.rendimiento || 1} onChange={e => setEditReceta({ ...editReceta, rendimiento: e.target.value })} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={lbl}>Unidad</label>
+            <select style={inp} value={editReceta?.unidad_rendimiento || 'porcion'} onChange={e => setEditReceta({ ...editReceta, unidad_rendimiento: e.target.value })}>
+              {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+        </div>
+        <label style={lbl}>Precio Venta ($)</label>
+        <input style={inp} type="number" step="0.01" value={editReceta?.precio_venta || ''} onChange={e => setEditReceta({ ...editReceta, precio_venta: e.target.value })} />
+        <label style={lbl}>Notas</label>
+        <textarea style={{ ...inp, minHeight: 50 }} value={editReceta?.notas || ''} onChange={e => setEditReceta({ ...editReceta, notas: e.target.value })} />
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button className="btn-primary" style={{ flex: 1 }} onClick={guardarReceta}>Guardar</button>
+          <button style={{ flex: 1, ...btnSec }} onClick={() => setShowNewReceta(false)}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── LISTA ──
   if (!sel) return (
     <div style={{ padding: '16px' }}>
@@ -204,8 +254,8 @@ export default function RecetasView({ user }) {
 
       {/* Lista */}
       {filtradas.map(r => {
-        const ings = ingredientes[r.id] || [];
-        const costo = calcCosto(r.id);
+        const rIngs = ingredientes[r.id] || [];
+        const rCosto = calcCosto(r.id);
         return (
           <div key={r.id} className="card" onClick={() => setSel(r)}
             style={{ cursor: 'pointer', padding: '12px 14px', marginBottom: 8 }}>
@@ -213,7 +263,7 @@ export default function RecetasView({ user }) {
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14, color: '#fff' }}>{r.nombre}</div>
                 <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-                  {r.categoria} · {ings.length} ingredientes
+                  {r.categoria} · {rIngs.length} ingredientes
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -221,10 +271,10 @@ export default function RecetasView({ user }) {
                 {r.precio_venta > 0 && (
                   <div style={{ fontSize: 12, color: '#4ade80', marginTop: 4 }}>
                     ${n(r.precio_venta).toFixed(2)}
-                    {costo > 0 && <span style={{ color: '#888', marginLeft: 4 }}>({Math.round((1 - costo / n(r.precio_venta)) * 100)}%)</span>}
+                    {rCosto > 0 && <span style={{ color: '#888', marginLeft: 4 }}>({Math.round((1 - rCosto / n(r.precio_venta)) * 100)}%)</span>}
                   </div>
                 )}
-                {costo > 0 && <div style={{ fontSize: 11, color: '#e9c46a' }}>Costo: ${costo.toFixed(2)}</div>}
+                {rCosto > 0 && <div style={{ fontSize: 11, color: '#e9c46a' }}>Costo: ${rCosto.toFixed(2)}</div>}
               </div>
             </div>
           </div>
@@ -232,51 +282,11 @@ export default function RecetasView({ user }) {
       })}
 
       {filtradas.length === 0 && <div style={{ textAlign: 'center', color: '#666', padding: 20 }}>No hay recetas que mostrar</div>}
-
-      {/* Modal nueva receta */}
-      {showNewReceta && (
-        <div className="modal-bg" onClick={() => setShowNewReceta(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ padding: 20 }}>
-            <h3 style={{ margin: '0 0 12px', color: '#fff' }}>{editReceta?.id ? 'Editar' : 'Nueva'} Receta</h3>
-            <label style={lbl}>Nombre</label>
-            <input style={inp} value={editReceta?.nombre || ''} onChange={e => setEditReceta({ ...editReceta, nombre: e.target.value })} />
-            <label style={lbl}>Tipo</label>
-            <select style={inp} value={editReceta?.tipo || 'sub_receta'} onChange={e => setEditReceta({ ...editReceta, tipo: e.target.value })}>
-              <option value="plato_menu">Plato del Menú</option>
-              <option value="sub_receta">Sub-receta</option>
-              <option value="porcionado">Porcionado</option>
-            </select>
-            <label style={lbl}>Categoría</label>
-            <input style={inp} value={editReceta?.categoria || ''} onChange={e => setEditReceta({ ...editReceta, categoria: e.target.value })}
-              placeholder="Ej: Salsas, Preparaciones, Combos..." />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ flex: 1 }}>
-                <label style={lbl}>Rendimiento</label>
-                <input style={inp} type="number" value={editReceta?.rendimiento || 1} onChange={e => setEditReceta({ ...editReceta, rendimiento: e.target.value })} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={lbl}>Unidad</label>
-                <input style={inp} value={editReceta?.unidad_rendimiento || 'porcion'} onChange={e => setEditReceta({ ...editReceta, unidad_rendimiento: e.target.value })} />
-              </div>
-            </div>
-            <label style={lbl}>Precio Venta ($)</label>
-            <input style={inp} type="number" step="0.01" value={editReceta?.precio_venta || ''} onChange={e => setEditReceta({ ...editReceta, precio_venta: e.target.value })} />
-            <label style={lbl}>Notas</label>
-            <textarea style={{ ...inp, minHeight: 50 }} value={editReceta?.notas || ''} onChange={e => setEditReceta({ ...editReceta, notas: e.target.value })} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button className="btn-primary" style={{ flex: 1 }} onClick={guardarReceta}>Guardar</button>
-              <button style={{ flex: 1, ...btnSec }} onClick={() => setShowNewReceta(false)}>Cancelar</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {recetaModal}
     </div>
   );
 
   // ── DETALLE ──
-  const ings = ingredientes[sel.id] || [];
-  const costo = calcCosto(sel.id);
-
   return (
     <div style={{ padding: '16px' }}>
       <button onClick={() => { setSel(null); setEditMode(false); }} style={{ background: 'none', border: 'none', color: '#e63946', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
@@ -296,10 +306,11 @@ export default function RecetasView({ user }) {
                   onChange={e => setEditRend({ ...editRend, valor: e.target.value })}
                   style={{ width: 60, padding: '3px 6px', borderRadius: 4, border: '1px solid #e63946', background: '#16213e', color: '#fff', fontSize: 12 }}
                   autoFocus />
-                <input value={editRend.unidad}
+                <select value={editRend.unidad}
                   onChange={e => setEditRend({ ...editRend, unidad: e.target.value })}
-                  style={{ width: 70, padding: '3px 6px', borderRadius: 4, border: '1px solid #444', background: '#16213e', color: '#fff', fontSize: 12 }}
-                  placeholder="unidad" />
+                  style={{ width: 90, padding: '3px 6px', borderRadius: 4, border: '1px solid #444', background: '#16213e', color: '#fff', fontSize: 12 }}>
+                  {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
                 <button onClick={guardarRendimiento}
                   style={{ background: '#4ade80', color: '#000', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>✓</button>
                 <button onClick={() => setEditRend(null)}
@@ -436,8 +447,10 @@ export default function RecetasView({ user }) {
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <input style={{ ...inp, flex: 1 }} type="number" step="0.001" placeholder="Cantidad"
                     value={ing.cantidad || ''} onChange={e => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], cantidad: e.target.value }; setEditIngredients(arr); }} />
-                  <input style={{ ...inp, width: 80 }} placeholder="Unidad" value={ing.unidad_medida || ''}
-                    onChange={e => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], unidad_medida: e.target.value }; setEditIngredients(arr); }} />
+                  <select style={{ ...inp, width: 100 }} value={ing.unidad_medida || 'unidad'}
+                    onChange={e => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], unidad_medida: e.target.value }; setEditIngredients(arr); }}>
+                    {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
                 </div>
                 <input style={{ ...inp, marginTop: 4, fontSize: 11 }} placeholder="Notas (opcional)" value={ing.notas || ''}
                   onChange={e => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], notas: e.target.value }; setEditIngredients(arr); }} />
@@ -455,6 +468,7 @@ export default function RecetasView({ user }) {
           </div>
         )}
       </div>
+      {recetaModal}
     </div>
   );
 }
