@@ -69,7 +69,7 @@ function elapsed(isoStr) {
 const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 const MESERO_ROLES = ['mesero', 'mesera']
 
-export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS }) {
+export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onChangeStore }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
@@ -178,7 +178,18 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS }) {
       {/* ── HEADER (igual a .topbar del ERP) ── */}
       <header className="pos-header">
         <span className="pos-header-brand">🍔 Freakie POS</span>
-        <span className="pos-header-store">{storeName}</span>
+        {onChangeStore ? (
+          <button
+            className="pos-header-store"
+            onClick={onChangeStore}
+            style={{ cursor: 'pointer', background: 'none', border: '1px solid #333', borderRadius: 6, padding: '2px 8px', color: '#e63946', fontWeight: 700, fontSize: 13 }}
+            title="Cambiar sucursal"
+          >
+            {storeName} ▾
+          </button>
+        ) : (
+          <span className="pos-header-store">{storeName}</span>
+        )}
         <span className="pos-header-sep" />
         <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
