@@ -37,6 +37,7 @@ import PendientesView from './components/admin/PendientesView'
 import DTEMapeoView from './components/admin/DTEMapeoView'
 import RentabilidadView from './components/admin/RentabilidadView'
 import FinanzasGastosView from './components/finanzas/FinanzasGastosView'
+import SuperAdminView from './components/admin/SuperAdminView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -191,6 +192,8 @@ export default function App() {
         return <InventarioDashboard user={user} onBack={() => setScreen('home')} />
       case 'marketing':
         return <MarketingView user={user} />
+      case 'superadmin-panel':
+        return <SuperAdminView user={user} />
 
       default:
         return <HomeScreen user={user} />

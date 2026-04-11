@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { db } from '../../supabase'
 import { NAV_SECTIONS, STORES } from '../../config'
 
 export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
   const [open, setOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [dbPermisos, setDbPermisos] = useState(null) // { nav_key: [roles] }
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768)
@@ -11,8 +13,24 @@ export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
     return () => window.removeEventListener('resize', handler)
   }, [])
 
-  const hasAccess = (roles) => {
+  // Cargar permisos dinámicos de BD
+  useEffect(() => {
+    db.from('permisos_rol').select('rol, nav_key').then(({ data }) => {
+      if (data && data.length > 0) {
+        const map = {}
+        data.forEach(p => {
+          if (!map[p.nav_key]) map[p.nav_key] = []
+          map[p.nav_key].push(p.rol)
+        })
+        setDbPermisos(map)
+      }
+    })
+  }, [])
+
+  const hasAccess = (item) => {
     if (user.rol === 'superadmin') return true
+    // Usar permisos de BD si están cargados, sino fallback a hardcoded
+    const roles = dbPermisos ? (dbPermisos[item.key] || []) : item.roles
     if (roles.includes('*')) return true
     return roles.includes(user.rol)
   }
@@ -63,7 +81,7 @@ export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
         {/* Navigation sections */}
         <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8 }}>
           {NAV_SECTIONS.map((section) => {
-            const visibleItems = section.items.filter(i => hasAccess(i.roles))
+            const visibleItems = section.items.filter(i => hasAccess(i))
             if (visibleItems.length === 0) return null
             return (
               <div key={section.label} className="sidebar-section">

@@ -132,4 +132,10 @@ export const NAV_SECTIONS = [
       { key: 'quanto-upload', label: 'Importar QUANTO', icon: '📤', roles: ['admin'] },
     ],
   },
+  {
+    label: 'Super Admin',
+    items: [
+      { key: 'superadmin-panel', label: 'Panel Super Admin', icon: '🛡️', roles: ['superadmin'] },
+    ],
+  },
 ]
