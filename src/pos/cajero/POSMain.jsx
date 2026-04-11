@@ -28,6 +28,9 @@ const PERMISOS_POR_ROL = {
 }
 const DEFAULT_PERMS = { comandar: false, moverMesa: false, preCuenta: false, anular: false, editarGuardado: false, cobrar: false, descuento: false }
 
+// Mapeo tipoDte UI → código MH para CHECK constraint en BD
+const DTE_TIPO_MAP = { factura: '01', ccf: '03', ticket: null }
+
 // Reloj
 function Clock() {
   const [t, setT] = useState('')
@@ -395,7 +398,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             iva:         0,
             propina:     paymentData.propina || 0,
             total:       total + (paymentData.propina || 0),
-            dte_tipo:    paymentData.tipoDte || null,
+            dte_tipo:    DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id:  paymentData.cliente?.id || null,
             cobrada_at:  new Date().toISOString(),
           })
@@ -406,7 +409,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         currentCuentaId = cuenta.id
         setCuentaId(currentCuentaId)
       } else {
-        await db
+        const { error: updErr } = await db
           .from('pos_cuentas')
           .update({
             estado:     'cobrada',
@@ -414,12 +417,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             iva:        0,
             propina:    paymentData.propina || 0,
             total:      total + (paymentData.propina || 0),
-            dte_tipo:   paymentData.tipoDte || null,
+            dte_tipo:   DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id: paymentData.cliente?.id || null,
             cobrada_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', currentCuentaId)
+        if (updErr) throw new Error('Error al marcar cobrada: ' + updErr.message)
       }
 
       // 2. Insertar ítems nuevos si hay
