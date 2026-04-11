@@ -24,7 +24,8 @@ const PERMISOS_POR_ROL = {
   cajera:    { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: false },
   gerente:   { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
   admin:     { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
-  ejecutivo: { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
+  ejecutivo:  { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
+  superadmin: { comandar: true,  moverMesa: true,  preCuenta: true,  anular: true,  editarGuardado: true,  cobrar: true,  descuento: true  },
 }
 const DEFAULT_PERMS = { comandar: false, moverMesa: false, preCuenta: false, anular: false, editarGuardado: false, cobrar: false, descuento: false }
 

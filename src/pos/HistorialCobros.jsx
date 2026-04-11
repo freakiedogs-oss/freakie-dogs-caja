@@ -1,0 +1,343 @@
+import { useState, useEffect, useCallback } from 'react'
+import { db } from '../supabase'
+import { STORES } from '../config'
+
+// ──────────────────────────────────────────────
+// Constantes
+// ──────────────────────────────────────────────
+const TIPO_INFO = {
+  mesa:            { icon: '🪑', label: 'Mesas',       color: '#4ade80' },
+  para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
+  delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
+  pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
+  drive_through:   { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24' },
+}
+
+const DTE_DISPLAY = {
+  '01': { icon: '📄', label: 'Factura' },
+  '03': { icon: '🏢', label: 'CCF' },
+  null: { icon: '🧾', label: 'Ticket' },
+}
+
+// Reloj
+function Clock() {
+  const [t, setT] = useState('')
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date(Date.now() - 6 * 3600 * 1000)
+      setT(now.toISOString().split('T')[1].slice(0, 8))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+  return <span className="pos-header-clock">{t}</span>
+}
+
+// Formato de hora
+function formatTime(isoStr) {
+  if (!isoStr) return ''
+  const d = new Date(isoStr)
+  return d.toISOString().split('T')[1].slice(0, 5)
+}
+
+// ──────────────────────────────────────────────
+// Componente Principal
+// ──────────────────────────────────────────────
+export default function HistorialCobros({ user, onBack }) {
+  const storeCode = user.store_code || 'S001'
+  const storeName = STORES[storeCode] || storeCode
+
+  const [cuentas, setCuentas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  // Obtener hoy en zona horaria El Salvador
+  const getToday = useCallback(() => {
+    const now = new Date(Date.now() - 6 * 3600 * 1000)
+    return now.toISOString().split('T')[0]
+  }, [])
+
+  // ── Cargar cobrados de hoy ──
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const todayStr = getToday()
+      const todayStart = `${todayStr}T00:00:00-06:00`
+
+      const { data: cuentasData, error } = await db
+        .from('pos_cuentas')
+        .select(`
+          id,
+          tipo,
+          mesa_ref,
+          total,
+          subtotal,
+          propina,
+          cobrada_at,
+          dte_tipo,
+          dte_numero_control,
+          dte_sello,
+          pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
+            id,
+            nombre,
+            precio_unitario,
+            cantidad,
+            notas
+          )
+        `)
+        .eq('store_code', storeCode)
+        .eq('estado', 'cobrada')
+        .gte('cobrada_at', todayStart)
+        .order('cobrada_at', { ascending: false })
+
+      if (error) throw error
+      setCuentas(cuentasData || [])
+    } catch (err) {
+      console.error('Error cargando historial:', err)
+      alert('Error al cargar historial: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [storeCode, getToday])
+
+  useEffect(() => { load() }, [load, refreshKey])
+
+  // Realtime: actualizar cuando haya nuevas cobradas
+  useEffect(() => {
+    const sub = db.channel('historial_cobros_rt')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'pos_cuentas',
+        filter: `store_code=eq.${storeCode}`,
+      }, () => setRefreshKey(k => k + 1))
+      .subscribe()
+    return () => db.removeChannel(sub)
+  }, [storeCode])
+
+  // ── REIMPRIMIR TICKET ──
+  const handleReimprimir = (cuenta) => {
+    const tipoInfo = TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']
+    const storeName_ = storeName
+    const tipoStr = tipoInfo.label
+    const mesaStr = cuenta.mesa_ref ? `Mesa #${cuenta.mesa_ref}` : tipoStr
+    const hora = formatTime(cuenta.cobrada_at)
+
+    const items = cuenta.pos_cuenta_items || []
+    const rows = items
+      .map(i =>
+        `<tr>
+          <td>${i.cantidad}x</td>
+          <td>${i.nombre}${i.notas ? ` <span style="color:#888;font-size:11px">(${i.notas})</span>` : ''}</td>
+          <td style="text-align:right">$${(parseFloat(i.precio_unitario) * i.cantidad).toFixed(2)}</td>
+        </tr>`
+      )
+      .join('')
+
+    // DTE info
+    const dteDisplay = DTE_DISPLAY[cuenta.dte_tipo] || DTE_DISPLAY[null]
+    const dteInfoStr = cuenta.dte_numero_control
+      ? `${dteDisplay.icon} ${dteDisplay.label} #${cuenta.dte_numero_control}`
+      : `${dteDisplay.icon} ${dteDisplay.label}`
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Ticket</title>
+    <style>
+      body { font-family: monospace; font-size: 13px; margin: 20px; max-width: 320px; }
+      h2 { text-align: center; margin: 0; font-size: 16px; }
+      .sub { text-align: center; color: #555; font-size: 11px; margin-bottom: 12px; }
+      table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+      td { padding: 3px 2px; vertical-align: top; }
+      .total-row { border-top: 1px dashed #333; padding-top: 8px;
+               display:flex; justify-content:space-between; font-weight:bold; font-size:15px; margin: 8px 0; }
+      .propina-row { display:flex; justify-content:space-between; font-size:13px; color:#666; }
+      .dte-info { text-align:center; color:#555; font-size:11px; margin-top:14px; padding:8px 0;
+                 border-top:1px dashed #999; border-bottom:1px dashed #999; }
+      .aviso { text-align:center; color:#888; font-size:10px; margin-top:14px; }
+      hr { border: none; border-top: 1px dashed #999; }
+    </style></head><body>
+    <h2>🍔 FREAKIE DOGS</h2>
+    <p class="sub">${storeName_} · ${mesaStr}<br>${hora}</p>
+    <hr>
+    <table>${rows}</table>
+    <hr>
+    <div class="total-row"><span>SUBTOTAL</span><span>$${parseFloat(cuenta.subtotal || 0).toFixed(2)}</span></div>
+    ${cuenta.propina ? `<div class="propina-row"><span>PROPINA</span><span>$${parseFloat(cuenta.propina).toFixed(2)}</span></div>` : ''}
+    <div class="total-row"><span>TOTAL</span><span>$${parseFloat(cuenta.total || 0).toFixed(2)}</span></div>
+    <div class="dte-info">${dteInfoStr}</div>
+    <p class="aviso">— TICKET REIMPRESO —</p>
+    <script>window.onload=()=>{window.print();}</script>
+    </body></html>`
+
+    const w = window.open('', '_blank', 'width=400,height=600')
+    w.document.write(html)
+    w.document.close()
+  }
+
+  // ── ANULAR DTE (placeholder) ──
+  const handleAnularDTE = (cuenta) => {
+    alert('Funcionalidad de anulación DTE por implementar')
+  }
+
+  // ── Loading ──
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+        <div className="spin" />
+        <span style={{ color: '#555', fontSize: 14 }}>Cargando historial...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="historial-cobros-root">
+
+      {/* ── HEADER ── */}
+      <header className="pos-header">
+        <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
+        <span className="pos-header-brand">🍔 Freakie POS</span>
+        <span className="pos-header-store">{storeName}</span>
+        <span
+          className="pos-header-btn"
+          style={{ background: '#4ade8018', borderColor: '#4ade80', color: '#4ade80', cursor: 'default' }}
+        >
+          📋 Historial de Cobros
+        </span>
+        <span className="pos-header-sep" />
+        <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
+        <Clock />
+        <button className="pos-header-btn danger" onClick={onBack}>Salir</button>
+      </header>
+
+      {/* ── CUERPO ── */}
+      <div className="historial-cobros-body">
+
+        {cuentas.length === 0 ? (
+          <div className="historial-empty">
+            <div style={{ fontSize: 48 }}>📋</div>
+            <div style={{ color: '#444', fontSize: 14, marginTop: 8 }}>Sin cobros hoy</div>
+            <div style={{ color: '#333', fontSize: 12 }}>Los tickets aparecerán aquí una vez cobrados</div>
+          </div>
+        ) : (
+          <div className="historial-cuentas-list">
+            <div className="historial-count">
+              {cuentas.length} cobro{cuentas.length !== 1 ? 's' : ''} hoy
+            </div>
+
+            {cuentas.map((cuenta) => {
+              const tipoInfo = TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']
+              const dteDisplay = DTE_DISPLAY[cuenta.dte_tipo] || DTE_DISPLAY[null]
+              const items = cuenta.pos_cuenta_items || []
+              const isExpanded = expandedId === cuenta.id
+
+              return (
+                <div key={cuenta.id} className="historial-ticket-card">
+
+                  {/* Header de ticket */}
+                  <div
+                    className="historial-ticket-header"
+                    onClick={() => setExpandedId(isExpanded ? null : cuenta.id)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="historial-ticket-tipo">
+                      <span style={{ fontSize: 18 }}>{tipoInfo.icon}</span>
+                      <span style={{ color: tipoInfo.color, fontWeight: 600 }}>
+                        {tipoInfo.label}
+                        {cuenta.mesa_ref && ` #${cuenta.mesa_ref}`}
+                      </span>
+                    </div>
+
+                    <div className="historial-ticket-meta">
+                      <span className="historial-ticket-time">{formatTime(cuenta.cobrada_at)}</span>
+                      <span className="historial-ticket-dte" style={{ color: '#666' }}>
+                        {dteDisplay.icon} {dteDisplay.label}
+                        {cuenta.dte_numero_control && ` #${cuenta.dte_numero_control}`}
+                      </span>
+                    </div>
+
+                    <div className="historial-ticket-total" style={{ color: '#4ade80', fontWeight: 700, fontSize: 16 }}>
+                      ${parseFloat(cuenta.total || 0).toFixed(2)}
+                    </div>
+
+                    <span style={{ color: '#555', fontSize: 12, marginLeft: 8 }}>
+                      {isExpanded ? '▼' : '▶'}
+                    </span>
+                  </div>
+
+                  {/* Detalles (items) — expandible */}
+                  {isExpanded && (
+                    <>
+                      <div className="historial-ticket-items">
+                        {items.length === 0 ? (
+                          <div style={{ color: '#555', fontSize: 12, padding: 8 }}>Sin ítems registrados</div>
+                        ) : (
+                          <table className="historial-items-table">
+                            <tbody>
+                              {items.map((item) => (
+                                <tr key={item.id} className="historial-item-row">
+                                  <td className="historial-item-qty">{item.cantidad}x</td>
+                                  <td className="historial-item-name">
+                                    {item.nombre}
+                                    {item.notas && <div className="historial-item-notas">📝 {item.notas}</div>}
+                                  </td>
+                                  <td className="historial-item-price">
+                                    ${(parseFloat(item.precio_unitario) * item.cantidad).toFixed(2)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+
+                      {/* Totales */}
+                      <div className="historial-ticket-totals">
+                        <div className="historial-total-row">
+                          <span>Subtotal:</span>
+                          <span>${parseFloat(cuenta.subtotal || 0).toFixed(2)}</span>
+                        </div>
+                        {cuenta.propina > 0 && (
+                          <div className="historial-total-row">
+                            <span>Propina:</span>
+                            <span>${parseFloat(cuenta.propina).toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="historial-total-row" style={{ fontSize: 14, fontWeight: 700, color: '#4ade80', borderTop: '1px solid #222', paddingTop: 6 }}>
+                          <span>Total:</span>
+                          <span>${parseFloat(cuenta.total || 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                      {/* Botones de acción */}
+                      <div className="historial-ticket-actions">
+                        <button
+                          className="historial-action-btn reimprimir"
+                          onClick={() => handleReimprimir(cuenta)}
+                          title="Reimprimir ticket"
+                        >
+                          🖨 Reimprimir
+                        </button>
+                        <button
+                          className="historial-action-btn anular"
+                          onClick={() => handleAnularDTE(cuenta)}
+                          disabled={!cuenta.dte_numero_control}
+                          title={cuenta.dte_numero_control ? 'Anular DTE' : 'Solo para documentos fiscales'}
+                        >
+                          🚫 Anular DTE
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                </div>
+              )
+            })}
+
+          </div>
+        )}
+
+      </div>
+
+    </div>
+  )
+}

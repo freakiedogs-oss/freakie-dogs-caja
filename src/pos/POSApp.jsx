@@ -3,6 +3,7 @@ import POSLogin from './POSLogin'
 import POSHome from './POSHome'
 import POSMain from './cajero/POSMain'
 import KDSScreen from './KDSScreen'
+import HistorialCobros from './HistorialCobros'
 import { STORES } from '../config'
 
 // Roles que pueden elegir sucursal al entrar al POS
@@ -77,6 +78,7 @@ function StoreSelector({ user, onSelect, onLogout }) {
  *   'home'     → POSHome: plano de mesas + cuentas abiertas + botones rápidos
  *   'ordering' → POSMain: menú + orden activa (nueva o existente)
  *   'kds'      → KDSScreen: pantalla de cocina / kitchen display
+ *   'historial' → HistorialCobros: historial de tickets cobrados hoy
  *
  * cuentaCtx: { tipo, mesa_ref, mesa_id, cuentaId }
  *   - cuentaId = null  → nueva orden
@@ -136,6 +138,8 @@ export default function POSApp() {
 
   const handleGoToKDS = () => setScreen('kds')
 
+  const handleGoToHistorial = () => setScreen('historial')
+
   // ── Login ──
   if (!user) return <POSLogin onLogin={handleLogin} />
 
@@ -153,6 +157,11 @@ export default function POSApp() {
     return <KDSScreen user={posUser} onBack={handleBack} />
   }
 
+  // ── Historial de Cobros ──
+  if (screen === 'historial') {
+    return <HistorialCobros user={posUser} onBack={handleBack} />
+  }
+
   // ── Home ──
   if (screen === 'home') {
     return (
@@ -161,6 +170,7 @@ export default function POSApp() {
         onStartOrder={handleStartOrder}
         onLogout={handleLogout}
         onGoToKDS={handleGoToKDS}
+        onGoToHistorial={handleGoToHistorial}
         onChangeStore={canChangeStore ? handleChangeStore : null}
       />
     )

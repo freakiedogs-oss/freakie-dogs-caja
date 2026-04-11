@@ -99,8 +99,11 @@ export default function KDSScreen({ user, onBack }) {
   const [filtroCanal, setFiltroCanal] = useState('todos')
   const [filtroEst,   setFiltroEst]   = useState('general')
   const [queue,       setQueue]       = useState([])         // rows de pos_cocina_queue
+  const [historial,   setHistorial]   = useState([])         // rows de pos_cocina_queue completadas hoy
   const [loading,     setLoading]     = useState(true)
   const [bumping,     setBumping]     = useState(null)       // cuenta_id+comanda en proceso
+  const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial'
+  const [reverting,   setReverting]   = useState(null)       // id de item en revert
   const prevCount = useRef(0)
   useTimer()  // fuerza re-render cada 10s para actualizar timers
 
@@ -121,7 +124,24 @@ export default function KDSScreen({ user, onBack }) {
     setLoading(false)
   }, [storeCode])
 
-  useEffect(() => { load() }, [load])
+  // ── Carga Historial (completadas hoy) ──
+  const loadHistorial = useCallback(async () => {
+    const today = new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('T')[0]
+    const { data } = await db
+      .from('pos_cocina_queue')
+      .select('*')
+      .eq('store_code', storeCode)
+      .eq('estado', 'completado')
+      .gte('completado_at', `${today}T00:00:00`)
+      .order('completado_at', { ascending: false })
+
+    setHistorial(data || [])
+  }, [storeCode])
+
+  useEffect(() => {
+    load()
+    loadHistorial()
+  }, [load, loadHistorial])
 
   // Realtime
   useEffect(() => {
@@ -129,10 +149,13 @@ export default function KDSScreen({ user, onBack }) {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'pos_cocina_queue',
         filter: `store_code=eq.${storeCode}`,
-      }, () => load())
+      }, () => {
+        load()
+        loadHistorial()
+      })
       .subscribe()
     return () => db.removeChannel(sub)
-  }, [storeCode, load])
+  }, [storeCode, load, loadHistorial])
 
   // ── Grouping ──
   // Agrupar queue por (cuenta_id + comanda_numero) → una "comanda"
@@ -209,8 +232,43 @@ export default function KDSScreen({ user, onBack }) {
         .eq('id', comanda.cuenta_id)
 
       load()
+      loadHistorial()
     } finally {
       setBumping(null)
+    }
+  }
+
+  // Revertir comanda completada → volver a pendiente
+  const revertirComanda = async (comanda) => {
+    setReverting(comanda.key)
+    try {
+      // Verificar que cuenta NO esté cobrada
+      const { data: cuenta } = await db
+        .from('pos_cuentas')
+        .select('estado')
+        .eq('id', comanda.cuenta_id)
+        .single()
+
+      if (cuenta?.estado === 'cobrada') {
+        alert('No se puede revertir una comanda de una cuenta cobrada.')
+        return
+      }
+
+      // Marcar todos los ítems como pendiente
+      const ids = comanda.items.map(i => i.id)
+      await db.from('pos_cocina_queue')
+        .update({ estado: 'pendiente', completado_at: null })
+        .in('id', ids)
+
+      // Actualizar cuenta a en_preparacion
+      await db.from('pos_cuentas')
+        .update({ estado: 'en_preparacion', updated_at: new Date().toISOString() })
+        .eq('id', comanda.cuenta_id)
+
+      load()
+      loadHistorial()
+    } finally {
+      setReverting(null)
     }
   }
 
@@ -226,154 +284,281 @@ export default function KDSScreen({ user, onBack }) {
         <span className="pos-header-brand">🍳 Cocina KDS</span>
         <span className="pos-header-store">{storeName}</span>
 
-        {/* Toggle CANAL / ESTACIÓN */}
+        {/* Toggle ACTIVAS / HISTORIAL */}
         <div className="kds-mode-toggle">
           <button
-            className={`kds-mode-btn${mode === 'canal' ? ' active' : ''}`}
-            onClick={() => setMode('canal')}
-          >🏷 Canal</button>
+            className={`kds-mode-btn${tab === 'activas' ? ' active' : ''}`}
+            onClick={() => setTab('activas')}
+          >🍳 Activas</button>
           <button
-            className={`kds-mode-btn${mode === 'estacion' ? ' active' : ''}`}
-            onClick={() => setMode('estacion')}
-          >⚙️ Estación</button>
+            className={`kds-mode-btn${tab === 'historial' ? ' active' : ''}`}
+            onClick={() => setTab('historial')}
+          >📋 Historial</button>
         </div>
 
-        <span className="pos-header-sep" />
-        <span style={{ fontSize: 12, color: queue.length > 0 ? '#fbbf24' : '#4ade80', fontWeight: 700 }}>
-          {queue.length > 0 ? `● ${queue.length} pendiente${queue.length !== 1 ? 's' : ''}` : '● Sin órdenes'}
-        </span>
+        {tab === 'activas' && (
+          <>
+            {/* Toggle CANAL / ESTACIÓN */}
+            <div className="kds-mode-toggle">
+              <button
+                className={`kds-mode-btn${mode === 'canal' ? ' active' : ''}`}
+                onClick={() => setMode('canal')}
+              >🏷 Canal</button>
+              <button
+                className={`kds-mode-btn${mode === 'estacion' ? ' active' : ''}`}
+                onClick={() => setMode('estacion')}
+              >⚙️ Estación</button>
+            </div>
+
+            <span className="pos-header-sep" />
+            <span style={{ fontSize: 12, color: queue.length > 0 ? '#fbbf24' : '#4ade80', fontWeight: 700 }}>
+              {queue.length > 0 ? `● ${queue.length} pendiente${queue.length !== 1 ? 's' : ''}` : '● Sin órdenes'}
+            </span>
+          </>
+        )}
         <Clock />
       </header>
 
       {/* ── BARRA DE FILTROS ── */}
-      {mode === 'canal' ? (
-        <div className="poshome-filters">
-          {FILTROS.map(f => {
-            const cnt = conteos[f.key] ?? 0
-            // Ocultar Drive Thru si no es Lourdes (S003)
-            if (f.key === 'drive' && storeCode !== 'S003') return null
-            return (
-              <button
-                key={f.key}
-                className={`poshome-filter-btn${filtroCanal === f.key ? ' active' : ''}`}
-                onClick={() => setFiltroCanal(f.key)}
-              >
-                <span className="poshome-filter-icon">{f.icon}</span>
-                <span className="poshome-filter-label">{f.label}</span>
-                {cnt > 0 && <span className="poshome-filter-badge">{cnt}</span>}
-              </button>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="poshome-filters">
-          {ESTACIONES.map(e => {
-            const cnt = contEst[e.key] ?? 0
-            return (
-              <button
-                key={e.key}
-                className={`poshome-filter-btn${filtroEst === e.key ? ' active' : ''}`}
-                onClick={() => setFiltroEst(e.key)}
-              >
-                <span className="poshome-filter-icon">{e.icon}</span>
-                <span className="poshome-filter-label">{e.label}</span>
-                {cnt > 0 && <span className="poshome-filter-badge">{cnt}</span>}
-              </button>
-            )
-          })}
-        </div>
+      {tab === 'activas' && (
+        mode === 'canal' ? (
+          <div className="poshome-filters">
+            {FILTROS.map(f => {
+              const cnt = conteos[f.key] ?? 0
+              // Ocultar Drive Thru si no es Lourdes (S003)
+              if (f.key === 'drive' && storeCode !== 'S003') return null
+              return (
+                <button
+                  key={f.key}
+                  className={`poshome-filter-btn${filtroCanal === f.key ? ' active' : ''}`}
+                  onClick={() => setFiltroCanal(f.key)}
+                >
+                  <span className="poshome-filter-icon">{f.icon}</span>
+                  <span className="poshome-filter-label">{f.label}</span>
+                  {cnt > 0 && <span className="poshome-filter-badge">{cnt}</span>}
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="poshome-filters">
+            {ESTACIONES.map(e => {
+              const cnt = contEst[e.key] ?? 0
+              return (
+                <button
+                  key={e.key}
+                  className={`poshome-filter-btn${filtroEst === e.key ? ' active' : ''}`}
+                  onClick={() => setFiltroEst(e.key)}
+                >
+                  <span className="poshome-filter-icon">{e.icon}</span>
+                  <span className="poshome-filter-label">{e.label}</span>
+                  {cnt > 0 && <span className="poshome-filter-badge">{cnt}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )
       )}
 
       {/* ── CUERPO ── */}
       <div className="kds-body">
-        {loading ? (
-          <div className="pos-loading">
-            <div className="spin" style={{ width: 32, height: 32 }} />
-            <span>Cargando cocina...</span>
-          </div>
-        ) : comandas.length === 0 ? (
-          <div className="kds-empty">
-            <div style={{ fontSize: 56 }}>✅</div>
-            <div style={{ color: '#4ade80', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
-              Cocina al día
+        {tab === 'activas' ? (
+          // ── VISTA ACTIVAS ──
+          loading ? (
+            <div className="pos-loading">
+              <div className="spin" style={{ width: 32, height: 32 }} />
+              <span>Cargando cocina...</span>
             </div>
-            <div style={{ color: '#444', fontSize: 13, marginTop: 4 }}>
-              Sin órdenes pendientes
+          ) : comandas.length === 0 ? (
+            <div className="kds-empty">
+              <div style={{ fontSize: 56 }}>✅</div>
+              <div style={{ color: '#4ade80', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
+                Cocina al día
+              </div>
+              <div style={{ color: '#444', fontSize: 13, marginTop: 4 }}>
+                Sin órdenes pendientes
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="kds-cards-grid">
-            {comandas.map(comanda => {
-              const info       = canalInfo(comanda.canal)
-              const timer      = elapsed(comanda.recibido_at)
-              const todosListos = comanda.items.every(i => i.estado === 'completado')
-              const isBumping   = bumping === comanda.key
-              const totalItems  = comanda.items.reduce((s, i) => s + (i.cantidad || 1), 0)
+          ) : (
+            <div className="kds-cards-grid">
+              {comandas.map(comanda => {
+                const info       = canalInfo(comanda.canal)
+                const timer      = elapsed(comanda.recibido_at)
+                const todosListos = comanda.items.every(i => i.estado === 'completado')
+                const isBumping   = bumping === comanda.key
+                const totalItems  = comanda.items.reduce((s, i) => s + (i.cantidad || 1), 0)
 
-              return (
-                <div
-                  key={comanda.key}
-                  className="kds-card"
-                  style={{ borderTopColor: info.color, ...(timer.urgent ? { boxShadow: `0 0 0 1px ${timer.color}33` } : {}) }}
-                >
-                  {/* Card header */}
-                  <div className="kds-card-header">
-                    <div className="kds-card-title">
-                      <span style={{ color: info.color, fontSize: 18 }}>{info.icon}</span>
-                      <span className="kds-card-canal" style={{ color: info.color }}>
-                        {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
+                return (
+                  <div
+                    key={comanda.key}
+                    className="kds-card"
+                    style={{ borderTopColor: info.color, ...(timer.urgent ? { boxShadow: `0 0 0 1px ${timer.color}33` } : {}) }}
+                  >
+                    {/* Card header */}
+                    <div className="kds-card-header">
+                      <div className="kds-card-title">
+                        <span style={{ color: info.color, fontSize: 18 }}>{info.icon}</span>
+                        <span className="kds-card-canal" style={{ color: info.color }}>
+                          {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
+                        </span>
+                        {comanda.comanda_numero && (
+                          <span className="kds-card-num">#{comanda.comanda_numero}</span>
+                        )}
+                      </div>
+                      <span className="kds-card-timer" style={{ color: timer.color }}>
+                        {timer.text}
                       </span>
-                      {comanda.comanda_numero && (
-                        <span className="kds-card-num">#{comanda.comanda_numero}</span>
-                      )}
                     </div>
-                    <span className="kds-card-timer" style={{ color: timer.color }}>
-                      {timer.text}
-                    </span>
-                  </div>
 
-                  {/* Items */}
-                  <div className="kds-card-items">
-                    {comanda.items.map(item => {
-                      const done = item.estado === 'completado'
-                      const inProg = item.estado === 'en_preparacion'
-                      return (
-                        <button
-                          key={item.id}
-                          className={`kds-item${done ? ' done' : inProg ? ' inprog' : ''}`}
-                          onClick={() => toggleItem(item.id, item.estado)}
-                          title="Toca para cambiar estado"
-                        >
-                          <span className="kds-item-status">
-                            {done ? '✅' : inProg ? '🔄' : '○'}
-                          </span>
-                          <span className="kds-item-qty">{item.cantidad || 1}×</span>
-                          <span className="kds-item-name">{item.nombre_item}</span>
-                          {item.nota && (
-                            <span className="kds-item-nota">📝 {item.nota}</span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
+                    {/* Items */}
+                    <div className="kds-card-items">
+                      {comanda.items.map(item => {
+                        const done = item.estado === 'completado'
+                        const inProg = item.estado === 'en_preparacion'
+                        return (
+                          <button
+                            key={item.id}
+                            className={`kds-item${done ? ' done' : inProg ? ' inprog' : ''}`}
+                            onClick={() => toggleItem(item.id, item.estado)}
+                            title="Toca para cambiar estado"
+                          >
+                            <span className="kds-item-status">
+                              {done ? '✅' : inProg ? '🔄' : '○'}
+                            </span>
+                            <span className="kds-item-qty">{item.cantidad || 1}×</span>
+                            <span className="kds-item-name">{item.nombre_item}</span>
+                            {item.nota && (
+                              <span className="kds-item-nota">📝 {item.nota}</span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
 
-                  {/* Resumen + botón LISTA */}
-                  <div className="kds-card-footer">
-                    <span className="kds-card-count">
-                      {comanda.items.filter(i => i.estado === 'completado').length}/{comanda.items.length} listos
-                    </span>
-                    <button
-                      className={`kds-bump-btn${todosListos ? ' ready' : ''}`}
-                      onClick={() => bumparComanda(comanda)}
-                      disabled={isBumping}
+                    {/* Resumen + botón LISTA */}
+                    <div className="kds-card-footer">
+                      <span className="kds-card-count">
+                        {comanda.items.filter(i => i.estado === 'completado').length}/{comanda.items.length} listos
+                      </span>
+                      <button
+                        className={`kds-bump-btn${todosListos ? ' ready' : ''}`}
+                        onClick={() => bumparComanda(comanda)}
+                        disabled={isBumping}
+                      >
+                        {isBumping ? '⏳' : todosListos ? '✓ LISTA' : '▷ LISTA'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        ) : (
+          // ── VISTA HISTORIAL ──
+          loading ? (
+            <div className="pos-loading">
+              <div className="spin" style={{ width: 32, height: 32 }} />
+              <span>Cargando historial...</span>
+            </div>
+          ) : historial.length === 0 ? (
+            <div className="kds-empty">
+              <div style={{ fontSize: 56 }}>📋</div>
+              <div style={{ color: '#888', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
+                Sin completadas hoy
+              </div>
+              <div style={{ color: '#444', fontSize: 13, marginTop: 4 }}>
+                Las órdenes completadas aparecerán aquí
+              </div>
+            </div>
+          ) : (
+            <div className="kds-cards-grid">
+              {/* Agrupar historial por comanda */}
+              {(() => {
+                const map = new Map()
+                historial.forEach(row => {
+                  const key = `${row.cuenta_id}__${row.comanda_numero ?? 0}`
+                  if (!map.has(key)) {
+                    map.set(key, {
+                      key,
+                      cuenta_id:      row.cuenta_id,
+                      comanda_numero: row.comanda_numero,
+                      canal:          row.canal || 'mesa',
+                      mesa_ref:       row.mesa_ref,
+                      completado_at:  row.completado_at,
+                      items:          [],
+                    })
+                  }
+                  map.get(key).items.push(row)
+                })
+                return [...map.values()].map(comanda => {
+                  const info = canalInfo(comanda.canal)
+                  const isReverting = reverting === comanda.key
+
+                  // Calcular tiempo desde completado
+                  const completedTime = comanda.items[0]?.completado_at
+                  const mins = Math.floor((Date.now() - new Date(completedTime).getTime()) / 60000)
+                  const timeStr = mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h${mins%60}m`
+
+                  return (
+                    <div
+                      key={comanda.key}
+                      className="kds-card"
+                      style={{ borderTopColor: info.color, opacity: 0.85 }}
                     >
-                      {isBumping ? '⏳' : todosListos ? '✓ LISTA' : '▷ LISTA'}
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                      {/* Card header */}
+                      <div className="kds-card-header">
+                        <div className="kds-card-title">
+                          <span style={{ color: info.color, fontSize: 18 }}>{info.icon}</span>
+                          <span className="kds-card-canal" style={{ color: info.color }}>
+                            {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
+                          </span>
+                          {comanda.comanda_numero && (
+                            <span className="kds-card-num">#{comanda.comanda_numero}</span>
+                          )}
+                        </div>
+                        <span className="kds-card-timer" style={{ color: '#4ade80' }}>
+                          ✓ {timeStr}
+                        </span>
+                      </div>
+
+                      {/* Items */}
+                      <div className="kds-card-items">
+                        {comanda.items.map(item => (
+                          <div
+                            key={item.id}
+                            className="kds-item done"
+                            style={{ opacity: 0.8 }}
+                          >
+                            <span className="kds-item-status">✅</span>
+                            <span className="kds-item-qty">{item.cantidad || 1}×</span>
+                            <span className="kds-item-name">{item.nombre_item}</span>
+                            {item.nota && (
+                              <span className="kds-item-nota">📝 {item.nota}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Botón Revertir */}
+                      <div className="kds-card-footer">
+                        <span className="kds-card-count" style={{ color: '#4ade80' }}>
+                          {comanda.items.length} item{comanda.items.length !== 1 ? 's' : ''}
+                        </span>
+                        <button
+                          className="kds-revert-btn"
+                          onClick={() => revertirComanda(comanda)}
+                          disabled={isReverting}
+                          title="Volver a en preparación (solo si no está cobrada)"
+                        >
+                          {isReverting ? '⏳' : '↩ Revertir'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+          )
         )}
       </div>
     </div>
