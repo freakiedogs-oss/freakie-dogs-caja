@@ -26,10 +26,12 @@ export default function ProduccionDiaria({ user }) {
   const [success, setSuccess] = useState(null);
   const [notas, setNotas] = useState('');
   const [saving, setSaving] = useState(false);
+  const [productorId, setProductorId] = useState('');
+  const [empleadosCM, setEmpleadosCM] = useState([]);
 
   // Estado Historial
   const [producciones, setProducciones] = useState([]);
-  const [filtroFecha, setFiltroFecha] = useState(today());
+  const [filtroFecha, setFiltroFecha] = useState('');
   const [filtroReceta, setFiltroReceta] = useState('');
   const [prodSelId, setProdSelId] = useState(null);
   const [prodItems, setProdItems] = useState([]);
@@ -47,11 +49,12 @@ export default function ProduccionDiaria({ user }) {
     setLoading(true);
     setError(null);
     try {
-      const [rRes, iRes, cRes, invRes] = await Promise.all([
+      const [rRes, iRes, cRes, invRes, empRes] = await Promise.all([
         db.from('recetas').select('*').eq('activo', true).order('nombre'),
         db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,costo_calculado)'),
         db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).order('nombre'),
         db.from('inventario').select('producto_id,stock_actual').eq('sucursal_id', CM_SUCURSAL_ID),
+        db.from('usuarios_erp').select('id,nombre,apellido,rol').eq('store_code', 'CM001').eq('activo', true).order('nombre'),
       ]);
 
       setRecetas(rRes.data || []);
@@ -67,6 +70,7 @@ export default function ProduccionDiaria({ user }) {
       const invMap = {};
       (invRes.data || []).forEach(r => { invMap[r.producto_id] = n(r.stock_actual); });
       setInventarioCM(invMap);
+      setEmpleadosCM(empRes.data || []);
     } catch (err) {
       console.error('Error cargando datos:', err);
       setError('Error cargando recetas y productos');
@@ -78,7 +82,7 @@ export default function ProduccionDiaria({ user }) {
   const cargarHistorial = useCallback(async () => {
     try {
       let query = db.from('produccion_diaria')
-        .select('*, recetas(id,nombre,tipo,rendimiento,unidad_rendimiento,costo_calculado)')
+        .select('*, recetas(id,nombre,tipo,rendimiento,unidad_rendimiento,costo_calculado), responsable:usuarios_erp!produccion_diaria_responsable_id_fkey(id,nombre,apellido)')
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -156,6 +160,7 @@ export default function ProduccionDiaria({ user }) {
       const lote = await getNextLote(fecha);
 
       // 1. Insertar produccion_diaria
+      const productor = empleadosCM.find(e => e.id === productorId);
       const prodRes = await db.from('produccion_diaria').insert({
         fecha,
         receta_id: recetaSel.id,
@@ -163,6 +168,7 @@ export default function ProduccionDiaria({ user }) {
         cantidad_enviada: 0,
         turno,
         lote,
+        responsable_id: productorId || null,
         created_by: `${user?.nombre || ''} ${user?.apellido || ''}`.trim(),
         created_by_id: user?.id || null,
         notas: notas || null,
@@ -203,6 +209,7 @@ export default function ProduccionDiaria({ user }) {
       setRecetaSelId(null);
       setTurno('mañana');
       setNotas('');
+      setProductorId('');
       setFecha(today());
       // Recargar inventario
       cargar();
@@ -295,11 +302,22 @@ export default function ProduccionDiaria({ user }) {
           <div className="card" style={{ padding: 16, marginBottom: 12 }}>
             <h3 style={{ margin: '0 0 16px', fontSize: 15, color: '#fff' }}>Nueva Producción</h3>
 
-            {/* Productor */}
+            {/* Registrado por */}
             <div style={{ background: '#1a1a2e', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>
-              👤 Productor: <strong style={{ color: '#4ade80' }}>{user?.nombre} {user?.apellido}</strong>
+              📋 Registra: <strong style={{ color: '#60a5fa' }}>{user?.nombre} {user?.apellido}</strong>
               <span style={{ color: '#666', marginLeft: 8 }}>({user?.rol})</span>
             </div>
+
+            {/* Productor (dropdown empleados CM) */}
+            <label style={lbl}>👤 ¿Quién produjo?</label>
+            <select value={productorId} onChange={e => setProductorId(e.target.value)} style={inp}>
+              <option value="">— Seleccionar empleado —</option>
+              {empleadosCM.filter(e => ['produccion', 'jefe_casa_matriz'].includes(e.rol)).map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.nombre} {e.apellido} ({e.rol === 'jefe_casa_matriz' ? 'Jefe CM' : 'Producción'})
+                </option>
+              ))}
+            </select>
 
             {/* Fecha */}
             <label style={lbl}>Fecha</label>
@@ -483,6 +501,12 @@ export default function ProduccionDiaria({ user }) {
               <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                 {fmtDate(prodSelData.fecha)} · {prodSelData.turno} · {prodSelData.lote || ''}
               </div>
+              <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
+                {prodSelData.responsable
+                  ? <>👤 Produjo: <strong style={{ color: '#4ade80' }}>{prodSelData.responsable.nombre} {prodSelData.responsable.apellido}</strong></>
+                  : null}
+                {prodSelData.created_by && <span style={{ color: '#666', marginLeft: 8 }}>📋 Registró: {prodSelData.created_by}</span>}
+              </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
                 <span style={{ background: '#1a3a52', color: '#60a5fa', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>
                   🏭 {n(prodSelData.cantidad_producida)} tandas producidas
@@ -580,7 +604,8 @@ export default function ProduccionDiaria({ user }) {
                       {p.recetas?.nombre || 'Receta desconocida'}
                     </div>
                     <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-                      {fmtDate(p.fecha)} · {p.turno} · {p.created_by || '?'}
+                      {fmtDate(p.fecha)} · {p.turno}
+                      {p.responsable ? ` · 👤 ${p.responsable.nombre} ${p.responsable.apellido}` : (p.created_by ? ` · ${p.created_by}` : '')}
                     </div>
                     {p.lote && (
                       <div style={{ fontSize: 11, color: '#4ade80', marginTop: 2 }}>
