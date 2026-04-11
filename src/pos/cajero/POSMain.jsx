@@ -3,6 +3,7 @@ import { db } from '../../supabase'
 import { STORES, today } from '../../config'
 import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
+import { emitDTE } from './dteService'
 
 // ──────────────────────────────────────────────
 // Constantes de display
@@ -64,8 +65,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // Cuenta activa en DB
   const [cuentaId,   setCuentaId]   = useState(cuentaCtx?.cuentaId || null)
   const [cuentaNum,  setCuentaNum]  = useState(null)
-  const [mesaActual, setMesaActual] = useState(mesaRef)  // puede cambiar con transfer
-  const [comandaSeq, setComandaSeq] = useState(1)        // secuencia local de comandas
+  const [mesaActual, setMesaActual] = useState(mesaRef)
+  const [comandaSeq, setComandaSeq] = useState(1)
 
   // Ítems: los ya guardados (comandados) + los nuevos (pendientes de comandar)
   const [items,          setItems]         = useState([])
@@ -205,7 +206,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const removeItem = useCallback((idx) => {
     setItems(prev => {
       const item = prev[idx]
-      if (item.saved && !perms.anular) return prev  // mesero no puede anular guardados
+      if (item.saved && !perms.anular) return prev
       const next = [...prev]
       if (item.qty > 1 && !item.saved) {
         next[idx] = { ...next[idx], qty: item.qty - 1 }
@@ -328,7 +329,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .eq('id', currentCuentaId)
       }
 
-      // Insertar ítems y capturar IDs
       const toInsert = newItems.map(it => ({
         cuenta_id:       currentCuentaId,
         menu_item_id:    it.id,
@@ -341,7 +341,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       }))
       const { data: insertedItems } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
 
-      // Enviar a cocina (con todos los campos)
       await db.from('pos_cocina_queue').insert(
         newItems.map((it, idx) => ({
           cuenta_id:      currentCuentaId,
@@ -371,13 +370,17 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     }
   }
 
-  // ── COBRAR ──
+  // ── COBRAR (con integración DTEaaS) ──
   const saveCuenta = async (paymentData) => {
     setSaving(true)
+    let dteResult = null
+    let dteError  = null
+
     try {
       let currentCuentaId = cuentaId
       const itemsToSave   = currentCuentaId ? newItems : items
 
+      // 1. Guardar cuenta en BD
       if (!currentCuentaId) {
         const { data: cuenta, error: cuentaErr } = await db
           .from('pos_cuentas')
@@ -392,7 +395,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             iva:         0,
             propina:     paymentData.propina || 0,
             total:       total + (paymentData.propina || 0),
-            dte_tipo:    paymentData.dteTipo || null,
+            dte_tipo:    paymentData.tipoDte || null,
+            cliente_id:  paymentData.cliente?.id || null,
             cobrada_at:  new Date().toISOString(),
           })
           .select()
@@ -410,13 +414,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             iva:        0,
             propina:    paymentData.propina || 0,
             total:      total + (paymentData.propina || 0),
-            dte_tipo:   paymentData.dteTipo || null,
+            dte_tipo:   paymentData.tipoDte || null,
+            cliente_id: paymentData.cliente?.id || null,
             cobrada_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', currentCuentaId)
       }
 
+      // 2. Insertar ítems nuevos si hay
       if (itemsToSave.length > 0) {
         const toInsert = itemsToSave.map(it => ({
           cuenta_id:       currentCuentaId,
@@ -448,25 +454,65 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         )
       }
 
+      // 3. Registrar pago
       await db.from('pos_cuenta_pagos').insert({
         cuenta_id:      currentCuentaId,
         metodo:         paymentData.metodo,
         monto:          total + (paymentData.propina || 0),
-        monto_efectivo: paymentData.efectivo || null,
-        monto_tarjeta:  paymentData.tarjeta  || null,
+        monto_recibido: paymentData.efectivo || null,
         cambio:         paymentData.cambio   || 0,
         referencia:     paymentData.referencia || null,
-        cajero_id:      user.id,
       })
 
-      return { id: currentCuentaId }
+      // 4. Emitir DTE (factura o CCF) — si falla, la venta YA se cobró
+      if (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf') {
+        try {
+          dteResult = await emitDTE({
+            tipoDte:  paymentData.tipoDte,
+            items:    items, // todos los items de la cuenta
+            receptor: paymentData.cliente || null,
+            metodo:   paymentData.metodo,
+          })
+
+          // 5. Guardar resultado DTE en la cuenta
+          if (dteResult) {
+            await db.from('pos_cuentas').update({
+              dte_uuid:           dteResult.codigo_generacion || null,
+              dte_numero_control: dteResult.numero_control || null,
+              dte_sello:          dteResult.sello_recepcion || null,
+              updated_at:         new Date().toISOString(),
+            }).eq('id', currentCuentaId)
+          }
+        } catch (err) {
+          console.error('Error emitiendo DTE:', err)
+          dteError = err.message || 'Error desconocido al emitir DTE'
+          // NO lanzamos error — la venta ya se cobró correctamente
+        }
+      }
+
+      // 6. Actualizar última visita del cliente
+      if (paymentData.cliente?.id) {
+        db.from('pos_clientes').update({
+          ultima_visita: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', paymentData.cliente.id).then(() => {}).catch(() => {})
+      }
+
+      return { cuenta: { id: currentCuentaId }, dte: dteResult, dteError }
+
     } finally {
       setSaving(false)
     }
   }
 
+  // handlePaymentConfirm devuelve resultado (NO cierra modal)
+  // El modal se cierra solo cuando el usuario toca "Nueva orden"
   const handlePaymentConfirm = async (paymentData) => {
-    await saveCuenta(paymentData)
+    return await saveCuenta(paymentData)
+  }
+
+  // Cuando el usuario confirma en el ticket de confirmación
+  const handlePaymentComplete = () => {
     setItems([])
     setShowPayModal(false)
     onBack()
@@ -491,7 +537,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         <span className="pos-header-brand">🍔 Freakie POS</span>
         <span className="pos-header-store">{storeName}</span>
 
-        {/* Badge tipo / mesa */}
         <span
           className="pos-header-btn"
           style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
@@ -499,7 +544,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           {tipoInfo.icon} {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
         </span>
 
-        {/* Cambiar mesa — solo si es mesa y tiene permiso */}
         {tipo === 'mesa' && perms.moverMesa && (
           <button
             className="pos-header-btn"
@@ -510,7 +554,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           </button>
         )}
 
-        {/* Pre-cuenta — si tiene permiso */}
         {perms.preCuenta && items.length > 0 && (
           <button
             className="pos-header-btn"
@@ -627,7 +670,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                     <div className="pos-order-item-price">
                       ${(item.precio * item.qty).toFixed(2)}
                     </div>
-                    {/* Botones de edición */}
                     {!item.saved && (
                       <div style={{ display: 'flex', gap: 2 }}>
                         <button
@@ -638,7 +680,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                         <button className="pos-order-item-del" onClick={() => removeItem(idx)}>✕</button>
                       </div>
                     )}
-                    {/* Guardado pero con permiso de anular */}
                     {item.saved && perms.anular && (
                       <button
                         className="pos-order-item-del"
@@ -649,7 +690,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                         }}
                       >🚫</button>
                     )}
-                    {/* Guardado sin permiso — ícono de candado */}
                     {item.saved && !perms.anular && (
                       <span style={{ fontSize: 10, color: '#333', marginTop: 2 }} title="Solo cajera puede anular">🔒</span>
                     )}
@@ -670,7 +710,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               <span>${total.toFixed(2)}</span>
             </div>
 
-            {/* COMANDAR */}
             {perms.comandar && (
               <button
                 className="pos-comandar-btn"
@@ -684,7 +723,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               </button>
             )}
 
-            {/* COBRAR — solo cajera/gerente */}
             {perms.cobrar ? (
               <button
                 className="pos-cobrar-btn"
@@ -728,12 +766,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         </div>
       )}
 
-      {/* Modal: Pago */}
+      {/* Modal: Pago + DTE */}
       {showPayModal && (
         <PaymentModal
           items={items}
           total={total}
           onConfirm={handlePaymentConfirm}
+          onComplete={handlePaymentComplete}
           onClose={() => setShowPayModal(false)}
           saving={saving}
         />

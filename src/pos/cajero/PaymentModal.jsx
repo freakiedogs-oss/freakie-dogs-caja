@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import CustomerSearch from './CustomerSearch'
 
 const DTE_TYPES = [
   { key: 'ticket',  label: '🧾 Ticket',   desc: 'Comprobante interno' },
@@ -6,7 +7,7 @@ const DTE_TYPES = [
   { key: 'ccf',     label: '🏢 CCF',       desc: 'Crédito Fiscal' },
 ]
 
-export default function PaymentModal({ items, total, onConfirm, onClose, saving }) {
+export default function PaymentModal({ items, total, onConfirm, onComplete, onClose, saving }) {
   const [metodo, setMetodo]     = useState('efectivo')
   const [efectivo, setEfectivo] = useState('')
   const [tarjeta, setTarjeta]   = useState('')
@@ -15,6 +16,12 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
   const [ref, setRef]           = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [cuentaResult, setCuentaResult] = useState(null)
+  const [dteResult, setDteResult] = useState(null)
+  const [dteError, setDteError]   = useState(null)
+  const [processing, setProcessing] = useState(false)
+
+  // Cliente seleccionado (para CCF)
+  const [cliente, setCliente] = useState(null)
 
   const propinaNum  = parseFloat(propina) || 0
   const efectivoNum = parseFloat(efectivo) || 0
@@ -28,13 +35,17 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
   const totalMixto = efectivoNum + tarjetaNum
 
   const canConfirm = () => {
-    if (metodo === 'efectivo') return efectivoNum >= totalConProp
-    if (metodo === 'tarjeta')  return true
-    if (metodo === 'mixto')    return Math.abs(totalMixto - totalConProp) < 0.01
-    return false
+    if (metodo === 'efectivo' && efectivoNum < totalConProp) return false
+    if (metodo === 'mixto' && Math.abs(totalMixto - totalConProp) >= 0.01) return false
+    // CCF requiere cliente seleccionado
+    if (tipoDte === 'ccf' && !cliente) return false
+    return true
   }
 
   const handleConfirm = async () => {
+    setProcessing(true)
+    setDteError(null)
+
     const payData = {
       metodo,
       efectivo: metodo === 'efectivo' ? efectivoNum : (metodo === 'mixto' ? efectivoNum : 0),
@@ -43,23 +54,49 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
       propina: propinaNum,
       tipoDte,
       referencia: ref || null,
+      // Datos del cliente para DTE
+      cliente: cliente ? {
+        id: cliente.id,
+        nombre: cliente.nombre,
+        nit: cliente.numero_documento,
+        nrc: cliente.nrc,
+        giro: cliente.giro,
+        codActividad: '56101',
+        descActividad: cliente.giro || 'Restaurantes',
+        nombreComercial: cliente.nombre_comercial || null,
+        correo: cliente.email || null,
+        telefono: cliente.telefono || null,
+        direccionTexto: cliente.direccion || null,
+        direccion: (cliente.departamento && cliente.municipio) ? {
+          departamento: cliente.departamento,
+          municipio: cliente.municipio,
+          complemento: cliente.direccion || 'San Salvador, El Salvador',
+        } : null,
+      } : null,
     }
-    const cuenta = await onConfirm(payData)
-    setCuentaResult(cuenta)
-    setConfirmed(true)
+
+    try {
+      const result = await onConfirm(payData)
+      setCuentaResult(result?.cuenta || result)
+      setDteResult(result?.dte || null)
+      setDteError(result?.dteError || null)
+      setConfirmed(true)
+    } catch (err) {
+      alert('Error al procesar pago: ' + err.message)
+    } finally {
+      setProcessing(false)
+    }
   }
 
   // ── Ticket de confirmación ──
   if (confirmed) {
     return (
       <div className="pos-modal-overlay">
-        <div className="pos-modal">
+        <div className="pos-modal" style={{ maxWidth: 420 }}>
           <div className="pos-ticket">
             <div className="pos-ticket-icon">✅</div>
             <div className="pos-ticket-title">¡Pago confirmado!</div>
-            <div className="pos-ticket-sub">
-              Orden enviada a cocina
-            </div>
+
             <div className="pos-ticket-detail">
               <div className="pos-ticket-row">
                 <span className="lbl">Total cobrado</span>
@@ -82,16 +119,63 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
                 </div>
               )}
               <div className="pos-ticket-row">
-                <span className="lbl">DTE</span>
+                <span className="lbl">Documento</span>
                 <span className="val">{DTE_TYPES.find(d => d.key === tipoDte)?.label}</span>
               </div>
             </div>
+
+            {/* ── Resultado DTE ── */}
+            {dteResult && (
+              <div style={{
+                background: '#0a2a0a', border: '1px solid #166534', borderRadius: 8,
+                padding: '10px 12px', marginTop: 12, marginBottom: 8
+              }}>
+                <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                  📄 DTE Emitido — {dteResult.estado === 'aceptado' ? '✅ Aceptado por Hacienda' : dteResult.estado}
+                </div>
+                <div style={{ fontSize: 11, color: '#8b8', lineHeight: 1.6 }}>
+                  <div><b>Nº Control:</b> {dteResult.numero_control}</div>
+                  <div><b>Código Gen:</b> {dteResult.codigo_generacion?.slice(0, 18)}...</div>
+                  <div><b>Sello:</b> {dteResult.sello_recepcion?.slice(0, 24)}...</div>
+                  <div><b>Monto:</b> ${dteResult.monto_total?.toFixed(2)} (IVA: ${dteResult.monto_iva?.toFixed(2)})</div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Error DTE (venta sí se cobró) ── */}
+            {dteError && (
+              <div style={{
+                background: '#2a1a0a', border: '1px solid #92400e', borderRadius: 8,
+                padding: '10px 12px', marginTop: 12, marginBottom: 8
+              }}>
+                <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                  ⚠️ DTE no emitido
+                </div>
+                <div style={{ fontSize: 11, color: '#d97706', lineHeight: 1.5 }}>
+                  {dteError}
+                </div>
+                <div style={{ fontSize: 10, color: '#92400e', marginTop: 4 }}>
+                  La venta se registró correctamente. El DTE puede emitirse después desde el admin.
+                </div>
+              </div>
+            )}
+
+            {/* Si es ticket (sin DTE) */}
+            {tipoDte === 'ticket' && !dteResult && !dteError && (
+              <div style={{
+                background: '#1a1a1a', borderRadius: 8, padding: '8px 12px',
+                marginTop: 8, fontSize: 11, color: '#555', textAlign: 'center'
+              }}>
+                Comprobante interno — sin documento fiscal
+              </div>
+            )}
+
             <button
               className="pos-confirmar-btn"
-              onClick={onClose}
-              style={{ marginTop: 0 }}
+              onClick={onComplete || onClose}
+              style={{ marginTop: 12 }}
             >
-              Nueva orden
+              ✅ Nueva orden
             </button>
           </div>
         </div>
@@ -101,7 +185,7 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
 
   return (
     <div className="pos-modal-overlay" onClick={onClose}>
-      <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+      <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
         <div className="pos-modal-title">💳 Cobrar orden</div>
 
         {/* Total */}
@@ -145,7 +229,6 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
                 autoFocus
               />
             </div>
-            {/* Botones rápidos */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
               {[totalConProp, Math.ceil(totalConProp), 20, 50].map(v => {
                 if (v < totalConProp && v !== totalConProp) return null
@@ -252,7 +335,7 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
               <button
                 key={d.key}
                 className={`pos-dte-opt${tipoDte === d.key ? ' active' : ''}`}
-                onClick={() => setTipoDte(d.key)}
+                onClick={() => { setTipoDte(d.key); if (d.key !== 'ccf') setCliente(null) }}
                 title={d.desc}
               >
                 {d.label}
@@ -260,6 +343,14 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
             ))}
           </div>
         </div>
+
+        {/* ── CustomerSearch para CCF ── */}
+        {tipoDte === 'ccf' && (
+          <CustomerSearch
+            selected={cliente}
+            onSelect={setCliente}
+          />
+        )}
 
         {/* Items resumen */}
         <div style={{
@@ -277,12 +368,22 @@ export default function PaymentModal({ items, total, onConfirm, onClose, saving 
           ))}
         </div>
 
+        {/* Validación CCF */}
+        {tipoDte === 'ccf' && !cliente && (
+          <div style={{
+            background: '#2a1a0a', borderRadius: 6, padding: '6px 10px',
+            marginBottom: 8, fontSize: 11, color: '#d97706'
+          }}>
+            ⚠️ Selecciona un cliente para emitir CCF
+          </div>
+        )}
+
         <button
           className="pos-confirmar-btn"
-          disabled={!canConfirm() || saving}
+          disabled={!canConfirm() || saving || processing}
           onClick={handleConfirm}
         >
-          {saving ? '⏳ Procesando...' : `✅ Confirmar pago $${totalConProp.toFixed(2)}`}
+          {processing ? '⏳ Emitiendo DTE...' : saving ? '⏳ Procesando...' : `✅ Confirmar pago $${totalConProp.toFixed(2)}`}
         </button>
         <button className="pos-cancelar-btn" onClick={onClose}>
           Cancelar
