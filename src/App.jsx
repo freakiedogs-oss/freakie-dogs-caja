@@ -37,6 +37,7 @@ import PendientesView from './components/admin/PendientesView'
 import DTEMapeoView from './components/admin/DTEMapeoView'
 import RentabilidadView from './components/admin/RentabilidadView'
 import FinanzasGastosView from './components/finanzas/FinanzasGastosView'
+import FinanzasDashboard from './components/finanzas/FinanzasDashboard'
 import SuperAdminView from './components/admin/SuperAdminView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
@@ -184,6 +185,8 @@ export default function App() {
         return <RentabilidadView user={user} />
       case 'gastos':
         return <FinanzasGastosView user={user} />
+      case 'finanzas-dashboard':
+        return <FinanzasDashboard user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
       case 'ventas-dash':
