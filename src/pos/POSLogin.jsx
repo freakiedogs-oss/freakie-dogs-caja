@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { db } from '../supabase'
 
 // Roles que pueden usar el POS
-const POS_ROLES = ['cajero', 'cajera', 'mesero', 'mesera', 'cocina', 'gerente', 'admin', 'ejecutivo']
+const POS_ROLES = ['cajero', 'cajera', 'mesero', 'mesera', 'cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 
 export default function POSLogin({ onLogin }) {
   const [pin, setPin] = useState('')
@@ -23,11 +23,16 @@ export default function POSLogin({ onLogin }) {
         .eq('activo', true)
         .maybeSingle()
       setLoading(false)
-      if (error || !data) { setErr('PIN incorrecto'); setPin(''); return }
-      if (!POS_ROLES.includes(data.rol)) {
-        setErr('Sin acceso al POS'); setPin(''); return
+      if (data) {
+        if (!POS_ROLES.includes(data.rol)) {
+          setErr('Sin acceso al POS'); setPin(''); return
+        }
+        onLogin(data); return
       }
-      onLogin(data)
+      // PIN de 4-5 dígitos sin match: seguir esperando más dígitos
+      if (np.length < 6) return
+      // 6 dígitos sin match: error y resetear
+      setErr('PIN incorrecto'); setPin('')
     }
   }
 
@@ -55,7 +60,7 @@ export default function POSLogin({ onLogin }) {
 
       {/* Dots */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        {[0,1,2,3].map(i => (
+        {[0,1,2,3,4,5].map(i => (
           <div key={i} style={{
             width: 14, height: 14, borderRadius: '50%',
             background: pin.length > i ? '#e63946' : '#222',

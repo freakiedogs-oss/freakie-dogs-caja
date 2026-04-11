@@ -3,7 +3,7 @@ import { db } from '../../supabase';
 import { today, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
-const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin'];
+const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
 
 /* ── Stepper button style (48px touch target) ── */
 const stepBtn={
@@ -287,6 +287,14 @@ export default function ConteoNocturno({user,onBack}){
 
     setGenerandoPedido(true);
     try{
+      // Eliminar pedido activo previo de esta sucursal (solo debe existir 1 por sucursal)
+      const {data:pedidoExistente}=await db.from('pedidos_sucursal')
+        .select('id').eq('sucursal_id', sucursalId).neq('estado','recibido').maybeSingle();
+      if(pedidoExistente){
+        await db.from('pedido_items').delete().eq('pedido_id', pedidoExistente.id);
+        await db.from('pedidos_sucursal').delete().eq('id', pedidoExistente.id);
+      }
+
       // Crear pedido_sucursal
       const {data:pedido,error:pedErr}=await db.from('pedidos_sucursal')
         .insert({

@@ -3,7 +3,7 @@ import { db } from '../../supabase';
 import { STORES, today, fmtDate, n, shiftDate } from '../../config';
 
 // ── Control de acceso ──
-const ALLOWED_ROLES = ['ejecutivo', 'admin', 'contador'];
+const ALLOWED_ROLES = ['ejecutivo', 'admin', 'contador', 'superadmin'];
 
 // ── Helpers ──
 const fmt$ = (v) => `$${parseFloat(v || 0).toFixed(2)}`;

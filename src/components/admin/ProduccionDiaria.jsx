@@ -3,7 +3,7 @@ import { db } from '../../supabase';
 import { today, fmtDate, n, STORES } from '../../config';
 
 // ── Roles con acceso de edición ──
-const ROLES_EDIT = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'];
+const ROLES_EDIT = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'superadmin'];
 
 // ── Generar número de lote ──
 const generarLote = (fecha, seq) =>

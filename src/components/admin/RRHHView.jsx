@@ -4,8 +4,8 @@ import { fmtDate, n, STORES } from '../../config';
 import AsistenciaDigital from './AsistenciaDigital';
 
 // ── Control de acceso ──
-const EDIT_PINS = ['1000', '2000', '7700']; // Jose, Cesar, Maria Jose (RRHH)
-const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'admin'];
+const EDIT_PINS = ['1000', '2000', '7700', '231155']; // Jose, Cesar, Maria Jose (RRHH), Super Admin
+const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'admin', 'superadmin'];
 
 // ── Cargos reales en producción ──
 const CARGOS_REALES = [
@@ -32,7 +32,7 @@ const colors = {
 };
 
 // ── Roles que NO se pueden editar ──
-const ROLES_PROTEGIDOS = ['ejecutivo', 'admin'];
+const ROLES_PROTEGIDOS = ['ejecutivo', 'admin', 'superadmin'];
 
 // ── Roles disponibles para asignar (excluye protegidos) ──
 const ROLES_EDITABLES = [

@@ -3,7 +3,7 @@ import { db } from '../../supabase';
 import { today, fmtDate, n } from '../../config';
 
 // ── Roles con acceso ──
-const ROLES_ACCESO = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'];
+const ROLES_ACCESO = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'superadmin'];
 
 // ── Categorías de incidentes de producción/casa matriz ──
 const CATEGORIAS = [

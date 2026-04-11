@@ -3,8 +3,8 @@ import { db } from '../../supabase';
 import { today, fmtDate, n, STORES } from '../../config';
 
 // ── PINS Y ACCESO ──────────────────────────────────────────────
-const EDIT_PINS = ['1000', '2000']; // Jose, Cesar
-const ALLOWED_ROLES = ['ejecutivo', 'admin', 'despachador', 'gerente'];
+const EDIT_PINS = ['1000', '2000', '231155']; // Jose, Cesar, Super Admin
+const ALLOWED_ROLES = ['ejecutivo', 'admin', 'despachador', 'gerente', 'superadmin'];
 
 // ── DELIVERY VIEW - GESTIÓN ENTREGAS Y DESPACHO ──────────────
 export default function DeliveryView({ user, show }) {

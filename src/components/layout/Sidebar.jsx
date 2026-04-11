@@ -12,6 +12,7 @@ export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
   }, [])
 
   const hasAccess = (roles) => {
+    if (user.rol === 'superadmin') return true
     if (roles.includes('*')) return true
     return roles.includes(user.rol)
   }

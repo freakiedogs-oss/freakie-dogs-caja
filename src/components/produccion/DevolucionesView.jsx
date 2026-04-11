@@ -3,8 +3,8 @@ import { db } from '../../supabase';
 import { today, fmtDate, n, STORES } from '../../config';
 
 // ── Roles ──
-const ROLES_SUCURSAL = ['gerente', 'cocina', 'admin', 'ejecutivo']; // Pueden crear devolución desde sucursal
-const ROLES_CM = ['jefe_casa_matriz', 'produccion', 'admin', 'ejecutivo']; // Pueden recibir en CM
+const ROLES_SUCURSAL = ['gerente', 'cocina', 'admin', 'ejecutivo', 'superadmin']; // Pueden crear devolución desde sucursal
+const ROLES_CM = ['jefe_casa_matriz', 'produccion', 'admin', 'ejecutivo', 'superadmin']; // Pueden recibir en CM
 
 const MOTIVOS = {
   error_despacho: { label: 'Error de despacho', icon: '📦', desc: 'Producto incorrecto o cantidad errónea enviada' },

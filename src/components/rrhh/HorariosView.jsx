@@ -21,8 +21,8 @@ const ETIQUETAS = {
   'Descanso':{ color: '#6b7280', bg: 'rgba(107,114,128,0.10)', icon: '😴', inicio: '',      fin: ''      },
 };
 
-const ROLES_ADMIN = ['rrhh', 'ejecutivo', 'admin'];
-const canEdit = (user) => [...ROLES_ADMIN, 'gerente', 'cocina', 'jefe_casa_matriz'].includes(user?.rol);
+const ROLES_ADMIN = ['rrhh', 'ejecutivo', 'admin', 'superadmin'];
+const canEdit = (user) => user?.rol === 'superadmin' || [...ROLES_ADMIN, 'gerente', 'cocina', 'jefe_casa_matriz'].includes(user?.rol);
 
 function getLunes(date) {
   const d = new Date(date);

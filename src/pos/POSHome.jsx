@@ -66,7 +66,7 @@ function elapsed(isoStr) {
 // ──────────────────────────────────────────────
 // Componente
 // ──────────────────────────────────────────────
-const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo']
+const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 const MESERO_ROLES = ['mesero', 'mesera']
 
 export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS }) {
@@ -91,7 +91,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS }) {
         .eq('activa', true)
         .order('numero'),
       db.from('pos_cuentas')
-        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, pos_cuenta_items(id)')
+        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
         .eq('store_code', storeCode)
         .in('estado', ESTADO_ACTIVO)
         .order('created_at'),

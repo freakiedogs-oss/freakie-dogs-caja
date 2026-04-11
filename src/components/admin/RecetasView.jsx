@@ -4,7 +4,7 @@ import { n } from '../../config';
 
 // ── Usuarios con acceso de edición ──
 const EDIT_EMAILS = ['joseisart2008@gmail.com'];
-const EDIT_PINS = ['2000', '1000', '4844']; // Cesar Rodriguez, Jose Isart, Denny Stefany
+const EDIT_PINS = ['2000', '1000', '4844', '231155']; // Cesar Rodriguez, Jose Isart, Denny Stefany, Super Admin
 
 // ── Unidades fijas ──
 const UNIDADES = [

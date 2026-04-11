@@ -4,8 +4,8 @@ import { n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
 // PINs ejecutivos: Jose=1000, Cesar=2000, Maria Jose=7700 (RRHH)
-const EDIT_PINS = ['1000', '2000', '7700'];
-const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'contador', 'admin'];
+const EDIT_PINS = ['1000', '2000', '7700', '231155'];
+const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'contador', 'admin', 'superadmin'];
 
 const fmt$ = (val) => {
   const num = n(val);

@@ -36,12 +36,15 @@ export default function LoginScreen({ onLogin }) {
         .eq('activo', true)
         .maybeSingle();
       setLoading(false);
-      if (error || !data) {
-        setErr('PIN incorrecto');
-        setPin('');
+      if (data) {
+        onLogin(data);
         return;
       }
-      onLogin(data);
+      // PIN de 4-5 dígitos sin match: seguir esperando más dígitos
+      if (np.length < 6) return;
+      // 6 dígitos sin match: error y resetear
+      setErr('PIN incorrecto');
+      setPin('');
     }
   };
 
@@ -75,10 +78,11 @@ export default function LoginScreen({ onLogin }) {
         Ingresa tu PIN
       </div>
       <div className="pin-box">
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <div
             key={i}
             className={`pin-dot${pin.length > i ? ' filled' : ''}`}
+            style={{ width: 14, height: 14, margin: '0 5px' }}
           />
         ))}
       </div>
