@@ -37,7 +37,7 @@ function buildDteItems(items, tipoDte) {
     return {
       descripcion: it.nombre,
       cantidad: it.qty,
-      precioUnitario: precio,
+      precioUni: precio,
       codigo: it.id || null,
     }
   })
@@ -48,10 +48,11 @@ function buildDteItems(items, tipoDte) {
  * Receptor es opcional para Factura.
  */
 export async function emitFactura({ items, receptor, metodo }) {
+  const totalPagar = items.reduce((s, it) => s + (it.precio * it.qty), 0)
   const body = {
     items: buildDteItems(items, 'factura'),
-    formaPago: mapFormaPago(metodo),
     condicionOperacion: 1, // contado
+    pagos: [{ codigo: mapFormaPago(metodo), montoPago: Math.round(totalPagar * 100) / 100, referencia: null, plazo: null, periodo: null }],
   }
 
   // Receptor opcional para factura
@@ -110,6 +111,12 @@ export async function emitCCF({ items, receptor, metodo }) {
       correo: receptor.correo || 'sin-correo@freakiedogs.com',
     },
   }
+
+  // Calcular total para pagos
+  const totalCCF = items.reduce((s, it) => s + (it.precio / 1.13 * it.qty), 0)
+  const ivaCCF = Math.round(totalCCF * 0.13 * 100) / 100
+  const totalPagarCCF = Math.round((totalCCF + ivaCCF) * 100) / 100
+  body.pagos = [{ codigo: mapFormaPago(metodo), montoPago: totalPagarCCF, referencia: null, plazo: null, periodo: null }]
 
   const res = await fetch(`${DTE_BASE}/emit-ccf`, {
     method: 'POST',
