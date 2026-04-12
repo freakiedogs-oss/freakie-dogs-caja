@@ -188,6 +188,7 @@ export default function FinanzasDashboard({ user }) {
   const [tab, setTab] = useState('dashboard')
   const [loading, setLoading] = useState(true)
   const [data2026, setData2026] = useState(null)
+  const [conIva, setConIva] = useState(false)  // false = sin IVA (default)
 
   // ── Access check ──
   useEffect(() => {
@@ -256,9 +257,9 @@ export default function FinanzasDashboard({ user }) {
       const m = v.fecha?.substring(0, 7) // "2026-01"
       if (!m) return
       if (!monthMap[m]) monthMap[m] = { ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0 }
-      // Use total_ventas_quanto (includes delivery platforms) ÷ 1.13 = sin IVA
+      // Ventas: con o sin IVA según toggle
       const bruto = parseFloat(v.total_ventas_quanto) || ((v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0))
-      const total = bruto / 1.13
+      const total = conIva ? bruto : bruto / 1.13
       monthMap[m].ventas += total
       monthMap[m].egresos += (v.total_egresos || 0)
       const sc = v.store_code || 'Otro'
@@ -270,7 +271,8 @@ export default function FinanzasDashboard({ user }) {
       const m = c.fecha_emision?.substring(0, 7)
       if (!m || !monthMap[m]) return
       const { categoria: cat, subcategoria: sub } = classify(c.proveedor_nombre || '')
-      const monto = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
+      const montoSinIva = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
+      const monto = conIva ? (parseFloat(c.monto_total) || montoSinIva) : montoSinIva
       if (monthMap[m].pl[cat] !== undefined) {
         monthMap[m].pl[cat] += monto
       } else {
@@ -294,7 +296,7 @@ export default function FinanzasDashboard({ user }) {
       const utilidad = ebitda - v.pl.impuestos
       return { key: k, label: formatMonth(k), ...v, ebitda, utilidad }
     })
-  }, [data2026, classify])
+  }, [data2026, classify, conIva])
 
   if (!ROLES.includes(user?.rol)) {
     return <div style={{ padding: 40, textAlign: 'center', color: C.red }}>⛔ Acceso restringido</div>
@@ -316,6 +318,17 @@ export default function FinanzasDashboard({ user }) {
         <div style={{ fontSize: 12, letterSpacing: 3, color: C.red, fontWeight: 800 }}>FREAKIE DOGS</div>
         <div style={{ fontSize: 20, fontWeight: 800, color: C.white, marginTop: 2 }}>Dashboard Financiero</div>
         <div style={{ fontSize: 11, color: C.textMuted }}>Ago 2025 — Abr 2026 · Datos en USD</div>
+        {/* Toggle IVA */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 8, background: C.card, borderRadius: 8, padding: '4px 12px', border: `1px solid ${C.border}` }}>
+          <span style={{ fontSize: 11, color: conIva ? C.textMuted : C.gold, fontWeight: conIva ? 400 : 700 }}>Sin IVA</span>
+          <div
+            onClick={() => setConIva(!conIva)}
+            style={{ width: 36, height: 20, borderRadius: 10, background: conIva ? C.red : C.gray, cursor: 'pointer', position: 'relative', transition: 'background .2s' }}
+          >
+            <div style={{ width: 16, height: 16, borderRadius: 8, background: C.white, position: 'absolute', top: 2, left: conIva ? 18 : 2, transition: 'left .2s' }} />
+          </div>
+          <span style={{ fontSize: 11, color: conIva ? C.gold : C.textMuted, fontWeight: conIva ? 700 : 400 }}>Con IVA</span>
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -336,7 +349,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
-          {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} />}
+          {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'catalogo' && <TabCatalogo user={user} data2026={data2026} onRefresh={loadData2026} />}
         </>
       )}
@@ -836,7 +849,7 @@ const CAT_COLORS = {
   impuestos: '#fbbf24',
 }
 
-function TabProveedores({ data2026, months2026 }) {
+function TabProveedores({ data2026, months2026, conIva }) {
   const [collapsedCats, setCollapsedCats] = useState({})
   const [collapsedSubs, setCollapsedSubs] = useState({})
 
@@ -857,7 +870,8 @@ function TabProveedores({ data2026, months2026 }) {
       const m = c.fecha_emision?.substring(0, 7)
       if (!m || !monthKeys.includes(m)) return
       const name = c.proveedor_nombre || 'Sin nombre'
-      const monto = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
+      const montoBase = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
+      const monto = conIva ? (parseFloat(c.monto_total) || montoBase) : montoBase
       if (!provData[name]) {
         const { categoria, subcategoria } = localClassify(name)
         provData[name] = { cat: categoria, sub: subcategoria || 'Varios', months: {}, total: 0 }

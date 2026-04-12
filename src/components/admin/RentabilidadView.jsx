@@ -39,6 +39,7 @@ export default function RentabilidadView({ user }) {
   const [categorias, setCategorias] = useState([])
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
+  const [conIva, setConIva] = useState(false)  // false = sin IVA
 
   const showToast = (msg, tipo = 'ok') => {
     setToast({ msg, tipo })
@@ -63,7 +64,7 @@ export default function RentabilidadView({ user }) {
     const ventasPorSuc = {}
     ;(ventas || []).forEach(v => {
       if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
-      ventasPorSuc[v.store_code] += n(v.total_ventas_quanto) / 1.13  // sin IVA
+      ventasPorSuc[v.store_code] += conIva ? n(v.total_ventas_quanto) : n(v.total_ventas_quanto) / 1.13
     })
 
     // 2. DTEs del mes (con nombre proveedor para fallback)
@@ -138,7 +139,7 @@ export default function RentabilidadView({ user }) {
     ;(gastos || []).forEach(g => {
       const suc = g.sucursal_code || 'CORP'
       const cat = g.categoria_gasto_id
-      const monto = n(g.monto) / 1.13  // quitar IVA (monto almacenado con IVA)
+      const monto = conIva ? n(g.monto) : n(g.monto) / 1.13  // monto almacenado con IVA
 
       if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
       gastosPorSucCat[suc][cat] = (gastosPorSucCat[suc][cat] || 0) + monto
@@ -155,7 +156,7 @@ export default function RentabilidadView({ user }) {
       const grupo = CATALOGO_TO_GRUPO[match.categoria]
       const catId = grupo ? catGrupoMap[grupo] : null
       if (!catId) return
-      const monto = n(dte.subtotal) || n(dte.monto_total)
+      const monto = conIva ? n(dte.monto_total) : (n(dte.subtotal) || n(dte.monto_total))
       const suc = 'CORP' // fallback goes to CORP (prorrateo)
       if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
       gastosPorSucCat[suc][catId] = (gastosPorSucCat[suc][catId] || 0) + monto
@@ -224,7 +225,7 @@ export default function RentabilidadView({ user }) {
 
     setDatos({ pnl, ventasPorSuc, gastosPorCat, gastosPorSucCat, totalVentasGlobal, totalGastos, catMap, fallbackCount, totalDtes: (dteMes || []).length, clasificadosDirectos: clasificadoSet.size })
     setLoading(false)
-  }, [desde, hasta])
+  }, [desde, hasta, conIva])
 
   // Cargar DTEs sin clasificar AGRUPADOS POR PROVEEDOR
   const cargarSinClasificar = useCallback(async () => {
@@ -346,13 +347,26 @@ export default function RentabilidadView({ user }) {
             )}
           </p>
         </div>
-        <select value={periodo} onChange={e => setPeriodo(e.target.value)}
-          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', fontWeight: 600, fontSize: 14 }}>
-          {mesesDisponibles.slice(0, 18).map(m => {
-            const [y, mo] = m.split('-')
-            return <option key={m} value={m}>{MESES[parseInt(mo) - 1]} {y}</option>
-          })}
-        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Toggle IVA */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F3F4F6', borderRadius: 8, padding: '4px 10px' }}>
+            <span style={{ fontSize: 11, color: conIva ? '#9CA3AF' : '#D97706', fontWeight: conIva ? 400 : 700 }}>Sin IVA</span>
+            <div
+              onClick={() => setConIva(!conIva)}
+              style={{ width: 32, height: 18, borderRadius: 9, background: conIva ? '#3B82F6' : '#9CA3AF', cursor: 'pointer', position: 'relative', transition: 'background .2s' }}
+            >
+              <div style={{ width: 14, height: 14, borderRadius: 7, background: '#fff', position: 'absolute', top: 2, left: conIva ? 16 : 2, transition: 'left .2s' }} />
+            </div>
+            <span style={{ fontSize: 11, color: conIva ? '#D97706' : '#9CA3AF', fontWeight: conIva ? 700 : 400 }}>Con IVA</span>
+          </div>
+          <select value={periodo} onChange={e => setPeriodo(e.target.value)}
+            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', fontWeight: 600, fontSize: 14 }}>
+            {mesesDisponibles.slice(0, 18).map(m => {
+              const [y, mo] = m.split('-')
+              return <option key={m} value={m}>{MESES[parseInt(mo) - 1]} {y}</option>
+            })}
+          </select>
+        </div>
       </div>
 
       {/* Tabs */}
