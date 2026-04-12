@@ -54,7 +54,8 @@ const HIST_PL = {
   insumo_venta:     [5370.84, 7863.72, 3035.60, 3860.84, 6843.00],
   limpieza:         [3575.78, 3578.56, 4056.76, 2000.59, 7957.24],
   costo_fijo:       [7187.90, 8286.96, 10290.16, 15558.37, 16810.68],
-  gastos_operativos:[22731.31, 26440.79, 23136.88, 15765.47, 20764.86],
+  gastos_operativos:[19662.44, 23630.71, 20395.24, 13319.36, 14972.88],
+  gastos_logisticos:[3068.87, 2810.08, 2741.64, 2446.11, 5791.98],
   gasto_financiero: [1369.50, 1856.81, 1689.00, 6294.97, 5309.32],
   planilla_legal:   [45406.83, 41737.35, 45295.79, 52317.91, 77556.84],
   impuestos:        [3463.70, 2716.52, 3215.04, 4755.03, 7339.75],
@@ -96,54 +97,87 @@ const HIST_SUCURSAL = {
 const STORE_MAP = { M001: 'Santa Tecla', S001: 'PM Soyapango', S002: 'PM Usulután', S003: 'Gran Plaza Lourdes', S004: 'Venecia Soyapango' }
 const STORE_COLORS = { M001: '#e63946', S001: '#3b82f6', S002: '#f4a261', S003: '#4ade80', S004: '#a78bfa' }
 
-// ── Provider → P&L category mapping for 2026 ──
-// Categorías: costo_comida, insumo_venta, limpieza, costo_fijo, gastos_operativos,
-//             gasto_financiero, planilla_legal, impuestos, activo_fijo
-const PROV_CAT = {
-  // COSTO COMIDA — ingredientes, cárnicos, lácteos, bebidas, condimentos, aceite freidoras
+// ── Provider classification — loaded from catalogo_contable table ──
+// Fallback hardcoded map (used if DB fetch fails)
+const PROV_CAT_FALLBACK = {
+  // COSTO COMIDA
   'Corte Argentino': 'costo_comida', 'BELCA': 'costo_comida', 'FLAMO': 'costo_comida',
   'INDUSTRIAS CARNICAS': 'costo_comida', 'Excel Protein': 'costo_comida', 'Lácteos del Corral': 'costo_comida',
   'Lacteos del Corral': 'costo_comida', 'Productos Cárnicos': 'costo_comida', 'MULTICONGELADOS': 'costo_comida',
   'AGROINDUSTRIAS LACTEAS': 'costo_comida', 'AGROINDUSTRIAS SAN JULIAN': 'costo_comida',
   'URBINA DE UMAÑA': 'costo_comida', 'CALLEJA': 'costo_comida', 'Pricesmart': 'costo_comida',
-  'GOOD PRICE': 'costo_comida', 'DISTRIBUIDORA EUROPEA': 'costo_comida', 'DISTRIBUIDORA SALVADOREÑA': 'costo_comida',
+  'DISTRIBUIDORA EUROPEA': 'costo_comida', 'DISTRIBUIDORA SALVADOREÑA': 'costo_comida',
   'DISTRIBUIDORA SANTA ELENA': 'costo_comida', 'PATRONIC': 'costo_comida', 'TECNISPICE': 'costo_comida',
   'OPERADORA DEL SUR': 'costo_comida', 'Embotelladora La Cascada': 'costo_comida',
-  'CRISTIAN JAVIER': 'costo_comida', 'MONICA ALEXANDRA': 'costo_comida',
-  'BOLCA': 'costo_comida', // aceite freidoras
-  // INSUMO VENTA — empaques, moldes, impresión
-  'MOLDEADOS SALVADOREÑOS': 'insumo_venta', 'EMPAQUES ECOLOGICOS': 'insumo_venta',
-  'INDUSTRIAS GRAFICAS': 'insumo_venta', 'ROBERTONI': 'insumo_venta',
-  // LIMPIEZA — productos limpieza, ferretería, limpieza planchas
-  'ALMACENES VIDRI': 'limpieza', 'DIVE': 'limpieza', 'FREUND': 'limpieza',
-  'ALKEMY': 'limpieza', // limpieza planchas
-  // COSTO FIJO — alquileres, electricidad, agua, mantenimiento food court
+  'MONICA ALEXANDRA': 'costo_comida', 'BOLCA': 'costo_comida',
+  'AGROMARKET': 'costo_comida', 'Comercializadora Interamericana': 'costo_comida',
+  'MOLDEADOS SALVADOREÑOS': 'costo_comida', 'CO INDUSTRIAS GIGANTE': 'costo_comida',
+  'PROVEEDORES DE INSUMOS DIVERSOS': 'costo_comida', 'SUMINISTROS E INVERSIONES': 'costo_comida',
+  'DISTRIBUIDORA ZABLAH': 'costo_comida', 'INVERSIONES VIDA': 'costo_comida',
+  'EL NUEVO MILAGRO': 'costo_comida', 'ROBERTONI': 'costo_comida',
+  // INSUMO VENTA
+  'CRISTIAN JAVIER': 'insumo_venta', 'EMPAQUES ECOLOGICOS': 'insumo_venta',
+  'INDUSTRIAS GRAFICAS': 'insumo_venta', 'IMPRESOS MULTIPLES': 'insumo_venta',
+  'SOINTEC': 'insumo_venta', 'CASA ALVARENGA': 'insumo_venta', 'MEDIA AGENCIA': 'insumo_venta',
+  // LIMPIEZA
+  'ALMACENES VIDRI': 'limpieza', 'ALKEMY': 'limpieza', 'MERINSA': 'limpieza', 'Grupo SANSIR': 'limpieza',
+  // COSTO FIJO
   'FONDO DE TITULARIZACION': 'costo_fijo', 'EMPRESA SALV. DE SERVICIOS': 'costo_fijo',
   'COMERCIALIZADORA DE ENERGIA': 'costo_fijo', 'Distribuidora de Electricidad': 'costo_fijo',
-  'JOSE MANUEL ROMERO': 'costo_fijo', // alquiler sucursal Lourdes
-  'DEICE': 'costo_fijo', // alquiler PM Usulután + PM Soyapango
-  'ADINCE': 'costo_fijo', // mantenimiento food courts PM
-  // GASTOS OPERATIVOS — delivery, gas, seguros, transporte, extintores
-  'Delivery Hero': 'gastos_operativos',
-  'TROPIGAS': 'gastos_operativos', 'UNIGAS': 'gastos_operativos',
-  'SOINTEC': 'gastos_operativos',
-  'AUTOFACIL': 'gastos_operativos', // seguro camión transporte
-  'ARSEGUI': 'gastos_operativos', // extintores cocina
-  'RINA XIOMARA': 'gastos_operativos', // transporte empleados
-  // GASTO FINANCIERO — bancos, préstamos
+  'JOSE MANUEL ROMERO': 'costo_fijo', 'DEICE': 'costo_fijo', 'ADINCE': 'costo_fijo',
+  'COMPAÑIA DE TELECOMUNICACIONES': 'costo_fijo', 'COMPAÑÍA DE TELECOMUNICACIONES': 'costo_fijo',
+  'CTE TELECOM': 'costo_fijo', 'DIVE': 'costo_fijo',
+  // GASTOS OPERATIVOS
+  'Delivery Hero': 'gastos_operativos', 'TROPIGAS': 'gastos_operativos', 'UNIGAS': 'gastos_operativos',
+  'AUTOFACIL': 'gastos_operativos', 'ARSEGUI': 'gastos_operativos', 'RINA XIOMARA': 'gastos_operativos',
+  'TS CAPITAL': 'gastos_operativos', 'TRULYN': 'gastos_operativos', 'HIFUMI': 'gastos_operativos',
+  // GASTOS LOGÍSTICOS
+  'Grupo 3 Inversiones': 'gastos_logisticos', 'ECSA OPERADORA': 'gastos_logisticos',
+  'CORINA MARGARITA': 'gastos_logisticos', 'COVI': 'gastos_logisticos',
+  // GASTO FINANCIERO
   'Servicios Financieros': 'gasto_financiero', 'SOCIEDAD DE AHORRO': 'gasto_financiero',
-  'TS CAPITAL': 'gasto_financiero', 'BANCO DE AMERICA': 'gasto_financiero',
-  // ACTIVO FIJO — equipos, construcción, toldos (no entra al P&L como gasto)
-  'GALVANIZADORA INDUSTRIAL': 'activo_fijo', // techos casa matriz
-  'PROMAICA': 'activo_fijo', // equipos cocina
-  'LONAS DECORATIVAS': 'activo_fijo', // toldos canopys eventos
+  'BANCO DE AMERICA': 'gasto_financiero',
+  // ACTIVO FIJO
+  'GALVANIZADORA INDUSTRIAL': 'activo_fijo', 'PROMAICA': 'activo_fijo', 'LONAS DECORATIVAS': 'activo_fijo',
+  'GOOD PRICE': 'activo_fijo', 'FREUND': 'activo_fijo', 'SISTEMAS FLEXIBLES': 'activo_fijo',
+  'GRUPO HB': 'activo_fijo', 'ROMENA DEL PACIFICO': 'activo_fijo', 'GRUPO PLANES': 'activo_fijo',
+  'UNION COMERCIAL': 'activo_fijo', 'SANTIAGO WILBERT': 'activo_fijo', 'MONTE ROYAL': 'activo_fijo',
 }
 
-function classifyProvider(name) {
-  for (const [key, cat] of Object.entries(PROV_CAT)) {
-    if (name.toUpperCase().includes(key.toUpperCase())) return cat
+// Build classifier from catalog entries (DB or fallback)
+function buildClassifier(catalogRows) {
+  if (!catalogRows || catalogRows.length === 0) {
+    // Use fallback
+    return (name) => {
+      const up = (name || '').toUpperCase()
+      for (const [key, cat] of Object.entries(PROV_CAT_FALLBACK)) {
+        if (up.includes(key.toUpperCase())) return { categoria: cat, subcategoria: '' }
+      }
+      return { categoria: 'gastos_operativos', subcategoria: 'Varios' }
+    }
   }
-  return 'gastos_operativos'
+  // Build exact match map (nombre_dte → {categoria, subcategoria}) + substring map
+  const exactMap = {}
+  const substrMap = []
+  catalogRows.forEach(r => {
+    exactMap[r.nombre_dte] = { categoria: r.categoria, subcategoria: r.subcategoria }
+    // Also add nombre_normalizado as substring key
+    if (r.nombre_normalizado) {
+      substrMap.push({ key: r.nombre_normalizado.toUpperCase(), cat: r.categoria, sub: r.subcategoria })
+    }
+  })
+  return (name) => {
+    // 1. Exact match
+    if (exactMap[name]) return exactMap[name]
+    // 2. Substring match on normalized
+    const up = (name || '').toUpperCase()
+    for (const s of substrMap) {
+      if (up.includes(s.key) || s.key.includes(up.replace(/[.,\s]+/g, ' ').trim())) {
+        return { categoria: s.cat, subcategoria: s.sub }
+      }
+    }
+    return { categoria: 'gastos_operativos', subcategoria: 'Varios' }
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -154,6 +188,7 @@ export default function FinanzasDashboard({ user }) {
   const [tab, setTab] = useState('dashboard')
   const [loading, setLoading] = useState(true)
   const [data2026, setData2026] = useState(null)
+  const [catalogo, setCatalogo] = useState([])
 
   // ── Access check ──
   useEffect(() => {
@@ -196,6 +231,12 @@ export default function FinanzasDashboard({ user }) {
         'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
         q => q.gte('fecha_pago', '2026-01-01'))
 
+      // 4. Catálogo contable (clasificación proveedores desde BD)
+      const { data: catData } = await db.from('catalogo_contable')
+        .select('nombre_dte, nombre_normalizado, categoria, subcategoria')
+        .eq('activo', true)
+      setCatalogo(catData || [])
+
       setData2026({ ventas, compras, planillas })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
@@ -204,6 +245,9 @@ export default function FinanzasDashboard({ user }) {
   }
 
   // ── Process 2026 data into monthly P&L ──
+  // Build classifier from DB catalog (or fallback)
+  const classify = useMemo(() => buildClassifier(catalogo), [catalogo])
+
   const months2026 = useMemo(() => {
     if (!data2026) return []
     const monthMap = {}
@@ -212,7 +256,7 @@ export default function FinanzasDashboard({ user }) {
     data2026.ventas.forEach(v => {
       const m = v.fecha?.substring(0, 7) // "2026-01"
       if (!m) return
-      if (!monthMap[m]) monthMap[m] = { ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, egresos: 0 }
+      if (!monthMap[m]) monthMap[m] = { ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0 }
       const total = (v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0)
       monthMap[m].ventas += total
       monthMap[m].egresos += (v.total_egresos || 0)
@@ -220,17 +264,21 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].bySuc[sc] = (monthMap[m].bySuc[sc] || 0) + total
     })
 
-    // Purchases → classify
+    // Purchases → classify using DB catalog
     data2026.compras.forEach(c => {
       const m = c.fecha_emision?.substring(0, 7)
       if (!m || !monthMap[m]) return
-      const cat = classifyProvider(c.proveedor_nombre || '')
+      const { categoria: cat, subcategoria: sub } = classify(c.proveedor_nombre || '')
       const monto = parseFloat(c.monto_total) || 0
       if (monthMap[m].pl[cat] !== undefined) {
         monthMap[m].pl[cat] += monto
       } else {
         monthMap[m].pl.gastos_operativos += monto
       }
+      // Track by provider for TabProveedores
+      const prov = c.proveedor_nombre || 'Desconocido'
+      if (!monthMap[m].byProv[prov]) monthMap[m].byProv[prov] = { monto: 0, cat, sub }
+      monthMap[m].byProv[prov].monto += monto
     })
 
     // Planilla supplement
@@ -241,11 +289,11 @@ export default function FinanzasDashboard({ user }) {
     })
 
     return Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => {
-      const ebitda = v.ventas - v.pl.costo_comida - v.pl.insumo_venta - v.pl.limpieza - v.pl.costo_fijo - v.pl.gastos_operativos - v.pl.gasto_financiero - v.pl.planilla_legal
+      const ebitda = v.ventas - v.pl.costo_comida - v.pl.insumo_venta - v.pl.limpieza - v.pl.costo_fijo - v.pl.gastos_operativos - v.pl.gastos_logisticos - v.pl.gasto_financiero - v.pl.planilla_legal
       const utilidad = ebitda - v.pl.impuestos
       return { key: k, label: formatMonth(k), ...v, ebitda, utilidad }
     })
-  }, [data2026])
+  }, [data2026, classify])
 
   if (!ROLES.includes(user?.rol)) {
     return <div style={{ padding: 40, textAlign: 'center', color: C.red }}>⛔ Acceso restringido</div>
@@ -286,7 +334,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
-          {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} />}
+          {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} classify={classify} />}
         </>
       )}
 
@@ -308,7 +356,7 @@ function TabDashboard({ months2026 }) {
   const prev = allMonths.length > 1 ? allMonths[allMonths.length - 2] : null
 
   // YTD totals
-  const ytd2025 = { ventas: sum(HIST_PL.ventas), ebitda: sum(HIST_PL.ventas.map((v, i) => v - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i])) }
+  const ytd2025 = { ventas: sum(HIST_PL.ventas), ebitda: sum(HIST_PL.ventas.map((v, i) => v - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gastos_logisticos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i])) }
   const ytd2026 = { ventas: months2026.reduce((s, m) => s + m.ventas, 0), ebitda: months2026.reduce((s, m) => s + m.ebitda, 0) }
 
   return (
@@ -425,6 +473,7 @@ function TabEstadoResultados({ months2026 }) {
     { key: 'limpieza', label: '(-) Limpieza', indent: true },
     { key: 'costo_fijo', label: '(-) Costo Fijo (Alquiler+Elec)', indent: true },
     { key: 'gastos_operativos', label: '(-) Gastos Operativos', indent: true },
+    { key: 'gastos_logisticos', label: '(-) Gastos Logísticos', indent: true },
     { key: 'gasto_financiero', label: '(-) Gasto Financiero', indent: true },
     { key: 'planilla_legal', label: '(-) Planilla + Legal', indent: true },
     { key: 'ebitda', label: 'EBITDA', bold: true, computed: true },
@@ -550,13 +599,13 @@ function TabEstadoResultados({ months2026 }) {
 function TabBalance({ months2026 }) {
   const allMonths = buildAllMonths(months2026)
   const totals = {}
-  const keys = ['ventas', 'costo_comida', 'insumo_venta', 'limpieza', 'costo_fijo', 'gastos_operativos', 'gasto_financiero', 'planilla_legal', 'impuestos']
+  const keys = ['ventas', 'costo_comida', 'insumo_venta', 'limpieza', 'costo_fijo', 'gastos_operativos', 'gastos_logisticos', 'gasto_financiero', 'planilla_legal', 'impuestos']
   keys.forEach(k => { totals[k] = allMonths.reduce((s, m) => s + (m[k] || 0), 0) })
   totals.ebitda = allMonths.reduce((s, m) => s + m.ebitda, 0)
   totals.utilidad = allMonths.reduce((s, m) => s + m.utilidad, 0)
 
   const totalCostos = totals.costo_comida + totals.insumo_venta + totals.limpieza
-  const totalGastosOp = totals.gastos_operativos + totals.costo_fijo + totals.gasto_financiero
+  const totalGastosOp = totals.gastos_operativos + totals.gastos_logisticos + totals.costo_fijo + totals.gasto_financiero
   const totalPlanilla = totals.planilla_legal
 
   // Simplified trial balance
@@ -782,7 +831,7 @@ const CAT_COLORS = {
   impuestos: '#fbbf24',
 }
 
-function TabProveedores({ data2026, months2026 }) {
+function TabProveedores({ data2026, months2026, classify }) {
   const [expandedCats, setExpandedCats] = useState({})
 
   const result = useMemo(() => {
@@ -803,7 +852,10 @@ function TabProveedores({ data2026, months2026 }) {
       if (!m || !monthKeys.includes(m)) return
       const name = c.proveedor_nombre || 'Sin nombre'
       const monto = parseFloat(c.monto_total) || 0
-      if (!provData[name]) provData[name] = { cat: classifyProvider(name), months: {}, total: 0 }
+      if (!provData[name]) {
+        const { categoria, subcategoria } = classify(name)
+        provData[name] = { cat: categoria, sub: subcategoria, months: {}, total: 0 }
+      }
       provData[name].months[m] = (provData[name].months[m] || 0) + monto
       provData[name].total += monto
     })
@@ -1026,11 +1078,12 @@ function buildAllMonths(months2026) {
     limpieza: HIST_PL.limpieza[i],
     costo_fijo: HIST_PL.costo_fijo[i],
     gastos_operativos: HIST_PL.gastos_operativos[i],
+    gastos_logisticos: HIST_PL.gastos_logisticos[i],
     gasto_financiero: HIST_PL.gasto_financiero[i],
     planilla_legal: HIST_PL.planilla_legal[i],
     impuestos: HIST_PL.impuestos[i],
-    ebitda: HIST_PL.ventas[i] - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i],
-    utilidad: HIST_PL.ventas[i] - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i] - HIST_PL.impuestos[i],
+    ebitda: HIST_PL.ventas[i] - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gastos_logisticos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i],
+    utilidad: HIST_PL.ventas[i] - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gastos_logisticos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i] - HIST_PL.impuestos[i],
     bySuc: Object.fromEntries(Object.entries(HIST_SUCURSAL).map(([k, v]) => [k, v[i]])),
   }))
 
@@ -1041,6 +1094,7 @@ function buildAllMonths(months2026) {
     limpieza: m.pl.limpieza,
     costo_fijo: m.pl.costo_fijo,
     gastos_operativos: m.pl.gastos_operativos,
+    gastos_logisticos: m.pl.gastos_logisticos,
     gasto_financiero: m.pl.gasto_financiero,
     planilla_legal: m.pl.planilla_legal,
     impuestos: m.pl.impuestos,
