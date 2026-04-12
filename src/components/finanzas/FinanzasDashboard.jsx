@@ -188,7 +188,6 @@ export default function FinanzasDashboard({ user }) {
   const [tab, setTab] = useState('dashboard')
   const [loading, setLoading] = useState(true)
   const [data2026, setData2026] = useState(null)
-  const [catalogo, setCatalogo] = useState([])
 
   // ── Access check ──
   useEffect(() => {
@@ -232,12 +231,12 @@ export default function FinanzasDashboard({ user }) {
         q => q.gte('fecha_pago', '2026-01-01'))
 
       // 4. Catálogo contable (clasificación proveedores desde BD)
-      const { data: catData } = await db.from('catalogo_contable')
+      const { data: catData, error: catErr } = await db.from('catalogo_contable')
         .select('nombre_dte, nombre_normalizado, categoria, subcategoria')
         .eq('activo', true)
-      setCatalogo(catData || [])
+      if (catErr) console.error('catalogo_contable load error:', catErr)
 
-      setData2026({ ventas, compras, planillas })
+      setData2026({ ventas, compras, planillas, catalogo: catData || [] })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -245,8 +244,8 @@ export default function FinanzasDashboard({ user }) {
   }
 
   // ── Process 2026 data into monthly P&L ──
-  // Build classifier from DB catalog (or fallback)
-  const classify = useMemo(() => buildClassifier(catalogo), [catalogo])
+  // Build classifier from DB catalog (loaded alongside data2026 — single state, no race condition)
+  const classify = useMemo(() => buildClassifier(data2026?.catalogo || []), [data2026])
 
   const months2026 = useMemo(() => {
     if (!data2026) return []
