@@ -144,3 +144,32 @@ export async function emitDTE({ tipoDte, items, receptor, metodo }) {
   // 'ticket' = sin DTE fiscal
   return null
 }
+
+/**
+ * Anular (invalidar) un DTE emitido previamente
+ * @param {Object} params
+ * @param {string} params.codigoGeneracion - UUID del DTE a anular
+ * @param {string} params.motivo - Razón de la anulación
+ * @param {number} [params.tipoAnulacion=2] - 1=Error emisión, 2=Rescindir operación
+ * @returns {Object} { success, codigo_generacion, estado, selloRecibido, hacienda_response }
+ */
+export async function anularDTE({ codigoGeneracion, motivo, tipoAnulacion = 2 }) {
+  const res = await fetch(`${DTE_BASE}/invalidar`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': DTE_API_KEY,
+    },
+    body: JSON.stringify({
+      codigo_generacion: codigoGeneracion,
+      motivo,
+      tipoAnulacion,
+    }),
+  })
+
+  const data = await res.json()
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || `Anulación error ${res.status}`)
+  }
+  return data
+}

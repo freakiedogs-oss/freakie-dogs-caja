@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
+import { anularDTE } from './cajero/dteService'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -77,6 +78,7 @@ export default function HistorialCobros({ user, onBack }) {
           propina,
           cobrada_at,
           dte_tipo,
+          dte_uuid,
           dte_numero_control,
           dte_sello,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
@@ -174,9 +176,66 @@ export default function HistorialCobros({ user, onBack }) {
     w.document.close()
   }
 
-  // ── ANULAR DTE (placeholder) ──
-  const handleAnularDTE = (cuenta) => {
-    alert('Funcionalidad de anulación DTE por implementar')
+  const [anulando, setAnulando] = useState(null) // id de la cuenta en proceso
+
+  // ── ANULAR DTE ──
+  const handleAnularDTE = async (cuenta) => {
+    if (!cuenta.dte_uuid) {
+      alert('Esta cuenta no tiene código de generación DTE')
+      return
+    }
+
+    // Pedir motivo
+    const motivo = prompt(
+      '¿Motivo de anulación?\n\n' +
+      'Ej: "Error en datos del cliente", "Venta cancelada", "Duplicado"\n\n' +
+      '(Cancelar para no anular)'
+    )
+    if (!motivo || motivo.trim().length < 5) {
+      if (motivo !== null) alert('El motivo debe tener al menos 5 caracteres')
+      return
+    }
+
+    // Confirmar
+    const dteLabel = cuenta.dte_tipo === '03' ? 'CCF' : 'Factura'
+    if (!confirm(
+      `⚠️ ¿Estás seguro de ANULAR este ${dteLabel}?\n\n` +
+      `Control: ${cuenta.dte_numero_control}\n` +
+      `Total: $${parseFloat(cuenta.total || 0).toFixed(2)}\n` +
+      `Motivo: ${motivo}\n\n` +
+      `Esta acción es IRREVERSIBLE ante Hacienda.`
+    )) return
+
+    setAnulando(cuenta.id)
+    try {
+      const result = await anularDTE({
+        codigoGeneracion: cuenta.dte_uuid,
+        motivo: motivo.trim(),
+        tipoAnulacion: 2, // Rescindir operación
+      })
+
+      // Actualizar pos_cuentas para marcar como anulada
+      await db
+        .from('pos_cuentas')
+        .update({
+          dte_sello: `ANULADO|${result.selloRecibido || ''}`,
+        })
+        .eq('id', cuenta.id)
+
+      alert(
+        `✅ DTE Anulado exitosamente\n\n` +
+        `Sello: ${result.selloRecibido || 'N/A'}\n` +
+        `El documento ha sido invalidado ante Hacienda.`
+      )
+
+      // Refrescar lista
+      setRefreshKey(k => k + 1)
+    } catch (err) {
+      console.error('Error anulando DTE:', err)
+      alert(`❌ Error al anular DTE:\n\n${err.message}`)
+    } finally {
+      setAnulando(null)
+    }
   }
 
   // ── Loading ──
@@ -320,10 +379,15 @@ export default function HistorialCobros({ user, onBack }) {
                         <button
                           className="historial-action-btn anular"
                           onClick={() => handleAnularDTE(cuenta)}
-                          disabled={!cuenta.dte_numero_control}
-                          title={cuenta.dte_numero_control ? 'Anular DTE' : 'Solo para documentos fiscales'}
+                          disabled={!cuenta.dte_uuid || anulando === cuenta.id || cuenta.dte_sello?.startsWith('ANULADO')}
+                          title={
+                            cuenta.dte_sello?.startsWith('ANULADO') ? 'DTE ya anulado' :
+                            !cuenta.dte_uuid ? 'Solo para documentos fiscales' :
+                            anulando === cuenta.id ? 'Anulando...' : 'Anular DTE ante Hacienda'
+                          }
                         >
-                          🚫 Anular DTE
+                          {cuenta.dte_sello?.startsWith('ANULADO') ? '✅ Anulado' :
+                           anulando === cuenta.id ? '⏳ Anulando...' : '🚫 Anular DTE'}
                         </button>
                       </div>
                     </>

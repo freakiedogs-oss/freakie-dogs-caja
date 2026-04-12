@@ -131,7 +131,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
                 padding: '10px 12px', marginTop: 12, marginBottom: 8
               }}>
                 <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-                  📄 DTE Emitido — {dteResult.estado === 'aceptado' ? '✅ Aceptado por Hacienda' : dteResult.estado}
+                  📄 DTE Emitido — {dteResult.estado === 'PROCESADO' ? '✅ Aceptado por Hacienda' : dteResult.estado}
                 </div>
                 <div style={{ fontSize: 11, color: '#8b8', lineHeight: 1.6 }}>
                   <div><b>Nº Control:</b> {dteResult.numero_control}</div>
