@@ -66,10 +66,10 @@ export default function RentabilidadView({ user }) {
       ventasPorSuc[v.store_code] += n(v.total_ventas_quanto)
     })
 
-    // 2. Gastos clasificados del mes - get DTE IDs first, then clasificaciones
+    // 2. DTEs del mes (con nombre proveedor para fallback)
     const { data: dteMes } = await db
       .from('compras_dte')
-      .select('id')
+      .select('id, proveedor_nombre, monto_total, subtotal')
       .gte('fecha_emision', desde)
       .lt('fecha_emision', hasta)
 
@@ -97,20 +97,71 @@ export default function RentabilidadView({ user }) {
     const catMap = {}
     ;(cats || []).forEach(c => { catMap[c.id] = c })
 
+    // 4. Catálogo contable para fallback de DTEs sin clasificar
+    const { data: catalogo } = await db.from('catalogo_contable')
+      .select('nombre_dte, nombre_normalizado, categoria, subcategoria')
+      .eq('activo', true)
+
+    // Build matcher from catalogo_contable → categorias_gasto
+    // Map catalogo categoria string → categorias_gasto id by grupo/nombre match
+    const catGrupoMap = {} // e.g. 'costo_comida' → first matching cat id with grupo 'COGS'
+    const CATALOGO_TO_GRUPO = {
+      costo_comida: 'COGS', insumo_venta: 'COGS', limpieza: 'COGS',
+      costo_fijo: 'Gasto Local', gastos_operativos: 'Gasto Venta',
+      gastos_logisticos: 'Gasto Venta', gasto_financiero: 'Gasto Admin',
+      activo_fijo: 'Inversión', impuestos: 'Gasto Admin', planilla_legal: 'Gasto Admin',
+    }
+    ;(cats || []).forEach(c => {
+      // Map by grupo
+      if (!catGrupoMap[c.grupo]) catGrupoMap[c.grupo] = c.id
+    })
+
+    // Simple fallback classifier from catalogo_contable
+    const catalogoClassify = (provNombre) => {
+      if (!catalogo || !provNombre) return null
+      const up = provNombre.toUpperCase()
+      for (const entry of catalogo) {
+        if (entry.nombre_dte === provNombre) return entry
+        if (entry.nombre_normalizado && up.includes(entry.nombre_normalizado.toUpperCase())) return entry
+      }
+      return null
+    }
+
     // Agrupar gastos
     const gastosPorSucCat = {} // { sucursal: { categoria: monto } }
     const gastosPorCat = {} // { categoria: monto }
     let totalGastos = 0
 
+    // Track which DTEs are classified
+    const clasificadoSet = new Set(gastos.map(g => g.dte_id))
+
     ;(gastos || []).forEach(g => {
       const suc = g.sucursal_code || 'CORP'
       const cat = g.categoria_gasto_id
-      const monto = n(g.monto)
+      const monto = n(g.monto) / 1.13  // quitar IVA (monto almacenado con IVA)
 
       if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
       gastosPorSucCat[suc][cat] = (gastosPorSucCat[suc][cat] || 0) + monto
       gastosPorCat[cat] = (gastosPorCat[cat] || 0) + monto
       totalGastos += monto
+    })
+
+    // Fallback: DTEs sin clasificar → usar catalogo_contable
+    let fallbackCount = 0
+    ;(dteMes || []).forEach(dte => {
+      if (clasificadoSet.has(dte.id)) return // Already classified
+      const match = catalogoClassify(dte.proveedor_nombre)
+      if (!match) return // No match in catalog either
+      const grupo = CATALOGO_TO_GRUPO[match.categoria]
+      const catId = grupo ? catGrupoMap[grupo] : null
+      if (!catId) return
+      const monto = n(dte.subtotal) || n(dte.monto_total)
+      const suc = 'CORP' // fallback goes to CORP (prorrateo)
+      if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
+      gastosPorSucCat[suc][catId] = (gastosPorSucCat[suc][catId] || 0) + monto
+      gastosPorCat[catId] = (gastosPorCat[catId] || 0) + monto
+      totalGastos += monto
+      fallbackCount++
     })
 
     // Calcular gastos corporativos (sin sucursal) para prorrateo
@@ -171,7 +222,7 @@ export default function RentabilidadView({ user }) {
       }
     })
 
-    setDatos({ pnl, ventasPorSuc, gastosPorCat, gastosPorSucCat, totalVentasGlobal, totalGastos, catMap })
+    setDatos({ pnl, ventasPorSuc, gastosPorCat, gastosPorSucCat, totalVentasGlobal, totalGastos, catMap, fallbackCount, totalDtes: (dteMes || []).length, clasificadosDirectos: clasificadoSet.size })
     setLoading(false)
   }, [desde, hasta])
 
@@ -179,7 +230,7 @@ export default function RentabilidadView({ user }) {
   const cargarSinClasificar = useCallback(async () => {
     const { data } = await db
       .from('compras_dte')
-      .select('id, proveedor_nombre, monto_total, fecha_emision')
+      .select('id, proveedor_nombre, monto_total, subtotal, fecha_emision')
       .gte('fecha_emision', desde)
       .lt('fecha_emision', hasta)
 
@@ -197,7 +248,7 @@ export default function RentabilidadView({ user }) {
       const key = d.proveedor_nombre
       if (!porProv[key]) porProv[key] = { proveedor: key, dtes: [], total: 0 }
       porProv[key].dtes.push(d)
-      porProv[key].total += parseFloat(d.monto_total) || 0
+      porProv[key].total += parseFloat(d.subtotal) || parseFloat(d.monto_total) || 0
     })
 
     // Ordenar por total descendente
@@ -222,7 +273,7 @@ export default function RentabilidadView({ user }) {
       dte_id: d.id,
       categoria_gasto_id: categoriaId,
       sucursal_code: sucursalCode || null,
-      monto: d.monto_total,
+      monto: parseFloat(d.subtotal) || d.monto_total,
       es_automatico: false,
       clasificado_por: user?.nombre || 'usuario'
     }))
@@ -286,6 +337,13 @@ export default function RentabilidadView({ user }) {
           </h2>
           <p style={{ margin: '4px 0 0', color: '#6B7280', fontSize: 13 }}>
             P&L operativo basado en DTEs clasificados + ventas diarias
+            {datos && (
+              <span style={{ display: 'block', fontSize: 11, marginTop: 2, color: datos.fallbackCount > 0 ? '#D97706' : '#059669' }}>
+                {datos.clasificadosDirectos}/{datos.totalDtes} clasificados directos
+                {datos.fallbackCount > 0 && ` + ${datos.fallbackCount} vía catálogo contable`}
+                {' '}({datos.totalDtes > 0 ? Math.round(((datos.clasificadosDirectos + (datos.fallbackCount || 0)) / datos.totalDtes) * 100) : 0}% cobertura)
+              </span>
+            )}
           </p>
         </div>
         <select value={periodo} onChange={e => setPeriodo(e.target.value)}

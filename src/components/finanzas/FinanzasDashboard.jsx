@@ -217,12 +217,12 @@ export default function FinanzasDashboard({ user }) {
     try {
       // 1. Monthly sales (~500 rows, fits in 1 page)
       const ventas = await fetchAll('ventas_diarias',
-        'fecha, store_code, efectivo_quanto, tarjeta_quanto, ventas_transferencia, ventas_link_pago, total_egresos, total_ingresos',
+        'fecha, store_code, total_ventas_quanto, efectivo_quanto, tarjeta_quanto, ventas_transferencia, ventas_link_pago, total_egresos, total_ingresos',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
       // 2. Monthly purchases — 1000+ rows, NEEDS pagination
       const compras = await fetchAll('compras_dte',
-        'fecha_emision, proveedor_nombre, monto_total',
+        'fecha_emision, proveedor_nombre, monto_total, subtotal',
         q => q.gte('fecha_emision', '2026-01-01').order('fecha_emision'))
 
       // 3. Planilla
@@ -256,7 +256,8 @@ export default function FinanzasDashboard({ user }) {
       const m = v.fecha?.substring(0, 7) // "2026-01"
       if (!m) return
       if (!monthMap[m]) monthMap[m] = { ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0 }
-      const total = (v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0)
+      // Use total_ventas_quanto (includes delivery platforms like PedidosYa/Uber)
+      const total = parseFloat(v.total_ventas_quanto) || ((v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0))
       monthMap[m].ventas += total
       monthMap[m].egresos += (v.total_egresos || 0)
       const sc = v.store_code || 'Otro'
@@ -268,7 +269,7 @@ export default function FinanzasDashboard({ user }) {
       const m = c.fecha_emision?.substring(0, 7)
       if (!m || !monthMap[m]) return
       const { categoria: cat, subcategoria: sub } = classify(c.proveedor_nombre || '')
-      const monto = parseFloat(c.monto_total) || 0
+      const monto = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
       if (monthMap[m].pl[cat] !== undefined) {
         monthMap[m].pl[cat] += monto
       } else {
@@ -304,6 +305,7 @@ export default function FinanzasDashboard({ user }) {
     { key: 'balance', label: '⚖️ Balance', icon: '⚖️' },
     { key: 'flujo-caja', label: '💰 Flujo de Caja', icon: '💰' },
     { key: 'proveedores', label: '🏢 Proveedores', icon: '🏢' },
+    { key: 'catalogo', label: '⚙️ Catálogo', icon: '⚙️' },
   ]
 
   return (
@@ -334,6 +336,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} />}
+          {tab === 'catalogo' && <TabCatalogo user={user} data2026={data2026} onRefresh={loadData2026} />}
         </>
       )}
 
@@ -853,7 +856,7 @@ function TabProveedores({ data2026, months2026 }) {
       const m = c.fecha_emision?.substring(0, 7)
       if (!m || !monthKeys.includes(m)) return
       const name = c.proveedor_nombre || 'Sin nombre'
-      const monto = parseFloat(c.monto_total) || 0
+      const monto = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
       if (!provData[name]) {
         const { categoria, subcategoria } = localClassify(name)
         provData[name] = { cat: categoria, sub: subcategoria || 'Varios', months: {}, total: 0 }
@@ -1097,6 +1100,349 @@ function TabProveedores({ data2026, months2026 }) {
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════
+//  TAB 6: CATÁLOGO CONTABLE (Admin CRUD)
+// ══════════════════════════════════════════════════════
+
+const CATEGORIAS_OPCIONES = [
+  'costo_comida', 'insumo_venta', 'limpieza', 'costo_fijo',
+  'gastos_operativos', 'gastos_logisticos', 'gasto_financiero',
+  'activo_fijo', 'impuestos', 'planilla_legal',
+]
+
+function TabCatalogo({ user, data2026, onRefresh }) {
+  const [entries, setEntries] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [filterCat, setFilterCat] = useState('')
+  const [editing, setEditing] = useState(null) // id of entry being edited
+  const [editForm, setEditForm] = useState({})
+  const [adding, setAdding] = useState(false)
+  const [newForm, setNewForm] = useState({ nombre_dte: '', nombre_normalizado: '', categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '' })
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState(null)
+  const [showUnmatched, setShowUnmatched] = useState(false)
+
+  const showMsg = (msg, tipo = 'ok') => {
+    setToast({ msg, tipo })
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  // Load catalog
+  const loadCatalog = async () => {
+    setLoading(true)
+    const { data, error } = await db.from('catalogo_contable')
+      .select('*')
+      .order('categoria')
+      .order('subcategoria')
+      .order('nombre_normalizado')
+    if (error) { showMsg('Error cargando catálogo: ' + error.message, 'error'); setLoading(false); return }
+    setEntries(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadCatalog() }, [])
+
+  // Unmatched providers (in compras_dte but not in catalog)
+  const unmatched = useMemo(() => {
+    if (!data2026?.compras || !entries.length) return []
+    const classifier = buildClassifier(entries.filter(e => e.activo))
+    const provTotals = {}
+    data2026.compras.forEach(c => {
+      const name = c.proveedor_nombre || ''
+      const { categoria } = classifier(name)
+      // If it falls through to default "gastos_operativos/Varios", might be unmatched
+      // Better check: no exact or substring match in catalog
+      const inCatalog = entries.some(e => e.activo && (e.nombre_dte === name || name.toUpperCase().includes((e.nombre_normalizado || '').toUpperCase())))
+      if (!inCatalog) {
+        if (!provTotals[name]) provTotals[name] = { nombre: name, count: 0, total: 0 }
+        provTotals[name].count++
+        provTotals[name].total += parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
+      }
+    })
+    return Object.values(provTotals).sort((a, b) => b.total - a.total)
+  }, [data2026, entries])
+
+  // Save edit
+  const saveEdit = async () => {
+    if (!editing) return
+    setSaving(true)
+    const { error } = await db.from('catalogo_contable')
+      .update({
+        nombre_normalizado: editForm.nombre_normalizado,
+        categoria: editForm.categoria,
+        subcategoria: editForm.subcategoria,
+        notas: editForm.notas,
+        activo: editForm.activo,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', editing)
+    setSaving(false)
+    if (error) { showMsg('Error: ' + error.message, 'error'); return }
+    showMsg('Proveedor actualizado')
+    setEditing(null)
+    await loadCatalog()
+    if (onRefresh) onRefresh()
+  }
+
+  // Add new
+  const saveNew = async () => {
+    if (!newForm.nombre_dte.trim() || !newForm.nombre_normalizado.trim()) {
+      showMsg('Nombre DTE y normalizado son obligatorios', 'error'); return
+    }
+    setSaving(true)
+    const { error } = await db.from('catalogo_contable').insert({
+      nombre_dte: newForm.nombre_dte.trim(),
+      nombre_normalizado: newForm.nombre_normalizado.trim(),
+      categoria: newForm.categoria,
+      subcategoria: newForm.subcategoria || 'Varios',
+      notas: newForm.notas,
+      activo: true,
+    })
+    setSaving(false)
+    if (error) { showMsg('Error: ' + error.message, 'error'); return }
+    showMsg('Proveedor agregado al catálogo')
+    setAdding(false)
+    setNewForm({ nombre_dte: '', nombre_normalizado: '', categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '' })
+    await loadCatalog()
+    if (onRefresh) onRefresh()
+  }
+
+  // Quick add from unmatched
+  const quickAdd = (nombre) => {
+    const words = nombre.split(/\s+/).slice(0, 3).join(' ')
+    setNewForm({ nombre_dte: nombre, nombre_normalizado: words, categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '' })
+    setAdding(true)
+    setShowUnmatched(false)
+  }
+
+  // Toggle activo
+  const toggleActivo = async (id, current) => {
+    await db.from('catalogo_contable').update({ activo: !current, updated_at: new Date().toISOString() }).eq('id', id)
+    showMsg(current ? 'Desactivado' : 'Activado')
+    loadCatalog()
+  }
+
+  // Filter
+  const filtered = entries.filter(e => {
+    if (filterCat && e.categoria !== filterCat) return false
+    if (search) {
+      const s = search.toLowerCase()
+      return (e.nombre_dte || '').toLowerCase().includes(s) ||
+        (e.nombre_normalizado || '').toLowerCase().includes(s) ||
+        (e.subcategoria || '').toLowerCase().includes(s) ||
+        (e.notas || '').toLowerCase().includes(s)
+    }
+    return true
+  })
+
+  const sInput = { padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.dark, color: C.white, fontSize: 12, width: '100%' }
+  const sSelect = { ...sInput, cursor: 'pointer' }
+  const sBtn = (bg) => ({ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12, background: bg || C.red, color: C.white })
+
+  // Get unique subcategories for a category (for autocomplete suggestions)
+  const getSubcats = (cat) => {
+    const subs = [...new Set(entries.filter(e => e.categoria === cat).map(e => e.subcategoria))]
+    return subs.sort()
+  }
+
+  return (
+    <div>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 9999,
+          background: toast.tipo === 'error' ? '#FEE2E2' : '#D1FAE5',
+          color: toast.tipo === 'error' ? '#991B1B' : '#065F46',
+          border: `1px solid ${toast.tipo === 'error' ? '#FCA5A5' : '#6EE7B7'}`,
+          borderRadius: 10, padding: '12px 20px', fontWeight: 600, fontSize: 13,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+        }}>{toast.msg}</div>
+      )}
+
+      {/* Header + Actions */}
+      <div style={sCard}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <div style={{ ...sH, marginBottom: 4 }}>CATÁLOGO CONTABLE</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>
+              {entries.filter(e => e.activo).length} proveedores activos · {entries.filter(e => !e.activo).length} inactivos
+              {unmatched.length > 0 && <span style={{ color: C.gold }}> · {unmatched.length} sin mapear en DTEs 2026</span>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setAdding(!adding)} style={sBtn(adding ? C.gray : C.red)}>
+              {adding ? '✕ Cancelar' : '+ Agregar'}
+            </button>
+            <button onClick={() => setShowUnmatched(!showUnmatched)} style={sBtn(showUnmatched ? C.gray : C.gold)}>
+              {showUnmatched ? '✕ Cerrar' : `🔍 Sin mapear (${unmatched.length})`}
+            </button>
+          </div>
+        </div>
+
+        {/* Search + Filter */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <input
+            placeholder="Buscar proveedor..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ ...sInput, maxWidth: 280 }}
+          />
+          <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={{ ...sSelect, maxWidth: 200 }}>
+            <option value="">Todas las categorías</option>
+            {CATEGORIAS_OPCIONES.map(c => (
+              <option key={c} value={c}>{CAT_LABELS[c] || c}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Add New Form */}
+      {adding && (
+        <div style={{ ...sCard, border: `2px solid ${C.red}`, background: 'rgba(230,57,70,0.05)' }}>
+          <div style={{ ...sH, color: C.red, marginBottom: 10 }}>AGREGAR PROVEEDOR AL CATÁLOGO</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+            <div>
+              <label style={{ fontSize: 10, color: C.textMuted, display: 'block', marginBottom: 2 }}>Nombre DTE (exacto)</label>
+              <input value={newForm.nombre_dte} onChange={e => setNewForm(p => ({ ...p, nombre_dte: e.target.value }))} style={sInput} placeholder="EMPRESA S.A. DE C.V." />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, color: C.textMuted, display: 'block', marginBottom: 2 }}>Nombre Normalizado (para matching)</label>
+              <input value={newForm.nombre_normalizado} onChange={e => setNewForm(p => ({ ...p, nombre_normalizado: e.target.value }))} style={sInput} placeholder="EMPRESA" />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, color: C.textMuted, display: 'block', marginBottom: 2 }}>Categoría</label>
+              <select value={newForm.categoria} onChange={e => setNewForm(p => ({ ...p, categoria: e.target.value }))} style={sSelect}>
+                {CATEGORIAS_OPCIONES.map(c => <option key={c} value={c}>{CAT_LABELS[c] || c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 10, color: C.textMuted, display: 'block', marginBottom: 2 }}>Subcategoría</label>
+              <input value={newForm.subcategoria} onChange={e => setNewForm(p => ({ ...p, subcategoria: e.target.value }))} style={sInput} placeholder="Varios" list="subcats-new" />
+              <datalist id="subcats-new">
+                {getSubcats(newForm.categoria).map(s => <option key={s} value={s} />)}
+              </datalist>
+            </div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 10, color: C.textMuted, display: 'block', marginBottom: 2 }}>Notas</label>
+            <input value={newForm.notas} onChange={e => setNewForm(p => ({ ...p, notas: e.target.value }))} style={sInput} placeholder="Opcional..." />
+          </div>
+          <button onClick={saveNew} disabled={saving} style={{ ...sBtn(C.red), opacity: saving ? 0.5 : 1 }}>
+            {saving ? 'Guardando...' : '💾 Guardar'}
+          </button>
+        </div>
+      )}
+
+      {/* Unmatched Providers Panel */}
+      {showUnmatched && unmatched.length > 0 && (
+        <div style={{ ...sCard, border: `1px solid ${C.gold}`, background: 'rgba(244,162,97,0.05)' }}>
+          <div style={{ ...sH, color: C.gold, marginBottom: 8 }}>PROVEEDORES EN DTEs 2026 SIN MAPEAR EN CATÁLOGO</div>
+          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 10 }}>
+            Estos proveedores aparecen en compras_dte pero no tienen match en el catálogo.
+            Click en "+" para agregar rápidamente.
+          </div>
+          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+            {unmatched.map((u, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: `1px solid ${C.border}`, fontSize: 11 }}>
+                <div style={{ color: C.white, flex: 1 }}>
+                  {u.nombre}
+                  <span style={{ color: C.textMuted, marginLeft: 8 }}>{u.count} DTEs · ${u.total.toFixed(2)}</span>
+                </div>
+                <button onClick={() => quickAdd(u.nombre)} style={{ ...sBtn(C.gold), padding: '3px 10px', fontSize: 11 }}>+</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Table */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Cargando catálogo...</div>
+      ) : (
+        <div style={{ ...sCard, padding: 8 }}>
+          <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, padding: '0 8px' }}>
+            Mostrando {filtered.length} de {entries.length} proveedores
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...sTh, textAlign: 'left', minWidth: 160 }}>Proveedor</th>
+                  <th style={{ ...sTh, textAlign: 'left', minWidth: 80 }}>Normalizado</th>
+                  <th style={{ ...sTh, textAlign: 'left', minWidth: 120 }}>Categoría</th>
+                  <th style={{ ...sTh, textAlign: 'left', minWidth: 100 }}>Subcategoría</th>
+                  <th style={{ ...sTh, textAlign: 'center', minWidth: 50 }}>Estado</th>
+                  <th style={{ ...sTh, textAlign: 'center', minWidth: 80 }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(e => {
+                  const isEditing = editing === e.id
+                  const catColor = CAT_COLORS[e.categoria] || C.gray
+                  return (
+                    <tr key={e.id} style={{ background: !e.activo ? 'rgba(107,114,128,0.1)' : isEditing ? 'rgba(230,57,70,0.08)' : 'transparent', opacity: e.activo ? 1 : 0.5 }}>
+                      <td style={{ padding: '5px 6px', color: C.white, borderBottom: `1px solid ${C.border}` }} title={e.nombre_dte}>
+                        {e.nombre_dte.length > 28 ? e.nombre_dte.substring(0, 26) + '…' : e.nombre_dte}
+                      </td>
+                      <td style={{ padding: '5px 6px', borderBottom: `1px solid ${C.border}` }}>
+                        {isEditing ? (
+                          <input value={editForm.nombre_normalizado} onChange={ev => setEditForm(p => ({ ...p, nombre_normalizado: ev.target.value }))} style={{ ...sInput, padding: '3px 6px', fontSize: 11 }} />
+                        ) : (
+                          <span style={{ color: C.textMuted }}>{e.nombre_normalizado}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '5px 6px', borderBottom: `1px solid ${C.border}` }}>
+                        {isEditing ? (
+                          <select value={editForm.categoria} onChange={ev => setEditForm(p => ({ ...p, categoria: ev.target.value }))} style={{ ...sSelect, padding: '3px 6px', fontSize: 11 }}>
+                            {CATEGORIAS_OPCIONES.map(c => <option key={c} value={c}>{CAT_LABELS[c] || c}</option>)}
+                          </select>
+                        ) : (
+                          <span style={{ color: catColor, fontWeight: 600 }}>
+                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 2, background: catColor, marginRight: 4 }}></span>
+                            {CAT_LABELS[e.categoria]?.replace(/^[^\s]+\s/, '') || e.categoria}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '5px 6px', borderBottom: `1px solid ${C.border}` }}>
+                        {isEditing ? (
+                          <input value={editForm.subcategoria} onChange={ev => setEditForm(p => ({ ...p, subcategoria: ev.target.value }))} style={{ ...sInput, padding: '3px 6px', fontSize: 11 }} list={`subcats-edit-${e.id}`} />
+                        ) : (
+                          <span style={{ color: C.textMuted }}>{e.subcategoria}</span>
+                        )}
+                        {isEditing && (
+                          <datalist id={`subcats-edit-${e.id}`}>
+                            {getSubcats(editForm.categoria).map(s => <option key={s} value={s} />)}
+                          </datalist>
+                        )}
+                      </td>
+                      <td style={{ padding: '5px 6px', textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>
+                        <span onClick={() => toggleActivo(e.id, e.activo)} style={{ cursor: 'pointer', fontSize: 14 }} title={e.activo ? 'Desactivar' : 'Activar'}>
+                          {e.activo ? '✅' : '⛔'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '5px 6px', textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                            <button onClick={saveEdit} disabled={saving} style={{ ...sBtn('#059669'), padding: '3px 8px', fontSize: 10 }}>💾</button>
+                            <button onClick={() => setEditing(null)} style={{ ...sBtn(C.gray), padding: '3px 8px', fontSize: 10 }}>✕</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setEditing(e.id); setEditForm({ nombre_normalizado: e.nombre_normalizado, categoria: e.categoria, subcategoria: e.subcategoria, notas: e.notas || '', activo: e.activo }) }} style={{ ...sBtn(C.cardAlt), padding: '3px 8px', fontSize: 10 }}>✏️</button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
