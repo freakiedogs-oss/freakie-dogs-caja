@@ -146,6 +146,7 @@ const PROV_CAT_FALLBACK = {
 
 // Build classifier from catalog entries (DB or fallback)
 function buildClassifier(catalogRows) {
+  console.log('[buildClassifier] rows:', catalogRows?.length || 0)
   if (!catalogRows || catalogRows.length === 0) {
     // Use fallback
     return (name) => {
@@ -234,7 +235,7 @@ export default function FinanzasDashboard({ user }) {
       const { data: catData, error: catErr } = await db.from('catalogo_contable')
         .select('nombre_dte, nombre_normalizado, categoria, subcategoria')
         .eq('activo', true)
-      if (catErr) console.error('catalogo_contable load error:', catErr)
+      console.log('[loadData2026] catalogo_contable:', catErr ? 'ERROR: ' + catErr.message : `OK ${(catData||[]).length} rows`)
 
       setData2026({ ventas, compras, planillas, catalogo: catData || [] })
     } catch (e) {
@@ -333,7 +334,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
-          {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} classify={classify} />}
+          {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} />}
         </>
       )}
 
@@ -832,11 +833,16 @@ const CAT_COLORS = {
   impuestos: '#fbbf24',
 }
 
-function TabProveedores({ data2026, months2026, classify }) {
+function TabProveedores({ data2026, months2026 }) {
   const [collapsedCats, setCollapsedCats] = useState({})
 
   const result = useMemo(() => {
     if (!data2026?.compras) return { categories: {}, monthKeys: [], ventasPorMes: {} }
+
+    // Build classifier locally from catalog data (avoids any closure/timing issues)
+    const catRows = data2026?.catalogo || []
+    console.log('[TabProveedores] catalog rows:', catRows.length, catRows.length > 0 ? catRows[0] : 'EMPTY')
+    const localClassify = buildClassifier(catRows)
 
     // Get last 6 months from available data
     const allKeys = [...new Set(data2026.compras.map(c => c.fecha_emision?.substring(0, 7)).filter(Boolean))].sort()
@@ -854,7 +860,7 @@ function TabProveedores({ data2026, months2026, classify }) {
       const name = c.proveedor_nombre || 'Sin nombre'
       const monto = parseFloat(c.monto_total) || 0
       if (!provData[name]) {
-        const { categoria, subcategoria } = classify(name)
+        const { categoria, subcategoria } = localClassify(name)
         provData[name] = { cat: categoria, sub: subcategoria, months: {}, total: 0 }
       }
       provData[name].months[m] = (provData[name].months[m] || 0) + monto
@@ -883,7 +889,7 @@ function TabProveedores({ data2026, months2026, classify }) {
     })
 
     return { categories, monthKeys, ventasPorMes }
-  }, [data2026, months2026, classify])
+  }, [data2026, months2026])
 
   const { categories, monthKeys, ventasPorMes } = result
   const totalVentas6m = monthKeys.reduce((s, k) => s + (ventasPorMes[k] || 0), 0)
