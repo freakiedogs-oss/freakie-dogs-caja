@@ -55,6 +55,10 @@ const uploadFoto = async (file, folder) => {
 
 export default function ReporteForm({ user, onBack }) {
   const { show, Toast } = useToast();
+  const esRolLibre = ['ejecutivo', 'admin'].includes(user.rol);
+  const necesitaElegir = !user.store_code || user.store_code === 'CM001';
+
+  const [selectedStore, setSelectedStore] = useState(necesitaElegir ? '' : user.store_code);
   const [estadoTurno, setEstadoTurno] = useState('sin_novedad');
   const [incSel, setIncSel] = useState({});
   const [empleados, setEmpleados] = useState([]);
@@ -72,9 +76,15 @@ export default function ReporteForm({ user, onBack }) {
   const mfRef = useRef();
 
   useEffect(() => {
+    if (!selectedStore) return;
+    setEmpleados([]);
+    setYaEnviado(null);
+    setMejoras([]);
+    setAusencias({});
+
     db.from('sucursales')
       .select('id')
-      .eq('store_code', user.store_code)
+      .eq('store_code', selectedStore)
       .maybeSingle()
       .then(({ data: suc }) => {
         if (suc) {
@@ -92,7 +102,7 @@ export default function ReporteForm({ user, onBack }) {
     db.from('reportes_turno')
       .select('*')
       .eq('fecha', today())
-      .eq('store_code', user.store_code)
+      .eq('store_code', selectedStore)
       .maybeSingle()
       .then(({ data }) => {
         setYaEnviado(data || null);
@@ -105,7 +115,7 @@ export default function ReporteForm({ user, onBack }) {
                 setMejoras(mej.map((m) => ({ descripcion: m.descripcion, fotos: [], fotosUrls: m.fotos_urls || [] })));
             });
       });
-  }, []);
+  }, [selectedStore]);
 
   // Auto-calcular estado del turno según la severidad más alta de incidentes
   useEffect(() => {
@@ -151,11 +161,15 @@ export default function ReporteForm({ user, onBack }) {
   const removeMejora = (i) => setMejoras((p) => p.filter((_, idx) => idx !== i));
 
   const submit = async () => {
+    if (!selectedStore) {
+      show('⚠️ Selecciona una sucursal');
+      return;
+    }
     setLoading(true);
     let fotosUrls = [];
     try {
       if (fotos.length > 0)
-        fotosUrls = await Promise.all(fotos.map((f) => uploadFoto(f, `incidentes/${user.store_code}`)));
+        fotosUrls = await Promise.all(fotos.map((f) => uploadFoto(f, `incidentes/${selectedStore}`)));
     } catch (e) {
       show('❌ Error subiendo foto: ' + e.message);
       setLoading(false);
@@ -166,7 +180,7 @@ export default function ReporteForm({ user, onBack }) {
       .from('reportes_turno')
       .insert({
         fecha: today(),
-        store_code: user.store_code,
+        store_code: selectedStore,
         estado_turno: estadoTurno,
         fotos_urls: fotosUrls,
         notas: notas.trim() || null,
@@ -199,7 +213,7 @@ export default function ReporteForm({ user, onBack }) {
           })
           .map((inc) => ({
             incidente_id: inc.id,
-            store_code: user.store_code,
+            store_code: selectedStore,
             descripcion: inc.tipo_label + ' — ' + (inc.detalle || 'Sin detalle'),
             estado: 'pendiente',
             creado_por: `${user.nombre} ${user.apellido}`,
@@ -221,7 +235,7 @@ export default function ReporteForm({ user, onBack }) {
     if (mejoras.length > 0) {
       for (const m of mejoras) {
         let mFotosUrls = [];
-        if (m.fotos.length > 0) mFotosUrls = await Promise.all(m.fotos.map((f) => uploadFoto(f, `mejoras/${user.store_code}`)));
+        if (m.fotos.length > 0) mFotosUrls = await Promise.all(m.fotos.map((f) => uploadFoto(f, `mejoras/${selectedStore}`)));
         await db.from('mejoras_reporte').insert({ reporte_id: rep.id, descripcion: m.descripcion, fotos_urls: mFotosUrls });
       }
     }
@@ -248,10 +262,46 @@ export default function ReporteForm({ user, onBack }) {
         <div>
           <div style={{ fontWeight: 800, fontSize: 18 }}>📋 Reporte de Turno</div>
           <div style={{ color: '#555', fontSize: 12 }}>
-            {STORES[user.store_code]} · {today()}
+            {STORES[selectedStore] || 'Sin sucursal'} · {today()}
           </div>
         </div>
       </div>
+
+      {/* Selector de sucursal para admin/ejecutivo sin sucursal fija */}
+      {necesitaElegir && esRolLibre && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="sec-title">Sucursal</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {Object.entries(STORES).filter(([sc]) => sc !== 'CM001').map(([sc, name]) => (
+              <div
+                key={sc}
+                onClick={() => { setSelectedStore(sc); }}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: 10,
+                  border: selectedStore === sc ? '2px solid #e63946' : '1.5px solid #333',
+                  background: selectedStore === sc ? '#e6394622' : '#1a1a1a',
+                  color: selectedStore === sc ? '#fff' : '#888',
+                  fontWeight: selectedStore === sc ? 700 : 400,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                }}
+              >
+                {name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bloquear si no tiene sucursal y no es rol libre */}
+      {necesitaElegir && !esRolLibre && (
+        <div className="card" style={{ textAlign: 'center', padding: 32 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🚫</div>
+          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Reporte no disponible</div>
+          <div style={{ color: '#aaa', fontSize: 14 }}>No tienes una sucursal asignada. Contacta al administrador.</div>
+        </div>
+      )}
 
       {yaEnviado && (
         <div style={{ background: '#14532d33', border: '1px solid #14532d', borderRadius: 12, padding: 16, marginBottom: 16 }}>
