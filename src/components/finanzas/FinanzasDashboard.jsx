@@ -161,27 +161,42 @@ export default function FinanzasDashboard({ user }) {
     loadData2026()
   }, [])
 
+  // Helper: paginated fetch — Supabase default limit is 1000 rows
+  async function fetchAll(table, select, filter) {
+    const PAGE = 1000
+    let all = [], offset = 0, done = false
+    while (!done) {
+      let q = db.from(table).select(select).range(offset, offset + PAGE - 1)
+      if (filter) q = filter(q)
+      const { data, error } = await q
+      if (error) { console.error(`fetchAll ${table}:`, error); break }
+      if (!data || data.length === 0) { done = true; break }
+      all = all.concat(data)
+      if (data.length < PAGE) done = true
+      else offset += PAGE
+    }
+    return all
+  }
+
   async function loadData2026() {
     setLoading(true)
     try {
-      // 1. Monthly sales
-      const { data: ventas } = await db.from('ventas_diarias')
-        .select('fecha, store_code, efectivo_quanto, tarjeta_quanto, ventas_transferencia, ventas_link_pago, total_egresos, total_ingresos')
-        .gte('fecha', '2026-01-01')
-        .order('fecha')
+      // 1. Monthly sales (~500 rows, fits in 1 page)
+      const ventas = await fetchAll('ventas_diarias',
+        'fecha, store_code, efectivo_quanto, tarjeta_quanto, ventas_transferencia, ventas_link_pago, total_egresos, total_ingresos',
+        q => q.gte('fecha', '2026-01-01').order('fecha'))
 
-      // 2. Monthly purchases (compras_dte for amounts)
-      const { data: compras } = await db.from('compras_dte')
-        .select('fecha_emision, proveedor_nombre, monto_total')
-        .gte('fecha_emision', '2026-01-01')
-        .order('fecha_emision')
+      // 2. Monthly purchases — 1000+ rows, NEEDS pagination
+      const compras = await fetchAll('compras_dte',
+        'fecha_emision, proveedor_nombre, monto_total',
+        q => q.gte('fecha_emision', '2026-01-01').order('fecha_emision'))
 
       // 3. Planilla
-      const { data: planillas } = await db.from('planillas')
-        .select('periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado')
-        .gte('fecha_pago', '2026-01-01')
+      const planillas = await fetchAll('planillas',
+        'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
+        q => q.gte('fecha_pago', '2026-01-01'))
 
-      setData2026({ ventas: ventas || [], compras: compras || [], planillas: planillas || [] })
+      setData2026({ ventas, compras, planillas })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
