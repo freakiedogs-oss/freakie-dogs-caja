@@ -109,7 +109,7 @@ const PROV_CAT_FALLBACK = {
   'DISTRIBUIDORA EUROPEA': 'costo_comida', 'DISTRIBUIDORA SALVADOREÑA': 'costo_comida',
   'DISTRIBUIDORA SANTA ELENA': 'costo_comida', 'PATRONIC': 'costo_comida', 'TECNISPICE': 'costo_comida',
   'OPERADORA DEL SUR': 'costo_comida', 'Embotelladora La Cascada': 'costo_comida',
-  'MONICA ALEXANDRA': 'costo_comida', 'BOLCA': 'costo_comida',
+  'MONICA ALEXANDRA': 'gastos_logisticos', 'BOLCA': 'costo_comida',
   'AGROMARKET': 'costo_comida', 'Comercializadora Interamericana': 'costo_comida',
   'MOLDEADOS SALVADOREÑOS': 'costo_comida', 'CO INDUSTRIAS GIGANTE': 'costo_comida',
   'PROVEEDORES DE INSUMOS DIVERSOS': 'costo_comida', 'SUMINISTROS E INVERSIONES': 'costo_comida',
@@ -813,6 +813,7 @@ const CAT_LABELS = {
   limpieza: '🧹 Limpieza',
   costo_fijo: '🏠 Costo Fijo',
   gastos_operativos: '⚙️ Gastos Operativos',
+  gastos_logisticos: '🚛 Gastos Logísticos',
   gasto_financiero: '🏦 Gasto Financiero',
   planilla_legal: '👥 Planilla / Legal',
   activo_fijo: '🔧 Activo Fijo',
@@ -825,6 +826,7 @@ const CAT_COLORS = {
   limpieza: '#2d6a4f',
   costo_fijo: '#3b82f6',
   gastos_operativos: '#a78bfa',
+  gastos_logisticos: '#f59e0b',
   gasto_financiero: '#f87171',
   planilla_legal: '#60a5fa',
   activo_fijo: '#6b7280',
@@ -832,7 +834,7 @@ const CAT_COLORS = {
 }
 
 function TabProveedores({ data2026, months2026, classify }) {
-  const [expandedCats, setExpandedCats] = useState({})
+  const [collapsedCats, setCollapsedCats] = useState({})
 
   const result = useMemo(() => {
     if (!data2026?.compras) return { categories: {}, monthKeys: [], ventasPorMes: {} }
@@ -871,9 +873,14 @@ function TabProveedores({ data2026, months2026, classify }) {
       categories[d.cat].grandTotal += d.total
     })
 
-    // Sort providers within each category by total desc
+    // Sort providers within each category: group by subcategoria, then by total desc within each sub
     Object.values(categories).forEach(cat => {
-      cat.providers.sort((a, b) => b.total - a.total)
+      cat.providers.sort((a, b) => {
+        const subA = (a.sub || 'Varios').toUpperCase()
+        const subB = (b.sub || 'Varios').toUpperCase()
+        if (subA !== subB) return subA < subB ? -1 : 1
+        return b.total - a.total
+      })
     })
 
     return { categories, monthKeys, ventasPorMes }
@@ -892,7 +899,7 @@ function TabProveedores({ data2026, months2026, classify }) {
     grandByMonth[mk] = sortedCats.reduce((s, [, c]) => s + (c.totals[mk] || 0), 0)
   })
 
-  const toggleCat = (cat) => setExpandedCats(prev => ({ ...prev, [cat]: !prev[cat] }))
+  const toggleCat = (cat) => setCollapsedCats(prev => ({ ...prev, [cat]: !prev[cat] }))
 
   const fmtShort = (n) => {
     if (n == null || n === 0) return '—'
@@ -936,8 +943,16 @@ function TabProveedores({ data2026, months2026, classify }) {
             </thead>
             <tbody>
               {sortedCats.map(([catKey, catData]) => {
-                const isOpen = expandedCats[catKey]
+                const isOpen = !collapsedCats[catKey]
                 const catColor = CAT_COLORS[catKey] || C.textMuted
+                // Build subcategory groups
+                const subGroups = []
+                let lastSub = null
+                catData.providers.forEach(prov => {
+                  const sub = prov.sub || 'Varios'
+                  if (sub !== lastSub) { subGroups.push({ sub, providers: [] }); lastSub = sub }
+                  subGroups[subGroups.length - 1].providers.push(prov)
+                })
                 return (
                   <React.Fragment key={catKey}>
                     {/* Category header row */}
@@ -972,34 +987,44 @@ function TabProveedores({ data2026, months2026, classify }) {
                         {totalVentas6m ? ((catData.grandTotal / totalVentas6m) * 100).toFixed(1) + '%' : ''}
                       </td>
                     </tr>
-                    {/* Provider detail rows */}
-                    {isOpen && catData.providers.map((prov, pi) => (
-                      <tr key={pi} style={{ background: pi % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                        <td style={{ padding: '5px 6px 5px 28px', fontSize: 10, color: C.textMuted, borderBottom: `1px solid rgba(51,65,85,0.4)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}
-                          title={prov.name}>
-                          {prov.name.length > 30 ? prov.name.substring(0, 28) + '…' : prov.name}
-                        </td>
-                        {monthKeys.map(mk => {
-                          const v = prov.months[mk] || 0
-                          const pctV = ventasPorMes[mk] ? (v / ventasPorMes[mk]) * 100 : 0
-                          return (
-                            <React.Fragment key={mk}>
-                              <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `1px solid rgba(51,65,85,0.4)` }}>
-                                {v > 0 ? fmtShort(v) : '—'}
-                              </td>
-                              <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)` }}>
-                                {v > 0 ? pctV.toFixed(1) + '%' : ''}
-                              </td>
-                            </React.Fragment>
-                          )
-                        })}
-                        <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.03)' }}>
-                          {fmt(prov.total)}
-                        </td>
-                        <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, background: 'rgba(244,162,97,0.03)' }}>
-                          {totalVentas6m ? ((prov.total / totalVentas6m) * 100).toFixed(1) + '%' : ''}
-                        </td>
-                      </tr>
+                    {/* Provider detail rows grouped by subcategory */}
+                    {isOpen && subGroups.map((sg, gi) => (
+                      <React.Fragment key={gi}>
+                        {/* Subcategory header */}
+                        <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                          <td colSpan={2 + monthKeys.length * 2} style={{ padding: '4px 6px 4px 20px', fontSize: 9, fontWeight: 700, color: catColor, letterSpacing: 0.5, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}>
+                            {sg.sub} <span style={{ color: C.textMuted, fontWeight: 400 }}>({sg.providers.length})</span>
+                          </td>
+                        </tr>
+                        {sg.providers.map((prov, pi) => (
+                          <tr key={pi} style={{ background: pi % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
+                            <td style={{ padding: '5px 6px 5px 32px', fontSize: 10, color: C.textMuted, borderBottom: `1px solid rgba(51,65,85,0.4)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}
+                              title={prov.name}>
+                              {prov.name.length > 30 ? prov.name.substring(0, 28) + '…' : prov.name}
+                            </td>
+                            {monthKeys.map(mk => {
+                              const v = prov.months[mk] || 0
+                              const pctV = ventasPorMes[mk] ? (v / ventasPorMes[mk]) * 100 : 0
+                              return (
+                                <React.Fragment key={mk}>
+                                  <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `1px solid rgba(51,65,85,0.4)` }}>
+                                    {v > 0 ? fmtShort(v) : '—'}
+                                  </td>
+                                  <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)` }}>
+                                    {v > 0 ? pctV.toFixed(1) + '%' : ''}
+                                  </td>
+                                </React.Fragment>
+                              )
+                            })}
+                            <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.03)' }}>
+                              {fmt(prov.total)}
+                            </td>
+                            <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, background: 'rgba(244,162,97,0.03)' }}>
+                              {totalVentas6m ? ((prov.total / totalVentas6m) * 100).toFixed(1) + '%' : ''}
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </React.Fragment>
                 )
