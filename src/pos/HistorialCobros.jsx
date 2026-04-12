@@ -84,12 +84,16 @@ export default function HistorialCobros({ user, onBack }) {
           dte_uuid,
           dte_numero_control,
           dte_sello,
+          cliente_id,
+          nc_codigo_generacion,
+          nc_emitida_at,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
             id,
             nombre,
             precio_unitario,
             cantidad,
-            notas
+            notas,
+            menu_item_id
           )
         `)
         .eq('store_code', storeCode)
@@ -319,6 +323,9 @@ export default function HistorialCobros({ user, onBack }) {
 
                     <div className="historial-ticket-total" style={{ color: '#4ade80', fontWeight: 700, fontSize: 16 }}>
                       ${parseFloat(cuenta.total || 0).toFixed(2)}
+                      {cuenta.nc_codigo_generacion && (
+                        <div style={{ fontSize: 9, color: '#f87171', fontWeight: 600, marginTop: 2 }}>📋 NC emitida</div>
+                      )}
                     </div>
 
                     <span style={{ color: '#555', fontSize: 12, marginLeft: 8 }}>
@@ -379,7 +386,7 @@ export default function HistorialCobros({ user, onBack }) {
                         >
                           🖨 Reimprimir
                         </button>
-                        {cuenta.dte_uuid && (cuenta.dte_tipo === '01' || cuenta.dte_tipo === '03') && (
+                        {cuenta.dte_uuid && (cuenta.dte_tipo === '01' || cuenta.dte_tipo === '03') && !cuenta.nc_codigo_generacion && (
                           <button
                             className="historial-action-btn"
                             onClick={() => setNcCuenta(cuenta)}
@@ -388,6 +395,11 @@ export default function HistorialCobros({ user, onBack }) {
                           >
                             📋 NC
                           </button>
+                        )}
+                        {cuenta.nc_codigo_generacion && (
+                          <span style={{ fontSize: 11, color: '#f87171', padding: '4px 8px', background: '#1a0a0a', borderRadius: 4, border: '1px solid #7f1d1d' }}>
+                            📋 NC: {cuenta.nc_codigo_generacion.slice(0, 8)}...
+                          </span>
                         )}
                         <button
                           className="historial-action-btn anular"
@@ -416,7 +428,7 @@ export default function HistorialCobros({ user, onBack }) {
       </div>
 
       {/* ── Nota de Crédito Modal ── */}
-      {ncCuenta && <NotaCreditoModal cuenta={ncCuenta} onClose={() => setNcCuenta(null)} onSuccess={() => { setNcCuenta(null); load() }} />}
+      {ncCuenta && <NotaCreditoModal cuenta={ncCuenta} onClose={() => { setNcCuenta(null); load() }} onSuccess={() => { /* no cerrar — el usuario ve resultado y da click en Cerrar */ }} />}
 
     </div>
   )

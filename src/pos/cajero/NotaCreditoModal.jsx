@@ -67,10 +67,10 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
         if (cli) {
           receptor = {
             nit: cli.numero_documento,
-            nrc: cli.nrc,
+            nrc: (cli.nrc || '').replace(/-/g, ''),
             nombre: cli.nombre,
-            codActividad: '56101',
-            descActividad: cli.giro || 'Restaurantes',
+            codActividad: cli.codigo_actividad || '46900',
+            descActividad: cli.giro || 'Venta al por mayor de otros productos',
             nombreComercial: cli.nombre_comercial || null,
             direccion: (cli.departamento && cli.municipio) ? {
               departamento: cli.departamento,
@@ -99,16 +99,23 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
 
       const data = await res.json()
       if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Error emitiendo NC')
+      // Verificar si Hacienda rechazó aunque success=true (edge case: contingency=false pero rechazado)
+      if (data.estado === 'RECHAZADO' || data.estado === 'rechazado') {
+        const obs = data.hacienda_response?.observaciones
+        const obsMsg = Array.isArray(obs) ? obs.join(', ') : (data.hacienda_response?.descripcionMsg || 'Rechazado por Hacienda')
+        throw new Error(`Rechazado: ${obsMsg}`)
+      }
 
-      // Guardar referencia NC en la cuenta original
-      await db.from('pos_cuentas').update({
-        nc_codigo_generacion: data.codigo_generacion,
-        nc_emitida_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq('id', cuenta.id)
+      // Guardar referencia NC en la cuenta original (solo si fue aceptada)
+      if (data.estado === 'PROCESADO' || data.estado === 'aceptado') {
+        await db.from('pos_cuentas').update({
+          nc_codigo_generacion: data.codigo_generacion,
+          nc_emitida_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', cuenta.id)
+      }
 
       setResult(data)
-      if (onSuccess) onSuccess(data)
     } catch (err) {
       setError(err.message)
     } finally {
