@@ -63,7 +63,7 @@ export default function RentabilidadView({ user }) {
     const ventasPorSuc = {}
     ;(ventas || []).forEach(v => {
       if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
-      ventasPorSuc[v.store_code] += n(v.total_ventas_quanto)
+      ventasPorSuc[v.store_code] += n(v.total_ventas_quanto) / 1.13  // sin IVA
     })
 
     // 2. DTEs del mes (con nombre proveedor para fallback)

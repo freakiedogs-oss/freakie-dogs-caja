@@ -256,8 +256,9 @@ export default function FinanzasDashboard({ user }) {
       const m = v.fecha?.substring(0, 7) // "2026-01"
       if (!m) return
       if (!monthMap[m]) monthMap[m] = { ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0 }
-      // Use total_ventas_quanto (includes delivery platforms like PedidosYa/Uber)
-      const total = parseFloat(v.total_ventas_quanto) || ((v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0))
+      // Use total_ventas_quanto (includes delivery platforms) ÷ 1.13 = sin IVA
+      const bruto = parseFloat(v.total_ventas_quanto) || ((v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0))
+      const total = bruto / 1.13
       monthMap[m].ventas += total
       monthMap[m].egresos += (v.total_egresos || 0)
       const sc = v.store_code || 'Otro'
