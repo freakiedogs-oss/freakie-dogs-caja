@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { NAV_SECTIONS, STORES } from '../../config';
+import DevOpsTab from './DevOpsTab';
 
 // ── Todos los nav_keys disponibles (flat) ──
 const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap(s =>
@@ -18,7 +19,8 @@ const inp = { width: '100%', padding: '8px 10px', borderRadius: 6, border: `1px 
 const btn = (bg) => ({ padding: '10px 16px', borderRadius: 8, border: 'none', background: bg, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 });
 
 export default function SuperAdminView({ user }) {
-  const [tab, setTab] = useState('usuarios');
+  // Ejecutivos entran directo al tab DevOps; superadmin a usuarios
+  const [tab, setTab] = useState(user?.rol === 'ejecutivo' ? 'devops' : 'usuarios');
 
   // ═══ ESTADO USUARIOS ═══
   const [usuarios, setUsuarios] = useState([]);
@@ -76,10 +78,15 @@ export default function SuperAdminView({ user }) {
       <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#fff' }}>🛡️ Super Admin</h2>
       <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${c.border}`, overflowX: 'auto' }}>
         {[
+          { k: 'devops', l: '🔧 DevOps' },
           { k: 'usuarios', l: '👥 Usuarios' },
           { k: 'permisos', l: '🔐 Permisos' },
           { k: 'nuevo-rol', l: '➕ Nuevo Rol' },
-        ].map(t => (
+        ].filter(t => {
+          // DevOps visible para ejecutivos y superadmin; el resto solo superadmin
+          if (t.k === 'devops') return true;
+          return user?.rol === 'superadmin';
+        }).map(t => (
           <button key={t.k} onClick={() => setTab(t.k)}
             style={{ padding: '8px 16px', borderRadius: 0, border: 'none', background: 'none',
               color: tab === t.k ? c.red : '#666', borderBottom: tab === t.k ? `2px solid ${c.red}` : 'none',
@@ -438,12 +445,13 @@ export default function SuperAdminView({ user }) {
   // ══════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════
-  if (user?.rol !== 'superadmin') {
+  const allowedRoles = ['superadmin', 'ejecutivo'];
+  if (!allowedRoles.includes(user?.rol)) {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
         <div style={{ color: '#f87171', fontSize: 15, fontWeight: 700 }}>Acceso restringido</div>
-        <div style={{ color: c.dim, fontSize: 13, marginTop: 4 }}>Solo Super Admin puede acceder a este panel</div>
+        <div style={{ color: c.dim, fontSize: 13, marginTop: 4 }}>Solo Super Admin y Ejecutivos pueden acceder a este panel</div>
       </div>
     );
   }
@@ -451,6 +459,7 @@ export default function SuperAdminView({ user }) {
   return (
     <div style={{ padding: '16px' }}>
       <TabBar />
+      {tab === 'devops' && <DevOpsTab />}
       {tab === 'usuarios' && renderUsuarios()}
       {tab === 'permisos' && renderPermisos()}
       {tab === 'nuevo-rol' && renderNuevoRol()}
