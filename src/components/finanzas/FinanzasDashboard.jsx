@@ -146,7 +146,6 @@ const PROV_CAT_FALLBACK = {
 
 // Build classifier from catalog entries (DB or fallback)
 function buildClassifier(catalogRows) {
-  console.log('[buildClassifier] rows:', catalogRows?.length || 0)
   if (!catalogRows || catalogRows.length === 0) {
     // Use fallback
     return (name) => {
@@ -235,7 +234,7 @@ export default function FinanzasDashboard({ user }) {
       const { data: catData, error: catErr } = await db.from('catalogo_contable')
         .select('nombre_dte, nombre_normalizado, categoria, subcategoria')
         .eq('activo', true)
-      console.log('[loadData2026] catalogo_contable:', catErr ? 'ERROR: ' + catErr.message : `OK ${(catData||[]).length} rows`)
+      if (catErr) console.warn('catalogo_contable:', catErr.message)
 
       setData2026({ ventas, compras, planillas, catalogo: catData || [] })
     } catch (e) {
@@ -835,25 +834,21 @@ const CAT_COLORS = {
 
 function TabProveedores({ data2026, months2026 }) {
   const [collapsedCats, setCollapsedCats] = useState({})
+  const [collapsedSubs, setCollapsedSubs] = useState({})
 
   const result = useMemo(() => {
     if (!data2026?.compras) return { categories: {}, monthKeys: [], ventasPorMes: {} }
 
-    // Build classifier locally from catalog data (avoids any closure/timing issues)
-    const catRows = data2026?.catalogo || []
-    console.log('[TabProveedores] catalog rows:', catRows.length, catRows.length > 0 ? catRows[0] : 'EMPTY')
-    const localClassify = buildClassifier(catRows)
+    const localClassify = buildClassifier(data2026?.catalogo || [])
 
-    // Get last 6 months from available data
     const allKeys = [...new Set(data2026.compras.map(c => c.fecha_emision?.substring(0, 7)).filter(Boolean))].sort()
     const monthKeys = allKeys.slice(-6)
 
-    // Ventas por mes (para calcular %)
     const ventasPorMes = {}
     months2026.forEach(m => { ventasPorMes[m.key] = m.ventas })
 
-    // Build provider → category → month → monto
-    const provData = {} // { provName: { cat, months: { '2026-01': monto } } }
+    // Build provider data
+    const provData = {}
     data2026.compras.forEach(c => {
       const m = c.fecha_emision?.substring(0, 7)
       if (!m || !monthKeys.includes(m)) return
@@ -861,31 +856,36 @@ function TabProveedores({ data2026, months2026 }) {
       const monto = parseFloat(c.monto_total) || 0
       if (!provData[name]) {
         const { categoria, subcategoria } = localClassify(name)
-        provData[name] = { cat: categoria, sub: subcategoria, months: {}, total: 0 }
+        provData[name] = { cat: categoria, sub: subcategoria || 'Varios', months: {}, total: 0 }
       }
       provData[name].months[m] = (provData[name].months[m] || 0) + monto
       provData[name].total += monto
     })
 
-    // Group by category
+    // Group by category, then by subcategory within each
     const categories = {}
     Object.entries(provData).forEach(([name, d]) => {
-      if (!categories[d.cat]) categories[d.cat] = { providers: [], totals: {}, grandTotal: 0 }
-      categories[d.cat].providers.push({ name, ...d })
+      if (!categories[d.cat]) categories[d.cat] = { subgroups: {}, totals: {}, grandTotal: 0, provCount: 0 }
+      const cat = categories[d.cat]
+      const subKey = d.sub || 'Varios'
+      if (!cat.subgroups[subKey]) cat.subgroups[subKey] = { providers: [], totals: {}, grandTotal: 0 }
+      const sg = cat.subgroups[subKey]
+      sg.providers.push({ name, ...d })
       monthKeys.forEach(mk => {
-        categories[d.cat].totals[mk] = (categories[d.cat].totals[mk] || 0) + (d.months[mk] || 0)
+        cat.totals[mk] = (cat.totals[mk] || 0) + (d.months[mk] || 0)
+        sg.totals[mk] = (sg.totals[mk] || 0) + (d.months[mk] || 0)
       })
-      categories[d.cat].grandTotal += d.total
+      cat.grandTotal += d.total
+      sg.grandTotal += d.total
+      cat.provCount++
     })
 
-    // Sort providers within each category: group by subcategoria, then by total desc within each sub
+    // Sort providers within each subgroup by total desc, sort subgroups by total desc
     Object.values(categories).forEach(cat => {
-      cat.providers.sort((a, b) => {
-        const subA = (a.sub || 'Varios').toUpperCase()
-        const subB = (b.sub || 'Varios').toUpperCase()
-        if (subA !== subB) return subA < subB ? -1 : 1
-        return b.total - a.total
+      Object.values(cat.subgroups).forEach(sg => {
+        sg.providers.sort((a, b) => b.total - a.total)
       })
+      cat.sortedSubs = Object.entries(cat.subgroups).sort((a, b) => b[1].grandTotal - a[1].grandTotal)
     })
 
     return { categories, monthKeys, ventasPorMes }
@@ -894,10 +894,8 @@ function TabProveedores({ data2026, months2026 }) {
   const { categories, monthKeys, ventasPorMes } = result
   const totalVentas6m = monthKeys.reduce((s, k) => s + (ventasPorMes[k] || 0), 0)
 
-  // Sort categories by grandTotal desc
   const sortedCats = Object.entries(categories).sort((a, b) => b[1].grandTotal - a[1].grandTotal)
 
-  // Grand total across all categories
   const grandTotal = sortedCats.reduce((s, [, c]) => s + c.grandTotal, 0)
   const grandByMonth = {}
   monthKeys.forEach(mk => {
@@ -905,6 +903,7 @@ function TabProveedores({ data2026, months2026 }) {
   })
 
   const toggleCat = (cat) => setCollapsedCats(prev => ({ ...prev, [cat]: !prev[cat] }))
+  const toggleSub = (key) => setCollapsedSubs(prev => ({ ...prev, [key]: !prev[key] }))
 
   const fmtShort = (n) => {
     if (n == null || n === 0) return '—'
@@ -948,28 +947,20 @@ function TabProveedores({ data2026, months2026 }) {
             </thead>
             <tbody>
               {sortedCats.map(([catKey, catData]) => {
-                const isOpen = !collapsedCats[catKey]
+                const isCatOpen = !collapsedCats[catKey]
                 const catColor = CAT_COLORS[catKey] || C.textMuted
-                // Build subcategory groups
-                const subGroups = []
-                let lastSub = null
-                catData.providers.forEach(prov => {
-                  const sub = prov.sub || 'Varios'
-                  if (sub !== lastSub) { subGroups.push({ sub, providers: [] }); lastSub = sub }
-                  subGroups[subGroups.length - 1].providers.push(prov)
-                })
                 return (
                   <React.Fragment key={catKey}>
-                    {/* Category header row */}
+                    {/* ── Category header row ── */}
                     <tr
                       onClick={() => toggleCat(catKey)}
                       style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
                     >
                       <td style={{ padding: '8px 6px', fontWeight: 700, color: C.white, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>
-                        <span style={{ display: 'inline-block', width: 8, marginRight: 6, fontSize: 9, color: C.textMuted }}>{isOpen ? '▼' : '▶'}</span>
+                        <span style={{ display: 'inline-block', width: 8, marginRight: 6, fontSize: 9, color: C.textMuted }}>{isCatOpen ? '▼' : '▶'}</span>
                         <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: catColor, marginRight: 6 }}></span>
                         {CAT_LABELS[catKey] || catKey}
-                        <span style={{ fontSize: 10, color: C.textMuted, marginLeft: 6 }}>({catData.providers.length})</span>
+                        <span style={{ fontSize: 10, color: C.textMuted, marginLeft: 6 }}>({catData.provCount})</span>
                       </td>
                       {monthKeys.map(mk => {
                         const v = catData.totals[mk] || 0
@@ -992,45 +983,74 @@ function TabProveedores({ data2026, months2026 }) {
                         {totalVentas6m ? ((catData.grandTotal / totalVentas6m) * 100).toFixed(1) + '%' : ''}
                       </td>
                     </tr>
-                    {/* Provider detail rows grouped by subcategory */}
-                    {isOpen && subGroups.map((sg, gi) => (
-                      <React.Fragment key={gi}>
-                        {/* Subcategory header */}
-                        <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
-                          <td colSpan={2 + monthKeys.length * 2} style={{ padding: '4px 6px 4px 20px', fontSize: 9, fontWeight: 700, color: catColor, letterSpacing: 0.5, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}>
-                            {sg.sub} <span style={{ color: C.textMuted, fontWeight: 400 }}>({sg.providers.length})</span>
-                          </td>
-                        </tr>
-                        {sg.providers.map((prov, pi) => (
-                          <tr key={pi} style={{ background: pi % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                            <td style={{ padding: '5px 6px 5px 32px', fontSize: 10, color: C.textMuted, borderBottom: `1px solid rgba(51,65,85,0.4)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}
-                              title={prov.name}>
-                              {prov.name.length > 30 ? prov.name.substring(0, 28) + '…' : prov.name}
+                    {/* ── Subcategory groups ── */}
+                    {isCatOpen && catData.sortedSubs?.map(([subKey, sg]) => {
+                      const subId = `${catKey}::${subKey}`
+                      const isSubOpen = !collapsedSubs[subId]
+                      return (
+                        <React.Fragment key={subKey}>
+                          {/* Subcategory header with totals */}
+                          <tr
+                            onClick={() => toggleSub(subId)}
+                            style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.04)' }}
+                          >
+                            <td style={{ padding: '5px 6px 5px 20px', fontSize: 10, fontWeight: 700, color: catColor, letterSpacing: 0.5, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}>
+                              <span style={{ display: 'inline-block', width: 8, marginRight: 4, fontSize: 8, color: C.textMuted }}>{isSubOpen ? '▾' : '▸'}</span>
+                              {subKey} <span style={{ color: C.textMuted, fontWeight: 400 }}>({sg.providers.length})</span>
                             </td>
                             {monthKeys.map(mk => {
-                              const v = prov.months[mk] || 0
+                              const v = sg.totals[mk] || 0
                               const pctV = ventasPorMes[mk] ? (v / ventasPorMes[mk]) * 100 : 0
                               return (
                                 <React.Fragment key={mk}>
-                                  <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `1px solid rgba(51,65,85,0.4)` }}>
+                                  <td style={{ padding: '5px 4px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid ${C.border}`, borderLeft: `1px solid ${C.border}` }}>
                                     {v > 0 ? fmtShort(v) : '—'}
                                   </td>
-                                  <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)` }}>
+                                  <td style={{ padding: '5px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid ${C.border}` }}>
                                     {v > 0 ? pctV.toFixed(1) + '%' : ''}
                                   </td>
                                 </React.Fragment>
                               )
                             })}
-                            <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.03)' }}>
-                              {fmt(prov.total)}
+                            <td style={{ padding: '5px 4px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid ${C.border}`, borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.03)' }}>
+                              {fmt(sg.grandTotal)}
                             </td>
-                            <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, background: 'rgba(244,162,97,0.03)' }}>
-                              {totalVentas6m ? ((prov.total / totalVentas6m) * 100).toFixed(1) + '%' : ''}
+                            <td style={{ padding: '5px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid ${C.border}`, background: 'rgba(244,162,97,0.03)' }}>
+                              {totalVentas6m ? ((sg.grandTotal / totalVentas6m) * 100).toFixed(1) + '%' : ''}
                             </td>
                           </tr>
-                        ))}
-                      </React.Fragment>
-                    ))}
+                          {/* Provider rows */}
+                          {isSubOpen && sg.providers.map((prov, pi) => (
+                            <tr key={pi} style={{ background: pi % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
+                              <td style={{ padding: '4px 6px 4px 36px', fontSize: 10, color: C.textMuted, borderBottom: `1px solid rgba(51,65,85,0.4)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}
+                                title={prov.name}>
+                                {prov.name.length > 30 ? prov.name.substring(0, 28) + '…' : prov.name}
+                              </td>
+                              {monthKeys.map(mk => {
+                                const v = prov.months[mk] || 0
+                                const pctV = ventasPorMes[mk] ? (v / ventasPorMes[mk]) * 100 : 0
+                                return (
+                                  <React.Fragment key={mk}>
+                                    <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `1px solid rgba(51,65,85,0.4)` }}>
+                                      {v > 0 ? fmtShort(v) : '—'}
+                                    </td>
+                                    <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)` }}>
+                                      {v > 0 ? pctV.toFixed(1) + '%' : ''}
+                                    </td>
+                                  </React.Fragment>
+                                )
+                              })}
+                              <td style={{ padding: '4px 4px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: C.white, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.03)' }}>
+                                {fmt(prov.total)}
+                              </td>
+                              <td style={{ padding: '4px 3px', textAlign: 'right', fontSize: 9, color: C.textMuted, fontFamily: 'monospace', borderBottom: `1px solid rgba(51,65,85,0.4)`, background: 'rgba(244,162,97,0.03)' }}>
+                                {totalVentas6m ? ((prov.total / totalVentas6m) * 100).toFixed(1) + '%' : ''}
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      )
+                    })}
                   </React.Fragment>
                 )
               })}
