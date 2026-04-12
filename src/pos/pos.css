@@ -3,37 +3,51 @@
    Layout: landscape tablet, touch-first
    ============================================================ */
 
+/* ── PALETA EYE-EFFICIENT ──
+   Warm dark #141418 en vez de negro puro → menos fatiga
+   Superficie #1c1c22, texto warm white #e8e6ef
+   Acento: #ff6b35 (naranja Freakie), éxito: #2dd4a8 (teal suave)
+   Rojo solo para acciones destructivas
+   ──────────────────────────────── */
+
 /* Reset para POS */
 #pos-root {
   display: flex;
   height: 100vh;
   overflow: hidden;
-  background: #111;
+  background: #141418;
 }
 
-/* ── HEADER (igual a .topbar del ERP) ── */
+/* ── HEADER ── */
 .pos-header {
   position: sticky;
   top: 0;
   z-index: 200;
   display: flex;
   align-items: center;
-  background: #111;
-  border-bottom: 1px solid #1e1e1e;
+  background: #1c1c22;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   padding: 0 16px;
   height: 52px;
   flex-shrink: 0;
   gap: 12px;
 }
+.pos-header-logo {
+  height: 32px;
+  width: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
 .pos-header-brand {
   font-size: 15px;
   font-weight: 800;
-  color: #e63946;
+  color: #ff6b35;
   white-space: nowrap;
 }
 .pos-header-store {
   font-size: 12px;
-  color: #e63946;
+  color: rgba(255,107,53,0.6);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -42,28 +56,29 @@
 }
 .pos-header-user {
   font-size: 12px;
-  color: #aaa;
+  color: #8b8997;
   white-space: nowrap;
 }
 .pos-header-clock {
   font-size: 13px;
   font-weight: 700;
-  color: #f0f0f0;
+  color: #8b8997;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .pos-header-btn {
-  background: #1e1e1e;
-  border: 1px solid #333;
+  background: #141418;
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px;
-  color: #ccc;
+  color: #8b8997;
   font-size: 13px;
   padding: 5px 10px;
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.12s;
 }
-.pos-header-btn:hover { background: #2a2a2a; }
-.pos-header-btn.danger { color: #f87171; border-color: #991b1b; }
+.pos-header-btn:hover { background: #232329; color: #e8e6ef; }
+.pos-header-btn.danger { color: rgba(239,68,68,0.8); border-color: rgba(239,68,68,0.3); }
 
 /* ── LAYOUT PRINCIPAL ── */
 .pos-layout {
@@ -72,6 +87,7 @@
   flex: 1;
   height: 100vh;
   overflow: hidden;
+  background: #141418;
 }
 .pos-body {
   display: flex;
@@ -93,8 +109,8 @@
   display: flex;
   gap: 6px;
   padding: 8px 10px;
-  background: #111;
-  border-bottom: 1px solid #1e1e1e;
+  background: #1c1c22;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   overflow-x: auto;
   flex-shrink: 0;
   scrollbar-width: none;
@@ -111,12 +127,12 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  background: #1e1e1e;
-  color: #888;
+  background: #141418;
+  color: #5a5869;
   transition: all 0.15s;
   flex-shrink: 0;
 }
-.pos-cat-btn:hover { background: #2a2a2a; color: #f0f0f0; }
+.pos-cat-btn:hover { background: #232329; color: #e8e6ef; }
 .pos-cat-btn.active { color: #fff; }
 .pos-cat-icon { font-size: 16px; }
 
@@ -131,13 +147,13 @@
   align-content: start;
 }
 .pos-products::-webkit-scrollbar { width: 4px; }
-.pos-products::-webkit-scrollbar-track { background: #111; }
+.pos-products::-webkit-scrollbar-track { background: transparent; }
 .pos-products::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 
 .pos-product-btn {
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 10px;
+  background: #1e1e26;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
   padding: 12px 10px;
   cursor: pointer;
   text-align: left;
@@ -149,13 +165,12 @@
   position: relative;
 }
 .pos-product-btn:hover {
-  background: #222;
-  border-color: #e63946;
-  transform: scale(1.01);
+  background: #26262f;
+  border-color: #ff6b35;
+  box-shadow: 0 0 0 1px rgba(255,107,53,0.25);
 }
 .pos-product-btn:active {
-  transform: scale(0.98);
-  background: #1e0a0d;
+  transform: scale(0.97);
 }
 .pos-product-btn.unavailable {
   opacity: 0.4;
@@ -164,17 +179,17 @@
 .pos-product-name {
   font-size: 13px;
   font-weight: 700;
-  color: #f0f0f0;
+  color: #e8e6ef;
   line-height: 1.3;
 }
 .pos-product-price {
   font-size: 15px;
   font-weight: 800;
-  color: #4ade80;
+  color: #2dd4a8;
 }
 .pos-product-desc {
   font-size: 10px;
-  color: #555;
+  color: #5a5869;
   line-height: 1.3;
   overflow: hidden;
   display: -webkit-box;
@@ -182,13 +197,13 @@
   -webkit-box-orient: vertical;
 }
 
-/* ── RIGHT: ORDER PANEL (superficie secundaria como sidebar ERP) ── */
+/* ── RIGHT: ORDER PANEL ── */
 .pos-order-panel {
   width: 300px;
   min-width: 280px;
   max-width: 340px;
-  background: #161616;
-  border-left: 1px solid #222;
+  background: #1c1c22;
+  border-left: 1px solid rgba(255,255,255,0.06);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -200,7 +215,7 @@
 
 .pos-order-header {
   padding: 10px 14px 8px;
-  border-bottom: 1px solid #222;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
 .pos-order-type-badge {
@@ -224,7 +239,7 @@
   overflow-y: auto;
   padding: 6px;
   scrollbar-width: thin;
-  scrollbar-color: #333 #111;
+  scrollbar-color: #333 transparent;
 }
 .pos-order-item {
   display: flex;
@@ -234,11 +249,11 @@
   border-radius: 8px;
   transition: background 0.1s;
 }
-.pos-order-item:hover { background: #1a1a1a; }
+.pos-order-item:hover { background: rgba(255,255,255,0.02); }
 .pos-order-item-qty {
   min-width: 22px;
   height: 22px;
-  background: #e63946;
+  background: #ff6b35;
   color: #fff;
   border-radius: 6px;
   font-size: 12px;
@@ -252,34 +267,34 @@
 .pos-order-item-name {
   font-size: 13px;
   font-weight: 600;
-  color: #f0f0f0;
+  color: #e8e6ef;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .pos-order-item-note {
   font-size: 10px;
-  color: #888;
+  color: #8b8997;
   font-style: italic;
 }
 .pos-order-item-price {
   font-size: 13px;
   font-weight: 700;
-  color: #4ade80;
+  color: #2dd4a8;
   white-space: nowrap;
   flex-shrink: 0;
 }
 .pos-order-item-del {
   background: none;
   border: none;
-  color: #444;
+  color: #5a5869;
   font-size: 15px;
   cursor: pointer;
   padding: 0 2px;
   flex-shrink: 0;
   line-height: 1;
 }
-.pos-order-item-del:hover { color: #f87171; }
+.pos-order-item-del:hover { color: #ef4444; }
 
 .pos-order-empty {
   flex: 1;
@@ -287,24 +302,24 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #333;
+  color: #5a5869;
   font-size: 13px;
   gap: 8px;
   padding: 20px;
   text-align: center;
 }
-.pos-order-empty-icon { font-size: 36px; }
+.pos-order-empty-icon { font-size: 36px; opacity: 0.4; }
 
 .pos-order-footer {
   padding: 10px 14px;
-  border-top: 1px solid #222;
+  border-top: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
 .pos-order-subtotal {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #666;
+  color: #8b8997;
   margin-bottom: 4px;
 }
 .pos-order-total {
@@ -312,36 +327,37 @@
   justify-content: space-between;
   font-size: 18px;
   font-weight: 800;
-  color: #f0f0f0;
+  color: #e8e6ef;
   margin-bottom: 10px;
 }
 .pos-cobrar-btn {
   width: 100%;
   padding: 14px;
-  background: #e63946;
+  background: #ff6b35;
   color: #fff;
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 16px;
   font-weight: 800;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.15s;
 }
-.pos-cobrar-btn:hover { background: #c1121f; }
+.pos-cobrar-btn:hover { background: #e55a28; }
 .pos-cobrar-btn:active { transform: scale(0.98); }
-.pos-cobrar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pos-cobrar-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .pos-clear-btn {
   width: 100%;
   margin-top: 6px;
   padding: 8px;
   background: none;
-  color: #555;
-  border: 1px solid #2a2a2a;
+  color: #5a5869;
+  border: 1px solid rgba(255,255,255,0.06);
   border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
+  transition: all 0.12s;
 }
-.pos-clear-btn:hover { color: #f87171; border-color: #991b1b; }
+.pos-clear-btn:hover { color: #ef4444; border-color: rgba(239,68,68,0.3); }
 
 /* ── ORDER TYPE SELECTOR (Modal) ── */
 .pos-modal-overlay {
@@ -355,9 +371,9 @@
   padding: 16px;
 }
 .pos-modal {
-  background: #161616;
-  border: 1px solid #2a2a2a;
-  border-radius: 16px;
+  background: #1c1c22;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
   padding: 24px;
   width: 100%;
   max-width: 480px;
@@ -367,12 +383,12 @@
 .pos-modal-title {
   font-size: 18px;
   font-weight: 800;
-  color: #f0f0f0;
+  color: #e8e6ef;
   margin-bottom: 6px;
 }
 .pos-modal-sub {
   font-size: 13px;
-  color: #555;
+  color: #5a5869;
   margin-bottom: 20px;
 }
 
@@ -389,38 +405,38 @@
   align-items: center;
   gap: 6px;
   padding: 16px 8px;
-  background: #1e1e1e;
-  border: 2px solid #2a2a2a;
+  background: #141418;
+  border: 2px solid rgba(255,255,255,0.06);
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.15s;
-  color: #aaa;
+  color: #8b8997;
 }
-.pos-type-btn:hover { background: #2a2a2a; border-color: #444; color: #fff; }
-.pos-type-btn.selected { border-color: #e63946; background: #1e0a0d; color: #fff; }
+.pos-type-btn:hover { background: #232329; border-color: rgba(255,255,255,0.12); color: #e8e6ef; }
+.pos-type-btn.selected { border-color: #ff6b35; background: rgba(255,107,53,0.08); color: #fff; }
 .pos-type-icon { font-size: 28px; }
 .pos-type-label { font-size: 12px; font-weight: 700; text-align: center; }
 
 /* Mesa input */
 .pos-mesa-input {
-  background: #1e1e1e;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
-  color: #f0f0f0;
+  background: #141418;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  color: #e8e6ef;
   font-size: 15px;
   padding: 10px 14px;
   width: 100%;
   margin-bottom: 10px;
 }
-.pos-mesa-input:focus { outline: none; border-color: #e63946; }
+.pos-mesa-input:focus { outline: none; border-color: rgba(255,107,53,0.5); }
 
 /* ── PAYMENT MODAL ── */
 .pos-payment-total {
   text-align: center;
   margin-bottom: 20px;
 }
-.pos-payment-total-label { font-size: 13px; color: #666; margin-bottom: 4px; }
-.pos-payment-total-amount { font-size: 36px; font-weight: 900; color: #4ade80; }
+.pos-payment-total-label { font-size: 13px; color: #5a5869; margin-bottom: 4px; }
+.pos-payment-total-amount { font-size: 36px; font-weight: 900; color: #2dd4a8; }
 
 .pos-method-tabs {
   display: flex;
@@ -430,18 +446,18 @@
 .pos-method-tab {
   flex: 1;
   padding: 10px;
-  background: #1e1e1e;
-  border: 2px solid #2a2a2a;
-  border-radius: 10px;
-  color: #888;
+  background: #141418;
+  border: 2px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  color: #8b8997;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   text-align: center;
   transition: all 0.15s;
 }
-.pos-method-tab:hover { background: #2a2a2a; }
-.pos-method-tab.active { border-color: #e63946; color: #fff; background: #1e0a0d; }
+.pos-method-tab:hover { background: #232329; }
+.pos-method-tab.active { border-color: #ff6b35; color: #ff6b35; background: rgba(255,107,53,0.08); }
 
 .pos-payment-field {
   margin-bottom: 14px;
@@ -453,57 +469,58 @@
   display: block;
 }
 .pos-payment-input {
-  background: #1e1e1e;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
-  color: #f0f0f0;
+  background: #141418;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  color: #e8e6ef;
   font-size: 16px;
   font-weight: 700;
   padding: 10px 14px;
   width: 100%;
 }
-.pos-payment-input:focus { outline: none; border-color: #4ade80; }
+.pos-payment-input:focus { outline: none; border-color: rgba(45,212,168,0.5); }
 .pos-cambio {
-  background: #0d2818;
-  border: 1px solid #2d6a4f;
-  border-radius: 8px;
+  background: rgba(45,212,168,0.08);
+  border: 1px solid rgba(45,212,168,0.25);
+  border-radius: 12px;
   padding: 10px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-top: 8px;
 }
-.pos-cambio-label { font-size: 12px; color: #4ade80; }
-.pos-cambio-value { font-size: 18px; font-weight: 800; color: #4ade80; }
+.pos-cambio-label { font-size: 12px; color: #2dd4a8; }
+.pos-cambio-value { font-size: 18px; font-weight: 800; color: #2dd4a8; }
 
 .pos-confirmar-btn {
   width: 100%;
   padding: 15px;
-  background: #4ade80;
-  color: #0d2818;
+  background: #2dd4a8;
+  color: #0a0a0a;
   border: none;
-  border-radius: 10px;
+  border-radius: 14px;
   font-size: 16px;
   font-weight: 800;
   cursor: pointer;
   margin-top: 16px;
-  transition: background 0.15s;
+  transition: all 0.15s;
 }
-.pos-confirmar-btn:hover { background: #22c55e; }
-.pos-confirmar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pos-confirmar-btn:hover { background: #26b892; }
+.pos-confirmar-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .pos-cancelar-btn {
   width: 100%;
   padding: 10px;
   background: none;
-  color: #666;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
+  color: #5a5869;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
   font-size: 13px;
   cursor: pointer;
   margin-top: 6px;
+  transition: all 0.12s;
 }
-.pos-cancelar-btn:hover { color: #f87171; }
+.pos-cancelar-btn:hover { color: #ef4444; }
 
 /* ── TICKET CONFIRMADO ── */
 .pos-ticket {
@@ -511,10 +528,10 @@
   padding: 10px 0;
 }
 .pos-ticket-icon { font-size: 48px; margin-bottom: 8px; }
-.pos-ticket-title { font-size: 20px; font-weight: 800; color: #4ade80; margin-bottom: 4px; }
-.pos-ticket-sub { font-size: 13px; color: #666; margin-bottom: 16px; }
+.pos-ticket-title { font-size: 20px; font-weight: 800; color: #2dd4a8; margin-bottom: 4px; }
+.pos-ticket-sub { font-size: 13px; color: #5a5869; margin-bottom: 16px; }
 .pos-ticket-detail {
-  background: #1a1a1a;
+  background: #141418;
   border-radius: 10px;
   padding: 12px;
   margin-bottom: 16px;
@@ -526,8 +543,8 @@
   font-size: 13px;
   padding: 3px 0;
 }
-.pos-ticket-row .lbl { color: #666; }
-.pos-ticket-row .val { color: #f0f0f0; font-weight: 600; }
+.pos-ticket-row .lbl { color: #8b8997; }
+.pos-ticket-row .val { color: #e8e6ef; font-weight: 600; }
 
 /* ── LOADING SPINNER ── */
 .pos-loading {
@@ -543,10 +560,10 @@
 
 /* ── NOTE MODAL ── */
 .pos-note-textarea {
-  background: #1e1e1e;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
-  color: #f0f0f0;
+  background: #141418;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  color: #e8e6ef;
   font-size: 14px;
   padding: 10px 14px;
   width: 100%;
@@ -554,7 +571,7 @@
   height: 80px;
   margin-bottom: 10px;
 }
-.pos-note-textarea:focus { outline: none; border-color: #e63946; }
+.pos-note-textarea:focus { outline: none; border-color: rgba(255,107,53,0.5); }
 
 /* ── DTE SELECTOR ── */
 .pos-dte-options {
@@ -565,14 +582,15 @@
 .pos-dte-opt {
   flex: 1;
   padding: 8px;
-  background: #1e1e1e;
-  border: 2px solid #2a2a2a;
-  border-radius: 8px;
-  color: #888;
+  background: #141418;
+  border: 2px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  color: #8b8997;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   text-align: center;
+  transition: all 0.12s;
 }
 
 /* ============================================================
@@ -732,7 +750,7 @@
   text-align: center;
   letter-spacing: 4px;
 }
-.pos-dte-opt.active { border-color: #e07c00; color: #f4a261; background: #1a1000; }
+.pos-dte-opt.active { border-color: #2dd4a8; color: #2dd4a8; background: rgba(45,212,168,0.08); }
 
 /* ============================================================
    POS HOME — Pantalla de inicio (diseño ERP)
@@ -741,7 +759,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #111;
+  background: #141418;
   overflow: hidden;
 }
 .poshome-body {
@@ -792,15 +810,15 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  border: 1.5px solid #333;
-  background: #1a1a1a;
-  color: #888;
+  border: 1.5px solid rgba(255,255,255,0.08);
+  background: #1e1e26;
+  color: #8b8997;
   transition: all .15s;
 }
-.poshome-zona-tab:hover { color: #f0f0f0; border-color: #555; }
+.poshome-zona-tab:hover { color: #e8e6ef; border-color: rgba(255,255,255,0.15); }
 .poshome-zona-tab.active {
-  background: #e63946;
-  border-color: #e63946;
+  background: #ff6b35;
+  border-color: #ff6b35;
   color: #fff;
 }
 
@@ -811,9 +829,9 @@
   gap: 10px;
 }
 .poshome-mesa-tile {
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 12px;
+  background: #1e1e26;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
   padding: 12px 8px;
   cursor: pointer;
   text-align: center;
@@ -826,7 +844,7 @@
   position: relative;
   overflow: hidden;
 }
-.poshome-mesa-tile:hover { border-color: #e63946; transform: scale(1.02); }
+.poshome-mesa-tile:hover { border-color: #ff6b35; transform: scale(1.02); }
 .poshome-mesa-num {
   font-size: 28px;
   font-weight: 900;
@@ -861,21 +879,21 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
+  background: #1e1e26;
+  border: 1px solid rgba(255,255,255,0.06);
   border-left: 3px solid;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 12px 14px;
   cursor: pointer;
   text-align: left;
   transition: all 0.15s;
   width: 100%;
 }
-.poshome-cuenta-row:hover { background: #222; border-color: #e63946; border-left-color: inherit; }
+.poshome-cuenta-row:hover { background: #232329; border-color: #ff6b35; border-left-color: inherit; }
 .poshome-cuenta-icon  { font-size: 20px; }
 .poshome-cuenta-label { font-size: 14px; font-weight: 700; }
 .poshome-cuenta-items { font-size: 12px; color: #666; flex: 1; }
-.poshome-cuenta-total { font-size: 15px; font-weight: 800; color: #f0f0f0; }
+.poshome-cuenta-total { font-size: 15px; font-weight: 800; color: #e8e6ef; }
 .poshome-cuenta-time  { font-size: 11px; color: #444; }
 .poshome-cuenta-arrow { font-size: 14px; color: #444; }
 
@@ -893,8 +911,8 @@
 /* ── Barra inferior — igual a .tab-bar del ERP ── */
 .poshome-quick-bar {
   display: flex;
-  background: #161616;
-  border-top: 1px solid #222;
+  background: #1c1c22;
+  border-top: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
 .poshome-quick-btn {
@@ -913,8 +931,8 @@
   color: #555;
 }
 .poshome-quick-btn:hover {
-  color: var(--qt-color, #e63946);
-  background: #1e1e1e;
+  color: var(--qt-color, #ff6b35);
+  background: #232329;
 }
 .poshome-quick-icon { font-size: 20px; }
 .poshome-quick-label { font-size: 11px; font-weight: 600; }
@@ -922,9 +940,9 @@
 /* ── Orden panel: badges ── */
 .pos-order-open-badge {
   font-size: 10px;
-  background: #4ade8018;
-  border: 1px solid #4ade8033;
-  color: #4ade80;
+  background: rgba(255,107,53,0.1);
+  border: 1px solid rgba(255,107,53,0.25);
+  color: #ff6b35;
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -942,31 +960,31 @@
 .pos-comandar-btn {
   width: 100%;
   padding: 12px;
-  background: #1a1200;
+  background: rgba(251,191,36,0.08);
   border: 2px solid #fbbf24;
   color: #fbbf24;
   font-size: 15px;
   font-weight: 800;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.15s;
   letter-spacing: 0.5px;
 }
 .pos-comandar-btn:hover:not(:disabled) {
-  background: #fbbf2415;
+  background: rgba(251,191,36,0.15);
 }
 .pos-comandar-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.2;
   cursor: default;
-  border-color: #333;
-  color: #555;
+  border-color: rgba(255,255,255,0.08);
+  color: #5a5869;
 }
 
 /* ── Barra de filtros — igual a .tab-bar del ERP ── */
 .poshome-filters {
   display: flex;
-  background: #161616;
-  border-bottom: 1px solid #222;
+  background: #1c1c22;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   overflow-x: auto;
   flex-shrink: 0;
   scrollbar-width: none;
@@ -991,13 +1009,13 @@
 }
 .poshome-filter-btn:hover { color: #aaa; }
 .poshome-filter-btn.active {
-  color: #e63946;
-  border-bottom-color: #e63946;
+  color: #ff6b35;
+  border-bottom-color: #ff6b35;
 }
 .poshome-filter-icon { font-size: 14px; }
 .poshome-filter-label { font-size: 12px; }
 .poshome-filter-badge {
-  background: #e63946;
+  background: #ff6b35;
   color: #fff;
   font-size: 10px;
   font-weight: 800;
@@ -1210,6 +1228,22 @@
 .kds-bump-btn.ready:hover { background: #4ade80; color: #0d1a10; }
 .kds-bump-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Revert button (historial) */
+.kds-revert-btn {
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: color-mix(in srgb, #60a5fa 15%, transparent);
+  color: #60a5fa;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.5px;
+}
+.kds-revert-btn:hover { background: #60a5fa; color: #0d1a1d; }
+.kds-revert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── Toggle canal/estación ── */
 .kds-mode-toggle {
   display: flex;
@@ -1240,4 +1274,227 @@
   justify-content: center;
   height: 60vh;
   text-align: center;
+}
+
+/* ============================================================
+   HistorialCobros — Ticket History View
+   ============================================================ */
+
+.historial-cobros-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #0a0a0a;
+  overflow: hidden;
+}
+
+.historial-cobros-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.historial-cobros-body::-webkit-scrollbar { width: 4px; }
+.historial-cobros-body::-webkit-scrollbar-track { background: #0a0a0a; }
+.historial-cobros-body::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+/* Estado vacío */
+.historial-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+/* Lista de cuentas */
+.historial-cuentas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.historial-count {
+  font-size: 12px;
+  color: #666;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+/* Ticket card */
+.historial-ticket-card {
+  background: #111;
+  border: 1px solid #1e1e1e;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.15s;
+}
+.historial-ticket-card:hover {
+  border-color: #333;
+  background: #151515;
+}
+
+/* Header del ticket */
+.historial-ticket-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.historial-ticket-tipo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.historial-ticket-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.historial-ticket-time {
+  color: #888;
+  font-weight: 600;
+}
+
+.historial-ticket-dte {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.historial-ticket-total {
+  min-width: 100px;
+  text-align: right;
+}
+
+/* Items (expandible) */
+.historial-ticket-items {
+  padding: 12px;
+  background: #0d0d0d;
+  border-top: 1px solid #1e1e1e;
+}
+
+.historial-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.historial-item-row {
+  border-bottom: 1px solid #1a1a1a;
+}
+.historial-item-row:last-child { border-bottom: none; }
+
+.historial-item-qty {
+  padding: 6px 0;
+  color: #fbbf24;
+  font-weight: 700;
+  width: 30px;
+  text-align: left;
+}
+
+.historial-item-name {
+  padding: 6px 8px;
+  color: #ccc;
+  flex: 1;
+}
+
+.historial-item-notas {
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.historial-item-price {
+  padding: 6px 0;
+  color: #4ade80;
+  font-weight: 700;
+  text-align: right;
+  width: 70px;
+}
+
+/* Totales */
+.historial-ticket-totals {
+  padding: 12px;
+  background: #0d0d0d;
+  border-top: 1px solid #1e1e1e;
+  font-size: 12px;
+}
+
+.historial-total-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: #aaa;
+}
+
+/* Botones de acción */
+.historial-ticket-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: #0d0d0d;
+  border-top: 1px solid #1e1e1e;
+}
+
+.historial-action-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #1e1e1e;
+  color: #ccc;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.historial-action-btn:hover:not(:disabled) {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #f0f0f0;
+}
+
+.historial-action-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.historial-action-btn.reimprimir {
+  border-color: #4ade8033;
+  background: #4ade8011;
+  color: #4ade80;
+}
+.historial-action-btn.reimprimir:hover:not(:disabled) {
+  background: #4ade8022;
+  border-color: #4ade80;
+}
+
+.historial-action-btn.anular {
+  border-color: #f8717133;
+  background: #f8717111;
+  color: #f87171;
+}
+.historial-action-btn.anular:hover:not(:disabled) {
+  background: #f8717122;
+  border-color: #f87171;
+}
+
+.historial-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

@@ -539,7 +539,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       {/* ── HEADER ── */}
       <header className="pos-header">
         <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
-        <span className="pos-header-brand">🍔 Freakie POS</span>
+        <img src="/icon-192.png" alt="Freakie Dogs" className="pos-header-logo" />
         <span className="pos-header-store">{storeName}</span>
 
         <span
