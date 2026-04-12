@@ -1387,12 +1387,12 @@ function TabCatalogo({ user, data2026, onRefresh }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
               <thead>
                 <tr>
-                  <th style={{ ...sTh, textAlign: 'left', minWidth: 160 }}>Proveedor</th>
+                  <th style={{ ...sTh, textAlign: 'left', minWidth: 140 }}>Proveedor</th>
                   <th style={{ ...sTh, textAlign: 'left', minWidth: 80 }}>Normalizado</th>
-                  <th style={{ ...sTh, textAlign: 'left', minWidth: 120 }}>Categoría</th>
-                  <th style={{ ...sTh, textAlign: 'left', minWidth: 100 }}>Subcategoría</th>
-                  <th style={{ ...sTh, textAlign: 'center', minWidth: 50 }}>Estado</th>
-                  <th style={{ ...sTh, textAlign: 'center', minWidth: 80 }}>Acciones</th>
+                  <th style={{ ...sTh, textAlign: 'left', minWidth: 100 }}>Categoría</th>
+                  <th style={{ ...sTh, textAlign: 'left', minWidth: 90 }}>Subcategoría</th>
+                  <th style={{ ...sTh, textAlign: 'center', width: 40 }}>Act.</th>
+                  <th style={{ ...sTh, textAlign: 'center', width: 70 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -1440,14 +1440,14 @@ function TabCatalogo({ user, data2026, onRefresh }) {
                           {e.activo ? '✅' : '⛔'}
                         </span>
                       </td>
-                      <td style={{ padding: '5px 6px', textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: '5px 6px', textAlign: 'center', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
                         {isEditing ? (
                           <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                            <button onClick={saveEdit} disabled={saving} style={{ ...sBtn('#059669'), padding: '3px 8px', fontSize: 10 }}>💾</button>
-                            <button onClick={() => setEditing(null)} style={{ ...sBtn(C.gray), padding: '3px 8px', fontSize: 10 }}>✕</button>
+                            <button onClick={saveEdit} disabled={saving} title="Guardar" style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: '#059669', color: '#fff' }}>💾</button>
+                            <button onClick={() => setEditing(null)} title="Cancelar" style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: C.gray, color: '#fff' }}>✕</button>
                           </div>
                         ) : (
-                          <button onClick={() => { setEditing(e.id); setEditForm({ nombre_normalizado: e.nombre_normalizado, categoria: e.categoria, subcategoria: e.subcategoria, notas: e.notas || '', activo: e.activo }) }} style={{ ...sBtn(C.cardAlt), padding: '3px 8px', fontSize: 10 }}>✏️</button>
+                          <button onClick={() => { setEditing(e.id); setEditForm({ nombre_normalizado: e.nombre_normalizado, categoria: e.categoria, subcategoria: e.subcategoria, notas: e.notas || '', activo: e.activo }) }} title="Editar" style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: C.cardAlt, color: '#fff' }}>✏️</button>
                         )}
                       </td>
                     </tr>
