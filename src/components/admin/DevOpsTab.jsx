@@ -128,31 +128,21 @@ export default function DevOpsTab() {
   // ══════════════════════════════════════════
   async function checkDTEs() {
     try {
-      const { data, error } = await db.rpc('query_raw', { sql_text: `
-        SELECT DATE(created_at) as dia, COUNT(*) as total
-        FROM compras
-        WHERE created_at >= NOW() - INTERVAL '7 days'
-        GROUP BY 1 ORDER BY 1 ASC
-      `});
+      const sevenAgo = daysAgo(7);
+      const { data: comprasData, error } = await db
+        .from('compras')
+        .select('created_at')
+        .gte('created_at', sevenAgo);
 
-      // Fallback: query directly if RPC doesn't exist
-      let rows = data;
-      if (error) {
-        // Direct query approach
-        const sevenAgo = daysAgo(7);
-        const { data: comprasData } = await db
-          .from('compras')
-          .select('created_at')
-          .gte('created_at', sevenAgo);
+      if (error) throw new Error(error.message);
 
-        // Group by day manually
-        const grouped = {};
-        (comprasData || []).forEach(r => {
-          const d = r.created_at?.split('T')[0];
-          if (d) grouped[d] = (grouped[d] || 0) + 1;
-        });
-        rows = Object.entries(grouped).map(([dia, total]) => ({ dia, total })).sort((a, b) => a.dia.localeCompare(b.dia));
-      }
+      // Group by day manually
+      const grouped = {};
+      (comprasData || []).forEach(r => {
+        const d = r.created_at?.split('T')[0];
+        if (d) grouped[d] = (grouped[d] || 0) + 1;
+      });
+      const rows = Object.entries(grouped).map(([dia, total]) => ({ dia, total })).sort((a, b) => a.dia.localeCompare(b.dia));
 
       // Build spark data for 7 days
       const spark = [];
@@ -250,12 +240,14 @@ export default function DevOpsTab() {
   // ══════════════════════════════════════════
   async function checkSerfinsa() {
     try {
-      const threeAgo = daysAgo(3);
-      const { data: serfinsa } = await db
+      const sevenAgo = daysAgo(7);
+      const { data: serfinsa, error } = await db
         .from('serfinsa_detalle_diario')
         .select('fecha, terminal_codigo, valor_operaciones')
-        .gte('fecha', threeAgo)
+        .gte('fecha', sevenAgo)
         .order('fecha', { ascending: true });
+
+      if (error) throw new Error(error.message);
 
       // Spark: last 7 days
       const spark = [];
@@ -372,70 +364,97 @@ export default function DevOpsTab() {
   // ══════════════════════════════════════════
   async function checkEdgeFunctions() {
     try {
-      const checks = [];
+      const details = [];
+      let issues = 0;
 
-      // Check DTE service — try a lightweight call
+      // 1. Check DTE pipeline health via last compras insertion
       try {
-        const dteUrl = 'https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/dte-service';
-        const resp = await fetch(dteUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${(await db.auth.getSession())?.data?.session?.access_token || 'anon'}` },
-          body: JSON.stringify({ action: 'health' }),
-        });
-        if (resp.ok || resp.status === 400) {
-          // 400 is expected for "health" action (not a real action), means function is up
-          checks.push({ name: 'dte-service', up: true, note: `Status ${resp.status}` });
+        const { data: lastCompra } = await db
+          .from('compras')
+          .select('created_at, proveedor')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (lastCompra && lastCompra.length > 0) {
+          const ago = Math.round((Date.now() - new Date(lastCompra[0].created_at).getTime()) / 3600000);
+          const isStale = ago > 26; // más de 26h sin DTEs nuevos = alerta
+          details.push(`${isStale ? '🟡' : '🟢'} Pipeline DTE GAS: último hace ${ago}h (${lastCompra[0].proveedor})`);
+          if (isStale) issues++;
         } else {
-          checks.push({ name: 'dte-service', up: false, note: `HTTP ${resp.status}` });
+          details.push('🔴 Pipeline DTE GAS: sin datos');
+          issues += 2;
         }
-      } catch (e) {
-        checks.push({ name: 'dte-service', up: false, note: e.message });
+      } catch {
+        details.push('🔴 Pipeline DTE GAS: error al consultar');
+        issues += 2;
       }
 
-      // Check acciones_pendientes for stale items
-      let staleActions = 0;
+      // 2. Check POS DTE standalone (last emitted DTE from POS)
+      try {
+        const { data: lastPOS } = await db
+          .from('pos_dte_standalone')
+          .select('created_at, tipo_dte, estado_hacienda')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (lastPOS && lastPOS.length > 0) {
+          const ago = Math.round((Date.now() - new Date(lastPOS[0].created_at).getTime()) / 3600000);
+          details.push(`🟢 POS DTE: último ${lastPOS[0].tipo_dte} (${lastPOS[0].estado_hacienda}) hace ${ago}h`);
+        } else {
+          details.push('🟡 POS DTE: sin emisiones registradas');
+        }
+      } catch {
+        // table might not exist yet
+        details.push('⚪ POS DTE: tabla no disponible');
+      }
+
+      // 3. Check Serfinsa GAS pipeline health
+      try {
+        const { data: lastSerfinsa } = await db
+          .from('serfinsa_detalle_diario')
+          .select('fecha')
+          .order('fecha', { ascending: false })
+          .limit(1);
+        if (lastSerfinsa && lastSerfinsa.length > 0) {
+          const lastDate = lastSerfinsa[0].fecha;
+          const todayStr = todaySV();
+          const diffDays = Math.round((new Date(todayStr) - new Date(lastDate)) / 86400000);
+          const isStale = diffDays > 2;
+          details.push(`${isStale ? '🟡' : '🟢'} Serfinsa GAS: último dato ${lastDate} (hace ${diffDays}d)`);
+          if (isStale) issues++;
+        } else {
+          details.push('🔴 Serfinsa GAS: sin datos');
+          issues += 2;
+        }
+      } catch {
+        details.push('🔴 Serfinsa GAS: error al consultar');
+        issues += 2;
+      }
+
+      // 4. Check acciones_pendientes (open incidents)
       try {
         const { data: pendientes } = await db
           .from('acciones_pendientes')
-          .select('id, tipo, created_at')
-          .eq('completada', false);
-        staleActions = (pendientes || []).length;
-      } catch {
-        // table might not exist
-      }
-
-      // Check last DTE emission (dte_emitidos or similar)
-      let lastDTE = null;
-      try {
-        const { data: lastEmision } = await db
-          .from('dte_emitidos')
-          .select('created_at, tipo_dte, estado')
-          .order('created_at', { ascending: false })
-          .limit(1);
-        if (lastEmision && lastEmision.length > 0) {
-          lastDTE = lastEmision[0];
+          .select('id, estado')
+          .in('estado', ['pendiente', 'abierta', 'en_progreso']);
+        const count = (pendientes || []).length;
+        if (count > 5) {
+          details.push(`🟡 Acciones pendientes: ${count} abiertas`);
+          issues++;
+        } else {
+          details.push(`🟢 Acciones pendientes: ${count} abiertas`);
         }
       } catch {
-        // table might not exist
+        details.push('⚪ Acciones pendientes: tabla no consultable');
       }
 
-      const allUp = checks.every(c => c.up);
-      let status = allUp ? 'ok' : 'error';
-      let summary = allUp ? 'Todos los servicios operativos' : `${checks.filter(c => !c.up).length} servicio(s) caído(s)`;
-
-      if (staleActions > 5) {
-        status = status === 'error' ? 'error' : 'warning';
-        summary += ` · ${staleActions} acciones pendientes`;
-      }
-
-      const details = [];
-      checks.forEach(ch => {
-        details.push(`${ch.up ? '🟢' : '🔴'} ${ch.name}: ${ch.note}`);
-      });
-      if (staleActions > 0) details.push(`\n📋 ${staleActions} acciones pendientes sin completar`);
-      if (lastDTE) {
-        const ago = Math.round((Date.now() - new Date(lastDTE.created_at).getTime()) / 3600000);
-        details.push(`\n📄 Último DTE emitido: ${lastDTE.tipo_dte} (${lastDTE.estado}) hace ${ago}h`);
+      // Determine overall status
+      let status = 'ok';
+      let summary = 'Todos los servicios operativos';
+      if (issues >= 2) {
+        status = 'error';
+        summary = `${issues} problema(s) detectado(s)`;
+      } else if (issues === 1) {
+        status = 'warning';
+        summary = '1 alerta menor';
       }
 
       setEdgeFnKPI({ status, summary, detail: details.join('\n'), spark: [] });
