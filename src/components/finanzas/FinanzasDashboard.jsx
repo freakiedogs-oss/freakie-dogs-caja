@@ -884,7 +884,7 @@ function TabProveedores({ data2026, months2026, classify }) {
     })
 
     return { categories, monthKeys, ventasPorMes }
-  }, [data2026, months2026])
+  }, [data2026, months2026, classify])
 
   const { categories, monthKeys, ventasPorMes } = result
   const totalVentas6m = monthKeys.reduce((s, k) => s + (ventasPorMes[k] || 0), 0)
