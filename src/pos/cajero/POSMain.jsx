@@ -3,6 +3,7 @@ import { db } from '../../supabase'
 import { STORES, today } from '../../config'
 import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
+import SplitCheckModal from './SplitCheckModal'
 import { emitDTE } from './dteService'
 
 // ──────────────────────────────────────────────
@@ -30,7 +31,7 @@ const PERMISOS_POR_ROL = {
 const DEFAULT_PERMS = { comandar: false, moverMesa: false, preCuenta: false, anular: false, editarGuardado: false, cobrar: false, descuento: false }
 
 // Mapeo tipoDte UI → código MH para CHECK constraint en BD
-const DTE_TIPO_MAP = { factura: '01', ccf: '03', ticket: null }
+const DTE_TIPO_MAP = { factura: '01', ccf: '03', se: '14', ticket: null }
 
 // Reloj
 function Clock() {
@@ -82,9 +83,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const [showNoteModal,     setShowNoteModal]      = useState(null)
   const [noteText,          setNoteText]           = useState('')
   const [showTransferModal, setShowTransferModal]  = useState(false)
+  const [showSplitModal,    setShowSplitModal]     = useState(false)
   const [saving,            setSaving]             = useState(false)
   const [commanding,        setCommanding]         = useState(false)
   const [loadingCuenta,     setLoadingCuenta]      = useState(!!cuentaCtx?.cuentaId)
+
+  // Descuento
+  const [showDiscountModal, setShowDiscountModal] = useState(false)
+  const [descuento, setDescuento]   = useState(0)
+  const [descuentoTipo, setDescuentoTipo] = useState(null) // 'porcentaje' | 'monto' | 'cortesia'
+  const [descuentoMotivo, setDescuentoMotivo] = useState('')
 
   // ── Cargar menú ──
   useEffect(() => {
@@ -241,7 +249,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
 
   // Totales
   const subtotal = items.reduce((s, i) => s + i.precio * i.qty, 0)
-  const total    = subtotal
+  const descuentoMonto = descuentoTipo === 'porcentaje'
+    ? Math.round(subtotal * descuento / 100 * 100) / 100
+    : descuentoTipo === 'cortesia'
+    ? subtotal
+    : descuento
+  const total = Math.max(0, subtotal - descuentoMonto)
   const newItems = items.filter(i => !i.saved)
   const hasNew   = newItems.length > 0
 
@@ -399,6 +412,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             iva:         0,
             propina:     paymentData.propina || 0,
             total:       total + (paymentData.propina || 0),
+            descuento:    descuentoMonto,
+            descuento_tipo: descuentoTipo,
+            descuento_motivo: descuentoMotivo || null,
+            descuento_autorizado_por: descuentoTipo ? user.id : null,
             dte_tipo:    DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id:  paymentData.cliente?.id || null,
             cobrada_at:  new Date().toISOString(),
@@ -418,6 +435,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             iva:        0,
             propina:    paymentData.propina || 0,
             total:      total + (paymentData.propina || 0),
+            descuento:    descuentoMonto,
+            descuento_tipo: descuentoTipo,
+            descuento_motivo: descuentoMotivo || null,
+            descuento_autorizado_por: descuentoTipo ? user.id : null,
             dte_tipo:   DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id: paymentData.cliente?.id || null,
             cobrada_at: new Date().toISOString(),
@@ -470,7 +491,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       })
 
       // 4. Emitir DTE (factura o CCF) — si falla, la venta YA se cobró
-      if (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf') {
+      if (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf' || paymentData.tipoDte === 'se') {
         try {
           dteResult = await emitDTE({
             tipoDte:  paymentData.tipoDte,
@@ -501,6 +522,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           ultima_visita: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }).eq('id', paymentData.cliente.id).then(() => {}).catch(() => {})
+      }
+
+      // 7. Deducir inventario (best-effort — no bloquea el cobro)
+      try {
+        await db.rpc('pos_deducir_inventario', { p_cuenta_id: currentCuentaId, p_store_code: storeCode })
+      } catch (invErr) {
+        console.warn('Inventario no deducido:', invErr.message)
       }
 
       return { cuenta: { id: currentCuentaId }, dte: dteResult, dteError }
@@ -556,6 +584,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             title="Mover a otra mesa"
           >
             ↔ Mesa
+          </button>
+        )}
+
+        {tipo === 'mesa' && perms.cobrar && cuentaId && items.length > 0 && (
+          <button
+            className="pos-header-btn"
+            onClick={() => setShowSplitModal(true)}
+            title="Dividir cuenta"
+          >
+            ✂ Dividir
           </button>
         )}
 
@@ -710,6 +748,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               <span>{items.reduce((s, i) => s + i.qty, 0)} artículos</span>
               <span>${subtotal.toFixed(2)}</span>
             </div>
+            {descuentoMonto > 0 && (
+              <div className="pos-order-subtotal" style={{ color: '#f87171' }}>
+                <span>
+                  {descuentoTipo === 'cortesia' ? '🎁 Cortesía' : descuentoTipo === 'porcentaje' ? `🏷 -${descuento}%` : '🏷 Descuento'}
+                  {descuentoMotivo ? ` (${descuentoMotivo})` : ''}
+                </span>
+                <span>-${descuentoMonto.toFixed(2)}</span>
+              </div>
+            )}
             <div className="pos-order-total">
               <span>TOTAL</span>
               <span>${total.toFixed(2)}</span>
@@ -740,6 +787,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               <div style={{ textAlign: 'center', fontSize: 12, color: '#333', padding: '8px 0' }}>
                 🔒 Cobro solo por cajera/gerente
               </div>
+            )}
+
+            {perms.descuento && items.length > 0 && (
+              <button
+                className="pos-header-btn"
+                style={{ width: '100%', marginTop: 4, fontSize: 12, padding: '6px 0', color: '#f4a261', borderColor: '#f4a26133' }}
+                onClick={() => setShowDiscountModal(true)}
+              >
+                🏷 {descuentoMonto > 0 ? `Descuento: -$${descuentoMonto.toFixed(2)}` : 'Aplicar descuento'}
+              </button>
             )}
 
             {hasNew && (
@@ -783,6 +840,128 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         />
       )}
 
+      {/* Modal: Descuento */}
+      {showDiscountModal && (
+        <div className="pos-modal-overlay" onClick={() => setShowDiscountModal(false)}>
+          <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 360 }}>
+            <div className="pos-modal-title">🏷 Aplicar Descuento</div>
+            <div style={{ color: '#666', fontSize: 12, marginBottom: 12 }}>Subtotal: ${subtotal.toFixed(2)}</div>
+
+            {/* Tipo de descuento */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {[
+                { key: 'porcentaje', label: '% Porcentaje' },
+                { key: 'monto', label: '$ Monto fijo' },
+                { key: 'cortesia', label: '🎁 Cortesía' },
+              ].map(opt => (
+                <button
+                  key={opt.key}
+                  style={{
+                    flex: 1, padding: '8px 4px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                    background: descuentoTipo === opt.key ? '#f4a26122' : '#1a1a1a',
+                    border: `1px solid ${descuentoTipo === opt.key ? '#f4a261' : '#333'}`,
+                    color: descuentoTipo === opt.key ? '#f4a261' : '#888',
+                  }}
+                  onClick={() => {
+                    setDescuentoTipo(opt.key)
+                    if (opt.key === 'cortesia') setDescuento(100)
+                    else setDescuento(0)
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Valor */}
+            {descuentoTipo && descuentoTipo !== 'cortesia' && (
+              <div style={{ marginBottom: 12 }}>
+                <label className="pos-payment-label">
+                  {descuentoTipo === 'porcentaje' ? 'Porcentaje (%)' : 'Monto ($)'}
+                </label>
+                {descuentoTipo === 'porcentaje' ? (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[5, 10, 15, 20, 25, 50].map(p => (
+                      <button
+                        key={p}
+                        style={{
+                          flex: 1, padding: '8px 2px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+                          background: descuento === p ? '#f4a26122' : '#111',
+                          border: `1px solid ${descuento === p ? '#f4a261' : '#333'}`,
+                          color: descuento === p ? '#f4a261' : '#888',
+                        }}
+                        onClick={() => setDescuento(p)}
+                      >
+                        {p}%
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <input
+                    className="pos-payment-input"
+                    type="number" min="0" max={subtotal} step="0.25"
+                    value={descuento || ''}
+                    onChange={e => setDescuento(Math.min(parseFloat(e.target.value) || 0, subtotal))}
+                    placeholder="$0.00"
+                    style={{ fontSize: 14, padding: '8px 12px' }}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Motivo */}
+            {descuentoTipo && (
+              <div style={{ marginBottom: 12 }}>
+                <label className="pos-payment-label">Motivo (opcional)</label>
+                <input
+                  className="pos-payment-input"
+                  placeholder="Ej: Cliente frecuente, error en pedido..."
+                  value={descuentoMotivo}
+                  onChange={e => setDescuentoMotivo(e.target.value)}
+                  style={{ fontSize: 13, padding: '8px 12px' }}
+                />
+              </div>
+            )}
+
+            {/* Preview */}
+            {descuentoTipo && (
+              <div style={{ background: '#1a0a0a', borderRadius: 8, padding: 10, marginBottom: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#888' }}>Descuento aplicado</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#f87171' }}>
+                  -${(descuentoTipo === 'porcentaje' ? subtotal * descuento / 100 : descuentoTipo === 'cortesia' ? subtotal : descuento).toFixed(2)}
+                </div>
+                <div style={{ fontSize: 12, color: '#4ade80' }}>
+                  Total: ${Math.max(0, subtotal - (descuentoTipo === 'porcentaje' ? subtotal * descuento / 100 : descuentoTipo === 'cortesia' ? subtotal : descuento)).toFixed(2)}
+                </div>
+              </div>
+            )}
+
+            <button
+              className="pos-confirmar-btn"
+              disabled={!descuentoTipo}
+              onClick={() => setShowDiscountModal(false)}
+            >
+              ✅ Aplicar descuento
+            </button>
+            {descuentoMonto > 0 && (
+              <button
+                className="pos-cancelar-btn"
+                style={{ color: '#f87171' }}
+                onClick={() => {
+                  setDescuento(0)
+                  setDescuentoTipo(null)
+                  setDescuentoMotivo('')
+                  setShowDiscountModal(false)
+                }}
+              >
+                🗑 Quitar descuento
+              </button>
+            )}
+            <button className="pos-cancelar-btn" onClick={() => setShowDiscountModal(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Transfer de mesa */}
       {showTransferModal && (
         <MesaTransferModal
@@ -790,6 +969,22 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           mesaActual={mesaActual}
           onTransfer={handleMesaTransfer}
           onClose={() => setShowTransferModal(false)}
+        />
+      )}
+
+      {/* Modal: Dividir Cuenta */}
+      {showSplitModal && (
+        <SplitCheckModal
+          cuentaId={cuentaId}
+          items={items}
+          storeCode={storeCode}
+          userId={user.id}
+          mesaRef={mesaRef}
+          onClose={() => setShowSplitModal(false)}
+          onSplit={() => {
+            setShowSplitModal(false)
+            onBack()
+          }}
         />
       )}
     </div>

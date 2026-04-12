@@ -5,6 +5,7 @@ const DTE_TYPES = [
   { key: 'ticket',  label: '🧾 Ticket',   desc: 'Comprobante interno' },
   { key: 'factura', label: '📄 Factura',   desc: 'Factura consumidor final' },
   { key: 'ccf',     label: '🏢 CCF',       desc: 'Crédito Fiscal' },
+  { key: 'se',      label: '👤 Suj.Excl.', desc: 'Sujeto Excluido (DUI)' },
 ]
 
 export default function PaymentModal({ items, total, onConfirm, onComplete, onClose, saving }) {
@@ -37,8 +38,8 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
   const canConfirm = () => {
     if (metodo === 'efectivo' && efectivoNum < totalConProp) return false
     if (metodo === 'mixto' && Math.abs(totalMixto - totalConProp) >= 0.01) return false
-    // CCF requiere cliente seleccionado
-    if (tipoDte === 'ccf' && !cliente) return false
+    // CCF y SE requieren cliente seleccionado
+    if ((tipoDte === 'ccf' || tipoDte === 'se') && !cliente) return false
     return true
   }
 
@@ -335,7 +336,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
               <button
                 key={d.key}
                 className={`pos-dte-opt${tipoDte === d.key ? ' active' : ''}`}
-                onClick={() => { setTipoDte(d.key); if (d.key !== 'ccf') setCliente(null) }}
+                onClick={() => { setTipoDte(d.key); if (d.key !== 'ccf' && d.key !== 'se') setCliente(null) }}
                 title={d.desc}
               >
                 {d.label}
@@ -344,8 +345,8 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
           </div>
         </div>
 
-        {/* ── CustomerSearch para CCF ── */}
-        {tipoDte === 'ccf' && (
+        {/* ── CustomerSearch para CCF y SE ── */}
+        {(tipoDte === 'ccf' || tipoDte === 'se') && (
           <CustomerSearch
             selected={cliente}
             onSelect={setCliente}
@@ -368,13 +369,13 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
           ))}
         </div>
 
-        {/* Validación CCF */}
-        {tipoDte === 'ccf' && !cliente && (
+        {/* Validación CCF y SE */}
+        {(tipoDte === 'ccf' || tipoDte === 'se') && !cliente && (
           <div style={{
             background: '#2a1a0a', borderRadius: 6, padding: '6px 10px',
             marginBottom: 8, fontSize: 11, color: '#d97706'
           }}>
-            ⚠️ Selecciona un cliente para emitir CCF
+            ⚠️ Selecciona un cliente para emitir {tipoDte === 'ccf' ? 'CCF' : 'Sujeto Excluido'}
           </div>
         )}
 

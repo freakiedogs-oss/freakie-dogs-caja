@@ -226,10 +226,18 @@ export default function KDSScreen({ user, onBack }) {
         .update({ estado: 'completado', completado_at: new Date().toISOString() })
         .in('id', ids)
 
-      // Actualizar cuenta a 'lista'
-      await db.from('pos_cuentas')
-        .update({ estado: 'lista', updated_at: new Date().toISOString() })
+      // Actualizar cuenta a 'lista' SOLO si no está cobrada (evitar race condition)
+      const { data: cuenta } = await db
+        .from('pos_cuentas')
+        .select('estado')
         .eq('id', comanda.cuenta_id)
+        .single()
+
+      if (cuenta?.estado !== 'cobrada') {
+        await db.from('pos_cuentas')
+          .update({ estado: 'lista', updated_at: new Date().toISOString() })
+          .eq('id', comanda.cuenta_id)
+      }
 
       load()
       loadHistorial()

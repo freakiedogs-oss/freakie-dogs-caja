@@ -135,12 +135,62 @@ export async function emitCCF({ items, receptor, metodo }) {
 }
 
 /**
+ * Emitir Factura de Sujeto Excluido (tipo 14)
+ * Para compras a personas no contribuyentes.
+ * Receptor OBLIGATORIO: nombre, numDocumento (DUI)
+ * Sin IVA — precios se envían tal cual como totalCompras
+ */
+export async function emitSujetoExcluido({ items, receptor, metodo }) {
+  if (!receptor?.nombre || !receptor?.numDocumento) {
+    throw new Error('Sujeto Excluido requiere nombre y DUI del proveedor')
+  }
+
+  const totalCompras = items.reduce((s, it) => s + (it.precio * it.qty), 0)
+  const body = {
+    items: items.map(it => ({
+      descripcion: it.nombre,
+      cantidad: it.qty,
+      precioUni: it.precio,
+      codigo: it.id || null,
+    })),
+    condicionOperacion: 1,
+    pagos: [{ codigo: mapFormaPago(metodo), montoPago: Math.round(totalCompras * 100) / 100, referencia: null, plazo: null, periodo: null }],
+    receptor: {
+      tipoDocumento: receptor.tipoDocumento || '13', // 13=DUI, 36=NIT
+      numDocumento: receptor.numDocumento.replace(/[-\s]/g, ''),
+      nombre: receptor.nombre,
+      codActividad: receptor.codActividad || null,
+      descActividad: receptor.descActividad || null,
+      direccion: receptor.direccion || null,
+      telefono: receptor.telefono || null,
+      correo: receptor.correo || null,
+    },
+  }
+
+  const res = await fetch(`${DTE_BASE}/emit-sujeto-excluido`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': DTE_API_KEY,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const data = await res.json()
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || data.message || `DTE error ${res.status}`)
+  }
+  return data
+}
+
+/**
  * Emitir DTE según tipo
  * @returns {Object} { success, document_id, codigo_generacion, numero_control, estado, sello_recepcion, monto_total, monto_iva }
  */
 export async function emitDTE({ tipoDte, items, receptor, metodo }) {
   if (tipoDte === 'factura') return emitFactura({ items, receptor, metodo })
   if (tipoDte === 'ccf')     return emitCCF({ items, receptor, metodo })
+  if (tipoDte === 'se')      return emitSujetoExcluido({ items, receptor, metodo })
   // 'ticket' = sin DTE fiscal
   return null
 }

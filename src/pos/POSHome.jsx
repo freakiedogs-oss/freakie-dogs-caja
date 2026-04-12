@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
 
@@ -80,6 +80,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const [hasMesas,     setHasMesas]     = useState(false)
   const [filtro,       setFiltro]       = useState('todos')   // clave activa
   const [refreshKey,   setRefreshKey]   = useState(0)
+  const [mesaMenu,     setMesaMenu]     = useState(null)      // mesa con menú contextual
+  const longPressRef   = useRef(null)
 
   // ── Carga ──
   const load = useCallback(async () => {
@@ -150,7 +152,36 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
     return ['lista', 'entregada'].includes(c.estado) ? 'lista' : 'activa'
   }
 
+  // Long-press para mostrar menú contextual en mesas ocupadas
+  const handleMesaTouchStart = (mesa) => {
+    const c = cuentaPorMesa[String(mesa.numero)]
+    if (!c) return // solo mesas ocupadas
+    longPressRef.current = setTimeout(() => {
+      setMesaMenu(mesa)
+      longPressRef.current = null
+    }, 600)
+  }
+  const handleMesaTouchEnd = () => {
+    if (longPressRef.current) {
+      clearTimeout(longPressRef.current)
+      longPressRef.current = null
+    }
+  }
+
+  // Liberar mesa: cerrar cuenta atascada
+  const handleLiberarMesa = async (mesa) => {
+    const c = cuentaPorMesa[String(mesa.numero)]
+    if (!c) return
+    if (!confirm(`¿Liberar mesa ${mesa.numero}? La cuenta se cerrará como cobrada.`)) return
+    await db.from('pos_cuentas')
+      .update({ estado: 'cobrada', cobrada_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', c.id)
+    setMesaMenu(null)
+    setRefreshKey(k => k + 1)
+  }
+
   const handleMesaClick = (mesa) => {
+    if (mesaMenu) { setMesaMenu(null); return } // cerrar menú si está abierto
     const c = cuentaPorMesa[String(mesa.numero)]
     onStartOrder({ tipo: 'mesa', mesa_ref: String(mesa.numero), mesa_id: mesa.id, cuentaId: c?.id || null })
   }
@@ -246,11 +277,14 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                 const colors  = MESA_STATUS_COLORS[status]
                 const itemCnt = cuenta?.pos_cuenta_items?.length || 0
                 return (
+                  <div key={mesa.id} style={{ position: 'relative' }}>
                   <button
-                    key={mesa.id}
                     className="poshome-mesa-tile"
                     style={{ background: colors.bg, borderColor: colors.border }}
                     onClick={() => handleMesaClick(mesa)}
+                    onTouchStart={() => handleMesaTouchStart(mesa)}
+                    onTouchEnd={handleMesaTouchEnd}
+                    onContextMenu={e => { e.preventDefault(); if (cuenta) setMesaMenu(mesa) }}
                   >
                     <div className="poshome-mesa-num" style={{ color: colors.text }}>{mesa.numero}</div>
                     {status === 'libre' ? (
@@ -267,6 +301,24 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                       </>
                     )}
                   </button>
+                  {/* Menú contextual liberar mesa */}
+                  {mesaMenu?.id === mesa.id && cuenta && (
+                    <div style={{
+                      position: 'absolute', top: 4, right: 4, zIndex: 50,
+                      background: '#1a1a2e', border: '1px solid #e63946', borderRadius: 8,
+                      padding: '6px 0', minWidth: 140, boxShadow: '0 4px 20px rgba(0,0,0,.6)',
+                    }}>
+                      <button
+                        style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#f4a261', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
+                        onClick={() => handleLiberarMesa(mesa)}
+                      >🔓 Liberar mesa</button>
+                      <button
+                        style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#888', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
+                        onClick={() => setMesaMenu(null)}
+                      >✕ Cancelar</button>
+                    </div>
+                  )}
+                  </div>
                 )
               })}
             </div>

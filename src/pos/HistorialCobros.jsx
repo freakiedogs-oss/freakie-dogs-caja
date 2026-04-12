@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
 import { anularDTE } from './cajero/dteService'
+import NotaCreditoModal from './cajero/NotaCreditoModal'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -17,6 +18,7 @@ const TIPO_INFO = {
 const DTE_DISPLAY = {
   '01': { icon: '📄', label: 'Factura' },
   '03': { icon: '🏢', label: 'CCF' },
+  '14': { icon: '👤', label: 'Suj.Excl.' },
   null: { icon: '🧾', label: 'Ticket' },
 }
 
@@ -53,6 +55,7 @@ export default function HistorialCobros({ user, onBack }) {
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [ncCuenta, setNcCuenta] = useState(null)
 
   // Obtener hoy en zona horaria El Salvador
   const getToday = useCallback(() => {
@@ -376,6 +379,16 @@ export default function HistorialCobros({ user, onBack }) {
                         >
                           🖨 Reimprimir
                         </button>
+                        {cuenta.dte_uuid && (cuenta.dte_tipo === '01' || cuenta.dte_tipo === '03') && (
+                          <button
+                            className="historial-action-btn"
+                            onClick={() => setNcCuenta(cuenta)}
+                            title="Emitir Nota de Crédito contra este DTE"
+                            style={{ background: '#7f1d1d', borderColor: '#be123c' }}
+                          >
+                            📋 NC
+                          </button>
+                        )}
                         <button
                           className="historial-action-btn anular"
                           onClick={() => handleAnularDTE(cuenta)}
@@ -401,6 +414,9 @@ export default function HistorialCobros({ user, onBack }) {
         )}
 
       </div>
+
+      {/* ── Nota de Crédito Modal ── */}
+      {ncCuenta && <NotaCreditoModal cuenta={ncCuenta} onClose={() => setNcCuenta(null)} onSuccess={() => { setNcCuenta(null); load() }} />}
 
     </div>
   )
