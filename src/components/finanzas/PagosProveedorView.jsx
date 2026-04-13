@@ -19,6 +19,99 @@ function Badge({ status }) {
   return <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, background: s.bg, color: s.color, fontWeight: 700 }}>{s.label}</span>
 }
 
+// ─── OCR: Tesseract.js lazy-load desde CDN ─────────────────
+let _tesseractLoaded = false
+async function loadTesseract() {
+  if (_tesseractLoaded) return
+  if (!window.Tesseract) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+      s.onload = resolve
+      s.onerror = reject
+      document.head.appendChild(s)
+    })
+  }
+  _tesseractLoaded = true
+}
+
+// Meses en español para parsear fechas BAC
+const MESES_MAP = {
+  'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+  'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+  'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12',
+  'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04',
+  'may': '05', 'jun': '06', 'jul': '07', 'ago': '08',
+  'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12',
+}
+
+function parseBAC(text) {
+  const result = {}
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+
+  // Proveedor: línea después de "Cuenta destino" (nombre empresa)
+  const idxDest = lines.findIndex(l => /cuenta\s*destino/i.test(l))
+  if (idxDest >= 0) {
+    // Siguiente línea no-numérica después de "Cuenta destino"
+    for (let i = idxDest + 1; i < Math.min(idxDest + 3, lines.length); i++) {
+      if (lines[i] && !/^\d+$/.test(lines[i].replace(/\s/g, '')) && !/cuenta/i.test(lines[i])) {
+        result.proveedor_nombre = lines[i].replace(/[^A-Za-zÀ-ÿ\s.,&\-]/g, '').trim()
+        break
+      }
+    }
+  }
+
+  // Monto: "Monto debitado" o "$XXX.XX" o "Monto  $350.00"
+  const montoMatch = text.match(/monto\s*(?:debitado)?\s*\$?\s*([\d,]+\.?\d*)/i)
+    || text.match(/\$([\d,]+\.\d{2})/i)
+  if (montoMatch) {
+    result.monto = montoMatch[1].replace(/,/g, '')
+  }
+
+  // Fecha: "13 abril", "13 abr 2026", "13/04/2026"
+  const fechaMatch = text.match(/(\d{1,2})\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\.?\s*(\d{4})?/i)
+  if (fechaMatch) {
+    const day = fechaMatch[1].padStart(2, '0')
+    const mon = MESES_MAP[fechaMatch[2].toLowerCase()] || '01'
+    const year = fechaMatch[3] || new Date().getFullYear()
+    result.fecha_pago = `${year}-${mon}-${day}`
+  } else {
+    const fechaNum = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
+    if (fechaNum) result.fecha_pago = `${fechaNum[3]}-${fechaNum[2].padStart(2,'0')}-${fechaNum[1].padStart(2,'0')}`
+  }
+
+  // N° comprobante: número largo (8+ dígitos) después de "comprobante"
+  const compMatch = text.match(/comprobante\s*[:\s]*(\d{6,})/i)
+    || text.match(/\b(\d{8,12})\b/)
+  if (compMatch) result.referencia_bancaria = compMatch[1]
+
+  // CCF / DTE: "CCF 2347" o "CCF-2347" o "DTE 2347"
+  const ccfMatches = text.match(/(?:CCF|DTE|CRF)[\s\-#]*(\d{3,6})/gi)
+  if (ccfMatches) {
+    const codes = ccfMatches.map(m => {
+      const n = m.match(/(\d{3,6})/)
+      return n ? n[1].slice(-4) : null
+    }).filter(Boolean)
+    if (codes.length) result.dtes_input = codes.join(', ')
+  }
+
+  // Descripción completa como nota si incluye "CCF" o texto útil
+  const descIdx = lines.findIndex(l => /descripci[oó]n/i.test(l))
+  if (descIdx >= 0 && lines[descIdx + 1]) {
+    result.descripcion_raw = lines[descIdx + 1]
+  }
+
+  return result
+}
+
+async function ocrParseImage(file) {
+  await loadTesseract()
+  const { data: { text } } = await window.Tesseract.recognize(file, 'spa', {
+    logger: () => {},
+  })
+  return parseBAC(text)
+}
+
 // ─── Storage upload helper ─────────────────────────────────
 async function uploadFile(file) {
   const ext = file.name.split('.').pop()
@@ -52,7 +145,7 @@ function SubirPagos({ user, proveedores, onSaved }) {
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef()
 
-  // Add files from input or drop
+  // Add files from input or drop — auto-OCR each one
   const addFiles = (files) => {
     const newEntries = Array.from(files).map(f => ({
       file: f,
@@ -61,11 +154,34 @@ function SubirPagos({ user, proveedores, onSaved }) {
       monto: '',
       fecha_pago: today(),
       referencia_bancaria: '',
-      dtes_input: '',  // "2347, 2348"
+      dtes_input: '',
       notas: '',
       metodo_pago: 'transferencia',
+      ocr_status: 'scanning', // scanning | done | error
     }))
-    setEntries(prev => [...prev, ...newEntries])
+    setEntries(prev => {
+      const startIdx = prev.length
+      // Launch OCR for each new file
+      newEntries.forEach((entry, j) => {
+        ocrParseImage(entry.file).then(parsed => {
+          setEntries(cur => cur.map((e, idx) => {
+            if (idx !== startIdx + j) return e
+            return {
+              ...e,
+              proveedor_nombre: parsed.proveedor_nombre || e.proveedor_nombre,
+              monto: parsed.monto || e.monto,
+              fecha_pago: parsed.fecha_pago || e.fecha_pago,
+              referencia_bancaria: parsed.referencia_bancaria || e.referencia_bancaria,
+              dtes_input: parsed.dtes_input || e.dtes_input,
+              ocr_status: 'done',
+            }
+          }))
+        }).catch(() => {
+          setEntries(cur => cur.map((e, idx) => idx === startIdx + j ? { ...e, ocr_status: 'error' } : e))
+        })
+      })
+      return [...prev, ...newEntries]
+    })
   }
 
   const handleDrop = (e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }
@@ -187,11 +303,37 @@ function SubirPagos({ user, proveedores, onSaved }) {
           }}>✕</button>
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {/* Thumbnail */}
-            <img src={entry.preview} alt="comprobante" style={{
-              width: 100, height: 100, objectFit: 'cover', borderRadius: 8, border: '1px solid #333',
-              cursor: 'pointer',
-            }} onClick={() => window.open(entry.preview, '_blank')} />
+            {/* Thumbnail + OCR status */}
+            <div style={{ position: 'relative', width: 100 }}>
+              <img src={entry.preview} alt="comprobante" style={{
+                width: 100, height: 100, objectFit: 'cover', borderRadius: 8, border: '1px solid #333',
+                cursor: 'pointer',
+              }} onClick={() => window.open(entry.preview, '_blank')} />
+              {entry.ocr_status === 'scanning' && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  background: 'rgba(37,99,235,0.85)', color: '#fff', fontSize: 10,
+                  textAlign: 'center', padding: '3px 0', borderRadius: '0 0 8px 8px',
+                  fontWeight: 700, animation: 'pulse 1.5s infinite',
+                }}>🔍 Leyendo...</div>
+              )}
+              {entry.ocr_status === 'done' && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  background: 'rgba(22,163,106,0.85)', color: '#fff', fontSize: 10,
+                  textAlign: 'center', padding: '3px 0', borderRadius: '0 0 8px 8px',
+                  fontWeight: 700,
+                }}>✅ Leído</div>
+              )}
+              {entry.ocr_status === 'error' && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  background: 'rgba(220,38,38,0.85)', color: '#fff', fontSize: 10,
+                  textAlign: 'center', padding: '3px 0', borderRadius: '0 0 8px 8px',
+                  fontWeight: 700,
+                }}>⚠️ Manual</div>
+              )}
+            </div>
 
             {/* Fields */}
             <div style={{ flex: 1, minWidth: 200, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
