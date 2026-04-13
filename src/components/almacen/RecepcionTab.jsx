@@ -18,8 +18,8 @@ export default function RecepcionTab({user,show}){
     setLoading(true);
     const {data}=await db.from('recepciones')
       .select('*')
-      .in('estado',['pendiente','en_proceso'])
-      .eq('tipo_recepcion','bodega')
+      .in('estado',['pendiente','en_proceso','por_confirmar'])
+      .eq('tipo_recepcion','bodega_proveedor')
       .order('created_at',{ascending:false});
     setReceps(data||[]);
     const {data:suc}=await db.from('sucursales').select('id,nombre,store_code').eq('activa',true);
@@ -38,24 +38,63 @@ export default function RecepcionTab({user,show}){
         + Nueva Recepción de Proveedor
       </button>
 
-      <div className="sec-title">Pendientes de Confirmar</div>
+      {/* Auto-recepciones desde DTE */}
+      {(()=>{
+        const autoReceps=receps.filter(r=>r.origen==='auto_dte');
+        const manualReceps=receps.filter(r=>r.origen!=='auto_dte');
+        return <>
+          {autoReceps.length>0&&(
+            <>
+              <div style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',border:'1px solid #e6394640',borderRadius:12,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
+                <span style={{fontSize:24}}>📨</span>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,color:'#fb923c',fontSize:14}}>
+                    {autoReceps.length} recepción{autoReceps.length>1?'es':''} desde DTE
+                  </div>
+                  <div style={{fontSize:12,color:'#999',marginTop:2}}>Pre-cargadas del correo — solo confirma y toma foto</div>
+                </div>
+              </div>
+              {autoReceps.map(r=>(
+                <div key={r.id} className="card" style={{cursor:'pointer',borderLeft:'3px solid #fb923c'}} onClick={()=>{setSel(r);setView('detalle');}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:15}}>{r.proveedor||'Proveedor sin nombre'}</div>
+                      <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(r.fecha)} {r.monto_estimado?'· $'+Number(r.monto_estimado).toFixed(2):''}</div>
+                    </div>
+                    <span style={{background:'#fb923c20',color:'#fb923c',fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:6}}>POR CONFIRMAR</span>
+                  </div>
+                  {r.dte_codigo&&<div style={{fontSize:12,color:'#666',marginTop:2}}>DTE: ...{r.dte_codigo}</div>}
+                  <div style={{marginTop:10,fontSize:13,color:'#fb923c',fontWeight:600}}>📷 Toma foto y confirma →</div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {manualReceps.length>0&&(
+            <>
+              <div className="sec-title">Otras Pendientes</div>
+              {manualReceps.map(r=>(
+                <div key={r.id} className="card" style={{cursor:'pointer'}} onClick={()=>{setSel(r);setView('detalle');}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:15}}>{r.proveedor||'Proveedor sin nombre'}</div>
+                      <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(r.fecha)}</div>
+                    </div>
+                    <Badge estado={r.estado}/>
+                  </div>
+                  {r.notas&&<div style={{fontSize:13,color:'#888',marginTop:4}}>{r.notas}</div>}
+                  <div style={{marginTop:10,fontSize:13,color:'#e63946',fontWeight:600}}>Tap para confirmar →</div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {receps.length===0&&!loading&&(
+            <div className="empty"><div className="empty-icon">📦</div><div className="empty-text">No hay recepciones pendientes</div></div>
+          )}
+        </>;
+      })()}
       {loading&&<div style={{textAlign:'center',padding:20}}><div className="spin" style={{width:28,height:28,margin:'0 auto'}}/></div>}
-      {!loading&&receps.length===0&&(
-        <div className="empty"><div className="empty-icon">📦</div><div className="empty-text">No hay recepciones pendientes</div></div>
-      )}
-      {receps.map(r=>(
-        <div key={r.id} className="card" style={{cursor:'pointer'}} onClick={()=>{setSel(r);setView('detalle');}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-            <div>
-              <div style={{fontWeight:700,fontSize:15}}>{r.proveedor||'Proveedor sin nombre'}</div>
-              <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(r.fecha)}</div>
-            </div>
-            <Badge estado={r.estado}/>
-          </div>
-          {r.notas&&<div style={{fontSize:13,color:'#888',marginTop:4}}>{r.notas}</div>}
-          <div style={{marginTop:10,fontSize:13,color:'#e63946',fontWeight:600}}>Tap para confirmar →</div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -455,23 +494,50 @@ function RecepcionDetalle({rec,user,show,onBack}){
       }
       // Actualizar recepción
       const hasDiff=items.some(it=>Math.abs(n(it.qty_input)-n(it.cantidad_esperada))>0.01);
-      await db.from('recepciones').update({
-        estado:hasDiff?'con_diferencias':'completada',
+      const updatePayload={
+        estado:hasDiff?'con_diferencias':'verificada',
         foto_dte_url:fotoDbUrl,
         updated_at:new Date().toISOString(),
-      }).eq('id',rec.id);
+      };
+      // Si era auto_dte por_confirmar, asignar recibido_por al usuario que confirma
+      if(rec.estado==='por_confirmar'){
+        updatePayload.recibido_por=user.id;
+      }
+      await db.from('recepciones').update(updatePayload).eq('id',rec.id);
 
-      // Actualizar inventario (upsert stock Casa Matriz)
+      // Si es auto_dte, cruzar el DTE como confirmado
+      if(rec.compras_dte_id){
+        await db.from('compras_dte').update({
+          cruzado:true,
+          recepcion_id:rec.id,
+          recepcion_candidata_id:null,
+          updated_at:new Date().toISOString()
+        }).eq('id',rec.compras_dte_id);
+      }
+
+      // Actualizar inventario (sumar stock Casa Matriz)
       const cmId=rec.sucursal_destino_id;
       for(const it of items){
         if(it.producto_id){
-          await db.from('inventario').upsert({
-            sucursal_id:cmId, producto_id:it.producto_id,
-            stock_actual:n(it.qty_input), ultima_actualizacion:new Date().toISOString()
-          },{onConflict:'sucursal_id,producto_id',ignoreDuplicates:false});
+          const qty=n(it.qty_input);
+          const {data:existing}=await db.from('inventario')
+            .select('id,stock_actual')
+            .eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
+          if(existing){
+            await db.from('inventario').update({
+              stock_actual:n(existing.stock_actual)+qty,
+              ultima_actualizacion:new Date().toISOString()
+            }).eq('id',existing.id);
+          }else{
+            await db.from('inventario').insert({
+              producto_id:it.producto_id, sucursal_id:cmId,
+              stock_actual:qty, stock_minimo:0, stock_maximo:999,
+              ultima_actualizacion:new Date().toISOString()
+            });
+          }
         }
       }
-      show(hasDiff?'⚠️ Recepción confirmada con diferencias':'✅ Recepción completada');
+      show(hasDiff?'⚠️ Recepción confirmada con diferencias':'✅ Recepción confirmada');
       onBack();
     }catch(e){ show('❌ '+e.message); }
     setSaving(false);
@@ -488,6 +554,21 @@ function RecepcionDetalle({rec,user,show,onBack}){
         <Badge estado={rec.estado}/>
       </div>
       <div style={{padding:'16px 16px 100px'}}>
+        {/* Banner auto-recepción DTE */}
+        {rec.origen==='auto_dte'&&(
+          <div style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',border:'1px solid #fb923c40',borderRadius:12,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
+            <span style={{fontSize:24}}>📨</span>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,color:'#fb923c',fontSize:14}}>Recepción pre-cargada desde DTE</div>
+              <div style={{fontSize:12,color:'#999',marginTop:2}}>
+                {rec.monto_estimado?`Monto: $${Number(rec.monto_estimado).toFixed(2)} · `:''}
+                {rec.dte_codigo?`DTE: ...${rec.dte_codigo}`:''}
+              </div>
+              <div style={{fontSize:12,color:'#4ade80',marginTop:4}}>Verifica cantidades, toma foto y confirma</div>
+            </div>
+          </div>
+        )}
+
         {/* Foto DTE */}
         <div className="field">
           <label>Foto del DTE</label>
@@ -507,6 +588,7 @@ function RecepcionDetalle({rec,user,show,onBack}){
             <div style={{fontWeight:600,fontSize:14,marginBottom:8}}>{it.descripcion||`Ítem ${i+1}`}</div>
             <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#666',marginBottom:10}}>
               <span>Esperado: <strong style={{color:'#f0f0f0'}}>{it.cantidad_esperada} {it.unidad||''}</strong></span>
+              {it.precio_unitario>0&&<span>Precio: <strong style={{color:'#4ade80'}}>${Number(it.precio_unitario).toFixed(2)}</strong></span>}
             </div>
             <div>
               <label>Cantidad recibida</label>
