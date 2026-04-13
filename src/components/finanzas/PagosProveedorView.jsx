@@ -188,20 +188,33 @@ function SubirPagos({ user, proveedores, onSaved }) {
   const updateEntry = (i, field, val) => setEntries(prev => prev.map((e, idx) => idx === i ? { ...e, [field]: val } : e))
   const removeEntry = (i) => setEntries(prev => { URL.revokeObjectURL(prev[i].preview); return prev.filter((_, idx) => idx !== i) })
 
-  // Match DTEs by last 4 digits + proveedor
+  // Match DTEs by last N digits of numero_control (fuzzy, no proveedor filter)
   const matchDTEs = async (digits4, provNombre) => {
     if (!digits4 || digits4.length < 3) return []
     const codes = digits4.split(/[,;\s]+/).map(c => c.trim()).filter(Boolean)
     const results = []
     for (const code of codes) {
+      // Search by numero_control only — more reliable than OCR proveedor name
       const { data } = await db.from('compras_dte')
         .select('id, numero_control, monto_total, fecha_emision, estado_pago, proveedor_nombre')
-        .ilike('proveedor_nombre', `%${provNombre.split(' ')[0]}%`)
         .like('numero_control', `%${code}`)
-        .limit(5)
+        .neq('estado_pago', 'pagado')
+        .order('fecha_emision', { ascending: false })
+        .limit(10)
       if (data) results.push(...data)
     }
-    return results
+    // Deduplicate
+    const unique = [...new Map(results.map(r => [r.id, r])).values()]
+    // Score: prefer matches where proveedor partially matches OCR text
+    const provFirst = (provNombre || '').split(/[\s,]+/)[0]?.toLowerCase() || ''
+    if (provFirst.length >= 3) {
+      unique.sort((a, b) => {
+        const aMatch = a.proveedor_nombre?.toLowerCase().includes(provFirst) ? 1 : 0
+        const bMatch = b.proveedor_nombre?.toLowerCase().includes(provFirst) ? 1 : 0
+        return bMatch - aMatch // proveedor matches first
+      })
+    }
+    return unique
   }
 
   // Save all entries
@@ -227,17 +240,38 @@ function SubirPagos({ user, proveedores, onSaved }) {
         }).select().single()
         if (pErr) throw pErr
 
-        // 3) Try matching DTEs
-        if (entry.dtes_input && entry.proveedor_nombre) {
-          const matches = await matchDTEs(entry.dtes_input, entry.proveedor_nombre)
-          if (matches.length > 0) {
-            // Distribute monto evenly if multiple, or full if single
-            const montoTotal = parseFloat(entry.monto) || 0
-            const perDTE = matches.length > 0 ? montoTotal / matches.length : montoTotal
-            const apps = matches.map(m => ({
+        // 3) Try auto-matching DTEs by last digits
+        if (entry.dtes_input) {
+          const allMatches = await matchDTEs(entry.dtes_input, entry.proveedor_nombre)
+          const montoTotal = parseFloat(entry.monto) || 0
+
+          // Per CCF code entered, find best match
+          const codes = entry.dtes_input.split(/[,;\s]+/).map(c => c.trim()).filter(Boolean)
+          const toApply = []
+
+          for (const code of codes) {
+            // Find matches for this specific code
+            const codeMatches = allMatches.filter(m => m.numero_control?.endsWith(code))
+
+            if (codeMatches.length === 1 && Math.abs(Number(codeMatches[0].monto_total) - montoTotal) < 0.50) {
+              // Unique match + monto coincide → apply
+              toApply.push(codeMatches[0])
+            } else if (codeMatches.length > 1) {
+              // Multiple matches: only auto-apply if one has exact monto
+              const exactMonto = codeMatches.find(m => Math.abs(Number(m.monto_total) - montoTotal) < 0.50)
+              if (exactMonto) toApply.push(exactMonto)
+              // Otherwise → pendiente, user resolves manually
+            }
+            // 0 matches or no monto match → pendiente
+          }
+
+          if (toApply.length > 0) {
+            // Distribute monto across matched DTEs
+            const perDTE = toApply.length > 1 ? montoTotal / toApply.length : montoTotal
+            const apps = toApply.map(m => ({
               pago_id: pago.id,
               compras_dte_id: m.id,
-              monto_aplicado: Math.min(perDTE, m.monto_total),
+              monto_aplicado: Math.min(perDTE, Number(m.monto_total)),
             }))
             await db.from('pagos_proveedor_aplicacion').insert(apps)
           }
