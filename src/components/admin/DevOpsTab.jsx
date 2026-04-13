@@ -243,7 +243,7 @@ export default function DevOpsTab() {
       const sevenAgo = daysAgo(7);
       const { data: serfinsa, error } = await db
         .from('serfinsa_detalle_diario')
-        .select('fecha, terminal_codigo, valor_operaciones')
+        .select('fecha, sucursal_nombre, valor_operaciones')
         .gte('fecha', sevenAgo)
         .order('fecha', { ascending: true });
 
@@ -277,7 +277,7 @@ export default function DevOpsTab() {
       }
 
       const total = latestData.reduce((s, r) => s + (parseFloat(r.valor_operaciones) || 0), 0);
-      const detail = `Terminales ${latestLabel}: ${latestData.length}\nMonto total: $${total.toFixed(2)}\n\nDetalle:\n${latestData.map(r => `  ${r.terminal_codigo}: $${parseFloat(r.valor_operaciones || 0).toFixed(2)}`).join('\n') || '  (sin datos)'}`;
+      const detail = `Terminales ${latestLabel}: ${latestData.length}\nMonto total: $${total.toFixed(2)}\n\nDetalle:\n${latestData.map(r => `  ${r.sucursal_nombre}: $${parseFloat(r.valor_operaciones || 0).toFixed(2)}`).join('\n') || '  (sin datos)'}`;
 
       setSerfinsaKPI({ status, summary, detail, spark });
     } catch (err) {
@@ -371,13 +371,13 @@ export default function DevOpsTab() {
       try {
         const { data: lastCompra } = await db
           .from('compras')
-          .select('created_at, proveedor')
+          .select('created_at, proveedor_nombre')
           .order('created_at', { ascending: false })
           .limit(1);
         if (lastCompra && lastCompra.length > 0) {
           const ago = Math.round((Date.now() - new Date(lastCompra[0].created_at).getTime()) / 3600000);
           const isStale = ago > 26; // más de 26h sin DTEs nuevos = alerta
-          details.push(`${isStale ? '🟡' : '🟢'} Pipeline DTE GAS: último hace ${ago}h (${lastCompra[0].proveedor})`);
+          details.push(`${isStale ? '🟡' : '🟢'} Pipeline DTE GAS: último hace ${ago}h (${lastCompra[0].proveedor_nombre})`);
           if (isStale) issues++;
         } else {
           details.push('🔴 Pipeline DTE GAS: sin datos');
