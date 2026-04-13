@@ -36,8 +36,7 @@ export default function DashboardEjecutivo({user,onBack}){
           .gte('fecha',d14Str)
           .order('fecha',{ascending:true});
 
-        // 3. Compras del mes
-        const mesStr=`${inicioMes.getFullYear()}-${String(inicioMes.getMonth()+1).padStart(2,'0')}-01`;
+        // 3. Compras del mes (reusa mesStr de arriba)
         const {data:comp}=await db.from('compras').select('total').gte('fecha_emision',mesStr);
 
         // 4. Préstamos
