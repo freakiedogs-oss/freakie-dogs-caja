@@ -39,6 +39,7 @@ import RentabilidadView from './components/admin/RentabilidadView'
 import FinanzasGastosView from './components/finanzas/FinanzasGastosView'
 import FinanzasDashboard from './components/finanzas/FinanzasDashboard'
 import SuperAdminView from './components/admin/SuperAdminView'
+import PagosProveedorView from './components/finanzas/PagosProveedorView'
 import { useToast } from './hooks/useToast'
 import { STORES } from './config'
 
@@ -187,6 +188,8 @@ export default function App() {
         return <FinanzasGastosView user={user} />
       case 'finanzas-dashboard':
         return <FinanzasDashboard user={user} />
+      case 'pagos-proveedor':
+        return <PagosProveedorView user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
       case 'ventas-dash':
