@@ -202,7 +202,7 @@ function buildPnL(ventas, gastos, conIva) {
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
   const [ventasRes, gastos] = await Promise.all([
-    db.from('ventas_diarias').select('store_code, total_ventas_quanto, fecha').gte('fecha', desde).lt('fecha', hasta),
+    db.from('v_ventas_unificadas').select('store_code, total_ventas_quanto, fecha, fuente').gte('fecha', desde).lt('fecha', hasta),
     fetchAll('v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
       q => q.gte('fecha', desde).lt('fecha', hasta))

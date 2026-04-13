@@ -21,17 +21,19 @@ export default function DashboardEjecutivo({user,onBack}){
   useEffect(()=>{
     const load=async()=>{
       try{
-        // 1. Ventas mes actual y hoy por sucursal
-        const inicioMes=new Date(); inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
-        const {data:vtMes}=await db.from('quanto_transacciones')
-          .select('store_code,total,fecha')
-          .gte('fecha',inicioMes.toISOString());
+        // 1. Ventas mes actual y hoy por sucursal (MATVIEW unificada: quanto > cierre)
+        const inicioMes=new Date(); inicioMes.setDate(1);
+        const mesStr=inicioMes.toISOString().split('T')[0];
+        const {data:vtMes}=await db.from('v_ventas_unificadas')
+          .select('store_code,total_ventas_quanto,fecha')
+          .gte('fecha',mesStr);
 
-        // 2. Ventas tendencia últimos 14 días (todos)
-        const d14=new Date(); d14.setDate(d14.getDate()-14); d14.setHours(0,0,0,0);
-        const {data:vtTend}=await db.from('quanto_transacciones')
-          .select('fecha,total')
-          .gte('fecha',d14.toISOString())
+        // 2. Ventas tendencia últimos 14 días (MATVIEW unificada)
+        const d14=new Date(); d14.setDate(d14.getDate()-14);
+        const d14Str=d14.toISOString().split('T')[0];
+        const {data:vtTend}=await db.from('v_ventas_unificadas')
+          .select('fecha,total_ventas_quanto')
+          .gte('fecha',d14Str)
           .order('fecha',{ascending:true});
 
         // 3. Compras del mes
@@ -48,18 +50,17 @@ export default function DashboardEjecutivo({user,onBack}){
         (vtMes||[]).forEach(r=>{
           const sc=r.store_code;
           if(!porSuc[sc]) porSuc[sc]={mes:0,hoy:0};
-          porSuc[sc].mes+=Number(r.total||0);
-          const fStr=new Date(r.fecha).toLocaleDateString('en-CA',{timeZone:'America/El_Salvador'});
-          if(fStr===hoyStr) porSuc[sc].hoy+=Number(r.total||0);
-          totalMes+=Number(r.total||0);
-          if(fStr===hoyStr) totalHoy+=Number(r.total||0);
+          const v=Number(r.total_ventas_quanto||0);
+          porSuc[sc].mes+=v;
+          if(r.fecha===hoyStr) porSuc[sc].hoy+=v;
+          totalMes+=v;
+          if(r.fecha===hoyStr) totalHoy+=v;
         });
 
-        // Procesar tendencia por día (total cadena)
+        // Procesar tendencia por día (total cadena) — MATVIEW ya agrupa por fecha
         const tendMap={};
         (vtTend||[]).forEach(r=>{
-          const d=new Date(r.fecha).toLocaleDateString('en-CA',{timeZone:'America/El_Salvador'});
-          tendMap[d]=(tendMap[d]||0)+Number(r.total||0);
+          tendMap[r.fecha]=(tendMap[r.fecha]||0)+Number(r.total_ventas_quanto||0);
         });
         const tendArr=Object.entries(tendMap).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14);
 

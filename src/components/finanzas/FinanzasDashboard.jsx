@@ -239,8 +239,12 @@ export default function FinanzasDashboard({ user }) {
     setLoading(true)
     try {
       // 1. Monthly sales (~500 rows, fits in 1 page)
-      const ventas = await fetchAll('ventas_diarias',
-        'fecha, store_code, total_ventas_quanto, efectivo_quanto, tarjeta_quanto, ventas_transferencia, ventas_link_pago, total_egresos, total_ingresos',
+      const ventas = await fetchAll('v_ventas_unificadas',
+        'fecha, store_code, total_ventas_quanto, efectivo_quanto, tarjeta_quanto, otros_quanto, fuente',
+        q => q.gte('fecha', '2026-01-01').order('fecha'))
+      // Egresos/ingresos siguen viniendo de ventas_diarias (datos operacionales de cierre)
+      const cierresOp = await fetchAll('ventas_diarias',
+        'fecha, store_code, total_egresos, total_ingresos',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
       // 2. GASTOS CONSOLIDADOS — une compras_dte + egresos_cierre + compras_sin_dte + descuadres
@@ -259,6 +263,21 @@ export default function FinanzasDashboard({ user }) {
         .select('nombre_dte, nombre_normalizado, categoria, subcategoria, sucursal_default')
         .eq('activo', true)
       if (catErr) console.warn('catalogo_contable:', catErr.message)
+
+      // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
+      const egMap = {}
+      cierresOp.forEach(c => {
+        const k = `${c.fecha}|${c.store_code}`
+        if (!egMap[k]) egMap[k] = { total_egresos: 0, total_ingresos: 0 }
+        egMap[k].total_egresos += parseFloat(c.total_egresos) || 0
+        egMap[k].total_ingresos += parseFloat(c.total_ingresos) || 0
+      })
+      ventas.forEach(v => {
+        const k = `${v.fecha}|${v.store_code}`
+        const eg = egMap[k]
+        v.total_egresos = eg?.total_egresos || 0
+        v.total_ingresos = eg?.total_ingresos || 0
+      })
 
       setData2026({ ventas, gastos, planillas, catalogo: catData || [] })
     } catch (e) {
@@ -282,7 +301,7 @@ export default function FinanzasDashboard({ user }) {
       const m = v.fecha?.substring(0, 7) // "2026-01"
       if (!m) return
       if (!monthMap[m]) monthMap[m] = initMonth()
-      const bruto = parseFloat(v.total_ventas_quanto) || ((v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0))
+      const bruto = parseFloat(v.total_ventas_quanto) || ((parseFloat(v.efectivo_quanto) || 0) + (parseFloat(v.tarjeta_quanto) || 0) + (parseFloat(v.otros_quanto) || 0))
       const total = conIva ? bruto : bruto / 1.13
       monthMap[m].ventas += total
       monthMap[m].egresos += (v.total_egresos || 0)
