@@ -204,7 +204,7 @@ export default function RentabilidadView({ user }) {
             P&L operativo · Gastos consolidados + ventas diarias
             {datos && (
               <span style={{ display: 'block', fontSize: 11, marginTop: 2, color: '#059669' }}>
-                {datos.totalRegistros} registros · DTEs ${fmt(datos.origenStats?.compras_dte || 0)}
+                {datos.totalRegistros} registros · DTEs {fmt(datos.origenStats?.compras_dte || 0)}
                 {(datos.origenStats?.egresos_cierre || 0) > 0 && ` + Egresos caja ${fmt(datos.origenStats.egresos_cierre)}`}
                 {(datos.origenStats?.descuadre || 0) > 0 && ` + Descuadres ${fmt(datos.origenStats.descuadre)}`}
               </span>
@@ -269,62 +269,62 @@ export default function RentabilidadView({ user }) {
 
               {/* P&L table */}
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff', borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E7EB' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, background: '#fff', borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E7EB', minWidth: 700 }}>
                   <thead>
                     <tr style={{ background: '#F9FAFB' }}>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: '#374151', borderBottom: '2px solid #E5E7EB' }}>Concepto</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: '#374151', borderBottom: '2px solid #E5E7EB', minWidth: 160, whiteSpace: 'nowrap' }}>Concepto</th>
                       {sucursales.map(s => (
-                        <th key={s} style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700, color: '#374151', borderBottom: '2px solid #E5E7EB', minWidth: 90 }}>
+                        <th key={s} style={{ padding: '10px 6px', textAlign: 'right', fontWeight: 700, color: '#374151', borderBottom: '2px solid #E5E7EB', fontSize: 11 }}>
                           {STORES[s]}
                         </th>
                       ))}
-                      <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#1D4ED8', borderBottom: '2px solid #E5E7EB' }}>Total</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: '#1D4ED8', borderBottom: '2px solid #E5E7EB' }}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {/* Ventas */}
                     <tr style={{ background: '#ECFDF5' }}>
-                      <td style={{ padding: '8px 14px', fontWeight: 700, color: '#065F46' }}>Ventas</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: '#065F46', whiteSpace: 'nowrap' }}>Ventas</td>
                       {sucursales.map(s => (
-                        <td key={s} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#065F46' }}>
+                        <td key={s} style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#065F46', fontSize: 12 }}>
                           {fmt(datos.pnl[s]?.venta)}
                         </td>
                       ))}
-                      <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 800, color: '#065F46' }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#065F46' }}>
                         {fmt(datos.totalVentasGlobal)}
                       </td>
                     </tr>
 
                     {/* COGS */}
                     <tr>
-                      <td style={{ padding: '8px 14px', color: '#DC2626' }}>(-) Costo Insumos (COGS)</td>
+                      <td style={{ padding: '8px 12px', color: '#DC2626', whiteSpace: 'nowrap' }}>(-) Costo Insumos</td>
                       {sucursales.map(s => (
-                        <td key={s} style={{ padding: '8px 10px', textAlign: 'right', color: '#DC2626' }}>
+                        <td key={s} style={{ padding: '8px 6px', textAlign: 'right', color: '#DC2626', fontSize: 12 }}>
                           {fmt(datos.pnl[s]?.cogs)}
                         </td>
                       ))}
-                      <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 600, color: '#DC2626' }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600, color: '#DC2626' }}>
                         {fmt(sucursales.reduce((sum, s) => sum + n(datos.pnl[s]?.cogs), 0))}
                       </td>
                     </tr>
 
                     {/* Utilidad Bruta */}
                     <tr style={{ background: '#F0FDF4', borderTop: '2px solid #86EFAC' }}>
-                      <td style={{ padding: '8px 14px', fontWeight: 700, color: '#166534' }}>= Utilidad Bruta</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: '#166534', whiteSpace: 'nowrap' }}>= Utilidad Bruta</td>
                       {sucursales.map(s => (
-                        <td key={s} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#166534' }}>
+                        <td key={s} style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#166534', fontSize: 12 }}>
                           {fmt(datos.pnl[s]?.utilidadBruta)}
                           <div style={{ fontSize: 10, color: '#6B7280' }}>{datos.pnl[s]?.margenBruto.toFixed(1)}%</div>
                         </td>
                       ))}
-                      <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>
                         {fmt(sucursales.reduce((sum, s) => sum + n(datos.pnl[s]?.utilidadBruta), 0))}
                       </td>
                     </tr>
 
                     {/* Gastos Locales */}
                     <tr>
-                      <td style={{ padding: '8px 14px', color: '#92400E', paddingLeft: 24 }}>Alquiler / Luz / Agua</td>
+                      <td style={{ padding: '8px 12px', color: '#92400E', paddingLeft: 20, whiteSpace: 'nowrap' }}>Alquiler / Luz / Agua</td>
                       {sucursales.map(s => (
                         <td key={s} style={{ padding: '8px 10px', textAlign: 'right', color: '#92400E' }}>
                           {fmt(datos.pnl[s]?.gastosLocales)}
@@ -337,43 +337,43 @@ export default function RentabilidadView({ user }) {
 
                     {/* Gastos Venta */}
                     <tr>
-                      <td style={{ padding: '8px 14px', color: '#92400E', paddingLeft: 24 }}>Gastos Venta (POS/PEYA/Mktg)</td>
+                      <td style={{ padding: '8px 12px', color: '#92400E', paddingLeft: 20, whiteSpace: 'nowrap' }}>Gastos Venta</td>
                       {sucursales.map(s => (
-                        <td key={s} style={{ padding: '8px 10px', textAlign: 'right', color: '#92400E' }}>
+                        <td key={s} style={{ padding: '8px 6px', textAlign: 'right', color: '#92400E', fontSize: 12 }}>
                           {fmt(datos.pnl[s]?.gastosVenta)}
                         </td>
                       ))}
-                      <td style={{ padding: '8px 14px', textAlign: 'right', color: '#92400E', fontWeight: 600 }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: '#92400E', fontWeight: 600 }}>
                         {fmt(sucursales.reduce((sum, s) => sum + n(datos.pnl[s]?.gastosVenta), 0))}
                       </td>
                     </tr>
 
                     {/* Gastos Admin */}
                     <tr>
-                      <td style={{ padding: '8px 14px', color: '#92400E', paddingLeft: 24 }}>Gastos Admin (prorrateados)</td>
+                      <td style={{ padding: '8px 12px', color: '#92400E', paddingLeft: 20, whiteSpace: 'nowrap' }}>Gastos Admin</td>
                       {sucursales.map(s => (
-                        <td key={s} style={{ padding: '8px 10px', textAlign: 'right', color: '#92400E' }}>
+                        <td key={s} style={{ padding: '8px 6px', textAlign: 'right', color: '#92400E', fontSize: 12 }}>
                           {fmt(datos.pnl[s]?.gastosAdmin)}
                         </td>
                       ))}
-                      <td style={{ padding: '8px 14px', textAlign: 'right', color: '#92400E', fontWeight: 600 }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', color: '#92400E', fontWeight: 600 }}>
                         {fmt(sucursales.reduce((sum, s) => sum + n(datos.pnl[s]?.gastosAdmin), 0))}
                       </td>
                     </tr>
 
                     {/* Utilidad Operativa */}
                     <tr style={{ background: '#EFF6FF', borderTop: '2px solid #93C5FD' }}>
-                      <td style={{ padding: '10px 14px', fontWeight: 800, color: '#1E40AF' }}>= Utilidad Operativa</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 800, color: '#1E40AF', whiteSpace: 'nowrap' }}>= Utilidad Operativa</td>
                       {sucursales.map(s => {
                         const uo = datos.pnl[s]?.utilidadOperativa || 0
                         return (
-                          <td key={s} style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: uo >= 0 ? '#166534' : '#DC2626' }}>
+                          <td key={s} style={{ padding: '10px 6px', textAlign: 'right', fontWeight: 800, color: uo >= 0 ? '#166534' : '#DC2626', fontSize: 12 }}>
                             {fmt(uo)}
                             <div style={{ fontSize: 10, color: '#6B7280' }}>{datos.pnl[s]?.margenOperativo.toFixed(1)}%</div>
                           </td>
                         )
                       })}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#1E40AF' }}>
+                      <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: '#1E40AF' }}>
                         {fmt(sucursales.reduce((sum, s) => sum + n(datos.pnl[s]?.utilidadOperativa), 0))}
                       </td>
                     </tr>
@@ -405,71 +405,97 @@ export default function RentabilidadView({ user }) {
           )}
 
           {/* ===== TAB: DETALLE POR CATEGORÍA ===== */}
-          {vista === 'detalle' && (
-            <div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, background: '#fff', borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E7EB' }}>
-                  <thead>
-                    <tr style={{ background: '#F9FAFB' }}>
-                      <th style={{ padding: '8px 14px', textAlign: 'left', fontWeight: 700, borderBottom: '2px solid #E5E7EB' }}>Categoría</th>
-                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, borderBottom: '2px solid #E5E7EB' }}>Grupo P&L</th>
-                      {sucursales.map(s => (
-                        <th key={s} style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700, borderBottom: '2px solid #E5E7EB', fontSize: 11 }}>
-                          {STORES[s]}
-                        </th>
-                      ))}
-                      <th style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700, borderBottom: '2px solid #E5E7EB', fontSize: 11 }}>CORP</th>
-                      <th style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 800, borderBottom: '2px solid #E5E7EB', color: '#1D4ED8' }}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(datos.gastosPorCat).sort((a, b) => b[1] - a[1]).map(([catName, total]) => {
-                      const CAT_TO_GRUPO = {
-                        costo_comida: 'COGS', insumo_venta: 'COGS', limpieza: 'COGS',
-                        costo_fijo: 'Gasto Local', Alquiler: 'Gasto Local',
-                        gastos_operativos: 'Gasto Venta', gastos_logisticos: 'Gasto Venta',
-                        gasto_financiero: 'Gasto Admin', activo_fijo: 'Inversión',
-                        'Gastos Varios': 'Gasto Admin',
-                      }
-                      return (
-                        <tr key={catName} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                          <td style={{ padding: '6px 14px', fontWeight: 600, color: '#374151' }}>{catName}</td>
-                          <td style={{ padding: '6px 10px', fontSize: 11, color: '#9CA3AF' }}>{CAT_TO_GRUPO[catName] || 'Otro'}</td>
-                          {sucursales.map(s => (
-                            <td key={s} style={{ padding: '6px 8px', textAlign: 'right', color: '#374151' }}>
-                              {datos.gastosPorSucCat[s]?.[catName] ? fmt(datos.gastosPorSucCat[s][catName]) : '-'}
-                            </td>
-                          ))}
-                          <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6B7280' }}>
-                            {datos.gastosPorSucCat['CORP']?.[catName] ? fmt(datos.gastosPorSucCat['CORP'][catName]) : '-'}
-                          </td>
-                          <td style={{ padding: '6px 14px', textAlign: 'right', fontWeight: 700, color: '#1D4ED8' }}>
-                            {fmt(total)}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {/* Total row */}
-                    <tr style={{ background: '#EFF6FF', borderTop: '2px solid #93C5FD' }}>
-                      <td style={{ padding: '8px 14px', fontWeight: 800 }} colSpan={2}>Total</td>
-                      {sucursales.map(s => {
-                        const total = Object.values(datos.gastosPorSucCat[s] || {}).reduce((a, b) => a + b, 0)
+          {vista === 'detalle' && (() => {
+            const CAT_LABELS = {
+              costo_comida: 'Costo Comida', insumo_venta: 'Insumo Venta', limpieza: 'Limpieza',
+              costo_fijo: 'Costo Fijo', Alquiler: 'Alquiler',
+              gastos_operativos: 'Gastos Operativos', gastos_logisticos: 'Gastos Logísticos',
+              gasto_financiero: 'Gasto Financiero', activo_fijo: 'Activo Fijo',
+              'Gastos Varios': 'Gastos Varios',
+            }
+            const CAT_TO_GRUPO = {
+              costo_comida: 'COGS', insumo_venta: 'COGS', limpieza: 'COGS',
+              costo_fijo: 'Gasto Local', Alquiler: 'Gasto Local',
+              gastos_operativos: 'Gasto Venta', gastos_logisticos: 'Gasto Venta',
+              gasto_financiero: 'Gasto Admin', activo_fijo: 'Inversión',
+              'Gastos Varios': 'Gasto Admin',
+            }
+            const GRUPO_COLORS = {
+              COGS: '#DC2626', 'Gasto Local': '#92400E', 'Gasto Venta': '#D97706',
+              'Gasto Admin': '#6B7280', 'Inversión': '#7C3AED',
+            }
+            const sorted = Object.entries(datos.gastosPorCat).sort((a, b) => b[1] - a[1])
+            return (
+              <div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, background: '#fff', borderRadius: 12, overflow: 'hidden', border: '1px solid #E5E7EB', minWidth: 700 }}>
+                    <thead>
+                      <tr style={{ background: '#F9FAFB' }}>
+                        <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, borderBottom: '2px solid #E5E7EB', minWidth: 140 }}>Categoría</th>
+                        <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 700, borderBottom: '2px solid #E5E7EB', fontSize: 11 }}>Grupo</th>
+                        {sucursales.map(s => (
+                          <th key={s} style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, borderBottom: '2px solid #E5E7EB', fontSize: 11 }}>
+                            {STORES[s]}
+                          </th>
+                        ))}
+                        <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, borderBottom: '2px solid #E5E7EB', fontSize: 11 }}>CORP</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, borderBottom: '2px solid #E5E7EB', color: '#1D4ED8' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map(([catName, total]) => {
+                        const grupo = CAT_TO_GRUPO[catName] || 'Otro'
+                        const color = GRUPO_COLORS[grupo] || '#374151'
                         return (
-                          <td key={s} style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700 }}>{total ? fmt(total) : '-'}</td>
+                          <tr key={catName} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                            <td style={{ padding: '7px 12px', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>
+                              {CAT_LABELS[catName] || catName}
+                            </td>
+                            <td style={{ padding: '7px 6px', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                              <span style={{ background: color + '18', color, padding: '2px 6px', borderRadius: 4 }}>{grupo}</span>
+                            </td>
+                            {sucursales.map(s => (
+                              <td key={s} style={{ padding: '7px 6px', textAlign: 'right', color: '#374151', fontSize: 12 }}>
+                                {datos.gastosPorSucCat[s]?.[catName] ? fmt(datos.gastosPorSucCat[s][catName]) : <span style={{ color: '#D1D5DB' }}>—</span>}
+                              </td>
+                            ))}
+                            <td style={{ padding: '7px 6px', textAlign: 'right', color: '#6B7280', fontSize: 12 }}>
+                              {datos.gastosPorSucCat['CORP']?.[catName] ? fmt(datos.gastosPorSucCat['CORP'][catName]) : <span style={{ color: '#D1D5DB' }}>—</span>}
+                            </td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#1D4ED8', fontSize: 12 }}>
+                              {fmt(total)}
+                            </td>
+                          </tr>
                         )
                       })}
-                      <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700 }}>
-                        {fmt(Object.values(datos.gastosPorSucCat['CORP'] || {}).reduce((a, b) => a + b, 0))}
-                      </td>
-                      <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 800, color: '#1D4ED8' }}>
-                        {fmt(datos.totalGastos)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                      {/* Total row */}
+                      <tr style={{ background: '#EFF6FF', borderTop: '2px solid #93C5FD' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 800 }} colSpan={2}>Total</td>
+                        {sucursales.map(s => {
+                          const total = Object.values(datos.gastosPorSucCat[s] || {}).reduce((a, b) => a + b, 0)
+                          return (
+                            <td key={s} style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: 12 }}>{total ? fmt(total) : '—'}</td>
+                          )
+                        })}
+                        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: 12 }}>
+                          {fmt(Object.values(datos.gastosPorSucCat['CORP'] || {}).reduce((a, b) => a + b, 0))}
+                        </td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1D4ED8' }}>
+                          {fmt(datos.totalGastos)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Nota explicativa */}
+                <div style={{ marginTop: 12, padding: '8px 14px', background: '#F9FAFB', borderRadius: 8, fontSize: 11, color: '#6B7280' }}>
+                  CORP = gastos sin sucursal asignada (se prorratean por peso de venta en el Resumen P&L).
+                  Sucursal directa solo aplica a proveedores con sucursal_default en el catálogo contable.
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </>
       )}
     </div>
