@@ -85,13 +85,19 @@ function parseBAC(text) {
     || text.match(/\b(\d{8,12})\b/)
   if (compMatch) result.referencia_bancaria = compMatch[1]
 
-  // CCF / DTE: "CCF 2347" o "CCF-2347" o "DTE 2347"
-  const ccfMatches = text.match(/(?:CCF|DTE|CRF)[\s\-#]*(\d{3,6})/gi)
-  if (ccfMatches) {
-    const codes = ccfMatches.map(m => {
-      const n = m.match(/(\d{3,6})/)
-      return n ? n[1].slice(-4) : null
-    }).filter(Boolean)
+  // CCF / DTE: "CCF 2347", "CCF-2347", "CCF 285,297" (comma-separated multi)
+  const ccfBlock = text.match(/(?:CCF|DTE|CRF)[\s\-#]*([\d,\s]{2,})/gi)
+  if (ccfBlock) {
+    const codes = []
+    for (const block of ccfBlock) {
+      // Remove the prefix (CCF/DTE/CRF) and split remaining digits by comma/space
+      const numPart = block.replace(/^(?:CCF|DTE|CRF)[\s\-#]*/i, '')
+      const chunks = numPart.split(/[,;\s]+/).map(c => c.trim()).filter(c => /^\d+$/.test(c))
+      for (const ch of chunks) {
+        // Zero-pad to 4 digits: "285" → "0285", "97" → "0097"
+        codes.push(ch.padStart(4, '0').slice(-4))
+      }
+    }
     if (codes.length) result.dtes_input = codes.join(', ')
   }
 
