@@ -244,34 +244,46 @@ function SubirPagos({ user, proveedores, onSaved }) {
         if (entry.dtes_input) {
           const allMatches = await matchDTEs(entry.dtes_input, entry.proveedor_nombre)
           const montoTotal = parseFloat(entry.monto) || 0
-
-          // Per CCF code entered, find best match
           const codes = entry.dtes_input.split(/[,;\s]+/).map(c => c.trim()).filter(Boolean)
-          const toApply = []
 
+          // Step A: find best unique candidate per code
+          const candidates = []
+          let allUnique = true
           for (const code of codes) {
-            // Find matches for this specific code
             const codeMatches = allMatches.filter(m => m.numero_control?.endsWith(code))
-
-            if (codeMatches.length === 1 && Math.abs(Number(codeMatches[0].monto_total) - montoTotal) < 0.50) {
-              // Unique match + monto coincide → apply
-              toApply.push(codeMatches[0])
+            if (codeMatches.length === 1) {
+              candidates.push(codeMatches[0])
             } else if (codeMatches.length > 1) {
-              // Multiple matches: only auto-apply if one has exact monto
-              const exactMonto = codeMatches.find(m => Math.abs(Number(m.monto_total) - montoTotal) < 0.50)
-              if (exactMonto) toApply.push(exactMonto)
-              // Otherwise → pendiente, user resolves manually
+              // Pick most recent unpaid
+              candidates.push(codeMatches[0])
+            } else {
+              allUnique = false // code sin match → no auto-apply batch
             }
-            // 0 matches or no monto match → pendiente
+          }
+
+          // Step B: decide auto-apply strategy
+          let toApply = []
+
+          if (codes.length > 1 && candidates.length === codes.length) {
+            // MULTI-DTE: all codes matched → check if sum of DTEs ≈ monto pago
+            const sumDTEs = candidates.reduce((s, m) => s + Number(m.monto_total), 0)
+            if (Math.abs(sumDTEs - montoTotal) <= 0.01) {
+              // Sum matches exactly → apply each DTE at its own monto
+              toApply = candidates
+            }
+            // Sum doesn't match → pendiente
+          } else if (codes.length === 1 && candidates.length === 1) {
+            // SINGLE DTE: match if monto coincide ±$0.50
+            if (Math.abs(Number(candidates[0].monto_total) - montoTotal) < 0.50) {
+              toApply = candidates
+            }
           }
 
           if (toApply.length > 0) {
-            // Distribute monto across matched DTEs
-            const perDTE = toApply.length > 1 ? montoTotal / toApply.length : montoTotal
             const apps = toApply.map(m => ({
               pago_id: pago.id,
               compras_dte_id: m.id,
-              monto_aplicado: Math.min(perDTE, Number(m.monto_total)),
+              monto_aplicado: Number(m.monto_total), // each DTE at its full amount
             }))
             await db.from('pagos_proveedor_aplicacion').insert(apps)
           }
