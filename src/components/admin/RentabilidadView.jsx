@@ -23,6 +23,40 @@ const T = {
   purple: '#8B5CF6',
 }
 
+// ── Mapeo categorías (mismo que FinanzasDashboard) ──
+// categoria_nombre → P&L group
+const CATNAME_TO_PL = {
+  'Insumo Cocina': 'costo_comida', 'Insumo Bebida': 'costo_comida', 'Insumo Producción': 'costo_comida',
+  'Insumo Merchandising': 'insumo_venta', 'Insumo Despacho': 'insumo_venta', 'Insumo Empaque': 'insumo_venta',
+  'Insumo Limpieza': 'limpieza', 'Insumo Colaboradores': 'costo_comida',
+  'Alquiler': 'costo_fijo', 'Electricidad': 'costo_fijo', 'Agua': 'costo_fijo',
+  'Gasto Mantenimiento': 'costo_fijo', 'Gasto Alcaldía': 'costo_fijo', 'Gasto Transporte': 'gastos_operativos',
+  'Gasto de Venta (POS/PEYA)': 'gastos_operativos', 'Gasto Mercadeo': 'gastos_operativos',
+  'Gasto Logístico': 'gastos_operativos', 'Gasto Logístico (Admin)': 'gastos_operativos',
+  'Gasto Financiero': 'gasto_financiero', 'Gasto Contabilidad': 'gasto_financiero',
+  'Gasto Planilla': 'planilla', 'Gastos Legales': 'gasto_financiero',
+  'Gasto Impuesto': 'gasto_financiero', 'Activo Fijo': 'activo_fijo',
+  'Gastos Varios': 'gastos_operativos', 'Gasto Colaboradores': 'gastos_operativos',
+  'Gasto Oficina': 'gastos_operativos', 'Gasto Personal (Socios)': 'gastos_operativos',
+  'Fuera de Freakie': 'gastos_operativos',
+}
+// categoria_grupo fallback
+const GRUPO_TO_PL = {
+  'COGS': 'costo_comida', 'Gasto Local': 'costo_fijo', 'Gasto Venta': 'gastos_operativos',
+  'Gasto Admin': 'gasto_financiero', 'Inversión': 'activo_fijo', 'No Operativo': 'gastos_operativos',
+}
+// P&L keys → display groups for the P&L table
+const PL_TO_DISPLAY = {
+  'costo_comida': 'costoComida',
+  'insumo_venta': 'costoComida',
+  'limpieza': 'costoComida',
+  'costo_fijo': 'gastosFijos',
+  'gastos_operativos': 'gastosOp',
+  'gasto_financiero': 'gastosFinan',
+  'planilla': 'planilla',
+  'activo_fijo': 'inversion',
+}
+
 // ── Helpers ──
 function fmt(v) { return '$' + n(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) }
 function fmt2(v) { return '$' + n(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
@@ -35,14 +69,22 @@ function delta(curr, prev) {
 function daysInMonth(y, m) { return new Date(y, m, 0).getDate() }
 function periodRange(year, month, maxDay) {
   const desde = `${year}-${String(month).padStart(2, '0')}-01`
-  const hastaDay = Math.min(maxDay, daysInMonth(year, month))
-  const hasta = `${year}-${String(month).padStart(2, '0')}-${String(hastaDay + 1).padStart(2, '0')}`
+  const clampedDay = Math.min(maxDay, daysInMonth(year, month))
+  // Use Date object to correctly handle month overflow (day 32 → next month)
+  const hastaDate = new Date(year, month - 1, clampedDay + 1)
+  const hasta = hastaDate.toISOString().split('T')[0]
   return { desde, hasta }
 }
 function prevMonth(y, m, offset = 1) {
   let ny = y, nm = m - offset
   while (nm < 1) { nm += 12; ny -= 1 }
   return { year: ny, month: nm }
+}
+function classifyGasto(g) {
+  const catNombre = g.categoria_nombre || ''
+  let plKey = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || 'gastos_operativos'
+  if (plKey === 'Alquiler') plKey = 'costo_fijo'
+  return plKey
 }
 
 // ── Paginated fetch (Supabase max 1000) ──
@@ -63,6 +105,7 @@ async function fetchAll(table, select, filter) {
 }
 
 // ── Process raw data into P&L structure ──
+// Uses CATNAME_TO_PL + GRUPO_TO_PL (same as FinanzasDashboard) for correct classification
 function buildPnL(ventas, gastos, conIva) {
   const ventasPorSuc = {}
   ;(ventas || []).forEach(v => {
@@ -70,64 +113,68 @@ function buildPnL(ventas, gastos, conIva) {
     ventasPorSuc[v.store_code] += conIva ? n(v.total_ventas_quanto) : n(v.total_ventas_quanto) / 1.13
   })
 
-  const gastosPorSucGrupo = {}
-  const gastosPorCat = {}
-  const gastosPorSucCat = {}
-  const catToGrupo = {}
+  // P&L groups per branch: { sucursal: { costoComida, gastosFijos, gastosOp, gastosFinan, planilla, inversion } }
+  const initPL = () => ({ costoComida: 0, gastosFijos: 0, gastosOp: 0, gastosFinan: 0, planilla: 0, inversion: 0 })
+  const plPorSuc = {}
+  const gastosPorCat = {}    // For category breakdown tab
+  const gastosPorSucCat = {} // For category breakdown per branch
+  const catToGrupo = {}      // Display mapping
 
   ;(gastos || []).forEach(g => {
     const suc = g.store_code || 'CORP'
-    const grupo = g.categoria_grupo || 'Gasto Venta'
-    const cat = g.categoria_nombre || 'Sin Clasificar'
-    const subcat = g.subcategoria_contable || ''
     const monto = conIva ? (n(g.monto) || 0) : (n(g.monto_sin_iva) || n(g.monto) || 0)
 
-    if (cat && grupo) catToGrupo[cat] = grupo
+    // Classify using the same logic as FinanzasDashboard
+    const plKey = classifyGasto(g)
+    const displayGroup = PL_TO_DISPLAY[plKey] || 'gastosOp'
 
-    if (!gastosPorSucGrupo[suc]) gastosPorSucGrupo[suc] = {}
-    gastosPorSucGrupo[suc][grupo] = (gastosPorSucGrupo[suc][grupo] || 0) + monto
+    if (!plPorSuc[suc]) plPorSuc[suc] = initPL()
+    plPorSuc[suc][displayGroup] = (plPorSuc[suc][displayGroup] || 0) + monto
 
-    const catKey = subcat || cat
+    // For category breakdown tab
+    const catName = g.categoria_nombre || g.subcategoria_contable || 'Sin Clasificar'
+    gastosPorCat[catName] = (gastosPorCat[catName] || 0) + monto
     if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
-    gastosPorSucCat[suc][catKey] = (gastosPorSucCat[suc][catKey] || 0) + monto
-    gastosPorCat[catKey] = (gastosPorCat[catKey] || 0) + monto
+    gastosPorSucCat[suc][catName] = (gastosPorSucCat[suc][catName] || 0) + monto
+
+    // Map category name → display group for the categories tab
+    const grupoLabels = {
+      costoComida: 'Costo Comida', gastosFijos: 'Gasto Fijo', gastosOp: 'Gasto Operativo',
+      gastosFinan: 'Gasto Financiero', planilla: 'Planilla', inversion: 'Inversión'
+    }
+    catToGrupo[catName] = grupoLabels[displayGroup] || 'Gasto Operativo'
   })
 
-  const gruposCorp = gastosPorSucGrupo['CORP'] || {}
+  const corpPL = plPorSuc['CORP'] || initPL()
   const totalVentas = Object.values(ventasPorSuc).reduce((a, b) => a + b, 0)
 
   const pnl = {}
   SUC_KEYS.forEach(suc => {
     const venta = ventasPorSuc[suc] || 0
     const peso = totalVentas > 0 ? venta / totalVentas : 0
-    const gruposSuc = gastosPorSucGrupo[suc] || {}
+    const sucPL = plPorSuc[suc] || initPL()
 
-    let cogs = n(gruposSuc['COGS'])
-    let gastosLocales = n(gruposSuc['Gasto Local'])
-    let gastosVenta = n(gruposSuc['Gasto Venta'])
-    let gastosAdmin = n(gruposSuc['Gasto Admin'])
+    // Direct costs + prorated corporate costs
+    let costoComida = sucPL.costoComida + (corpPL.costoComida * peso)
+    let gastosFijos = sucPL.gastosFijos + (corpPL.gastosFijos * peso)
+    let gastosOp = sucPL.gastosOp + (corpPL.gastosOp * peso)
+    let gastosFinan = sucPL.gastosFinan + (corpPL.gastosFinan * peso)
+    let planilla = sucPL.planilla + (corpPL.planilla * peso)
 
-    Object.entries(gruposCorp).forEach(([grupo, monto]) => {
-      const porcion = monto * peso
-      if (grupo === 'COGS') cogs += porcion
-      else if (grupo === 'Gasto Local') gastosLocales += porcion
-      else if (grupo === 'Gasto Venta') gastosVenta += porcion
-      else if (grupo === 'Gasto Admin') gastosAdmin += porcion
-    })
-
-    const utilidadBruta = venta - cogs
-    const totalGastos = gastosLocales + gastosVenta + gastosAdmin
+    const utilidadBruta = venta - costoComida
+    const totalGastos = gastosFijos + gastosOp + gastosFinan + planilla
     const utilidadOperativa = utilidadBruta - totalGastos
 
     pnl[suc] = {
-      venta, cogs, utilidadBruta,
+      venta, costoComida, utilidadBruta,
       margenBruto: venta > 0 ? (utilidadBruta / venta) * 100 : 0,
-      gastosLocales, gastosVenta, gastosAdmin, totalGastos, utilidadOperativa,
+      gastosFijos, gastosOp, gastosFinan, planilla,
+      totalGastos, utilidadOperativa,
       margenOperativo: venta > 0 ? (utilidadOperativa / venta) * 100 : 0,
     }
   })
 
-  const totalCOGS = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.cogs), 0)
+  const totalCOGS = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.costoComida), 0)
   const totalUB = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.utilidadBruta), 0)
   const totalGastosOp = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.totalGastos), 0)
   const totalUO = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.utilidadOperativa), 0)
@@ -255,7 +302,7 @@ export default function RentabilidadView({ user }) {
         const count = periods.length
         if (!count) return avg
         SUC_KEYS.forEach(s => {
-          avg.pnl[s] = { venta: 0, cogs: 0, utilidadBruta: 0, gastosLocales: 0, gastosVenta: 0, gastosAdmin: 0, totalGastos: 0, utilidadOperativa: 0, margenBruto: 0, margenOperativo: 0 }
+          avg.pnl[s] = { venta: 0, costoComida: 0, utilidadBruta: 0, gastosFijos: 0, gastosOp: 0, gastosFinan: 0, planilla: 0, totalGastos: 0, utilidadOperativa: 0, margenBruto: 0, margenOperativo: 0 }
         })
         periods.forEach(p => {
           avg.totalVentas += p.totalVentas / count
@@ -479,7 +526,7 @@ export default function RentabilidadView({ user }) {
 
                       {/* COGS */}
                       <tr style={sectionRow}><td colSpan={SUC_KEYS.length + 4} style={sectionTd}>COSTO DE VENTAS</td></tr>
-                      <PnlRow label="(–) Costo Insumos" curr={datos.curr} comp={comp} field="cogs" negative invertDelta />
+                      <PnlRow label="(–) Costo Comida" curr={datos.curr} comp={comp} field="costoComida" negative invertDelta />
 
                       {/* Utilidad Bruta */}
                       <PnlRow label="= Utilidad Bruta" curr={datos.curr} comp={comp} field="utilidadBruta" subtotal positive />
@@ -487,9 +534,10 @@ export default function RentabilidadView({ user }) {
 
                       {/* GASTOS OPERATIVOS */}
                       <tr style={sectionRow}><td colSpan={SUC_KEYS.length + 4} style={sectionTd}>GASTOS OPERATIVOS</td></tr>
-                      <PnlRow label="(–) Gasto Local" curr={datos.curr} comp={comp} field="gastosLocales" negative invertDelta />
-                      <PnlRow label="(–) Gasto Venta" curr={datos.curr} comp={comp} field="gastosVenta" negative invertDelta />
-                      <PnlRow label="(–) Gasto Admin" curr={datos.curr} comp={comp} field="gastosAdmin" negative invertDelta />
+                      <PnlRow label="(–) Gastos Fijos (Alq/Luz/Agua)" curr={datos.curr} comp={comp} field="gastosFijos" negative invertDelta />
+                      <PnlRow label="(–) Gastos Operativos" curr={datos.curr} comp={comp} field="gastosOp" negative invertDelta />
+                      <PnlRow label="(–) Planilla" curr={datos.curr} comp={comp} field="planilla" negative invertDelta />
+                      <PnlRow label="(–) Gastos Financieros" curr={datos.curr} comp={comp} field="gastosFinan" negative invertDelta />
 
                       {/* Utilidad Operativa */}
                       <PnlRow label="= Utilidad Operativa" curr={datos.curr} comp={comp} field="utilidadOperativa" subtotal positive isFinal />
@@ -524,10 +572,10 @@ export default function RentabilidadView({ user }) {
 
                   const total = c.venta || 1
                   const segments = [
-                    { pct: (c.cogs / total) * 100, color: T.red, label: 'COGS' },
-                    { pct: (c.gastosLocales / total) * 100, color: T.yellow, label: 'Gasto Local' },
-                    { pct: (c.gastosVenta / total) * 100, color: T.purple, label: 'Gasto Venta' },
-                    { pct: (c.gastosAdmin / total) * 100, color: '#64748B', label: 'Otros' },
+                    { pct: (c.costoComida / total) * 100, color: T.red, label: 'Costo Comida' },
+                    { pct: (c.gastosFijos / total) * 100, color: T.yellow, label: 'Gasto Fijo' },
+                    { pct: (c.gastosOp / total) * 100, color: T.purple, label: 'Gasto Op.' },
+                    { pct: ((c.gastosFinan + c.planilla) / total) * 100, color: '#64748B', label: 'Planilla/Finan.' },
                     { pct: Math.max(0, (c.utilidadOperativa / total) * 100), color: T.green, label: 'Utilidad' },
                   ]
 
@@ -566,8 +614,8 @@ export default function RentabilidadView({ user }) {
               {/* Legend */}
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 {[
-                  { color: T.red, label: 'Costo Ventas' }, { color: T.yellow, label: 'Gasto Local' },
-                  { color: T.purple, label: 'Gasto Venta' }, { color: '#64748B', label: 'Otros Gastos' },
+                  { color: T.red, label: 'Costo Comida' }, { color: T.yellow, label: 'Gasto Fijo' },
+                  { color: T.purple, label: 'Gasto Operativo' }, { color: '#64748B', label: 'Planilla/Financiero' },
                   { color: T.green, label: 'Utilidad Operativa' },
                 ].map(l => (
                   <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.textMuted }}>
@@ -594,10 +642,11 @@ export default function RentabilidadView({ user }) {
             Object.values(grupos).forEach(g => g.items.sort((a, b) => b.monto - a.monto))
 
             const grupoMeta = {
-              'COGS': { icon: '🥩', label: 'Costo Comida (COGS)', color: T.red },
-              'Gasto Local': { icon: '🏢', label: 'Costos Fijos / Local', color: T.yellow },
-              'Gasto Venta': { icon: '📦', label: 'Gastos de Venta', color: T.purple },
-              'Gasto Admin': { icon: '⚙️', label: 'Gastos Administrativos', color: T.accent },
+              'Costo Comida': { icon: '🥩', label: 'Costo Comida', color: T.red },
+              'Gasto Fijo': { icon: '🏢', label: 'Costos Fijos (Alquiler/Luz/Agua)', color: T.yellow },
+              'Gasto Operativo': { icon: '⚙️', label: 'Gastos Operativos', color: T.purple },
+              'Gasto Financiero': { icon: '🏦', label: 'Gastos Financieros', color: T.accent },
+              'Planilla': { icon: '👥', label: 'Planilla', color: '#0EA5E9' },
               'Inversión': { icon: '🔧', label: 'Inversión / Activo Fijo', color: '#64748B' },
             }
 
