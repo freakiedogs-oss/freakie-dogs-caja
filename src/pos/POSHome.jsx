@@ -69,7 +69,7 @@ function elapsed(isoStr) {
 const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 const MESERO_ROLES = ['mesero', 'mesera']
 
-export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onChangeStore }) {
+export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToMenuAdmin, onChangeStore }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
@@ -436,6 +436,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {!MESERO_ROLES.includes(user.rol) && onGoToHistorial && (
           <button className="poshome-quick-btn" style={{ '--qt-color': '#2dd4a8' }} onClick={onGoToHistorial}>
             <span className="poshome-quick-icon">📋</span><span className="poshome-quick-label">Historial</span>
+          </button>
+        )}
+        {onGoToMenuAdmin && (
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#ff6b35' }} onClick={onGoToMenuAdmin}>
+            <span className="poshome-quick-icon">📝</span><span className="poshome-quick-label">Menú Admin</span>
           </button>
         )}
       </div>

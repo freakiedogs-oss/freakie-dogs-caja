@@ -4,6 +4,7 @@ import POSHome from './POSHome'
 import POSMain from './cajero/POSMain'
 import KDSScreen from './KDSScreen'
 import HistorialCobros from './HistorialCobros'
+import MenuAdminView from './admin/MenuAdminView'
 import { STORES } from '../config'
 
 // Roles que pueden elegir sucursal al entrar al POS
@@ -140,6 +141,8 @@ export default function POSApp() {
 
   const handleGoToHistorial = () => setScreen('historial')
 
+  const handleGoToMenuAdmin = () => setScreen('menu-admin')
+
   // ── Login ──
   if (!user) return <POSLogin onLogin={handleLogin} />
 
@@ -162,6 +165,11 @@ export default function POSApp() {
     return <HistorialCobros user={posUser} onBack={handleBack} />
   }
 
+  // ── Admin Menú ──
+  if (screen === 'menu-admin') {
+    return <MenuAdminView user={posUser} storeCode={posUser.store_code} onBack={handleBack} />
+  }
+
   // ── Home ──
   if (screen === 'home') {
     return (
@@ -171,6 +179,7 @@ export default function POSApp() {
         onLogout={handleLogout}
         onGoToKDS={handleGoToKDS}
         onGoToHistorial={handleGoToHistorial}
+        onGoToMenuAdmin={canChangeStore ? handleGoToMenuAdmin : null}
         onChangeStore={canChangeStore ? handleChangeStore : null}
       />
     )
