@@ -83,39 +83,41 @@ export default function RentabilidadView({ user }) {
 
     // 2. GASTOS CONSOLIDADOS — ya clasificados vía catalogo_contable
     const gastos = await fetchAll('v_gastos_consolidados',
-      'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, subcategoria_contable, origen, store_code',
+      'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
       q => q.gte('fecha', desde).lt('fecha', hasta))
 
-    // Mapa categoría catálogo → grupo P&L
-    const CAT_TO_GRUPO = {
-      costo_comida: 'COGS', insumo_venta: 'COGS', limpieza: 'COGS',
-      costo_fijo: 'Gasto Local', Alquiler: 'Gasto Local',
-      gastos_operativos: 'Gasto Venta', gastos_logisticos: 'Gasto Venta',
-      gasto_financiero: 'Gasto Admin', activo_fijo: 'Inversión',
-      impuestos: 'Gasto Admin', planilla_legal: 'Gasto Admin',
-      'Gastos Varios': 'Gasto Admin',
-    }
-
-    // Agrupar gastos por sucursal y categoría
-    const gastosPorSucCat = {} // { sucursal: { cat_name: monto } }
-    const gastosPorCat = {} // { cat_name: monto }
+    // Agrupar gastos por sucursal y grupo P&L (usando categoria_grupo de la vista)
+    const gastosPorSucGrupo = {} // { sucursal: { grupo: monto } }
+    const gastosPorCat = {} // { cat_nombre: monto } para Detalle
+    const gastosPorSucCat = {} // { sucursal: { cat_nombre: monto } } para Detalle
+    const catToGrupo = {} // { "Insumo Cocina": "COGS", "Alquiler": "Gasto Local", ... }
     let totalGastos = 0
     const origenStats = { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }
 
     gastos.forEach(g => {
       const suc = g.store_code || 'CORP'
-      const cat = g.categoria_nombre || 'gastos_operativos'
+      const grupo = g.categoria_grupo || 'Gasto Venta'  // COGS, Gasto Local, Gasto Venta, Gasto Admin, Inversión
+      const cat = g.categoria_nombre || 'Sin Clasificar'
       const monto = conIva ? (n(g.monto) || 0) : (n(g.monto_sin_iva) || n(g.monto) || 0)
 
+      // Mapa categoría → grupo (de la BD)
+      if (cat && grupo) catToGrupo[cat] = grupo
+
+      // Por grupo P&L (para Resumen)
+      if (!gastosPorSucGrupo[suc]) gastosPorSucGrupo[suc] = {}
+      gastosPorSucGrupo[suc][grupo] = (gastosPorSucGrupo[suc][grupo] || 0) + monto
+
+      // Por categoría detallada (para tab Detalle)
       if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
       gastosPorSucCat[suc][cat] = (gastosPorSucCat[suc][cat] || 0) + monto
       gastosPorCat[cat] = (gastosPorCat[cat] || 0) + monto
+
       totalGastos += monto
       if (origenStats[g.origen] !== undefined) origenStats[g.origen] += monto
     })
 
     // Calcular gastos corporativos (sin sucursal) para prorrateo
-    const gastosCorp = gastosPorSucCat['CORP'] || {}
+    const gruposCorp = gastosPorSucGrupo['CORP'] || {}
     const totalVentasGlobal = Object.values(ventasPorSuc).reduce((a, b) => a + b, 0)
 
     // P&L por sucursal
@@ -125,23 +127,17 @@ export default function RentabilidadView({ user }) {
     sucursales.forEach(suc => {
       const ventaSuc = ventasPorSuc[suc] || 0
       const pesoVenta = totalVentasGlobal > 0 ? ventaSuc / totalVentasGlobal : 0
-      const gastosSuc = gastosPorSucCat[suc] || {}
+      const gruposSuc = gastosPorSucGrupo[suc] || {}
 
-      let cogs = 0, gastosLocales = 0, gastosVenta = 0, gastosAdmin = 0, inversion = 0
-
-      // Directos de esta sucursal
-      Object.entries(gastosSuc).forEach(([catName, monto]) => {
-        const grupo = CAT_TO_GRUPO[catName] || 'Gasto Venta'
-        if (grupo === 'COGS') cogs += monto
-        else if (grupo === 'Gasto Local') gastosLocales += monto
-        else if (grupo === 'Gasto Venta') gastosVenta += monto
-        else if (grupo === 'Gasto Admin') gastosAdmin += monto
-        else if (grupo === 'Inversión') inversion += monto
-      })
+      // Directos de esta sucursal (categoria_grupo viene de la BD)
+      let cogs       = n(gruposSuc['COGS'])
+      let gastosLocales = n(gruposSuc['Gasto Local'])
+      let gastosVenta   = n(gruposSuc['Gasto Venta'])
+      let gastosAdmin   = n(gruposSuc['Gasto Admin'])
+      let inversion     = n(gruposSuc['Inversión'])
 
       // Prorrateo corporativos por peso de venta
-      Object.entries(gastosCorp).forEach(([catName, monto]) => {
-        const grupo = CAT_TO_GRUPO[catName] || 'Gasto Venta'
+      Object.entries(gruposCorp).forEach(([grupo, monto]) => {
         const porcion = monto * pesoVenta
         if (grupo === 'COGS') cogs += porcion
         else if (grupo === 'Gasto Local') gastosLocales += porcion
@@ -160,7 +156,7 @@ export default function RentabilidadView({ user }) {
       }
     })
 
-    setDatos({ pnl, ventasPorSuc, gastosPorCat, gastosPorSucCat, totalVentasGlobal, totalGastos, origenStats, totalRegistros: gastos.length })
+    setDatos({ pnl, ventasPorSuc, gastosPorCat, gastosPorSucCat, gastosPorSucGrupo, catToGrupo, totalVentasGlobal, totalGastos, origenStats, totalRegistros: gastos.length })
     setLoading(false)
   }, [desde, hasta, conIva])
 
@@ -406,20 +402,6 @@ export default function RentabilidadView({ user }) {
 
           {/* ===== TAB: DETALLE POR CATEGORÍA ===== */}
           {vista === 'detalle' && (() => {
-            const CAT_LABELS = {
-              costo_comida: 'Costo Comida', insumo_venta: 'Insumo Venta', limpieza: 'Limpieza',
-              costo_fijo: 'Costo Fijo', Alquiler: 'Alquiler',
-              gastos_operativos: 'Gastos Operativos', gastos_logisticos: 'Gastos Logísticos',
-              gasto_financiero: 'Gasto Financiero', activo_fijo: 'Activo Fijo',
-              'Gastos Varios': 'Gastos Varios',
-            }
-            const CAT_TO_GRUPO = {
-              costo_comida: 'COGS', insumo_venta: 'COGS', limpieza: 'COGS',
-              costo_fijo: 'Gasto Local', Alquiler: 'Gasto Local',
-              gastos_operativos: 'Gasto Venta', gastos_logisticos: 'Gasto Venta',
-              gasto_financiero: 'Gasto Admin', activo_fijo: 'Inversión',
-              'Gastos Varios': 'Gasto Admin',
-            }
             const GRUPO_COLORS = {
               COGS: '#DC2626', 'Gasto Local': '#92400E', 'Gasto Venta': '#D97706',
               'Gasto Admin': '#6B7280', 'Inversión': '#7C3AED',
@@ -444,12 +426,12 @@ export default function RentabilidadView({ user }) {
                     </thead>
                     <tbody>
                       {sorted.map(([catName, total]) => {
-                        const grupo = CAT_TO_GRUPO[catName] || 'Otro'
+                        const grupo = datos.catToGrupo[catName] || 'Otro'
                         const color = GRUPO_COLORS[grupo] || '#374151'
                         return (
                           <tr key={catName} style={{ borderBottom: '1px solid #F3F4F6' }}>
                             <td style={{ padding: '7px 12px', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>
-                              {CAT_LABELS[catName] || catName}
+                              {catName}
                             </td>
                             <td style={{ padding: '7px 6px', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>
                               <span style={{ background: color + '18', color, padding: '2px 6px', borderRadius: 4 }}>{grupo}</span>

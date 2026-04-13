@@ -9,6 +9,28 @@ import { db } from '../../supabase'
 const ROLES = ['ejecutivo', 'admin', 'superadmin']
 const EDIT_PINS = ['1000', '2000', '231155']
 
+// Mapa categorías_gasto.nombre → P&L key (la vista devuelve nombres legibles de categorias_gasto)
+const CATNAME_TO_PL = {
+  'Insumo Cocina': 'costo_comida', 'Insumo Bebida': 'costo_comida', 'Insumo Producción': 'costo_comida',
+  'Insumo Merchandising': 'insumo_venta', 'Insumo Despacho': 'insumo_venta', 'Insumo Empaque': 'insumo_venta',
+  'Insumo Limpieza': 'limpieza', 'Insumo Colaboradores': 'costo_comida',
+  'Alquiler': 'costo_fijo', 'Electricidad': 'costo_fijo', 'Agua': 'costo_fijo',
+  'Gasto Mantenimiento': 'costo_fijo', 'Gasto Alcaldía': 'costo_fijo', 'Gasto Transporte': 'costo_fijo',
+  'Gasto de Venta (POS/PEYA)': 'gastos_operativos', 'Gasto Mercadeo': 'gastos_operativos',
+  'Gasto Logístico': 'gastos_logisticos', 'Gasto Logístico (Admin)': 'gastos_logisticos',
+  'Gasto Financiero': 'gasto_financiero', 'Gasto Contabilidad': 'gasto_financiero',
+  'Gasto Planilla': 'planilla_legal', 'Gastos Legales': 'planilla_legal',
+  'Gasto Impuesto': 'impuestos', 'Activo Fijo': 'activo_fijo',
+  'Gastos Varios': 'gastos_operativos', 'Gasto Colaboradores': 'gastos_operativos',
+  'Gasto Oficina': 'gastos_operativos', 'Gasto Personal (Socios)': 'gastos_operativos',
+  'Fuera de Freakie': 'gastos_operativos',
+}
+// Fallback por categoria_grupo → P&L key
+const GRUPO_TO_PL = {
+  'COGS': 'costo_comida', 'Gasto Local': 'costo_fijo', 'Gasto Venta': 'gastos_operativos',
+  'Gasto Admin': 'gasto_financiero', 'Inversión': 'activo_fijo', 'No Operativo': 'gastos_operativos',
+}
+
 // ── Brand colors ──
 const C = {
   red: '#e63946', redDark: '#b91c2c', redBg: '#fef2f2',
@@ -224,7 +246,7 @@ export default function FinanzasDashboard({ user }) {
       // 2. GASTOS CONSOLIDADOS — une compras_dte + egresos_cierre + compras_sin_dte + descuadres
       //    Ya viene clasificado vía catalogo_contable (JOIN en la vista)
       const gastos = await fetchAll('v_gastos_consolidados',
-        'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, subcategoria_contable, origen, store_code',
+        'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
       // 3. Planilla
@@ -268,13 +290,14 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].bySuc[sc] = (monthMap[m].bySuc[sc] || 0) + total
     })
 
-    // GASTOS CONSOLIDADOS — ya clasificados vía catalogo_contable en la vista
+    // GASTOS CONSOLIDADOS — clasificados vía categorias_gasto + catalogo_contable
     data2026.gastos.forEach(g => {
       const m = g.fecha?.substring(0, 7)
       if (!m) return
       if (!monthMap[m]) monthMap[m] = initMonth()
-      // Categoría viene del catálogo (vía la vista). Normalizar "Alquiler" → costo_fijo
-      let cat = g.categoria_nombre || 'gastos_operativos'
+      // Determinar P&L key: primero por nombre exacto, luego por grupo, luego por nombre directo
+      const catNombre = g.categoria_nombre || ''
+      let cat = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
       if (cat === 'Alquiler') cat = 'costo_fijo'
       const sub = g.subcategoria_contable || ''
       const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
@@ -877,9 +900,10 @@ function TabProveedores({ data2026, months2026, conIva }) {
       const name = g.proveedor_nombre || 'Sin nombre'
       const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
       if (!provData[name]) {
-        let cat = g.categoria_nombre || 'gastos_operativos'
+        const catNombre = g.categoria_nombre || ''
+        let cat = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
         if (cat === 'Alquiler') cat = 'costo_fijo'
-        provData[name] = { cat, sub: g.subcategoria_contable || 'Varios', months: {}, total: 0, origen: g.origen }
+        provData[name] = { cat, catDisplay: catNombre, sub: g.subcategoria_contable || 'Varios', months: {}, total: 0, origen: g.origen }
       }
       provData[name].months[m] = (provData[name].months[m] || 0) + monto
       provData[name].total += monto
