@@ -791,12 +791,242 @@ function CuentasPorPagar({ cxp, onRefresh }) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// TAB 4: HISTORIAL
+// ═══════════════════════════════════════════════════════════
+function HistorialPagos({ pagos, onRefresh }) {
+  const [expandedId, setExpandedId] = useState(null)
+  const [editId, setEditId] = useState(null)
+  const [editFields, setEditFields] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [filter, setFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  const filtered = pagos.filter(p => {
+    if (filter && !p.proveedor_nombre?.toLowerCase().includes(filter.toLowerCase())
+      && !p.referencia_bancaria?.includes(filter)) return false
+    if (dateFrom && p.fecha_pago < dateFrom) return false
+    if (dateTo && p.fecha_pago > dateTo) return false
+    return true
+  })
+
+  const totalMonto = filtered.reduce((s, p) => s + Number(p.monto || 0), 0)
+  const totalAplicado = filtered.reduce((s, p) =>
+    s + (p.aplicaciones || []).reduce((a, x) => a + Number(x.monto_aplicado || 0), 0), 0)
+
+  const startEdit = (p) => {
+    setEditId(p.id)
+    setEditFields({
+      proveedor_nombre: p.proveedor_nombre || '',
+      monto: p.monto || '',
+      fecha_pago: p.fecha_pago || '',
+      referencia_bancaria: p.referencia_bancaria || '',
+      notas: p.notas || '',
+    })
+  }
+
+  const saveEdit = async (id) => {
+    setSaving(true)
+    const { error } = await db.from('pagos_proveedor').update({
+      ...editFields,
+      monto: parseFloat(editFields.monto) || 0,
+      updated_at: new Date().toISOString(),
+    }).eq('id', id)
+    if (error) { alert(error.message); setSaving(false); return }
+    setEditId(null)
+    setSaving(false)
+    onRefresh()
+  }
+
+  const revertApp = async (appId, pagoId) => {
+    if (!confirm('¿Revertir esta aplicación? El DTE volverá a pendiente.')) return
+    const { error } = await db.from('pagos_proveedor_aplicacion').delete().eq('id', appId)
+    if (error) { alert(error.message); return }
+    await db.rpc('refresh_cxp')
+    onRefresh()
+  }
+
+  const deletePago = async (id) => {
+    if (!confirm('¿Eliminar este pago y todas sus aplicaciones?')) return
+    await db.from('pagos_proveedor_aplicacion').delete().eq('pago_id', id)
+    const { error } = await db.from('pagos_proveedor').delete().eq('id', id)
+    if (error) { alert(error.message); return }
+    await db.rpc('refresh_cxp')
+    onRefresh()
+  }
+
+  return (
+    <div>
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Buscar proveedor o ref..."
+          style={{ ...inputSt, flex: 1, minWidth: 150 }}
+        />
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+          style={{ ...inputSt, width: 130 }} />
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+          style={{ ...inputSt, width: 130 }} />
+      </div>
+
+      {/* Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 14 }}>
+        <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: '#888' }}>Pagos</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>{filtered.length}</div>
+        </div>
+        <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: '#888' }}>Total pagado</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#4ade80' }}>{fmt(totalMonto)}</div>
+        </div>
+        <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: '#888' }}>Total aplicado</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: totalAplicado < totalMonto ? '#fbbf24' : '#4ade80' }}>{fmt(totalAplicado)}</div>
+        </div>
+      </div>
+
+      {/* List */}
+      {filtered.map(p => {
+        const isExpanded = expandedId === p.id
+        const isEditing = editId === p.id
+        const apps = p.aplicaciones || []
+        const applied = apps.reduce((s, a) => s + Number(a.monto_aplicado || 0), 0)
+        const diff = Number(p.monto) - applied
+
+        return (
+          <div key={p.id} className="card" style={{ marginBottom: 8, padding: 12 }}>
+            {/* Header row */}
+            <div
+              onClick={() => { setExpandedId(isExpanded ? null : p.id); setEditId(null) }}
+              style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{p.proveedor_nombre || 'Sin proveedor'}</div>
+                <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                  {fmtDate(p.fecha_pago)} · {fmt(p.monto)} · Ref: {p.referencia_bancaria || '—'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Badge status={p.estado} />
+                {p.foto_urls?.[0] && (
+                  <img src={p.foto_urls[0]} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover' }}
+                    onClick={(e) => { e.stopPropagation(); window.open(p.foto_urls[0], '_blank') }} />
+                )}
+                <span style={{ color: '#666', fontSize: 16 }}>{isExpanded ? '▾' : '▸'}</span>
+              </div>
+            </div>
+
+            {/* Expanded detail */}
+            {isExpanded && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #333' }}>
+
+                {/* Applications list */}
+                {apps.length > 0 ? (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: '#888', fontWeight: 700, marginBottom: 6 }}>Aplicaciones ({apps.length})</div>
+                    {apps.map(a => (
+                      <div key={a.id} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '6px 4px', borderBottom: '1px solid #222', fontSize: 12,
+                      }}>
+                        <div>
+                          <span style={{ color: '#4ade80' }}>🔗 </span>
+                          <span style={{ color: '#ddd' }}>{a.compras_dte?.numero_control?.slice(-12) || 'Sin DTE'}</span>
+                          <span style={{ color: '#888', marginLeft: 8 }}>{fmt(a.monto_aplicado)}</span>
+                        </div>
+                        <button onClick={() => revertApp(a.id, p.id)}
+                          style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 700, fontSize: 10 }}>
+                          ✕ Revertir
+                        </button>
+                      </div>
+                    ))}
+                    {diff > 0.01 && (
+                      <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6, textAlign: 'right' }}>
+                        {fmt(diff)} sin aplicar
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Sin aplicaciones</div>
+                )}
+
+                {/* Edit form */}
+                {isEditing ? (
+                  <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <label style={labelSt}>Proveedor</label>
+                        <input value={editFields.proveedor_nombre} onChange={(e) => setEditFields(f => ({ ...f, proveedor_nombre: e.target.value }))} style={inputSt} />
+                      </div>
+                      <div>
+                        <label style={labelSt}>Monto</label>
+                        <input type="number" step="0.01" value={editFields.monto} onChange={(e) => setEditFields(f => ({ ...f, monto: e.target.value }))} style={inputSt} />
+                      </div>
+                      <div>
+                        <label style={labelSt}>Fecha</label>
+                        <input type="date" value={editFields.fecha_pago} onChange={(e) => setEditFields(f => ({ ...f, fecha_pago: e.target.value }))} style={inputSt} />
+                      </div>
+                      <div>
+                        <label style={labelSt}>Referencia</label>
+                        <input value={editFields.referencia_bancaria} onChange={(e) => setEditFields(f => ({ ...f, referencia_bancaria: e.target.value }))} style={inputSt} />
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={labelSt}>Notas</label>
+                        <input value={editFields.notas} onChange={(e) => setEditFields(f => ({ ...f, notas: e.target.value }))} style={inputSt} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+                      <button onClick={() => setEditId(null)}
+                        style={{ background: '#333', color: '#aaa', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12 }}>
+                        Cancelar
+                      </button>
+                      <button onClick={() => saveEdit(p.id)} disabled={saving}
+                        style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                        {saving ? '...' : 'Guardar'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button onClick={() => startEdit(p)}
+                      style={{ background: '#1e3a5f', color: '#60a5fa', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>
+                      ✏️ Editar
+                    </button>
+                    <button onClick={() => deletePago(p.id)}
+                      style={{ background: '#3b1111', color: '#ef4444', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>
+                      🗑 Eliminar
+                    </button>
+                  </div>
+                )}
+
+                {/* Metadata */}
+                <div style={{ fontSize: 10, color: '#555', marginTop: 8 }}>
+                  ID: {p.id?.slice(0, 8)} · Creado: {p.created_at ? new Date(p.created_at).toLocaleString('es-SV') : '—'}
+                  {p.notas && <span> · Notas: {p.notas}</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>Sin pagos registrados</div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
 // MAIN VIEW
 // ═══════════════════════════════════════════════════════════
 const TABS = [
   { key: 'subir', label: '📸 Subir Pagos' },
   { key: 'pendientes', label: '⏳ Pendientes' },
   { key: 'cxp', label: '📋 Cuentas x Pagar' },
+  { key: 'historial', label: '📜 Historial' },
 ]
 
 export default function PagosProveedorView({ user }) {
@@ -898,6 +1128,7 @@ export default function PagosProveedorView({ user }) {
           {tab === 'subir' && <SubirPagos user={user} proveedores={proveedores} onSaved={loadData} />}
           {tab === 'pendientes' && <PendientesConciliar pagos={pagos} onRefresh={loadData} />}
           {tab === 'cxp' && <CuentasPorPagar cxp={cxp} onRefresh={loadData} />}
+          {tab === 'historial' && <HistorialPagos pagos={pagos} onRefresh={loadData} />}
         </>
       )}
     </div>
