@@ -40,10 +40,15 @@ const CATNAME_TO_PL = {
   'Gasto Oficina': 'gastos_operativos', 'Gasto Personal (Socios)': 'gastos_operativos',
   'Fuera de Freakie': 'gastos_operativos',
 }
-// categoria_grupo fallback
+// categoria_grupo fallback (includes both display names AND raw catalog values)
 const GRUPO_TO_PL = {
   'COGS': 'costo_comida', 'Gasto Local': 'costo_fijo', 'Gasto Venta': 'gastos_operativos',
   'Gasto Admin': 'gasto_financiero', 'Inversión': 'activo_fijo', 'No Operativo': 'gastos_operativos',
+  // Raw catalogo_contable.categoria values (in case categoria_grupo uses these)
+  'costo_comida': 'costo_comida', 'insumo_venta': 'insumo_venta', 'limpieza': 'limpieza',
+  'costo_fijo': 'costo_fijo', 'gastos_operativos': 'gastos_operativos',
+  'gasto_financiero': 'gasto_financiero', 'activo_fijo': 'activo_fijo',
+  'gastos_logisticos': 'gastos_logisticos', 'planilla_legal': 'planilla',
 }
 // P&L keys → display groups for the P&L table
 const PL_TO_DISPLAY = {
@@ -52,8 +57,10 @@ const PL_TO_DISPLAY = {
   'limpieza': 'costoComida',
   'costo_fijo': 'gastosFijos',
   'gastos_operativos': 'gastosOp',
+  'gastos_logisticos': 'gastosOp',
   'gasto_financiero': 'gastosFinan',
   'planilla': 'planilla',
+  'impuestos': 'gastosFinan',
   'activo_fijo': 'inversion',
 }
 
@@ -80,10 +87,19 @@ function prevMonth(y, m, offset = 1) {
   while (nm < 1) { nm += 12; ny -= 1 }
   return { year: ny, month: nm }
 }
+// Valid P&L keys (same as FinanzasDashboard initMonth)
+const VALID_PL_KEYS = { costo_comida: true, insumo_venta: true, limpieza: true, costo_fijo: true, gastos_operativos: true, gastos_logisticos: true, gasto_financiero: true, planilla: true, impuestos: true, activo_fijo: true }
+
 function classifyGasto(g) {
   const catNombre = g.categoria_nombre || ''
-  let plKey = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || 'gastos_operativos'
+  // Same 3-step logic as FinanzasDashboard line 300:
+  // 1. CATNAME_TO_PL by exact name (e.g., 'Insumo Cocina' → 'costo_comida')
+  // 2. GRUPO_TO_PL by group (e.g., 'COGS' → 'costo_comida')
+  // 3. catNombre directly if it's a valid PL key (e.g., 'costo_comida' → 'costo_comida')
+  let plKey = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
   if (plKey === 'Alquiler') plKey = 'costo_fijo'
+  // Validate: if plKey is not a recognized P&L key, fallback
+  if (!VALID_PL_KEYS[plKey]) plKey = 'gastos_operativos'
   return plKey
 }
 
