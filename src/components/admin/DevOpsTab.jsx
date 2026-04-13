@@ -99,6 +99,10 @@ function KPICard({ title, icon, status, summary, detail, sparkData, sparkColor, 
 export default function DevOpsTab() {
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [autoFixing, setAutoFixing] = useState(false);
+  const [autoFixResult, setAutoFixResult] = useState(null);
+  const [logEntries, setLogEntries] = useState([]);
+  const [showLog, setShowLog] = useState(false);
 
   // ── KPI States ──
   const [dteKPI, setDteKPI] = useState({ status: 'loading', summary: '', detail: '', spark: [] });
@@ -121,7 +125,33 @@ export default function DevOpsTab() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  // ── Load log entries ──
+  const loadLog = useCallback(async () => {
+    const { data } = await db
+      .from('devops_log')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    setLogEntries(data || []);
+  }, []);
+
+  // ── Run Auto-Fix ──
+  const runAutoFix = useCallback(async () => {
+    setAutoFixing(true);
+    setAutoFixResult(null);
+    try {
+      const { data, error } = await db.rpc('devops_autofix');
+      if (error) throw new Error(error.message);
+      setAutoFixResult(data);
+      await loadLog(); // refresh log after fix
+      await refresh(); // refresh KPIs
+    } catch (err) {
+      setAutoFixResult({ error: err.message });
+    }
+    setAutoFixing(false);
+  }, [loadLog, refresh]);
+
+  useEffect(() => { refresh(); loadLog(); }, [refresh, loadLog]);
 
   // ══════════════════════════════════════════
   // 1. DTEs Pipeline (compras table)
@@ -558,9 +588,113 @@ export default function DevOpsTab() {
         detail={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{edgeFnKPI.detail}</pre>}
       />
 
+      {/* ══════════════════════════════════════ */}
+      {/* AUTO-FIX BUTTON */}
+      {/* ══════════════════════════════════════ */}
+      <div style={{
+        background: '#1a1a2e', borderRadius: 10, padding: 14, marginTop: 16, marginBottom: 10,
+        border: `1px solid ${c.border}`,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: c.text }}>🔧 Self-Healing</div>
+            <div style={{ fontSize: 11, color: c.dim, marginTop: 2 }}>
+              Auto-fix: GRANTs, RLS policies, DTE staging, MATVIEW refresh
+            </div>
+          </div>
+          <button onClick={runAutoFix} disabled={autoFixing}
+            style={{
+              padding: '8px 16px', borderRadius: 6, border: 'none',
+              background: autoFixing ? '#555' : c.green, color: '#000',
+              fontWeight: 700, fontSize: 12, cursor: autoFixing ? 'wait' : 'pointer',
+            }}>
+            {autoFixing ? '⏳ Ejecutando...' : '🩺 Run Auto-Fix'}
+          </button>
+        </div>
+
+        {/* Auto-fix result */}
+        {autoFixResult && (
+          <div style={{
+            marginTop: 10, padding: 10, borderRadius: 6,
+            background: autoFixResult.error ? '#3b0a0a' : '#0a3b1a',
+            fontSize: 12, color: c.text,
+          }}>
+            {autoFixResult.error ? (
+              <span>🔴 Error: {autoFixResult.error}</span>
+            ) : (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                  ✅ {autoFixResult.fixes_applied} fix(es) aplicado(s)
+                </div>
+                {(autoFixResult.details || []).map((d, i) => (
+                  <div key={i} style={{ fontSize: 11, color: c.dim, marginTop: 2 }}>
+                    {d.status === 'ok' ? '✓' : '✗'} {d.fix}: {d.tabla || d.count || ''}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════ */}
+      {/* HISTORIAL LOG */}
+      {/* ══════════════════════════════════════ */}
+      <div style={{
+        background: c.card, borderRadius: 10, padding: 14,
+        border: `1px solid ${c.border}`,
+      }}>
+        <div onClick={() => setShowLog(!showLog)}
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: c.text }}>
+            📋 Historial de Acciones ({logEntries.length})
+          </div>
+          <span style={{ fontSize: 11, color: c.dim }}>{showLog ? '▲' : '▼'}</span>
+        </div>
+
+        {showLog && (
+          <div style={{ marginTop: 10, maxHeight: 400, overflowY: 'auto' }}>
+            {logEntries.length === 0 ? (
+              <div style={{ fontSize: 12, color: c.dim, textAlign: 'center', padding: 20 }}>
+                Sin registros aún
+              </div>
+            ) : (
+              logEntries.map((entry) => {
+                const time = new Date(entry.created_at).toLocaleString('es-SV', {
+                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                });
+                const statusIcon = entry.resultado === 'ok' ? '✅' : entry.resultado === 'error' ? '🔴' : '⏳';
+                const catColors = {
+                  permisos: '#a78bfa', dte_pipeline: c.blue, matview: c.yellow,
+                  serfinsa: c.yellow, system: c.green,
+                };
+                return (
+                  <div key={entry.id} style={{
+                    padding: '8px 10px', marginBottom: 4, borderRadius: 6,
+                    background: c.bg, borderLeft: `3px solid ${catColors[entry.categoria] || c.dim}`,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 12, color: c.text, flex: 1 }}>
+                        {statusIcon} {entry.accion}
+                      </div>
+                      <div style={{ fontSize: 10, color: c.dim, marginLeft: 8, whiteSpace: 'nowrap' }}>
+                        {time}
+                      </div>
+                    </div>
+                    {entry.detalle && (
+                      <div style={{ fontSize: 10, color: c.dim, marginTop: 2 }}>{entry.detalle}</div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Footer */}
       <div style={{ fontSize: 10, color: '#444', textAlign: 'center', marginTop: 16, padding: 8 }}>
-        DevOps Monitor · Los datos son en tiempo real desde Supabase
+        DevOps Monitor + Self-Healing · Datos en tiempo real desde Supabase
       </div>
     </div>
   );
