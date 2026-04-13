@@ -252,36 +252,40 @@ function SubirPagos({ user, proveedores, onSaved }) {
           const montoTotal = parseFloat(entry.monto) || 0
           const codes = entry.dtes_input.split(/[,;\s]+/).map(c => c.trim()).filter(Boolean)
 
-          // Step A: find best unique candidate per code
+          // Step A: find best candidate per code, prefer same proveedor
+          const provFirst = (entry.proveedor_nombre || '').split(/[\s,]+/)[0]?.toLowerCase() || ''
           const candidates = []
-          let allUnique = true
           for (const code of codes) {
             const codeMatches = allMatches.filter(m => m.numero_control?.endsWith(code))
-            if (codeMatches.length === 1) {
-              candidates.push(codeMatches[0])
-            } else if (codeMatches.length > 1) {
-              // Pick most recent unpaid
-              candidates.push(codeMatches[0])
+            if (codeMatches.length === 0) continue
+            // If multiple matches, prefer one whose proveedor matches OCR
+            if (codeMatches.length > 1 && provFirst.length >= 3) {
+              const provMatch = codeMatches.find(m => m.proveedor_nombre?.toLowerCase().includes(provFirst))
+              candidates.push(provMatch || codeMatches[0])
             } else {
-              allUnique = false // code sin match → no auto-apply batch
+              candidates.push(codeMatches[0])
             }
           }
 
-          // Step B: decide auto-apply strategy
+          // Step B: auto-apply if all codes found a candidate
           let toApply = []
 
-          if (codes.length > 1 && candidates.length === codes.length) {
-            // MULTI-DTE: all codes matched → check if sum of DTEs ≈ monto pago
+          if (candidates.length === codes.length && candidates.length > 0) {
+            // Check if all candidates share the same proveedor (first word)
+            const provNames = candidates.map(c => (c.proveedor_nombre || '').split(/[\s,]+/)[0]?.toLowerCase())
+            const sameProveedor = provNames.every(p => p === provNames[0])
+
             const sumDTEs = candidates.reduce((s, m) => s + Number(m.monto_total), 0)
-            if (Math.abs(sumDTEs - montoTotal) <= 0.01) {
-              // Sum matches exactly → apply each DTE at its own monto
-              toApply = candidates
-            }
-            // Sum doesn't match → pendiente
-          } else if (codes.length === 1 && candidates.length === 1) {
-            // SINGLE DTE: match if monto coincide ±$0.50
-            if (Math.abs(Number(candidates[0].monto_total) - montoTotal) < 0.50) {
-              toApply = candidates
+            if (codes.length > 1) {
+              // MULTI-DTE: same proveedor + sum ±$0.01
+              if (sameProveedor && Math.abs(sumDTEs - montoTotal) <= 0.01) {
+                toApply = candidates
+              }
+            } else {
+              // SINGLE DTE: monto ±$0.01
+              if (Math.abs(Number(candidates[0].monto_total) - montoTotal) <= 0.01) {
+                toApply = candidates
+              }
             }
           }
 
@@ -501,18 +505,27 @@ function PendientesConciliar({ pagos, onRefresh }) {
   const searchDTEs = async (pagoId, provNombre) => {
     if (!matchInput.trim()) return
     setSearching(true)
-    const codes = matchInput.split(/[,;\s]+/).filter(Boolean)
+    const codes = matchInput.split(/[,;\s]+/).filter(Boolean).map(c => c.padStart(4, '0').slice(-4))
     const results = []
     for (const code of codes) {
       const { data } = await db.from('compras_dte')
         .select('id, numero_control, monto_total, fecha_emision, estado_pago, proveedor_nombre')
-        .or(`numero_control.like.%${code},proveedor_nombre.ilike.%${provNombre.split(' ')[0]}%`)
         .like('numero_control', `%${code}`)
+        .neq('estado_pago', 'pagado')
+        .order('fecha_emision', { ascending: false })
         .limit(10)
       if (data) results.push(...data)
     }
-    // Deduplicate
+    // Deduplicate + sort: proveedor matching pago's proveedor first
     const unique = [...new Map(results.map(r => [r.id, r])).values()]
+    const provFirst = (provNombre || '').split(/[\s,]+/)[0]?.toLowerCase() || ''
+    if (provFirst.length >= 3) {
+      unique.sort((a, b) => {
+        const aMatch = a.proveedor_nombre?.toLowerCase().includes(provFirst) ? 1 : 0
+        const bMatch = b.proveedor_nombre?.toLowerCase().includes(provFirst) ? 1 : 0
+        return bMatch - aMatch
+      })
+    }
     setMatchResults(unique)
     setSearching(false)
   }
