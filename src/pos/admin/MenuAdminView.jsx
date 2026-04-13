@@ -39,17 +39,42 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
   const [menus, setMenus] = useState([])
   const [loading, setLoading] = useState(true)
 
-  // Load menus for this store
+  // Load menus for this store (two-step: resolve sucursal_id first)
   useEffect(() => {
     const load = async () => {
-      // pos_menus uses sucursal_id (FK to sucursales), so join
-      const { data } = await db
-        .from('pos_menus')
-        .select('id, nombre, canal, activo, sucursal_id, sucursales!inner(store_code)')
-        .eq('sucursales.store_code', storeCode)
-        .order('nombre')
-      setMenus(data || [])
-      if (data?.length) setMenuId(data[0].id)
+      // Step 1: get sucursal UUID from store_code
+      const { data: suc } = await db
+        .from('sucursales')
+        .select('id')
+        .eq('store_code', storeCode)
+        .single()
+
+      let menusData = []
+      if (suc?.id) {
+        // Step 2: get menus for this sucursal
+        const { data } = await db
+          .from('pos_menus')
+          .select('id, nombre, canal, activo, sucursal_id')
+          .eq('sucursal_id', suc.id)
+          .order('nombre')
+        menusData = data || []
+      }
+
+      // Fallback: if no menus found for this store, show ALL menus (admin convenience)
+      if (menusData.length === 0) {
+        const { data } = await db
+          .from('pos_menus')
+          .select('id, nombre, canal, activo, sucursal_id, sucursales(store_code, nombre)')
+          .eq('activo', true)
+          .order('nombre')
+        menusData = (data || []).map(m => ({
+          ...m,
+          _label: `${m.nombre} (${m.canal}) — ${m.sucursales?.nombre || m.sucursales?.store_code || '?'}`
+        }))
+      }
+
+      setMenus(menusData)
+      if (menusData.length) setMenuId(menusData[0].id)
       setLoading(false)
     }
     load()
@@ -71,13 +96,13 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
         <span className="pos-header-store">{storeCode}</span>
         <div className="pos-header-sep" />
         {/* Menu selector */}
-        {menus.length > 1 && (
+        {menus.length > 0 && (
           <select
             value={menuId || ''}
             onChange={e => setMenuId(e.target.value)}
             style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12 }}
           >
-            {menus.map(m => <option key={m.id} value={m.id}>{m.nombre} ({m.canal})</option>)}
+            {menus.map(m => <option key={m.id} value={m.id}>{m._label || `${m.nombre} (${m.canal})`}</option>)}
           </select>
         )}
         <span className="pos-header-user">{user?.nombre?.split(' ')[0]}</span>
