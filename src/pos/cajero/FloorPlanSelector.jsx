@@ -181,20 +181,20 @@ export default function FloorPlanSelector({ storeCode, storeName, onSelectMesa, 
             preserveAspectRatio="xMidYMid meet"
           >
             {/* Fondo del salón */}
-            <rect x="0" y="0" width={SVG_W} height={SVG_H} fill="#111" rx="1" />
+            <rect x="0" y="0" width={SVG_W} height={SVG_H} fill="#1c1c22" rx="1" />
 
             {/* Cuadrícula sutil */}
             {Array.from({ length: 9 }).map((_, i) => (
               <line key={`vg${i}`} x1={(i + 1) * 10} y1="0" x2={(i + 1) * 10} y2={SVG_H}
-                stroke="#1c1c1c" strokeWidth="0.3" />
+                stroke="#2a2a32" strokeWidth="0.3" />
             ))}
             {Array.from({ length: 4 }).map((_, i) => (
               <line key={`hg${i}`} x1="0" y1={(i + 1) * (SVG_H / 5)} x2={SVG_W} y2={(i + 1) * (SVG_H / 5)}
-                stroke="#1c1c1c" strokeWidth="0.3" />
+                stroke="#2a2a32" strokeWidth="0.3" />
             ))}
 
             {/* Etiqueta zona */}
-            <text x="1" y="4" fill="#222" fontSize="3" fontFamily="sans-serif">
+            <text x="1" y="4" fill="#2a2a32" fontSize="3" fontFamily="sans-serif">
               {ZONA_LABELS[selectedZona] || selectedZona}
             </text>
 
@@ -206,8 +206,8 @@ export default function FloorPlanSelector({ storeCode, storeName, onSelectMesa, 
               const h       = parseFloat(mesa.alto)
               const ocupada = isOcupada(mesa)
               const hovered = hoveredMesa === mesa.id && !ocupada
-              const color   = ocupada ? '#e63946' : hovered ? '#6ef08f' : '#4ade80'
-              const bgColor = ocupada ? '#1f0608' : hovered ? '#0a2015' : '#0d1a10'
+              const color   = ocupada ? '#ff6b35' : hovered ? '#6ef08f' : '#2dd4a8'
+              const bgColor = ocupada ? '#1a0a0a' : hovered ? '#0a2015' : '#0d1a18'
               const forma   = mesa.forma || 'cuadrada'
 
               return (
@@ -252,7 +252,7 @@ export default function FloorPlanSelector({ storeCode, storeName, onSelectMesa, 
                   <text
                     x={x + w / 2} y={y + h / 2 + 2.5}
                     textAnchor="middle" dominantBaseline="middle"
-                    fill={ocupada ? '#e6394688' : '#4ade8066'}
+                    fill={ocupada ? '#ff6b3588' : '#2dd4a866'}
                     fontSize={2.2}
                     fontFamily="sans-serif"
                   >

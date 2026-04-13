@@ -163,12 +163,12 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
 
         {/* Items List */}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ color: '#888', fontSize: 12, marginBottom: 10 }}>
+          <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 10 }}>
             Selecciona los ítems a mover a una nueva cuenta
           </div>
           <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #333', borderRadius: 8, padding: 12 }}>
             {originalItems.length === 0 ? (
-              <div style={{ color: '#666', textAlign: 'center', padding: 24 }}>Sin ítems</div>
+              <div style={{ color: '#8b8997', textAlign: 'center', padding: 24 }}>Sin ítems</div>
             ) : (
               originalItems.map(item => {
                 const itemSel = selectedItems[item.id] || { selected: false, qtyToMove: 1 }
@@ -183,7 +183,7 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                       marginBottom: 8,
                       background: itemSel.selected ? '#2a2a2a' : 'transparent',
                       borderRadius: 6,
-                      border: `1px solid ${itemSel.selected ? '#4ade80' : '#333'}`,
+                      border: `1px solid ${itemSel.selected ? '#2dd4a8' : '#2a2a32'}`,
                     }}
                   >
                     <input
@@ -194,7 +194,7 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                     />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 500 }}>{item.nombre}</div>
-                      <div style={{ fontSize: 12, color: '#888' }}>
+                      <div style={{ fontSize: 12, color: '#8b8997' }}>
                         ${item.precio.toFixed(2)} × {item.cantidad} = ${(item.precio * item.cantidad).toFixed(2)}
                       </div>
                     </div>
@@ -204,9 +204,9 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                           onClick={() => handleQtyChange(item.id, itemSel.qtyToMove - 1)}
                           disabled={itemSel.qtyToMove <= 1}
                           style={{
-                            background: '#333',
+                            background: '#2a2a32',
                             border: '1px solid #444',
-                            color: '#888',
+                            color: '#8b8997',
                             padding: '4px 8px',
                             borderRadius: 4,
                             cursor: 'pointer',
@@ -224,7 +224,7 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                           style={{
                             width: 40,
                             textAlign: 'center',
-                            background: '#1a1a1a',
+                            background: '#1e1e26',
                             border: '1px solid #333',
                             color: '#fff',
                             padding: '4px 6px',
@@ -236,9 +236,9 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                           onClick={() => handleQtyChange(item.id, itemSel.qtyToMove + 1)}
                           disabled={itemSel.qtyToMove >= item.cantidad}
                           style={{
-                            background: '#333',
+                            background: '#2a2a32',
                             border: '1px solid #444',
-                            color: '#888',
+                            color: '#8b8997',
                             padding: '4px 8px',
                             borderRadius: 4,
                             cursor: 'pointer',
@@ -259,11 +259,11 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
         {/* Preview */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
           {/* Cuenta Original */}
-          <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, padding: 12 }}>
+          <div style={{ background: '#1e1e26', border: '1px solid #333', borderRadius: 8, padding: 12 }}>
             <div style={{ fontWeight: 600, marginBottom: 10, color: '#f87171' }}>Cuenta Original</div>
             <div style={{ maxHeight: 150, overflowY: 'auto', marginBottom: 12, fontSize: 12 }}>
               {remainingItems.length === 0 ? (
-                <div style={{ color: '#666' }}>Sin ítems</div>
+                <div style={{ color: '#8b8997' }}>Sin ítems</div>
               ) : (
                 remainingItems.map(item => (
                   <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: '#ccc' }}>
@@ -282,11 +282,11 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
           </div>
 
           {/* Nueva Cuenta */}
-          <div style={{ background: '#1a1a1a', border: '1px solid #4ade80', borderRadius: 8, padding: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 10, color: '#4ade80' }}>Nueva Cuenta</div>
+          <div style={{ background: '#1e1e26', border: '1px solid #2dd4a8', borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: '#2dd4a8' }}>Nueva Cuenta</div>
             <div style={{ maxHeight: 150, overflowY: 'auto', marginBottom: 12, fontSize: 12 }}>
               {newAccountItems.length === 0 ? (
-                <div style={{ color: '#666' }}>Selecciona ítems arriba</div>
+                <div style={{ color: '#8b8997' }}>Selecciona ítems arriba</div>
               ) : (
                 newAccountItems.map(item => (
                   <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: '#ccc' }}>
@@ -311,7 +311,7 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
           disabled={selectedIds.length === 0 || loading}
           onClick={handleConfirm}
           style={{
-            background: selectedIds.length > 0 && !loading ? '#4ade80' : '#333',
+            background: selectedIds.length > 0 && !loading ? '#2dd4a8' : '#2a2a32',
             color: selectedIds.length > 0 && !loading ? '#0d2818' : '#666',
           }}
         >

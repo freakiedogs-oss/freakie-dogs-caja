@@ -6,7 +6,7 @@ import { STORES } from '../config'
 // Constantes
 // ──────────────────────────────────────────────
 const TIPO_INFO = {
-  mesa:            { icon: '🪑', label: 'Mesas',       color: '#4ade80' },
+  mesa:            { icon: '🪑', label: 'Mesas',       color: '#2dd4a8' },
   para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
   delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
   pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
@@ -34,8 +34,8 @@ const ZONA_LABELS = {
 const ESTADO_ACTIVO = ['abierta', 'enviada_cocina', 'en_preparacion', 'lista', 'entregada']
 
 const MESA_STATUS_COLORS = {
-  libre:  { bg: '#0d1a10', border: '#4ade80', text: '#4ade80' },
-  activa: { bg: '#1a1200', border: '#fbbf24', text: '#fbbf24' },
+  libre:  { bg: '#0d1a18', border: '#2dd4a8', text: '#2dd4a8' },
+  activa: { bg: '#1a1800', border: '#fbbf24', text: '#fbbf24' },
   lista:  { bg: '#0a1520', border: '#60a5fa', text: '#60a5fa' },
 }
 
@@ -197,8 +197,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   // ── Loading ──
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-        <div className="spin" /><span style={{ color: '#555', fontSize: 14 }}>Cargando...</span>
+      <div style={{ minHeight: '100vh', background: '#141418', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+        <div className="spin" /><span style={{ color: '#8b8997', fontSize: 14 }}>Cargando...</span>
       </div>
     )
   }
@@ -208,12 +208,13 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
 
       {/* ── HEADER (igual a .topbar del ERP) ── */}
       <header className="pos-header">
-        <span className="pos-header-brand">🍔 Freakie POS</span>
+        <img src="/icon-192.png" className="pos-header-logo" alt="Freakie Dogs" />
+        <span className="pos-header-brand">Freakie POS</span>
         {onChangeStore ? (
           <button
             className="pos-header-store"
             onClick={onChangeStore}
-            style={{ cursor: 'pointer', background: 'none', border: '1px solid #333', borderRadius: 6, padding: '2px 8px', color: '#e63946', fontWeight: 700, fontSize: 13 }}
+            style={{ cursor: 'pointer', background: 'none', border: '1px solid #2a2a32', borderRadius: 6, padding: '2px 8px', color: '#ff6b35', fontWeight: 700, fontSize: 13 }}
             title="Cambiar sucursal"
           >
             {storeName} ▾
@@ -305,7 +306,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                   {mesaMenu?.id === mesa.id && cuenta && (
                     <div style={{
                       position: 'absolute', top: 4, right: 4, zIndex: 50,
-                      background: '#1a1a2e', border: '1px solid #e63946', borderRadius: 8,
+                      background: '#1e1e26', border: '1px solid #ff6b35', borderRadius: 8,
                       padding: '6px 0', minWidth: 140, boxShadow: '0 4px 20px rgba(0,0,0,.6)',
                     }}>
                       <button
@@ -313,7 +314,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                         onClick={() => handleLiberarMesa(mesa)}
                       >🔓 Liberar mesa</button>
                       <button
-                        style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#888', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
+                        style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#8b8997', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
                         onClick={() => setMesaMenu(null)}
                       >✕ Cancelar</button>
                     </div>
@@ -335,7 +336,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             )}
             <div className="poshome-cuentas-list">
               {cuentasFiltradas.map(c => {
-                const info   = TIPO_INFO[c.tipo] || { icon: '📦', label: c.tipo, color: '#888' }
+                const info   = TIPO_INFO[c.tipo] || { icon: '📦', label: c.tipo, color: '#8b8997' }
                 const items  = c.pos_cuenta_items?.length || 0
                 return (
                   <button
@@ -371,7 +372,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {cuentasFiltradas.length === 0 && !mostrarPlano && (
           <div className="poshome-empty">
             <div style={{ fontSize: 40 }}>{FILTROS.find(f => f.key === filtro)?.icon || '📋'}</div>
-            <div style={{ color: '#555', fontSize: 14, marginTop: 8 }}>
+            <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>
               Sin órdenes de {FILTROS.find(f => f.key === filtro)?.label || filtro}
             </div>
             {filtro !== 'todos' && filtro !== 'mesa' && (
@@ -390,8 +391,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {cuentas.length === 0 && filtro === 'todos' && (
           <div className="poshome-empty">
             <div style={{ fontSize: 48 }}>🍔</div>
-            <div style={{ color: '#444', fontSize: 14, marginTop: 8 }}>Sin órdenes activas</div>
-            <div style={{ color: '#333', fontSize: 12 }}>Usa los botones de abajo para crear una nueva</div>
+            <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>Sin órdenes activas</div>
+            <div style={{ color: '#6b6878', fontSize: 12 }}>Usa los botones de abajo para crear una nueva</div>
           </div>
         )}
 
@@ -403,7 +404,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {hasMesas && (
           <button
             className="poshome-quick-btn"
-            style={{ '--qt-color': '#4ade80' }}
+            style={{ '--qt-color': '#2dd4a8' }}
             onClick={() => setFiltro('mesa')}
           >
             <span className="poshome-quick-icon">🪑</span>
@@ -427,13 +428,13 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         </>)}
         {/* KDS: acceso rápido para cocina / gerente / admin / ejecutivo */}
         {KDS_ROLES.includes(user.rol) && onGoToKDS && (
-          <button className="poshome-quick-btn" style={{ '--qt-color': '#e63946' }} onClick={onGoToKDS}>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#ff6b35' }} onClick={onGoToKDS}>
             <span className="poshome-quick-icon">🍳</span><span className="poshome-quick-label">Cocina KDS</span>
           </button>
         )}
         {/* Historial: cajero+ (cajero, cajera, gerente, admin, ejecutivo, superadmin) */}
         {!MESERO_ROLES.includes(user.rol) && onGoToHistorial && (
-          <button className="poshome-quick-btn" style={{ '--qt-color': '#4ade80' }} onClick={onGoToHistorial}>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#2dd4a8' }} onClick={onGoToHistorial}>
             <span className="poshome-quick-icon">📋</span><span className="poshome-quick-label">Historial</span>
           </button>
         )}

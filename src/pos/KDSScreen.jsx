@@ -6,7 +6,7 @@ import { STORES } from '../config'
 // Constantes
 // ──────────────────────────────────────────────
 const CANAL_INFO = {
-  mesa:            { icon: '🪑', label: 'Sucursal',    color: '#4ade80' },
+  mesa:            { icon: '🪑', label: 'Sucursal',    color: '#2dd4a8' },
   para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
   delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
   pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
@@ -49,9 +49,9 @@ function useTimer() {
 }
 
 function elapsed(isoStr) {
-  if (!isoStr) return { text: '', color: '#555', urgent: false }
+  if (!isoStr) return { text: '', color: '#8b8997', urgent: false }
   const mins = Math.floor((Date.now() - new Date(isoStr).getTime()) / 60000)
-  if (mins < 5)  return { text: `${mins}m`,                    color: '#4ade80', urgent: false }
+  if (mins < 5)  return { text: `${mins}m`,                    color: '#2dd4a8', urgent: false }
   if (mins < 10) return { text: `${mins}m`,                    color: '#fbbf24', urgent: false }
   if (mins < 20) return { text: `${mins}m ⚡`,                  color: '#f97316', urgent: true  }
   return             { text: `${Math.floor(mins/60)}h${mins%60}m ‼️`, color: '#f87171', urgent: true  }
@@ -281,7 +281,7 @@ export default function KDSScreen({ user, onBack }) {
   }
 
   // ── Render ──
-  const canalInfo = (canal) => CANAL_INFO[canal] || { icon: '📦', label: canal, color: '#888' }
+  const canalInfo = (canal) => CANAL_INFO[canal] || { icon: '📦', label: canal, color: '#8b8997' }
 
   return (
     <div className="kds-root">
@@ -319,7 +319,7 @@ export default function KDSScreen({ user, onBack }) {
             </div>
 
             <span className="pos-header-sep" />
-            <span style={{ fontSize: 12, color: queue.length > 0 ? '#fbbf24' : '#4ade80', fontWeight: 700 }}>
+            <span style={{ fontSize: 12, color: queue.length > 0 ? '#fbbf24' : '#2dd4a8', fontWeight: 700 }}>
               {queue.length > 0 ? `● ${queue.length} pendiente${queue.length !== 1 ? 's' : ''}` : '● Sin órdenes'}
             </span>
           </>
@@ -380,10 +380,10 @@ export default function KDSScreen({ user, onBack }) {
           ) : comandas.length === 0 ? (
             <div className="kds-empty">
               <div style={{ fontSize: 56 }}>✅</div>
-              <div style={{ color: '#4ade80', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
+              <div style={{ color: '#2dd4a8', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
                 Cocina al día
               </div>
-              <div style={{ color: '#444', fontSize: 13, marginTop: 4 }}>
+              <div style={{ color: '#8b8997', fontSize: 13, marginTop: 4 }}>
                 Sin órdenes pendientes
               </div>
             </div>
@@ -471,10 +471,10 @@ export default function KDSScreen({ user, onBack }) {
           ) : historial.length === 0 ? (
             <div className="kds-empty">
               <div style={{ fontSize: 56 }}>📋</div>
-              <div style={{ color: '#888', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
+              <div style={{ color: '#8b8997', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
                 Sin completadas hoy
               </div>
-              <div style={{ color: '#444', fontSize: 13, marginTop: 4 }}>
+              <div style={{ color: '#8b8997', fontSize: 13, marginTop: 4 }}>
                 Las órdenes completadas aparecerán aquí
               </div>
             </div>
@@ -524,7 +524,7 @@ export default function KDSScreen({ user, onBack }) {
                             <span className="kds-card-num">#{comanda.comanda_numero}</span>
                           )}
                         </div>
-                        <span className="kds-card-timer" style={{ color: '#4ade80' }}>
+                        <span className="kds-card-timer" style={{ color: '#2dd4a8' }}>
                           ✓ {timeStr}
                         </span>
                       </div>
@@ -549,7 +549,7 @@ export default function KDSScreen({ user, onBack }) {
 
                       {/* Botón Revertir */}
                       <div className="kds-card-footer">
-                        <span className="kds-card-count" style={{ color: '#4ade80' }}>
+                        <span className="kds-card-count" style={{ color: '#2dd4a8' }}>
                           {comanda.items.length} item{comanda.items.length !== 1 ? 's' : ''}
                         </span>
                         <button

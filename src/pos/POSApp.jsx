@@ -19,20 +19,20 @@ function StoreSelector({ user, onSelect, onLogout }) {
   return (
     <div style={{
       minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', padding: '0 24px'
+      alignItems: 'center', justifyContent: 'center', background: '#141418', padding: '0 24px'
     }}>
       <img
         src="/icon-192.png"
         alt="Freakie Dogs"
         style={{ width: 80, height: 80, borderRadius: 16, marginBottom: 10, objectFit: 'contain' }}
       />
-      <div style={{ fontWeight: 800, fontSize: 20, color: '#e63946', marginBottom: 4 }}>
+      <div style={{ fontWeight: 800, fontSize: 20, color: '#ff6b35', marginBottom: 4 }}>
         Freakie POS
       </div>
-      <div style={{ color: '#888', fontSize: 13, marginBottom: 6 }}>
+      <div style={{ color: '#8b8997', fontSize: 13, marginBottom: 6 }}>
         Hola, {user.nombre?.split(' ')[0]} 👋
       </div>
-      <div style={{ color: '#555', fontSize: 12, marginBottom: 28, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 28, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         Selecciona sucursal
       </div>
 
@@ -42,17 +42,17 @@ function StoreSelector({ user, onSelect, onLogout }) {
             key={code}
             onClick={() => onSelect(code)}
             style={{
-              padding: '16px 20px', border: '1px solid #222', borderRadius: 12,
-              background: '#111', color: '#f0f0f0', fontSize: 16, fontWeight: 600,
+              padding: '16px 20px', border: '1px solid #2a2a32', borderRadius: 12,
+              background: '#1c1c22', color: '#e8e6ef', fontSize: 16, fontWeight: 600,
               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
               transition: 'all 0.15s',
             }}
-            onMouseOver={e => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.borderColor = '#e63946' }}
-            onMouseOut={e => { e.currentTarget.style.background = '#111'; e.currentTarget.style.borderColor = '#222' }}
+            onMouseOver={e => { e.currentTarget.style.background = '#1e1e26'; e.currentTarget.style.borderColor = '#ff6b35' }}
+            onMouseOut={e => { e.currentTarget.style.background = '#1c1c22'; e.currentTarget.style.borderColor = '#2a2a32' }}
           >
             <span style={{ fontSize: 22 }}>🏪</span>
             <span style={{ flex: 1, textAlign: 'left' }}>{name}</span>
-            <span style={{ color: '#555', fontSize: 12, fontWeight: 400 }}>{code}</span>
+            <span style={{ color: '#8b8997', fontSize: 12, fontWeight: 400 }}>{code}</span>
           </button>
         ))}
       </div>
@@ -60,8 +60,8 @@ function StoreSelector({ user, onSelect, onLogout }) {
       <button
         onClick={onLogout}
         style={{
-          marginTop: 32, padding: '10px 24px', border: '1px solid #333', borderRadius: 8,
-          background: 'transparent', color: '#666', fontSize: 13, cursor: 'pointer',
+          marginTop: 32, padding: '10px 24px', border: '1px solid #2a2a32', borderRadius: 8,
+          background: 'transparent', color: '#8b8997', fontSize: 13, cursor: 'pointer',
         }}
       >
         ← Cambiar usuario

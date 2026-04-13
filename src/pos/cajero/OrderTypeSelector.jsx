@@ -35,7 +35,7 @@ export default function OrderTypeSelector({ onSelect, onClose, current, currentM
           >
             <span className="pos-type-icon">{t.icon}</span>
             <span className="pos-type-label">{t.label}</span>
-            <span style={{ fontSize: 10, color: '#555' }}>{t.desc}</span>
+            <span style={{ fontSize: 10, color: '#8b8997' }}>{t.desc}</span>
           </button>
         ))}
       </div>
@@ -44,8 +44,8 @@ export default function OrderTypeSelector({ onSelect, onClose, current, currentM
       {selected === 'local' && (
         <div style={{
           marginBottom: 12, padding: '8px 12px',
-          background: '#4ade8010', border: '1px solid #4ade8030',
-          borderRadius: 8, fontSize: 12, color: '#4ade80',
+          background: '#2dd4a810', border: '1px solid #2dd4a830',
+          borderRadius: 8, fontSize: 12, color: '#2dd4a8',
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
           🪑 Se abrirá el plano del piso para elegir mesa
@@ -55,7 +55,7 @@ export default function OrderTypeSelector({ onSelect, onClose, current, currentM
       {/* Para llevar / Delivery: referencia */}
       {(selected === 'delivery' || selected === 'pedidos_ya') && (
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
+          <label style={{ fontSize: 12, color: '#8b8997', display: 'block', marginBottom: 6 }}>
             Referencia / Nombre cliente (opcional)
           </label>
           <input
@@ -89,13 +89,13 @@ export default function OrderTypeSelector({ onSelect, onClose, current, currentM
   if (!modal) {
     return (
       <div style={{
-        minHeight: '100vh', background: '#0d0d0d',
+        minHeight: '100vh', background: '#141418',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
       }}>
         <div style={{ width: '100%', maxWidth: 480 }}>
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <div style={{ fontSize: 40 }}>🍔</div>
-            <div style={{ fontSize: 20, fontWeight: 900, color: '#e63946', marginTop: 6 }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: '#ff6b35', marginTop: 6 }}>
               FREAKIE DOGS POS
             </div>
           </div>

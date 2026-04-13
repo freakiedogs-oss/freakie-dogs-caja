@@ -41,20 +41,20 @@ export default function POSLogin({ onLogin }) {
   return (
     <div style={{
       minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', background: '#111', padding: '0 24px'
+      alignItems: 'center', justifyContent: 'center', background: '#141418', padding: '0 24px'
     }}>
       <img
         src="/icon-192.png"
         alt="Freakie Dogs"
         style={{ width: 120, height: 120, borderRadius: 20, marginBottom: 12, objectFit: 'contain' }}
       />
-      <div style={{ fontWeight: 800, fontSize: 22, color: '#e63946' }}>
+      <div style={{ fontWeight: 800, fontSize: 22, color: '#ff6b35' }}>
         Freakie Dogs
       </div>
-      <div style={{ color: '#555', fontSize: 12, marginTop: 3, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+      <div style={{ color: '#8b8997', fontSize: 12, marginTop: 3, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
         Punto de Venta
       </div>
-      <div style={{ color: '#444', fontSize: 12, marginBottom: 32 }}>
+      <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 32 }}>
         Ingresa tu PIN
       </div>
 
@@ -63,8 +63,8 @@ export default function POSLogin({ onLogin }) {
         {[0,1,2,3,4,5].map(i => (
           <div key={i} style={{
             width: 14, height: 14, borderRadius: '50%',
-            background: pin.length > i ? '#e63946' : '#222',
-            border: '2px solid ' + (pin.length > i ? '#e63946' : '#333'),
+            background: pin.length > i ? '#ff6b35' : '#2a2a32',
+            border: '2px solid ' + (pin.length > i ? '#ff6b35' : '#2a2a32'),
             transition: 'all 0.1s'
           }} />
         ))}
@@ -80,20 +80,20 @@ export default function POSLogin({ onLogin }) {
         {keys.map((k, i) => k === '' ? <div key={i} /> : (
           <button key={i} onClick={() => press(k)} style={{
             padding: '16px', border: 'none', borderRadius: 12,
-            background: k === 'del' ? '#1e1e1e' : '#181818',
-            color: '#f0f0f0', fontSize: k === 'del' ? 18 : 20,
+            background: k === 'del' ? '#1e1e26' : '#1c1c22',
+            color: '#e8e6ef', fontSize: k === 'del' ? 18 : 20,
             fontWeight: 700, cursor: 'pointer',
-            border: '1px solid #222', transition: 'background 0.1s'
+            border: '1px solid #2a2a32', transition: 'background 0.1s'
           }}
-            onMouseOver={e => e.currentTarget.style.background = '#2a2a2a'}
-            onMouseOut={e => e.currentTarget.style.background = k === 'del' ? '#1e1e1e' : '#181818'}
+            onMouseOver={e => e.currentTarget.style.background = '#2a2a32'}
+            onMouseOut={e => e.currentTarget.style.background = k === 'del' ? '#1e1e26' : '#1c1c22'}
           >
             {k === 'del' ? '⌫' : k}
           </button>
         ))}
       </div>
 
-      <div style={{ marginTop: 40, fontSize: 11, color: '#333' }}>
+      <div style={{ marginTop: 40, fontSize: 11, color: '#6b6878' }}>
         Freakie Dogs POS v1.0
       </div>
     </div>

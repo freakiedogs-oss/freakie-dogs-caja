@@ -8,7 +8,7 @@ import NotaCreditoModal from './cajero/NotaCreditoModal'
 // Constantes
 // ──────────────────────────────────────────────
 const TIPO_INFO = {
-  mesa:            { icon: '🪑', label: 'Mesas',       color: '#4ade80' },
+  mesa:            { icon: '🪑', label: 'Mesas',       color: '#2dd4a8' },
   para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
   delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
   pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
@@ -248,9 +248,9 @@ export default function HistorialCobros({ user, onBack }) {
   // ── Loading ──
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+      <div style={{ minHeight: '100vh', background: '#141418', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
         <div className="spin" />
-        <span style={{ color: '#555', fontSize: 14 }}>Cargando historial...</span>
+        <span style={{ color: '#8b8997', fontSize: 14 }}>Cargando historial...</span>
       </div>
     )
   }
@@ -261,11 +261,12 @@ export default function HistorialCobros({ user, onBack }) {
       {/* ── HEADER ── */}
       <header className="pos-header">
         <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
-        <span className="pos-header-brand">🍔 Freakie POS</span>
+        <img src="/icon-192.png" className="pos-header-logo" alt="Freakie Dogs" />
+        <span className="pos-header-brand">Freakie POS</span>
         <span className="pos-header-store">{storeName}</span>
         <span
           className="pos-header-btn"
-          style={{ background: '#4ade8018', borderColor: '#4ade80', color: '#4ade80', cursor: 'default' }}
+          style={{ background: '#2dd4a818', borderColor: '#2dd4a8', color: '#2dd4a8', cursor: 'default' }}
         >
           📋 Historial de Cobros
         </span>
@@ -281,8 +282,8 @@ export default function HistorialCobros({ user, onBack }) {
         {cuentas.length === 0 ? (
           <div className="historial-empty">
             <div style={{ fontSize: 48 }}>📋</div>
-            <div style={{ color: '#444', fontSize: 14, marginTop: 8 }}>Sin cobros hoy</div>
-            <div style={{ color: '#333', fontSize: 12 }}>Los tickets aparecerán aquí una vez cobrados</div>
+            <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>Sin cobros hoy</div>
+            <div style={{ color: '#6b6878', fontSize: 12 }}>Los tickets aparecerán aquí una vez cobrados</div>
           </div>
         ) : (
           <div className="historial-cuentas-list">
@@ -315,20 +316,20 @@ export default function HistorialCobros({ user, onBack }) {
 
                     <div className="historial-ticket-meta">
                       <span className="historial-ticket-time">{formatTime(cuenta.cobrada_at)}</span>
-                      <span className="historial-ticket-dte" style={{ color: '#666' }}>
+                      <span className="historial-ticket-dte" style={{ color: '#8b8997' }}>
                         {dteDisplay.icon} {dteDisplay.label}
                         {cuenta.dte_numero_control && ` #${cuenta.dte_numero_control}`}
                       </span>
                     </div>
 
-                    <div className="historial-ticket-total" style={{ color: '#4ade80', fontWeight: 700, fontSize: 16 }}>
+                    <div className="historial-ticket-total" style={{ color: '#2dd4a8', fontWeight: 700, fontSize: 16 }}>
                       ${parseFloat(cuenta.total || 0).toFixed(2)}
                       {cuenta.nc_codigo_generacion && (
                         <div style={{ fontSize: 9, color: '#f87171', fontWeight: 600, marginTop: 2 }}>📋 NC emitida</div>
                       )}
                     </div>
 
-                    <span style={{ color: '#555', fontSize: 12, marginLeft: 8 }}>
+                    <span style={{ color: '#8b8997', fontSize: 12, marginLeft: 8 }}>
                       {isExpanded ? '▼' : '▶'}
                     </span>
                   </div>
@@ -338,7 +339,7 @@ export default function HistorialCobros({ user, onBack }) {
                     <>
                       <div className="historial-ticket-items">
                         {items.length === 0 ? (
-                          <div style={{ color: '#555', fontSize: 12, padding: 8 }}>Sin ítems registrados</div>
+                          <div style={{ color: '#8b8997', fontSize: 12, padding: 8 }}>Sin ítems registrados</div>
                         ) : (
                           <table className="historial-items-table">
                             <tbody>
@@ -371,7 +372,7 @@ export default function HistorialCobros({ user, onBack }) {
                             <span>${parseFloat(cuenta.propina).toFixed(2)}</span>
                           </div>
                         )}
-                        <div className="historial-total-row" style={{ fontSize: 14, fontWeight: 700, color: '#4ade80', borderTop: '1px solid #222', paddingTop: 6 }}>
+                        <div className="historial-total-row" style={{ fontSize: 14, fontWeight: 700, color: '#2dd4a8', borderTop: '1px solid #2a2a32', paddingTop: 6 }}>
                           <span>Total:</span>
                           <span>${parseFloat(cuenta.total || 0).toFixed(2)}</span>
                         </div>

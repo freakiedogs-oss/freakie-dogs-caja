@@ -100,15 +100,15 @@ export default function CustomerSearch({ onSelect, selected }) {
   if (selected) {
     return (
       <div style={{
-        background: '#1a2a1a', border: '1px solid #2d5a2d', borderRadius: 8,
+        background: '#0d1a18', border: '1px solid #1a3a32', borderRadius: 8,
         padding: '8px 12px', marginBottom: 12
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 13 }}>
+            <div style={{ color: '#2dd4a8', fontWeight: 700, fontSize: 13 }}>
               🏢 {selected.nombre}
             </div>
-            <div style={{ color: '#666', fontSize: 11, marginTop: 2 }}>
+            <div style={{ color: '#8b8997', fontSize: 11, marginTop: 2 }}>
               NIT: {selected.numero_documento} · NRC: {selected.nrc}
               {selected.giro && ` · ${selected.giro}`}
             </div>
@@ -128,15 +128,15 @@ export default function CustomerSearch({ onSelect, selected }) {
   // ── Formulario nuevo cliente ──
   if (showNew) {
     const fieldStyle = {
-      background: '#1a1a1a', border: '1px solid #333', borderRadius: 6,
-      color: '#e0e0e0', padding: '6px 10px', fontSize: 12, width: '100%',
+      background: '#1e1e26', border: '1px solid #2a2a32', borderRadius: 6,
+      color: '#e8e6ef', padding: '6px 10px', fontSize: 12, width: '100%',
       marginBottom: 6, outline: 'none',
     }
-    const labelStyle = { color: '#888', fontSize: 11, marginBottom: 2, display: 'block' }
+    const labelStyle = { color: '#8b8997', fontSize: 11, marginBottom: 2, display: 'block' }
 
     return (
       <div style={{
-        background: '#111', border: '1px solid #333', borderRadius: 8,
+        background: '#1c1c22', border: '1px solid #2a2a32', borderRadius: 8,
         padding: 12, marginBottom: 12
       }}>
         <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
@@ -193,8 +193,8 @@ export default function CustomerSearch({ onSelect, selected }) {
           <button
             onClick={() => setShowNew(false)}
             style={{
-              padding: '8px 12px', background: '#1e1e1e', border: '1px solid #333',
-              borderRadius: 6, color: '#888', cursor: 'pointer', fontSize: 12
+              padding: '8px 12px', background: '#1e1e26', border: '1px solid #2a2a32',
+              borderRadius: 6, color: '#8b8997', cursor: 'pointer', fontSize: 12
             }}
           >Cancelar</button>
         </div>
@@ -205,14 +205,14 @@ export default function CustomerSearch({ onSelect, selected }) {
   // ── Buscador ──
   return (
     <div style={{ marginBottom: 12 }}>
-      <label style={{ color: '#888', fontSize: 11, display: 'block', marginBottom: 4 }}>
+      <label style={{ color: '#8b8997', fontSize: 11, display: 'block', marginBottom: 4 }}>
         🏢 Cliente para CCF (buscar por NIT, NRC o nombre)
       </label>
       <div style={{ display: 'flex', gap: 6 }}>
         <input
           style={{
-            flex: 1, background: '#1a1a1a', border: '1px solid #444', borderRadius: 6,
-            color: '#e0e0e0', padding: '8px 12px', fontSize: 13, outline: 'none',
+            flex: 1, background: '#1e1e26', border: '1px solid #2a2a32', borderRadius: 6,
+            color: '#e8e6ef', padding: '8px 12px', fontSize: 13, outline: 'none',
           }}
           placeholder="Buscar: 0614... o EMPRESA..."
           value={query}
@@ -222,18 +222,18 @@ export default function CustomerSearch({ onSelect, selected }) {
         <button
           onClick={() => setShowNew(true)}
           style={{
-            padding: '8px 12px', background: '#1e1e1e', border: '1px solid #444',
+            padding: '8px 12px', background: '#1e1e26', border: '1px solid #2a2a32',
             borderRadius: 6, color: '#fbbf24', cursor: 'pointer', fontSize: 13, fontWeight: 700,
             whiteSpace: 'nowrap'
           }}
         >+ Nuevo</button>
       </div>
 
-      {loading && <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>Buscando...</div>}
+      {loading && <div style={{ color: '#8b8997', fontSize: 11, marginTop: 4 }}>Buscando...</div>}
 
       {results.length > 0 && (
         <div style={{
-          background: '#111', border: '1px solid #333', borderRadius: 6,
+          background: '#1c1c22', border: '1px solid #2a2a32', borderRadius: 6,
           marginTop: 4, maxHeight: 140, overflowY: 'auto'
         }}>
           {results.map(c => (
@@ -242,12 +242,12 @@ export default function CustomerSearch({ onSelect, selected }) {
               onClick={() => { onSelect(c); setQuery(''); setResults([]) }}
               style={{
                 display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px',
-                background: 'none', border: 'none', borderBottom: '1px solid #222',
-                cursor: 'pointer', color: '#ccc',
+                background: 'none', border: 'none', borderBottom: '1px solid #2a2a32',
+                cursor: 'pointer', color: '#e8e6ef',
               }}
             >
               <div style={{ fontWeight: 600, fontSize: 12 }}>{c.nombre}</div>
-              <div style={{ fontSize: 10, color: '#666' }}>
+              <div style={{ fontSize: 10, color: '#8b8997' }}>
                 NIT: {c.numero_documento || '—'} · NRC: {c.nrc || '—'}
                 {c.giro && ` · ${c.giro}`}
               </div>
@@ -257,7 +257,7 @@ export default function CustomerSearch({ onSelect, selected }) {
       )}
 
       {query.length >= 2 && !loading && results.length === 0 && (
-        <div style={{ color: '#666', fontSize: 11, marginTop: 4 }}>
+        <div style={{ color: '#8b8997', fontSize: 11, marginTop: 4 }}>
           Sin resultados.{' '}
           <span
             style={{ color: '#fbbf24', cursor: 'pointer', textDecoration: 'underline' }}

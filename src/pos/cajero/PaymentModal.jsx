@@ -110,7 +110,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
               {cambio > 0 && (
                 <div className="pos-ticket-row">
                   <span className="lbl">Cambio</span>
-                  <span className="val" style={{ color: '#4ade80' }}>${cambio.toFixed(2)}</span>
+                  <span className="val" style={{ color: '#2dd4a8' }}>${cambio.toFixed(2)}</span>
                 </div>
               )}
               {propinaNum > 0 && (
@@ -131,7 +131,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
                 background: '#0a2a0a', border: '1px solid #166534', borderRadius: 8,
                 padding: '10px 12px', marginTop: 12, marginBottom: 8
               }}>
-                <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                <div style={{ color: '#2dd4a8', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
                   📄 DTE Emitido — {dteResult.estado === 'PROCESADO' ? '✅ Aceptado por Hacienda' : dteResult.estado}
                 </div>
                 <div style={{ fontSize: 11, color: '#8b8', lineHeight: 1.6 }}>
@@ -164,8 +164,8 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
             {/* Si es ticket (sin DTE) */}
             {tipoDte === 'ticket' && !dteResult && !dteError && (
               <div style={{
-                background: '#1a1a1a', borderRadius: 8, padding: '8px 12px',
-                marginTop: 8, fontSize: 11, color: '#555', textAlign: 'center'
+                background: '#1e1e26', borderRadius: 8, padding: '8px 12px',
+                marginTop: 8, fontSize: 11, color: '#8b8997', textAlign: 'center'
               }}>
                 Comprobante interno — sin documento fiscal
               </div>
@@ -194,7 +194,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
           <div className="pos-payment-total-label">Total a cobrar</div>
           <div className="pos-payment-total-amount">${totalConProp.toFixed(2)}</div>
           {propinaNum > 0 && (
-            <div style={{ fontSize: 11, color: '#666' }}>
+            <div style={{ fontSize: 11, color: '#8b8997' }}>
               (incl. propina ${propinaNum.toFixed(2)})
             </div>
           )}
@@ -237,8 +237,8 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
                   <button
                     key={v}
                     style={{
-                      padding: '6px 12px', background: '#1e1e1e', border: '1px solid #333',
-                      borderRadius: 8, color: '#ccc', fontSize: 12, cursor: 'pointer'
+                      padding: '6px 12px', background: '#1e1e26', border: '1px solid #2a2a32',
+                      borderRadius: 8, color: '#e8e6ef', fontSize: 12, cursor: 'pointer'
                     }}
                     onClick={() => setEfectivo(v.toFixed(2))}
                   >
@@ -299,7 +299,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
             </div>
             <div style={{
               display: 'flex', justifyContent: 'space-between',
-              fontSize: 12, color: Math.abs(totalMixto - totalConProp) < 0.01 ? '#4ade80' : '#f87171',
+              fontSize: 12, color: Math.abs(totalMixto - totalConProp) < 0.01 ? '#2dd4a8' : '#f87171',
               marginBottom: 8
             }}>
               <span>Suma: ${totalMixto.toFixed(2)}</span>
@@ -355,13 +355,13 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
 
         {/* Items resumen */}
         <div style={{
-          background: '#1a1a1a', borderRadius: 8, padding: '8px 10px',
+          background: '#1e1e26', borderRadius: 8, padding: '8px 10px',
           marginBottom: 12, maxHeight: 80, overflowY: 'auto'
         }}>
           {items.map((it, i) => (
             <div key={i} style={{
               display: 'flex', justifyContent: 'space-between',
-              fontSize: 11, color: '#666', padding: '1px 0'
+              fontSize: 11, color: '#8b8997', padding: '1px 0'
             }}>
               <span>{it.qty}x {it.nombre}</span>
               <span>${(it.precio * it.qty).toFixed(2)}</span>

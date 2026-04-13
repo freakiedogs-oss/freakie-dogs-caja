@@ -10,7 +10,7 @@ import { emitDTE } from './dteService'
 // Constantes de display
 // ──────────────────────────────────────────────
 const TIPO_INFO = {
-  'mesa':           { icon: '🪑', label: 'Mesa',        color: '#4ade80', canal: 'local'          },
+  'mesa':           { icon: '🪑', label: 'Mesa',        color: '#2dd4a8', canal: 'local'          },
   'para_llevar':    { icon: '🥡', label: 'Para Llevar', color: '#f4a261', canal: 'para_llevar'     },
   'delivery_propio':{ icon: '🛵', label: 'Delivery',    color: '#60a5fa', canal: 'delivery_propio' },
   'pedidos_ya':     { icon: '📱', label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
@@ -554,9 +554,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // ── Loading ──
   if (loadingCuenta) {
     return (
-      <div style={{ minHeight: '100vh', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+      <div style={{ minHeight: '100vh', background: '#1c1c22', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
         <div className="spin" />
-        <span style={{ color: '#555', fontSize: 14 }}>Cargando cuenta...</span>
+        <span style={{ color: '#8b8997', fontSize: 14 }}>Cargando cuenta...</span>
       </div>
     )
   }
@@ -657,7 +657,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                   </button>
                 ))}
                 {itemsActivaCat.length === 0 && (
-                  <div style={{ color: '#333', fontSize: 13, padding: 20, gridColumn: '1/-1' }}>
+                  <div style={{ color: '#6b6878', fontSize: 13, padding: 20, gridColumn: '1/-1' }}>
                     No hay productos en esta categoría
                   </div>
                 )}
@@ -698,7 +698,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                   <div
                     className="pos-order-item-status"
                     title={item.saved ? 'Comandado' : 'Pendiente de comandar'}
-                    style={{ color: item.saved ? '#4ade8066' : '#fbbf24' }}
+                    style={{ color: item.saved ? '#2dd4a866' : '#fbbf24' }}
                   >
                     {item.saved ? '✓' : '●'}
                   </div>
@@ -717,7 +717,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                       <div style={{ display: 'flex', gap: 2 }}>
                         <button
                           className="pos-order-item-del"
-                          style={{ color: '#555', fontSize: 12 }}
+                          style={{ color: '#8b8997', fontSize: 12 }}
                           onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
                         >📝</button>
                         <button className="pos-order-item-del" onClick={() => removeItem(idx)}>✕</button>
@@ -734,7 +734,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                       >🚫</button>
                     )}
                     {item.saved && !perms.anular && (
-                      <span style={{ fontSize: 10, color: '#333', marginTop: 2 }} title="Solo cajera puede anular">🔒</span>
+                      <span style={{ fontSize: 10, color: '#6b6878', marginTop: 2 }} title="Solo cajera puede anular">🔒</span>
                     )}
                   </div>
                 </div>
@@ -784,7 +784,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                 {saving ? '...' : `💳 COBRAR $${total.toFixed(2)}`}
               </button>
             ) : (
-              <div style={{ textAlign: 'center', fontSize: 12, color: '#333', padding: '8px 0' }}>
+              <div style={{ textAlign: 'center', fontSize: 12, color: '#6b6878', padding: '8px 0' }}>
                 🔒 Cobro solo por cajera/gerente
               </div>
             )}
@@ -845,7 +845,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         <div className="pos-modal-overlay" onClick={() => setShowDiscountModal(false)}>
           <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 360 }}>
             <div className="pos-modal-title">🏷 Aplicar Descuento</div>
-            <div style={{ color: '#666', fontSize: 12, marginBottom: 12 }}>Subtotal: ${subtotal.toFixed(2)}</div>
+            <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 12 }}>Subtotal: ${subtotal.toFixed(2)}</div>
 
             {/* Tipo de descuento */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -859,7 +859,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                   style={{
                     flex: 1, padding: '8px 4px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
                     background: descuentoTipo === opt.key ? '#f4a26122' : '#1a1a1a',
-                    border: `1px solid ${descuentoTipo === opt.key ? '#f4a261' : '#333'}`,
+                    border: `1px solid ${descuentoTipo === opt.key ? '#f4a261' : '#2a2a32'}`,
                     color: descuentoTipo === opt.key ? '#f4a261' : '#888',
                   }}
                   onClick={() => {
@@ -886,8 +886,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                         key={p}
                         style={{
                           flex: 1, padding: '8px 2px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
-                          background: descuento === p ? '#f4a26122' : '#111',
-                          border: `1px solid ${descuento === p ? '#f4a261' : '#333'}`,
+                          background: descuento === p ? '#f4a26122' : '#1c1c22',
+                          border: `1px solid ${descuento === p ? '#f4a261' : '#2a2a32'}`,
                           color: descuento === p ? '#f4a261' : '#888',
                         }}
                         onClick={() => setDescuento(p)}
@@ -926,11 +926,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             {/* Preview */}
             {descuentoTipo && (
               <div style={{ background: '#1a0a0a', borderRadius: 8, padding: 10, marginBottom: 12, textAlign: 'center' }}>
-                <div style={{ fontSize: 11, color: '#888' }}>Descuento aplicado</div>
+                <div style={{ fontSize: 11, color: '#8b8997' }}>Descuento aplicado</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: '#f87171' }}>
                   -${(descuentoTipo === 'porcentaje' ? subtotal * descuento / 100 : descuentoTipo === 'cortesia' ? subtotal : descuento).toFixed(2)}
                 </div>
-                <div style={{ fontSize: 12, color: '#4ade80' }}>
+                <div style={{ fontSize: 12, color: '#2dd4a8' }}>
                   Total: ${Math.max(0, subtotal - (descuentoTipo === 'porcentaje' ? subtotal * descuento / 100 : descuentoTipo === 'cortesia' ? subtotal : descuento)).toFixed(2)}
                 </div>
               </div>

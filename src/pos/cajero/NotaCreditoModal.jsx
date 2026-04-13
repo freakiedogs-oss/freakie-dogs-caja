@@ -130,7 +130,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
         <div className="pos-modal" style={{ maxWidth: 400 }}>
           <div style={{ textAlign: 'center', padding: 16 }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
-            <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>
+            <div style={{ color: '#2dd4a8', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>
               Nota de Crédito emitida
             </div>
             <div style={{ background: '#0a2a0a', border: '1px solid #166534', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 12, color: '#8b8', textAlign: 'left' }}>
@@ -152,7 +152,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
         <div className="pos-modal-title">📋 Nota de Crédito</div>
 
         {/* Info del DTE original */}
-        <div style={{ background: '#1a1a2e', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#888' }}>
+        <div style={{ background: '#1e1e26', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#8b8997' }}>
           <div>DTE Original: <span style={{ color: '#60a5fa' }}>{cuenta.dte_tipo === '01' ? 'Factura' : cuenta.dte_tipo === '03' ? 'CCF' : cuenta.dte_tipo}</span></div>
           <div>UUID: {cuenta.dte_uuid?.slice(0, 24)}...</div>
           <div>Total original: <b style={{ color: '#fff' }}>${parseFloat(cuenta.total || 0).toFixed(2)}</b></div>
@@ -173,7 +173,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
         {/* Items seleccionables */}
         <div style={{ marginBottom: 12 }}>
           <label className="pos-payment-label">Ítems a incluir en NC</label>
-          <div style={{ background: '#111', borderRadius: 8, padding: 8, maxHeight: 180, overflowY: 'auto' }}>
+          <div style={{ background: '#1c1c22', borderRadius: 8, padding: 8, maxHeight: 180, overflowY: 'auto' }}>
             {items.map((it, idx) => (
               <div key={idx} style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px',
@@ -184,7 +184,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
                   type="checkbox"
                   checked={it.incluir}
                   onChange={() => toggleItem(idx)}
-                  style={{ accentColor: '#e63946' }}
+                  style={{ accentColor: '#ff6b35' }}
                 />
                 <span style={{ flex: 1, fontSize: 12, color: '#ccc' }}>{it.nombre}</span>
                 <input
@@ -194,8 +194,8 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
                   disabled={!it.incluir}
                   style={{ width: 40, textAlign: 'center', background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#fff', fontSize: 12, padding: 2 }}
                 />
-                <span style={{ fontSize: 11, color: '#666', minWidth: 20 }}>/{it.cantidad}</span>
-                <span style={{ fontSize: 12, color: '#4ade80', minWidth: 55, textAlign: 'right' }}>
+                <span style={{ fontSize: 11, color: '#8b8997', minWidth: 20 }}>/{it.cantidad}</span>
+                <span style={{ fontSize: 12, color: '#2dd4a8', minWidth: 55, textAlign: 'right' }}>
                   ${(it.precio_unitario * it.cantidadNC).toFixed(2)}
                 </span>
               </div>

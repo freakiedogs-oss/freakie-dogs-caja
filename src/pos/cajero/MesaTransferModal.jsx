@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { db } from '../../supabase'
 
 const MESA_STATUS_COLORS = {
-  libre:  { bg: '#0d1a10', border: '#4ade80', text: '#4ade80' },
-  activa: { bg: '#1a1200', border: '#fbbf24', text: '#fbbf24' },
+  libre:  { bg: '#0d1a18', border: '#2dd4a8', text: '#2dd4a8' },
+  activa: { bg: '#1a1800', border: '#fbbf24', text: '#fbbf24' },
 }
 
 export default function MesaTransferModal({ storeCode, mesaActual, onTransfer, onClose }) {
@@ -61,8 +61,8 @@ export default function MesaTransferModal({ storeCode, mesaActual, onTransfer, o
               const colors   = ocupada
                 ? { bg: '#1a0a0a', border: '#f87171', text: '#f87171' }
                 : esActual
-                  ? { bg: '#0a1a0a', border: '#4ade80aa', text: '#4ade8066' }
-                  : { bg: '#1a1a1a', border: '#2a2a2a',  text: '#888' }
+                  ? { bg: '#0d1a18', border: '#2dd4a8aa', text: '#2dd4a866' }
+                  : { bg: '#1e1e26', border: '#2a2a32',  text: '#8b8997' }
 
               return (
                 <button
@@ -70,8 +70,8 @@ export default function MesaTransferModal({ storeCode, mesaActual, onTransfer, o
                   onClick={() => { if (!esActual && !ocupada) setSelected(mesaStr) }}
                   disabled={esActual || ocupada}
                   style={{
-                    background: isSelected ? '#e6394618' : colors.bg,
-                    border: `2px solid ${isSelected ? '#e63946' : colors.border}`,
+                    background: isSelected ? '#ff6b3518' : colors.bg,
+                    border: `2px solid ${isSelected ? '#ff6b35' : colors.border}`,
                     borderRadius: 10,
                     padding: '10px 6px',
                     textAlign: 'center',
@@ -80,10 +80,10 @@ export default function MesaTransferModal({ storeCode, mesaActual, onTransfer, o
                     transition: 'all 0.15s',
                   }}
                 >
-                  <div style={{ fontSize: 20, fontWeight: 900, color: isSelected ? '#e63946' : colors.text, fontFamily: 'monospace' }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: isSelected ? '#ff6b35' : colors.text, fontFamily: 'monospace' }}>
                     {mesa.numero}
                   </div>
-                  <div style={{ fontSize: 9, color: ocupada ? '#f87171' : '#444', marginTop: 2 }}>
+                  <div style={{ fontSize: 9, color: ocupada ? '#f87171' : '#8b8997', marginTop: 2 }}>
                     {esActual ? 'actual' : ocupada ? 'ocupada' : 'libre'}
                   </div>
                 </button>
@@ -96,7 +96,7 @@ export default function MesaTransferModal({ storeCode, mesaActual, onTransfer, o
           className="pos-confirmar-btn"
           disabled={!selected}
           onClick={handleConfirm}
-          style={{ background: selected ? '#4ade80' : undefined, color: selected ? '#0d2818' : undefined }}
+          style={{ background: selected ? '#2dd4a8' : undefined, color: selected ? '#0d2818' : undefined }}
         >
           {selected ? `↔ Mover a Mesa #${selected}` : 'Selecciona una mesa'}
         </button>
