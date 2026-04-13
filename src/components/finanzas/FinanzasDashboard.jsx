@@ -378,6 +378,7 @@ export default function FinanzasDashboard({ user }) {
           </div>
           <span style={{ fontSize: 11, color: conIva ? C.gold : C.textMuted, fontWeight: conIva ? 700 : 400 }}>Con IVA</span>
         </div>
+        <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>Ventas {conIva ? 'con' : 'sin'} IVA · Sin propinas · Fuente: Quanto &gt; Cierres</div>
       </div>
 
       {/* Tab bar */}

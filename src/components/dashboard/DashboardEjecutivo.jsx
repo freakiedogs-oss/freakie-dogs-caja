@@ -125,7 +125,7 @@ export default function DashboardEjecutivo({user,onBack}){
             {new Date().toLocaleDateString('es-SV',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}
           </div>
         </div>
-        <div style={{fontSize:10,color:'#333',textAlign:'right'}}>Solo<br/>Ejecutivos</div>
+        <div style={{fontSize:10,color:'#333',textAlign:'right'}}>Solo Ejecutivos<br/><span style={{color:'#555'}}>Ventas con IVA, sin propinas</span></div>
       </div>
 
       {/* Tabs */}
