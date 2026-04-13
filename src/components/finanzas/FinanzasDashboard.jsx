@@ -221,23 +221,24 @@ export default function FinanzasDashboard({ user }) {
         'fecha, store_code, total_ventas_quanto, efectivo_quanto, tarjeta_quanto, ventas_transferencia, ventas_link_pago, total_egresos, total_ingresos',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
-      // 2. Monthly purchases — 1000+ rows, NEEDS pagination
-      const compras = await fetchAll('compras_dte',
-        'fecha_emision, proveedor_nombre, monto_total, subtotal',
-        q => q.gte('fecha_emision', '2026-01-01').order('fecha_emision'))
+      // 2. GASTOS CONSOLIDADOS — une compras_dte + egresos_cierre + compras_sin_dte + descuadres
+      //    Ya viene clasificado vía catalogo_contable (JOIN en la vista)
+      const gastos = await fetchAll('v_gastos_consolidados',
+        'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, subcategoria_contable, origen, store_code',
+        q => q.gte('fecha', '2026-01-01').order('fecha'))
 
       // 3. Planilla
       const planillas = await fetchAll('planillas',
         'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
         q => q.gte('fecha_pago', '2026-01-01'))
 
-      // 4. Catálogo contable (clasificación proveedores desde BD)
+      // 4. Catálogo contable (para TabCatalogo CRUD y clasificación fallback)
       const { data: catData, error: catErr } = await db.from('catalogo_contable')
-        .select('nombre_dte, nombre_normalizado, categoria, subcategoria')
+        .select('nombre_dte, nombre_normalizado, categoria, subcategoria, sucursal_default')
         .eq('activo', true)
       if (catErr) console.warn('catalogo_contable:', catErr.message)
 
-      setData2026({ ventas, compras, planillas, catalogo: catData || [] })
+      setData2026({ ventas, gastos, planillas, catalogo: catData || [] })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -245,19 +246,20 @@ export default function FinanzasDashboard({ user }) {
   }
 
   // ── Process 2026 data into monthly P&L ──
-  // Build classifier from DB catalog (loaded alongside data2026 — single state, no race condition)
+  // Classifier from DB catalog — used only by TabCatalogo/TabProveedores for display
   const classify = useMemo(() => buildClassifier(data2026?.catalogo || []), [data2026])
 
   const months2026 = useMemo(() => {
     if (!data2026) return []
     const monthMap = {}
 
+    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 } })
+
     // Sales
     data2026.ventas.forEach(v => {
       const m = v.fecha?.substring(0, 7) // "2026-01"
       if (!m) return
-      if (!monthMap[m]) monthMap[m] = { ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0 }
-      // Ventas: con o sin IVA según toggle
+      if (!monthMap[m]) monthMap[m] = initMonth()
       const bruto = parseFloat(v.total_ventas_quanto) || ((v.efectivo_quanto || 0) + (v.tarjeta_quanto || 0) + (v.ventas_transferencia || 0) + (v.ventas_link_pago || 0))
       const total = conIva ? bruto : bruto / 1.13
       monthMap[m].ventas += total
@@ -266,21 +268,26 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].bySuc[sc] = (monthMap[m].bySuc[sc] || 0) + total
     })
 
-    // Purchases → classify using DB catalog
-    data2026.compras.forEach(c => {
-      const m = c.fecha_emision?.substring(0, 7)
-      if (!m || !monthMap[m]) return
-      const { categoria: cat, subcategoria: sub } = classify(c.proveedor_nombre || '')
-      const montoSinIva = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
-      const monto = conIva ? (parseFloat(c.monto_total) || montoSinIva) : montoSinIva
+    // GASTOS CONSOLIDADOS — ya clasificados vía catalogo_contable en la vista
+    data2026.gastos.forEach(g => {
+      const m = g.fecha?.substring(0, 7)
+      if (!m) return
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      // Categoría viene del catálogo (vía la vista). Normalizar "Alquiler" → costo_fijo
+      let cat = g.categoria_nombre || 'gastos_operativos'
+      if (cat === 'Alquiler') cat = 'costo_fijo'
+      const sub = g.subcategoria_contable || ''
+      const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
       if (monthMap[m].pl[cat] !== undefined) {
         monthMap[m].pl[cat] += monto
       } else {
-        monthMap[m].pl.gastos_operativos += monto
+        monthMap[m].pl.gastos_operativos += monto  // fallback
       }
+      // Track by origin
+      if (monthMap[m].gastosOrigen[g.origen] !== undefined) monthMap[m].gastosOrigen[g.origen] += monto
       // Track by provider for TabProveedores
-      const prov = c.proveedor_nombre || 'Desconocido'
-      if (!monthMap[m].byProv[prov]) monthMap[m].byProv[prov] = { monto: 0, cat, sub }
+      const prov = g.proveedor_nombre || 'Desconocido'
+      if (!monthMap[m].byProv[prov]) monthMap[m].byProv[prov] = { monto: 0, cat, sub, origen: g.origen }
       monthMap[m].byProv[prov].monto += monto
     })
 
@@ -296,7 +303,7 @@ export default function FinanzasDashboard({ user }) {
       const utilidad = ebitda - v.pl.impuestos
       return { key: k, label: formatMonth(k), ...v, ebitda, utilidad }
     })
-  }, [data2026, classify, conIva])
+  }, [data2026, conIva])
 
   if (!ROLES.includes(user?.rol)) {
     return <div style={{ padding: 40, textAlign: 'center', color: C.red }}>⛔ Acceso restringido</div>
@@ -854,27 +861,25 @@ function TabProveedores({ data2026, months2026, conIva }) {
   const [collapsedSubs, setCollapsedSubs] = useState({})
 
   const result = useMemo(() => {
-    if (!data2026?.compras) return { categories: {}, monthKeys: [], ventasPorMes: {} }
+    if (!data2026?.gastos) return { categories: {}, monthKeys: [], ventasPorMes: {} }
 
-    const localClassify = buildClassifier(data2026?.catalogo || [])
-
-    const allKeys = [...new Set(data2026.compras.map(c => c.fecha_emision?.substring(0, 7)).filter(Boolean))].sort()
+    const allKeys = [...new Set(data2026.gastos.map(g => g.fecha?.substring(0, 7)).filter(Boolean))].sort()
     const monthKeys = allKeys.slice(-6)
 
     const ventasPorMes = {}
     months2026.forEach(m => { ventasPorMes[m.key] = m.ventas })
 
-    // Build provider data
+    // Build provider data from gastos consolidados (ya clasificados)
     const provData = {}
-    data2026.compras.forEach(c => {
-      const m = c.fecha_emision?.substring(0, 7)
+    data2026.gastos.forEach(g => {
+      const m = g.fecha?.substring(0, 7)
       if (!m || !monthKeys.includes(m)) return
-      const name = c.proveedor_nombre || 'Sin nombre'
-      const montoBase = parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
-      const monto = conIva ? (parseFloat(c.monto_total) || montoBase) : montoBase
+      const name = g.proveedor_nombre || 'Sin nombre'
+      const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
       if (!provData[name]) {
-        const { categoria, subcategoria } = localClassify(name)
-        provData[name] = { cat: categoria, sub: subcategoria || 'Varios', months: {}, total: 0 }
+        let cat = g.categoria_nombre || 'gastos_operativos'
+        if (cat === 'Alquiler') cat = 'costo_fijo'
+        provData[name] = { cat, sub: g.subcategoria_contable || 'Varios', months: {}, total: 0, origen: g.origen }
       }
       provData[name].months[m] = (provData[name].months[m] || 0) + monto
       provData[name].total += monto
@@ -1162,21 +1167,17 @@ function TabCatalogo({ user, data2026, onRefresh }) {
 
   useEffect(() => { loadCatalog() }, [])
 
-  // Unmatched providers (in compras_dte but not in catalog)
+  // Unmatched providers (in gastos consolidados but not in catalog)
   const unmatched = useMemo(() => {
-    if (!data2026?.compras || !entries.length) return []
-    const classifier = buildClassifier(entries.filter(e => e.activo))
+    if (!data2026?.gastos || !entries.length) return []
     const provTotals = {}
-    data2026.compras.forEach(c => {
-      const name = c.proveedor_nombre || ''
-      const { categoria } = classifier(name)
-      // If it falls through to default "gastos_operativos/Varios", might be unmatched
-      // Better check: no exact or substring match in catalog
+    data2026.gastos.filter(g => g.origen === 'compras_dte').forEach(g => {
+      const name = g.proveedor_nombre || ''
       const inCatalog = entries.some(e => e.activo && (e.nombre_dte === name || name.toUpperCase().includes((e.nombre_normalizado || '').toUpperCase())))
       if (!inCatalog) {
         if (!provTotals[name]) provTotals[name] = { nombre: name, count: 0, total: 0 }
         provTotals[name].count++
-        provTotals[name].total += parseFloat(c.subtotal) || parseFloat(c.monto_total) || 0
+        provTotals[name].total += parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0
       }
     })
     return Object.values(provTotals).sort((a, b) => b.total - a.total)
