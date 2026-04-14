@@ -9,6 +9,7 @@ const TIPO_INFO = {
   mesa:            { icon: '🪑', label: 'Mesas',       color: '#2dd4a8' },
   para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
   delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
+  delivery_app:    { icon: '📲', label: 'App Delivery', color: '#f472b6' },
   pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
   drive_through:   { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24' },
 }
@@ -18,6 +19,7 @@ const FILTROS = [
   { key: 'mesa',           icon: '🪑', label: 'Mesas'       },
   { key: 'para_llevar',    icon: '🥡', label: 'Para Llevar' },
   { key: 'delivery_propio',icon: '🛵', label: 'Delivery'    },
+  { key: 'delivery_app',   icon: '📲', label: 'App'         },
   { key: 'pedidos_ya',     icon: '📱', label: 'PedidosYa'   },
   { key: 'drive_through',  icon: '🚗', label: 'Drive Thru'  },
 ]
@@ -93,7 +95,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         .eq('activa', true)
         .order('numero'),
       db.from('pos_cuentas')
-        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
+        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, cliente_nombre, delivery_direccion, delivery_referencia, delivery_plataforma, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
         .eq('store_code', storeCode)
         .in('estado', ESTADO_ACTIVO)
         .order('created_at'),
@@ -132,6 +134,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
     mesa:            cuentas.filter(c => c.tipo === 'mesa').length,
     para_llevar:     cuentas.filter(c => c.tipo === 'para_llevar').length,
     delivery_propio: cuentas.filter(c => c.tipo === 'delivery_propio').length,
+    delivery_app:    cuentas.filter(c => c.tipo === 'delivery_app').length,
     pedidos_ya:      cuentas.filter(c => c.tipo === 'pedidos_ya').length,
     drive_through:   cuentas.filter(c => c.tipo === 'drive_through').length,
   }
@@ -348,9 +351,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                     <span className="poshome-cuenta-icon">{info.icon}</span>
                     <div className="poshome-cuenta-info">
                       <span className="poshome-cuenta-label" style={{ color: info.color }}>
-                        {info.label}
+                        {info.label}{c.delivery_referencia ? ` #${c.delivery_referencia}` : ''}
                       </span>
-                      <span className="poshome-cuenta-items">{items} ítem{items !== 1 ? 's' : ''}</span>
+                      <span className="poshome-cuenta-items">
+                        {c.cliente_nombre ? `👤 ${c.cliente_nombre} · ` : ''}{items} ítem{items !== 1 ? 's' : ''}
+                      </span>
                     </div>
                     <span className="poshome-cuenta-total">${parseFloat(c.subtotal || 0).toFixed(2)}</span>
                     <span className="poshome-cuenta-time">{elapsed(c.created_at)}</span>
@@ -375,7 +380,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>
               Sin órdenes de {FILTROS.find(f => f.key === filtro)?.label || filtro}
             </div>
-            {filtro !== 'todos' && filtro !== 'mesa' && (
+            {filtro !== 'todos' && filtro !== 'mesa' && filtro !== 'delivery_app' && (
               <button
                 className="poshome-nueva-btn"
                 style={{ '--color': TIPO_INFO[filtro]?.color || '#888' }}
