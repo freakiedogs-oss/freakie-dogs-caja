@@ -17,6 +17,7 @@ import HistorialTab from './components/almacen/HistorialTab'
 import StockLevelsView from './components/almacen/StockLevelsView'
 import InventarioFisico from './components/almacen/InventarioFisico'
 import ComprasTab from './components/almacen/ComprasTab'
+import KardexView from './components/almacen/KardexView'
 import RecetasView from './components/admin/RecetasView'
 import PlanillaView from './components/admin/PlanillaView'
 import RRHHView from './components/admin/RRHHView'
@@ -41,12 +42,61 @@ import FinanzasDashboard from './components/finanzas/FinanzasDashboard'
 import SuperAdminView from './components/admin/SuperAdminView'
 import PagosProveedorView from './components/finanzas/PagosProveedorView'
 import { useToast } from './hooks/useToast'
-import { STORES } from './config'
+import { STORES, NAV_SECTIONS } from './config'
 
-function HomeScreen({ user }) {
+// ── Helpers para accesos rápidos ──
+const ROLE_DEFAULTS = {
+  cajero: ['cierre', 'reporte', 'deposito', 'conteo'],
+  cajera: ['cierre', 'reporte', 'deposito', 'conteo'],
+  gerente: ['cierre', 'reporte', 'incidentes', 'conteo', 'horarios'],
+  admin: ['admin', 'ejecutivo', 'recepcion', 'despacho'],
+  ejecutivo: ['ejecutivo', 'finanzas-dashboard', 'ventas-dash', 'rentabilidad', 'superadmin-panel'],
+  superadmin: ['superadmin-panel', 'ejecutivo', 'finanzas-dashboard', 'admin'],
+  bodeguero: ['recepcion', 'despacho', 'inventario', 'historial'],
+  jefe_casa_matriz: ['recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
+  cocina: ['conteo', 'reporte', 'devoluciones'],
+  rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales'],
+  contador: ['gastos', 'conciliacion', 'planilla'],
+  despachador: ['entregas', 'delivery'],
+  motorista: ['entregas', 'delivery'],
+  domicilios: ['entregas', 'delivery'],
+  marketing: ['marketing'],
+  produccion: ['produccion', 'incidentes-cm', 'recetas'],
+}
+
+function getNavCounts() {
+  try { return JSON.parse(localStorage.getItem('fd_nav_counts') || '{}') } catch { return {} }
+}
+
+function incrementNavCount(key) {
+  const c = getNavCounts()
+  c[key] = (c[key] || 0) + 1
+  localStorage.setItem('fd_nav_counts', JSON.stringify(c))
+}
+
+function getNavInfo(key) {
+  for (const sec of NAV_SECTIONS) {
+    const item = sec.items.find(i => i.key === key)
+    if (item) return item
+  }
+  return null
+}
+
+function HomeScreen({ user, onNavigate }) {
   const storeName = STORES[user.store_code] || user.sucursal || ''
   const hora = new Date().getHours()
   const saludo = hora < 12 ? 'Buenos días' : hora < 18 ? 'Buenas tardes' : 'Buenas noches'
+
+  // Obtener top accesos rápidos: frecuentes del usuario o defaults por rol
+  const counts = getNavCounts()
+  const sorted = Object.entries(counts)
+    .filter(([k]) => k !== 'home')
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k)
+    .slice(0, 6)
+
+  const defaults = ROLE_DEFAULTS[user.rol] || ROLE_DEFAULTS['cajero'] || []
+  const quickLinks = sorted.length >= 3 ? sorted : defaults
 
   return (
     <div style={{ padding: '24px 16px' }}>
@@ -57,13 +107,41 @@ function HomeScreen({ user }) {
         <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>{storeName} · {user.rol}</div>
       </div>
 
-      <div className="card" style={{ borderColor: '#2d6a4f', padding: 20 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#4ade80', marginBottom: 8 }}>
-          💡 Navegación
+      {/* Accesos Rápidos */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#888', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
+          {sorted.length >= 3 ? '⚡ Más Usados' : '⚡ Accesos Rápidos'}
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+          {quickLinks.map(key => {
+            const info = getNavInfo(key)
+            if (!info) return null
+            return (
+              <button
+                key={key}
+                onClick={() => onNavigate(key)}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, padding: '16px 8px',
+                  background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12,
+                  cursor: 'pointer', transition: 'border-color 0.2s',
+                }}
+                onMouseOver={e => e.currentTarget.style.borderColor = '#e63946'}
+                onMouseOut={e => e.currentTarget.style.borderColor = '#2a2a2a'}
+              >
+                <span style={{ fontSize: 24 }}>{info.icon}</span>
+                <span style={{ fontSize: 12, color: '#ccc', fontWeight: 500, textAlign: 'center', lineHeight: 1.3 }}>
+                  {info.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="card" style={{ borderColor: '#2d6a4f', padding: 16 }}>
         <div style={{ fontSize: 13, color: '#aaa', lineHeight: 1.6 }}>
-          Usa el menú lateral (☰) para acceder a todos los módulos.
-          Cada sección muestra solo los módulos disponibles para tu rol.
+          💡 Usa el menú lateral (☰) para ver todos los módulos. Los accesos rápidos se personalizan según tu uso.
         </div>
       </div>
 
@@ -89,6 +167,7 @@ export default function App() {
   const handleNavigate = useCallback((key) => {
     setScreen(key)
     setEditCierre(null)
+    if (key !== 'home') incrementNavCount(key)
   }, [])
 
   // Not logged in
@@ -98,7 +177,7 @@ export default function App() {
   const renderScreen = () => {
     switch (screen) {
       case 'home':
-        return <HomeScreen user={user} />
+        return <HomeScreen user={user} onNavigate={handleNavigate} />
       case 'pendientes':
         return <PendientesView user={user} onNavigate={handleNavigate} />
       case 'mi-asistencia':
@@ -142,6 +221,8 @@ export default function App() {
         return <StockLevelsView user={user} onBack={() => setScreen('home')} />
       case 'inventario-fisico':
         return <InventarioFisico user={user} onBack={() => setScreen('home')} />
+      case 'kardex':
+        return <KardexView user={user} show={show} />
 
       // Supply Chain
       case 'conteo':

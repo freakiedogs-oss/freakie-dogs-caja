@@ -56,6 +56,8 @@ export default function HistorialCobros({ user, onBack }) {
   const [expandedId, setExpandedId] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [ncCuenta, setNcCuenta] = useState(null)
+  const [filtroFecha, setFiltroFecha] = useState('hoy') // 'hoy' | 'ayer' | 'custom'
+  const [fechaCustom, setFechaCustom] = useState('')
 
   // Obtener hoy en zona horaria El Salvador
   const getToday = useCallback(() => {
@@ -63,12 +65,29 @@ export default function HistorialCobros({ user, onBack }) {
     return now.toISOString().split('T')[0]
   }, [])
 
-  // ── Cargar cobrados de hoy ──
+  // ── Cargar cobrados por fecha ──
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const todayStr = getToday()
-      const todayStart = `${todayStr}T00:00:00-06:00`
+      let fechaInicio, fechaFin
+
+      if (filtroFecha === 'hoy') {
+        fechaInicio = `${todayStr}T00:00:00-06:00`
+        fechaFin = `${todayStr}T23:59:59-06:00`
+      } else if (filtroFecha === 'ayer') {
+        const ayer = new Date(Date.now() - 6 * 3600 * 1000)
+        ayer.setDate(ayer.getDate() - 1)
+        const ayerStr = ayer.toISOString().split('T')[0]
+        fechaInicio = `${ayerStr}T00:00:00-06:00`
+        fechaFin = `${ayerStr}T23:59:59-06:00`
+      } else if (filtroFecha === 'custom' && fechaCustom) {
+        fechaInicio = `${fechaCustom}T00:00:00-06:00`
+        fechaFin = `${fechaCustom}T23:59:59-06:00`
+      } else {
+        fechaInicio = `${todayStr}T00:00:00-06:00`
+        fechaFin = `${todayStr}T23:59:59-06:00`
+      }
 
       const { data: cuentasData, error } = await db
         .from('pos_cuentas')
@@ -98,7 +117,8 @@ export default function HistorialCobros({ user, onBack }) {
         `)
         .eq('store_code', storeCode)
         .eq('estado', 'cobrada')
-        .gte('cobrada_at', todayStart)
+        .gte('cobrada_at', fechaInicio)
+        .lte('cobrada_at', fechaFin)
         .order('cobrada_at', { ascending: false })
 
       if (error) throw error
@@ -109,7 +129,7 @@ export default function HistorialCobros({ user, onBack }) {
     } finally {
       setLoading(false)
     }
-  }, [storeCode, getToday])
+  }, [storeCode, getToday, filtroFecha, fechaCustom])
 
   useEffect(() => { load() }, [load, refreshKey])
 
@@ -189,6 +209,13 @@ export default function HistorialCobros({ user, onBack }) {
   const handleAnularDTE = async (cuenta) => {
     if (!cuenta.dte_uuid) {
       alert('Esta cuenta no tiene código de generación DTE')
+      return
+    }
+
+    // Check if invoice is older than 72h
+    const horasDesde = (Date.now() - new Date(cuenta.cobrada_at).getTime()) / 3600000
+    if (horasDesde > 72) {
+      alert('⚠️ Esta factura tiene más de 72 horas. La anulación puede ser rechazada por Hacienda.')
       return
     }
 
@@ -276,19 +303,57 @@ export default function HistorialCobros({ user, onBack }) {
         <button className="pos-header-btn danger" onClick={onBack}>Salir</button>
       </header>
 
+      {/* ── FILTRO DE FECHA ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '10px 16px', background: '#1a1a20',
+        borderBottom: '1px solid #2a2a32',
+        flexWrap: 'wrap'
+      }}>
+        {['hoy', 'ayer', 'custom'].map(f => (
+          <button
+            key={f}
+            onClick={() => setFiltroFecha(f)}
+            style={{
+              padding: '6px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+              border: '1px solid ' + (filtroFecha === f ? '#e63946' : '#333'),
+              background: filtroFecha === f ? '#e63946' : '#1e1e24',
+              color: filtroFecha === f ? '#fff' : '#8b8997',
+              cursor: 'pointer',
+            }}
+          >
+            {f === 'hoy' ? '📅 Hoy' : f === 'ayer' ? '⏪ Ayer' : '📆 Elegir fecha'}
+          </button>
+        ))}
+        {filtroFecha === 'custom' && (
+          <input
+            type="date"
+            value={fechaCustom}
+            onChange={e => setFechaCustom(e.target.value)}
+            max={getToday()}
+            style={{
+              background: '#1e1e24', border: '1px solid #333', borderRadius: 8,
+              color: '#f0f0f0', padding: '6px 12px', fontSize: 13,
+            }}
+          />
+        )}
+      </div>
+
       {/* ── CUERPO ── */}
       <div className="historial-cobros-body">
 
         {cuentas.length === 0 ? (
           <div className="historial-empty">
             <div style={{ fontSize: 48 }}>📋</div>
-            <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>Sin cobros hoy</div>
+            <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>
+              {filtroFecha === 'hoy' ? 'Sin cobros hoy' : filtroFecha === 'ayer' ? 'Sin cobros ayer' : 'Sin cobros en esta fecha'}
+            </div>
             <div style={{ color: '#6b6878', fontSize: 12 }}>Los tickets aparecerán aquí una vez cobrados</div>
           </div>
         ) : (
           <div className="historial-cuentas-list">
             <div className="historial-count">
-              {cuentas.length} cobro{cuentas.length !== 1 ? 's' : ''} hoy
+              {cuentas.length} cobro{cuentas.length !== 1 ? 's' : ''} {filtroFecha === 'hoy' ? 'hoy' : filtroFecha === 'ayer' ? 'ayer' : fechaCustom}
             </div>
 
             {cuentas.map((cuenta) => {
@@ -405,9 +470,10 @@ export default function HistorialCobros({ user, onBack }) {
                         <button
                           className="historial-action-btn anular"
                           onClick={() => handleAnularDTE(cuenta)}
-                          disabled={!cuenta.dte_uuid || anulando === cuenta.id || cuenta.dte_sello?.startsWith('ANULADO')}
+                          disabled={!cuenta.dte_uuid || anulando === cuenta.id || cuenta.dte_sello?.startsWith('ANULADO') || (Date.now() - new Date(cuenta.cobrada_at).getTime()) / 3600000 > 72}
                           title={
                             cuenta.dte_sello?.startsWith('ANULADO') ? 'DTE ya anulado' :
+                            (Date.now() - new Date(cuenta.cobrada_at).getTime()) / 3600000 > 72 ? '⚠️ Factura > 72 horas (puede ser rechazada)' :
                             !cuenta.dte_uuid ? 'Solo para documentos fiscales' :
                             anulando === cuenta.id ? 'Anulando...' : 'Anular DTE ante Hacienda'
                           }
