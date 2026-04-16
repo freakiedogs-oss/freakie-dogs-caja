@@ -207,8 +207,8 @@ function TabMenu({ user, evento, show }) {
   }, [evento.id]);
 
   const fetchPosItems = useCallback(async () => {
-    const { data } = await db.from('pos_menu_items').select('id, nombre, precio, imagen_url, sucursal_id').eq('disponible', true).order('nombre');
-    // Deduplicar por nombre (hay 1 registro por sucursal)
+    const { data } = await db.from('pos_menu_items').select('id, nombre, precio, imagen_url').eq('disponible', true).order('nombre');
+    // Deduplicar por nombre (hay 1 registro por sucursal/menú)
     const seen = new Map();
     (data || []).forEach(item => {
       if (!seen.has(item.nombre)) seen.set(item.nombre, item);
@@ -322,10 +322,12 @@ function TabMenu({ user, evento, show }) {
 
           <div className="border-t border-gray-700 pt-3">
             <p className="text-xs text-gray-400 mb-2">O agrega un item personalizado:</p>
-            <div className="flex gap-2">
-              <Input placeholder="Nombre" value={customName} onChange={e => setCustomName(e.target.value)} className="flex-1" />
-              <Input placeholder="Precio $" type="number" step="0.01" value={customPrice} onChange={e => setCustomPrice(e.target.value)} className="w-24" />
-              <Button size="sm" onClick={addCustom}>+</Button>
+            <div className="space-y-2">
+              <Input placeholder="Nombre del item" value={customName} onChange={e => setCustomName(e.target.value)} />
+              <div className="flex gap-2">
+                <Input placeholder="Precio $" type="number" step="0.01" value={customPrice} onChange={e => setCustomPrice(e.target.value)} className="flex-1" />
+                <Button onClick={addCustom}>+ Agregar</Button>
+              </div>
             </div>
           </div>
         </CardContent>
