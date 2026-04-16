@@ -7,39 +7,78 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Badge } from '../ui/Badge';
 
-const TYPE_VARIANT = {
-  recepcion: 'success',
-  despacho: 'info',
-  ajuste_manual: 'warning',
-  conteo_fisico: 'muted',
-  produccion: 'info',
-  merma: 'destructive',
-  devolucion: 'warning',
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONSTANTES
+   ═══════════════════════════════════════════════════════════════════════════ */
+const TIPOS = {
+  materia_prima:     { label: 'MP',  full: 'Materia Prima',       icon: '🥩', color: '#60a5fa', bg: '#1e3a5f', badge: 'info',    hint: 'Ingrediente que compras a proveedores' },
+  sub_producto:      { label: 'SP',  full: 'Sub Producto',        icon: '🧪', color: '#fb923c', bg: '#7c2d12', badge: 'warning', hint: 'Se prepara en cocina con materias primas' },
+  producto_terminado:{ label: 'PT',  full: 'Producto Terminado',  icon: '🍔', color: '#4ade80', bg: '#14532d', badge: 'success', hint: 'Lo que vendes al cliente' },
+  insumo:            { label: 'IN',  full: 'Insumo',              icon: '📦', color: '#a1a1aa', bg: '#27272a', badge: 'muted',   hint: 'Material de operación (no alimento)' },
 };
 
-const TYPE_LABELS = {
-  recepcion: '📥 Recepción',
-  despacho: '🚚 Despacho',
-  ajuste_manual: '✏️ Ajuste',
-  conteo_fisico: '📋 Conteo',
-  produccion: '🏭 Producción',
-  merma: '🗑️ Merma',
-  devolucion: '🔄 Devolución',
+const MOV_TIPOS = {
+  recepcion:      { label: 'Recepción',  icon: '📥', badge: 'success' },
+  despacho:       { label: 'Despacho',   icon: '🚚', badge: 'info' },
+  ajuste_manual:  { label: 'Ajuste',     icon: '✏️', badge: 'warning' },
+  conteo_fisico:  { label: 'Conteo',     icon: '📋', badge: 'muted' },
+  produccion:     { label: 'Producción', icon: '🏭', badge: 'info' },
+  merma:          { label: 'Merma',      icon: '🗑️', badge: 'destructive' },
+  devolucion:     { label: 'Devolución', icon: '🔄', badge: 'warning' },
 };
 
 const selectCls = 'w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 
-// Etiquetas y colores por tipo
-const TIPO_INFO = {
-  materia_prima:    { label: 'MP', badge: 'info',        full: 'Materia Prima',    color: 'text-blue-400' },
-  sub_producto:     { label: 'SP', badge: 'warning',     full: 'Sub Producto',     color: 'text-orange-400' },
-  producto_terminado:{ label: 'PT', badge: 'success',    full: 'Producto Terminado',color: 'text-green-400' },
-  insumo:           { label: 'IN', badge: 'muted',       full: 'Insumo',           color: 'text-muted-foreground' },
-};
+const UNIDADES = ['kg', 'lb', 'g', 'unidad', 'litro', 'ml', 'oz', 'porcion', 'caja', 'paquete'];
 
-// ── Utilidad: búsqueda en catálogo ─────────────────────────────────────────
-// tipo puede ser string ('materia_prima') o array (['materia_prima','sub_producto'])
-function CatalogoSearch({ placeholder = 'Buscar en catálogo...', tipo, onSelect, className = '' }) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENTES REUTILIZABLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Chip badge visual por tipo
+function TipoPill({ tipo, size = 'sm' }) {
+  const t = TIPOS[tipo];
+  if (!t) return <span className="tag tag-gray">{tipo || '?'}</span>;
+  const cls = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full font-bold ${cls}`}
+      style={{ background: t.bg, color: t.color }}>
+      {t.icon} {t.label}
+    </span>
+  );
+}
+
+// Barra de progreso visual
+function ProgressBar({ value, max, label }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div className="space-y-1">
+      {label && <div className="flex justify-between text-xs text-muted-foreground">
+        <span>{label}</span>
+        <span className="font-bold" style={{ color: pct === 100 ? '#4ade80' : '#fb923c' }}>{pct}%</span>
+      </div>}
+      <div className="h-2 bg-muted rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, background: pct === 100 ? '#4ade80' : pct > 50 ? '#fbbf24' : '#e63946' }} />
+      </div>
+    </div>
+  );
+}
+
+// KPI card compacta
+function KpiCard({ icon, label, value, sub, color }) {
+  return (
+    <div className="stat-card">
+      <div style={{ fontSize: 22, marginBottom: 2 }}>{icon}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: color || '#f0f0f0' }}>{value}</div>
+      <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>{label}</div>
+      {sub && <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// Búsqueda en catálogo — acepta tipo string o array
+function CatalogoSearch({ placeholder = 'Buscar...', tipo, onSelect, onCreate, className = '' }) {
   const [q, setQ] = useState('');
   const [opts, setOpts] = useState([]);
   const [open, setOpen] = useState(false);
@@ -47,18 +86,15 @@ function CatalogoSearch({ placeholder = 'Buscar en catálogo...', tipo, onSelect
   useEffect(() => {
     if (!q || q.length < 2) { setOpts([]); return; }
     const t = setTimeout(async () => {
-      let query = db.from('catalogo_productos').select('id, nombre, sku, tipo').ilike('nombre', `%${q}%`).limit(12);
+      let query = db.from('catalogo_productos').select('id, nombre, sku, tipo').ilike('nombre', `%${q}%`).eq('activo', true).limit(10);
       if (tipo) {
-        if (Array.isArray(tipo)) {
-          query = query.in('tipo', tipo);
-        } else {
-          query = query.eq('tipo', tipo);
-        }
+        if (Array.isArray(tipo)) query = query.in('tipo', tipo);
+        else query = query.eq('tipo', tipo);
       }
       const { data } = await query;
       setOpts(data || []);
       setOpen(true);
-    }, 300);
+    }, 250);
     return () => clearTimeout(t);
   }, [q, tipo]);
 
@@ -69,30 +105,60 @@ function CatalogoSearch({ placeholder = 'Buscar en catálogo...', tipo, onSelect
         value={q}
         onChange={e => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => q.length >= 2 && setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
       />
-      {open && opts.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-20 bg-card border border-border rounded-b-md shadow-lg max-h-48 overflow-y-auto">
-          {opts.map(opt => (
-            <div
-              key={opt.id}
-              onMouseDown={() => { onSelect(opt); setQ(''); setOpts([]); setOpen(false); }}
-              className="px-3 py-2 text-sm cursor-pointer hover:bg-muted border-b border-border/50 last:border-0 flex items-center gap-2"
-            >
-              {opt.sku && <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded" style={{ color: TIPO_INFO[opt.tipo]?.color?.replace('text-','') || 'inherit' }}>{opt.sku}</span>}
-              <span>{opt.nombre}</span>
-              {opt.tipo && <span className={`text-xs ml-auto ${TIPO_INFO[opt.tipo]?.color || ''}`}>{TIPO_INFO[opt.tipo]?.label || ''}</span>}
+      {open && (q.length >= 2) && (
+        <div className="absolute top-full left-0 right-0 z-30 border border-border rounded-b-lg shadow-xl max-h-52 overflow-y-auto" style={{ background: '#1e1e1e' }}>
+          {opts.length === 0 ? (
+            <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+              No se encontró "{q}"
+              {onCreate && (
+                <button
+                  onMouseDown={() => { onCreate(q); setQ(''); setOpen(false); }}
+                  className="block mx-auto mt-2 text-xs font-bold px-3 py-1.5 rounded-full"
+                  style={{ background: '#14532d', color: '#4ade80' }}
+                >
+                  + Crear "{q}" como nuevo
+                </button>
+              )}
             </div>
-          ))}
+          ) : (
+            <>
+              {opts.map(opt => (
+                <div
+                  key={opt.id}
+                  onMouseDown={() => { onSelect(opt); setQ(''); setOpts([]); setOpen(false); }}
+                  className="px-3 py-2.5 cursor-pointer border-b border-border/50 last:border-0 flex items-center gap-2 hover:bg-muted/80 active:bg-muted"
+                >
+                  <TipoPill tipo={opt.tipo} />
+                  <span className="text-sm flex-1 truncate">{opt.nombre}</span>
+                  {opt.sku && <span className="text-xs font-mono text-muted-foreground">{opt.sku}</span>}
+                </div>
+              ))}
+              {onCreate && (
+                <div
+                  onMouseDown={() => { onCreate(q); setQ(''); setOpen(false); }}
+                  className="px-3 py-2.5 cursor-pointer text-sm text-center font-semibold border-t border-border"
+                  style={{ color: '#4ade80' }}
+                >
+                  + Crear "{q}" como nuevo
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENTE PRINCIPAL
+   ═══════════════════════════════════════════════════════════════════════════ */
 export default function KardexView({ user, show }) {
   const [sucursales, setSucursales] = useState([]);
   const [sucursal, setSucursal] = useState('');
+  const [activeTab, setActiveTab] = useState('inventario');
 
   useEffect(() => {
     db.from('sucursales').select('id, store_code, nombre').eq('activa', true)
@@ -100,262 +166,226 @@ export default function KardexView({ user, show }) {
         const suc = (data || []).sort((a, b) => a.store_code.localeCompare(b.store_code));
         setSucursales(suc);
         const match = suc.find(s => s.store_code === user?.store_code);
-        if (match) setSucursal(match.id);
-        else if (suc.length > 0) setSucursal(suc[0].id);
+        setSucursal(match ? match.id : suc[0]?.id || '');
       });
   }, []);
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 1: MATERIAS PRIMAS
-  // ══════════════════════════════════════════════════════════════════════════
-  const [catalogoItems, setCatalogoItems] = useState([]);
-  const [catalogoFilter, setCatalogoFilter] = useState('materia_prima');
-  const [catalogoSearch, setCatalogoSearch] = useState('');
-  const [loadingCatalogo, setLoadingCatalogo] = useState(false);
-  const [newItemNombre, setNewItemNombre] = useState('');
-  const [newItemUnidad, setNewItemUnidad] = useState('kg');
-  const [newItemTipo, setNewItemTipo] = useState('materia_prima');
-  const [creatingItem, setCreatingItem] = useState(false);
-  const [showNewItem, setShowNewItem] = useState(false);
+  /* ══════════════════════════════════════════════════════════════════════
+     TAB 1: INVENTARIO (Catálogo de ingredientes y productos)
+     ══════════════════════════════════════════════════════════════════════ */
+  const [catalogo, setCatalogo] = useState([]);
+  const [catFilter, setCatFilter] = useState('todos');
+  const [catSearch, setCatSearch] = useState('');
+  const [loadingCat, setLoadingCat] = useState(false);
+  const [showCrear, setShowCrear] = useState(false);
+  const [nuevoItem, setNuevoItem] = useState({ nombre: '', tipo: 'materia_prima', unidad: 'kg' });
+  const [creando, setCreando] = useState(false);
 
   const fetchCatalogo = useCallback(async () => {
-    setLoadingCatalogo(true);
+    setLoadingCat(true);
     try {
-      let query = db.from('catalogo_productos')
+      let q = db.from('catalogo_productos')
         .select('id, nombre, sku, tipo, unidad_medida, categoria, activo, codigo')
-        .order('nombre');
-
-      if (catalogoFilter === 'todos') {
-        // sin filtro de tipo
-      } else if (catalogoFilter === 'materia_prima') {
-        query = query.or('tipo.eq.materia_prima,tipo.is.null');
-      } else {
-        query = query.eq('tipo', catalogoFilter);
+        .eq('activo', true).order('nombre');
+      if (catFilter !== 'todos') {
+        if (catFilter === 'materia_prima') q = q.or('tipo.eq.materia_prima,tipo.is.null');
+        else q = q.eq('tipo', catFilter);
       }
-
-      if (catalogoSearch) query = query.ilike('nombre', `%${catalogoSearch}%`);
-
-      const { data, error } = await query;
+      if (catSearch) q = q.ilike('nombre', `%${catSearch}%`);
+      const { data, error } = await q;
       if (error) throw error;
-      setCatalogoItems(data || []);
-    } catch {
-      show?.('Error al cargar catálogo', 'error');
-    } finally {
-      setLoadingCatalogo(false);
-    }
-  }, [catalogoFilter, catalogoSearch]);
+      setCatalogo(data || []);
+    } catch { show?.('Error al cargar inventario', 'error'); }
+    finally { setLoadingCat(false); }
+  }, [catFilter, catSearch]);
 
   useEffect(() => { fetchCatalogo(); }, [fetchCatalogo]);
 
-  const handleCreateItem = async () => {
-    if (!newItemNombre.trim()) { show?.('Ingresa un nombre', 'warning'); return; }
-    setCreatingItem(true);
+  const handleCrearItem = async () => {
+    if (!nuevoItem.nombre.trim()) { show?.('Escribe un nombre', 'warning'); return; }
+    setCreando(true);
     try {
-      const { data, error } = await db.rpc('crear_catalogo_item', {
-        p_nombre: newItemNombre.trim(),
-        p_tipo: newItemTipo,
-        p_unidad_medida: newItemUnidad,
+      const { error } = await db.rpc('crear_catalogo_item', {
+        p_nombre: nuevoItem.nombre.trim(),
+        p_tipo: nuevoItem.tipo,
+        p_unidad_medida: nuevoItem.unidad,
       });
       if (error) throw error;
-      const tipoLabel = TIPO_INFO[newItemTipo]?.full || newItemTipo;
-      show?.(`${tipoLabel} creado con SKU auto-generado`, 'success');
-      setNewItemNombre('');
-      setShowNewItem(false);
+      show?.(`${TIPOS[nuevoItem.tipo]?.full} creado`, 'success');
+      setNuevoItem({ nombre: '', tipo: 'materia_prima', unidad: 'kg' });
+      setShowCrear(false);
       fetchCatalogo();
-    } catch {
-      show?.('Error al crear item', 'error');
-    } finally {
-      setCreatingItem(false);
-    }
+    } catch { show?.('Error al crear', 'error'); }
+    finally { setCreando(false); }
   };
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 2: MAPEO DTE
-  // ══════════════════════════════════════════════════════════════════════════
-  const [dteDescripciones, setDteDescripciones] = useState([]);
+  // Conteos por tipo
+  const catCounts = { materia_prima: 0, sub_producto: 0, producto_terminado: 0, insumo: 0, total: catalogo.length };
+  catalogo.forEach(c => { const t = c.tipo || 'materia_prima'; if (catCounts[t] !== undefined) catCounts[t]++; });
+
+  /* ══════════════════════════════════════════════════════════════════════
+     TAB 2: MAPEO DE COMPRAS (vincular items DTE → catálogo)
+     ══════════════════════════════════════════════════════════════════════ */
+  const [dteDescs, setDteDescs] = useState([]);
   const [loadingMapeo, setLoadingMapeo] = useState(false);
   const [soloSinMapear, setSoloSinMapear] = useState(true);
   const [mapeoSearch, setMapeoSearch] = useState('');
   const [extracting, setExtracting] = useState(false);
-  const [mappingDesc, setMappingDesc] = useState(null); // descripción activa para mapear
-  const [creatingFromDte, setCreatingFromDte] = useState(null); // descripción para crear MP nueva
-  const [newMPFromDte, setNewMPFromDte] = useState('');
-  const [savingMapeo, setSavingMapeo] = useState(null);
+  const [activeMapDesc, setActiveMapDesc] = useState(null);
+  const [creandoDesdeMapeo, setCreandoDesdeMapeo] = useState(null);
+  const [newNameMapeo, setNewNameMapeo] = useState('');
+  const [savingMapeo, setSavingMapeo] = useState(false);
+  const [totalDescs, setTotalDescs] = useState(0);
+  const [totalMapped, setTotalMapped] = useState(0);
 
-  const fetchDteDescripciones = useCallback(async () => {
+  const fetchMapeo = useCallback(async () => {
     setLoadingMapeo(true);
     try {
-      let query = db.from('v_dte_descripciones').select('*');
-      if (soloSinMapear) query = query.eq('mapeado', false);
-      if (mapeoSearch) query = query.ilike('descripcion', `%${mapeoSearch}%`);
-      query = query.limit(200);
-      const { data, error } = await query;
+      // Primero: totales para la barra de progreso
+      const { data: allData } = await db.from('v_dte_descripciones').select('mapeado');
+      if (allData) {
+        setTotalDescs(allData.length);
+        setTotalMapped(allData.filter(d => d.mapeado).length);
+      }
+      // Luego: datos filtrados
+      let q = db.from('v_dte_descripciones').select('*');
+      if (soloSinMapear) q = q.eq('mapeado', false);
+      if (mapeoSearch) q = q.ilike('descripcion', `%${mapeoSearch}%`);
+      q = q.limit(100);
+      const { data, error } = await q;
       if (error) throw error;
-      setDteDescripciones(data || []);
-    } catch {
-      show?.('Error al cargar descripciones DTE', 'error');
-    } finally {
-      setLoadingMapeo(false);
-    }
+      setDteDescs(data || []);
+    } catch { show?.('Error al cargar mapeo', 'error'); }
+    finally { setLoadingMapeo(false); }
   }, [soloSinMapear, mapeoSearch]);
 
-  const handleExtractItems = async () => {
+  const handleExtract = async () => {
     setExtracting(true);
     try {
       const { data, error } = await db.rpc('extraer_items_dte');
       if (error) throw error;
-      show?.(`${data} items extraídos/actualizados`, 'success');
-      fetchDteDescripciones();
-    } catch {
-      show?.('Error al extraer items DTE', 'error');
-    } finally {
-      setExtracting(false);
-    }
+      show?.(`${data} items sincronizados desde tus compras`, 'success');
+      fetchMapeo();
+    } catch { show?.('Error al sincronizar', 'error'); }
+    finally { setExtracting(false); }
   };
 
-  const handleMapearDescripcion = async (descripcion, catalogoId) => {
-    setSavingMapeo(descripcion);
+  const handleMapear = async (descripcion, catalogoId) => {
+    setSavingMapeo(true);
     try {
       const { data, error } = await db.rpc('mapear_descripcion_dte', {
-        p_descripcion: descripcion,
-        p_catalogo_id: catalogoId,
+        p_descripcion: descripcion, p_catalogo_id: catalogoId,
       });
       if (error) throw error;
-      show?.(`${data} líneas mapeadas`, 'success');
-      setMappingDesc(null);
-      fetchDteDescripciones();
-    } catch {
-      show?.('Error al mapear descripción', 'error');
-    } finally {
-      setSavingMapeo(null);
-    }
+      show?.(`Vinculado — ${data} líneas de compra actualizadas`, 'success');
+      setActiveMapDesc(null);
+      fetchMapeo();
+    } catch { show?.('Error al vincular', 'error'); }
+    finally { setSavingMapeo(false); }
   };
 
   const handleCrearYMapear = async (descripcion) => {
-    const nombre = newMPFromDte.trim() || descripcion;
-    if (!nombre) return;
-    setSavingMapeo(descripcion);
+    const nombre = newNameMapeo.trim() || descripcion;
+    setSavingMapeo(true);
     try {
-      // Crear MP nueva
-      const { data: nuevoId, error: errCreate } = await db.rpc('crear_materia_prima', {
-        p_nombre: nombre,
-        p_unidad_medida: 'kg',
-        p_descripcion: `Importado desde DTE: ${descripcion}`,
+      const { data: nuevoId, error: errC } = await db.rpc('crear_materia_prima', {
+        p_nombre: nombre, p_unidad_medida: 'kg',
+        p_descripcion: `Desde compras: ${descripcion}`,
       });
-      if (errCreate) throw errCreate;
-
-      // Mapear todas las líneas a esta nueva MP
-      const { data: count, error: errMap } = await db.rpc('mapear_descripcion_dte', {
-        p_descripcion: descripcion,
-        p_catalogo_id: nuevoId,
+      if (errC) throw errC;
+      const { data: count, error: errM } = await db.rpc('mapear_descripcion_dte', {
+        p_descripcion: descripcion, p_catalogo_id: nuevoId,
       });
-      if (errMap) throw errMap;
-
-      show?.(`MP "${nombre}" creada y ${count} líneas mapeadas`, 'success');
-      setCreatingFromDte(null);
-      setNewMPFromDte('');
-      setMappingDesc(null);
-      fetchDteDescripciones();
+      if (errM) throw errM;
+      show?.(`"${nombre}" creado y ${count} líneas vinculadas`, 'success');
+      setCreandoDesdeMapeo(null);
+      setNewNameMapeo('');
+      setActiveMapDesc(null);
+      fetchMapeo();
       fetchCatalogo();
-    } catch {
-      show?.('Error al crear y mapear', 'error');
-    } finally {
-      setSavingMapeo(null);
-    }
+    } catch { show?.('Error al crear y vincular', 'error'); }
+    finally { setSavingMapeo(false); }
   };
 
-  const sinMapearCount = dteDescripciones.filter(d => !d.mapeado).length;
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 3: RECETAS
-  // ══════════════════════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════════════════════════
+     TAB 3: RECETAS
+     ══════════════════════════════════════════════════════════════════════ */
   const [recetas, setRecetas] = useState([]);
   const [loadingRecetas, setLoadingRecetas] = useState(false);
-  const [recetaExpandida, setRecetaExpandida] = useState(null);
+  const [recetaOpen, setRecetaOpen] = useState(null);
   const [recetaLineas, setRecetaLineas] = useState({});
   const [showNuevaReceta, setShowNuevaReceta] = useState(false);
-  const [nuevaReceta, setNuevaReceta] = useState({ nombre: '', rendimiento: 1, unidad_rendimiento: 'porcion' });
-  const [nuevaLinea, setNuevaLinea] = useState({ receta_id: null, cantidad: '', unidad: 'kg' });
+  const [nrData, setNrData] = useState({ nombre: '', rendimiento: 1, unidad: 'porcion' });
+  const [nrPT, setNrPT] = useState(null);
   const [savingReceta, setSavingReceta] = useState(false);
+  const [addLinea, setAddLinea] = useState({ comp: null, cantidad: '', unidad: 'kg' });
 
   const fetchRecetas = useCallback(async () => {
     setLoadingRecetas(true);
     try {
-      const { data, error } = await db
-        .from('recetas')
-        .select('id, nombre, rendimiento, unidad_rendimiento, activo, catalogo_id, catalogo_productos(nombre, sku)')
-        .order('nombre');
-      if (error) throw error;
+      const { data } = await db.from('recetas')
+        .select('id, nombre, rendimiento, unidad_rendimiento, activo, catalogo_id, catalogo_productos(nombre, sku, tipo)')
+        .eq('activo', true).order('nombre');
       setRecetas(data || []);
-    } catch {
-      show?.('Error al cargar recetas', 'error');
-    } finally {
-      setLoadingRecetas(false);
-    }
+    } catch { show?.('Error al cargar recetas', 'error'); }
+    finally { setLoadingRecetas(false); }
   }, []);
 
-  const fetchLineas = async (recetaId) => {
-    if (recetaLineas[recetaId]) return; // ya cargado
-    const { data } = await db
-      .from('recetas_lineas')
-      .select('id, cantidad, unidad, notas, catalogo_productos(id, nombre, sku)')
-      .eq('receta_id', recetaId)
-      .order('created_at');
-    setRecetaLineas(prev => ({ ...prev, [recetaId]: data || [] }));
+  const fetchLineas = async (rid) => {
+    if (recetaLineas[rid]) return;
+    const { data } = await db.from('recetas_lineas')
+      .select('id, cantidad, unidad, tipo_componente, catalogo_productos(id, nombre, sku, tipo)')
+      .eq('receta_id', rid).order('created_at');
+    setRecetaLineas(prev => ({ ...prev, [rid]: data || [] }));
   };
 
-  const handleExpandReceta = (recetaId) => {
-    if (recetaExpandida === recetaId) { setRecetaExpandida(null); return; }
-    setRecetaExpandida(recetaId);
-    fetchLineas(recetaId);
+  const toggleReceta = (rid) => {
+    if (recetaOpen === rid) { setRecetaOpen(null); return; }
+    setRecetaOpen(rid);
+    fetchLineas(rid);
   };
 
   const handleCrearReceta = async () => {
-    if (!nuevaReceta.nombre.trim()) { show?.('Ingresa nombre de receta', 'warning'); return; }
+    if (!nrData.nombre.trim()) { show?.('Escribe un nombre', 'warning'); return; }
     setSavingReceta(true);
     try {
       const { error } = await db.from('recetas').insert({
-        nombre: nuevaReceta.nombre.trim(),
-        rendimiento: parseFloat(nuevaReceta.rendimiento) || 1,
-        unidad_rendimiento: nuevaReceta.unidad_rendimiento,
-        catalogo_id: nuevaReceta.catalogo_id || null,
+        nombre: nrData.nombre.trim(),
+        rendimiento: parseFloat(nrData.rendimiento) || 1,
+        unidad_rendimiento: nrData.unidad,
+        catalogo_id: nrPT?.id || null,
         activo: true,
       });
       if (error) throw error;
-      show?.('Receta creada', 'success');
+      show?.('Receta creada — ahora agrega los ingredientes', 'success');
       setShowNuevaReceta(false);
-      setNuevaReceta({ nombre: '', rendimiento: 1, unidad_rendimiento: 'porcion' });
+      setNrData({ nombre: '', rendimiento: 1, unidad: 'porcion' });
+      setNrPT(null);
       fetchRecetas();
-    } catch {
-      show?.('Error al crear receta', 'error');
-    } finally {
-      setSavingReceta(false);
-    }
+    } catch { show?.('Error al crear receta', 'error'); }
+    finally { setSavingReceta(false); }
   };
 
-  const handleAddLinea = async (recetaId, componente) => {
-    if (!nuevaLinea.cantidad || isNaN(nuevaLinea.cantidad)) {
-      show?.('Ingresa cantidad válida', 'warning'); return;
-    }
+  const handleAddIngrediente = async (recetaId) => {
+    if (!addLinea.comp) { show?.('Selecciona un ingrediente', 'warning'); return; }
+    if (!addLinea.cantidad || isNaN(addLinea.cantidad)) { show?.('Escribe la cantidad', 'warning'); return; }
     try {
       const { error } = await db.from('recetas_lineas').insert({
         receta_id: recetaId,
-        materia_prima_id: componente.id,
-        tipo_componente: componente.tipo || 'materia_prima',
-        cantidad: parseFloat(nuevaLinea.cantidad),
-        unidad: nuevaLinea.unidad,
+        materia_prima_id: addLinea.comp.id,
+        tipo_componente: addLinea.comp.tipo || 'materia_prima',
+        cantidad: parseFloat(addLinea.cantidad),
+        unidad: addLinea.unidad,
       });
       if (error) throw error;
       show?.('Ingrediente agregado', 'success');
-      setNuevaLinea({ receta_id: null, cantidad: '', unidad: 'kg' });
-      // Refrescar líneas
+      setAddLinea({ comp: null, cantidad: '', unidad: 'kg' });
+      // Refresh lines
       const { data } = await db.from('recetas_lineas')
-        .select('id, cantidad, unidad, notas, catalogo_productos(id, nombre, sku)')
+        .select('id, cantidad, unidad, tipo_componente, catalogo_productos(id, nombre, sku, tipo)')
         .eq('receta_id', recetaId).order('created_at');
       setRecetaLineas(prev => ({ ...prev, [recetaId]: data || [] }));
-    } catch {
-      show?.('Error al agregar ingrediente', 'error');
-    }
+    } catch { show?.('Error al agregar', 'error'); }
   };
 
   const handleDeleteLinea = async (lineaId, recetaId) => {
@@ -367,11 +397,11 @@ export default function KardexView({ user, show }) {
     }));
   };
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 4: MOVIMIENTOS
-  // ══════════════════════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════════════════════════
+     TAB 4: MOVIMIENTOS
+     ══════════════════════════════════════════════════════════════════════ */
   const [movimientos, setMovimientos] = useState([]);
-  const [searchProd, setSearchProd] = useState('');
+  const [searchMov, setSearchMov] = useState('');
   const [dateStart, setDateStart] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 7);
     return d.toISOString().split('T')[0];
@@ -379,734 +409,679 @@ export default function KardexView({ user, show }) {
   const [dateEnd, setDateEnd] = useState(() => today());
   const [loadingMov, setLoadingMov] = useState(false);
 
-  const fetchMovimientos = useCallback(async () => {
+  const fetchMov = useCallback(async () => {
     if (!sucursal) return;
     setLoadingMov(true);
     try {
-      const { data, error } = await db
-        .from('kardex_movimientos')
+      const { data } = await db.from('kardex_movimientos')
         .select('id, tipo, cantidad, stock_anterior, stock_posterior, notas, created_at, catalogo_productos(nombre)')
         .eq('sucursal_id', sucursal)
         .gte('created_at', dateStart + 'T00:00:00Z')
         .lte('created_at', dateEnd + 'T23:59:59Z')
         .order('created_at', { ascending: false });
-      if (error) throw error;
-      let filtered = data || [];
-      if (searchProd) {
-        filtered = filtered.filter(m =>
-          m.catalogo_productos?.nombre?.toLowerCase().includes(searchProd.toLowerCase())
-        );
-      }
-      setMovimientos(filtered);
-    } catch {
-      show?.('Error al cargar movimientos', 'error');
-    } finally {
-      setLoadingMov(false);
-    }
-  }, [sucursal, dateStart, dateEnd, searchProd]);
+      let f = data || [];
+      if (searchMov) f = f.filter(m => m.catalogo_productos?.nombre?.toLowerCase().includes(searchMov.toLowerCase()));
+      setMovimientos(f);
+    } catch { show?.('Error al cargar movimientos', 'error'); }
+    finally { setLoadingMov(false); }
+  }, [sucursal, dateStart, dateEnd, searchMov]);
 
-  useEffect(() => { fetchMovimientos(); }, [fetchMovimientos]);
+  useEffect(() => { fetchMov(); }, [fetchMov]);
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 5: AJUSTES
-  // ══════════════════════════════════════════════════════════════════════════
-  const [adjProduct, setAdjProduct] = useState(null);
-  const [adjCantidad, setAdjCantidad] = useState('');
+  /* ══════════════════════════════════════════════════════════════════════
+     TAB 5: AJUSTES
+     ══════════════════════════════════════════════════════════════════════ */
+  const [adjProd, setAdjProd] = useState(null);
+  const [adjQty, setAdjQty] = useState('');
   const [adjNotas, setAdjNotas] = useState('');
-  const [currentStock, setCurrentStock] = useState(null);
+  const [adjStock, setAdjStock] = useState(null);
   const [savingAdj, setSavingAdj] = useState(false);
 
-  const selectProduct = async (prod) => {
-    setAdjProduct(prod);
+  const selectAdjProd = async (prod) => {
+    setAdjProd(prod);
     if (!sucursal) { show?.('Selecciona una sucursal primero', 'warning'); return; }
-    const { data } = await db
-      .from('inventario').select('stock_actual')
+    const { data } = await db.from('inventario').select('stock_actual')
       .eq('producto_id', prod.id).eq('sucursal_id', sucursal).single();
-    setCurrentStock(data?.stock_actual ?? 0);
+    setAdjStock(data?.stock_actual ?? 0);
   };
 
-  const handleRegisterAdjuste = async () => {
-    if (!adjProduct) { show?.('Selecciona un producto', 'warning'); return; }
-    if (!adjCantidad || isNaN(adjCantidad)) { show?.('Ingresa cantidad válida', 'warning'); return; }
-    if (!adjNotas || adjNotas.trim().length < 5) { show?.('Notas deben tener mínimo 5 caracteres', 'warning'); return; }
+  const handleAjuste = async () => {
+    if (!adjProd) { show?.('Selecciona un producto', 'warning'); return; }
+    if (!adjQty || isNaN(adjQty)) { show?.('Escribe una cantidad válida', 'warning'); return; }
+    if (!adjNotas || adjNotas.trim().length < 5) { show?.('Escribe el motivo (mín. 5 caracteres)', 'warning'); return; }
     setSavingAdj(true);
     try {
-      const cantidad = parseFloat(adjCantidad);
-      const stockPosterior = currentStock + cantidad;
-      const { error: kardexErr } = await db.from('kardex_movimientos').insert({
-        producto_id: adjProduct.id, sucursal_id: sucursal,
-        tipo: 'ajuste_manual', cantidad, stock_anterior: currentStock,
-        stock_posterior: stockPosterior, notas: adjNotas.trim(),
+      const cantidad = parseFloat(adjQty);
+      const stockPost = adjStock + cantidad;
+      const { error } = await db.from('kardex_movimientos').insert({
+        producto_id: adjProd.id, sucursal_id: sucursal,
+        tipo: 'ajuste_manual', cantidad, stock_anterior: adjStock,
+        stock_posterior: stockPost, notas: adjNotas.trim(),
         usuario_id: user.id, referencia_tipo: 'manual',
       });
-      if (kardexErr) throw kardexErr;
-      await db.from('inventario')
-        .update({ stock_actual: stockPosterior })
-        .eq('producto_id', adjProduct.id).eq('sucursal_id', sucursal);
-      show?.('Ajuste registrado correctamente', 'success');
-      setAdjProduct(null); setAdjCantidad(''); setAdjNotas(''); setCurrentStock(null);
-    } catch {
-      show?.('Error al registrar ajuste', 'error');
-    } finally {
-      setSavingAdj(false);
-    }
+      if (error) throw error;
+      await db.from('inventario').update({ stock_actual: stockPost })
+        .eq('producto_id', adjProd.id).eq('sucursal_id', sucursal);
+      show?.('Ajuste registrado', 'success');
+      setAdjProd(null); setAdjQty(''); setAdjNotas(''); setAdjStock(null);
+    } catch { show?.('Error al registrar ajuste', 'error'); }
+    finally { setSavingAdj(false); }
   };
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // RENDER
-  // ══════════════════════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════════════════════════
+     RENDER
+     ══════════════════════════════════════════════════════════════════════ */
   return (
-    <div className="p-4 min-h-screen bg-background text-foreground">
-      <Tabs defaultValue="materias">
-        <TabsList className="mb-5 flex-wrap h-auto gap-1">
-          <TabsTrigger value="materias">📦 Materias Primas</TabsTrigger>
-          <TabsTrigger value="mapeo" onClick={fetchDteDescripciones}>🔗 Mapeo DTE</TabsTrigger>
-          <TabsTrigger value="recetas" onClick={fetchRecetas}>📋 Recetas</TabsTrigger>
-          <TabsTrigger value="movimientos">📊 Movimientos</TabsTrigger>
+    <div className="p-3 min-h-screen bg-background text-foreground">
+      <Tabs value={activeTab} onValueChange={v => {
+        setActiveTab(v);
+        if (v === 'mapeo') fetchMapeo();
+        if (v === 'recetas') fetchRecetas();
+      }}>
+        <TabsList className="mb-4 flex-wrap h-auto gap-1">
+          <TabsTrigger value="inventario">📦 Inventario</TabsTrigger>
+          <TabsTrigger value="mapeo">🔗 Mapeo Compras</TabsTrigger>
+          <TabsTrigger value="recetas">📋 Recetas</TabsTrigger>
+          <TabsTrigger value="movimientos">📊 Historial</TabsTrigger>
           <TabsTrigger value="ajustes">⚙️ Ajustes</TabsTrigger>
         </TabsList>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            TAB 1: MATERIAS PRIMAS
-        ══════════════════════════════════════════════════════════════════════ */}
-        <TabsContent value="materias">
-          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-            <h3 className="sec-title mb-0">Catálogo de Productos</h3>
-            <Button variant="success" size="sm" onClick={() => setShowNewItem(v => !v)}>
-              + Nuevo ítem
+        {/* ═══════════════════════════════════════════════════════════════
+            TAB 1: INVENTARIO
+        ═══════════════════════════════════════════════════════════════ */}
+        <TabsContent value="inventario">
+          {/* KPIs */}
+          <div className="flex gap-2 mb-4 overflow-x-auto">
+            <KpiCard icon="🥩" label="Materias Primas" value={catCounts.materia_prima} color="#60a5fa" />
+            <KpiCard icon="🧪" label="Sub Productos" value={catCounts.sub_producto} color="#fb923c" />
+            <KpiCard icon="🍔" label="Terminados" value={catCounts.producto_terminado} color="#4ade80" />
+            <KpiCard icon="📦" label="Insumos" value={catCounts.insumo} color="#a1a1aa" />
+          </div>
+
+          {/* Filtros tipo chips */}
+          <div className="chips">
+            {[
+              { key: 'todos', label: 'Todos' },
+              { key: 'materia_prima', label: '🥩 MP' },
+              { key: 'sub_producto', label: '🧪 SP' },
+              { key: 'producto_terminado', label: '🍔 PT' },
+              { key: 'insumo', label: '📦 IN' },
+            ].map(f => (
+              <button key={f.key} className={`chip ${catFilter === f.key ? 'on' : ''}`}
+                onClick={() => setCatFilter(f.key)}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Buscar + Crear */}
+          <div className="flex gap-2 mb-4">
+            <Input placeholder="Buscar por nombre..." value={catSearch}
+              onChange={e => setCatSearch(e.target.value)} className="flex-1" />
+            <Button variant="success" size="sm" onClick={() => setShowCrear(v => !v)}
+              className="whitespace-nowrap shrink-0">
+              + Crear
             </Button>
           </div>
 
-          {showNewItem && (
-            <Card className="mb-4 border-primary/30">
-              <CardHeader><CardTitle className="text-sm">Nuevo ítem de catálogo</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  {/* Tipo */}
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Tipo</label>
-                    <select value={newItemTipo} onChange={e => setNewItemTipo(e.target.value)} className={selectCls}>
-                      <option value="materia_prima">🥩 MP — Materia Prima</option>
-                      <option value="sub_producto">🧪 SP — Sub Producto</option>
-                      <option value="producto_terminado">🍔 PT — Producto Terminado</option>
-                      <option value="insumo">📦 Insumo</option>
-                    </select>
-                  </div>
-                  {/* Nombre */}
-                  <div className="sm:col-span-2 space-y-1">
-                    <label className="text-xs text-muted-foreground">Nombre</label>
-                    <Input
-                      placeholder={
-                        newItemTipo === 'materia_prima' ? 'Ej: Carne de Res 80/20' :
-                        newItemTipo === 'sub_producto'  ? 'Ej: Salsa Especial, Masa Pre-lista' :
-                        'Ej: Smash Burger Classic'
-                      }
-                      value={newItemNombre}
-                      onChange={e => setNewItemNombre(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleCreateItem()}
-                      autoFocus
-                    />
-                  </div>
-                  {/* Unidad */}
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Unidad</label>
-                    <select value={newItemUnidad} onChange={e => setNewItemUnidad(e.target.value)} className={selectCls}>
-                      <option value="kg">kg</option>
-                      <option value="lb">lb</option>
-                      <option value="unidad">unidad</option>
-                      <option value="litro">litro</option>
-                      <option value="gramo">gramo</option>
-                      <option value="ml">ml</option>
-                      <option value="porcion">porcion</option>
-                      <option value="caja">caja</option>
-                      <option value="paquete">paquete</option>
-                    </select>
-                  </div>
-                </div>
-                {newItemTipo === 'sub_producto' && (
-                  <p className="text-xs text-orange-400/80">
-                    💡 Un Sub Producto se fabrica en casa matriz con Materias Primas, y se usa como componente en platos/combos.
-                    Se le generará un SKU <span className="font-mono">SP-XXX</span> automáticamente.
-                  </p>
-                )}
-                <div className="flex gap-2">
-                  <Button variant="success" size="sm" onClick={handleCreateItem} disabled={creatingItem}>
-                    {creatingItem ? 'Creando...' : `✓ Crear ${TIPO_INFO[newItemTipo]?.label || ''}`}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => { setShowNewItem(false); setNewItemNombre(''); }}>
-                    Cancelar
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* Panel crear nuevo */}
+          {showCrear && (
+            <div className="card" style={{ borderColor: '#2d6a4f' }}>
+              <div className="sec-title" style={{ marginBottom: 12 }}>Nuevo producto o ingrediente</div>
 
-          {/* Filtros */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            {[
-              { key: 'todos',             label: '📋 Todos' },
-              { key: 'materia_prima',     label: '🥩 MP — Materias Primas' },
-              { key: 'sub_producto',      label: '🧪 SP — Sub Productos' },
-              { key: 'producto_terminado',label: '🍔 PT — Terminados' },
-              { key: 'insumo',            label: '📦 Insumos' },
-            ].map(f => (
-              <Button
-                key={f.key}
-                variant={catalogoFilter === f.key ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setCatalogoFilter(f.key)}
-              >
-                {f.label}
-              </Button>
-            ))}
-            <Input
-              placeholder="Buscar..."
-              value={catalogoSearch}
-              onChange={e => setCatalogoSearch(e.target.value)}
-              className="max-w-48"
-            />
-          </div>
+              {/* Selector de tipo: visual con iconos grandes */}
+              <div className="flex gap-2 mb-3 flex-wrap">
+                {Object.entries(TIPOS).map(([key, t]) => (
+                  <button key={key}
+                    className="flex-1 min-w-[70px] rounded-lg p-2 text-center border-2 transition-all"
+                    style={{
+                      background: nuevoItem.tipo === key ? t.bg : 'transparent',
+                      borderColor: nuevoItem.tipo === key ? t.color : '#333',
+                      color: nuevoItem.tipo === key ? t.color : '#888',
+                    }}
+                    onClick={() => setNuevoItem(p => ({ ...p, tipo: key }))}
+                  >
+                    <div style={{ fontSize: 20 }}>{t.icon}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2 }}>{t.label}</div>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mb-3" style={{ color: TIPOS[nuevoItem.tipo]?.color }}>
+                {TIPOS[nuevoItem.tipo]?.hint}
+              </p>
 
-          {loadingCatalogo ? (
-            <div className="spin" style={{ width: 28, height: 28, margin: '40px auto' }} />
-          ) : catalogoItems.length === 0 ? (
-            <div className="empty">
-              <div className="empty-icon">📦</div>
-              <div className="empty-text">
-                {catalogoFilter === 'materia_prima'
-                  ? 'No hay Materias Primas. Usa "Mapeo DTE" para crear desde tus compras.'
-                  : 'No hay productos de este tipo.'}
+              <div className="flex gap-2 mb-3">
+                <Input placeholder="Nombre del producto..."
+                  value={nuevoItem.nombre}
+                  onChange={e => setNuevoItem(p => ({ ...p, nombre: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && handleCrearItem()}
+                  className="flex-1" autoFocus />
+                <select value={nuevoItem.unidad}
+                  onChange={e => setNuevoItem(p => ({ ...p, unidad: e.target.value }))}
+                  className={selectCls} style={{ width: 'auto', minWidth: 80 }}>
+                  {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+
+              <div className="flex gap-2">
+                <button className="btn btn-green btn-sm" onClick={handleCrearItem} disabled={creando}>
+                  {creando ? 'Creando...' : `Crear ${TIPOS[nuevoItem.tipo]?.label}`}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowCrear(false)}>Cancelar</button>
               </div>
             </div>
+          )}
+
+          {/* Lista de productos */}
+          {loadingCat ? (
+            <div className="spin" style={{ width: 28, height: 28, margin: '40px auto' }} />
+          ) : catalogo.length === 0 ? (
+            <div className="empty">
+              <div className="empty-icon">{catFilter === 'todos' ? '📦' : TIPOS[catFilter]?.icon || '📦'}</div>
+              <div className="empty-text">
+                {catFilter === 'todos' ? 'No hay productos aún.' : `No hay ${TIPOS[catFilter]?.full || 'productos'} aún.`}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Usa el botón "+ Crear" o ve a "Mapeo Compras" para importar ingredientes desde tus facturas.
+              </p>
+            </div>
           ) : (
-            <Card>
-              <CardContent className="p-0 overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left p-3 text-muted-foreground font-medium">SKU</th>
-                      <th className="text-left p-3 text-muted-foreground font-medium">Nombre</th>
-                      <th className="text-left p-3 text-muted-foreground font-medium">Tipo</th>
-                      <th className="text-left p-3 text-muted-foreground font-medium">Unidad</th>
-                      <th className="text-left p-3 text-muted-foreground font-medium">Categoría</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {catalogoItems.map(item => (
-                      <tr key={item.id} className="border-b border-border/50 hover:bg-muted/40 transition-colors">
-                        <td className="p-3">
-                          {item.sku
-                            ? <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded text-primary">{item.sku}</span>
-                            : <span className="text-xs text-muted-foreground italic">sin SKU</span>
-                          }
-                        </td>
-                        <td className="p-3 font-medium">{item.nombre}</td>
-                        <td className="p-3">
-                          <Badge variant={TIPO_INFO[item.tipo]?.badge || 'muted'}>
-                            {item.sku?.split('-')[0] || '?'} — {TIPO_INFO[item.tipo]?.full || 'Sin clasificar'}
-                          </Badge>
-                        </td>
-                        <td className="p-3 text-muted-foreground">{item.unidad_medida || '—'}</td>
-                        <td className="p-3 text-muted-foreground">{item.categoria || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
+            <div className="space-y-2">
+              {catalogo.map(item => (
+                <div key={item.id} className="item-row flex items-center gap-3">
+                  <TipoPill tipo={item.tipo} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{item.nombre}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.sku || 'sin SKU'} · {item.unidad_medida || 'unidad'}
+                      {item.categoria ? ` · ${item.categoria}` : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {catalogo.length >= 1000 && (
+                <p className="text-xs text-center text-muted-foreground mt-2">
+                  Mostrando primeros 1,000 resultados. Usa el buscador para filtrar.
+                </p>
+              )}
+            </div>
           )}
         </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            TAB 2: MAPEO DTE
-            Una descripción → una Materia Prima. Mapear una vez = aplica a todos los DTEs.
-        ══════════════════════════════════════════════════════════════════════ */}
+        {/* ═══════════════════════════════════════════════════════════════
+            TAB 2: MAPEO DE COMPRAS
+            Vincula los items de tus facturas a ingredientes del catálogo
+        ═══════════════════════════════════════════════════════════════ */}
         <TabsContent value="mapeo">
-          <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
-            <h3 className="sec-title mb-0">Mapeo DTE → Materia Prima</h3>
-            <Button variant="outline" size="sm" onClick={handleExtractItems} disabled={extracting}>
-              {extracting ? 'Extrayendo...' : '📥 Sincronizar DTEs'}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">
-            Cada descripción única de tus compras. Mapearla una vez actualiza todos los DTEs que la contienen.
-          </p>
-
-          {/* Filtros mapeo */}
-          <div className="flex flex-wrap gap-2 items-center mb-4">
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={soloSinMapear}
-                onChange={e => { setSoloSinMapear(e.target.checked); }}
-                className="rounded"
-              />
-              Solo sin mapear
-            </label>
-            <Input
-              placeholder="Buscar descripción..."
-              value={mapeoSearch}
-              onChange={e => setMapeoSearch(e.target.value)}
-              className="max-w-60"
+          {/* Barra de progreso global */}
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div>
+                <p className="text-sm font-bold">Identificación de ingredientes</p>
+                <p className="text-xs text-muted-foreground">
+                  Vincula las descripciones de tus facturas a tu catálogo de ingredientes
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={handleExtract} disabled={extracting}
+                style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                {extracting ? '⏳ ...' : '🔄 Sincronizar'}
+              </button>
+            </div>
+            <ProgressBar
+              value={totalMapped}
+              max={totalDescs}
+              label={`${totalMapped} de ${totalDescs} descripciones vinculadas`}
             />
-            <Button variant="ghost" size="sm" onClick={fetchDteDescripciones}>Actualizar</Button>
+          </div>
+
+          {/* Filtro */}
+          <div className="flex gap-2 items-center mb-4 flex-wrap">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: '#888' }}>
+              <input type="checkbox" checked={soloSinMapear}
+                onChange={e => setSoloSinMapear(e.target.checked)}
+                style={{ accentColor: '#e63946' }} />
+              Solo pendientes
+            </label>
+            <Input placeholder="Buscar descripción..." value={mapeoSearch}
+              onChange={e => setMapeoSearch(e.target.value)} className="flex-1 max-w-60" />
+            <button className="btn btn-ghost btn-sm" onClick={fetchMapeo} style={{ fontSize: 12 }}>
+              Actualizar
+            </button>
           </div>
 
           {loadingMapeo ? (
             <div className="spin" style={{ width: 28, height: 28, margin: '40px auto' }} />
-          ) : dteDescripciones.length === 0 ? (
+          ) : dteDescs.length === 0 ? (
             <div className="empty">
               <div className="empty-icon">✅</div>
               <div className="empty-text">
-                {soloSinMapear ? '¡Todas las descripciones están mapeadas!' : 'No hay descripciones DTE'}
+                {soloSinMapear ? '¡Todo vinculado!' : 'No hay descripciones'}
               </div>
+              {soloSinMapear && totalDescs > 0 && (
+                <p className="text-xs mt-2" style={{ color: '#4ade80' }}>
+                  Todas tus descripciones de compra están vinculadas a ingredientes del catálogo.
+                </p>
+              )}
             </div>
           ) : (
-            <Card>
-              <CardContent className="p-0 overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left p-3 text-muted-foreground font-medium w-1/2">Descripción DTE</th>
-                      <th className="text-right p-3 text-muted-foreground font-medium">$ Total</th>
-                      <th className="text-right p-3 text-muted-foreground font-medium">DTEs</th>
-                      <th className="text-left p-3 text-muted-foreground font-medium">Materia Prima</th>
-                      <th className="p-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dteDescripciones.map(desc => (
-                      <tr key={desc.descripcion} className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${!desc.mapeado ? 'bg-destructive/5' : ''}`}>
-                        <td className="p-3">
-                          <p className="text-xs font-medium leading-snug line-clamp-2" title={desc.descripcion}>
-                            {desc.descripcion}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{desc.num_lineas} líneas</p>
-                        </td>
-                        <td className="p-3 text-right font-mono text-xs">
-                          ${n(desc.monto_total)}
-                        </td>
-                        <td className="p-3 text-right text-muted-foreground">
-                          {desc.num_dtes}
-                        </td>
-                        <td className="p-3 min-w-48">
-                          {desc.mapeado ? (
-                            <Badge variant="success">✓ Mapeado</Badge>
-                          ) : mappingDesc === desc.descripcion ? (
-                            <div className="space-y-2">
-                              {/* Opción A: mapear a MP existente */}
-                              <CatalogoSearch
-                                placeholder="Buscar MP existente..."
-                                tipo="materia_prima"
-                                onSelect={mp => handleMapearDescripcion(desc.descripcion, mp.id)}
-                              />
-                              {/* Opción B: crear MP nueva */}
-                              {creatingFromDte === desc.descripcion ? (
-                                <div className="flex gap-1">
-                                  <Input
-                                    placeholder="Nombre MP (o Enter para usar desc.)"
-                                    value={newMPFromDte}
-                                    onChange={e => setNewMPFromDte(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && handleCrearYMapear(desc.descripcion)}
-                                    className="text-xs"
-                                    autoFocus
-                                  />
-                                  <Button
-                                    variant="success"
-                                    size="sm"
-                                    onClick={() => handleCrearYMapear(desc.descripcion)}
-                                    disabled={savingMapeo === desc.descripcion}
-                                  >
-                                    {savingMapeo === desc.descripcion ? '...' : '✓'}
-                                  </Button>
-                                </div>
-                              ) : (
-                                <Button
-                                  variant="outline"
-                                  size="xs"
-                                  onClick={() => { setCreatingFromDte(desc.descripcion); setNewMPFromDte(''); }}
-                                  className="text-xs w-full"
-                                >
-                                  + Crear nueva MP
-                                </Button>
-                              )}
+            <div className="space-y-2">
+              {dteDescs.map(desc => {
+                const isActive = activeMapDesc === desc.descripcion;
+                const isCreating = creandoDesdeMapeo === desc.descripcion;
+
+                return (
+                  <div key={desc.descripcion} className="card" style={{
+                    borderColor: desc.mapeado ? '#14532d' : isActive ? '#e63946' : '#2a2a2a',
+                    padding: 12,
+                  }}>
+                    {/* Encabezado: descripción + monto */}
+                    <div className="flex items-start gap-2 mb-1">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold leading-tight" style={{ wordBreak: 'break-word' }}>
+                          {desc.descripcion}
+                        </p>
+                        <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+                          <span>💰 ${n(desc.monto_total)}</span>
+                          <span>📄 {desc.num_dtes} facturas</span>
+                          <span>📦 {desc.num_lineas} líneas</span>
+                        </div>
+                      </div>
+                      {desc.mapeado ? (
+                        <span className="tag tag-green shrink-0" style={{ fontSize: 11 }}>✓ Vinculado</span>
+                      ) : (
+                        <span className="tag tag-orange shrink-0" style={{ fontSize: 11 }}>Pendiente</span>
+                      )}
+                    </div>
+
+                    {/* Acciones si no está mapeado */}
+                    {!desc.mapeado && !isActive && (
+                      <button className="btn btn-ghost btn-sm mt-2" style={{ fontSize: 12, width: '100%' }}
+                        onClick={() => { setActiveMapDesc(desc.descripcion); setCreandoDesdeMapeo(null); }}>
+                        Vincular a ingrediente →
+                      </button>
+                    )}
+
+                    {/* Panel de vinculación expandido */}
+                    {isActive && !desc.mapeado && (
+                      <div className="mt-3 space-y-2 pt-3" style={{ borderTop: '1px solid #333' }}>
+                        {/* Opción 1: buscar existente */}
+                        <p className="text-xs font-bold" style={{ color: '#60a5fa' }}>
+                          Buscar ingrediente existente:
+                        </p>
+                        <CatalogoSearch
+                          placeholder="Escribe el nombre del ingrediente..."
+                          tipo={['materia_prima', 'sub_producto']}
+                          onSelect={mp => handleMapear(desc.descripcion, mp.id)}
+                        />
+
+                        {/* Separador */}
+                        <div className="flex items-center gap-3 my-1">
+                          <div className="flex-1 h-px" style={{ background: '#333' }} />
+                          <span className="text-xs text-muted-foreground">ó</span>
+                          <div className="flex-1 h-px" style={{ background: '#333' }} />
+                        </div>
+
+                        {/* Opción 2: crear nuevo */}
+                        {!isCreating ? (
+                          <button className="btn btn-green btn-sm" style={{ width: '100%', fontSize: 12 }}
+                            onClick={() => { setCreandoDesdeMapeo(desc.descripcion); setNewNameMapeo(''); }}>
+                            + Crear ingrediente nuevo
+                          </button>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-xs font-bold" style={{ color: '#4ade80' }}>
+                              Nombre para la nueva Materia Prima:
+                            </p>
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder={desc.descripcion.substring(0, 40)}
+                                value={newNameMapeo}
+                                onChange={e => setNewNameMapeo(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleCrearYMapear(desc.descripcion)}
+                                autoFocus className="flex-1" />
+                              <button className="btn btn-green btn-sm shrink-0"
+                                onClick={() => handleCrearYMapear(desc.descripcion)}
+                                disabled={savingMapeo}>
+                                {savingMapeo ? '...' : '✓'}
+                              </button>
                             </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic">Sin mapear</span>
-                          )}
-                        </td>
-                        <td className="p-3 text-right">
-                          {!desc.mapeado && mappingDesc !== desc.descripcion && (
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() => { setMappingDesc(desc.descripcion); setCreatingFromDte(null); }}
-                            >
-                              Mapear →
-                            </Button>
-                          )}
-                          {mappingDesc === desc.descripcion && (
-                            <Button variant="ghost" size="xs" onClick={() => { setMappingDesc(null); setCreatingFromDte(null); }}>
-                              ✕
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
+                            <p className="text-xs text-muted-foreground">
+                              Deja vacío para usar la descripción de la factura tal cual.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Cancelar */}
+                        <button className="text-xs text-muted-foreground mt-1 underline"
+                          onClick={() => { setActiveMapDesc(null); setCreandoDesdeMapeo(null); }}>
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════
             TAB 3: RECETAS
-        ══════════════════════════════════════════════════════════════════════ */}
+        ═══════════════════════════════════════════════════════════════ */}
         <TabsContent value="recetas">
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-            <h3 className="sec-title mb-0">Recetas de Producción</h3>
-            <Button variant="success" size="sm" onClick={() => setShowNuevaReceta(v => !v)}>
-              + Nueva Receta
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <div>
+              <h3 className="sec-title mb-0">Recetas</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Define qué ingredientes componen cada producto
+              </p>
+            </div>
+            <Button variant="success" size="sm" onClick={() => setShowNuevaReceta(v => !v)}
+              className="shrink-0">
+              + Nueva
             </Button>
           </div>
 
+          {/* Crear receta */}
           {showNuevaReceta && (
-            <Card className="mb-4 border-primary/30">
-              <CardHeader><CardTitle className="text-sm">Nueva Receta</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-1 space-y-1">
-                    <label className="text-xs text-muted-foreground">Nombre de la receta</label>
-                    <Input
-                      placeholder="Ej: Smash Burger Classic"
-                      value={nuevaReceta.nombre}
-                      onChange={e => setNuevaReceta(p => ({ ...p, nombre: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Resultado: PT o SP (opcional)</label>
-                    <CatalogoSearch
-                      placeholder="Buscar PT o SP en catálogo..."
-                      tipo={['producto_terminado', 'sub_producto']}
-                      onSelect={pt => setNuevaReceta(p => ({ ...p, catalogo_id: pt.id, _ptNombre: pt.nombre, _ptTipo: pt.tipo }))}
-                    />
-                    {nuevaReceta._ptNombre && (
-                      <p className={`text-xs mt-0.5 ${TIPO_INFO[nuevaReceta._ptTipo]?.color || 'text-success'}`}>
-                        → [{TIPO_INFO[nuevaReceta._ptTipo]?.label}] {nuevaReceta._ptNombre}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Rendimiento</label>
-                    <div className="flex gap-2">
-                      <Input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={nuevaReceta.rendimiento}
-                        onChange={e => setNuevaReceta(p => ({ ...p, rendimiento: e.target.value }))}
-                        className="w-24"
-                      />
-                      <Input
-                        placeholder="porcion"
-                        value={nuevaReceta.unidad_rendimiento}
-                        onChange={e => setNuevaReceta(p => ({ ...p, unidad_rendimiento: e.target.value }))}
-                      />
+            <div className="card" style={{ borderColor: '#2d6a4f' }}>
+              <div className="sec-title" style={{ marginBottom: 10 }}>Nueva receta</div>
+              <div className="space-y-3">
+                <div className="field">
+                  <label>¿Qué se prepara?</label>
+                  <Input placeholder="Ej: Smash Burger Classic, Salsa Especial..."
+                    value={nrData.nombre}
+                    onChange={e => setNrData(p => ({ ...p, nombre: e.target.value }))} />
+                </div>
+
+                <div className="field">
+                  <label>¿A qué producto del catálogo corresponde? (opcional)</label>
+                  <CatalogoSearch
+                    placeholder="Buscar PT o SP..."
+                    tipo={['producto_terminado', 'sub_producto']}
+                    onSelect={pt => setNrPT(pt)}
+                  />
+                  {nrPT && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <TipoPill tipo={nrPT.tipo} />
+                      <span className="text-sm">{nrPT.nombre}</span>
+                      <button className="text-xs text-destructive ml-auto" onClick={() => setNrPT(null)}>✕</button>
                     </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>Rinde</label>
+                    <Input type="number" min="0.01" step="0.01"
+                      value={nrData.rendimiento}
+                      onChange={e => setNrData(p => ({ ...p, rendimiento: e.target.value }))} />
+                  </div>
+                  <div className="field" style={{ flex: 1 }}>
+                    <label>Unidad</label>
+                    <select value={nrData.unidad}
+                      onChange={e => setNrData(p => ({ ...p, unidad: e.target.value }))}
+                      className={selectCls}>
+                      <option value="porcion">porción</option>
+                      <option value="unidad">unidad</option>
+                      <option value="kg">kg</option>
+                      <option value="litro">litro</option>
+                    </select>
                   </div>
                 </div>
+
                 <div className="flex gap-2">
-                  <Button variant="success" size="sm" onClick={handleCrearReceta} disabled={savingReceta}>
-                    {savingReceta ? 'Guardando...' : '✓ Crear Receta'}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setShowNuevaReceta(false)}>Cancelar</Button>
+                  <button className="btn btn-green btn-sm" onClick={handleCrearReceta} disabled={savingReceta}>
+                    {savingReceta ? '...' : 'Crear receta'}
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowNuevaReceta(false)}>Cancelar</button>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
+          {/* Lista de recetas */}
           {loadingRecetas ? (
             <div className="spin" style={{ width: 28, height: 28, margin: '40px auto' }} />
           ) : recetas.length === 0 ? (
             <div className="empty">
               <div className="empty-icon">📋</div>
-              <div className="empty-text">No hay recetas. Crea la primera receta para definir qué Materias Primas componen cada producto.</div>
+              <div className="empty-text">No hay recetas</div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Crea tu primera receta para definir qué ingredientes lleva cada plato o preparación.
+              </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {recetas.map(receta => (
-                <Card key={receta.id} className={receta.activo ? '' : 'opacity-60'}>
-                  <CardContent className="pt-4">
-                    <div
-                      className="flex items-center justify-between cursor-pointer"
-                      onClick={() => handleExpandReceta(receta.id)}
-                    >
-                      <div>
-                        <p className="font-semibold">{receta.nombre}</p>
+            <div className="space-y-2">
+              {recetas.map(rec => {
+                const isOpen = recetaOpen === rec.id;
+                const lineas = recetaLineas[rec.id] || [];
+
+                return (
+                  <div key={rec.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                    {/* Header receta */}
+                    <div className="flex items-center gap-3 p-3 cursor-pointer"
+                      onClick={() => toggleReceta(rec.id)}
+                      style={{ background: isOpen ? '#1e1e1e' : 'transparent' }}>
+                      <div style={{ fontSize: 24 }}>
+                        {rec.catalogo_productos?.tipo === 'sub_producto' ? '🧪' : '🍔'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate">{rec.nombre}</p>
                         <p className="text-xs text-muted-foreground">
-                          Rinde: {receta.rendimiento} {receta.unidad_rendimiento}
-                          {receta.catalogo_productos && ` · PT: ${receta.catalogo_productos.nombre}`}
+                          Rinde {rec.rendimiento} {rec.unidad_rendimiento}
+                          {rec.catalogo_productos && (
+                            <span> · <span style={{ color: TIPOS[rec.catalogo_productos.tipo]?.color }}>
+                              {rec.catalogo_productos.sku}
+                            </span></span>
+                          )}
                         </p>
                       </div>
-                      <span className="text-muted-foreground text-sm">
-                        {recetaExpandida === receta.id ? '▲' : '▼'}
-                      </span>
+                      <span className="text-muted-foreground text-lg">{isOpen ? '▲' : '▼'}</span>
                     </div>
 
-                    {recetaExpandida === receta.id && (
-                      <div className="mt-4 border-t border-border pt-4 space-y-3">
-                        {/* Ingredientes */}
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ingredientes</p>
-                        {(recetaLineas[receta.id] || []).length === 0 ? (
-                          <p className="text-xs text-muted-foreground italic">Sin ingredientes aún</p>
+                    {/* Detalle: ingredientes */}
+                    {isOpen && (
+                      <div className="px-3 pb-3 space-y-2" style={{ borderTop: '1px solid #222' }}>
+                        {lineas.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-3 text-center italic">
+                            Sin ingredientes — agrega abajo
+                          </p>
                         ) : (
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-xs text-muted-foreground">
-                                <th className="text-left pb-1">Materia Prima</th>
-                                <th className="text-right pb-1">Cantidad</th>
-                                <th className="text-left pb-1 pl-2">Unidad</th>
-                                <th className="pb-1"></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(recetaLineas[receta.id] || []).map(linea => {
-                                const tipoComp = linea.tipo_componente || linea.catalogo_productos?.tipo || 'materia_prima';
-                                const tipoColor = TIPO_INFO[tipoComp]?.color || 'text-muted-foreground';
-                                return (
-                                <tr key={linea.id} className="border-t border-border/30">
-                                  <td className="py-1.5">
-                                    {linea.catalogo_productos?.sku && (
-                                      <span className={`text-xs font-mono mr-1.5 ${tipoColor}`}>{linea.catalogo_productos.sku}</span>
-                                    )}
-                                    {linea.catalogo_productos?.nombre || '?'}
-                                    {tipoComp === 'sub_producto' && (
-                                      <span className="ml-1.5 text-xs bg-orange-400/15 text-orange-400 px-1 rounded">SP</span>
-                                    )}
-                                  </td>
-                                  <td className="py-1.5 text-right font-mono">{n(linea.cantidad)}</td>
-                                  <td className="py-1.5 pl-2 text-muted-foreground">{linea.unidad}</td>
-                                  <td className="py-1.5 text-right">
-                                    <button
-                                      onClick={() => handleDeleteLinea(linea.id, receta.id)}
-                                      className="text-xs text-destructive hover:text-destructive/80"
-                                    >
-                                      ✕
-                                    </button>
-                                  </td>
-                                </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                          <div className="space-y-1 pt-2">
+                            {lineas.map(l => (
+                              <div key={l.id} className="flex items-center gap-2 py-1.5 px-2 rounded-lg"
+                                style={{ background: '#141414', border: '1px solid #1e1e1e' }}>
+                                <TipoPill tipo={l.tipo_componente || l.catalogo_productos?.tipo} />
+                                <span className="text-sm flex-1 truncate">
+                                  {l.catalogo_productos?.nombre || '?'}
+                                </span>
+                                <span className="text-sm font-bold" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {n(l.cantidad)} {l.unidad}
+                                </span>
+                                <button onClick={() => handleDeleteLinea(l.id, rec.id)}
+                                  className="text-destructive text-xs px-1 hover:opacity-70">✕</button>
+                              </div>
+                            ))}
+                          </div>
                         )}
 
-                        {/* Agregar ingrediente — acepta MP y SP */}
-                        <div className="pt-2 border-t border-border/30">
-                          <p className="text-xs font-semibold text-muted-foreground mb-1">+ Agregar componente</p>
-                          <p className="text-xs text-muted-foreground mb-2">Puede ser Materia Prima (MP) o Sub Producto (SP)</p>
-                          <div className="flex gap-2 flex-wrap items-end">
-                            <div className="flex-1 min-w-48">
-                              <CatalogoSearch
-                                placeholder="Buscar MP o SP..."
-                                tipo={['materia_prima', 'sub_producto']}
-                                onSelect={comp => setNuevaLinea(p => ({ ...p, receta_id: receta.id, _mp: comp }))}
-                              />
-                              {nuevaLinea._mp && nuevaLinea.receta_id === receta.id && (
-                                <p className={`text-xs mt-0.5 ${TIPO_INFO[nuevaLinea._mp.tipo]?.color || 'text-success'}`}>
-                                  → [{nuevaLinea._mp.sku}] {nuevaLinea._mp.nombre}
-                                </p>
-                              )}
+                        {/* Agregar ingrediente */}
+                        <div className="pt-2" style={{ borderTop: '1px dashed #333' }}>
+                          <p className="text-xs font-bold text-muted-foreground mb-2">
+                            + Agregar ingrediente (MP o SP)
+                          </p>
+                          <CatalogoSearch
+                            placeholder="Buscar ingrediente..."
+                            tipo={['materia_prima', 'sub_producto']}
+                            onSelect={comp => setAddLinea(p => ({ ...p, comp }))}
+                          />
+                          {addLinea.comp && (
+                            <div className="mt-2 flex gap-2 items-end flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-1">
+                                <TipoPill tipo={addLinea.comp.tipo} />
+                                <span className="text-sm truncate">{addLinea.comp.nombre}</span>
+                              </div>
+                              <Input type="number" min="0" step="0.001" placeholder="Cant."
+                                value={addLinea.cantidad}
+                                onChange={e => setAddLinea(p => ({ ...p, cantidad: e.target.value }))}
+                                style={{ width: 80 }} />
+                              <select value={addLinea.unidad}
+                                onChange={e => setAddLinea(p => ({ ...p, unidad: e.target.value }))}
+                                className={selectCls} style={{ width: 72 }}>
+                                {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                              <button className="btn btn-green btn-sm"
+                                onClick={() => handleAddIngrediente(rec.id)}>
+                                Agregar
+                              </button>
                             </div>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.001"
-                              placeholder="Cantidad"
-                              value={nuevaLinea.receta_id === receta.id ? nuevaLinea.cantidad : ''}
-                              onChange={e => setNuevaLinea(p => ({ ...p, cantidad: e.target.value, receta_id: receta.id }))}
-                              className="w-28"
-                            />
-                            <select
-                              value={nuevaLinea.receta_id === receta.id ? nuevaLinea.unidad : 'kg'}
-                              onChange={e => setNuevaLinea(p => ({ ...p, unidad: e.target.value, receta_id: receta.id }))}
-                              className="rounded-md border border-input bg-muted px-2 py-2 text-sm"
-                            >
-                              <option value="kg">kg</option>
-                              <option value="lb">lb</option>
-                              <option value="g">g</option>
-                              <option value="unidad">unidad</option>
-                              <option value="litro">litro</option>
-                              <option value="ml">ml</option>
-                              <option value="oz">oz</option>
-                            </select>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                if (nuevaLinea._mp && nuevaLinea.receta_id === receta.id) {
-                                  handleAddLinea(receta.id, nuevaLinea._mp);
-                                } else {
-                                  show?.('Selecciona un componente (MP o SP)', 'warning');
-                                }
-                              }}
-                            >
-                              Agregar
-                            </Button>
-                          </div>
+                          )}
                         </div>
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            TAB 4: MOVIMIENTOS
-        ══════════════════════════════════════════════════════════════════════ */}
+        {/* ═══════════════════════════════════════════════════════════════
+            TAB 4: HISTORIAL DE MOVIMIENTOS
+        ═══════════════════════════════════════════════════════════════ */}
         <TabsContent value="movimientos">
-          <h3 className="sec-title">Kardex de Movimientos</h3>
-
-          <Card className="mb-4">
-            <CardContent className="pt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Sucursal</label>
-                  <select value={sucursal} onChange={e => setSucursal(e.target.value)} className={selectCls}>
-                    <option value="">Selecciona sucursal...</option>
-                    {sucursales.map(s => (
-                      <option key={s.id} value={s.id}>{s.store_code} — {s.nombre || STORES[s.store_code] || s.store_code}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Producto</label>
-                  <Input placeholder="Buscar producto..." value={searchProd} onChange={e => setSearchProd(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Desde</label>
-                  <Input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Hasta</label>
-                  <Input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} />
-                </div>
+          <div className="card" style={{ padding: 12 }}>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div className="field">
+                <label>Sucursal</label>
+                <select value={sucursal} onChange={e => setSucursal(e.target.value)} className={selectCls}>
+                  <option value="">Selecciona...</option>
+                  {sucursales.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.store_code} — {s.nombre || STORES[s.store_code] || s.store_code}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </CardContent>
-          </Card>
+              <div className="field">
+                <label>Producto</label>
+                <Input placeholder="Buscar..." value={searchMov}
+                  onChange={e => setSearchMov(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="field"><label>Desde</label>
+                <Input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} /></div>
+              <div className="field"><label>Hasta</label>
+                <Input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} /></div>
+            </div>
+          </div>
 
           {loadingMov ? (
             <div className="spin" style={{ width: 28, height: 28, margin: '40px auto' }} />
           ) : movimientos.length === 0 ? (
             <div className="empty">
-              <div className="empty-icon">📦</div>
-              <div className="empty-text">No hay movimientos en este período</div>
+              <div className="empty-icon">📊</div>
+              <div className="empty-text">Sin movimientos en este período</div>
             </div>
           ) : (
-            <Card>
-              <CardContent className="p-0 overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left p-3 text-muted-foreground font-medium">Fecha</th>
-                      <th className="text-left p-3 text-muted-foreground font-medium">Producto</th>
-                      <th className="text-center p-3 text-muted-foreground font-medium">Tipo</th>
-                      <th className="text-right p-3 text-muted-foreground font-medium">Cantidad</th>
-                      <th className="text-right p-3 text-muted-foreground font-medium">Ant.</th>
-                      <th className="text-right p-3 text-muted-foreground font-medium">Post.</th>
-                      <th className="text-left p-3 text-muted-foreground font-medium">Notas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movimientos.map(mov => (
-                      <tr key={mov.id} className="border-b border-border/50 hover:bg-muted/40 transition-colors">
-                        <td className="p-3 text-xs">{fmtDate(mov.created_at)}</td>
-                        <td className="p-3">{mov.catalogo_productos?.nombre || '-'}</td>
-                        <td className="p-3 text-center">
-                          <Badge variant={TYPE_VARIANT[mov.tipo] || 'muted'}>
-                            {TYPE_LABELS[mov.tipo] || mov.tipo}
-                          </Badge>
-                        </td>
-                        <td className={`p-3 text-right font-semibold ${mov.cantidad > 0 ? 'text-success' : 'text-destructive'}`}>
-                          {mov.cantidad > 0 ? '+' : ''}{n(mov.cantidad)}
-                        </td>
-                        <td className="p-3 text-right text-muted-foreground">{n(mov.stock_anterior)}</td>
-                        <td className="p-3 text-right">{n(mov.stock_posterior)}</td>
-                        <td className="p-3 text-xs text-muted-foreground">{mov.notas || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
+            <div className="space-y-1">
+              {movimientos.map(mov => {
+                const mt = MOV_TIPOS[mov.tipo] || { label: mov.tipo, icon: '?', badge: 'muted' };
+                const isPositive = mov.cantidad > 0;
+                return (
+                  <div key={mov.id} className="item-row">
+                    <div className="flex items-center gap-3 w-full">
+                      <div style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{mt.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{mov.catalogo_productos?.nombre || '—'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {mt.label} · {fmtDate(mov.created_at)}
+                          {mov.notas ? ` · ${mov.notas}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold" style={{ color: isPositive ? '#4ade80' : '#f87171' }}>
+                          {isPositive ? '+' : ''}{n(mov.cantidad)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {n(mov.stock_anterior)} → {n(mov.stock_posterior)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </TabsContent>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            TAB 5: AJUSTES
-        ══════════════════════════════════════════════════════════════════════ */}
+        {/* ═══════════════════════════════════════════════════════════════
+            TAB 5: AJUSTES MANUALES
+        ═══════════════════════════════════════════════════════════════ */}
         <TabsContent value="ajustes">
-          <h3 className="sec-title">Ajustes Manuales de Stock</h3>
+          <div className="card" style={{ maxWidth: 480 }}>
+            <div className="sec-title" style={{ marginBottom: 4 }}>Ajuste manual de inventario</div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Registra una corrección cuando el stock real no coincide con el sistema.
+            </p>
 
-          <Card className="max-w-lg">
-            <CardHeader><CardTitle>Registrar Ajuste</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Sucursal</label>
+            <div className="space-y-3">
+              <div className="field">
+                <label>Sucursal</label>
                 <select value={sucursal} onChange={e => setSucursal(e.target.value)} className={selectCls}>
-                  <option value="">Selecciona sucursal...</option>
+                  <option value="">Selecciona...</option>
                   {sucursales.map(s => (
-                    <option key={s.id} value={s.id}>{s.store_code} — {s.nombre || STORES[s.store_code] || s.store_code}</option>
+                    <option key={s.id} value={s.id}>
+                      {s.store_code} — {s.nombre || STORES[s.store_code] || s.store_code}
+                    </option>
                   ))}
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Producto</label>
+              <div className="field">
+                <label>Producto</label>
                 <CatalogoSearch
                   placeholder="Buscar producto..."
-                  onSelect={selectProduct}
+                  onSelect={selectAdjProd}
                 />
-                {adjProduct && currentStock !== null && (
-                  <div className="p-3 rounded-md bg-muted/50 border border-border text-sm mt-2">
-                    <p className="font-semibold">{adjProduct.nombre}</p>
-                    <p className="text-muted-foreground">
-                      Stock actual: <span className="text-success font-bold">{n(currentStock)}</span>
-                    </p>
+                {adjProd && adjStock !== null && (
+                  <div className="diff-bar diff-ok mt-2">
+                    <div>
+                      <p className="text-sm font-bold">{adjProd.nombre}</p>
+                      <p className="text-xs" style={{ color: '#4ade80' }}>Stock actual: {n(adjStock)}</p>
+                    </div>
+                    <TipoPill tipo={adjProd.tipo} />
                   </div>
                 )}
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Cantidad (+ entrada / − salida)</label>
-                <Input
-                  type="number" step="0.01" placeholder="Ej: 5 o -3"
-                  value={adjCantidad} onChange={e => setAdjCantidad(e.target.value)}
-                />
+              <div className="field">
+                <label>Cantidad (+ entrada / − salida)</label>
+                <Input type="number" step="0.01" placeholder="Ej: 5 o -3"
+                  value={adjQty} onChange={e => setAdjQty(e.target.value)} />
+                {adjQty && adjStock !== null && (
+                  <p className="text-xs mt-1" style={{ color: parseFloat(adjQty) >= 0 ? '#4ade80' : '#f87171' }}>
+                    Nuevo stock: {n(adjStock + (parseFloat(adjQty) || 0))}
+                  </p>
+                )}
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Notas/Motivo (mín. 5 caracteres)</label>
+              <div className="field">
+                <label>Motivo del ajuste</label>
                 <textarea
-                  placeholder="Ej: Conteo físico, Merma por rotura..."
+                  placeholder="Ej: Conteo físico, Merma por rotura, Devolución..."
                   value={adjNotas} onChange={e => setAdjNotas(e.target.value)}
-                  className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring min-h-[72px] resize-y font-inherit"
-                />
+                  className="inp" style={{ minHeight: 72, resize: 'vertical' }} />
               </div>
 
-              <Button
-                variant="success" className="w-full"
-                onClick={handleRegisterAdjuste}
-                disabled={savingAdj || !adjProduct}
-              >
-                {savingAdj ? 'Guardando...' : '✓ Registrar Ajuste'}
-              </Button>
-            </CardContent>
-          </Card>
+              <button className="btn btn-green" onClick={handleAjuste}
+                disabled={savingAdj || !adjProd}>
+                {savingAdj ? 'Guardando...' : '✓ Registrar ajuste'}
+              </button>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
