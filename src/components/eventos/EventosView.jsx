@@ -58,14 +58,20 @@ export default function EventosView({ user }) {
           <TabsTrigger value="lista">📋 Eventos</TabsTrigger>
           {selectedEvento && <TabsTrigger value="menu">🍔 Menú</TabsTrigger>}
           {selectedEvento && <TabsTrigger value="pedido">📦 Pedido CM</TabsTrigger>}
-          {selectedEvento && selectedEvento.estado === 'activo' && <TabsTrigger value="venta">🛒 Venta</TabsTrigger>}
+          {selectedEvento && (selectedEvento.estado === 'activo' || selectedEvento.estado === 'planificacion') && <TabsTrigger value="venta">🛒 Venta</TabsTrigger>}
           {selectedEvento && <TabsTrigger value="cierre">✅ Cierre</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="lista">
           <TabLista
             user={user} eventos={eventos} selectedEvento={selectedEvento}
-            onSelect={(e) => { setSelectedEvento(e); }}
+            onSelect={(e) => {
+              setSelectedEvento(e);
+              // Auto-navegar a tab relevante según estado
+              if (e.estado === 'planificacion') setTab('menu');
+              else if (e.estado === 'activo') setTab('venta');
+              else setTab('cierre');
+            }}
             onRefresh={fetchEventos} show={show}
             onGoToTab={(t) => setTab(t)}
           />
@@ -79,7 +85,7 @@ export default function EventosView({ user }) {
             <TabsContent value="pedido">
               <TabPedido user={user} evento={selectedEvento} show={show} onRefresh={fetchEventos} />
             </TabsContent>
-            {selectedEvento.estado === 'activo' && (
+            {(selectedEvento.estado === 'activo' || selectedEvento.estado === 'planificacion') && (
               <TabsContent value="venta">
                 <TabVenta user={user} evento={selectedEvento} show={show} onRefresh={fetchEventos} />
               </TabsContent>
@@ -110,12 +116,13 @@ function TabLista({ user, eventos, selectedEvento, onSelect, onRefresh, show, on
       hora_fin: form.hora_fin || null,
       responsable_id: user.id,
     };
-    const { error } = await db.from('eventos').insert(payload);
+    const { data: newEvento, error } = await db.from('eventos').insert(payload).select().single();
     if (error) return show('Error: ' + error.message);
-    show('Evento creado');
+    show('Evento creado — configura el menú y pedidos');
     setCreating(false);
     setForm({ nombre: '', descripcion: '', fecha_evento: today(), hora_inicio: '', hora_fin: '', ubicacion: '', cliente: '', precio_pactado: '' });
-    onRefresh();
+    await onRefresh();
+    if (newEvento) { onSelect(newEvento); onGoToTab('menu'); }
   };
 
   const activar = async (ev) => {
