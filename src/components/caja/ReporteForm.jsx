@@ -139,6 +139,48 @@ export default function ReporteForm({ user, onBack }) {
           // Restaurar estado del turno y notas del reporte existente
           if (data.estado_turno) setEstadoTurno(data.estado_turno);
           if (data.notas) setNotas(data.notas);
+
+          // Cargar incidentes guardados
+          db.from('incidentes_reporte')
+            .select('*')
+            .eq('reporte_id', data.id)
+            .then(({ data: incs }) => {
+              if (incs && incs.length > 0) {
+                const map = {};
+                incs.forEach((inc) => {
+                  map[inc.tipo_id] = {
+                    cat: inc.categoria,
+                    label: inc.tipo_label,
+                    severidad: inc.severidad,
+                    detalle: inc.detalle || '',
+                    requiere_accion: false,
+                  };
+                });
+                setIncSel(map);
+              }
+            });
+
+          // Cargar ausencias guardadas
+          db.from('ausencias_reporte')
+            .select('*')
+            .eq('reporte_id', data.id)
+            .then(({ data: aus }) => {
+              if (aus && aus.length > 0) {
+                const ausMap = {};
+                const extrasArr = [];
+                aus.forEach((a) => {
+                  if (a.empleado_id) {
+                    ausMap[a.empleado_id] = a.tipo;
+                  } else {
+                    extrasArr.push({ nombre: a.empleado_nombre, tipo: a.tipo });
+                  }
+                });
+                setAusencias(ausMap);
+                if (extrasArr.length > 0) setExtras(extrasArr);
+              }
+            });
+
+          // Cargar mejoras guardadas
           db.from('mejoras_reporte')
             .select('*')
             .eq('reporte_id', data.id)
@@ -150,14 +192,15 @@ export default function ReporteForm({ user, onBack }) {
       });
   }, [selectedStore, fechaSel]);
 
-  // Auto-calcular estado del turno según la severidad más alta de incidentes
+  // Auto-calcular estado del turno según la severidad más alta de incidentes (solo para reportes nuevos)
   useEffect(() => {
+    if (yaEnviado) return; // no sobreescribir el estado guardado
     const incs = Object.values(incSel);
     if (incs.length === 0) { setEstadoTurno('sin_novedad'); return; }
     if (incs.some(i => i.severidad === 'grave')) { setEstadoTurno('grave'); return; }
     if (incs.some(i => i.severidad === 'moderado')) { setEstadoTurno('moderado'); return; }
     setEstadoTurno('novedades_menores');
-  }, [incSel]);
+  }, [incSel, yaEnviado]);
 
   const toggleInc = (id, cat, label) => {
     setIncSel((prev) => {
