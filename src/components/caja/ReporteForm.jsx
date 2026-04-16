@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../../supabase';
-import { STORES, today, fmtDate, n } from '../../config';
+import { STORES, today, shiftDate, fmtDate, n } from '../../config';
 import { BUCKET_CIERRES as BUCKET } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
@@ -53,12 +53,23 @@ const uploadFoto = async (file, folder) => {
   return data.publicUrl;
 };
 
+/** Devuelve true si `fechaStr` (YYYY-MM-DD) está dentro de las 72h desde ahora (hora SV, UTC-6) */
+const dentroDeVentana72h = (fechaStr) => {
+  // Fin del día seleccionado en hora SV = inicio del día siguiente 00:00 SV = 06:00 UTC
+  const finDia = new Date(fechaStr + 'T00:00:00-06:00');
+  finDia.setDate(finDia.getDate() + 1); // midnight del día siguiente SV
+  const ahora = new Date();
+  const diffMs = ahora - finDia;
+  return diffMs < 72 * 3600 * 1000; // dentro de 72h desde que terminó el día
+};
+
 export default function ReporteForm({ user, onBack }) {
   const { show, Toast } = useToast();
   const esRolLibre = ['ejecutivo', 'admin'].includes(user.rol);
   const necesitaElegir = !user.store_code || user.store_code === 'CM001';
 
   const [selectedStore, setSelectedStore] = useState(necesitaElegir ? '' : user.store_code);
+  const [fechaSel, setFechaSel] = useState(today()); // fecha seleccionada para el reporte
   const [estadoTurno, setEstadoTurno] = useState('sin_novedad');
   const [incSel, setIncSel] = useState({});
   const [empleados, setEmpleados] = useState([]);
@@ -75,12 +86,30 @@ export default function ReporteForm({ user, onBack }) {
   const fRef = useRef();
   const mfRef = useRef();
 
+  const puedeEditar = useMemo(() => dentroDeVentana72h(fechaSel), [fechaSel]);
+  const esFuturo = useMemo(() => fechaSel > today(), [fechaSel]);
+  // bloqueado = no se puede enviar/editar (ya enviado, fuera de ventana, o futuro)
+  const bloqueado = !!yaEnviado || !puedeEditar || esFuturo;
+
+  // Reset formulario al cambiar fecha
+  const resetForm = () => {
+    setEstadoTurno('sin_novedad');
+    setIncSel({});
+    setAusencias({});
+    setExtras([]);
+    setExtraNombre('');
+    setNotas('');
+    setFotos([]);
+    setMejoras([]);
+    setMejoraDesc('');
+    setMejoraFotos([]);
+  };
+
   useEffect(() => {
     if (!selectedStore) return;
     setEmpleados([]);
     setYaEnviado(null);
-    setMejoras([]);
-    setAusencias({});
+    resetForm();
 
     db.from('sucursales')
       .select('id')
@@ -101,12 +130,15 @@ export default function ReporteForm({ user, onBack }) {
       });
     db.from('reportes_turno')
       .select('*')
-      .eq('fecha', today())
+      .eq('fecha', fechaSel)
       .eq('store_code', selectedStore)
       .maybeSingle()
       .then(({ data }) => {
         setYaEnviado(data || null);
-        if (data)
+        if (data) {
+          // Restaurar estado del turno y notas del reporte existente
+          if (data.estado_turno) setEstadoTurno(data.estado_turno);
+          if (data.notas) setNotas(data.notas);
           db.from('mejoras_reporte')
             .select('*')
             .eq('reporte_id', data.id)
@@ -114,8 +146,9 @@ export default function ReporteForm({ user, onBack }) {
               if (mej && mej.length > 0)
                 setMejoras(mej.map((m) => ({ descripcion: m.descripcion, fotos: [], fotosUrls: m.fotos_urls || [] })));
             });
+        }
       });
-  }, [selectedStore]);
+  }, [selectedStore, fechaSel]);
 
   // Auto-calcular estado del turno según la severidad más alta de incidentes
   useEffect(() => {
@@ -179,7 +212,7 @@ export default function ReporteForm({ user, onBack }) {
     const { data: rep, error: repErr } = await db
       .from('reportes_turno')
       .insert({
-        fecha: today(),
+        fecha: fechaSel,
         store_code: selectedStore,
         estado_turno: estadoTurno,
         fotos_urls: fotosUrls,
@@ -259,11 +292,44 @@ export default function ReporteForm({ user, onBack }) {
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', fontSize: 22, cursor: 'pointer', padding: 0 }}>
           ←
         </button>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>📋 Reporte de Turno</div>
           <div style={{ color: '#555', fontSize: 12 }}>
-            {STORES[selectedStore] || 'Sin sucursal'} · {today()}
+            {STORES[selectedStore] || 'Sin sucursal'}
           </div>
+        </div>
+      </div>
+
+      {/* Selector de fecha */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <button
+            onClick={() => setFechaSel(shiftDate(fechaSel, -1))}
+            style={{ background: 'none', border: '1.5px solid #333', borderRadius: 8, color: '#aaa', fontSize: 18, cursor: 'pointer', padding: '6px 12px', lineHeight: 1 }}
+          >
+            ‹
+          </button>
+          <div style={{ textAlign: 'center', flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: fechaSel === today() ? '#4ade80' : '#fff' }}>
+              {fmtDate(fechaSel)}
+            </div>
+            <div style={{ fontSize: 11, color: '#555' }}>
+              {fechaSel === today() ? 'Hoy' : fechaSel === shiftDate(today(), -1) ? 'Ayer' : ''}
+              {!puedeEditar && !esFuturo && ' · Solo lectura (más de 72h)'}
+              {esFuturo && ' · No se puede llenar un día futuro'}
+            </div>
+          </div>
+          <button
+            onClick={() => { if (fechaSel < today()) setFechaSel(shiftDate(fechaSel, 1)); }}
+            disabled={fechaSel >= today()}
+            style={{
+              background: 'none', border: '1.5px solid #333', borderRadius: 8,
+              color: fechaSel >= today() ? '#333' : '#aaa', fontSize: 18,
+              cursor: fechaSel >= today() ? 'default' : 'pointer', padding: '6px 12px', lineHeight: 1,
+            }}
+          >
+            ›
+          </button>
         </div>
       </div>
 
@@ -303,9 +369,28 @@ export default function ReporteForm({ user, onBack }) {
         </div>
       )}
 
-      {yaEnviado && (
+      {/* Banner: fuera de ventana (solo lectura) */}
+      {!puedeEditar && !esFuturo && (
+        <div style={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, color: '#888', marginBottom: 4 }}>🔒 Solo lectura</div>
+          <div style={{ fontSize: 12, color: '#555' }}>
+            Han pasado más de 72 horas desde este día. {yaEnviado ? 'El reporte se puede ver pero no editar.' : 'Ya no se puede crear un reporte.'}
+          </div>
+        </div>
+      )}
+
+      {/* Banner: día futuro */}
+      {esFuturo && (
+        <div style={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, color: '#888', marginBottom: 4 }}>📅 Día futuro</div>
+          <div style={{ fontSize: 12, color: '#555' }}>Navega a hoy o días anteriores para llenar el reporte.</div>
+        </div>
+      )}
+
+      {/* Banner: ya enviado (dentro de ventana) */}
+      {yaEnviado && puedeEditar && !esFuturo && (
         <div style={{ background: '#14532d33', border: '1px solid #14532d', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, color: '#4ade80', marginBottom: 4 }}>✓ Reporte ya enviado hoy</div>
+          <div style={{ fontWeight: 700, color: '#4ade80', marginBottom: 4 }}>✓ Reporte enviado para este día</div>
           <div style={{ fontSize: 12, color: '#888' }}>
             Enviado por {yaEnviado.creado_por}. Solo puede haber un reporte por día.
           </div>
@@ -351,13 +436,13 @@ export default function ReporteForm({ user, onBack }) {
               {AUSENCIA_CFG.map((a) => (
                 <div
                   key={a.tipo}
-                  onClick={() => !yaEnviado && setAusencias((p) => ({ ...p, [e.id]: p[e.id] === a.tipo ? null : a.tipo }))}
+                  onClick={() => !bloqueado && setAusencias((p) => ({ ...p, [e.id]: p[e.id] === a.tipo ? null : a.tipo }))}
                   style={{
                     padding: '5px 12px',
                     borderRadius: 20,
                     fontSize: 12,
                     fontWeight: 600,
-                    cursor: yaEnviado ? 'default' : 'pointer',
+                    cursor: bloqueado ? 'default' : 'pointer',
                     background: ausencias[e.id] === a.tipo ? a.color : '#1a1a1a',
                     color: ausencias[e.id] === a.tipo ? a.tc : '#555',
                     border: `1.5px solid ${ausencias[e.id] === a.tipo ? a.tc : '#2a2a2a'}`,
@@ -378,13 +463,13 @@ export default function ReporteForm({ user, onBack }) {
               {AUSENCIA_CFG.map((a) => (
                 <div
                   key={a.tipo}
-                  onClick={() => !yaEnviado && setExtras((p) => p.map((x, j) => (j === i ? { ...x, tipo: x.tipo === a.tipo ? null : a.tipo } : x)))}
+                  onClick={() => !bloqueado && setExtras((p) => p.map((x, j) => (j === i ? { ...x, tipo: x.tipo === a.tipo ? null : a.tipo } : x)))}
                   style={{
                     padding: '5px 12px',
                     borderRadius: 20,
                     fontSize: 12,
                     fontWeight: 600,
-                    cursor: yaEnviado ? 'default' : 'pointer',
+                    cursor: bloqueado ? 'default' : 'pointer',
                     background: e.tipo === a.tipo ? a.color : '#1a1a1a',
                     color: e.tipo === a.tipo ? a.tc : '#555',
                     border: `1.5px solid ${e.tipo === a.tipo ? a.tc : '#2a2a2a'}`,
@@ -396,7 +481,7 @@ export default function ReporteForm({ user, onBack }) {
             </div>
           </div>
         ))}
-        {!yaEnviado && (
+        {!bloqueado && (
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <input
               className="inp"
@@ -437,12 +522,12 @@ export default function ReporteForm({ user, onBack }) {
               return (
                 <div
                   key={item.id}
-                  onClick={() => !yaEnviado && toggleInc(item.id, cat.cat, item.label)}
+                  onClick={() => !bloqueado && toggleInc(item.id, cat.cat, item.label)}
                   style={{
                     marginBottom: 8,
                     padding: '10px 12px',
                     borderRadius: 10,
-                    cursor: yaEnviado ? 'default' : 'pointer',
+                    cursor: bloqueado ? 'default' : 'pointer',
                     border: `1.5px solid ${sel ? '#e63946' : '#2a2a2a'}`,
                     background: sel ? '#2d0a0d' : '#1a1a1a',
                     transition: 'all .15s',
@@ -558,7 +643,7 @@ export default function ReporteForm({ user, onBack }) {
                   </a>
                 ))}
               </div>
-              {!yaEnviado && (
+              {!bloqueado && (
                 <button onClick={() => removeMejora(i)} style={{ background: 'none', border: 'none', color: '#f87171', fontSize: 16, cursor: 'pointer', padding: '0 0 0 8px' }}>
                   ✕
                 </button>
@@ -566,7 +651,7 @@ export default function ReporteForm({ user, onBack }) {
             </div>
           </div>
         ))}
-        {!yaEnviado && (
+        {!bloqueado && (
           <div style={{ background: '#141414', border: '1px dashed #2a2a2a', borderRadius: 10, padding: 12 }}>
             <input
               className="inp"
@@ -608,7 +693,7 @@ export default function ReporteForm({ user, onBack }) {
           onChange={(e) => setFotos(Array.from(e.target.files).slice(0, 3))}
           style={{ display: 'none' }}
         />
-        {!yaEnviado && (
+        {!bloqueado && (
           <button className="btn btn-ghost" onClick={() => fRef.current.click()} style={{ marginBottom: 8 }}>
             📷 {fotos.length > 0 ? `${fotos.length} foto(s) seleccionada(s)` : 'Agregar fotos del turno'}
           </button>
@@ -633,13 +718,13 @@ export default function ReporteForm({ user, onBack }) {
           rows={3}
           value={notas}
           onChange={(e) => setNotas(e.target.value)}
-          readOnly={!!yaEnviado}
+          readOnly={bloqueado}
           placeholder="Observaciones del turno, información relevante…"
           style={{ resize: 'none' }}
         />
       </div>
 
-      {!yaEnviado && (
+      {!bloqueado && (
         <button className="btn btn-red" onClick={submit} disabled={loading} style={{ fontSize: 17, padding: 18 }}>
           {loading ? <span className="spin" /> : '📋  ENVIAR REPORTE DE TURNO'}
         </button>
