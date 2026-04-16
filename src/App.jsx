@@ -63,6 +63,7 @@ const ROLE_DEFAULTS = {
   domicilios: ['entregas', 'delivery'],
   marketing: ['marketing'],
   produccion: ['produccion', 'incidentes-cm', 'recetas'],
+  eventos: ['eventos', 'mi-asistencia', 'mi-boleta'],
 }
 
 function getNavCounts() {
@@ -88,15 +89,23 @@ function HomeScreen({ user, onNavigate }) {
   const hora = new Date().getHours()
   const saludo = hora < 12 ? 'Buenos días' : hora < 18 ? 'Buenas tardes' : 'Buenas noches'
 
+  // Módulos permitidos para este rol (según NAV_SECTIONS)
+  const allowedKeys = new Set()
+  for (const sec of NAV_SECTIONS) {
+    for (const item of sec.items) {
+      if (!item.roles || item.roles.includes(user.rol)) allowedKeys.add(item.key)
+    }
+  }
+
   // Obtener top accesos rápidos: frecuentes del usuario o defaults por rol
   const counts = getNavCounts()
   const sorted = Object.entries(counts)
-    .filter(([k]) => k !== 'home')
+    .filter(([k]) => k !== 'home' && allowedKeys.has(k))
     .sort((a, b) => b[1] - a[1])
     .map(([k]) => k)
     .slice(0, 6)
 
-  const defaults = ROLE_DEFAULTS[user.rol] || ROLE_DEFAULTS['cajero'] || []
+  const defaults = (ROLE_DEFAULTS[user.rol] || ROLE_DEFAULTS['cajero'] || []).filter(k => allowedKeys.has(k))
   const quickLinks = sorted.length >= 3 ? sorted : defaults
 
   return (
