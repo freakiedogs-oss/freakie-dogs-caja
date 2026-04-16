@@ -110,6 +110,12 @@ export const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'Eventos',
+    items: [
+      { key: 'eventos', label: 'Eventos', icon: '🎪', roles: ['eventos', 'ejecutivo', 'admin', 'superadmin', 'jefe_casa_matriz'] },
+    ],
+  },
+  {
     label: 'Delivery',
     items: [
       { key: 'delivery', label: 'Panel Delivery', icon: '🛵', roles: ['ejecutivo', 'despachador', 'domicilios', 'motorista', 'motorista_interno', 'gerente', 'admin'] },

@@ -41,6 +41,7 @@ import FinanzasGastosView from './components/finanzas/FinanzasGastosView'
 import FinanzasDashboard from './components/finanzas/FinanzasDashboard'
 import SuperAdminView from './components/admin/SuperAdminView'
 import PagosProveedorView from './components/finanzas/PagosProveedorView'
+import EventosView from './components/eventos/EventosView'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
 
@@ -271,6 +272,8 @@ export default function App() {
         return <FinanzasDashboard user={user} />
       case 'pagos-proveedor':
         return <PagosProveedorView user={user} />
+      case 'eventos':
+        return <EventosView user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
       case 'ventas-dash':
