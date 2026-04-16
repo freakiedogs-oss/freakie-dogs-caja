@@ -144,12 +144,12 @@ function TabLista({ user, eventos, selectedEvento, onSelect, onRefresh, show, on
             <Input placeholder="Nombre del evento *" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
             <Input placeholder="Descripción" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} />
             <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-xs text-gray-500">Fecha *</label><Input type="date" value={form.fecha_evento} onChange={e => setForm({...form, fecha_evento: e.target.value})} /></div>
-              <div><label className="text-xs text-gray-500">Ubicación</label><Input placeholder="Lugar" value={form.ubicacion} onChange={e => setForm({...form, ubicacion: e.target.value})} /></div>
+              <div><label className="text-xs text-gray-400">Fecha *</label><Input type="date" value={form.fecha_evento} onChange={e => setForm({...form, fecha_evento: e.target.value})} /></div>
+              <div><label className="text-xs text-gray-400">Ubicación</label><Input placeholder="Lugar" value={form.ubicacion} onChange={e => setForm({...form, ubicacion: e.target.value})} /></div>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-xs text-gray-500">Hora inicio</label><Input type="time" value={form.hora_inicio} onChange={e => setForm({...form, hora_inicio: e.target.value})} /></div>
-              <div><label className="text-xs text-gray-500">Hora fin</label><Input type="time" value={form.hora_fin} onChange={e => setForm({...form, hora_fin: e.target.value})} /></div>
+              <div><label className="text-xs text-gray-400">Hora inicio</label><Input type="time" value={form.hora_inicio} onChange={e => setForm({...form, hora_inicio: e.target.value})} /></div>
+              <div><label className="text-xs text-gray-400">Hora fin</label><Input type="time" value={form.hora_fin} onChange={e => setForm({...form, hora_fin: e.target.value})} /></div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Input placeholder="Cliente / Contratante" value={form.cliente} onChange={e => setForm({...form, cliente: e.target.value})} />
@@ -169,7 +169,7 @@ function TabLista({ user, eventos, selectedEvento, onSelect, onRefresh, show, on
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-semibold">{ev.nombre}</div>
-                  <div className="text-xs text-gray-500">{fmtDate(ev.fecha_evento)} · {ev.ubicacion || 'Sin ubicación'} {ev.cliente ? `· ${ev.cliente}` : ''}</div>
+                  <div className="text-xs text-gray-400">{fmtDate(ev.fecha_evento)} · {ev.ubicacion || 'Sin ubicación'} {ev.cliente ? `· ${ev.cliente}` : ''}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_COLOR[ev.estado]}`}>{ev.estado}</span>
@@ -179,7 +179,7 @@ function TabLista({ user, eventos, selectedEvento, onSelect, onRefresh, show, on
                 </div>
               </div>
               {ev.total_ventas > 0 && (
-                <div className="text-xs mt-1 text-gray-600">Ventas: {fmt$(ev.total_ventas)} · {ev.num_transacciones} tx</div>
+                <div className="text-xs mt-1 text-gray-400">Ventas: {fmt$(ev.total_ventas)} · {ev.num_transacciones} tx</div>
               )}
             </CardContent>
           </Card>
@@ -207,8 +207,13 @@ function TabMenu({ user, evento, show }) {
   }, [evento.id]);
 
   const fetchPosItems = useCallback(async () => {
-    const { data } = await db.from('pos_menu_items').select('id, nombre, precio, imagen_url').eq('disponible', true).order('nombre');
-    setPosItems(data || []);
+    const { data } = await db.from('pos_menu_items').select('id, nombre, precio, imagen_url, sucursal_id').eq('disponible', true).order('nombre');
+    // Deduplicar por nombre (hay 1 registro por sucursal)
+    const seen = new Map();
+    (data || []).forEach(item => {
+      if (!seen.has(item.nombre)) seen.set(item.nombre, item);
+    });
+    setPosItems([...seen.values()]);
   }, []);
 
   useEffect(() => { fetchMenu(); fetchPosItems(); }, [fetchMenu, fetchPosItems]);
@@ -278,15 +283,15 @@ function TabMenu({ user, evento, show }) {
         <CardContent className="p-3 space-y-2">
           {menuItems.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Sin items. Agrega desde el catálogo POS abajo.</p>}
           {menuItems.map(item => (
-            <div key={item.id} className={`flex items-center justify-between p-2 rounded ${item.activo ? 'bg-white' : 'bg-gray-100 opacity-60'}`}>
+            <div key={item.id} className={`flex items-center justify-between p-2 rounded border ${item.activo ? 'border-gray-700 bg-gray-800' : 'border-gray-800 bg-gray-900 opacity-50'}`}>
               <div className="flex-1">
-                <span className="font-medium text-sm">{item.nombre}</span>
+                <span className="font-medium text-sm text-gray-100">{item.nombre}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Input type="number" step="0.01" className="w-20 text-right text-sm" defaultValue={item.precio}
                   onBlur={e => updatePrice(item, e.target.value)} />
                 <Button size="sm" variant="ghost" onClick={() => toggleItem(item)}>{item.activo ? '👁️' : '🚫'}</Button>
-                <Button size="sm" variant="ghost" className="text-red-500" onClick={() => removeItem(item)}>✕</Button>
+                <Button size="sm" variant="ghost" className="text-red-400" onClick={() => removeItem(item)}>✕</Button>
               </div>
             </div>
           ))}
@@ -306,17 +311,17 @@ function TabMenu({ user, evento, show }) {
               <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
               <div className="grid grid-cols-1 gap-1 max-h-60 overflow-y-auto">
                 {filtered.slice(0, 30).map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
-                    <span>{item.nombre} — {fmt$(item.precio)}</span>
-                    <Button size="sm" variant="outline" onClick={() => addFromPos(item)}>+ Agregar</Button>
+                  <div key={item.id} className="flex items-center justify-between p-2 rounded border border-gray-700 bg-gray-800 text-sm">
+                    <span className="text-gray-200">{item.nombre} — <span className="text-green-400 font-medium">{fmt$(item.precio)}</span></span>
+                    <Button size="sm" onClick={() => addFromPos(item)}>+ Agregar</Button>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="border-t pt-3">
-            <p className="text-xs text-gray-500 mb-2">O agrega un item personalizado:</p>
+          <div className="border-t border-gray-700 pt-3">
+            <p className="text-xs text-gray-400 mb-2">O agrega un item personalizado:</p>
             <div className="flex gap-2">
               <Input placeholder="Nombre" value={customName} onChange={e => setCustomName(e.target.value)} className="flex-1" />
               <Input placeholder="Precio $" type="number" step="0.01" value={customPrice} onChange={e => setCustomPrice(e.target.value)} className="w-24" />
@@ -442,7 +447,7 @@ function TabPedido({ user, evento, show, onRefresh }) {
             <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
             <div className="max-h-40 overflow-y-auto space-y-1">
               {filtered.slice(0, 20).map(p => (
-                <div key={p.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
+                <div key={p.id} className="flex items-center justify-between p-2 bg-gray-800 rounded text-sm">
                   <span>{p.nombre} <span className="text-gray-400">({p.unidad_medida})</span></span>
                   <Button size="sm" variant="outline" onClick={() => addItem(p)}>+</Button>
                 </div>
@@ -450,7 +455,7 @@ function TabPedido({ user, evento, show, onRefresh }) {
             </div>
             {items.length > 0 && (
               <div className="border-t pt-2 space-y-1">
-                <p className="text-xs font-medium text-gray-600">Items del pedido:</p>
+                <p className="text-xs font-medium text-gray-400">Items del pedido:</p>
                 {items.map((it, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-sm">
                     <span className="flex-1">{it.nombre} ({it.unidad})</span>
@@ -474,7 +479,7 @@ function TabPedido({ user, evento, show, onRefresh }) {
               <div className="flex items-center justify-between cursor-pointer" onClick={() => loadPedidoItems(p.id)}>
                 <div>
                   <span className="text-sm font-medium">Pedido {fmtDate(p.created_at?.split('T')[0] || '')}</span>
-                  <span className="text-xs text-gray-500 ml-2">por {p.solicitante?.nombre || '—'}</span>
+                  <span className="text-xs text-gray-400 ml-2">por {p.solicitante?.nombre || '—'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge className={ESTADO_COLOR[p.estado] || 'bg-gray-100'}>{p.estado}</Badge>
@@ -603,11 +608,11 @@ function TabVenta({ user, evento, show, onRefresh }) {
       <div className="grid grid-cols-2 gap-2">
         <Card><CardContent className="p-3 text-center">
           <div className="text-2xl font-bold text-green-600">{fmt$(totalHoy)}</div>
-          <div className="text-xs text-gray-500">Total ventas</div>
+          <div className="text-xs text-gray-400">Total ventas</div>
         </CardContent></Card>
         <Card><CardContent className="p-3 text-center">
           <div className="text-2xl font-bold">{numVentas}</div>
-          <div className="text-xs text-gray-500">Transacciones</div>
+          <div className="text-xs text-gray-400">Transacciones</div>
         </CardContent></Card>
       </div>
 
@@ -670,11 +675,11 @@ function TabVenta({ user, evento, show, onRefresh }) {
       {showHistory && (
         <div className="space-y-1">
           {ventas.map(v => (
-            <div key={v.id} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
+            <div key={v.id} className="flex items-center justify-between text-sm p-2 bg-gray-800 rounded">
               <div>
                 <span>{PAGO_ICONS[v.metodo_pago]} {fmt$(v.total)}</span>
                 <span className="text-xs text-gray-400 ml-2">{new Date(v.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}</span>
-                {v.items && <span className="text-xs text-gray-500 ml-1">({v.items.map(i => i.menu?.nombre).join(', ')})</span>}
+                {v.items && <span className="text-xs text-gray-400 ml-1">({v.items.map(i => i.menu?.nombre).join(', ')})</span>}
               </div>
               <Button size="sm" variant="ghost" className="text-red-400 text-xs" onClick={() => anularVenta(v.id)}>Anular</Button>
             </div>
@@ -809,7 +814,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
               </div>
             ))}
           </div>
-          <div className="text-sm mt-2 text-gray-500">
+          <div className="text-sm mt-2 text-gray-400">
             Transacciones: {evento.estado === 'cerrado' || evento.estado === 'aprobado' ? evento.num_transacciones : ventas.length}
             {evento.precio_pactado && <span className="ml-4">Precio pactado: {fmt$(evento.precio_pactado)}</span>}
           </div>
@@ -830,7 +835,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
         </CardHeader>
         <CardContent className="p-3 space-y-2">
           {creatingDev && (
-            <div className="border rounded p-3 space-y-2 bg-gray-50">
+            <div className="border rounded p-3 space-y-2 bg-gray-800">
               <Input placeholder="Buscar producto..." value={searchDev} onChange={e => setSearchDev(e.target.value)} />
               <div className="max-h-32 overflow-y-auto space-y-1">
                 {filteredDev.slice(0, 15).map(p => (
@@ -857,7 +862,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
           )}
 
           {devoluciones.map(dev => (
-            <div key={dev.id} className="p-2 bg-white rounded border text-sm">
+            <div key={dev.id} className="p-2 bg-gray-800 rounded border text-sm">
               <div className="flex items-center justify-between">
                 <Badge className={ESTADO_COLOR[dev.estado] || 'bg-gray-100'}>{dev.estado}</Badge>
                 {dev.estado === 'pendiente' && (isCM(user.rol) || isAdmin(user.rol)) && (
@@ -865,7 +870,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
                 )}
               </div>
               {dev.items?.map(it => (
-                <div key={it.id} className="text-xs text-gray-600 mt-1">
+                <div key={it.id} className="text-xs text-gray-400 mt-1">
                   {it.producto?.nombre}: {it.cantidad} {it.producto?.unidad_medida}
                 </div>
               ))}
@@ -904,7 +909,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
         <div className="text-center py-4">
           <span className="text-lg">✅</span>
           <p className="text-green-600 font-medium">Evento aprobado por {evento.aprobador?.nombre || '—'}</p>
-          <p className="text-xs text-gray-500">{evento.aprobado_at && new Date(evento.aprobado_at).toLocaleString('es-SV')}</p>
+          <p className="text-xs text-gray-400">{evento.aprobado_at && new Date(evento.aprobado_at).toLocaleString('es-SV')}</p>
         </div>
       )}
     </div>
