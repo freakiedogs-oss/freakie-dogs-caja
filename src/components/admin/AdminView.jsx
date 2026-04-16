@@ -17,8 +17,36 @@ function fmtTimer(horas){
   return `${h}h ${m}m`;
 }
 
-const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
-const fmtPct = (n) => `${parseFloat(n || 0).toFixed(2)}%`;
+const fmt$ = (v) => `$${parseFloat(v || 0).toFixed(2)}`;
+const fmtPct = (v) => `${parseFloat(v || 0).toFixed(2)}%`;
+
+// Helper: consolidar array de cierres en un solo objeto sumado
+function consolidarCierres(arr){
+  if(!arr||arr.length===0) return null;
+  if(arr.length===1) return {...arr[0], _turnos: [arr[0].turno], _turnoCount: 1};
+  const base={...arr[0]};
+  const campos=['efectivo_quanto','tarjeta_quanto','ventas_transferencia','ventas_link_pago',
+    'total_ventas_quanto','total_egresos','total_ingresos','efectivo_calculado',
+    'efectivo_real_depositar','diferencia_deposito'];
+  campos.forEach(k=>{ base[k]=arr.reduce((s,c)=>s+n(c[k]),0); });
+  // Observaciones: concatenar las que existan
+  const obs=arr.map(c=>c.observaciones).filter(Boolean);
+  base.observaciones=obs.length?obs.join(' | '):null;
+  // Comentario corrección: concatenar
+  const corr=arr.map(c=>c.comentario_correccion).filter(Boolean);
+  base.comentario_correccion=corr.length?corr.join(' | '):null;
+  // Estado: el "peor" estado del grupo (corrección > enviado > borrador > aprobado)
+  const prioridad={requiere_correccion:0,enviado:1,borrador:2,aprobado:3};
+  const peor=arr.reduce((worst,c)=>(prioridad[c.estado]??99)<(prioridad[worst.estado]??99)?c:worst,arr[0]);
+  base.estado=peor.estado;
+  base.turno=arr.map(c=>c.turno).join(' + ');
+  base.creado_por=[...new Set(arr.map(c=>c.creado_por))].join(', ');
+  base._turnos=arr.map(c=>c.turno);
+  base._turnoCount=arr.length;
+  // Para aprobación masiva guardamos los IDs
+  base._ids=arr.map(c=>c.id);
+  return base;
+}
 
 function EstadoBadge({estado}){
   const map={
@@ -41,13 +69,19 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   const [cierres,setCierres]=useState([]);
   const [depositos,setDepositos]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [selected,setSelected]=useState(null);
+  const [selected,setSelected]=useState(null);       // cierre consolidado (o individual)
+  const [selectedGroup,setSelectedGroup]=useState([]); // todos los cierres raw del grupo
+  const [turnoActivo,setTurnoActivo]=useState('consolidado'); // 'consolidado' | turno real
   const [comentario,setComentario]=useState('');
   const [saving,setSaving]=useState(false);
-  const [depDetalle,setDepDetalle]=useState(null); // depósito vinculado al cierre seleccionado
-  // Filtros — strings simples (single-select)
+  const [depDetalle,setDepDetalle]=useState(null);
+  // Filtros
   const [filtroEstado,setFiltroEstado]=useState('todos');
   const [filtroSuc,setFiltroSuc]=useState('todas');
+
+  // Almacén completo de egresos/ingresos (todos los turnos)
+  const [allEgresos,setAllEgresos]=useState([]);
+  const [allIngresos,setAllIngresos]=useState([]);
 
   const allStoreCodes=Object.keys(STORES).filter(sc=>sc!=='CM001');
   const esRangoSimple=fechaDesde===fechaHasta;
@@ -65,18 +99,56 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     setLoading(false);
   };
 
-  // Cargar egresos/ingresos/depósito al seleccionar un cierre
-  const abrirDetalle=async(cierre)=>{
-    setSelected(cierre);setComentario(cierre.comentario_aprobacion||'');setDepDetalle(null);
+  // Helper: agrupar cierres por store_code+fecha
+  const groupByStoreDate=useCallback((cierresArr)=>{
+    const map={};
+    for(const c of cierresArr){
+      const key=`${c.store_code}|${c.fecha}`;
+      if(!map[key]) map[key]=[];
+      map[key].push(c);
+    }
+    return map;
+  },[]);
+
+  // Abrir detalle — carga egresos/ingresos de TODOS los turnos del día
+  const abrirDetalle=async(consolidado, group)=>{
+    setSelected(consolidado);
+    setSelectedGroup(group);
+    setTurnoActivo('consolidado');
+    setComentario(consolidado.comentario_aprobacion||'');
+    setDepDetalle(null);
+
+    const ids=group.map(c=>c.id);
     const [egRes,inRes,depRes]=await Promise.all([
-      db.from('egresos_cierre').select('*').eq('cierre_id',cierre.id),
-      db.from('ingresos_cierre').select('*').eq('cierre_id',cierre.id),
-      db.from('depositos_bancarios').select('*').eq('store_code',cierre.store_code).contains('dias_cubiertos',[cierre.fecha]).limit(1)
+      db.from('egresos_cierre').select('*').in('cierre_id',ids),
+      db.from('ingresos_cierre').select('*').in('cierre_id',ids),
+      db.from('depositos_bancarios').select('*').eq('store_code',consolidado.store_code).contains('dias_cubiertos',[consolidado.fecha]).limit(1)
     ]);
-    setEgresosDetalle(egRes.data||[]);
-    setIngresosDetalle(inRes.data||[]);
+    setAllEgresos(egRes.data||[]);
+    setAllIngresos(inRes.data||[]);
     setDepDetalle((depRes.data||[])[0]||null);
   };
+
+  // Filtrar egresos/ingresos por turno activo
+  const egresosDetalleFiltrados=useMemo(()=>{
+    if(turnoActivo==='consolidado') return allEgresos;
+    const turnoIds=selectedGroup.filter(c=>c.turno===turnoActivo).map(c=>c.id);
+    return allEgresos.filter(e=>turnoIds.includes(e.cierre_id));
+  },[allEgresos,turnoActivo,selectedGroup]);
+
+  const ingresosDetalleFiltrados=useMemo(()=>{
+    if(turnoActivo==='consolidado') return allIngresos;
+    const turnoIds=selectedGroup.filter(c=>c.turno===turnoActivo).map(c=>c.id);
+    return allIngresos.filter(e=>turnoIds.includes(e.cierre_id));
+  },[allIngresos,turnoActivo,selectedGroup]);
+
+  // Datos numéricos del modal según turno activo
+  const datosModal=useMemo(()=>{
+    if(!selected) return null;
+    if(turnoActivo==='consolidado') return selected;
+    const turnoC=selectedGroup.find(c=>c.turno===turnoActivo);
+    return turnoC||selected;
+  },[selected,turnoActivo,selectedGroup]);
 
   const confirmarDeposito=async()=>{
     if(!depDetalle)return;
@@ -97,16 +169,17 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   };
   const matchSuc=(sc)=> filtroSuc==='todas'||filtroSuc===sc;
 
-  // Status de una sucursal en una fecha específica
+  // Status de una sucursal en una fecha — ahora consolida todos los turnos
   const getStatus=(sc,fecha)=>{
-    const c=cierres.find(x=>x.store_code===sc&&x.fecha===fecha);
-    if(!c) return {tipo:'faltante'};
+    const group=cierres.filter(x=>x.store_code===sc&&x.fecha===fecha);
+    if(group.length===0) return {tipo:'faltante'};
+    const c=consolidarCierres(group);
     const dep=depositos.find(d=>d.store_code===sc&&(d.fotos_urls||[]).length>0);
-    if(c.estado==='aprobado'&&dep&&dep.estado==='confirmado') return {tipo:'completo',cierre:c,dep};
-    if(c.estado==='aprobado') return {tipo:'aprobado',cierre:c,dep:dep||null};
-    if(c.estado==='requiere_correccion') return {tipo:'correccion',cierre:c,dep:dep||null};
-    if(c.estado==='enviado') return {tipo:'revision',cierre:c,dep:dep||null};
-    return {tipo:'borrador',cierre:c,dep:dep||null};
+    if(c.estado==='aprobado'&&dep&&dep.estado==='confirmado') return {tipo:'completo',cierre:c,group,dep};
+    if(c.estado==='aprobado') return {tipo:'aprobado',cierre:c,group,dep:dep||null};
+    if(c.estado==='requiere_correccion') return {tipo:'correccion',cierre:c,group,dep:dep||null};
+    if(c.estado==='enviado') return {tipo:'revision',cierre:c,group,dep:dep||null};
+    return {tipo:'borrador',cierre:c,group,dep:dep||null};
   };
 
   // KPIs basados en filtros actuales
@@ -132,14 +205,16 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
         if(out[s.tipo]!==undefined)out[s.tipo]++;
       });
     } else {
-      cierres.forEach(c=>{
+      // Agrupar por store+fecha, contar por grupo consolidado
+      const grouped=groupByStoreDate(cierres);
+      Object.values(grouped).forEach(group=>{
+        const c=consolidarCierres(group);
         const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
         if(c.estado==='aprobado'&&dep&&dep.estado==='confirmado')out.completo++;
         else if(c.estado==='aprobado')out.aprobado++;
         else if(c.estado==='requiere_correccion')out.correccion++;
         else if(c.estado==='enviado')out.revision++;
       });
-      if(esRangoSimple) out.faltante=Math.max(0,allStoreCodes.length-cierres.length);
     }
     return out;
   },[cierres,depositos,fechaDesde,esRangoSimple]);
@@ -160,25 +235,28 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     return <span className="tag tag-red">⚠ {fmt$(a)}</span>;
   };
 
+  // Aprobar: ahora afecta todos los cierres del grupo
   const aprobar=async(estado)=>{
     if(!selected)return;
     setSaving(true);
-    await db.from('ventas_diarias').update({estado,aprobado_por:`${user.nombre} ${user.apellido}`,aprobado_at:new Date().toISOString(),comentario_aprobacion:comentario.trim()||null}).eq('id',selected.id);
+    const ids=selectedGroup.map(c=>c.id);
+    const updateData={estado,aprobado_por:`${user.nombre} ${user.apellido}`,aprobado_at:new Date().toISOString(),comentario_aprobacion:comentario.trim()||null};
+    await Promise.all(ids.map(id=>
+      db.from('ventas_diarias').update(updateData).eq('id',id)
+    ));
     setSaving(false);
     show(estado==='aprobado'?'✓ Cierre aprobado':'⚠ Marcado para corrección');
-    setSelected(null); setComentario(''); cargar();
+    setSelected(null); setSelectedGroup([]); setComentario(''); cargar();
   };
 
-  // Lista a mostrar
+  // Lista a mostrar — ahora SIEMPRE consolida por store_code+fecha
   const displayItems=useMemo(()=>{
-    // Helper: tipo de un cierre
-    const getTipo=(c)=>{
-      const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
-      if(c.estado==='aprobado'&&dep&&dep.estado==='confirmado') return {tipo:'completo',dep};
-      if(c.estado==='aprobado') return {tipo:'aprobado',dep:dep||null};
-      if(c.estado==='requiere_correccion') return {tipo:'correccion',dep:dep||null};
-      if(c.estado==='enviado') return {tipo:'revision',dep:dep||null};
-      return {tipo:'borrador',dep:dep||null};
+    const getTipo=(c,dep)=>{
+      if(c.estado==='aprobado'&&dep&&dep.estado==='confirmado') return 'completo';
+      if(c.estado==='aprobado') return 'aprobado';
+      if(c.estado==='requiere_correccion') return 'correccion';
+      if(c.estado==='enviado') return 'revision';
+      return 'borrador';
     };
 
     if(esRangoSimple){
@@ -192,57 +270,97 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
         return {sc,s};
       }).filter(Boolean);
     } else {
+      // Agrupar por store_code+fecha → una tarjeta por grupo
+      const grouped=groupByStoreDate(cierres);
       const items=[];
-      for(const c of cierres){
+      for(const [key,group] of Object.entries(grouped)){
+        const c=consolidarCierres(group);
         if(!matchSuc(c.store_code)) continue;
         const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
         if(!matchEstado(c.estado,dep)) continue;
-        const {tipo}=getTipo(c);
-        items.push({sc:c.store_code,s:{tipo,cierre:c,dep:dep||null}});
+        const tipo=getTipo(c,dep);
+        items.push({sc:c.store_code,s:{tipo,cierre:c,group,dep:dep||null}});
       }
+      // Ordenar por fecha desc, luego store_code
+      items.sort((a,b)=>b.s.cierre.fecha.localeCompare(a.s.cierre.fecha)||a.sc.localeCompare(b.sc));
       return items;
     }
   },[esRangoSimple,cierres,depositos,filtroSuc,filtroEstado,fechaDesde]);
+
+  // Cerrar modal
+  const cerrarModal=()=>{
+    setSelected(null);setSelectedGroup([]);setTurnoActivo('consolidado');
+    setAllEgresos([]);setAllIngresos([]);
+  };
 
   return(
     <div style={{minHeight:'100vh',padding:'0 16px 50px'}}>
       <Toast/>
 
       {/* Modal cierre detalle */}
-      {selected&&(
-        <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&setSelected(null)}>
+      {selected&&datosModal&&(
+        <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&cerrarModal()}>
           <div className="modal">
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
               <div>
                 <div style={{fontWeight:800,fontSize:17}}>{STORES[selected.store_code]||selected.store_code}</div>
-                <div style={{fontSize:13,color:'#666'}}>{selected.fecha} · {selected.turno} · {selected.creado_por}</div>
+                <div style={{fontSize:13,color:'#666'}}>{selected.fecha} · {datosModal.turno} · {datosModal.creado_por}</div>
               </div>
-              <EstadoBadge estado={selected.estado}/>
+              <EstadoBadge estado={datosModal.estado}/>
             </div>
+
+            {/* Toggle de turnos — solo si hay >1 turno */}
+            {selectedGroup.length>1&&(
+              <div style={{display:'flex',gap:4,margin:'10px 0 6px',flexWrap:'wrap'}}>
+                <button
+                  onClick={()=>setTurnoActivo('consolidado')}
+                  style={{
+                    padding:'5px 14px',borderRadius:16,fontSize:12,fontWeight:600,cursor:'pointer',
+                    background:turnoActivo==='consolidado'?'#e63946':'#1e1e1e',
+                    color:turnoActivo==='consolidado'?'#fff':'#aaa',
+                    border:turnoActivo==='consolidado'?'1px solid #e63946':'1px solid #333'
+                  }}>
+                  Consolidado
+                </button>
+                {selectedGroup.map(c=>(
+                  <button key={c.turno}
+                    onClick={()=>setTurnoActivo(c.turno)}
+                    style={{
+                      padding:'5px 14px',borderRadius:16,fontSize:12,fontWeight:600,cursor:'pointer',
+                      background:turnoActivo===c.turno?'#e63946':'#1e1e1e',
+                      color:turnoActivo===c.turno?'#fff':'#aaa',
+                      border:turnoActivo===c.turno?'1px solid #e63946':'1px solid #333'
+                    }}>
+                    {c.turno.charAt(0).toUpperCase()+c.turno.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div style={{margin:'14px 0 4px'}}>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Efectivo QUANTO</span><span style={{fontWeight:600}}>{fmt$(selected.efectivo_quanto)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Tarjeta QUANTO</span><span style={{fontWeight:600}}>{fmt$(selected.tarjeta_quanto)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Transferencia</span><span style={{fontWeight:600}}>{fmt$(selected.ventas_transferencia)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Link de Pago</span><span style={{fontWeight:600}}>{fmt$(selected.ventas_link_pago)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Total ventas</span><span style={{fontWeight:700}}>{fmt$(selected.total_ventas_quanto)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Egresos</span><span style={{fontWeight:600,color:'#f87171'}}>-{fmt$(selected.total_egresos)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Ingresos</span><span style={{fontWeight:600,color:'#4ade80'}}>+{fmt$(selected.total_ingresos)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Efectivo calculado</span><span style={{fontWeight:700}}>{fmt$(selected.efectivo_calculado)}</span></div>
-              <div className="row"><span style={{fontWeight:700}}>Efectivo real depósito</span><span style={{fontWeight:800,fontSize:17}}>{fmt$(selected.efectivo_real_depositar)}</span></div>
-              <div className="row"><span style={{color:'#888',fontSize:13}}>Diferencia</span>{tagDif(selected.diferencia_deposito)}</div>
-              {selected.observaciones&&<div className="row"><span style={{color:'#888',fontSize:13}}>Obs:</span><span style={{fontSize:13}}>{selected.observaciones}</span></div>}
-              {selected.comentario_correccion&&(
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Efectivo QUANTO</span><span style={{fontWeight:600}}>{fmt$(datosModal.efectivo_quanto)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Tarjeta QUANTO</span><span style={{fontWeight:600}}>{fmt$(datosModal.tarjeta_quanto)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Transferencia</span><span style={{fontWeight:600}}>{fmt$(datosModal.ventas_transferencia)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Link de Pago</span><span style={{fontWeight:600}}>{fmt$(datosModal.ventas_link_pago)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Total ventas</span><span style={{fontWeight:700}}>{fmt$(datosModal.total_ventas_quanto)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Egresos</span><span style={{fontWeight:600,color:'#f87171'}}>-{fmt$(datosModal.total_egresos)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Ingresos</span><span style={{fontWeight:600,color:'#4ade80'}}>+{fmt$(datosModal.total_ingresos)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Efectivo calculado</span><span style={{fontWeight:700}}>{fmt$(datosModal.efectivo_calculado)}</span></div>
+              <div className="row"><span style={{fontWeight:700}}>Efectivo real depósito</span><span style={{fontWeight:800,fontSize:17}}>{fmt$(datosModal.efectivo_real_depositar)}</span></div>
+              <div className="row"><span style={{color:'#888',fontSize:13}}>Diferencia</span>{tagDif(datosModal.diferencia_deposito)}</div>
+              {datosModal.observaciones&&<div className="row"><span style={{color:'#888',fontSize:13}}>Obs:</span><span style={{fontSize:13}}>{datosModal.observaciones}</span></div>}
+              {datosModal.comentario_correccion&&(
                 <div style={{marginTop:8,padding:'8px 10px',background:'#0d1a2a',borderRadius:8,fontSize:13,color:'#60a5fa'}}>
-                  📝 <strong>Respuesta del equipo:</strong> {selected.comentario_correccion}
+                  📝 <strong>Respuesta del equipo:</strong> {datosModal.comentario_correccion}
                 </div>
               )}
             </div>
 
             {/* Detalle egresos con fotos */}
-            {egresosDetalle.length>0&&(
+            {egresosDetalleFiltrados.length>0&&(
               <div style={{marginTop:12}}>
-                <div className="sec-title">Egresos del día</div>
-                {egresosDetalle.map(eg=>(
+                <div className="sec-title">Egresos del día{turnoActivo!=='consolidado'?` (${turnoActivo})`:''}</div>
+                {egresosDetalleFiltrados.map(eg=>(
                   <div key={eg.id} style={{padding:'8px 12px',background:'#1a1a1a',borderRadius:8,marginBottom:8}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                       <div>
@@ -263,10 +381,10 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
             )}
 
             {/* Detalle ingresos */}
-            {ingresosDetalle.length>0&&(
+            {ingresosDetalleFiltrados.length>0&&(
               <div style={{marginTop:12}}>
-                <div className="sec-title">Ingresos del día</div>
-                {ingresosDetalle.map(ing=>(
+                <div className="sec-title">Ingresos del día{turnoActivo!=='consolidado'?` (${turnoActivo})`:''}</div>
+                {ingresosDetalleFiltrados.map(ing=>(
                   <div key={ing.id} style={{padding:'8px 12px',background:'#1a1a1a',borderRadius:8,marginBottom:8,display:'flex',justifyContent:'space-between'}}>
                     <div>
                       <span style={{fontWeight:600,fontSize:13}}>{ing.motivo_nombre}</span>
@@ -326,7 +444,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
               return timer?(
                 <div style={{marginTop:12,padding:'8px 12px',background:'#1e3a5f33',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',border:'1px solid #1e3a5f'}}>
                   <span style={{fontSize:12,color:'#60a5fa'}}>⏱ Editable por: <strong>{timer}</strong></span>
-                  <button className="btn btn-ghost" onClick={()=>{setSelected(null);onEditCierre(selected);}}
+                  <button className="btn btn-ghost" onClick={()=>{cerrarModal();onEditCierre(selectedGroup[0]);}}
                     style={{fontSize:12,color:'#60a5fa',borderColor:'#1e3a5f',padding:'4px 12px'}}>
                     ✏️ Editar
                   </button>
@@ -340,7 +458,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
 
             {/* Edición completa → navega a CierreForm */}
             {selected.estado!=='aprobado'&&(
-              <button className="btn btn-ghost" onClick={()=>{setSelected(null);onEditCierre(selected);}}
+              <button className="btn btn-ghost" onClick={()=>{cerrarModal();onEditCierre(selectedGroup[0]);}}
                 style={{marginTop:12,marginBottom:4,fontSize:13,color:'#60a5fa',borderColor:'#1e3a5f'}}>
                 ✏️ Editar cierre completo (egresos, ingresos, ventas...)
               </button>
@@ -498,14 +616,23 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
           displayItems.map(({sc,s},idx)=>{
             const cfg=STATUS_CFG[s.tipo];
             const c=s.cierre;
+            const group=s.group||[c].filter(Boolean);
             return(
               <div key={`${sc}-${c?.fecha||idx}`}
-                onClick={c?()=>abrirDetalle(c):undefined}
+                onClick={c?()=>abrirDetalle(c,group):undefined}
                 style={{background:cfg.bg,border:`1.5px solid ${cfg.border}`,borderRadius:12,padding:'14px 16px',marginBottom:10,cursor:c?'pointer':'default',opacity:s.tipo==='faltante'?.5:1}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:15}}>{STORES[sc]}</div>
-                    {c&&<div style={{fontSize:12,color:'#888',marginTop:2}}>{!esRangoSimple&&`${c.fecha} · `}{c.turno} · {c.creado_por}</div>}
+                    {c&&(
+                      <div style={{fontSize:12,color:'#888',marginTop:2}}>
+                        {!esRangoSimple&&`${c.fecha} · `}
+                        {c._turnoCount>1
+                          ? <span style={{color:'#60a5fa'}}>{c._turnoCount} turnos</span>
+                          : c.turno}
+                        {' · '}{c.creado_por}
+                      </div>
+                    )}
                     {!c&&<div style={{fontSize:12,color:'#555',marginTop:2}}>Sin cierre registrado</div>}
                   </div>
                   <div style={{textAlign:'right'}}>
