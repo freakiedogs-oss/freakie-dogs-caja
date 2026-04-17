@@ -23,6 +23,9 @@ export default function LoginScreen({ onLogin }) {
   const [canInstall, setCanInstall] = useState(!!window.__pwaReady);
   const [online, setOnline] = useState(navigator.onLine);
   const [healthOk, setHealthOk] = useState(null); // null=checking, true=ok, false=fail
+  const [healthErr, setHealthErr] = useState(''); // mensaje de error detallado
+  const [rawFetchOk, setRawFetchOk] = useState(null); // fetch RAW a supabase (sin SDK)
+  const [rawFetchDetails, setRawFetchDetails] = useState('');
   const [showDiag, setShowDiag] = useState(false);
   const debounceRef = useRef(null);
   const abortRef = useRef(null);
@@ -43,11 +46,44 @@ export default function LoginScreen({ onLogin }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // 1. Health check vía SDK de Supabase
       try {
         const { error } = await db.from('usuarios_erp').select('id').limit(1);
-        if (!cancelled) setHealthOk(!error);
-      } catch {
-        if (!cancelled) setHealthOk(false);
+        if (cancelled) return;
+        if (error) {
+          setHealthOk(false);
+          setHealthErr(`${error.code || ''} ${error.message || String(error)}`.trim());
+        } else {
+          setHealthOk(true);
+          setHealthErr('');
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setHealthOk(false);
+        setHealthErr(`EXC: ${e?.message || String(e)}`);
+      }
+
+      // 2. Fetch RAW al endpoint REST (sin el SDK) para aislar si es red/CORS/SDK
+      try {
+        const SUPA_URL = 'https://btboxlwfqcbrdfrlnwln.supabase.co';
+        // Anon key pública (misma que expone el SDK). Sólo se usa para el health check.
+        const ANON = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
+        const r = await fetch(`${SUPA_URL}/rest/v1/usuarios_erp?select=id&limit=1`, {
+          headers: ANON ? { apikey: ANON, Authorization: `Bearer ${ANON}` } : {},
+        });
+        if (cancelled) return;
+        if (r.ok) {
+          setRawFetchOk(true);
+          setRawFetchDetails(`${r.status} OK`);
+        } else {
+          setRawFetchOk(false);
+          const txt = await r.text().catch(() => '');
+          setRawFetchDetails(`${r.status} ${r.statusText} ${txt.slice(0, 120)}`);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setRawFetchOk(false);
+        setRawFetchDetails(`FETCH FAIL: ${e?.message || String(e)}`);
       }
     })();
     return () => { cancelled = true; };
@@ -427,7 +463,18 @@ export default function LoginScreen({ onLogin }) {
           <div><b>Host:</b> {host}</div>
           <div><b>Canónico:</b> {isCanonical ? 'Sí ✅' : 'No ⚠️'}</div>
           <div><b>Online:</b> {online ? 'Sí ✅' : 'No ❌'}</div>
-          <div><b>Supabase:</b> {healthOk === null ? '⏳' : healthOk ? 'OK ✅' : 'FAIL ❌'}</div>
+          <div><b>Supabase SDK:</b> {healthOk === null ? '⏳' : healthOk ? 'OK ✅' : 'FAIL ❌'}</div>
+          {healthErr && (
+            <div style={{ color: '#fca5a5', fontSize: 10, marginLeft: 8, wordBreak: 'break-all' }}>
+              → {healthErr}
+            </div>
+          )}
+          <div><b>Fetch RAW:</b> {rawFetchOk === null ? '⏳' : rawFetchOk ? 'OK ✅' : 'FAIL ❌'}</div>
+          {rawFetchDetails && (
+            <div style={{ color: '#fca5a5', fontSize: 10, marginLeft: 8, wordBreak: 'break-all' }}>
+              → {rawFetchDetails}
+            </div>
+          )}
           <div style={{ marginTop: 4 }}><b>User Agent:</b></div>
           <div style={{ fontSize: 10, opacity: 0.7, wordBreak: 'break-all' }}>
             {navigator.userAgent}
