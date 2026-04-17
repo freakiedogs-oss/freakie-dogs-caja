@@ -913,31 +913,35 @@ function TabProveedores({ data2026, months2026, conIva }) {
     months2026.forEach(m => { ventasPorMes[m.key] = m.ventas })
 
     // Build provider data from gastos consolidados (ya clasificados)
+    // FIX 17-Abr-2026: clasificar cada LÍNEA individualmente (antes fijaba cat del primer registro
+    // del proveedor, causando desviación vs TabDashboard). Key compuesta name::cat permite que un
+    // mismo proveedor aparezca bajo 2+ categorías si tiene gastos multi-categoría.
     const provData = {}
     data2026.gastos.forEach(g => {
       const m = g.fecha?.substring(0, 7)
       if (!m || !monthKeys.includes(m)) return
       const name = g.proveedor_nombre || 'Sin nombre'
       const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
-      if (!provData[name]) {
-        const catNombre = g.categoria_nombre || ''
-        let cat = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
-        if (cat === 'Alquiler') cat = 'costo_fijo'
-        provData[name] = { cat, catDisplay: catNombre, sub: g.subcategoria_contable || 'Varios', months: {}, total: 0, origen: g.origen }
+      const catNombre = g.categoria_nombre || ''
+      let cat = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
+      if (cat === 'Alquiler') cat = 'costo_fijo'
+      const key = `${name}::${cat}`
+      if (!provData[key]) {
+        provData[key] = { name, cat, catDisplay: catNombre, sub: g.subcategoria_contable || 'Varios', months: {}, total: 0, origen: g.origen }
       }
-      provData[name].months[m] = (provData[name].months[m] || 0) + monto
-      provData[name].total += monto
+      provData[key].months[m] = (provData[key].months[m] || 0) + monto
+      provData[key].total += monto
     })
 
     // Group by category, then by subcategory within each
     const categories = {}
-    Object.entries(provData).forEach(([name, d]) => {
+    Object.values(provData).forEach((d) => {
       if (!categories[d.cat]) categories[d.cat] = { subgroups: {}, totals: {}, grandTotal: 0, provCount: 0 }
       const cat = categories[d.cat]
       const subKey = d.sub || 'Varios'
       if (!cat.subgroups[subKey]) cat.subgroups[subKey] = { providers: [], totals: {}, grandTotal: 0 }
       const sg = cat.subgroups[subKey]
-      sg.providers.push({ name, ...d })
+      sg.providers.push({ ...d })
       monthKeys.forEach(mk => {
         cat.totals[mk] = (cat.totals[mk] || 0) + (d.months[mk] || 0)
         sg.totals[mk] = (sg.totals[mk] || 0) + (d.months[mk] || 0)
