@@ -752,6 +752,8 @@ function TabCierre({ user, evento, show, onRefresh }) {
   // Staff
   const [staffList, setStaffList] = useState(evento.staff_nombres || []);
   const [showStaffPicker, setShowStaffPicker] = useState(false);
+  // Efectivo cambio
+  const [efectivoCambio, setEfectivoCambio] = useState(String(evento.efectivo_cambio || 0));
 
   const fetchVentas = useCallback(async () => {
     const { data } = await db.from('evento_ventas').select('*').eq('evento_id', evento.id).eq('anulada', false);
@@ -873,7 +875,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
 
   const cerrarEvento = async () => {
     // Save staff first
-    await db.from('eventos').update({ staff_nombres: staffList, total_egresos: totalEg }).eq('id', evento.id);
+    await db.from('eventos').update({ staff_nombres: staffList, total_egresos: totalEg, efectivo_cambio: n(efectivoCambio) }).eq('id', evento.id);
     const { data, error } = await db.rpc('cerrar_evento', { p_evento_id: evento.id, p_usuario_id: user.id, p_notas: notasCierre || null });
     if (error) return show('Error: ' + error.message);
     if (data && !data.ok) return show(data.error);
@@ -897,6 +899,16 @@ function TabCierre({ user, evento, show, onRefresh }) {
       {showEg && <ModalEgreso motivos={motEg} empleados={empleados} onClose={() => setShowEg(false)} onSave={saveEgreso} />}
 
       <p className="sec-title">Cierre: {evento.nombre}</p>
+
+      {/* ── Efectivo para cambio ── */}
+      <div className="card" style={{ padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Efectivo para cambio</div>
+        <input style={inputStyle} type="number" step="0.01" placeholder="0.00" value={efectivoCambio}
+          onChange={e => setEfectivoCambio(e.target.value)}
+          onBlur={() => { db.from('eventos').update({ efectivo_cambio: n(efectivoCambio) }).eq('id', evento.id); }}
+        />
+        <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>Caja chica al inicio del evento</div>
+      </div>
 
       {/* ── Financial summary ── */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
@@ -1044,7 +1056,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
       </div>
 
       {/* ── Resumen Final ── */}
-      {(totalVentas > 0 || totalEg > 0) && (
+      {(totalVentas > 0 || totalEg > 0 || n(efectivoCambio) > 0) && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <p className="sec-title">Resumen Financiero</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
@@ -1065,6 +1077,25 @@ function TabCierre({ user, evento, show, onRefresh }) {
               <span style={{ color: '#fbbf24', fontWeight: 600 }}>{fmt$(evento.precio_pactado)}</span>
             </div>
           )}
+          {/* Efectivo a entregar */}
+          <div style={{ borderTop: '2px solid #333', marginTop: 10, paddingTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+              <span style={{ color: '#aaa', fontSize: 13 }}>Efectivo para cambio</span>
+              <span style={{ fontWeight: 600 }}>{fmt$(n(efectivoCambio))}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+              <span style={{ color: '#aaa', fontSize: 13 }}>(+) Ventas efectivo</span>
+              <span style={{ fontWeight: 600 }}>+{fmt$(porMetodo.efectivo || 0)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+              <span style={{ color: '#aaa', fontSize: 13 }}>(-) Egresos</span>
+              <span style={{ fontWeight: 600, color: '#f87171' }}>-{fmt$(totalEg)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 4px', borderTop: '1px solid #444', marginTop: 6 }}>
+              <span style={{ color: '#fff', fontSize: 15, fontWeight: 700 }}>Efectivo a entregar</span>
+              <span style={{ color: '#fbbf24', fontSize: 22, fontWeight: 800 }}>{fmt$(n(efectivoCambio) + n(porMetodo.efectivo || 0) - totalEg)}</span>
+            </div>
+          </div>
         </div>
       )}
 
