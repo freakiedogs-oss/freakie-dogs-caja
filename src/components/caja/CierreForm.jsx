@@ -473,6 +473,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
     ventas_transferencia: existingCierre ? String(existingCierre.ventas_transferencia || 0) : '',
     ventas_link_pago: existingCierre ? String(existingCierre.ventas_link_pago || 0) : '',
   });
+  const [efectivoCambio, setEfectivoCambio] = useState(existingCierre ? String(existingCierre.efectivo_cambio || 0) : '');
   const [efectivoReal, setEfectivoReal] = useState(existingCierre ? String(existingCierre.efectivo_real_depositar || '') : '');
   const [obs, setObs] = useState(existingCierre?.observaciones || '');
   const [comentarioCorreccion, setComentarioCorreccion] = useState(existingCierre?.comentario_correccion || '');
@@ -579,10 +580,11 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
   }, [fecha, selectedStore]);
 
   const ef = n(ventas.efectivo_quanto);
+  const efCambio = n(efectivoCambio);
   const totalEg = egresos.reduce((s, e) => s + n(e.monto), 0);
   const totalIn = ingresos.reduce((s, e) => s + n(e.monto), 0);
   const totalVentas = ef + n(ventas.tarjeta_quanto) + n(ventas.ventas_transferencia) + n(ventas.ventas_link_pago);
-  const efCalculado = ef - totalEg + totalIn;
+  const efCalculado = efCambio + ef - totalEg + totalIn;
   const efReal = n(efectivoReal);
   const difDeposito = efReal - efCalculado;
   const difClass = () => {
@@ -620,6 +622,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       fecha,
       store_code: storeCode,
       turno,
+      efectivo_cambio: efCambio,
       efectivo_quanto: ef,
       tarjeta_quanto: n(ventas.tarjeta_quanto),
       ventas_transferencia: n(ventas.ventas_transferencia),
@@ -864,6 +867,11 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       </div>
 
       <div className="card">
+        <div className="sec-title">Efectivo Inicial</div>
+        <Mi label="Efectivo para cambio" value={efectivoCambio} onChange={setEfectivoCambio} hint="Caja chica al inicio del turno" />
+      </div>
+
+      <div className="card">
         <div className="sec-title">Ventas QUANTO {fetching && '(cargando...)'}</div>
         <Mi label="Efectivo QUANTO" value={ventas.efectivo_quanto} onChange={sv('efectivo_quanto')} hint={!isEdit ? 'Auto' : undefined} />
         <Mi label="Tarjeta QUANTO" value={ventas.tarjeta_quanto} onChange={sv('tarjeta_quanto')} hint={!isEdit ? 'Auto' : undefined} />
@@ -968,8 +976,12 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       <div className="card">
         <div className="sec-title">Resumen de Efectivo</div>
         <div className="row">
-          <span style={{ fontSize: 13, color: '#888' }}>Efectivo QUANTO</span>
-          <span style={{ fontWeight: 600 }}>{fmt$(ef)}</span>
+          <span style={{ fontSize: 13, color: '#888' }}>Efectivo para cambio</span>
+          <span style={{ fontWeight: 600 }}>{fmt$(efCambio)}</span>
+        </div>
+        <div className="row">
+          <span style={{ fontSize: 13, color: '#888' }}>(+) Efectivo QUANTO</span>
+          <span style={{ fontWeight: 600 }}>+{fmt$(ef)}</span>
         </div>
         <div className="row">
           <span style={{ fontSize: 13, color: '#888' }}>(-) Total egresos</span>
@@ -980,7 +992,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
           <span style={{ fontWeight: 600, color: '#4ade80' }}>+{fmt$(totalIn)}</span>
         </div>
         <div className="row" style={{ borderBottom: '2px solid #333', paddingBottom: 14, marginBottom: 14 }}>
-          <span style={{ fontSize: 14, fontWeight: 700 }}>Efectivo calculado a depositar</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Efectivo a entregar</span>
           <span style={{ fontWeight: 800, fontSize: 17 }}>{fmt$(efCalculado)}</span>
         </div>
         <Mi label="Efectivo REAL que vas a depositar ★" value={efectivoReal} onChange={setEfectivoReal} hint="Requerido" />
