@@ -1,11 +1,11 @@
 // Edge Function de Vercel que hace proxy transparente a Supabase.
-// Motivo: algunos ISPs en El Salvador (y ciertos DNS) están bloqueando la
-// resolución de *.supabase.co. Al pasar por vercel.app (que sí resuelve en
-// todas las redes), la PWA funciona sin pedirle al usuario cambiar DNS.
+// Se accede vía rewrite en vercel.json:
+//   /api/sb/:path*  →  /api/supaproxy?_p=:path*
+// El cliente supabase-js usa URL base /api/sb y no necesita saber del rewrite.
 //
-// Todas las llamadas a /api/sb/* se reenvían a
-// https://btboxlwfqcbrdfrlnwln.supabase.co/* preservando método, headers y
-// body. Así el SDK de supabase-js sigue funcionando igual.
+// Motivo: algunos ISPs/WiFis en El Salvador (y ciertos DNS) están bloqueando
+// la resolución DNS de *.supabase.co. Al pasar por vercel.app, la PWA funciona
+// en todas las redes sin pedirle al usuario cambiar DNS.
 
 export const config = {
   runtime: 'edge',
@@ -13,7 +13,6 @@ export const config = {
 
 const SUPA_URL = 'https://btboxlwfqcbrdfrlnwln.supabase.co';
 
-// Headers que NO debemos reenviar (identifican a Vercel/infra y confunden upstream)
 const STRIP_REQ_HEADERS = new Set([
   'host',
   'x-forwarded-host',
@@ -32,7 +31,6 @@ const STRIP_REQ_HEADERS = new Set([
   'forwarded',
 ]);
 
-// Headers que NO debemos devolver (content-encoding y length los maneja Vercel)
 const STRIP_RES_HEADERS = new Set([
   'content-encoding',
   'content-length',
@@ -43,11 +41,16 @@ const STRIP_RES_HEADERS = new Set([
 export default async function handler(req) {
   const url = new URL(req.url);
 
-  // /api/sb/rest/v1/usuarios_erp?... → /rest/v1/usuarios_erp?...
-  const upstreamPath = url.pathname.replace(/^\/api\/sb/, '');
-  const target = SUPA_URL + upstreamPath + url.search;
+  // El rewrite en vercel.json inyecta _p=<path>. También soportamos llamada
+  // directa con ?_p=rest/v1/xxx.
+  const rawPath = url.searchParams.get('_p') || '';
+  url.searchParams.delete('_p');
+  // Eliminar leading slash duplicado
+  const path = rawPath.replace(/^\/+/, '');
+  const qs = url.search; // ya sin _p
+  const target = `${SUPA_URL}/${path}${qs}`;
 
-  // Preflight CORS — responder directo (Vercel same-origin, pero por si acaso)
+  // Preflight CORS (probable que no haga falta, mismo origen)
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -69,7 +72,6 @@ export default async function handler(req) {
     }
   }
 
-  // Body: streaming para soportar uploads grandes (fotos de cierres, etc.)
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
 
   let upstreamResponse;
@@ -78,7 +80,7 @@ export default async function handler(req) {
       method: req.method,
       headers: upstreamHeaders,
       body: hasBody ? req.body : undefined,
-      // @ts-ignore — duplex es requerido cuando body es un ReadableStream
+      // @ts-ignore duplex requerido para streaming
       duplex: hasBody ? 'half' : undefined,
       redirect: 'manual',
     });
@@ -99,14 +101,12 @@ export default async function handler(req) {
     );
   }
 
-  // Copiar headers de respuesta
   const responseHeaders = new Headers();
   for (const [key, value] of upstreamResponse.headers.entries()) {
     if (!STRIP_RES_HEADERS.has(key.toLowerCase())) {
       responseHeaders.set(key, value);
     }
   }
-  // Asegurar CORS (mismo origen en realidad, pero no duele)
   responseHeaders.set('access-control-allow-origin', '*');
 
   return new Response(upstreamResponse.body, {
