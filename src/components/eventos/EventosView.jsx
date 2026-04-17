@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '../../supabase';
 import { today, fmtDate, n } from '../../config';
 
@@ -19,6 +19,7 @@ const ESTADO_COLOR = {
 };
 const PAGO_ICONS = { efectivo: '💵', tarjeta: '💳', transferencia: '🏦', link_pago: '🔗' };
 const PAGO_LABELS = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia', link_pago: 'Link Pago' };
+const MOTIVOS_EMPLEADO = ['Adelanto de Salario', 'Pago de Salario', 'Pago Propina'];
 const isAdmin = (r) => ['ejecutivo', 'admin', 'superadmin'].includes(r);
 const isCM = (r) => ['jefe_casa_matriz', 'bodeguero'].includes(r);
 const fmt$ = (v) => '$' + n(v).toFixed(2);
@@ -29,9 +30,11 @@ const badgeStyle = (estado) => ({ display: 'inline-block', padding: '2px 10px', 
 
 // ── Main Component ──
 export default function EventosView({ user }) {
-  const [tab, setTab] = useState('lista');
+  // screen: 'list' = lista de eventos, 'detail' = evento individual
+  const [screen, setScreen] = useState('list');
   const [eventos, setEventos] = useState([]);
   const [sel, setSel] = useState(null);
+  const [detailTab, setDetailTab] = useState('menu');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -52,45 +55,81 @@ export default function EventosView({ user }) {
 
   const show = (m, t = 3000) => { setMsg(m); setTimeout(() => setMsg(''), t); };
 
-  const tabs = [
-    { key: 'lista', label: 'Eventos', icon: '📋' },
-    { key: 'menu', label: 'Menu', icon: '🍔', needSel: true },
-    { key: 'pedido', label: 'Pedido CM', icon: '📦', needSel: true },
-    { key: 'venta', label: 'Ventas', icon: '🛒', needSel: true },
-    { key: 'cierre', label: 'Cierre', icon: '✅', needSel: true },
+  const openEvent = (ev) => {
+    setSel(ev);
+    if (ev.estado === 'planificacion') setDetailTab('pedido');
+    else if (ev.estado === 'activo') setDetailTab('venta');
+    else setDetailTab('cierre');
+    setScreen('detail');
+  };
+
+  const goBack = () => { setScreen('list'); };
+
+  const detailTabs = [
+    { key: 'menu', label: 'Menu', icon: '🍔' },
+    { key: 'pedido', label: 'Pedido CM', icon: '📦' },
+    { key: 'venta', label: 'Ventas', icon: '🛒' },
+    { key: 'cierre', label: 'Cierre', icon: '✅' },
   ];
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: 16 }}>
-      <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>🎪 Eventos</h1>
-      {msg && <div style={{ background: '#003320', border: '1px solid #005533', color: '#34d399', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 500, marginBottom: 12 }}>{msg}</div>}
+      {msg && <div style={{ background: '#003320', border: '1px solid #005533', color: '#34d399', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 500, marginBottom: 12, position: 'sticky', top: 8, zIndex: 10 }}>{msg}</div>}
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
-        {tabs.map(t => {
-          if (t.needSel && !sel) return null;
-          const active = tab === t.key;
-          return (
-            <button key={t.key} className={active ? 'btn btn-sm btn-red' : 'btn btn-sm btn-ghost'}
-              onClick={() => setTab(t.key)}>{t.icon} {t.label}</button>
-          );
-        })}
-        {sel && <span style={{ color: '#aaa', fontSize: 12, alignSelf: 'center', marginLeft: 8 }}>{sel.nombre}</span>}
-      </div>
+      {/* ═══ SCREEN: LIST ═══ */}
+      {screen === 'list' && (
+        <>
+          <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, marginBottom: 16 }}>🎪 Eventos</h1>
+          <ListScreen user={user} eventos={eventos} onSelect={openEvent} onRefresh={fetchEventos} show={show} />
+        </>
+      )}
 
-      {tab === 'lista' && <TabLista user={user} eventos={eventos} sel={sel} onSelect={(e) => { setSel(e); if (e.estado === 'planificacion') setTab('pedido'); else if (e.estado === 'activo') setTab('venta'); else setTab('cierre'); }} onRefresh={fetchEventos} show={show} setTab={setTab} />}
-      {tab === 'menu' && sel && <TabMenu user={user} evento={sel} show={show} />}
-      {tab === 'pedido' && sel && <TabPedido user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
-      {tab === 'venta' && sel && <TabVenta user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
-      {tab === 'cierre' && sel && <TabCierre user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
+      {/* ═══ SCREEN: DETAIL ═══ */}
+      {screen === 'detail' && sel && (
+        <>
+          {/* Header con boton back */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <button onClick={goBack} style={{ background: 'none', border: 'none', color: '#e63946', fontSize: 28, cursor: 'pointer', padding: '0 4px', fontWeight: 700 }}>‹</button>
+            <div style={{ flex: 1 }}>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 17 }}>{sel.nombre}</div>
+              <div style={{ color: '#666', fontSize: 12 }}>{fmtDate(sel.fecha_evento)} · {sel.ubicacion || 'Sin ubicacion'}{sel.cliente ? ` · ${sel.cliente}` : ''}</div>
+            </div>
+            <span style={badgeStyle(sel.estado)}>{sel.estado}</span>
+          </div>
+
+          {/* Detail tabs */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid #222', paddingBottom: 8 }}>
+            {detailTabs.map(t => {
+              const active = detailTab === t.key;
+              return (
+                <button key={t.key} onClick={() => setDetailTab(t.key)}
+                  style={{
+                    flex: 1, padding: '10px 4px', borderRadius: '10px 10px 0 0', border: 'none',
+                    background: active ? '#e63946' : 'transparent', color: active ? '#fff' : '#888',
+                    fontSize: 12, fontWeight: active ? 700 : 500, cursor: 'pointer', display: 'flex',
+                    flexDirection: 'column', alignItems: 'center', gap: 2, transition: 'all 0.2s',
+                  }}>
+                  <span style={{ fontSize: 18 }}>{t.icon}</span>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {detailTab === 'menu' && <TabMenu user={user} evento={sel} show={show} />}
+          {detailTab === 'pedido' && <TabPedido user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
+          {detailTab === 'venta' && <TabVenta user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
+          {detailTab === 'cierre' && <TabCierre user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
+        </>
+      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 1: LISTA DE EVENTOS + CREAR
+// LIST SCREEN: Lista + Crear evento
 // ═══════════════════════════════════════════════════
-function TabLista({ user, eventos, sel, onSelect, onRefresh, show, setTab }) {
+function ListScreen({ user, eventos, onSelect, onRefresh, show }) {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ nombre: '', descripcion: '', fecha_evento: today(), hora_inicio: '', hora_fin: '', ubicacion: '', cliente: '', precio_pactado: '' });
 
@@ -99,11 +138,11 @@ function TabLista({ user, eventos, sel, onSelect, onRefresh, show, setTab }) {
     const payload = { ...form, precio_pactado: form.precio_pactado ? n(form.precio_pactado) : null, hora_inicio: form.hora_inicio || null, hora_fin: form.hora_fin || null, responsable_id: user.id };
     const { data: newEvt, error } = await db.from('eventos').insert(payload).select().single();
     if (error) return show('Error: ' + error.message);
-    show('Evento creado — configura menu y pedidos');
+    show('Evento creado');
     setCreating(false);
     setForm({ nombre: '', descripcion: '', fecha_evento: today(), hora_inicio: '', hora_fin: '', ubicacion: '', cliente: '', precio_pactado: '' });
     await onRefresh();
-    if (newEvt) { onSelect(newEvt); setTab('menu'); }
+    if (newEvt) onSelect(newEvt);
   };
 
   const activar = async (ev, e) => {
@@ -115,11 +154,13 @@ function TabLista({ user, eventos, sel, onSelect, onRefresh, show, setTab }) {
 
   return (
     <div>
+      {/* Boton Nuevo */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <p className="sec-title">Mis Eventos</p>
-        <button className="btn btn-red" onClick={() => setCreating(!creating)}>{creating ? 'Cancelar' : '+ Nuevo'}</button>
+        <p className="sec-title" style={{ marginBottom: 0 }}>Mis Eventos</p>
+        <button className="btn btn-red" onClick={() => setCreating(!creating)}>{creating ? 'Cancelar' : '+ Nuevo Evento'}</button>
       </div>
 
+      {/* Form crear */}
       {creating && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -142,20 +183,26 @@ function TabLista({ user, eventos, sel, onSelect, onRefresh, show, setTab }) {
         </div>
       )}
 
+      {/* Lista de eventos */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {eventos.map(ev => (
-          <div key={ev.id} className="card" style={{ padding: 14, cursor: 'pointer', border: sel?.id === ev.id ? '2px solid #e53e3e' : '1px solid #2a2a2a' }} onClick={() => onSelect(ev)}>
+          <div key={ev.id} className="card" style={{ padding: 14, cursor: 'pointer' }} onClick={() => onSelect(ev)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
+              <div style={{ flex: 1 }}>
                 <div style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>{ev.nombre}</div>
                 <div style={{ color: '#666', fontSize: 12, marginTop: 2 }}>{fmtDate(ev.fecha_evento)} · {ev.ubicacion || 'Sin ubicacion'}{ev.cliente ? ` · ${ev.cliente}` : ''}</div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                 <span style={badgeStyle(ev.estado)}>{ev.estado}</span>
                 {ev.estado === 'planificacion' && <button className="btn btn-sm btn-orange" onClick={(e) => activar(ev, e)}>Activar</button>}
               </div>
             </div>
-            {ev.total_ventas > 0 && <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>Ventas: {fmt$(ev.total_ventas)} · {ev.num_transacciones} tx</div>}
+            {(ev.total_ventas > 0 || ev.precio_pactado > 0) && (
+              <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+                {ev.total_ventas > 0 && <span>Ventas: {fmt$(ev.total_ventas)} · {ev.num_transacciones} tx</span>}
+                {ev.precio_pactado > 0 && <span style={{ marginLeft: ev.total_ventas > 0 ? 8 : 0 }}>Pactado: {fmt$(ev.precio_pactado)}</span>}
+              </div>
+            )}
           </div>
         ))}
         {eventos.length === 0 && <p style={{ color: '#555', textAlign: 'center', padding: 32 }}>No hay eventos. Crea el primero.</p>}
@@ -165,7 +212,7 @@ function TabLista({ user, eventos, sel, onSelect, onRefresh, show, setTab }) {
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 2: MENU DEL EVENTO
+// TAB: MENU DEL EVENTO
 // ═══════════════════════════════════════════════════
 function TabMenu({ user, evento, show }) {
   const [menuItems, setMenuItems] = useState([]);
@@ -265,7 +312,7 @@ function TabMenu({ user, evento, show }) {
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 3: PEDIDO A CASA MATRIZ (pedidos_sucursal)
+// TAB: PEDIDO A CASA MATRIZ (pedidos_sucursal)
 // ═══════════════════════════════════════════════════
 function TabPedido({ user, evento, show, onRefresh }) {
   const [pedidos, setPedidos] = useState([]);
@@ -352,7 +399,7 @@ function TabPedido({ user, evento, show, onRefresh }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <p className="sec-title">Pedido a Casa Matriz</p>
+        <p className="sec-title" style={{ marginBottom: 0 }}>Pedido a Casa Matriz</p>
         {(evento.estado === 'planificacion' || evento.estado === 'activo') && (
           <button className="btn btn-red" onClick={() => setCreating(!creating)}>{creating ? 'Cancelar' : '+ Nuevo Pedido'}</button>
         )}
@@ -424,7 +471,7 @@ function TabPedido({ user, evento, show, onRefresh }) {
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 4: VENTAS RAPIDAS
+// TAB: VENTAS RAPIDAS
 // ═══════════════════════════════════════════════════
 function TabVenta({ user, evento, show, onRefresh }) {
   const [menuItems, setMenuItems] = useState([]);
@@ -568,17 +615,143 @@ function TabVenta({ user, evento, show, onRefresh }) {
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 5: CIERRE + DEVOLUCIONES + APROBACION
+// MODAL EGRESO (same pattern as CierreForm)
+// ═══════════════════════════════════════════════════
+function ModalEgreso({ motivos, empleados, onSave, onClose }) {
+  const [motivo, setMotivo] = useState(null);
+  const [monto, setMonto] = useState('');
+  const [persona, setPersona] = useState('');
+  const [empleadoId, setEmpleadoId] = useState(null);
+  const [showNuevoNombre, setShowNuevoNombre] = useState(false);
+  const [nuevoNombre, setNuevoNombre] = useState('');
+  const [nuevoApellido, setNuevoApellido] = useState('');
+  const [comentario, setComentario] = useState('');
+  const [foto, setFoto] = useState(null);
+  const fRef = useRef();
+
+  const esMotEmpleado = motivo && MOTIVOS_EMPLEADO.includes(motivo.nombre);
+  const personaOk = !motivo?.requiere_persona || (esMotEmpleado ? empleadoId || (showNuevoNombre && nuevoNombre.trim() && nuevoApellido.trim()) : persona.trim());
+  const ok = motivo && n(monto) > 0 && personaOk && (!motivo.requiere_comentario || comentario.trim()) && (!motivo.requiere_foto || foto);
+
+  const selectEmpleado = (emp) => { setEmpleadoId(emp.id); setPersona(emp.nombre_completo || `${emp.nombre} ${emp.apellido || ''}`); setShowNuevoNombre(false); };
+  const confirmarNuevo = () => { if (!nuevoNombre.trim() || !nuevoApellido.trim()) return; setPersona(`${nuevoNombre.trim()} ${nuevoApellido.trim()}`); setEmpleadoId(null); };
+
+  return (
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 16 }}>Agregar Egreso</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+          {motivos.map(m => (
+            <div key={m.id} onClick={() => { setMotivo(m); setPersona(''); setEmpleadoId(null); setShowNuevoNombre(false); }}
+              style={{ padding: '8px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', fontWeight: 600,
+                background: motivo?.id === m.id ? '#e63946' : '#1e1e1e', color: motivo?.id === m.id ? '#fff' : '#aaa',
+                border: `1.5px solid ${motivo?.id === m.id ? '#e63946' : '#333'}` }}>
+              {m.nombre}
+            </div>
+          ))}
+        </div>
+        {motivo && (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Monto</div>
+              <input className="inp" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" />
+            </div>
+            {motivo.requiere_persona && esMotEmpleado && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Persona que recibe *</div>
+                {persona && !showNuevoNombre && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: '#14532d33', border: '1px solid #14532d', borderRadius: 10, marginBottom: 8 }}>
+                    <span style={{ flex: 1, fontWeight: 600, color: '#4ade80' }}>{persona}</span>
+                    <button onClick={() => { setPersona(''); setEmpleadoId(null); }} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 16 }}>×</button>
+                  </div>
+                )}
+                {!persona && !showNuevoNombre && (
+                  <div style={{ maxHeight: 200, overflowY: 'auto', borderRadius: 10, border: '1px solid #333' }}>
+                    {(empleados || []).map(emp => (
+                      <div key={emp.id} onClick={() => selectEmpleado(emp)}
+                        style={{ padding: '10px 12px', borderBottom: '1px solid #222', cursor: 'pointer', fontSize: 14, color: '#ccc' }}>
+                        {emp.nombre_completo || emp.nombre} <span style={{ fontSize: 11, color: '#555' }}>· {emp.cargo || emp.rol || 'empleado'}</span>
+                      </div>
+                    ))}
+                    <div onClick={() => setShowNuevoNombre(true)}
+                      style={{ padding: '10px 12px', cursor: 'pointer', fontSize: 13, color: '#60a5fa', borderTop: '1px solid #333', background: '#0d1a2a' }}>
+                      + Agregar otra persona (fuera de empleados)
+                    </div>
+                  </div>
+                )}
+                {showNuevoNombre && (
+                  <div style={{ background: '#1a1a1a', padding: 12, borderRadius: 10, border: '1px solid #333' }}>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Persona externa</div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <input className="inp" value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} placeholder="Nombre" style={{ flex: 1, fontSize: 13 }} />
+                      <input className="inp" value={nuevoApellido} onChange={e => setNuevoApellido(e.target.value)} placeholder="Apellido" style={{ flex: 1, fontSize: 13 }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setShowNuevoNombre(false)}>Volver</button>
+                      <button className="btn btn-red btn-sm" onClick={confirmarNuevo} disabled={!nuevoNombre.trim() || !nuevoApellido.trim()}>Confirmar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {motivo.requiere_persona && !esMotEmpleado && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Persona que recibe *</div>
+                <input className="inp" value={persona} onChange={e => setPersona(e.target.value)} placeholder="Nombre completo" />
+              </div>
+            )}
+            {motivo.requiere_comentario && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Comentario *</div>
+                <textarea className="inp" rows={2} value={comentario} onChange={e => setComentario(e.target.value)} placeholder="Describe el gasto..." style={{ resize: 'none' }} />
+              </div>
+            )}
+            {motivo.requiere_foto && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Foto requerida *</div>
+                <input ref={fRef} type="file" accept="image/*" capture="environment" onChange={e => setFoto(e.target.files[0])} style={{ display: 'none' }} />
+                <button className="btn btn-ghost" onClick={() => fRef.current.click()} style={{ width: 'auto', padding: '10px 20px' }}>
+                  {foto ? `✓ ${foto.name}` : '📷 Foto'}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <button className="btn btn-ghost" onClick={onClose} style={{ flex: 1 }}>Cancelar</button>
+          <button className="btn btn-red" onClick={() => ok && onSave({
+            motivo_id: motivo.id, motivo_nombre: motivo.nombre, monto: n(monto),
+            persona_recibe: persona.trim() || null, empleado_id: empleadoId,
+            comentario: comentario.trim() || null, foto_file: foto || null, foto_url: null,
+          })} disabled={!ok} style={{ flex: 2, opacity: ok ? 1 : 0.4 }}>
+            Agregar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// TAB: CIERRE + EGRESOS + STAFF + DEVOLUCIONES + APROBACION
 // ═══════════════════════════════════════════════════
 function TabCierre({ user, evento, show, onRefresh }) {
   const [ventas, setVentas] = useState([]);
   const [devoluciones, setDevoluciones] = useState([]);
+  const [egresos, setEgresos] = useState([]);
+  const [egresosDB, setEgresosDB] = useState([]);
+  const [motEg, setMotEg] = useState([]);
+  const [empleados, setEmpleados] = useState([]);
+  const [showEg, setShowEg] = useState(false);
   const [creatingDev, setCreatingDev] = useState(false);
   const [devItems, setDevItems] = useState([]);
   const [productos, setProductos] = useState([]);
   const [searchDev, setSearchDev] = useState('');
   const [notasCierre, setNotasCierre] = useState('');
   const [notasAprobacion, setNotasAprobacion] = useState('');
+  // Staff
+  const [staffList, setStaffList] = useState(evento.staff_nombres || []);
+  const [showStaffPicker, setShowStaffPicker] = useState(false);
 
   const fetchVentas = useCallback(async () => {
     const { data } = await db.from('evento_ventas').select('*').eq('evento_id', evento.id).eq('anulada', false);
@@ -597,7 +770,24 @@ function TabCierre({ user, evento, show, onRefresh }) {
     setProductos(data || []);
   }, []);
 
-  useEffect(() => { fetchVentas(); fetchDevoluciones(); fetchProductos(); }, [fetchVentas, fetchDevoluciones, fetchProductos]);
+  const fetchMotivos = useCallback(async () => {
+    const { data } = await db.from('motivos_egreso').select('*').eq('activo', true).order('nombre');
+    setMotEg(data || []);
+  }, []);
+
+  const fetchEmpleados = useCallback(async () => {
+    const { data } = await db.from('usuarios_erp').select('id, nombre, apellido, rol, store_code').eq('activo', true).order('nombre');
+    setEmpleados((data || []).map(e => ({ ...e, nombre_completo: `${e.nombre} ${e.apellido || ''}`.trim(), cargo: e.rol })));
+  }, []);
+
+  const fetchEgresosDB = useCallback(async () => {
+    const { data } = await db.from('evento_egresos').select('*').eq('evento_id', evento.id).order('created_at');
+    setEgresosDB(data || []);
+  }, [evento.id]);
+
+  useEffect(() => {
+    fetchVentas(); fetchDevoluciones(); fetchProductos(); fetchMotivos(); fetchEmpleados(); fetchEgresosDB();
+  }, [fetchVentas, fetchDevoluciones, fetchProductos, fetchMotivos, fetchEmpleados, fetchEgresosDB]);
 
   // Totals
   const isClosed = evento.estado === 'cerrado' || evento.estado === 'aprobado';
@@ -606,6 +796,52 @@ function TabCierre({ user, evento, show, onRefresh }) {
     ? { efectivo: n(evento.total_efectivo), tarjeta: n(evento.total_tarjeta), transferencia: n(evento.total_transferencia), link_pago: n(evento.total_link_pago) }
     : ventas.reduce((acc, v) => { acc[v.metodo_pago] = (acc[v.metodo_pago] || 0) + n(v.total); return acc; }, {});
   const numTx = isClosed ? n(evento.num_transacciones) : ventas.length;
+
+  // Egresos total (DB saved + pending in state)
+  const totalEgDB = egresosDB.reduce((s, e) => s + n(e.monto), 0);
+  const totalEgPending = egresos.reduce((s, e) => s + n(e.monto), 0);
+  const totalEg = totalEgDB + totalEgPending;
+
+  // Save egreso to DB immediately
+  const saveEgreso = async (eg) => {
+    const { error } = await db.from('evento_egresos').insert({
+      evento_id: evento.id,
+      motivo_id: eg.motivo_id,
+      motivo_nombre: eg.motivo_nombre,
+      monto: eg.monto,
+      persona_recibe: eg.persona_recibe,
+      comentario: eg.comentario,
+      registrado_por: user.id,
+    });
+    if (error) return show('Error: ' + error.message);
+    show('Egreso registrado');
+    setShowEg(false);
+    fetchEgresosDB();
+    // Update total_egresos on the event
+    const newTotal = totalEgDB + eg.monto;
+    await db.from('eventos').update({ total_egresos: newTotal }).eq('id', evento.id);
+  };
+
+  const deleteEgreso = async (eg) => {
+    await db.from('evento_egresos').delete().eq('id', eg.id);
+    show('Egreso eliminado');
+    fetchEgresosDB();
+  };
+
+  // Staff management
+  const addStaff = async (emp) => {
+    const name = emp.nombre_completo || `${emp.nombre} ${emp.apellido || ''}`.trim();
+    if (staffList.includes(name)) return show('Ya agregado');
+    const newList = [...staffList, name];
+    setStaffList(newList);
+    await db.from('eventos').update({ staff_nombres: newList }).eq('id', evento.id);
+  };
+
+  const removeStaff = async (name) => {
+    const newList = staffList.filter(n => n !== name);
+    setStaffList(newList);
+    await db.from('eventos').update({ staff_nombres: newList }).eq('id', evento.id);
+  };
 
   // Devolucion
   const addDevItem = (prod) => {
@@ -636,6 +872,8 @@ function TabCierre({ user, evento, show, onRefresh }) {
   };
 
   const cerrarEvento = async () => {
+    // Save staff first
+    await db.from('eventos').update({ staff_nombres: staffList, total_egresos: totalEg }).eq('id', evento.id);
     const { data, error } = await db.rpc('cerrar_evento', { p_evento_id: evento.id, p_usuario_id: user.id, p_notas: notasCierre || null });
     if (error) return show('Error: ' + error.message);
     if (data && !data.ok) return show(data.error);
@@ -652,12 +890,15 @@ function TabCierre({ user, evento, show, onRefresh }) {
   };
 
   const filteredDev = productos.filter(p => p.nombre.toLowerCase().includes(searchDev.toLowerCase()));
+  const staffEmployees = empleados.filter(e => !staffList.includes(e.nombre_completo));
 
   return (
     <div>
+      {showEg && <ModalEgreso motivos={motEg} empleados={empleados} onClose={() => setShowEg(false)} onSave={saveEgreso} />}
+
       <p className="sec-title">Cierre: {evento.nombre}</p>
 
-      {/* Financial summary */}
+      {/* ── Financial summary ── */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ textAlign: 'center', marginBottom: 12 }}>
           <div style={{ color: '#34d399', fontSize: 32, fontWeight: 700 }}>{fmt$(totalVentas)}</div>
@@ -665,7 +906,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
           {evento.precio_pactado && <div style={{ color: '#aaa', fontSize: 12, marginTop: 4 }}>Precio pactado: {fmt$(evento.precio_pactado)}</div>}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {Object.entries(porMetodo).map(([k, v]) => (
+          {Object.entries(porMetodo).filter(([, v]) => v > 0).map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: '#111', borderRadius: 8, border: '1px solid #222' }}>
               <span style={{ color: '#aaa', fontSize: 13 }}>{PAGO_ICONS[k]} {PAGO_LABELS[k]}</span>
               <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>{fmt$(v)}</span>
@@ -674,10 +915,79 @@ function TabCierre({ user, evento, show, onRefresh }) {
         </div>
       </div>
 
-      {/* Devoluciones */}
+      {/* ── Egresos / Costos ── */}
       <div className="card" style={{ padding: 14, marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <p style={{ color: '#aaa', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>↩️ Devoluciones a CM</p>
+          <span className="sec-title" style={{ marginBottom: 0 }}>💸 Egresos / Costos</span>
+          {!isClosed && <button className="btn btn-ghost btn-sm" onClick={() => setShowEg(true)}>+ Agregar</button>}
+        </div>
+        {egresosDB.length === 0 && <div style={{ color: '#444', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>Sin egresos registrados</div>}
+        {egresosDB.map(eg => (
+          <div key={eg.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 4px', borderBottom: '1px solid #222' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#fff' }}>{eg.motivo_nombre}</div>
+              {eg.persona_recibe && <div style={{ fontSize: 12, color: '#888' }}>→ {eg.persona_recibe}</div>}
+              {eg.comentario && <div style={{ fontSize: 12, color: '#666' }}>{eg.comentario}</div>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontWeight: 700, color: '#f87171' }}>{fmt$(eg.monto)}</span>
+              {!isClosed && (
+                <button onClick={() => deleteEgreso(eg)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 18 }}>×</button>
+              )}
+            </div>
+          </div>
+        ))}
+        {totalEg > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTop: '1px solid #333' }}>
+            <span style={{ fontSize: 13, color: '#888' }}>Total egresos</span>
+            <span style={{ fontWeight: 700, color: '#f87171' }}>{fmt$(totalEg)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Staff / Empleados del evento ── */}
+      <div className="card" style={{ padding: 14, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span className="sec-title" style={{ marginBottom: 0 }}>👥 Personal del Evento</span>
+          {!isClosed && <button className="btn btn-ghost btn-sm" onClick={() => setShowStaffPicker(!showStaffPicker)}>
+            {showStaffPicker ? 'Cerrar' : '+ Agregar'}
+          </button>}
+        </div>
+
+        {/* Staff chips */}
+        {staffList.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: showStaffPicker ? 10 : 0 }}>
+            {staffList.map(name => (
+              <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: '#14532d33', border: '1px solid #14532d', borderRadius: 20, fontSize: 13, color: '#4ade80' }}>
+                {name}
+                {!isClosed && (
+                  <button onClick={() => removeStaff(name)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: '#444', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>Sin personal asignado</div>
+        )}
+
+        {/* Staff picker */}
+        {showStaffPicker && (
+          <div style={{ maxHeight: 200, overflowY: 'auto', borderRadius: 10, border: '1px solid #333', marginTop: 8 }}>
+            {staffEmployees.map(emp => (
+              <div key={emp.id} onClick={() => addStaff(emp)}
+                style={{ padding: '10px 12px', borderBottom: '1px solid #222', cursor: 'pointer', fontSize: 14, color: '#ccc' }}>
+                {emp.nombre_completo} <span style={{ fontSize: 11, color: '#555' }}>· {emp.rol}</span>
+              </div>
+            ))}
+            {staffEmployees.length === 0 && <div style={{ padding: 12, color: '#555', fontSize: 13, textAlign: 'center' }}>Todos los empleados ya fueron agregados</div>}
+          </div>
+        )}
+      </div>
+
+      {/* ── Devoluciones ── */}
+      <div className="card" style={{ padding: 14, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <p style={{ color: '#aaa', fontSize: 11, textTransform: 'uppercase', fontWeight: 600, marginBottom: 0 }}>↩️ Devoluciones a CM</p>
           {(evento.estado === 'activo' || evento.estado === 'cerrado') && (
             <button className="btn btn-sm btn-ghost" onClick={() => setCreatingDev(!creatingDev)}>{creatingDev ? 'Cancelar' : '+ Devolucion'}</button>
           )}
@@ -733,7 +1043,32 @@ function TabCierre({ user, evento, show, onRefresh }) {
         {devoluciones.length === 0 && !creatingDev && <p style={{ color: '#555', textAlign: 'center', fontSize: 12 }}>Sin devoluciones</p>}
       </div>
 
-      {/* Close event */}
+      {/* ── Resumen Final ── */}
+      {(totalVentas > 0 || totalEg > 0) && (
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <p className="sec-title">Resumen Financiero</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+            <span style={{ color: '#aaa', fontSize: 13 }}>Total ventas</span>
+            <span style={{ color: '#4ade80', fontWeight: 700 }}>{fmt$(totalVentas)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+            <span style={{ color: '#aaa', fontSize: 13 }}>(-) Total egresos</span>
+            <span style={{ color: '#f87171', fontWeight: 700 }}>-{fmt$(totalEg)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 4px', borderTop: '2px solid #333', marginTop: 8 }}>
+            <span style={{ color: '#fff', fontSize: 15, fontWeight: 700 }}>Neto</span>
+            <span style={{ color: (totalVentas - totalEg) >= 0 ? '#34d399' : '#f87171', fontSize: 20, fontWeight: 800 }}>{fmt$(totalVentas - totalEg)}</span>
+          </div>
+          {evento.precio_pactado > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', marginTop: 4 }}>
+              <span style={{ color: '#aaa', fontSize: 13 }}>vs Precio pactado</span>
+              <span style={{ color: '#fbbf24', fontWeight: 600 }}>{fmt$(evento.precio_pactado)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Close event ── */}
       {evento.estado === 'activo' && (
         <div className="card" style={{ padding: 16, border: '2px solid #f59e0b', marginBottom: 16 }}>
           <p style={{ color: '#fff', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>🔒 Cerrar Evento</p>
@@ -743,7 +1078,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
         </div>
       )}
 
-      {/* Approve event */}
+      {/* ── Approve event ── */}
       {evento.estado === 'cerrado' && isAdmin(user.rol) && (
         <div className="card" style={{ padding: 16, border: '2px solid #8b5cf6', marginBottom: 16 }}>
           <p style={{ color: '#fff', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>✅ Aprobar Evento</p>
@@ -753,7 +1088,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
         </div>
       )}
 
-      {/* Approved status */}
+      {/* ── Approved status ── */}
       {evento.estado === 'aprobado' && (
         <div style={{ textAlign: 'center', padding: 24 }}>
           <div style={{ fontSize: 32, marginBottom: 4 }}>✅</div>
@@ -763,7 +1098,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
         </div>
       )}
 
-      {/* Closed info */}
+      {/* ── Closed info ── */}
       {evento.estado === 'cerrado' && evento.cerrador && (
         <div style={{ textAlign: 'center', padding: 12, marginBottom: 8 }}>
           <p style={{ color: '#60a5fa', fontSize: 13 }}>Cerrado por {evento.cerrador?.nombre || '—'} {evento.cerrado_at && <span style={{ color: '#666' }}>({new Date(evento.cerrado_at).toLocaleString('es-SV')})</span>}</p>
