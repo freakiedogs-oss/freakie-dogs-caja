@@ -87,10 +87,10 @@ export default function LoginScreen({ onLogin }) {
         setRawFetchDetails(`FAIL: ${e?.message || String(e)}`);
       }
 
-      // 3. Fetch vía PROXY /api/sb — debería funcionar aunque el directo falle
+      // 3. Fetch vía PROXY /sb — debería funcionar aunque el directo falle
       try {
         const r = await fetch(
-          `${window.location.origin}/api/sb/rest/v1/usuarios_erp?select=id&limit=1`,
+          `${window.location.origin}/sb/rest/v1/usuarios_erp?select=id&limit=1`,
           { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } }
         );
         if (cancelled) return;
