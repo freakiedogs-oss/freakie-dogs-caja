@@ -1,12 +1,59 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db } from '../../supabase';
+import { APP_VERSION } from '../../config';
+
+// Dominios oficiales de producción. Si el host NO está aquí y no es localhost,
+// mostramos warning de "enlace antiguo".
+const CANONICAL_HOSTS = [
+  'freakie-dogs-caja.vercel.app',
+  'erp.freakiedogs.com',
+  'erp.freakiedogs.sv',
+];
+
+// PINs válidos: 4 dígitos (estándar) o 6 dígitos (super admin)
+const MIN_PIN = 4;
+const MAX_PIN = 6;
+const DEBOUNCE_MS = 400; // espera sin input antes de queryear
 
 export default function LoginScreen({ onLogin }) {
   const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
+  const [errDetails, setErrDetails] = useState('');
   const [loading, setLoading] = useState(false);
   const [canInstall, setCanInstall] = useState(!!window.__pwaReady);
+  const [online, setOnline] = useState(navigator.onLine);
+  const [healthOk, setHealthOk] = useState(null); // null=checking, true=ok, false=fail
+  const [showDiag, setShowDiag] = useState(false);
+  const debounceRef = useRef(null);
+  const abortRef = useRef(null);
 
+  // ─── Online / offline ───────────────────────────────────────
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  // ─── Health check a Supabase al cargar ──────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { error } = await db.from('usuarios_erp').select('id').limit(1);
+        if (!cancelled) setHealthOk(!error);
+      } catch {
+        if (!cancelled) setHealthOk(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ─── PWA install prompt ─────────────────────────────────────
   useEffect(() => {
     const on = () => setCanInstall(true);
     const off = () => setCanInstall(false);
@@ -18,37 +65,139 @@ export default function LoginScreen({ onLogin }) {
     };
   }, []);
 
-  const press = async (k) => {
-    if (loading) return;
-    if (k === 'del') {
-      setPin((p) => p.slice(0, -1));
-      setErr('');
+  // ─── Debounced auto-login cuando el PIN tiene 4-6 dígitos ───
+  useEffect(() => {
+    // Limpiar timer previo al cambiar el pin
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    // No hay PIN suficiente → no hacer nada
+    if (pin.length < MIN_PIN) return;
+
+    // Si ya alcanzó el máximo (6), queryear inmediatamente
+    const delay = pin.length >= MAX_PIN ? 0 : DEBOUNCE_MS;
+    const pinSnapshot = pin;
+
+    debounceRef.current = setTimeout(() => {
+      runLogin(pinSnapshot);
+    }, delay);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin]);
+
+  // ─── Ejecutar el login contra Supabase ──────────────────────
+  const runLogin = async (np) => {
+    if (!navigator.onLine) {
+      setErr('Sin conexión a internet');
+      setErrDetails('Revisa WiFi o datos móviles y reintenta.');
+      setPin('');
       return;
     }
-    const np = pin + k;
-    setPin(np);
-    if (np.length >= 4) {
-      setLoading(true);
+    // Abortar request anterior si sigue viva
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    setLoading(true);
+    setErr('');
+    setErrDetails('');
+    try {
       const { data, error } = await db
         .from('usuarios_erp')
         .select('*')
         .eq('pin', np)
         .eq('activo', true)
+        .abortSignal(ac.signal)
         .maybeSingle();
+
+      // Si mientras queryeábamos el usuario cambió el PIN (otro dígito), ignorar
+      if (pin !== np && pin.length >= MIN_PIN) return;
+
       setLoading(false);
+      if (error) {
+        // Ignorar errores de abort (no son fallas reales)
+        if (error.message?.toLowerCase().includes('abort')) return;
+        setErr('Error conectando al servidor');
+        setErrDetails(error.message || 'Intenta de nuevo o limpia el caché.');
+        setPin('');
+        return;
+      }
       if (data) {
         onLogin(data);
         return;
       }
-      // PIN de 4-5 dígitos sin match: seguir esperando más dígitos
-      if (np.length < 6) return;
-      // 6 dígitos sin match: error y resetear
+      // No hubo match
+      // Si el PIN ya alcanzó el máximo (6) → error definitivo
+      // Si todavía es < 6 → el usuario probablemente NO va a teclear más (pasó el debounce)
+      //   → también mostrar error
       setErr('PIN incorrecto');
+      setErrDetails('Verifica con tu supervisor.');
+      setPin('');
+    } catch (e) {
+      setLoading(false);
+      if (e?.name === 'AbortError') return;
+      setErr('Error inesperado');
+      setErrDetails(String(e?.message || e));
       setPin('');
     }
   };
 
+  const press = (k) => {
+    // No bloqueamos con loading — el debounce + abort se encarga
+    if (k === 'del') {
+      setPin((p) => p.slice(0, -1));
+      setErr('');
+      setErrDetails('');
+      return;
+    }
+    if (pin.length >= MAX_PIN) return; // tope
+    setPin((p) => p + k);
+    setErr('');
+    setErrDetails('');
+  };
+
+  // ─── Limpieza de caché / SW para usuarios atascados ─────────
+  const clearCacheAndReload = async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch {
+      /* ignore */
+    }
+    window.location.href = window.location.pathname + '?_r=' + Date.now();
+  };
+
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isCanonical =
+    CANONICAL_HOSTS.includes(host) || host === 'localhost' || host === '127.0.0.1';
+  const canonicalUrl = `https://${CANONICAL_HOSTS[0]}`;
+
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
+
+  const statusDot =
+    !online ? '🔴' :
+    healthOk === false ? '🔴' :
+    healthOk === null ? '🟡' : '🟢';
+
+  const statusText =
+    !online ? 'Sin internet' :
+    healthOk === false ? 'Servidor no responde' :
+    healthOk === null ? 'Verificando...' : 'Conectado';
 
   return (
     <div
@@ -59,9 +208,65 @@ export default function LoginScreen({ onLogin }) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '0 24px',
+        padding: '24px 24px 56px',
       }}
     >
+      {/* ⚠️ Warning URL no canónica (preview de Vercel / link viejo) */}
+      {!isCanonical && (
+        <div
+          style={{
+            background: '#78350f',
+            color: '#fde68a',
+            padding: '10px 14px',
+            borderRadius: 10,
+            fontSize: 12,
+            lineHeight: 1.5,
+            marginBottom: 16,
+            textAlign: 'center',
+            maxWidth: 320,
+            border: '1px solid #f59e0b',
+          }}
+        >
+          ⚠️ <b>Estás en un enlace antiguo</b>
+          <div style={{ fontSize: 11, marginTop: 4, opacity: 0.85, wordBreak: 'break-all' }}>
+            {host}
+          </div>
+          <a
+            href={canonicalUrl}
+            style={{
+              color: '#fff',
+              display: 'inline-block',
+              marginTop: 6,
+              fontWeight: 700,
+              textDecoration: 'underline',
+            }}
+          >
+            Ir al enlace oficial →
+          </a>
+        </div>
+      )}
+
+      {/* 🔴 Warning offline o servidor caído */}
+      {(!online || healthOk === false) && (
+        <div
+          style={{
+            background: '#7f1d1d',
+            color: '#fecaca',
+            padding: '10px 14px',
+            borderRadius: 10,
+            fontSize: 12,
+            marginBottom: 16,
+            textAlign: 'center',
+            border: '1px solid #dc2626',
+          }}
+        >
+          {!online ? '📡 Sin conexión a internet' : '🔌 El servidor no responde'}
+          <div style={{ fontSize: 11, marginTop: 4, opacity: 0.85 }}>
+            {!online ? 'Revisa tu WiFi o datos móviles.' : 'Intenta en unos segundos.'}
+          </div>
+        </div>
+      )}
+
       <img
         src="/icon-192.png"
         alt="Freakie Dogs"
@@ -77,6 +282,7 @@ export default function LoginScreen({ onLogin }) {
       <div style={{ color: '#555', fontSize: 13, marginTop: 4, marginBottom: 32 }}>
         Ingresa tu PIN
       </div>
+
       <div className="pin-box">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <div
@@ -86,12 +292,32 @@ export default function LoginScreen({ onLogin }) {
           />
         ))}
       </div>
-      {err && (
-        <div style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>
-          {err}
-        </div>
-      )}
-      {loading && <div className="spin" style={{ marginBottom: 12 }} />}
+
+      {/* Área de mensaje con altura fija para que no salte el layout */}
+      <div
+        style={{
+          minHeight: 48,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column',
+        }}
+      >
+        {err && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: '#f87171', fontSize: 14, fontWeight: 700 }}>
+              ❌ {err}
+            </div>
+            {errDetails && (
+              <div style={{ color: '#888', fontSize: 11, marginTop: 2, maxWidth: 280 }}>
+                {errDetails}
+              </div>
+            )}
+          </div>
+        )}
+        {loading && !err && <div className="spin" />}
+      </div>
+
       <div className="keypad">
         {keys.map((k, i) =>
           k === '' ? (
@@ -103,11 +329,31 @@ export default function LoginScreen({ onLogin }) {
           )
         )}
       </div>
+
+      {/* Botón limpiar caché — visible solo si hay error */}
+      {err && (
+        <button
+          onClick={clearCacheAndReload}
+          style={{
+            marginTop: 16,
+            background: 'transparent',
+            color: '#888',
+            border: '1px solid #333',
+            borderRadius: 10,
+            padding: '10px 18px',
+            fontSize: 13,
+            cursor: 'pointer',
+          }}
+        >
+          🔄 Limpiar caché y reintentar
+        </button>
+      )}
+
       {canInstall && (
         <button
           onClick={() => window.__installPWA()}
           style={{
-            marginTop: 28,
+            marginTop: 24,
             background: '#e63946',
             color: '#fff',
             border: 'none',
@@ -127,7 +373,7 @@ export default function LoginScreen({ onLogin }) {
       {!canInstall && (
         <div
           style={{
-            marginTop: 24,
+            marginTop: 20,
             color: '#444',
             fontSize: 12,
             textAlign: 'center',
@@ -136,6 +382,72 @@ export default function LoginScreen({ onLogin }) {
         >
           En iOS: toca <b style={{ color: '#888' }}>Compartir →</b> "Añadir a pantalla de
           inicio"
+        </div>
+      )}
+
+      {/* Footer con versión + estado (tocable para panel diagnóstico) */}
+      <div
+        onClick={() => setShowDiag((v) => !v)}
+        style={{
+          position: 'fixed',
+          bottom: 6,
+          left: 0,
+          right: 0,
+          textAlign: 'center',
+          fontSize: 10,
+          color: '#555',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+      >
+        {statusDot} {APP_VERSION} · {host} · {statusText}
+      </div>
+
+      {/* Panel diagnóstico (expandido al tocar el footer) */}
+      {showDiag && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 28,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#111',
+            border: '1px solid #333',
+            borderRadius: 10,
+            padding: 12,
+            fontSize: 11,
+            color: '#aaa',
+            fontFamily: 'monospace',
+            maxWidth: 320,
+            width: '90%',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          }}
+        >
+          <div><b>Versión:</b> {APP_VERSION}</div>
+          <div><b>Host:</b> {host}</div>
+          <div><b>Canónico:</b> {isCanonical ? 'Sí ✅' : 'No ⚠️'}</div>
+          <div><b>Online:</b> {online ? 'Sí ✅' : 'No ❌'}</div>
+          <div><b>Supabase:</b> {healthOk === null ? '⏳' : healthOk ? 'OK ✅' : 'FAIL ❌'}</div>
+          <div style={{ marginTop: 4 }}><b>User Agent:</b></div>
+          <div style={{ fontSize: 10, opacity: 0.7, wordBreak: 'break-all' }}>
+            {navigator.userAgent}
+          </div>
+          <button
+            onClick={clearCacheAndReload}
+            style={{
+              marginTop: 8,
+              background: '#e63946',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              padding: '6px 12px',
+              fontSize: 11,
+              cursor: 'pointer',
+              width: '100%',
+            }}
+          >
+            🔄 Limpiar caché y recargar
+          </button>
         </div>
       )}
     </div>

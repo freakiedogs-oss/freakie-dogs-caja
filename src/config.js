@@ -1,3 +1,5 @@
+export const APP_VERSION = 'v2.1.0 · 17-Abr-2026'
+
 export const STORES = {
   M001: 'Cafetalón',
   S001: 'Soyapango',
