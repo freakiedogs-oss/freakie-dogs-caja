@@ -1,203 +1,177 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { today, fmtDate, n } from '../../config';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
-import { Badge } from '../ui/Badge';
 
-// ── Helpers ──
+// ── Constants ──
+const EVT_SUCURSAL_ID = 'a2889f21-948b-4b58-8261-dc78ee2dc803';
 const ESTADO_COLOR = {
-  planificacion: 'bg-yellow-100 text-yellow-800',
-  activo: 'bg-green-100 text-green-800',
-  cerrado: 'bg-blue-100 text-blue-800',
-  aprobado: 'bg-purple-100 text-purple-800',
-  cancelado: 'bg-red-100 text-red-800',
+  planificacion: { background: '#332b00', color: '#fbbf24', border: '1px solid #554400' },
+  activo:        { background: '#003320', color: '#34d399', border: '1px solid #005533' },
+  cerrado:       { background: '#002244', color: '#60a5fa', border: '1px solid #003366' },
+  aprobado:      { background: '#220033', color: '#c084fc', border: '1px solid #440055' },
+  cancelado:     { background: '#330011', color: '#f87171', border: '1px solid #550022' },
+  enviado:       { background: '#332b00', color: '#fbbf24', border: '1px solid #554400' },
+  preparando:    { background: '#003320', color: '#34d399', border: '1px solid #005533' },
+  despachado:    { background: '#002244', color: '#60a5fa', border: '1px solid #003366' },
+  recibido:      { background: '#220033', color: '#c084fc', border: '1px solid #440055' },
+  pendiente:     { background: '#332b00', color: '#fbbf24', border: '1px solid #554400' },
+  recibida:      { background: '#003320', color: '#34d399', border: '1px solid #005533' },
 };
 const PAGO_ICONS = { efectivo: '💵', tarjeta: '💳', transferencia: '🏦', link_pago: '🔗' };
-const PAGO_LABELS = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia', link_pago: 'Link de Pago' };
-const isAdmin = (r) => ['ejecutivo','admin','superadmin'].includes(r);
-const isCM = (r) => ['jefe_casa_matriz','bodeguero'].includes(r);
-const fmt$ = (v) => `$${n(v).toFixed(2)}`;
+const PAGO_LABELS = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia', link_pago: 'Link Pago' };
+const isAdmin = (r) => ['ejecutivo', 'admin', 'superadmin'].includes(r);
+const isCM = (r) => ['jefe_casa_matriz', 'bodeguero'].includes(r);
+const fmt$ = (v) => '$' + n(v).toFixed(2);
 
+const stepBtn = { width: 48, height: 48, borderRadius: 12, border: '1px solid #333', background: '#1a1a1a', color: '#fff', fontSize: 22, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', flexShrink: 0 };
+const inputStyle = { background: '#111', border: '1px solid #333', borderRadius: 8, color: '#fff', padding: '8px 12px', fontSize: 14, width: '100%', outline: 'none' };
+const badgeStyle = (estado) => ({ display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: 11, fontWeight: 600, ...(ESTADO_COLOR[estado] || { background: '#222', color: '#aaa' }) });
+
+// ── Main Component ──
 export default function EventosView({ user }) {
   const [tab, setTab] = useState('lista');
   const [eventos, setEventos] = useState([]);
-  const [selectedEvento, setSelectedEvento] = useState(null);
+  const [sel, setSel] = useState(null);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // ── Cargar eventos ──
   const fetchEventos = useCallback(async () => {
     setLoading(true);
     const { data } = await db.from('eventos')
       .select('*, responsable:usuarios_erp!responsable_id(nombre), cerrador:usuarios_erp!cerrado_por(nombre), aprobador:usuarios_erp!aprobado_por(nombre)')
       .order('fecha_evento', { ascending: false });
     setEventos(data || []);
-    // Refresh selectedEvento if active
-    if (selectedEvento) {
-      const fresh = (data || []).find(e => e.id === selectedEvento.id);
-      if (fresh) setSelectedEvento(fresh);
+    if (sel) {
+      const fresh = (data || []).find(e => e.id === sel.id);
+      if (fresh) setSel(fresh);
     }
     setLoading(false);
-  }, [selectedEvento?.id]);
+  }, [sel?.id]);
 
   useEffect(() => { fetchEventos(); }, []);
 
   const show = (m, t = 3000) => { setMsg(m); setTimeout(() => setMsg(''), t); };
 
-  // ── RENDER ──
+  const tabs = [
+    { key: 'lista', label: 'Eventos', icon: '📋' },
+    { key: 'menu', label: 'Menu', icon: '🍔', needSel: true },
+    { key: 'pedido', label: 'Pedido CM', icon: '📦', needSel: true },
+    { key: 'venta', label: 'Ventas', icon: '🛒', needSel: true },
+    { key: 'cierre', label: 'Cierre', icon: '✅', needSel: true },
+  ];
+
   return (
-    <div className="p-4 max-w-4xl mx-auto space-y-4">
-      <h1 className="text-2xl font-bold">🎪 Eventos</h1>
-      {msg && <div className="bg-green-100 text-green-800 p-3 rounded-lg text-sm font-medium">{msg}</div>}
+    <div style={{ maxWidth: 800, margin: '0 auto', padding: 16 }}>
+      <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>🎪 Eventos</h1>
+      {msg && <div style={{ background: '#003320', border: '1px solid #005533', color: '#34d399', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 500, marginBottom: 12 }}>{msg}</div>}
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="w-full flex-wrap">
-          <TabsTrigger value="lista">📋 Eventos</TabsTrigger>
-          {selectedEvento && <TabsTrigger value="menu">🍔 Menú</TabsTrigger>}
-          {selectedEvento && <TabsTrigger value="pedido">📦 Pedido CM</TabsTrigger>}
-          {selectedEvento && (selectedEvento.estado === 'activo' || selectedEvento.estado === 'planificacion') && <TabsTrigger value="venta">🛒 Venta</TabsTrigger>}
-          {selectedEvento && <TabsTrigger value="cierre">✅ Cierre</TabsTrigger>}
-        </TabsList>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+        {tabs.map(t => {
+          if (t.needSel && !sel) return null;
+          const active = tab === t.key;
+          return (
+            <button key={t.key} className={active ? 'btn btn-sm btn-red' : 'btn btn-sm btn-ghost'}
+              onClick={() => setTab(t.key)}>{t.icon} {t.label}</button>
+          );
+        })}
+        {sel && <span style={{ color: '#aaa', fontSize: 12, alignSelf: 'center', marginLeft: 8 }}>{sel.nombre}</span>}
+      </div>
 
-        <TabsContent value="lista">
-          <TabLista
-            user={user} eventos={eventos} selectedEvento={selectedEvento}
-            onSelect={(e) => {
-              setSelectedEvento(e);
-              // Auto-navegar a tab relevante según estado
-              if (e.estado === 'planificacion') setTab('menu');
-              else if (e.estado === 'activo') setTab('venta');
-              else setTab('cierre');
-            }}
-            onRefresh={fetchEventos} show={show}
-            onGoToTab={(t) => setTab(t)}
-          />
-        </TabsContent>
-
-        {selectedEvento && (
-          <>
-            <TabsContent value="menu">
-              <TabMenu user={user} evento={selectedEvento} show={show} />
-            </TabsContent>
-            <TabsContent value="pedido">
-              <TabPedido user={user} evento={selectedEvento} show={show} onRefresh={fetchEventos} />
-            </TabsContent>
-            {(selectedEvento.estado === 'activo' || selectedEvento.estado === 'planificacion') && (
-              <TabsContent value="venta">
-                <TabVenta user={user} evento={selectedEvento} show={show} onRefresh={fetchEventos} />
-              </TabsContent>
-            )}
-            <TabsContent value="cierre">
-              <TabCierre user={user} evento={selectedEvento} show={show} onRefresh={fetchEventos} />
-            </TabsContent>
-          </>
-        )}
-      </Tabs>
+      {tab === 'lista' && <TabLista user={user} eventos={eventos} sel={sel} onSelect={(e) => { setSel(e); if (e.estado === 'planificacion') setTab('pedido'); else if (e.estado === 'activo') setTab('venta'); else setTab('cierre'); }} onRefresh={fetchEventos} show={show} setTab={setTab} />}
+      {tab === 'menu' && sel && <TabMenu user={user} evento={sel} show={show} />}
+      {tab === 'pedido' && sel && <TabPedido user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
+      {tab === 'venta' && sel && <TabVenta user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
+      {tab === 'cierre' && sel && <TabCierre user={user} evento={sel} show={show} onRefresh={fetchEventos} />}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 1: LISTA DE EVENTOS + CREAR NUEVO
+// TAB 1: LISTA DE EVENTOS + CREAR
 // ═══════════════════════════════════════════════════
-function TabLista({ user, eventos, selectedEvento, onSelect, onRefresh, show, onGoToTab }) {
+function TabLista({ user, eventos, sel, onSelect, onRefresh, show, setTab }) {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ nombre: '', descripcion: '', fecha_evento: today(), hora_inicio: '', hora_fin: '', ubicacion: '', cliente: '', precio_pactado: '' });
 
   const handleCreate = async () => {
     if (!form.nombre || !form.fecha_evento) return show('Nombre y fecha son requeridos');
-    const payload = {
-      ...form,
-      precio_pactado: form.precio_pactado ? n(form.precio_pactado) : null,
-      hora_inicio: form.hora_inicio || null,
-      hora_fin: form.hora_fin || null,
-      responsable_id: user.id,
-    };
-    const { data: newEvento, error } = await db.from('eventos').insert(payload).select().single();
+    const payload = { ...form, precio_pactado: form.precio_pactado ? n(form.precio_pactado) : null, hora_inicio: form.hora_inicio || null, hora_fin: form.hora_fin || null, responsable_id: user.id };
+    const { data: newEvt, error } = await db.from('eventos').insert(payload).select().single();
     if (error) return show('Error: ' + error.message);
-    show('Evento creado — configura el menú y pedidos');
+    show('Evento creado — configura menu y pedidos');
     setCreating(false);
     setForm({ nombre: '', descripcion: '', fecha_evento: today(), hora_inicio: '', hora_fin: '', ubicacion: '', cliente: '', precio_pactado: '' });
     await onRefresh();
-    if (newEvento) { onSelect(newEvento); onGoToTab('menu'); }
+    if (newEvt) { onSelect(newEvt); setTab('menu'); }
   };
 
-  const activar = async (ev) => {
+  const activar = async (ev, e) => {
+    e.stopPropagation();
     await db.from('eventos').update({ estado: 'activo', updated_at: new Date().toISOString() }).eq('id', ev.id);
     show('Evento activado');
     onRefresh();
   };
 
   return (
-    <div className="space-y-4 mt-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Mis Eventos</h2>
-        <Button size="sm" onClick={() => setCreating(!creating)}>{creating ? 'Cancelar' : '+ Nuevo Evento'}</Button>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <p className="sec-title">Mis Eventos</p>
+        <button className="btn btn-red" onClick={() => setCreating(!creating)}>{creating ? 'Cancelar' : '+ Nuevo'}</button>
       </div>
 
       {creating && (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <Input placeholder="Nombre del evento *" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
-            <Input placeholder="Descripción" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} />
-            <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-xs text-gray-400">Fecha *</label><Input type="date" value={form.fecha_evento} onChange={e => setForm({...form, fecha_evento: e.target.value})} /></div>
-              <div><label className="text-xs text-gray-400">Ubicación</label><Input placeholder="Lugar" value={form.ubicacion} onChange={e => setForm({...form, ubicacion: e.target.value})} /></div>
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <input style={inputStyle} placeholder="Nombre del evento *" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
+            <input style={inputStyle} placeholder="Descripcion (opcional)" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div><label style={{ color: '#666', fontSize: 11, textTransform: 'uppercase' }}>Fecha *</label><input style={inputStyle} type="date" value={form.fecha_evento} onChange={e => setForm({ ...form, fecha_evento: e.target.value })} /></div>
+              <div><label style={{ color: '#666', fontSize: 11, textTransform: 'uppercase' }}>Ubicacion</label><input style={inputStyle} placeholder="Lugar" value={form.ubicacion} onChange={e => setForm({ ...form, ubicacion: e.target.value })} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-xs text-gray-400">Hora inicio</label><Input type="time" value={form.hora_inicio} onChange={e => setForm({...form, hora_inicio: e.target.value})} /></div>
-              <div><label className="text-xs text-gray-400">Hora fin</label><Input type="time" value={form.hora_fin} onChange={e => setForm({...form, hora_fin: e.target.value})} /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div><label style={{ color: '#666', fontSize: 11, textTransform: 'uppercase' }}>Hora inicio</label><input style={inputStyle} type="time" value={form.hora_inicio} onChange={e => setForm({ ...form, hora_inicio: e.target.value })} /></div>
+              <div><label style={{ color: '#666', fontSize: 11, textTransform: 'uppercase' }}>Hora fin</label><input style={inputStyle} type="time" value={form.hora_fin} onChange={e => setForm({ ...form, hora_fin: e.target.value })} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Input placeholder="Cliente / Contratante" value={form.cliente} onChange={e => setForm({...form, cliente: e.target.value})} />
-              <Input placeholder="Precio pactado $" type="number" step="0.01" value={form.precio_pactado} onChange={e => setForm({...form, precio_pactado: e.target.value})} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <input style={inputStyle} placeholder="Cliente / Contratante" value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} />
+              <input style={inputStyle} placeholder="Precio pactado $" type="number" step="0.01" value={form.precio_pactado} onChange={e => setForm({ ...form, precio_pactado: e.target.value })} />
             </div>
-            <Button className="w-full" onClick={handleCreate}>Crear Evento</Button>
-          </CardContent>
-        </Card>
+            <button className="btn btn-green" style={{ width: '100%' }} onClick={handleCreate}>Crear Evento</button>
+          </div>
+        </div>
       )}
 
-      {/* Lista de eventos */}
-      <div className="space-y-2">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {eventos.map(ev => (
-          <Card key={ev.id} className={`cursor-pointer transition ${selectedEvento?.id === ev.id ? 'ring-2 ring-blue-500' : ''}`}
-            onClick={() => onSelect(ev)}>
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-semibold">{ev.nombre}</div>
-                  <div className="text-xs text-gray-400">{fmtDate(ev.fecha_evento)} · {ev.ubicacion || 'Sin ubicación'} {ev.cliente ? `· ${ev.cliente}` : ''}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_COLOR[ev.estado]}`}>{ev.estado}</span>
-                  {ev.estado === 'planificacion' && (
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); activar(ev); }}>Activar</Button>
-                  )}
-                </div>
+          <div key={ev.id} className="card" style={{ padding: 14, cursor: 'pointer', border: sel?.id === ev.id ? '2px solid #e53e3e' : '1px solid #2a2a2a' }} onClick={() => onSelect(ev)}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>{ev.nombre}</div>
+                <div style={{ color: '#666', fontSize: 12, marginTop: 2 }}>{fmtDate(ev.fecha_evento)} · {ev.ubicacion || 'Sin ubicacion'}{ev.cliente ? ` · ${ev.cliente}` : ''}</div>
               </div>
-              {ev.total_ventas > 0 && (
-                <div className="text-xs mt-1 text-gray-400">Ventas: {fmt$(ev.total_ventas)} · {ev.num_transacciones} tx</div>
-              )}
-            </CardContent>
-          </Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={badgeStyle(ev.estado)}>{ev.estado}</span>
+                {ev.estado === 'planificacion' && <button className="btn btn-sm btn-orange" onClick={(e) => activar(ev, e)}>Activar</button>}
+              </div>
+            </div>
+            {ev.total_ventas > 0 && <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>Ventas: {fmt$(ev.total_ventas)} · {ev.num_transacciones} tx</div>}
+          </div>
         ))}
-        {eventos.length === 0 && <p className="text-gray-400 text-center py-8">No hay eventos aún. Crea el primero.</p>}
+        {eventos.length === 0 && <p style={{ color: '#555', textAlign: 'center', padding: 32 }}>No hay eventos. Crea el primero.</p>}
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 2: MENÚ DEL EVENTO (jalar de pos_menu_items)
+// TAB 2: MENU DEL EVENTO
 // ═══════════════════════════════════════════════════
 function TabMenu({ user, evento, show }) {
   const [menuItems, setMenuItems] = useState([]);
   const [posItems, setPosItems] = useState([]);
   const [search, setSearch] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [showPos, setShowPos] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customPrice, setCustomPrice] = useState('');
 
@@ -206,138 +180,92 @@ function TabMenu({ user, evento, show }) {
     setMenuItems(data || []);
   }, [evento.id]);
 
-  const fetchPosItems = useCallback(async () => {
+  const fetchPos = useCallback(async () => {
     const { data } = await db.from('pos_menu_items').select('id, nombre, precio, imagen_url').eq('disponible', true).order('nombre');
-    // Deduplicar por nombre (hay 1 registro por sucursal/menú)
     const seen = new Map();
-    (data || []).forEach(item => {
-      if (!seen.has(item.nombre)) seen.set(item.nombre, item);
-    });
+    (data || []).forEach(item => { if (!seen.has(item.nombre)) seen.set(item.nombre, item); });
     setPosItems([...seen.values()]);
   }, []);
 
-  useEffect(() => { fetchMenu(); fetchPosItems(); }, [fetchMenu, fetchPosItems]);
+  useEffect(() => { fetchMenu(); fetchPos(); }, [fetchMenu, fetchPos]);
 
   const addFromPos = async (item) => {
-    const precio = customPrice ? n(customPrice) : item.precio;
-    const { error } = await db.from('evento_menu').insert({
-      evento_id: evento.id,
-      nombre: customName || item.nombre,
-      precio,
-      imagen_url: item.imagen_url,
-      pos_menu_item_id: item.id,
-      orden: menuItems.length,
-    });
-    if (error) return show(error.message.includes('unique') ? 'Ya existe ese item en el menú' : 'Error: ' + error.message);
-    show(`${item.nombre} agregado al menú`);
-    setCustomName('');
-    setCustomPrice('');
+    const { error } = await db.from('evento_menu').insert({ evento_id: evento.id, nombre: item.nombre, precio: item.precio, imagen_url: item.imagen_url, pos_menu_item_id: item.id, orden: menuItems.length });
+    if (error) return show(error.message.includes('unique') ? 'Ya existe en el menu' : 'Error: ' + error.message);
+    show(item.nombre + ' agregado');
     fetchMenu();
   };
 
   const addCustom = async () => {
     if (!customName || !customPrice) return show('Nombre y precio requeridos');
-    const { error } = await db.from('evento_menu').insert({
-      evento_id: evento.id,
-      nombre: customName,
-      precio: n(customPrice),
-      orden: menuItems.length,
-    });
+    const { error } = await db.from('evento_menu').insert({ evento_id: evento.id, nombre: customName, precio: n(customPrice), orden: menuItems.length });
     if (error) return show('Error: ' + error.message);
     show('Item agregado');
-    setCustomName('');
-    setCustomPrice('');
+    setCustomName(''); setCustomPrice('');
     fetchMenu();
   };
 
-  const toggleItem = async (item) => {
-    await db.from('evento_menu').update({ activo: !item.activo }).eq('id', item.id);
-    fetchMenu();
-  };
-
-  const updatePrice = async (item, newPrice) => {
-    if (!newPrice) return;
-    await db.from('evento_menu').update({ precio: n(newPrice) }).eq('id', item.id);
-    show('Precio actualizado');
-    fetchMenu();
-  };
-
-  const removeItem = async (item) => {
-    await db.from('evento_menu').delete().eq('id', item.id);
-    show('Item eliminado');
-    fetchMenu();
-  };
+  const toggleItem = async (item) => { await db.from('evento_menu').update({ activo: !item.activo }).eq('id', item.id); fetchMenu(); };
+  const updatePrice = async (item, val) => { if (!val) return; await db.from('evento_menu').update({ precio: n(val) }).eq('id', item.id); show('Precio actualizado'); fetchMenu(); };
+  const removeItem = async (item) => { await db.from('evento_menu').delete().eq('id', item.id); show('Eliminado'); fetchMenu(); };
 
   const filtered = posItems.filter(i => i.nombre.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="space-y-4 mt-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">🍔 Menú: {evento.nombre}</h2>
-        <Badge className={ESTADO_COLOR[evento.estado]}>{evento.estado}</Badge>
-      </div>
+    <div>
+      <p className="sec-title">Menu del Evento ({menuItems.length} items)</p>
 
-      {/* Items actuales del menú del evento */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Items del Evento ({menuItems.length})</CardTitle></CardHeader>
-        <CardContent className="p-3 space-y-2">
-          {menuItems.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Sin items. Agrega desde el catálogo POS abajo.</p>}
-          {menuItems.map(item => (
-            <div key={item.id} className={`flex items-center justify-between p-2 rounded border ${item.activo ? 'border-gray-700 bg-gray-800' : 'border-gray-800 bg-gray-900 opacity-50'}`}>
-              <div className="flex-1">
-                <span className="font-medium text-sm text-gray-100">{item.nombre}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Input type="number" step="0.01" className="w-20 text-right text-sm" defaultValue={item.precio}
-                  onBlur={e => updatePrice(item, e.target.value)} />
-                <Button size="sm" variant="ghost" onClick={() => toggleItem(item)}>{item.activo ? '👁️' : '🚫'}</Button>
-                <Button size="sm" variant="ghost" className="text-red-400" onClick={() => removeItem(item)}>✕</Button>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* Agregar items */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Agregar Items al Menú</CardTitle></CardHeader>
-        <CardContent className="p-3 space-y-3">
-          <Button size="sm" variant="outline" onClick={() => setAdding(!adding)}>
-            {adding ? 'Cerrar catálogo' : '📋 Jalar del catálogo POS'}
-          </Button>
-
-          {adding && (
-            <div className="space-y-2">
-              <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
-              <div className="grid grid-cols-1 gap-1 max-h-60 overflow-y-auto">
-                {filtered.slice(0, 30).map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-2 rounded border border-gray-700 bg-gray-800 text-sm">
-                    <span className="text-gray-200">{item.nombre} — <span className="text-green-400 font-medium">{fmt$(item.precio)}</span></span>
-                    <Button size="sm" onClick={() => addFromPos(item)}>+ Agregar</Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="border-t border-gray-700 pt-3">
-            <p className="text-xs text-gray-400 mb-2">O agrega un item personalizado:</p>
-            <div className="space-y-2">
-              <Input placeholder="Nombre del item" value={customName} onChange={e => setCustomName(e.target.value)} />
-              <div className="flex gap-2">
-                <Input placeholder="Precio $" type="number" step="0.01" value={customPrice} onChange={e => setCustomPrice(e.target.value)} className="flex-1" />
-                <Button onClick={addCustom}>+ Agregar</Button>
-              </div>
+      {/* Current menu items */}
+      <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+        {menuItems.length === 0 && <p style={{ color: '#555', textAlign: 'center', padding: 16, fontSize: 13 }}>Sin items. Agrega del catalogo POS o crea uno personalizado.</p>}
+        {menuItems.map(item => (
+          <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 4px', borderBottom: '1px solid #222', opacity: item.activo ? 1 : 0.4 }}>
+            <span style={{ color: '#fff', fontSize: 14, flex: 1 }}>{item.nombre}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input style={{ ...inputStyle, width: 80, textAlign: 'right', padding: '4px 8px' }} type="number" step="0.01" defaultValue={item.precio} onBlur={e => updatePrice(item, e.target.value)} />
+              <button style={{ ...stepBtn, width: 36, height: 36, fontSize: 16 }} onClick={() => toggleItem(item)}>{item.activo ? '👁️' : '🚫'}</button>
+              <button style={{ ...stepBtn, width: 36, height: 36, fontSize: 16, color: '#f87171' }} onClick={() => removeItem(item)}>✕</button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        ))}
+      </div>
+
+      {/* Add from POS */}
+      <button className="btn btn-ghost" style={{ marginBottom: 12 }} onClick={() => setShowPos(!showPos)}>
+        {showPos ? 'Cerrar catalogo' : '📋 Jalar del catalogo POS'}
+      </button>
+
+      {showPos && (
+        <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+          <input style={{ ...inputStyle, marginBottom: 8 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            {filtered.slice(0, 30).map(item => (
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px', borderBottom: '1px solid #1a1a1a' }}>
+                <span style={{ color: '#ccc', fontSize: 13 }}>{item.nombre} — <span style={{ color: '#34d399', fontWeight: 600 }}>{fmt$(item.precio)}</span></span>
+                <button className="btn btn-sm btn-green" onClick={() => addFromPos(item)}>+ Agregar</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Custom item */}
+      <div className="card" style={{ padding: 12 }}>
+        <p style={{ color: '#666', fontSize: 11, textTransform: 'uppercase', marginBottom: 8 }}>Item personalizado</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input style={inputStyle} placeholder="Nombre del item" value={customName} onChange={e => setCustomName(e.target.value)} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input style={{ ...inputStyle, flex: 1 }} placeholder="Precio $" type="number" step="0.01" value={customPrice} onChange={e => setCustomPrice(e.target.value)} />
+            <button className="btn btn-green" onClick={addCustom}>+ Agregar</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 3: PEDIDO DE INVENTARIO A CASA MATRIZ
+// TAB 3: PEDIDO A CASA MATRIZ (pedidos_sucursal)
 // ═══════════════════════════════════════════════════
 function TabPedido({ user, evento, show, onRefresh }) {
   const [pedidos, setPedidos] = useState([]);
@@ -345,13 +273,17 @@ function TabPedido({ user, evento, show, onRefresh }) {
   const [creating, setCreating] = useState(false);
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState('');
-  const [expandedPedido, setExpandedPedido] = useState(null);
+  const [expanded, setExpanded] = useState(null);
   const [pedidoItems, setPedidoItems] = useState({});
 
+  const notasPrefix = `EVT:${evento.id}`;
+
   const fetchPedidos = useCallback(async () => {
-    const { data } = await db.from('evento_pedidos')
+    const { data } = await db.from('pedidos_sucursal')
       .select('*, solicitante:usuarios_erp!solicitado_por(nombre)')
-      .eq('evento_id', evento.id).order('created_at', { ascending: false });
+      .eq('sucursal_id', EVT_SUCURSAL_ID)
+      .ilike('notas', notasPrefix + '%')
+      .order('created_at', { ascending: false });
     setPedidos(data || []);
   }, [evento.id]);
 
@@ -362,168 +294,137 @@ function TabPedido({ user, evento, show, onRefresh }) {
 
   useEffect(() => { fetchPedidos(); fetchProductos(); }, [fetchPedidos, fetchProductos]);
 
-  const loadPedidoItems = async (pedidoId) => {
-    if (expandedPedido === pedidoId) { setExpandedPedido(null); return; }
-    const { data } = await db.from('evento_pedido_items')
+  const loadItems = async (pid) => {
+    if (expanded === pid) { setExpanded(null); return; }
+    const { data } = await db.from('pedido_items')
       .select('*, producto:catalogo_productos(nombre, unidad_medida)')
-      .eq('evento_pedido_id', pedidoId);
-    setPedidoItems(prev => ({ ...prev, [pedidoId]: data || [] }));
-    setExpandedPedido(pedidoId);
+      .eq('pedido_id', pid);
+    setPedidoItems(prev => ({ ...prev, [pid]: data || [] }));
+    setExpanded(pid);
   };
 
   const addItem = (prod) => {
     if (items.find(i => i.producto_id === prod.id)) return show('Ya agregado');
-    setItems([...items, { producto_id: prod.id, nombre: prod.nombre, unidad: prod.unidad_medida, cantidad_solicitada: 1 }]);
+    setItems([...items, { producto_id: prod.id, nombre: prod.nombre, unidad: prod.unidad_medida, cantidad: 1 }]);
   };
 
-  const updateQty = (idx, val) => {
-    const updated = [...items];
-    updated[idx].cantidad_solicitada = n(val);
-    setItems(updated);
+  const updateQty = (idx, delta) => {
+    const u = [...items];
+    u[idx].cantidad = Math.max(0.5, n(u[idx].cantidad) + delta);
+    setItems(u);
   };
 
-  const removeItem = (idx) => setItems(items.filter((_, i) => i !== idx));
+  const setQty = (idx, val) => {
+    const u = [...items];
+    u[idx].cantidad = n(val);
+    setItems(u);
+  };
 
   const crearPedido = async () => {
     if (items.length === 0) return show('Agrega al menos un producto');
-    const { data: pedido, error } = await db.from('evento_pedidos').insert({
-      evento_id: evento.id,
+    const notasFull = `${notasPrefix} | ${evento.nombre}`;
+    const { data: pedido, error } = await db.from('pedidos_sucursal').insert({
+      fecha_pedido: today(),
+      sucursal_id: EVT_SUCURSAL_ID,
+      estado: 'enviado',
       solicitado_por: user.id,
+      notas: notasFull,
     }).select().single();
     if (error) return show('Error: ' + error.message);
 
-    const rows = items.map(i => ({
-      evento_pedido_id: pedido.id,
-      producto_id: i.producto_id,
-      cantidad_solicitada: i.cantidad_solicitada,
-    }));
-    const { error: e2 } = await db.from('evento_pedido_items').insert(rows);
+    const rows = items.map(i => ({ pedido_id: pedido.id, producto_id: i.producto_id, cantidad_solicitada: i.cantidad, unidad: i.unidad }));
+    const { error: e2 } = await db.from('pedido_items').insert(rows);
     if (e2) return show('Error items: ' + e2.message);
 
-    show('Pedido creado');
-    setItems([]);
-    setCreating(false);
+    show('Pedido enviado a Casa Matriz');
+    setItems([]); setCreating(false);
     fetchPedidos();
   };
 
-  // CM: Despachar pedido
-  const despachar = async (pedido, itemsData) => {
-    // Actualizar cantidades despachadas = solicitadas (CM puede editar)
-    for (const it of itemsData) {
-      await db.from('evento_pedido_items').update({ cantidad_despachada: it.cantidad_solicitada }).eq('id', it.id);
-    }
-    await db.from('evento_pedidos').update({
-      estado: 'despachado',
-      despachado_por: user.id,
-      despachado_at: new Date().toISOString(),
-    }).eq('id', pedido.id);
-    show('Pedido despachado — inventario CM001 actualizado');
-    fetchPedidos();
-    onRefresh();
-  };
-
-  // Merari: Confirmar recepción
-  const confirmarRecepcion = async (pedido) => {
-    await db.from('evento_pedidos').update({
-      estado: 'recibido',
-      recibido_at: new Date().toISOString(),
-    }).eq('id', pedido.id);
-    show('Recepción confirmada');
-    fetchPedidos();
+  const confirmarRecepcion = async (p) => {
+    await db.from('pedidos_sucursal').update({ estado: 'recibido' }).eq('id', p.id);
+    show('Recepcion confirmada');
+    fetchPedidos(); onRefresh();
   };
 
   const filtered = productos.filter(p => p.nombre.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="space-y-4 mt-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">📦 Pedido a Casa Matriz</h2>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <p className="sec-title">Pedido a Casa Matriz</p>
         {(evento.estado === 'planificacion' || evento.estado === 'activo') && (
-          <Button size="sm" onClick={() => setCreating(!creating)}>{creating ? 'Cancelar' : '+ Nuevo Pedido'}</Button>
+          <button className="btn btn-red" onClick={() => setCreating(!creating)}>{creating ? 'Cancelar' : '+ Nuevo Pedido'}</button>
         )}
       </div>
 
       {creating && (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <Input placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {filtered.slice(0, 20).map(p => (
-                <div key={p.id} className="flex items-center justify-between p-2 bg-gray-800 rounded text-sm">
-                  <span>{p.nombre} <span className="text-gray-400">({p.unidad_medida})</span></span>
-                  <Button size="sm" variant="outline" onClick={() => addItem(p)}>+</Button>
+        <div className="card" style={{ padding: 14, marginBottom: 16 }}>
+          <input style={{ ...inputStyle, marginBottom: 10 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+          <div style={{ maxHeight: 180, overflowY: 'auto', marginBottom: 10 }}>
+            {filtered.slice(0, 25).map(p => (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px', borderBottom: '1px solid #1a1a1a' }}>
+                <span style={{ color: '#ccc', fontSize: 13 }}>{p.nombre} <span style={{ color: '#666' }}>({p.unidad_medida})</span></span>
+                <button className="btn btn-sm btn-ghost" onClick={() => addItem(p)}>+</button>
+              </div>
+            ))}
+          </div>
+
+          {items.length > 0 && (
+            <div style={{ borderTop: '1px solid #333', paddingTop: 10 }}>
+              <p style={{ color: '#aaa', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Items del pedido</p>
+              {items.map((it, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ color: '#fff', fontSize: 13, flex: 1 }}>{it.nombre} <span style={{ color: '#666' }}>({it.unidad})</span></span>
+                  <button style={stepBtn} onClick={() => updateQty(idx, -1)}>-</button>
+                  <input style={{ ...inputStyle, width: 60, textAlign: 'center', padding: '6px 4px' }} type="number" step="0.5" value={it.cantidad} onChange={e => setQty(idx, e.target.value)} />
+                  <button style={stepBtn} onClick={() => updateQty(idx, 1)}>+</button>
+                  <button style={{ ...stepBtn, width: 36, height: 36, fontSize: 16, color: '#f87171' }} onClick={() => setItems(items.filter((_, i) => i !== idx))}>✕</button>
                 </div>
               ))}
+              <button className="btn btn-green" style={{ width: '100%', marginTop: 8 }} onClick={crearPedido}>📦 Enviar Pedido a CM</button>
             </div>
-            {items.length > 0 && (
-              <div className="border-t pt-2 space-y-1">
-                <p className="text-xs font-medium text-gray-400">Items del pedido:</p>
-                {items.map((it, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-sm">
-                    <span className="flex-1">{it.nombre} ({it.unidad})</span>
-                    <Input type="number" step="0.1" className="w-20 text-right" value={it.cantidad_solicitada}
-                      onChange={e => updateQty(idx, e.target.value)} />
-                    <Button size="sm" variant="ghost" className="text-red-500" onClick={() => removeItem(idx)}>✕</Button>
-                  </div>
-                ))}
-                <Button className="w-full mt-2" onClick={crearPedido}>Enviar Pedido a CM</Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
 
-      {/* Lista de pedidos */}
-      <div className="space-y-2">
+      {/* Pedidos list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {pedidos.map(p => (
-          <Card key={p.id}>
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between cursor-pointer" onClick={() => loadPedidoItems(p.id)}>
-                <div>
-                  <span className="text-sm font-medium">Pedido {fmtDate(p.created_at?.split('T')[0] || '')}</span>
-                  <span className="text-xs text-gray-400 ml-2">por {p.solicitante?.nombre || '—'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={ESTADO_COLOR[p.estado] || 'bg-gray-100'}>{p.estado}</Badge>
-                  <span className="text-xs">{expandedPedido === p.id ? '▲' : '▼'}</span>
+          <div key={p.id} className="card" style={{ padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => loadItems(p.id)}>
+              <div>
+                <span style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>Pedido {fmtDate(p.fecha_pedido || p.created_at?.split('T')[0] || '')}</span>
+                <span style={{ color: '#666', fontSize: 12, marginLeft: 8 }}>por {p.solicitante?.nombre || '—'}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={badgeStyle(p.estado)}>{p.estado}</span>
+                <span style={{ color: '#555', fontSize: 12 }}>{expanded === p.id ? '▲' : '▼'}</span>
+              </div>
+            </div>
+            {expanded === p.id && pedidoItems[p.id] && (
+              <div style={{ borderTop: '1px solid #222', marginTop: 8, paddingTop: 8 }}>
+                {pedidoItems[p.id].map(it => (
+                  <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 13 }}>
+                    <span style={{ color: '#ccc' }}>{it.producto?.nombre}</span>
+                    <span style={{ color: '#aaa' }}>{it.cantidad_solicitada} {it.producto?.unidad_medida}{it.cantidad_despachada > 0 ? ` (desp: ${it.cantidad_despachada})` : ''}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  {p.estado === 'despachado' && <button className="btn btn-sm btn-green" onClick={() => confirmarRecepcion(p)}>📥 Confirmar Recepcion</button>}
                 </div>
               </div>
-
-              {expandedPedido === p.id && pedidoItems[p.id] && (
-                <div className="mt-2 border-t pt-2 space-y-1">
-                  {pedidoItems[p.id].map(it => (
-                    <div key={it.id} className="flex items-center justify-between text-sm">
-                      <span>{it.producto?.nombre}</span>
-                      <span>{it.cantidad_solicitada} {it.producto?.unidad_medida} {it.cantidad_despachada > 0 ? `(desp: ${it.cantidad_despachada})` : ''}</span>
-                    </div>
-                  ))}
-                  <div className="flex gap-2 mt-2">
-                    {p.estado === 'pendiente' && isCM(user.rol) && (
-                      <Button size="sm" variant="outline" onClick={() => despachar(p, pedidoItems[p.id])}>🚚 Despachar</Button>
-                    )}
-                    {p.estado === 'pendiente' && isAdmin(user.rol) && (
-                      <Button size="sm" variant="outline" onClick={async () => {
-                        await db.from('evento_pedidos').update({ estado: 'aprobado', aprobado_por: user.id, aprobado_at: new Date().toISOString() }).eq('id', p.id);
-                        show('Pedido aprobado'); fetchPedidos();
-                      }}>✅ Aprobar</Button>
-                    )}
-                    {p.estado === 'despachado' && (
-                      <Button size="sm" onClick={() => confirmarRecepcion(p)}>📥 Confirmar Recepción</Button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            )}
+          </div>
         ))}
-        {pedidos.length === 0 && <p className="text-gray-400 text-center py-4 text-sm">No hay pedidos para este evento.</p>}
+        {pedidos.length === 0 && <p style={{ color: '#555', textAlign: 'center', padding: 24, fontSize: 13 }}>No hay pedidos para este evento.</p>}
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 4: VENTA RÁPIDA (botones grandes, 1 tap)
+// TAB 4: VENTAS RAPIDAS
 // ═══════════════════════════════════════════════════
 function TabVenta({ user, evento, show, onRefresh }) {
   const [menuItems, setMenuItems] = useState([]);
@@ -531,7 +432,7 @@ function TabVenta({ user, evento, show, onRefresh }) {
   const [metodo, setMetodo] = useState('efectivo');
   const [ventas, setVentas] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHist, setShowHist] = useState(false);
 
   const fetchMenu = useCallback(async () => {
     const { data } = await db.from('evento_menu').select('*').eq('evento_id', evento.id).eq('activo', true).order('orden');
@@ -549,19 +450,16 @@ function TabVenta({ user, evento, show, onRefresh }) {
   useEffect(() => { fetchMenu(); fetchVentas(); }, [fetchMenu, fetchVentas]);
 
   const addToCart = (item) => {
-    const existing = cart.find(c => c.evento_menu_id === item.id);
-    if (existing) {
-      setCart(cart.map(c => c.evento_menu_id === item.id ? { ...c, cantidad: c.cantidad + 1 } : c));
-    } else {
-      setCart([...cart, { evento_menu_id: item.id, nombre: item.nombre, precio_unitario: item.precio, cantidad: 1 }]);
-    }
+    const ex = cart.find(c => c.evento_menu_id === item.id);
+    if (ex) setCart(cart.map(c => c.evento_menu_id === item.id ? { ...c, cantidad: c.cantidad + 1 } : c));
+    else setCart([...cart, { evento_menu_id: item.id, nombre: item.nombre, precio_unitario: item.precio, cantidad: 1 }]);
   };
 
   const updateCartQty = (menuId, delta) => {
     setCart(cart.map(c => {
       if (c.evento_menu_id !== menuId) return c;
-      const newQty = c.cantidad + delta;
-      return newQty > 0 ? { ...c, cantidad: newQty } : null;
+      const nq = c.cantidad + delta;
+      return nq > 0 ? { ...c, cantidad: nq } : null;
     }).filter(Boolean));
   };
 
@@ -570,120 +468,97 @@ function TabVenta({ user, evento, show, onRefresh }) {
   const registrarVenta = async () => {
     if (cart.length === 0) return show('Agrega items al carrito');
     setSaving(true);
-
-    const { data: venta, error } = await db.from('evento_ventas').insert({
-      evento_id: evento.id,
-      metodo_pago: metodo,
-      total: cartTotal,
-      registrado_por: user.id,
-    }).select().single();
-
+    const { data: venta, error } = await db.from('evento_ventas').insert({ evento_id: evento.id, metodo_pago: metodo, total: cartTotal, registrado_por: user.id }).select().single();
     if (error) { setSaving(false); return show('Error: ' + error.message); }
-
-    const rows = cart.map(c => ({
-      evento_venta_id: venta.id,
-      evento_menu_id: c.evento_menu_id,
-      cantidad: c.cantidad,
-      precio_unitario: c.precio_unitario,
-    }));
+    const rows = cart.map(c => ({ evento_venta_id: venta.id, evento_menu_id: c.evento_menu_id, cantidad: c.cantidad, precio_unitario: c.precio_unitario }));
     await db.from('evento_venta_items').insert(rows);
-
-    show(`Venta registrada: ${fmt$(cartTotal)} (${PAGO_LABELS[metodo]})`);
-    setCart([]);
-    setSaving(false);
+    show(`Venta: ${fmt$(cartTotal)} (${PAGO_LABELS[metodo]})`);
+    setCart([]); setSaving(false);
     fetchVentas();
   };
 
-  const anularVenta = async (ventaId) => {
-    await db.from('evento_ventas').update({ anulada: true, anulada_por: user.id, anulada_at: new Date().toISOString() }).eq('id', ventaId);
+  const anular = async (vid) => {
+    await db.from('evento_ventas').update({ anulada: true, anulada_por: user.id, anulada_at: new Date().toISOString() }).eq('id', vid);
     show('Venta anulada');
     fetchVentas();
   };
 
-  // Resumen rápido
   const totalHoy = ventas.reduce((s, v) => s + n(v.total), 0);
-  const numVentas = ventas.length;
 
   return (
-    <div className="space-y-4 mt-4">
-      {/* Resumen rápido */}
-      <div className="grid grid-cols-2 gap-2">
-        <Card><CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold text-green-600">{fmt$(totalHoy)}</div>
-          <div className="text-xs text-gray-400">Total ventas</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3 text-center">
-          <div className="text-2xl font-bold">{numVentas}</div>
-          <div className="text-xs text-gray-400">Transacciones</div>
-        </CardContent></Card>
+    <div>
+      {/* Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+        <div className="card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ color: '#34d399', fontSize: 26, fontWeight: 700 }}>{fmt$(totalHoy)}</div>
+          <div style={{ color: '#666', fontSize: 11, textTransform: 'uppercase' }}>Total ventas</div>
+        </div>
+        <div className="card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ color: '#fff', fontSize: 26, fontWeight: 700 }}>{ventas.length}</div>
+          <div style={{ color: '#666', fontSize: 11, textTransform: 'uppercase' }}>Transacciones</div>
+        </div>
       </div>
 
-      {/* Método de pago */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Payment method */}
+      <p className="sec-title">Metodo de pago</p>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
         {Object.entries(PAGO_LABELS).map(([key, label]) => (
-          <Button key={key} size="sm" variant={metodo === key ? 'default' : 'outline'}
-            onClick={() => setMetodo(key)}>
+          <button key={key} className={metodo === key ? 'btn btn-sm btn-red' : 'btn btn-sm btn-ghost'} onClick={() => setMetodo(key)}>
             {PAGO_ICONS[key]} {label}
-          </Button>
+          </button>
         ))}
       </div>
 
-      {/* Grid de botones de menú */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* Menu grid */}
+      <p className="sec-title">Menu</p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         {menuItems.map(item => (
-          <Button key={item.id}
-            variant="outline"
-            className="h-20 flex flex-col items-center justify-center text-center"
-            onClick={() => addToCart(item)}>
-            <span className="font-bold text-sm leading-tight">{item.nombre}</span>
-            <span className="text-green-600 font-bold">{fmt$(item.precio)}</span>
-          </Button>
+          <div key={item.id} className="card" style={{ padding: 16, textAlign: 'center', cursor: 'pointer', border: '1px solid #333' }} onClick={() => addToCart(item)}>
+            <div style={{ color: '#fff', fontWeight: 600, fontSize: 14, lineHeight: '1.2' }}>{item.nombre}</div>
+            <div style={{ color: '#34d399', fontWeight: 700, fontSize: 16, marginTop: 4 }}>{fmt$(item.precio)}</div>
+          </div>
         ))}
       </div>
-      {menuItems.length === 0 && <p className="text-gray-400 text-center text-sm">Configura items en la pestaña Menú primero.</p>}
+      {menuItems.length === 0 && <p style={{ color: '#555', textAlign: 'center', fontSize: 13, marginBottom: 16 }}>Configura items en la tab Menu primero.</p>}
 
-      {/* Carrito */}
+      {/* Cart */}
       {cart.length > 0 && (
-        <Card className="border-2 border-green-500">
-          <CardContent className="p-3 space-y-2">
-            <p className="text-sm font-semibold">🛒 Carrito</p>
-            {cart.map(c => (
-              <div key={c.evento_menu_id} className="flex items-center justify-between text-sm">
-                <span className="flex-1">{c.nombre}</span>
-                <div className="flex items-center gap-1">
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => updateCartQty(c.evento_menu_id, -1)}>−</Button>
-                  <span className="w-6 text-center font-medium">{c.cantidad}</span>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => updateCartQty(c.evento_menu_id, 1)}>+</Button>
-                  <span className="ml-2 font-medium w-16 text-right">{fmt$(c.precio_unitario * c.cantidad)}</span>
-                </div>
+        <div className="card" style={{ padding: 14, border: '2px solid #34d399', marginBottom: 16 }}>
+          <p style={{ color: '#fff', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>🛒 Carrito</p>
+          {cart.map(c => (
+            <div key={c.evento_menu_id} style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ color: '#ccc', fontSize: 13, flex: 1 }}>{c.nombre}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button style={{ ...stepBtn, width: 36, height: 36 }} onClick={() => updateCartQty(c.evento_menu_id, -1)}>-</button>
+                <span style={{ color: '#fff', fontWeight: 600, width: 28, textAlign: 'center', fontSize: 15 }}>{c.cantidad}</span>
+                <button style={{ ...stepBtn, width: 36, height: 36 }} onClick={() => updateCartQty(c.evento_menu_id, 1)}>+</button>
+                <span style={{ color: '#aaa', fontWeight: 500, width: 64, textAlign: 'right', fontSize: 13 }}>{fmt$(c.precio_unitario * c.cantidad)}</span>
               </div>
-            ))}
-            <div className="border-t pt-2 flex items-center justify-between">
-              <span className="text-lg font-bold">{fmt$(cartTotal)}</span>
-              <Button className="bg-green-600 hover:bg-green-700 text-white px-6" onClick={registrarVenta} disabled={saving}>
-                {saving ? 'Guardando...' : `💰 Cobrar ${PAGO_ICONS[metodo]}`}
-              </Button>
             </div>
-          </CardContent>
-        </Card>
+          ))}
+          <div style={{ borderTop: '1px solid #333', paddingTop: 10, marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#fff', fontSize: 20, fontWeight: 700 }}>{fmt$(cartTotal)}</span>
+            <button className="btn btn-green" style={{ padding: '10px 24px', fontSize: 15 }} onClick={registrarVenta} disabled={saving}>
+              {saving ? 'Guardando...' : `💰 Cobrar ${PAGO_ICONS[metodo]}`}
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Historial */}
-      <div className="flex items-center justify-between">
-        <Button size="sm" variant="ghost" onClick={() => setShowHistory(!showHistory)}>
-          {showHistory ? 'Ocultar historial' : `📜 Ver historial (${numVentas})`}
-        </Button>
-      </div>
-      {showHistory && (
-        <div className="space-y-1">
+      {/* History toggle */}
+      <button className="btn btn-ghost" onClick={() => setShowHist(!showHist)}>
+        {showHist ? 'Ocultar historial' : `📜 Historial (${ventas.length})`}
+      </button>
+      {showHist && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {ventas.map(v => (
-            <div key={v.id} className="flex items-center justify-between text-sm p-2 bg-gray-800 rounded">
+            <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#111', borderRadius: 8, border: '1px solid #222' }}>
               <div>
-                <span>{PAGO_ICONS[v.metodo_pago]} {fmt$(v.total)}</span>
-                <span className="text-xs text-gray-400 ml-2">{new Date(v.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}</span>
-                {v.items && <span className="text-xs text-gray-400 ml-1">({v.items.map(i => i.menu?.nombre).join(', ')})</span>}
+                <span style={{ color: '#fff', fontSize: 13 }}>{PAGO_ICONS[v.metodo_pago]} {fmt$(v.total)}</span>
+                <span style={{ color: '#666', fontSize: 11, marginLeft: 8 }}>{new Date(v.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}</span>
+                {v.items && <span style={{ color: '#555', fontSize: 11, marginLeft: 4 }}>({v.items.map(i => i.menu?.nombre).join(', ')})</span>}
               </div>
-              <Button size="sm" variant="ghost" className="text-red-400 text-xs" onClick={() => anularVenta(v.id)}>Anular</Button>
+              <button className="btn btn-sm btn-ghost" style={{ color: '#f87171', fontSize: 11 }} onClick={() => anular(v.id)}>Anular</button>
             </div>
           ))}
         </div>
@@ -693,7 +568,7 @@ function TabVenta({ user, evento, show, onRefresh }) {
 }
 
 // ═══════════════════════════════════════════════════
-// TAB 5: CIERRE + DEVOLUCIÓN + APROBACIÓN
+// TAB 5: CIERRE + DEVOLUCIONES + APROBACION
 // ═══════════════════════════════════════════════════
 function TabCierre({ user, evento, show, onRefresh }) {
   const [ventas, setVentas] = useState([]);
@@ -712,7 +587,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
 
   const fetchDevoluciones = useCallback(async () => {
     const { data } = await db.from('evento_devoluciones')
-      .select('*, items:evento_devolucion_items(*, producto:catalogo_productos(nombre, unidad_medida))')
+      .select('*, items:evento_devolucion_items(*, producto:catalogo_productos(nombre, unidad_medida)), devolvedor:usuarios_erp!devuelto_por(nombre)')
       .eq('evento_id', evento.id).order('created_at', { ascending: false });
     setDevoluciones(data || []);
   }, [evento.id]);
@@ -724,70 +599,52 @@ function TabCierre({ user, evento, show, onRefresh }) {
 
   useEffect(() => { fetchVentas(); fetchDevoluciones(); fetchProductos(); }, [fetchVentas, fetchDevoluciones, fetchProductos]);
 
-  // Totales
-  const totalVentas = ventas.reduce((s, v) => s + n(v.total), 0);
-  const porMetodo = ventas.reduce((acc, v) => {
-    acc[v.metodo_pago] = (acc[v.metodo_pago] || 0) + n(v.total);
-    return acc;
-  }, {});
+  // Totals
+  const isClosed = evento.estado === 'cerrado' || evento.estado === 'aprobado';
+  const totalVentas = isClosed ? n(evento.total_ventas) : ventas.reduce((s, v) => s + n(v.total), 0);
+  const porMetodo = isClosed
+    ? { efectivo: n(evento.total_efectivo), tarjeta: n(evento.total_tarjeta), transferencia: n(evento.total_transferencia), link_pago: n(evento.total_link_pago) }
+    : ventas.reduce((acc, v) => { acc[v.metodo_pago] = (acc[v.metodo_pago] || 0) + n(v.total); return acc; }, {});
+  const numTx = isClosed ? n(evento.num_transacciones) : ventas.length;
 
-  // Devolución
+  // Devolucion
   const addDevItem = (prod) => {
     if (devItems.find(i => i.producto_id === prod.id)) return;
     setDevItems([...devItems, { producto_id: prod.id, nombre: prod.nombre, unidad: prod.unidad_medida, cantidad: 1, notas: '' }]);
   };
 
+  const updateDevQty = (idx, delta) => {
+    const u = [...devItems];
+    u[idx].cantidad = Math.max(0.5, n(u[idx].cantidad) + delta);
+    setDevItems(u);
+  };
+
   const crearDevolucion = async () => {
     if (devItems.length === 0) return show('Agrega items a devolver');
-    const { data: dev, error } = await db.from('evento_devoluciones').insert({
-      evento_id: evento.id,
-      devuelto_por: user.id,
-    }).select().single();
+    const { data: dev, error } = await db.from('evento_devoluciones').insert({ evento_id: evento.id, devuelto_por: user.id }).select().single();
     if (error) return show('Error: ' + error.message);
-
-    await db.from('evento_devolucion_items').insert(devItems.map(i => ({
-      evento_devolucion_id: dev.id,
-      producto_id: i.producto_id,
-      cantidad: i.cantidad,
-      notas: i.notas || null,
-    })));
-    show('Devolución creada');
-    setDevItems([]);
-    setCreatingDev(false);
+    await db.from('evento_devolucion_items').insert(devItems.map(i => ({ evento_devolucion_id: dev.id, producto_id: i.producto_id, cantidad: i.cantidad, notas: i.notas || null })));
+    show('Devolucion creada');
+    setDevItems([]); setCreatingDev(false);
     fetchDevoluciones();
   };
 
-  // CM: Confirmar devolución
   const confirmarDev = async (dev) => {
-    await db.from('evento_devoluciones').update({
-      estado: 'recibida',
-      recibido_por: user.id,
-      recibido_at: new Date().toISOString(),
-    }).eq('id', dev.id);
-    show('Devolución confirmada — inventario CM001 actualizado');
+    await db.from('evento_devoluciones').update({ estado: 'recibida', recibido_por: user.id, recibido_at: new Date().toISOString() }).eq('id', dev.id);
+    show('Devolucion confirmada');
     fetchDevoluciones();
   };
 
-  // Cerrar evento
   const cerrarEvento = async () => {
-    const { data, error } = await db.rpc('cerrar_evento', {
-      p_evento_id: evento.id,
-      p_usuario_id: user.id,
-      p_notas: notasCierre || null,
-    });
+    const { data, error } = await db.rpc('cerrar_evento', { p_evento_id: evento.id, p_usuario_id: user.id, p_notas: notasCierre || null });
     if (error) return show('Error: ' + error.message);
     if (data && !data.ok) return show(data.error);
-    show(`Evento cerrado — Total: ${fmt$(data.total_ventas)}`);
+    show('Evento cerrado — Total: ' + fmt$(data.total_ventas));
     onRefresh();
   };
 
-  // Aprobar evento
   const aprobarEvento = async () => {
-    const { data, error } = await db.rpc('aprobar_evento', {
-      p_evento_id: evento.id,
-      p_usuario_id: user.id,
-      p_notas: notasAprobacion || null,
-    });
+    const { data, error } = await db.rpc('aprobar_evento', { p_evento_id: evento.id, p_usuario_id: user.id, p_notas: notasAprobacion || null });
     if (error) return show('Error: ' + error.message);
     if (data && !data.ok) return show(data.error);
     show('Evento aprobado');
@@ -797,121 +654,120 @@ function TabCierre({ user, evento, show, onRefresh }) {
   const filteredDev = productos.filter(p => p.nombre.toLowerCase().includes(searchDev.toLowerCase()));
 
   return (
-    <div className="space-y-4 mt-4">
-      <h2 className="text-lg font-semibold">✅ Cierre: {evento.nombre}</h2>
+    <div>
+      <p className="sec-title">Cierre: {evento.nombre}</p>
 
-      {/* Resumen financiero */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Resumen de Ventas</CardTitle></CardHeader>
-        <CardContent className="p-3">
-          <div className="text-2xl font-bold text-green-600 mb-2">{fmt$(evento.estado === 'cerrado' || evento.estado === 'aprobado' ? evento.total_ventas : totalVentas)}</div>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {Object.entries(evento.estado === 'cerrado' || evento.estado === 'aprobado'
-              ? { efectivo: evento.total_efectivo, tarjeta: evento.total_tarjeta, transferencia: evento.total_transferencia, link_pago: evento.total_link_pago }
-              : porMetodo
-            ).map(([k, v]) => (
-              <div key={k} className="flex justify-between">
-                <span>{PAGO_ICONS[k]} {PAGO_LABELS[k]}</span>
-                <span className="font-medium">{fmt$(v)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="text-sm mt-2 text-gray-400">
-            Transacciones: {evento.estado === 'cerrado' || evento.estado === 'aprobado' ? evento.num_transacciones : ventas.length}
-            {evento.precio_pactado && <span className="ml-4">Precio pactado: {fmt$(evento.precio_pactado)}</span>}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Financial summary */}
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ textAlign: 'center', marginBottom: 12 }}>
+          <div style={{ color: '#34d399', fontSize: 32, fontWeight: 700 }}>{fmt$(totalVentas)}</div>
+          <div style={{ color: '#666', fontSize: 11, textTransform: 'uppercase' }}>Total ventas · {numTx} transacciones</div>
+          {evento.precio_pactado && <div style={{ color: '#aaa', fontSize: 12, marginTop: 4 }}>Precio pactado: {fmt$(evento.precio_pactado)}</div>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {Object.entries(porMetodo).map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: '#111', borderRadius: 8, border: '1px solid #222' }}>
+              <span style={{ color: '#aaa', fontSize: 13 }}>{PAGO_ICONS[k]} {PAGO_LABELS[k]}</span>
+              <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>{fmt$(v)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Devoluciones */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">↩️ Devoluciones a CM</CardTitle>
-            {(evento.estado === 'activo' || evento.estado === 'cerrado') && (
-              <Button size="sm" variant="outline" onClick={() => setCreatingDev(!creatingDev)}>
-                {creatingDev ? 'Cancelar' : '+ Devolución'}
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="p-3 space-y-2">
-          {creatingDev && (
-            <div className="border rounded p-3 space-y-2 bg-gray-800">
-              <Input placeholder="Buscar producto..." value={searchDev} onChange={e => setSearchDev(e.target.value)} />
-              <div className="max-h-32 overflow-y-auto space-y-1">
-                {filteredDev.slice(0, 15).map(p => (
-                  <div key={p.id} className="flex items-center justify-between text-sm p-1">
-                    <span>{p.nombre} ({p.unidad_medida})</span>
-                    <Button size="sm" variant="ghost" onClick={() => addDevItem(p)}>+</Button>
-                  </div>
-                ))}
-              </div>
-              {devItems.length > 0 && (
-                <div className="space-y-1 border-t pt-2">
-                  {devItems.map((it, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-sm">
-                      <span className="flex-1">{it.nombre}</span>
-                      <Input type="number" step="0.1" className="w-16" value={it.cantidad}
-                        onChange={e => { const u = [...devItems]; u[idx].cantidad = n(e.target.value); setDevItems(u); }} />
-                      <Button size="sm" variant="ghost" className="text-red-500" onClick={() => setDevItems(devItems.filter((_, i) => i !== idx))}>✕</Button>
-                    </div>
-                  ))}
-                  <Button size="sm" className="w-full" onClick={crearDevolucion}>Enviar Devolución</Button>
-                </div>
-              )}
-            </div>
+      <div className="card" style={{ padding: 14, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <p style={{ color: '#aaa', fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>↩️ Devoluciones a CM</p>
+          {(evento.estado === 'activo' || evento.estado === 'cerrado') && (
+            <button className="btn btn-sm btn-ghost" onClick={() => setCreatingDev(!creatingDev)}>{creatingDev ? 'Cancelar' : '+ Devolucion'}</button>
           )}
+        </div>
 
-          {devoluciones.map(dev => (
-            <div key={dev.id} className="p-2 bg-gray-800 rounded border text-sm">
-              <div className="flex items-center justify-between">
-                <Badge className={ESTADO_COLOR[dev.estado] || 'bg-gray-100'}>{dev.estado}</Badge>
-                {dev.estado === 'pendiente' && (isCM(user.rol) || isAdmin(user.rol)) && (
-                  <Button size="sm" variant="outline" onClick={() => confirmarDev(dev)}>📥 Confirmar</Button>
-                )}
-              </div>
-              {dev.items?.map(it => (
-                <div key={it.id} className="text-xs text-gray-400 mt-1">
-                  {it.producto?.nombre}: {it.cantidad} {it.producto?.unidad_medida}
+        {creatingDev && (
+          <div style={{ background: '#111', borderRadius: 10, padding: 12, border: '1px solid #333', marginBottom: 12 }}>
+            <input style={{ ...inputStyle, marginBottom: 8 }} placeholder="Buscar producto..." value={searchDev} onChange={e => setSearchDev(e.target.value)} />
+            <div style={{ maxHeight: 140, overflowY: 'auto' }}>
+              {filteredDev.slice(0, 15).map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 2px', borderBottom: '1px solid #1a1a1a' }}>
+                  <span style={{ color: '#ccc', fontSize: 12 }}>{p.nombre} ({p.unidad_medida})</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => addDevItem(p)}>+</button>
                 </div>
               ))}
             </div>
-          ))}
-          {devoluciones.length === 0 && !creatingDev && <p className="text-xs text-gray-400 text-center">Sin devoluciones</p>}
-        </CardContent>
-      </Card>
+            {devItems.length > 0 && (
+              <div style={{ borderTop: '1px solid #333', paddingTop: 10, marginTop: 8 }}>
+                {devItems.map((it, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <span style={{ color: '#fff', fontSize: 13, flex: 1 }}>{it.nombre}</span>
+                    <button style={{ ...stepBtn, width: 36, height: 36 }} onClick={() => updateDevQty(idx, -1)}>-</button>
+                    <input style={{ ...inputStyle, width: 56, textAlign: 'center', padding: '4px' }} type="number" step="0.5" value={it.cantidad}
+                      onChange={e => { const u = [...devItems]; u[idx].cantidad = n(e.target.value); setDevItems(u); }} />
+                    <button style={{ ...stepBtn, width: 36, height: 36 }} onClick={() => updateDevQty(idx, 1)}>+</button>
+                    <button style={{ ...stepBtn, width: 36, height: 36, color: '#f87171', fontSize: 16 }} onClick={() => setDevItems(devItems.filter((_, i) => i !== idx))}>✕</button>
+                  </div>
+                ))}
+                <button className="btn btn-orange" style={{ width: '100%', marginTop: 8 }} onClick={crearDevolucion}>↩️ Enviar Devolucion</button>
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* Acciones de cierre/aprobación */}
+        {devoluciones.map(dev => (
+          <div key={dev.id} style={{ padding: 10, background: '#111', borderRadius: 8, border: '1px solid #222', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={badgeStyle(dev.estado)}>{dev.estado}</span>
+                <span style={{ color: '#666', fontSize: 11 }}>{dev.devolvedor?.nombre || '—'}</span>
+              </div>
+              {dev.estado === 'pendiente' && (isCM(user.rol) || isAdmin(user.rol)) && (
+                <button className="btn btn-sm btn-green" onClick={() => confirmarDev(dev)}>📥 Confirmar</button>
+              )}
+            </div>
+            {dev.items?.map(it => (
+              <div key={it.id} style={{ color: '#888', fontSize: 12, paddingLeft: 4 }}>
+                {it.producto?.nombre}: {it.cantidad} {it.producto?.unidad_medida}
+              </div>
+            ))}
+          </div>
+        ))}
+        {devoluciones.length === 0 && !creatingDev && <p style={{ color: '#555', textAlign: 'center', fontSize: 12 }}>Sin devoluciones</p>}
+      </div>
+
+      {/* Close event */}
       {evento.estado === 'activo' && (
-        <Card className="border-2 border-orange-300">
-          <CardContent className="p-4 space-y-3">
-            <p className="font-semibold text-sm">Cerrar Evento</p>
-            <Input placeholder="Notas de cierre (opcional)" value={notasCierre} onChange={e => setNotasCierre(e.target.value)} />
-            <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white" onClick={cerrarEvento}>
-              🔒 Cerrar Evento
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="card" style={{ padding: 16, border: '2px solid #f59e0b', marginBottom: 16 }}>
+          <p style={{ color: '#fff', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>🔒 Cerrar Evento</p>
+          <p style={{ color: '#888', fontSize: 12, marginBottom: 10 }}>Esto congela las ventas y genera el resumen financiero.</p>
+          <input style={{ ...inputStyle, marginBottom: 10 }} placeholder="Notas de cierre (opcional)" value={notasCierre} onChange={e => setNotasCierre(e.target.value)} />
+          <button className="btn btn-orange" style={{ width: '100%' }} onClick={cerrarEvento}>🔒 Cerrar Evento</button>
+        </div>
       )}
 
+      {/* Approve event */}
       {evento.estado === 'cerrado' && isAdmin(user.rol) && (
-        <Card className="border-2 border-purple-300">
-          <CardContent className="p-4 space-y-3">
-            <p className="font-semibold text-sm">Aprobar Evento</p>
-            <Input placeholder="Notas de aprobación (opcional)" value={notasAprobacion} onChange={e => setNotasAprobacion(e.target.value)} />
-            <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white" onClick={aprobarEvento}>
-              ✅ Aprobar Evento
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="card" style={{ padding: 16, border: '2px solid #8b5cf6', marginBottom: 16 }}>
+          <p style={{ color: '#fff', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>✅ Aprobar Evento</p>
+          <p style={{ color: '#888', fontSize: 12, marginBottom: 10 }}>Solo ejecutivos/admin. Confirma que los numeros estan correctos.</p>
+          <input style={{ ...inputStyle, marginBottom: 10 }} placeholder="Notas de aprobacion (opcional)" value={notasAprobacion} onChange={e => setNotasAprobacion(e.target.value)} />
+          <button className="btn btn-red" style={{ width: '100%' }} onClick={aprobarEvento}>✅ Aprobar Evento</button>
+        </div>
       )}
 
+      {/* Approved status */}
       {evento.estado === 'aprobado' && (
-        <div className="text-center py-4">
-          <span className="text-lg">✅</span>
-          <p className="text-green-600 font-medium">Evento aprobado por {evento.aprobador?.nombre || '—'}</p>
-          <p className="text-xs text-gray-400">{evento.aprobado_at && new Date(evento.aprobado_at).toLocaleString('es-SV')}</p>
+        <div style={{ textAlign: 'center', padding: 24 }}>
+          <div style={{ fontSize: 32, marginBottom: 4 }}>✅</div>
+          <p style={{ color: '#34d399', fontWeight: 600, fontSize: 15 }}>Evento aprobado por {evento.aprobador?.nombre || '—'}</p>
+          {evento.aprobado_at && <p style={{ color: '#666', fontSize: 12 }}>{new Date(evento.aprobado_at).toLocaleString('es-SV')}</p>}
+          {evento.notas_aprobacion && <p style={{ color: '#888', fontSize: 12, marginTop: 4 }}>"{evento.notas_aprobacion}"</p>}
+        </div>
+      )}
+
+      {/* Closed info */}
+      {evento.estado === 'cerrado' && evento.cerrador && (
+        <div style={{ textAlign: 'center', padding: 12, marginBottom: 8 }}>
+          <p style={{ color: '#60a5fa', fontSize: 13 }}>Cerrado por {evento.cerrador?.nombre || '—'} {evento.cerrado_at && <span style={{ color: '#666' }}>({new Date(evento.cerrado_at).toLocaleString('es-SV')})</span>}</p>
+          {evento.notas_cierre && <p style={{ color: '#888', fontSize: 12, marginTop: 2 }}>"{evento.notas_cierre}"</p>}
         </div>
       )}
     </div>
