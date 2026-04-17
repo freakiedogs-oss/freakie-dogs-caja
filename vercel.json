@@ -2,9 +2,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/sb/:path*", "destination": "/api/supaproxy?_p=:path*" },
-    { "source": "/pos/:path*", "destination": "/pos.html" },
+    { "source": "/sb/(.*)", "destination": "/api/supaproxy?_p=$1" },
+    { "source": "/sb", "destination": "/api/supaproxy" },
+    { "source": "/pos/(.*)", "destination": "/pos.html" },
     { "source": "/pos", "destination": "/pos.html" },
-    { "source": "/:path((?!api/|sb/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|sb/|sb$).*)", "destination": "/index.html" }
   ]
 }

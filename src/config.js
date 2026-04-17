@@ -1,4 +1,4 @@
-export const APP_VERSION = 'v2.2.3 · 17-Abr-2026 (proxy /sb)'
+export const APP_VERSION = 'v2.2.4 · 17-Abr-2026 (proxy /sb regex)'
 
 export const STORES = {
   M001: 'Cafetalón',
