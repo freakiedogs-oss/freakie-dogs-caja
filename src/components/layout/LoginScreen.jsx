@@ -24,8 +24,10 @@ export default function LoginScreen({ onLogin }) {
   const [online, setOnline] = useState(navigator.onLine);
   const [healthOk, setHealthOk] = useState(null); // null=checking, true=ok, false=fail
   const [healthErr, setHealthErr] = useState(''); // mensaje de error detallado
-  const [rawFetchOk, setRawFetchOk] = useState(null); // fetch RAW a supabase (sin SDK)
+  const [rawFetchOk, setRawFetchOk] = useState(null); // fetch directo a supabase.co
   const [rawFetchDetails, setRawFetchDetails] = useState('');
+  const [proxyFetchOk, setProxyFetchOk] = useState(null); // fetch via /api/sb proxy
+  const [proxyFetchDetails, setProxyFetchDetails] = useState('');
   const [showDiag, setShowDiag] = useState(false);
   const debounceRef = useRef(null);
   const abortRef = useRef(null);
@@ -63,14 +65,13 @@ export default function LoginScreen({ onLogin }) {
         setHealthErr(`EXC: ${e?.message || String(e)}`);
       }
 
-      // 2. Fetch RAW al endpoint REST (sin el SDK) para aislar si es red/CORS/SDK
+      // 2. Fetch DIRECTO a supabase.co (sin proxy) — si esto falla confirma bloqueo DNS
+      const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjcyMzQsImV4cCI6MjA4OTU0MzIzNH0.NpBQZgxbajgOVvw3FOwIUiOkgmh7rEuPQMRi0ZcFKe4';
       try {
-        const SUPA_URL = 'https://btboxlwfqcbrdfrlnwln.supabase.co';
-        // Anon key pública (misma que expone el SDK). Sólo se usa para el health check.
-        const ANON = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
-        const r = await fetch(`${SUPA_URL}/rest/v1/usuarios_erp?select=id&limit=1`, {
-          headers: ANON ? { apikey: ANON, Authorization: `Bearer ${ANON}` } : {},
-        });
+        const r = await fetch(
+          'https://btboxlwfqcbrdfrlnwln.supabase.co/rest/v1/usuarios_erp?select=id&limit=1',
+          { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } }
+        );
         if (cancelled) return;
         if (r.ok) {
           setRawFetchOk(true);
@@ -78,12 +79,33 @@ export default function LoginScreen({ onLogin }) {
         } else {
           setRawFetchOk(false);
           const txt = await r.text().catch(() => '');
-          setRawFetchDetails(`${r.status} ${r.statusText} ${txt.slice(0, 120)}`);
+          setRawFetchDetails(`${r.status} ${r.statusText} ${txt.slice(0, 80)}`);
         }
       } catch (e) {
         if (cancelled) return;
         setRawFetchOk(false);
-        setRawFetchDetails(`FETCH FAIL: ${e?.message || String(e)}`);
+        setRawFetchDetails(`FAIL: ${e?.message || String(e)}`);
+      }
+
+      // 3. Fetch vía PROXY /api/sb — debería funcionar aunque el directo falle
+      try {
+        const r = await fetch(
+          `${window.location.origin}/api/sb/rest/v1/usuarios_erp?select=id&limit=1`,
+          { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } }
+        );
+        if (cancelled) return;
+        if (r.ok) {
+          setProxyFetchOk(true);
+          setProxyFetchDetails(`${r.status} OK`);
+        } else {
+          setProxyFetchOk(false);
+          const txt = await r.text().catch(() => '');
+          setProxyFetchDetails(`${r.status} ${r.statusText} ${txt.slice(0, 80)}`);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setProxyFetchOk(false);
+        setProxyFetchDetails(`FAIL: ${e?.message || String(e)}`);
       }
     })();
     return () => { cancelled = true; };
@@ -469,10 +491,16 @@ export default function LoginScreen({ onLogin }) {
               → {healthErr}
             </div>
           )}
-          <div><b>Fetch RAW:</b> {rawFetchOk === null ? '⏳' : rawFetchOk ? 'OK ✅' : 'FAIL ❌'}</div>
+          <div><b>Fetch DIRECTO:</b> {rawFetchOk === null ? '⏳' : rawFetchOk ? 'OK ✅' : 'FAIL ❌'}</div>
           {rawFetchDetails && (
             <div style={{ color: '#fca5a5', fontSize: 10, marginLeft: 8, wordBreak: 'break-all' }}>
               → {rawFetchDetails}
+            </div>
+          )}
+          <div><b>Fetch PROXY:</b> {proxyFetchOk === null ? '⏳' : proxyFetchOk ? 'OK ✅' : 'FAIL ❌'}</div>
+          {proxyFetchDetails && (
+            <div style={{ color: proxyFetchOk ? '#86efac' : '#fca5a5', fontSize: 10, marginLeft: 8, wordBreak: 'break-all' }}>
+              → {proxyFetchDetails}
             </div>
           )}
           <div style={{ marginTop: 4 }}><b>User Agent:</b></div>
