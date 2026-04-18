@@ -122,7 +122,7 @@ async function fetchAll(table, select, filter) {
 
 // ── Process raw data into P&L structure ──
 // Uses CATNAME_TO_PL + GRUPO_TO_PL (same as FinanzasDashboard) for correct classification
-function buildPnL(ventas, gastos, conIva) {
+function buildPnL(ventas, gastos, conIva, planillaBySuc) {
   const ventasPorSuc = {}
   ;(ventas || []).forEach(v => {
     if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
@@ -135,6 +135,19 @@ function buildPnL(ventas, gastos, conIva) {
   const gastosPorCat = {}    // For category breakdown tab
   const gastosPorSucCat = {} // For category breakdown per branch
   const catToGrupo = {}      // Display mapping
+
+  // FIX 17-Abr-2026: sumar planilla real por sucursal desde v_planilla_por_sucursal
+  // Empleados sin sucursal → store_code NULL → se atribuyen a CORP y se prorratean por peso de ventas
+  ;(planillaBySuc || []).forEach(p => {
+    const suc = p.store_code || 'CORP'
+    if (!plPorSuc[suc]) plPorSuc[suc] = initPL()
+    plPorSuc[suc].planilla += n(p.monto) || 0
+    const catName = 'Gasto Planilla'
+    gastosPorCat[catName] = (gastosPorCat[catName] || 0) + (n(p.monto) || 0)
+    if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
+    gastosPorSucCat[suc][catName] = (gastosPorSucCat[suc][catName] || 0) + (n(p.monto) || 0)
+    catToGrupo[catName] = 'Planilla'
+  })
 
   ;(gastos || []).forEach(g => {
     const suc = g.store_code || 'CORP'
@@ -201,13 +214,15 @@ function buildPnL(ventas, gastos, conIva) {
 // ── Fetch period data ──
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
-  const [ventasRes, gastos] = await Promise.all([
+  const [ventasRes, gastos, planillaRes] = await Promise.all([
     db.from('v_ventas_unificadas').select('store_code, total_ventas_quanto, fecha, fuente').gte('fecha', desde).lt('fecha', hasta),
     fetchAll('v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
-      q => q.gte('fecha', desde).lt('fecha', hasta))
+      q => q.gte('fecha', desde).lt('fecha', hasta)),
+    // FIX 17-Abr-2026: leer planilla por sucursal desde vista nueva (gasto empresa = devengado + patronales)
+    db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta)
   ])
-  return buildPnL(ventasRes.data, gastos, conIva)
+  return buildPnL(ventasRes.data, gastos, conIva, planillaRes.data)
 }
 
 // ═══════════════════════════════════════════
