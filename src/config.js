@@ -1,3 +1,5 @@
+export const APP_VERSION = 'v2.2.5 · 18-Abr-2026 (recovery dashboard + rentabilidad + login)'
+
 export const STORES = {
   M001: 'Cafetalón',
   S001: 'Soyapango',
