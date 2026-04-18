@@ -18,6 +18,7 @@ import StockLevelsView from './components/almacen/StockLevelsView'
 import InventarioFisico from './components/almacen/InventarioFisico'
 import ComprasTab from './components/almacen/ComprasTab'
 import KardexView from './components/almacen/KardexView'
+import RecepcionBeesView from './components/almacen/RecepcionBeesView'
 import RecetasView from './components/admin/RecetasView'
 import PlanillaView from './components/admin/PlanillaView'
 import RRHHView from './components/admin/RRHHView'
@@ -233,6 +234,8 @@ export default function App() {
         return <InventarioFisico user={user} onBack={() => setScreen('home')} />
       case 'kardex':
         return <KardexView user={user} show={show} />
+      case 'recepcion-bees':
+        return <RecepcionBeesView user={user} show={show} />
 
       // Supply Chain
       case 'conteo':

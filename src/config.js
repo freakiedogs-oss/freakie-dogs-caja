@@ -1,5 +1,3 @@
-export const APP_VERSION = 'v2.2.4 · 17-Abr-2026 (proxy /sb regex)'
-
 export const STORES = {
   M001: 'Cafetalón',
   S001: 'Soyapango',
@@ -75,6 +73,7 @@ export const NAV_SECTIONS = [
       { key: 'stock-levels', label: 'Stock Mín/Máx', icon: '📊', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
       { key: 'inventario-fisico', label: 'Inventario Físico', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
       { key: 'kardex', label: 'Kardex', icon: '📒', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
+      { key: 'recepcion-bees', label: 'Recepción BEES', icon: '🥤', roles: ['gerente', 'cajero', 'cajera', 'cocina', 'jefe_casa_matriz', 'admin', 'ejecutivo'] },
     ],
   },
   {
