@@ -1,0 +1,102 @@
+name: Anti-Regression Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect suspicious diff
+        run: |
+          # Umbrales
+          MAX_NET_DELETIONS=100
+          MAX_FILES_CHANGED=15
+          CRITICAL_FILES=("src/App.jsx" "src/config.js" "src/supabase.js" "vercel.json" "api/supaproxy.js" "src/components/finanzas/FinanzasDashboard.jsx" "src/components/admin/RentabilidadView.jsx" "src/components/layout/LoginScreen.jsx")
+
+          # Comparar HEAD vs HEAD~1 (para push) o base ref (para PR)
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="HEAD~1"
+          fi
+
+          echo "Comparing $BASE..HEAD"
+          STATS=$(git diff --shortstat "$BASE"..HEAD || echo "")
+          echo "Stats: $STATS"
+
+          INSERTIONS=$(echo "$STATS" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+          DELETIONS=$(echo "$STATS" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+          FILES_CHANGED=$(echo "$STATS" | grep -oE '[0-9]+ file' | grep -oE '[0-9]+' || echo "0")
+
+          NET_DELETIONS=$((DELETIONS - INSERTIONS))
+          echo "Files: $FILES_CHANGED | +$INSERTIONS / -$DELETIONS | Net deletions: $NET_DELETIONS"
+
+          FAIL=0
+          WARNINGS=""
+
+          # Check 1: Net deletions >100 líneas
+          if [ "$NET_DELETIONS" -gt "$MAX_NET_DELETIONS" ]; then
+            WARNINGS+="⚠️  Net deletions ($NET_DELETIONS) > umbral ($MAX_NET_DELETIONS). Posible regresión stale-workspace.\n"
+            FAIL=1
+          fi
+
+          # Check 2: Demasiados archivos modificados
+          if [ "$FILES_CHANGED" -gt "$MAX_FILES_CHANGED" ]; then
+            WARNINGS+="⚠️  $FILES_CHANGED archivos modificados (> $MAX_FILES_CHANGED). Revisar si es intencional.\n"
+            FAIL=1
+          fi
+
+          # Check 3: Archivos críticos con net deletion masiva (>50 líneas por archivo)
+          for FILE in "${CRITICAL_FILES[@]}"; do
+            if git diff --numstat "$BASE"..HEAD -- "$FILE" 2>/dev/null | grep -q .; then
+              STATS_FILE=$(git diff --numstat "$BASE"..HEAD -- "$FILE")
+              ADDED=$(echo "$STATS_FILE" | awk '{print $1}')
+              REMOVED=$(echo "$STATS_FILE" | awk '{print $2}')
+              if [ "$REMOVED" != "-" ] && [ "$ADDED" != "-" ]; then
+                NET_FILE=$((REMOVED - ADDED))
+                if [ "$NET_FILE" -gt 50 ]; then
+                  WARNINGS+="🚨 Archivo crítico '$FILE' perdió $NET_FILE líneas netas (+$ADDED / -$REMOVED). Verificar que no sea regresión stale.\n"
+                  FAIL=1
+                fi
+              fi
+            fi
+          done
+
+          # Check 4: vercel-deploy/ resucitado
+          if git diff --name-only "$BASE"..HEAD | grep -q "^vercel-deploy/"; then
+            WARNINGS+="🚨 Se detectaron cambios en vercel-deploy/ (directorio prohibido post-19-Abr-2026). Eliminar.\n"
+            FAIL=1
+          fi
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo ""
+            echo "======================================"
+            echo "❌ ANTI-REGRESSION CHECK FALLÓ"
+            echo "======================================"
+            echo -e "$WARNINGS"
+            echo ""
+            echo "Si este commit es legítimo (refactor grande, borrado intencional, etc.),"
+            echo "incluí la etiqueta [skip-antiregression] en el mensaje del commit O"
+            echo "pedí a un admin que haga override manual."
+            echo ""
+
+            # Permitir override vía commit message tag
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            if echo "$COMMIT_MSG" | grep -qF "[skip-antiregression]"; then
+              echo "✅ Override detectado en commit message: [skip-antiregression]. Continuando."
+              exit 0
+            fi
+
+            exit 1
+          fi
+
+          echo "✅ Anti-regression check OK."
