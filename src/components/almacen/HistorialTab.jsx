@@ -20,6 +20,8 @@ export default function HistorialTab({user,show}){
   const [showPendientes,setShowPendientes]=useState(false);
   const [loadingPend,setLoadingPend]=useState(false);
   const [pendCount,setPendCount]=useState(0);
+  const [pendItems,setPendItems]=useState({}); // {recepcion_id:[items]}
+  const [expPendId,setExpPendId]=useState(null); // DTE id expandido
   // Recepciones huérfanas (sin DTE en compras)
   const [huerfanas,setHuerfanas]=useState([]);
   const [showHuerfanas,setShowHuerfanas]=useState(false);
@@ -50,7 +52,26 @@ export default function HistorialTab({user,show}){
       .eq('revision_manual',true).eq('cruzado',false)
       .order('fecha_emision',{ascending:false});
     setPendientes(data||[]);
+    // Batch cargar items de TODAS las recepciones candidatas
+    const recIds=[...new Set((data||[]).map(d=>d.recepcion_candidata_id).filter(Boolean))];
+    if(recIds.length>0){
+      const {data:itms}=await db.from('recepcion_items').select('*').in('recepcion_id',recIds);
+      const byRec={};
+      (itms||[]).forEach(it=>{(byRec[it.recepcion_id]=byRec[it.recepcion_id]||[]).push(it);});
+      setPendItems(byRec);
+    }
     setLoadingPend(false);
+  };
+  // Extraer items del JSON DTE (cuerpoDocumento del DTE SV)
+  const dteItems=(dte)=>{
+    const cuerpo=dte?.json_original?.cuerpoDocumento;
+    if(!Array.isArray(cuerpo)) return [];
+    return cuerpo.map(it=>({
+      desc:it.descripcion||'(sin descripción)',
+      cant:Number(it.cantidad)||0,
+      precio:Number(it.precioUni)||0,
+      subtotal:Number(it.ventaGravada)||0
+    }));
   };
   const aprobarCruce=async(dte)=>{
     setSaving(true);
@@ -184,23 +205,90 @@ export default function HistorialTab({user,show}){
           {loadingPend&&<div className="spin" style={{width:24,height:24,margin:'12px auto'}}/>}
           {!loadingPend&&pendientes.map(dte=>{
             const cand=dte.recepcion_candidata;
+            const dItems=dteItems(dte);
+            const rItems=cand?(pendItems[cand.id]||[]):[];
+            const totDteCant=dItems.reduce((s,x)=>s+x.cant,0);
+            const totRecCant=rItems.reduce((s,x)=>s+(Number(x.cantidad_recibida)||0),0);
+            const totRecMonto=rItems.reduce((s,x)=>s+((Number(x.cantidad_recibida)||0)*(Number(x.precio_unitario)||0)),0);
+            const expanded=expPendId===dte.id;
             return(
               <div key={dte.id} className="card" style={{padding:'12px 14px',borderLeft:'3px solid #f4a261',marginBottom:8}}>
-                <div style={{fontSize:11,color:'#888',marginBottom:4}}>DTE del correo</div>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:600}}>{dte.proveedor_nombre||'Proveedor'}</div>
-                    <div style={{fontSize:11,color:'#666'}}>{fmtDate(dte.fecha_emision)} · DTE ****{dte.dte_codigo}</div>
-                    {dte.monto_total&&<div style={{fontSize:12,color:'#4ade80',marginTop:2}}>${Number(dte.monto_total).toFixed(2)}</div>}
+                {/* Resumen header */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:11,color:'#888',marginBottom:2}}>📧 DTE del correo</div>
+                    <div style={{fontSize:13,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{dte.proveedor_nombre||'Proveedor'}</div>
+                    <div style={{fontSize:11,color:'#666'}}>{fmtDate(dte.fecha_emision)} · ****{dte.dte_codigo}</div>
+                    <div style={{fontSize:13,color:'#4ade80',fontWeight:600,marginTop:2}}>${Number(dte.monto_total||0).toFixed(2)} · {dItems.length} ítem{dItems.length!==1?'s':''} · {totDteCant.toFixed(0)} u</div>
                   </div>
+                  {cand&&(
+                    <div style={{flex:1,minWidth:0,background:'#1a1a1a',borderRadius:8,padding:'8px 10px'}}>
+                      <div style={{fontSize:11,color:'#888',marginBottom:2}}>📦 Recepción candidata</div>
+                      <div style={{fontSize:13,fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{cand.proveedor||'—'}</div>
+                      <div style={{fontSize:11,color:'#666'}}>{fmtDate(cand.fecha)}{cand.dte_codigo?' · ****'+cand.dte_codigo:' · sin código'}</div>
+                      <div style={{fontSize:13,color:'#4ade80',fontWeight:600,marginTop:2}}>${totRecMonto.toFixed(2)} · {rItems.length} ítem{rItems.length!==1?'s':''} · {totRecCant.toFixed(0)} u</div>
+                    </div>
+                  )}
                 </div>
+
+                {/* Diff rápido */}
                 {cand&&(
-                  <div style={{background:'#1a1a1a',borderRadius:8,padding:'8px 10px',marginTop:8}}>
-                    <div style={{fontSize:11,color:'#888',marginBottom:2}}>Recepción candidata</div>
-                    <div style={{fontSize:13,fontWeight:500}}>{cand.proveedor||'—'}</div>
-                    <div style={{fontSize:11,color:'#666'}}>{fmtDate(cand.fecha)}{cand.dte_codigo?' · DTE ****'+cand.dte_codigo:' · Sin DTE'}</div>
+                  <div style={{display:'flex',gap:8,marginTop:8,fontSize:11}}>
+                    <div style={{flex:1,padding:'4px 8px',borderRadius:6,background:Math.abs(Number(dte.monto_total||0)-totRecMonto)<0.5?'#0a3d0a':'#3d2200',color:Math.abs(Number(dte.monto_total||0)-totRecMonto)<0.5?'#4ade80':'#f4a261'}}>
+                      Δ Monto: ${(Number(dte.monto_total||0)-totRecMonto).toFixed(2)}
+                    </div>
+                    <div style={{flex:1,padding:'4px 8px',borderRadius:6,background:totDteCant===totRecCant?'#0a3d0a':'#3d2200',color:totDteCant===totRecCant?'#4ade80':'#f4a261'}}>
+                      Δ Cantidad: {(totDteCant-totRecCant).toFixed(0)} u
+                    </div>
                   </div>
                 )}
+
+                {/* Toggle ver ítems */}
+                <button className="btn" style={{width:'100%',fontSize:12,padding:'6px',marginTop:8,background:'transparent',border:'1px solid #333',color:'#888'}}
+                  onClick={()=>setExpPendId(expanded?null:dte.id)}>
+                  {expanded?'▲ Ocultar ítems':`▼ Comparar ítems (DTE: ${dItems.length} · Rec: ${rItems.length})`}
+                </button>
+
+                {/* Comparación de ítems side-by-side */}
+                {expanded&&(
+                  <div style={{marginTop:10,borderTop:'1px solid #2a2a2a',paddingTop:10}}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      {/* Columna DTE */}
+                      <div>
+                        <div style={{fontSize:11,color:'#f4a261',fontWeight:700,marginBottom:6,textAlign:'center',background:'#2a1800',padding:'4px',borderRadius:4}}>📧 DTE ({dItems.length})</div>
+                        {dItems.length===0&&<div style={{fontSize:11,color:'#555',textAlign:'center'}}>Sin ítems</div>}
+                        {dItems.map((it,i)=>(
+                          <div key={i} style={{padding:'6px 0',borderBottom:'1px solid #1a1a1a',fontSize:11}}>
+                            <div style={{color:'#fff',marginBottom:2,wordBreak:'break-word'}}>{it.desc.length>60?it.desc.slice(0,60)+'…':it.desc}</div>
+                            <div style={{display:'flex',justifyContent:'space-between',color:'#888'}}>
+                              <span>{it.cant.toFixed(2)} × ${it.precio.toFixed(2)}</span>
+                              <span style={{color:'#4ade80',fontWeight:600}}>${it.subtotal.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Columna Recepción */}
+                      <div>
+                        <div style={{fontSize:11,color:'#4ade80',fontWeight:700,marginBottom:6,textAlign:'center',background:'#0a2a0a',padding:'4px',borderRadius:4}}>📦 Recepción ({rItems.length})</div>
+                        {rItems.length===0&&<div style={{fontSize:11,color:'#555',textAlign:'center'}}>Sin ítems</div>}
+                        {rItems.map((it,i)=>{
+                          const cant=Number(it.cantidad_recibida)||0;
+                          const precio=Number(it.precio_unitario)||0;
+                          return(
+                            <div key={it.id||i} style={{padding:'6px 0',borderBottom:'1px solid #1a1a1a',fontSize:11}}>
+                              <div style={{color:'#fff',marginBottom:2,wordBreak:'break-word'}}>{(it.descripcion||'(sin desc)').length>60?(it.descripcion||'').slice(0,60)+'…':(it.descripcion||'(sin desc)')}</div>
+                              <div style={{display:'flex',justifyContent:'space-between',color:'#888'}}>
+                                <span>{cant.toFixed(2)}{it.unidad?' '+it.unidad:''} × ${precio.toFixed(2)}</span>
+                                <span style={{color:'#4ade80',fontWeight:600}}>${(cant*precio).toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{display:'flex',gap:8,marginTop:10}}>
                   <button className="btn btn-green" style={{flex:1,fontSize:13,padding:'10px'}} onClick={()=>aprobarCruce(dte)} disabled={saving}>
                     ✅ Sí, es el mismo
