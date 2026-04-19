@@ -110,6 +110,7 @@ export default function DevOpsTab() {
   const [serfinsaKPI, setSerfinsaKPI] = useState({ status: 'loading', summary: '', detail: '', spark: [] });
   const [cierresKPI, setCierresKPI] = useState({ status: 'loading', summary: '', detail: '', spark: [] });
   const [edgeFnKPI, setEdgeFnKPI] = useState({ status: 'loading', summary: '', detail: '', spark: [] });
+  const [coberturaKPI, setCoberturaKPI] = useState({ status: 'loading', summary: '', detail: '', spark: [] });
 
   // ── Refresh all ──
   const refresh = useCallback(async () => {
@@ -120,6 +121,7 @@ export default function DevOpsTab() {
       checkSerfinsa(),
       checkCierres(),
       checkEdgeFunctions(),
+      checkCobertura(),
     ]);
     setLastRefresh(new Date().toLocaleTimeString('es-SV'));
     setLoading(false);
@@ -152,6 +154,14 @@ export default function DevOpsTab() {
   }, [loadLog, refresh]);
 
   useEffect(() => { refresh(); loadLog(); }, [refresh, loadLog]);
+
+  // Auto-refresh cada 5 min (solo si la pestaña está visible)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 300000); // 5 min
+    return () => clearInterval(interval);
+  }, [refresh]);
 
   // ══════════════════════════════════════════
   // 1. DTEs Pipeline (compras table)
@@ -494,9 +504,49 @@ export default function DevOpsTab() {
   }
 
   // ══════════════════════════════════════════
+  // 6. Cobertura cruce DTE ↔ Recepción (últimos 30 días)
+  // Umbrales: verde ≥95%, amarillo 85-94%, rojo <85%
+  // ══════════════════════════════════════════
+  async function checkCobertura() {
+    try {
+      const { data, error } = await db
+        .from('v_cobertura_cruce')
+        .select('*')
+        .single();
+
+      if (error) throw new Error(error.message);
+      if (!data) throw new Error('Sin datos en v_cobertura_cruce');
+
+      const pctDte = parseFloat(data.pct_dtes_con_recepcion) || 0;
+      const pctRec = parseFloat(data.pct_recepciones_con_dte) || 0;
+      const worst = Math.min(pctDte, pctRec);
+
+      let status = 'ok';
+      if (worst < 85) status = 'error';
+      else if (worst < 95) status = 'warning';
+
+      const summary = `${pctDte.toFixed(1)}% DTEs · ${pctRec.toFixed(1)}% Recepciones`;
+      const detail = [
+        `Ventana: últimos 30 días`,
+        `Total DTEs: ${data.total_dtes_30d} (${data.dtes_huerfanos} huérfanos sin recepción)`,
+        `Total Recepciones: ${data.total_recepciones_30d} (${data.recepciones_huerfanas} huérfanas sin DTE)`,
+        ``,
+        `% DTEs con recepción: ${pctDte.toFixed(2)}%`,
+        `% Recepciones con DTE: ${pctRec.toFixed(2)}%`,
+        ``,
+        `Umbrales: 🟢 ≥95%  🟡 85-94%  🔴 <85%`,
+      ].join('\n');
+
+      setCoberturaKPI({ status, summary, detail, spark: [] });
+    } catch (err) {
+      setCoberturaKPI({ status: 'error', summary: `Error: ${err.message}`, detail: '', spark: [] });
+    }
+  }
+
+  // ══════════════════════════════════════════
   // Summary bar
   // ══════════════════════════════════════════
-  const allKPIs = [dteKPI, posKPI, serfinsaKPI, cierresKPI, edgeFnKPI];
+  const allKPIs = [dteKPI, posKPI, serfinsaKPI, cierresKPI, edgeFnKPI, coberturaKPI];
   const errCount = allKPIs.filter(k => k.status === 'error').length;
   const warnCount = allKPIs.filter(k => k.status === 'warning').length;
   const okCount = allKPIs.filter(k => k.status === 'ok').length;
@@ -586,6 +636,14 @@ export default function DevOpsTab() {
         status={edgeFnKPI.status}
         summary={edgeFnKPI.summary}
         detail={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{edgeFnKPI.detail}</pre>}
+      />
+
+      <KPICard
+        title="Cobertura cruce DTE ↔ Recepción"
+        icon="🔗"
+        status={coberturaKPI.status}
+        summary={coberturaKPI.summary}
+        detail={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{coberturaKPI.detail}</pre>}
       />
 
       {/* ══════════════════════════════════════ */}

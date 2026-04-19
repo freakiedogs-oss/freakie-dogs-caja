@@ -1,11 +1,12 @@
 {
+  "version": 2,
+  "name": "freakie-dogs-caja",
+  "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [
-    { "source": "/sb/(.*)", "destination": "/api/supaproxy?_p=$1" },
-    { "source": "/sb", "destination": "/api/supaproxy" },
-    { "source": "/pos/(.*)", "destination": "/pos.html" },
-    { "source": "/pos", "destination": "/pos.html" },
-    { "source": "/((?!api/|sb/|sb$).*)", "destination": "/index.html" }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/pos(/.*)?", "dest": "/pos.html" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

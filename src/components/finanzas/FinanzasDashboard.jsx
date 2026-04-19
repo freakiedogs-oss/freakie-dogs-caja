@@ -395,7 +395,7 @@ export default function FinanzasDashboard({ user }) {
         </div>
       ) : (
         <>
-          {tab === 'dashboard' && <TabDashboard months2026={months2026} ventasRaw={data2026?.ventas} />}
+          {tab === 'dashboard' && <TabDashboard months2026={months2026} />}
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
@@ -415,53 +415,11 @@ export default function FinanzasDashboard({ user }) {
 //  TAB 1: DASHBOARD GENERAL (KPIs + Tendencias)
 // ══════════════════════════════════════════════════════
 
-function TabDashboard({ months2026, ventasRaw }) {
+function TabDashboard({ months2026 }) {
   // Combine all months
   const allMonths = buildAllMonths(months2026)
   const latest = allMonths[allMonths.length - 1]
   const prev = allMonths.length > 1 ? allMonths[allMonths.length - 2] : null
-
-  // FIX 17-Abr-2026: toggle comparador para card de ventas por sucursal
-  const [comparador, setComparador] = useState('mes_anterior') // 'mes_anterior' | 'prom_3m' | 'prom_6m'
-
-  // Ventas por sucursal: mes actual hasta hoy + comparador
-  const ventasSucComp = useMemo(() => {
-    if (!ventasRaw || !ventasRaw.length) return null
-    const hoy = new Date(Date.now() - 6 * 3600 * 1000)
-    const y = hoy.getFullYear(), m = hoy.getMonth(), diaActual = hoy.getDate()
-    const mKey = (yr, mo) => `${yr}-${String(mo + 1).padStart(2, '0')}`
-    const currentKey = mKey(y, m)
-
-    // Agrupa ventas hasta `upToDay` de un mes específico
-    const sumMonthUpTo = (targetKey, upToDay) => {
-      const acc = {}
-      ventasRaw.forEach(v => {
-        if (!v.fecha || !v.fecha.startsWith(targetKey)) return
-        const dia = parseInt(v.fecha.slice(-2), 10)
-        if (dia > upToDay) return
-        const bruto = parseFloat(v.total_ventas_quanto) || ((parseFloat(v.efectivo_quanto) || 0) + (parseFloat(v.tarjeta_quanto) || 0) + (parseFloat(v.otros_quanto) || 0))
-        if (!v.store_code) return
-        acc[v.store_code] = (acc[v.store_code] || 0) + bruto
-      })
-      return acc
-    }
-
-    const actualBySuc = sumMonthUpTo(currentKey, diaActual)
-
-    const monthsBack = comparador === 'mes_anterior' ? 1 : comparador === 'prom_3m' ? 3 : 6
-    const pastSucs = []
-    for (let i = 1; i <= monthsBack; i++) {
-      const d = new Date(y, m - i, 1)
-      pastSucs.push(sumMonthUpTo(mKey(d.getFullYear(), d.getMonth()), diaActual))
-    }
-    // Promedio de los meses pasados
-    const compBySuc = {}
-    const allStores = new Set([...Object.keys(actualBySuc), ...pastSucs.flatMap(p => Object.keys(p))])
-    allStores.forEach(sc => {
-      compBySuc[sc] = pastSucs.reduce((s, p) => s + (p[sc] || 0), 0) / monthsBack
-    })
-    return { actualBySuc, compBySuc, diaActual, currentKey }
-  }, [ventasRaw, comparador])
 
   // YTD totals
   const ytd2025 = { ventas: sum(HIST_PL.ventas), ebitda: sum(HIST_PL.ventas.map((v, i) => v - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gastos_logisticos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i])) }
@@ -543,70 +501,24 @@ function TabDashboard({ months2026, ventasRaw }) {
         </div>
       </div>
 
-      {/* Sales by sucursal - bar chart con comparador toggle */}
+      {/* Sales by sucursal - bar chart simplified */}
       <div style={sCard}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-          <div style={sH}>Ventas por Sucursal (Mes Actual al Día de Hoy vs Comparador)</div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {[
-              { k: 'mes_anterior', l: 'Mes Anterior' },
-              { k: 'prom_3m', l: 'Prom 3M' },
-              { k: 'prom_6m', l: 'Prom 6M' },
-            ].map(o => (
-              <button key={o.k} onClick={() => setComparador(o.k)}
-                style={{
-                  padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4, cursor: 'pointer',
-                  border: '1px solid ' + (comparador === o.k ? C.gold : C.border),
-                  background: comparador === o.k ? 'rgba(244,162,97,0.15)' : 'transparent',
-                  color: comparador === o.k ? C.gold : C.textMuted,
-                }}>{o.l}</button>
-            ))}
-          </div>
-        </div>
+        <div style={{ ...sH, marginBottom: 8 }}>Ventas por Sucursal (Último Mes Completo)</div>
         {(() => {
-          if (!ventasSucComp) return <div style={{ color: C.textMuted, fontSize: 12 }}>Sin datos</div>
-          const { actualBySuc, compBySuc, diaActual } = ventasSucComp
-          const entries = Object.entries(actualBySuc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
-          if (!entries.length) return <div style={{ color: C.textMuted, fontSize: 12 }}>Sin ventas este mes</div>
-          const maxV = Math.max(...entries.map(([, v]) => v), ...entries.map(([sc]) => compBySuc[sc] || 0))
-          const compLabel = comparador === 'mes_anterior' ? 'mes ant.' : comparador === 'prom_3m' ? 'prom 3m' : 'prom 6m'
-          return (
-            <>
-              <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 10 }}>
-                Mes actual día 1–{diaActual} (barra colorida) · {compLabel} mismo período (barra gris)
+          const lastComplete = months2026.length > 1 ? months2026[months2026.length - 2] : months2026[months2026.length - 1]
+          if (!lastComplete) return <div style={{ color: C.textMuted, fontSize: 12 }}>Sin datos</div>
+          const maxV = Math.max(...Object.values(lastComplete.bySuc || {}))
+          return Object.entries(lastComplete.bySuc || {}).sort((a, b) => b[1] - a[1]).map(([sc, v]) => (
+            <div key={sc} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                <span style={{ color: STORE_COLORS[sc] || C.white, fontWeight: 600 }}>{STORE_MAP[sc] || sc}</span>
+                <span style={{ color: C.white, fontWeight: 700 }}>{fmt(v)}</span>
               </div>
-              {entries.map(([sc, vActual]) => {
-                const vComp = compBySuc[sc] || 0
-                const pctActual = maxV > 0 ? (vActual / maxV) * 100 : 0
-                const pctComp = maxV > 0 ? (vComp / maxV) * 100 : 0
-                const diff = vComp > 0 ? ((vActual - vComp) / vComp) * 100 : null
-                return (
-                  <div key={sc} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-                      <span style={{ color: STORE_COLORS[sc] || C.white, fontWeight: 600 }}>{STORE_MAP[sc] || sc}</span>
-                      <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <span style={{ color: C.white, fontWeight: 700 }}>{fmt(vActual)}</span>
-                        <span style={{ color: C.textMuted, fontSize: 10 }}>vs {fmt(vComp)}</span>
-                        {diff !== null && (
-                          <span style={{ color: diff >= 0 ? C.greenLight : '#f87171', fontSize: 11, fontWeight: 700, minWidth: 48, textAlign: 'right' }}>
-                            {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                    {/* Barra actual (color sucursal) */}
-                    <div style={{ height: 7, background: 'rgba(255,255,255,0.06)', borderRadius: 3 }}>
-                      <div style={{ height: 7, borderRadius: 3, background: STORE_COLORS[sc] || C.blue, width: `${pctActual}%`, transition: 'width .5s' }} />
-                    </div>
-                    {/* Barra comparador (gris) */}
-                    <div style={{ height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 2, marginTop: 2 }}>
-                      <div style={{ height: 4, borderRadius: 2, background: 'rgba(148,163,184,0.7)', width: `${pctComp}%`, transition: 'width .5s' }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </>
-          )
+              <div style={{ height: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 4, marginTop: 3 }}>
+                <div style={{ height: 8, borderRadius: 4, background: STORE_COLORS[sc] || C.blue, width: `${(v / maxV * 100)}%`, transition: 'width .5s' }} />
+              </div>
+            </div>
+          ))
         })()}
       </div>
     </>
@@ -1001,35 +913,31 @@ function TabProveedores({ data2026, months2026, conIva }) {
     months2026.forEach(m => { ventasPorMes[m.key] = m.ventas })
 
     // Build provider data from gastos consolidados (ya clasificados)
-    // FIX 17-Abr-2026: clasificar cada LÍNEA individualmente (antes fijaba cat del primer registro
-    // del proveedor, causando desviación vs TabDashboard). Key compuesta name::cat permite que un
-    // mismo proveedor aparezca bajo 2+ categorías si tiene gastos multi-categoría.
     const provData = {}
     data2026.gastos.forEach(g => {
       const m = g.fecha?.substring(0, 7)
       if (!m || !monthKeys.includes(m)) return
       const name = g.proveedor_nombre || 'Sin nombre'
       const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
-      const catNombre = g.categoria_nombre || ''
-      let cat = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
-      if (cat === 'Alquiler') cat = 'costo_fijo'
-      const key = `${name}::${cat}`
-      if (!provData[key]) {
-        provData[key] = { name, cat, catDisplay: catNombre, sub: g.subcategoria_contable || 'Varios', months: {}, total: 0, origen: g.origen }
+      if (!provData[name]) {
+        const catNombre = g.categoria_nombre || ''
+        let cat = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
+        if (cat === 'Alquiler') cat = 'costo_fijo'
+        provData[name] = { cat, catDisplay: catNombre, sub: g.subcategoria_contable || 'Varios', months: {}, total: 0, origen: g.origen }
       }
-      provData[key].months[m] = (provData[key].months[m] || 0) + monto
-      provData[key].total += monto
+      provData[name].months[m] = (provData[name].months[m] || 0) + monto
+      provData[name].total += monto
     })
 
     // Group by category, then by subcategory within each
     const categories = {}
-    Object.values(provData).forEach((d) => {
+    Object.entries(provData).forEach(([name, d]) => {
       if (!categories[d.cat]) categories[d.cat] = { subgroups: {}, totals: {}, grandTotal: 0, provCount: 0 }
       const cat = categories[d.cat]
       const subKey = d.sub || 'Varios'
       if (!cat.subgroups[subKey]) cat.subgroups[subKey] = { providers: [], totals: {}, grandTotal: 0 }
       const sg = cat.subgroups[subKey]
-      sg.providers.push({ ...d })
+      sg.providers.push({ name, ...d })
       monthKeys.forEach(mk => {
         cat.totals[mk] = (cat.totals[mk] || 0) + (d.months[mk] || 0)
         sg.totals[mk] = (sg.totals[mk] || 0) + (d.months[mk] || 0)
