@@ -82,6 +82,7 @@ export const NAV_SECTIONS = [
     label: 'Supply Chain',
     items: [
       { key: 'conteo', label: 'Conteo Nocturno', icon: '🌙', roles: ['cocina', 'gerente', 'admin', 'ejecutivo'] },
+      { key: 'mis-pedidos', label: 'Mis Pedidos', icon: '📦', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'jefe_casa_matriz'] },
       { key: 'entregas', label: 'Confirmar Entregas', icon: '✅', roles: ['despachador', 'motorista', 'motorista_interno', 'domicilios', 'gerente', 'cocina', 'admin', 'ejecutivo'] },
     ],
   },

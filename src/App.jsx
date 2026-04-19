@@ -10,6 +10,7 @@ import DashboardVentas from './components/dashboard/DashboardVentas'
 import DashboardEjecutivo from './components/dashboard/DashboardEjecutivo'
 import ConteoNocturno from './components/supply-chain/ConteoNocturno'
 import ConfirmarEntrega from './components/supply-chain/ConfirmarEntrega'
+import MisPedidosView from './components/supply-chain/MisPedidosView'
 import RecepcionTab from './components/almacen/RecepcionTab'
 import DespachoTab from './components/almacen/DespachoTab'
 import InventarioTab from './components/almacen/InventarioTab'
@@ -242,6 +243,8 @@ export default function App() {
         return <ConteoNocturno user={user} onBack={() => setScreen('home')} />
       case 'entregas':
         return <ConfirmarEntrega user={user} onBack={() => setScreen('home')} />
+      case 'mis-pedidos':
+        return <MisPedidosView user={user} onBack={() => setScreen('home')} />
 
       // Admin
       case 'admin':
