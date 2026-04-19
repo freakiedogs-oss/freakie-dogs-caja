@@ -1278,7 +1278,7 @@ function TabCatalogo({ user, data2026, onRefresh }) {
   const [editing, setEditing] = useState(null) // id of entry being edited
   const [editForm, setEditForm] = useState({})
   const [adding, setAdding] = useState(false)
-  const [newForm, setNewForm] = useState({ nombre_dte: '', nombre_normalizado: '', categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '' })
+  const [newForm, setNewForm] = useState({ nombre_dte: '', nombre_normalizado: '', categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '', requiere_recepcion: true })
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
   const [showUnmatched, setShowUnmatched] = useState(false)
@@ -1330,6 +1330,7 @@ function TabCatalogo({ user, data2026, onRefresh }) {
         subcategoria: editForm.subcategoria,
         notas: editForm.notas,
         activo: editForm.activo,
+        requiere_recepcion: editForm.requiere_recepcion,
         updated_at: new Date().toISOString(),
       })
       .eq('id', editing)
@@ -1353,13 +1354,14 @@ function TabCatalogo({ user, data2026, onRefresh }) {
       categoria: newForm.categoria,
       subcategoria: newForm.subcategoria || 'Varios',
       notas: newForm.notas,
+      requiere_recepcion: newForm.requiere_recepcion,
       activo: true,
     })
     setSaving(false)
     if (error) { showMsg('Error: ' + error.message, 'error'); return }
     showMsg('Proveedor agregado al catálogo')
     setAdding(false)
-    setNewForm({ nombre_dte: '', nombre_normalizado: '', categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '' })
+    setNewForm({ nombre_dte: '', nombre_normalizado: '', categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '', requiere_recepcion: true })
     await loadCatalog()
     if (onRefresh) onRefresh()
   }
@@ -1367,7 +1369,7 @@ function TabCatalogo({ user, data2026, onRefresh }) {
   // Quick add from unmatched
   const quickAdd = (nombre) => {
     const words = nombre.split(/\s+/).slice(0, 3).join(' ')
-    setNewForm({ nombre_dte: nombre, nombre_normalizado: words, categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '' })
+    setNewForm({ nombre_dte: nombre, nombre_normalizado: words, categoria: 'gastos_operativos', subcategoria: 'Varios', notas: '', requiere_recepcion: true })
     setAdding(true)
     setShowUnmatched(false)
   }
@@ -1484,6 +1486,22 @@ function TabCatalogo({ user, data2026, onRefresh }) {
             <label style={{ fontSize: 10, color: C.textMuted, display: 'block', marginBottom: 2 }}>Notas</label>
             <input value={newForm.notas} onChange={e => setNewForm(p => ({ ...p, notas: e.target.value }))} style={sInput} placeholder="Opcional..." />
           </div>
+          <div style={{ marginBottom: 10, padding: 10, background: 'rgba(244,162,97,0.08)', border: `1px solid ${C.gold}`, borderRadius: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: C.white, fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={newForm.requiere_recepcion}
+                onChange={e => setNewForm(p => ({ ...p, requiere_recepcion: e.target.checked }))}
+                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: C.red }}
+              />
+              ¿Requiere recepción física?
+            </label>
+            <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, marginLeft: 24 }}>
+              ✅ <b>Marcado</b> (default): el DTE necesita recepción física en el almacén (insumos, productos tangibles).
+              <br />
+              ⛔ <b>Desmarcado</b>: gasto sin recepción (servicios, alquileres, comisiones, transferencias, intangibles).
+            </div>
+          </div>
           <button onClick={saveNew} disabled={saving} style={{ ...sBtn(C.red), opacity: saving ? 0.5 : 1 }}>
             {saving ? 'Guardando...' : '💾 Guardar'}
           </button>
@@ -1528,6 +1546,7 @@ function TabCatalogo({ user, data2026, onRefresh }) {
                   <th style={{ ...sTh, textAlign: 'left', minWidth: 80 }}>Normalizado</th>
                   <th style={{ ...sTh, textAlign: 'left', minWidth: 100 }}>Categoría</th>
                   <th style={{ ...sTh, textAlign: 'left', minWidth: 90 }}>Subcategoría</th>
+                  <th style={{ ...sTh, textAlign: 'center', width: 60 }} title="Requiere recepción física en almacén">Rec.</th>
                   <th style={{ ...sTh, textAlign: 'center', width: 40 }}>Act.</th>
                   <th style={{ ...sTh, textAlign: 'center', width: 70 }}></th>
                 </tr>
@@ -1573,6 +1592,21 @@ function TabCatalogo({ user, data2026, onRefresh }) {
                         )}
                       </td>
                       <td style={{ padding: '5px 6px', textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>
+                        {isEditing ? (
+                          <input
+                            type="checkbox"
+                            checked={!!editForm.requiere_recepcion}
+                            onChange={ev => setEditForm(p => ({ ...p, requiere_recepcion: ev.target.checked }))}
+                            style={{ width: 14, height: 14, cursor: 'pointer', accentColor: C.red }}
+                            title="¿Requiere recepción física?"
+                          />
+                        ) : (
+                          <span style={{ fontSize: 13 }} title={e.requiere_recepcion ? 'Requiere recepción física' : 'Sin recepción (servicio/intangible)'}>
+                            {e.requiere_recepcion ? '📦' : '—'}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '5px 6px', textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>
                         <span onClick={() => toggleActivo(e.id, e.activo)} style={{ cursor: 'pointer', fontSize: 14 }} title={e.activo ? 'Desactivar' : 'Activar'}>
                           {e.activo ? '✅' : '⛔'}
                         </span>
@@ -1584,7 +1618,7 @@ function TabCatalogo({ user, data2026, onRefresh }) {
                             <button onClick={() => setEditing(null)} title="Cancelar" style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: C.gray, color: '#fff' }}>✕</button>
                           </div>
                         ) : (
-                          <button onClick={() => { setEditing(e.id); setEditForm({ nombre_normalizado: e.nombre_normalizado, categoria: e.categoria, subcategoria: e.subcategoria, notas: e.notas || '', activo: e.activo }) }} title="Editar" style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: C.cardAlt, color: '#fff' }}>✏️</button>
+                          <button onClick={() => { setEditing(e.id); setEditForm({ nombre_normalizado: e.nombre_normalizado, categoria: e.categoria, subcategoria: e.subcategoria, notas: e.notas || '', activo: e.activo, requiere_recepcion: e.requiere_recepcion !== false }) }} title="Editar" style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: C.cardAlt, color: '#fff' }}>✏️</button>
                         )}
                       </td>
                     </tr>
