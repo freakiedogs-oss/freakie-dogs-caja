@@ -122,19 +122,35 @@ async function fetchAll(table, select, filter) {
 
 // ── Process raw data into P&L structure ──
 // Uses CATNAME_TO_PL + GRUPO_TO_PL (same as FinanzasDashboard) for correct classification
-function buildPnL(ventas, gastos, conIva) {
+function buildPnL(ventas, gastos, conIva, planillaBySuc) {
   const ventasPorSuc = {}
   ;(ventas || []).forEach(v => {
     if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
     ventasPorSuc[v.store_code] += conIva ? n(v.total_ventas_quanto) : n(v.total_ventas_quanto) / 1.13
   })
 
-  // P&L groups per branch: { sucursal: { costoComida, gastosFijos, gastosOp, gastosFinan, planilla, inversion } }
-  const initPL = () => ({ costoComida: 0, gastosFijos: 0, gastosOp: 0, gastosFinan: 0, planilla: 0, inversion: 0 })
+  // P&L groups per branch: { sucursal: { costoComida, gastosFijos, gastosOp, gastosFinan, planilla, planillaCorp, inversion } }
+  // FIX 17-Abr-2026 v2: planilla = solo empleados de la sucursal. planillaCorp = CM+Admin+Motoristas prorrateados.
+  const initPL = () => ({ costoComida: 0, gastosFijos: 0, gastosOp: 0, gastosFinan: 0, planilla: 0, planillaCorp: 0, inversion: 0 })
   const plPorSuc = {}
   const gastosPorCat = {}    // For category breakdown tab
   const gastosPorSucCat = {} // For category breakdown per branch
   const catToGrupo = {}      // Display mapping
+
+  // FIX 17-Abr-2026: sumar planilla real por sucursal desde v_planilla_por_sucursal
+  // Empleados sin sucursal → store_code NULL → se atribuyen a CORP y se prorratean por peso de ventas
+  ;(planillaBySuc || []).forEach(p => {
+    // FIX 17-Abr-2026 v2: CM001 NO genera ventas → tratar como CORP para prorratear entre sucursales operativas
+    const rawSuc = p.store_code
+    const suc = (!rawSuc || rawSuc === 'CM001') ? 'CORP' : rawSuc
+    if (!plPorSuc[suc]) plPorSuc[suc] = initPL()
+    plPorSuc[suc].planilla += n(p.monto) || 0
+    const catName = 'Gasto Planilla'
+    gastosPorCat[catName] = (gastosPorCat[catName] || 0) + (n(p.monto) || 0)
+    if (!gastosPorSucCat[suc]) gastosPorSucCat[suc] = {}
+    gastosPorSucCat[suc][catName] = (gastosPorSucCat[suc][catName] || 0) + (n(p.monto) || 0)
+    catToGrupo[catName] = 'Planilla'
+  })
 
   ;(gastos || []).forEach(g => {
     const suc = g.store_code || 'CORP'
@@ -175,16 +191,18 @@ function buildPnL(ventas, gastos, conIva) {
     let gastosFijos = sucPL.gastosFijos + (corpPL.gastosFijos * peso)
     let gastosOp = sucPL.gastosOp + (corpPL.gastosOp * peso)
     let gastosFinan = sucPL.gastosFinan + (corpPL.gastosFinan * peso)
-    let planilla = sucPL.planilla + (corpPL.planilla * peso)
+    // FIX 17-Abr-2026 v2: separar planilla directa (empleados de la sucursal) de prorrateada (CM+Admin+Motoristas)
+    let planilla = sucPL.planilla
+    let planillaCorp = corpPL.planilla * peso
 
     const utilidadBruta = venta - costoComida
-    const totalGastos = gastosFijos + gastosOp + gastosFinan + planilla
+    const totalGastos = gastosFijos + gastosOp + gastosFinan + planilla + planillaCorp
     const utilidadOperativa = utilidadBruta - totalGastos
 
     pnl[suc] = {
       venta, costoComida, utilidadBruta,
       margenBruto: venta > 0 ? (utilidadBruta / venta) * 100 : 0,
-      gastosFijos, gastosOp, gastosFinan, planilla,
+      gastosFijos, gastosOp, gastosFinan, planilla, planillaCorp,
       totalGastos, utilidadOperativa,
       margenOperativo: venta > 0 ? (utilidadOperativa / venta) * 100 : 0,
     }
@@ -201,13 +219,15 @@ function buildPnL(ventas, gastos, conIva) {
 // ── Fetch period data ──
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
-  const [ventasRes, gastos] = await Promise.all([
+  const [ventasRes, gastos, planillaRes] = await Promise.all([
     db.from('v_ventas_unificadas').select('store_code, total_ventas_quanto, fecha, fuente').gte('fecha', desde).lt('fecha', hasta),
     fetchAll('v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
-      q => q.gte('fecha', desde).lt('fecha', hasta))
+      q => q.gte('fecha', desde).lt('fecha', hasta)),
+    // FIX 17-Abr-2026: leer planilla por sucursal desde vista nueva (gasto empresa = devengado + patronales)
+    db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta)
   ])
-  return buildPnL(ventasRes.data, gastos, conIva)
+  return buildPnL(ventasRes.data, gastos, conIva, planillaRes.data)
 }
 
 // ═══════════════════════════════════════════
@@ -318,7 +338,7 @@ export default function RentabilidadView({ user }) {
         const count = periods.length
         if (!count) return avg
         SUC_KEYS.forEach(s => {
-          avg.pnl[s] = { venta: 0, costoComida: 0, utilidadBruta: 0, gastosFijos: 0, gastosOp: 0, gastosFinan: 0, planilla: 0, totalGastos: 0, utilidadOperativa: 0, margenBruto: 0, margenOperativo: 0 }
+          avg.pnl[s] = { venta: 0, costoComida: 0, utilidadBruta: 0, gastosFijos: 0, gastosOp: 0, gastosFinan: 0, planilla: 0, planillaCorp: 0, totalGastos: 0, utilidadOperativa: 0, margenBruto: 0, margenOperativo: 0 }
         })
         periods.forEach(p => {
           avg.totalVentas += p.totalVentas / count
@@ -472,10 +492,10 @@ export default function RentabilidadView({ user }) {
               color="green" sparkData={datos.spark.ub}
             />
             <KpiCard
-              label="Gastos Operativos" value={fmt(datos.curr.totalGastosOp + datos.curr.totalCOGS)}
-              changeLabel={delta(datos.curr.totalGastosOp + datos.curr.totalCOGS, (comp?.totalGastosOp || 0) + (comp?.totalCOGS || 0)).label}
-              changeDir={(() => { const d = delta(datos.curr.totalGastosOp + datos.curr.totalCOGS, (comp?.totalGastosOp || 0) + (comp?.totalCOGS || 0)); return d.dir === 'up' ? 'down' : d.dir === 'down' ? 'up' : 'neutral' })()}
-              sub={`${compLabel}: ${fmt((comp?.totalGastosOp || 0) + (comp?.totalCOGS || 0))}`}
+              label="Gastos Operativos" value={fmt(datos.curr.totalGastosOp)}
+              changeLabel={delta(datos.curr.totalGastosOp, comp?.totalGastosOp || 0).label}
+              changeDir={(() => { const d = delta(datos.curr.totalGastosOp, comp?.totalGastosOp || 0); return d.dir === 'up' ? 'down' : d.dir === 'down' ? 'up' : 'neutral' })()}
+              sub={`${compLabel}: ${fmt(comp?.totalGastosOp || 0)}`}
               color="red" sparkData={datos.spark.gastos}
             />
             <KpiCard
@@ -552,7 +572,8 @@ export default function RentabilidadView({ user }) {
                       <tr style={sectionRow}><td colSpan={SUC_KEYS.length + 4} style={sectionTd}>GASTOS OPERATIVOS</td></tr>
                       <PnlRow label="(–) Gastos Fijos (Alq/Luz/Agua)" curr={datos.curr} comp={comp} field="gastosFijos" negative invertDelta />
                       <PnlRow label="(–) Gastos Operativos" curr={datos.curr} comp={comp} field="gastosOp" negative invertDelta />
-                      <PnlRow label="(–) Planilla" curr={datos.curr} comp={comp} field="planilla" negative invertDelta />
+                      <PnlRow label="(–) Planilla Sucursal" curr={datos.curr} comp={comp} field="planilla" negative invertDelta />
+                      <PnlRow label="(–) Planilla CM + Admin (prorrateada)" curr={datos.curr} comp={comp} field="planillaCorp" negative invertDelta />
                       <PnlRow label="(–) Gastos Financieros" curr={datos.curr} comp={comp} field="gastosFinan" negative invertDelta />
 
                       {/* Utilidad Operativa */}
@@ -591,7 +612,7 @@ export default function RentabilidadView({ user }) {
                     { pct: (c.costoComida / total) * 100, color: T.red, label: 'Costo Comida' },
                     { pct: (c.gastosFijos / total) * 100, color: T.yellow, label: 'Gasto Fijo' },
                     { pct: (c.gastosOp / total) * 100, color: T.purple, label: 'Gasto Op.' },
-                    { pct: ((c.gastosFinan + c.planilla) / total) * 100, color: '#64748B', label: 'Planilla/Finan.' },
+                    { pct: ((c.gastosFinan + c.planilla + c.planillaCorp) / total) * 100, color: '#64748B', label: 'Planilla/Finan.' },
                     { pct: Math.max(0, (c.utilidadOperativa / total) * 100), color: T.green, label: 'Utilidad' },
                   ]
 
