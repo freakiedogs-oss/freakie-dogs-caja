@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Pre-commit hook anti-regresión — Freakie Dogs ERP
+#
+# Habilitar localmente una sola vez:
+#   git config core.hooksPath scripts/hooks
+#
+# Desactivar (emergencias): commit con flag --no-verify
+
+set -e
+
+MAX_NET_DELETIONS=100
+MAX_FILES_CHANGED=15
+CRITICAL_FILES=(
+  "src/App.jsx"
+  "src/config.js"
+  "src/supabase.js"
+  "vercel.json"
+  "api/supaproxy.js"
+  "src/components/finanzas/FinanzasDashboard.jsx"
+  "src/components/admin/RentabilidadView.jsx"
+  "src/components/layout/LoginScreen.jsx"
+)
+
+STATS=$(git diff --cached --shortstat)
+[ -z "$STATS" ] && exit 0
+
+INSERTIONS=$(echo "$STATS" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DELETIONS=$(echo "$STATS" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+FILES_CHANGED=$(echo "$STATS" | grep -oE '[0-9]+ file' | grep -oE '[0-9]+' || echo "0")
+NET_DELETIONS=$((DELETIONS - INSERTIONS))
+
+FAIL=0
+WARNINGS=""
+
+if [ "$NET_DELETIONS" -gt "$MAX_NET_DELETIONS" ]; then
+  WARNINGS+="⚠️  Net deletions ($NET_DELETIONS) > umbral ($MAX_NET_DELETIONS). Posible regresión stale-workspace.\n"
+  FAIL=1
+fi
+
+if [ "$FILES_CHANGED" -gt "$MAX_FILES_CHANGED" ]; then
+  WARNINGS+="⚠️  $FILES_CHANGED archivos modificados (> $MAX_FILES_CHANGED).\n"
+  FAIL=1
+fi
+
+for FILE in "${CRITICAL_FILES[@]}"; do
+  if git diff --cached --numstat -- "$FILE" 2>/dev/null | grep -q .; then
+    STATS_FILE=$(git diff --cached --numstat -- "$FILE")
+    ADDED=$(echo "$STATS_FILE" | awk '{print $1}')
+    REMOVED=$(echo "$STATS_FILE" | awk '{print $2}')
+    if [ "$REMOVED" != "-" ] && [ "$ADDED" != "-" ]; then
+      NET_FILE=$((REMOVED - ADDED))
+      if [ "$NET_FILE" -gt 50 ]; then
+        WARNINGS+="🚨 Archivo crítico '$FILE' pierde $NET_FILE líneas netas (+$ADDED / -$REMOVED).\n"
+        FAIL=1
+      fi
+    fi
+  fi
+done
+
+if git diff --cached --name-only | grep -q "^vercel-deploy/"; then
+  WARNINGS+="🚨 Cambios en vercel-deploy/ (directorio prohibido post-19-Abr-2026).\n"
+  FAIL=1
+fi
+
+if [ "$FAIL" -eq 1 ]; then
+  echo ""
+  echo "==========================================="
+  echo "❌ PRE-COMMIT: ANTI-REGRESSION CHECK FALLÓ"
+  echo "==========================================="
+  echo -e "$WARNINGS"
+  echo "Si esto es intencional, commit con --no-verify:"
+  echo "  git commit --no-verify -m '...'"
+  echo ""
+  exit 1
+fi
+
+exit 0
