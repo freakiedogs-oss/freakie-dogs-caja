@@ -15,6 +15,7 @@ const TIPO_INFO = {
   'delivery_propio':{ icon: '🛵', label: 'Delivery',    color: '#60a5fa', canal: 'delivery_propio' },
   'pedidos_ya':     { icon: '📱', label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
   'drive_through':  { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24', canal: 'drive_through'   },
+  'delivery_app':   { icon: '📲', label: 'App Delivery', color: '#f472b6', canal: 'delivery_app'   },
 }
 
 // ── Permisos por rol ──

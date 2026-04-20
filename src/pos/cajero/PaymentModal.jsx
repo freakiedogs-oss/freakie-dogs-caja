@@ -8,6 +8,16 @@ const DTE_TYPES = [
   { key: 'se',      label: '👤 Suj.Excl.', desc: 'Sujeto Excluido (DUI)' },
 ]
 
+const METODO_DISPLAY = {
+  efectivo:      { icon: '💵', label: 'Efectivo' },
+  tarjeta:       { icon: '💳', label: 'Tarjeta' },
+  link_pago:     { icon: '🔗', label: 'Link de Pago' },
+  transferencia: { icon: '🏦', label: 'Transferencia' },
+  mixto:         { icon: '🔀', label: 'Mixto' },
+}
+
+const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 'Industrial', 'Hipotecario', 'Otro']
+
 export default function PaymentModal({ items, total, onConfirm, onComplete, onClose, saving }) {
   const [metodo, setMetodo]     = useState('efectivo')
   const [efectivo, setEfectivo] = useState('')
@@ -15,6 +25,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
   const [propina, setPropina]   = useState('')
   const [tipoDte, setTipoDte]   = useState('ticket')
   const [ref, setRef]           = useState('')
+  const [banco, setBanco]       = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [cuentaResult, setCuentaResult] = useState(null)
   const [dteResult, setDteResult] = useState(null)
@@ -47,6 +58,11 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
     setProcessing(true)
     setDteError(null)
 
+    // Construir referencia según método
+    const refFinal = metodo === 'transferencia'
+      ? [banco, ref].filter(Boolean).join(' — ') || null
+      : ref || null
+
     const payData = {
       metodo,
       efectivo: metodo === 'efectivo' ? efectivoNum : (metodo === 'mixto' ? efectivoNum : 0),
@@ -54,7 +70,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
       cambio,
       propina: propinaNum,
       tipoDte,
-      referencia: ref || null,
+      referencia: refFinal,
       // Datos del cliente para DTE
       cliente: cliente ? {
         id: cliente.id,
@@ -105,7 +121,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
               </div>
               <div className="pos-ticket-row">
                 <span className="lbl">Método</span>
-                <span className="val">{metodo.charAt(0).toUpperCase() + metodo.slice(1)}</span>
+                <span className="val">{METODO_DISPLAY[metodo]?.icon} {METODO_DISPLAY[metodo]?.label || metodo}</span>
               </div>
               {cambio > 0 && (
                 <div className="pos-ticket-row">
@@ -201,15 +217,15 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
         </div>
 
         {/* Método de pago */}
-        <div className="pos-method-tabs">
-          {['efectivo','tarjeta','mixto'].map(m => (
+        <div className="pos-method-tabs" style={{ flexWrap: 'wrap' }}>
+          {['efectivo','tarjeta','link_pago','transferencia','mixto'].map(m => (
             <button
               key={m}
               className={`pos-method-tab${metodo === m ? ' active' : ''}`}
               onClick={() => setMetodo(m)}
+              style={{ fontSize: 12, padding: '6px 10px' }}
             >
-              {m === 'efectivo' ? '💵' : m === 'tarjeta' ? '💳' : '🔀'}{' '}
-              {m.charAt(0).toUpperCase() + m.slice(1)}
+              {METODO_DISPLAY[m]?.icon}{' '}{METODO_DISPLAY[m]?.label}
             </button>
           ))}
         </div>
@@ -269,6 +285,62 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
               autoFocus
             />
           </div>
+        )}
+
+        {/* Link de Pago */}
+        {metodo === 'link_pago' && (
+          <div className="pos-payment-field">
+            <label className="pos-payment-label">Referencia del link (opcional)</label>
+            <input
+              className="pos-payment-input"
+              type="text"
+              placeholder="ID o referencia del link BAC..."
+              value={ref}
+              onChange={e => setRef(e.target.value)}
+              autoFocus
+            />
+            <div style={{ fontSize: 11, color: '#8b8997', marginTop: 4 }}>
+              🔗 El cliente paga vía link de pago BAC. Monto: ${totalConProp.toFixed(2)}
+            </div>
+          </div>
+        )}
+
+        {/* Transferencia */}
+        {metodo === 'transferencia' && (
+          <>
+            <div className="pos-payment-field">
+              <label className="pos-payment-label">Banco de origen (opcional)</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                {BANCOS_SV.map(b => (
+                  <button
+                    key={b}
+                    style={{
+                      padding: '5px 10px', background: banco === b ? '#1a3a4a' : '#1e1e26',
+                      border: banco === b ? '1px solid #60a5fa' : '1px solid #2a2a32',
+                      borderRadius: 8, color: banco === b ? '#60a5fa' : '#e8e6ef',
+                      fontSize: 11, cursor: 'pointer'
+                    }}
+                    onClick={() => setBanco(banco === b ? '' : b)}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="pos-payment-field">
+              <label className="pos-payment-label">Referencia (opcional)</label>
+              <input
+                className="pos-payment-input"
+                type="text"
+                placeholder="Número de confirmación..."
+                value={ref}
+                onChange={e => setRef(e.target.value)}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: '#8b8997', marginTop: -4, marginBottom: 8 }}>
+              🏦 Transferencia bancaria. Monto: ${totalConProp.toFixed(2)}
+            </div>
+          </>
         )}
 
         {/* Mixto */}

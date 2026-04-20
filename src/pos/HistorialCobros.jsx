@@ -13,6 +13,7 @@ const TIPO_INFO = {
   delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
   pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
   drive_through:   { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24' },
+  delivery_app:    { icon: '📲', label: 'App Delivery', color: '#f472b6' },
 }
 
 const DTE_DISPLAY = {

@@ -11,13 +11,14 @@ const CANAL_INFO = {
   delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
   pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
   drive_through:   { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24' },
+  delivery_app:    { icon: '📲', label: 'App Delivery', color: '#f472b6' },
 }
 
 // Sucursal = mesa + para_llevar (se atienden juntos en cocina)
 const CANAL_FILTER = {
   todos:      null,
   sucursal:   ['mesa', 'para_llevar'],
-  delivery:   ['delivery_propio'],
+  delivery:   ['delivery_propio', 'delivery_app'],
   pedidos_ya: ['pedidos_ya'],
   drive:      ['drive_through'],
 }
