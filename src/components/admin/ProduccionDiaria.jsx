@@ -237,7 +237,6 @@ export default function ProduccionDiaria({ user }) {
         receta_id: recetaSel.id,
         cantidad_producida: n(cantidadProducir),
         cantidad_enviada: 0,
-        merma: 0,
         turno,
         lote,
         responsable_id: productorId,
@@ -246,6 +245,7 @@ export default function ProduccionDiaria({ user }) {
         notas: notas || null,
       }).select();
 
+      if (prodRes.error) throw new Error(prodRes.error.message || JSON.stringify(prodRes.error));
       const produccionId = prodRes.data?.[0]?.id;
       if (!produccionId) throw new Error('No se creó el registro de producción');
 
