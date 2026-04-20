@@ -25,6 +25,8 @@ export default function HistorialTab({user,show}){
   // Recepciones huérfanas (sin DTE en compras)
   const [huerfanas,setHuerfanas]=useState([]);
   const [showHuerfanas,setShowHuerfanas]=useState(false);
+  const [huerfanasPeriodo,setHuerfanasPeriodo]=useState('30d'); // '7d' | '30d' | '90d' | 'todos'
+  const [loadingHuer,setLoadingHuer]=useState(false);
 
   const cargar=async()=>{
     const {data:allRecs}=await db.from('recepciones').select('*')
@@ -34,17 +36,31 @@ export default function HistorialTab({user,show}){
     db.from('compras_dte').select('id',{count:'exact',head:true})
       .eq('revision_manual',true).eq('cruzado',false)
       .then(({count})=>setPendientes(prev=>count>0?prev:[]));
-    // Detectar huérfanas: recepciones con dte_codigo que NO existe en compras_dte
-    if(allRecs&&allRecs.length>0){
-      const conDte=(allRecs||[]).filter(r=>r.dte_codigo);
-      if(conDte.length>0){
-        const codigos=[...new Set(conDte.map(r=>r.dte_codigo))];
-        const {data:dtes}=await db.from('compras_dte').select('dte_codigo').in('dte_codigo',codigos);
-        const existentes=new Set((dtes||[]).map(d=>d.dte_codigo));
-        const sinDte=conDte.filter(r=>!existentes.has(r.dte_codigo));
-        setHuerfanas(sinDte);
+  };
+
+  // Detecta TODAS las recepciones huérfanas en el período seleccionado
+  // (desacoplado de la lista "Últimas 30" para que Marco vea todo el backlog)
+  const cargarHuerfanas=async(periodo)=>{
+    setLoadingHuer(true);
+    try{
+      const dias={'7d':7,'30d':30,'90d':90,'todos':3650}[periodo]||30;
+      const fechaMin=new Date(Date.now()-dias*86400000).toISOString();
+      const {data:recsConDte}=await db.from('recepciones').select('*')
+        .not('dte_codigo','is',null)
+        .gte('created_at',fechaMin)
+        .order('created_at',{ascending:false}).limit(1000);
+      if(!recsConDte||recsConDte.length===0){setHuerfanas([]);return;}
+      const codigos=[...new Set(recsConDte.map(r=>r.dte_codigo).filter(Boolean))];
+      if(codigos.length===0){setHuerfanas([]);return;}
+      // Supabase .in() máx ~500 — dividir en chunks
+      const existentes=new Set();
+      for(let i=0;i<codigos.length;i+=500){
+        const chunk=codigos.slice(i,i+500);
+        const {data:dtes}=await db.from('compras_dte').select('dte_codigo').in('dte_codigo',chunk);
+        (dtes||[]).forEach(d=>existentes.add(d.dte_codigo));
       }
-    }
+      setHuerfanas(recsConDte.filter(r=>!existentes.has(r.dte_codigo)));
+    }finally{setLoadingHuer(false);}
   };
   const cargarPendientes=async()=>{
     setLoadingPend(true);
@@ -107,6 +123,9 @@ export default function HistorialTab({user,show}){
     cargar();
     db.from('sucursales').select('id').eq('store_code','CM001').maybeSingle().then(({data})=>{if(data)setCmId(data.id);});
   },[]);
+
+  // Reload huérfanas cuando cambia el período (o al montar)
+  useEffect(()=>{cargarHuerfanas(huerfanasPeriodo);},[huerfanasPeriodo]);
 
   const horasDesde=(d)=>(Date.now()-new Date(d).getTime())/3600000;
   const esEditable=(r)=>horasDesde(r.created_at)<72;
@@ -173,19 +192,31 @@ export default function HistorialTab({user,show}){
           </div>
         </div>
       )}
-      {/* Banner recepciones sin DTE contabilizado */}
-      {huerfanas.length>0&&(
-        <div style={{background:'linear-gradient(135deg,#2a0000,#3d0000)',border:'1px solid #e63946',borderRadius:12,padding:'12px 14px',marginBottom:14,cursor:'pointer'}}
+      {/* Banner recepciones sin DTE contabilizado — con filtro de período */}
+      <div style={{background:'linear-gradient(135deg,#2a0000,#3d0000)',border:'1px solid #e63946',borderRadius:12,padding:'12px 14px',marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}
           onClick={()=>setShowHuerfanas(!showHuerfanas)}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div>
-              <div style={{fontSize:14,fontWeight:700,color:'#e63946'}}>🔴 {huerfanas.length} recepción{huerfanas.length>1?'es':''} sin DTE contabilizado</div>
-              <div style={{fontSize:11,color:'#b44',marginTop:2}}>Tienen foto y código DTE pero no llegó el DTE por email</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:700,color:'#e63946'}}>
+              {loadingHuer?'⏳ Cargando…':`🔴 ${huerfanas.length} recepción${huerfanas.length===1?'':'es'} sin DTE contabilizado`}
             </div>
-            <span style={{color:'#e63946',fontSize:16}}>{showHuerfanas?'▲':'▼'}</span>
+            <div style={{fontSize:11,color:'#b44',marginTop:2}}>Tienen foto y código DTE pero no llegó el DTE por email</div>
           </div>
+          <span style={{color:'#e63946',fontSize:16,marginLeft:8}}>{showHuerfanas?'▲':'▼'}</span>
         </div>
-      )}
+        <div style={{display:'flex',gap:6,marginTop:10,flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
+          {[['7d','7 días'],['30d','30 días'],['90d','90 días'],['todos','Todos']].map(([k,l])=>(
+            <button key={k} onClick={()=>setHuerfanasPeriodo(k)}
+              style={{
+                padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',
+                border:'1px solid '+(huerfanasPeriodo===k?'#e63946':'#5a2020'),
+                background:huerfanasPeriodo===k?'#e63946':'transparent',
+                color:huerfanasPeriodo===k?'#fff':'#e63946',
+                fontWeight:huerfanasPeriodo===k?700:500,
+              }}>{l}</button>
+          ))}
+        </div>
+      </div>
       {showHuerfanas&&huerfanas.map(r=>(
         <div key={r.id} className="card" style={{padding:'12px 14px',borderLeft:'3px solid #e63946',marginBottom:8}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>

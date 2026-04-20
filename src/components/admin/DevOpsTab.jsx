@@ -525,8 +525,55 @@ export default function DevOpsTab() {
       if (worst < 85) status = 'error';
       else if (worst < 95) status = 'warning';
 
-      const summary = `${pctDte.toFixed(1)}% DTEs · ${pctRec.toFixed(1)}% Recepciones`;
-      const detail = [
+      // ── Breakdown huérfanas por sucursal + spark 7d (added 19-Abr) ──
+      let perSucursal = [];
+      const spark = [];
+      try {
+        const fecha30 = new Date(Date.now() - 30 * 86400000).toISOString();
+        const { data: recs30 } = await db
+          .from('recepciones')
+          .select('created_at, dte_codigo, sucursal_destino_id, sucursales:sucursal_destino_id(store_code, nombre)')
+          .not('dte_codigo', 'is', null)
+          .gte('created_at', fecha30)
+          .limit(3000);
+
+        const codigos = [...new Set((recs30 || []).map(r => r.dte_codigo).filter(Boolean))];
+        const existentes = new Set();
+        for (let i = 0; i < codigos.length; i += 500) {
+          const chunk = codigos.slice(i, i + 500);
+          const { data: dtes } = await db.from('compras_dte').select('dte_codigo').in('dte_codigo', chunk);
+          (dtes || []).forEach(d => existentes.add(d.dte_codigo));
+        }
+        const huerfanas = (recs30 || []).filter(r => !existentes.has(r.dte_codigo));
+
+        // Breakdown por sucursal
+        const bySuc = {};
+        huerfanas.forEach(r => {
+          const key = r.sucursales?.store_code || 'sin_suc';
+          const nombre = r.sucursales?.nombre || '(sin asignar)';
+          if (!bySuc[key]) bySuc[key] = { nombre, count: 0 };
+          bySuc[key].count++;
+        });
+        perSucursal = Object.entries(bySuc)
+          .map(([k, v]) => ({ store_code: k, ...v }))
+          .sort((a, b) => b.count - a.count);
+
+        // Spark: huérfanas/día últimos 7 días
+        const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+        const byDay = {};
+        huerfanas.forEach(r => {
+          const d = r.created_at?.split('T')[0];
+          if (d) byDay[d] = (byDay[d] || 0) + 1;
+        });
+        for (let i = 6; i >= 0; i--) {
+          const d = daysAgo(i);
+          const dow = new Date(d + 'T12:00:00').getDay();
+          spark.push({ label: dayNames[dow], value: byDay[d] || 0 });
+        }
+      } catch (_) { /* fallback: KPI sin breakdown */ }
+
+      const summary = `${pctDte.toFixed(1)}% DTEs · ${pctRec.toFixed(1)}% Rec · ${data.recepciones_huerfanas} huérfanas`;
+      const detailLines = [
         `Ventana: últimos 30 días`,
         `Total DTEs: ${data.total_dtes_30d} (${data.dtes_huerfanos} huérfanos sin recepción)`,
         `Total Recepciones: ${data.total_recepciones_30d} (${data.recepciones_huerfanas} huérfanas sin DTE)`,
@@ -534,10 +581,22 @@ export default function DevOpsTab() {
         `% DTEs con recepción: ${pctDte.toFixed(2)}%`,
         `% Recepciones con DTE: ${pctRec.toFixed(2)}%`,
         ``,
-        `Umbrales: 🟢 ≥95%  🟡 85-94%  🔴 <85%`,
-      ].join('\n');
+      ];
+      if (perSucursal.length > 0) {
+        detailLines.push('Huérfanas por sucursal (30d):');
+        perSucursal.forEach(p => {
+          detailLines.push(`  • ${p.nombre} [${p.store_code}]: ${p.count}`);
+        });
+        detailLines.push('');
+      }
+      if (spark.length > 0) {
+        detailLines.push('Spark: huérfanas/día (últimos 7 días)');
+      }
+      detailLines.push(`Umbrales: 🟢 ≥95%  🟡 85-94%  🔴 <85%`);
+      const detail = detailLines.join('\n');
 
-      setCoberturaKPI({ status, summary, detail, spark: [] });
+      const sparkColor = status === 'error' ? c.red : status === 'warning' ? c.yellow : c.green;
+      setCoberturaKPI({ status, summary, detail, spark, sparkColor });
     } catch (err) {
       setCoberturaKPI({ status: 'error', summary: `Error: ${err.message}`, detail: '', spark: [] });
     }
@@ -644,6 +703,8 @@ export default function DevOpsTab() {
         status={coberturaKPI.status}
         summary={coberturaKPI.summary}
         detail={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{coberturaKPI.detail}</pre>}
+        sparkData={coberturaKPI.spark}
+        sparkColor={coberturaKPI.sparkColor || c.red}
       />
 
       {/* ══════════════════════════════════════ */}
