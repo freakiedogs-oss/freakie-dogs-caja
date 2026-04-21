@@ -264,6 +264,24 @@ export default function FinanzasDashboard({ user }) {
         .eq('activo', true)
       if (catErr) console.warn('catalogo_contable:', catErr.message)
 
+      // 5. DTEs de Delivery Hero (raw, para tab PEYA)
+      const dhDtes = await fetchAll('compras_dte',
+        'id, fecha_emision, monto_total, subtotal, iva, numero_control',
+        q => q.ilike('proveedor_nombre', '%delivery hero%').gte('fecha_emision', '2026-01-01').order('fecha_emision'))
+
+      // 6. Transacciones PeYa individuales (para tab PEYA — ventas brutas por semana/sucursal)
+      const ventaspeya = await fetchAll('quanto_transacciones',
+        'fecha, store_code, total',
+        q => q.eq('metodo_pago', 'PedidosYa').gte('fecha', '2026-01-01').order('fecha'))
+
+      // 7. Liquidaciones semanales PeYa (ingresadas manualmente)
+      const peya_liq = await fetchAll('peya_liquidaciones', 'id, semana_inicio, semana_fin, fecha_deposito, monto_depositado, notas', null)
+
+      // 8. Pedidos PeYa directos de plataforma (ricos: comisión, ingreso_estimado, precio real)
+      const peyaOrders = await fetchAll('pedidos_peya',
+        'store_code, estado, fecha_pedido, total_pedido, comision, ingreso_estimado, tarifa_publicidad, avoidable_cancellation_fee, descuento_tienda, mes_csv',
+        q => q.gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
+
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
       cierresOp.forEach(c => {
@@ -279,7 +297,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, catalogo: catData || [] })
+      setData2026({ ventas, gastos, planillas, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -356,6 +374,7 @@ export default function FinanzasDashboard({ user }) {
     { key: 'estado-resultados', label: '📋 Estado de Resultados', icon: '📋' },
     { key: 'balance', label: '⚖️ Balance', icon: '⚖️' },
     { key: 'flujo-caja', label: '💰 Flujo de Caja', icon: '💰' },
+    { key: 'peya', label: '🛵 PEYA', icon: '🛵' },
     { key: 'proveedores', label: '🏢 Proveedores', icon: '🏢' },
     { key: 'catalogo', label: '⚙️ Catálogo', icon: '⚙️' },
   ]
@@ -395,10 +414,11 @@ export default function FinanzasDashboard({ user }) {
         </div>
       ) : (
         <>
-          {tab === 'dashboard' && <TabDashboard months2026={months2026} ventasRaw={data2026?.ventas} />}
+          {tab === 'dashboard' && <TabDashboard months2026={months2026} ventasRaw={data2026?.ventas} ventaspeya={data2026?.ventaspeya} />}
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
+          {tab === 'peya' && <TabPeya data2026={data2026} conIva={conIva} onRefresh={loadData2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'catalogo' && <TabCatalogo user={user} data2026={data2026} onRefresh={loadData2026} />}
         </>
@@ -412,10 +432,166 @@ export default function FinanzasDashboard({ user }) {
 }
 
 // ══════════════════════════════════════════════════════
+//  COMPONENTE: VENTAS POR CANAL (reutilizable)
+// ══════════════════════════════════════════════════════
+
+const CANAL_COLORS = {
+  'PedidosYa': '#e84393',
+  'Efectivo':  '#4ade80',
+  'Tarjeta':   '#3b82f6',
+  'Otros':     '#f4a261',
+}
+
+function VentasPorCanal({ ventasRaw, ventaspeya, months2026 }) {
+  const [viewMode, setViewMode] = useState('total') // 'total' | 'mensual'
+
+  const canalData = useMemo(() => {
+    // Agrupa ventas brutas de cierre por mes
+    const byMonth = {}
+    ;(ventasRaw || []).forEach(v => {
+      const m = v.fecha?.substring(0, 7)
+      if (!m || !m.startsWith('2026')) return
+      if (!byMonth[m]) byMonth[m] = { efectivo: 0, tarjeta: 0, total: 0 }
+      byMonth[m].efectivo += parseFloat(v.efectivo_quanto) || 0
+      byMonth[m].tarjeta  += parseFloat(v.tarjeta_quanto)  || 0
+      byMonth[m].total    += parseFloat(v.total_ventas_quanto) ||
+        ((parseFloat(v.efectivo_quanto)||0) + (parseFloat(v.tarjeta_quanto)||0) + (parseFloat(v.otros_quanto)||0))
+    })
+
+    // PeYa por mes (quanto_transacciones, solo positivos = entregados)
+    const peyaByMonth = {}
+    ;(ventaspeya || []).forEach(v => {
+      const m = v.fecha?.substring(0, 7)
+      if (!m || !m.startsWith('2026')) return
+      const t = parseFloat(v.total) || 0
+      if (t > 0) peyaByMonth[m] = (peyaByMonth[m] || 0) + t
+    })
+
+    const months = Array.from(new Set([...Object.keys(byMonth), ...Object.keys(peyaByMonth)])).sort()
+    const rows = months.map(m => {
+      const ef  = byMonth[m]?.efectivo || 0
+      const tar = byMonth[m]?.tarjeta  || 0
+      const peya = peyaByMonth[m] || 0
+      // Total from months2026 (más preciso, ya incluye todo)
+      const m26 = months2026?.find(x => x.mes === m)
+      const total = m26?.ventas || byMonth[m]?.total || 0
+      const otros = Math.max(0, total - ef - tar - peya)
+      return { mes: m, label: formatMonth(m), efectivo: ef, tarjeta: tar, peya, otros, total }
+    })
+
+    // Totales acumulados
+    const tot = rows.reduce((a, r) => ({
+      efectivo: a.efectivo + r.efectivo, tarjeta: a.tarjeta + r.tarjeta,
+      peya: a.peya + r.peya, otros: a.otros + r.otros, total: a.total + r.total,
+    }), { efectivo: 0, tarjeta: 0, peya: 0, otros: 0, total: 0 })
+
+    return { rows, tot }
+  }, [ventasRaw, ventaspeya, months2026])
+
+  const { rows, tot } = canalData
+  if (!rows.length) return null
+
+  const canales = [
+    { key: 'peya',     label: '🛵 PedidosYa', color: CANAL_COLORS['PedidosYa'] },
+    { key: 'tarjeta',  label: '💳 Tarjeta',    color: CANAL_COLORS['Tarjeta'] },
+    { key: 'efectivo', label: '💵 Efectivo',   color: CANAL_COLORS['Efectivo'] },
+    { key: 'otros',    label: '🔗 Otros',      color: CANAL_COLORS['Otros'] },
+  ]
+
+  return (
+    <div style={sCard}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+        <div style={sH}>VENTAS POR CANAL 2026</div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {['total', 'mensual'].map(v => (
+            <button key={v} onClick={() => setViewMode(v)}
+              style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4, cursor: 'pointer',
+                border: '1px solid ' + (viewMode === v ? C.red : C.border),
+                background: viewMode === v ? 'rgba(230,57,70,0.15)' : 'transparent',
+                color: viewMode === v ? C.red : C.textMuted }}>
+              {v === 'total' ? 'Resumen' : 'Por Mes'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {viewMode === 'total' ? (
+        // Vista resumen — KPI cards + barras proporcionales
+        <>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            {canales.map(c => {
+              const val = tot[c.key]
+              const share = tot.total > 0 ? val / tot.total : 0
+              return (
+                <div key={c.key} style={{ ...sKPI(C.cardAlt), minWidth: 130, textAlign: 'left', padding: '10px 12px' }}>
+                  <div style={{ fontSize: 11, color: c.color, fontWeight: 700, marginBottom: 2 }}>{c.label}</div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: C.white }}>{fmt(val)}</div>
+                  <div style={{ fontSize: 10, color: C.textMuted }}>{(share * 100).toFixed(1)}% del total</div>
+                  <div style={{ background: C.border, borderRadius: 2, height: 3, width: '100%', marginTop: 6 }}>
+                    <div style={{ background: c.color, height: 3, borderRadius: 2, width: `${share * 100}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {/* Stacked bar total */}
+          <div style={{ height: 18, borderRadius: 6, display: 'flex', overflow: 'hidden', marginBottom: 4 }}>
+            {canales.map(c => {
+              const share = tot.total > 0 ? (tot[c.key] / tot.total) * 100 : 0
+              return share > 0 ? (
+                <div key={c.key} title={`${c.label}: ${share.toFixed(1)}%`}
+                  style={{ height: '100%', width: `${share}%`, background: c.color }} />
+              ) : null
+            })}
+          </div>
+          <div style={{ fontSize: 10, color: C.textMuted }}>Total: {fmt(tot.total)} · 2026 acumulado</div>
+        </>
+      ) : (
+        // Vista mensual — tabla
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ ...sTh, textAlign: 'left', minWidth: 70 }}>Mes</th>
+                {canales.map(c => <th key={c.key} style={{ ...sTh, color: c.color }}>{c.label}</th>)}
+                <th style={{ ...sTh, color: C.gold }}>Total</th>
+                <th style={{ ...sTh, color: CANAL_COLORS['PedidosYa'] }}>PeYa %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.mes} style={{ background: i % 2 ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
+                  <td style={{ ...sTdL, fontWeight: 600 }}>{r.label}</td>
+                  {canales.map(c => (
+                    <td key={c.key} style={{ ...sTd(false), color: c.color }}>{fmt(r[c.key])}</td>
+                  ))}
+                  <td style={{ ...sTd(false), fontWeight: 700, color: C.gold }}>{fmt(r.total)}</td>
+                  <td style={{ ...sTd(false), color: CANAL_COLORS['PedidosYa'] }}>
+                    {r.total > 0 ? (r.peya / r.total * 100).toFixed(1) + '%' : '—'}
+                  </td>
+                </tr>
+              ))}
+              <tr style={{ background: 'rgba(244,162,97,0.08)', borderTop: `2px solid ${C.gold}` }}>
+                <td style={{ ...sTdL, fontWeight: 700, color: C.gold }}>TOTAL</td>
+                {canales.map(c => <td key={c.key} style={{ ...sTd(false), fontWeight: 700, color: c.color }}>{fmt(tot[c.key])}</td>)}
+                <td style={{ ...sTd(false), fontWeight: 700, color: C.gold }}>{fmt(tot.total)}</td>
+                <td style={{ ...sTd(false), fontWeight: 700, color: CANAL_COLORS['PedidosYa'] }}>
+                  {tot.total > 0 ? (tot.peya / tot.total * 100).toFixed(1) + '%' : '—'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════
 //  TAB 1: DASHBOARD GENERAL (KPIs + Tendencias)
 // ══════════════════════════════════════════════════════
 
-function TabDashboard({ months2026, ventasRaw }) {
+function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
   // Combine all months
   const allMonths = buildAllMonths(months2026)
   const latest = allMonths[allMonths.length - 1]
@@ -542,6 +718,9 @@ function TabDashboard({ months2026, ventasRaw }) {
           </table>
         </div>
       </div>
+
+      {/* Ventas por Canal */}
+      <VentasPorCanal ventasRaw={ventasRaw} ventaspeya={ventaspeya} months2026={months2026} />
 
       {/* Sales by sucursal - bar chart con comparador toggle */}
       <div style={sCard}>
@@ -1692,6 +1871,517 @@ function formatMonth(key) {
 }
 
 function sum(arr) { return arr.reduce((a, b) => a + (b || 0), 0) }
+
+// ══════════════════════════════════════════════════════
+//  TAB PEYA — Análisis PedidosYa / Delivery Hero
+// ══════════════════════════════════════════════════════
+
+// Devuelve el lunes de la semana a la que pertenece una fecha
+function getMonday(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00')
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const mon = new Date(d)
+  mon.setDate(d.getDate() + diff)
+  return mon.toISOString().substring(0, 10)
+}
+
+function weekLabel(mondayStr) {
+  const mon = new Date(mondayStr + 'T12:00:00')
+  const fri = new Date(mon); fri.setDate(mon.getDate() + 4)
+  const fmt = (d) => `${d.getDate()}/${d.getMonth() + 1}`
+  return `${fmt(mon)}–${fmt(fri)}`
+}
+
+function TabPeya({ data2026, conIva, onRefresh }) {
+  const emptyForm = { semana_inicio: '', semana_fin: '', fecha_deposito: '', monto_depositado: '', notas: '' }
+  const [form, setForm] = useState(emptyForm)
+  const [editId, setEditId] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [viewMode, setViewMode] = useState('semanal') // 'semanal' | 'mensual'
+  const [peyaView, setPeyaView] = useState('resumen') // 'resumen' | 'sucursal'
+
+  // Autofill semana_fin cuando se ingresa semana_inicio
+  function handleSemanaInicioChange(val) {
+    const mon = val
+    let fin = ''
+    if (mon) {
+      const d = new Date(mon + 'T12:00:00')
+      d.setDate(d.getDate() + 4) // +4 = viernes
+      fin = d.toISOString().substring(0, 10)
+    }
+    setForm(f => ({ ...f, semana_inicio: mon, semana_fin: fin }))
+  }
+
+  // ── Análisis plataforma PeYa (datos ricos de pedidos_peya) ──
+  const plataforma = useMemo(() => {
+    const orders = (data2026?.peyaOrders || []).filter(o => o.estado === 'Entregado')
+    const cancelled = (data2026?.peyaOrders || []).filter(o => o.estado === 'Cancelado')
+    if (!orders.length) return null
+
+    let ventaBruta = 0, comisionTotal = 0, ingresoEstimado = 0
+    let tarifaPubli = 0, descTienda = 0, canceladoMonto = 0
+    const bySuc = {}
+
+    orders.forEach(o => {
+      const vb = parseFloat(o.total_pedido) || 0
+      const com = parseFloat(o.comision) || 0
+      const ing = parseFloat(o.ingreso_estimado) || 0
+      const pub = parseFloat(o.tarifa_publicidad) || 0
+      const dt  = parseFloat(o.descuento_tienda) || 0
+      ventaBruta     += vb
+      comisionTotal  += com
+      ingresoEstimado+= ing
+      tarifaPubli    += pub
+      descTienda     += dt
+      const sc = o.store_code || 'Otro'
+      if (!bySuc[sc]) bySuc[sc] = { vb: 0, com: 0, ing: 0, pedidos: 0 }
+      bySuc[sc].vb      += vb
+      bySuc[sc].com     += com
+      bySuc[sc].ing     += ing
+      bySuc[sc].pedidos += 1
+    })
+    cancelled.forEach(o => { canceladoMonto += parseFloat(o.total_pedido) || 0 })
+
+    // Precio implícito PeYa vs Quanto:
+    // comision / ventaBruta = tasa comisión plataforma sobre precio PeYa
+    // ingresoEstimado / ventaBruta = fracción neta recibida
+    const tasaComision = ventaBruta > 0 ? comisionTotal / ventaBruta : null
+    const tasaNeta     = ventaBruta > 0 ? ingresoEstimado / ventaBruta : null
+
+    return { ventaBruta, comisionTotal, ingresoEstimado, tarifaPubli, descTienda,
+             canceladoMonto, tasaComision, tasaNeta, bySuc,
+             totalPedidos: orders.length, cancelados: cancelled.length }
+  }, [data2026?.peyaOrders])
+
+  // ── Procesar datos semanales ──
+  const { weeks, months, sucursales } = useMemo(() => {
+    if (!data2026) return { weeks: [], months: [], sucursales: {} }
+
+    // Ventas PeYa por semana y por sucursal
+    const salesByWeek = {}, salesBySuc = {}
+    ;(data2026.ventaspeya || []).forEach(v => {
+      const wk = getMonday(v.fecha?.substring(0, 10) || '')
+      if (!wk) return
+      const total = parseFloat(v.total) || 0
+      if (!salesByWeek[wk]) salesByWeek[wk] = { ventas: 0, pedidos: 0 }
+      salesByWeek[wk].ventas += total
+      salesByWeek[wk].pedidos++
+      const sc = v.store_code || 'Otro'
+      if (!salesBySuc[sc]) salesBySuc[sc] = 0
+      salesBySuc[sc] += total
+    })
+
+    // DTEs Delivery Hero por semana
+    const dhByWeek = {}
+    ;(data2026.dhDtes || []).forEach(d => {
+      const wk = getMonday(d.fecha_emision?.substring(0, 10) || '')
+      if (!wk) return
+      const monto = conIva ? (parseFloat(d.monto_total) || 0) : (parseFloat(d.subtotal) || 0)
+      dhByWeek[wk] = (dhByWeek[wk] || 0) + monto
+    })
+
+    // Liquidaciones por semana
+    const liqByWeek = {}
+    ;(data2026.peya_liq || []).forEach(l => {
+      liqByWeek[l.semana_inicio] = {
+        id: l.id, monto: parseFloat(l.monto_depositado) || 0,
+        fecha_deposito: l.fecha_deposito, notas: l.notas,
+        semana_fin: l.semana_fin,
+      }
+    })
+
+    // Unir semanas
+    const allWeeks = new Set([
+      ...Object.keys(salesByWeek),
+      ...Object.keys(dhByWeek),
+      ...Object.keys(liqByWeek),
+    ])
+    const weeks = Array.from(allWeeks).sort().map(wk => {
+      const ventas = salesByWeek[wk]?.ventas || 0
+      const pedidos = salesByWeek[wk]?.pedidos || 0
+      const dh = dhByWeek[wk] || 0
+      const liqD = liqByWeek[wk]
+      const liq = liqD?.monto || 0
+      const diferencia = ventas - liq
+      return { wk, ventas, pedidos, dh, liq, diferencia, liqData: liqD,
+        comisionEfectiva: ventas ? dh / ventas : null,
+        netRate: ventas && liq ? liq / ventas : null,
+      }
+    })
+
+    // Agrupar por mes para vista mensual
+    const monthMap = {}
+    weeks.forEach(w => {
+      const m = w.wk.substring(0, 7)
+      if (!monthMap[m]) monthMap[m] = { ventas: 0, pedidos: 0, dh: 0, liq: 0, semanas: 0 }
+      monthMap[m].ventas += w.ventas
+      monthMap[m].pedidos += w.pedidos
+      monthMap[m].dh += w.dh
+      monthMap[m].liq += w.liq
+      monthMap[m].semanas++
+    })
+    const months = Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).map(([m, d]) => ({
+      mes: m, label: formatMonth(m), ...d,
+      diferencia: d.ventas - d.liq,
+      comisionEfectiva: d.ventas ? d.dh / d.ventas : null,
+      netRate: d.ventas && d.liq ? d.liq / d.ventas : null,
+    }))
+
+    return { weeks, months, sucursales: salesBySuc }
+  }, [data2026, conIva])
+
+  // ── Totales ──
+  const totVentas = weeks.reduce((s, w) => s + w.ventas, 0)
+  const totDh     = weeks.reduce((s, w) => s + w.dh, 0)
+  const totLiq    = weeks.reduce((s, w) => s + w.liq, 0)
+  const totSemConLiq = weeks.filter(w => w.liq > 0).length
+  const totSem = weeks.length
+  const comisionGlobal = totVentas ? totDh / totVentas : null
+  const netGlobal = totVentas && totLiq ? totLiq / totVentas : null
+
+  // ── Guardar liquidación ──
+  async function saveLiq() {
+    if (!form.semana_inicio || !form.monto_depositado) {
+      setMsg({ type: 'error', text: 'Semana inicio y monto son obligatorios' }); return
+    }
+    setSaving(true); setMsg(null)
+    try {
+      const payload = {
+        semana_inicio: form.semana_inicio,
+        semana_fin: form.semana_fin || form.semana_inicio,
+        fecha_deposito: form.fecha_deposito || null,
+        monto_depositado: parseFloat(form.monto_depositado),
+        notas: form.notas || null,
+      }
+      let err
+      if (editId) {
+        const r = await db.from('peya_liquidaciones').update(payload).eq('id', editId)
+        err = r.error
+      } else {
+        const r = await db.from('peya_liquidaciones').insert(payload)
+        err = r.error
+      }
+      if (err) throw new Error(err.message)
+      setMsg({ type: 'ok', text: editId ? 'Liquidación actualizada' : 'Liquidación guardada ✓' })
+      setForm(emptyForm); setEditId(null)
+      onRefresh()
+    } catch (e) {
+      setMsg({ type: 'error', text: e.message })
+    }
+    setSaving(false)
+  }
+
+  async function deleteLiq(id) {
+    if (!confirm('¿Eliminar esta liquidación?')) return
+    const { error } = await db.from('peya_liquidaciones').delete().eq('id', id)
+    if (error) setMsg({ type: 'error', text: error.message })
+    else { setMsg({ type: 'ok', text: 'Eliminada' }); onRefresh() }
+  }
+
+  function startEdit(w) {
+    const l = w.liqData
+    setEditId(l.id)
+    setForm({
+      semana_inicio: w.wk,
+      semana_fin: l.semana_fin || '',
+      fecha_deposito: l.fecha_deposito || '',
+      monto_depositado: String(l.monto),
+      notas: l.notas || '',
+    })
+  }
+
+  const pctFmt = (n) => n == null ? <span style={{ color: C.textMuted }}>—</span> : <span style={{ color: n > 0.28 ? '#f87171' : n > 0.22 ? C.gold : '#4ade80' }}>{(n * 100).toFixed(1)}%</span>
+  const sInput = { background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 10px', color: C.white, fontSize: 12, width: '100%' }
+  const sBtn = (color) => ({ padding: '7px 16px', borderRadius: 7, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12, background: color, color: '#fff' })
+
+  const rows = viewMode === 'semanal' ? weeks : months
+
+  return (
+    <div>
+      {/* KPIs fila 1 — Plataforma (pedidos_peya) */}
+      {plataforma && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ ...sH, marginBottom: 6 }}>📊 DATOS PLATAFORMA PEDIDOSYA ({plataforma.totalPedidos.toLocaleString()} entregas · {plataforma.cancelados} cancelados)</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={sKPI(C.cardAlt)}>
+              <div style={sH}>Venta Bruta PeYa</div>
+              <div style={sVal}>{fmt(plataforma.ventaBruta)}</div>
+              <div style={sSub}>Precio publicado en plataforma</div>
+            </div>
+            <div style={sKPI(C.cardAlt)}>
+              <div style={sH}>Comisión Plataforma</div>
+              <div style={{ ...sVal, color: '#f87171' }}>{fmt(plataforma.comisionTotal)}</div>
+              <div style={sSub}>{plataforma.tasaComision != null ? (plataforma.tasaComision * 100).toFixed(1) + '% de venta bruta' : '—'}</div>
+            </div>
+            <div style={sKPI(C.cardAlt)}>
+              <div style={sH}>Ingreso Estimado PeYa</div>
+              <div style={{ ...sVal, color: '#4ade80' }}>{fmt(plataforma.ingresoEstimado)}</div>
+              <div style={sSub}>{plataforma.tasaNeta != null ? (plataforma.tasaNeta * 100).toFixed(1) + '% net de la venta' : '—'}</div>
+            </div>
+            <div style={sKPI(C.cardAlt)}>
+              <div style={sH}>Tarifa Publicidad</div>
+              <div style={{ ...sVal, color: C.gold }}>{fmt(plataforma.tarifaPubli)}</div>
+              <div style={sSub}>Ads PeYa (sobre entregados)</div>
+            </div>
+            <div style={sKPI(C.cardAlt)}>
+              <div style={sH}>Cancelados</div>
+              <div style={{ ...sVal, color: '#f87171' }}>{fmt(plataforma.canceladoMonto)}</div>
+              <div style={sSub}>{plataforma.cancelados} órdenes canceladas</div>
+            </div>
+          </div>
+          {/* Insight: brecha precio PeYa vs Quanto */}
+          <div style={{ ...sCard, background: 'rgba(232,67,147,0.08)', border: '1px solid rgba(232,67,147,0.3)', marginTop: 8, marginBottom: 0, padding: '10px 14px' }}>
+            <div style={{ fontSize: 11, color: '#e84393', fontWeight: 700, marginBottom: 4 }}>💡 ANÁLISIS DE PRECIO OCULTO</div>
+            <div style={{ fontSize: 12, color: C.white, lineHeight: 1.6 }}>
+              PeYa cobra la comisión sobre el <strong>precio PeYa</strong> (no sobre el precio de tu menú). Si tu precio en el menú Quanto es $9 pero PeYa lo lista a $8, la comisión del {plataforma.tasaComision != null ? (plataforma.tasaComision * 100).toFixed(1) : '?'}% se aplica sobre $8 → cobran ${plataforma.tasaComision != null ? (8 * plataforma.tasaComision).toFixed(2) : '?'} en lugar de ${plataforma.tasaComision != null ? (9 * plataforma.tasaComision).toFixed(2) : '?'}.
+              Tu ingreso neto real es ~<strong style={{ color: '#4ade80' }}>{plataforma.tasaNeta != null ? (plataforma.tasaNeta * 100).toFixed(1) : '?'}%</strong> del precio publicado en PeYa.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KPIs fila 2 — Quanto + DH */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={sKPI(C.cardAlt)}>
+          <div style={sH}>Ventas PeYa en Quanto</div>
+          <div style={sVal}>{fmt(totVentas)}</div>
+          <div style={sSub}>Quanto · {weeks.reduce((s, w) => s + w.pedidos, 0).toLocaleString()} transacciones</div>
+        </div>
+        <div style={sKPI(C.cardAlt)}>
+          <div style={sH}>Cobros DH (DTEs)</div>
+          <div style={{ ...sVal, color: '#f87171' }}>{fmt(totDh)}</div>
+          <div style={sSub}>{conIva ? 'Con IVA' : 'Sin IVA'} · {(data2026?.dhDtes || []).length} facturas</div>
+        </div>
+        <div style={sKPI(C.cardAlt)}>
+          <div style={sH}>Liquidado Real</div>
+          <div style={{ ...sVal, color: totLiq > 0 ? '#4ade80' : C.textMuted }}>{totLiq > 0 ? fmt(totLiq) : '—'}</div>
+          <div style={sSub}>{totSemConLiq}/{totSem} semanas ingresadas</div>
+        </div>
+        <div style={sKPI(C.cardAlt)}>
+          <div style={sH}>Comisión DH / Quanto</div>
+          <div style={{ ...sVal, color: comisionGlobal > 0.28 ? '#f87171' : C.gold }}>{comisionGlobal != null ? (comisionGlobal * 100).toFixed(1) + '%' : '—'}</div>
+          <div style={sSub}>DTE ÷ ventas brutas Quanto</div>
+        </div>
+        {netGlobal != null && (
+          <div style={sKPI(C.cardAlt)}>
+            <div style={sH}>Net Recibido / Quanto</div>
+            <div style={{ ...sVal, color: '#4ade80' }}>{(netGlobal * 100).toFixed(1)}%</div>
+            <div style={sSub}>Costo real: {((1 - netGlobal) * 100).toFixed(1)}% de la venta</div>
+          </div>
+        )}
+      </div>
+
+      {/* Toggle vista */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        {['semanal', 'mensual'].map(v => (
+          <button key={v} onClick={() => setViewMode(v)} style={{ ...sBtn(viewMode === v ? C.red : C.cardAlt), textTransform: 'capitalize' }}>{v}</button>
+        ))}
+      </div>
+
+      {/* Tabla semanas / meses */}
+      <div style={sCard}>
+        <div style={{ ...sH, marginBottom: 8 }}>
+          {viewMode === 'semanal' ? 'DETALLE SEMANAL' : 'RESUMEN MENSUAL'}
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ ...sTh, textAlign: 'left', minWidth: 90 }}>{viewMode === 'semanal' ? 'Semana' : 'Mes'}</th>
+                {viewMode === 'semanal' && <th style={sTh}># Pedidos</th>}
+                <th style={sTh}>Ventas Quanto</th>
+                <th style={sTh}>DTEs DH</th>
+                <th style={sTh}>Comis. %</th>
+                <th style={{ ...sTh, color: '#4ade80' }}>Liquidado</th>
+                <th style={sTh}>Dif. (Quanto−Liq)</th>
+                <th style={sTh}>Net %</th>
+                {viewMode === 'semanal' && <th style={sTh}>Acciones</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => {
+                const isWeek = viewMode === 'semanal'
+                const key = isWeek ? row.wk : row.mes
+                const hasLiq = row.liq > 0
+                return (
+                  <tr key={key} style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
+                    <td style={{ ...sTdL, fontWeight: 600 }}>
+                      {isWeek ? weekLabel(row.wk) : row.label}
+                      {isWeek && <div style={{ fontSize: 9, color: C.textMuted }}>{row.wk}</div>}
+                    </td>
+                    {isWeek && <td style={sTd(false)}>{row.pedidos.toLocaleString()}</td>}
+                    <td style={sTd(false)}>{fmt(row.ventas)}</td>
+                    <td style={sTd(false)}><span style={{ color: '#f87171' }}>{fmt(row.dh)}</span></td>
+                    <td style={{ ...sTd(false), textAlign: 'right' }}>{pctFmt(row.comisionEfectiva)}</td>
+                    <td style={{ ...sTd(false), color: hasLiq ? '#4ade80' : C.textMuted, fontWeight: hasLiq ? 600 : 400 }}>
+                      {hasLiq ? fmt(row.liq) : '—'}
+                      {isWeek && hasLiq && row.liqData?.fecha_deposito && (
+                        <div style={{ fontSize: 9, color: C.textMuted }}>dep. {row.liqData.fecha_deposito}</div>
+                      )}
+                    </td>
+                    <td style={sTd(row.diferencia > 0)}>
+                      {hasLiq ? fmt(row.diferencia) : <span style={{ color: C.textMuted }}>—</span>}
+                    </td>
+                    <td style={{ ...sTd(false), textAlign: 'right' }}>{hasLiq ? pctFmt(row.netRate) : <span style={{ color: C.textMuted }}>—</span>}</td>
+                    {isWeek && (
+                      <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                        {hasLiq ? (
+                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                            <button onClick={() => startEdit(row)} style={{ ...sBtn(C.cardAlt), padding: '3px 8px', fontSize: 11 }}>✏️</button>
+                            <button onClick={() => deleteLiq(row.liqData.id)} style={{ ...sBtn('#7f1d1d'), padding: '3px 8px', fontSize: 11 }}>🗑</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setEditId(null); handleSemanaInicioChange(row.wk) }}
+                            style={{ ...sBtn(C.cardAlt), padding: '3px 8px', fontSize: 10, opacity: 0.7 }}
+                          >+ Liq</button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+              {/* Totales */}
+              <tr style={{ background: 'rgba(244,162,97,0.08)', borderTop: `2px solid ${C.gold}` }}>
+                <td style={{ ...sTdL, fontWeight: 700, color: C.gold }}>TOTAL</td>
+                {viewMode === 'semanal' && <td style={{ ...sTd(false), fontWeight: 700 }}>{weeks.reduce((s, w) => s + w.pedidos, 0).toLocaleString()}</td>}
+                <td style={{ ...sTd(false), fontWeight: 700 }}>{fmt(totVentas)}</td>
+                <td style={{ ...sTd(false), fontWeight: 700, color: '#f87171' }}>{fmt(totDh)}</td>
+                <td style={{ ...sTd(false), fontWeight: 700, textAlign: 'right' }}>{pctFmt(comisionGlobal)}</td>
+                <td style={{ ...sTd(false), fontWeight: 700, color: '#4ade80' }}>{totLiq > 0 ? fmt(totLiq) : '—'}</td>
+                <td style={{ ...sTd(false), fontWeight: 700 }}>{totLiq > 0 ? fmt(totVentas - totLiq) : '—'}</td>
+                <td style={{ ...sTd(false), fontWeight: 700, textAlign: 'right' }}>{netGlobal != null ? pctFmt(netGlobal) : <span style={{ color: C.textMuted }}>—</span>}</td>
+                {viewMode === 'semanal' && <td></td>}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Ventas por sucursal */}
+      {Object.keys(sucursales).length > 0 && (
+        <div style={sCard}>
+          <div style={{ ...sH, marginBottom: 8 }}>VENTAS PEYA POR SUCURSAL (2026)</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {Object.entries(sucursales).sort((a, b) => b[1] - a[1]).map(([sc, v]) => {
+              const pct = totVentas ? v / totVentas : 0
+              const barW = Math.max(4, pct * 100)
+              return (
+                <div key={sc} style={{ ...sKPI(C.cardAlt), minWidth: 140, textAlign: 'left', padding: '10px 12px' }}>
+                  <div style={{ fontSize: 11, color: STORE_COLORS[sc] || C.textMuted, fontWeight: 700, marginBottom: 4 }}>{STORE_MAP[sc] || sc}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: C.white }}>{fmt(v)}</div>
+                  <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 4 }}>{(pct * 100).toFixed(1)}% del total</div>
+                  <div style={{ background: C.border, borderRadius: 2, height: 4, width: '100%' }}>
+                    <div style={{ background: STORE_COLORS[sc] || C.red, height: 4, borderRadius: 2, width: `${barW}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Comisión real por sucursal (pedidos_peya) */}
+      {plataforma && Object.keys(plataforma.bySuc).length > 0 && (
+        <div style={sCard}>
+          <div style={{ ...sH, marginBottom: 8 }}>COMISIÓN REAL POR SUCURSAL (plataforma 2026)</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...sTh, textAlign: 'left' }}>Sucursal</th>
+                  <th style={sTh}>Pedidos</th>
+                  <th style={sTh}>Venta Bruta</th>
+                  <th style={{ ...sTh, color: '#f87171' }}>Comisión</th>
+                  <th style={{ ...sTh, color: '#f87171' }}>% Comisión</th>
+                  <th style={{ ...sTh, color: '#4ade80' }}>Ingreso Est.</th>
+                  <th style={{ ...sTh, color: '#4ade80' }}>% Neto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(plataforma.bySuc).sort((a, b) => b[1].vb - a[1].vb).map(([sc, d], i) => {
+                  const tasaCom = d.vb > 0 ? d.com / d.vb : null
+                  const tasaNet = d.vb > 0 ? d.ing / d.vb : null
+                  return (
+                    <tr key={sc} style={{ background: i % 2 ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
+                      <td style={{ ...sTdL, color: STORE_COLORS[sc] || C.white, fontWeight: 700 }}>{STORE_MAP[sc] || sc}</td>
+                      <td style={sTd(false)}>{d.pedidos.toLocaleString()}</td>
+                      <td style={sTd(false)}>{fmt(d.vb)}</td>
+                      <td style={{ ...sTd(false), color: '#f87171' }}>{fmt(d.com)}</td>
+                      <td style={{ ...sTd(false) }}>
+                        <span style={{ color: tasaCom > 0.22 ? '#f87171' : C.gold }}>
+                          {tasaCom != null ? (tasaCom * 100).toFixed(1) + '%' : '—'}
+                        </span>
+                      </td>
+                      <td style={{ ...sTd(false), color: '#4ade80' }}>{fmt(d.ing)}</td>
+                      <td style={{ ...sTd(false) }}>
+                        <span style={{ color: tasaNet != null && tasaNet < 0.7 ? '#f87171' : '#4ade80' }}>
+                          {tasaNet != null ? (tasaNet * 100).toFixed(1) + '%' : '—'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Formulario de liquidación */}
+      <div style={sCard}>
+        <div style={{ ...sH, marginBottom: 10 }}>{editId ? '✏️ EDITAR LIQUIDACIÓN' : '+ REGISTRAR LIQUIDACIÓN SEMANAL'}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8, marginBottom: 10 }}>
+          <div>
+            <div style={{ ...sH, fontSize: 10 }}>Semana inicio (lunes) *</div>
+            <input type="date" style={sInput} value={form.semana_inicio}
+              onChange={e => handleSemanaInicioChange(e.target.value)} />
+          </div>
+          <div>
+            <div style={{ ...sH, fontSize: 10 }}>Semana fin (viernes)</div>
+            <input type="date" style={sInput} value={form.semana_fin}
+              onChange={e => setForm(f => ({ ...f, semana_fin: e.target.value }))} />
+          </div>
+          <div>
+            <div style={{ ...sH, fontSize: 10 }}>Fecha depósito</div>
+            <input type="date" style={sInput} value={form.fecha_deposito}
+              onChange={e => setForm(f => ({ ...f, fecha_deposito: e.target.value }))} />
+          </div>
+          <div>
+            <div style={{ ...sH, fontSize: 10 }}>Monto depositado ($) *</div>
+            <input type="number" step="0.01" min="0" placeholder="0.00" style={sInput} value={form.monto_depositado}
+              onChange={e => setForm(f => ({ ...f, monto_depositado: e.target.value }))} />
+          </div>
+          <div style={{ gridColumn: 'span 2' }}>
+            <div style={{ ...sH, fontSize: 10 }}>Notas (opcional)</div>
+            <input type="text" placeholder="Ej: Semana 14, depósito Promerica..." style={sInput} value={form.notas}
+              onChange={e => setForm(f => ({ ...f, notas: e.target.value }))} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={saveLiq} disabled={saving} style={sBtn(C.red)}>
+            {saving ? 'Guardando...' : editId ? '💾 Actualizar' : '💾 Guardar'}
+          </button>
+          {editId && (
+            <button onClick={() => { setEditId(null); setForm(emptyForm) }} style={sBtn(C.gray)}>Cancelar</button>
+          )}
+          {msg && (
+            <span style={{ fontSize: 12, color: msg.type === 'ok' ? '#4ade80' : '#f87171', marginLeft: 8 }}>{msg.text}</span>
+          )}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 10, color: C.textMuted, lineHeight: 1.5 }}>
+          💡 <strong style={{ color: C.white }}>¿Cómo funciona?</strong> DH deposita cada viernes la liquidación de la semana anterior (lun–vier).
+          La <strong style={{ color: C.white }}>comisión real</strong> = (Ventas Quanto − Liquidado) ÷ Ventas Quanto.
+          Esto incluye el descuento de precio oculto: si Quanto dice $9 pero PeYa cobra $8, la comisión se aplica sobre $8.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════
 
 function delta(curr, prev) {
   if (!prev || prev === 0) return ''
