@@ -15,7 +15,7 @@ const CATNAME_TO_PL = {
   'Insumo Merchandising': 'insumo_venta', 'Insumo Despacho': 'insumo_venta', 'Insumo Empaque': 'insumo_venta',
   'Insumo Limpieza': 'limpieza', 'Insumo Colaboradores': 'costo_comida',
   'Alquiler': 'costo_fijo', 'Electricidad': 'costo_fijo', 'Agua': 'costo_fijo',
-  'Gasto Mantenimiento': 'costo_fijo', 'Gasto Alcaldía': 'costo_fijo', 'Gasto Transporte': 'costo_fijo',
+  'Gasto Mantenimiento': 'costo_fijo', 'Gasto Alcaldía': 'costo_fijo', 'Gasto Transporte': 'gastos_operativos',
   'Gasto de Venta (POS/PEYA)': 'gastos_operativos', 'Gasto Mercadeo': 'gastos_operativos',
   'Gasto Logístico': 'gastos_logisticos', 'Gasto Logístico (Admin)': 'gastos_logisticos',
   'Gasto Financiero': 'gasto_financiero', 'Gasto Contabilidad': 'gasto_financiero',
