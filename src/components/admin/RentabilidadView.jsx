@@ -308,6 +308,8 @@ export default function RentabilidadView({ user }) {
   const hoy = new Date(Date.now() - 6 * 3600 * 1000)
   const isCurrentMonth = hoy.getFullYear() === year && (hoy.getMonth() + 1) === month
   const diaActual = isCurrentMonth ? hoy.getDate() : daysInMonth(year, month)
+  // Vista por Sucursal usa siempre el día anterior (días con cierre completo)
+  const diaAyer = isCurrentMonth ? Math.max(1, hoy.getDate() - 1) : daysInMonth(year, month)
   const diasEnMes = daysInMonth(year, month)
   const pctMes = Math.round((diaActual / diasEnMes) * 100)
 
@@ -321,6 +323,10 @@ export default function RentabilidadView({ user }) {
       // Comparison periods (same # of days)
       const comp1m = prevMonth(year, month, 1)
       const prev1 = await fetchPeriod(comp1m.year, comp1m.month, diaActual, conIva)
+
+      // Vista por Sucursal: usar días cerrados (hasta ayer)
+      const currSuc = isCurrentMonth ? await fetchPeriod(year, month, diaAyer, conIva) : curr
+      const prev1Suc = isCurrentMonth ? await fetchPeriod(comp1m.year, comp1m.month, diaAyer, conIva) : prev1
 
       // 3M and 6M averages
       let sum3 = null, sum6 = null
@@ -378,6 +384,7 @@ export default function RentabilidadView({ user }) {
 
       setDatos({
         curr, prev1, avg3: sum3, avg6: sum6,
+        currSuc, prev1Suc,
         spark: { ventas: sparkVentas, ub: sparkUB, gastos: sparkGastos, uo: sparkUO },
         trend: {
           labels: trendLabels,
@@ -392,7 +399,7 @@ export default function RentabilidadView({ user }) {
       setToast({ msg: 'Error cargando datos: ' + err.message, tipo: 'error' })
     }
     setLoading(false)
-  }, [year, month, diaActual, conIva])
+  }, [year, month, diaActual, diaAyer, conIva])
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
@@ -400,6 +407,14 @@ export default function RentabilidadView({ user }) {
   const comp = useMemo(() => {
     if (!datos) return null
     if (compMode === '1m') return datos.prev1
+    if (compMode === '3m') return datos.avg3
+    return datos.avg6
+  }, [datos, compMode])
+
+  // Comparador para Vista por Sucursal (usa diaAyer)
+  const compSuc = useMemo(() => {
+    if (!datos) return null
+    if (compMode === '1m') return datos.prev1Suc
     if (compMode === '3m') return datos.avg3
     return datos.avg6
   }, [datos, compMode])
@@ -595,13 +610,13 @@ export default function RentabilidadView({ user }) {
             <div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: T.text }}>Resumen por Sucursal</div>
-                <div style={{ fontSize: 12, color: T.textMuted }}>Performance relativo — {MESES[month - 1]} 1-{diaActual} vs {compLabel}</div>
+                <div style={{ fontSize: 12, color: T.textMuted }}>Performance relativo — {MESES[month - 1]} 1-{diaAyer} vs {compLabel} (días cerrados)</div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 24 }}>
                 {SUC_KEYS.map(s => {
-                  const c = datos.curr.pnl[s]
-                  const p = comp?.pnl[s]
+                  const c = datos.currSuc.pnl[s]
+                  const p = compSuc?.pnl[s]
                   if (!c || !c.venta) return null
                   const dVenta = delta(c.venta, p?.venta)
                   const dUO = delta(c.utilidadOperativa, p?.utilidadOperativa)
