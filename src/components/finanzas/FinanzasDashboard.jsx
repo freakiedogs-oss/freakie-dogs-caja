@@ -605,6 +605,8 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
     if (!ventasRaw || !ventasRaw.length) return null
     const hoy = new Date(Date.now() - 6 * 3600 * 1000)
     const y = hoy.getFullYear(), m = hoy.getMonth(), diaActual = hoy.getDate()
+    // Usar ayer como corte para excluir día incompleto
+    const diaAyer = Math.max(1, diaActual - 1)
     const mKey = (yr, mo) => `${yr}-${String(mo + 1).padStart(2, '0')}`
     const currentKey = mKey(y, m)
 
@@ -622,13 +624,13 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       return acc
     }
 
-    const actualBySuc = sumMonthUpTo(currentKey, diaActual)
+    const actualBySuc = sumMonthUpTo(currentKey, diaAyer)
 
     const monthsBack = comparador === 'mes_anterior' ? 1 : comparador === 'prom_3m' ? 3 : 6
     const pastSucs = []
     for (let i = 1; i <= monthsBack; i++) {
       const d = new Date(y, m - i, 1)
-      pastSucs.push(sumMonthUpTo(mKey(d.getFullYear(), d.getMonth()), diaActual))
+      pastSucs.push(sumMonthUpTo(mKey(d.getFullYear(), d.getMonth()), diaAyer))
     }
     // Promedio de los meses pasados
     const compBySuc = {}
@@ -636,7 +638,7 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
     allStores.forEach(sc => {
       compBySuc[sc] = pastSucs.reduce((s, p) => s + (p[sc] || 0), 0) / monthsBack
     })
-    return { actualBySuc, compBySuc, diaActual, currentKey }
+    return { actualBySuc, compBySuc, diaActual: diaAyer, currentKey }
   }, [ventasRaw, comparador])
 
   // YTD totals
