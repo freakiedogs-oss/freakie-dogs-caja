@@ -1,386 +1,223 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '../../supabase';
-import { today, fmtDate, n, STORES } from '../../config';
+import { today, n } from '../../config';
 
-// ── PINS Y ACCESO ──────────────────────────────────────────────
-const EDIT_PINS = ['1000', '2000', '231155']; // Jose, Cesar, Super Admin
-const ALLOWED_ROLES = ['ejecutivo', 'admin', 'despachador', 'gerente', 'superadmin'];
+// ── Paleta ──────────────────────────────────────────────────────────────────
+const c = {
+  bg: '#111', card: '#1a1a1a', border: '#2a2a2a', input: '#1e1e1e',
+  red: '#e63946', green: '#4ade80', yellow: '#fbbf24', orange: '#f97316',
+  blue: '#60a5fa', purple: '#a78bfa', text: '#f0f0f0', dim: '#888', off: '#555',
+};
+const card = (ex = {}) => ({ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, padding: 14, marginBottom: 10, ...ex });
+const btn  = (bg, fg = '#fff') => ({ padding: '9px 16px', borderRadius: 8, background: bg, color: fg, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 });
+const inp  = { background: c.input, border: `1px solid #333`, borderRadius: 8, padding: '9px 12px', color: c.text, fontSize: 13, width: '100%', boxSizing: 'border-box' };
+const lbl  = { display: 'block', fontSize: 11, color: c.dim, marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' };
+const kpi  = (color) => ({ flex: 1, minWidth: 140, background: '#16213e', padding: 12, borderRadius: 8, borderLeft: `3px solid ${color}` });
 
-// ── DELIVERY VIEW - GESTIÓN ENTREGAS Y DESPACHO ──────────────
-export default function DeliveryView({ user, show }) {
-  const [tab, setTab] = useState('despachador'); // despachador | viajes | bonos
-  const [loading, setLoading] = useState(true);
+// ── Cargos de motoristas (case-sensitive, tal como está en BD) ───────────────
+const CARGOS_DRIVER = ['Motorista', 'Domicilio', 'Motorista Interno', 'Domicilios Propios'];
 
-  const canEdit = EDIT_PINS.includes(user?.pin) || ALLOWED_ROLES.includes(user?.cargo);
+// ── config_delivery: array {parametro,valor} → objeto plano ─────────────────
+const parseCfg = rows => (rows || []).reduce((a, r) => { a[r.parametro] = parseFloat(r.valor); return a; }, {});
 
-  // Control de acceso
-  useEffect(() => {
-    if (!canEdit) {
-      show('❌ No tienes permisos para acceder a Delivery');
-    }
-  }, []);
+// ── Tarifa EXCLUSIVA: fuera_de_horario reemplaza el bono de distancia ────────
+// $0.50 viaje <17km | $1.00 viaje ≥17km | $3.00 viaje fuera de horario (flat)
+// Un viaje fuera de horario siempre vale $3 sin importar la distancia
+function calcTarifa(tipo, dist, fuera, cfg) {
+  if (fuera) return cfg.tarifa_fuera_horario ?? 3.0;
+  if (tipo === 'mandado') return cfg.tarifa_mandado ?? 0.5;
+  const umbral = cfg.km_umbral_doble ?? 17;
+  return n(dist) >= umbral ? (cfg.tarifa_entrega_larga ?? 1.0) : (cfg.tarifa_entrega_normal ?? 0.5);
+}
 
-  if (!canEdit) {
-    return (
-      <div style={{ padding: 20, textAlign: 'center', color: '#e63946' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>🚫 Acceso Denegado</div>
-        <div style={{ color: '#888', fontSize: 13 }}>Solo ejecutivos y gerentes pueden acceder a este módulo.</div>
-      </div>
-    );
-  }
+// ── Resumen de bono mensual por driver ───────────────────────────────────────
+function bonoDriver(viajes, cfg) {
+  const umbral   = cfg.km_umbral_doble ?? 17;
+  // fuera_horario es exclusivo: esos viajes NO cuentan en normal/larga/mandados
+  const fuera    = viajes.filter(v => v.es_fuera_de_horario).length;
+  const normal   = viajes.filter(v => !v.es_fuera_de_horario && v.tipo === 'entrega' && n(v.distancia_km) < umbral).length;
+  const larga    = viajes.filter(v => !v.es_fuera_de_horario && v.tipo === 'entrega' && n(v.distancia_km) >= umbral).length;
+  const mandados = viajes.filter(v => !v.es_fuera_de_horario && v.tipo === 'mandado').length;
+  const total    = normal * (cfg.tarifa_entrega_normal ?? 0.5)
+                 + larga  * (cfg.tarifa_entrega_larga  ?? 1.0)
+                 + fuera  * (cfg.tarifa_fuera_horario  ?? 3.0)
+                 + mandados * (cfg.tarifa_mandado       ?? 0.5);
+  return { normal, larga, fuera, mandados, total: Math.round(total * 100) / 100 };
+}
+
+const mesActual = () => {
+  const d = new Date(Date.now() - 6 * 3600 * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const fmtMes = m => { if (!m) return ''; const [y, mo] = m.split('-'); return `${MESES[+mo - 1]} ${y}`; };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function DeliveryView({ user, show = () => {} }) {
+  const [tab, setTab] = useState('viajes');
+  const rol = user?.rol || '';
+  const puedeAprobar = ['ejecutivo', 'superadmin', 'admin'].includes(rol);
 
   return (
-    <div style={{ padding: '16px 16px 100px' }}>
+    <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh' }}>
       {/* TABS */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', flexWrap: 'nowrap' }}>
-        <button
-          className={`btn btn-sm ${tab === 'despachador' ? 'btn-red' : 'btn-ghost'}`}
-          onClick={() => setTab('despachador')}
-        >
-          📋 Despacho
-        </button>
-        <button
-          className={`btn btn-sm ${tab === 'viajes' ? 'btn-red' : 'btn-ghost'}`}
-          onClick={() => setTab('viajes')}
-        >
-          🚗 Viajes
-        </button>
-        <button
-          className={`btn btn-sm ${tab === 'bonos' ? 'btn-red' : 'btn-ghost'}`}
-          onClick={() => setTab('bonos')}
-        >
-          💰 Bonos del Mes
-        </button>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
+        {[['despacho','📋 Despacho'],['viajes','🚗 Viajes'],['bonos','💰 Bonos']].map(([k, etq]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+            background: tab === k ? c.red : '#222',
+            color: tab === k ? '#fff' : c.dim,
+          }}>{etq}</button>
+        ))}
       </div>
 
-      {/* CONTENIDO TABS */}
-      {tab === 'despachador' && <PanelDespachador user={user} show={show} />}
-      {tab === 'viajes' && <RegistroViajes user={user} show={show} />}
-      {tab === 'bonos' && <BonossDelMes user={user} show={show} />}
+      {tab === 'despacho' && <TabDespacho user={user} show={show} puedeAprobar={puedeAprobar} />}
+      {tab === 'viajes'   && <TabViajes   user={user} show={show} />}
+      {tab === 'bonos'    && <TabBonos    user={user} show={show} puedeAprobar={puedeAprobar} />}
     </div>
   );
 }
 
-// ── TAB 1: PANEL DESPACHADOR ────────────────────────────────────
-function PanelDespachador({ user, show }) {
-  const [pedidos, setPedidos] = useState([]);
-  const [empleados, setEmpleados] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [newPedido, setNewPedido] = useState({
-    cliente_nombre: '',
-    cliente_telefono: '',
-    direccion: '',
-    zona: '',
-    items: '',
-    total: '',
-  });
+// ── TAB 1: PANEL DESPACHADOR ─────────────────────────────────────────────────
+function TabDespacho({ user, show }) {
+  const [pedidos, setPedidos]     = useState([]);
+  const [drivers, setDrivers]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [showForm, setShowForm]   = useState(false);
+  const [nuevo, setNuevo]         = useState({ cliente_nombre: '', cliente_telefono: '', direccion: '', zona: '', items: '', total: '' });
 
   const cargar = useCallback(async () => {
     setLoading(true);
-    try {
-      const [ped, emp] = await Promise.all([
-        db.from('delivery_clientes')
-          .select('*')
-          .in('estado', ['pendiente', 'asignado', 'en_camino'])
-          .order('created_at', { ascending: false }),
-        db.from('empleados')
-          .select('id,nombre,cargo,sucursal_id')
-          .eq('cargo', 'delivery')
-          .eq('activo', true),
-      ]);
-      setPedidos(ped.data || []);
-      setEmpleados(emp.data || []);
-    } catch (e) {
-      show('❌ ' + e.message);
-    }
+    const [ped, emp] = await Promise.all([
+      db.from('delivery_clientes').select('*').order('created_at', { ascending: false }).limit(50),
+      db.from('empleados').select('id,nombre,cargo').in('cargo', CARGOS_DRIVER).eq('activo', true),
+    ]);
+    setPedidos(ped.data || []);
+    setDrivers(emp.data || []);
     setLoading(false);
-  }, [show]);
+  }, []);
 
-  useEffect(() => {
-    cargar();
-  }, [cargar]);
+  useEffect(() => { cargar(); }, [cargar]);
 
   const crearPedido = async () => {
-    if (!newPedido.cliente_nombre.trim()) {
-      show('⚠️ Ingresa el nombre del cliente');
-      return;
-    }
-    if (!newPedido.direccion.trim()) {
-      show('⚠️ Ingresa la dirección');
-      return;
-    }
-    if (!newPedido.total) {
-      show('⚠️ Ingresa el total');
-      return;
-    }
-
-    try {
-      const { error } = await db.from('delivery_clientes').insert({
-        sucursal_id: user.sucursal_id || 1,
-        cliente_nombre: newPedido.cliente_nombre.trim(),
-        cliente_telefono: newPedido.cliente_telefono.trim(),
-        direccion: newPedido.direccion.trim(),
-        zona: newPedido.zona.trim(),
-        items: newPedido.items.trim(),
-        total: n(newPedido.total),
-        estado: 'pendiente',
-        created_at: new Date().toISOString(),
-      });
-      if (error) throw error;
-      show('✅ Pedido creado');
-      setNewPedido({ cliente_nombre: '', cliente_telefono: '', direccion: '', zona: '', items: '', total: '' });
-      setShowForm(false);
-      await cargar();
-    } catch (e) {
-      show('❌ ' + e.message);
-    }
+    if (!nuevo.cliente_nombre.trim()) { show('⚠️ Ingresa nombre del cliente'); return; }
+    const { error } = await db.from('delivery_clientes').insert({
+      ...nuevo, total: n(nuevo.total), estado: 'pendiente', created_at: new Date().toISOString(),
+    });
+    if (error) { show('❌ ' + error.message); return; }
+    show('✅ Pedido creado');
+    setNuevo({ cliente_nombre: '', cliente_telefono: '', direccion: '', zona: '', items: '', total: '' });
+    setShowForm(false);
+    cargar();
   };
 
-  const asignarDriver = async (pedidoId, driverId) => {
-    if (!driverId) {
-      show('⚠️ Selecciona un conductor');
-      return;
-    }
-    try {
-      const { error } = await db.from('delivery_clientes')
-        .update({ estado: 'asignado', repartidor_id: driverId })
-        .eq('id', pedidoId);
-      if (error) throw error;
-      show('✅ Conductor asignado');
-      await cargar();
-    } catch (e) {
-      show('❌ ' + e.message);
-    }
+  const asignar = async (pedidoId, driverId) => {
+    if (!driverId) { show('⚠️ Selecciona un conductor'); return; }
+    const { error } = await db.from('delivery_clientes').update({ empleado_id: driverId, estado: 'asignado' }).eq('id', pedidoId);
+    if (error) { show('❌ ' + error.message); return; }
+    show('✅ Conductor asignado');
+    cargar();
   };
 
-  const cambiarEstado = async (pedidoId, nuevoEstado) => {
-    try {
-      const { error } = await db.from('delivery_clientes')
-        .update({ estado: nuevoEstado })
-        .eq('id', pedidoId);
-      if (error) throw error;
-      show(`✅ Pedido marcado como ${nuevoEstado}`);
-      await cargar();
-    } catch (e) {
-      show('❌ ' + e.message);
-    }
+  const cambiarEstado = async (id, estado) => {
+    const { error } = await db.from('delivery_clientes').update({ estado }).eq('id', id);
+    if (error) { show('❌ ' + error.message); return; }
+    cargar();
   };
 
-  // Contar por estado
-  const contadores = {
-    pendiente: pedidos.filter(p => p.estado === 'pendiente').length,
-    asignado: pedidos.filter(p => p.estado === 'asignado').length,
-    en_camino: pedidos.filter(p => p.estado === 'en_camino').length,
-  };
+  const colorEstado = { pendiente: c.yellow, asignado: c.blue, en_camino: c.orange, entregado: c.green, cancelado: c.off };
 
   return (
     <div>
-      {/* CONTADORES */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div className="badge-count">
-          <div style={{ fontSize: 12, color: '#f59e0b' }}>📋 Pendientes</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b' }}>{contadores.pendiente}</div>
-        </div>
-        <div className="badge-count">
-          <div style={{ fontSize: 12, color: '#3b82f6' }}>📌 Asignados</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#3b82f6' }}>{contadores.asignado}</div>
-        </div>
-        <div className="badge-count">
-          <div style={{ fontSize: 12, color: '#8b5cf6' }}>🚗 En Camino</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#8b5cf6' }}>{contadores.en_camino}</div>
-        </div>
-      </div>
-
-      {/* BOTÓN NUEVO PEDIDO */}
-      <button className="btn btn-orange" style={{ width: '100%', marginBottom: 16 }} onClick={() => setShowForm(!showForm)}>
+      <button onClick={() => setShowForm(!showForm)} style={{ ...btn(c.red), width: '100%', marginBottom: 16 }}>
         {showForm ? '✕ Cancelar' : '+ Nuevo Pedido'}
       </button>
 
-      {/* FORM NUEVO PEDIDO */}
       {showForm && (
-        <div className="card" style={{ marginBottom: 16, padding: 14, background: '#16213e', borderLeft: '3px solid #f59e0b' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#f59e0b' }}>CREAR PEDIDO</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-            <input
-              type="text"
-              placeholder="Cliente"
-              value={newPedido.cliente_nombre}
-              onChange={e => setNewPedido({ ...newPedido, cliente_nombre: e.target.value })}
-              style={inputStyle}
-            />
-            <input
-              type="tel"
-              placeholder="Teléfono"
-              value={newPedido.cliente_telefono}
-              onChange={e => setNewPedido({ ...newPedido, cliente_telefono: e.target.value })}
-              style={inputStyle}
-            />
-          </div>
-          <input
-            type="text"
-            placeholder="Dirección"
-            value={newPedido.direccion}
-            onChange={e => setNewPedido({ ...newPedido, direccion: e.target.value })}
-            style={{ ...inputStyle, marginBottom: 8 }}
-          />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-            <input
-              type="text"
-              placeholder="Zona"
-              value={newPedido.zona}
-              onChange={e => setNewPedido({ ...newPedido, zona: e.target.value })}
-              style={inputStyle}
-            />
-            <input
-              type="number"
-              step="0.01"
-              placeholder="Total ($)"
-              value={newPedido.total}
-              onChange={e => setNewPedido({ ...newPedido, total: e.target.value })}
-              style={inputStyle}
-            />
-          </div>
-          <textarea
-            placeholder="Items (Ej: 1x Smash Burger, 1x Refr.)"
-            value={newPedido.items}
-            onChange={e => setNewPedido({ ...newPedido, items: e.target.value })}
-            style={{ ...inputStyle, minHeight: 50, marginBottom: 8, fontFamily: 'monospace', fontSize: 12 }}
-          />
-          <button className="btn btn-green" style={{ width: '100%' }} onClick={crearPedido}>
-            💾 Crear Pedido
-          </button>
+        <div style={card({ borderLeft: `3px solid ${c.red}`, marginBottom: 16 })}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: c.red, marginBottom: 12 }}>NUEVO PEDIDO</div>
+          {[
+            ['cliente_nombre', 'Cliente *', 'text'],
+            ['cliente_telefono', 'Teléfono', 'tel'],
+            ['direccion', 'Dirección', 'text'],
+            ['zona', 'Zona / Colonia', 'text'],
+            ['items', 'Descripción del pedido', 'text'],
+            ['total', 'Total ($)', 'number'],
+          ].map(([field, label, type]) => (
+            <div key={field} style={{ marginBottom: 10 }}>
+              <label style={lbl}>{label}</label>
+              <input type={type} placeholder={label} value={nuevo[field]}
+                onChange={e => setNuevo({ ...nuevo, [field]: e.target.value })}
+                style={inp} />
+            </div>
+          ))}
+          <button onClick={crearPedido} style={{ ...btn(c.green), width: '100%' }}>💾 Crear Pedido</button>
         </div>
       )}
 
-      {/* LISTA PEDIDOS */}
-      {loading && <div className="spin" style={{ width: 28, height: 28, margin: '20px auto' }} />}
+      {loading && <div style={{ textAlign: 'center', padding: 32, color: c.dim }}>Cargando...</div>}
+
       {!loading && pedidos.length === 0 && (
-        <div className="empty">
-          <div className="empty-icon">📋</div>
-          <div className="empty-text">No hay pedidos activos</div>
+        <div style={{ textAlign: 'center', padding: 40, color: c.dim }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🛵</div>
+          <div>Sin pedidos registrados</div>
         </div>
       )}
 
-      {!loading &&
-        pedidos.map(ped => (
-          <PedidoCard
-            key={ped.id}
-            pedido={ped}
-            empleados={empleados}
-            onAsignar={asignarDriver}
-            onCambiarEstado={cambiarEstado}
-          />
-        ))}
+      {!loading && pedidos.map(p => {
+        const driverNombre = drivers.find(d => d.id === p.empleado_id)?.nombre;
+        return (
+          <PedidoCard key={p.id} pedido={p} drivers={drivers} driverNombre={driverNombre}
+            colorEstado={colorEstado} onAsignar={asignar} onCambiar={cambiarEstado} />
+        );
+      })}
     </div>
   );
 }
 
-// ── CARD PEDIDO ────────────────────────────────────────────────
-function PedidoCard({ pedido, empleados, onAsignar, onCambiarEstado }) {
-  const [selectedDriver, setSelectedDriver] = useState(pedido.repartidor_id || '');
-  const driverNombre = empleados.find(e => e.id === selectedDriver)?.nombre || empleados.find(e => e.id === pedido.repartidor_id)?.nombre || '';
-
-  const estadoColor = {
-    pendiente: '#f59e0b',
-    asignado: '#3b82f6',
-    en_camino: '#8b5cf6',
-    entregado: '#4ade80',
-    cancelado: '#ef4444',
-  };
-
-  const estadoColor_ = estadoColor[pedido.estado] || '#666';
-
+function PedidoCard({ pedido: p, drivers, driverNombre, colorEstado, onAsignar, onCambiar }) {
+  const [selDriver, setSelDriver] = useState('');
   return (
-    <div className="card" style={{ borderLeft: `4px solid ${estadoColor_}`, marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+    <div style={card()}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#fff' }}>{pedido.cliente_nombre}</div>
-          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>📍 {pedido.direccion}</div>
-          {pedido.zona && <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>Zona: {pedido.zona}</div>}
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{p.cliente_nombre}</div>
+          {p.direccion && <div style={{ fontSize: 12, color: c.dim, marginTop: 2 }}>{p.direccion}{p.zona ? ` · ${p.zona}` : ''}</div>}
+          {p.cliente_telefono && <div style={{ fontSize: 12, color: c.blue, marginTop: 2 }}>📱 {p.cliente_telefono}</div>}
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: estadoColor_ }}>
-            {pedido.estado.toUpperCase()}
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#4ade80', marginTop: 4 }}>
-            ${n(pedido.total).toFixed(2)}
-          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: colorEstado[p.estado] || c.dim }}>{p.estado?.toUpperCase()}</div>
+          {p.total > 0 && <div style={{ fontSize: 14, fontWeight: 700, color: c.green, marginTop: 4 }}>${n(p.total).toFixed(2)}</div>}
         </div>
       </div>
 
-      {pedido.cliente_telefono && (
-        <div style={{ fontSize: 12, color: '#60a5fa', marginBottom: 8 }}>
-          📱 {pedido.cliente_telefono}
-        </div>
+      {p.items && (
+        <div style={{ fontSize: 12, color: '#ccc', background: '#16213e', padding: 8, borderRadius: 6, marginBottom: 8 }}>{p.items}</div>
       )}
 
-      {pedido.items && (
-        <div style={{ fontSize: 12, color: '#ddd', background: '#16213e', padding: 8, borderRadius: 6, marginBottom: 8 }}>
-          {pedido.items}
-        </div>
-      )}
-
-      {pedido.distancia_km && (
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
-          📏 {n(pedido.distancia_km).toFixed(1)} km
-        </div>
-      )}
-
-      {/* SELECTOR CONDUCTOR */}
-      {pedido.estado === 'pendiente' && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <select
-            value={selectedDriver}
-            onChange={e => setSelectedDriver(e.target.value)}
-            style={{ ...inputStyle, flex: 1, fontSize: 12 }}
-          >
-            <option value="">— Seleccionar conductor —</option>
-            {empleados.map(emp => (
-              <option key={emp.id} value={emp.id}>
-                {emp.nombre}
-              </option>
-            ))}
+      {p.estado === 'pendiente' && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          <select value={selDriver} onChange={e => setSelDriver(e.target.value)}
+            style={{ ...inp, flex: 1, fontSize: 12 }}>
+            <option value="">— Conductor —</option>
+            {drivers.map(d => <option key={d.id} value={d.id}>{d.nombre} ({d.cargo})</option>)}
           </select>
-          <button
-            className="btn btn-blue btn-sm"
-            onClick={() => onAsignar(pedido.id, selectedDriver)}
-          >
-            Asignar
-          </button>
+          <button onClick={() => onAsignar(p.id, selDriver)} style={btn(c.blue)}>Asignar</button>
         </div>
       )}
 
-      {/* BOTONES ACCIÓN */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {pedido.estado === 'asignado' && (
-          <button
-            className="btn btn-purple btn-sm"
-            onClick={() => onCambiarEstado(pedido.id, 'en_camino')}
-          >
-            🚗 En Camino
-          </button>
-        )}
-        {pedido.estado === 'en_camino' && (
-          <button
-            className="btn btn-green btn-sm"
-            onClick={() => onCambiarEstado(pedido.id, 'entregado')}
-          >
-            ✅ Entregado
-          </button>
-        )}
-        {pedido.estado !== 'entregado' && pedido.estado !== 'cancelado' && (
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => onCambiarEstado(pedido.id, 'cancelado')}
-          >
-            🚫 Cancelar
-          </button>
+        {p.estado === 'asignado'  && <button onClick={() => onCambiar(p.id, 'en_camino')} style={btn(c.purple)}>🚗 En Camino</button>}
+        {p.estado === 'en_camino' && <button onClick={() => onCambiar(p.id, 'entregado')} style={btn(c.green)}>✅ Entregado</button>}
+        {!['entregado','cancelado'].includes(p.estado) && (
+          <button onClick={() => onCambiar(p.id, 'cancelado')} style={btn('#333', c.dim)}>🚫 Cancelar</button>
         )}
       </div>
 
       {driverNombre && (
-        <div style={{ fontSize: 11, color: '#60a5fa', marginTop: 8, paddingTop: 8, borderTop: '1px solid #333' }}>
+        <div style={{ fontSize: 11, color: c.blue, marginTop: 8, paddingTop: 8, borderTop: `1px solid #333` }}>
           🚚 Conductor: {driverNombre}
         </div>
       )}
@@ -388,449 +225,423 @@ function PedidoCard({ pedido, empleados, onAsignar, onCambiarEstado }) {
   );
 }
 
-// ── TAB 2: REGISTRO DE VIAJES ──────────────────────────────────
-function RegistroViajes({ user, show }) {
-  const [viajes, setViajes] = useState([]);
-  const [empleados, setEmpleados] = useState([]);
-  const [pedidos, setPedidos] = useState([]);
-  const [config, setConfig] = useState(null);
-  const [loading, setLoading] = useState(true);
+// ── TAB 2: REGISTRO DE VIAJES ────────────────────────────────────────────────
+function TabViajes({ user, show }) {
+  const [viajes, setViajes]     = useState([]);
+  const [drivers, setDrivers]   = useState([]);
+  const [config, setConfig]     = useState({});
+  const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [newViaje, setNewViaje] = useState({
-    empleado_id: '',
-    delivery_id: '',
-    distancia_km: '',
-    es_fuera_de_horario: false,
-    tipo: 'entrega',
-    notas: '',
+  const [filtroFecha, setFiltroFecha] = useState(today());
+  const [form, setForm] = useState({
+    empleado_id: '', tipo: 'entrega', distancia_km: '',
+    es_fuera_de_horario: false, descripcion_mandado: '', notas: '',
   });
 
   const cargar = useCallback(async () => {
     setLoading(true);
-    try {
-      const [vjs, emp, ped, cfg] = await Promise.all([
-        db.from('viajes_delivery')
-          .select('*, empleados(nombre)')
-          .eq('fecha', today())
-          .order('created_at', { ascending: false }),
-        db.from('empleados')
-          .select('id,nombre,cargo')
-          .eq('cargo', 'delivery')
-          .eq('activo', true),
-        db.from('delivery_clientes')
-          .select('id,cliente_nombre,cliente_telefono,estado')
-          .eq('estado', 'en_camino')
-          .order('created_at', { ascending: false }),
-        db.from('config_delivery')
-          .select('*')
-          .limit(1)
-          .single(),
-      ]);
-      setViajes(vjs.data || []);
-      setEmpleados(emp.data || []);
-      setPedidos(ped.data || []);
-      setConfig(cfg.data || {});
-    } catch (e) {
-      show('❌ ' + e.message);
-    }
+    const [vjs, emp, cfg] = await Promise.all([
+      db.from('viajes_delivery')
+        .select('*, empleados(nombre,cargo)')
+        .eq('fecha', filtroFecha)
+        .order('created_at', { ascending: false }),
+      db.from('empleados').select('id,nombre,cargo').in('cargo', CARGOS_DRIVER).eq('activo', true),
+      db.from('config_delivery').select('parametro,valor'),
+    ]);
+    setViajes(vjs.data || []);
+    setDrivers(emp.data || []);
+    setConfig(parseCfg(cfg.data));
     setLoading(false);
-  }, [show]);
+  }, [filtroFecha]);
 
-  useEffect(() => {
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const f = form;
+  const tarifaPreview = useMemo(() =>
+    (f.tipo && Object.keys(config).length > 0)
+      ? calcTarifa(f.tipo, n(f.distancia_km), f.es_fuera_de_horario, config)
+      : null,
+    [f.tipo, f.distancia_km, f.es_fuera_de_horario, config]
+  );
+
+  const registrar = async () => {
+    if (!form.empleado_id) { show('⚠️ Selecciona un conductor'); return; }
+    if (form.tipo === 'entrega' && !form.distancia_km) { show('⚠️ Ingresa la distancia en km'); return; }
+
+    const payload = {
+      empleado_id: form.empleado_id,
+      fecha: filtroFecha,
+      tipo: form.tipo,
+      distancia_km: form.tipo === 'entrega' ? n(form.distancia_km) : 0,
+      es_fuera_de_horario: form.es_fuera_de_horario,
+      descripcion_mandado: form.descripcion_mandado.trim() || null,
+      notas: form.notas.trim() || null,
+      created_at: new Date().toISOString(),
+    };
+    const { error } = await db.from('viajes_delivery').insert(payload);
+    if (error) { show('❌ ' + error.message); return; }
+    show(`✅ Viaje registrado — $${tarifaPreview?.toFixed(2)}`);
+    setForm({ empleado_id: '', tipo: 'entrega', distancia_km: '', es_fuera_de_horario: false, descripcion_mandado: '', notas: '' });
+    setShowForm(false);
     cargar();
-  }, [cargar]);
-
-  const registrarViaje = async () => {
-    if (!newViaje.empleado_id) {
-      show('⚠️ Selecciona un conductor');
-      return;
-    }
-    if (!newViaje.distancia_km) {
-      show('⚠️ Ingresa la distancia en km');
-      return;
-    }
-
-    try {
-      const { error } = await db.from('viajes_delivery').insert({
-        empleado_id: newViaje.empleado_id,
-        delivery_id: newViaje.delivery_id || null,
-        fecha: today(),
-        distancia_km: n(newViaje.distancia_km),
-        es_fuera_de_horario: newViaje.es_fuera_de_horario,
-        tipo: newViaje.tipo,
-        notas: newViaje.notas.trim(),
-        created_at: new Date().toISOString(),
-      });
-      if (error) throw error;
-      show('✅ Viaje registrado');
-      setNewViaje({
-        empleado_id: '',
-        delivery_id: '',
-        distancia_km: '',
-        es_fuera_de_horario: false,
-        tipo: 'entrega',
-        notas: '',
-      });
-      setShowForm(false);
-      await cargar();
-    } catch (e) {
-      show('❌ ' + e.message);
-    }
   };
 
-  // Calcular tarifa
-  const calcularTarifa = () => {
-    if (!config || !newViaje.distancia_km) return 0;
-    const dist = n(newViaje.distancia_km);
-    const umbral = n(config.km_umbral || 17);
-    let tarifa = 0;
-
-    if (newViaje.es_fuera_de_horario) {
-      tarifa = n(config.tarifa_fuera_horario || 3.0);
-    } else if (dist > umbral) {
-      tarifa = n(config.tarifa_larga || 1.0);
-    } else {
-      tarifa = newViaje.tipo === 'mandado' ? n(config.tarifa_mandado || 0.5) : n(config.tarifa_normal || 0.5);
-    }
-    return tarifa;
-  };
+  // Totales del día
+  const totalDia     = viajes.length;
+  const bonoDia      = viajes.reduce((s, v) => s + calcTarifa(v.tipo, n(v.distancia_km), v.es_fuera_de_horario, config), 0);
+  const fueraHorario = viajes.filter(v => v.es_fuera_de_horario).length;
 
   return (
     <div>
-      {/* BOTÓN REGISTRAR VIAJE */}
-      <button className="btn btn-orange" style={{ width: '100%', marginBottom: 16 }} onClick={() => setShowForm(!showForm)}>
+      {/* Filtro fecha */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+        <input type="date" value={filtroFecha} onChange={e => setFiltroFecha(e.target.value)}
+          style={{ ...inp, flex: 1 }} />
+        <button onClick={() => setFiltroFecha(today())} style={btn('#333', c.dim)}>Hoy</button>
+      </div>
+
+      {/* KPIs del día */}
+      {!loading && viajes.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div style={kpi(c.blue)}><div style={{ fontSize: 10, color: c.dim }}>VIAJES</div><div style={{ fontSize: 20, fontWeight: 700, color: c.blue }}>{totalDia}</div></div>
+          <div style={kpi(c.green)}><div style={{ fontSize: 10, color: c.dim }}>BONO DÍA</div><div style={{ fontSize: 20, fontWeight: 700, color: c.green }}>${bonoDia.toFixed(2)}</div></div>
+          <div style={kpi(c.orange)}><div style={{ fontSize: 10, color: c.dim }}>FUERA HORARIO</div><div style={{ fontSize: 20, fontWeight: 700, color: c.orange }}>{fueraHorario}</div></div>
+        </div>
+      )}
+
+      {/* Botón registrar */}
+      <button onClick={() => setShowForm(!showForm)} style={{ ...btn(c.orange), width: '100%', marginBottom: 14 }}>
         {showForm ? '✕ Cancelar' : '+ Registrar Viaje'}
       </button>
 
-      {/* FORM VIAJE */}
+      {/* Formulario */}
       {showForm && (
-        <div className="card" style={{ marginBottom: 16, padding: 14, background: '#16213e', borderLeft: '3px solid #f59e0b' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#f59e0b' }}>NUEVO VIAJE</div>
+        <div style={card({ borderLeft: `3px solid ${c.orange}`, marginBottom: 14 })}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: c.orange, marginBottom: 12 }}>NUEVO VIAJE</div>
 
-          <label style={labelStyle}>Conductor</label>
-          <select
-            value={newViaje.empleado_id}
-            onChange={e => setNewViaje({ ...newViaje, empleado_id: e.target.value })}
-            style={{ ...inputStyle, marginBottom: 10 }}
-          >
+          <label style={lbl}>Conductor *</label>
+          <select value={form.empleado_id} onChange={e => setForm({ ...form, empleado_id: e.target.value })}
+            style={{ ...inp, marginBottom: 10 }}>
             <option value="">— Seleccionar conductor —</option>
-            {empleados.map(emp => (
-              <option key={emp.id} value={emp.id}>
-                {emp.nombre}
-              </option>
-            ))}
+            {drivers.map(d => <option key={d.id} value={d.id}>{d.nombre} ({d.cargo})</option>)}
           </select>
 
-          <label style={labelStyle}>Pedido (Opcional)</label>
-          <select
-            value={newViaje.delivery_id}
-            onChange={e => setNewViaje({ ...newViaje, delivery_id: e.target.value })}
-            style={{ ...inputStyle, marginBottom: 10 }}
-          >
-            <option value="">— Sin pedido específico —</option>
-            {pedidos.map(ped => (
-              <option key={ped.id} value={ped.id}>
-                {ped.cliente_nombre}
-              </option>
-            ))}
-          </select>
-
-          <label style={labelStyle}>Distancia (km)</label>
-          <input
-            type="number"
-            step="0.1"
-            placeholder="0.0"
-            value={newViaje.distancia_km}
-            onChange={e => setNewViaje({ ...newViaje, distancia_km: e.target.value })}
-            style={{ ...inputStyle, marginBottom: 10 }}
-          />
-
-          <label style={labelStyle}>Tipo</label>
-          <select
-            value={newViaje.tipo}
-            onChange={e => setNewViaje({ ...newViaje, tipo: e.target.value })}
-            style={{ ...inputStyle, marginBottom: 10 }}
-          >
+          <label style={lbl}>Tipo</label>
+          <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}
+            style={{ ...inp, marginBottom: 10 }}>
             <option value="entrega">Entrega</option>
             <option value="mandado">Mandado</option>
           </select>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <input
-              type="checkbox"
-              id="fuera_horario"
-              checked={newViaje.es_fuera_de_horario}
-              onChange={e => setNewViaje({ ...newViaje, es_fuera_de_horario: e.target.checked })}
-              style={{ width: 18, height: 18, cursor: 'pointer' }}
-            />
-            <label htmlFor="fuera_horario" style={{ fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
-              ⏰ Fuera de horario
+          {form.tipo === 'entrega' && (
+            <>
+              <label style={lbl}>Distancia (km) *</label>
+              <input type="number" step="0.5" min="0" placeholder="0.0"
+                value={form.distancia_km}
+                onChange={e => setForm({ ...form, distancia_km: e.target.value })}
+                style={{ ...inp, marginBottom: 10 }} />
+            </>
+          )}
+
+          {form.tipo === 'mandado' && (
+            <>
+              <label style={lbl}>Descripción del mandado</label>
+              <input type="text" placeholder="Ej: Comprar papel para caja..."
+                value={form.descripcion_mandado}
+                onChange={e => setForm({ ...form, descripcion_mandado: e.target.value })}
+                style={{ ...inp, marginBottom: 10 }} />
+            </>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <input type="checkbox" id="fh" checked={form.es_fuera_de_horario}
+              onChange={e => setForm({ ...form, es_fuera_de_horario: e.target.checked })}
+              style={{ width: 18, height: 18, cursor: 'pointer' }} />
+            <label htmlFor="fh" style={{ fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
+              ⏰ Fuera de horario (+${(config.tarifa_fuera_horario ?? 3).toFixed(2)})
             </label>
           </div>
 
-          <label style={labelStyle}>Notas</label>
-          <textarea
-            placeholder="Observaciones del viaje..."
-            value={newViaje.notas}
-            onChange={e => setNewViaje({ ...newViaje, notas: e.target.value })}
-            style={{ ...inputStyle, minHeight: 50, marginBottom: 12, fontFamily: 'monospace', fontSize: 12 }}
-          />
+          <label style={lbl}>Notas (opcional)</label>
+          <textarea placeholder="Observaciones..." value={form.notas}
+            onChange={e => setForm({ ...form, notas: e.target.value })}
+            style={{ ...inp, minHeight: 48, marginBottom: 12, fontFamily: 'inherit' }} />
 
-          {/* TARIFA CALCULADA */}
-          <div
-            style={{
-              background: '#1a1a2e',
-              padding: 10,
-              borderRadius: 6,
-              marginBottom: 12,
-              border: '1px solid #333',
-            }}
-          >
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>TARIFA ESTIMADA</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#4ade80' }}>
-              ${calcularTarifa().toFixed(2)}
+          {/* Tarifa preview */}
+          {tarifaPreview !== null && (
+            <div style={{ background: '#0a1628', padding: 10, borderRadius: 8, marginBottom: 12, border: '1px solid #1e3a5f' }}>
+              <div style={{ fontSize: 11, color: c.dim, marginBottom: 4 }}>TARIFA ESTIMADA</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: c.green }}>${tarifaPreview.toFixed(2)}</div>
+              {form.tipo === 'entrega' && (
+                <div style={{ fontSize: 11, color: c.dim, marginTop: 4 }}>
+                  {n(form.distancia_km) >= (config.km_umbral_doble ?? 17)
+                    ? `Entrega larga ≥${config.km_umbral_doble ?? 17}km: $${(config.tarifa_entrega_larga ?? 1).toFixed(2)}`
+                    : `Entrega normal <${config.km_umbral_doble ?? 17}km: $${(config.tarifa_entrega_normal ?? 0.5).toFixed(2)}`}
+                  {form.es_fuera_de_horario && ` + fuera horario: $${(config.tarifa_fuera_horario ?? 3).toFixed(2)}`}
+                </div>
+              )}
             </div>
-          </div>
+          )}
 
-          <button className="btn btn-green" style={{ width: '100%' }} onClick={registrarViaje}>
-            💾 Registrar Viaje
-          </button>
+          <button onClick={registrar} style={{ ...btn(c.green), width: '100%' }}>💾 Registrar</button>
         </div>
       )}
 
-      {/* LISTA VIAJES */}
-      {loading && <div className="spin" style={{ width: 28, height: 28, margin: '20px auto' }} />}
+      {loading && <div style={{ textAlign: 'center', padding: 32, color: c.dim }}>Cargando...</div>}
+
       {!loading && viajes.length === 0 && (
-        <div className="empty">
-          <div className="empty-icon">🚗</div>
-          <div className="empty-text">Sin viajes hoy</div>
+        <div style={{ textAlign: 'center', padding: 40, color: c.dim }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🚗</div>
+          <div style={{ marginBottom: 4 }}>Sin viajes en esta fecha</div>
+          <div style={{ fontSize: 12 }}>{drivers.length === 0 ? 'No hay conductores activos en BD' : `${drivers.length} conductores disponibles`}</div>
         </div>
       )}
 
-      {!loading &&
-        viajes.map(viaje => (
-          <div key={viaje.id} className="card" style={{ marginBottom: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+      {!loading && viajes.map(v => {
+        const tarifa = calcTarifa(v.tipo, n(v.distancia_km), v.es_fuera_de_horario, config);
+        return (
+          <div key={v.id} style={card()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>
-                  {viaje.empleados?.nombre || 'Conductor'}
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{v.empleados?.nombre || '—'}</div>
+                <div style={{ fontSize: 12, color: c.dim, marginTop: 2 }}>{v.empleados?.cargo}</div>
+                <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
+                  {v.tipo === 'mandado' ? '📦 Mandado' : `🚗 Entrega · ${n(v.distancia_km).toFixed(1)} km`}
+                  {v.es_fuera_de_horario && <span style={{ color: c.orange, marginLeft: 8 }}>⏰ Fuera hr.</span>}
                 </div>
-                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                  {viaje.tipo === 'mandado' ? '📦' : '🚗'} {viaje.tipo}
-                </div>
+                {v.descripcion_mandado && <div style={{ fontSize: 11, color: c.dim, marginTop: 4 }}>{v.descripcion_mandado}</div>}
+                {v.notas && <div style={{ fontSize: 11, color: c.dim, marginTop: 4 }}>📝 {v.notas}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#4ade80' }}>
-                  {n(viaje.distancia_km).toFixed(1)} km
+                <div style={{ fontSize: 16, fontWeight: 700, color: c.green }}>${tarifa.toFixed(2)}</div>
+                <div style={{ fontSize: 11, color: c.dim, marginTop: 4 }}>
+                  {new Date(v.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}
                 </div>
-                {viaje.es_fuera_de_horario && (
-                  <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>⏰ Fuera de horario</div>
-                )}
               </div>
             </div>
-            {viaje.notas && (
-              <div style={{ fontSize: 11, color: '#666', marginTop: 4, paddingTop: 4, borderTop: '1px solid #333' }}>
-                📝 {viaje.notas}
-              </div>
-            )}
           </div>
-        ))}
+        );
+      })}
     </div>
   );
 }
 
-// ── TAB 3: BONOS DEL MES ───────────────────────────────────────
-function BonossDelMes({ user, show }) {
-  const [bonos, setBonos] = useState([]);
-  const [empleados, setEmpleados] = useState([]);
-  const [viajes, setViajes] = useState([]);
-  const [config, setConfig] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [mesSelec, setMesSelec] = useState(today().substring(0, 7)); // YYYY-MM
+// ── TAB 3: BONOS DEL MES ─────────────────────────────────────────────────────
+function TabBonos({ user, show, puedeAprobar }) {
+  const [mes, setMes]           = useState(mesActual());
+  const [drivers, setDrivers]   = useState([]);
+  const [viajes, setViajes]     = useState([]);
+  const [config, setConfig]     = useState({});
+  const [guardados, setGuardados] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [expandido, setExpandido] = useState(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
+    const [emp, vjs, cfg, bon] = await Promise.all([
+      db.from('empleados').select('id,nombre,cargo').in('cargo', CARGOS_DRIVER).eq('activo', true),
+      db.from('viajes_delivery').select('*').like('fecha', mes + '%'),
+      db.from('config_delivery').select('parametro,valor'),
+      db.from('bonos_delivery_mensual').select('*, empleados(nombre,cargo)').eq('mes', mes),
+    ]);
+    setDrivers(emp.data || []);
+    setViajes(vjs.data || []);
+    setConfig(parseCfg(cfg.data));
+    setGuardados(bon.data || []);
+    setLoading(false);
+  }, [mes]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  // Calcular bonos cliente-side (cálculo correcto aditivo)
+  const resumen = useMemo(() => {
+    if (!drivers.length || !Object.keys(config).length) return [];
+    return drivers
+      .map(d => {
+        const vjs = viajes.filter(v => v.empleado_id === d.id);
+        if (vjs.length === 0 && !guardados.find(g => g.empleado_id === d.id)) return null;
+        const calc  = bonoDriver(vjs, config);
+        const saved = guardados.find(g => g.empleado_id === d.id);
+        return { ...d, viajes: vjs.length, calc, saved };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.calc.total - a.calc.total);
+  }, [drivers, viajes, config, guardados]);
+
+  const totales = useMemo(() => ({
+    viajes: resumen.reduce((s, d) => s + d.viajes, 0),
+    bono:   resumen.reduce((s, d) => s + d.calc.total, 0),
+    drivers: resumen.length,
+  }), [resumen]);
+
+  const guardar = async () => {
+    if (viajes.length === 0) { show('⚠️ No hay viajes registrados en este mes'); return; }
+    setGuardando(true);
     try {
-      const [emp, vjs, cfg] = await Promise.all([
-        db.from('empleados')
-          .select('id,nombre,cargo')
-          .eq('cargo', 'delivery')
-          .eq('activo', true),
-        db.from('viajes_delivery')
-          .select('*')
-          .like('fecha', mesSelec + '%'),
-        db.from('config_delivery')
-          .select('*')
-          .limit(1)
-          .single(),
-      ]);
-      setEmpleados(emp.data || []);
-      setViajes(vjs.data || []);
-      setConfig(cfg.data || {});
+      const { data, error } = await db.rpc('calcular_bonos_delivery_mes', { p_mes: mes });
+      if (error) throw error;
+      show(`✅ Bonos calculados para ${data} conductor(es)`);
+      cargar();
     } catch (e) {
       show('❌ ' + e.message);
     }
-    setLoading(false);
-  }, [mesSelec, show]);
+    setGuardando(false);
+  };
 
-  useEffect(() => {
+  const aprobar = async (empleadoId) => {
+    const { error } = await db.from('bonos_delivery_mensual')
+      .update({ estado: 'aprobado' })
+      .eq('mes', mes).eq('empleado_id', empleadoId);
+    if (error) { show('❌ ' + error.message); return; }
+    show('✅ Bono aprobado');
     cargar();
-  }, [cargar]);
+  };
 
-  // Calcular bonos por driver
-  const calcularBonos = useMemo(() => {
-    const result = {};
-    empleados.forEach(emp => {
-      const empViajes = viajes.filter(v => v.empleado_id === emp.id);
-      const entregas_normal = empViajes.filter(
-        v => v.tipo === 'entrega' && !v.es_fuera_de_horario && n(v.distancia_km) <= (config.km_umbral || 17)
-      ).length;
-      const entregas_larga_distancia = empViajes.filter(
-        v => v.tipo === 'entrega' && n(v.distancia_km) > (config.km_umbral || 17)
-      ).length;
-      const fuera_horario = empViajes.filter(v => v.es_fuera_de_horario).length;
-      const mandados = empViajes.filter(v => v.tipo === 'mandado').length;
-
-      const bono =
-        entregas_normal * n(config.tarifa_normal || 0.5) +
-        entregas_larga_distancia * n(config.tarifa_larga || 1.0) +
-        fuera_horario * n(config.tarifa_fuera_horario || 3.0) +
-        mandados * n(config.tarifa_mandado || 0.5);
-
-      result[emp.id] = {
-        nombre: emp.nombre,
-        entregas_normal,
-        entregas_larga_distancia,
-        fuera_horario,
-        mandados,
-        bono_total: bono,
-        viajes_total: empViajes.length,
-      };
-    });
-    return result;
-  }, [empleados, viajes, config]);
-
-  const totalBono = Object.values(calcularBonos).reduce((sum, d) => sum + n(d.bono_total), 0);
-  const totalViajes = Object.values(calcularBonos).reduce((sum, d) => sum + d.viajes_total, 0);
-
-  // Inputs para mes
-  const minDate = '2026-01-01';
-  const maxDate = today();
+  const cfgKeys = [
+    ['km_umbral_doble','Umbral km doble','km'],
+    ['tarifa_entrega_normal','Tarifa normal','$'],
+    ['tarifa_entrega_larga','Tarifa larga','$'],
+    ['tarifa_fuera_horario','Fuera de horario','$'],
+    ['tarifa_mandado','Mandado','$'],
+  ];
 
   return (
     <div>
-      {/* SELECTOR MES */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Período</label>
-        <input
-          type="month"
-          value={mesSelec}
-          onChange={e => setMesSelec(e.target.value)}
-          min={minDate}
-          max={maxDate}
-          style={{ ...inputStyle }}
-        />
+      {/* Selector de mes */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={lbl}>Período</label>
+        <input type="month" value={mes} onChange={e => setMes(e.target.value)}
+          style={inp} />
       </div>
 
-      {/* TABLA BONOS */}
-      {loading && <div className="spin" style={{ width: 28, height: 28, margin: '20px auto' }} />}
+      {/* Tarifas configuradas */}
+      <div style={card({ marginBottom: 14 })}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: c.dim, marginBottom: 8 }}>⚙️ TARIFAS CONFIGURADAS</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {cfgKeys.map(([k, label, unit]) => (
+            <div key={k} style={{ background: '#111', padding: '6px 10px', borderRadius: 6, fontSize: 12 }}>
+              <span style={{ color: c.dim }}>{label}: </span>
+              <span style={{ color: c.yellow, fontWeight: 700 }}>
+                {unit === '$' ? `$${(config[k] ?? '-')}` : `${config[k] ?? '-'} km`}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
 
-      {!loading && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #444' }}>
-                <th style={thStyle}>Conductor</th>
-                <th style={{ ...thStyle, textAlign: 'center' }}>Normal</th>
-                <th style={{ ...thStyle, textAlign: 'center' }}>Largas</th>
-                <th style={{ ...thStyle, textAlign: 'center' }}>Fuera Hr</th>
-                <th style={{ ...thStyle, textAlign: 'center' }}>Mandados</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>Bono Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.values(calcularBonos).map(driver => (
-                <tr key={driver.nombre} style={{ borderBottom: '1px solid #333' }}>
-                  <td style={{ ...tdStyle, fontWeight: 600, color: '#ddd' }}>{driver.nombre}</td>
-                  <td style={{ ...tdStyle, textAlign: 'center', color: '#60a5fa' }}>{driver.entregas_normal}</td>
-                  <td style={{ ...tdStyle, textAlign: 'center', color: '#f59e0b' }}>{driver.entregas_larga_distancia}</td>
-                  <td style={{ ...tdStyle, textAlign: 'center', color: '#e63946' }}>{driver.fuera_horario}</td>
-                  <td style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>{driver.mandados}</td>
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#4ade80' }}>
-                    ${n(driver.bono_total).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
+      {loading && <div style={{ textAlign: 'center', padding: 32, color: c.dim }}>Cargando...</div>}
 
-              {/* TOTALES */}
-              <tr style={{ borderTop: '2px solid #666', background: '#16213e' }}>
-                <td style={{ ...tdStyle, fontWeight: 700, color: '#fff' }}>TOTAL</td>
-                <td style={{ ...tdStyle, textAlign: 'center' }}></td>
-                <td style={{ ...tdStyle, textAlign: 'center' }}></td>
-                <td style={{ ...tdStyle, textAlign: 'center' }}></td>
-                <td style={{ ...tdStyle, textAlign: 'center' }}></td>
-                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#4ade80', fontSize: 14 }}>
-                  ${totalBono.toFixed(2)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      {!loading && resumen.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 40, color: c.dim }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>💰</div>
+          <div style={{ marginBottom: 4 }}>Sin viajes en {fmtMes(mes)}</div>
+          <div style={{ fontSize: 12 }}>Registra viajes en la pestaña 🚗 para calcular bonos</div>
         </div>
       )}
 
-      {/* RESUMEN */}
-      {!loading && (
-        <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 150, background: '#16213e', padding: 12, borderRadius: 8, borderLeft: '3px solid #4ade80' }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Total Bonos</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#4ade80' }}>${totalBono.toFixed(2)}</div>
+      {/* KPIs resumen */}
+      {!loading && resumen.length > 0 && (
+        <>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+            <div style={kpi(c.green)}><div style={{ fontSize: 10, color: c.dim }}>BONO TOTAL</div><div style={{ fontSize: 20, fontWeight: 700, color: c.green }}>${totales.bono.toFixed(2)}</div></div>
+            <div style={kpi(c.blue)}><div style={{ fontSize: 10, color: c.dim }}>VIAJES</div><div style={{ fontSize: 20, fontWeight: 700, color: c.blue }}>{totales.viajes}</div></div>
+            <div style={kpi(c.purple)}><div style={{ fontSize: 10, color: c.dim }}>DRIVERS</div><div style={{ fontSize: 20, fontWeight: 700, color: c.purple }}>{totales.drivers}</div></div>
           </div>
-          <div style={{ flex: 1, minWidth: 150, background: '#16213e', padding: 12, borderRadius: 8, borderLeft: '3px solid #60a5fa' }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Total Viajes</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#60a5fa' }}>{totalViajes}</div>
+
+          {/* Tabla por driver */}
+          <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid #444` }}>
+                  <th style={{ padding: '8px 6px', textAlign: 'left', color: c.dim, fontWeight: 600 }}>Conductor</th>
+                  <th style={{ padding: '8px 4px', textAlign: 'center', color: c.blue }}>Nrm</th>
+                  <th style={{ padding: '8px 4px', textAlign: 'center', color: c.yellow }}>Lrg</th>
+                  <th style={{ padding: '8px 4px', textAlign: 'center', color: c.orange }}>F.Hr</th>
+                  <th style={{ padding: '8px 4px', textAlign: 'center', color: c.dim }}>Mnd</th>
+                  <th style={{ padding: '8px 6px', textAlign: 'right', color: c.green }}>Bono</th>
+                  <th style={{ padding: '8px 6px', textAlign: 'center', color: c.dim }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resumen.map(d => {
+                  const estado = d.saved?.estado;
+                  const estadoColor = { aprobado: c.green, calculado: c.yellow }[estado] || c.dim;
+                  return (
+                    <tr key={d.id} style={{ borderBottom: `1px solid #333`, cursor: 'pointer' }}
+                      onClick={() => setExpandido(expandido === d.id ? null : d.id)}>
+                      <td style={{ padding: '8px 6px', fontWeight: 600, color: c.text }}>
+                        {d.nombre}
+                        <div style={{ fontSize: 10, color: c.dim, fontWeight: 400 }}>{d.cargo}</div>
+                      </td>
+                      <td style={{ padding: '8px 4px', textAlign: 'center', color: c.blue }}>{d.calc.normal}</td>
+                      <td style={{ padding: '8px 4px', textAlign: 'center', color: c.yellow }}>{d.calc.larga}</td>
+                      <td style={{ padding: '8px 4px', textAlign: 'center', color: c.orange }}>{d.calc.fuera}</td>
+                      <td style={{ padding: '8px 4px', textAlign: 'center', color: c.dim }}>{d.calc.mandados}</td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: c.green }}>${d.calc.total.toFixed(2)}</td>
+                      <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: 11, color: estadoColor }}>
+                        {estado ? estado.toUpperCase() : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr style={{ borderTop: `2px solid #555`, background: '#161616' }}>
+                  <td style={{ padding: '8px 6px', fontWeight: 700, color: '#fff' }}>TOTAL</td>
+                  <td style={{ padding: '8px 4px', textAlign: 'center', color: c.blue }}>{resumen.reduce((s,d)=>s+d.calc.normal,0)}</td>
+                  <td style={{ padding: '8px 4px', textAlign: 'center', color: c.yellow }}>{resumen.reduce((s,d)=>s+d.calc.larga,0)}</td>
+                  <td style={{ padding: '8px 4px', textAlign: 'center', color: c.orange }}>{resumen.reduce((s,d)=>s+d.calc.fuera,0)}</td>
+                  <td style={{ padding: '8px 4px', textAlign: 'center', color: c.dim }}>{resumen.reduce((s,d)=>s+d.calc.mandados,0)}</td>
+                  <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: c.green, fontSize: 14 }}>${totales.bono.toFixed(2)}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div style={{ flex: 1, minWidth: 150, background: '#16213e', padding: 12, borderRadius: 8, borderLeft: '3px solid #f59e0b' }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Promedio/Viaje</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b' }}>
-              ${totalViajes > 0 ? (totalBono / totalViajes).toFixed(2) : '0.00'}
-            </div>
-          </div>
-        </div>
+
+          {/* Panel expandido por driver */}
+          {expandido && (() => {
+            const d = resumen.find(x => x.id === expandido);
+            if (!d) return null;
+            return (
+              <div style={card({ borderLeft: `3px solid ${c.green}`, marginBottom: 14 })}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{d.nombre}</div>
+                <div style={{ fontSize: 12, color: c.dim, marginBottom: 10 }}>{d.viajes} viajes en {fmtMes(mes)}</div>
+                {[
+                  ['Entregas normales', d.calc.normal, config.tarifa_entrega_normal, c.blue],
+                  ['Entregas largas', d.calc.larga, config.tarifa_entrega_larga, c.yellow],
+                  ['Fuera de horario', d.calc.fuera, config.tarifa_fuera_horario, c.orange],
+                  ['Mandados', d.calc.mandados, config.tarifa_mandado, c.dim],
+                ].map(([lbl2, qty, tarifa, color]) => qty > 0 && (
+                  <div key={lbl2} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #333', fontSize: 13 }}>
+                    <span style={{ color }}>{lbl2}: <strong>{qty}</strong></span>
+                    <span style={{ color: c.green }}>× ${(tarifa ?? 0).toFixed(2)} = ${(qty * (tarifa ?? 0)).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 14, fontWeight: 700, marginTop: 4 }}>
+                  <span style={{ color: c.text }}>BONO TOTAL</span>
+                  <span style={{ color: c.green }}>${d.calc.total.toFixed(2)}</span>
+                </div>
+                {puedeAprobar && d.saved && d.saved.estado !== 'aprobado' && (
+                  <button onClick={() => aprobar(d.id)} style={{ ...btn(c.green), width: '100%', marginTop: 8 }}>
+                    ✅ Aprobar Bono
+                  </button>
+                )}
+                {d.saved?.estado === 'aprobado' && (
+                  <div style={{ textAlign: 'center', padding: 8, color: c.green, fontSize: 13, fontWeight: 600 }}>✅ BONO APROBADO</div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Botón guardar */}
+          {puedeAprobar && (
+            <button onClick={guardar} disabled={guardando || viajes.length === 0}
+              style={{ ...btn(guardando ? '#333' : c.yellow, guardando ? c.dim : '#000'), width: '100%' }}>
+              {guardando ? 'Calculando...' : `💾 Calcular y Guardar Bonos — ${fmtMes(mes)}`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
 }
-
-// ── ESTILOS REUTILIZABLES ──────────────────────────────────────
-const inputStyle = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 6,
-  border: '1px solid #333',
-  background: '#16213e',
-  color: '#eee',
-  fontSize: 13,
-  boxSizing: 'border-box',
-};
-
-const labelStyle = {
-  display: 'block',
-  fontSize: 12,
-  color: '#888',
-  marginBottom: 6,
-  fontWeight: 600,
-};
-
-const thStyle = {
-  padding: '10px 8px',
-  fontSize: 12,
-  color: '#888',
-  textAlign: 'left',
-  fontWeight: 600,
-};
-
-const tdStyle = {
-  padding: '10px 8px',
-  fontSize: 13,
-  color: '#ddd',
-};
