@@ -43,14 +43,14 @@ function calcMontoPorPersona(total, numGana) {
 // ─── SUCURSALES CON PROPINAS ───────────────────────────────────────────────
 const SUCKS_PROPINA = ['M001', 'S003', 'S004'];
 
-// Roles que pueden aprobar (admin/ejecutivo/rrhh/superadmin)
+// Roles que pueden aprobar — solo ejecutivo/superadmin
 function puedeAprobar(rol) {
-  return ['admin', 'ejecutivo', 'rrhh', 'superadmin'].includes(rol);
+  return ['ejecutivo', 'superadmin'].includes(rol);
 }
 
-// Roles que ven menú Evaluar de su propia sucursal
+// Roles que ven menú Evaluar — solo ejecutivo/superadmin
 function puedeEvaluar(rol) {
-  return ['gerente', 'admin', 'ejecutivo', 'rrhh', 'superadmin'].includes(rol);
+  return ['ejecutivo', 'superadmin'].includes(rol);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
