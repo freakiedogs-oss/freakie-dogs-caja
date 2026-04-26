@@ -3,9 +3,6 @@ import { db } from '../../supabase';
 import { STORES, today, fmtDate, n } from '../../config';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
-import { Badge } from '../ui/Badge';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONSTANTES
@@ -468,28 +465,48 @@ export default function KardexView({ user, show }) {
     finally { setSavingAdj(false); }
   };
 
+  const handleTab = (v) => {
+    setActiveTab(v);
+    if (v === 'mapeo')   fetchMapeo();
+    if (v === 'recetas') fetchRecetas();
+  };
+
   /* ══════════════════════════════════════════════════════════════════════
      RENDER
      ══════════════════════════════════════════════════════════════════════ */
+  const TABS_K = [
+    { id: 'inventario',  label: '📦 Inventario' },
+    { id: 'mapeo',       label: '🔗 Mapeo Compras' },
+    { id: 'recetas',     label: '📋 Recetas' },
+    { id: 'movimientos', label: '📊 Historial' },
+    { id: 'ajustes',     label: '⚙️ Ajustes' },
+  ];
+
   return (
     <div className="p-3 min-h-screen bg-background text-foreground">
-      <Tabs value={activeTab} onValueChange={v => {
-        setActiveTab(v);
-        if (v === 'mapeo') fetchMapeo();
-        if (v === 'recetas') fetchRecetas();
-      }}>
-        <TabsList className="mb-4 flex-wrap h-auto gap-1">
-          <TabsTrigger value="inventario">📦 Inventario</TabsTrigger>
-          <TabsTrigger value="mapeo">🔗 Mapeo Compras</TabsTrigger>
-          <TabsTrigger value="recetas">📋 Recetas</TabsTrigger>
-          <TabsTrigger value="movimientos">📊 Historial</TabsTrigger>
-          <TabsTrigger value="ajustes">⚙️ Ajustes</TabsTrigger>
-        </TabsList>
+      {/* Tab nav — pills */}
+      <div style={{ display: 'flex', overflowX: 'auto', gap: 6, marginBottom: 16, paddingBottom: 2 }}>
+        {TABS_K.map(t => (
+          <button
+            key={t.id}
+            onClick={() => handleTab(t.id)}
+            style={{
+              padding: '6px 12px', borderRadius: 20, border: 'none',
+              cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600,
+              background: activeTab === t.id ? '#e63946' : '#222',
+              color:      activeTab === t.id ? '#fff'     : '#666',
+              transition: 'all 0.15s', fontFamily: 'inherit',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
         {/* ═══════════════════════════════════════════════════════════════
             TAB 1: INVENTARIO
         ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="inventario">
+        {activeTab === 'inventario' && (<div>
           {/* KPIs */}
           <div className="flex gap-2 mb-4 overflow-x-auto">
             <KpiCard icon="🥩" label="Materias Primas" value={catCounts.materia_prima} color="#60a5fa" />
@@ -606,13 +623,13 @@ export default function KardexView({ user, show }) {
               )}
             </div>
           )}
-        </TabsContent>
+        </div>)}
 
         {/* ═══════════════════════════════════════════════════════════════
             TAB 2: MAPEO DE COMPRAS
             Vincula los items de tus facturas a ingredientes del catálogo
         ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="mapeo">
+        {activeTab === 'mapeo' && (<div>
           {/* Barra de progreso global */}
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -763,12 +780,12 @@ export default function KardexView({ user, show }) {
               })}
             </div>
           )}
-        </TabsContent>
+        </div>)}
 
         {/* ═══════════════════════════════════════════════════════════════
             TAB 3: RECETAS
         ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="recetas">
+        {activeTab === 'recetas' && (<div>
           <div className="flex items-center justify-between mb-4 gap-3">
             <div>
               <h3 className="sec-title mb-0">Recetas</h3>
@@ -945,12 +962,12 @@ export default function KardexView({ user, show }) {
               })}
             </div>
           )}
-        </TabsContent>
+        </div>)}
 
         {/* ═══════════════════════════════════════════════════════════════
             TAB 4: HISTORIAL DE MOVIMIENTOS
         ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="movimientos">
+        {activeTab === 'movimientos' && (<div>
           <div className="card" style={{ padding: 12 }}>
             <div className="grid grid-cols-2 gap-2 mb-2">
               <div className="field">
@@ -1015,12 +1032,12 @@ export default function KardexView({ user, show }) {
               })}
             </div>
           )}
-        </TabsContent>
+        </div>)}
 
         {/* ═══════════════════════════════════════════════════════════════
             TAB 5: AJUSTES MANUALES
         ═══════════════════════════════════════════════════════════════ */}
-        <TabsContent value="ajustes">
+        {activeTab === 'ajustes' && (<div>
           <div className="card" style={{ maxWidth: 480 }}>
             <div className="sec-title" style={{ marginBottom: 4 }}>Ajuste manual de inventario</div>
             <p className="text-xs text-muted-foreground mb-4">
@@ -1082,8 +1099,7 @@ export default function KardexView({ user, show }) {
               </button>
             </div>
           </div>
-        </TabsContent>
-      </Tabs>
+        </div>)}
     </div>
   );
 }
