@@ -36,6 +36,7 @@ import MiAsistencia from './components/empleado/MiAsistencia'
 import MiBoleta from './components/empleado/MiBoleta'
 import HorariosView from './components/rrhh/HorariosView'
 import Amonestaciones from './components/rrhh/Amonestaciones'
+import PropinasView from './components/rrhh/PropinasView'
 import PendientesView from './components/admin/PendientesView'
 import DTEMapeoView from './components/admin/DTEMapeoView'
 import RentabilidadView from './components/admin/RentabilidadView'
@@ -269,6 +270,8 @@ export default function App() {
         return <HorariosView user={user} />
       case 'amonestaciones':
         return <Amonestaciones user={user} onBack={() => setScreen('home')} />
+      case 'propinas':
+        return <PropinasView user={user} />
       case 'produccion':
         return <ProduccionDiaria user={user} />
       case 'incidentes-cm':

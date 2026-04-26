@@ -133,6 +133,7 @@ export const NAV_SECTIONS = [
       { key: 'planilla', label: 'Nómina / Planilla', icon: '💵', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
       { key: 'recibos-digitales', label: 'Recibos Digitales', icon: '🧾', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
       { key: 'amonestaciones', label: 'Amonestaciones', icon: '⚖️', roles: ['ejecutivo', 'rrhh', 'admin', 'gerente'] },
+      { key: 'propinas', label: 'Propinas Mensuales', icon: '💰', roles: ['ejecutivo', 'rrhh', 'admin', 'gerente', 'superadmin'] },
     ],
   },
   {
