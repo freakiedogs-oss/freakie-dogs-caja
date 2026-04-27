@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db } from '../../supabase'
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -43,8 +43,107 @@ const TABS = [
   { key: 'importar', label: '📥 Importar' },
   { key: 'cola', label: '🔍 Cola Manual' },
   { key: 'reglas', label: '⚙️ Reglas' },
+  { key: 'comprobantes', label: '📷 Comprobantes' },
   { key: 'auditoria', label: '📋 Auditoría' },
 ]
+
+// ─── OCR: Tesseract.js lazy-load desde CDN ─────────────────
+let _tesseractLoaded = false
+async function loadTesseract() {
+  if (_tesseractLoaded) return
+  if (!window.Tesseract) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+      s.onload = resolve
+      s.onerror = reject
+      document.head.appendChild(s)
+    })
+  }
+  _tesseractLoaded = true
+}
+
+// SHA-256 hash del archivo (idempotencia)
+async function sha256File(file) {
+  const buf = await file.arrayBuffer()
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf)
+  return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+const MESES_MAP = {
+  enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+  julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12',
+  ene: '01', feb: '02', mar: '03', abr: '04', may: '05', jun: '06',
+  jul: '07', ago: '08', sep: '09', oct: '10', nov: '11', dic: '12',
+}
+
+// Parser regex para comprobantes de transferencia bancaria SV
+function parseComprobante(text) {
+  const out = {}
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+
+  // Monto: "$1,234.56" o "USD 1,234.56" o "Monto debitado $..."
+  const montoMatch = text.match(/(?:monto|total|valor|debitado)[:\s]*\$?\s*([\d,]+\.\d{2})/i)
+    || text.match(/\$\s*([\d,]+\.\d{2})/)
+    || text.match(/USD\s*([\d,]+\.\d{2})/i)
+  if (montoMatch) out.monto = parseFloat(montoMatch[1].replace(/,/g, ''))
+
+  // Fecha: "13 abril 2026", "13/04/2026", "13-04-2026"
+  const fechaTexto = text.match(/(\d{1,2})\s+(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\.?\s*(?:de\s+)?(\d{4})?/i)
+  if (fechaTexto) {
+    const day = fechaTexto[1].padStart(2, '0')
+    const mon = MESES_MAP[fechaTexto[2].toLowerCase()] || '01'
+    const year = fechaTexto[3] || new Date().getFullYear()
+    out.fecha_extraida = `${year}-${mon}-${day}`
+  } else {
+    const fnum = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+    if (fnum) {
+      const d = fnum[1].padStart(2, '0'), m = fnum[2].padStart(2, '0')
+      let y = fnum[3]
+      if (y.length === 2) y = '20' + y
+      out.fecha_extraida = `${y}-${m}-${d}`
+    }
+  }
+
+  // Beneficiario: línea después de "A favor de", "Beneficiario", "Cuenta destino"
+  const idxBenef = lines.findIndex(l => /(?:beneficiario|a favor de|cuenta destino|destinatario)/i.test(l))
+  if (idxBenef >= 0) {
+    for (let i = idxBenef + 1; i < Math.min(idxBenef + 4, lines.length); i++) {
+      const cand = lines[i]
+      if (cand && !/^\d+$/.test(cand.replace(/\s/g, '')) && cand.length > 3 && /[A-Za-z]/.test(cand)) {
+        out.beneficiario = cand.replace(/[^A-Za-zÀ-ÿ0-9\s.,&\-]/g, '').trim().slice(0, 100)
+        break
+      }
+    }
+  }
+
+  // Últimos 4 dígitos cuenta destino: "***1234", "...-1234", "20150045 1" última cifra final
+  const u4 = text.match(/(?:cuenta|cta|account)[\s\S]{0,40}?(?:\*+|x+|\.+|-+)\s*(\d{4})/i)
+    || text.match(/(?:cuenta|cta)[\s\S]{0,40}?(\d{10,})/i)
+  if (u4) {
+    const raw = u4[1]
+    out.ultimos_4_digitos = raw.length >= 4 ? raw.slice(-4) : raw.padStart(4, '0')
+  }
+
+  // Banco origen
+  const bancos = ['BAC', 'Agricola', 'Agrícola', 'Davivienda', 'Promerica', 'Cuscatlan', 'Cuscatlán', 'Banco Industrial', 'Hipotecario', 'Atlantida', 'Atlántida']
+  for (const b of bancos) {
+    if (new RegExp(`\\b${b}\\b`, 'i').test(text)) { out.banco_origen = b; break }
+  }
+
+  // N° referencia
+  const ref = text.match(/(?:referencia|comprobante|n[uúº]?mero|trans?accion)[:\s#]*(\d{6,})/i)
+    || text.match(/\b(\d{8,12})\b/)
+  if (ref) out.numero_referencia = ref[1]
+
+  return out
+}
+
+async function ocrComprobante(file) {
+  await loadTesseract()
+  const { data: { text } } = await window.Tesseract.recognize(file, 'spa', { logger: () => {} })
+  return { text, parsed: parseComprobante(text) }
+}
 
 const ESTADOS_CLASIFICAR = [
   { val: 'auto_match', label: 'Auto-match' },
@@ -103,8 +202,213 @@ export default function BancoView({ user }) {
       {tab === 'importar' && <TabImportar />}
       {tab === 'cola' && <TabColaManual user={user} />}
       {tab === 'reglas' && <TabReglas />}
+      {tab === 'comprobantes' && <TabComprobantes user={user} />}
       {tab === 'auditoria' && <TabAuditoria />}
     </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAB 6: COMPROBANTES — multi-upload + OCR Tesseract.js + auto-match
+// ═══════════════════════════════════════════════════════════
+function TabComprobantes({ user }) {
+  const [comprobantes, setComprobantes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [processing, setProcessing] = useState(false)
+  const [progress, setProgress] = useState({ done: 0, total: 0, currentMsg: '' })
+  const [lastBatch, setLastBatch] = useState(null) // { ok, dup, err, matched, sin_match }
+  const fileInputRef = useRef(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await db.from('bank_comprobantes')
+        .select('*, bank_transacciones:bank_transaccion_id(fecha,codigo_bac,descripcion,debito)')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      setComprobantes(data || [])
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleFiles = async (files) => {
+    if (!files || files.length === 0) return
+    setProcessing(true)
+    setProgress({ done: 0, total: files.length, currentMsg: 'Cargando OCR…' })
+    let ok = 0, dup = 0, err = 0
+
+    try {
+      await loadTesseract()
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        setProgress({ done: i, total: files.length, currentMsg: `Procesando ${file.name}…` })
+        try {
+          const hash = await sha256File(file)
+
+          // Verificar duplicado por hash antes de subir
+          const { data: existing } = await db.from('bank_comprobantes').select('id').eq('hash_imagen', hash).maybeSingle()
+          if (existing) { dup++; continue }
+
+          // OCR
+          const { text, parsed } = await ocrComprobante(file)
+
+          // Upload a storage
+          const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+          const yyyy = (parsed.fecha_extraida || new Date().toISOString().slice(0,10)).slice(0,4)
+          const mm = (parsed.fecha_extraida || new Date().toISOString().slice(0,10)).slice(5,7)
+          const path = `${yyyy}/${mm}/${hash}.${ext}`
+          const { error: upErr } = await db.storage.from('bank-comprobantes').upload(path, file, { upsert: true, contentType: file.type })
+          if (upErr) throw upErr
+          const { data: urlData } = db.storage.from('bank-comprobantes').getPublicUrl(path)
+
+          // INSERT
+          const { error: insErr } = await db.from('bank_comprobantes').insert({
+            foto_url: urlData.publicUrl,
+            storage_path: path,
+            hash_imagen: hash,
+            ocr_text: text.slice(0, 5000),
+            ocr_data: parsed,
+            monto: parsed.monto || null,
+            fecha_extraida: parsed.fecha_extraida || null,
+            beneficiario: parsed.beneficiario || null,
+            ultimos_4_digitos: parsed.ultimos_4_digitos || null,
+            banco_origen: parsed.banco_origen || null,
+            numero_referencia: parsed.numero_referencia || null,
+            uploaded_by: user?.nombre || user?.rol || 'unknown',
+          })
+          if (insErr) {
+            if (insErr.code === '23505') { dup++; continue } // hash UNIQUE conflict
+            throw insErr
+          }
+          ok++
+        } catch (e) {
+          console.error('Error procesando', file.name, e)
+          err++
+        }
+      }
+
+      // Después del batch: ejecutar matcher
+      const { data: mres } = await db.rpc('bancoview_match_comprobantes')
+      const matched = mres?.[0]?.matches_creados ?? 0
+      const sin_match = mres?.[0]?.sin_match ?? 0
+
+      setLastBatch({ ok, dup, err, matched, sin_match })
+      await load()
+    } finally {
+      setProcessing(false)
+      setProgress({ done: 0, total: 0, currentMsg: '' })
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
+
+  return (
+    <>
+      {/* Upload zone */}
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 20, marginBottom: 12, textAlign: 'center' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 8 }}>📷 Subir comprobantes en lote</div>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 14, lineHeight: 1.5 }}>
+          Selecciona varias imágenes desde tu galería o cámara. Cada imagen se procesa con OCR<br/>
+          (Tesseract.js español) y se intenta vincular automáticamente a una transacción del banco.
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          capture="environment"
+          onChange={(e) => handleFiles(e.target.files)}
+          disabled={processing}
+          style={{ display: 'none' }}
+          id="bank-comp-upload"
+        />
+        <label htmlFor="bank-comp-upload" style={{
+          display: 'inline-block', padding: '10px 20px', borderRadius: 8,
+          background: processing ? '#374151' : 'rgba(96,165,250,0.15)',
+          border: '1px solid #60a5fa', color: '#60a5fa', fontWeight: 700, fontSize: 13,
+          cursor: processing ? 'not-allowed' : 'pointer',
+        }}>
+          {processing ? '⏳ Procesando…' : '📤 Seleccionar imágenes'}
+        </label>
+        {processing && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>{progress.currentMsg}</div>
+            <div style={{ background: '#0f172a', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+              <div style={{ background: '#60a5fa', height: '100%', width: `${(progress.done / Math.max(progress.total, 1)) * 100}%`, transition: 'width 0.3s' }} />
+            </div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{progress.done} / {progress.total}</div>
+          </div>
+        )}
+      </div>
+
+      {/* Resultados último batch */}
+      {lastBatch && (
+        <div style={{ background: '#064e3b', border: '1px solid #065f46', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#6ee7b7', marginBottom: 6 }}>✅ Último batch procesado</div>
+          <div style={{ fontSize: 11, color: '#a7f3d0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px,1fr))', gap: 8 }}>
+            <div>📥 Subidos: <b style={{ color: '#fff' }}>{lastBatch.ok}</b></div>
+            <div>⚠️ Duplicados: <b style={{ color: '#fcd34d' }}>{lastBatch.dup}</b></div>
+            <div>❌ Errores: <b style={{ color: '#fca5a5' }}>{lastBatch.err}</b></div>
+            <div>🔗 Auto-match: <b style={{ color: '#fff' }}>{lastBatch.matched}</b></div>
+            <div>🔍 Sin match: <b style={{ color: '#fbbf24' }}>{lastBatch.sin_match}</b></div>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de comprobantes */}
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Últimos {comprobantes.length} comprobantes</div>
+        {comprobantes.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#888' }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>📷</div>
+            <div>Aún no hay comprobantes. Sube las capturas de tu galería arriba.</div>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #374151' }}>
+                  <th style={th}>Foto</th>
+                  <th style={th}>Fecha</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Monto</th>
+                  <th style={th}>Beneficiario</th>
+                  <th style={th}>4 dig</th>
+                  <th style={th}>Banco</th>
+                  <th style={th}>Match</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comprobantes.map(c => (
+                  <tr key={c.id} style={{ borderBottom: '1px solid #2a3340' }}>
+                    <td style={td}>
+                      <a href={c.foto_url} target="_blank" rel="noopener noreferrer">
+                        <img src={c.foto_url} alt="comp" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, border: '1px solid #374151' }} />
+                      </a>
+                    </td>
+                    <td style={td}>{c.fecha_extraida ? fmtDate(c.fecha_extraida) : <span style={{ color: '#666' }}>—</span>}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{c.monto != null ? fmt(c.monto) : <span style={{ color: '#666' }}>—</span>}</td>
+                    <td style={{ ...td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.beneficiario || <span style={{ color: '#666' }}>—</span>}</td>
+                    <td style={td}><code style={codeSt}>{c.ultimos_4_digitos || '—'}</code></td>
+                    <td style={td}>{c.banco_origen || <span style={{ color: '#666' }}>—</span>}</td>
+                    <td style={td}>
+                      {c.bank_transaccion_id ? (
+                        <span style={{ color: '#34d399', fontWeight: 700 }}>✅ {c.match_metodo}</span>
+                      ) : (
+                        <span style={{ color: '#fbbf24' }}>⏳ sin match</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
