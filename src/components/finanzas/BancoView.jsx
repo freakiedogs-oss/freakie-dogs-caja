@@ -522,6 +522,10 @@ function TabWizard({ user, pushNotif }) {
         )}
       </div>
 
+      {/* Multi-DTE: pagar varias facturas con un solo pago */}
+      <MultiDteSelector bankTx={actual} user={user} pushNotif={pushNotif}
+        onApplied={() => { setPendientes(ps => ps.filter(p => p.id !== actual.id)); setIdx(i => Math.min(i, filtrados.length - 2)) }} />
+
       {/* Acciones alternativas */}
       <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 8 }}>🛠 Otras acciones</div>
@@ -727,6 +731,190 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
           <button onClick={guardar} disabled={saving} style={{ ...btnSt, background: 'rgba(52,211,153,0.2)', border: '1px solid #34d399', color: '#6ee7b7' }}>{saving ? '⏳' : '💾 Guardar gasto'}</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// MULTI-DTE SELECTOR — pagar varias facturas con un solo pago bancario
+// ═══════════════════════════════════════════════════════════
+function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
+  const [proveedoresPend, setProveedoresPend] = useState([])
+  const [provFiltro, setProvFiltro] = useState('')
+  const [provSeleccionado, setProvSeleccionado] = useState(null)
+  const [facturas, setFacturas] = useState([])
+  const [seleccionadas, setSeleccionadas] = useState(new Set())
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  const target = bankTx?.debito || bankTx?.credito || 0
+
+  // Cargar proveedores con facturas pendientes (resumen)
+  useEffect(() => {
+    if (!expanded) return
+    (async () => {
+      setLoading(true)
+      try {
+        const data = await fetchAll(db.from('v_compras_dte_pendientes').select('proveedor_nombre, saldo_pendiente'))
+        const byProv = {}
+        for (const f of data) {
+          if (!byProv[f.proveedor_nombre]) byProv[f.proveedor_nombre] = { nombre: f.proveedor_nombre, count: 0, total: 0 }
+          byProv[f.proveedor_nombre].count++
+          byProv[f.proveedor_nombre].total += Number(f.saldo_pendiente) || 0
+        }
+        setProveedoresPend(Object.values(byProv).sort((a, b) => b.total - a.total))
+      } catch (e) { console.error(e) } finally { setLoading(false) }
+    })()
+  }, [expanded])
+
+  // Cargar facturas del proveedor seleccionado
+  useEffect(() => {
+    if (!provSeleccionado) { setFacturas([]); setSeleccionadas(new Set()); return }
+    (async () => {
+      setLoading(true)
+      try {
+        const { data } = await db.from('v_compras_dte_pendientes')
+          .select('*').eq('proveedor_nombre', provSeleccionado).order('fecha', { ascending: false })
+        setFacturas(data || [])
+        // Auto-sugerir: si hay combinación obvia que sume al target, marcarla
+        const list = data || []
+        let acum = 0
+        const auto = new Set()
+        for (const f of list) {
+          if (acum + Number(f.saldo_pendiente) <= target + 0.01) {
+            auto.add(f.id); acum += Number(f.saldo_pendiente)
+            if (Math.abs(acum - target) < 0.01) break
+          }
+        }
+        if (Math.abs(acum - target) < 0.01 && auto.size > 0) setSeleccionadas(auto)
+      } catch (e) { console.error(e) } finally { setLoading(false) }
+    })()
+  }, [provSeleccionado, target])
+
+  const provFiltrados = provFiltro
+    ? proveedoresPend.filter(p => p.nombre.toLowerCase().includes(provFiltro.toLowerCase()))
+    : proveedoresPend.slice(0, 8)
+
+  const seleccionadasArr = facturas.filter(f => seleccionadas.has(f.id))
+  const sumaSeleccionada = seleccionadasArr.reduce((s, f) => s + Number(f.saldo_pendiente), 0)
+  const restante = target - sumaSeleccionada
+  const cuadra = Math.abs(restante) < 0.01
+
+  const toggleFactura = (id) => {
+    const ns = new Set(seleccionadas); if (ns.has(id)) ns.delete(id); else ns.add(id); setSeleccionadas(ns)
+  }
+
+  const aplicar = async () => {
+    if (seleccionadas.size === 0) return alert('Selecciona al menos 1 factura')
+    if (!cuadra && !confirm(`La suma seleccionada (${fmt(sumaSeleccionada)}) no cuadra con el monto del banco (${fmt(target)}). ¿Continuar de todos modos?`)) return
+    setSaving(true)
+    try {
+      const matches = seleccionadasArr.map(f => ({
+        target_tabla: 'compras_dte',
+        target_id: f.id,
+        monto_aplicado: Number(f.saldo_pendiente),
+        proveedor_nombre: f.proveedor_nombre,
+      }))
+      const { data, error } = await db.rpc('bancoview_aplicar_match_multiple', {
+        p_bank_transaccion_id: bankTx.id,
+        p_matches: matches,
+        p_created_by: user?.nombre || 'wizard',
+      })
+      if (error) throw error
+      const result = data?.[0]
+      if (result?.notificaciones?.length) for (const n of result.notificaciones) pushNotif(n)
+      alert(`✅ ${result?.matches_creados || matches.length} facturas vinculadas (${fmt(result?.monto_aplicado_total || sumaSeleccionada)})`)
+      onApplied?.()
+    } catch (e) { alert('Error: ' + e.message) } finally { setSaving(false) }
+  }
+
+  if (!expanded) {
+    return (
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+        <button onClick={() => setExpanded(true)} style={{ ...btnSt, width: '100%', background: 'rgba(168,85,247,0.15)', border: '1px solid #a855f7', color: '#c4b5fd' }}>
+          💼 Pagar múltiples facturas (multi-DTE) ▾
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 12, border: '1px solid #a855f7' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd' }}>💼 Pagar múltiples facturas a un proveedor</div>
+        <button onClick={() => setExpanded(false)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 16 }}>×</button>
+      </div>
+
+      {!provSeleccionado && (
+        <>
+          <input value={provFiltro} onChange={e => setProvFiltro(e.target.value)} placeholder="🔍 Buscar proveedor con facturas pendientes…" style={{ ...inputSt, width: '100%', marginBottom: 10 }} />
+          {loading ? <div style={{ color: '#888', textAlign: 'center', padding: 16 }}>Cargando…</div> : (
+            <div style={{ display: 'grid', gap: 4, maxHeight: 240, overflowY: 'auto' }}>
+              {provFiltrados.map(p => (
+                <button key={p.nombre} onClick={() => setProvSeleccionado(p.nombre)}
+                  style={{ padding: '8px 10px', background: '#0f172a', border: '1px solid #2a3340', borderRadius: 6, color: '#fff', fontSize: 12, cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{p.nombre}</span>
+                  <span style={{ color: '#a7f3d0' }}>{p.count} fact · {fmt(p.total)}</span>
+                </button>
+              ))}
+              {provFiltrados.length === 0 && <div style={{ color: '#888', fontSize: 11, padding: 8 }}>Sin proveedores que coincidan</div>}
+            </div>
+          )}
+        </>
+      )}
+
+      {provSeleccionado && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{provSeleccionado}</div>
+            <button onClick={() => { setProvSeleccionado(null); setSeleccionadas(new Set()) }} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: 11 }}>← cambiar</button>
+          </div>
+
+          {/* Tracker */}
+          <div style={{
+            padding: 10, borderRadius: 6, marginBottom: 10,
+            background: cuadra ? '#064e3b' : restante < 0 ? '#7f1d1d' : '#92400e',
+            border: `1px solid ${cuadra ? '#34d399' : restante < 0 ? '#fb7185' : '#fbbf24'}`,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+              <div>Pago banco: <b style={{ color: '#fff' }}>{fmt(target)}</b></div>
+              <div>Seleccionado: <b style={{ color: '#fff' }}>{fmt(sumaSeleccionada)}</b> ({seleccionadas.size})</div>
+              <div>{cuadra ? '✅ Cuadra' : restante < 0 ? '⚠️ Excedido' : '⏳ Restan'} <b style={{ color: '#fff' }}>{fmt(Math.abs(restante))}</b></div>
+            </div>
+          </div>
+
+          {/* Lista facturas */}
+          {loading ? <div style={{ color: '#888', textAlign: 'center', padding: 16 }}>Cargando…</div> : (
+            <div style={{ maxHeight: 280, overflowY: 'auto', marginBottom: 10 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead><tr style={{ borderBottom: '1px solid #374151', position: 'sticky', top: 0, background: '#1f2937' }}>
+                  <th style={{ ...th, width: 30 }}></th>
+                  <th style={th}>Fecha</th><th style={th}>N° DTE</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Total</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Saldo</th>
+                  <th style={th}>Vence</th>
+                </tr></thead>
+                <tbody>{facturas.map(f => (
+                  <tr key={f.id} style={{ borderBottom: '1px solid #2a3340', cursor: 'pointer', background: seleccionadas.has(f.id) ? 'rgba(168,85,247,0.1)' : 'transparent' }} onClick={() => toggleFactura(f.id)}>
+                    <td style={td}><input type="checkbox" checked={seleccionadas.has(f.id)} onChange={() => toggleFactura(f.id)} onClick={e => e.stopPropagation()} /></td>
+                    <td style={td}>{fmtDate(f.fecha)}</td>
+                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 10 }}>{f.numero_control || f.id.slice(0, 8)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmt(f.monto_total)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#fbbf24' }}>{fmt(f.saldo_pendiente)}</td>
+                    <td style={td}>{f.fecha_vencimiento ? fmtDate(f.fecha_vencimiento) : '—'}{f.dias_para_vencer != null && f.dias_para_vencer < 0 && <span style={{ color: '#fb7185' }}> ⚠️</span>}</td>
+                  </tr>))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <button onClick={aplicar} disabled={saving || seleccionadas.size === 0}
+            style={{ ...btnSt, width: '100%', background: cuadra ? 'rgba(52,211,153,0.2)' : 'rgba(168,85,247,0.2)', border: `1px solid ${cuadra ? '#34d399' : '#a855f7'}`, color: cuadra ? '#6ee7b7' : '#c4b5fd' }}>
+            {saving ? '⏳ Aplicando…' : `✅ Vincular ${seleccionadas.size} facturas (${fmt(sumaSeleccionada)})`}
+          </button>
+        </>
+      )}
     </div>
   )
 }
