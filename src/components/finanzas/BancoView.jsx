@@ -747,26 +747,30 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [incluirPagadas, setIncluirPagadas] = useState(false)
 
   const target = bankTx?.debito || bankTx?.credito || 0
 
-  // Cargar proveedores con facturas pendientes (resumen)
+  // Cargar proveedores: agrupar desde v_compras_dte_para_match con filtro segun incluirPagadas
   useEffect(() => {
     if (!expanded) return
     (async () => {
       setLoading(true)
       try {
-        const data = await fetchAll(db.from('v_compras_dte_pendientes').select('proveedor_nombre, saldo_pendiente'))
+        let q = db.from('v_compras_dte_para_match').select('proveedor_nombre, monto_para_match, ya_pagada')
+        if (!incluirPagadas) q = q.eq('ya_pagada', false)
+        const data = await fetchAll(q)
         const byProv = {}
         for (const f of data) {
-          if (!byProv[f.proveedor_nombre]) byProv[f.proveedor_nombre] = { nombre: f.proveedor_nombre, count: 0, total: 0 }
+          if (!byProv[f.proveedor_nombre]) byProv[f.proveedor_nombre] = { nombre: f.proveedor_nombre, count: 0, total: 0, count_pagadas: 0 }
           byProv[f.proveedor_nombre].count++
-          byProv[f.proveedor_nombre].total += Number(f.saldo_pendiente) || 0
+          byProv[f.proveedor_nombre].total += Number(f.monto_para_match) || 0
+          if (f.ya_pagada) byProv[f.proveedor_nombre].count_pagadas++
         }
         setProveedoresPend(Object.values(byProv).sort((a, b) => b.total - a.total))
       } catch (e) { console.error(e) } finally { setLoading(false) }
     })()
-  }, [expanded])
+  }, [expanded, incluirPagadas])
 
   // Cargar facturas del proveedor seleccionado
   useEffect(() => {
@@ -774,30 +778,33 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
     (async () => {
       setLoading(true)
       try {
-        const { data } = await db.from('v_compras_dte_pendientes')
-          .select('*').eq('proveedor_nombre', provSeleccionado).order('fecha', { ascending: false })
+        let q = db.from('v_compras_dte_para_match').select('*').eq('proveedor_nombre', provSeleccionado)
+        if (!incluirPagadas) q = q.eq('ya_pagada', false)
+        const { data } = await q.order('fecha', { ascending: false })
         setFacturas(data || [])
-        // Auto-sugerir: si hay combinación obvia que sume al target, marcarla
+        // Auto-sugerir: combinacion que sume al target
         const list = data || []
         let acum = 0
         const auto = new Set()
         for (const f of list) {
-          if (acum + Number(f.saldo_pendiente) <= target + 0.01) {
-            auto.add(f.id); acum += Number(f.saldo_pendiente)
+          const monto = Number(f.monto_para_match) || 0
+          if (acum + monto <= target + 0.01) {
+            auto.add(f.id); acum += monto
             if (Math.abs(acum - target) < 0.01) break
           }
         }
         if (Math.abs(acum - target) < 0.01 && auto.size > 0) setSeleccionadas(auto)
+        else setSeleccionadas(new Set())
       } catch (e) { console.error(e) } finally { setLoading(false) }
     })()
-  }, [provSeleccionado, target])
+  }, [provSeleccionado, target, incluirPagadas])
 
   const provFiltrados = provFiltro
     ? proveedoresPend.filter(p => p.nombre.toLowerCase().includes(provFiltro.toLowerCase()))
     : proveedoresPend.slice(0, 8)
 
   const seleccionadasArr = facturas.filter(f => seleccionadas.has(f.id))
-  const sumaSeleccionada = seleccionadasArr.reduce((s, f) => s + Number(f.saldo_pendiente), 0)
+  const sumaSeleccionada = seleccionadasArr.reduce((s, f) => s + Number(f.monto_para_match), 0)
   const restante = target - sumaSeleccionada
   const cuadra = Math.abs(restante) < 0.01
 
@@ -813,7 +820,7 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
       const matches = seleccionadasArr.map(f => ({
         target_tabla: 'compras_dte',
         target_id: f.id,
-        monto_aplicado: Number(f.saldo_pendiente),
+        monto_aplicado: Number(f.monto_para_match),
         proveedor_nombre: f.proveedor_nombre,
       }))
       const { data, error } = await db.rpc('bancoview_aplicar_match_multiple', {
@@ -846,6 +853,14 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
         <button onClick={() => setExpanded(false)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 16 }}>×</button>
       </div>
 
+      {/* Toggle incluir pagadas — útil para entrenar el sistema con DTEs marcados como pagados pre-conciliación */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: 8, background: '#0f172a', borderRadius: 6 }}>
+        <input type="checkbox" id="inc-pagadas" checked={incluirPagadas} onChange={e => { setIncluirPagadas(e.target.checked); setProvSeleccionado(null); setSeleccionadas(new Set()) }} />
+        <label htmlFor="inc-pagadas" style={{ fontSize: 11, color: '#aaa', cursor: 'pointer' }}>
+          📂 <b>Incluir DTEs marcadas como pagadas</b> (útil para vincular pagos antiguos sin conciliar y entrenar el sistema)
+        </label>
+      </div>
+
       {!provSeleccionado && (
         <>
           <input value={provFiltro} onChange={e => setProvFiltro(e.target.value)} placeholder="🔍 Buscar proveedor con facturas pendientes…" style={{ ...inputSt, width: '100%', marginBottom: 10 }} />
@@ -855,7 +870,9 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
                 <button key={p.nombre} onClick={() => setProvSeleccionado(p.nombre)}
                   style={{ padding: '8px 10px', background: '#0f172a', border: '1px solid #2a3340', borderRadius: 6, color: '#fff', fontSize: 12, cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
                   <span>{p.nombre}</span>
-                  <span style={{ color: '#a7f3d0' }}>{p.count} fact · {fmt(p.total)}</span>
+                  <span style={{ color: '#a7f3d0' }}>
+                    {p.count} fact{p.count_pagadas > 0 && incluirPagadas ? ` (${p.count_pagadas} pag)` : ''} · {fmt(p.total)}
+                  </span>
                 </button>
               ))}
               {provFiltrados.length === 0 && <div style={{ color: '#888', fontSize: 11, padding: 8 }}>Sin proveedores que coincidan</div>}
@@ -891,18 +908,26 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
                 <thead><tr style={{ borderBottom: '1px solid #374151', position: 'sticky', top: 0, background: '#1f2937' }}>
                   <th style={{ ...th, width: 30 }}></th>
                   <th style={th}>Fecha</th><th style={th}>N° DTE</th>
+                  <th style={th}>Estado</th>
                   <th style={{ ...th, textAlign: 'right' }}>Total</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Saldo</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Para match</th>
                   <th style={th}>Vence</th>
                 </tr></thead>
                 <tbody>{facturas.map(f => (
-                  <tr key={f.id} style={{ borderBottom: '1px solid #2a3340', cursor: 'pointer', background: seleccionadas.has(f.id) ? 'rgba(168,85,247,0.1)' : 'transparent' }} onClick={() => toggleFactura(f.id)}>
+                  <tr key={f.id} style={{ borderBottom: '1px solid #2a3340', cursor: 'pointer', background: seleccionadas.has(f.id) ? 'rgba(168,85,247,0.1)' : (f.ya_pagada ? 'rgba(52,211,153,0.04)' : 'transparent'), opacity: f.ya_pagada ? 0.85 : 1 }} onClick={() => toggleFactura(f.id)}>
                     <td style={td}><input type="checkbox" checked={seleccionadas.has(f.id)} onChange={() => toggleFactura(f.id)} onClick={e => e.stopPropagation()} /></td>
                     <td style={td}>{fmtDate(f.fecha)}</td>
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 10 }}>{f.numero_control || f.id.slice(0, 8)}</td>
+                    <td style={td}>
+                      {f.ya_pagada ? (
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: '#065f46', color: '#6ee7b7', fontWeight: 700 }}>✓ pagada</span>
+                      ) : (
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: '#92400e', color: '#fcd34d', fontWeight: 700 }}>pendiente</span>
+                      )}
+                    </td>
                     <td style={{ ...td, textAlign: 'right' }}>{fmt(f.monto_total)}</td>
-                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#fbbf24' }}>{fmt(f.saldo_pendiente)}</td>
-                    <td style={td}>{f.fecha_vencimiento ? fmtDate(f.fecha_vencimiento) : '—'}{f.dias_para_vencer != null && f.dias_para_vencer < 0 && <span style={{ color: '#fb7185' }}> ⚠️</span>}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: f.ya_pagada ? '#6ee7b7' : '#fbbf24' }}>{fmt(f.monto_para_match)}</td>
+                    <td style={td}>{f.fecha_vencimiento ? fmtDate(f.fecha_vencimiento) : '—'}{f.dias_para_vencer != null && f.dias_para_vencer < 0 && !f.ya_pagada && <span style={{ color: '#fb7185' }}> ⚠️</span>}</td>
                   </tr>))}
                 </tbody>
               </table>
