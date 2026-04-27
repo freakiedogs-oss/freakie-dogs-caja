@@ -1097,6 +1097,7 @@ function TabComprobantes({ user }) {
 function TabColaManual({ user }) {
   const [tx, setTx] = useState([])
   const [loading, setLoading] = useState(true)
+  const [filtroEstado, setFiltroEstado] = useState('sin_clasificar')
   const [filtroMes, setFiltroMes] = useState('todos')
   const [filtroCodigo, setFiltroCodigo] = useState('todos')
   const [seleccion, setSeleccion] = useState(new Set())
@@ -1105,10 +1106,12 @@ function TabColaManual({ user }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchAll(db.from('bank_transacciones').select('*').eq('estado', 'sin_clasificar').order('fecha', { ascending: false }))
+      let q = db.from('bank_transacciones').select('*').order('fecha', { ascending: false })
+      if (filtroEstado !== 'todos') q = q.eq('estado', filtroEstado)
+      const data = await fetchAll(q)
       setTx(data); setSeleccion(new Set())
     } catch (e) { console.error(e) } finally { setLoading(false) }
-  }, [])
+  }, [filtroEstado])
   useEffect(() => { load() }, [load])
 
   const meses = useMemo(() => ['todos', ...new Set(tx.map(t => (t.fecha || '').slice(0, 7))).values()].sort().reverse(), [tx])
@@ -1128,22 +1131,74 @@ function TabColaManual({ user }) {
     } catch (e) { alert('Error: ' + e.message) }
   }
 
+  const revertir = async (id) => {
+    if (!confirm('Revertir a sin_clasificar?')) return
+    try {
+      // Eliminar bank_match asociados (si los hay)
+      await db.from('bank_match').delete().eq('bank_transaccion_id', id)
+      await db.from('bank_transacciones').update({
+        estado: 'sin_clasificar',
+        notas: `[reverted:${user?.rol || 'user'}_${today()}]`,
+      }).eq('id', id)
+      await load()
+    } catch (e) { alert('Error: ' + e.message) }
+  }
+
+  const revertirBulk = async () => {
+    if (seleccion.size === 0) return alert('Selecciona al menos una')
+    if (!confirm(`Revertir ${seleccion.size} transacciones a sin_clasificar? (también borra sus matches)`)) return
+    try {
+      const ids = Array.from(seleccion)
+      await db.from('bank_match').delete().in('bank_transaccion_id', ids)
+      await db.from('bank_transacciones').update({
+        estado: 'sin_clasificar',
+        notas: `[reverted_bulk:${user?.rol || 'user'}_${today()}]`,
+      }).in('id', ids)
+      await load()
+    } catch (e) { alert('Error: ' + e.message) }
+  }
+
+  const ESTADOS_FILTRO = [
+    { val: 'todos', label: 'Todos los estados' },
+    { val: 'sin_clasificar', label: '🔴 Sin clasificar' },
+    { val: 'auto_match', label: '🟢 Auto-match' },
+    { val: 'match_manual', label: '🔵 Manual (Wizard)' },
+    { val: 'movimiento_socio', label: '🟣 Socio' },
+    { val: 'sin_dte', label: '🟠 Sin DTE' },
+    { val: 'comision_bancaria', label: '🟡 Comisión bancaria' },
+    { val: 'transferencia_interna', label: '⚪ Transferencia interna' },
+    { val: 'ignorar', label: '🗑 Ignoradas' },
+  ]
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
+  const verRevertir = filtroEstado !== 'sin_clasificar' && filtroEstado !== 'todos'
 
   return (
     <>
+      {/* Filtros + bulk */}
       <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div><div style={labelSt}>Estado</div><select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} style={{ ...inputSt, minWidth: 180 }}>
+          {ESTADOS_FILTRO.map(e => <option key={e.val} value={e.val}>{e.label}</option>)}
+        </select></div>
         <div><div style={labelSt}>Mes</div><select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={inputSt}>
           {meses.map(m => <option key={m} value={m}>{m === 'todos' ? 'Todos' : m}</option>)}
         </select></div>
         <div><div style={labelSt}>Código</div><select value={filtroCodigo} onChange={e => setFiltroCodigo(e.target.value)} style={inputSt}>
           {codigos.map(c => <option key={c} value={c}>{c === 'todos' ? 'Todos' : c}</option>)}
         </select></div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'flex-end' }}>
-          <div><div style={labelSt}>Marcar como</div><select value={bulkEstado} onChange={e => setBulkEstado(e.target.value)} style={inputSt}>
-            {ESTADOS_CLASIFICAR.map(e => <option key={e.val} value={e.val}>{e.label}</option>)}
-          </select></div>
-          <button onClick={aplicarBulk} disabled={seleccion.size === 0} style={{ ...btnSt, opacity: seleccion.size === 0 ? 0.5 : 1 }}>Aplicar ({seleccion.size})</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          {verRevertir ? (
+            <button onClick={revertirBulk} disabled={seleccion.size === 0} style={{ ...btnSt, background: 'rgba(251,191,36,0.15)', border: '1px solid #fbbf24', color: '#fbbf24', opacity: seleccion.size === 0 ? 0.5 : 1 }}>
+              ↩️ Revertir ({seleccion.size})
+            </button>
+          ) : (
+            <>
+              <div><div style={labelSt}>Marcar como</div><select value={bulkEstado} onChange={e => setBulkEstado(e.target.value)} style={inputSt}>
+                {ESTADOS_CLASIFICAR.map(e => <option key={e.val} value={e.val}>{e.label}</option>)}
+              </select></div>
+              <button onClick={aplicarBulk} disabled={seleccion.size === 0} style={{ ...btnSt, opacity: seleccion.size === 0 ? 0.5 : 1 }}>Aplicar ({seleccion.size})</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1154,18 +1209,29 @@ function TabColaManual({ user }) {
           <thead style={{ position: 'sticky', top: 0, background: '#1f2937', zIndex: 1 }}>
             <tr style={{ borderBottom: '1px solid #374151' }}>
               <th style={{ ...th, width: 30 }}><input type="checkbox" checked={seleccion.size === filtrados.length && filtrados.length > 0} onChange={toggleSelAll} /></th>
-              <th style={th}>Fecha</th><th style={th}>Cód</th><th style={th}>Descripción</th>
+              <th style={th}>Fecha</th><th style={th}>Cód</th>
+              {filtroEstado === 'todos' && <th style={th}>Estado</th>}
+              <th style={th}>Descripción</th>
               <th style={{ ...th, textAlign: 'right' }}>Débito</th><th style={{ ...th, textAlign: 'right' }}>Crédito</th>
+              {verRevertir && <th style={{ ...th, width: 50 }}></th>}
             </tr>
           </thead>
-          <tbody>{filtrados.slice(0, 200).map(t => (
+          <tbody>{filtrados.slice(0, 200).map(t => {
+            const ec = ESTADO_COLOR[t.estado] || ESTADO_COLOR.sin_clasificar
+            return (
             <tr key={t.id} style={{ borderBottom: '1px solid #2a3340', cursor: 'pointer', background: seleccion.has(t.id) ? 'rgba(96,165,250,0.06)' : 'transparent' }} onClick={() => toggleSel(t.id)}>
               <td style={td}><input type="checkbox" checked={seleccion.has(t.id)} onChange={() => toggleSel(t.id)} onClick={e => e.stopPropagation()} /></td>
               <td style={td}>{fmtDate(t.fecha)}</td><td style={td}><code style={codeSt}>{t.codigo_bac}</code></td>
+              {filtroEstado === 'todos' && <td style={td}><span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: ec.bg, color: ec.color, fontWeight: 700 }}>{ec.label}</span></td>}
               <td style={{ ...td, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</td>
               <td style={{ ...td, textAlign: 'right', color: Number(t.debito) > 0 ? '#fb7185' : '#666' }}>{Number(t.debito) > 0 ? fmt(t.debito) : '—'}</td>
               <td style={{ ...td, textAlign: 'right', color: Number(t.credito) > 0 ? '#34d399' : '#666' }}>{Number(t.credito) > 0 ? fmt(t.credito) : '—'}</td>
-            </tr>))}
+              {verRevertir && <td style={td} onClick={e => e.stopPropagation()}>
+                <button onClick={() => revertir(t.id)} title="Revertir a sin_clasificar"
+                  style={{ padding: '2px 6px', fontSize: 10, borderRadius: 4, border: '1px solid #fbbf24', background: 'transparent', color: '#fbbf24', cursor: 'pointer' }}>↩️</button>
+              </td>}
+            </tr>)
+          })}
           </tbody>
         </table>
         {filtrados.length > 200 && <div style={{ padding: 12, textAlign: 'center', color: '#888', fontSize: 11 }}>Mostrando 200 de {filtrados.length}.</div>}
