@@ -320,20 +320,38 @@ function TabComprobantes({ user }) {
           type="file"
           multiple
           accept="image/*"
-          capture="environment"
           onChange={(e) => handleFiles(e.target.files)}
           disabled={processing}
           style={{ display: 'none' }}
           id="bank-comp-upload"
         />
-        <label htmlFor="bank-comp-upload" style={{
-          display: 'inline-block', padding: '10px 20px', borderRadius: 8,
-          background: processing ? '#374151' : 'rgba(96,165,250,0.15)',
-          border: '1px solid #60a5fa', color: '#60a5fa', fontWeight: 700, fontSize: 13,
-          cursor: processing ? 'not-allowed' : 'pointer',
-        }}>
-          {processing ? '⏳ Procesando…' : '📤 Seleccionar imágenes'}
-        </label>
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={(e) => handleFiles(e.target.files)}
+          disabled={processing}
+          style={{ display: 'none' }}
+          id="bank-comp-camera"
+        />
+        <div style={{ display: 'inline-flex', gap: 8 }}>
+          <label htmlFor="bank-comp-upload" style={{
+            padding: '10px 20px', borderRadius: 8,
+            background: processing ? '#374151' : 'rgba(96,165,250,0.15)',
+            border: '1px solid #60a5fa', color: '#60a5fa', fontWeight: 700, fontSize: 13,
+            cursor: processing ? 'not-allowed' : 'pointer',
+          }}>
+            {processing ? '⏳ Procesando…' : '🖼️ Galería (multi)'}
+          </label>
+          <label htmlFor="bank-comp-camera" style={{
+            padding: '10px 20px', borderRadius: 8,
+            background: processing ? '#374151' : 'rgba(52,211,153,0.15)',
+            border: '1px solid #34d399', color: '#34d399', fontWeight: 700, fontSize: 13,
+            cursor: processing ? 'not-allowed' : 'pointer',
+          }}>
+            📷 Cámara
+          </label>
+        </div>
         {processing && (
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>{progress.currentMsg}</div>
