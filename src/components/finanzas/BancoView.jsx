@@ -1131,7 +1131,8 @@ function TabColaManual({ user }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      let q = db.from('bank_transacciones').select('*').order('fecha', { ascending: false })
+      // Usa la vista enriquecida que incluye proveedores matcheados
+      let q = db.from('v_bank_tx_con_match').select('*').order('fecha', { ascending: false })
       if (filtroEstado !== 'todos') q = q.eq('estado', filtroEstado)
       const data = await fetchAll(q)
       setTx(data); setSeleccion(new Set())
@@ -1237,6 +1238,7 @@ function TabColaManual({ user }) {
               <th style={th}>Fecha</th><th style={th}>Cód</th>
               {filtroEstado === 'todos' && <th style={th}>Estado</th>}
               <th style={th}>Descripción</th>
+              {filtroEstado !== 'sin_clasificar' && <th style={th}>Match (proveedor)</th>}
               <th style={{ ...th, textAlign: 'right' }}>Débito</th><th style={{ ...th, textAlign: 'right' }}>Crédito</th>
               {verRevertir && <th style={{ ...th, width: 50 }}></th>}
             </tr>
@@ -1248,7 +1250,10 @@ function TabColaManual({ user }) {
               <td style={td}><input type="checkbox" checked={seleccion.has(t.id)} onChange={() => toggleSel(t.id)} onClick={e => e.stopPropagation()} /></td>
               <td style={td}>{fmtDate(t.fecha)}</td><td style={td}><code style={codeSt}>{t.codigo_bac}</code></td>
               {filtroEstado === 'todos' && <td style={td}><span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: ec.bg, color: ec.color, fontWeight: 700 }}>{ec.label}</span></td>}
-              <td style={{ ...td, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</td>
+              <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</td>
+              {filtroEstado !== 'sin_clasificar' && <td style={{ ...td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.matches_count > 0 ? '#a7f3d0' : '#666' }}>
+                {t.proveedores_matcheados !== '—' ? <>{t.proveedores_matcheados}{t.matches_count > 1 && <span style={{ color: '#888' }}> ({t.matches_count})</span>}</> : '—'}
+              </td>}
               <td style={{ ...td, textAlign: 'right', color: Number(t.debito) > 0 ? '#fb7185' : '#666' }}>{Number(t.debito) > 0 ? fmt(t.debito) : '—'}</td>
               <td style={{ ...td, textAlign: 'right', color: Number(t.credito) > 0 ? '#34d399' : '#666' }}>{Number(t.credito) > 0 ? fmt(t.credito) : '—'}</td>
               {verRevertir && <td style={td} onClick={e => e.stopPropagation()}>
@@ -1303,8 +1308,21 @@ function TabReglas() {
 
   return (
     <>
-      <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
-        <button onClick={ejecutar} disabled={running} style={{ ...btnSt, opacity: running ? 0.5 : 1 }}>{running ? '⏳' : '▶️ Aplicar reglas'}</button>
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={ejecutar} disabled={running} style={{ ...btnSt, opacity: running ? 0.5 : 1 }}>{running ? '⏳' : '▶️ Aplicar 10 reglas base'}</button>
+        <button onClick={async () => {
+          if (!confirm('Aplicar TODAS las reglas aprendidas (AUTO—) a las tx pendientes que matcheen?')) return
+          setRunning(true)
+          try {
+            const { data, error } = await db.rpc('bancoview_aplicar_aprendizaje')
+            if (error) throw error
+            const r = data?.[0]
+            alert(`✅ ${r?.reglas_evaluadas || 0} reglas evaluadas · ${r?.transacciones_marcadas || 0} tx marcadas · ${r?.matches_creados || 0} matches creados`)
+            await load()
+          } catch (e) { alert('Error: ' + e.message) } finally { setRunning(false) }
+        }} disabled={running} style={{ ...btnSt, background: 'rgba(168,85,247,0.15)', border: '1px solid #a855f7', color: '#c4b5fd', opacity: running ? 0.5 : 1 }}>
+          🚀 Aplicar aprendizaje (reglas AUTO—)
+        </button>
         <div style={{ fontSize: 11, color: '#888' }}>Idempotente: solo procesa <code style={codeSt}>sin_clasificar</code>.</div>
       </div>
 
