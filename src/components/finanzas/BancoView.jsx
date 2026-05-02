@@ -579,6 +579,21 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
   // Form nuevo proveedor
   const [nuevoProv, setNuevoProv] = useState({ nombre_dte: '', categoria: '', subcategoria: '', sucursal_default: '' })
 
+  // Subcategorías agrupadas por categoría (desde catalogo_contable existente) — evita duplicados tipo "bebidas" vs "Bebidas"
+  const subcatsPorCategoria = useMemo(() => {
+    const map = {}
+    for (const p of proveedores) {
+      if (!p.categoria || !p.subcategoria) continue
+      if (!map[p.categoria]) map[p.categoria] = new Set()
+      map[p.categoria].add(p.subcategoria.trim())
+    }
+    const result = {}
+    for (const [cat, set] of Object.entries(map)) {
+      result[cat] = [...set].sort((a, b) => a.localeCompare(b))
+    }
+    return result
+  }, [proveedores])
+
   useEffect(() => {
     (async () => {
       try {
@@ -679,7 +694,35 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
                 <option value="">— Categoría P&L —</option>
                 {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
-              <input value={nuevoProv.subcategoria} onChange={e => setNuevoProv({ ...nuevoProv, subcategoria: e.target.value })} placeholder="Subcategoría (opcional)" style={inputSt} />
+              <input
+                list="subcats-list"
+                value={nuevoProv.subcategoria}
+                onChange={e => setNuevoProv({ ...nuevoProv, subcategoria: e.target.value })}
+                placeholder={nuevoProv.categoria ? `Subcategoría (existentes para ${nuevoProv.categoria}: ${(subcatsPorCategoria[nuevoProv.categoria] || []).length})` : 'Subcategoría (opcional)'}
+                style={inputSt}
+              />
+              <datalist id="subcats-list">
+                {(subcatsPorCategoria[nuevoProv.categoria] || []).map(s => <option key={s} value={s} />)}
+              </datalist>
+              {nuevoProv.subcategoria && nuevoProv.categoria && (() => {
+                const existentes = subcatsPorCategoria[nuevoProv.categoria] || []
+                const exact = existentes.find(s => s.toLowerCase() === nuevoProv.subcategoria.toLowerCase().trim())
+                const similar = existentes.find(s => s.toLowerCase().includes(nuevoProv.subcategoria.toLowerCase().trim()) || nuevoProv.subcategoria.toLowerCase().trim().includes(s.toLowerCase()))
+                if (exact && exact !== nuevoProv.subcategoria) return (
+                  <div style={{ fontSize: 10, color: '#fbbf24', marginTop: 4, padding: '4px 8px', background: 'rgba(251,191,36,0.1)', borderRadius: 4 }}>
+                    ⚠️ Existe ya como <b>"{exact}"</b> (mismo texto, distinta capitalización). <button type="button" onClick={() => setNuevoProv({ ...nuevoProv, subcategoria: exact })} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', textDecoration: 'underline', fontSize: 10 }}>Usar la existente</button>
+                  </div>
+                )
+                if (similar && similar !== nuevoProv.subcategoria) return (
+                  <div style={{ fontSize: 10, color: '#a7f3d0', marginTop: 4, padding: '4px 8px', background: 'rgba(52,211,153,0.08)', borderRadius: 4 }}>
+                    💡 Hay una similar: <b>"{similar}"</b>. <button type="button" onClick={() => setNuevoProv({ ...nuevoProv, subcategoria: similar })} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', textDecoration: 'underline', fontSize: 10 }}>Usar esa</button>
+                  </div>
+                )
+                if (!existentes.some(s => s.toLowerCase() === nuevoProv.subcategoria.toLowerCase().trim())) return (
+                  <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>✨ Nueva subcategoría (no existía antes)</div>
+                )
+                return null
+              })()}
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={crearProveedor} style={btnSt}>Guardar proveedor</button>
                 <button onClick={() => setShowNuevoProv(false)} style={{ ...btnSt, background: 'transparent', border: '1px solid #374151', color: '#aaa' }}>Cancelar</button>
