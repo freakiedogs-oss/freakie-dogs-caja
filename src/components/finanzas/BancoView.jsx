@@ -1127,6 +1127,7 @@ function TabColaManual({ user }) {
   const [filtroCodigo, setFiltroCodigo] = useState('todos')
   const [seleccion, setSeleccion] = useState(new Set())
   const [bulkEstado, setBulkEstado] = useState('match_manual')
+  const [expandido, setExpandido] = useState(null) // id de tx con drawer abierto
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1230,37 +1231,83 @@ function TabColaManual({ user }) {
 
       <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>{filtrados.length} tx · suma: {fmt(filtrados.reduce((s, t) => s + (Number(t.debito) || 0) + (Number(t.credito) || 0), 0))}</div>
 
-      <div style={{ background: '#1f2937', borderRadius: 8, padding: 8, overflow: 'auto', maxHeight: '60vh' }}>
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 8, overflow: 'auto', maxHeight: '70vh' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
           <thead style={{ position: 'sticky', top: 0, background: '#1f2937', zIndex: 1 }}>
             <tr style={{ borderBottom: '1px solid #374151' }}>
               <th style={{ ...th, width: 30 }}><input type="checkbox" checked={seleccion.size === filtrados.length && filtrados.length > 0} onChange={toggleSelAll} /></th>
-              <th style={th}>Fecha</th><th style={th}>Cód</th>
+              <th style={th}>Fecha</th>
+              <th style={th}>Cód</th>
               {filtroEstado === 'todos' && <th style={th}>Estado</th>}
               <th style={th}>Descripción</th>
-              {filtroEstado !== 'sin_clasificar' && <th style={th}>Match (proveedor)</th>}
-              <th style={{ ...th, textAlign: 'right' }}>Débito</th><th style={{ ...th, textAlign: 'right' }}>Crédito</th>
+              <th style={th}>4 dig</th>
+              <th style={th}>Match (proveedor)</th>
+              <th style={th}>Categoría</th>
+              <th style={th}>Centro</th>
+              <th style={th}>Foto</th>
+              <th style={{ ...th, textAlign: 'right' }}>Débito</th>
+              <th style={{ ...th, textAlign: 'right' }}>Crédito</th>
               {verRevertir && <th style={{ ...th, width: 50 }}></th>}
             </tr>
           </thead>
           <tbody>{filtrados.slice(0, 200).map(t => {
             const ec = ESTADO_COLOR[t.estado] || ESTADO_COLOR.sin_clasificar
-            return (
-            <tr key={t.id} style={{ borderBottom: '1px solid #2a3340', cursor: 'pointer', background: seleccion.has(t.id) ? 'rgba(96,165,250,0.06)' : 'transparent' }} onClick={() => toggleSel(t.id)}>
-              <td style={td}><input type="checkbox" checked={seleccion.has(t.id)} onChange={() => toggleSel(t.id)} onClick={e => e.stopPropagation()} /></td>
-              <td style={td}>{fmtDate(t.fecha)}</td><td style={td}><code style={codeSt}>{t.codigo_bac}</code></td>
+            const isExp = expandido === t.id
+            const comp = t.comprobante_info
+            return (<>
+            <tr key={t.id} style={{ borderBottom: isExp ? 'none' : '1px solid #2a3340', cursor: 'pointer', background: seleccion.has(t.id) ? 'rgba(96,165,250,0.06)' : (isExp ? 'rgba(96,165,250,0.04)' : 'transparent') }}
+                onClick={() => setExpandido(isExp ? null : t.id)}>
+              <td style={td} onClick={e => e.stopPropagation()}><input type="checkbox" checked={seleccion.has(t.id)} onChange={() => toggleSel(t.id)} /></td>
+              <td style={td}>{fmtDate(t.fecha)}</td>
+              <td style={td}><code style={codeSt}>{t.codigo_bac}</code></td>
               {filtroEstado === 'todos' && <td style={td}><span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: ec.bg, color: ec.color, fontWeight: 700 }}>{ec.label}</span></td>}
-              <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</td>
-              {filtroEstado !== 'sin_clasificar' && <td style={{ ...td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.matches_count > 0 ? '#a7f3d0' : '#666' }}>
-                {t.proveedores_matcheados !== '—' ? <>{t.proveedores_matcheados}{t.matches_count > 1 && <span style={{ color: '#888' }}> ({t.matches_count})</span>}</> : '—'}
-              </td>}
+              <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</td>
+              <td style={td}><code style={codeSt}>{t.cuenta_destino_4dig || '—'}</code></td>
+              <td style={{ ...td, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.matches_count > 0 ? '#a7f3d0' : '#666' }}>
+                {t.proveedores_matcheados ? <>{t.proveedores_matcheados}{t.matches_count > 1 && <span style={{ color: '#888' }}> ({t.matches_count})</span>}</> : '—'}
+              </td>
+              <td style={{ ...td, color: t.categoria_efectiva ? '#bfdbfe' : '#666' }}>{t.categoria_efectiva || '—'}</td>
+              <td style={{ ...td, color: t.centro_costo_nombre ? '#fcd34d' : '#666' }}>{t.centro_costo_nombre || '—'}</td>
+              <td style={td}>{comp?.foto_url ? <img src={comp.foto_url} alt="comp" style={{ width: 24, height: 24, objectFit: 'cover', borderRadius: 3, border: '1px solid #374151' }} /> : <span style={{ color: '#444' }}>—</span>}</td>
               <td style={{ ...td, textAlign: 'right', color: Number(t.debito) > 0 ? '#fb7185' : '#666' }}>{Number(t.debito) > 0 ? fmt(t.debito) : '—'}</td>
               <td style={{ ...td, textAlign: 'right', color: Number(t.credito) > 0 ? '#34d399' : '#666' }}>{Number(t.credito) > 0 ? fmt(t.credito) : '—'}</td>
               {verRevertir && <td style={td} onClick={e => e.stopPropagation()}>
                 <button onClick={() => revertir(t.id)} title="Revertir a sin_clasificar"
                   style={{ padding: '2px 6px', fontSize: 10, borderRadius: 4, border: '1px solid #fbbf24', background: 'transparent', color: '#fbbf24', cursor: 'pointer' }}>↩️</button>
               </td>}
-            </tr>)
+            </tr>
+            {isExp && (
+              <tr key={t.id + '-exp'} style={{ borderBottom: '1px solid #2a3340', background: 'rgba(15,23,42,0.6)' }}>
+                <td colSpan={filtroEstado === 'todos' ? (verRevertir ? 13 : 12) : (verRevertir ? 12 : 11)} style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: comp?.foto_url ? '1fr 220px' : '1fr', gap: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, fontSize: 11 }}>
+                      <DetailField label="Referencia BAC" value={t.referencia} mono />
+                      <DetailField label="Cuenta destino (full)" value={t.descripcion?.match(/\d{6,}/)?.[0]} mono />
+                      <DetailField label="Subcategoría" value={t.subcategoria} />
+                      <DetailField label="Sucursal" value={t.sucursal_inferida} />
+                      <DetailField label="Categoría P&L grupo" value={t.categoria_grupo} />
+                      <DetailField label="Centro costo tipo" value={t.centro_costo_tipo} />
+                      <DetailField label="Match método" value={t.match_metodo} mono />
+                      <DetailField label="Confianza" value={t.match_confianza ? `${(t.match_confianza * 100).toFixed(0)}%` : null} />
+                      <DetailField label="N° matches" value={t.matches_count > 0 ? t.matches_count : null} />
+                      <DetailField label="Monto aplicado" value={t.monto_aplicado_total ? fmt(t.monto_aplicado_total) : null} />
+                      {comp?.concepto && <DetailField label="Concepto OCR" value={comp.concepto} wide />}
+                      {comp?.banco_origen && <DetailField label="Banco origen" value={comp.banco_origen} />}
+                      {t.notas && <DetailField label="Notas / audit" value={t.notas} wide mono />}
+                    </div>
+                    {comp?.foto_url && (
+                      <div>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>📷 Comprobante OCR</div>
+                        <a href={comp.foto_url} target="_blank" rel="noreferrer">
+                          <img src={comp.foto_url} alt="comp" style={{ width: '100%', maxWidth: 200, borderRadius: 6, border: '1px solid #374151' }} />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+            </>)
           })}
           </tbody>
         </table>
@@ -1444,6 +1491,19 @@ function TabAuditoria() {
 // ═══════════════════════════════════════════════════════════
 // SHARED COMPONENTS / STYLES
 // ═══════════════════════════════════════════════════════════
+function DetailField({ label, value, mono, wide }) {
+  return (
+    <div style={{ gridColumn: wide ? 'span 2' : 'auto', minWidth: 0 }}>
+      <div style={{ fontSize: 9, color: '#888', textTransform: 'uppercase', fontWeight: 700, marginBottom: 2 }}>{label}</div>
+      <div style={{
+        fontSize: 11, color: value ? '#d1d5db' : '#555',
+        fontFamily: mono ? 'monospace' : 'inherit',
+        wordBreak: 'break-word', whiteSpace: 'pre-wrap',
+      }}>{value || '—'}</div>
+    </div>
+  )
+}
+
 function KpiCard({ label, value, sub, color }) {
   return (
     <div style={{ background: '#1f2937', borderRadius: 8, padding: 14, border: `1px solid ${color}33` }}>
