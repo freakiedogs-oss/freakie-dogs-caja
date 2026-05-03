@@ -37,6 +37,7 @@ const TABS = [
   { key: 'wizard', label: '⚡ Wizard' },
   { key: 'comprobantes', label: '📷 Comprobantes' },
   { key: 'cola', label: '🔍 Cola Manual' },
+  { key: 'vincular', label: '📎 Vincular DTE' },
   { key: 'reglas', label: '⚙️ Reglas' },
   { key: 'auditoria', label: '📋 Auditoría' },
 ]
@@ -212,6 +213,7 @@ export default function BancoView({ user }) {
       {tab === 'wizard' && <TabWizard user={user} pushNotif={pushNotif} />}
       {tab === 'comprobantes' && <TabComprobantes user={user} />}
       {tab === 'cola' && <TabColaManual user={user} />}
+      {tab === 'vincular' && <TabVincularDTE user={user} pushNotif={pushNotif} />}
       {tab === 'reglas' && <TabReglas />}
       {tab === 'auditoria' && <TabAuditoria />}
     </div>
@@ -1575,6 +1577,259 @@ function TabAuditoria() {
           )
         })}</tbody>
       </table>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAB VINCULAR DTE — Gastos sin DTE → DTE generado después (F5.6)
+// ═══════════════════════════════════════════════════════════
+function TabVincularDTE({ user, pushNotif }) {
+  const [gastos, setGastos] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filtroProv, setFiltroProv] = useState('')
+  const [filtroMin, setFiltroMin] = useState('')
+  const [filtroMax, setFiltroMax] = useState('')
+  const [sugerencias, setSugerencias] = useState({}) // { gastoId: [...candidatos] }
+  const [loadingSug, setLoadingSug] = useState({}) // { gastoId: bool }
+  const [saving, setSaving] = useState({}) // { gastoId: bool }
+  const [stats, setStats] = useState({ total: 0, monto: 0, vinculados_hoy: 0 })
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const all = await fetchAll(
+        db.from('v_gastos_sin_dte_pendientes_vinculacion').select('*').order('fecha', { ascending: false })
+      )
+      setGastos(all || [])
+      const totalMonto = (all || []).reduce((s, g) => s + Number(g.monto_total || 0), 0)
+      // contar vinculados hoy: la función inserta "el YYYY-MM-DD" en notas
+      const hoy = today()
+      const { count } = await db.from('compras_sin_dte')
+        .select('*', { count: 'exact', head: true })
+        .eq('tipo', 'pagado_anticipado_con_dte')
+        .ilike('notas', `%vinculado_a_dte:%el ${hoy}%`)
+      setStats({ total: all?.length || 0, monto: totalMonto, vinculados_hoy: count || 0 })
+    } catch (e) { console.error(e) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const cargarSugerencias = async (gastoId) => {
+    if (sugerencias[gastoId]) return // ya cargadas
+    setLoadingSug(s => ({ ...s, [gastoId]: true }))
+    try {
+      const { data, error } = await db.rpc('bancoview_sugerir_dtes_para_gasto', { p_gasto_id: gastoId })
+      if (error) throw error
+      setSugerencias(s => ({ ...s, [gastoId]: data || [] }))
+    } catch (e) {
+      console.error(e)
+      setSugerencias(s => ({ ...s, [gastoId]: [] }))
+    } finally {
+      setLoadingSug(s => ({ ...s, [gastoId]: false }))
+    }
+  }
+
+  const vincular = async (gastoId, dteId, score) => {
+    if (!confirm(`Vincular este gasto al DTE seleccionado?\n\nScore: ${(score * 100).toFixed(0)}%\n\nEsto marcará el gasto como 'pagado_anticipado_con_dte' y actualizará el DTE como pagado.`)) return
+    setSaving(s => ({ ...s, [gastoId]: true }))
+    try {
+      const { error } = await db.rpc('bancoview_vincular_gasto_a_dte', {
+        p_gasto_id: gastoId,
+        p_dte_id: dteId,
+        p_usuario: user?.nombre || user?.pin || 'desconocido',
+      })
+      if (error) throw error
+      pushNotif?.(`Gasto vinculado a DTE — ahora aparecerá pagado en compras DTE`)
+      // remover gasto de la lista
+      setGastos(gs => gs.filter(g => g.id !== gastoId))
+      setSugerencias(s => { const c = { ...s }; delete c[gastoId]; return c })
+    } catch (e) {
+      alert('Error: ' + e.message)
+    } finally {
+      setSaving(s => ({ ...s, [gastoId]: false }))
+    }
+  }
+
+  const ignorar = async (gastoId) => {
+    if (!confirm('Marcar como gasto sin DTE formal? (acepta que no habrá factura)')) return
+    setSaving(s => ({ ...s, [gastoId]: true }))
+    try {
+      await db.from('compras_sin_dte').update({ tipo: 'sin_dte_formal' }).eq('id', gastoId)
+      setGastos(gs => gs.filter(g => g.id !== gastoId))
+    } catch (e) {
+      alert('Error: ' + e.message)
+    } finally {
+      setSaving(s => ({ ...s, [gastoId]: false }))
+    }
+  }
+
+  const filtered = useMemo(() => {
+    return gastos.filter(g => {
+      if (filtroProv && !(g.proveedor_nombre || '').toLowerCase().includes(filtroProv.toLowerCase())) return false
+      const m = Number(g.monto_total || 0)
+      if (filtroMin && m < parseFloat(filtroMin)) return false
+      if (filtroMax && m > parseFloat(filtroMax)) return false
+      return true
+    })
+  }, [gastos, filtroProv, filtroMin, filtroMax])
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando gastos pendientes…</div>
+
+  return (
+    <div>
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 14 }}>
+        <KpiCard label="Pendientes" value={stats.total} sub="gastos sin DTE" color="#f59e0b" />
+        <KpiCard label="Monto total" value={fmt(stats.monto)} sub="por vincular" color="#60a5fa" />
+        <KpiCard label="Vinculados hoy" value={stats.vinculados_hoy} sub="DTE encontrado" color="#34d399" />
+      </div>
+
+      {/* Info banner */}
+      <div style={{ background: '#1e3a8a22', border: '1px solid #1e3a8a', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 12, color: '#bfdbfe' }}>
+        💡 <b>Cómo funciona:</b> Estos son pagos hechos por banco sin DTE al momento. Si después llegó un DTE del proveedor, vincúlalos aquí. El sistema sugiere candidatos por monto exacto + proveedor + fecha posterior. Score ≥80% es match seguro.
+      </div>
+
+      {/* Filtros */}
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 10, marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div>
+          <label style={labelSt}>Proveedor</label>
+          <input type="text" value={filtroProv} onChange={e => setFiltroProv(e.target.value)} placeholder="buscar…" style={{ ...inputSt, width: 180 }} />
+        </div>
+        <div>
+          <label style={labelSt}>Monto mín</label>
+          <input type="number" value={filtroMin} onChange={e => setFiltroMin(e.target.value)} placeholder="0" style={{ ...inputSt, width: 90 }} />
+        </div>
+        <div>
+          <label style={labelSt}>Monto máx</label>
+          <input type="number" value={filtroMax} onChange={e => setFiltroMax(e.target.value)} placeholder="∞" style={{ ...inputSt, width: 90 }} />
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#888' }}>
+          Mostrando <b style={{ color: '#fff' }}>{filtered.length}</b> de {gastos.length}
+        </div>
+      </div>
+
+      {/* Lista */}
+      {filtered.length === 0 ? (
+        <div style={{ background: '#1f2937', borderRadius: 8, padding: 24, textAlign: 'center', color: '#888' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>{gastos.length === 0 ? '✅' : '🔎'}</div>
+          <div>{gastos.length === 0 ? 'No hay gastos pendientes de vincular' : 'No hay gastos que coincidan con los filtros'}</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {filtered.map(g => (
+            <GastoVincularCard
+              key={g.id}
+              gasto={g}
+              sugerencias={sugerencias[g.id]}
+              loadingSug={loadingSug[g.id]}
+              saving={saving[g.id]}
+              onLoad={() => cargarSugerencias(g.id)}
+              onVincular={(dteId, score) => vincular(g.id, dteId, score)}
+              onIgnorar={() => ignorar(g.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GastoVincularCard({ gasto, sugerencias, loadingSug, saving, onLoad, onVincular, onIgnorar }) {
+  const [open, setOpen] = useState(false)
+  const toggle = () => {
+    if (!open) onLoad()
+    setOpen(o => !o)
+  }
+  return (
+    <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, border: '1px solid #374151' }}>
+      {/* Header del gasto */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 200px', minWidth: 180 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{gasto.proveedor_nombre || '(sin proveedor)'}</div>
+          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+            {fmtDate(gasto.fecha)} · {gasto.descripcion || 'sin descripción'}
+            {gasto.proveedor_nit && <span> · NIT {gasto.proveedor_nit}</span>}
+          </div>
+          {gasto.categoria_nombre && (
+            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+              📂 {gasto.categoria_nombre}{gasto.catalogo_subcategoria && ` › ${gasto.catalogo_subcategoria}`}
+              {gasto.centro_costo_nombre && ` · 🏗️ ${gasto.centro_costo_nombre}`}
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: '#fbbf24', minWidth: 100, textAlign: 'right' }}>{fmt(gasto.monto_total)}</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={toggle} disabled={saving} style={{
+            ...btnSt, padding: '6px 12px', fontSize: 11,
+            background: open ? 'rgba(96,165,250,0.25)' : 'rgba(96,165,250,0.10)',
+          }}>
+            {open ? '▼ Ocultar' : '🔍 Buscar DTE'}
+          </button>
+          <button onClick={onIgnorar} disabled={saving} style={{
+            padding: '6px 12px', borderRadius: 6, border: '1px solid #6b7280',
+            background: 'transparent', color: '#9ca3af', fontWeight: 700, fontSize: 11, cursor: saving ? 'not-allowed' : 'pointer',
+          }}>Sin DTE formal</button>
+        </div>
+      </div>
+
+      {/* Sugerencias */}
+      {open && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #374151' }}>
+          {loadingSug ? (
+            <div style={{ textAlign: 'center', color: '#888', padding: 12, fontSize: 12 }}>Buscando candidatos…</div>
+          ) : !sugerencias || sugerencias.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#888', padding: 12, fontSize: 12 }}>
+              📭 Sin candidatos. Verifica que el DTE haya sido emitido o cárgalo manualmente.
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8, fontWeight: 600 }}>Top {sugerencias.length} candidatos:</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {sugerencias.map(c => {
+                  const score = Number(c.score || 0)
+                  const scoreColor = score >= 0.8 ? '#34d399' : score >= 0.5 ? '#fbbf24' : '#9ca3af'
+                  return (
+                    <div key={c.dte_id} style={{
+                      background: '#0f172a', borderRadius: 6, padding: 8, display: 'flex', gap: 10, alignItems: 'center',
+                      border: `1px solid ${score >= 0.8 ? '#065f46' : '#374151'}`,
+                    }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: scoreColor, minWidth: 50 }}>{(score * 100).toFixed(0)}%</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>
+                          {c.proveedor_nombre || '(sin proveedor)'} · {fmt(c.monto_total)}
+                          {Math.abs(Number(c.diff_monto || 0)) > 0.01 && (
+                            <span style={{ color: '#fca5a5', fontSize: 10, marginLeft: 6 }}>(Δ {fmt(Math.abs(c.diff_monto))})</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>
+                          {fmtDate(c.fecha_emision)}
+                          {c.diff_dias != null && <span> · {c.diff_dias > 0 ? `+${c.diff_dias}d después` : `${c.diff_dias}d antes`}</span>}
+                          {c.numero_control && <span> · {c.numero_control}</span>}
+                          {c.tipo_dte && <span> · tipo {c.tipo_dte}</span>}
+                        </div>
+                        {c.razon && (
+                          <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1, fontStyle: 'italic' }}>{c.razon}</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => onVincular(c.dte_id, score)}
+                        disabled={saving}
+                        style={{
+                          padding: '6px 12px', borderRadius: 6,
+                          border: `1px solid ${scoreColor}`,
+                          background: `${scoreColor}22`, color: scoreColor,
+                          fontWeight: 700, fontSize: 11,
+                          cursor: saving ? 'not-allowed' : 'pointer',
+                        }}
+                      >Vincular</button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
