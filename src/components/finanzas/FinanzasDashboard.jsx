@@ -11,24 +11,32 @@ const EDIT_PINS = ['1000', '2000', '231155']
 
 // Mapa categorías_gasto.nombre → P&L key (la vista devuelve nombres legibles de categorias_gasto)
 const CATNAME_TO_PL = {
+  // Nombres CANÓNICOS de categorias_gasto.nombre (match directo, prioritario)
+  'Costo Comida': 'costo_comida', 'Insumo Venta': 'insumo_venta', 'Limpieza': 'limpieza',
+  'Costo Fijo': 'costo_fijo', 'Gastos Operativos': 'gastos_operativos',
+  'Gastos Logísticos': 'gastos_logisticos', 'Gasto Financiero': 'gasto_financiero',
+  'Activo Fijo': 'activo_fijo',
+  // Aliases legacy/históricos
   'Insumo Cocina': 'costo_comida', 'Insumo Bebida': 'costo_comida', 'Insumo Producción': 'costo_comida',
   'Insumo Merchandising': 'insumo_venta', 'Insumo Despacho': 'insumo_venta', 'Insumo Empaque': 'insumo_venta',
   'Insumo Limpieza': 'limpieza', 'Insumo Colaboradores': 'costo_comida',
   'Alquiler': 'costo_fijo', 'Electricidad': 'costo_fijo', 'Agua': 'costo_fijo',
-  'Gasto Mantenimiento': 'costo_fijo', 'Gasto Alcaldía': 'costo_fijo', 'Gasto Transporte': 'gastos_operativos',
+  'Gasto Mantenimiento': 'costo_fijo', 'Gasto Alcaldía': 'costo_fijo', 'Gasto Transporte': 'gastos_logisticos',
   'Gasto de Venta (POS/PEYA)': 'gastos_operativos', 'Gasto Mercadeo': 'gastos_operativos',
   'Gasto Logístico': 'gastos_logisticos', 'Gasto Logístico (Admin)': 'gastos_logisticos',
-  'Gasto Financiero': 'gasto_financiero', 'Gasto Contabilidad': 'gasto_financiero',
+  'Gasto Contabilidad': 'gasto_financiero',
   'Gasto Planilla': 'planilla_legal', 'Gastos Legales': 'planilla_legal',
-  'Gasto Impuesto': 'impuestos', 'Activo Fijo': 'activo_fijo',
+  'Gasto Impuesto': 'impuestos',
   'Gastos Varios': 'gastos_operativos', 'Gasto Colaboradores': 'gastos_operativos',
   'Gasto Oficina': 'gastos_operativos', 'Gasto Personal (Socios)': 'gastos_operativos',
   'Fuera de Freakie': 'gastos_operativos',
 }
-// Fallback por categoria_grupo → P&L key
+// Fallback por categoria_grupo → P&L key (último recurso si CATNAME_TO_PL no tiene match)
+// IMPORTANTE: 'Gasto Admin' agrupa gastos_operativos+gastos_logisticos en BD,
+// caída por defecto a gastos_operativos. 'No Operativo' es donde vive 'Gasto Financiero'.
 const GRUPO_TO_PL = {
   'COGS': 'costo_comida', 'Gasto Local': 'costo_fijo', 'Gasto Venta': 'gastos_operativos',
-  'Gasto Admin': 'gasto_financiero', 'Inversión': 'activo_fijo', 'No Operativo': 'gastos_operativos',
+  'Gasto Admin': 'gastos_operativos', 'Inversión': 'activo_fijo', 'No Operativo': 'gasto_financiero',
 }
 
 // ── Brand colors ──
@@ -257,10 +265,6 @@ export default function FinanzasDashboard({ user }) {
       const planillas = await fetchAll('planillas',
         'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
         q => q.gte('fecha_pago', '2026-01-01'))
-      // 3b. Desglose planilla por sucursal (para expansion en Estado de Resultados)
-      const planillaPorSuc = await fetchAll('v_planilla_por_sucursal',
-        'fecha, store_code, monto, n_empleados',
-        q => q.gte('fecha', '2026-01-01'))
 
       // 4. Catálogo contable (para TabCatalogo CRUD y clasificación fallback)
       const { data: catData, error: catErr } = await db.from('catalogo_contable')
@@ -286,27 +290,6 @@ export default function FinanzasDashboard({ user }) {
         'store_code, estado, fecha_pedido, total_pedido, comision, ingreso_estimado, tarifa_publicidad, avoidable_cancellation_fee, descuento_tienda, mes_csv',
         q => q.gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
 
-      // 9. Movimientos socios (F6) — repagos capital + dividendos + aportes recibidos = NO van al P&L pero afectan caja
-      const movsSocios = await fetchAll('movimientos_socios',
-        'fecha, tipo, monto, direccion, socio_nombre, clasificacion_pl',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-
-      // 10. Movimientos préstamos institucionales (F6) — abono_capital NO va al P&L, pago_interes SÍ
-      const prestamoMovs = await fetchAll('prestamo_movimientos',
-        'fecha, tipo, monto',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-
-      // 11. Eventos cerrados — venta adicional a sumar al total y desglosar
-      // Filtramos por cerrado_at (más confiable que estado, que a veces queda en 'aprobado' por bug del módulo Eventos)
-      const eventosCerrados = await fetchAll('eventos',
-        'fecha_evento, estado, total_ventas, cerrado_at, nombre, cliente',
-        q => q.not('cerrado_at', 'is', null).gte('fecha_evento', '2026-01-01').order('fecha_evento'))
-
-      // 12. Bank transacciones BAC (F7 — tab Banco en dashboard)
-      const bankTx = await fetchAll('bank_transacciones',
-        'id, fecha, codigo_bac, descripcion, debito, credito, balance, estado, notas',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
       cierresOp.forEach(c => {
@@ -322,7 +305,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx })
+      setData2026({ ventas, gastos, planillas, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -337,7 +320,7 @@ export default function FinanzasDashboard({ user }) {
     if (!data2026) return []
     const monthMap = {}
 
-    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
+    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 } })
 
     // Sales
     data2026.ventas.forEach(v => {
@@ -352,42 +335,6 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].bySuc[sc] = (monthMap[m].bySuc[sc] || 0) + total
     })
 
-    // Desglose ventas: PeYa vs Local (Quanto POS) vs Eventos cerrados
-    // PeYa viene en quanto_transacciones con fuente=PedidosYa
-    const peyaByMonth = {}
-    ;(data2026.ventaspeya || []).forEach(v => {
-      const m = v.fecha?.substring(0, 7)
-      if (!m) return
-      const t = parseFloat(v.total) || 0
-      if (t > 0) peyaByMonth[m] = (peyaByMonth[m] || 0) + t
-    })
-    // Eventos cerrados — venta adicional NO incluida en Quanto, hay que sumarla a m.ventas
-    const eventosByMonth = {}
-    ;(data2026.eventosCerrados || []).forEach(ev => {
-      const m = ev.fecha_evento?.substring(0, 7)
-      if (!m) return
-      const t = parseFloat(ev.total_ventas) || 0
-      if (t > 0) eventosByMonth[m] = (eventosByMonth[m] || 0) + t
-    })
-    // Sumar eventos al total de ventas del mes (no estaban incluidos antes)
-    Object.entries(eventosByMonth).forEach(([m, total]) => {
-      if (!monthMap[m]) monthMap[m] = initMonth()
-      const totalAdj = conIva ? total : total / 1.13
-      monthMap[m].ventas += totalAdj
-    })
-    // Acumular subcategorías de venta por mes
-    Object.keys(monthMap).forEach(m => {
-      const peyaBruto = peyaByMonth[m] || 0
-      const peya = conIva ? peyaBruto : peyaBruto / 1.13
-      const eventosBruto = eventosByMonth[m] || 0
-      const eventos = conIva ? eventosBruto : eventosBruto / 1.13
-      const local = Math.max(0, monthMap[m].ventas - peya - eventos) // Local = Total − PeYa − Eventos
-      if (!monthMap[m].plSubs.ventas) monthMap[m].plSubs.ventas = {}
-      monthMap[m].plSubs.ventas['🏪 Venta Local (Quanto POS)'] = local
-      monthMap[m].plSubs.ventas['🛵 PedidosYa (Delivery)'] = peya
-      if (eventos > 0) monthMap[m].plSubs.ventas['🎉 Eventos (cerrados)'] = eventos
-    })
-
     // GASTOS CONSOLIDADOS — clasificados vía categorias_gasto + catalogo_contable
     data2026.gastos.forEach(g => {
       const m = g.fecha?.substring(0, 7)
@@ -399,84 +346,30 @@ export default function FinanzasDashboard({ user }) {
       if (cat === 'Alquiler') cat = 'costo_fijo'
       const sub = g.subcategoria_contable || ''
       const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
-      const catFinal = monthMap[m].pl[cat] !== undefined ? cat : 'gastos_operativos'
-      monthMap[m].pl[catFinal] += monto
-      // Acumular subcategorías para vista expandible
-      const subKey = (sub && sub.trim()) ? sub.trim() : '(sin subcategoría)'
-      if (!monthMap[m].plSubs[catFinal]) monthMap[m].plSubs[catFinal] = {}
-      monthMap[m].plSubs[catFinal][subKey] = (monthMap[m].plSubs[catFinal][subKey] || 0) + monto
+      if (monthMap[m].pl[cat] !== undefined) {
+        monthMap[m].pl[cat] += monto
+      } else {
+        monthMap[m].pl.gastos_operativos += monto  // fallback
+      }
       // Track by origin
       if (monthMap[m].gastosOrigen[g.origen] !== undefined) monthMap[m].gastosOrigen[g.origen] += monto
       // Track by provider for TabProveedores
       const prov = g.proveedor_nombre || 'Desconocido'
-      if (!monthMap[m].byProv[prov]) monthMap[m].byProv[prov] = { monto: 0, cat: catFinal, sub, origen: g.origen }
+      if (!monthMap[m].byProv[prov]) monthMap[m].byProv[prov] = { monto: 0, cat, sub, origen: g.origen }
       monthMap[m].byProv[prov].monto += monto
     })
 
-    // Planilla supplement (total)
+    // Planilla supplement
     data2026.planillas?.forEach(p => {
       const m = p.fecha_pago?.substring(0, 7)
       if (!m || !monthMap[m]) return
       monthMap[m].pl.planilla_legal += (p.total_bruto || 0) + (p.total_patronal || 0)
     })
 
-    // Planilla desglose por sucursal (para expansion en Estado de Resultados)
-    data2026.planillaPorSuc?.forEach(ps => {
-      const m = ps.fecha?.substring(0, 7)
-      if (!m || !monthMap[m]) return
-      const suc = ps.store_code || 'Corporativo / Eventos'
-      if (!monthMap[m].plSubs.planilla_legal) monthMap[m].plSubs.planilla_legal = {}
-      monthMap[m].plSubs.planilla_legal[suc] = (monthMap[m].plSubs.planilla_legal[suc] || 0) + (parseFloat(ps.monto) || 0)
-    })
-
-    // Movimientos socios (F6) — solo afectan caja, NO P&L (excepto salario_socio que ya viene en planillas y pago_interes que va a gasto_financiero)
-    data2026.movsSocios?.forEach(ms => {
-      const m = ms.fecha?.substring(0, 7)
-      if (!m) return
-      if (!monthMap[m]) monthMap[m] = initMonth()
-      const monto = parseFloat(ms.monto) || 0
-      if (ms.tipo === 'repago_capital') {
-        monthMap[m].cf.repago_capital_socios += monto
-      } else if (ms.tipo === 'dividendo') {
-        monthMap[m].cf.dividendos_pagados += monto
-      } else if ((ms.tipo === 'aporte_capital' || ms.tipo === 'prestamo_socio') && ms.direccion === 'I') {
-        monthMap[m].cf.aportes_socios_recibidos += monto
-      }
-      // Nota: salario_socio y pago_interes NO se suman acá porque ya entran al P&L vía planillas/gasto_financiero
-    })
-
-    // Movimientos préstamos institucionales (F6) — abono_capital NO va al P&L pero sí afecta caja
-    data2026.prestamoMovs?.forEach(pm => {
-      const m = pm.fecha?.substring(0, 7)
-      if (!m) return
-      if (!monthMap[m]) monthMap[m] = initMonth()
-      const monto = parseFloat(pm.monto) || 0
-      if (pm.tipo === 'abono_capital') {
-        monthMap[m].cf.repago_capital_prestamos += monto
-      }
-      // pago_interes y desembolso NO se contabilizan acá — interés ya en gasto_financiero, desembolso es entrada de caja pero crea pasivo
-    })
-
     return Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => {
       const ebitda = v.ventas - v.pl.costo_comida - v.pl.insumo_venta - v.pl.limpieza - v.pl.costo_fijo - v.pl.gastos_operativos - v.pl.gastos_logisticos - v.pl.gasto_financiero - v.pl.planilla_legal
       const utilidad = ebitda - v.pl.impuestos
-      // Free cash flow: utilidad NETA - CapEx - repagos capital + aportes socios recibidos
-      const capex = v.pl.activo_fijo
-      const totalSalidasNoPL = capex + v.cf.repago_capital_socios + v.cf.repago_capital_prestamos + v.cf.dividendos_pagados
-      const caja_neta = utilidad - totalSalidasNoPL + v.cf.aportes_socios_recibidos
-      // Promote categorías P&L al nivel raíz para acceso fácil desde plLines
-      const plRaiz = { ...v.pl }
-      return {
-        key: k, label: formatMonth(k), ...v, ebitda, utilidad,
-        ...plRaiz, // costo_comida, insumo_venta, limpieza, etc. al nivel raíz
-        // Y los CF
-        activo_fijo: capex,
-        repago_capital_socios: v.cf.repago_capital_socios,
-        repago_capital_prestamos: v.cf.repago_capital_prestamos,
-        dividendos_pagados: v.cf.dividendos_pagados,
-        aportes_socios_recibidos: v.cf.aportes_socios_recibidos,
-        caja_neta,
-      }
+      return { key: k, label: formatMonth(k), ...v, ebitda, utilidad }
     })
   }, [data2026, conIva])
 
@@ -489,14 +382,13 @@ export default function FinanzasDashboard({ user }) {
     { key: 'estado-resultados', label: '📋 Estado de Resultados', icon: '📋' },
     { key: 'balance', label: '⚖️ Balance', icon: '⚖️' },
     { key: 'flujo-caja', label: '💰 Flujo de Caja', icon: '💰' },
-    { key: 'banco', label: '🏦 Banco', icon: '🏦' },
     { key: 'peya', label: '🛵 PEYA', icon: '🛵' },
     { key: 'proveedores', label: '🏢 Proveedores', icon: '🏢' },
     { key: 'catalogo', label: '⚙️ Catálogo', icon: '⚙️' },
   ]
 
   return (
-    <div style={{ padding: '12px 8px', maxWidth: 1600, margin: '0 auto' }}>
+    <div style={{ padding: '12px 8px', maxWidth: 900, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 12, letterSpacing: 3, color: C.red, fontWeight: 800 }}>FREAKIE DOGS</div>
@@ -534,7 +426,6 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
-          {tab === 'banco' && <TabBanco bankTx={data2026?.bankTx} months2026={months2026} />}
           {tab === 'peya' && <TabPeya data2026={data2026} conIva={conIva} onRefresh={loadData2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'catalogo' && <TabCatalogo user={user} data2026={data2026} onRefresh={loadData2026} />}
@@ -915,31 +806,6 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
 
 function TabEstadoResultados({ months2026 }) {
   const allMonths = buildAllMonths(months2026)
-  const [expanded, setExpanded] = useState({})  // { categoryKey: true }
-  const toggleExpand = (k) => setExpanded(e => ({ ...e, [k]: !e[k] }))
-
-  // Calcular subcategorías agregadas por categoría a través de todos los meses
-  const subsByCategory = useMemo(() => {
-    const result = {}
-    allMonths.forEach(m => {
-      if (!m.plSubs) return
-      Object.entries(m.plSubs).forEach(([cat, subs]) => {
-        if (!result[cat]) result[cat] = {}
-        Object.entries(subs).forEach(([sub, monto]) => {
-          if (!result[cat][sub]) result[cat][sub] = { total: 0, perMonth: {} }
-          result[cat][sub].total += monto || 0
-          result[cat][sub].perMonth[m.key] = (result[cat][sub].perMonth[m.key] || 0) + (monto || 0)
-        })
-      })
-    })
-    // Ordenar subcategorías por total desc
-    Object.keys(result).forEach(cat => {
-      result[cat] = Object.entries(result[cat])
-        .sort((a, b) => b[1].total - a[1].total)
-        .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {})
-    })
-    return result
-  }, [allMonths])
 
   const plLines = [
     { key: 'ventas', label: 'VENTAS TOTALES', bold: true, positive: true },
@@ -954,13 +820,6 @@ function TabEstadoResultados({ months2026 }) {
     { key: 'ebitda', label: 'EBITDA', bold: true, computed: true },
     { key: 'impuestos', label: '(-) Impuestos', indent: true },
     { key: 'utilidad', label: 'UTILIDAD NETA', bold: true, computed: true },
-    // ─── Movimientos no-P&L que sí afectan caja ───
-    { key: 'activo_fijo', label: '(-) CapEx (Activo Fijo)', indent: true, noPL: true },
-    { key: 'repago_capital_socios', label: '(-) Repago Capital Socios', indent: true, noPL: true },
-    { key: 'repago_capital_prestamos', label: '(-) Repago Capital Préstamos', indent: true, noPL: true },
-    { key: 'dividendos_pagados', label: '(-) Dividendos Pagados', indent: true, noPL: true },
-    { key: 'aportes_socios_recibidos', label: '(+) Aportes/Préstamos Socios Recibidos', indent: true, noPL: true, positive: true },
-    { key: 'caja_neta', label: 'CAJA NETA REAL', bold: true, computed: true },
   ]
 
   // Totals
@@ -977,45 +836,26 @@ function TabEstadoResultados({ months2026 }) {
         <div style={{ fontSize: 11, color: C.textMuted }}>Agosto 2025 — Abril 2026</div>
       </div>
 
-      <div style={{ overflowX: 'auto', maxHeight: '75vh' }}>
+      <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-          <thead style={{ position: 'sticky', top: 0, background: C.card, zIndex: 3 }}>
+          <thead>
             <tr style={{ borderBottom: `2px solid ${C.red}` }}>
-              <th style={{ ...sTh, textAlign: 'left', color: C.white, position: 'sticky', left: 0, background: C.card, zIndex: 4, minWidth: 180 }}>Concepto</th>
+              <th style={{ ...sTh, textAlign: 'left', color: C.white }}>Concepto</th>
               {allMonths.map((m, i) => (
-                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold, background: C.card }}>
+                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold }}>
                   {m.label}
                 </th>
               ))}
-              <th style={{ ...sTh, color: C.red, background: C.card }}>Total</th>
-              <th style={{ ...sTh, color: C.textMuted, background: C.card }}>% Venta</th>
+              <th style={{ ...sTh, color: C.red }}>Total</th>
+              <th style={{ ...sTh, color: C.textMuted }}>% Venta</th>
             </tr>
           </thead>
           <tbody>
             {plLines.map((line, li) => {
-              const isSeparator = line.key === 'ebitda' || line.key === 'utilidad' || line.key === 'caja_neta'
-              const isCFSection = line.noPL
-              const rowBg = isSeparator ? '#2a2a3e' : isCFSection ? '#1a2540' : li % 2 ? '#192237' : C.card
-              const prevLine = plLines[li - 1]
-              const showCFHeader = isCFSection && (!prevLine || !prevLine.noPL)
-              const hasSubs = subsByCategory[line.key] && Object.keys(subsByCategory[line.key]).length > 0
-              const isExp = !!expanded[line.key]
+              const isSeparator = line.key === 'ebitda' || line.key === 'utilidad'
               return (
-                <React.Fragment key={line.key}>
-                {showCFHeader && (
-                  <tr style={{ background: '#0d1424' }}>
-                    <td colSpan={allMonths.length + 3} style={{
-                      padding: '8px 8px 4px 8px', fontSize: 10, fontWeight: 800,
-                      color: C.gold, letterSpacing: 1.5, textTransform: 'uppercase',
-                      borderTop: `2px solid ${C.gold}`,
-                      position: 'sticky', left: 0, background: '#0d1424',
-                    }}>
-                      ▸ Salidas/Entradas de caja NO contabilizadas en P&L
-                    </td>
-                  </tr>
-                )}
-                <tr style={{
-                  background: rowBg,
+                <tr key={line.key} style={{
+                  background: isSeparator ? 'rgba(230,57,70,0.1)' : li % 2 ? 'rgba(255,255,255,0.02)' : 'transparent',
                   borderTop: isSeparator ? `1px solid ${C.red}` : 'none',
                 }}>
                   <td style={{
@@ -1024,17 +864,7 @@ function TabEstadoResultados({ months2026 }) {
                     paddingLeft: line.indent ? 20 : 6,
                     color: line.bold ? C.white : C.textMuted,
                     fontSize: line.bold ? 12 : 11,
-                    position: 'sticky', left: 0, background: rowBg, zIndex: 1,
-                    boxShadow: '2px 0 4px rgba(0,0,0,0.3)',
-                    cursor: hasSubs ? 'pointer' : 'default',
-                    userSelect: 'none',
-                  }}
-                  onClick={hasSubs ? () => toggleExpand(line.key) : undefined}>
-                    {hasSubs && (
-                      <span style={{ display: 'inline-block', width: 14, color: isExp ? C.gold : C.textMuted, fontSize: 9, marginRight: 2 }}>
-                        {isExp ? '▼' : '▶'}
-                      </span>
-                    )}
+                  }}>
                     {line.label}
                   </td>
                   {allMonths.map((m, i) => {
@@ -1057,34 +887,6 @@ function TabEstadoResultados({ months2026 }) {
                     {totals.ventas ? pct(totals[line.key] / totals.ventas) : '—'}
                   </td>
                 </tr>
-                {/* Filas hijas si está expandido */}
-                {hasSubs && isExp && Object.entries(subsByCategory[line.key]).map(([sub, info]) => (
-                  <tr key={`${line.key}-${sub}`} style={{ background: '#0f1828' }}>
-                    <td style={{
-                      ...sTdL, paddingLeft: 36,
-                      color: '#94a3b8', fontSize: 10, fontStyle: 'italic',
-                      position: 'sticky', left: 0, background: '#0f1828', zIndex: 1,
-                      boxShadow: '2px 0 4px rgba(0,0,0,0.3)',
-                    }}>
-                      ↳ {sub}
-                    </td>
-                    {allMonths.map((m, i) => {
-                      const v = info.perMonth[m.key] || 0
-                      return (
-                        <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#cbd5e1' : '#475569' }}>
-                          {v ? fmt(v) : '—'}
-                        </td>
-                      )
-                    })}
-                    <td style={{ ...sTd(), fontSize: 10, color: '#cbd5e1', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>
-                      {fmt(info.total)}
-                    </td>
-                    <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>
-                      {totals[line.key] ? pct(info.total / totals[line.key]) : '—'}
-                    </td>
-                  </tr>
-                ))}
-                </React.Fragment>
               )
             })}
           </tbody>
@@ -1238,266 +1040,6 @@ function TabBalance({ months2026 }) {
 }
 
 // ══════════════════════════════════════════════════════
-//  TAB BANCO — Vista del estado de cuenta BAC integrada (F7)
-// ══════════════════════════════════════════════════════
-
-const ESTADO_CHIP = {
-  sin_clasificar: { bg: '#7f1d1d22', color: '#fca5a5', label: 'Sin clasif' },
-  auto_match: { bg: '#065f4622', color: '#6ee7b7', label: 'Auto' },
-  match_manual: { bg: '#1e40af22', color: '#93c5fd', label: 'Manual' },
-  movimiento_socio: { bg: '#5b21b622', color: '#c4b5fd', label: 'Socio' },
-  comision_bancaria: { bg: '#92400e22', color: '#fcd34d', label: 'Comisión' },
-  transferencia_interna: { bg: '#37415122', color: '#d1d5db', label: 'Interna' },
-  sin_dte: { bg: '#9a341222', color: '#fdba74', label: 'Sin DTE' },
-  ignorar: { bg: '#37415122', color: '#9ca3af', label: 'Ignorar' },
-}
-
-function TabBanco({ bankTx, months2026 }) {
-  const [filtroMes, setFiltroMes] = useState('') // '' = último mes con data
-
-  const data = useMemo(() => {
-    if (!bankTx || bankTx.length === 0) return null
-    // Agrupar por mes
-    const byMonth = {}
-    bankTx.forEach(t => {
-      const m = t.fecha?.substring(0, 7)
-      if (!m) return
-      if (!byMonth[m]) byMonth[m] = {
-        mes: m, n: 0, ingresos: 0, egresos: 0, balance_final: 0,
-        matched: 0, sin_clasif: 0, by_estado: {},
-        ingresos_lista: [], egresos_lista: [],
-      }
-      byMonth[m].n += 1
-      byMonth[m].ingresos += parseFloat(t.credito) || 0
-      byMonth[m].egresos += parseFloat(t.debito) || 0
-      byMonth[m].balance_final = parseFloat(t.balance) || byMonth[m].balance_final // último wins
-      const est = t.estado || 'sin_clasificar'
-      byMonth[m].by_estado[est] = (byMonth[m].by_estado[est] || 0) + 1
-      if (est === 'sin_clasificar') byMonth[m].sin_clasif += 1
-      else if (['auto_match','match_manual'].includes(est)) byMonth[m].matched += 1
-      // Listas para tops
-      if ((t.credito || 0) > 0) byMonth[m].ingresos_lista.push(t)
-      if ((t.debito || 0) > 0) byMonth[m].egresos_lista.push(t)
-    })
-    // Ordenar tops por monto desc
-    Object.values(byMonth).forEach(m => {
-      m.ingresos_lista.sort((a,b) => (b.credito||0) - (a.credito||0))
-      m.egresos_lista.sort((a,b) => (b.debito||0) - (a.debito||0))
-      m.pct_clasif = m.n > 0 ? (1 - m.sin_clasif / m.n) * 100 : 0
-      m.neto = m.ingresos - m.egresos
-    })
-    const meses = Object.values(byMonth).sort((a,b) => a.mes.localeCompare(b.mes))
-    const ultimoMes = meses[meses.length - 1]
-    const saldoActual = ultimoMes?.balance_final || 0
-    return { meses, ultimoMes, saldoActual }
-  }, [bankTx])
-
-  if (!bankTx || bankTx.length === 0) {
-    return (
-      <div style={sCard}>
-        <div style={{ textAlign: 'center', padding: 40 }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🏦</div>
-          <div style={{ fontSize: 14, color: C.textMuted }}>No hay datos del banco cargados aún.</div>
-          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>Importa el estado de cuenta BAC desde el módulo BancoView.</div>
-        </div>
-      </div>
-    )
-  }
-
-  const mesActual = filtroMes
-    ? data.meses.find(m => m.mes === filtroMes)
-    : data.ultimoMes
-
-  return (
-    <div>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.white }}>🏦 Banco BAC #201500451 USD</div>
-          <div style={{ fontSize: 11, color: C.textMuted }}>Estado de cuenta integrado al dashboard financiero</div>
-        </div>
-        <a href="?ver=banco" style={{
-          padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.blue}`,
-          background: 'rgba(96,165,250,0.15)', color: C.blue, fontWeight: 700, fontSize: 12,
-          textDecoration: 'none',
-        }}>Abrir BancoView →</a>
-      </div>
-
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
-        <KpiCardBanco label="Saldo actual" value={fmt(data.saldoActual)} sub={data.ultimoMes ? formatMonth(data.ultimoMes.mes) : '—'} color={C.blue} />
-        <KpiCardBanco label="Ingresos último mes" value={fmt(data.ultimoMes?.ingresos || 0)} sub={`${data.ultimoMes?.n || 0} transacciones`} color={C.greenLight} />
-        <KpiCardBanco label="Egresos último mes" value={fmt(data.ultimoMes?.egresos || 0)} sub={data.ultimoMes ? `Neto ${data.ultimoMes.neto >= 0 ? '+' : ''}${fmt(data.ultimoMes.neto)}` : '—'} color={C.red} />
-        <KpiCardBanco label="Cobertura matching" value={`${(data.ultimoMes?.pct_clasif || 0).toFixed(1)}%`} sub={`${data.ultimoMes?.sin_clasif || 0} sin clasificar`} color={(data.ultimoMes?.pct_clasif || 0) >= 80 ? C.greenLight : C.gold} />
-      </div>
-
-      {/* Tabla mensual */}
-      <div style={sCard}>
-        <div style={{ ...sH, marginBottom: 8 }}>Resumen mensual</div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 600 }}>
-            <thead><tr style={{ borderBottom: `2px solid ${C.red}` }}>
-              <th style={{ ...sTh, textAlign: 'left' }}>Mes</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>Tx</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>Ingresos</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>Egresos</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>Neto</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>Saldo final</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>% matched</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>Sin clasif</th>
-            </tr></thead>
-            <tbody>
-              {data.meses.map(m => {
-                const isSelected = m.mes === (filtroMes || data.ultimoMes?.mes)
-                return (
-                  <tr key={m.mes} onClick={() => setFiltroMes(m.mes)} style={{
-                    borderBottom: '1px solid #2a3340', cursor: 'pointer',
-                    background: isSelected ? 'rgba(96,165,250,0.08)' : 'transparent',
-                  }}>
-                    <td style={{ ...sTdL, fontWeight: 700, color: isSelected ? C.blue : C.white }}>{formatMonth(m.mes)}</td>
-                    <td style={{ ...sTd(), textAlign: 'right' }}>{m.n}</td>
-                    <td style={{ ...sTd(), textAlign: 'right', color: C.greenLight }}>{fmt(m.ingresos)}</td>
-                    <td style={{ ...sTd(), textAlign: 'right', color: '#fca5a5' }}>{fmt(m.egresos)}</td>
-                    <td style={{ ...sTd(), textAlign: 'right', fontWeight: 700, color: m.neto >= 0 ? C.greenLight : '#f87171' }}>
-                      {m.neto >= 0 ? '+' : ''}{fmt(m.neto)}
-                    </td>
-                    <td style={{ ...sTd(), textAlign: 'right', fontWeight: 700, color: C.white }}>{fmt(m.balance_final)}</td>
-                    <td style={{ ...sTd(), textAlign: 'right', color: m.pct_clasif >= 80 ? C.greenLight : m.pct_clasif >= 60 ? C.gold : '#f87171' }}>
-                      {m.pct_clasif.toFixed(1)}%
-                    </td>
-                    <td style={{ ...sTd(), textAlign: 'right', color: C.textMuted }}>{m.sin_clasif}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Detalle del mes seleccionado */}
-      {mesActual && (
-        <div style={{ ...sCard, marginTop: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={sH}>Detalle de {formatMonth(mesActual.mes)}</div>
-            <div style={{ fontSize: 11, color: C.textMuted }}>Click en otra fila de arriba para cambiar mes</div>
-          </div>
-
-          {/* Top ingresos + egresos lado a lado */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
-            {/* INGRESOS */}
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.greenLight, marginBottom: 6 }}>📈 Top 10 Ingresos</div>
-              <div style={{ background: '#0f1828', borderRadius: 6, overflow: 'hidden' }}>
-                {mesActual.ingresos_lista.slice(0, 10).map(t => {
-                  const chip = ESTADO_CHIP[t.estado] || ESTADO_CHIP.sin_clasificar
-                  return (
-                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #1a2540', fontSize: 11, gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: C.white, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.descripcion}>{t.descripcion}</div>
-                        <div style={{ fontSize: 9, color: C.textMuted }}>{fmtDateBank(t.fecha)} · {t.codigo_bac}</div>
-                      </div>
-                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <div style={{ color: C.greenLight, fontWeight: 700 }}>+{fmt(t.credito)}</div>
-                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: chip.bg, color: chip.color, fontWeight: 700 }}>{chip.label}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-                {mesActual.ingresos_lista.length === 0 && (
-                  <div style={{ padding: 16, textAlign: 'center', color: C.textMuted, fontSize: 11 }}>Sin ingresos este mes</div>
-                )}
-              </div>
-            </div>
-
-            {/* EGRESOS */}
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fca5a5', marginBottom: 6 }}>📉 Top 10 Egresos</div>
-              <div style={{ background: '#0f1828', borderRadius: 6, overflow: 'hidden' }}>
-                {mesActual.egresos_lista.slice(0, 10).map(t => {
-                  const chip = ESTADO_CHIP[t.estado] || ESTADO_CHIP.sin_clasificar
-                  return (
-                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #1a2540', fontSize: 11, gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: C.white, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.descripcion}>{t.descripcion}</div>
-                        <div style={{ fontSize: 9, color: C.textMuted }}>{fmtDateBank(t.fecha)} · {t.codigo_bac}</div>
-                      </div>
-                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <div style={{ color: '#fca5a5', fontWeight: 700 }}>−{fmt(t.debito)}</div>
-                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: chip.bg, color: chip.color, fontWeight: 700 }}>{chip.label}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-                {mesActual.egresos_lista.length === 0 && (
-                  <div style={{ padding: 16, textAlign: 'center', color: C.textMuted, fontSize: 11 }}>Sin egresos este mes</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Distribución por estado */}
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 6, textTransform: 'uppercase' }}>Distribución por estado</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {Object.entries(mesActual.by_estado).sort((a,b) => b[1] - a[1]).map(([est, n]) => {
-                const chip = ESTADO_CHIP[est] || { bg: '#374151', color: '#9ca3af', label: est }
-                return (
-                  <span key={est} style={{ padding: '4px 8px', borderRadius: 6, background: chip.bg, color: chip.color, fontSize: 11, fontWeight: 700, border: `1px solid ${chip.color}33` }}>
-                    {chip.label} · {n}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Cuadre Caja vs P&L */}
-          {(() => {
-            const m26 = months2026?.find(x => x.key === mesActual.mes)
-            if (!m26) return null
-            // Total gastos del P&L (excluye ventas) en el mes
-            const gastoPL = (m26.pl?.costo_comida || 0) + (m26.pl?.insumo_venta || 0) + (m26.pl?.limpieza || 0) +
-                          (m26.pl?.costo_fijo || 0) + (m26.pl?.gastos_operativos || 0) + (m26.pl?.gastos_logisticos || 0) +
-                          (m26.pl?.gasto_financiero || 0) + (m26.pl?.planilla_legal || 0) + (m26.pl?.impuestos || 0) +
-                          (m26.pl?.activo_fijo || 0)
-            const diff = mesActual.egresos - gastoPL
-            const pctDiff = gastoPL > 0 ? (diff / gastoPL) * 100 : 0
-            return (
-              <div style={{ marginTop: 14, padding: 10, background: '#0d1424', borderRadius: 6, borderLeft: `3px solid ${Math.abs(pctDiff) < 10 ? C.greenLight : C.gold}` }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 4, textTransform: 'uppercase' }}>Cuadre Banco vs P&L</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, fontSize: 12 }}>
-                  <div><span style={{ color: C.textMuted }}>Egresos banco:</span> <b style={{ color: C.white }}>{fmt(mesActual.egresos)}</b></div>
-                  <div><span style={{ color: C.textMuted }}>Gastos P&L (incl CapEx):</span> <b style={{ color: C.white }}>{fmt(gastoPL)}</b></div>
-                  <div><span style={{ color: C.textMuted }}>Diferencia:</span> <b style={{ color: Math.abs(pctDiff) < 10 ? C.greenLight : C.gold }}>{diff >= 0 ? '+' : ''}{fmt(diff)} ({pctDiff >= 0 ? '+' : ''}{pctDiff.toFixed(1)}%)</b></div>
-                </div>
-                <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, fontStyle: 'italic' }}>
-                  💡 Banco {'>'} P&L: hay salidas no contabilizadas (movimientos socio, repagos préstamos, transferencias). Banco {'<'} P&L: hay gastos pendientes de pago en bank_tx futuros.
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function KpiCardBanco({ label, value, sub, color }) {
-  return (
-    <div style={{ background: C.card, borderRadius: 8, padding: 12, border: `1px solid ${color}33` }}>
-      <div style={{ fontSize: 10, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
-      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{sub}</div>
-    </div>
-  )
-}
-
-function fmtDateBank(d) {
-  if (!d) return '—'
-  const dt = new Date(d + 'T00:00:00')
-  return dt.toLocaleDateString('es-SV', { day: '2-digit', month: 'short' })
-}
-
-// ══════════════════════════════════════════════════════
 //  TAB 4: FLUJO DE CAJA
 // ══════════════════════════════════════════════════════
 
@@ -1515,15 +1057,15 @@ function TabFlujoCaja({ months2026 }) {
         <div style={{ fontSize: 11, color: C.textMuted }}>Método indirecto · Ago 2025 — Abr 2026</div>
       </div>
 
-      <div style={{ overflowX: 'auto', maxHeight: '75vh' }}>
+      <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 650 }}>
-          <thead style={{ position: 'sticky', top: 0, background: C.card, zIndex: 3 }}>
+          <thead>
             <tr style={{ borderBottom: `2px solid ${C.gold}` }}>
-              <th style={{ ...sTh, textAlign: 'left', color: C.white, background: C.card }}>Concepto</th>
+              <th style={{ ...sTh, textAlign: 'left', color: C.white }}>Concepto</th>
               {allMonths.map((m, i) => (
-                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold, background: C.card }}>{m.label}</th>
+                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold }}>{m.label}</th>
               ))}
-              <th style={{ ...sTh, color: C.red, background: C.card }}>Total</th>
+              <th style={{ ...sTh, color: C.red }}>Total</th>
             </tr>
           </thead>
           <tbody>
@@ -1723,30 +1265,30 @@ function TabProveedores({ data2026, months2026, conIva }) {
           Últimos {monthKeys.length} meses · Click en categoría para expandir/colapsar proveedores · % sobre ventas del mes
         </div>
 
-        <div style={{ overflowX: 'auto', maxHeight: '75vh' }}>
+        <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead style={{ position: 'sticky', top: 0, background: C.card, zIndex: 3 }}>
+            <thead>
               <tr>
-                <th style={{ ...sTh, textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, background: C.card, zIndex: 4 }}>Categoría / Proveedor</th>
+                <th style={{ ...sTh, textAlign: 'left', minWidth: 180 }}>Categoría / Proveedor</th>
                 {monthKeys.map(mk => (
-                  <th key={mk} colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `1px solid ${C.border}`, background: C.card }}>
+                  <th key={mk} colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `1px solid ${C.border}` }}>
                     {formatMonth(mk)}
                   </th>
                 ))}
-                <th colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.15)' }}>
+                <th colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.1)' }}>
                   TOTAL
                 </th>
               </tr>
               <tr>
-                <th style={{ ...sTh, borderBottom: `2px solid ${C.border}`, position: 'sticky', left: 0, background: C.card, zIndex: 4 }}></th>
+                <th style={{ ...sTh, borderBottom: `2px solid ${C.border}` }}></th>
                 {monthKeys.map(mk => (
                   <React.Fragment key={mk}>
-                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `1px solid ${C.border}`, background: C.card }}>$</th>
-                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted, background: C.card }}>%</th>
+                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `1px solid ${C.border}` }}>$</th>
+                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted }}>%</th>
                   </React.Fragment>
                 ))}
-                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `2px solid ${C.gold}`, background: C.card }}>$</th>
-                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted, background: C.card }}>%</th>
+                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `2px solid ${C.gold}` }}>$</th>
+                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted }}>%</th>
               </tr>
             </thead>
             <tbody>
