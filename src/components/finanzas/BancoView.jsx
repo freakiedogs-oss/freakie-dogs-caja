@@ -183,7 +183,7 @@ export default function BancoView({ user }) {
   const dismissNotif = (id) => setNotifs(ns => ns.filter(n => n.id !== id))
 
   return (
-    <div style={{ padding: '12px 16px', maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ padding: '12px 16px', maxWidth: 1600, margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>🏦 BancoView — Conciliación Bancaria</div>
         <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>BAC #201500451 USD · Auto-match conservador + Wizard manual + Aprendizaje</div>

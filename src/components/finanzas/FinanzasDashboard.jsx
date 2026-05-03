@@ -380,7 +380,7 @@ export default function FinanzasDashboard({ user }) {
   ]
 
   return (
-    <div style={{ padding: '12px 8px', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: '12px 8px', maxWidth: 1600, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 12, letterSpacing: 3, color: C.red, fontWeight: 800 }}>FREAKIE DOGS</div>
@@ -605,8 +605,6 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
     if (!ventasRaw || !ventasRaw.length) return null
     const hoy = new Date(Date.now() - 6 * 3600 * 1000)
     const y = hoy.getFullYear(), m = hoy.getMonth(), diaActual = hoy.getDate()
-    // Usar ayer como corte para excluir día incompleto
-    const diaAyer = Math.max(1, diaActual - 1)
     const mKey = (yr, mo) => `${yr}-${String(mo + 1).padStart(2, '0')}`
     const currentKey = mKey(y, m)
 
@@ -624,13 +622,13 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       return acc
     }
 
-    const actualBySuc = sumMonthUpTo(currentKey, diaAyer)
+    const actualBySuc = sumMonthUpTo(currentKey, diaActual)
 
     const monthsBack = comparador === 'mes_anterior' ? 1 : comparador === 'prom_3m' ? 3 : 6
     const pastSucs = []
     for (let i = 1; i <= monthsBack; i++) {
       const d = new Date(y, m - i, 1)
-      pastSucs.push(sumMonthUpTo(mKey(d.getFullYear(), d.getMonth()), diaAyer))
+      pastSucs.push(sumMonthUpTo(mKey(d.getFullYear(), d.getMonth()), diaActual))
     }
     // Promedio de los meses pasados
     const compBySuc = {}
@@ -638,7 +636,7 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
     allStores.forEach(sc => {
       compBySuc[sc] = pastSucs.reduce((s, p) => s + (p[sc] || 0), 0) / monthsBack
     })
-    return { actualBySuc, compBySuc, diaActual: diaAyer, currentKey }
+    return { actualBySuc, compBySuc, diaActual, currentKey }
   }, [ventasRaw, comparador])
 
   // YTD totals
@@ -830,26 +828,27 @@ function TabEstadoResultados({ months2026 }) {
         <div style={{ fontSize: 11, color: C.textMuted }}>Agosto 2025 — Abril 2026</div>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', maxHeight: '75vh' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-          <thead>
+          <thead style={{ position: 'sticky', top: 0, background: C.card, zIndex: 3 }}>
             <tr style={{ borderBottom: `2px solid ${C.red}` }}>
-              <th style={{ ...sTh, textAlign: 'left', color: C.white }}>Concepto</th>
+              <th style={{ ...sTh, textAlign: 'left', color: C.white, position: 'sticky', left: 0, background: C.card, zIndex: 4, minWidth: 180 }}>Concepto</th>
               {allMonths.map((m, i) => (
-                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold }}>
+                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold, background: C.card }}>
                   {m.label}
                 </th>
               ))}
-              <th style={{ ...sTh, color: C.red }}>Total</th>
-              <th style={{ ...sTh, color: C.textMuted }}>% Venta</th>
+              <th style={{ ...sTh, color: C.red, background: C.card }}>Total</th>
+              <th style={{ ...sTh, color: C.textMuted, background: C.card }}>% Venta</th>
             </tr>
           </thead>
           <tbody>
             {plLines.map((line, li) => {
               const isSeparator = line.key === 'ebitda' || line.key === 'utilidad'
+              const rowBg = isSeparator ? '#2a2a3e' : li % 2 ? '#192237' : C.card // colores sólidos para sticky col
               return (
                 <tr key={line.key} style={{
-                  background: isSeparator ? 'rgba(230,57,70,0.1)' : li % 2 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                  background: rowBg,
                   borderTop: isSeparator ? `1px solid ${C.red}` : 'none',
                 }}>
                   <td style={{
@@ -858,6 +857,8 @@ function TabEstadoResultados({ months2026 }) {
                     paddingLeft: line.indent ? 20 : 6,
                     color: line.bold ? C.white : C.textMuted,
                     fontSize: line.bold ? 12 : 11,
+                    position: 'sticky', left: 0, background: rowBg, zIndex: 1,
+                    boxShadow: '2px 0 4px rgba(0,0,0,0.3)',
                   }}>
                     {line.label}
                   </td>
@@ -1051,15 +1052,15 @@ function TabFlujoCaja({ months2026 }) {
         <div style={{ fontSize: 11, color: C.textMuted }}>Método indirecto · Ago 2025 — Abr 2026</div>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', maxHeight: '75vh' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 650 }}>
-          <thead>
+          <thead style={{ position: 'sticky', top: 0, background: C.card, zIndex: 3 }}>
             <tr style={{ borderBottom: `2px solid ${C.gold}` }}>
-              <th style={{ ...sTh, textAlign: 'left', color: C.white }}>Concepto</th>
+              <th style={{ ...sTh, textAlign: 'left', color: C.white, background: C.card }}>Concepto</th>
               {allMonths.map((m, i) => (
-                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold }}>{m.label}</th>
+                <th key={i} style={{ ...sTh, fontSize: 10, color: m.is2026 ? C.blue : C.gold, background: C.card }}>{m.label}</th>
               ))}
-              <th style={{ ...sTh, color: C.red }}>Total</th>
+              <th style={{ ...sTh, color: C.red, background: C.card }}>Total</th>
             </tr>
           </thead>
           <tbody>
@@ -1259,30 +1260,30 @@ function TabProveedores({ data2026, months2026, conIva }) {
           Últimos {monthKeys.length} meses · Click en categoría para expandir/colapsar proveedores · % sobre ventas del mes
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', maxHeight: '75vh' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, background: C.card, zIndex: 3 }}>
               <tr>
-                <th style={{ ...sTh, textAlign: 'left', minWidth: 180 }}>Categoría / Proveedor</th>
+                <th style={{ ...sTh, textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, background: C.card, zIndex: 4 }}>Categoría / Proveedor</th>
                 {monthKeys.map(mk => (
-                  <th key={mk} colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `1px solid ${C.border}` }}>
+                  <th key={mk} colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `1px solid ${C.border}`, background: C.card }}>
                     {formatMonth(mk)}
                   </th>
                 ))}
-                <th colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.1)' }}>
+                <th colSpan={2} style={{ ...sTh, textAlign: 'center', borderLeft: `2px solid ${C.gold}`, background: 'rgba(244,162,97,0.15)' }}>
                   TOTAL
                 </th>
               </tr>
               <tr>
-                <th style={{ ...sTh, borderBottom: `2px solid ${C.border}` }}></th>
+                <th style={{ ...sTh, borderBottom: `2px solid ${C.border}`, position: 'sticky', left: 0, background: C.card, zIndex: 4 }}></th>
                 {monthKeys.map(mk => (
                   <React.Fragment key={mk}>
-                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `1px solid ${C.border}` }}>$</th>
-                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted }}>%</th>
+                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `1px solid ${C.border}`, background: C.card }}>$</th>
+                    <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted, background: C.card }}>%</th>
                   </React.Fragment>
                 ))}
-                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `2px solid ${C.gold}` }}>$</th>
-                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted }}>%</th>
+                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, borderLeft: `2px solid ${C.gold}`, background: C.card }}>$</th>
+                <th style={{ ...sTh, fontSize: 9, borderBottom: `2px solid ${C.border}`, color: C.textMuted, background: C.card }}>%</th>
               </tr>
             </thead>
             <tbody>
