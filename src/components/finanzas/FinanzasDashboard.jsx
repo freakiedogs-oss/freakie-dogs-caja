@@ -297,9 +297,10 @@ export default function FinanzasDashboard({ user }) {
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
       // 11. Eventos cerrados — venta adicional a sumar al total y desglosar
+      // Filtramos por cerrado_at (más confiable que estado, que a veces queda en 'aprobado' por bug del módulo Eventos)
       const eventosCerrados = await fetchAll('eventos',
-        'fecha_evento, estado, total_ventas, nombre, cliente',
-        q => q.eq('estado', 'cerrado').gte('fecha_evento', '2026-01-01').order('fecha_evento'))
+        'fecha_evento, estado, total_ventas, cerrado_at, nombre, cliente',
+        q => q.not('cerrado_at', 'is', null).gte('fecha_evento', '2026-01-01').order('fecha_evento'))
 
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
