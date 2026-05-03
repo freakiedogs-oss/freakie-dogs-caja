@@ -315,6 +315,16 @@ export default function FinanzasDashboard({ user }) {
         'id, fecha, codigo_bac, descripcion, debito, credito, balance, estado, notas',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
+      // 13. Validación Serfinsa diaria (Liquidez Real)
+      const serfinsaValid = await fetchAll('serfinsa_validacion_diaria',
+        'fecha, total_serfinsa, total_tarjeta_reportado, diferencia, num_terminales, estado',
+        q => q.gte('fecha', '2026-01-01').order('fecha'))
+
+      // 14. Depósitos bancarios efectivo
+      const depositos = await fetchAll('depositos_bancarios',
+        'fecha_deposito, store_code, monto, monto_esperado, diferencia_deposito, estado',
+        q => q.gte('fecha_deposito', '2026-01-01').order('fecha_deposito'))
+
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
       cierresOp.forEach(c => {
@@ -330,7 +340,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx })
+      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx, serfinsaValid, depositos })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -498,6 +508,7 @@ export default function FinanzasDashboard({ user }) {
     { key: 'balance', label: '⚖️ Balance', icon: '⚖️' },
     { key: 'flujo-caja', label: '💰 Flujo de Caja', icon: '💰' },
     { key: 'banco', label: '🏦 Banco', icon: '🏦' },
+    { key: 'liquidez', label: '💧 Liquidez Real', icon: '💧' },
     { key: 'peya', label: '🛵 PEYA', icon: '🛵' },
     { key: 'proveedores', label: '🏢 Proveedores', icon: '🏢' },
     { key: 'catalogo', label: '⚙️ Catálogo', icon: '⚙️' },
@@ -543,6 +554,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
           {tab === 'banco' && <TabBanco bankTx={data2026?.bankTx} months2026={months2026} />}
+          {tab === 'liquidez' && <TabLiquidez data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'peya' && <TabPeya data2026={data2026} conIva={conIva} onRefresh={loadData2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'catalogo' && <TabCatalogo user={user} data2026={data2026} onRefresh={loadData2026} />}
@@ -1241,6 +1253,305 @@ function TabBalance({ months2026 }) {
       <div style={{ marginTop: 12, padding: 10, background: 'rgba(59,130,246,0.1)', borderRadius: 8, fontSize: 11, color: C.textMuted }}>
         ⚠️ Balance estimado a partir de datos operativos. Cuentas de activo calculadas por distribución histórica. Préstamos reflejan saldo acumulado reportado. Para balance auditado, consultar con Angel Ortiz.
       </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════
+//  TAB LIQUIDEZ REAL — Reportado POS vs Recibido Banco
+// ══════════════════════════════════════════════════════
+
+const CANAL_LIQ = {
+  tarjeta:      { icon: '💳', label: 'Tarjeta (Serfinsa)',  color: '#3b82f6', comision: 0.030 },
+  pos_bac:      { icon: '🏦', label: 'POS Adquirente BAC',  color: '#06b6d4', comision: 0.025 },
+  efectivo:     { icon: '💵', label: 'Efectivo (depósitos)', color: '#4ade80', comision: 0 },
+  peya:         { icon: '🛵', label: 'PedidosYa',            color: '#e84393', comision: 0.275 },
+  transfers:    { icon: '🔄', label: 'Transferencias',       color: '#a78bfa', comision: 0 },
+}
+
+function TabLiquidez({ data2026, months2026, conIva }) {
+  const [filtroMes, setFiltroMes] = useState('')
+
+  const liq = useMemo(() => {
+    if (!data2026) return null
+    const adj = (v) => conIva ? v : v / 1.13
+
+    // ───── REPORTADO (POS Quanto)
+    const posByMonth = {}
+    ;(data2026.ventas || []).forEach(v => {
+      const m = v.fecha?.substring(0, 7)
+      if (!m) return
+      if (!posByMonth[m]) posByMonth[m] = { tarjeta: 0, efectivo: 0, peya: 0, otros: 0 }
+      posByMonth[m].tarjeta  += adj(parseFloat(v.tarjeta_quanto)  || 0)
+      posByMonth[m].efectivo += adj(parseFloat(v.efectivo_quanto) || 0)
+      posByMonth[m].otros    += adj(parseFloat(v.otros_quanto)    || 0)
+    })
+    ;(data2026.ventaspeya || []).forEach(v => {
+      const m = v.fecha?.substring(0, 7)
+      if (!m) return
+      const t = parseFloat(v.total) || 0
+      if (t > 0) {
+        if (!posByMonth[m]) posByMonth[m] = { tarjeta: 0, efectivo: 0, peya: 0, otros: 0 }
+        posByMonth[m].peya = (posByMonth[m].peya || 0) + adj(t)
+      }
+    })
+
+    // ───── RECIBIDO (Bank BAC)
+    // Heurística PeYa:
+    //   1. "PARTNER PEDIDOSYA" / "PEDIDOSYA" / "DELIVERY HERO" → explícito
+    //   2. "Pay Adv Doc 6XXXXXXXXX" en VIERNES con monto $3K-$15K → liquidación semanal PeYa legacy
+    //   3. Resto Pay Adv Doc → POS BAC otro adquirente
+    const bankByMonth = {}
+    ;(data2026.bankTx || []).forEach(t => {
+      const m = t.fecha?.substring(0, 7)
+      if (!m) return
+      if (!bankByMonth[m]) bankByMonth[m] = { serfinsa: 0, pos_bac: 0, efectivo: 0, peya: 0, transfers: 0 }
+      const cred = parseFloat(t.credito) || 0
+      if (cred <= 0) return
+      const desc = (t.descripcion || '').toUpperCase()
+      const dow = new Date(t.fecha + 'T00:00:00').getDay()  // 0=Dom, 5=Vie
+      const isFriday = dow === 5
+
+      // 1. PeYa explícito
+      if (desc.includes('PARTNER PEDIDOSYA') || desc.includes('PEDIDOSYA') || desc.includes('DELIVERY HERO') || desc.includes('PEYA')) {
+        bankByMonth[m].peya += cred
+      }
+      // 2. PeYa legacy: Pay Adv Doc viernes monto $3K-$15K
+      else if (t.codigo_bac === 'CR' && desc.includes('PAY ADV DOC') && isFriday && cred >= 3000 && cred <= 15000) {
+        bankByMonth[m].peya += cred
+      }
+      // 3. Tarjeta Serfinsa
+      else if (t.codigo_bac === 'TM' && desc.includes('SERVICIOS FINANCIEROS')) {
+        bankByMonth[m].serfinsa += cred
+      }
+      // 4. POS BAC adquirente: resto L1 + CR (Pay Adv Doc otros días/montos, NOTA, REMESA, AFI)
+      else if (t.codigo_bac === 'L1' || (t.codigo_bac === 'CR' && (desc.includes('PAY ADV') || desc.includes('NOTA') || desc.includes('REMESA') || desc.includes('AFI')))) {
+        bankByMonth[m].pos_bac += cred
+      }
+      // 5. Efectivo
+      else if (t.codigo_bac === 'DP') {
+        bankByMonth[m].efectivo += cred
+      }
+      // 6. Transferencias clientes (excluyendo socios)
+      else if (desc.startsWith('TEF DE:') || desc.startsWith('T365 DE:')) {
+        if (!desc.includes('ISART') && !desc.includes('CESAR ROD') && !desc.includes('FRANCISCO SIG')) {
+          bankByMonth[m].transfers += cred
+        }
+      }
+    })
+
+    // ───── Validación adicional
+    const sValidByMonth = {}
+    ;(data2026.serfinsaValid || []).forEach(s => {
+      const m = s.fecha?.substring(0, 7)
+      if (!m) return
+      if (!sValidByMonth[m]) sValidByMonth[m] = { liquidado: 0, reportado: 0, diff: 0, dias: 0 }
+      sValidByMonth[m].liquidado += parseFloat(s.total_serfinsa) || 0
+      sValidByMonth[m].reportado += parseFloat(s.total_tarjeta_reportado) || 0
+      sValidByMonth[m].diff      += parseFloat(s.diferencia) || 0
+      sValidByMonth[m].dias      += 1
+    })
+    const depByMonth = {}
+    ;(data2026.depositos || []).forEach(d => {
+      const m = d.fecha_deposito?.substring(0, 7)
+      if (!m) return
+      if (!depByMonth[m]) depByMonth[m] = { monto: 0, esperado: 0, n: 0 }
+      depByMonth[m].monto    += parseFloat(d.monto)          || 0
+      depByMonth[m].esperado += parseFloat(d.monto_esperado) || 0
+      depByMonth[m].n        += 1
+    })
+
+    const allMeses = Array.from(new Set([
+      ...Object.keys(posByMonth), ...Object.keys(bankByMonth)
+    ])).sort()
+
+    const rows = allMeses.map(m => {
+      const p = posByMonth[m] || { tarjeta: 0, efectivo: 0, peya: 0, otros: 0 }
+      const b = bankByMonth[m] || { serfinsa: 0, pos_bac: 0, efectivo: 0, peya: 0, transfers: 0 }
+      const sv = sValidByMonth[m]
+      const dp = depByMonth[m]
+      const canales = {
+        tarjeta:   { rep: p.tarjeta,  rec: b.serfinsa, comision: p.tarjeta * 0.030 },
+        pos_bac:   { rep: 0,          rec: b.pos_bac,  comision: 0 },
+        efectivo:  { rep: p.efectivo, rec: b.efectivo, comision: 0 },
+        peya:      { rep: p.peya,     rec: b.peya,     comision: p.peya * 0.275 },
+        transfers: { rep: 0,          rec: b.transfers, comision: 0 },
+      }
+      const totalRep = p.tarjeta + p.efectivo + p.peya + p.otros
+      const totalRec = b.serfinsa + b.pos_bac + b.efectivo + b.peya + b.transfers
+      const cobertura = totalRep > 0 ? (totalRec / totalRep) * 100 : 0
+      return { mes: m, p, b, canales, totalRep, totalRec, cobertura, gap: totalRep - totalRec, sv, dp }
+    })
+
+    return { rows, peyaLiqVacio: !data2026.peya_liq?.length, depositosVacio: !data2026.depositos?.length }
+  }, [data2026, conIva])
+
+  if (!liq || !liq.rows.length) {
+    return <div style={sCard}><div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>💧 Sin datos de liquidez</div></div>
+  }
+
+  const mesActual = filtroMes ? liq.rows.find(r => r.mes === filtroMes) : liq.rows[liq.rows.length - 1]
+  const totales = liq.rows.reduce((acc, r) => ({
+    rep: acc.rep + r.totalRep, rec: acc.rec + r.totalRec, gap: acc.gap + r.gap
+  }), { rep: 0, rec: 0, gap: 0 })
+  const coberturaGlobal = totales.rep > 0 ? (totales.rec / totales.rep) * 100 : 0
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.white }}>💧 Liquidez Real — Cash Conversion</div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+          ¿Cuánto de la venta reportada en POS realmente entra líquido a la cuenta BAC? Compara <b style={{color: C.gold}}>POS (Quanto + PeYa)</b> vs <b style={{color: C.greenLight}}>liquidaciones BAC</b> por canal.
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <KpiCardBanco label="Reportado POS total" value={fmt(totales.rep)} sub={`${liq.rows.length} meses`} color={C.gold} />
+        <KpiCardBanco label="Recibido en banco" value={fmt(totales.rec)} sub="liquidaciones BAC identificadas" color={C.greenLight} />
+        <KpiCardBanco label="% Cobertura" value={`${coberturaGlobal.toFixed(1)}%`} sub={coberturaGlobal >= 90 ? 'cuadre saludable' : coberturaGlobal >= 70 ? 'revisar gaps' : 'revisión urgente'} color={coberturaGlobal >= 90 ? C.greenLight : coberturaGlobal >= 70 ? C.gold : C.red} />
+        <KpiCardBanco label="Gap (no recibido)" value={fmt(totales.gap)} sub="comisiones + retraso + faltantes" color={totales.gap >= 0 ? C.red : C.greenLight} />
+      </div>
+
+      {(liq.peyaLiqVacio || liq.depositosVacio) && (
+        <div style={{ background: '#7c2d1222', border: '1px solid #7c2d12', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 12, color: '#fdba74' }}>
+          ⚠️ <b>Datos faltantes:</b>
+          {liq.peyaLiqVacio && <> tabla <code>peya_liquidaciones</code> vacía → PeYa cruzado vs bank_tx (PARTNER PEDIDOSYA + Pay Adv Doc viernes $3-15K).</>}
+          {liq.depositosVacio && <> Tabla <code>depositos_bancarios</code> vacía → Efectivo cruzado vs bank_tx código DP.</>}
+        </div>
+      )}
+
+      <div style={sCard}>
+        <div style={{ ...sH, marginBottom: 8 }}>Resumen mensual por canal</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 900 }}>
+            <thead><tr style={{ borderBottom: `2px solid ${C.red}` }}>
+              <th style={{ ...sTh, textAlign: 'left', position: 'sticky', left: 0, background: C.card, zIndex: 2 }}>Mes</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>💳 Tarj POS</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>↳ Serfinsa</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>🏦 POS BAC</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>💵 Efect POS</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>↳ Depósitos</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>🛵 PeYa POS</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>↳ PeYa banco</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>🔄 Transfers</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Cobertura</th>
+            </tr></thead>
+            <tbody>
+              {liq.rows.map(r => {
+                const isSel = r.mes === (filtroMes || liq.rows[liq.rows.length-1].mes)
+                return (
+                  <tr key={r.mes} onClick={() => setFiltroMes(r.mes)} style={{
+                    borderBottom: '1px solid #2a3340', cursor: 'pointer',
+                    background: isSel ? 'rgba(96,165,250,0.08)' : 'transparent',
+                  }}>
+                    <td style={{ ...sTdL, fontWeight: 700, color: isSel ? C.blue : C.white, position: 'sticky', left: 0, background: isSel ? '#1a2540' : C.card, zIndex: 1 }}>{formatMonth(r.mes)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: C.gold }}>{fmt(r.canales.tarjeta.rep)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: C.greenLight }}>{fmt(r.canales.tarjeta.rec)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: '#06b6d4' }}>{fmt(r.canales.pos_bac.rec)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: C.gold }}>{fmt(r.canales.efectivo.rep)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: C.greenLight }}>{fmt(r.canales.efectivo.rec)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: C.gold }}>{fmt(r.canales.peya.rep)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: r.canales.peya.rec > 0 ? C.greenLight : '#475569' }}>{r.canales.peya.rec > 0 ? fmt(r.canales.peya.rec) : '—'}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: '#a78bfa' }}>{r.canales.transfers.rec > 0 ? fmt(r.canales.transfers.rec) : '—'}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', fontWeight: 700, color: r.cobertura >= 90 ? C.greenLight : r.cobertura >= 70 ? C.gold : '#f87171' }}>
+                      {r.cobertura.toFixed(1)}%
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize: 10, color: C.textMuted, marginTop: 6, fontStyle: 'italic' }}>
+          💡 PeYa banco identificado por: "PARTNER PEDIDOSYA" + "Pay Adv Doc 6XXXXXXXXX" en viernes $3K-$15K (liquidación semanal típica).
+        </div>
+      </div>
+
+      {mesActual && (
+        <div style={{ ...sCard, marginTop: 16 }}>
+          <div style={sH}>Análisis detallado de {formatMonth(mesActual.mes)}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 10, marginTop: 8 }}>
+            {Object.entries(mesActual.canales).map(([key, c]) => {
+              const cfg = CANAL_LIQ[key]
+              if (!cfg) return null
+              const liquido_esperado = c.rep - c.comision
+              const diff = c.rec - liquido_esperado
+              const pct = c.rep > 0 ? (c.rec / c.rep) * 100 : (c.rec > 0 ? 100 : 0)
+              const noReportado = c.rep === 0 && c.rec > 0
+              return (
+                <div key={key} style={{ background: '#0f1828', borderRadius: 8, padding: 12, border: `1px solid ${cfg.color}33` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: cfg.color }}>{cfg.icon} {cfg.label}</div>
+                    {!noReportado && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: pct >= 90 ? C.greenLight : pct >= 70 ? C.gold : '#f87171' }}>
+                        {pct.toFixed(1)}%
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textMuted, marginBottom: 3 }}>
+                      <span>Reportado POS</span><span style={{ color: C.gold }}>{fmt(c.rep)}</span>
+                    </div>
+                    <div style={{ background: '#1a2540', borderRadius: 4, height: 8 }}>
+                      <div style={{ background: C.gold, width: '100%', height: '100%', borderRadius: 4 }} />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textMuted, marginBottom: 3 }}>
+                      <span>Recibido banco</span><span style={{ color: C.greenLight }}>{fmt(c.rec)}</span>
+                    </div>
+                    <div style={{ background: '#1a2540', borderRadius: 4, height: 8 }}>
+                      <div style={{ background: C.greenLight, width: c.rep > 0 ? `${Math.min(100, pct)}%` : '0%', height: '100%', borderRadius: 4 }} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: C.textMuted, marginTop: 8, lineHeight: 1.5 }}>
+                    {cfg.comision > 0 && (
+                      <div>Comisión esperada ~{(cfg.comision*100).toFixed(1)}%: <b style={{ color: '#fca5a5' }}>−{fmt(c.comision)}</b></div>
+                    )}
+                    {!noReportado && (
+                      <>
+                        <div>Líquido esperado: <b style={{ color: C.white }}>{fmt(liquido_esperado)}</b></div>
+                        <div>Gap: <b style={{ color: Math.abs(diff) < 100 ? C.greenLight : (diff < 0 ? '#f87171' : C.gold) }}>{diff >= 0 ? '+' : ''}{fmt(diff)}</b></div>
+                      </>
+                    )}
+                    {noReportado && (
+                      <div style={{ color: '#a78bfa' }}>ℹ️ No reportado en POS Quanto — flujo de banco directo</div>
+                    )}
+                    {key === 'tarjeta' && mesActual.sv && (
+                      <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px dashed #334155' }}>
+                        ✅ Validado Serfinsa: {mesActual.sv.dias} días · diff {mesActual.sv.diff >= 0 ? '+' : ''}{fmt(mesActual.sv.diff)}
+                      </div>
+                    )}
+                    {key === 'efectivo' && mesActual.dp && (
+                      <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px dashed #334155' }}>
+                        📋 {mesActual.dp.n} depósitos registrados · esperado {fmt(mesActual.dp.esperado)}
+                      </div>
+                    )}
+                    {key === 'efectivo' && c.rep > c.rec * 1.1 && (
+                      <div style={{ marginTop: 4, color: '#fdba74' }}>
+                        💸 Efectivo no depositado: <b>{fmt(c.rep - c.rec)}</b> (gastos cierre, viáticos, bóveda)
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ marginTop: 14, padding: 12, background: '#0d1424', borderRadius: 6, borderLeft: `3px solid ${mesActual.cobertura >= 90 ? C.greenLight : mesActual.cobertura >= 70 ? C.gold : '#f87171'}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 6, textTransform: 'uppercase' }}>Conclusión {formatMonth(mesActual.mes)}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, fontSize: 12 }}>
+              <div><span style={{ color: C.textMuted }}>Total reportado POS:</span> <b style={{ color: C.gold }}>{fmt(mesActual.totalRep)}</b></div>
+              <div><span style={{ color: C.textMuted }}>Total recibido banco:</span> <b style={{ color: C.greenLight }}>{fmt(mesActual.totalRec)}</b></div>
+              <div><span style={{ color: C.textMuted }}>% Cobertura efectiva:</span> <b style={{ color: mesActual.cobertura >= 90 ? C.greenLight : mesActual.cobertura >= 70 ? C.gold : '#f87171' }}>{mesActual.cobertura.toFixed(1)}%</b></div>
+              <div><span style={{ color: C.textMuted }}>Gap total:</span> <b style={{ color: mesActual.gap >= 0 ? '#fdba74' : C.greenLight }}>{mesActual.gap >= 0 ? '+' : ''}{fmt(mesActual.gap)}</b></div>
+            </div>
+            <div style={{ fontSize: 10, color: C.textMuted, marginTop: 6, fontStyle: 'italic' }}>
+              💡 Gap normal ~3-15% (comisiones POS + efectivo en bóveda + retraso liquidación). Si {'>'}25%: revisar canales individuales arriba.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
