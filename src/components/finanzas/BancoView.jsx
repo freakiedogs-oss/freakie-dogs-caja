@@ -1168,6 +1168,10 @@ function TabColaManual({ user }) {
   const [filtroEstado, setFiltroEstado] = useState('sin_clasificar')
   const [filtroMes, setFiltroMes] = useState('todos')
   const [filtroCodigo, setFiltroCodigo] = useState('todos')
+  const [filtroProveedor, setFiltroProveedor] = useState('todos')
+  const [filtroCategoria, setFiltroCategoria] = useState('todos')
+  const [filtroCentro, setFiltroCentro] = useState('todos')
+  const [search, setSearch] = useState('')
   const [seleccion, setSeleccion] = useState(new Set())
   const [bulkEstado, setBulkEstado] = useState('match_manual')
   const [expandido, setExpandido] = useState(null) // id de tx con drawer abierto
@@ -1186,8 +1190,29 @@ function TabColaManual({ user }) {
 
   const meses = useMemo(() => ['todos', ...new Set(tx.map(t => (t.fecha || '').slice(0, 7))).values()].sort().reverse(), [tx])
   const codigos = useMemo(() => ['todos', ...new Set(tx.map(t => t.codigo_bac).filter(Boolean))], [tx])
-  const filtrados = tx.filter(t => (filtroMes === 'todos' || (t.fecha || '').startsWith(filtroMes)) && (filtroCodigo === 'todos' || t.codigo_bac === filtroCodigo))
-    .sort((a, b) => ((Number(b.debito) || 0) + (Number(b.credito) || 0)) - ((Number(a.debito) || 0) + (Number(a.credito) || 0)))
+  const proveedores = useMemo(() => {
+    const set = new Set()
+    tx.forEach(t => { if (t.proveedores_matcheados) t.proveedores_matcheados.split(' · ').forEach(p => set.add(p.trim())) })
+    return ['todos', ...Array.from(set).sort()]
+  }, [tx])
+  const categorias = useMemo(() => ['todos', 'sin_categoria', ...new Set(tx.map(t => t.categoria_efectiva).filter(Boolean))].sort(), [tx])
+  const centrosCosto = useMemo(() => ['todos', 'sin_centro', ...new Set(tx.map(t => t.centro_costo_nombre).filter(Boolean))].sort(), [tx])
+
+  const searchLow = search.trim().toLowerCase()
+  const filtrados = tx.filter(t => {
+    if (filtroMes !== 'todos' && !(t.fecha || '').startsWith(filtroMes)) return false
+    if (filtroCodigo !== 'todos' && t.codigo_bac !== filtroCodigo) return false
+    if (filtroProveedor !== 'todos' && !(t.proveedores_matcheados || '').includes(filtroProveedor)) return false
+    if (filtroCategoria === 'sin_categoria' && t.categoria_efectiva) return false
+    if (filtroCategoria !== 'todos' && filtroCategoria !== 'sin_categoria' && t.categoria_efectiva !== filtroCategoria) return false
+    if (filtroCentro === 'sin_centro' && t.centro_costo_nombre) return false
+    if (filtroCentro !== 'todos' && filtroCentro !== 'sin_centro' && t.centro_costo_nombre !== filtroCentro) return false
+    if (searchLow) {
+      const hay = `${t.descripcion || ''} ${t.proveedores_matcheados || ''} ${t.referencia || ''} ${t.cuenta_destino_4dig || ''} ${t.notas || ''} ${t.centro_costo_nombre || ''} ${t.categoria_efectiva || ''} ${t.subcategoria || ''}`.toLowerCase()
+      if (!hay.includes(searchLow)) return false
+    }
+    return true
+  }).sort((a, b) => ((Number(b.debito) || 0) + (Number(b.credito) || 0)) - ((Number(a.debito) || 0) + (Number(a.credito) || 0)))
 
   const toggleSel = (id) => { const ns = new Set(seleccion); if (ns.has(id)) ns.delete(id); else ns.add(id); setSeleccion(ns) }
   const toggleSelAll = () => { if (seleccion.size === filtrados.length) setSeleccion(new Set()); else setSeleccion(new Set(filtrados.map(t => t.id))) }
@@ -1245,16 +1270,39 @@ function TabColaManual({ user }) {
 
   return (
     <>
+      {/* Buscador global */}
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 Buscar en descripción, proveedor, referencia, 4 dig, categoría, centro, notas…"
+            style={{ ...inputSt, width: '100%', padding: '10px 14px', fontSize: 13 }}
+          />
+          {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#888', fontSize: 16, cursor: 'pointer' }}>×</button>}
+        </div>
+      </div>
+
       {/* Filtros + bulk */}
       <div style={{ background: '#1f2937', borderRadius: 8, padding: 12, marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div><div style={labelSt}>Estado</div><select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} style={{ ...inputSt, minWidth: 180 }}>
+        <div><div style={labelSt}>Estado</div><select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} style={{ ...inputSt, minWidth: 160 }}>
           {ESTADOS_FILTRO.map(e => <option key={e.val} value={e.val}>{e.label}</option>)}
         </select></div>
         <div><div style={labelSt}>Mes</div><select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={inputSt}>
           {meses.map(m => <option key={m} value={m}>{m === 'todos' ? 'Todos' : m}</option>)}
         </select></div>
-        <div><div style={labelSt}>Código</div><select value={filtroCodigo} onChange={e => setFiltroCodigo(e.target.value)} style={inputSt}>
+        <div><div style={labelSt}>Cód</div><select value={filtroCodigo} onChange={e => setFiltroCodigo(e.target.value)} style={inputSt}>
           {codigos.map(c => <option key={c} value={c}>{c === 'todos' ? 'Todos' : c}</option>)}
+        </select></div>
+        <div><div style={labelSt}>Proveedor</div><select value={filtroProveedor} onChange={e => setFiltroProveedor(e.target.value)} style={{ ...inputSt, maxWidth: 200 }}>
+          {proveedores.map(p => <option key={p} value={p}>{p === 'todos' ? 'Todos' : (p.length > 30 ? p.slice(0, 30) + '…' : p)}</option>)}
+        </select></div>
+        <div><div style={labelSt}>Categoría</div><select value={filtroCategoria} onChange={e => setFiltroCategoria(e.target.value)} style={inputSt}>
+          {categorias.map(c => <option key={c} value={c}>{c === 'todos' ? 'Todas' : c === 'sin_categoria' ? '— sin categoría' : c}</option>)}
+        </select></div>
+        <div><div style={labelSt}>Centro</div><select value={filtroCentro} onChange={e => setFiltroCentro(e.target.value)} style={inputSt}>
+          {centrosCosto.map(c => <option key={c} value={c}>{c === 'todos' ? 'Todos' : c === 'sin_centro' ? '— sin centro' : c}</option>)}
         </select></div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           {verRevertir ? (
