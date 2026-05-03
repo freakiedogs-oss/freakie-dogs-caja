@@ -296,6 +296,11 @@ export default function FinanzasDashboard({ user }) {
         'fecha, tipo, monto',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
+      // 11. Eventos cerrados — venta adicional a sumar al total y desglosar
+      const eventosCerrados = await fetchAll('eventos',
+        'fecha_evento, estado, total_ventas, nombre, cliente',
+        q => q.eq('estado', 'cerrado').gte('fecha_evento', '2026-01-01').order('fecha_evento'))
+
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
       cierresOp.forEach(c => {
@@ -311,7 +316,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs })
+      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -339,6 +344,42 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].egresos += (v.total_egresos || 0)
       const sc = v.store_code || 'Otro'
       monthMap[m].bySuc[sc] = (monthMap[m].bySuc[sc] || 0) + total
+    })
+
+    // Desglose ventas: PeYa vs Local (Quanto POS) vs Eventos cerrados
+    // PeYa viene en quanto_transacciones con fuente=PedidosYa
+    const peyaByMonth = {}
+    ;(data2026.ventaspeya || []).forEach(v => {
+      const m = v.fecha?.substring(0, 7)
+      if (!m) return
+      const t = parseFloat(v.total) || 0
+      if (t > 0) peyaByMonth[m] = (peyaByMonth[m] || 0) + t
+    })
+    // Eventos cerrados — venta adicional NO incluida en Quanto, hay que sumarla a m.ventas
+    const eventosByMonth = {}
+    ;(data2026.eventosCerrados || []).forEach(ev => {
+      const m = ev.fecha_evento?.substring(0, 7)
+      if (!m) return
+      const t = parseFloat(ev.total_ventas) || 0
+      if (t > 0) eventosByMonth[m] = (eventosByMonth[m] || 0) + t
+    })
+    // Sumar eventos al total de ventas del mes (no estaban incluidos antes)
+    Object.entries(eventosByMonth).forEach(([m, total]) => {
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      const totalAdj = conIva ? total : total / 1.13
+      monthMap[m].ventas += totalAdj
+    })
+    // Acumular subcategorías de venta por mes
+    Object.keys(monthMap).forEach(m => {
+      const peyaBruto = peyaByMonth[m] || 0
+      const peya = conIva ? peyaBruto : peyaBruto / 1.13
+      const eventosBruto = eventosByMonth[m] || 0
+      const eventos = conIva ? eventosBruto : eventosBruto / 1.13
+      const local = Math.max(0, monthMap[m].ventas - peya - eventos) // Local = Total − PeYa − Eventos
+      if (!monthMap[m].plSubs.ventas) monthMap[m].plSubs.ventas = {}
+      monthMap[m].plSubs.ventas['🏪 Venta Local (Quanto POS)'] = local
+      monthMap[m].plSubs.ventas['🛵 PedidosYa (Delivery)'] = peya
+      if (eventos > 0) monthMap[m].plSubs.ventas['🎉 Eventos (cerrados)'] = eventos
     })
 
     // GASTOS CONSOLIDADOS — clasificados vía categorias_gasto + catalogo_contable
