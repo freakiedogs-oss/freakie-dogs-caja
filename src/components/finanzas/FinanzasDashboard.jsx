@@ -257,6 +257,10 @@ export default function FinanzasDashboard({ user }) {
       const planillas = await fetchAll('planillas',
         'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
         q => q.gte('fecha_pago', '2026-01-01'))
+      // 3b. Desglose planilla por sucursal (para expansion en Estado de Resultados)
+      const planillaPorSuc = await fetchAll('v_planilla_por_sucursal',
+        'fecha, store_code, monto, n_empleados',
+        q => q.gte('fecha', '2026-01-01'))
 
       // 4. Catálogo contable (para TabCatalogo CRUD y clasificación fallback)
       const { data: catData, error: catErr } = await db.from('catalogo_contable')
@@ -307,7 +311,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs })
+      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -322,7 +326,7 @@ export default function FinanzasDashboard({ user }) {
     if (!data2026) return []
     const monthMap = {}
 
-    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
+    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
 
     // Sales
     data2026.ventas.forEach(v => {
@@ -348,24 +352,34 @@ export default function FinanzasDashboard({ user }) {
       if (cat === 'Alquiler') cat = 'costo_fijo'
       const sub = g.subcategoria_contable || ''
       const monto = conIva ? (parseFloat(g.monto) || 0) : (parseFloat(g.monto_sin_iva) || parseFloat(g.monto) || 0)
-      if (monthMap[m].pl[cat] !== undefined) {
-        monthMap[m].pl[cat] += monto
-      } else {
-        monthMap[m].pl.gastos_operativos += monto  // fallback
-      }
+      const catFinal = monthMap[m].pl[cat] !== undefined ? cat : 'gastos_operativos'
+      monthMap[m].pl[catFinal] += monto
+      // Acumular subcategorías para vista expandible
+      const subKey = (sub && sub.trim()) ? sub.trim() : '(sin subcategoría)'
+      if (!monthMap[m].plSubs[catFinal]) monthMap[m].plSubs[catFinal] = {}
+      monthMap[m].plSubs[catFinal][subKey] = (monthMap[m].plSubs[catFinal][subKey] || 0) + monto
       // Track by origin
       if (monthMap[m].gastosOrigen[g.origen] !== undefined) monthMap[m].gastosOrigen[g.origen] += monto
       // Track by provider for TabProveedores
       const prov = g.proveedor_nombre || 'Desconocido'
-      if (!monthMap[m].byProv[prov]) monthMap[m].byProv[prov] = { monto: 0, cat, sub, origen: g.origen }
+      if (!monthMap[m].byProv[prov]) monthMap[m].byProv[prov] = { monto: 0, cat: catFinal, sub, origen: g.origen }
       monthMap[m].byProv[prov].monto += monto
     })
 
-    // Planilla supplement
+    // Planilla supplement (total)
     data2026.planillas?.forEach(p => {
       const m = p.fecha_pago?.substring(0, 7)
       if (!m || !monthMap[m]) return
       monthMap[m].pl.planilla_legal += (p.total_bruto || 0) + (p.total_patronal || 0)
+    })
+
+    // Planilla desglose por sucursal (para expansion en Estado de Resultados)
+    data2026.planillaPorSuc?.forEach(ps => {
+      const m = ps.fecha?.substring(0, 7)
+      if (!m || !monthMap[m]) return
+      const suc = ps.store_code || 'Corporativo / Eventos'
+      if (!monthMap[m].plSubs.planilla_legal) monthMap[m].plSubs.planilla_legal = {}
+      monthMap[m].plSubs.planilla_legal[suc] = (monthMap[m].plSubs.planilla_legal[suc] || 0) + (parseFloat(ps.monto) || 0)
     })
 
     // Movimientos socios (F6) — solo afectan caja, NO P&L (excepto salario_socio que ya viene en planillas y pago_interes que va a gasto_financiero)
@@ -403,9 +417,12 @@ export default function FinanzasDashboard({ user }) {
       const capex = v.pl.activo_fijo
       const totalSalidasNoPL = capex + v.cf.repago_capital_socios + v.cf.repago_capital_prestamos + v.cf.dividendos_pagados
       const caja_neta = utilidad - totalSalidasNoPL + v.cf.aportes_socios_recibidos
+      // Promote categorías P&L al nivel raíz para acceso fácil desde plLines
+      const plRaiz = { ...v.pl }
       return {
         key: k, label: formatMonth(k), ...v, ebitda, utilidad,
-        // Promote para que plLines pueda hacer m[line.key]
+        ...plRaiz, // costo_comida, insumo_venta, limpieza, etc. al nivel raíz
+        // Y los CF
         activo_fijo: capex,
         repago_capital_socios: v.cf.repago_capital_socios,
         repago_capital_prestamos: v.cf.repago_capital_prestamos,
@@ -849,6 +866,31 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
 
 function TabEstadoResultados({ months2026 }) {
   const allMonths = buildAllMonths(months2026)
+  const [expanded, setExpanded] = useState({})  // { categoryKey: true }
+  const toggleExpand = (k) => setExpanded(e => ({ ...e, [k]: !e[k] }))
+
+  // Calcular subcategorías agregadas por categoría a través de todos los meses
+  const subsByCategory = useMemo(() => {
+    const result = {}
+    allMonths.forEach(m => {
+      if (!m.plSubs) return
+      Object.entries(m.plSubs).forEach(([cat, subs]) => {
+        if (!result[cat]) result[cat] = {}
+        Object.entries(subs).forEach(([sub, monto]) => {
+          if (!result[cat][sub]) result[cat][sub] = { total: 0, perMonth: {} }
+          result[cat][sub].total += monto || 0
+          result[cat][sub].perMonth[m.key] = (result[cat][sub].perMonth[m.key] || 0) + (monto || 0)
+        })
+      })
+    })
+    // Ordenar subcategorías por total desc
+    Object.keys(result).forEach(cat => {
+      result[cat] = Object.entries(result[cat])
+        .sort((a, b) => b[1].total - a[1].total)
+        .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {})
+    })
+    return result
+  }, [allMonths])
 
   const plLines = [
     { key: 'ventas', label: 'VENTAS TOTALES', bold: true, positive: true },
@@ -907,6 +949,8 @@ function TabEstadoResultados({ months2026 }) {
               const rowBg = isSeparator ? '#2a2a3e' : isCFSection ? '#1a2540' : li % 2 ? '#192237' : C.card
               const prevLine = plLines[li - 1]
               const showCFHeader = isCFSection && (!prevLine || !prevLine.noPL)
+              const hasSubs = subsByCategory[line.key] && Object.keys(subsByCategory[line.key]).length > 0
+              const isExp = !!expanded[line.key]
               return (
                 <React.Fragment key={line.key}>
                 {showCFHeader && (
@@ -933,7 +977,15 @@ function TabEstadoResultados({ months2026 }) {
                     fontSize: line.bold ? 12 : 11,
                     position: 'sticky', left: 0, background: rowBg, zIndex: 1,
                     boxShadow: '2px 0 4px rgba(0,0,0,0.3)',
-                  }}>
+                    cursor: hasSubs ? 'pointer' : 'default',
+                    userSelect: 'none',
+                  }}
+                  onClick={hasSubs ? () => toggleExpand(line.key) : undefined}>
+                    {hasSubs && (
+                      <span style={{ display: 'inline-block', width: 14, color: isExp ? C.gold : C.textMuted, fontSize: 9, marginRight: 2 }}>
+                        {isExp ? '▼' : '▶'}
+                      </span>
+                    )}
                     {line.label}
                   </td>
                   {allMonths.map((m, i) => {
@@ -956,6 +1008,33 @@ function TabEstadoResultados({ months2026 }) {
                     {totals.ventas ? pct(totals[line.key] / totals.ventas) : '—'}
                   </td>
                 </tr>
+                {/* Filas hijas si está expandido */}
+                {hasSubs && isExp && Object.entries(subsByCategory[line.key]).map(([sub, info]) => (
+                  <tr key={`${line.key}-${sub}`} style={{ background: '#0f1828' }}>
+                    <td style={{
+                      ...sTdL, paddingLeft: 36,
+                      color: '#94a3b8', fontSize: 10, fontStyle: 'italic',
+                      position: 'sticky', left: 0, background: '#0f1828', zIndex: 1,
+                      boxShadow: '2px 0 4px rgba(0,0,0,0.3)',
+                    }}>
+                      ↳ {sub}
+                    </td>
+                    {allMonths.map((m, i) => {
+                      const v = info.perMonth[m.key] || 0
+                      return (
+                        <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#cbd5e1' : '#475569' }}>
+                          {v ? fmt(v) : '—'}
+                        </td>
+                      )
+                    })}
+                    <td style={{ ...sTd(), fontSize: 10, color: '#cbd5e1', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>
+                      {fmt(info.total)}
+                    </td>
+                    <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>
+                      {totals[line.key] ? pct(info.total / totals[line.key]) : '—'}
+                    </td>
+                  </tr>
+                ))}
                 </React.Fragment>
               )
             })}
