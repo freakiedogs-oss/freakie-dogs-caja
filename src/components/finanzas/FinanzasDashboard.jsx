@@ -282,6 +282,16 @@ export default function FinanzasDashboard({ user }) {
         'store_code, estado, fecha_pedido, total_pedido, comision, ingreso_estimado, tarifa_publicidad, avoidable_cancellation_fee, descuento_tienda, mes_csv',
         q => q.gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
 
+      // 9. Movimientos socios (F6) — repagos capital + dividendos + aportes recibidos = NO van al P&L pero afectan caja
+      const movsSocios = await fetchAll('movimientos_socios',
+        'fecha, tipo, monto, direccion, socio_nombre, clasificacion_pl',
+        q => q.gte('fecha', '2026-01-01').order('fecha'))
+
+      // 10. Movimientos préstamos institucionales (F6) — abono_capital NO va al P&L, pago_interes SÍ
+      const prestamoMovs = await fetchAll('prestamo_movimientos',
+        'fecha, tipo, monto',
+        q => q.gte('fecha', '2026-01-01').order('fecha'))
+
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
       cierresOp.forEach(c => {
@@ -297,7 +307,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders })
+      setData2026({ ventas, gastos, planillas, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -312,7 +322,7 @@ export default function FinanzasDashboard({ user }) {
     if (!data2026) return []
     const monthMap = {}
 
-    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 } })
+    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
 
     // Sales
     data2026.ventas.forEach(v => {
@@ -358,10 +368,51 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].pl.planilla_legal += (p.total_bruto || 0) + (p.total_patronal || 0)
     })
 
+    // Movimientos socios (F6) — solo afectan caja, NO P&L (excepto salario_socio que ya viene en planillas y pago_interes que va a gasto_financiero)
+    data2026.movsSocios?.forEach(ms => {
+      const m = ms.fecha?.substring(0, 7)
+      if (!m) return
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      const monto = parseFloat(ms.monto) || 0
+      if (ms.tipo === 'repago_capital') {
+        monthMap[m].cf.repago_capital_socios += monto
+      } else if (ms.tipo === 'dividendo') {
+        monthMap[m].cf.dividendos_pagados += monto
+      } else if ((ms.tipo === 'aporte_capital' || ms.tipo === 'prestamo_socio') && ms.direccion === 'I') {
+        monthMap[m].cf.aportes_socios_recibidos += monto
+      }
+      // Nota: salario_socio y pago_interes NO se suman acá porque ya entran al P&L vía planillas/gasto_financiero
+    })
+
+    // Movimientos préstamos institucionales (F6) — abono_capital NO va al P&L pero sí afecta caja
+    data2026.prestamoMovs?.forEach(pm => {
+      const m = pm.fecha?.substring(0, 7)
+      if (!m) return
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      const monto = parseFloat(pm.monto) || 0
+      if (pm.tipo === 'abono_capital') {
+        monthMap[m].cf.repago_capital_prestamos += monto
+      }
+      // pago_interes y desembolso NO se contabilizan acá — interés ya en gasto_financiero, desembolso es entrada de caja pero crea pasivo
+    })
+
     return Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => {
       const ebitda = v.ventas - v.pl.costo_comida - v.pl.insumo_venta - v.pl.limpieza - v.pl.costo_fijo - v.pl.gastos_operativos - v.pl.gastos_logisticos - v.pl.gasto_financiero - v.pl.planilla_legal
       const utilidad = ebitda - v.pl.impuestos
-      return { key: k, label: formatMonth(k), ...v, ebitda, utilidad }
+      // Free cash flow: utilidad NETA - CapEx - repagos capital + aportes socios recibidos
+      const capex = v.pl.activo_fijo
+      const totalSalidasNoPL = capex + v.cf.repago_capital_socios + v.cf.repago_capital_prestamos + v.cf.dividendos_pagados
+      const caja_neta = utilidad - totalSalidasNoPL + v.cf.aportes_socios_recibidos
+      return {
+        key: k, label: formatMonth(k), ...v, ebitda, utilidad,
+        // Promote para que plLines pueda hacer m[line.key]
+        activo_fijo: capex,
+        repago_capital_socios: v.cf.repago_capital_socios,
+        repago_capital_prestamos: v.cf.repago_capital_prestamos,
+        dividendos_pagados: v.cf.dividendos_pagados,
+        aportes_socios_recibidos: v.cf.aportes_socios_recibidos,
+        caja_neta,
+      }
     })
   }, [data2026, conIva])
 
@@ -812,6 +863,13 @@ function TabEstadoResultados({ months2026 }) {
     { key: 'ebitda', label: 'EBITDA', bold: true, computed: true },
     { key: 'impuestos', label: '(-) Impuestos', indent: true },
     { key: 'utilidad', label: 'UTILIDAD NETA', bold: true, computed: true },
+    // ─── Movimientos no-P&L que sí afectan caja ───
+    { key: 'activo_fijo', label: '(-) CapEx (Activo Fijo)', indent: true, noPL: true },
+    { key: 'repago_capital_socios', label: '(-) Repago Capital Socios', indent: true, noPL: true },
+    { key: 'repago_capital_prestamos', label: '(-) Repago Capital Préstamos', indent: true, noPL: true },
+    { key: 'dividendos_pagados', label: '(-) Dividendos Pagados', indent: true, noPL: true },
+    { key: 'aportes_socios_recibidos', label: '(+) Aportes/Préstamos Socios Recibidos', indent: true, noPL: true, positive: true },
+    { key: 'caja_neta', label: 'CAJA NETA REAL', bold: true, computed: true },
   ]
 
   // Totals
@@ -844,10 +902,26 @@ function TabEstadoResultados({ months2026 }) {
           </thead>
           <tbody>
             {plLines.map((line, li) => {
-              const isSeparator = line.key === 'ebitda' || line.key === 'utilidad'
-              const rowBg = isSeparator ? '#2a2a3e' : li % 2 ? '#192237' : C.card // colores sólidos para sticky col
+              const isSeparator = line.key === 'ebitda' || line.key === 'utilidad' || line.key === 'caja_neta'
+              const isCFSection = line.noPL
+              const rowBg = isSeparator ? '#2a2a3e' : isCFSection ? '#1a2540' : li % 2 ? '#192237' : C.card
+              const prevLine = plLines[li - 1]
+              const showCFHeader = isCFSection && (!prevLine || !prevLine.noPL)
               return (
-                <tr key={line.key} style={{
+                <React.Fragment key={line.key}>
+                {showCFHeader && (
+                  <tr style={{ background: '#0d1424' }}>
+                    <td colSpan={allMonths.length + 3} style={{
+                      padding: '8px 8px 4px 8px', fontSize: 10, fontWeight: 800,
+                      color: C.gold, letterSpacing: 1.5, textTransform: 'uppercase',
+                      borderTop: `2px solid ${C.gold}`,
+                      position: 'sticky', left: 0, background: '#0d1424',
+                    }}>
+                      ▸ Salidas/Entradas de caja NO contabilizadas en P&L
+                    </td>
+                  </tr>
+                )}
+                <tr style={{
                   background: rowBg,
                   borderTop: isSeparator ? `1px solid ${C.red}` : 'none',
                 }}>
@@ -882,6 +956,7 @@ function TabEstadoResultados({ months2026 }) {
                     {totals.ventas ? pct(totals[line.key] / totals.ventas) : '—'}
                   </td>
                 </tr>
+                </React.Fragment>
               )
             })}
           </tbody>
