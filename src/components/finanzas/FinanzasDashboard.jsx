@@ -302,6 +302,11 @@ export default function FinanzasDashboard({ user }) {
         'fecha_evento, estado, total_ventas, cerrado_at, nombre, cliente',
         q => q.not('cerrado_at', 'is', null).gte('fecha_evento', '2026-01-01').order('fecha_evento'))
 
+      // 12. Bank transacciones BAC (F7 — tab Banco en dashboard)
+      const bankTx = await fetchAll('bank_transacciones',
+        'id, fecha, codigo_bac, descripcion, debito, credito, balance, estado, notas',
+        q => q.gte('fecha', '2026-01-01').order('fecha'))
+
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
       cierresOp.forEach(c => {
@@ -317,7 +322,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados })
+      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -484,6 +489,7 @@ export default function FinanzasDashboard({ user }) {
     { key: 'estado-resultados', label: '📋 Estado de Resultados', icon: '📋' },
     { key: 'balance', label: '⚖️ Balance', icon: '⚖️' },
     { key: 'flujo-caja', label: '💰 Flujo de Caja', icon: '💰' },
+    { key: 'banco', label: '🏦 Banco', icon: '🏦' },
     { key: 'peya', label: '🛵 PEYA', icon: '🛵' },
     { key: 'proveedores', label: '🏢 Proveedores', icon: '🏢' },
     { key: 'catalogo', label: '⚙️ Catálogo', icon: '⚙️' },
@@ -528,6 +534,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
+          {tab === 'banco' && <TabBanco bankTx={data2026?.bankTx} months2026={months2026} />}
           {tab === 'peya' && <TabPeya data2026={data2026} conIva={conIva} onRefresh={loadData2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'catalogo' && <TabCatalogo user={user} data2026={data2026} onRefresh={loadData2026} />}
@@ -1228,6 +1235,266 @@ function TabBalance({ months2026 }) {
       </div>
     </div>
   )
+}
+
+// ══════════════════════════════════════════════════════
+//  TAB BANCO — Vista del estado de cuenta BAC integrada (F7)
+// ══════════════════════════════════════════════════════
+
+const ESTADO_CHIP = {
+  sin_clasificar: { bg: '#7f1d1d22', color: '#fca5a5', label: 'Sin clasif' },
+  auto_match: { bg: '#065f4622', color: '#6ee7b7', label: 'Auto' },
+  match_manual: { bg: '#1e40af22', color: '#93c5fd', label: 'Manual' },
+  movimiento_socio: { bg: '#5b21b622', color: '#c4b5fd', label: 'Socio' },
+  comision_bancaria: { bg: '#92400e22', color: '#fcd34d', label: 'Comisión' },
+  transferencia_interna: { bg: '#37415122', color: '#d1d5db', label: 'Interna' },
+  sin_dte: { bg: '#9a341222', color: '#fdba74', label: 'Sin DTE' },
+  ignorar: { bg: '#37415122', color: '#9ca3af', label: 'Ignorar' },
+}
+
+function TabBanco({ bankTx, months2026 }) {
+  const [filtroMes, setFiltroMes] = useState('') // '' = último mes con data
+
+  const data = useMemo(() => {
+    if (!bankTx || bankTx.length === 0) return null
+    // Agrupar por mes
+    const byMonth = {}
+    bankTx.forEach(t => {
+      const m = t.fecha?.substring(0, 7)
+      if (!m) return
+      if (!byMonth[m]) byMonth[m] = {
+        mes: m, n: 0, ingresos: 0, egresos: 0, balance_final: 0,
+        matched: 0, sin_clasif: 0, by_estado: {},
+        ingresos_lista: [], egresos_lista: [],
+      }
+      byMonth[m].n += 1
+      byMonth[m].ingresos += parseFloat(t.credito) || 0
+      byMonth[m].egresos += parseFloat(t.debito) || 0
+      byMonth[m].balance_final = parseFloat(t.balance) || byMonth[m].balance_final // último wins
+      const est = t.estado || 'sin_clasificar'
+      byMonth[m].by_estado[est] = (byMonth[m].by_estado[est] || 0) + 1
+      if (est === 'sin_clasificar') byMonth[m].sin_clasif += 1
+      else if (['auto_match','match_manual'].includes(est)) byMonth[m].matched += 1
+      // Listas para tops
+      if ((t.credito || 0) > 0) byMonth[m].ingresos_lista.push(t)
+      if ((t.debito || 0) > 0) byMonth[m].egresos_lista.push(t)
+    })
+    // Ordenar tops por monto desc
+    Object.values(byMonth).forEach(m => {
+      m.ingresos_lista.sort((a,b) => (b.credito||0) - (a.credito||0))
+      m.egresos_lista.sort((a,b) => (b.debito||0) - (a.debito||0))
+      m.pct_clasif = m.n > 0 ? (1 - m.sin_clasif / m.n) * 100 : 0
+      m.neto = m.ingresos - m.egresos
+    })
+    const meses = Object.values(byMonth).sort((a,b) => a.mes.localeCompare(b.mes))
+    const ultimoMes = meses[meses.length - 1]
+    const saldoActual = ultimoMes?.balance_final || 0
+    return { meses, ultimoMes, saldoActual }
+  }, [bankTx])
+
+  if (!bankTx || bankTx.length === 0) {
+    return (
+      <div style={sCard}>
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🏦</div>
+          <div style={{ fontSize: 14, color: C.textMuted }}>No hay datos del banco cargados aún.</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>Importa el estado de cuenta BAC desde el módulo BancoView.</div>
+        </div>
+      </div>
+    )
+  }
+
+  const mesActual = filtroMes
+    ? data.meses.find(m => m.mes === filtroMes)
+    : data.ultimoMes
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.white }}>🏦 Banco BAC #201500451 USD</div>
+          <div style={{ fontSize: 11, color: C.textMuted }}>Estado de cuenta integrado al dashboard financiero</div>
+        </div>
+        <a href="?ver=banco" style={{
+          padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.blue}`,
+          background: 'rgba(96,165,250,0.15)', color: C.blue, fontWeight: 700, fontSize: 12,
+          textDecoration: 'none',
+        }}>Abrir BancoView →</a>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <KpiCardBanco label="Saldo actual" value={fmt(data.saldoActual)} sub={data.ultimoMes ? formatMonth(data.ultimoMes.mes) : '—'} color={C.blue} />
+        <KpiCardBanco label="Ingresos último mes" value={fmt(data.ultimoMes?.ingresos || 0)} sub={`${data.ultimoMes?.n || 0} transacciones`} color={C.greenLight} />
+        <KpiCardBanco label="Egresos último mes" value={fmt(data.ultimoMes?.egresos || 0)} sub={data.ultimoMes ? `Neto ${data.ultimoMes.neto >= 0 ? '+' : ''}${fmt(data.ultimoMes.neto)}` : '—'} color={C.red} />
+        <KpiCardBanco label="Cobertura matching" value={`${(data.ultimoMes?.pct_clasif || 0).toFixed(1)}%`} sub={`${data.ultimoMes?.sin_clasif || 0} sin clasificar`} color={(data.ultimoMes?.pct_clasif || 0) >= 80 ? C.greenLight : C.gold} />
+      </div>
+
+      {/* Tabla mensual */}
+      <div style={sCard}>
+        <div style={{ ...sH, marginBottom: 8 }}>Resumen mensual</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 600 }}>
+            <thead><tr style={{ borderBottom: `2px solid ${C.red}` }}>
+              <th style={{ ...sTh, textAlign: 'left' }}>Mes</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Tx</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Ingresos</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Egresos</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Neto</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Saldo final</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>% matched</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Sin clasif</th>
+            </tr></thead>
+            <tbody>
+              {data.meses.map(m => {
+                const isSelected = m.mes === (filtroMes || data.ultimoMes?.mes)
+                return (
+                  <tr key={m.mes} onClick={() => setFiltroMes(m.mes)} style={{
+                    borderBottom: '1px solid #2a3340', cursor: 'pointer',
+                    background: isSelected ? 'rgba(96,165,250,0.08)' : 'transparent',
+                  }}>
+                    <td style={{ ...sTdL, fontWeight: 700, color: isSelected ? C.blue : C.white }}>{formatMonth(m.mes)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right' }}>{m.n}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: C.greenLight }}>{fmt(m.ingresos)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: '#fca5a5' }}>{fmt(m.egresos)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', fontWeight: 700, color: m.neto >= 0 ? C.greenLight : '#f87171' }}>
+                      {m.neto >= 0 ? '+' : ''}{fmt(m.neto)}
+                    </td>
+                    <td style={{ ...sTd(), textAlign: 'right', fontWeight: 700, color: C.white }}>{fmt(m.balance_final)}</td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: m.pct_clasif >= 80 ? C.greenLight : m.pct_clasif >= 60 ? C.gold : '#f87171' }}>
+                      {m.pct_clasif.toFixed(1)}%
+                    </td>
+                    <td style={{ ...sTd(), textAlign: 'right', color: C.textMuted }}>{m.sin_clasif}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Detalle del mes seleccionado */}
+      {mesActual && (
+        <div style={{ ...sCard, marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={sH}>Detalle de {formatMonth(mesActual.mes)}</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>Click en otra fila de arriba para cambiar mes</div>
+          </div>
+
+          {/* Top ingresos + egresos lado a lado */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
+            {/* INGRESOS */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.greenLight, marginBottom: 6 }}>📈 Top 10 Ingresos</div>
+              <div style={{ background: '#0f1828', borderRadius: 6, overflow: 'hidden' }}>
+                {mesActual.ingresos_lista.slice(0, 10).map(t => {
+                  const chip = ESTADO_CHIP[t.estado] || ESTADO_CHIP.sin_clasificar
+                  return (
+                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #1a2540', fontSize: 11, gap: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: C.white, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.descripcion}>{t.descripcion}</div>
+                        <div style={{ fontSize: 9, color: C.textMuted }}>{fmtDateBank(t.fecha)} · {t.codigo_bac}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                        <div style={{ color: C.greenLight, fontWeight: 700 }}>+{fmt(t.credito)}</div>
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: chip.bg, color: chip.color, fontWeight: 700 }}>{chip.label}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+                {mesActual.ingresos_lista.length === 0 && (
+                  <div style={{ padding: 16, textAlign: 'center', color: C.textMuted, fontSize: 11 }}>Sin ingresos este mes</div>
+                )}
+              </div>
+            </div>
+
+            {/* EGRESOS */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#fca5a5', marginBottom: 6 }}>📉 Top 10 Egresos</div>
+              <div style={{ background: '#0f1828', borderRadius: 6, overflow: 'hidden' }}>
+                {mesActual.egresos_lista.slice(0, 10).map(t => {
+                  const chip = ESTADO_CHIP[t.estado] || ESTADO_CHIP.sin_clasificar
+                  return (
+                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #1a2540', fontSize: 11, gap: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: C.white, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.descripcion}>{t.descripcion}</div>
+                        <div style={{ fontSize: 9, color: C.textMuted }}>{fmtDateBank(t.fecha)} · {t.codigo_bac}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                        <div style={{ color: '#fca5a5', fontWeight: 700 }}>−{fmt(t.debito)}</div>
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: chip.bg, color: chip.color, fontWeight: 700 }}>{chip.label}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+                {mesActual.egresos_lista.length === 0 && (
+                  <div style={{ padding: 16, textAlign: 'center', color: C.textMuted, fontSize: 11 }}>Sin egresos este mes</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Distribución por estado */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 6, textTransform: 'uppercase' }}>Distribución por estado</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {Object.entries(mesActual.by_estado).sort((a,b) => b[1] - a[1]).map(([est, n]) => {
+                const chip = ESTADO_CHIP[est] || { bg: '#374151', color: '#9ca3af', label: est }
+                return (
+                  <span key={est} style={{ padding: '4px 8px', borderRadius: 6, background: chip.bg, color: chip.color, fontSize: 11, fontWeight: 700, border: `1px solid ${chip.color}33` }}>
+                    {chip.label} · {n}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Cuadre Caja vs P&L */}
+          {(() => {
+            const m26 = months2026?.find(x => x.key === mesActual.mes)
+            if (!m26) return null
+            // Total gastos del P&L (excluye ventas) en el mes
+            const gastoPL = (m26.pl?.costo_comida || 0) + (m26.pl?.insumo_venta || 0) + (m26.pl?.limpieza || 0) +
+                          (m26.pl?.costo_fijo || 0) + (m26.pl?.gastos_operativos || 0) + (m26.pl?.gastos_logisticos || 0) +
+                          (m26.pl?.gasto_financiero || 0) + (m26.pl?.planilla_legal || 0) + (m26.pl?.impuestos || 0) +
+                          (m26.pl?.activo_fijo || 0)
+            const diff = mesActual.egresos - gastoPL
+            const pctDiff = gastoPL > 0 ? (diff / gastoPL) * 100 : 0
+            return (
+              <div style={{ marginTop: 14, padding: 10, background: '#0d1424', borderRadius: 6, borderLeft: `3px solid ${Math.abs(pctDiff) < 10 ? C.greenLight : C.gold}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 4, textTransform: 'uppercase' }}>Cuadre Banco vs P&L</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, fontSize: 12 }}>
+                  <div><span style={{ color: C.textMuted }}>Egresos banco:</span> <b style={{ color: C.white }}>{fmt(mesActual.egresos)}</b></div>
+                  <div><span style={{ color: C.textMuted }}>Gastos P&L (incl CapEx):</span> <b style={{ color: C.white }}>{fmt(gastoPL)}</b></div>
+                  <div><span style={{ color: C.textMuted }}>Diferencia:</span> <b style={{ color: Math.abs(pctDiff) < 10 ? C.greenLight : C.gold }}>{diff >= 0 ? '+' : ''}{fmt(diff)} ({pctDiff >= 0 ? '+' : ''}{pctDiff.toFixed(1)}%)</b></div>
+                </div>
+                <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, fontStyle: 'italic' }}>
+                  💡 Banco {'>'} P&L: hay salidas no contabilizadas (movimientos socio, repagos préstamos, transferencias). Banco {'<'} P&L: hay gastos pendientes de pago en bank_tx futuros.
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function KpiCardBanco({ label, value, sub, color }) {
+  return (
+    <div style={{ background: C.card, borderRadius: 8, padding: 12, border: `1px solid ${color}33` }}>
+      <div style={{ fontSize: 10, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{sub}</div>
+    </div>
+  )
+}
+
+function fmtDateBank(d) {
+  if (!d) return '—'
+  const dt = new Date(d + 'T00:00:00')
+  return dt.toLocaleDateString('es-SV', { day: '2-digit', month: 'short' })
 }
 
 // ══════════════════════════════════════════════════════
