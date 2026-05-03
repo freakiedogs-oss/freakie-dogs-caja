@@ -38,8 +38,20 @@ const TABS = [
   { key: 'comprobantes', label: '📷 Comprobantes' },
   { key: 'cola', label: '🔍 Cola Manual' },
   { key: 'vincular', label: '📎 Vincular DTE' },
+  { key: 'socios', label: '👥 Socios' },
   { key: 'reglas', label: '⚙️ Reglas' },
   { key: 'auditoria', label: '📋 Auditoría' },
+]
+
+const TIPOS_MOV_SOCIO = [
+  { val: 'aporte_capital', label: 'Aporte de capital', dir: 'I', clasif: 'capital_aportado' },
+  { val: 'prestamo_socio', label: 'Préstamo del socio (con interés)', dir: 'I', clasif: 'capital_aportado' },
+  { val: 'repago_capital', label: 'Repago de capital', dir: 'E', clasif: 'capital_repagado' },
+  { val: 'pago_interes', label: 'Pago de interés acumulado', dir: 'E', clasif: 'interes_pagado' },
+  { val: 'salario_socio', label: 'Salario del socio (gasto P&L)', dir: 'E', clasif: 'gasto_salario' },
+  { val: 'manejo_efectivo', label: 'Manejo de efectivo (no afecta P&L)', dir: 'B', clasif: 'no_afecta_pl' },
+  { val: 'dividendo', label: 'Dividendo (reparte utilidades)', dir: 'E', clasif: 'gasto_dividendo' },
+  { val: 'otro', label: 'Otro (especificar en notas)', dir: 'B', clasif: 'no_afecta_pl' },
 ]
 
 const ESTADOS_CLASIFICAR = [
@@ -214,6 +226,7 @@ export default function BancoView({ user }) {
       {tab === 'comprobantes' && <TabComprobantes user={user} />}
       {tab === 'cola' && <TabColaManual user={user} />}
       {tab === 'vincular' && <TabVincularDTE user={user} pushNotif={pushNotif} />}
+      {tab === 'socios' && <TabSocios user={user} pushNotif={pushNotif} />}
       {tab === 'reglas' && <TabReglas />}
       {tab === 'auditoria' && <TabAuditoria />}
     </div>
@@ -1830,6 +1843,421 @@ function GastoVincularCard({ gasto, sugerencias, loadingSug, saving, onLoad, onV
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAB SOCIOS — F6: Movimientos socios + aportes FIFO + intereses
+// ═══════════════════════════════════════════════════════════
+function TabSocios({ user, pushNotif }) {
+  const [subTab, setSubTab] = useState('cola')
+  const SUB_TABS = [
+    { key: 'cola', label: '📥 Cola pendiente' },
+    { key: 'balance', label: '⚖️ Balance socios' },
+    { key: 'aportes', label: '🧾 Aportes FIFO' },
+    { key: 'prestamos', label: '🏦 Préstamos' },
+  ]
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {SUB_TABS.map(t => (
+          <button key={t.key} onClick={() => setSubTab(t.key)} style={{
+            padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            border: subTab === t.key ? '2px solid #a78bfa' : '1px solid #444',
+            background: subTab === t.key ? 'rgba(167,139,250,0.15)' : 'transparent',
+            color: subTab === t.key ? '#a78bfa' : '#aaa',
+          }}>{t.label}</button>
+        ))}
+      </div>
+      {subTab === 'cola' && <SubColaSocios user={user} pushNotif={pushNotif} />}
+      {subTab === 'balance' && <SubBalanceSocios />}
+      {subTab === 'aportes' && <SubAportesFIFO />}
+      {subTab === 'prestamos' && <SubPrestamos user={user} pushNotif={pushNotif} />}
+    </div>
+  )
+}
+
+// Sub-tab Cola: bank_tx pendientes de clasificar como movimiento socio
+function SubColaSocios({ user, pushNotif }) {
+  const [pendientes, setPendientes] = useState([])
+  const [socios, setSocios] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [forms, setForms] = useState({}) // {tx_id: {socio_id, tipo, notas, ...}}
+  const [saving, setSaving] = useState({})
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [pendData, sociosData] = await Promise.all([
+        fetchAll(db.from('v_bank_tx_socio_pendientes').select('*')),
+        db.from('socios').select('*').eq('activo', true).order('nombre'),
+      ])
+      setPendientes(pendData || [])
+      setSocios(sociosData.data || [])
+    } catch (e) { console.error(e) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const updateForm = (txId, patch) => setForms(f => ({ ...f, [txId]: { ...f[txId], ...patch } }))
+
+  const clasificar = async (tx) => {
+    const f = forms[tx.id] || {}
+    const socioId = f.socio_id || tx.socio_sugerido_id
+    const tipo = f.tipo
+    if (!socioId) { alert('Falta socio'); return }
+    if (!tipo) { alert('Falta tipo'); return }
+    const tipoConfig = TIPOS_MOV_SOCIO.find(t => t.val === tipo)
+    if (!tipoConfig) { alert('Tipo inválido'); return }
+    if (tipoConfig.dir === 'I' && tx.direccion !== 'I') {
+      if (!confirm(`Tipo "${tipoConfig.label}" suele ser ingreso pero esta tx es egreso. ¿Continuar?`)) return
+    }
+    if (tipoConfig.dir === 'E' && tx.direccion !== 'E') {
+      if (!confirm(`Tipo "${tipoConfig.label}" suele ser egreso pero esta tx es ingreso. ¿Continuar?`)) return
+    }
+    setSaving(s => ({ ...s, [tx.id]: true }))
+    try {
+      const { data, error } = await db.rpc('bancoview_clasificar_movimiento_socio', {
+        p_bank_tx_id: tx.id,
+        p_socio_id: socioId,
+        p_tipo: tipo,
+        p_clasif_pl: tipoConfig.clasif,
+        p_centro_costo_id: f.centro_costo_id || null,
+        p_notas: f.notas || null,
+        p_usuario: user?.nombre || user?.pin || 'desconocido',
+      })
+      if (error) throw error
+      const result = data?.[0]
+      if (result?.ok) {
+        pushNotif?.(result.mensaje)
+        setPendientes(p => p.filter(x => x.id !== tx.id))
+        setForms(f2 => { const c = { ...f2 }; delete c[tx.id]; return c })
+      } else {
+        alert('Error: ' + (result?.mensaje || 'desconocido'))
+      }
+    } catch (e) {
+      alert('Error: ' + e.message)
+    } finally {
+      setSaving(s => ({ ...s, [tx.id]: false }))
+    }
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
+
+  const totalI = pendientes.filter(p => p.direccion === 'I').reduce((s, p) => s + Number(p.monto || 0), 0)
+  const totalE = pendientes.filter(p => p.direccion === 'E').reduce((s, p) => s + Number(p.monto || 0), 0)
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
+        <KpiCard label="Pendientes" value={pendientes.length} sub="bank_tx por clasificar" color="#a78bfa" />
+        <KpiCard label="Ingresos" value={fmt(totalI)} sub="entradas hacia banco" color="#34d399" />
+        <KpiCard label="Egresos" value={fmt(totalE)} sub="salidas del banco" color="#fbbf24" />
+      </div>
+
+      <div style={{ background: '#1e3a8a22', border: '1px solid #1e3a8a', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 12, color: '#bfdbfe' }}>
+        💡 <b>Cómo funciona:</b> Cada bank_tx detectada como movimiento socio (R03) requiere clasificación caso por caso. Los <b>aportes/préstamos de socio</b> crean lotes FIFO que devengan 10% anual capitalizado mensual tras 30 días sin repago. Los <b>repagos</b> consumen los aportes desde el más antiguo. Los <b>salarios</b> y <b>dividendos</b> impactan P&L directamente.
+      </div>
+
+      {pendientes.length === 0 ? (
+        <div style={{ background: '#1f2937', borderRadius: 8, padding: 24, textAlign: 'center', color: '#888' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+          <div>No hay movimientos socio pendientes</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {pendientes.slice(0, 50).map(tx => {
+            const f = forms[tx.id] || {}
+            const socioActual = f.socio_id || tx.socio_sugerido_id
+            return (
+              <div key={tx.id} style={{ background: '#1f2937', borderRadius: 8, padding: 10, border: '1px solid #374151' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11, color: '#888' }}>{fmtDate(tx.fecha)} · <code style={codeSt}>{tx.codigo_bac}</code></div>
+                    <div style={{ fontSize: 12, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tx.descripcion}>{tx.descripcion}</div>
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: tx.direccion === 'I' ? '#34d399' : '#fbbf24' }}>
+                    {tx.direccion === 'I' ? '+' : '−'}{fmt(tx.monto)}
+                  </div>
+                  <select value={socioActual || ''} onChange={e => updateForm(tx.id, { socio_id: parseInt(e.target.value) })}
+                    style={{ ...inputSt, fontSize: 11 }}>
+                    <option value="">— socio —</option>
+                    {socios.map(s => <option key={s.id} value={s.id}>{s.nombre}{tx.socio_sugerido_id === s.id ? ' ✨' : ''}</option>)}
+                  </select>
+                  <select value={f.tipo || ''} onChange={e => updateForm(tx.id, { tipo: e.target.value })}
+                    style={{ ...inputSt, fontSize: 11 }}>
+                    <option value="">— tipo —</option>
+                    {TIPOS_MOV_SOCIO
+                      .filter(t => t.dir === 'B' || t.dir === tx.direccion)
+                      .map(t => <option key={t.val} value={t.val}>{t.label}</option>)}
+                  </select>
+                  <button onClick={() => clasificar(tx)} disabled={saving[tx.id]} style={{
+                    ...btnSt, padding: '6px 12px', fontSize: 11,
+                    background: saving[tx.id] ? '#374151' : 'rgba(167,139,250,0.15)',
+                    border: '1px solid #a78bfa', color: '#a78bfa',
+                  }}>{saving[tx.id] ? '…' : 'Clasificar'}</button>
+                </div>
+                <input type="text" value={f.notas || ''} onChange={e => updateForm(tx.id, { notas: e.target.value })}
+                  placeholder="Notas (opcional, ej: 'aporte para inversión Plaza Olímpica')"
+                  style={{ ...inputSt, width: '100%', marginTop: 6, fontSize: 11 }} />
+              </div>
+            )
+          })}
+          {pendientes.length > 50 && (
+            <div style={{ textAlign: 'center', color: '#888', fontSize: 11, padding: 8 }}>
+              Mostrando 50 de {pendientes.length}. Sigue clasificando para ver más.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SubBalanceSocios() {
+  const [data, setData] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [devengando, setDevengando] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await db.from('v_socios_balance').select('*').order('deuda_total', { ascending: false })
+      setData(data || [])
+    } catch (e) { console.error(e) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const devengar = async () => {
+    if (!confirm('Devengar intereses al día de hoy? Esto capitaliza intereses para todos los aportes activos con > 30 días sin repago.')) return
+    setDevengando(true)
+    try {
+      const { data, error } = await db.rpc('bancoview_devengar_intereses_socios', { p_fecha_corte: today() })
+      if (error) throw error
+      const r = data?.[0]
+      alert(r?.mensaje || 'OK')
+      await load()
+    } catch (e) {
+      alert('Error: ' + e.message)
+    } finally {
+      setDevengando(false)
+    }
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
+
+  const totales = data.reduce((acc, d) => ({
+    aportado: acc.aportado + Number(d.total_aportado || 0),
+    repagado: acc.repagado + Number(d.total_capital_repagado || 0),
+    pendiente: acc.pendiente + Number(d.capital_pendiente || 0),
+    int_acum: acc.int_acum + Number(d.intereses_acumulados || 0),
+    int_pag: acc.int_pag + Number(d.intereses_pagados || 0),
+    salarios: acc.salarios + Number(d.total_salarios || 0),
+    deuda: acc.deuda + Number(d.deuda_total || 0),
+  }), { aportado: 0, repagado: 0, pendiente: 0, int_acum: 0, int_pag: 0, salarios: 0, deuda: 0 })
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Balance por socio</div>
+        <button onClick={devengar} disabled={devengando} style={{
+          padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: devengando ? 'not-allowed' : 'pointer',
+          border: '1px solid #a78bfa', background: 'rgba(167,139,250,0.15)', color: '#a78bfa',
+        }}>{devengando ? 'Devengando…' : '⚡ Devengar intereses (hoy)'}</button>
+      </div>
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 10, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 800 }}>
+          <thead><tr style={{ borderBottom: '2px solid #374151' }}>
+            <th style={{ ...th, position: 'sticky', left: 0, background: '#1f2937', zIndex: 1 }}>Socio</th>
+            <th style={{ ...th, textAlign: 'right' }}>Aportado</th>
+            <th style={{ ...th, textAlign: 'right' }}>Repagado</th>
+            <th style={{ ...th, textAlign: 'right' }}>Capital pendiente</th>
+            <th style={{ ...th, textAlign: 'right' }}>Int. acum</th>
+            <th style={{ ...th, textAlign: 'right' }}>Int. pagado</th>
+            <th style={{ ...th, textAlign: 'right' }}>Salarios</th>
+            <th style={{ ...th, textAlign: 'right' }}>Deuda total</th>
+            <th style={{ ...th, textAlign: 'right' }}>Aportes activos</th>
+          </tr></thead>
+          <tbody>
+            {data.map(d => (
+              <tr key={d.socio_id} style={{ borderBottom: '1px solid #2a3340' }}>
+                <td style={{ ...td, fontWeight: 700, position: 'sticky', left: 0, background: '#1f2937' }}>{d.nombre}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmt(d.total_aportado)}</td>
+                <td style={{ ...td, textAlign: 'right', color: '#34d399' }}>{fmt(d.total_capital_repagado)}</td>
+                <td style={{ ...td, textAlign: 'right', color: '#fbbf24', fontWeight: 700 }}>{fmt(d.capital_pendiente)}</td>
+                <td style={{ ...td, textAlign: 'right', color: '#fca5a5' }}>{fmt(d.intereses_acumulados)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmt(d.intereses_pagados)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmt(d.total_salarios)}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#f87171' }}>{fmt(d.deuda_total)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{d.aportes_activos}</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: '2px solid #374151', background: '#0f172a' }}>
+              <td style={{ ...td, fontWeight: 800, color: '#fff', position: 'sticky', left: 0, background: '#0f172a' }}>TOTAL</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#fff' }}>{fmt(totales.aportado)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#34d399' }}>{fmt(totales.repagado)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#fbbf24' }}>{fmt(totales.pendiente)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#fca5a5' }}>{fmt(totales.int_acum)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{fmt(totales.int_pag)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{fmt(totales.salarios)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#f87171' }}>{fmt(totales.deuda)}</td>
+              <td style={{ ...td }}></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function SubAportesFIFO() {
+  const [data, setData] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filtroSocio, setFiltroSocio] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const all = await fetchAll(db.from('v_socio_aportes_detalle').select('*').order('fecha_aporte', { ascending: false }))
+      setData(all || [])
+    } catch (e) { console.error(e) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
+
+  const filtered = data.filter(a => !filtroSocio || a.socio_nombre === filtroSocio)
+  const socios = [...new Set(data.map(a => a.socio_nombre))]
+
+  return (
+    <div>
+      <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <select value={filtroSocio} onChange={e => setFiltroSocio(e.target.value)} style={{ ...inputSt, fontSize: 11 }}>
+          <option value="">Todos los socios</option>
+          {socios.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <span style={{ fontSize: 11, color: '#888' }}>{filtered.length} aportes</span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ background: '#1f2937', borderRadius: 8, padding: 24, textAlign: 'center', color: '#888' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+          <div>No hay aportes registrados aún. Clasifica bank_tx en "Cola pendiente" para crear lotes.</div>
+        </div>
+      ) : (
+        <div style={{ background: '#1f2937', borderRadius: 8, padding: 10, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 900 }}>
+            <thead><tr style={{ borderBottom: '2px solid #374151' }}>
+              <th style={th}>Socio</th>
+              <th style={th}>Fecha</th>
+              <th style={{ ...th, textAlign: 'right' }}>Días</th>
+              <th style={{ ...th, textAlign: 'right' }}>Monto</th>
+              <th style={{ ...th, textAlign: 'right' }}>Repagado</th>
+              <th style={{ ...th, textAlign: 'right' }}>Cap. pend</th>
+              <th style={{ ...th, textAlign: 'right' }}>Int. acum</th>
+              <th style={{ ...th, textAlign: 'right' }}>Int. pagado</th>
+              <th style={{ ...th, textAlign: 'right' }}>Deuda total</th>
+              <th style={th}>Estado</th>
+              <th style={th}>Último corte</th>
+            </tr></thead>
+            <tbody>
+              {filtered.map(a => {
+                const dias = a.dias_antiguedad
+                const venceCorte = dias >= 30
+                return (
+                  <tr key={a.id} style={{ borderBottom: '1px solid #2a3340' }}>
+                    <td style={{ ...td, fontWeight: 700 }}>{a.socio_nombre}</td>
+                    <td style={td}>{fmtDate(a.fecha_aporte)}</td>
+                    <td style={{ ...td, textAlign: 'right', color: venceCorte ? '#fbbf24' : '#888' }}>{dias}d</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmt(a.monto_original)}</td>
+                    <td style={{ ...td, textAlign: 'right', color: '#34d399' }}>{fmt(a.capital_repagado)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#fbbf24' }}>{fmt(a.capital_pendiente)}</td>
+                    <td style={{ ...td, textAlign: 'right', color: '#fca5a5' }}>{fmt(a.interes_acumulado)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmt(a.interes_pagado)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: '#f87171' }}>{fmt(a.deuda_total)}</td>
+                    <td style={td}>
+                      <span style={{
+                        padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                        background: a.estado === 'liquidado' ? '#065f46' : '#7c2d12',
+                        color: a.estado === 'liquidado' ? '#6ee7b7' : '#fdba74',
+                      }}>{a.estado}</span>
+                    </td>
+                    <td style={{ ...td, fontSize: 10, color: '#888' }}>{a.fecha_ultimo_corte ? fmtDate(a.fecha_ultimo_corte) : '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SubPrestamos({ user, pushNotif }) {
+  const [data, setData] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await db.from('v_prestamos_estado').select('*').eq('activo', true).order('capital_pendiente', { ascending: false })
+      setData(data || [])
+    } catch (e) { console.error(e) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
+
+  const totales = data.reduce((acc, p) => ({
+    original: acc.original + Number(p.monto_original || 0),
+    pagado: acc.pagado + Number(p.capital_pagado || 0),
+    pendiente: acc.pendiente + Number(p.capital_pendiente || 0),
+    intereses: acc.intereses + Number(p.intereses_pagados_total || 0),
+  }), { original: 0, pagado: 0, pendiente: 0, intereses: 0 })
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
+        <KpiCard label="Préstamos activos" value={data.length} sub="instituciones" color="#a78bfa" />
+        <KpiCard label="Capital pendiente" value={fmt(totales.pendiente)} sub={`de ${fmt(totales.original)} original`} color="#f87171" />
+        <KpiCard label="Capital pagado" value={fmt(totales.pagado)} sub="acumulado" color="#34d399" />
+        <KpiCard label="Intereses YTD" value={fmt(totales.intereses)} sub="pagados" color="#fbbf24" />
+      </div>
+
+      <div style={{ background: '#1f2937', borderRadius: 8, padding: 10, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 800 }}>
+          <thead><tr style={{ borderBottom: '2px solid #374151' }}>
+            <th style={th}>Institución</th>
+            <th style={th}>Tipo</th>
+            <th style={th}>Origen</th>
+            <th style={{ ...th, textAlign: 'right' }}>Monto orig</th>
+            <th style={{ ...th, textAlign: 'right' }}>Cap. pagado</th>
+            <th style={{ ...th, textAlign: 'right' }}>Cap. pendiente</th>
+            <th style={{ ...th, textAlign: 'right' }}>Int. pagados</th>
+            <th style={{ ...th, textAlign: 'right' }}>Movs</th>
+            <th style={th}>Notas</th>
+          </tr></thead>
+          <tbody>
+            {data.map(p => (
+              <tr key={p.id} style={{ borderBottom: '1px solid #2a3340' }}>
+                <td style={{ ...td, fontWeight: 700 }}>{p.institucion}</td>
+                <td style={td}><span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: p.tipo === 'prestamo' ? '#1e40af' : '#7c2d12', color: '#fff' }}>{p.tipo}</span></td>
+                <td style={{ ...td, fontSize: 10 }}>{fmtDate(p.fecha_origen)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmt(p.monto_original)}</td>
+                <td style={{ ...td, textAlign: 'right', color: '#34d399' }}>{fmt(p.capital_pagado)}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#f87171' }}>{fmt(p.capital_pendiente)}</td>
+                <td style={{ ...td, textAlign: 'right', color: '#fbbf24' }}>{fmt(p.intereses_pagados_total)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{p.movimientos_count}</td>
+                <td style={{ ...td, fontSize: 10, color: '#888', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.notas}>{p.notas || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 10, fontSize: 11, color: '#888', fontStyle: 'italic' }}>
+        💡 Para registrar pagos a estos préstamos, ve al <b>Wizard</b>, selecciona la bank_tx del débito (ej: "PAGO INTERESES 406034530"), y usa "Acción → Pago a préstamo" — pendiente UI dedicada en el Wizard.
+      </div>
     </div>
   )
 }
