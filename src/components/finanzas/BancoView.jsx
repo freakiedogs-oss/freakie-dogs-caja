@@ -567,7 +567,33 @@ function TabWizard({ user, pushNotif }) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// AUTO-CATEGORIZACIÓN — Planilla Gerencial / ISSS / AFP / Impuestos
+// Reglas (3-May-2026): regex sobre proveedor + descripción
+// ═══════════════════════════════════════════════════════════
+function autoDetectarCategoria(proveedor = '', descripcion = '') {
+  const txt = `${proveedor} ${descripcion}`.toLowerCase()
+  // ISSS y AFP (cuotas patronales) — antes que gerencial para no confundir "AFP" con un nombre
+  if (/\bisss\b/.test(txt) || /\bafp\b/.test(txt) || /\bcrecer\b/.test(txt) || /\bconfia\b/.test(txt)) {
+    return { categoria: 'isss_afp', razon: 'ISSS/AFP detectado por patrón' }
+  }
+  // Planilla Gerencial — ejecutivos
+  if (/gasto\s*gerencia/i.test(txt) ||
+      /\bcesar\s+(omar\s+)?rodriguez\b/i.test(txt) ||
+      /\bfrancisco\s+siguenza\b/i.test(txt) ||
+      /\bjose\s+isart\b/i.test(txt) ||
+      /\bluis\s+castillo\b/i.test(txt)) {
+    return { categoria: 'planilla_gerencial', razon: 'Planilla Gerencial detectado por nombre ejecutivo' }
+  }
+  // Impuestos DGII
+  if (/\b(iva|pago.*cuenta|f-?14|f-?07|renta.*anual|f-?11|hacienda|dgii|ministerio.*hacienda)\b/i.test(txt)) {
+    return { categoria: 'impuestos_dgii', razon: 'Impuestos DGII detectado' }
+  }
+  return null
+}
+
+// ═══════════════════════════════════════════════════════════
 // MODAL CREAR GASTO SIN DTE — con autocomplete proveedor + crear nuevo + centro costo
+// + auto-detección de categoría Planilla/ISSS/AFP/Impuestos
 // ═══════════════════════════════════════════════════════════
 function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
   const [proveedores, setProveedores] = useState([])
@@ -593,6 +619,18 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
 
   // Form nuevo proveedor
   const [nuevoProv, setNuevoProv] = useState({ nombre_dte: '', categoria: '', subcategoria: '', sucursal_default: '' })
+
+  // Auto-detección de categoría Planilla/ISSS/AFP/Impuestos
+  const autoDetect = useMemo(
+    () => autoDetectarCategoria(form.proveedor_nombre, form.descripcion),
+    [form.proveedor_nombre, form.descripcion]
+  )
+  // Si auto-detect encuentra una categoría y el usuario no eligió manualmente, aplicar
+  useEffect(() => {
+    if (autoDetect && !form.categoria_gasto_id) {
+      setForm(f => ({ ...f, categoria_gasto_id: autoDetect.categoria }))
+    }
+  }, [autoDetect])
 
   // Subcategorías agrupadas por categoría (desde catalogo_contable existente) — evita duplicados tipo "bebidas" vs "Bebidas"
   const subcatsPorCategoria = useMemo(() => {
@@ -658,6 +696,30 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
     if (!form.proveedor_nombre || !form.monto_total || !form.fecha) return alert('Completa proveedor, monto y fecha')
     setSaving(true)
     try {
+      // Categoría final: la del form (auto-detected o manual)
+      const categoriaFinal = form.categoria_gasto_id || autoDetect?.categoria || null
+      // CRÍTICO: si esta es una categoría especial (Planilla/ISSS/AFP/Impuestos), sincronizar catalogo_contable
+      // para que la vista v_gastos_consolidados respete esta categoría en futuras consultas.
+      // Sin esto, la vista usaría COALESCE(cc.categoria, ...) y sobreescribiría con una categoría vieja.
+      if (categoriaFinal && ['planilla_gerencial', 'isss_afp', 'impuestos_dgii'].includes(categoriaFinal)) {
+        const provExistente = proveedores.find(p =>
+          p.nombre_dte?.toLowerCase() === form.proveedor_nombre.toLowerCase().trim()
+        )
+        if (provExistente && provExistente.categoria !== categoriaFinal) {
+          // Sincronizar entry existente
+          await db.from('catalogo_contable').update({ categoria: categoriaFinal }).eq('id', provExistente.id)
+        } else if (!provExistente) {
+          // Crear entry nuevo en catalogo_contable
+          await db.from('catalogo_contable').insert({
+            nombre_dte: form.proveedor_nombre.trim(),
+            nombre_normalizado: form.proveedor_nombre.trim().toUpperCase(),
+            categoria: categoriaFinal,
+            subcategoria: autoDetect?.razon?.includes('ISSS/AFP') ? 'ISSS/AFP' : (autoDetect?.razon?.includes('Gerencial') ? 'Planilla Gerencia' : null),
+            requiere_recepcion: false,
+            activo: true,
+          })
+        }
+      }
       const { data, error } = await db.from('compras_sin_dte').insert({
         fecha: form.fecha,
         proveedor_nombre: form.proveedor_nombre,
@@ -665,7 +727,7 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
         monto_total: parseFloat(form.monto_total),
         descripcion: form.descripcion,
         forma_pago: form.forma_pago,
-        categoria_gasto_id: form.categoria_gasto_id || null,
+        categoria_gasto_id: categoriaFinal,
         centro_costo_id: form.centro_costo_id ? parseInt(form.centro_costo_id) : null,
         sucursal_id: form.sucursal_id || null,
         bank_transaccion_id: bankTx?.id || null,
@@ -757,6 +819,16 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
               <option value="">— Selecciona —</option>
               {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
+            {autoDetect && form.categoria_gasto_id === autoDetect.categoria && (
+              <div style={{ fontSize: 10, color: '#a7f3d0', marginTop: 4, padding: '4px 8px', background: 'rgba(52,211,153,0.08)', borderRadius: 4 }}>
+                🔮 Auto-detectado: <b>{autoDetect.razon}</b>. Catálogo se sincronizará al guardar.
+              </div>
+            )}
+            {autoDetect && form.categoria_gasto_id !== autoDetect.categoria && form.categoria_gasto_id && (
+              <div style={{ fontSize: 10, color: '#fbbf24', marginTop: 4, padding: '4px 8px', background: 'rgba(251,191,36,0.1)', borderRadius: 4 }}>
+                ⚠️ Sugerencia ignorada: el patrón sugiere <b>{autoDetect.categoria}</b> ({autoDetect.razon}). <button type="button" onClick={() => setForm(f => ({ ...f, categoria_gasto_id: autoDetect.categoria }))} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', textDecoration: 'underline', fontSize: 10 }}>Aplicar sugerencia</button>
+              </div>
+            )}
           </div>
           <div><div style={labelSt}>Centro de costo</div>
             <select value={form.centro_costo_id} onChange={e => setForm({ ...form, centro_costo_id: e.target.value })} style={inputSt}>
