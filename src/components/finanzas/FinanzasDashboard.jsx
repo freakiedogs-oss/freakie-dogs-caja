@@ -325,6 +325,16 @@ export default function FinanzasDashboard({ user }) {
         'fecha_deposito, store_code, monto, monto_esperado, diferencia_deposito, estado',
         q => q.gte('fecha_deposito', '2026-01-01').order('fecha_deposito'))
 
+      // 15. Planilla Gerencial — provisionado vs pagado real (anti-doble-conteo)
+      const planillaGerencial = await fetchAll('v_planilla_gerencial_pl',
+        'mes, provisionado, pagado_real, pendiente_pago',
+        q => q.gte('mes', '2026-01-01').order('mes'))
+
+      // 16. Obligaciones provisionadas (ISSS, AFP, Impuestos) — usa pagado_real cuando existe, sino promedio últimos 2
+      const obligaciones = await fetchAll('v_obligaciones_provisionadas',
+        'mes, codigo, nombre, grupo, categoria_gasto_id, monto_pl, estado',
+        q => q.gte('mes', '2026-01-01').order('mes'))
+
       // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
       const egMap = {}
       cierresOp.forEach(c => {
@@ -340,7 +350,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx, serfinsaValid, depositos })
+      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx, serfinsaValid, depositos, planillaGerencial, obligaciones })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -355,7 +365,7 @@ export default function FinanzasDashboard({ user }) {
     if (!data2026) return []
     const monthMap = {}
 
-    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
+    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, planilla_gerencial: 0, isss_afp: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
 
     // Sales
     data2026.ventas.forEach(v => {
@@ -411,8 +421,15 @@ export default function FinanzasDashboard({ user }) {
       const m = g.fecha?.substring(0, 7)
       if (!m) return
       if (!monthMap[m]) monthMap[m] = initMonth()
-      // Determinar P&L key: primero por nombre exacto, luego por grupo, luego por nombre directo
+      // Anti-doble-conteo: estas categorías Planilla se manejan por vistas dedicadas
+      // (v_planilla_gerencial_pl + v_obligaciones_provisionadas) — NO sumar acá
+      const catGastoId = g.categoria_gasto_id || g.categoria_id || ''
       const catNombre = g.categoria_nombre || ''
+      if (['planilla_gerencial', 'isss_afp', 'planilla_operativa'].includes(catGastoId) ||
+          ['Planilla Gerencial', 'ISSS y AFP (cuotas patronales)', 'Planilla Operativa'].includes(catNombre)) {
+        return // skip — ya viene por vistas dedicadas
+      }
+      // Determinar P&L key: primero por nombre exacto, luego por grupo, luego por nombre directo
       let cat = CATNAME_TO_PL[catNombre] || GRUPO_TO_PL[g.categoria_grupo] || catNombre || 'gastos_operativos'
       if (cat === 'Alquiler') cat = 'costo_fijo'
       const sub = g.subcategoria_contable || ''
@@ -431,11 +448,43 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].byProv[prov].monto += monto
     })
 
-    // Planilla supplement (total)
+    // Planilla operativa: solo total_bruto (líquido + descuentos empleado)
+    // El patronal real (ISSS+AFP) se trae de v_obligaciones_provisionadas (pagado real o promedio)
     data2026.planillas?.forEach(p => {
       const m = p.fecha_pago?.substring(0, 7)
       if (!m || !monthMap[m]) return
-      monthMap[m].pl.planilla_legal += (p.total_bruto || 0) + (p.total_patronal || 0)
+      monthMap[m].pl.planilla_legal += (p.total_bruto || 0)
+    })
+
+    // Planilla Gerencial — provisión devengada (con auto-saldo si hay pago real)
+    // v_planilla_gerencial_pl ya tiene la lógica: monto_pl = COALESCE(pagado_real, provisionado)
+    data2026.planillaGerencial?.forEach(pg => {
+      const m = pg.mes?.substring(0, 7)
+      if (!m) return
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      const monto = parseFloat(pg.provisionado) || 0  // siempre $10K mensual devengado
+      monthMap[m].pl.planilla_gerencial += monto
+    })
+
+    // Obligaciones (ISSS/AFP/Impuestos) — provisión auto-saldable
+    // monto_pl = pagado_real cuando existe, sino promedio últimos 2 pagos
+    data2026.obligaciones?.forEach(o => {
+      const m = o.mes?.substring(0, 7)
+      if (!m) return
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      const monto = parseFloat(o.monto_pl) || 0
+      if (o.grupo === 'Planilla') {
+        monthMap[m].pl.isss_afp += monto
+        // Subcategorías para vista expandible
+        if (!monthMap[m].plSubs.isss_afp) monthMap[m].plSubs.isss_afp = {}
+        const label = `${o.nombre} ${o.estado === 'pagado' ? '✅' : '⏳ prov'}`
+        monthMap[m].plSubs.isss_afp[label] = (monthMap[m].plSubs.isss_afp[label] || 0) + monto
+      } else if (o.grupo === 'Impuestos') {
+        monthMap[m].pl.impuestos += monto
+        if (!monthMap[m].plSubs.impuestos) monthMap[m].plSubs.impuestos = {}
+        const label = `${o.nombre} ${o.estado === 'pagado' ? '✅' : '⏳ prov'}`
+        monthMap[m].plSubs.impuestos[label] = (monthMap[m].plSubs.impuestos[label] || 0) + monto
+      }
     })
 
     // Planilla desglose por sucursal (para expansion en Estado de Resultados)
@@ -476,7 +525,7 @@ export default function FinanzasDashboard({ user }) {
     })
 
     return Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => {
-      const ebitda = v.ventas - v.pl.costo_comida - v.pl.insumo_venta - v.pl.limpieza - v.pl.costo_fijo - v.pl.gastos_operativos - v.pl.gastos_logisticos - v.pl.gasto_financiero - v.pl.planilla_legal
+      const ebitda = v.ventas - v.pl.costo_comida - v.pl.insumo_venta - v.pl.limpieza - v.pl.costo_fijo - v.pl.gastos_operativos - v.pl.gastos_logisticos - v.pl.gasto_financiero - v.pl.planilla_legal - v.pl.planilla_gerencial - v.pl.isss_afp
       const utilidad = ebitda - v.pl.impuestos
       // Free cash flow: utilidad NETA - CapEx - repagos capital + aportes socios recibidos
       const capex = v.pl.activo_fijo
@@ -970,7 +1019,9 @@ function TabEstadoResultados({ months2026 }) {
     { key: 'gastos_operativos', label: '(-) Gastos Operativos', indent: true },
     { key: 'gastos_logisticos', label: '(-) Gastos Logísticos', indent: true },
     { key: 'gasto_financiero', label: '(-) Gasto Financiero', indent: true },
-    { key: 'planilla_legal', label: '(-) Planilla + Legal', indent: true },
+    { key: 'planilla_legal', label: '(-) Planilla Operativa (líquidos)', indent: true },
+    { key: 'isss_afp', label: '(-) ISSS + AFP (real / provisión)', indent: true },
+    { key: 'planilla_gerencial', label: '(-) Planilla Gerencial (provisionado)', indent: true },
     { key: 'ebitda', label: 'EBITDA', bold: true, computed: true },
     { key: 'impuestos', label: '(-) Impuestos', indent: true },
     { key: 'utilidad', label: 'UTILIDAD NETA', bold: true, computed: true },
@@ -1296,51 +1347,8 @@ function TabLiquidez({ data2026, months2026, conIva }) {
       }
     })
 
-    // ───── RECIBIDO (Bank BAC)
-    // Heurística PeYa:
-    //   1. "PARTNER PEDIDOSYA" / "PEDIDOSYA" / "DELIVERY HERO" → explícito
-    //   2. "Pay Adv Doc 6XXXXXXXXX" en VIERNES con monto $3K-$15K → liquidación semanal PeYa legacy
-    //   3. Resto Pay Adv Doc → POS BAC otro adquirente
-    const bankByMonth = {}
-    ;(data2026.bankTx || []).forEach(t => {
-      const m = t.fecha?.substring(0, 7)
-      if (!m) return
-      if (!bankByMonth[m]) bankByMonth[m] = { serfinsa: 0, pos_bac: 0, efectivo: 0, peya: 0, transfers: 0 }
-      const cred = parseFloat(t.credito) || 0
-      if (cred <= 0) return
-      const desc = (t.descripcion || '').toUpperCase()
-      const dow = new Date(t.fecha + 'T00:00:00').getDay()  // 0=Dom, 5=Vie
-      const isFriday = dow === 5
-
-      // 1. PeYa explícito
-      if (desc.includes('PARTNER PEDIDOSYA') || desc.includes('PEDIDOSYA') || desc.includes('DELIVERY HERO') || desc.includes('PEYA')) {
-        bankByMonth[m].peya += cred
-      }
-      // 2. PeYa legacy: Pay Adv Doc viernes monto $3K-$15K
-      else if (t.codigo_bac === 'CR' && desc.includes('PAY ADV DOC') && isFriday && cred >= 3000 && cred <= 15000) {
-        bankByMonth[m].peya += cred
-      }
-      // 3. Tarjeta Serfinsa
-      else if (t.codigo_bac === 'TM' && desc.includes('SERVICIOS FINANCIEROS')) {
-        bankByMonth[m].serfinsa += cred
-      }
-      // 4. POS BAC adquirente: resto L1 + CR (Pay Adv Doc otros días/montos, NOTA, REMESA, AFI)
-      else if (t.codigo_bac === 'L1' || (t.codigo_bac === 'CR' && (desc.includes('PAY ADV') || desc.includes('NOTA') || desc.includes('REMESA') || desc.includes('AFI')))) {
-        bankByMonth[m].pos_bac += cred
-      }
-      // 5. Efectivo
-      else if (t.codigo_bac === 'DP') {
-        bankByMonth[m].efectivo += cred
-      }
-      // 6. Transferencias clientes (excluyendo socios)
-      else if (desc.startsWith('TEF DE:') || desc.startsWith('T365 DE:')) {
-        if (!desc.includes('ISART') && !desc.includes('CESAR ROD') && !desc.includes('FRANCISCO SIG')) {
-          bankByMonth[m].transfers += cred
-        }
-      }
-    })
-
-    // ───── Validación adicional
+    // ───── FUENTES OFICIALES PRIMERO (Opción A — más precisas)
+    // 1. Serfinsa diaria → cuadre por fecha de operación (sin desfase T-2)
     const sValidByMonth = {}
     ;(data2026.serfinsaValid || []).forEach(s => {
       const m = s.fecha?.substring(0, 7)
@@ -1351,6 +1359,7 @@ function TabLiquidez({ data2026, months2026, conIva }) {
       sValidByMonth[m].diff      += parseFloat(s.diferencia) || 0
       sValidByMonth[m].dias      += 1
     })
+    // 2. Depósitos bancarios (desde 23-Mar 2026)
     const depByMonth = {}
     ;(data2026.depositos || []).forEach(d => {
       const m = d.fecha_deposito?.substring(0, 7)
@@ -1360,27 +1369,86 @@ function TabLiquidez({ data2026, months2026, conIva }) {
       depByMonth[m].esperado += parseFloat(d.monto_esperado) || 0
       depByMonth[m].n        += 1
     })
+    // 3. PeYa liquidaciones oficiales (correos PedidosYa)
+    // Asignar por mes de fecha_deposito (cuando entra al banco)
+    const peyaLiqByMonth = {}
+    ;(data2026.peya_liq || []).forEach(l => {
+      const m = (l.fecha_deposito || l.semana_fin)?.substring(0, 7)
+      if (!m) return
+      if (!peyaLiqByMonth[m]) peyaLiqByMonth[m] = { monto: 0, n: 0 }
+      peyaLiqByMonth[m].monto += parseFloat(l.monto_depositado) || 0
+      peyaLiqByMonth[m].n     += 1
+    })
+
+    // ───── RECIBIDO (Bank BAC) — solo para POS BAC y Transfers, el resto usa fuentes oficiales
+    const bankByMonth = {}
+    ;(data2026.bankTx || []).forEach(t => {
+      const m = t.fecha?.substring(0, 7)
+      if (!m) return
+      if (!bankByMonth[m]) bankByMonth[m] = { serfinsa_bank: 0, pos_bac: 0, efectivo_bank: 0, peya_bank: 0, transfers: 0 }
+      const cred = parseFloat(t.credito) || 0
+      if (cred <= 0) return
+      const desc = (t.descripcion || '').toUpperCase()
+      const dow = new Date(t.fecha + 'T00:00:00').getDay()
+      const isFriday = dow === 5
+
+      if (desc.includes('PARTNER PEDIDOSYA') || desc.includes('PEDIDOSYA') || desc.includes('DELIVERY HERO') || desc.includes('PEYA')) {
+        bankByMonth[m].peya_bank += cred
+      }
+      else if (t.codigo_bac === 'CR' && desc.includes('PAY ADV DOC') && isFriday && cred >= 3000 && cred <= 15000) {
+        bankByMonth[m].peya_bank += cred
+      }
+      else if (t.codigo_bac === 'TM' && desc.includes('SERVICIOS FINANCIEROS')) {
+        bankByMonth[m].serfinsa_bank += cred
+      }
+      else if (t.codigo_bac === 'L1' || (t.codigo_bac === 'CR' && (desc.includes('PAY ADV') || desc.includes('NOTA') || desc.includes('REMESA') || desc.includes('AFI')))) {
+        bankByMonth[m].pos_bac += cred
+      }
+      else if (t.codigo_bac === 'DP') {
+        bankByMonth[m].efectivo_bank += cred
+      }
+      else if (desc.startsWith('TEF DE:') || desc.startsWith('T365 DE:')) {
+        if (!desc.includes('ISART') && !desc.includes('CESAR ROD') && !desc.includes('FRANCISCO SIG')) {
+          bankByMonth[m].transfers += cred
+        }
+      }
+    })
 
     const allMeses = Array.from(new Set([
-      ...Object.keys(posByMonth), ...Object.keys(bankByMonth)
+      ...Object.keys(posByMonth), ...Object.keys(bankByMonth), ...Object.keys(sValidByMonth)
     ])).sort()
 
     const rows = allMeses.map(m => {
       const p = posByMonth[m] || { tarjeta: 0, efectivo: 0, peya: 0, otros: 0 }
-      const b = bankByMonth[m] || { serfinsa: 0, pos_bac: 0, efectivo: 0, peya: 0, transfers: 0 }
+      const b = bankByMonth[m] || { serfinsa_bank: 0, pos_bac: 0, efectivo_bank: 0, peya_bank: 0, transfers: 0 }
       const sv = sValidByMonth[m]
       const dp = depByMonth[m]
+      const peyaLiq = peyaLiqByMonth[m]
+
+      // ── PRIORIZAR FUENTES OFICIALES ──
+      // Tarjeta: usar serfinsa_validacion_diaria (fuente oficial Serfinsa, sin desfase T-2)
+      const recSerfinsa = sv?.liquidado || b.serfinsa_bank
+      const sourceSerfinsa = sv ? 'oficial' : 'bank_tx'
+
+      // Efectivo: priorizar depositos_bancarios cuando hay; si no, bank_tx DP
+      const recEfectivo = dp?.monto || b.efectivo_bank
+      const sourceEfectivo = dp ? 'oficial' : 'bank_tx'
+
+      // PeYa: priorizar peya_liquidaciones (correos PedidosYa)
+      const recPeya = peyaLiq?.monto || b.peya_bank
+      const sourcePeya = peyaLiq ? 'oficial' : 'bank_tx'
+
       const canales = {
-        tarjeta:   { rep: p.tarjeta,  rec: b.serfinsa, comision: p.tarjeta * 0.030 },
-        pos_bac:   { rep: 0,          rec: b.pos_bac,  comision: 0 },
-        efectivo:  { rep: p.efectivo, rec: b.efectivo, comision: 0 },
-        peya:      { rep: p.peya,     rec: b.peya,     comision: p.peya * 0.275 },
-        transfers: { rep: 0,          rec: b.transfers, comision: 0 },
+        tarjeta:   { rep: p.tarjeta,  rec: recSerfinsa, comision: p.tarjeta * 0.030, source: sourceSerfinsa, _bank: b.serfinsa_bank },
+        pos_bac:   { rep: 0,          rec: b.pos_bac,   comision: 0, source: 'bank_tx' },
+        efectivo:  { rep: p.efectivo, rec: recEfectivo, comision: 0, source: sourceEfectivo, _bank: b.efectivo_bank },
+        peya:      { rep: p.peya,     rec: recPeya,     comision: p.peya * 0.275, source: sourcePeya, _bank: b.peya_bank, _liqN: peyaLiq?.n || 0 },
+        transfers: { rep: 0,          rec: b.transfers, comision: 0, source: 'bank_tx' },
       }
       const totalRep = p.tarjeta + p.efectivo + p.peya + p.otros
-      const totalRec = b.serfinsa + b.pos_bac + b.efectivo + b.peya + b.transfers
+      const totalRec = recSerfinsa + b.pos_bac + recEfectivo + recPeya + b.transfers
       const cobertura = totalRep > 0 ? (totalRec / totalRep) * 100 : 0
-      return { mes: m, p, b, canales, totalRep, totalRec, cobertura, gap: totalRep - totalRec, sv, dp }
+      return { mes: m, p, b, canales, totalRep, totalRec, cobertura, gap: totalRep - totalRec, sv, dp, peyaLiq }
     })
 
     return { rows, peyaLiqVacio: !data2026.peya_liq?.length, depositosVacio: !data2026.depositos?.length }
@@ -1412,13 +1480,11 @@ function TabLiquidez({ data2026, months2026, conIva }) {
         <KpiCardBanco label="Gap (no recibido)" value={fmt(totales.gap)} sub="comisiones + retraso + faltantes" color={totales.gap >= 0 ? C.red : C.greenLight} />
       </div>
 
-      {(liq.peyaLiqVacio || liq.depositosVacio) && (
-        <div style={{ background: '#7c2d1222', border: '1px solid #7c2d12', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 12, color: '#fdba74' }}>
-          ⚠️ <b>Datos faltantes:</b>
-          {liq.peyaLiqVacio && <> tabla <code>peya_liquidaciones</code> vacía → PeYa cruzado vs bank_tx (PARTNER PEDIDOSYA + Pay Adv Doc viernes $3-15K).</>}
-          {liq.depositosVacio && <> Tabla <code>depositos_bancarios</code> vacía → Efectivo cruzado vs bank_tx código DP.</>}
-        </div>
-      )}
+      <div style={{ background: '#0c4a6e22', border: '1px solid #0369a1', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 11, color: '#bae6fd' }}>
+        📋 <b>Fuentes activas:</b> Tarjeta = <code>serfinsa_validacion_diaria</code> · Efectivo = <code>depositos_bancarios</code> (desde 23-Mar) + bank_tx DP (resto) · PeYa = <code>peya_liquidaciones</code> (15 correos cargados) + bank_tx fallback · POS BAC y Transfers = bank_tx.
+        {liq.peyaLiqVacio && <><br/>⚠️ <code>peya_liquidaciones</code> vacía → PeYa solo desde bank_tx.</>}
+        {liq.depositosVacio && <><br/>⚠️ <code>depositos_bancarios</code> vacía → Efectivo solo desde bank_tx.</>}
+      </div>
 
       <div style={sCard}>
         <div style={{ ...sH, marginBottom: 8 }}>Resumen mensual por canal</div>
@@ -1517,14 +1583,32 @@ function TabLiquidez({ data2026, months2026, conIva }) {
                     {noReportado && (
                       <div style={{ color: '#a78bfa' }}>ℹ️ No reportado en POS Quanto — flujo de banco directo</div>
                     )}
+                    {/* Source badge */}
+                    {c.source && (
+                      <div style={{ marginTop: 4, fontSize: 9 }}>
+                        Fuente: <span style={{
+                          padding: '1px 5px', borderRadius: 3, fontWeight: 700,
+                          background: c.source === 'oficial' ? '#065f4622' : '#37415122',
+                          color: c.source === 'oficial' ? '#6ee7b7' : '#9ca3af',
+                        }}>{c.source === 'oficial' ? '✅ oficial' : 'bank_tx'}</span>
+                        {c.source === 'oficial' && c._bank > 0 && Math.abs(c._bank - c.rec) > 100 && (
+                          <span style={{ color: '#fdba74' }}> · bank_tx mostraría {fmt(c._bank)} (desfase T-2)</span>
+                        )}
+                      </div>
+                    )}
                     {key === 'tarjeta' && mesActual.sv && (
                       <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px dashed #334155' }}>
-                        ✅ Validado Serfinsa: {mesActual.sv.dias} días · diff {mesActual.sv.diff >= 0 ? '+' : ''}{fmt(mesActual.sv.diff)}
+                        ✅ Validación diaria Serfinsa: {mesActual.sv.dias} días · POS reportado {fmt(mesActual.sv.reportado)} · diff {mesActual.sv.diff >= 0 ? '+' : ''}{fmt(mesActual.sv.diff)}
                       </div>
                     )}
                     {key === 'efectivo' && mesActual.dp && (
                       <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px dashed #334155' }}>
-                        📋 {mesActual.dp.n} depósitos registrados · esperado {fmt(mesActual.dp.esperado)}
+                        📋 {mesActual.dp.n} depósitos · esperado {fmt(mesActual.dp.esperado)} · real {fmt(mesActual.dp.monto)}
+                      </div>
+                    )}
+                    {key === 'peya' && mesActual.peyaLiq && (
+                      <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px dashed #334155' }}>
+                        📧 {mesActual.peyaLiq.n} liquidaciones de correos PedidosYa
                       </div>
                     )}
                     {key === 'efectivo' && c.rep > c.rec * 1.1 && (
