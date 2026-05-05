@@ -110,6 +110,7 @@ export default function RRHHView({ user }) {
     { id: 'asistencia',         label: '📋 Asistencia Manual' },
     { id: 'descuentos',         label: '💰 Descuentos' },
     ...(canEdit ? [{ id: 'usuarios-pin', label: '🔑 Usuarios PIN' }] : []),
+    ...(canEdit ? [{ id: 'cuentas-bancarias', label: '🏦 Cuentas Bancarias' }] : []),
   ];
 
   return (
@@ -141,6 +142,7 @@ export default function RRHHView({ user }) {
         {tab === 'asistencia'         && <TabAsistencia   sucursales={sucursales} show={show} />}
         {tab === 'descuentos'         && <TabDescuentos   canEdit={canEdit} show={show} />}
         {tab === 'usuarios-pin'       && <TabUsuariosPIN  canEdit={canEdit} sucursales={sucursales} show={show} />}
+        {tab === 'cuentas-bancarias'  && <TabCuentasBancarias canEdit={canEdit} show={show} />}
       </div>
 
       {Toast}
@@ -898,6 +900,316 @@ function ModalDescuento({ formData, setFormData, empleados, onSave, onCancel }) 
           <button onClick={onCancel} style={{ ...btn('ghost'), flex: 1, padding: 10 }}>Cancelar</button>
           <button onClick={onSave}   style={{ ...btn('success'), flex: 1, padding: 10 }}>Guardar</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB 6: CUENTAS BANCARIAS DE TERCEROS
+// Mapa cuenta TEF → entidad → categoría P&L (auto-categoriza wizard)
+// ═══════════════════════════════════════════════════════════════
+function TabCuentasBancarias({ canEdit, show }) {
+  const [cuentas, setCuentas] = useState([]);
+  const [empleados, setEmpleados] = useState([]);
+  const [proveedores, setProveedores] = useState([]);
+  const [socios, setSocios] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [showNueva, setShowNueva] = useState(false);
+  const [filtroRel, setFiltroRel] = useState('');
+  const [filtroBanco, setFiltroBanco] = useState('');
+  const [busca, setBusca] = useState('');
+
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [c, e, p, s, cat] = await Promise.all([
+        db.from('cuentas_bancarias_terceros').select('*').order('relacion_tipo').order('nombre_titular'),
+        db.from('empleados').select('id,codigo_empleado,nombre_completo').eq('activo', true).order('nombre_completo'),
+        db.from('proveedores').select('id,nombre').order('nombre'),
+        db.from('socios').select('id,nombre').order('nombre'),
+        db.from('categorias_gasto').select('id,nombre,grupo').order('orden'),
+      ]);
+      setCuentas(c.data || []);
+      setEmpleados(e.data || []);
+      setProveedores(p.data || []);
+      setSocios(s.data || []);
+      setCategorias(cat.data || []);
+    } catch (err) { show('Error: ' + err.message, false); }
+    setLoading(false);
+  }, [show]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const filtradas = useMemo(() => cuentas.filter(c => {
+    if (filtroRel && c.relacion_tipo !== filtroRel) return false;
+    if (filtroBanco && c.banco !== filtroBanco) return false;
+    if (busca) {
+      const q = busca.toLowerCase();
+      if (!c.nombre_titular?.toLowerCase().includes(q) && !c.cuenta_numero?.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }), [cuentas, filtroRel, filtroBanco, busca]);
+
+  const bancos = [...new Set(cuentas.map(c => c.banco).filter(Boolean))].sort();
+
+  const guardar = async (item) => {
+    if (!item.cuenta_numero || !item.nombre_titular || !item.relacion_tipo) {
+      show('Cuenta, titular y relación son obligatorios', false); return;
+    }
+    setSaving(true);
+    try {
+      const aliasArr = typeof item.alias === 'string'
+        ? item.alias.split(',').map(s => s.trim()).filter(Boolean)
+        : (item.alias || []);
+      const payload = {
+        cuenta_numero: item.cuenta_numero.trim(),
+        banco: item.banco || null,
+        tipo_cuenta: item.tipo_cuenta || null,
+        nombre_titular: item.nombre_titular.trim(),
+        relacion_tipo: item.relacion_tipo,
+        empleado_id: item.relacion_tipo === 'empleado' ? (item.empleado_id || null) : null,
+        proveedor_id: item.relacion_tipo === 'proveedor' ? (item.proveedor_id || null) : null,
+        socio_id: item.relacion_tipo === 'socio' ? (item.socio_id || null) : null,
+        ejecutivo_nombre: item.relacion_tipo === 'ejecutivo' ? (item.ejecutivo_nombre || null) : null,
+        categoria_gasto_id_default: item.categoria_gasto_id_default || null,
+        subcategoria_default: item.subcategoria_default || null,
+        alias: aliasArr,
+        notas: item.notas || null,
+        activo: item.activo ?? true,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = item.id
+        ? await db.from('cuentas_bancarias_terceros').update(payload).eq('id', item.id)
+        : await db.from('cuentas_bancarias_terceros').insert(payload);
+      if (error) { show('Error: ' + error.message, false); setSaving(false); return; }
+      show('✓ Cuenta guardada');
+      setEditando(null); setShowNueva(false);
+      await cargar();
+    } catch (e) { show(e.message, false); }
+    setSaving(false);
+  };
+
+  const toggleActivo = async (item) => {
+    const { error } = await db.from('cuentas_bancarias_terceros').update({ activo: !item.activo }).eq('id', item.id);
+    if (error) { show(error.message, false); return; }
+    await cargar();
+  };
+
+  if (loading) return <div style={{ color: C.textDim, fontSize: 13 }}>Cargando cuentas bancarias...</div>;
+
+  const total = cuentas.length;
+  const activas = cuentas.filter(c => c.activo).length;
+  const sinIdentificar = cuentas.filter(c => c.nombre_titular?.toUpperCase().includes('PENDIENTE')).length;
+
+  const RELACIONES = [
+    { val: 'empleado', label: '👤 Empleado' },
+    { val: 'proveedor', label: '🏪 Proveedor' },
+    { val: 'socio', label: '🤝 Socio' },
+    { val: 'ejecutivo', label: '💼 Ejecutivo (planilla gerencial)' },
+    { val: 'otro', label: '📌 Otro' },
+  ];
+
+  const TIPOS_CUENTA = [
+    { val: 'corriente', label: 'Corriente' },
+    { val: 'ahorro', label: 'Ahorro' },
+    { val: 'fondo', label: 'Fondo' },
+    { val: 'tarjeta', label: 'Tarjeta' },
+    { val: 'otro', label: 'Otro' },
+  ];
+
+  const item = editando || (showNueva ? { cuenta_numero: '', banco: 'BAC', tipo_cuenta: 'corriente', nombre_titular: '', relacion_tipo: '', alias: '', activo: true } : null);
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 120, padding: 10, borderRadius: 8, background: C.bgCard, border: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 10, color: C.textDim }}>Total cuentas</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{total}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 120, padding: 10, borderRadius: 8, background: C.bgCard, border: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 10, color: C.textDim }}>Activas</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.green }}>{activas}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 120, padding: 10, borderRadius: 8, background: C.bgCard, border: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 10, color: C.textDim }}>⚠️ Sin identificar</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.yellow }}>{sinIdentificar}</div>
+        </div>
+      </div>
+
+      {/* Filtros + acción */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <input placeholder="🔎 Buscar cuenta o titular..." value={busca} onChange={e => setBusca(e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
+        <select value={filtroRel} onChange={e => setFiltroRel(e.target.value)} style={{ ...inp, width: 'auto' }}>
+          <option value="">Todas las relaciones</option>
+          {RELACIONES.map(r => <option key={r.val} value={r.val}>{r.label}</option>)}
+        </select>
+        <select value={filtroBanco} onChange={e => setFiltroBanco(e.target.value)} style={{ ...inp, width: 'auto' }}>
+          <option value="">Todos los bancos</option>
+          {bancos.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+        {canEdit && (
+          <button onClick={() => { setEditando(null); setShowNueva(true); }} style={{ ...btn('primary'), whiteSpace: 'nowrap' }}>+ Nueva cuenta</button>
+        )}
+      </div>
+
+      {/* Form editor */}
+      {item && (
+        <div style={{ background: C.bgCard, padding: 14, borderRadius: 8, border: `1px solid ${C.red}`, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, color: C.red, marginBottom: 10, fontSize: 13 }}>
+            {editando ? '✏️ Editando cuenta' : '➕ Nueva cuenta bancaria'}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim }}>Número de cuenta *</label>
+              <input value={item.cuenta_numero} onChange={e => setEditando({ ...item, cuenta_numero: e.target.value })} placeholder="113363337" style={inp} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim }}>Banco</label>
+              <input list="bancos-list" value={item.banco || ''} onChange={e => setEditando({ ...item, banco: e.target.value })} placeholder="BAC" style={inp} />
+              <datalist id="bancos-list">
+                <option value="BAC" /><option value="Agrícola" /><option value="Cuscatlán" /><option value="Promerica" /><option value="Davivienda" />
+              </datalist>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim }}>Tipo</label>
+              <select value={item.tipo_cuenta || ''} onChange={e => setEditando({ ...item, tipo_cuenta: e.target.value })} style={inp}>
+                <option value="">— Seleccionar —</option>
+                {TIPOS_CUENTA.map(t => <option key={t.val} value={t.val}>{t.label}</option>)}
+              </select>
+            </div>
+            <div style={{ gridColumn: 'span 2' }}>
+              <label style={{ fontSize: 11, color: C.textDim }}>Nombre titular (como aparece en banco) *</label>
+              <input value={item.nombre_titular} onChange={e => setEditando({ ...item, nombre_titular: e.target.value })} placeholder="CESAR OMAR RODRIGUEZ ZAVALA" style={inp} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim }}>Relación *</label>
+              <select value={item.relacion_tipo} onChange={e => setEditando({ ...item, relacion_tipo: e.target.value })} style={inp}>
+                <option value="">— Seleccionar —</option>
+                {RELACIONES.map(r => <option key={r.val} value={r.val}>{r.label}</option>)}
+              </select>
+            </div>
+            {item.relacion_tipo === 'empleado' && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ fontSize: 11, color: C.textDim }}>Empleado</label>
+                <select value={item.empleado_id || ''} onChange={e => setEditando({ ...item, empleado_id: e.target.value })} style={inp}>
+                  <option value="">— Seleccionar empleado —</option>
+                  {empleados.map(e => <option key={e.id} value={e.id}>{e.codigo_empleado} · {e.nombre_completo}</option>)}
+                </select>
+              </div>
+            )}
+            {item.relacion_tipo === 'proveedor' && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ fontSize: 11, color: C.textDim }}>Proveedor</label>
+                <select value={item.proveedor_id || ''} onChange={e => setEditando({ ...item, proveedor_id: e.target.value })} style={inp}>
+                  <option value="">— Seleccionar proveedor —</option>
+                  {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+              </div>
+            )}
+            {item.relacion_tipo === 'socio' && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ fontSize: 11, color: C.textDim }}>Socio</label>
+                <select value={item.socio_id || ''} onChange={e => setEditando({ ...item, socio_id: parseInt(e.target.value) || null })} style={inp}>
+                  <option value="">— Seleccionar socio —</option>
+                  {socios.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                </select>
+              </div>
+            )}
+            {item.relacion_tipo === 'ejecutivo' && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ fontSize: 11, color: C.textDim }}>Nombre ejecutivo</label>
+                <input value={item.ejecutivo_nombre || ''} onChange={e => setEditando({ ...item, ejecutivo_nombre: e.target.value })} placeholder="Cesar Rodriguez" style={inp} />
+              </div>
+            )}
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim }}>Categoría P&L default</label>
+              <select value={item.categoria_gasto_id_default || ''} onChange={e => setEditando({ ...item, categoria_gasto_id_default: e.target.value })} style={inp}>
+                <option value="">— Sin default —</option>
+                {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.grupo})</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim }}>Subcategoría default</label>
+              <input value={item.subcategoria_default || ''} onChange={e => setEditando({ ...item, subcategoria_default: e.target.value })} placeholder="Salario Quincenal" style={inp} />
+            </div>
+            <div style={{ gridColumn: 'span 3' }}>
+              <label style={{ fontSize: 11, color: C.textDim }}>Aliases (separados por coma) — para fuzzy match en bank.descripcion</label>
+              <input value={Array.isArray(item.alias) ? item.alias.join(', ') : (item.alias || '')} onChange={e => setEditando({ ...item, alias: e.target.value })}
+                placeholder="113363337, TEF A : 113363337, CESAR OMAR" style={inp} />
+            </div>
+            <div style={{ gridColumn: 'span 3' }}>
+              <label style={{ fontSize: 11, color: C.textDim }}>Notas</label>
+              <input value={item.notas || ''} onChange={e => setEditando({ ...item, notas: e.target.value })} style={inp} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button onClick={() => guardar(item)} disabled={saving} style={btn('primary')}>
+              {saving ? 'Guardando...' : (editando ? 'Actualizar' : 'Crear cuenta')}
+            </button>
+            <button onClick={() => { setEditando(null); setShowNueva(false); }} style={btn('secondary')}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Tabla */}
+      <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${C.border}` }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
+          <thead>
+            <tr style={{ background: C.bgCard }}>
+              <th style={thS}>Cuenta</th>
+              <th style={thS}>Titular</th>
+              <th style={thS}>Banco</th>
+              <th style={thS}>Relación</th>
+              <th style={thS}>Categoría default</th>
+              <th style={thS}>Subcat</th>
+              <th style={thS}>Aliases</th>
+              <th style={thS}>Estado</th>
+              {canEdit && <th style={thS}>Acciones</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filtradas.length === 0 && <tr><td colSpan={canEdit ? 9 : 8} style={{ ...tdS, textAlign: 'center', color: C.textDim, padding: 20 }}>Sin cuentas con estos filtros</td></tr>}
+            {filtradas.map(c => {
+              const rel = RELACIONES.find(r => r.val === c.relacion_tipo);
+              const sinId = c.nombre_titular?.toUpperCase().includes('PENDIENTE');
+              return (
+                <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}`, opacity: c.activo ? 1 : 0.5 }}>
+                  <td style={{ ...tdS, fontFamily: 'monospace', fontSize: 12 }}>{c.cuenta_numero}</td>
+                  <td style={{ ...tdS, color: sinId ? C.yellow : C.text, fontWeight: 600 }}>{c.nombre_titular}</td>
+                  <td style={tdS}>{c.banco || '—'}</td>
+                  <td style={{ ...tdS, fontSize: 11 }}>{rel?.label || c.relacion_tipo}</td>
+                  <td style={{ ...tdS, fontSize: 11 }}>
+                    {c.categoria_gasto_id_default
+                      ? <span style={{ background: 'rgba(96,165,250,0.15)', color: C.blue, padding: '2px 6px', borderRadius: 4 }}>{c.categoria_gasto_id_default}</span>
+                      : '—'}
+                  </td>
+                  <td style={{ ...tdS, fontSize: 11, color: C.textDim }}>{c.subcategoria_default || '—'}</td>
+                  <td style={{ ...tdS, fontSize: 10, color: C.textDim, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {(c.alias || []).join(', ') || '—'}
+                  </td>
+                  <td style={tdS}>
+                    {c.activo ? <span style={{ color: C.green, fontSize: 11 }}>✓ activa</span> : <span style={{ color: C.textDim, fontSize: 11 }}>inactiva</span>}
+                  </td>
+                  {canEdit && (
+                    <td style={tdS}>
+                      <button onClick={() => { setShowNueva(false); setEditando({ ...c, alias: (c.alias || []).join(', ') }); }} style={{ ...btn('secondary'), padding: '4px 8px', fontSize: 11 }}>Editar</button>
+                      <button onClick={() => toggleActivo(c)} style={{ ...btn('secondary'), padding: '4px 8px', fontSize: 11, marginLeft: 4 }}>{c.activo ? 'Desactivar' : 'Activar'}</button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ marginTop: 14, padding: '8px 12px', borderRadius: 6, background: 'rgba(96,165,250,0.07)', border: '1px solid rgba(96,165,250,0.18)', fontSize: 11, color: C.textDim }}>
+        💡 <b>Cómo funciona</b>: cuando una transacción bancaria entra al wizard de BancoView, el sistema busca un alias que matchee con la descripción del bank. Si lo encuentra, sugiere automáticamente la categoría P&L y subcategoría default de esta cuenta. La vista <code>v_bank_tx_pendientes_match</code> consume esta tabla.
       </div>
     </div>
   );

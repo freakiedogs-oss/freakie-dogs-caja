@@ -38,6 +38,7 @@ const TABS = [
   { key: 'comprobantes', label: '📷 Comprobantes' },
   { key: 'cola', label: '🔍 Cola Manual' },
   { key: 'vincular', label: '📎 Vincular DTE' },
+  { key: 'reconciliar', label: '🔮 Auto-Reconciliar' },
   { key: 'socios', label: '👥 Socios' },
   { key: 'reglas', label: '⚙️ Reglas' },
   { key: 'auditoria', label: '📋 Auditoría' },
@@ -226,6 +227,7 @@ export default function BancoView({ user }) {
       {tab === 'comprobantes' && <TabComprobantes user={user} />}
       {tab === 'cola' && <TabColaManual user={user} />}
       {tab === 'vincular' && <TabVincularDTE user={user} pushNotif={pushNotif} />}
+      {tab === 'reconciliar' && <TabAutoReconciliar user={user} pushNotif={pushNotif} />}
       {tab === 'socios' && <TabSocios user={user} pushNotif={pushNotif} />}
       {tab === 'reglas' && <TabReglas />}
       {tab === 'auditoria' && <TabAuditoria />}
@@ -1602,6 +1604,204 @@ function TabReglas() {
           </table>
         </div>
       )}
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAB AUTO-RECONCILIAR — bank_tx pendientes con sugerencia de match
+// Consume v_bank_tx_pendientes_match (cuenta_match score 0.95 + obligacion_match 0.85)
+// Botón 1-click crea compras_sin_dte con categoría correcta + sincroniza catalogo_contable
+// ═══════════════════════════════════════════════════════════
+function TabAutoReconciliar({ user, pushNotif }) {
+  const [pendientes, setPendientes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filtroMes, setFiltroMes] = useState('todos')
+  const [filtroDir, setFiltroDir] = useState('D')      // D=débito, C=crédito, T=todos
+  const [filtroScore, setFiltroScore] = useState(0)    // score mínimo
+  const [busy, setBusy] = useState({})                 // { bank_id: true } durante reconciliación
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      let q = db.from('v_bank_tx_pendientes_match')
+        .select('bank_id,fecha,descripcion,debito,credito,direccion,cuenta_id,nombre_titular,relacion_tipo,categoria_gasto_id_default,subcategoria_default,match_tipo,score')
+        .order('fecha', { ascending: false })
+        .order('score', { ascending: false })
+        .limit(500)
+      const { data, error } = await q
+      if (error) throw error
+      setPendientes(data || [])
+    } catch (e) { console.error(e) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  // Filtros (en memoria)
+  const filtrados = useMemo(() => {
+    return pendientes.filter(p => {
+      if (filtroDir !== 'T' && p.direccion !== filtroDir) return false
+      if (filtroScore && parseFloat(p.score) < filtroScore) return false
+      if (filtroMes !== 'todos') {
+        const mes = p.fecha?.substring(0, 7)
+        if (mes !== filtroMes) return false
+      }
+      return true
+    })
+  }, [pendientes, filtroDir, filtroScore, filtroMes])
+
+  const meses = useMemo(() => {
+    const set = new Set()
+    pendientes.forEach(p => p.fecha && set.add(p.fecha.substring(0, 7)))
+    return [...set].sort().reverse()
+  }, [pendientes])
+
+  // KPIs
+  const kpis = useMemo(() => {
+    const total = filtrados.length
+    const monto = filtrados.reduce((s, p) => s + parseFloat(p.direccion === 'D' ? p.debito : p.credito || 0), 0)
+    const cuentaMatches = filtrados.filter(p => p.match_tipo === 'cuenta_match').length
+    const oblMatches = filtrados.filter(p => p.match_tipo === 'obligacion_match').length
+    return { total, monto, cuentaMatches, oblMatches }
+  }, [filtrados])
+
+  const reconciliar = async (item) => {
+    if (busy[item.bank_id]) return
+    setBusy(b => ({ ...b, [item.bank_id]: true }))
+    try {
+      const monto = parseFloat(item.direccion === 'D' ? item.debito : item.credito || 0)
+      // Insert compras_sin_dte
+      const { error } = await db.from('compras_sin_dte').insert({
+        fecha: item.fecha,
+        proveedor_nombre: item.nombre_titular,
+        monto_total: monto,
+        descripcion: `${item.subcategoria_default || ''} (auto-reconciliado desde ${item.match_tipo})`.trim(),
+        forma_pago: 'transferencia',
+        categoria_gasto_id: item.categoria_gasto_id_default,
+        bank_transaccion_id: item.bank_id,
+        conciliado: true,
+        tipo: 'gasto_sin_dte',
+        notas: `auto-reconciliado ${new Date().toISOString().substring(0, 10)} via TabAutoReconciliar (score ${item.score})`,
+      })
+      if (error) throw error
+      pushNotif?.(`✅ Reconciliado: ${item.nombre_titular} $${monto.toFixed(2)}`)
+      // Quitar de la lista
+      setPendientes(ps => ps.filter(p => p.bank_id !== item.bank_id))
+    } catch (e) {
+      alert('Error reconciliando: ' + e.message)
+    } finally {
+      setBusy(b => { const next = { ...b }; delete next[item.bank_id]; return next })
+    }
+  }
+
+  if (loading) return <div style={{ color: '#aaa', padding: 20 }}>Cargando...</div>
+
+  const sCard = { background: '#1f2937', borderRadius: 8, padding: 12, border: '1px solid #2d3748' }
+  const sKpi = { ...sCard, textAlign: 'center', flex: 1 }
+  const sTh = { padding: 8, fontSize: 11, color: '#888', textTransform: 'uppercase', textAlign: 'left', borderBottom: '1px solid #2d3748' }
+  const sTd = { padding: 8, fontSize: 12, color: '#ddd', borderBottom: '1px solid #1a2540' }
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+        <div style={sKpi}>
+          <div style={{ fontSize: 11, color: '#888' }}>Pendientes filtradas</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{kpis.total}</div>
+        </div>
+        <div style={sKpi}>
+          <div style={{ fontSize: 11, color: '#888' }}>Monto pendiente</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#f59e0b' }}>${kpis.monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </div>
+        <div style={sKpi}>
+          <div style={{ fontSize: 11, color: '#888' }}>Match cuenta (0.95)</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#4ade80' }}>{kpis.cuentaMatches}</div>
+        </div>
+        <div style={sKpi}>
+          <div style={{ fontSize: 11, color: '#888' }}>Match obligación (0.85)</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#60a5fa' }}>{kpis.oblMatches}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={{ padding: 6, fontSize: 12, background: '#1a2540', color: '#ddd', border: '1px solid #444', borderRadius: 6 }}>
+          <option value="todos">Todos los meses</option>
+          {meses.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <select value={filtroDir} onChange={e => setFiltroDir(e.target.value)} style={{ padding: 6, fontSize: 12, background: '#1a2540', color: '#ddd', border: '1px solid #444', borderRadius: 6 }}>
+          <option value="D">Solo débitos (pagos)</option>
+          <option value="C">Solo créditos (ingresos)</option>
+          <option value="T">Todos</option>
+        </select>
+        <select value={filtroScore} onChange={e => setFiltroScore(parseFloat(e.target.value))} style={{ padding: 6, fontSize: 12, background: '#1a2540', color: '#ddd', border: '1px solid #444', borderRadius: 6 }}>
+          <option value="0">Cualquier score</option>
+          <option value="0.85">≥ 0.85</option>
+          <option value="0.95">≥ 0.95 (solo cuenta-match)</option>
+        </select>
+        <button onClick={load} style={{ padding: '6px 12px', fontSize: 12, background: '#374151', color: '#ddd', border: 'none', borderRadius: 6, cursor: 'pointer' }}>🔄 Recargar</button>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#888' }}>
+          💡 Vista <code style={{ background: '#1a2540', padding: '2px 6px', borderRadius: 4 }}>v_bank_tx_pendientes_match</code> · Score 0.95=cuenta exacta · 0.85=obligación regex
+        </div>
+      </div>
+
+      <div style={sCard}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={sTh}>Fecha</th>
+              <th style={sTh}>Descripción bank</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Monto</th>
+              <th style={sTh}>→ Sugerencia</th>
+              <th style={sTh}>Categoría</th>
+              <th style={sTh}>Subcat.</th>
+              <th style={sTh}>Score</th>
+              <th style={sTh}>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtrados.length === 0 && (
+              <tr><td colSpan={8} style={{ ...sTd, textAlign: 'center', color: '#888', padding: 30 }}>Nada pendiente con estos filtros 🎉</td></tr>
+            )}
+            {filtrados.map(p => {
+              const monto = parseFloat(p.direccion === 'D' ? p.debito : p.credito || 0)
+              const isBusy = !!busy[p.bank_id]
+              return (
+                <tr key={p.bank_id}>
+                  <td style={sTd}>{p.fecha?.substring(5)}</td>
+                  <td style={{ ...sTd, fontSize: 11, color: '#aaa' }}>{p.descripcion}</td>
+                  <td style={{ ...sTd, textAlign: 'right', color: p.direccion === 'D' ? '#ef4444' : '#4ade80', fontWeight: 600 }}>
+                    {p.direccion === 'D' ? '−' : '+'}${monto.toFixed(2)}
+                  </td>
+                  <td style={{ ...sTd, color: '#fff', fontWeight: 600 }}>{p.nombre_titular}</td>
+                  <td style={{ ...sTd, fontSize: 11 }}>
+                    <span style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', padding: '2px 6px', borderRadius: 4 }}>
+                      {p.categoria_gasto_id_default || '—'}
+                    </span>
+                  </td>
+                  <td style={{ ...sTd, fontSize: 11, color: '#888' }}>{p.subcategoria_default || '—'}</td>
+                  <td style={sTd}>
+                    <span style={{
+                      background: parseFloat(p.score) >= 0.95 ? 'rgba(74,222,128,0.15)' : 'rgba(251,191,36,0.15)',
+                      color: parseFloat(p.score) >= 0.95 ? '#4ade80' : '#fbbf24',
+                      padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600
+                    }}>
+                      {parseFloat(p.score).toFixed(2)} · {p.match_tipo === 'cuenta_match' ? '🎯' : '📋'}
+                    </span>
+                  </td>
+                  <td style={sTd}>
+                    {p.direccion === 'D' && p.categoria_gasto_id_default ? (
+                      <button onClick={() => reconciliar(p)} disabled={isBusy}
+                        style={{ padding: '4px 10px', fontSize: 11, background: isBusy ? '#374151' : '#10b981', color: '#fff', border: 'none', borderRadius: 4, cursor: isBusy ? 'wait' : 'pointer', fontWeight: 600 }}>
+                        {isBusy ? '...' : '✓ Reconciliar'}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 10, color: '#666' }}>{p.direccion === 'C' ? 'ingreso' : 'sin cat.'}</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }
