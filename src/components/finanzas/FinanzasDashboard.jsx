@@ -247,8 +247,12 @@ export default function FinanzasDashboard({ user }) {
     setLoading(true)
     try {
       // 1. Monthly sales (~500 rows, fits in 1 page)
-      const ventas = await fetchAll('v_ventas_unificadas',
-        'fecha, store_code, total_ventas_quanto, efectivo_quanto, tarjeta_quanto, otros_quanto, fuente',
+      // 5-May-2026: migrado de v_ventas_unificadas → v_quanto_ordenes_diario
+      // Ventas ahora INCLUYEN propina (lo que entró al cliente). El delta vs
+      // planilla.propina_pagada emerge naturalmente en EBITDA.
+      // Excluye sucursal fantasma EVT01 (Mar 22-27, sin documentar).
+      const ventas = await fetchAll('v_quanto_ordenes_diario',
+        'fecha, store_code, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
       // Egresos/ingresos siguen viniendo de ventas_diarias (datos operacionales de cierre)
       const cierresOp = await fetchAll('ventas_diarias',
@@ -310,13 +314,10 @@ export default function FinanzasDashboard({ user }) {
         'fecha_evento, estado, total_ventas, cerrado_at, nombre, cliente',
         q => q.not('cerrado_at', 'is', null).gte('fecha_evento', '2026-01-01').order('fecha_evento'))
 
-      // 12. Bank transacciones BAC + Agrícola (F7+F8 — multi-banco consolidado)
+      // 12. Bank transacciones BAC (F7 — tab Banco en dashboard)
       const bankTx = await fetchAll('bank_transacciones',
-        'id, cuenta_id, fecha, codigo_bac, descripcion, debito, credito, balance, estado, notas',
+        'id, fecha, codigo_bac, descripcion, debito, credito, balance, estado, notas',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
-
-      // 12b. Saldos consolidados por cuenta (F8)
-      const { data: bankSaldos } = await db.from('v_bank_saldos_consolidados').select('*')
 
       // 13. Validación Serfinsa diaria (Liquidez Real)
       const serfinsaValid = await fetchAll('serfinsa_validacion_diaria',
@@ -353,7 +354,7 @@ export default function FinanzasDashboard({ user }) {
         v.total_ingresos = eg?.total_ingresos || 0
       })
 
-      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx, bankSaldos: bankSaldos || [], serfinsaValid, depositos, planillaGerencial, obligaciones })
+      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx, serfinsaValid, depositos, planillaGerencial, obligaciones })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -368,16 +369,25 @@ export default function FinanzasDashboard({ user }) {
     if (!data2026) return []
     const monthMap = {}
 
-    const initMonth = () => ({ ventas: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, planilla_gerencial: 0, isss_afp: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
+    const initMonth = () => ({ ventas: 0, propinaCobrada: 0, ventaNeta: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, planilla_gerencial: 0, isss_afp: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
 
-    // Sales
+    // Sales — 5-May-2026: ahora desde v_quanto_ordenes_diario
+    // total_ventas    = con IVA con propina (lo que entró al cliente)
+    // total_sin_iva   = sin IVA con propina
+    // venta_neta      = sin IVA sin propina (sub-fila informativa)
+    // propina_cobrada = propina al 100% (sub-fila informativa, no tributa IVA)
     data2026.ventas.forEach(v => {
       const m = v.fecha?.substring(0, 7) // "2026-01"
       if (!m) return
       if (!monthMap[m]) monthMap[m] = initMonth()
-      const bruto = parseFloat(v.total_ventas_quanto) || ((parseFloat(v.efectivo_quanto) || 0) + (parseFloat(v.tarjeta_quanto) || 0) + (parseFloat(v.otros_quanto) || 0))
-      const total = conIva ? bruto : bruto / 1.13
+      const conIvaTotal = parseFloat(v.total_ventas) || 0
+      const sinIvaTotal = parseFloat(v.total_sin_iva) || 0
+      const total = conIva ? conIvaTotal : sinIvaTotal
+      const propina = parseFloat(v.propina_cobrada) || 0  // propina no tiene IVA, igual con/sin
+      const neta = parseFloat(v.venta_neta) || 0          // sin IVA sin propina
       monthMap[m].ventas += total
+      monthMap[m].propinaCobrada += propina
+      monthMap[m].ventaNeta += conIva ? (neta + parseFloat(v.iva_recaudado || 0)) : neta
       monthMap[m].egresos += (v.total_egresos || 0)
       const sc = v.store_code || 'Otro'
       monthMap[m].bySuc[sc] = (monthMap[m].bySuc[sc] || 0) + total
@@ -412,9 +422,12 @@ export default function FinanzasDashboard({ user }) {
       const peya = conIva ? peyaBruto : peyaBruto / 1.13
       const eventosBruto = eventosByMonth[m] || 0
       const eventos = conIva ? eventosBruto : eventosBruto / 1.13
-      const local = Math.max(0, monthMap[m].ventas - peya - eventos) // Local = Total − PeYa − Eventos
+      const local = Math.max(0, monthMap[m].ventas - peya - eventos) // Local = Total − PeYa − Eventos (incluye propina)
+      const propina = monthMap[m].propinaCobrada || 0
+      const localSinPropina = Math.max(0, local - propina)            // Venta local neta sin propina
       if (!monthMap[m].plSubs.ventas) monthMap[m].plSubs.ventas = {}
-      monthMap[m].plSubs.ventas['🏪 Venta Local (Quanto POS)'] = local
+      monthMap[m].plSubs.ventas['🏪 Venta Local (Quanto POS)'] = localSinPropina
+      if (propina > 0) monthMap[m].plSubs.ventas['💸 Propina cobrada'] = propina
       monthMap[m].plSubs.ventas['🛵 PedidosYa (Delivery)'] = peya
       if (eventos > 0) monthMap[m].plSubs.ventas['🎉 Eventos (cerrados)'] = eventos
     })
@@ -584,7 +597,7 @@ export default function FinanzasDashboard({ user }) {
           </div>
           <span style={{ fontSize: 11, color: conIva ? C.gold : C.textMuted, fontWeight: conIva ? 700 : 400 }}>Con IVA</span>
         </div>
-        <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>Ventas {conIva ? 'con' : 'sin'} IVA · Sin propinas · Fuente: Quanto &gt; Cierres</div>
+        <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>Ventas {conIva ? 'con' : 'sin'} IVA · <strong>Con propina cobrada</strong> · Fuente: quanto_ordenes (DTE)</div>
       </div>
 
       {/* Tab bar */}
@@ -605,7 +618,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
-          {tab === 'banco' && <TabBanco bankTx={data2026?.bankTx} bankSaldos={data2026?.bankSaldos} months2026={months2026} />}
+          {tab === 'banco' && <TabBanco bankTx={data2026?.bankTx} months2026={months2026} />}
           {tab === 'liquidez' && <TabLiquidez data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'peya' && <TabPeya data2026={data2026} conIva={conIva} onRefresh={loadData2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
@@ -1658,7 +1671,7 @@ const ESTADO_CHIP = {
   ignorar: { bg: '#37415122', color: '#9ca3af', label: 'Ignorar' },
 }
 
-function TabBanco({ bankTx, bankSaldos, months2026 }) {
+function TabBanco({ bankTx, months2026 }) {
   const [filtroMes, setFiltroMes] = useState('') // '' = último mes con data
 
   const data = useMemo(() => {
@@ -1719,8 +1732,8 @@ function TabBanco({ bankTx, bankSaldos, months2026 }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.white }}>🏦 Bancos Freakie Dogs (Multi-cuenta)</div>
-          <div style={{ fontSize: 11, color: C.textMuted }}>Estado de cuenta consolidado · BAC operativa + Agrícola cobranza</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.white }}>🏦 Banco BAC #201500451 USD</div>
+          <div style={{ fontSize: 11, color: C.textMuted }}>Estado de cuenta integrado al dashboard financiero</div>
         </div>
         <a href="?ver=banco" style={{
           padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.blue}`,
@@ -1729,34 +1742,9 @@ function TabBanco({ bankTx, bankSaldos, months2026 }) {
         }}>Abrir BancoView →</a>
       </div>
 
-      {/* Saldos por cuenta + consolidado (F8) */}
-      {bankSaldos && bankSaldos.length > 0 && (() => {
-        const saldoTotal = bankSaldos.reduce((s, c) => s + (parseFloat(c.saldo_actual) || 0), 0)
-        return (
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${bankSaldos.length + 1}, 1fr)`, gap: 8, marginBottom: 12 }}>
-            {bankSaldos.map(c => (
-              <div key={c.cuenta_id} style={{ background: '#0f1828', borderRadius: 8, padding: 10, border: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: 10, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>
-                  🏦 {c.banco} · {c.alias}
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: C.white, marginTop: 2 }}>{fmt(c.saldo_actual)}</div>
-                <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>
-                  {c.total_tx} tx · {c.tx_ultimos_30d} en últimos 30d
-                  {c.numero_cuenta === 'PENDIENTE_CONFIRMAR' && <span style={{ color: '#fdba74' }}> · ⚠️ # cuenta sin confirmar</span>}
-                </div>
-              </div>
-            ))}
-            <div style={{ background: 'rgba(96,165,250,0.10)', borderRadius: 8, padding: 10, border: `2px solid ${C.blue}` }}>
-              <div style={{ fontSize: 10, color: C.blue, fontWeight: 700, textTransform: 'uppercase' }}>💰 Saldo Total Consolidado</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: C.blue, marginTop: 2 }}>{fmt(saldoTotal)}</div>
-              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>{bankSaldos.length} cuentas activas</div>
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* KPIs operación bank_tx (todas las cuentas) */}
+      {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <KpiCardBanco label="Saldo actual" value={fmt(data.saldoActual)} sub={data.ultimoMes ? formatMonth(data.ultimoMes.mes) : '—'} color={C.blue} />
         <KpiCardBanco label="Ingresos último mes" value={fmt(data.ultimoMes?.ingresos || 0)} sub={`${data.ultimoMes?.n || 0} transacciones`} color={C.greenLight} />
         <KpiCardBanco label="Egresos último mes" value={fmt(data.ultimoMes?.egresos || 0)} sub={data.ultimoMes ? `Neto ${data.ultimoMes.neto >= 0 ? '+' : ''}${fmt(data.ultimoMes.neto)}` : '—'} color={C.red} />
         <KpiCardBanco label="Cobertura matching" value={`${(data.ultimoMes?.pct_clasif || 0).toFixed(1)}%`} sub={`${data.ultimoMes?.sin_clasif || 0} sin clasificar`} color={(data.ultimoMes?.pct_clasif || 0) >= 80 ? C.greenLight : C.gold} />
