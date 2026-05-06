@@ -43,8 +43,8 @@ import RentabilidadView from './components/admin/RentabilidadView'
 import FinanzasGastosView from './components/finanzas/FinanzasGastosView'
 import FinanzasDashboard from './components/finanzas/FinanzasDashboard'
 import SuperAdminView from './components/admin/SuperAdminView'
+import QuantoUploadView from './components/admin/QuantoUploadView'
 import PagosProveedorView from './components/finanzas/PagosProveedorView'
-import BancoView from './components/finanzas/BancoView'
 import EventosView from './components/eventos/EventosView'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
@@ -291,8 +291,6 @@ export default function App() {
         return <FinanzasDashboard user={user} />
       case 'pagos-proveedor':
         return <PagosProveedorView user={user} />
-      case 'banco':
-        return <BancoView user={user} />
       case 'eventos':
         return <EventosView user={user} />
       case 'delivery':
@@ -305,6 +303,8 @@ export default function App() {
         return <MarketingView user={user} />
       case 'superadmin-panel':
         return <SuperAdminView user={user} />
+      case 'quanto-upload':
+        return <QuantoUploadView user={user} />
 
       default:
         return <HomeScreen user={user} />
