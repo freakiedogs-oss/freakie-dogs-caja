@@ -262,7 +262,7 @@ export default function FinanzasDashboard({ user }) {
       // 2. GASTOS CONSOLIDADOS — une compras_dte + egresos_cierre + compras_sin_dte + descuadres
       //    Ya viene clasificado vía catalogo_contable (JOIN en la vista)
       const gastos = await fetchAll('v_gastos_consolidados',
-        'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
+        'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_gasto_id, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
       // 3. Planilla
@@ -662,10 +662,10 @@ function VentasPorCanal({ ventasRaw, ventaspeya, months2026 }) {
       const m = v.fecha?.substring(0, 7)
       if (!m || !m.startsWith('2026')) return
       if (!byMonth[m]) byMonth[m] = { efectivo: 0, tarjeta: 0, total: 0 }
-      byMonth[m].efectivo += parseFloat(v.efectivo_quanto) || 0
-      byMonth[m].tarjeta  += parseFloat(v.tarjeta_quanto)  || 0
-      byMonth[m].total    += parseFloat(v.total_ventas_quanto) ||
-        ((parseFloat(v.efectivo_quanto)||0) + (parseFloat(v.tarjeta_quanto)||0) + (parseFloat(v.otros_quanto)||0))
+      byMonth[m].efectivo += parseFloat(v.efectivo) || 0
+      byMonth[m].tarjeta  += parseFloat(v.tarjeta)  || 0
+      byMonth[m].total    += parseFloat(v.total_ventas) ||
+        ((parseFloat(v.efectivo)||0) + (parseFloat(v.tarjeta)||0) + (parseFloat(v.otros)||0))
     })
 
     // PeYa por mes (quanto_transacciones, solo positivos = entregados)
@@ -825,7 +825,7 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
         if (!v.fecha || !v.fecha.startsWith(targetKey)) return
         const dia = parseInt(v.fecha.slice(-2), 10)
         if (dia > upToDay) return
-        const bruto = parseFloat(v.total_ventas_quanto) || ((parseFloat(v.efectivo_quanto) || 0) + (parseFloat(v.tarjeta_quanto) || 0) + (parseFloat(v.otros_quanto) || 0))
+        const bruto = parseFloat(v.total_ventas) || ((parseFloat(v.efectivo) || 0) + (parseFloat(v.tarjeta) || 0) + (parseFloat(v.otros) || 0))
         if (!v.store_code) return
         acc[v.store_code] = (acc[v.store_code] || 0) + bruto
       })
@@ -1364,9 +1364,9 @@ function TabLiquidez({ data2026, months2026, conIva }) {
       const m = v.fecha?.substring(0, 7)
       if (!m) return
       if (!posByMonth[m]) posByMonth[m] = { tarjeta: 0, efectivo: 0, peya: 0, otros: 0 }
-      posByMonth[m].tarjeta  += adj(parseFloat(v.tarjeta_quanto)  || 0)
-      posByMonth[m].efectivo += adj(parseFloat(v.efectivo_quanto) || 0)
-      posByMonth[m].otros    += adj(parseFloat(v.otros_quanto)    || 0)
+      posByMonth[m].tarjeta  += adj(parseFloat(v.tarjeta)  || 0)
+      posByMonth[m].efectivo += adj(parseFloat(v.efectivo) || 0)
+      posByMonth[m].otros    += adj(parseFloat(v.otros)    || 0)
     })
     ;(data2026.ventaspeya || []).forEach(v => {
       const m = v.fecha?.substring(0, 7)
