@@ -286,9 +286,17 @@ export default function FinanzasDashboard({ user }) {
         q => q.ilike('proveedor_nombre', '%delivery hero%').gte('fecha_emision', '2026-01-01').order('fecha_emision'))
 
       // 6. Transacciones PeYa individuales (para tab PEYA — ventas brutas por semana/sucursal)
-      const ventaspeya = await fetchAll('quanto_transacciones',
-        'fecha, store_code, total',
-        q => q.eq('metodo_pago', 'PedidosYa').gte('fecha', '2026-01-01').order('fecha'))
+      // 5-May-2026: cambiamos fuente a pedidos_peya (la tabla "verdad" de PeYa)
+      // porque quanto_transacciones fue archivada en Fase 6.
+      const ventaspeyaRaw = await fetchAll('pedidos_peya',
+        'fecha_pedido, store_code, total_pedido, estado',
+        q => q.eq('estado', 'Entregado').gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
+      // Normalizar shape para que el resto del código siga usando v.fecha + v.total
+      const ventaspeya = ventaspeyaRaw.map(v => ({
+        fecha: v.fecha_pedido,
+        store_code: v.store_code,
+        total: v.total_pedido,
+      }))
 
       // 7. Liquidaciones semanales PeYa (ingresadas manualmente)
       const peya_liq = await fetchAll('peya_liquidaciones', 'id, semana_inicio, semana_fin, fecha_deposito, monto_depositado, notas', null)
