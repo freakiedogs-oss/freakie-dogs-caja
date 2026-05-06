@@ -416,20 +416,28 @@ export default function FinanzasDashboard({ user }) {
       const totalAdj = conIva ? total : total / 1.13
       monthMap[m].ventas += totalAdj
     })
+    // 5-May-2026: PeYa también debe sumar al total (porque quanto_ordenes excluye PeYa
+    // a diferencia de la vista vieja v_ventas_unificadas que sí la incluía)
+    Object.entries(peyaByMonth).forEach(([m, total]) => {
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      const totalAdj = conIva ? total : total / 1.13
+      monthMap[m].ventas += totalAdj
+    })
     // Acumular subcategorías de venta por mes
     Object.keys(monthMap).forEach(m => {
       const peyaBruto = peyaByMonth[m] || 0
       const peya = conIva ? peyaBruto : peyaBruto / 1.13
       const eventosBruto = eventosByMonth[m] || 0
       const eventos = conIva ? eventosBruto : eventosBruto / 1.13
-      const local = Math.max(0, monthMap[m].ventas - peya - eventos) // Local = Total − PeYa − Eventos (incluye propina)
+      // local ya es Quanto puro CON propina (gracias a v_quanto_ordenes_diario)
+      const local = Math.max(0, monthMap[m].ventas - peya - eventos)
       const propina = monthMap[m].propinaCobrada || 0
-      const localSinPropina = Math.max(0, local - propina)            // Venta local neta sin propina
       if (!monthMap[m].plSubs.ventas) monthMap[m].plSubs.ventas = {}
-      monthMap[m].plSubs.ventas['🏪 Venta Local (Quanto POS)'] = localSinPropina
-      if (propina > 0) monthMap[m].plSubs.ventas['💸 Propina cobrada'] = propina
+      monthMap[m].plSubs.ventas['🏪 Venta Local (Quanto POS)'] = local      // ← incluye propina
       monthMap[m].plSubs.ventas['🛵 PedidosYa (Delivery)'] = peya
       if (eventos > 0) monthMap[m].plSubs.ventas['🎉 Eventos (cerrados)'] = eventos
+      // Propina cobrada como sub-fila INFORMATIVA (ya está incluida en Venta Local arriba)
+      if (propina > 0) monthMap[m].plSubs.ventas['ℹ️ Propina cobrada (incluida en Venta Local)'] = propina
     })
 
     // GASTOS CONSOLIDADOS — clasificados vía categorias_gasto + catalogo_contable
@@ -1145,32 +1153,39 @@ function TabEstadoResultados({ months2026 }) {
                   </td>
                 </tr>
                 {/* Filas hijas si está expandido */}
-                {hasSubs && isExp && Object.entries(subsByCategory[line.key]).map(([sub, info]) => (
+                {hasSubs && isExp && Object.entries(subsByCategory[line.key]).map(([sub, info]) => {
+                  // Sub-filas informativas (prefijo ℹ️) — NO se suman al total, se muestran en gris
+                  const esInfo = sub.startsWith('ℹ️')
+                  const colorTxt = esInfo ? '#64748b' : '#94a3b8'
+                  const colorVal = esInfo ? '#64748b' : '#cbd5e1'
+                  return (
                   <tr key={`${line.key}-${sub}`} style={{ background: '#0f1828' }}>
                     <td style={{
                       ...sTdL, paddingLeft: 36,
-                      color: '#94a3b8', fontSize: 10, fontStyle: 'italic',
+                      color: colorTxt, fontSize: 10, fontStyle: 'italic',
                       position: 'sticky', left: 0, background: '#0f1828', zIndex: 1,
                       boxShadow: '2px 0 4px rgba(0,0,0,0.3)',
+                      opacity: esInfo ? 0.75 : 1,
                     }}>
                       ↳ {sub}
                     </td>
                     {allMonths.map((m, i) => {
                       const v = info.perMonth[m.key] || 0
                       return (
-                        <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#cbd5e1' : '#475569' }}>
+                        <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? colorVal : '#475569', opacity: esInfo ? 0.75 : 1 }}>
                           {v ? fmt(v) : '—'}
                         </td>
                       )
                     })}
-                    <td style={{ ...sTd(), fontSize: 10, color: '#cbd5e1', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>
+                    <td style={{ ...sTd(), fontSize: 10, color: colorVal, fontWeight: esInfo ? 400 : 700, borderLeft: `1px solid ${C.border}`, opacity: esInfo ? 0.75 : 1 }}>
                       {fmt(info.total)}
                     </td>
-                    <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>
-                      {totals[line.key] ? pct(info.total / totals[line.key]) : '—'}
+                    <td style={{ ...sTd(), fontSize: 10, color: C.textMuted, opacity: esInfo ? 0.75 : 1 }}>
+                      {esInfo ? '—' : (totals[line.key] ? pct(info.total / totals[line.key]) : '—')}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
                 </React.Fragment>
               )
             })}
