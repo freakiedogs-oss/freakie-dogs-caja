@@ -6,8 +6,7 @@ import ReporteForm from './components/caja/ReporteForm'
 import Deposito from './components/caja/Deposito'
 import AdminView from './components/admin/AdminView'
 import IncidentesDash from './components/admin/IncidentesDash'
-import DashboardVentas from './components/dashboard/DashboardVentas'
-import DashboardEjecutivo from './components/dashboard/DashboardEjecutivo'
+import KpisVentaDashboard from './components/dashboard/KpisVentaDashboard'
 import ConteoNocturno from './components/supply-chain/ConteoNocturno'
 import ConfirmarEntrega from './components/supply-chain/ConfirmarEntrega'
 import MisPedidosView from './components/supply-chain/MisPedidosView'
@@ -31,7 +30,6 @@ import MarketingView from './components/marketing/MarketingView'
 import IncidentesProduccion from './components/produccion/IncidentesProduccion'
 import DevolucionesView from './components/produccion/DevolucionesView'
 import InventarioDashboard from './components/dashboard/InventarioDashboard'
-import VentasDashboard from './components/dashboard/VentasDashboard'
 import MiAsistencia from './components/empleado/MiAsistencia'
 import MiBoleta from './components/empleado/MiBoleta'
 import HorariosView from './components/rrhh/HorariosView'
@@ -53,10 +51,10 @@ import { STORES, NAV_SECTIONS } from './config'
 const ROLE_DEFAULTS = {
   cajero: ['cierre', 'reporte', 'deposito', 'conteo'],
   cajera: ['cierre', 'reporte', 'deposito', 'conteo'],
-  gerente: ['cierre', 'reporte', 'incidentes', 'conteo', 'horarios'],
-  admin: ['admin', 'ejecutivo', 'recepcion', 'despacho'],
-  ejecutivo: ['ejecutivo', 'finanzas-dashboard', 'ventas-dash', 'rentabilidad', 'superadmin-panel'],
-  superadmin: ['superadmin-panel', 'ejecutivo', 'finanzas-dashboard', 'admin'],
+  gerente: ['cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta'],
+  admin: ['admin', 'kpis-venta', 'recepcion', 'despacho'],
+  ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
+  superadmin: ['superadmin-panel', 'kpis-venta', 'finanzas-dashboard', 'admin'],
   bodeguero: ['recepcion', 'despacho', 'inventario', 'historial'],
   jefe_casa_matriz: ['recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
   cocina: ['conteo', 'reporte', 'devoluciones'],
@@ -160,7 +158,7 @@ function HomeScreen({ user, onNavigate }) {
       </div>
 
       <div style={{ marginTop: 16, fontSize: 11, color: '#333', textAlign: 'center' }}>
-        Freakie Dogs ERP v2.0 — Vite + React
+        Freakie Dogs ERP v2.3 — Vite + React
       </div>
     </div>
   )
@@ -215,10 +213,8 @@ export default function App() {
         return <Deposito user={user} onBack={() => setScreen('home')} />
 
       // Dashboards
-      case 'dashboard':
-        return <DashboardVentas user={user} onBack={() => setScreen('home')} />
-      case 'ejecutivo':
-        return <DashboardEjecutivo user={user} onBack={() => setScreen('home')} />
+      case 'kpis-venta':
+        return <KpisVentaDashboard user={user} onBack={() => setScreen('home')} />
 
       // Almacén
       case 'recepcion':
@@ -295,8 +291,6 @@ export default function App() {
         return <EventosView user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
-      case 'ventas-dash':
-        return <VentasDashboard user={user} onBack={() => setScreen('home')} />
       case 'inventario-dash':
         return <InventarioDashboard user={user} onBack={() => setScreen('home')} />
       case 'marketing':

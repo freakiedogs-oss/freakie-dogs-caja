@@ -1,4 +1,4 @@
-export const APP_VERSION = 'v2.2.6 · 18-Abr-2026 (fix proxy Supabase /sb rewrites)'
+export const APP_VERSION = 'v2.3.0 · 5-May-2026 (KPIs de Venta dashboard)'
 
 export const STORES = {
   M001: 'Cafetalón',
@@ -58,9 +58,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Dashboards',
     items: [
-      { key: 'dashboard', label: 'Ventas', icon: '📊', roles: ['gerente', 'admin', 'ejecutivo'] },
-      { key: 'ejecutivo', label: 'Ejecutivo', icon: '👔', roles: ['ejecutivo', 'admin'] },
-      { key: 'ventas-dash', label: 'Ventas Diarias', icon: '📊', roles: ['ejecutivo', 'admin'] },
+      { key: 'kpis-venta', label: 'KPIs de Venta', icon: '📊', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'inventario-dash', label: 'Inventario Global', icon: '📦', roles: ['ejecutivo', 'admin'] },
     ],
   },
