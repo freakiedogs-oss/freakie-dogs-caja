@@ -1,52 +1,55 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, lazy, Suspense } from 'react'
 import Sidebar from './components/layout/Sidebar'
 import LoginScreen from './components/layout/LoginScreen'
-import CierreForm from './components/caja/CierreForm'
-import ReporteForm from './components/caja/ReporteForm'
-import Deposito from './components/caja/Deposito'
-import AdminView from './components/admin/AdminView'
-import IncidentesDash from './components/admin/IncidentesDash'
-import KpisVentaDashboard from './components/dashboard/KpisVentaDashboard'
-import ConteoNocturno from './components/supply-chain/ConteoNocturno'
-import ConfirmarEntrega from './components/supply-chain/ConfirmarEntrega'
-import MisPedidosView from './components/supply-chain/MisPedidosView'
-import RecepcionTab from './components/almacen/RecepcionTab'
-import DespachoTab from './components/almacen/DespachoTab'
-import InventarioTab from './components/almacen/InventarioTab'
-import HistorialTab from './components/almacen/HistorialTab'
-import StockLevelsView from './components/almacen/StockLevelsView'
-import InventarioFisico from './components/almacen/InventarioFisico'
-import ComprasTab from './components/almacen/ComprasTab'
-import KardexView from './components/almacen/KardexView'
-import RecepcionBeesView from './components/almacen/RecepcionBeesView'
-import RecetasView from './components/admin/RecetasView'
-import PlanillaView from './components/admin/PlanillaView'
-import RRHHView from './components/admin/RRHHView'
-import RecibosDigitales from './components/rrhh/RecibosDigitales'
-import ProduccionDiaria from './components/admin/ProduccionDiaria'
-import ConciliacionView from './components/admin/ConciliacionView'
-import DeliveryView from './components/delivery/DeliveryView'
-import MarketingView from './components/marketing/MarketingView'
-import IncidentesProduccion from './components/produccion/IncidentesProduccion'
-import DevolucionesView from './components/produccion/DevolucionesView'
-import InventarioDashboard from './components/dashboard/InventarioDashboard'
-import MiAsistencia from './components/empleado/MiAsistencia'
-import MiBoleta from './components/empleado/MiBoleta'
-import HorariosView from './components/rrhh/HorariosView'
-import Amonestaciones from './components/rrhh/Amonestaciones'
-import PropinasView from './components/rrhh/PropinasView'
-import PendientesView from './components/admin/PendientesView'
-import DTEMapeoView from './components/admin/DTEMapeoView'
-import RentabilidadView from './components/admin/RentabilidadView'
-import FinanzasGastosView from './components/finanzas/FinanzasGastosView'
-import FinanzasDashboard from './components/finanzas/FinanzasDashboard'
-import BancoView from './components/finanzas/BancoView'
-import SuperAdminView from './components/admin/SuperAdminView'
-import QuantoUploadView from './components/admin/QuantoUploadView'
-import PagosProveedorView from './components/finanzas/PagosProveedorView'
-import EventosView from './components/eventos/EventosView'
+import LoadingScreen from './components/layout/LoadingScreen'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
+
+// ── Lazy imports — cada ruta carga su chunk sólo cuando se navega ──
+const CierreForm         = lazy(() => import('./components/caja/CierreForm'))
+const ReporteForm        = lazy(() => import('./components/caja/ReporteForm'))
+const Deposito           = lazy(() => import('./components/caja/Deposito'))
+const AdminView          = lazy(() => import('./components/admin/AdminView'))
+const IncidentesDash     = lazy(() => import('./components/admin/IncidentesDash'))
+const KpisVentaDashboard = lazy(() => import('./components/dashboard/KpisVentaDashboard'))
+const ConteoNocturno     = lazy(() => import('./components/supply-chain/ConteoNocturno'))
+const ConfirmarEntrega   = lazy(() => import('./components/supply-chain/ConfirmarEntrega'))
+const MisPedidosView     = lazy(() => import('./components/supply-chain/MisPedidosView'))
+const RecepcionTab       = lazy(() => import('./components/almacen/RecepcionTab'))
+const DespachoTab        = lazy(() => import('./components/almacen/DespachoTab'))
+const InventarioTab      = lazy(() => import('./components/almacen/InventarioTab'))
+const HistorialTab       = lazy(() => import('./components/almacen/HistorialTab'))
+const StockLevelsView    = lazy(() => import('./components/almacen/StockLevelsView'))
+const InventarioFisico   = lazy(() => import('./components/almacen/InventarioFisico'))
+const ComprasTab         = lazy(() => import('./components/almacen/ComprasTab'))
+const KardexView         = lazy(() => import('./components/almacen/KardexView'))
+const RecepcionBeesView  = lazy(() => import('./components/almacen/RecepcionBeesView'))
+const RecetasView        = lazy(() => import('./components/admin/RecetasView'))
+const PlanillaView       = lazy(() => import('./components/admin/PlanillaView'))
+const RRHHView           = lazy(() => import('./components/admin/RRHHView'))
+const RecibosDigitales   = lazy(() => import('./components/rrhh/RecibosDigitales'))
+const ProduccionDiaria   = lazy(() => import('./components/admin/ProduccionDiaria'))
+const ConciliacionView   = lazy(() => import('./components/admin/ConciliacionView'))
+const DeliveryView       = lazy(() => import('./components/delivery/DeliveryView'))
+const MarketingView      = lazy(() => import('./components/marketing/MarketingView'))
+const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
+const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
+const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
+const MiAsistencia       = lazy(() => import('./components/empleado/MiAsistencia'))
+const MiBoleta           = lazy(() => import('./components/empleado/MiBoleta'))
+const HorariosView       = lazy(() => import('./components/rrhh/HorariosView'))
+const Amonestaciones     = lazy(() => import('./components/rrhh/Amonestaciones'))
+const PropinasView       = lazy(() => import('./components/rrhh/PropinasView'))
+const PendientesView     = lazy(() => import('./components/admin/PendientesView'))
+const DTEMapeoView       = lazy(() => import('./components/admin/DTEMapeoView'))
+const RentabilidadView   = lazy(() => import('./components/admin/RentabilidadView'))
+const FinanzasGastosView = lazy(() => import('./components/finanzas/FinanzasGastosView'))
+const FinanzasDashboard  = lazy(() => import('./components/finanzas/FinanzasDashboard'))
+const BancoView          = lazy(() => import('./components/finanzas/BancoView'))
+const SuperAdminView     = lazy(() => import('./components/admin/SuperAdminView'))
+const QuantoUploadView   = lazy(() => import('./components/admin/QuantoUploadView'))
+const PagosProveedorView = lazy(() => import('./components/finanzas/PagosProveedorView'))
+const EventosView        = lazy(() => import('./components/eventos/EventosView'))
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
@@ -317,7 +320,9 @@ export default function App() {
         onLogout={handleLogout}
       />
       <div className="main-content with-sidebar">
-        {renderScreen()}
+        <Suspense fallback={<LoadingScreen />}>
+          {renderScreen()}
+        </Suspense>
       </div>
       <Toast />
     </div>
