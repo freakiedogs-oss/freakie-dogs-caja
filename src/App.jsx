@@ -40,6 +40,7 @@ import DTEMapeoView from './components/admin/DTEMapeoView'
 import RentabilidadView from './components/admin/RentabilidadView'
 import FinanzasGastosView from './components/finanzas/FinanzasGastosView'
 import FinanzasDashboard from './components/finanzas/FinanzasDashboard'
+import BancoView from './components/finanzas/BancoView'
 import SuperAdminView from './components/admin/SuperAdminView'
 import QuantoUploadView from './components/admin/QuantoUploadView'
 import PagosProveedorView from './components/finanzas/PagosProveedorView'
@@ -285,6 +286,8 @@ export default function App() {
         return <FinanzasGastosView user={user} />
       case 'finanzas-dashboard':
         return <FinanzasDashboard user={user} />
+      case 'banco':
+        return <BancoView user={user} />
       case 'pagos-proveedor':
         return <PagosProveedorView user={user} />
       case 'eventos':
