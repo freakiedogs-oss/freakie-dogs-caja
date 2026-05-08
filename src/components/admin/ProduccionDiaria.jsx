@@ -94,7 +94,7 @@ export default function ProduccionDiaria({ user }) {
     setError(null);
     try {
       const [rRes, iRes, cRes, invRes, empRes] = await Promise.all([
-        db.from('recetas').select('*').eq('activo', true).order('nombre'),
+        db.from('recetas').select('id,nombre,tipo,rendimiento,unidad_rendimiento,costo_calculado,activo').eq('activo', true).order('nombre'),
         db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,costo_calculado)'),
         db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).order('nombre'),
         db.from('inventario').select('producto_id,stock_actual').eq('sucursal_id', CM_SUCURSAL_ID),

@@ -223,7 +223,7 @@ function TabMenu({ user, evento, show }) {
   const [customPrice, setCustomPrice] = useState('');
 
   const fetchMenu = useCallback(async () => {
-    const { data } = await db.from('evento_menu').select('*').eq('evento_id', evento.id).order('orden');
+    const { data } = await db.from('evento_menu').select('id,nombre,precio,activo,orden').eq('evento_id', evento.id).order('orden');
     setMenuItems(data || []);
   }, [evento.id]);
 
@@ -482,7 +482,7 @@ function TabVenta({ user, evento, show, onRefresh }) {
   const [showHist, setShowHist] = useState(false);
 
   const fetchMenu = useCallback(async () => {
-    const { data } = await db.from('evento_menu').select('*').eq('evento_id', evento.id).eq('activo', true).order('orden');
+    const { data } = await db.from('evento_menu').select('id,nombre,precio,activo,orden').eq('evento_id', evento.id).eq('activo', true).order('orden');
     setMenuItems(data || []);
   }, [evento.id]);
 
@@ -756,7 +756,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
   const [efectivoCambio, setEfectivoCambio] = useState(String(evento.efectivo_cambio || 0));
 
   const fetchVentas = useCallback(async () => {
-    const { data } = await db.from('evento_ventas').select('*').eq('evento_id', evento.id).eq('anulada', false);
+    const { data } = await db.from('evento_ventas').select('id,evento_id,total,metodo_pago,anulada,created_at,items:evento_venta_items(id,menu:evento_menu(nombre))').eq('evento_id', evento.id).eq('anulada', false);
     setVentas(data || []);
   }, [evento.id]);
 
@@ -773,7 +773,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
   }, []);
 
   const fetchMotivos = useCallback(async () => {
-    const { data } = await db.from('motivos_egreso').select('*').eq('activo', true).order('nombre');
+    const { data } = await db.from('motivos_egreso').select('id,nombre,requiere_persona,requiere_comentario,orden').eq('activo', true).order('nombre');
     setMotEg(data || []);
   }, []);
 
@@ -783,7 +783,7 @@ function TabCierre({ user, evento, show, onRefresh }) {
   }, []);
 
   const fetchEgresosDB = useCallback(async () => {
-    const { data } = await db.from('evento_egresos').select('*').eq('evento_id', evento.id).order('created_at');
+    const { data } = await db.from('evento_egresos').select('id,evento_id,motivo_nombre,monto,persona_recibe,comentario,created_at').eq('evento_id', evento.id).order('created_at');
     setEgresosDB(data || []);
   }, [evento.id]);
 

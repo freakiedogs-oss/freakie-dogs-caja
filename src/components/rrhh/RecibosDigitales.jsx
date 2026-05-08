@@ -173,7 +173,7 @@ export default function RecibosDigitales({ user, onBack }) {
     (async () => {
       setLoading(true);
       const { data } = await db.from('planillas')
-        .select('*')
+        .select('id,periodo,fecha_inicio,fecha_fin,fecha_pago,estado,total_neto')
         .in('estado', ['calculada', 'aprobada', 'pagada'])
         .order('fecha_inicio', { ascending: false });
       setPlanillas(data || []);

@@ -17,7 +17,7 @@ export default function RecepcionTab({user,show}){
   const cargar=async()=>{
     setLoading(true);
     const {data}=await db.from('recepciones')
-      .select('*')
+      .select('id,fecha,proveedor,estado,dte_codigo,monto_estimado,notas,origen,foto_dte_url')
       .in('estado',['pendiente','en_proceso','por_confirmar'])
       .eq('tipo_recepcion','bodega_proveedor')
       .order('created_at',{ascending:false});
@@ -151,13 +151,13 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
     setProveedorSearch(p.nombre);
     setShowProvSearch(false);
     // Buscar OC aprobada para este proveedor
-    const {data:ocs}=await db.from('ordenes_compra').select('*')
+    const {data:ocs}=await db.from('ordenes_compra').select('id,numero_oc,proveedor,estado,fecha_aprobacion,total_estimado')
       .eq('proveedor_id',p.id).eq('estado','aprobada')
       .order('fecha_aprobacion',{ascending:false}).limit(1);
     if(ocs&&ocs.length>0){
       const oc=ocs[0];
       // Cargar items de la OC
-      const {data:ocItems}=await db.from('ordenes_compra_items').select('*').eq('orden_id',oc.id);
+      const {data:ocItems}=await db.from('ordenes_compra_items').select('id,orden_id,descripcion,cantidad_solicitada,precio_unitario_estimado,nombre,unidad').eq('orden_id',oc.id);
       if(ocItems&&ocItems.length>0){
         setOcVinculada(oc);
         setItems(ocItems.map(it=>({
@@ -468,7 +468,7 @@ function RecepcionDetalle({rec,user,show,onBack}){
   const fRef=useRef();
 
   useEffect(()=>{
-    db.from('recepcion_items').select('*').eq('recepcion_id',rec.id)
+    db.from('recepcion_items').select('id,recepcion_id,producto_id,descripcion,cantidad,cantidad_recibida,precio_unitario,subtotal,unidad').eq('recepcion_id',rec.id)
       .then(({data})=>{ setItems((data||[]).map(it=>({...it,qty_input:String(it.cantidad_recibida)}))); setLoading(false); });
   },[rec.id]);
 

@@ -111,11 +111,11 @@ export default function MiAsistencia({ user }) {
       setSucursal(suc);
 
       const { data: hoyData } = await db.from('asistencia')
-        .select('*').eq('usuario_id', user.id).eq('fecha', hoy).maybeSingle();
+        .select('id,fecha,hora_entrada,hora_salida,distancia_entrada_m,distancia_salida_m,fuera_geofence,usuario_id').eq('usuario_id', user.id).eq('fecha', hoy).maybeSingle();
       setTodayRecord(hoyData);
 
       const { data: hist } = await db.from('asistencia')
-        .select('*').eq('usuario_id', user.id)
+        .select('id,fecha,hora_entrada,hora_salida,distancia_entrada_m,fuera_geofence,sucursal').eq('usuario_id', user.id)
         .order('fecha', { ascending: false }).limit(14);
       setHistorial(hist || []);
     } catch (e) { console.error(e); }
@@ -130,7 +130,7 @@ export default function MiAsistencia({ user }) {
     try {
       // Traer plantillas (semana_inicio IS NULL) + overrides de la semana visible
       const { data } = await db.from('horarios_empleados')
-        .select('*')
+        .select('id,usuario_id,dia_semana,turno,hora_inicio,hora_fin,tramos,es_plantilla,semana_inicio')
         .eq('usuario_id', user.id)
         .or(`es_plantilla.eq.true,semana_inicio.eq.${lunesVisible}`)
         .order('dia_semana')

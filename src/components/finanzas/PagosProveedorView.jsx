@@ -1048,7 +1048,7 @@ export default function PagosProveedorView({ user }) {
 
       // CxP materialized view
       const { data: cxpData } = await db.from('v_cuentas_por_pagar')
-        .select('*')
+        .select('proveedor_nombre,saldo_pendiente,facturas_pendientes,facturas_vencidas,monto_vencido,proximo_vencimiento')
         .order('saldo_pendiente', { ascending: false })
       setCxp(cxpData || [])
 

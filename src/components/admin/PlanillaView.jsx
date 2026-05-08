@@ -85,7 +85,7 @@ export default function PlanillaView({ user }) {
   // ── Cargar datos base ──
   const cargarPlanillas = useCallback(async () => {
     setLoading(true);
-    const res = await db.from('planillas').select('*').order('fecha_inicio', { ascending: false });
+    const res = await db.from('planillas').select('id,periodo,fecha_inicio,fecha_fin,estado,total_neto').order('fecha_inicio', { ascending: false });
     setPlanillas(res.data || []);
     setLoading(false);
   }, []);

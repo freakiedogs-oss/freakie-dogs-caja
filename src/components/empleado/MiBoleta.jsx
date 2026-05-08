@@ -30,7 +30,7 @@ export default function MiBoleta({ user }) {
 
         if (emp) {
           const { data } = await db.from('recibos_pago')
-            .select('*')
+            .select('id,empleado_id,periodo,estado,neto,salario_base,horas_extra,bonificaciones,propinas,isss,afp,renta,otros_descuentos')
             .eq('empleado_id', emp.id)
             .order('periodo', { ascending: false })
             .limit(12);

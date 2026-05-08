@@ -33,7 +33,7 @@ export default function RecetasView({ user }) {
   const cargar = useCallback(async () => {
     setLoading(true);
     const [rRes, iRes, cRes] = await Promise.all([
-      db.from('recetas').select('*').eq('activo', true).order('tipo').order('nombre'),
+      db.from('recetas').select('id,nombre,tipo,categoria,rendimiento,unidad_rendimiento,precio_venta,notas,activo,costo_calculado').eq('activo', true).order('tipo').order('nombre'),
       db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,costo_calculado)'),
       db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).order('nombre'),
     ]);

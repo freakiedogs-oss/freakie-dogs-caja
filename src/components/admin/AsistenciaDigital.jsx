@@ -304,11 +304,11 @@ function CorreccionesPanel({ sucursales, user }) {
     if (!empleadoPin) return;
     setBuscando(true);
     setEmpleado(null);
-    const { data } = await db.from('usuarios_erp').select('*').eq('pin', empleadoPin).maybeSingle();
+    const { data } = await db.from('usuarios_erp').select('id,nombre,apellido,pin,rol,store_code').eq('pin', empleadoPin).maybeSingle();
     setEmpleado(data || false);
     if (data) {
       const { data: regs } = await db.from('asistencia')
-        .select('*').eq('usuario_id', data.id)
+        .select('id,fecha,hora_entrada,hora_salida,distancia_entrada_m,fuera_geofence,usuario_id').eq('usuario_id', data.id)
         .order('fecha', { ascending: false }).limit(10);
       setRegistros(regs || []);
     }

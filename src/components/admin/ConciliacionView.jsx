@@ -48,24 +48,24 @@ export default function ConciliacionView({ user, onBack }) {
     try {
       const [sRes, vRes, cRes, aRes] = await Promise.all([
         db.from('serfinsa_detalle_diario')
-          .select('*')
+          .select('fecha,sucursal_id,sucursal_nombre,monto_serfinsa,monto_quanto,diferencia,estado')
           .gte('fecha', fechaIni)
           .lte('fecha', fechaFin)
           .order('fecha', { ascending: false })
           .order('sucursal_id'),
         db.from('serfinsa_validacion_diaria')
-          .select('*')
+          .select('fecha,sucursal_id,estado,diferencia,notas')
           .gte('fecha', fechaIni)
           .lte('fecha', fechaFin)
           .order('fecha', { ascending: false }),
         db.from('compras_dte')
-          .select('*')
+          .select('id,fecha,proveedor,numero_dte,monto,match_status')
           .gte('fecha', dteFechaIni)
           .lte('fecha', dteFechaFin)
           .order('fecha', { ascending: false })
           .order('numero_dte'),
         db.from('v_ajustes_cruce_resumen')
-          .select('*')
+          .select('fecha,tipo_ajuste,monto,descripcion')
           .gte('fecha', mesResumen + '-01')
           .lt('fecha', shiftDate(mesResumen + '-01', 32).slice(0, 7) + '-01'),
       ]);

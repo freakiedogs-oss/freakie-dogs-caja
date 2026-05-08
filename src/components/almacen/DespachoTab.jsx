@@ -117,7 +117,7 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
   const cargarItems=async()=>{
     setLoadingItems(true);
     try{
-      const {data}=await db.from('despacho_items').select('*').eq('despacho_id',despacho.id);
+      const {data}=await db.from('despacho_items').select('id,despacho_id,producto_id,descripcion,cantidad_solicitada,cantidad_despachada,unidad,unidad_medida').eq('despacho_id',despacho.id);
       setItems(data||[]);
     }catch(e){show('❌ '+e.message);}
     setLoadingItems(false);

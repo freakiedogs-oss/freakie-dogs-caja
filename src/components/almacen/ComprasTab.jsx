@@ -12,7 +12,7 @@ export default function ComprasTab({user,show}){
 
   const cargar=()=>{
     setLoading(true);
-    db.from('ordenes_compra').select('*')
+    db.from('ordenes_compra').select('id,numero_oc,proveedor,estado,fecha_emision,fecha_entrega_esperada,fecha_aprobacion,total_estimado,total_items,notas,recepcion_id')
       .order('created_at',{ascending:false}).limit(30)
       .then(({data})=>{setOrdenes(data||[]);setLoading(false);});
   };
@@ -260,7 +260,7 @@ function DetalleOC({oc,user,show,onBack}){
   const [estado,setEstado]=useState(oc.estado);
 
   useEffect(()=>{
-    db.from('ordenes_compra_items').select('*').eq('orden_id',oc.id)
+    db.from('ordenes_compra_items').select('id,orden_id,descripcion,cantidad_solicitada,cantidad_recibida,precio_unitario_estimado,nombre,unidad,stock_actual_al_crear').eq('orden_id',oc.id)
       .order('created_at').then(({data})=>{setItems(data||[]);setLoading(false);});
   },[]);
 

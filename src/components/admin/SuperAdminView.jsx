@@ -49,7 +49,7 @@ export default function SuperAdminView({ user }) {
   const cargarUsuarios = useCallback(async () => {
     setLoadingUsers(true);
     const { data } = await db.from('usuarios_erp')
-      .select('*')
+      .select('id,nombre,apellido,pin,rol,store_code,activo')
       .order('nombre');
     setUsuarios(data || []);
     setLoadingUsers(false);

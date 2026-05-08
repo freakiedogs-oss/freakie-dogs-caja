@@ -483,12 +483,12 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
 
   useEffect(() => {
     db.from('motivos_egreso')
-      .select('*')
+      .select('id,nombre,requiere_persona,requiere_comentario,requiere_foto,orden')
       .eq('activo', true)
       .order('orden')
       .then(({ data }) => setMotEg(data || []));
     db.from('motivos_ingreso')
-      .select('*')
+      .select('id,nombre,requiere_evento,requiere_comentario,orden')
       .eq('activo', true)
       .order('orden')
       .then(({ data }) => setMotIn(data || []));
@@ -515,10 +515,10 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       // Limpiar state antes de cargar para evitar duplicados
       setEgresos([]); setIngresos([]); setAjustes([]); setDepInfo(null);
       Promise.all([
-        db.from('egresos_cierre').select('*').eq('cierre_id', existingCierre.id),
-        db.from('ingresos_cierre').select('*').eq('cierre_id', existingCierre.id),
-        db.from('ajustes_metodo').select('*').eq('cierre_id', existingCierre.id),
-        db.from('depositos_bancarios').select('*').eq('store_code', existingCierre.store_code).contains('dias_cubiertos', [existingCierre.fecha]).limit(1),
+        db.from('egresos_cierre').select('id,cierre_id,motivo_id,motivo_nombre,monto,persona_recibe,comentario,foto_url,empleado_id').eq('cierre_id', existingCierre.id),
+        db.from('ingresos_cierre').select('id,cierre_id,motivo_id,motivo_nombre,monto,nombre_evento,comentario').eq('cierre_id', existingCierre.id),
+        db.from('ajustes_metodo').select('id,cierre_id,de_metodo,a_metodo,monto,nota').eq('cierre_id', existingCierre.id),
+        db.from('depositos_bancarios').select('id,monto,monto_esperado,diferencia_deposito,estado,fotos_urls,notas').eq('store_code', existingCierre.store_code).contains('dias_cubiertos', [existingCierre.fecha]).limit(1),
       ]).then(([eg, ing, aj, dep]) => {
         // Deduplicar por id para prevenir duplicados
         const dedupe = (arr) => { const seen = new Set(); return (arr||[]).filter(r => r.id && !seen.has(r.id) && seen.add(r.id)); };

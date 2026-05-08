@@ -131,7 +131,7 @@ export default function DevOpsTab() {
   const loadLog = useCallback(async () => {
     const { data } = await db
       .from('devops_log')
-      .select('*')
+      .select('id,accion,resultado,categoria,detalle,created_at')
       .order('created_at', { ascending: false })
       .limit(50);
     setLogEntries(data || []);
@@ -511,7 +511,7 @@ export default function DevOpsTab() {
     try {
       const { data, error } = await db
         .from('v_cobertura_cruce')
-        .select('*')
+        .select('pct_dtes_con_recepcion,pct_recepciones_con_dte,total_dtes_,total_recepciones_,dtes_huerfanos,recepciones_huerfanas')
         .single();
 
       if (error) throw new Error(error.message);

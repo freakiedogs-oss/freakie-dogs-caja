@@ -158,7 +158,7 @@ export default function PropinasView({ user }) {
     // Evaluación existente para ese mes + sucursal
     const { data: eval_ } = await db
       .from('propina_evaluacion_mensual')
-      .select('*')
+      .select('id,mes,sucursal_id,estado,propina_total_mes,num_beneficiarios,pct_reparto,evaluada_por,fecha_evaluacion')
       .eq('mes', mesEval)
       .eq('sucursal_id', sucursal.id)
       .maybeSingle();
@@ -168,7 +168,7 @@ export default function PropinasView({ user }) {
       // Cargar detalles existentes
       const { data: dets } = await db
         .from('propina_evaluacion_detalle')
-        .select('*')
+        .select('id,evaluacion_id,empleado_id,gano_propina,motivo_perdida,monto_asignado')
         .eq('evaluacion_id', eval_.id);
       const map = {};
       (dets || []).forEach(d => { map[d.empleado_id] = { gano: d.gano_propina, motivo: d.motivo_perdida || '' }; });

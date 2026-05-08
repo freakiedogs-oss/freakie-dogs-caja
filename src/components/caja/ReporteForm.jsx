@@ -129,7 +129,7 @@ export default function ReporteForm({ user, onBack }) {
         }
       });
     db.from('reportes_turno')
-      .select('*')
+      .select('id,fecha,store_code,estado_turno,notas,creado_por,fotos_urls')
       .eq('fecha', fechaSel)
       .eq('store_code', selectedStore)
       .maybeSingle()
@@ -142,7 +142,7 @@ export default function ReporteForm({ user, onBack }) {
 
           // Cargar incidentes guardados
           db.from('incidentes_reporte')
-            .select('*')
+            .select('id,reporte_id,tipo_id,categoria,tipo_label,severidad,detalle')
             .eq('reporte_id', data.id)
             .then(({ data: incs }) => {
               if (incs && incs.length > 0) {
@@ -162,7 +162,7 @@ export default function ReporteForm({ user, onBack }) {
 
           // Cargar ausencias guardadas
           db.from('ausencias_reporte')
-            .select('*')
+            .select('id,reporte_id,empleado_id,empleado_nombre,tipo')
             .eq('reporte_id', data.id)
             .then(({ data: aus }) => {
               if (aus && aus.length > 0) {
@@ -182,7 +182,7 @@ export default function ReporteForm({ user, onBack }) {
 
           // Cargar mejoras guardadas
           db.from('mejoras_reporte')
-            .select('*')
+            .select('id,reporte_id,descripcion,fotos_urls')
             .eq('reporte_id', data.id)
             .then(({ data: mej }) => {
               if (mej && mej.length > 0)

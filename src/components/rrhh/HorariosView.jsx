@@ -138,8 +138,8 @@ export default function HorariosView({ user }) {
     if (!sucursalSel || !semana) return;
     setLoading(true);
     const [{ data: plantilla }, { data: overrides }] = await Promise.all([
-      db.from('horarios_empleados').select('*').eq('sucursal', sucursalSel).is('semana_inicio', null),
-      db.from('horarios_empleados').select('*').eq('sucursal', sucursalSel).eq('semana_inicio', semana),
+      db.from('horarios_empleados').select('id,usuario_id,dia_semana,turno,hora_inicio,hora_fin,tramos,notas,sucursal,semana_inicio').eq('sucursal', sucursalSel).is('semana_inicio', null),
+      db.from('horarios_empleados').select('id,usuario_id,dia_semana,turno,hora_inicio,hora_fin,tramos,notas,sucursal,semana_inicio').eq('sucursal', sucursalSel).eq('semana_inicio', semana),
     ]);
     const map = {};
     (plantilla || []).forEach(h => { map[`${h.usuario_id}-${h.dia_semana}`] = { ...h, _fuente: 'plantilla' }; });
@@ -212,7 +212,7 @@ export default function HorariosView({ user }) {
 
   const copiarSemanaAnterior = async () => {
     const semanaAnterior = addDays(semana, -7);
-    const { data } = await db.from('horarios_empleados').select('*').eq('sucursal', sucursalSel).eq('semana_inicio', semanaAnterior);
+    const { data } = await db.from('horarios_empleados').select('id,usuario_id,dia_semana,turno,hora_inicio,hora_fin,tramos,notas,sucursal,semana_inicio').eq('sucursal', sucursalSel).eq('semana_inicio', semanaAnterior);
     if (!data?.length) { showToast('La semana anterior no tiene horarios', false); return; }
     const inserts = data.map(h => ({
       usuario_id: h.usuario_id, sucursal: h.sucursal,

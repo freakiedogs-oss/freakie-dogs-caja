@@ -249,7 +249,7 @@ function TabResumen() {
     try {
       const [txAll, cc] = await Promise.all([
         fetchAll(db.from('bank_transacciones').select('fecha,debito,credito,estado,codigo_bac,descripcion,id,centro_costo_id').order('fecha', { ascending: false })),
-        db.from('centros_costo').select('*').eq('activo', true).order('orden'),
+        db.from('centros_costo').select('id,nombre,tipo').eq('activo', true).order('orden'),
       ])
       setCentros(cc.data || [])
 
@@ -349,7 +349,7 @@ function TabWizard({ user, pushNotif }) {
     setLoading(true)
     try {
       const data = await fetchAll(
-        db.from('bank_transacciones').select('*').eq('estado', 'sin_clasificar')
+        db.from('bank_transacciones').select('id,fecha,codigo_bac,descripcion,debito,credito,balance,estado,notas,referencia,direccion').eq('estado', 'sin_clasificar')
           .order('debito', { ascending: false }).order('credito', { ascending: false })
       )
       setPendientes(data)
@@ -372,8 +372,8 @@ function TabWizard({ user, pushNotif }) {
     (async () => {
       try {
         const [sug, comp] = await Promise.all([
-          db.from('v_bank_sugerencias').select('*').eq('bank_id', actual.id).order('confianza', { ascending: false }).limit(5),
-          db.from('bank_comprobantes').select('*').eq('bank_transaccion_id', actual.id).maybeSingle(),
+          db.from('v_bank_sugerencias').select('id,sugerencia_label,sugerencia_monto,sugerencia_fecha,confianza,dias_diff,target_id,target_tabla').eq('bank_id', actual.id).order('confianza', { ascending: false }).limit(5),
+          db.from('bank_comprobantes').select('id,banco_origen,beneficiario,concepto,foto_url').eq('bank_transaccion_id', actual.id).maybeSingle(),
         ])
         setSugerencias(sug.data || [])
         setComprobante(comp.data)
@@ -654,7 +654,7 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
       try {
         const [provs, ccs, cats, sucs] = await Promise.all([
           db.from('catalogo_contable').select('id,nombre_dte,categoria,subcategoria,sucursal_default').eq('activo', true).order('nombre_dte'),
-          db.from('centros_costo').select('*').eq('activo', true).order('orden'),
+          db.from('centros_costo').select('id,nombre,tipo').eq('activo', true).order('orden'),
           db.from('categorias_gasto').select('id,nombre').order('id'),
           db.from('sucursales').select('id,store_code,nombre').order('store_code'),
         ])
@@ -910,7 +910,7 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
     (async () => {
       setLoading(true)
       try {
-        let q = db.from('v_compras_dte_para_match').select('*').eq('proveedor_nombre', provSeleccionado)
+        let q = db.from('v_compras_dte_para_match').select('id,proveedor_nombre,fecha,fecha_vencimiento,monto_total,monto_para_match,ya_pagada,numero_control,tipo,notas,dias_para_vencer,categoria_gasto_id,centro_costo_id').eq('proveedor_nombre', provSeleccionado)
         if (!incluirPagadas) q = q.eq('ya_pagada', false)
         const { data } = await q.order('fecha', { ascending: false })
         setFacturas(data || [])
@@ -1269,7 +1269,7 @@ function TabColaManual({ user }) {
     setLoading(true)
     try {
       // Usa la vista enriquecida que incluye proveedores matcheados
-      let q = db.from('v_bank_tx_con_match').select('*').order('fecha', { ascending: false })
+      let q = db.from('v_bank_tx_con_match').select('id,fecha,codigo_bac,descripcion,debito,credito,estado,direccion,notas,referencia,categoria_efectiva,categoria_grupo,subcategoria,centro_costo_id,centro_costo_nombre,centro_costo_tipo,proveedores_matcheados,match_confianza,match_metodo,matches_count,monto_aplicado_total,sucursal_inferida,comprobante_info').order('fecha', { ascending: false })
       if (filtroEstado !== 'todos') q = q.eq('estado', filtroEstado)
       const data = await fetchAll(q)
       setTx(data); setSeleccion(new Set())
@@ -1511,8 +1511,8 @@ function TabReglas() {
     setLoading(true)
     try {
       const [reg, apr] = await Promise.all([
-        db.from('bank_reglas_clasificacion').select('*').order('prioridad', { ascending: true }),
-        db.from('bank_aprendizaje').select('*').order('confirmaciones', { ascending: false }).limit(20),
+        db.from('bank_reglas_clasificacion').select('id,nombre,prioridad,activa,hits,last_hit_at').order('prioridad', { ascending: true }),
+        db.from('bank_aprendizaje').select('id,patron_tipo,patron_valor,proveedor_nombre,confirmaciones,regla_creada_id').order('confirmaciones', { ascending: false }).limit(20),
       ])
       setReglas(reg.data || []); setAprendizaje(apr.data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
@@ -1884,7 +1884,7 @@ function TabVincularDTE({ user, pushNotif }) {
     setLoading(true)
     try {
       const all = await fetchAll(
-        db.from('v_gastos_sin_dte_pendientes_vinculacion').select('*').order('fecha', { ascending: false })
+        db.from('v_gastos_sin_dte_pendientes_vinculacion').select('id,fecha,descripcion,monto_total,proveedor_nombre,proveedor_nit,categoria_nombre,catalogo_subcategoria,centro_costo_nombre').order('fecha', { ascending: false })
       )
       setGastos(all || [])
       const totalMonto = (all || []).reduce((s, g) => s + Number(g.monto_total || 0), 0)
@@ -2162,8 +2162,8 @@ function SubColaSocios({ user, pushNotif }) {
     setLoading(true)
     try {
       const [pendData, sociosData] = await Promise.all([
-        fetchAll(db.from('v_bank_tx_socio_pendientes').select('*')),
-        db.from('socios').select('*').eq('activo', true).order('nombre'),
+        fetchAll(db.from('v_bank_tx_socio_pendientes').select('id,fecha,codigo_bac,descripcion,monto,direccion,socio_sugerido_id')),
+        db.from('socios').select('id,nombre').eq('activo', true).order('nombre'),
       ])
       setPendientes(pendData || [])
       setSocios(sociosData.data || [])
@@ -2294,7 +2294,7 @@ function SubBalanceSocios() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('v_socios_balance').select('*').order('deuda_total', { ascending: false })
+      const { data } = await db.from('v_socios_balance').select('socio_id,nombre,total_aportado,total_capital_repagado,capital_pendiente,intereses_acumulados,intereses_pagados,deuda_total,aportes_activos,total_salarios').order('deuda_total', { ascending: false })
       setData(data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [])
@@ -2390,7 +2390,7 @@ function SubAportesFIFO() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await fetchAll(db.from('v_socio_aportes_detalle').select('*').order('fecha_aporte', { ascending: false }))
+      const all = await fetchAll(db.from('v_socio_aportes_detalle').select('id,socio_nombre,fecha_aporte,dias_antiguedad,monto_original,capital_repagado,capital_pendiente,interes_acumulado,interes_pagado,deuda_total,estado,fecha_ultimo_corte').order('fecha_aporte', { ascending: false }))
       setData(all || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [])
@@ -2473,7 +2473,7 @@ function SubPrestamos({ user, pushNotif }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('v_prestamos_estado').select('*').eq('activo', true).order('capital_pendiente', { ascending: false })
+      const { data } = await db.from('v_prestamos_estado').select('id,institucion,tipo,fecha_origen,monto_original,capital_pagado,capital_pendiente,intereses_pagados_total,movimientos_count,notas').eq('activo', true).order('capital_pendiente', { ascending: false })
       setData(data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [])

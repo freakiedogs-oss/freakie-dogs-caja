@@ -29,7 +29,7 @@ export default function HistorialTab({user,show}){
   const [loadingHuer,setLoadingHuer]=useState(false);
 
   const cargar=async()=>{
-    const {data:allRecs}=await db.from('recepciones').select('*')
+    const {data:allRecs}=await db.from('recepciones').select('id,fecha,proveedor,estado,dte_codigo,foto_dte_url,notas,created_at')
       .order('created_at',{ascending:false}).limit(30);
     setRecs(allRecs||[]);setLoading(false);
     // Cargar count de pendientes
@@ -45,7 +45,7 @@ export default function HistorialTab({user,show}){
     try{
       const dias={'7d':7,'30d':30,'90d':90,'todos':3650}[periodo]||30;
       const fechaMin=new Date(Date.now()-dias*86400000).toISOString();
-      const {data:recsConDte}=await db.from('recepciones').select('*')
+      const {data:recsConDte}=await db.from('recepciones').select('id,fecha,proveedor,estado,dte_codigo,foto_dte_url,notas,created_at')
         .not('dte_codigo','is',null)
         .gte('created_at',fechaMin)
         .order('created_at',{ascending:false}).limit(1000);
@@ -71,7 +71,7 @@ export default function HistorialTab({user,show}){
     // Batch cargar items de TODAS las recepciones candidatas
     const recIds=[...new Set((data||[]).map(d=>d.recepcion_candidata_id).filter(Boolean))];
     if(recIds.length>0){
-      const {data:itms}=await db.from('recepcion_items').select('*').in('recepcion_id',recIds);
+      const {data:itms}=await db.from('recepcion_items').select('id,recepcion_id,descripcion,cantidad,precio_unitario,subtotal,unidad,producto_id').in('recepcion_id',recIds);
       const byRec={};
       (itms||[]).forEach(it=>{(byRec[it.recepcion_id]=byRec[it.recepcion_id]||[]).push(it);});
       setPendItems(byRec);
@@ -134,7 +134,7 @@ export default function HistorialTab({user,show}){
     if(expandedId===recId){setExpandedId(null);return;}
     setExpandedId(recId);
     setLoadingItems(true);
-    const {data}=await db.from('recepcion_items').select('*').eq('recepcion_id',recId);
+    const {data}=await db.from('recepcion_items').select('id,recepcion_id,descripcion,cantidad,cantidad_recibida,precio_unitario,subtotal,unidad,producto_id').eq('recepcion_id',recId);
     setItems((data||[]).map(it=>({...it,qty_edit:String(it.cantidad_recibida)})));
     setLoadingItems(false);
   };
@@ -144,7 +144,7 @@ export default function HistorialTab({user,show}){
     setSaving(true);
     try{
       // 1. Obtener items para revertir inventario
-      const {data:recItems}=await db.from('recepcion_items').select('*').eq('recepcion_id',rec.id);
+      const {data:recItems}=await db.from('recepcion_items').select('id,recepcion_id,producto_id,cantidad_recibida').eq('recepcion_id',rec.id);
       // 2. Revertir inventario
       for(const it of (recItems||[])){
         if(!it.producto_id||!cmId) continue;
@@ -432,7 +432,7 @@ function EditarRecepcion({rec,cmId,show,onBack}){
 
   // Cargar items existentes
   useEffect(()=>{
-    db.from('recepcion_items').select('*').eq('recepcion_id',rec.id).then(({data})=>{
+    db.from('recepcion_items').select('id,recepcion_id,producto_id,descripcion,cantidad,cantidad_recibida,precio_unitario,subtotal,unidad').eq('recepcion_id',rec.id).then(({data})=>{
       const mapped=(data||[]).map(it=>({
         dbId:it.id, prodId:it.producto_id, prodNombre:it.descripcion||'', desc:it.descripcion||'',
         qty:String(it.cantidad_recibida), precio:it.precio_unitario?String(it.precio_unitario):'', unidad:it.unidad||'unidad', origQty:it.cantidad_recibida

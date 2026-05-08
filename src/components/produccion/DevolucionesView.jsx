@@ -112,7 +112,7 @@ export default function DevolucionesView({ user }) {
   const cargarDevoluciones = useCallback(async () => {
     setLoadingList(true);
     let query = db.from('devoluciones_sucursal')
-      .select('*')
+      .select('id,fecha,store_code,estado,motivo,creado_por,recibido_por')
       .order('created_at', { ascending: false })
       .limit(50);
 

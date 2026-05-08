@@ -96,7 +96,7 @@ export default function ConfirmarEntrega({user,onBack}){
     setItemsNotas({});
     try{
       const {data,error}=await db.from('despacho_items')
-        .select('*')
+        .select('id,despacho_id,descripcion,cantidad_despachada,cantidad_recibida,unidad_medida')
         .eq('despacho_id',desp.id)
         .order('id');
       if(error)throw error;

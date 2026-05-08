@@ -927,7 +927,7 @@ function TabCuentasBancarias({ canEdit, show }) {
     setLoading(true);
     try {
       const [c, e, p, s, cat] = await Promise.all([
-        db.from('cuentas_bancarias_terceros').select('*').order('relacion_tipo').order('nombre_titular'),
+        db.from('cuentas_bancarias_terceros').select('id,nombre_titular,relacion_tipo,banco,alias,cuenta_numero,categoria_gasto_id_default,subcategoria_default,activo').order('relacion_tipo').order('nombre_titular'),
         db.from('empleados').select('id,codigo_empleado,nombre_completo').eq('activo', true).order('nombre_completo'),
         db.from('proveedores').select('id,nombre').order('nombre'),
         db.from('socios').select('id,nombre').order('nombre'),

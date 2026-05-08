@@ -248,7 +248,7 @@ export default function Amonestaciones({ user, onBack }) {
         .eq('empleado_id', empId)
         .order('fecha_incidente', { ascending: false }),
       db.from('amonestaciones')
-        .select('*')
+        .select('id,tipo,estado,created_at,empleado_id')
         .eq('empleado_id', empId)
         .order('created_at', { ascending: false }),
     ]);

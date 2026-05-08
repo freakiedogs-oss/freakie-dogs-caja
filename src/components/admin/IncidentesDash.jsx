@@ -38,7 +38,7 @@ export default function IncidentesDash({user,onBack,defaultTab}){
 
   const cargar=async()=>{
     setLoading(true);
-    const {data}=await db.from('reportes_turno').select('*')
+    const {data}=await db.from('reportes_turno').select('id,fecha,store_code,estado_turno,notas,creado_por')
       .gte('fecha',fechaDesde).lte('fecha',fechaHasta)
       .order('fecha',{ascending:false}).order('store_code');
     setReportes(data||[]);
@@ -48,7 +48,7 @@ export default function IncidentesDash({user,onBack,defaultTab}){
 
   const cargarAcciones=async()=>{
     setAccLoading(true);
-    const q=db.from('acciones_pendientes').select('*').order('created_at',{ascending:false});
+    const q=db.from('acciones_pendientes').select('id,store_code,estado,descripcion,creado_por,notas_resolucion,created_at').order('created_at',{ascending:false});
     if(filtroSuc!=='todas') q.eq('store_code',filtroSuc);
     const {data}=await q;
     setAcciones(data||[]);
@@ -72,8 +72,8 @@ export default function IncidentesDash({user,onBack,defaultTab}){
   const verDetalle=async(rep)=>{
     setSelected(rep);
     const [{data:inc},{data:aus}]=await Promise.all([
-      db.from('incidentes_reporte').select('*').eq('reporte_id',rep.id),
-      db.from('ausencias_reporte').select('*').eq('reporte_id',rep.id),
+      db.from('incidentes_reporte').select('id,tipo_label,severidad,detalle').eq('reporte_id',rep.id),
+      db.from('ausencias_reporte').select('id,empleado_nombre,tipo').eq('reporte_id',rep.id),
     ]);
     setIncDetalle(inc||[]);
     setAusDetalle(aus||[]);

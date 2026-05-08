@@ -328,7 +328,7 @@ export default function FinanzasDashboard({ user }) {
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
       // 12b. Saldos consolidados por cuenta (F8)
-      const { data: bankSaldos } = await db.from('v_bank_saldos_consolidados').select('*')
+      const { data: bankSaldos } = await db.from('v_bank_saldos_consolidados').select('cuenta_id,banco,alias,numero_cuenta,saldo_actual,total_tx,tx_ultimos_30d')
 
       // 13. Validación Serfinsa diaria (Liquidez Real)
       const serfinsaValid = await fetchAll('serfinsa_validacion_diaria',
@@ -2407,7 +2407,7 @@ function TabCatalogo({ user, data2026, onRefresh }) {
   const loadCatalog = async () => {
     setLoading(true)
     const { data, error } = await db.from('catalogo_contable')
-      .select('*')
+      .select('id,nombre_dte,nombre_normalizado,categoria,subcategoria,activo,notas,requiere_recepcion')
       .order('categoria')
       .order('subcategoria')
       .order('nombre_normalizado')

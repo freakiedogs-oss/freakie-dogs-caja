@@ -245,7 +245,7 @@ export default function KardexView({ user, show }) {
         setTotalMapped(allData.filter(d => d.mapeado).length);
       }
       // Luego: datos filtrados
-      let q = db.from('v_dte_descripciones').select('*');
+      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas');
       if (soloSinMapear) q = q.eq('mapeado', false);
       if (mapeoSearch) q = q.ilike('descripcion', `%${mapeoSearch}%`);
       q = q.limit(100);
