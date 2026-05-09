@@ -130,25 +130,30 @@ export default function KpisVentaDashboard({ user, onBack }) {
         const fechaDesde = mesSel;
         const fechaHasta = mesSiguiente(mesSel);
 
-        const { data: kpis, error: e1 } = await db.rpc('obtener_kpis_venta_canal', {
-          p_pin: user.pin, p_fecha_desde: fechaDesde, p_fecha_hasta: fechaHasta,
-        });
-        if (e1) throw e1;
-        setKpisRaw(kpis || []);
-
-        const items = await fetchTopItemsPareto(fechaDesde, fechaHasta);
+        // OLA 4.6 — 2026-05-09: Paralelizar las 6 llamadas con Promise.all
+        // Antes: 6 awaits secuenciales (suma ~22s con quanto_orden_items pesado).
+        // Después: paralelas, total = max(individual) ≈ 3-5s.
+        const [
+          kpisResp,
+          items,
+          emps,
+          tend,
+          insightsResp,
+          md,
+        ] = await Promise.all([
+          db.rpc('obtener_kpis_venta_canal', { p_pin: user.pin, p_fecha_desde: fechaDesde, p_fecha_hasta: fechaHasta }),
+          fetchTopItemsPareto(fechaDesde, fechaHasta),
+          fetchEmpleados(fechaDesde, fechaHasta),
+          fetchTendencia(user.pin),
+          db.rpc('obtener_insights_kpis', { p_pin: user.pin, p_mes: mesSel }),
+          fetchMetasData(user.pin, mesSel),
+        ]);
+        if (kpisResp.error) throw kpisResp.error;
+        setKpisRaw(kpisResp.data || []);
         setTopItems(items);
-
-        const emps = await fetchEmpleados(fechaDesde, fechaHasta);
         setEmpleados(emps);
-
-        const tend = await fetchTendencia(user.pin);
         setTendencia(tend);
-
-        const { data: ins } = await db.rpc('obtener_insights_kpis', { p_pin: user.pin, p_mes: mesSel });
-        setInsights(ins?.[0] || null);
-
-        const md = await fetchMetasData(user.pin, mesSel);
+        setInsights(insightsResp.data?.[0] || null);
         setMetasData(md);
       } catch (e) {
         console.error('KpisVentaDashboard load error:', e);
@@ -328,17 +333,35 @@ async function fetchTopItemsPareto(fechaDesde, fechaHasta) {
   const idsBySuc = {};
   ords.forEach(o => { (idsBySuc[o.store_code] = idsBySuc[o.store_code] || []).push(o.id); });
 
-  const result = {};
+  // OLA 4.6 — Paralelización de chunks: en lugar de await secuencial dentro del for,
+  // construir Promise.all con TODOS los chunks de TODAS las sucursales y lanzarlos paralelo.
+  // Antes: 5 suc × 2-3 chunks × ~500ms = ~5-7 seg secuencial.
+  // Después: ~500ms (la query más lenta).
+  const allChunkPromises = [];
+  const chunkMeta = []; // mantiene orden: { sc, idx }
   for (const sc of Object.keys(idsBySuc)) {
     const ids = idsBySuc[sc];
-    let allItems = [];
     for (let i = 0; i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
-      const { data } = await db.from('quanto_orden_items')
+      allChunkPromises.push(db.from('quanto_orden_items')
         .select('descripcion,cantidad,precio_unitario,es_propina')
-        .in('orden_id', chunk);
-      if (data) allItems = allItems.concat(data);
+        .in('orden_id', chunk));
+      chunkMeta.push({ sc });
     }
+  }
+  const allResponses = await Promise.all(allChunkPromises);
+
+  // Agrupar items por sucursal
+  const itemsBySuc = {};
+  allResponses.forEach((resp, i) => {
+    const sc = chunkMeta[i].sc;
+    if (!itemsBySuc[sc]) itemsBySuc[sc] = [];
+    if (resp.data) itemsBySuc[sc].push(...resp.data);
+  });
+
+  const result = {};
+  for (const sc of Object.keys(idsBySuc)) {
+    const allItems = itemsBySuc[sc] || [];
 
     const agg = {};
     for (const it of allItems) {
