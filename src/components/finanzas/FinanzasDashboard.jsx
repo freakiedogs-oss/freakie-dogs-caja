@@ -219,12 +219,35 @@ export default function FinanzasDashboard({ user }) {
   const [loading, setLoading] = useState(true)
   const [data2026, setData2026] = useState(null)
   const [conIva, setConIva] = useState(false)  // false = sin IVA (default)
+  const [peyaLoading, setPeyaLoading] = useState(false)
 
   // ── Access check ──
   useEffect(() => {
     if (!ROLES.includes(user?.rol)) return
     loadData2026()
   }, [])
+
+  // ── Lazy load peyaOrders — solo cuando user abre TabPeya ──
+  // pedidos_peya tiene ~22K filas. Cargarlo al inicio agregaba ~5s al dashboard.
+  // Lazy: solo se trae cuando hace click en tab "peya".
+  useEffect(() => {
+    if (tab !== 'peya') return
+    if (data2026?.peyaOrders) return        // ya cargado
+    if (peyaLoading) return                  // ya en curso
+    setPeyaLoading(true)
+    ;(async () => {
+      try {
+        const peyaOrders = await fetchAll('pedidos_peya',
+          'store_code, estado, fecha_pedido, total_pedido, comision, ingreso_estimado, tarifa_publicidad, avoidable_cancellation_fee, descuento_tienda, mes_csv',
+          q => q.gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
+        setData2026(prev => prev ? { ...prev, peyaOrders } : prev)
+      } catch (e) {
+        console.error('peyaOrders lazy load error:', e)
+      } finally {
+        setPeyaLoading(false)
+      }
+    })()
+  }, [tab, data2026, peyaLoading])
 
   // Helper: paginated fetch — Supabase default limit is 1000 rows
   // Mantenido para tablas pequeñas (<1000 filas) que no se materializan
@@ -339,9 +362,9 @@ export default function FinanzasDashboard({ user }) {
         'id, fecha_emision, monto_total, subtotal, iva, numero_control',
         q => q.ilike('proveedor_nombre', '%delivery hero%').gte('fecha_emision', '2026-01-01').order('fecha_emision'))
 
-      const peyaOrders = await fetchAll('pedidos_peya',
-        'store_code, estado, fecha_pedido, total_pedido, comision, ingreso_estimado, tarifa_publicidad, avoidable_cancellation_fee, descuento_tienda, mes_csv',
-        q => q.gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
+      // peyaOrders lazy-loaded — solo se carga cuando user abre TabPeya (~22K filas)
+      // Reduce dashboard inicial de 7.5s a ~2.5s
+      const peyaOrders = null
 
       const peya_liq = await fetchAll('peya_liquidaciones', 'id, semana_inicio, semana_fin, fecha_deposito, monto_depositado, notas', null)
 
