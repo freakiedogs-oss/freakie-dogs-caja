@@ -284,12 +284,73 @@ export default function FinanzasDashboard({ user }) {
       // bank_transacciones) se reemplazan por 3 matviews pre-agregadas.
       // Fetches pequeños (<1000 filas, sin paginacion real) quedan igual.
 
-      // REQUEST 1: Ventas + PeYa (mv_finanzas_ventas_mensual)
-      // Reemplaza: v_quanto_ordenes_diario (~500 rows) + pedidos_peya×2 (~2000 rows)
-      // Resultado: ~60 filas (6 meses × 5 suc × 2 fuentes)
-      const ventasMV = await fetchSimple('mv_finanzas_ventas_mensual',
-        'mes, store_code, fuente, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros, num_dias, num_pedidos',
-        q => q.gte('mes', '2026-01-01').order('mes'))
+      // OLA 4.5 — 2026-05-09: Paralelizar las 19 queries con Promise.all
+      // Antes: secuenciales (suma de tiempos = ~5-7s acumulado).
+      // Después: paralelas, total = max(tiempo individual) ≈ 700ms.
+      const [
+        ventasMV,
+        gastosMV,
+        bancoMV,
+        bankSaldosResp,
+        catResp,
+        dhDtes,
+        peya_liq,
+        planillas,
+        planillaPorSuc,
+        movsSocios,
+        prestamoMovs,
+        eventosCerrados,
+        serfinsaValid,
+        depositos,
+        planillaGerencial,
+        obligaciones,
+      ] = await Promise.all([
+        fetchSimple('mv_finanzas_ventas_mensual',
+          'mes, store_code, fuente, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros, num_dias, num_pedidos',
+          q => q.gte('mes', '2026-01-01').order('mes')),
+        fetchSimple('mv_finanzas_gastos_mensual',
+          'mes, store_code, categoria_gasto_id, categoria_nombre, categoria_grupo, subcategoria_contable, origen, proveedor_nombre, total_monto, total_sin_iva, num_movimientos',
+          q => q.gte('mes', '2026-01-01').order('mes')),
+        fetchSimple('mv_finanzas_banco_mensual',
+          'mes, cuenta_id, estado, codigo_bac, total_credito, total_debito, num_tx, balance_max, total_peya_credito, total_serfinsa_credito, total_efectivo_deposito, total_pos_bac, total_transfers_credito',
+          q => q.gte('mes', '2026-01-01').order('mes')),
+        db.from('v_bank_saldos_consolidados').select('cuenta_id,banco,alias,numero_cuenta,saldo_actual,total_tx,tx_ultimos_30d'),
+        db.from('catalogo_contable').select('nombre_dte, nombre_normalizado, categoria, subcategoria, sucursal_default').eq('activo', true),
+        fetchAll('compras_dte',
+          'id, fecha_emision, monto_total, subtotal, iva, numero_control',
+          q => q.ilike('proveedor_nombre', '%delivery hero%').gte('fecha_emision', '2026-01-01').order('fecha_emision')),
+        fetchAll('peya_liquidaciones', 'id, semana_inicio, semana_fin, fecha_deposito, monto_depositado, notas', null),
+        fetchAll('planillas',
+          'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
+          q => q.gte('fecha_pago', '2026-01-01')),
+        fetchAll('v_planilla_por_sucursal',
+          'fecha, store_code, monto, n_empleados',
+          q => q.gte('fecha', '2026-01-01')),
+        fetchAll('movimientos_socios',
+          'fecha, tipo, monto, direccion, socio_nombre, clasificacion_pl',
+          q => q.gte('fecha', '2026-01-01').order('fecha')),
+        fetchAll('prestamo_movimientos',
+          'fecha, tipo, monto',
+          q => q.gte('fecha', '2026-01-01').order('fecha')),
+        fetchAll('eventos',
+          'fecha_evento, estado, total_ventas, cerrado_at, nombre, cliente',
+          q => q.not('cerrado_at', 'is', null).gte('fecha_evento', '2026-01-01').order('fecha_evento')),
+        fetchAll('serfinsa_validacion_diaria',
+          'fecha, total_serfinsa, total_tarjeta_reportado, diferencia, num_terminales, estado',
+          q => q.gte('fecha', '2026-01-01').order('fecha')),
+        fetchAll('depositos_bancarios',
+          'fecha_deposito, store_code, monto, monto_esperado, diferencia_deposito, estado',
+          q => q.gte('fecha_deposito', '2026-01-01').order('fecha_deposito')),
+        fetchAll('v_planilla_gerencial_pl',
+          'mes, provisionado, pagado_real, pendiente_pago',
+          q => q.gte('mes', '2026-01-01').order('mes')),
+        fetchAll('v_obligaciones_provisionadas',
+          'mes, codigo, nombre, grupo, categoria_gasto_id, monto_pl, estado',
+          q => q.gte('mes', '2026-01-01').order('mes')),
+      ])
+      const bankSaldos = bankSaldosResp?.data
+      const catData = catResp?.data
+      if (catResp?.error) console.warn('catalogo_contable:', catResp.error.message)
 
       // Separar ventas Quanto y PeYa desde la matview
       const ventasQuantoMV = ventasMV.filter(v => v.fuente === 'quanto')
@@ -319,14 +380,7 @@ export default function FinanzasDashboard({ user }) {
         total_ingresos: 0,
       }))
 
-      // REQUEST 2: Gastos consolidados (mv_finanzas_gastos_mensual)
-      // Reemplaza: v_gastos_consolidados (~60K rows → ~80 pages de 1000)
-      // Resultado: ~2000 filas (6 meses × 5 suc × 15 cats × N proveedores)
-      const gastosMV = await fetchSimple('mv_finanzas_gastos_mensual',
-        'mes, store_code, categoria_gasto_id, categoria_nombre, categoria_grupo, subcategoria_contable, origen, proveedor_nombre, total_monto, total_sin_iva, num_movimientos',
-        q => q.gte('mes', '2026-01-01').order('mes'))
-
-      // Adaptar al shape que espera months2026 useMemo y TabProveedores
+      // Adaptar gastosMV al shape que espera months2026 useMemo y TabProveedores
       const gastos = gastosMV.map(g => ({
         fecha: g.mes,
         proveedor_nombre: g.proveedor_nombre,
@@ -340,69 +394,8 @@ export default function FinanzasDashboard({ user }) {
         store_code: g.store_code === '_TODAS' ? null : g.store_code,
       }))
 
-      // REQUEST 3: Banco mensual (mv_finanzas_banco_mensual)
-      // Reemplaza: bank_transacciones (~800+ rows row-by-row con clasificacion pesada)
-      // Resultado: ~50 filas agregadas por mes×estado×cuenta×codigo
-      // NOTA: El detalle Top-10 transacciones del mes seleccionado se carga lazy (abajo)
-      const bancoMV = await fetchSimple('mv_finanzas_banco_mensual',
-        'mes, cuenta_id, estado, codigo_bac, total_credito, total_debito, num_tx, balance_max, total_peya_credito, total_serfinsa_credito, total_efectivo_deposito, total_pos_bac, total_transfers_credito',
-        q => q.gte('mes', '2026-01-01').order('mes'))
-
-      // Saldos consolidados por cuenta (F8) — sin cambio
-      const { data: bankSaldos } = await db.from('v_bank_saldos_consolidados').select('cuenta_id,banco,alias,numero_cuenta,saldo_actual,total_tx,tx_ultimos_30d')
-
-      // Fetches pequeños: sin cambio (todos <1000 filas, sin paginacion real)
-
-      const { data: catData, error: catErr } = await db.from('catalogo_contable')
-        .select('nombre_dte, nombre_normalizado, categoria, subcategoria, sucursal_default')
-        .eq('activo', true)
-      if (catErr) console.warn('catalogo_contable:', catErr.message)
-
-      const dhDtes = await fetchAll('compras_dte',
-        'id, fecha_emision, monto_total, subtotal, iva, numero_control',
-        q => q.ilike('proveedor_nombre', '%delivery hero%').gte('fecha_emision', '2026-01-01').order('fecha_emision'))
-
       // peyaOrders lazy-loaded — solo se carga cuando user abre TabPeya (~22K filas)
-      // Reduce dashboard inicial de 7.5s a ~2.5s
       const peyaOrders = null
-
-      const peya_liq = await fetchAll('peya_liquidaciones', 'id, semana_inicio, semana_fin, fecha_deposito, monto_depositado, notas', null)
-
-      const planillas = await fetchAll('planillas',
-        'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
-        q => q.gte('fecha_pago', '2026-01-01'))
-
-      const planillaPorSuc = await fetchAll('v_planilla_por_sucursal',
-        'fecha, store_code, monto, n_empleados',
-        q => q.gte('fecha', '2026-01-01'))
-
-      const movsSocios = await fetchAll('movimientos_socios',
-        'fecha, tipo, monto, direccion, socio_nombre, clasificacion_pl',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-
-      const prestamoMovs = await fetchAll('prestamo_movimientos',
-        'fecha, tipo, monto',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-
-      const eventosCerrados = await fetchAll('eventos',
-        'fecha_evento, estado, total_ventas, cerrado_at, nombre, cliente',
-        q => q.not('cerrado_at', 'is', null).gte('fecha_evento', '2026-01-01').order('fecha_evento'))
-
-      const serfinsaValid = await fetchAll('serfinsa_validacion_diaria',
-        'fecha, total_serfinsa, total_tarjeta_reportado, diferencia, num_terminales, estado',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-
-      const depositos = await fetchAll('depositos_bancarios',
-        'fecha_deposito, store_code, monto, monto_esperado, diferencia_deposito, estado',
-        q => q.gte('fecha_deposito', '2026-01-01').order('fecha_deposito'))
-
-      const planillaGerencial = await fetchAll('v_planilla_gerencial_pl',
-        'mes, provisionado, pagado_real, pendiente_pago',
-        q => q.gte('mes', '2026-01-01').order('mes'))
-
-      const obligaciones = await fetchAll('v_obligaciones_provisionadas',
-        'mes, codigo, nombre, grupo, categoria_gasto_id, monto_pl, estado',
-        q => q.gte('mes', '2026-01-01').order('mes'))
 
       setData2026({
         ventas,
