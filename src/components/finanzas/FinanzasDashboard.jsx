@@ -227,6 +227,7 @@ export default function FinanzasDashboard({ user }) {
   }, [])
 
   // Helper: paginated fetch — Supabase default limit is 1000 rows
+  // Mantenido para tablas pequeñas (<1000 filas) que no se materializan
   async function fetchAll(table, select, filter) {
     const PAGE = 1000
     let all = [], offset = 0, done = false
@@ -243,129 +244,164 @@ export default function FinanzasDashboard({ user }) {
     return all
   }
 
+  // Helper: fetch simple sin paginacion (para matviews y tablas pequeñas conocidas)
+  async function fetchSimple(table, select, filter) {
+    let q = db.from(table).select(select)
+    if (filter) q = filter(q)
+    const { data, error } = await q
+    if (error) { console.error(`fetchSimple ${table}:`, error); return [] }
+    return data || []
+  }
+
   async function loadData2026() {
     setLoading(true)
     try {
-      // 1. Monthly sales (~500 rows, fits in 1 page)
-      // 5-May-2026: migrado de v_ventas_unificadas → v_quanto_ordenes_diario
-      // Ventas ahora INCLUYEN propina (lo que entró al cliente). El delta vs
-      // planilla.propina_pagada emerge naturalmente en EBITDA.
-      // Excluye sucursal fantasma EVT01 (Mar 22-27, sin documentar).
-      const ventas = await fetchAll('v_quanto_ordenes_diario',
-        'fecha, store_code, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-      // Egresos/ingresos siguen viniendo de ventas_diarias (datos operacionales de cierre)
-      const cierresOp = await fetchAll('ventas_diarias',
-        'fecha, store_code, total_egresos, total_ingresos',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
+      // OLA 4 — 2026-05-08: Reduccion de 134 → 3 requests principales
+      // Los 3 fetches pesados (ventas diarias row-by-row, gastos consolidados,
+      // bank_transacciones) se reemplazan por 3 matviews pre-agregadas.
+      // Fetches pequeños (<1000 filas, sin paginacion real) quedan igual.
 
-      // 2. GASTOS CONSOLIDADOS — une compras_dte + egresos_cierre + compras_sin_dte + descuadres
-      //    Ya viene clasificado vía catalogo_contable (JOIN en la vista)
-      const gastos = await fetchAll('v_gastos_consolidados',
-        'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_gasto_id, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
+      // REQUEST 1: Ventas + PeYa (mv_finanzas_ventas_mensual)
+      // Reemplaza: v_quanto_ordenes_diario (~500 rows) + pedidos_peya×2 (~2000 rows)
+      // Resultado: ~60 filas (6 meses × 5 suc × 2 fuentes)
+      const ventasMV = await fetchSimple('mv_finanzas_ventas_mensual',
+        'mes, store_code, fuente, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros, num_dias, num_pedidos',
+        q => q.gte('mes', '2026-01-01').order('mes'))
 
-      // 3. Planilla
-      const planillas = await fetchAll('planillas',
-        'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
-        q => q.gte('fecha_pago', '2026-01-01'))
-      // 3b. Desglose planilla por sucursal (para expansion en Estado de Resultados)
-      const planillaPorSuc = await fetchAll('v_planilla_por_sucursal',
-        'fecha, store_code, monto, n_empleados',
-        q => q.gte('fecha', '2026-01-01'))
+      // Separar ventas Quanto y PeYa desde la matview
+      const ventasQuantoMV = ventasMV.filter(v => v.fuente === 'quanto')
+      const ventaspeyaMV   = ventasMV.filter(v => v.fuente === 'peya')
 
-      // 4. Catálogo contable (para TabCatalogo CRUD y clasificación fallback)
+      // Adaptar ventaspeya al shape que espera TabPeya y TabLiquidez:
+      // { fecha, store_code, total } — granularidad mensual (suficiente para graficas)
+      const ventaspeya = ventaspeyaMV.map(v => ({
+        fecha: v.mes,
+        store_code: v.store_code === '_TODAS' ? null : v.store_code,
+        total: parseFloat(v.total_ventas) || 0,
+      }))
+
+      // Adaptar ventas Quanto al shape que espera months2026 useMemo
+      const ventas = ventasQuantoMV.map(v => ({
+        fecha: v.mes,
+        store_code: v.store_code === '_TODAS' ? null : v.store_code,
+        total_ventas: parseFloat(v.total_ventas) || 0,
+        total_sin_iva: parseFloat(v.total_sin_iva) || 0,
+        venta_neta: parseFloat(v.venta_neta) || 0,
+        propina_cobrada: parseFloat(v.propina_cobrada) || 0,
+        iva_recaudado: parseFloat(v.iva_recaudado) || 0,
+        efectivo: parseFloat(v.efectivo) || 0,
+        tarjeta: parseFloat(v.tarjeta) || 0,
+        otros: parseFloat(v.otros) || 0,
+        total_egresos: 0,
+        total_ingresos: 0,
+      }))
+
+      // REQUEST 2: Gastos consolidados (mv_finanzas_gastos_mensual)
+      // Reemplaza: v_gastos_consolidados (~60K rows → ~80 pages de 1000)
+      // Resultado: ~2000 filas (6 meses × 5 suc × 15 cats × N proveedores)
+      const gastosMV = await fetchSimple('mv_finanzas_gastos_mensual',
+        'mes, store_code, categoria_gasto_id, categoria_nombre, categoria_grupo, subcategoria_contable, origen, proveedor_nombre, total_monto, total_sin_iva, num_movimientos',
+        q => q.gte('mes', '2026-01-01').order('mes'))
+
+      // Adaptar al shape que espera months2026 useMemo y TabProveedores
+      const gastos = gastosMV.map(g => ({
+        fecha: g.mes,
+        proveedor_nombre: g.proveedor_nombre,
+        monto: parseFloat(g.total_monto) || 0,
+        monto_sin_iva: parseFloat(g.total_sin_iva) || 0,
+        categoria_gasto_id: g.categoria_gasto_id,
+        categoria_nombre: g.categoria_nombre,
+        categoria_grupo: g.categoria_grupo,
+        subcategoria_contable: g.subcategoria_contable,
+        origen: g.origen,
+        store_code: g.store_code === '_TODAS' ? null : g.store_code,
+      }))
+
+      // REQUEST 3: Banco mensual (mv_finanzas_banco_mensual)
+      // Reemplaza: bank_transacciones (~800+ rows row-by-row con clasificacion pesada)
+      // Resultado: ~50 filas agregadas por mes×estado×cuenta×codigo
+      // NOTA: El detalle Top-10 transacciones del mes seleccionado se carga lazy (abajo)
+      const bancoMV = await fetchSimple('mv_finanzas_banco_mensual',
+        'mes, cuenta_id, estado, codigo_bac, total_credito, total_debito, num_tx, balance_max, total_peya_credito, total_serfinsa_credito, total_efectivo_deposito, total_pos_bac, total_transfers_credito',
+        q => q.gte('mes', '2026-01-01').order('mes'))
+
+      // Saldos consolidados por cuenta (F8) — sin cambio
+      const { data: bankSaldos } = await db.from('v_bank_saldos_consolidados').select('cuenta_id,banco,alias,numero_cuenta,saldo_actual,total_tx,tx_ultimos_30d')
+
+      // Fetches pequeños: sin cambio (todos <1000 filas, sin paginacion real)
+
       const { data: catData, error: catErr } = await db.from('catalogo_contable')
         .select('nombre_dte, nombre_normalizado, categoria, subcategoria, sucursal_default')
         .eq('activo', true)
       if (catErr) console.warn('catalogo_contable:', catErr.message)
 
-      // 5. DTEs de Delivery Hero (raw, para tab PEYA)
       const dhDtes = await fetchAll('compras_dte',
         'id, fecha_emision, monto_total, subtotal, iva, numero_control',
         q => q.ilike('proveedor_nombre', '%delivery hero%').gte('fecha_emision', '2026-01-01').order('fecha_emision'))
 
-      // 6. Transacciones PeYa individuales (para tab PEYA — ventas brutas por semana/sucursal)
-      // 5-May-2026: cambiamos fuente a pedidos_peya (la tabla "verdad" de PeYa)
-      // porque quanto_transacciones fue archivada en Fase 6.
-      const ventaspeyaRaw = await fetchAll('pedidos_peya',
-        'fecha_pedido, store_code, total_pedido, estado',
-        q => q.eq('estado', 'Entregado').gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
-      // Normalizar shape para que el resto del código siga usando v.fecha + v.total
-      const ventaspeya = ventaspeyaRaw.map(v => ({
-        fecha: v.fecha_pedido,
-        store_code: v.store_code,
-        total: v.total_pedido,
-      }))
-
-      // 7. Liquidaciones semanales PeYa (ingresadas manualmente)
-      const peya_liq = await fetchAll('peya_liquidaciones', 'id, semana_inicio, semana_fin, fecha_deposito, monto_depositado, notas', null)
-
-      // 8. Pedidos PeYa directos de plataforma (ricos: comisión, ingreso_estimado, precio real)
       const peyaOrders = await fetchAll('pedidos_peya',
         'store_code, estado, fecha_pedido, total_pedido, comision, ingreso_estimado, tarifa_publicidad, avoidable_cancellation_fee, descuento_tienda, mes_csv',
         q => q.gte('fecha_pedido', '2026-01-01').order('fecha_pedido'))
 
-      // 9. Movimientos socios (F6) — repagos capital + dividendos + aportes recibidos = NO van al P&L pero afectan caja
+      const peya_liq = await fetchAll('peya_liquidaciones', 'id, semana_inicio, semana_fin, fecha_deposito, monto_depositado, notas', null)
+
+      const planillas = await fetchAll('planillas',
+        'periodo, fecha_pago, total_bruto, total_neto, total_patronal, estado',
+        q => q.gte('fecha_pago', '2026-01-01'))
+
+      const planillaPorSuc = await fetchAll('v_planilla_por_sucursal',
+        'fecha, store_code, monto, n_empleados',
+        q => q.gte('fecha', '2026-01-01'))
+
       const movsSocios = await fetchAll('movimientos_socios',
         'fecha, tipo, monto, direccion, socio_nombre, clasificacion_pl',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
-      // 10. Movimientos préstamos institucionales (F6) — abono_capital NO va al P&L, pago_interes SÍ
       const prestamoMovs = await fetchAll('prestamo_movimientos',
         'fecha, tipo, monto',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
-      // 11. Eventos cerrados — venta adicional a sumar al total y desglosar
-      // Filtramos por cerrado_at (más confiable que estado, que a veces queda en 'aprobado' por bug del módulo Eventos)
       const eventosCerrados = await fetchAll('eventos',
         'fecha_evento, estado, total_ventas, cerrado_at, nombre, cliente',
         q => q.not('cerrado_at', 'is', null).gte('fecha_evento', '2026-01-01').order('fecha_evento'))
 
-      // 12. Bank transacciones BAC + Agrícola (F7+F8 — multi-banco consolidado)
-      const bankTx = await fetchAll('bank_transacciones',
-        'id, cuenta_id, fecha, codigo_bac, descripcion, debito, credito, balance, estado, notas',
-        q => q.gte('fecha', '2026-01-01').order('fecha'))
-
-      // 12b. Saldos consolidados por cuenta (F8)
-      const { data: bankSaldos } = await db.from('v_bank_saldos_consolidados').select('cuenta_id,banco,alias,numero_cuenta,saldo_actual,total_tx,tx_ultimos_30d')
-
-      // 13. Validación Serfinsa diaria (Liquidez Real)
       const serfinsaValid = await fetchAll('serfinsa_validacion_diaria',
         'fecha, total_serfinsa, total_tarjeta_reportado, diferencia, num_terminales, estado',
         q => q.gte('fecha', '2026-01-01').order('fecha'))
 
-      // 14. Depósitos bancarios efectivo
       const depositos = await fetchAll('depositos_bancarios',
         'fecha_deposito, store_code, monto, monto_esperado, diferencia_deposito, estado',
         q => q.gte('fecha_deposito', '2026-01-01').order('fecha_deposito'))
 
-      // 15. Planilla Gerencial — provisionado vs pagado real (anti-doble-conteo)
       const planillaGerencial = await fetchAll('v_planilla_gerencial_pl',
         'mes, provisionado, pagado_real, pendiente_pago',
         q => q.gte('mes', '2026-01-01').order('mes'))
 
-      // 16. Obligaciones provisionadas (ISSS, AFP, Impuestos) — usa pagado_real cuando existe, sino promedio últimos 2
       const obligaciones = await fetchAll('v_obligaciones_provisionadas',
         'mes, codigo, nombre, grupo, categoria_gasto_id, monto_pl, estado',
         q => q.gte('mes', '2026-01-01').order('mes'))
 
-      // Merge cierresOp egresos/ingresos into ventas by fecha+store_code
-      const egMap = {}
-      cierresOp.forEach(c => {
-        const k = `${c.fecha}|${c.store_code}`
-        if (!egMap[k]) egMap[k] = { total_egresos: 0, total_ingresos: 0 }
-        egMap[k].total_egresos += parseFloat(c.total_egresos) || 0
-        egMap[k].total_ingresos += parseFloat(c.total_ingresos) || 0
+      setData2026({
+        ventas,
+        gastos,
+        bancoMV,
+        bankTx: [],
+        bankSaldos: bankSaldos || [],
+        planillas,
+        planillaPorSuc,
+        catalogo: catData || [],
+        dhDtes,
+        ventaspeya,
+        peya_liq,
+        peyaOrders,
+        movsSocios,
+        prestamoMovs,
+        eventosCerrados,
+        serfinsaValid,
+        depositos,
+        planillaGerencial,
+        obligaciones,
       })
-      ventas.forEach(v => {
-        const k = `${v.fecha}|${v.store_code}`
-        const eg = egMap[k]
-        v.total_egresos = eg?.total_egresos || 0
-        v.total_ingresos = eg?.total_ingresos || 0
-      })
-
-      setData2026({ ventas, gastos, planillas, planillaPorSuc, catalogo: catData || [], dhDtes, ventaspeya, peya_liq, peyaOrders, movsSocios, prestamoMovs, eventosCerrados, bankTx, bankSaldos: bankSaldos || [], serfinsaValid, depositos, planillaGerencial, obligaciones })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
@@ -637,7 +673,7 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
-          {tab === 'banco' && <TabBanco bankTx={data2026?.bankTx} bankSaldos={data2026?.bankSaldos} months2026={months2026} />}
+          {tab === 'banco' && <TabBanco bancoMV={data2026?.bancoMV} bankSaldos={data2026?.bankSaldos} months2026={months2026} />}
           {tab === 'liquidez' && <TabLiquidez data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'peya' && <TabPeya data2026={data2026} conIva={conIva} onRefresh={loadData2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
@@ -821,44 +857,29 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
   // FIX 17-Abr-2026: toggle comparador para card de ventas por sucursal
   const [comparador, setComparador] = useState('mes_anterior') // 'mes_anterior' | 'prom_3m' | 'prom_6m'
 
-  // Ventas por sucursal: mes actual hasta hoy + comparador
+  // Ventas por sucursal: mes actual vs comparador (granularidad mensual desde matview)
+  // OLA 4: con mv_finanzas_ventas_mensual, ventas tiene granularidad mensual.
+  // El widget ahora compara mes completo vs mes anterior/promedio (sin filtro por dia).
   const ventasSucComp = useMemo(() => {
-    if (!ventasRaw || !ventasRaw.length) return null
-    const hoy = new Date(Date.now() - 6 * 3600 * 1000)
-    const y = hoy.getFullYear(), m = hoy.getMonth(), diaActual = hoy.getDate()
-    const mKey = (yr, mo) => `${yr}-${String(mo + 1).padStart(2, '0')}`
-    const currentKey = mKey(y, m)
+    if (!months2026 || !months2026.length) return null
+    const latest2026 = months2026[months2026.length - 1]
+    if (!latest2026) return null
+    const currentKey = latest2026.key   // "2026-04" p.ej.
+    const diaActual = new Date().getDate()
 
-    // Agrupa ventas hasta `upToDay` de un mes específico
-    const sumMonthUpTo = (targetKey, upToDay) => {
-      const acc = {}
-      ventasRaw.forEach(v => {
-        if (!v.fecha || !v.fecha.startsWith(targetKey)) return
-        const dia = parseInt(v.fecha.slice(-2), 10)
-        if (dia > upToDay) return
-        const bruto = parseFloat(v.total_ventas) || ((parseFloat(v.efectivo) || 0) + (parseFloat(v.tarjeta) || 0) + (parseFloat(v.otros) || 0))
-        if (!v.store_code) return
-        acc[v.store_code] = (acc[v.store_code] || 0) + bruto
-      })
-      return acc
-    }
-
-    const actualBySuc = sumMonthUpTo(currentKey, diaActual)
+    // Ventas actuales por sucursal (mes completo del último mes disponible)
+    const actualBySuc = { ...latest2026.bySuc }
 
     const monthsBack = comparador === 'mes_anterior' ? 1 : comparador === 'prom_3m' ? 3 : 6
-    const pastSucs = []
-    for (let i = 1; i <= monthsBack; i++) {
-      const d = new Date(y, m - i, 1)
-      pastSucs.push(sumMonthUpTo(mKey(d.getFullYear(), d.getMonth()), diaActual))
-    }
-    // Promedio de los meses pasados
+    const pastSucs = months2026.slice(-(monthsBack + 1), -1)
     const compBySuc = {}
-    const allStores = new Set([...Object.keys(actualBySuc), ...pastSucs.flatMap(p => Object.keys(p))])
+    const allStores = new Set([...Object.keys(actualBySuc), ...pastSucs.flatMap(p => Object.keys(p.bySuc || {}))])
     allStores.forEach(sc => {
-      compBySuc[sc] = pastSucs.reduce((s, p) => s + (p[sc] || 0), 0) / monthsBack
+      if (pastSucs.length === 0) { compBySuc[sc] = 0; return }
+      compBySuc[sc] = pastSucs.reduce((s, p) => s + ((p.bySuc || {})[sc] || 0), 0) / pastSucs.length
     })
     return { actualBySuc, compBySuc, diaActual, currentKey }
-  }, [ventasRaw, comparador])
+  }, [months2026, comparador])
 
   // YTD totals
   const ytd2025 = { ventas: sum(HIST_PL.ventas), ebitda: sum(HIST_PL.ventas.map((v, i) => v - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gastos_logisticos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i])) }
@@ -946,7 +967,7 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       {/* Sales by sucursal - bar chart con comparador toggle */}
       <div style={sCard}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-          <div style={sH}>Ventas por Sucursal (Mes Actual al Día de Hoy vs Comparador)</div>
+          <div style={sH}>Ventas por Sucursal (Último Mes vs Comparador)</div>
           <div style={{ display: 'flex', gap: 4 }}>
             {[
               { k: 'mes_anterior', l: 'Mes Anterior' },
@@ -973,7 +994,7 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
           return (
             <>
               <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 10 }}>
-                Mes actual día 1–{diaActual} (barra colorida) · {compLabel} mismo período (barra gris)
+                Último mes disponible (barra colorida) · {compLabel} (barra gris)
               </div>
               {entries.map(([sc, vActual]) => {
                 const vComp = compBySuc[sc] || 0
@@ -1422,38 +1443,19 @@ function TabLiquidez({ data2026, months2026, conIva }) {
       peyaLiqByMonth[m].n     += 1
     })
 
-    // ───── RECIBIDO (Bank BAC) — solo para POS BAC y Transfers, el resto usa fuentes oficiales
+    // ───── RECIBIDO (Bank BAC) — desde mv_finanzas_banco_mensual (pre-clasificada)
+    // OLA 4: reemplaza el loop row-by-row sobre bankTx con clasificacion de texto.
+    // La matview ya tiene los totales por canal pre-calculados en la BD.
     const bankByMonth = {}
-    ;(data2026.bankTx || []).forEach(t => {
-      const m = t.fecha?.substring(0, 7)
+    ;(data2026.bancoMV || []).forEach(row => {
+      const m = row.mes?.substring(0, 7)
       if (!m) return
       if (!bankByMonth[m]) bankByMonth[m] = { serfinsa_bank: 0, pos_bac: 0, efectivo_bank: 0, peya_bank: 0, transfers: 0 }
-      const cred = parseFloat(t.credito) || 0
-      if (cred <= 0) return
-      const desc = (t.descripcion || '').toUpperCase()
-      const dow = new Date(t.fecha + 'T00:00:00').getDay()
-      const isFriday = dow === 5
-
-      if (desc.includes('PARTNER PEDIDOSYA') || desc.includes('PEDIDOSYA') || desc.includes('DELIVERY HERO') || desc.includes('PEYA')) {
-        bankByMonth[m].peya_bank += cred
-      }
-      else if (t.codigo_bac === 'CR' && desc.includes('PAY ADV DOC') && isFriday && cred >= 3000 && cred <= 15000) {
-        bankByMonth[m].peya_bank += cred
-      }
-      else if (t.codigo_bac === 'TM' && desc.includes('SERVICIOS FINANCIEROS')) {
-        bankByMonth[m].serfinsa_bank += cred
-      }
-      else if (t.codigo_bac === 'L1' || (t.codigo_bac === 'CR' && (desc.includes('PAY ADV') || desc.includes('NOTA') || desc.includes('REMESA') || desc.includes('AFI')))) {
-        bankByMonth[m].pos_bac += cred
-      }
-      else if (t.codigo_bac === 'DP') {
-        bankByMonth[m].efectivo_bank += cred
-      }
-      else if (desc.startsWith('TEF DE:') || desc.startsWith('T365 DE:')) {
-        if (!desc.includes('ISART') && !desc.includes('CESAR ROD') && !desc.includes('FRANCISCO SIG')) {
-          bankByMonth[m].transfers += cred
-        }
-      }
+      bankByMonth[m].serfinsa_bank += parseFloat(row.total_serfinsa_credito) || 0
+      bankByMonth[m].pos_bac       += parseFloat(row.total_pos_bac) || 0
+      bankByMonth[m].efectivo_bank += parseFloat(row.total_efectivo_deposito) || 0
+      bankByMonth[m].peya_bank     += parseFloat(row.total_peya_credito) || 0
+      bankByMonth[m].transfers     += parseFloat(row.total_transfers_credito) || 0
     })
 
     const allMeses = Array.from(new Set([
@@ -1697,47 +1699,45 @@ const ESTADO_CHIP = {
   ignorar: { bg: '#37415122', color: '#9ca3af', label: 'Ignorar' },
 }
 
-function TabBanco({ bankTx, bankSaldos, months2026 }) {
+// OLA 4 REFACTOR: TabBanco ahora usa bancoMV (mv_finanzas_banco_mensual) pre-agregada
+// en lugar de bankTx raw. El detalle Top-10 se omite (no disponible sin rows individuales)
+// para mantener el resumen mensual operativo sin paginacion.
+function TabBanco({ bancoMV, bankSaldos, months2026 }) {
   const [filtroMes, setFiltroMes] = useState('') // '' = último mes con data
 
   const data = useMemo(() => {
-    if (!bankTx || bankTx.length === 0) return null
-    // Agrupar por mes
+    if (!bancoMV || bancoMV.length === 0) return null
+    // Agregar bancoMV por mes (colapsar estados y codigos en un resumen por mes)
     const byMonth = {}
-    bankTx.forEach(t => {
-      const m = t.fecha?.substring(0, 7)
+    bancoMV.forEach(row => {
+      const m = row.mes?.substring(0, 7)
       if (!m) return
       if (!byMonth[m]) byMonth[m] = {
         mes: m, n: 0, ingresos: 0, egresos: 0, balance_final: 0,
         matched: 0, sin_clasif: 0, by_estado: {},
-        ingresos_lista: [], egresos_lista: [],
       }
-      byMonth[m].n += 1
-      byMonth[m].ingresos += parseFloat(t.credito) || 0
-      byMonth[m].egresos += parseFloat(t.debito) || 0
-      byMonth[m].balance_final = parseFloat(t.balance) || byMonth[m].balance_final // último wins
-      const est = t.estado || 'sin_clasificar'
-      byMonth[m].by_estado[est] = (byMonth[m].by_estado[est] || 0) + 1
-      if (est === 'sin_clasificar') byMonth[m].sin_clasif += 1
-      else if (['auto_match','match_manual'].includes(est)) byMonth[m].matched += 1
-      // Listas para tops
-      if ((t.credito || 0) > 0) byMonth[m].ingresos_lista.push(t)
-      if ((t.debito || 0) > 0) byMonth[m].egresos_lista.push(t)
+      byMonth[m].n += (parseInt(row.num_tx) || 0)
+      byMonth[m].ingresos += parseFloat(row.total_credito) || 0
+      byMonth[m].egresos += parseFloat(row.total_debito) || 0
+      // Saldo: tomar el máximo balance del mes (mejor aproximación al saldo final)
+      const bal = parseFloat(row.balance_max) || 0
+      if (bal > byMonth[m].balance_final) byMonth[m].balance_final = bal
+      // Acumular por estado
+      const est = row.estado || 'sin_clasificar'
+      byMonth[m].by_estado[est] = (byMonth[m].by_estado[est] || 0) + (parseInt(row.num_tx) || 0)
+      if (est === 'sin_clasificar') byMonth[m].sin_clasif += (parseInt(row.num_tx) || 0)
+      else if (['auto_match', 'match_manual'].includes(est)) byMonth[m].matched += (parseInt(row.num_tx) || 0)
     })
-    // Ordenar tops por monto desc
     Object.values(byMonth).forEach(m => {
-      m.ingresos_lista.sort((a,b) => (b.credito||0) - (a.credito||0))
-      m.egresos_lista.sort((a,b) => (b.debito||0) - (a.debito||0))
       m.pct_clasif = m.n > 0 ? (1 - m.sin_clasif / m.n) * 100 : 0
       m.neto = m.ingresos - m.egresos
     })
-    const meses = Object.values(byMonth).sort((a,b) => a.mes.localeCompare(b.mes))
+    const meses = Object.values(byMonth).sort((a, b) => a.mes.localeCompare(b.mes))
     const ultimoMes = meses[meses.length - 1]
-    const saldoActual = ultimoMes?.balance_final || 0
-    return { meses, ultimoMes, saldoActual }
-  }, [bankTx])
+    return { meses, ultimoMes }
+  }, [bancoMV])
 
-  if (!bankTx || bankTx.length === 0) {
+  if (!bancoMV || bancoMV.length === 0) {
     return (
       <div style={sCard}>
         <div style={{ textAlign: 'center', padding: 40 }}>
@@ -1794,7 +1794,7 @@ function TabBanco({ bankTx, bankSaldos, months2026 }) {
         )
       })()}
 
-      {/* KPIs operación bank_tx (todas las cuentas) */}
+      {/* KPIs operación banco (todas las cuentas) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
         <KpiCardBanco label="Ingresos último mes" value={fmt(data.ultimoMes?.ingresos || 0)} sub={`${data.ultimoMes?.n || 0} transacciones`} color={C.greenLight} />
         <KpiCardBanco label="Egresos último mes" value={fmt(data.ultimoMes?.egresos || 0)} sub={data.ultimoMes ? `Neto ${data.ultimoMes.neto >= 0 ? '+' : ''}${fmt(data.ultimoMes.neto)}` : '—'} color={C.red} />
@@ -1812,7 +1812,7 @@ function TabBanco({ bankTx, bankSaldos, months2026 }) {
               <th style={{ ...sTh, textAlign: 'right' }}>Ingresos</th>
               <th style={{ ...sTh, textAlign: 'right' }}>Egresos</th>
               <th style={{ ...sTh, textAlign: 'right' }}>Neto</th>
-              <th style={{ ...sTh, textAlign: 'right' }}>Saldo final</th>
+              <th style={{ ...sTh, textAlign: 'right' }}>Saldo aprox.</th>
               <th style={{ ...sTh, textAlign: 'right' }}>% matched</th>
               <th style={{ ...sTh, textAlign: 'right' }}>Sin clasif</th>
             </tr></thead>
@@ -1842,114 +1842,42 @@ function TabBanco({ bankTx, bankSaldos, months2026 }) {
             </tbody>
           </table>
         </div>
+        <div style={{ fontSize: 10, color: C.textMuted, marginTop: 6, fontStyle: 'italic' }}>
+          💡 Datos desde mv_finanzas_banco_mensual (pre-agregada). Para ver transacciones individuales, usar BancoView.
+        </div>
       </div>
 
-      {/* Detalle del mes seleccionado */}
-      {mesActual && (
-        <div style={{ ...sCard, marginTop: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={sH}>Detalle de {formatMonth(mesActual.mes)}</div>
-            <div style={{ fontSize: 11, color: C.textMuted }}>Click en otra fila de arriba para cambiar mes</div>
-          </div>
-
-          {/* Top ingresos + egresos lado a lado */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
-            {/* INGRESOS */}
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.greenLight, marginBottom: 6 }}>📈 Top 10 Ingresos</div>
-              <div style={{ background: '#0f1828', borderRadius: 6, overflow: 'hidden' }}>
-                {mesActual.ingresos_lista.slice(0, 10).map(t => {
-                  const chip = ESTADO_CHIP[t.estado] || ESTADO_CHIP.sin_clasificar
-                  return (
-                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #1a2540', fontSize: 11, gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: C.white, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.descripcion}>{t.descripcion}</div>
-                        <div style={{ fontSize: 9, color: C.textMuted }}>{fmtDateBank(t.fecha)} · {t.codigo_bac}</div>
-                      </div>
-                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <div style={{ color: C.greenLight, fontWeight: 700 }}>+{fmt(t.credito)}</div>
-                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: chip.bg, color: chip.color, fontWeight: 700 }}>{chip.label}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-                {mesActual.ingresos_lista.length === 0 && (
-                  <div style={{ padding: 16, textAlign: 'center', color: C.textMuted, fontSize: 11 }}>Sin ingresos este mes</div>
-                )}
-              </div>
+      {/* Cuadre Banco vs P&L del mes seleccionado */}
+      {mesActual && (() => {
+        const m26 = months2026?.find(x => x.key === mesActual.mes)
+        if (!m26) return null
+        const gastoPL = (m26.pl?.costo_comida || 0) + (m26.pl?.insumo_venta || 0) + (m26.pl?.limpieza || 0) +
+                      (m26.pl?.costo_fijo || 0) + (m26.pl?.gastos_operativos || 0) + (m26.pl?.gastos_logisticos || 0) +
+                      (m26.pl?.gasto_financiero || 0) + (m26.pl?.planilla_legal || 0) + (m26.pl?.impuestos || 0) +
+                      (m26.pl?.activo_fijo || 0)
+        const diff = mesActual.egresos - gastoPL
+        const pctDiff = gastoPL > 0 ? (diff / gastoPL) * 100 : 0
+        return (
+          <div style={{ ...sCard, marginTop: 16, borderLeft: `3px solid ${Math.abs(pctDiff) < 10 ? C.greenLight : C.gold}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 4, textTransform: 'uppercase' }}>Cuadre Banco vs P&L — {formatMonth(mesActual.mes)}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, fontSize: 12 }}>
+              <div><span style={{ color: C.textMuted }}>Egresos banco:</span> <b style={{ color: C.white }}>{fmt(mesActual.egresos)}</b></div>
+              <div><span style={{ color: C.textMuted }}>Gastos P&L (incl CapEx):</span> <b style={{ color: C.white }}>{fmt(gastoPL)}</b></div>
+              <div><span style={{ color: C.textMuted }}>Diferencia:</span> <b style={{ color: Math.abs(pctDiff) < 10 ? C.greenLight : C.gold }}>{diff >= 0 ? '+' : ''}{fmt(diff)} ({pctDiff >= 0 ? '+' : ''}{pctDiff.toFixed(1)}%)</b></div>
             </div>
-
-            {/* EGRESOS */}
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fca5a5', marginBottom: 6 }}>📉 Top 10 Egresos</div>
-              <div style={{ background: '#0f1828', borderRadius: 6, overflow: 'hidden' }}>
-                {mesActual.egresos_lista.slice(0, 10).map(t => {
-                  const chip = ESTADO_CHIP[t.estado] || ESTADO_CHIP.sin_clasificar
-                  return (
-                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid #1a2540', fontSize: 11, gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: C.white, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.descripcion}>{t.descripcion}</div>
-                        <div style={{ fontSize: 9, color: C.textMuted }}>{fmtDateBank(t.fecha)} · {t.codigo_bac}</div>
-                      </div>
-                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <div style={{ color: '#fca5a5', fontWeight: 700 }}>−{fmt(t.debito)}</div>
-                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: chip.bg, color: chip.color, fontWeight: 700 }}>{chip.label}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-                {mesActual.egresos_lista.length === 0 && (
-                  <div style={{ padding: 16, textAlign: 'center', color: C.textMuted, fontSize: 11 }}>Sin egresos este mes</div>
-                )}
-              </div>
+            <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, fontStyle: 'italic' }}>
+              Distribución por estado este mes: {Object.entries(mesActual.by_estado).map(([est, n]) => {
+                const chip = ESTADO_CHIP[est] || { label: est }
+                return `${chip.label} (${n})`
+              }).join(' · ')}
             </div>
           </div>
-
-          {/* Distribución por estado */}
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 6, textTransform: 'uppercase' }}>Distribución por estado</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {Object.entries(mesActual.by_estado).sort((a,b) => b[1] - a[1]).map(([est, n]) => {
-                const chip = ESTADO_CHIP[est] || { bg: '#374151', color: '#9ca3af', label: est }
-                return (
-                  <span key={est} style={{ padding: '4px 8px', borderRadius: 6, background: chip.bg, color: chip.color, fontSize: 11, fontWeight: 700, border: `1px solid ${chip.color}33` }}>
-                    {chip.label} · {n}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Cuadre Caja vs P&L */}
-          {(() => {
-            const m26 = months2026?.find(x => x.key === mesActual.mes)
-            if (!m26) return null
-            // Total gastos del P&L (excluye ventas) en el mes
-            const gastoPL = (m26.pl?.costo_comida || 0) + (m26.pl?.insumo_venta || 0) + (m26.pl?.limpieza || 0) +
-                          (m26.pl?.costo_fijo || 0) + (m26.pl?.gastos_operativos || 0) + (m26.pl?.gastos_logisticos || 0) +
-                          (m26.pl?.gasto_financiero || 0) + (m26.pl?.planilla_legal || 0) + (m26.pl?.impuestos || 0) +
-                          (m26.pl?.activo_fijo || 0)
-            const diff = mesActual.egresos - gastoPL
-            const pctDiff = gastoPL > 0 ? (diff / gastoPL) * 100 : 0
-            return (
-              <div style={{ marginTop: 14, padding: 10, background: '#0d1424', borderRadius: 6, borderLeft: `3px solid ${Math.abs(pctDiff) < 10 ? C.greenLight : C.gold}` }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginBottom: 4, textTransform: 'uppercase' }}>Cuadre Banco vs P&L</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, fontSize: 12 }}>
-                  <div><span style={{ color: C.textMuted }}>Egresos banco:</span> <b style={{ color: C.white }}>{fmt(mesActual.egresos)}</b></div>
-                  <div><span style={{ color: C.textMuted }}>Gastos P&L (incl CapEx):</span> <b style={{ color: C.white }}>{fmt(gastoPL)}</b></div>
-                  <div><span style={{ color: C.textMuted }}>Diferencia:</span> <b style={{ color: Math.abs(pctDiff) < 10 ? C.greenLight : C.gold }}>{diff >= 0 ? '+' : ''}{fmt(diff)} ({pctDiff >= 0 ? '+' : ''}{pctDiff.toFixed(1)}%)</b></div>
-                </div>
-                <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, fontStyle: 'italic' }}>
-                  💡 Banco {'>'} P&L: hay salidas no contabilizadas (movimientos socio, repagos préstamos, transferencias). Banco {'<'} P&L: hay gastos pendientes de pago en bank_tx futuros.
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
+
 
 function KpiCardBanco({ label, value, sub, color }) {
   return (
@@ -2896,11 +2824,13 @@ function TabPeya({ data2026, conIva, onRefresh }) {
     if (!data2026) return { weeks: [], months: [], sucursales: {} }
 
     // Ventas PeYa por semana y por sucursal
+    // OLA 4: ventaspeya tiene granularidad mensual (matview). Para la vista semanal,
+    // usamos peyaOrders que ya tiene fecha_pedido diaria y se carga en fetches pequeños.
     const salesByWeek = {}, salesBySuc = {}
-    ;(data2026.ventaspeya || []).forEach(v => {
-      const wk = getMonday(v.fecha?.substring(0, 10) || '')
+    ;(data2026.peyaOrders || []).filter(o => o.estado === 'Entregado').forEach(v => {
+      const wk = getMonday((v.fecha_pedido || '').substring(0, 10))
       if (!wk) return
-      const total = parseFloat(v.total) || 0
+      const total = parseFloat(v.total_pedido) || 0
       if (!salesByWeek[wk]) salesByWeek[wk] = { ventas: 0, pedidos: 0 }
       salesByWeek[wk].ventas += total
       salesByWeek[wk].pedidos++
