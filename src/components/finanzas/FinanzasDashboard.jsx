@@ -304,6 +304,7 @@ export default function FinanzasDashboard({ user }) {
         depositos,
         planillaGerencial,
         obligaciones,
+        planillaOp,
       ] = await Promise.all([
         fetchSimple('mv_finanzas_ventas_mensual',
           'mes, store_code, fuente, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros, num_dias, num_pedidos',
@@ -346,6 +347,9 @@ export default function FinanzasDashboard({ user }) {
           q => q.gte('mes', '2026-01-01').order('mes')),
         fetchAll('v_obligaciones_provisionadas',
           'mes, codigo, nombre, grupo, categoria_gasto_id, monto_pl, estado',
+          q => q.gte('mes', '2026-01-01').order('mes')),
+        fetchAll('v_planilla_operativa_pl',
+          'mes, pagado_real, provisionado, monto_pl, estado',
           q => q.gte('mes', '2026-01-01').order('mes')),
       ])
       const bankSaldos = bankSaldosResp?.data
@@ -417,6 +421,7 @@ export default function FinanzasDashboard({ user }) {
         depositos,
         planillaGerencial,
         obligaciones,
+        planillaOp,
       })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
@@ -535,12 +540,15 @@ export default function FinanzasDashboard({ user }) {
       monthMap[m].byProv[prov].monto += monto
     })
 
-    // Planilla operativa: solo total_bruto (líquido + descuentos empleado)
-    // El patronal real (ISSS+AFP) se trae de v_obligaciones_provisionadas (pagado real o promedio)
-    data2026.planillas?.forEach(p => {
-      const m = p.fecha_pago?.substring(0, 7)
-      if (!m || !monthMap[m]) return
-      monthMap[m].pl.planilla_legal += (p.total_bruto || 0)
+    // Planilla operativa: leer de v_planilla_operativa_pl que ya devuelve
+    // - meses cerrados: pagado_real total
+    // - mes en curso: provisión incremental diaria (avg 2 meses, normalizada por días equivalentes con asuetos x2)
+    // El patronal real (ISSS+AFP) se trae aparte de v_obligaciones_provisionadas
+    data2026.planillaOp?.forEach(po => {
+      const m = po.mes?.substring(0, 7)
+      if (!m) return
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      monthMap[m].pl.planilla_legal += (parseFloat(po.monto_pl) || 0)
     })
 
     // Planilla Gerencial — provisión devengada (con auto-saldo si hay pago real)
