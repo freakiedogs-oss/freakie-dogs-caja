@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
 
-// Componente aislado para card de fecha + comparador + refresh (lazy, defensivo)
+// Componentes aislados lazy + defensivos (si fallan, ErrorBoundary los aísla)
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
+const CardVentasComparativo = lazy(() => import('./CardVentasComparativo'))
 
 // ErrorBoundary defensivo — si el componente lazy crashea, no rompe el dashboard
 class ErrorBoundary extends React.Component {
@@ -896,27 +897,8 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
   const latest = allMonths[allMonths.length - 1]
   const prev = allMonths.length > 1 ? allMonths[allMonths.length - 2] : null
 
-  // FIX 17-Abr-2026: toggle comparador para card de ventas por sucursal
-  const [comparador, setComparador] = useState('mes_anterior') // 'mes_anterior' | 'prom_3m' | 'prom_6m'
-
-  // Ventas por sucursal: mes actual vs comparador (granularidad mensual desde matview)
-  const ventasSucComp = useMemo(() => {
-    if (!months2026 || !months2026.length) return null
-    const latest2026 = months2026[months2026.length - 1]
-    if (!latest2026) return null
-    const currentKey = latest2026.key
-    const diaActual = new Date().getDate()
-    const actualBySuc = { ...latest2026.bySuc }
-    const monthsBack = comparador === 'mes_anterior' ? 1 : comparador === 'prom_3m' ? 3 : 6
-    const pastSucs = months2026.slice(-(monthsBack + 1), -1)
-    const compBySuc = {}
-    const allStores = new Set([...Object.keys(actualBySuc), ...pastSucs.flatMap(p => Object.keys(p.bySuc || {}))])
-    allStores.forEach(sc => {
-      if (pastSucs.length === 0) { compBySuc[sc] = 0; return }
-      compBySuc[sc] = pastSucs.reduce((s, p) => s + ((p.bySuc || {})[sc] || 0), 0) / pastSucs.length
-    })
-    return { actualBySuc, compBySuc, diaActual, currentKey }
-  }, [months2026, comparador])
+  // NOTA: card "Ventas por Sucursal" ahora es <CardVentasComparativo /> aislado.
+  // El cálculo apples-to-apples vive en la RPC fn_ventas_comparativo_igualado.
 
   // YTD totals
   const ytd2025 = { ventas: sum(HIST_PL.ventas), ebitda: sum(HIST_PL.ventas.map((v, i) => v - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gastos_logisticos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i])) }
@@ -1001,72 +983,12 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       {/* Ventas por Canal */}
       <VentasPorCanal ventasRaw={ventasRaw} ventaspeya={ventaspeya} months2026={months2026} />
 
-      {/* Sales by sucursal - bar chart con comparador toggle */}
-      <div style={sCard}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-          <div style={sH}>Ventas por Sucursal (Último Mes vs Comparador)</div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {[
-              { k: 'mes_anterior', l: 'Mes Anterior' },
-              { k: 'prom_3m', l: 'Prom 3M' },
-              { k: 'prom_6m', l: 'Prom 6M' },
-            ].map(o => (
-              <button key={o.k} onClick={() => setComparador(o.k)}
-                style={{
-                  padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4, cursor: 'pointer',
-                  border: '1px solid ' + (comparador === o.k ? C.gold : C.border),
-                  background: comparador === o.k ? 'rgba(244,162,97,0.15)' : 'transparent',
-                  color: comparador === o.k ? C.gold : C.textMuted,
-                }}>{o.l}</button>
-            ))}
-          </div>
-        </div>
-        {(() => {
-          if (!ventasSucComp) return <div style={{ color: C.textMuted, fontSize: 12 }}>Sin datos</div>
-          const { actualBySuc, compBySuc, diaActual } = ventasSucComp
-          const entries = Object.entries(actualBySuc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
-          if (!entries.length) return <div style={{ color: C.textMuted, fontSize: 12 }}>Sin ventas este mes</div>
-          const maxV = Math.max(...entries.map(([, v]) => v), ...entries.map(([sc]) => compBySuc[sc] || 0))
-          const compLabel = comparador === 'mes_anterior' ? 'mes ant.' : comparador === 'prom_3m' ? 'prom 3m' : 'prom 6m'
-          return (
-            <>
-              <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 10 }}>
-                Último mes disponible (barra colorida) · {compLabel} (barra gris)
-              </div>
-              {entries.map(([sc, vActual]) => {
-                const vComp = compBySuc[sc] || 0
-                const pctActual = maxV > 0 ? (vActual / maxV) * 100 : 0
-                const pctComp = maxV > 0 ? (vComp / maxV) * 100 : 0
-                const diff = vComp > 0 ? ((vActual - vComp) / vComp) * 100 : null
-                return (
-                  <div key={sc} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-                      <span style={{ color: STORE_COLORS[sc] || C.white, fontWeight: 600 }}>{STORE_MAP[sc] || sc}</span>
-                      <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <span style={{ color: C.white, fontWeight: 700 }}>{fmt(vActual)}</span>
-                        <span style={{ color: C.textMuted, fontSize: 10 }}>vs {fmt(vComp)}</span>
-                        {diff !== null && (
-                          <span style={{ color: diff >= 0 ? C.greenLight : '#f87171', fontSize: 11, fontWeight: 700, minWidth: 48, textAlign: 'right' }}>
-                            {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                    {/* Barra actual (color sucursal) */}
-                    <div style={{ height: 7, background: 'rgba(255,255,255,0.06)', borderRadius: 3 }}>
-                      <div style={{ height: 7, borderRadius: 3, background: STORE_COLORS[sc] || C.blue, width: `${pctActual}%`, transition: 'width .5s' }} />
-                    </div>
-                    {/* Barra comparador (gris) */}
-                    <div style={{ height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 2, marginTop: 2 }}>
-                      <div style={{ height: 4, borderRadius: 2, background: 'rgba(148,163,184,0.7)', width: `${pctComp}%`, transition: 'width .5s' }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </>
-          )
-        })()}
-      </div>
+      {/* Ventas por Sucursal — Comparativo apples-to-apples (componente lazy aislado) */}
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <CardVentasComparativo />
+        </Suspense>
+      </ErrorBoundary>
     </>
   )
 }
