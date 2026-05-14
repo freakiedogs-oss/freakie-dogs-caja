@@ -219,22 +219,6 @@ export default function FinanzasDashboard({ user }) {
   const [loading, setLoading] = useState(true)
   const [data2026, setData2026] = useState(null)
   const [conIva, setConIva] = useState(false)  // false = sin IVA (default)
-  const [refreshing, setRefreshing] = useState(false)
-  async function handleRefreshPL() {
-    if (refreshing) return
-    setRefreshing(true)
-    try {
-      const r = await db.rpc('fn_refresh_pl')
-      if (r && r.error) {
-        alert('Error: ' + r.error.message)
-      } else {
-        await loadData2026()
-      }
-    } catch (e) {
-      alert('Error: ' + (e && e.message ? e.message : 'desconocido'))
-    }
-    setRefreshing(false)
-  }
   const [peyaLoading, setPeyaLoading] = useState(false)
 
   // ── Access check ──
@@ -438,21 +422,11 @@ export default function FinanzasDashboard({ user }) {
         planillaGerencial,
         obligaciones,
         planillaOp,
-        dataDisponible: null,
-        compIgualado: [],
       })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
     }
     setLoading(false)
-
-    // Extras no bloqueantes (corren después del setLoading para no atrasar el render)
-    db.from('v_data_disponible_resumen').select('*').single()
-      .then(r => { if (!r.error && r.data) setData2026(prev => prev ? { ...prev, dataDisponible: r.data } : prev) })
-      .catch(() => {})
-    db.rpc('fn_ventas_comparativo_igualado')
-      .then(r => { if (!r.error && Array.isArray(r.data)) setData2026(prev => prev ? { ...prev, compIgualado: r.data } : prev) })
-      .catch(() => {})
   }
 
   // ── Process 2026 data into monthly P&L ──
@@ -703,26 +677,6 @@ export default function FinanzasDashboard({ user }) {
           <span style={{ fontSize: 11, color: conIva ? C.gold : C.textMuted, fontWeight: conIva ? 700 : 400 }}>Con IVA</span>
         </div>
         <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>Ventas {conIva ? 'con' : 'sin'} IVA · <strong>Con propina cobrada</strong> · Fuente: quanto_ordenes (DTE)</div>
-
-        {/* Card "Última data" + botón Refrescar P&L */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 8, fontSize: 11, color: C.textMuted, flexWrap: 'wrap' }}>
-          {data2026 && data2026.dataDisponible ? (
-            <>
-              <span>📅 Quanto hasta <b style={{ color: C.white }}>{data2026.dataDisponible.quanto_hasta}</b></span>
-              <span>·</span>
-              <span>PeYa hasta <b style={{ color: C.white }}>{data2026.dataDisponible.peya_hasta}</b></span>
-              <span>·</span>
-              <span style={{ color: C.gold }}>Comparativo usa corte <b>{data2026.dataDisponible.data_completa_hasta}</b></span>
-            </>
-          ) : null}
-          <button
-            onClick={handleRefreshPL}
-            disabled={refreshing}
-            style={{ padding: '3px 10px', fontSize: 10, background: refreshing ? C.gray : C.red, color: C.white, border: 'none', borderRadius: 4, cursor: refreshing ? 'wait' : 'pointer', fontWeight: 600 }}
-          >
-            {refreshing ? '⏳ Refrescando…' : '🔄 Refrescar P&L'}
-          </button>
-        </div>
       </div>
 
       {/* Tab bar */}
@@ -927,35 +881,13 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
   // FIX 17-Abr-2026: toggle comparador para card de ventas por sucursal
   const [comparador, setComparador] = useState('mes_anterior') // 'mes_anterior' | 'prom_3m' | 'prom_6m'
 
-  // Ventas por sucursal: comparador apples-to-apples si la RPC está disponible, sino fallback al cálculo mensual.
+  // Ventas por sucursal: mes actual vs comparador (granularidad mensual desde matview)
   const ventasSucComp = useMemo(() => {
-    const compRows = (data2026 && data2026.compIgualado) ? data2026.compIgualado : []
-    const dataDisp = (data2026 && data2026.dataDisponible) ? data2026.dataDisponible : null
-
-    // Path 1: usar RPC igualada (apples-to-apples) si tiene data
-    if (compRows.length > 0 && dataDisp) {
-      const actualBySuc = {}
-      const compBySuc = {}
-      compRows.forEach(r => {
-        if (!r || !r.store_code) return
-        actualBySuc[r.store_code] = parseFloat(r.ventas_actual) || 0
-        const compVal = comparador === 'mes_anterior' ? r.ventas_mes_anterior
-                      : comparador === 'prom_3m' ? r.ventas_prom_3m
-                      : r.ventas_prom_6m
-        compBySuc[r.store_code] = parseFloat(compVal) || 0
-      })
-      return {
-        actualBySuc, compBySuc,
-        diaActual: dataDisp.dia_corte || new Date().getDate(),
-        fechaCorte: dataDisp.data_completa_hasta || null,
-        igualado: true,
-      }
-    }
-
-    // Path 2: fallback al cálculo viejo (mes completo)
     if (!months2026 || !months2026.length) return null
     const latest2026 = months2026[months2026.length - 1]
     if (!latest2026) return null
+    const currentKey = latest2026.key
+    const diaActual = new Date().getDate()
     const actualBySuc = { ...latest2026.bySuc }
     const monthsBack = comparador === 'mes_anterior' ? 1 : comparador === 'prom_3m' ? 3 : 6
     const pastSucs = months2026.slice(-(monthsBack + 1), -1)
@@ -965,8 +897,8 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       if (pastSucs.length === 0) { compBySuc[sc] = 0; return }
       compBySuc[sc] = pastSucs.reduce((s, p) => s + ((p.bySuc || {})[sc] || 0), 0) / pastSucs.length
     })
-    return { actualBySuc, compBySuc, diaActual: new Date().getDate(), igualado: false }
-  }, [data2026, months2026, comparador])
+    return { actualBySuc, compBySuc, diaActual, currentKey }
+  }, [months2026, comparador])
 
   // YTD totals
   const ytd2025 = { ventas: sum(HIST_PL.ventas), ebitda: sum(HIST_PL.ventas.map((v, i) => v - HIST_PL.costo_comida[i] - HIST_PL.insumo_venta[i] - HIST_PL.limpieza[i] - HIST_PL.costo_fijo[i] - HIST_PL.gastos_operativos[i] - HIST_PL.gastos_logisticos[i] - HIST_PL.gasto_financiero[i] - HIST_PL.planilla_legal[i])) }
@@ -1054,18 +986,7 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       {/* Sales by sucursal - bar chart con comparador toggle */}
       <div style={sCard}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-          <div>
-            <div style={sH}>
-              {ventasSucComp && ventasSucComp.igualado
-                ? 'Ventas por Sucursal — Mismos días del mes vs Comparador'
-                : 'Ventas por Sucursal (Último Mes vs Comparador)'}
-            </div>
-            {ventasSucComp && ventasSucComp.igualado && ventasSucComp.fechaCorte ? (
-              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>
-                Mes actual del día 1 al <b style={{ color: C.gold }}>{ventasSucComp.fechaCorte}</b> ({ventasSucComp.diaActual} días) vs mismos {ventasSucComp.diaActual} días del comparador
-              </div>
-            ) : null}
-          </div>
+          <div style={sH}>Ventas por Sucursal (Último Mes vs Comparador)</div>
           <div style={{ display: 'flex', gap: 4 }}>
             {[
               { k: 'mes_anterior', l: 'Mes Anterior' },
