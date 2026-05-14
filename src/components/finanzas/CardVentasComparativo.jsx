@@ -48,7 +48,16 @@ export default function CardVentasComparativo() {
     return () => window.removeEventListener('freakie:refresh-pl', h)
   }, [cargar])
 
-  if (error || loading || !rows.length) return null
+  // Estados visibles (no null silencioso) para debugging y UX clara
+  if (loading) {
+    return <div style={st.placeholder}>⏳ Cargando comparativo de ventas por sucursal…</div>
+  }
+  if (error) {
+    return <div style={st.placeholder}>⚠️ No se pudo cargar el comparativo (RPC fn_ventas_comparativo_igualado)</div>
+  }
+  if (!rows.length) {
+    return <div style={st.placeholder}>Sin datos en el comparativo (RPC devolvió 0 filas)</div>
+  }
 
   const diaCorte = rows[0] && rows[0].dia_corte
   const fechaCorte = rows[0] && rows[0].fecha_corte
@@ -152,6 +161,7 @@ const st = {
     color: active ? '#f4a261' : '#94a3b8',
   }),
   legend: { fontSize: 10, color: '#94a3b8', marginBottom: 10 },
+  placeholder: { background: '#16213e', borderRadius: 12, padding: 16, marginBottom: 12, border: '1px solid #334155', color: '#94a3b8', fontSize: 12, textAlign: 'center' },
   row: { display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 },
   rowRight: { display: 'flex', gap: 10, alignItems: 'center' },
   barBg: { height: 7, background: 'rgba(255,255,255,0.06)', borderRadius: 3 },
