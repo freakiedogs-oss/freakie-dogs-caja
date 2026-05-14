@@ -1,5 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
+
+// Componente aislado para card de fecha + comparador + refresh (lazy, defensivo)
+const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
+
+// ErrorBoundary defensivo — si el componente lazy crashea, no rompe el dashboard
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false } }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(error, info) { console.warn('ErrorBoundary caught:', error && error.message) }
+  render() { return this.state.hasError ? null : this.props.children }
+}
 
 /* ═══════════════════════════════════════════
    FREAKIE DOGS — DASHBOARD FINANCIERO
@@ -677,6 +688,13 @@ export default function FinanzasDashboard({ user }) {
           <span style={{ fontSize: 11, color: conIva ? C.gold : C.textMuted, fontWeight: conIva ? 700 : 400 }}>Con IVA</span>
         </div>
         <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>Ventas {conIva ? 'con' : 'sin'} IVA · <strong>Con propina cobrada</strong> · Fuente: quanto_ordenes (DTE)</div>
+
+        {/* Card autónoma: última fecha de data + comparador apples-to-apples + botón refresh */}
+        <ErrorBoundary>
+          <Suspense fallback={null}>
+            <CardDataDisponible />
+          </Suspense>
+        </ErrorBoundary>
       </div>
 
       {/* Tab bar */}
