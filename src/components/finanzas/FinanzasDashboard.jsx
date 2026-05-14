@@ -305,8 +305,6 @@ export default function FinanzasDashboard({ user }) {
         planillaGerencial,
         obligaciones,
         planillaOp,
-        dataDispResp,
-        compIgualadoResp,
       ] = await Promise.all([
         fetchSimple('mv_finanzas_ventas_mensual',
           'mes, store_code, fuente, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros, num_dias, num_pedidos',
@@ -353,9 +351,19 @@ export default function FinanzasDashboard({ user }) {
         fetchAll('v_planilla_operativa_pl',
           'mes, pagado_real, provisionado, monto_pl, estado',
           q => q.gte('mes', '2026-01-01').order('mes')),
-        db.from('v_data_disponible_resumen').select('*').single(),
-        db.rpc('fn_ventas_comparativo_igualado'),
       ])
+
+      // Llamadas defensivas (no bloqueantes) — si fallan, el dashboard sigue cargando
+      let dataDisponible = null
+      let compIgualado = []
+      try {
+        const dispResp = await db.from('v_data_disponible_resumen').select('*').single()
+        if (!dispResp.error) dataDisponible = dispResp.data
+      } catch (e) { console.warn('v_data_disponible_resumen:', e.message) }
+      try {
+        const compResp = await db.rpc('fn_ventas_comparativo_igualado')
+        if (!compResp.error && Array.isArray(compResp.data)) compIgualado = compResp.data
+      } catch (e) { console.warn('fn_ventas_comparativo_igualado:', e.message) }
       const bankSaldos = bankSaldosResp?.data
       const catData = catResp?.data
       if (catResp?.error) console.warn('catalogo_contable:', catResp.error.message)
@@ -426,8 +434,8 @@ export default function FinanzasDashboard({ user }) {
         planillaGerencial,
         obligaciones,
         planillaOp,
-        dataDisponible: dataDispResp?.data || null,
-        compIgualado: compIgualadoResp?.data || [],
+        dataDisponible,
+        compIgualado,
       })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
