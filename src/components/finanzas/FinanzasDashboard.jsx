@@ -930,15 +930,15 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       {data2026?.dataDisponible && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, padding: '8px 12px', background: C.cardAlt, borderRadius: 8, fontSize: 12 }}>
           <span style={{ color: C.textMuted }}>📅 Última data:</span>
-          <span><b style={{ color: C.text }}>Quanto</b> hasta <b>{data2026.dataDisponible.quanto_hasta}</b></span>
+          <span><b style={{ color: C.white }}>Quanto</b> hasta <b>{data2026.dataDisponible.quanto_hasta}</b></span>
           <span style={{ color: C.textMuted }}>·</span>
-          <span><b style={{ color: C.text }}>PeYa</b> hasta <b>{data2026.dataDisponible.peya_hasta}</b></span>
+          <span><b style={{ color: C.white }}>PeYa</b> hasta <b>{data2026.dataDisponible.peya_hasta}</b></span>
           <span style={{ color: C.textMuted }}>·</span>
           <span style={{ color: '#fbbf24' }}>📊 Comparativos usan corte: <b>{data2026.dataDisponible.data_completa_hasta}</b> ({data2026.dataDisponible.dias_atraso}d atrás)</span>
           <button
             onClick={handleRefreshPL}
             disabled={refreshing}
-            style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11, background: C.brand, color: '#fff', border: 'none', borderRadius: 4, cursor: refreshing ? 'wait' : 'pointer' }}
+            style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11, background: C.red, color: '#fff', border: 'none', borderRadius: 4, cursor: refreshing ? 'wait' : 'pointer' }}
           >
             {refreshing ? '⏳ Refrescando…' : '🔄 Refrescar P&L'}
           </button>
