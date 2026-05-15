@@ -1126,13 +1126,20 @@ function TabEstadoResultados({ months2026 }) {
                   {allMonths.map((m, i) => {
                     const val = m[line.key] || 0
                     const isNeg = !line.positive && val < 0
+                    const ventasMes = m.ventas || 0
+                    const pctMes = ventasMes && line.key !== 'ventas' ? (val / ventasMes) : null
                     return (
                       <td key={i} style={{
                         ...sTd(isNeg || (line.computed && val < 0)),
                         fontWeight: line.bold ? 700 : 400,
                         fontSize: 11,
                       }}>
-                        {val < 0 && line.computed ? '-' : ''}{fmt(val)}
+                        <div>{val < 0 && line.computed ? '-' : ''}{fmt(val)}</div>
+                        {pctMes !== null && val !== 0 && (
+                          <div style={{ fontSize: 9, color: C.textMuted, fontWeight: 400, marginTop: 1 }}>
+                            {pct(pctMes)}
+                          </div>
+                        )}
                       </td>
                     )
                   })}
@@ -1162,9 +1169,16 @@ function TabEstadoResultados({ months2026 }) {
                     </td>
                     {allMonths.map((m, i) => {
                       const v = info.perMonth[m.key] || 0
+                      const ventasMes = m.ventas || 0
+                      const pctMes = v && ventasMes && !esInfo ? (v / ventasMes) : null
                       return (
                         <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? colorVal : '#475569', opacity: esInfo ? 0.75 : 1 }}>
-                          {v ? fmt(v) : '—'}
+                          <div>{v ? fmt(v) : '—'}</div>
+                          {pctMes !== null && (
+                            <div style={{ fontSize: 8, color: '#64748b', fontWeight: 400, marginTop: 1 }}>
+                              {pct(pctMes)}
+                            </div>
+                          )}
                         </td>
                       )
                     })}
