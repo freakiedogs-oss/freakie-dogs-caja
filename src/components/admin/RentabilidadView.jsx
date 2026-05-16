@@ -43,7 +43,7 @@ const CATNAME_TO_PL = {
 // categoria_grupo fallback (includes both display names AND raw catalog values)
 const GRUPO_TO_PL = {
   'COGS': 'costo_comida', 'Gasto Local': 'costo_fijo', 'Gasto Venta': 'gastos_operativos',
-  'Gasto Admin': 'gasto_financiero', 'Inversión': 'activo_fijo', 'No Operativo': 'gastos_operativos',
+  'Gasto Admin': 'gastos_operativos', 'Inversión': 'activo_fijo', 'No Operativo': 'gasto_financiero',
   // Raw catalogo_contable.categoria values (in case categoria_grupo uses these)
   'costo_comida': 'costo_comida', 'insumo_venta': 'insumo_venta', 'limpieza': 'limpieza',
   'costo_fijo': 'costo_fijo', 'gastos_operativos': 'gastos_operativos',
