@@ -126,7 +126,7 @@ function buildPnL(ventas, gastos, conIva, planillaBySuc) {
   const ventasPorSuc = {}
   ;(ventas || []).forEach(v => {
     if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
-    ventasPorSuc[v.store_code] += conIva ? n(v.total_ventas_quanto) : n(v.total_ventas_quanto) / 1.13
+    ventasPorSuc[v.store_code] += conIva ? n(v.total_ventas) : n(v.total_ventas) / 1.13
   })
 
   // P&L groups per branch: { sucursal: { costoComida, gastosFijos, gastosOp, gastosFinan, planilla, planillaCorp, inversion } }
@@ -220,7 +220,7 @@ function buildPnL(ventas, gastos, conIva, planillaBySuc) {
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
   const [ventasRes, gastos, planillaRes] = await Promise.all([
-    db.from('v_ventas_unificadas').select('store_code, total_ventas_quanto, fecha, fuente').gte('fecha', desde).lt('fecha', hasta),
+    db.from('v_quanto_ordenes_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta), // 15-may-2026: migrado v_ventas_unificadas (eliminada en migración Quanto 5-may) → v_quanto_ordenes_diario
     fetchAll('v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
       q => q.gte('fecha', desde).lt('fecha', hasta)),
