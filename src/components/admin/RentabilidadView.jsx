@@ -219,15 +219,43 @@ function buildPnL(ventas, gastos, conIva, planillaBySuc) {
 // ── Fetch period data ──
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
-  const [ventasRes, gastos, planillaRes] = await Promise.all([
-    db.from('v_quanto_ordenes_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta), // 15-may-2026: migrado v_ventas_unificadas (eliminada en migración Quanto 5-may) → v_quanto_ordenes_diario
+  const [ventasRes, gastos, planillaRes, eventosRes, eventoEgresosRes] = await Promise.all([
+    db.from('v_quanto_ordenes_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta), // 15-may-2026: migrado v_ventas_unificadas → v_quanto_ordenes_diario
     fetchAll('v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
       q => q.gte('fecha', desde).lt('fecha', hasta)),
-    // FIX 17-Abr-2026: leer planilla por sucursal desde vista nueva (gasto empresa = devengado + patronales)
-    db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta)
+    db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta),
+    // 15-may-2026: integrar eventos. Las ventas de eventos cerrados/activos van con store_code='EVT01'
+    // El frontend prorratea automaticamente costos y gastos operativos por peso de ventas → EVT01 recibe su parte
+    db.from('eventos').select('fecha_evento, total_ventas, estado').gte('fecha_evento', desde).lt('fecha_evento', hasta).in('estado', ['cerrado', 'activo']),
+    // evento_egresos: gastos puntuales del evento (cuando se registren). Por ahora suele estar vacio
+    db.from('evento_egresos').select('created_at, monto, evento_id').gte('created_at', desde).lt('created_at', hasta)
   ])
-  return buildPnL(ventasRes.data, gastos, conIva, planillaRes.data)
+  // Anexar ventas de eventos al array de ventas (store_code='EVT01')
+  const ventasConEventos = [
+    ...(ventasRes.data || []),
+    ...((eventosRes.data || []).map(e => ({
+      store_code: 'EVT01',
+      total_ventas: n(e.total_ventas) || 0,
+      fecha: e.fecha_evento
+    })).filter(e => e.total_ventas > 0))
+  ]
+  // Anexar egresos puntuales de eventos al array de gastos (categoria 'Costo Comida' por defecto)
+  const gastosConEventos = [
+    ...(gastos || []),
+    ...((eventoEgresosRes.data || []).map(g => ({
+      fecha: (g.created_at || '').substring(0,10),
+      proveedor_nombre: 'Evento - Gasto Puntual',
+      monto: n(g.monto) || 0,
+      monto_sin_iva: (n(g.monto) || 0) / 1.13,
+      categoria_nombre: 'Costo Comida',
+      categoria_grupo: 'COGS',
+      subcategoria_contable: 'Eventos',
+      origen: 'evento_egresos',
+      store_code: 'EVT01'
+    })))
+  ]
+  return buildPnL(ventasConEventos, gastosConEventos, conIva, planillaRes.data)
 }
 
 // ═══════════════════════════════════════════
@@ -916,7 +944,7 @@ function PnlRow({ label, curr, comp, field, positive, negative, subtotal, invert
         const color = negative ? '#EF4444' : positive ? (v >= 0 ? '#10B981' : '#EF4444') : '#94A3B8'
         return (
           <td key={s} style={{ ...tdBase, color: subtotal ? (v >= 0 ? '#10B981' : '#EF4444') : color }}>
-            {negative ? '-' : ''}{fmt(Math.abs(v))}
+            {negative ? '-' : (v < 0 ? '-' : '')}{fmt(Math.abs(v))}
           </td>
         )
       })}
@@ -925,8 +953,8 @@ function PnlRow({ label, curr, comp, field, positive, negative, subtotal, invert
         <Delta label={bestDelta.label} dir={invertDelta ? (bestDelta.dir === 'up' ? 'down' : bestDelta.dir === 'down' ? 'up' : 'neutral') : bestDelta.dir} />
       </td>
       {/* Total */}
-      <td style={{ ...tdBase, borderLeft: `2px solid #334155`, fontWeight: 700, color: isFinal ? '#F1F5F9' : negative ? '#EF4444' : '#F1F5F9', fontSize: isFinal ? 14 : 13 }}>
-        {negative ? '-' : ''}{fmt(Math.abs(totalCurr))}
+      <td style={{ ...tdBase, borderLeft: `2px solid #334155`, fontWeight: 700, color: isFinal ? (totalCurr >= 0 ? '#10B981' : '#EF4444') : negative ? '#EF4444' : '#F1F5F9', fontSize: isFinal ? 14 : 13 }}>
+        {negative ? '-' : (totalCurr < 0 ? '-' : '')}{fmt(Math.abs(totalCurr))}
       </td>
       <td style={tdBase}>
         <Delta label={bestDelta.label} dir={invertDelta ? (bestDelta.dir === 'up' ? 'down' : bestDelta.dir === 'down' ? 'up' : 'neutral') : bestDelta.dir} />
