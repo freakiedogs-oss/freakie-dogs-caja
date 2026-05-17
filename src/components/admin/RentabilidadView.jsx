@@ -227,7 +227,7 @@ async function fetchPeriod(year, month, maxDay, conIva) {
     db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta),
     // 15-may-2026: integrar eventos. Las ventas de eventos cerrados/activos van con store_code='EVT01'
     // El frontend prorratea automaticamente costos y gastos operativos por peso de ventas → EVT01 recibe su parte
-    db.from('eventos').select('fecha_evento, total_ventas, estado').gte('fecha_evento', desde).lt('fecha_evento', hasta).in('estado', ['cerrado', 'activo']),
+    db.from('eventos').select('fecha_evento, total_ventas, estado').gte('fecha_evento', desde).lt('fecha_evento', hasta).in('estado', ['cerrado', 'activo', 'aprobado']),
     // evento_egresos: gastos puntuales del evento (cuando se registren). Por ahora suele estar vacio
     db.from('evento_egresos').select('created_at, monto, evento_id').gte('created_at', desde).lt('created_at', hasta)
   ])
