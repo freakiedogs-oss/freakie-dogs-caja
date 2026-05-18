@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db as supabase } from '../../supabase'
 import { today, fmtDate, n } from '../../config'
+import ConciliarTinderTab from './ConciliarTinderTab'
 
 const colors = { bg: '#1a1a2e', card: '#16213e', accent: '#e63946', gold: '#ffd60a', green: '#4ade80', blue: '#60a5fa' }
 
@@ -532,7 +533,7 @@ export default function FinanzasGastosView({ user }) {
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
         {[
           { key: 'egresos',     label: '📊 Egresos de Caja' },
-          { key: 'conciliar',   label: '🔗 Conciliar DTEs' },
+          { key: 'conciliar',   label: '🎯 Conciliar Proveedores' },
           { key: 'recepciones', label: '📦 Recepciones CM' },
           { key: 'sin-dte',     label: '📥 Registrar Sin DTE' },
         ].map(t => (
@@ -690,9 +691,25 @@ export default function FinanzasGastosView({ user }) {
       )}
 
       {/* ═══════════════════════════════════════════════
-          TAB 2 — CONCILIAR DTEs (SMART MATCHING)
+          TAB 2 — CONCILIAR PROVEEDORES (Tinder, F2 17-May-2026)
+          Reemplaza el matching auto monto+fecha por asignación
+          manual con scoring multi-señal (RPC suggest_proveedor_para_egreso)
+          y exclusión P&L automática vía egresos_cierre.excluir_pl.
       ═══════════════════════════════════════════════ */}
-      {tab === 'conciliar' && (() => {
+      {tab === 'conciliar' && (
+        <ConciliarTinderTab
+          user={user}
+          filtroSucursal={filtroSucursal}
+          filtroDesde={filtroDesde}
+          filtroHasta={filtroHasta}
+        />
+      )}
+
+      {/* ─── JSX legacy de Conciliar DTEs (matching auto) ──────────────────────
+          Mantenido como comentario para rollback rápido si Tinder falla.
+          Activar con tab === 'conciliar-legacy' si fuese necesario.
+      ──────────────────────────────────────────────────────────────────────── */}
+      {tab === 'conciliar-legacy' && (() => {
         const verdes    = pendientes.filter(p => matchMap[p.id]?.confianza === 'alta')
         const amarillos = pendientes.filter(p => matchMap[p.id]?.confianza === 'media')
         const bajos     = pendientes.filter(p => matchMap[p.id]?.confianza === 'baja')
