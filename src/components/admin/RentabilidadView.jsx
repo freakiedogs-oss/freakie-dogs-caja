@@ -124,9 +124,14 @@ async function fetchAll(table, select, filter) {
 // Uses CATNAME_TO_PL + GRUPO_TO_PL (same as FinanzasDashboard) for correct classification
 function buildPnL(ventas, gastos, conIva, planillaBySuc) {
   const ventasPorSuc = {}
+  const ventasPorSucFuente = {}
   ;(ventas || []).forEach(v => {
     if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
-    ventasPorSuc[v.store_code] += conIva ? n(v.total_ventas) : n(v.total_ventas) / 1.13
+    const monto = conIva ? n(v.total_ventas) : n(v.total_ventas) / 1.13
+    ventasPorSuc[v.store_code] += monto
+    const fuente = v.fuente || 'POS'
+    if (!ventasPorSucFuente[v.store_code]) ventasPorSucFuente[v.store_code] = {}
+    ventasPorSucFuente[v.store_code][fuente] = (ventasPorSucFuente[v.store_code][fuente] || 0) + monto
   })
 
   // P&L groups per branch: { sucursal: { costoComida, gastosFijos, gastosOp, gastosFinan, planilla, planillaCorp, inversion } }
@@ -213,32 +218,29 @@ function buildPnL(ventas, gastos, conIva, planillaBySuc) {
   const totalGastosOp = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.totalGastos), 0)
   const totalUO = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.utilidadOperativa), 0)
 
-  return { pnl, ventasPorSuc, totalVentas, totalCOGS, totalUB, totalGastosOp, totalUO, gastosPorCat, gastosPorSucCat, catToGrupo }
+  return { pnl, ventasPorSuc, ventasPorSucFuente, totalVentas, totalCOGS, totalUB, totalGastosOp, totalUO, gastosPorCat, gastosPorSucCat, catToGrupo }
 }
 
 // ── Fetch period data ──
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
-  const [ventasRes, gastos, planillaRes, eventosRes, eventoEgresosRes] = await Promise.all([
-    db.from('v_quanto_ordenes_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta), // 15-may-2026: migrado v_ventas_unificadas → v_quanto_ordenes_diario
+  const [ventasRes, gastos, planillaRes, eventosRes, eventoEgresosRes, peyaRes] = await Promise.all([
+    db.from('v_quanto_ordenes_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta),
     fetchAll('v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
       q => q.gte('fecha', desde).lt('fecha', hasta)),
     db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta),
-    // 15-may-2026: integrar eventos. Las ventas de eventos cerrados/activos van con store_code='EVT01'
-    // El frontend prorratea automaticamente costos y gastos operativos por peso de ventas → EVT01 recibe su parte
     db.from('eventos').select('fecha_evento, total_ventas, estado').gte('fecha_evento', desde).lt('fecha_evento', hasta).in('estado', ['cerrado', 'activo', 'aprobado']),
-    // evento_egresos: gastos puntuales del evento (cuando se registren). Por ahora suele estar vacio
-    db.from('evento_egresos').select('created_at, monto, evento_id').gte('created_at', desde).lt('created_at', hasta)
+    db.from('evento_egresos').select('created_at, monto, evento_id').gte('created_at', desde).lt('created_at', hasta),
+    // 18-may-2026: integrar ventas PeYa (delivery) por sucursal — antes solo Quanto (POS) → rentabilidad negativa
+    fetchAll('pedidos_peya', 'fecha_pedido, store_code, total_pedido, estado',
+      q => q.eq('estado', 'Entregado').gte('fecha_pedido', desde).lt('fecha_pedido', hasta))
   ])
-  // Anexar ventas de eventos al array de ventas (store_code='EVT01')
+  // Unificar ventas con fuente: POS (Quanto) + PEYA (delivery) + EVENTOS — 18-may-2026
   const ventasConEventos = [
-    ...(ventasRes.data || []),
-    ...((eventosRes.data || []).map(e => ({
-      store_code: 'EVT01',
-      total_ventas: n(e.total_ventas) || 0,
-      fecha: e.fecha_evento
-    })).filter(e => e.total_ventas > 0))
+    ...((ventasRes.data || []).map(v => ({ store_code: v.store_code, total_ventas: n(v.total_ventas) || 0, fecha: v.fecha, fuente: 'POS' }))),
+    ...((peyaRes || []).map(p => ({ store_code: p.store_code, total_ventas: n(p.total_pedido) || 0, fecha: p.fecha_pedido, fuente: 'PEYA' })).filter(v => v.total_ventas > 0 && v.store_code)),
+    ...((eventosRes.data || []).map(e => ({ store_code: 'EVT01', total_ventas: n(e.total_ventas) || 0, fecha: e.fecha_evento, fuente: 'EVENTOS' })).filter(e => e.total_ventas > 0))
   ]
   // Anexar egresos puntuales de eventos al array de gastos (categoria 'Costo Comida' por defecto)
   const gastosConEventos = [
@@ -601,7 +603,7 @@ export default function RentabilidadView({ user }) {
                     <tbody>
                       {/* VENTAS */}
                       <tr style={sectionRow}><td colSpan={SUC_KEYS.length + 4} style={sectionTd}>INGRESOS</td></tr>
-                      <PnlRow label="Ventas Netas" curr={datos.curr} comp={comp} field="venta" positive />
+                      <PnlRowVentas label="Ventas Netas" curr={datos.curr} comp={comp} />
 
                       {/* COGS */}
                       <tr style={sectionRow}><td colSpan={SUC_KEYS.length + 4} style={sectionTd}>COSTO DE VENTAS</td></tr>
@@ -923,6 +925,47 @@ const sectionRow = {}
 const sectionTd = {
   padding: '14px 14px 6px', fontWeight: 600, color: '#60A5FA', fontSize: 11,
   textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: 'none',
+}
+
+function PnlRowVentas({ label, curr, comp }) {
+  const [expanded, setExpanded] = useState(false)
+  const FUENTES = ['POS', 'PEYA', 'EVENTOS']
+  const FUENTES_LABEL = { POS: 'POS (Quanto)', PEYA: 'PeYa (Delivery)', EVENTOS: 'Eventos' }
+  const totalCurr = SUC_KEYS.reduce((s, k) => s + n(curr.pnl[k]?.venta), 0)
+  const totalComp = comp ? SUC_KEYS.reduce((s, k) => s + n(comp.pnl[k]?.venta), 0) : 0
+  const bestDelta = delta(totalCurr, totalComp)
+  return (
+    <>
+      <tr style={{ cursor: 'pointer' }} onClick={() => setExpanded(!expanded)}>
+        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500, color: '#F1F5F9' }}>
+          <span style={{ display: 'inline-block', width: 12, color: '#94A3B8' }}>{expanded ? '▼' : '▶'}</span> {label}
+        </td>
+        {SUC_KEYS.map(s => {
+          const v = n(curr.pnl[s]?.venta)
+          return <td key={s} style={{ ...tdStyle, color: '#10B981', fontWeight: 500 }}>{fmt(v)}</td>
+        })}
+        <td style={tdStyle}><Delta label={bestDelta.label} dir={bestDelta.dir} /></td>
+        <td style={{ ...tdStyle, borderLeft: '2px solid #334155', fontWeight: 700, color: '#10B981' }}>{fmt(totalCurr)}</td>
+        <td style={tdStyle}><Delta label={bestDelta.label} dir={bestDelta.dir} /></td>
+      </tr>
+      {expanded && FUENTES.map(fuente => {
+        const totalFuente = SUC_KEYS.reduce((s, k) => s + n(curr.ventasPorSucFuente?.[k]?.[fuente]), 0)
+        if (totalFuente === 0) return null
+        return (
+          <tr key={fuente} style={{ background: 'rgba(148,163,184,0.05)' }}>
+            <td style={{ ...tdStyle, textAlign: 'left', paddingLeft: 28, fontSize: 12, color: '#94A3B8' }}>↳ {FUENTES_LABEL[fuente]}</td>
+            {SUC_KEYS.map(s => {
+              const v = n(curr.ventasPorSucFuente?.[s]?.[fuente])
+              return <td key={s} style={{ ...tdStyle, color: v > 0 ? '#94A3B8' : '#475569', fontSize: 12 }}>{v > 0 ? fmt(v) : '—'}</td>
+            })}
+            <td style={tdStyle}></td>
+            <td style={{ ...tdStyle, borderLeft: '2px solid #334155', color: '#94A3B8', fontSize: 12 }}>{fmt(totalFuente)}</td>
+            <td style={tdStyle}></td>
+          </tr>
+        )
+      })}
+    </>
+  )
 }
 
 function PnlRow({ label, curr, comp, field, positive, negative, subtotal, invertDelta, isFinal }) {
