@@ -186,7 +186,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
 
     showToast(
       isExcluye
-        ? `✓ ${sugerencia.nombre} · EXCLUIDO del P&L (envía DTE)`
+        ? `✓ ${sugerencia.nombre} · EXCLUIDO del P&L (ya contabilizado)`
         : `✓ ${sugerencia.nombre} · Categoría: ${sugerencia.subcategoria || sugerencia.categoria}`,
       isExcluye ? 'warn' : 'ok'
     )
@@ -243,19 +243,31 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   }
 
   // Para mostrar genera_dte en resultados de búsqueda, leer de compras_dte últimos 90d en bulk
+  // yaEnPlSet = nombres de proveedores que ya están en P&L por otra fuente
+  // (compras_dte 90d, compras_bees Constancia, compras_sin_dte 90d, Delivery Hero).
+  // Si asignas un egreso a uno de estos → excluir_pl=TRUE para evitar doble conteo.
   const [generaDteSet, setGeneraDteSet] = useState(new Set())
   useEffect(() => {
     let cancel = false
     ;(async () => {
       if (searchResults.length === 0) return
-      const ids = searchResults.map(r => r.nombre_dte.toUpperCase())
-      if (!ids.length) return
-      const { data } = await supabase
-        .from('compras_dte')
-        .select('proveedor_nombre')
-        .gte('fecha_emision', new Date(Date.now() - 90*86400000).toISOString().split('T')[0])
+      const desde90 = new Date(Date.now() - 90*86400000).toISOString().split('T')[0]
+      const [dte, bees, sinDte] = await Promise.all([
+        supabase.from('compras_dte').select('proveedor_nombre').gte('fecha_emision', desde90),
+        supabase.from('compras_bees').select('id').gte('fecha', desde90).limit(1),
+        supabase.from('compras_sin_dte').select('proveedor_nombre').gte('fecha', desde90),
+      ])
       if (cancel) return
-      const set = new Set((data || []).map(d => (d.proveedor_nombre || '').toUpperCase().trim()))
+      const set = new Set()
+      ;(dte.data || []).forEach(d => set.add((d.proveedor_nombre || '').toUpperCase().trim()))
+      ;(sinDte.data || []).forEach(d => set.add((d.proveedor_nombre || '').toUpperCase().trim()))
+      // Constancia siempre, si hay registros bees recientes
+      if ((bees.data || []).length > 0) {
+        set.add('LA CONSTANCIA')
+        set.add('LA CONSTANCIA (BEES)')
+      }
+      // Delivery Hero siempre
+      set.add('DELIVERY HERO EL SALVADOR, S.A. DE C.V.')
       setGeneraDteSet(set)
     })()
     return () => { cancel = true }
@@ -307,7 +319,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
       </div>
 
       <div style={S.hintBox}>
-        💡 Asigna el proveedor correcto. Si envía DTEs → <strong>excluido del P&L</strong> automáticamente (evita doble conteo). Si no, queda categorizado y sigue contando en P&L.
+        💡 Asigna el proveedor correcto. Si ya en P&Ls → <strong>excluido del P&L</strong> automáticamente (evita doble conteo). Si no, queda categorizado y sigue contando en P&L.
       </div>
 
       {/* Progress */}
@@ -412,7 +424,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
                       })}
                     </div>
                     {s.genera_dte && (
-                      <div style={S.excludeFlag}>⚠ Excluirá del P&L (envía DTE)</div>
+                      <div style={S.excludeFlag}>⚠ Ya está en P&L · Se excluirá para evitar doble conteo</div>
                     )}
                   </div>
                   <button style={S.btnAsignar} onClick={(e) => { e.stopPropagation(); askAsignar(s) }}>
@@ -440,7 +452,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 13 }}>{r.nombre_dte}</div>
                           <div style={S.sugMeta}>
-                            {r.subcategoria || r.categoria}{dte ? ' · ⚡ envía DTE' : ' · sin DTE'}
+                            {r.subcategoria || r.categoria}{dte ? ' · ⚡ ya en P&L' : ' · no en P&L'}
                           </div>
                         </div>
                         <button style={{ ...S.btnAsignar, padding: '5px 8px', fontSize: 11 }}>✓</button>
@@ -480,7 +492,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
             </div>
             {confirm.sugerencia.genera_dte ? (
               <div style={S.confirmWarn}>
-                ⚠ Este proveedor envía DTEs. El egreso se <strong>excluirá del P&L</strong> para evitar doble conteo.
+                ⚠ Este proveedor ya está siendo contabilizado en el P&L por otra fuente (DTE / BEES / Excel manual / PeYa). El egreso se <strong>excluirá del P&L</strong> para evitar doble conteo.
                 {confirm.sugerencia.dte_match_id && (
                   <div style={{ marginTop: 6, fontSize: 12 }}>
                     Además se vinculará al DTE {fmt$(confirm.sugerencia.dte_monto)} del {fmtDate(confirm.sugerencia.dte_fecha)}.
@@ -489,7 +501,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
               </div>
             ) : (
               <div style={S.confirmOk}>
-                ✓ Este proveedor no envía DTE. El gasto seguirá contando en P&L bajo <strong>{confirm.sugerencia.subcategoria || confirm.sugerencia.categoria}</strong>.
+                ✓ Este proveedor no está en otra fuente del P&L. El gasto contará en P&L bajo <strong>{confirm.sugerencia.subcategoria || confirm.sugerencia.categoria}</strong>.
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
