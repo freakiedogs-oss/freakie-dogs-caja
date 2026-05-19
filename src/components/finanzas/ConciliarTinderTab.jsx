@@ -16,12 +16,13 @@ const colors = {
 const fmt$ = (v) => `$${n(v).toFixed(2)}`
 
 const RAZON_MAP = {
-  dte_alta:   { label: '⚡ DTE match exacto',  cls: 'dte' },
-  dte_media:  { label: '⚡ DTE match',          cls: 'dte' },
-  dte_baja:   { label: '⚡ DTE cercano',        cls: 'dte' },
-  frecuente:  { label: '📊 Frecuente',          cls: 'frec' },
-  comentario: { label: '💬 Comentario',         cls: 'coment' },
-  ocr:        { label: '🔍 OCR',                cls: 'ocr' },
+  dte_perfecto: { label: '✨ MATCH EXACTO DTE', cls: 'perfecto' },
+  dte_alta:     { label: '⚡ DTE match alta',   cls: 'dte' },
+  dte_media:    { label: '⚡ DTE match media',  cls: 'dte' },
+  dte_baja:     { label: '⚡ DTE cercano',      cls: 'dte' },
+  frecuente:    { label: '📊 Frecuente',        cls: 'frec' },
+  comentario:   { label: '💬 Comentario',       cls: 'coment' },
+  ocr:          { label: '🔍 OCR',              cls: 'ocr' },
 }
 
 export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, filtroHasta }) {
@@ -40,6 +41,8 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   const [toast, setToast] = useState(null)
   const [confirm, setConfirm] = useState(null)
   const [fotoZoom, setFotoZoom] = useState(false)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrResult, setOcrResult] = useState(null)
 
   const cargandoCardRef = useRef(false)
 
@@ -121,6 +124,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
                            .concat(pendientes.filter(p => skipped.has(p.id)))
     const egreso = cola[idx]
     if (egreso && (!card || card.egreso.id !== egreso.id)) {
+      setOcrResult(null)  // Reset OCR al cambiar card
       cargarSugerencias(egreso)
     } else if (!egreso) {
       setCard(null)
@@ -225,6 +229,108 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
     setPendientes(prev => prev.filter(p => p.id !== card.egreso.id))
     setCard(null)
     setCounts(c => ({ ...c, [tipo]: Math.max(0, c[tipo] - 1) }))
+  }
+
+  // ── F4 OCR Tesseract.js: leer foto del recibo, extraer texto, buscar match en catálogo
+  const runOcr = async () => {
+    if (!card?.egreso?.foto_url || ocrLoading) return
+    setOcrLoading(true)
+    setOcrResult(null)
+
+    try {
+      // Lazy load Tesseract desde CDN (no en bundle)
+      if (!window.Tesseract) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script')
+          s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+          s.onload = resolve
+          s.onerror = reject
+          document.head.appendChild(s)
+        })
+      }
+      const { data: { text } } = await window.Tesseract.recognize(
+        card.egreso.foto_url, 'spa+eng',
+        { logger: m => {} }
+      )
+
+      const textoLimpio = (text || '').trim().slice(0, 2000)
+      setOcrResult(textoLimpio)
+
+      // Cachear en BD
+      await supabase
+        .from('egresos_cierre')
+        .update({ ocr_texto: textoLimpio })
+        .eq('id', card.egreso.id)
+
+      // Buscar matches contra catálogo: extraer NITs y nombres
+      const textoUpper = textoLimpio.toUpperCase()
+      // NIT pattern: 14 dígitos contiguos o con guiones
+      const nitsEncontrados = [...textoUpper.matchAll(/\b\d{4}[-]?\d{6}[-]?\d{3}[-]?\d{1}\b/g)]
+        .map(m => m[0].replace(/-/g, ''))
+
+      // Buscar proveedores en catalogo por nombre o normalizado dentro del texto OCR
+      const { data: catalogo } = await supabase
+        .from('catalogo_contable')
+        .select('id, nombre_dte, nombre_normalizado, categoria, subcategoria')
+        .eq('activo', true)
+        .is('duplicado_de', null)
+
+      const matches = (catalogo || [])
+        .map(c => {
+          const norm = (c.nombre_normalizado || '').toUpperCase()
+          let score = 0
+          if (norm.length >= 5 && textoUpper.includes(norm)) score = 25
+          else {
+            // Match parcial: alguna palabra significativa
+            const palabras = norm.split(/\s+/).filter(p => p.length >= 5)
+            const hits = palabras.filter(p => textoUpper.includes(p)).length
+            if (hits >= 1) score = Math.min(20, hits * 8)
+          }
+          return { ...c, score }
+        })
+        .filter(c => c.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+
+      // Refrescar sugerencias inyectando OCR como señal extra al inicio
+      if (matches.length > 0) {
+        const ocrSugerencias = matches.map(m => ({
+          catalogo_id: m.id,
+          nombre: m.nombre_dte,
+          categoria: m.categoria,
+          subcategoria: m.subcategoria,
+          score: m.score,
+          razones: ['ocr'],
+          genera_dte: generaDteSet.has((m.nombre_dte || '').toUpperCase().trim()),
+          dte_match_id: null,
+        }))
+        setCard(prev => prev ? {
+          ...prev,
+          sugerencias: [
+            ...ocrSugerencias.filter(o => !prev.sugerencias.find(s => s.catalogo_id === o.catalogo_id)),
+            ...prev.sugerencias.map(s => {
+              const ocrMatch = matches.find(m => m.id === s.catalogo_id)
+              if (ocrMatch) {
+                return {
+                  ...s,
+                  score: Number(s.score || 0) + ocrMatch.score,
+                  razones: [...(s.razones || []), 'ocr']
+                }
+              }
+              return s
+            }).sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+          ]
+        } : prev)
+        showToast(`🔍 OCR: ${matches.length} candidato${matches.length>1?'s':''} detectado${matches.length>1?'s':''}`, 'ok')
+      } else {
+        showToast('🔍 OCR ejecutado · sin coincidencias en catálogo', 'info')
+      }
+    } catch (err) {
+      console.error('[OCR]', err)
+      showToast('❌ OCR falló: ' + (err.message || 'error'), 'error')
+    } finally {
+      setOcrLoading(false)
+    }
   }
 
   // ── Búsqueda en catalogo_contable
@@ -399,11 +505,15 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
 
             {!loadingCard && sugerencias.map((s, i) => {
               const scoreNum = Number(s.score || 0)
-              const scoreCls = scoreNum >= 50 ? 'high'
-                             : scoreNum >= 25 ? 'med'
+              const esPerfecto = (s.razones || []).includes('dte_perfecto')
+              const scoreCls = esPerfecto      ? 'perfecto'
+                             : scoreNum >= 50  ? 'high'
+                             : scoreNum >= 25  ? 'med'
                              : 'low'
               return (
-                <div key={s.catalogo_id} style={S.sugRow} onClick={() => askAsignar(s)}>
+                <div key={s.catalogo_id}
+                     style={{ ...S.sugRow, ...(esPerfecto ? S.sugRowPerfecto : {}) }}
+                     onClick={() => askAsignar(s)}>
                   <div style={{ ...S.scorePill, ...S.scorePillStyles[scoreCls] }}>
                     {scoreNum > 0 ? Math.round(scoreNum) : '?'}
                   </div>
@@ -467,7 +577,21 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
             <div style={S.actions}>
               <button style={S.btnNoPl} onClick={noAplica}>🚫 No aplica P&L</button>
               <button style={S.btnSkip} onClick={skip}>⏭ Skip</button>
+              {egresoActual?.foto_url && (
+                <button style={S.btnOcr}
+                        onClick={runOcr}
+                        disabled={ocrLoading}
+                        title={ocrResult ? 'OCR ya ejecutado' : 'Leer texto de la foto y buscar proveedor'}>
+                  {ocrLoading ? '⏳ Leyendo…' : '🔍 Leer OCR'}
+                </button>
+              )}
             </div>
+            {ocrResult && (
+              <div style={S.ocrPanel}>
+                <strong style={{ color: '#f9a8d4' }}>🔍 Texto OCR detectado:</strong>
+                <div style={S.ocrText}>{ocrResult.slice(0, 240)}{ocrResult.length > 240 ? '…' : ''}</div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -490,7 +614,22 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
               Egreso de <strong style={{ color: colors.gold }}>{fmt$(confirm.egreso.monto)}</strong>{' '}
               del {fmtDate(confirm.egreso.ventas_diarias?.fecha)} · {confirm.egreso.ventas_diarias?.store_code}
             </div>
-            {confirm.sugerencia.genera_dte ? (
+            {(confirm.sugerencia.razones || []).includes('dte_perfecto') ? (
+              <div style={S.confirmPerfecto}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#10b981', marginBottom: 6 }}>
+                  ✨ MATCH EXACTO con DTE existente
+                </div>
+                Se va a <strong>cruzar este egreso con el DTE</strong> que ya existe en el sistema:
+                <div style={{ marginTop: 8, padding: 8, background: 'rgba(16,185,129,0.1)', borderRadius: 6 }}>
+                  <strong>{confirm.sugerencia.dte_proveedor || confirm.sugerencia.nombre}</strong><br/>
+                  Monto DTE: <strong>{fmt$(confirm.sugerencia.dte_monto)}</strong> · Fecha: {fmtDate(confirm.sugerencia.dte_fecha)}<br/>
+                  Egreso: <strong>{fmt$(confirm.egreso.monto)}</strong> · Diff: <strong>{fmt$(Math.abs(n(confirm.sugerencia.dte_monto) - n(confirm.egreso.monto)))}</strong>
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, color: '#6ee7b7' }}>
+                  ✓ DTE marcado <code>cruzado=TRUE</code> · ✓ Egreso vinculado · ✓ Excluido del P&L (ya contabilizado en compras_dte)
+                </div>
+              </div>
+            ) : confirm.sugerencia.genera_dte ? (
               <div style={S.confirmWarn}>
                 ⚠ Este proveedor ya está siendo contabilizado en el P&L por otra fuente (DTE / BEES / Excel manual / PeYa). El egreso se <strong>excluirá del P&L</strong> para evitar doble conteo.
                 {confirm.sugerencia.dte_match_id && (
@@ -569,11 +708,13 @@ const S = {
   panelCounter: { fontSize: 11, color: colors.gray, background: colors.card2, padding: '3px 9px', borderRadius: 10 },
 
   sugRow: { padding: '12px 16px', borderBottom: `1px solid ${colors.border}`, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', transition: 'background 0.15s' },
+  sugRowPerfecto: { background: 'linear-gradient(90deg, rgba(16,185,129,0.12) 0%, rgba(16,185,129,0.04) 100%)', borderLeft: '3px solid #10b981' },
   scorePill: { fontWeight: 800, fontSize: 12, padding: '5px 7px', borderRadius: 7, minWidth: 36, textAlign: 'center', alignSelf: 'center' },
   scorePillStyles: {
-    high: { background: colors.green, color: '#0a2418' },
-    med:  { background: colors.gold,  color: '#3a2510' },
-    low:  { background: colors.gray,  color: '#1a1a2e' },
+    perfecto: { background: '#10b981', color: '#fff', boxShadow: '0 0 0 2px rgba(16,185,129,0.4)' },
+    high:     { background: colors.green, color: '#0a2418' },
+    med:      { background: colors.gold,  color: '#3a2510' },
+    low:      { background: colors.gray,  color: '#1a1a2e' },
   },
   sugInfo: { flex: 1, minWidth: 0 },
   sugNombre: { fontWeight: 700, fontSize: 13, color: '#f0f0f0', marginBottom: 2 },
@@ -581,10 +722,11 @@ const S = {
   razones: { display: 'flex', gap: 5, flexWrap: 'wrap' },
   razon: { fontSize: 10, padding: '2px 6px', borderRadius: 4, background: colors.card2, color: colors.gray, border: `1px solid ${colors.border}` },
   razonStyles: {
-    dte:    { background: '#1a3a1a', borderColor: '#2a5a2a', color: '#86efac' },
-    frec:   { background: '#1a2a4a', borderColor: '#2a4a7a', color: '#93c5fd' },
-    ocr:    { background: '#3a1a2a', borderColor: '#7a2a4a', color: '#f9a8d4' },
-    coment: { background: '#3a3a1a', borderColor: '#7a7a2a', color: colors.gold },
+    perfecto: { background: '#064e3b', borderColor: '#10b981', color: '#6ee7b7', fontWeight: 800, fontSize: 11, padding: '3px 8px', textTransform: 'uppercase' },
+    dte:      { background: '#1a3a1a', borderColor: '#2a5a2a', color: '#86efac' },
+    frec:     { background: '#1a2a4a', borderColor: '#2a4a7a', color: '#93c5fd' },
+    ocr:      { background: '#3a1a2a', borderColor: '#7a2a4a', color: '#f9a8d4' },
+    coment:   { background: '#3a3a1a', borderColor: '#7a7a2a', color: colors.gold },
   },
   excludeFlag: { fontSize: 10, color: colors.accent, marginTop: 4, fontWeight: 600 },
   btnAsignar: { background: colors.green, color: '#0a2418', border: 'none', padding: '7px 11px', borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: 'pointer', alignSelf: 'center', whiteSpace: 'nowrap' },
@@ -598,6 +740,9 @@ const S = {
   actions: { padding: '12px 16px', display: 'flex', gap: 8, flexWrap: 'wrap' },
   btnNoPl: { flex: 1, background: colors.card2, border: `1px solid ${colors.border}`, color: colors.gray, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
   btnSkip: { flex: 1, background: colors.card2, border: '1px solid #7a5a10', color: colors.gold, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
+  btnOcr:  { flex: 1, background: colors.card2, border: '1px solid #7a2a4a', color: '#f9a8d4', padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
+  ocrPanel: { padding: '10px 16px', borderTop: `1px solid ${colors.border}`, background: 'rgba(58,26,42,0.3)', fontSize: 11 },
+  ocrText: { marginTop: 4, color: '#cbd5e1', fontFamily: 'ui-monospace, monospace', fontSize: 10, lineHeight: 1.5, whiteSpace: 'pre-wrap', maxHeight: 80, overflowY: 'auto' },
 
   toast: { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', padding: '13px 20px', borderRadius: 11, fontWeight: 700, fontSize: 13, boxShadow: '0 6px 18px rgba(0,0,0,0.4)', zIndex: 1000 },
   toastOk:    { background: colors.green, color: '#0a2418' },
@@ -607,8 +752,9 @@ const S = {
 
   modalBg: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, padding: 20 },
   modal: { background: colors.card, border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, maxWidth: 460, width: '100%', boxShadow: '0 12px 36px rgba(0,0,0,0.5)' },
-  confirmWarn: { padding: 12, background: 'rgba(255,214,10,0.1)', border: '1px solid rgba(255,214,10,0.3)', borderRadius: 8, color: colors.gold, fontSize: 13 },
-  confirmOk:   { padding: 12, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 8, color: colors.green, fontSize: 13 },
+  confirmWarn:     { padding: 12, background: 'rgba(255,214,10,0.1)', border: '1px solid rgba(255,214,10,0.3)', borderRadius: 8, color: colors.gold, fontSize: 13 },
+  confirmOk:       { padding: 12, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 8, color: colors.green, fontSize: 13 },
+  confirmPerfecto: { padding: 14, background: 'rgba(16,185,129,0.08)', border: '2px solid #10b981', borderRadius: 8, color: '#86efac', fontSize: 13 },
   btnCancel:   { flex: 1, background: colors.card2, border: `1px solid ${colors.border}`, color: '#f0f0f0', padding: '10px', borderRadius: 7, cursor: 'pointer', fontWeight: 600 },
   btnConfirm:  { flex: 2, background: colors.accent, border: 'none', color: '#fff', padding: '10px', borderRadius: 7, cursor: 'pointer', fontWeight: 700 },
 
