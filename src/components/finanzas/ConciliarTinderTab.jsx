@@ -16,13 +16,14 @@ const colors = {
 const fmt$ = (v) => `$${n(v).toFixed(2)}`
 
 const RAZON_MAP = {
-  dte_perfecto: { label: '✨ MATCH EXACTO DTE', cls: 'perfecto' },
-  dte_alta:     { label: '⚡ DTE match alta',   cls: 'dte' },
-  dte_media:    { label: '⚡ DTE match media',  cls: 'dte' },
-  dte_baja:     { label: '⚡ DTE cercano',      cls: 'dte' },
-  frecuente:    { label: '📊 Frecuente',        cls: 'frec' },
-  comentario:   { label: '💬 Comentario',       cls: 'coment' },
-  ocr:          { label: '🔍 OCR',              cls: 'ocr' },
+  dte_perfecto:        { label: '✨ MATCH EXACTO DTE',         cls: 'perfecto' },
+  dte_alta:            { label: '⚡ DTE match alta',           cls: 'dte' },
+  dte_media:           { label: '⚡ DTE match media',          cls: 'dte' },
+  dte_baja:            { label: '⚡ DTE cercano',              cls: 'dte' },
+  dte_pendiente_match: { label: '⏳ Sin DTE específico',       cls: 'pendiente' },
+  frecuente:           { label: '📊 Frecuente',                cls: 'frec' },
+  comentario:          { label: '💬 Comentario',               cls: 'coment' },
+  ocr:                 { label: '🔍 OCR',                      cls: 'ocr' },
 }
 
 export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, filtroHasta }) {
@@ -43,6 +44,10 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   const [fotoZoom, setFotoZoom] = useState(false)
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrResult, setOcrResult] = useState(null)
+  // Splits del egreso actual (cuando el usuario hace + Otra factura)
+  const [splits, setSplits] = useState([])               // {split_id, proveedor_id, nombre, monto, razon, fuente, dte_match_id}
+  const [splitMode, setSplitMode] = useState(false)      // True después de agregar el primer split
+  const [splitMontoInput, setSplitMontoInput] = useState('')
 
   const cargandoCardRef = useRef(false)
 
@@ -125,6 +130,9 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
     const egreso = cola[idx]
     if (egreso && (!card || card.egreso.id !== egreso.id)) {
       setOcrResult(null)  // Reset OCR al cambiar card
+      setSplits([])         // Reset splits al cambiar card
+      setSplitMode(false)
+      setSplitMontoInput('')
       cargarSugerencias(egreso)
     } else if (!egreso) {
       setCard(null)
@@ -146,61 +154,124 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   // ── Asignar proveedor (con confirmación si excluye P&L)
   const askAsignar = (sugerencia) => {
     if (!card?.egreso) return
+    // Si estamos en splitMode y no hay monto input, prefill con el restante
+    if (splitMode && !splitMontoInput) {
+      setSplitMontoInput(restanteSplit.toFixed(2))
+    }
     setConfirm({ sugerencia, egreso: card.egreso })
   }
 
-  const ejecutarAsignar = async () => {
+  // ── Clasificación de la asignación según fuente del proveedor en P&L
+  // 4 escenarios → distintos estados + excluir_pl
+  const clasificarAsignacion = (s) => {
+    const matchExacto    = !!s.dte_match_id
+    const tieneDteProv   = !!s.tiene_dte_proveedor
+    const tieneBeesOtro  = !!s.tiene_bees_otro
+    if (matchExacto)    return { tipo: 'match',     estado: 'cruzado',             excluye: true,  msg: 'Se cruza con DTE existente · no doble conteo' }
+    if (tieneDteProv && !tieneBeesOtro) return { tipo: 'pendiente', estado: 'pendiente_dte', excluye: false, msg: 'Sin DTE específico · queda EN P&L hasta que llegue' }
+    if (tieneBeesOtro)  return { tipo: 'agregado',  estado: 'excluido_dte_externo', excluye: true,  msg: 'Ya contabilizado en P&L (BEES/sin_dte/PeYa)' }
+    return                    { tipo: 'normal',    estado: 'asignado_directo',     excluye: false, msg: 'Entra al P&L normal' }
+  }
+
+  // ── Asignar completo (1:1) o agregar split parcial
+  const ejecutarAsignar = async (montoSplitOverride = null) => {
     if (!confirm) return
     const { sugerencia, egreso } = confirm
-    setConfirm(null)
-    const isExcluye = !!sugerencia.genera_dte
-    const isMatchExacto = !!sugerencia.dte_match_id
+    const esSplit = montoSplitOverride != null || splitMode
+    const montoUsar = montoSplitOverride != null
+      ? Number(montoSplitOverride)
+      : esSplit ? Number(splitMontoInput) : Number(egreso.monto)
 
-    const estadoNuevo = isMatchExacto ? 'cruzado'
-                      : isExcluye    ? 'excluido_dte_externo'
-                      :                'asignado_directo'
-
-    const updates = {
-      proveedor_id:         sugerencia.catalogo_id,
-      proveedor_genera_dte: isExcluye,
-      excluir_pl:           isExcluye,
-      categoria_gasto_id:   sugerencia.categoria,
-      estado_cruce:         estadoNuevo,
-      asignado_por:         user?.id || null,
-      asignado_at:          new Date().toISOString(),
-      ...(isMatchExacto ? { compras_dte_id: sugerencia.dte_match_id } : {}),
-    }
-
-    const { error: e1 } = await supabase
-      .from('egresos_cierre').update(updates).eq('id', egreso.id)
-
-    if (e1) {
-      console.error('[Tinder] update egreso:', e1)
-      showToast('❌ Error al asignar: ' + e1.message, 'error')
+    if (esSplit && (!montoUsar || montoUsar <= 0)) {
+      showToast('❌ Monto del split debe ser > 0', 'error')
       return
     }
+    setConfirm(null)
 
-    // Si hay match exacto, marcar el DTE como cruzado
-    if (isMatchExacto) {
-      await supabase.from('compras_dte').update({ cruzado: true }).eq('id', sugerencia.dte_match_id)
+    const isMatchExacto = !!sugerencia.dte_match_id
+
+    let result
+    if (esSplit) {
+      // Agregar split
+      const { data, error } = await supabase.rpc('agregar_split_egreso', {
+        p_egreso_id: egreso.id,
+        p_proveedor_id: sugerencia.catalogo_id,
+        p_monto: montoUsar,
+        p_dte_match_id: sugerencia.dte_match_id || null,
+        p_asignado_por: user?.id || null,
+        p_comentario: sugerencia.nombre,
+        p_tiene_dte_proveedor: !!sugerencia.tiene_dte_proveedor,
+        p_tiene_bees_otro:     !!sugerencia.tiene_bees_otro,
+      })
+      if (error || !(data?.[0]?.ok)) {
+        showToast('❌ ' + (error?.message || data?.[0]?.msg || 'Error'), 'error')
+        return
+      }
+      result = data[0]
+      setSplits(prev => [...prev, {
+        split_id: result.split_id,
+        proveedor_id: sugerencia.catalogo_id,
+        nombre: sugerencia.nombre,
+        monto: montoUsar,
+        estado: result.estado_split,
+        excluye: result.excluir_pl_split,
+        dte_match_id: sugerencia.dte_match_id,
+      }])
+      setSplitMontoInput('')
+      showToast(result.completo
+        ? `✓ Split agregado · Egreso COMPLETO ($${montoUsar.toFixed(2)} de $${Number(egreso.monto).toFixed(2)})`
+        : `+ Split $${montoUsar.toFixed(2)} agregado · Faltan $${Number(result.restante).toFixed(2)}`,
+        result.completo ? 'ok' : 'info')
+      if (result.completo) {
+        setAsignadosSesion(x => x + 1)
+        setPendientes(prev => prev.filter(p => p.id !== egreso.id))
+        setCard(null); setSplits([]); setSplitMode(false)
+        setCounts(c => ({ ...c, [tipo]: Math.max(0, c[tipo] - 1) }))
+      } else {
+        setSplitMode(true)  // Ya empezó split mode
+      }
+    } else {
+      // Asignar completo 1:1 via RPC nueva
+      const { data, error } = await supabase.rpc('asignar_egreso_completo', {
+        p_egreso_id: egreso.id,
+        p_proveedor_id: sugerencia.catalogo_id,
+        p_dte_match_id: sugerencia.dte_match_id || null,
+        p_asignado_por: user?.id || null,
+        p_tiene_dte_proveedor: !!sugerencia.tiene_dte_proveedor,
+        p_tiene_bees_otro:     !!sugerencia.tiene_bees_otro,
+      })
+      if (error || !(data?.[0]?.ok)) {
+        showToast('❌ ' + (error?.message || data?.[0]?.msg || 'Error'), 'error')
+        return
+      }
+      const r = data[0]
+      const cls = clasificarAsignacion(sugerencia)
+      setAsignadosSesion(x => x + 1)
+      if (r.excluir_pl) setExcluidosSesion(x => x + 1)
+      showToast(`✓ ${sugerencia.nombre} · ${cls.msg}`,
+        cls.tipo === 'match' ? 'ok' : cls.tipo === 'pendiente' ? 'info' : cls.tipo === 'agregado' ? 'warn' : 'ok')
+      setPendientes(prev => prev.filter(p => p.id !== egreso.id))
+      setCard(null); setSplits([]); setSplitMode(false)
+      setSearch(''); setSearchResults([])
+      setCounts(c => ({ ...c, [tipo]: Math.max(0, c[tipo] - 1) }))
     }
-
-    setAsignadosSesion(x => x + 1)
-    if (isExcluye) setExcluidosSesion(x => x + 1)
-
-    showToast(
-      isExcluye
-        ? `✓ ${sugerencia.nombre} · EXCLUIDO del P&L (ya contabilizado)`
-        : `✓ ${sugerencia.nombre} · Categoría: ${sugerencia.subcategoria || sugerencia.categoria}`,
-      isExcluye ? 'warn' : 'ok'
-    )
-
-    // Sacar de la cola y avanzar
-    setPendientes(prev => prev.filter(p => p.id !== egreso.id))
-    setCard(null)
-    setSearch(''); setSearchResults([])
-    setCounts(c => ({ ...c, [tipo]: Math.max(0, c[tipo] - 1) }))
   }
+
+  // ── Cancelar splits parciales y revertir egreso a pendiente
+  const cancelarSplits = async () => {
+    if (splits.length === 0) { setSplitMode(false); return }
+    if (!confirm) {/* noop */}
+    for (const s of splits) {
+      await supabase.rpc('revertir_split_egreso', { p_split_id: s.split_id })
+    }
+    setSplits([])
+    setSplitMode(false)
+    showToast(`↩ ${splits.length} splits revertidos`, 'info')
+  }
+
+  const restanteSplit = card?.egreso
+    ? Number(card.egreso.monto) - splits.reduce((s, x) => s + Number(x.monto || 0), 0)
+    : 0
 
   // ── Skip (queda al final de la cola)
   const skip = () => {
@@ -488,8 +559,49 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
 
           {/* Panel sugerencias */}
           <div style={S.panel}>
+            {/* Split panel — visible cuando hay splits parciales */}
+            {splitMode && splits.length > 0 && (
+              <div style={S.splitPanel}>
+                <div style={S.splitHead}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: colors.gold }}>
+                    🧾 Splits ({splits.length})
+                  </span>
+                  <span style={{ fontSize: 12, color: colors.gray }}>
+                    {fmt$(Number(egresoActual.monto) - restanteSplit)} de {fmt$(egresoActual.monto)} ·
+                    {' '}<strong style={{ color: restanteSplit < 1 ? colors.green : colors.gold }}>
+                      Faltan {fmt$(restanteSplit)}
+                    </strong>
+                  </span>
+                </div>
+                {splits.map((sp) => (
+                  <div key={sp.split_id} style={S.splitRow}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>{sp.nombre}</div>
+                      <div style={{ fontSize: 11, color: colors.gray }}>
+                        {fmt$(sp.monto)} · {sp.estado}
+                        {sp.excluye && <span style={{ color: colors.accent }}> · excluido P&L</span>}
+                      </div>
+                    </div>
+                    <button style={S.btnSplitRemove}
+                            onClick={async () => {
+                              await supabase.rpc('revertir_split_egreso', { p_split_id: sp.split_id })
+                              setSplits(prev => prev.filter(x => x.split_id !== sp.split_id))
+                              showToast('↩ Split removido', 'info')
+                            }}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div style={{ padding: '8px 14px', display: 'flex', gap: 6 }}>
+                  <button style={S.btnSplitCancel} onClick={cancelarSplits}>↩ Cancelar todo</button>
+                </div>
+              </div>
+            )}
+
             <div style={S.panelHead}>
-              <div style={S.panelTitle}>💡 Sugerencias</div>
+              <div style={S.panelTitle}>
+                {splitMode ? '➕ Selecciona el siguiente proveedor' : '💡 Sugerencias'}
+              </div>
               <div style={S.panelCounter}>
                 {loadingCard ? '…' : `${sugerencias.length} candidatos`}
               </div>
@@ -575,14 +687,21 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
 
             {/* Acciones */}
             <div style={S.actions}>
-              <button style={S.btnNoPl} onClick={noAplica}>🚫 No aplica P&L</button>
+              <button style={S.btnNoPl} onClick={noAplica}>🚫 No aplica</button>
               <button style={S.btnSkip} onClick={skip}>⏭ Skip</button>
+              {!splitMode && (
+                <button style={S.btnSplit}
+                        onClick={() => { setSplitMode(true); setSplitMontoInput('') }}
+                        title="Si la foto tiene varias facturas, divide el egreso entre múltiples proveedores">
+                  ✂ Split
+                </button>
+              )}
               {egresoActual?.foto_url && (
                 <button style={S.btnOcr}
                         onClick={runOcr}
                         disabled={ocrLoading}
                         title={ocrResult ? 'OCR ya ejecutado' : 'Leer texto de la foto y buscar proveedor'}>
-                  {ocrLoading ? '⏳ Leyendo…' : '🔍 Leer OCR'}
+                  {ocrLoading ? '⏳ Leyendo…' : '🔍 OCR'}
                 </button>
               )}
             </div>
@@ -603,53 +722,93 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
         </div>
       )}
 
-      {/* Confirm modal */}
-      {confirm && (
-        <div style={S.modalBg} onClick={() => setConfirm(null)}>
-          <div style={S.modal} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 10 }}>
-              Asignar a <span style={{ color: colors.gold }}>{confirm.sugerencia.nombre}</span>
-            </div>
-            <div style={{ fontSize: 13, color: colors.gray, marginBottom: 14 }}>
-              Egreso de <strong style={{ color: colors.gold }}>{fmt$(confirm.egreso.monto)}</strong>{' '}
-              del {fmtDate(confirm.egreso.ventas_diarias?.fecha)} · {confirm.egreso.ventas_diarias?.store_code}
-            </div>
-            {(confirm.sugerencia.razones || []).includes('dte_perfecto') ? (
-              <div style={S.confirmPerfecto}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#10b981', marginBottom: 6 }}>
-                  ✨ MATCH EXACTO con DTE existente
-                </div>
-                Se va a <strong>cruzar este egreso con el DTE</strong> que ya existe en el sistema:
-                <div style={{ marginTop: 8, padding: 8, background: 'rgba(16,185,129,0.1)', borderRadius: 6 }}>
-                  <strong>{confirm.sugerencia.dte_proveedor || confirm.sugerencia.nombre}</strong><br/>
-                  Monto DTE: <strong>{fmt$(confirm.sugerencia.dte_monto)}</strong> · Fecha: {fmtDate(confirm.sugerencia.dte_fecha)}<br/>
-                  Egreso: <strong>{fmt$(confirm.egreso.monto)}</strong> · Diff: <strong>{fmt$(Math.abs(n(confirm.sugerencia.dte_monto) - n(confirm.egreso.monto)))}</strong>
-                </div>
-                <div style={{ marginTop: 8, fontSize: 12, color: '#6ee7b7' }}>
-                  ✓ DTE marcado <code>cruzado=TRUE</code> · ✓ Egreso vinculado · ✓ Excluido del P&L (ya contabilizado en compras_dte)
-                </div>
+      {/* Confirm modal — 4 variantes según fuente del proveedor en P&L */}
+      {confirm && (() => {
+        const cls = clasificarAsignacion(confirm.sugerencia)
+        const esSplit = splitMode
+        const montoInputNum = Number(splitMontoInput) || 0
+        const restanteValido = !esSplit || (montoInputNum > 0 && montoInputNum <= restanteSplit + 1)
+        return (
+          <div style={S.modalBg} onClick={() => setConfirm(null)}>
+            <div style={S.modal} onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 10 }}>
+                {esSplit ? '➕ Agregar split' : 'Asignar'} a <span style={{ color: colors.gold }}>{confirm.sugerencia.nombre}</span>
               </div>
-            ) : confirm.sugerencia.genera_dte ? (
-              <div style={S.confirmWarn}>
-                ⚠ Este proveedor ya está siendo contabilizado en el P&L por otra fuente (DTE / BEES / Excel manual / PeYa). El egreso se <strong>excluirá del P&L</strong> para evitar doble conteo.
-                {confirm.sugerencia.dte_match_id && (
-                  <div style={{ marginTop: 6, fontSize: 12 }}>
-                    Además se vinculará al DTE {fmt$(confirm.sugerencia.dte_monto)} del {fmtDate(confirm.sugerencia.dte_fecha)}.
+              <div style={{ fontSize: 13, color: colors.gray, marginBottom: 14 }}>
+                Egreso <strong style={{ color: colors.gold }}>{fmt$(confirm.egreso.monto)}</strong>
+                {' '}· {fmtDate(confirm.egreso.ventas_diarias?.fecha)} · {confirm.egreso.ventas_diarias?.store_code}
+                {esSplit && <> · Faltan <strong style={{ color: colors.gold }}>{fmt$(restanteSplit)}</strong></>}
+              </div>
+
+              {/* Input de monto si es split */}
+              {esSplit && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={S.searchLabel}>Monto de esta factura</label>
+                  <input
+                    type="number" step="0.01" autoFocus
+                    style={S.searchInput}
+                    placeholder={`Máx ${restanteSplit.toFixed(2)}`}
+                    value={splitMontoInput}
+                    onChange={(e) => setSplitMontoInput(e.target.value)}
+                  />
+                  {montoInputNum > restanteSplit + 1 && (
+                    <div style={{ fontSize: 11, color: colors.accent, marginTop: 4 }}>
+                      ⚠ Excede el restante por ${(montoInputNum - restanteSplit).toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Hint según clasificación */}
+              {cls.tipo === 'match' && (
+                <div style={S.confirmPerfecto}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#10b981', marginBottom: 6 }}>✨ MATCH EXACTO con DTE existente</div>
+                  Se va a <strong>cruzar con el DTE</strong>:
+                  <div style={{ marginTop: 8, padding: 8, background: 'rgba(16,185,129,0.1)', borderRadius: 6 }}>
+                    <strong>{confirm.sugerencia.dte_proveedor || confirm.sugerencia.nombre}</strong><br/>
+                    DTE: <strong>{fmt$(confirm.sugerencia.dte_monto)}</strong> del {fmtDate(confirm.sugerencia.dte_fecha)}<br/>
+                    Egreso: <strong>{fmt$(esSplit ? montoInputNum : confirm.egreso.monto)}</strong>
+                    {' · Diff '}<strong>{fmt$(Math.abs(n(confirm.sugerencia.dte_monto) - (esSplit ? montoInputNum : n(confirm.egreso.monto))))}</strong>
                   </div>
-                )}
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#6ee7b7' }}>
+                    ✓ DTE → <code>cruzado=TRUE</code> · ✓ Egreso vinculado · ✓ EXCLUIDO P&L (no duplica)
+                  </div>
+                </div>
+              )}
+              {cls.tipo === 'pendiente' && (
+                <div style={S.confirmPendiente}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: colors.gold, marginBottom: 6 }}>⏳ SIN DTE ESPECÍFICO en BD</div>
+                  <strong>{confirm.sugerencia.nombre}</strong> envía DTEs por email pero <strong>no encontramos el DTE</strong> que corresponde a este egreso (monto ±monto, fecha ±14d).
+                  <div style={{ marginTop: 8, padding: 8, background: 'rgba(255,214,10,0.08)', borderRadius: 6, fontSize: 12 }}>
+                    ✓ Egreso queda <code>pendiente_dte</code> · ✓ <strong>SÍ entra al P&L</strong> hasta que llegue el DTE<br/>
+                    Cuando llegue el DTE, lo cruzas manualmente desde la tab Excluidos P&L.
+                  </div>
+                </div>
+              )}
+              {cls.tipo === 'agregado' && (
+                <div style={S.confirmWarn}>
+                  ⚠ <strong>{confirm.sugerencia.nombre}</strong> ya está contabilizado en el P&L por otra fuente (BEES / Excel manual / PeYa prorrateado).
+                  <div style={{ marginTop: 6, fontSize: 12 }}>El egreso se <strong>excluirá</strong> para evitar doble conteo.</div>
+                </div>
+              )}
+              {cls.tipo === 'normal' && (
+                <div style={S.confirmOk}>
+                  ✓ <strong>{confirm.sugerencia.nombre}</strong> no está en otra fuente del P&L. El gasto contará bajo <strong>{confirm.sugerencia.subcategoria || confirm.sugerencia.categoria}</strong>.
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                <button style={S.btnCancel} onClick={() => setConfirm(null)}>Cancelar</button>
+                <button style={{ ...S.btnConfirm, opacity: restanteValido ? 1 : 0.5 }}
+                        disabled={!restanteValido}
+                        onClick={() => ejecutarAsignar()}>
+                  {esSplit ? 'Agregar split' : 'Confirmar asignación'}
+                </button>
               </div>
-            ) : (
-              <div style={S.confirmOk}>
-                ✓ Este proveedor no está en otra fuente del P&L. El gasto contará en P&L bajo <strong>{confirm.sugerencia.subcategoria || confirm.sugerencia.categoria}</strong>.
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-              <button style={S.btnCancel} onClick={() => setConfirm(null)}>Cancelar</button>
-              <button style={S.btnConfirm} onClick={ejecutarAsignar}>Confirmar asignación</button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Foto zoom modal */}
       {fotoZoom && egresoActual?.foto_url && (
@@ -722,11 +881,12 @@ const S = {
   razones: { display: 'flex', gap: 5, flexWrap: 'wrap' },
   razon: { fontSize: 10, padding: '2px 6px', borderRadius: 4, background: colors.card2, color: colors.gray, border: `1px solid ${colors.border}` },
   razonStyles: {
-    perfecto: { background: '#064e3b', borderColor: '#10b981', color: '#6ee7b7', fontWeight: 800, fontSize: 11, padding: '3px 8px', textTransform: 'uppercase' },
-    dte:      { background: '#1a3a1a', borderColor: '#2a5a2a', color: '#86efac' },
-    frec:     { background: '#1a2a4a', borderColor: '#2a4a7a', color: '#93c5fd' },
-    ocr:      { background: '#3a1a2a', borderColor: '#7a2a4a', color: '#f9a8d4' },
-    coment:   { background: '#3a3a1a', borderColor: '#7a7a2a', color: colors.gold },
+    perfecto:  { background: '#064e3b', borderColor: '#10b981', color: '#6ee7b7', fontWeight: 800, fontSize: 11, padding: '3px 8px', textTransform: 'uppercase' },
+    dte:       { background: '#1a3a1a', borderColor: '#2a5a2a', color: '#86efac' },
+    pendiente: { background: '#3a2510', borderColor: '#7a5a10', color: colors.gold, fontWeight: 700 },
+    frec:      { background: '#1a2a4a', borderColor: '#2a4a7a', color: '#93c5fd' },
+    ocr:       { background: '#3a1a2a', borderColor: '#7a2a4a', color: '#f9a8d4' },
+    coment:    { background: '#3a3a1a', borderColor: '#7a7a2a', color: colors.gold },
   },
   excludeFlag: { fontSize: 10, color: colors.accent, marginTop: 4, fontWeight: 600 },
   btnAsignar: { background: colors.green, color: '#0a2418', border: 'none', padding: '7px 11px', borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: 'pointer', alignSelf: 'center', whiteSpace: 'nowrap' },
@@ -739,8 +899,15 @@ const S = {
 
   actions: { padding: '12px 16px', display: 'flex', gap: 8, flexWrap: 'wrap' },
   btnNoPl: { flex: 1, background: colors.card2, border: `1px solid ${colors.border}`, color: colors.gray, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
-  btnSkip: { flex: 1, background: colors.card2, border: '1px solid #7a5a10', color: colors.gold, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
-  btnOcr:  { flex: 1, background: colors.card2, border: '1px solid #7a2a4a', color: '#f9a8d4', padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
+  btnSkip:  { flex: 1, background: colors.card2, border: '1px solid #7a5a10', color: colors.gold, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
+  btnOcr:   { flex: 1, background: colors.card2, border: '1px solid #7a2a4a', color: '#f9a8d4', padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
+  btnSplit: { flex: 1, background: colors.card2, border: '1px solid #2a5a2a', color: '#86efac', padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
+
+  splitPanel: { padding: '10px 0', borderBottom: `1px solid ${colors.border}`, background: 'rgba(255,214,10,0.04)' },
+  splitHead:  { padding: '4px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  splitRow:   { padding: '8px 16px', display: 'flex', gap: 8, alignItems: 'center', borderTop: `1px solid ${colors.border}` },
+  btnSplitRemove: { background: 'transparent', border: '1px solid #7a1a2a', color: colors.accent, padding: '4px 9px', borderRadius: 5, fontSize: 14, cursor: 'pointer', lineHeight: 1 },
+  btnSplitCancel: { flex: 1, background: 'transparent', border: '1px solid #7a1a2a', color: colors.accent, padding: '7px 11px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' },
   ocrPanel: { padding: '10px 16px', borderTop: `1px solid ${colors.border}`, background: 'rgba(58,26,42,0.3)', fontSize: 11 },
   ocrText: { marginTop: 4, color: '#cbd5e1', fontFamily: 'ui-monospace, monospace', fontSize: 10, lineHeight: 1.5, whiteSpace: 'pre-wrap', maxHeight: 80, overflowY: 'auto' },
 
@@ -752,9 +919,10 @@ const S = {
 
   modalBg: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, padding: 20 },
   modal: { background: colors.card, border: `1px solid ${colors.border}`, borderRadius: 14, padding: 20, maxWidth: 460, width: '100%', boxShadow: '0 12px 36px rgba(0,0,0,0.5)' },
-  confirmWarn:     { padding: 12, background: 'rgba(255,214,10,0.1)', border: '1px solid rgba(255,214,10,0.3)', borderRadius: 8, color: colors.gold, fontSize: 13 },
-  confirmOk:       { padding: 12, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 8, color: colors.green, fontSize: 13 },
-  confirmPerfecto: { padding: 14, background: 'rgba(16,185,129,0.08)', border: '2px solid #10b981', borderRadius: 8, color: '#86efac', fontSize: 13 },
+  confirmWarn:      { padding: 12, background: 'rgba(255,214,10,0.1)', border: '1px solid rgba(255,214,10,0.3)', borderRadius: 8, color: colors.gold, fontSize: 13 },
+  confirmOk:        { padding: 12, background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 8, color: colors.green, fontSize: 13 },
+  confirmPerfecto:  { padding: 14, background: 'rgba(16,185,129,0.08)', border: '2px solid #10b981', borderRadius: 8, color: '#86efac', fontSize: 13 },
+  confirmPendiente: { padding: 14, background: 'rgba(255,214,10,0.05)', border: '2px solid #7a5a10', borderRadius: 8, color: colors.gold, fontSize: 13 },
   btnCancel:   { flex: 1, background: colors.card2, border: `1px solid ${colors.border}`, color: '#f0f0f0', padding: '10px', borderRadius: 7, cursor: 'pointer', fontWeight: 600 },
   btnConfirm:  { flex: 2, background: colors.accent, border: 'none', color: '#fff', padding: '10px', borderRadius: 7, cursor: 'pointer', fontWeight: 700 },
 
