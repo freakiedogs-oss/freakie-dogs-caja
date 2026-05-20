@@ -20,17 +20,20 @@ const fmt$ = (v) => `$${n(v).toFixed(2)}`
 const SUPA_HOST = 'https://btboxlwfqcbrdfrlnwln.supabase.co'
 const fotoUrlSafe = (url) => {
   if (!url) return url
+  let out = url
   // 1) URL con host vercel.app/sb/ → reemplazar host por Supabase directo
-  if (url.includes('/sb/storage/')) {
-    return url.replace(/^https?:\/\/[^/]+\/sb\//, SUPA_HOST + '/')
+  if (out.includes('/sb/storage/')) {
+    out = out.replace(/^https?:\/\/[^/]+\/sb\//, SUPA_HOST + '/')
   }
   // 2) URL relativa /sb/storage/... → prefijo con host Supabase directo
-  if (url.startsWith('/sb/storage/')) {
-    return SUPA_HOST + url.replace(/^\/sb\//, '/')
+  if (out.startsWith('/sb/storage/')) {
+    out = SUPA_HOST + out.replace(/^\/sb\//, '/')
   }
-  // 3) URL ya directa o cualquier otra cosa → tal cual
-  return url
+  // 3) Colapsar dobles slashes en el path (mantener https://)
+  out = out.replace(/(https?:\/\/)([^?#]*)/, (_, proto, rest) => proto + rest.replace(/\/{2,}/g, '/'))
+  return out
 }
+const esPdf = (url) => (url || '').toLowerCase().split('?')[0].endsWith('.pdf')
 
 const RAZON_MAP = {
   dte_perfecto:        { label: '✨ MATCH EXACTO DTE',         cls: 'perfecto' },
@@ -637,9 +640,22 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
           <div style={S.cardFoto}>
             <div style={S.fotoWrap} onClick={() => egresoActual.foto_url && setFotoZoom(true)}>
               {egresoActual.foto_url ? (
-                <img src={fotoUrlSafe(egresoActual.foto_url)} alt="recibo"
-                     style={S.fotoImg}
-                     onError={(e) => { e.target.style.display = 'none' }} />
+                esPdf(egresoActual.foto_url) ? (
+                  <div style={{ ...S.fotoImg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <embed src={fotoUrlSafe(egresoActual.foto_url) + '#toolbar=0&navpanes=0'}
+                           type="application/pdf"
+                           style={{ flex: 1, width: '100%', border: 0 }} />
+                    <a href={fotoUrlSafe(egresoActual.foto_url)} target="_blank" rel="noreferrer"
+                       style={{ padding: '6px 8px', background: colors.card2, color: colors.gold, fontSize: 11, textAlign: 'center', textDecoration: 'none' }}
+                       onClick={e => e.stopPropagation()}>
+                      📄 Abrir PDF en pestaña nueva
+                    </a>
+                  </div>
+                ) : (
+                  <img src={fotoUrlSafe(egresoActual.foto_url)} alt="recibo"
+                       style={S.fotoImg}
+                       onError={(e) => { e.target.style.display = 'none' }} />
+                )
               ) : (
                 <div style={S.fotoEmpty}>
                   <div style={{ fontSize: 56, opacity: 0.4 }}>📭</div>
@@ -815,7 +831,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
                   ✂ Split
                 </button>
               )}
-              {egresoActual?.foto_url && (
+              {egresoActual?.foto_url && !esPdf(egresoActual.foto_url) && (
                 <button style={S.btnOcr}
                         onClick={runOcr}
                         disabled={ocrLoading}
@@ -932,7 +948,14 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
       {/* Foto zoom modal */}
       {fotoZoom && egresoActual?.foto_url && (
         <div style={S.modalBg} onClick={() => setFotoZoom(false)}>
-          <img src={fotoUrlSafe(egresoActual.foto_url)} alt="" style={S.fotoZoomImg} />
+          {esPdf(egresoActual.foto_url) ? (
+            <embed src={fotoUrlSafe(egresoActual.foto_url)}
+                   type="application/pdf"
+                   style={{ ...S.fotoZoomImg, width: '90vw', height: '90vh' }}
+                   onClick={e => e.stopPropagation()} />
+          ) : (
+            <img src={fotoUrlSafe(egresoActual.foto_url)} alt="" style={S.fotoZoomImg} />
+          )}
         </div>
       )}
 
