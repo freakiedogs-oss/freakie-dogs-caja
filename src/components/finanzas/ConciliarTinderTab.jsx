@@ -15,6 +15,23 @@ const colors = {
 
 const fmt$ = (v) => `$${n(v).toFixed(2)}`
 
+// Bypass del proxy /sb/ → va directo a Supabase Storage (bucket cierres-fotos es público).
+// Evita el límite de invocaciones del Edge Function de Vercel.
+const SUPA_HOST = 'https://btboxlwfqcbrdfrlnwln.supabase.co'
+const fotoUrlSafe = (url) => {
+  if (!url) return url
+  // 1) URL con host vercel.app/sb/ → reemplazar host por Supabase directo
+  if (url.includes('/sb/storage/')) {
+    return url.replace(/^https?:\/\/[^/]+\/sb\//, SUPA_HOST + '/')
+  }
+  // 2) URL relativa /sb/storage/... → prefijo con host Supabase directo
+  if (url.startsWith('/sb/storage/')) {
+    return SUPA_HOST + url.replace(/^\/sb\//, '/')
+  }
+  // 3) URL ya directa o cualquier otra cosa → tal cual
+  return url
+}
+
 const RAZON_MAP = {
   dte_perfecto:        { label: '✨ MATCH EXACTO DTE',         cls: 'perfecto' },
   dte_alta:            { label: '⚡ DTE match alta',           cls: 'dte' },
@@ -335,7 +352,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
         })
       }
       const { data: { text } } = await window.Tesseract.recognize(
-        card.egreso.foto_url, 'spa+eng',
+        fotoUrlSafe(card.egreso.foto_url), 'spa+eng',
         { logger: m => {} }
       )
 
@@ -620,7 +637,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
           <div style={S.cardFoto}>
             <div style={S.fotoWrap} onClick={() => egresoActual.foto_url && setFotoZoom(true)}>
               {egresoActual.foto_url ? (
-                <img src={egresoActual.foto_url} alt="recibo"
+                <img src={fotoUrlSafe(egresoActual.foto_url)} alt="recibo"
                      style={S.fotoImg}
                      onError={(e) => { e.target.style.display = 'none' }} />
               ) : (
@@ -915,7 +932,7 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
       {/* Foto zoom modal */}
       {fotoZoom && egresoActual?.foto_url && (
         <div style={S.modalBg} onClick={() => setFotoZoom(false)}>
-          <img src={egresoActual.foto_url} alt="" style={S.fotoZoomImg} />
+          <img src={fotoUrlSafe(egresoActual.foto_url)} alt="" style={S.fotoZoomImg} />
         </div>
       )}
 

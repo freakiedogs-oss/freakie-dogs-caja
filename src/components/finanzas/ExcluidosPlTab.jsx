@@ -13,6 +13,14 @@ const colors = {
 }
 const fmt$ = (v) => `$${n(v).toFixed(2)}`
 
+const SUPA_HOST = 'https://btboxlwfqcbrdfrlnwln.supabase.co'
+const fotoUrlSafe = (url) => {
+  if (!url) return url
+  if (url.includes('/sb/storage/')) return url.replace(/^https?:\/\/[^/]+\/sb\//, SUPA_HOST + '/')
+  if (url.startsWith('/sb/storage/')) return SUPA_HOST + url.replace(/^\/sb\//, '/')
+  return url
+}
+
 const SUCURSALES = [
   { code: '',     nombre: 'Todas' },
   { code: 'CM001', nombre: 'Casa Matriz' },
@@ -216,7 +224,7 @@ export default function ExcluidosPlTab() {
                     <td style={S.td}>
                       <div style={{ display: 'flex', gap: 4 }}>
                         {r.foto_url && (
-                          <a href={r.foto_url} target="_blank" rel="noreferrer" style={S.btnIcon} title="Ver foto egreso">📷</a>
+                          <a href={fotoUrlSafe(r.foto_url)} target="_blank" rel="noreferrer" style={S.btnIcon} title="Ver foto egreso">📷</a>
                         )}
                         {r.compras_dte_id && (
                           <span style={{ ...S.pill, background: '#1a2a4a', color: '#93c5fd' }}
