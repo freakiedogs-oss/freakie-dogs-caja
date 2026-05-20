@@ -364,17 +364,32 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
         .slice(0, 3)
 
       // Refrescar sugerencias inyectando OCR como señal extra al inicio
+      // Clasificar cada match OCR via RPC para flags correctos (evita bug del set frontend)
       if (matches.length > 0) {
-        const ocrSugerencias = matches.map(m => ({
-          catalogo_id: m.id,
-          nombre: m.nombre_dte,
-          categoria: m.categoria,
-          subcategoria: m.subcategoria,
-          score: m.score,
-          razones: ['ocr'],
-          genera_dte: generaDteSet.has((m.nombre_dte || '').toUpperCase().trim()),
-          dte_match_id: null,
-        }))
+        const clasificaciones = await Promise.all(matches.map(m =>
+          supabase.rpc('clasificar_proveedor_para_egreso', {
+            p_egreso_id: card.egreso.id,
+            p_proveedor_id: m.id,
+          }).then(r => (r.data || [])[0] || {})
+        ))
+        const ocrSugerencias = matches.map((m, i) => {
+          const c = clasificaciones[i] || {}
+          return {
+            catalogo_id: m.id,
+            nombre: m.nombre_dte,
+            categoria: m.categoria,
+            subcategoria: m.subcategoria,
+            score: m.score,
+            razones: ['ocr'],
+            genera_dte: !!c.tiene_bees_otro,
+            tiene_dte_proveedor: !!c.tiene_dte_proveedor,
+            tiene_bees_otro:     !!c.tiene_bees_otro,
+            dte_match_id:        c.dte_match_id || null,
+            dte_proveedor:       c.dte_proveedor || null,
+            dte_monto:           c.dte_monto || null,
+            dte_fecha:           c.dte_fecha || null,
+          }
+        })
         setCard(prev => prev ? {
           ...prev,
           sugerencias: [
@@ -451,17 +466,38 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   }, [searchResults])
 
   // ── Asignar desde resultado de búsqueda manual
-  const asignarBusqueda = (cat) => {
-    const generaDte = generaDteSet.has((cat.nombre_dte || '').toUpperCase().trim())
+  // Llama RPC clasificar_proveedor_para_egreso para obtener flags correctos
+  // (tiene_dte_proveedor, tiene_bees_otro, dte_match_id) — evita el bug de los
+  // sets frontend que fallaban con encodings/normalización de nombres.
+  const asignarBusqueda = async (cat) => {
+    if (!card?.egreso) return
+    const { data, error } = await supabase.rpc('clasificar_proveedor_para_egreso', {
+      p_egreso_id: card.egreso.id,
+      p_proveedor_id: cat.id,
+    })
+    if (error) {
+      console.error('[clasificar_proveedor]', error)
+      showToast('❌ Error clasificando proveedor', 'error')
+      return
+    }
+    const c = (data || [])[0] || {}
     askAsignar({
       catalogo_id: cat.id,
       nombre: cat.nombre_dte,
       categoria: cat.categoria,
       subcategoria: cat.subcategoria,
       score: null,
-      razones: ['manual'],
-      genera_dte: generaDte,
-      dte_match_id: null,
+      razones: c.es_perfecto ? ['dte_perfecto', 'manual']
+            : c.dte_match_id ? ['dte_alta', 'manual']
+            : c.tiene_dte_proveedor && !c.tiene_bees_otro ? ['dte_pendiente_match', 'manual']
+            : ['manual'],
+      genera_dte: !!c.tiene_bees_otro,
+      tiene_dte_proveedor: !!c.tiene_dte_proveedor,
+      tiene_bees_otro:     !!c.tiene_bees_otro,
+      dte_match_id:        c.dte_match_id || null,
+      dte_proveedor:       c.dte_proveedor || null,
+      dte_monto:           c.dte_monto || null,
+      dte_fecha:           c.dte_fecha || null,
     })
   }
 
