@@ -48,6 +48,13 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   const [splits, setSplits] = useState([])               // {split_id, proveedor_id, nombre, monto, razon, fuente, dte_match_id}
   const [splitMode, setSplitMode] = useState(false)      // True después de agregar el primer split
   const [splitMontoInput, setSplitMontoInput] = useState('')
+  // Crear proveedor nuevo
+  const [newProvOpen, setNewProvOpen] = useState(false)
+  const [newProvForm, setNewProvForm] = useState({
+    nombre: '', categoria: '', subcategoria: '', requiere_recepcion: true
+  })
+  const [newProvSaving, setNewProvSaving] = useState(false)
+  const [categoriasGasto, setCategoriasGasto] = useState([])
 
   const cargandoCardRef = useRef(false)
 
@@ -104,6 +111,14 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
 
   useEffect(() => { cargarCola() }, [cargarCola])
   useEffect(() => { cargarContadores() }, [cargarContadores])
+
+  // Cargar categorías_gasto una sola vez para el dropdown de "Nuevo proveedor"
+  useEffect(() => {
+    supabase.from('categorias_gasto')
+      .select('id, nombre, grupo')
+      .order('grupo').order('orden')
+      .then(({ data }) => setCategoriasGasto(data || []))
+  }, [])
 
   // ── Cargar sugerencias de la card actual
   const cargarSugerencias = useCallback(async (egreso) => {
@@ -465,6 +480,52 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
     return () => { cancel = true }
   }, [searchResults])
 
+  // ── Crear proveedor nuevo (catalogo_contable) y opcionalmente asignar al egreso actual
+  const abrirNuevoProveedor = () => {
+    // Prefill nombre con lo que esté en el buscador
+    setNewProvForm({
+      nombre: search || '',
+      categoria: '',
+      subcategoria: '',
+      requiere_recepcion: true,
+    })
+    setNewProvOpen(true)
+  }
+
+  const guardarNuevoProveedor = async () => {
+    if (!newProvForm.nombre || newProvForm.nombre.trim().length < 3) {
+      showToast('❌ Nombre debe tener al menos 3 caracteres', 'error'); return
+    }
+    if (!newProvForm.categoria) {
+      showToast('❌ Selecciona una categoría P&L', 'error'); return
+    }
+    setNewProvSaving(true)
+    const { data, error } = await supabase.rpc('crear_proveedor_catalogo', {
+      p_nombre_dte:         newProvForm.nombre.trim(),
+      p_categoria:          newProvForm.categoria,
+      p_subcategoria:       newProvForm.subcategoria || null,
+      p_requiere_recepcion: newProvForm.requiere_recepcion,
+    })
+    setNewProvSaving(false)
+    if (error || !(data?.[0]?.ok)) {
+      showToast('❌ ' + (error?.message || data?.[0]?.msg || 'Error'), 'error'); return
+    }
+    const r = data[0]
+    if (r.ya_existia) {
+      showToast(`ℹ Ya existía como "${r.nombre_existente}" (id ${r.catalogo_id}) — se usará el existente`, 'warn')
+    } else {
+      showToast(`✓ Proveedor creado: ${r.nombre_existente || newProvForm.nombre}`, 'ok')
+    }
+    setNewProvOpen(false)
+    // Asignar inmediato al egreso actual
+    await asignarBusqueda({
+      id: r.catalogo_id,
+      nombre_dte: r.nombre_existente || newProvForm.nombre.trim(),
+      categoria: newProvForm.categoria,
+      subcategoria: newProvForm.subcategoria || null,
+    })
+  }
+
   // ── Asignar desde resultado de búsqueda manual
   // Llama RPC clasificar_proveedor_para_egreso para obtener flags correctos
   // (tiene_dte_proveedor, tiene_bees_otro, dte_match_id) — evita el bug de los
@@ -719,6 +780,11 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
                   })}
                 </div>
               )}
+              {/* Botón crear nuevo proveedor — visible siempre */}
+              <button style={S.btnNuevoProv} onClick={abrirNuevoProveedor}>
+                ➕ Crear proveedor nuevo
+                {search && <span style={{ color: colors.gold, marginLeft: 4 }}>"{search.slice(0, 30)}"</span>}
+              </button>
             </div>
 
             {/* Acciones */}
@@ -852,6 +918,70 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
           <img src={egresoActual.foto_url} alt="" style={S.fotoZoomImg} />
         </div>
       )}
+
+      {/* Modal: crear proveedor nuevo */}
+      {newProvOpen && (
+        <div style={S.modalBg} onClick={() => !newProvSaving && setNewProvOpen(false)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4, color: colors.blue }}>
+              ➕ Crear proveedor nuevo
+            </div>
+            <div style={{ fontSize: 12, color: colors.gray, marginBottom: 14 }}>
+              Se agregará a <code>catalogo_contable</code> y se asignará al egreso actual.
+            </div>
+
+            <div style={S.formRow}>
+              <label style={S.formLabel}>Nombre del proveedor *</label>
+              <input style={S.formInput} autoFocus
+                value={newProvForm.nombre}
+                placeholder="Ej: Calleja, S.A. de C.V."
+                onChange={e => setNewProvForm(f => ({...f, nombre: e.target.value}))} />
+            </div>
+
+            <div style={S.formRow}>
+              <label style={S.formLabel}>Categoría P&L *</label>
+              <select style={S.formInput}
+                value={newProvForm.categoria}
+                onChange={e => setNewProvForm(f => ({...f, categoria: e.target.value}))}>
+                <option value="">— Seleccionar —</option>
+                {categoriasGasto.map(c => (
+                  <option key={c.id} value={c.id}>{c.grupo} · {c.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={S.formRow}>
+              <label style={S.formLabel}>Subcategoría (opcional)</label>
+              <input style={S.formInput}
+                value={newProvForm.subcategoria}
+                placeholder="Ej: Insumos Cocina, Servicios Públicos..."
+                onChange={e => setNewProvForm(f => ({...f, subcategoria: e.target.value}))} />
+            </div>
+
+            <div style={S.formRow}>
+              <label style={S.formCheckbox}>
+                <input type="checkbox"
+                  checked={newProvForm.requiere_recepcion}
+                  onChange={e => setNewProvForm(f => ({...f, requiere_recepcion: e.target.checked}))} />
+                <span>Requiere recepción física (items inventariables)</span>
+              </label>
+              <div style={{ fontSize: 10, color: colors.gray, marginTop: 4, marginLeft: 24 }}>
+                Desmarca para servicios (Tigo, Electricidad, Bancos, etc.)
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button style={S.btnCancel} disabled={newProvSaving}
+                onClick={() => setNewProvOpen(false)}>Cancelar</button>
+              <button style={{ ...S.btnConfirm, opacity: newProvSaving ? 0.6 : 1 }}
+                disabled={newProvSaving}
+                onClick={guardarNuevoProveedor}>
+                {newProvSaving ? 'Guardando…' : 'Crear y asignar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -944,6 +1074,11 @@ const S = {
   splitRow:   { padding: '8px 16px', display: 'flex', gap: 8, alignItems: 'center', borderTop: `1px solid ${colors.border}` },
   btnSplitRemove: { background: 'transparent', border: '1px solid #7a1a2a', color: colors.accent, padding: '4px 9px', borderRadius: 5, fontSize: 14, cursor: 'pointer', lineHeight: 1 },
   btnSplitCancel: { flex: 1, background: 'transparent', border: '1px solid #7a1a2a', color: colors.accent, padding: '7px 11px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' },
+  btnNuevoProv:   { width: '100%', marginTop: 8, background: 'rgba(96,165,250,0.1)', border: '1px dashed #2a4a7a', color: colors.blue, padding: '8px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left' },
+  formRow:        { marginBottom: 12 },
+  formLabel:      { fontSize: 10, color: colors.gray, display: 'block', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
+  formInput:      { width: '100%', background: colors.bg, border: `1px solid ${colors.border}`, color: '#f0f0f0', padding: '8px 11px', borderRadius: 7, fontSize: 13, boxSizing: 'border-box' },
+  formCheckbox:   { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f0f0f0', cursor: 'pointer' },
   ocrPanel: { padding: '10px 16px', borderTop: `1px solid ${colors.border}`, background: 'rgba(58,26,42,0.3)', fontSize: 11 },
   ocrText: { marginTop: 4, color: '#cbd5e1', fontFamily: 'ui-monospace, monospace', fontSize: 10, lineHeight: 1.5, whiteSpace: 'pre-wrap', maxHeight: 80, overflowY: 'auto' },
 
