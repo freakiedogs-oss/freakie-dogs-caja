@@ -5,7 +5,6 @@ import { db } from '../../supabase'
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
 const CardVentasComparativo = lazy(() => import('./CardVentasComparativo'))
 const ExcluidosPlTab = lazy(() => import('./ExcluidosPlTab'))
-const DTEsTab = lazy(() => import('./DTEsTab'))
 
 // ErrorBoundary defensivo — si el componente lazy crashea, no rompe el dashboard
 class ErrorBoundary extends React.Component {
@@ -669,7 +668,6 @@ export default function FinanzasDashboard({ user }) {
     { key: 'liquidez', label: '💧 Liquidez Real', icon: '💧' },
     { key: 'peya', label: '🛵 PEYA', icon: '🛵' },
     { key: 'proveedores', label: '🏢 Proveedores', icon: '🏢' },
-    { key: 'dtes', label: '🧾 DTEs', icon: '🧾' },
     { key: 'catalogo', label: '⚙️ Catálogo', icon: '⚙️' },
     { key: 'excluidos', label: '🚫 Excluidos P&L', icon: '🚫' },
   ]
@@ -724,13 +722,6 @@ export default function FinanzasDashboard({ user }) {
           {tab === 'liquidez' && <TabLiquidez data2026={data2026} months2026={months2026} conIva={conIva} />}
           {tab === 'peya' && <TabPeya data2026={data2026} conIva={conIva} onRefresh={loadData2026} />}
           {tab === 'proveedores' && <TabProveedores data2026={data2026} months2026={months2026} conIva={conIva} />}
-          {tab === 'dtes' && (
-            <ErrorBoundary>
-              <Suspense fallback={<div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>⏳ Cargando DTEs…</div>}>
-                <DTEsTab />
-              </Suspense>
-            </ErrorBoundary>
-          )}
           {tab === 'catalogo' && <TabCatalogo user={user} data2026={data2026} onRefresh={loadData2026} />}
           {tab === 'excluidos' && (
             <ErrorBoundary>

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
 
 /* ═══════════════════════════════════════════════════════════════
-   FREAKIE DOGS — FinanzasDashboard / Tab DTEs
+   FREAKIE DOGS — Vista DTEs (item del sidebar Finanzas)
    Sub-tabs:
      • Listado  → tabla con filtros + filas expandibles con items
      • KPIs     → buscador items/proveedores + Top + mix
    Fuentes:
      • v_dtes_finanzas        — DTE + categoría + sucursal + método pago
-     • v_dtes_finanzas_items  — items por DTE (lazy load al expandir)
+     • v_dtes_finanzas_items  — UNION compras_dte_items + json_original->cuerpoDocumento
      • v_kpi_proveedores      — Top + frecuencia + categoría principal
      • v_kpi_items_precios    — items min/avg/max/último
    ═══════════════════════════════════════════════════════════════ */
@@ -94,11 +94,20 @@ async function fetchAll(builder, label = 'rows') {
 //   COMPONENTE PRINCIPAL
 // ══════════════════════════════════════════════════════
 
-export default function DTEsTab() {
+export default function DTEsView({ user }) {
   const [subtab, setSubtab] = useState('listado')
 
   return (
-    <div>
+    <div style={{ padding: '12px 8px', maxWidth: 1600, margin: '0 auto' }}>
+      {/* Header de vista */}
+      <div style={{ textAlign: 'center', marginBottom: 16 }}>
+        <div style={{ color: C.red, fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>FREAKIE DOGS</div>
+        <h1 style={{ color: C.white, fontSize: 24, fontWeight: 800, margin: '4px 0' }}>🧾 DTEs</h1>
+        <div style={{ color: C.textMuted, fontSize: 11 }}>
+          Documentos Tributarios Electrónicos · Items · Pagos · KPIs por proveedor e item
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <button onClick={() => setSubtab('listado')} style={sBtn(subtab === 'listado')}>📋 Listado de DTEs</button>
         <button onClick={() => setSubtab('kpis')} style={sBtn(subtab === 'kpis')}>📊 Proveedores / Items / KPIs</button>

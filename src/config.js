@@ -112,6 +112,7 @@ export const NAV_SECTIONS = [
     label: 'Finanzas',
     items: [
       { key: 'finanzas-dashboard', label: 'Dashboard Financiero', icon: '📊', roles: ['ejecutivo', 'superadmin'] },
+      { key: 'dtes', label: 'DTEs', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'banco', label: 'BancoView (Conciliación)', icon: '🏦', roles: ['ejecutivo', 'superadmin'] },
