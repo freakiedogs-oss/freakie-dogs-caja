@@ -50,6 +50,9 @@ const SuperAdminView     = lazy(() => import('./components/admin/SuperAdminView'
 const QuantoUploadView   = lazy(() => import('./components/admin/QuantoUploadView'))
 const PagosProveedorView = lazy(() => import('./components/finanzas/PagosProveedorView'))
 const EventosView        = lazy(() => import('./components/eventos/EventosView'))
+const MiDespacho            = lazy(() => import('./components/empleado/MiDespacho'))
+const DespachoOperativoView = lazy(() => import('./components/admin/DespachoOperativoView'))
+const DespachoKpiDashboard  = lazy(() => import('./components/admin/DespachoKpiDashboard'))
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
@@ -58,17 +61,17 @@ const ROLE_DEFAULTS = {
   gerente: ['cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta'],
   admin: ['admin', 'kpis-venta', 'recepcion', 'despacho'],
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
-  superadmin: ['superadmin-panel', 'kpis-venta', 'finanzas-dashboard', 'admin'],
+  superadmin: ['superadmin-panel', 'kpi-despacho', 'kpis-venta', 'finanzas-dashboard', 'admin'],
   bodeguero: ['recepcion', 'despacho', 'inventario', 'historial'],
-  jefe_casa_matriz: ['recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
+  jefe_casa_matriz: ['despacho-operativo', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
   cocina: ['conteo', 'reporte', 'devoluciones'],
   rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales'],
   contador: ['gastos', 'conciliacion', 'planilla'],
-  despachador: ['entregas', 'delivery'],
-  motorista: ['entregas', 'delivery'],
+  despachador: ['mi-despacho', 'entregas', 'delivery'],
+  motorista: ['mi-despacho', 'entregas', 'delivery'],
   domicilios: ['entregas', 'delivery'],
   marketing: ['marketing'],
-  produccion: ['produccion', 'incidentes-cm', 'recetas'],
+  produccion: ['despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
   eventos: ['eventos', 'mi-asistencia', 'mi-boleta'],
 }
 
@@ -295,6 +298,14 @@ export default function App() {
         return <PagosProveedorView user={user} />
       case 'eventos':
         return <EventosView user={user} />
+
+      // KPI Despacho a Motoristas
+      case 'mi-despacho':
+        return <MiDespacho user={user} />
+      case 'despacho-operativo':
+        return <DespachoOperativoView user={user} />
+      case 'kpi-despacho':
+        return <DespachoKpiDashboard user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
       case 'inventario-dash':

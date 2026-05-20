@@ -595,6 +595,41 @@ Diseño completo de la base de datos PostgreSQL en Supabase. Todas las tablas us
 
 **Integración Dashboard Financiero (18-Abr-2026, v6):** `v_gastos_consolidados` incluye 6to UNION ALL de `compras_bees` con filtro `fecha >= '2026-01-01'` (backfill desde arranque contable nuevo). Campos normalizados: `proveedor_nombre='La Constancia SA de CV'` (override oficial), `categoria_gasto_id='2-Insumo Bebida'`, `categoria_nombre='Insumo Bebida'`, `categoria_grupo='COGS'`, `subcategoria_contable='Bebidas'` (capitalizado, alineado con `catalogo_contable` — ver nota de unificación abajo), `origen='compras_bees'`. El frontend `FinanzasDashboard.jsx` mapea estos BEES a la línea P&L "🥩 Costo Comida" vía `CATNAME_TO_PL['Insumo Bebida']='costo_comida'` y `GRUPO_TO_PL['COGS']='costo_comida'` (fallback). Los 43 BEES de Sept-Dic 2025 NO entran al consolidado por diseño (arranque contable empieza Enero 2026). **Fix unificación subcategoría Bebidas (18-Abr-2026):** la primera versión del UNION BEES usaba `'bebidas'` (minúscula), lo que producía DOS grupos BEBIDAS separados en `TabProveedores` bajo Costo Comida (agrupación case-sensitive por `subcategoria_contable`): (1) `BEBIDAS` con La Constancia $30,902.91 (compras_bees) y (2) `BEBIDAS` con Embotelladora La Cascada + Comercializadora Interamericana + SUMINISTROS E INVERSIONES $3,693.64 (compras_dte). Migración `fix_v_gastos_consolidados_bees_subcat_capitalized_v2` capitalizó el literal en el 6to UNION (`'bebidas'` → `'Bebidas'`) alineándolo a la convención de `catalogo_contable` (fuente única de verdad). Resultado: un solo grupo BEBIDAS consolidado $34,596.55 con los 4 proveedores.
 
+### 7.12.5 Tablas KPI Despacho a Motoristas (18 May 2026)
+
+| # | Tabla | Descripción clave |
+|---|-------|-------------------|
+| 60 | despacho_motoristas | KPI tiempo de despacho. Cada fila = ciclo llegada→salida del motorista en CM001. FK `motorista_id` → usuarios_erp (rol 'despachador' o 'motorista'). Campos: numero_ciclo (auto, 1+ por día), hora_llegada/hora_salida, lat/lng llegada+salida, llego_tarde+motivo_tardanza (obligatorio si tarde), tiempo_despacho_minutos (calculado al marcar salida), notas_generales, estado CHECK (en_espera/despachado/anulado), anulado_en/anulado_por. Trigger updated_at. **Independiente de despachos_sucursal** (que mide ciclo del pedido a sucursal). |
+| 61 | despacho_kpi_sucursales | Sucursales destino por ciclo. 1 ciclo → N sucursales. FK despacho_id CASCADE + FK sucursal_id. producto_faltante opcional por sucursal. UNIQUE(despacho_id, sucursal_id) anti-duplicado. |
+| 62 | justificacion_retrasos_despacho | Justificación por encargados de bodega. FK despacho_id UNIQUE (1:1). categoria CHECK (falta_producto/error_pedido/motorista_tarde/problema_sistema/mucho_volumen/otro). obligatoria=TRUE auto si tiempo > tiempo_max_amarillo_min. Encargado snapshot (id+nombre). |
+| 63 | configuracion_despacho_kpi | Singleton (id=1). Thresholds verde<30m / amarillo<45m / rojo>=45m. Horario marcaje 6:00-12:00. Horario llegada objetivo 8:00. minutos_anulacion=5. matriz_store_code='CM001' (GPS se lee de sucursales, no se duplica). |
+
+**View:** `v_despachos_kpi` — despachos del día con color_semaforo (verde/amarillo/rojo/gris/pendiente), minutos_en_espera, sucursales JSON agg, justificacion JSON.
+
+**RPCs (7, todas SECURITY DEFINER):**
+- `fn_haversine_metros(lat1,lng1,lat2,lng2)` → distancia en metros. IMMUTABLE.
+- `fn_marcar_llegada_despacho(motorista_id, lat, lng)` → valida rol + horario 6-12 (TZ El Salvador) + radio matriz + no duplicado + auto-incrementa numero_ciclo + detecta llego_tarde (>08:00).
+- `fn_set_motivo_tardanza_despacho(despacho_id, motivo)` → solo si llego_tarde y aún en_espera. Mínimo 3 chars.
+- `fn_marcar_salida_despacho(despacho_id, lat, lng, sucursales[], notas)` → valida GPS + bloquea si llego_tarde sin motivo + calcula tiempo + retorna color. Insert ON CONFLICT en sucursales.
+- `fn_anular_marcaje_despacho(despacho_id, motorista_id)` → solo el propio motorista, ventana 5min desde último marcaje (hora_salida o hora_llegada). Soft delete (estado='anulado').
+- `fn_justificar_retraso_despacho(despacho_id, encargado_id, categoria, detalle)` → roles permitidos jefe_casa_matriz/produccion/superadmin. Upsert ON CONFLICT(despacho_id). obligatoria=TRUE si tiempo > tiempo_max_amarillo_min.
+- `fn_kpi_despacho_dashboard(inicio DATE, fin DATE)` → JSON con totales (despachos, tiempo_promedio_min, verde/amarillo/rojo, llegadas_tarde), por_motorista (con stats), por_sucursal (con rojos), serie_diaria (para BarChart).
+
+**RLS:** patrón ERP — SELECT abierto a anon+authenticated, escritura solo via RPCs SECURITY DEFINER que validan rol vía p_motorista_id/p_encargado_id.
+
+**Componentes React (lazy):**
+- `src/components/empleado/MiDespacho.jsx` — vista motorista mobile-first (GPS Haversine cliente, validación radio 300m, modal motivo tardanza, selector sucursales con notas faltantes, marcar salida con confirmación, anular 5min, historial del día). Rol: despachador, motorista.
+- `src/components/admin/DespachoOperativoView.jsx` — vista encargados (polling 20s, alertas >45min, KPI cards verde/amarillo/rojo del día, modal justificación obligatoria si rojo, dropdown 6 categorías). Rol: jefe_casa_matriz, produccion, superadmin.
+- `src/components/admin/DespachoKpiDashboard.jsx` — dashboard admin (rango hoy/7d/30d/90d/1año/custom, 6 KPI cards, BarChart Recharts con refs 30/45min, comparativa por motorista, tabla por sucursal, tabla detallada filtros motorista/color/llegada-tarde, exportar CSV UTF-8). Solo rol: superadmin.
+
+**Nav:** Sección nueva "KPI Despacho a Motoristas" en `NAV_SECTIONS` con 3 entries (mi-despacho, despacho-operativo, kpi-despacho). ROLE_DEFAULTS extendido para despachador/motorista (mi-despacho first), jefe_casa_matriz/produccion (despacho-operativo), superadmin (kpi-despacho).
+
+**Usuarios involucrados:**
+- Motoristas: Israel Martinez (PIN 8200, rol despachador, CM001) | Angel Armando Ganuza Jovel (PIN 8100, rol motorista, sin store)
+- Encargados de bodega: Marcos Flores (PIN 5001, jefe_casa_matriz) | Denny Stefany Viera Alvarado (PIN 4844, jefe_casa_matriz) | Jessica Guadalupe Mendoza Barrientos (PIN 6828, rol produccion)
+
+**Pendiente Fase 2:** cron Edge Function reporte semanal lunes 7AM, integración WhatsApp (decidir Twilio vs Make.com+Telegram), exportación PDF, notificaciones push.
+
 ### 7.13 Tablas Flujo Ventas→Inventario (30 Mar 2026)
 
 | # | Tabla | Descripción clave |
