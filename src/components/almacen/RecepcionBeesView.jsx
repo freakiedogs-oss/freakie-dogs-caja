@@ -353,7 +353,12 @@ function BeesDetalle({ compra, user, show, onBack }) {
   };
 
   const recepcionar = async () => {
-    if (!confirm('¿Confirmar recepción? Se guardarán las cantidades editadas.')) return;
+    const itemsSinProducto = items.filter(it => !it.producto_id && n(it.cantidad_recibida) > 0);
+    let confirmMsg = '¿Confirmar recepción? Suma automáticamente al inventario y registra en kardex.';
+    if (itemsSinProducto.length > 0) {
+      confirmMsg = `⚠️ ${itemsSinProducto.length} items NO mapeados se omitirán del inventario. ¿Continuar?`;
+    }
+    if (!confirm(confirmMsg)) return;
     setSaving(true);
     try {
       for (const it of items) {
@@ -361,41 +366,26 @@ function BeesDetalle({ compra, user, show, onBack }) {
       }
       let fotoUrl = compra.foto_recepcion_url;
       if (fotoRecep) fotoUrl = await uploadFoto() || fotoUrl;
+      // El trigger fn_bees_al_recepcionar auto-marca inventariado=true
+      // y fn_bees_inventariar suma stock + crea kardex en un solo UPDATE
       await db.from('compras_bees').update({
         estado_recepcion: 'recepcionado', fecha_recepcion_real: today(),
         recepcionado_por: user.id, foto_recepcion_url: fotoUrl,
         notas_recepcion: notas.trim() || null,
       }).eq('id', compra.id);
-      show('✅ Recepción confirmada');
-      onBack();
-    } catch (e) { show('⚠️ Error: ' + e.message); }
-    finally { setSaving(false); }
-  };
-
-  const inventariar = async () => {
-    const itemsSinProducto = items.filter(it => !it.producto_id && n(it.cantidad_recibida) > 0);
-    if (itemsSinProducto.length > 0) {
-      if (!confirm(`⚠️ ${itemsSinProducto.length} items NO mapeados se omitirán del inventario. ¿Continuar?`)) return;
-    } else if (!confirm('¿Sumar los productos al inventario? Registra en kardex.')) return;
-    setSaving(true);
-    try {
-      for (const it of items) {
-        await db.from('compras_bees_items').update({ cantidad_recibida: n(it.cantidad_recibida) }).eq('id', it.id);
-      }
-      const { error } = await db.from('compras_bees').update({
-        inventariado: true, notas_recepcion: notas.trim() || null,
-      }).eq('id', compra.id);
-      if (error) throw error;
-      show('✅ Inventario actualizado + kardex registrado');
+      show('✅ Recepción confirmada — inventario y kardex actualizados');
       onBack();
     } catch (e) { show('⚠️ Error: ' + e.message); }
     finally { setSaving(false); }
   };
 
   const reabrir = async () => {
-    if (!confirm('¿Reabrir la recepción? Podrás editar cantidades de nuevo.')) return;
-    await db.from('compras_bees').update({ estado_recepcion: 'en_transito' }).eq('id', compra.id);
-    show('↩️ Recepción reabierta');
+    if (!confirm('⚠️ Reabrir descontará el stock recibido. ¿Continuar?')) return;
+    // Nota: el trigger NO revierte automáticamente. Si se necesita, hacer en BD.
+    await db.from('compras_bees').update({
+      estado_recepcion: 'en_transito', inventariado: false,
+    }).eq('id', compra.id);
+    show('↩️ Recepción reabierta (stock NO descontado automáticamente — revisar manual)');
     onBack();
   };
 
@@ -503,25 +493,20 @@ function BeesDetalle({ compra, user, show, onBack }) {
       )}
 
       <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {compra.estado_recepcion !== 'recepcionado' && !compra.inventariado && (
+        {!compra.inventariado && (
           <button className="btn btn-red" onClick={recepcionar} disabled={saving}>
-            {saving ? 'Guardando…' : '✅ Confirmar recepción'}
+            {saving ? 'Guardando…' : '✅ Confirmar recepción (suma a inventario)'}
           </button>
         )}
-        {compra.estado_recepcion === 'recepcionado' && !compra.inventariado && (
+        {compra.inventariado && (
           <>
-            <button className="btn btn-red" onClick={inventariar} disabled={saving}>
-              {saving ? 'Inventariando…' : '📦 Sumar al inventario'}
-            </button>
+            <div style={{ textAlign: 'center', padding: 12, background: '#22c55e22', color: '#22c55e', borderRadius: 8, fontWeight: 600 }}>
+              ✅ Recepcionado e inventariado — stock y kardex actualizados
+            </div>
             <button className="btn" onClick={reabrir} disabled={saving} style={{ background: '#2a2a32' }}>
               ↩️ Reabrir para editar
             </button>
           </>
-        )}
-        {compra.inventariado && (
-          <div style={{ textAlign: 'center', padding: 12, background: '#22c55e22', color: '#22c55e', borderRadius: 8, fontWeight: 600 }}>
-            ✅ Ya inventariado — suma reflejada en stock
-          </div>
         )}
       </div>
     </div>
