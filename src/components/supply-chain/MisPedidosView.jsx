@@ -196,7 +196,7 @@ export default function MisPedidosView({ user, onBack }) {
       Object.values(pitems).flat().forEach(i => prodIds.add(i.producto_id));
       Object.values(ditems).flat().forEach(i => prodIds.add(i.producto_id));
       if (prodIds.size > 0) {
-        const { data: prods } = await db.from('productos')
+        const { data: prods } = await db.from('catalogo_productos')
           .select('id,nombre,unidad_medida,categoria')
           .in('id', Array.from(prodIds));
         const map = {};
