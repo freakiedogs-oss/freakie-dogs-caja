@@ -630,6 +630,40 @@ Diseño completo de la base de datos PostgreSQL en Supabase. Todas las tablas us
 
 **Pendiente Fase 2:** cron Edge Function reporte semanal lunes 7AM, integración WhatsApp (decidir Twilio vs Make.com+Telegram), exportación PDF, notificaciones push.
 
+### 7.12.6 Tablas KPI Delivery Propio (20 May 2026)
+
+Dashboard ejecutivo del dueño (solo superadmin) que mide ventas de delivery propio con proyección mensual ponderada por L-V vs S-D. Lee de `quanto_ordenes` filtrando `canal_venta='delivery_propio'`. NO crea pipeline de ingesta — usa el flujo automatizado del POS+DTE.
+
+| # | Tabla | Descripción clave |
+|---|-------|-------------------|
+| 64 | `metas_delivery` | Singleton por (anio, mes) con meta_monto, meta_auto (TRUE si calculada mes_anterior×1.05, FALSE si override manual), ajustada_por FK usuarios_erp, ajustada_en. UNIQUE(anio, mes). |
+| — | `sucursales.tiene_delivery` (COLUMNA NUEVA) | BOOLEAN. TRUE para M001/S001/S002/S003/S004. CM001 queda FALSE (es bodega). Filtra automáticamente las sucursales en la view. |
+
+**View:** `v_delivery_dia` — agregación diaria por sucursal de `quanto_ordenes` con `canal_venta='delivery_propio'` AND `sucursales.tiene_delivery=TRUE`. Calcula `tipo_dia` ('semana'|'finde') con `EXTRACT(DOW)`. Campos: fecha, store_code, sucursal_nombre, dow, tipo_dia, pedidos, monto, ticket_promedio.
+
+**RPCs (3, todas SECURITY DEFINER):**
+- `fn_delivery_dashboard(p_anio, p_mes)` → JSON con periodo (dias_mes 28/29/30/31, dias_semana_mes/dias_finde_mes calculados con `generate_series` + filter por DOW, hoy en TZ America/El_Salvador), totales (acumulado, pedidos, ticket_promedio, proyeccion, meta, meta_auto, meta_ajustada, venta_mes_anterior, porcentaje_avance, porcentaje_proyectado, semaforo verde/amarillo/rojo, dias_restantes), promedios (lunes_a_viernes, finde_semana, diferencia_pct), serie_diaria con dia_nombre y tipo_dia, por_sucursal con sparkline JSON agg y monto_periodo_mes_anterior (mismos N días para crecimiento apples-to-apples), dias_sin_datos lista, mejor_dia y peor_dia. **Lógica de proyección ponderada:** `acumulado + (dias_LV_restantes × prom_LV) + (dias_SD_restantes × prom_SD) + (dias_LV_sin_datos × prom_LV) + (dias_SD_sin_datos × prom_SD)`. Fallback a promedio S-D del mes anterior si aún no hay datos S-D del mes actual. Meta auto = mes anterior × 1.05.
+- `fn_delivery_productos_top(p_anio, p_mes, p_limit=20)` → JSON ranking productos. Extrae items del `quanto_ordenes.json_raw->'cuerpoDocumento'` via `jsonb_array_elements` LATERAL. Normaliza descripcion con LOWER+trim. Suma `ventaGravada + ventaNoSuj + ventaExenta`.
+- `fn_delivery_set_meta(p_anio, p_mes, p_meta_monto, p_usuario_id)` → upsert en metas_delivery. Valida rol `superadmin`. ON CONFLICT(anio,mes) DO UPDATE.
+
+**RLS:** patrón ERP — SELECT abierto a anon/authenticated, escritura via RPCs SECURITY DEFINER que validan rol vía p_usuario_id.
+
+**Componente React (lazy):**
+- `src/components/admin/DeliveryKpiDashboard.jsx` — solo superadmin. Selector de mes (12 últimos), 6 KPI cards con semáforo color-coded, gráfica SVG custom inline (línea sólida real + punteada proyección + horizontal meta + área sombreada verde/amarillo/rojo, marcador HOY destacado, marcadores diarios con orange para finde, leyenda, grid con 5 ticks Y), card mejor/peor día, ranking sucursales con sparkline mini SVG (120x32px) + crecimiento vs mismos N días del mes anterior con ↑/↓ %, top 20 productos, tabla detalle diario (columnas por sucursal, fines de semana resaltados con fondo azul oscuro, mejor día con fondo verde y 🏆), modal ajustar meta, exportar CSV UTF-8.
+
+**Nav:** entry "KPI Delivery Propio" 🛵 en sección "Dashboards" de NAV_SECTIONS. Solo rol `superadmin`. INSERT permisos_rol(superadmin, kpi-delivery).
+
+**Sucursales con delivery propio activo (5):**
+- M001 Plaza Cafetalón (Tecla) — top con ~$12K/mes
+- S001 Plaza Mundo Soyapango — ~$6K/mes
+- S003 Grand Plaza Lourdes — ~$5.8K/mes (+29.8% growth detectado)
+- S002 Plaza Mundo Usulután — bajo volumen ($700/mes, -32% vs mes anterior, alerta activa)
+- S004 Paseo Venecia — residual (~$20/mes, deliveries de emergencia)
+
+**Volumen histórico:** 7,276 órdenes · $166,402 acumulado · Ene-May 2026 · promedio $33K-37K/mes.
+
+**Pendiente Fase 2:** cron Edge Function reporte semanal/mensual a Cesar, WhatsApp/email automático, notificaciones push cuando proyección cae a rojo, drill-down por hora del día.
+
 ### 7.13 Tablas Flujo Ventas→Inventario (30 Mar 2026)
 
 | # | Tabla | Descripción clave |
