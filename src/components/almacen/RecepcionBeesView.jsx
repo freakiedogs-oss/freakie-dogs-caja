@@ -115,6 +115,7 @@ export default function RecepcionBeesView({ user, show }) {
   const [view, setView] = useState('lista');
   const [tab, setTab] = useState('pendientes');
   const [compras, setCompras] = useState([]);
+  const [stock, setStock] = useState([]);
   const [sel, setSel] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sucursal, setSucursal] = useState(null);
@@ -130,16 +131,27 @@ export default function RecepcionBeesView({ user, show }) {
 
   const cargar = async () => {
     setLoading(true);
-    let q = db.from('compras_bees')
-      .select('id,id_factura,numero_pedido,fecha,sucursal_id,store_code,sucursal_header,monto_total,items_count,foto_pedido_url,foto_recepcion_url,estado_recepcion,fecha_recepcion_real,inventariado,notas_recepcion')
-      .order('fecha', { ascending: false })
-      .limit(60);
-    if (!esAdmin && user?.sucursal_id) q = q.eq('sucursal_id', user.sucursal_id);
-    if (tab === 'pendientes') q = q.in('estado_recepcion', ['pendiente', 'en_transito']);
-    else if (tab === 'por_inventariar') q = q.eq('estado_recepcion', 'recepcionado').eq('inventariado', false);
-    else q = q.eq('inventariado', true);
-    const { data } = await q;
-    setCompras(data || []);
+    if (tab === 'stock') {
+      // Tab Stock Bebidas: vista v_stock_bebidas (inventario actual)
+      let qs = db.from('v_stock_bebidas')
+        .select('producto_id,sucursal_id,store_code,sucursal_nombre,producto_nombre,categoria,unidad_medida,stock_actual,stock_minimo,stock_maximo,ultima_actualizacion,estado_stock')
+        .order('producto_nombre', { ascending: true });
+      if (!esAdmin && user?.sucursal_id) qs = qs.eq('sucursal_id', user.sucursal_id);
+      const { data } = await qs;
+      setStock(data || []);
+      setCompras([]);
+    } else {
+      let q = db.from('compras_bees')
+        .select('id,id_factura,numero_pedido,fecha,sucursal_id,store_code,sucursal_header,monto_total,items_count,foto_pedido_url,foto_recepcion_url,estado_recepcion,fecha_recepcion_real,inventariado,notas_recepcion')
+        .order('fecha', { ascending: false })
+        .limit(60);
+      if (!esAdmin && user?.sucursal_id) q = q.eq('sucursal_id', user.sucursal_id);
+      if (tab === 'pendientes') q = q.in('estado_recepcion', ['pendiente', 'en_transito']);
+      else q = q.eq('inventariado', true);  // historial
+      const { data } = await q;
+      setCompras(data || []);
+      setStock([]);
+    }
     setLoading(false);
   };
 
@@ -169,7 +181,7 @@ export default function RecepcionBeesView({ user, show }) {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, borderBottom: '1px solid #2a2a32' }}>
-        {[['pendientes', '📷 En tránsito'], ['por_inventariar', '📦 Por inventariar'], ['historial', '✅ Inventariados']].map(([key, label]) => (
+        {[['pendientes', '📷 En tránsito'], ['stock', '🥤 Stock Bebidas'], ['historial', '✅ Inventariados']].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{
               padding: '10px 14px', background: 'transparent',
@@ -182,12 +194,13 @@ export default function RecepcionBeesView({ user, show }) {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40 }}><div className="spin" style={{ width: 28, height: 28, margin: '0 auto' }} /></div>
+      ) : tab === 'stock' ? (
+        <StockBebidasTab stock={stock} esAdmin={esAdmin} />
       ) : compras.length === 0 ? (
         <div className="empty">
           <div className="empty-icon">🥤</div>
           <div className="empty-text">
             {tab === 'pendientes' && 'No hay pedidos en tránsito'}
-            {tab === 'por_inventariar' && 'No hay recepciones por inventariar'}
             {tab === 'historial' && 'No hay compras inventariadas'}
           </div>
         </div>
@@ -195,6 +208,69 @@ export default function RecepcionBeesView({ user, show }) {
         compras.map(c => <CompraCard key={c.id} compra={c} tab={tab}
           onClick={() => { setSel(c); setView('detalle'); }} />)
       )}
+    </div>
+  );
+}
+
+// ── TAB STOCK BEBIDAS — agrupado por sucursal ─────────────────
+function StockBebidasTab({ stock, esAdmin }) {
+  if (!stock.length) {
+    return (
+      <div className="empty">
+        <div className="empty-icon">🥤</div>
+        <div className="empty-text">Sin stock de bebidas registrado</div>
+      </div>
+    );
+  }
+
+  // Agrupar por sucursal
+  const porSucursal = stock.reduce((acc, r) => {
+    const k = r.store_code;
+    if (!acc[k]) acc[k] = { nombre: r.sucursal_nombre, store_code: k, items: [] };
+    acc[k].items.push(r);
+    return acc;
+  }, {});
+  const sucursales = Object.values(porSucursal).sort((a, b) => a.store_code.localeCompare(b.store_code));
+
+  const colorEstado = (e) => e === 'critico' ? '#ef4444' : e === 'bajo' ? '#fb923c' : '#22c55e';
+
+  return (
+    <div>
+      <div className="card" style={{ background: '#1c1c22', marginBottom: 12, padding: 10, fontSize: 12, color: '#888' }}>
+        💡 Stock acumulado desde recepciones BEES. Cantidades en <b>cajas</b>.
+        {' '}Las ventas aún no descuentan automáticamente — ver Kardex para el detalle de movimientos.
+      </div>
+      {sucursales.map(s => (
+        <div key={s.store_code} style={{ marginBottom: 18 }}>
+          {esAdmin && (
+            <div className="sec-title" style={{ marginBottom: 8 }}>
+              {s.store_code} · {s.nombre} <span style={{ color: '#666', fontWeight: 400 }}>({s.items.length} productos)</span>
+            </div>
+          )}
+          {s.items.map(it => (
+            <div key={it.producto_id + it.sucursal_id} className="card" style={{ padding: '10px 12px', marginBottom: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{it.producto_nombre}</div>
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                    {it.categoria} · {it.unidad_medida}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: colorEstado(it.estado_stock) }}>
+                    {Number(it.stock_actual).toFixed(0)}
+                  </div>
+                  {(it.stock_minimo > 0 || it.stock_maximo > 0) && (
+                    <div style={{ fontSize: 10, color: '#666' }}>
+                      mín {Number(it.stock_minimo || 0).toFixed(0)} · máx {Number(it.stock_maximo || 0).toFixed(0)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -243,6 +319,7 @@ function BeesDetalle({ compra, user, show, onBack }) {
   const [fotoRecep, setFotoRecep] = useState(null);
   const [fotoRecepUrl, setFotoRecepUrl] = useState(compra.foto_recepcion_url || '');
   const fRef = useRef();
+  const fGaleriaRecRef = useRef();
 
   useEffect(() => {
     db.from('v_compras_bees_items')
@@ -403,9 +480,15 @@ function BeesDetalle({ compra, user, show, onBack }) {
         <div style={{ marginTop: 16 }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>📷 Foto al recepcionar (opcional)</div>
           <input type="file" accept="image/*" capture="environment" ref={fRef} onChange={handleFotoRecep} style={{ display: 'none' }} />
-          <button className="btn" onClick={() => fRef.current?.click()}>
-            {fotoRecep ? '✅ Foto cargada' : '📷 Tomar foto'}
-          </button>
+          <input type="file" accept="image/*" ref={fGaleriaRecRef} onChange={handleFotoRecep} style={{ display: 'none' }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={() => fRef.current?.click()} style={{ flex: 1 }}>
+              {fotoRecep ? '✅ Foto cargada' : '📷 Cámara'}
+            </button>
+            <button className="btn" onClick={() => fGaleriaRecRef.current?.click()} style={{ flex: 1, background: '#2a2a32' }}>
+              🖼️ Galería
+            </button>
+          </div>
           {fotoRecepUrl && <img src={fotoRecepUrl} style={{ width: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 8, marginTop: 8 }} alt="" />}
         </div>
       )}
@@ -469,6 +552,7 @@ function NuevaCompraBees({ user, sucursal, esAdmin, show, onBack }) {
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
   const fRef = useRef();
+  const fGaleriaRef = useRef();
 
   useEffect(() => {
     if (!esAdmin) return;
@@ -620,14 +704,18 @@ function NuevaCompraBees({ user, sucursal, esAdmin, show, onBack }) {
         )}
 
         <input type="file" accept="image/*" capture="environment" ref={fRef} onChange={handleFoto} style={{ display: 'none' }} />
+        <input type="file" accept="image/*" ref={fGaleriaRef} onChange={handleFoto} style={{ display: 'none' }} />
 
         {step === 'upload' && (
           <>
             <button className="btn btn-red" onClick={() => fRef.current?.click()} style={{ width: '100%', padding: '20px', fontSize: 16 }}>
-              📷 Tomar / subir foto del pedido
+              📷 Tomar foto con cámara
+            </button>
+            <button className="btn" onClick={() => fGaleriaRef.current?.click()} style={{ width: '100%', padding: '16px', fontSize: 15, marginTop: 10, background: '#2a2a32' }}>
+              🖼️ Subir screenshot / galería
             </button>
             <div style={{ marginTop: 16, padding: 12, background: '#1c1c22', borderRadius: 8, fontSize: 12, color: '#888', lineHeight: 1.5 }}>
-              💡 Tip: toma la captura directa de la app BEES donde se ve el comprobante completo (ID, pedido, items, total). El OCR extrae todo y solo necesitas revisar. OCR gratis (Tesseract.js).
+              💡 Tip: lo más rápido es tomar un screenshot directo en el celular de la app BEES (comprobante completo: ID, pedido, items, total) y subirlo con "Galería". El OCR extrae todo y solo necesitas revisar. OCR gratis (Tesseract.js).
             </div>
           </>
         )}
