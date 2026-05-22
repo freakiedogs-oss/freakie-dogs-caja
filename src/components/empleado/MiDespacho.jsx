@@ -107,6 +107,8 @@ export default function MiDespacho({ user }) {
   const [selSucursales, setSelSucursales] = useState({})  // { sucId: { sel: bool, faltante: '' } }
   const [notasGenerales, setNotasGenerales] = useState('')
   const [, forceTick] = useState(0)  // re-render cada 30s para los timers
+  // Bug 8: edición de sucursales después de marcar salida (ventana 5min)
+  const [editarSuc, setEditarSuc] = useState(null)  // null | { despachoId, sucursales: {sucId: {sel, faltante}} }
 
   const reloadRef = useRef(0)
 
@@ -143,6 +145,15 @@ export default function MiDespacho({ user }) {
     const t = setInterval(() => forceTick(x => x + 1), 20000)
     return () => clearInterval(t)
   }, [])
+
+  // Bug 1 UX: pedir GPS automáticamente al cargar (background, no espera al click)
+  // Esto evita los 5-10s de espera cuando el motorista quiera marcar.
+  useEffect(() => {
+    if (!loading && !gps && !reqGps && !gpsErr) {
+      pedirGps()  // fire-and-forget
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
 
   // ─────────────────────────────────────────────────────
   // GPS
@@ -275,7 +286,38 @@ export default function MiDespacho({ user }) {
     })
     setBusy(false)
     if (error || !data?.ok) { setMsg({ tipo: 'err', texto: data?.error || error?.message || 'Error' }); return }
-    setMsg({ tipo: 'ok', texto: '✓ Marcaje anulado' })
+    const justifAviso = data.justificacion_borrada ? ' (también se borró su justificación)' : ''
+    setMsg({ tipo: 'ok', texto: '✓ Marcaje anulado' + justifAviso })
+    reloadRef.current++
+    cargarTodo()
+  }
+
+  // Bug 8: abrir modal de edición de sucursales con valores precargados
+  const abrirEditarSucursales = (despacho) => {
+    const pre = {}
+    ;(despacho.sucursales || []).forEach(s => {
+      pre[s.sucursal_id] = { sel: true, faltante: s.producto_faltante || '' }
+    })
+    setEditarSuc({ despachoId: despacho.id, sucursales: pre })
+  }
+
+  // Bug 8: guardar cambios de sucursales
+  const guardarEdicionSucursales = async () => {
+    if (!editarSuc) return
+    const arr = Object.entries(editarSuc.sucursales)
+      .filter(([, v]) => v.sel)
+      .map(([id, v]) => ({ sucursal_id: id, producto_faltante: v.faltante || null }))
+    if (arr.length === 0) { setMsg({ tipo: 'err', texto: 'Debes seleccionar al menos una sucursal' }); return }
+    setBusy(true); setMsg(null)
+    const { data, error } = await db.rpc('fn_editar_sucursales_despacho', {
+      p_despacho_id: editarSuc.despachoId,
+      p_motorista_id: user.id,
+      p_sucursales: arr,
+    })
+    setBusy(false)
+    if (error || !data?.ok) { setMsg({ tipo: 'err', texto: data?.error || error?.message || 'Error' }); return }
+    setMsg({ tipo: 'ok', texto: `✓ Sucursales actualizadas (${data.sucursales_actualizadas})` })
+    setEditarSuc(null)
     reloadRef.current++
     cargarTodo()
   }
@@ -543,16 +585,95 @@ export default function MiDespacho({ user }) {
                   </div>
                 )}
                 {puedeAnular && (
-                  <button
-                    onClick={() => setConfirm({ tipo: 'anular', payload: d.id })}
-                    style={{ ...btnSecondary, width: 'auto', padding: '4px 10px', fontSize: 12, marginTop: 6, color: c.red, borderColor: c.red }}
-                  >
-                    Anular ({(config?.minutos_anulacion || 5) - minSinceSalida} min)
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => abrirEditarSucursales(d)}
+                      style={{ ...btnSecondary, width: 'auto', padding: '4px 10px', fontSize: 12, color: c.blue, borderColor: c.blue }}
+                      title="Cambiar las sucursales seleccionadas sin perder el ciclo"
+                    >
+                      ✏️ Editar sucursales
+                    </button>
+                    <button
+                      onClick={() => setConfirm({ tipo: 'anular', payload: d.id })}
+                      style={{ ...btnSecondary, width: 'auto', padding: '4px 10px', fontSize: 12, color: c.red, borderColor: c.red }}
+                    >
+                      Anular ({(config?.minutos_anulacion || 5) - minSinceSalida} min)
+                    </button>
+                  </div>
                 )}
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Modal editar sucursales (Bug 8 opción B) */}
+      {editarSuc && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 100,
+          }}
+          onClick={() => setEditarSuc(null)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{
+            background: c.card, border: `1px solid ${c.cardBorder}`, borderRadius: 12,
+            padding: 20, maxWidth: 480, width: '100%', maxHeight: '85vh', overflowY: 'auto',
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: c.blue }}>
+              ✏️ Editar sucursales del despacho
+            </div>
+            <div style={{ fontSize: 12, color: c.textDim, marginBottom: 12 }}>
+              Reemplazá la lista de sucursales destino. NO se pierde el ciclo ni el tiempo de despacho.
+            </div>
+            {sucursales.map(suc => {
+              const v = editarSuc.sucursales[suc.id] || { sel: false, faltante: '' }
+              return (
+                <div key={suc.id} style={{ marginBottom: 10, padding: 10, background: c.input, borderRadius: 8, border: `1px solid ${v.sel ? c.green : c.border}` }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={v.sel}
+                      onChange={() => setEditarSuc(s => ({
+                        ...s,
+                        sucursales: { ...s.sucursales, [suc.id]: { sel: !v.sel, faltante: v.faltante } },
+                      }))}
+                      style={{ width: 22, height: 22 }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{suc.nombre}</div>
+                      <div style={{ fontSize: 11, color: c.textDim }}>{suc.store_code}</div>
+                    </div>
+                  </label>
+                  {v.sel && (
+                    <input
+                      type="text"
+                      value={v.faltante}
+                      onChange={e => setEditarSuc(s => ({
+                        ...s,
+                        sucursales: { ...s.sucursales, [suc.id]: { ...v, faltante: e.target.value } },
+                      }))}
+                      placeholder={`¿Faltó algún producto para ${suc.nombre}?`}
+                      style={{
+                        width: '100%', marginTop: 8, background: c.card, color: c.text,
+                        border: `1px solid ${c.border}`, borderRadius: 6, padding: 8, fontSize: 13, boxSizing: 'border-box',
+                      }}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={() => setEditarSuc(null)} disabled={busy}
+                      style={{ ...btnSecondary, flex: 1 }}>
+                Cancelar
+              </button>
+              <button onClick={guardarEdicionSucursales} disabled={busy}
+                      style={{ ...btnSuccess, flex: 2 }}>
+                {busy ? 'Guardando…' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

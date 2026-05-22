@@ -198,7 +198,23 @@ export default function DespachoKpiDashboard({ user }) {
 
       {loading && <div style={{ padding: 30, textAlign: 'center', color: c.textDim }}>Cargando…</div>}
 
-      {!loading && datos && (
+      {/* Bug 6: estado vacío amigable cuando el periodo no tiene despachos */}
+      {!loading && datos && datos.sin_datos && (
+        <div style={{ ...cardStyle, textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>
+            Sin despachos registrados en este período
+          </div>
+          <div style={{ color: c.textDim, fontSize: 14 }}>
+            Del {fmtFecha(periodo.inicio)} al {fmtFecha(periodo.fin)} no hay despachos cerrados todavía.
+          </div>
+          <div style={{ color: c.textDim, fontSize: 12, marginTop: 10 }}>
+            Probá un período más amplio o esperá a que se registren marcajes.
+          </div>
+        </div>
+      )}
+
+      {!loading && datos && !datos.sin_datos && (
         <>
           {/* KPI Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 16 }}>

@@ -172,6 +172,17 @@ export default function DespachoOperativoView({ user }) {
     })
     setBusy(false)
     if (error || !data?.ok) {
+      // Bug 4: detectar específicamente si fue anulado mientras tenías el modal abierto
+      if (data?.fue_anulado) {
+        setMsg({
+          tipo: 'err',
+          texto: '⚠ Este despacho fue anulado mientras editabas. Cerrando modal y refrescando…'
+        })
+        setModalJustif(null); setJustifTxt(''); setJustifCat('falta_producto')
+        reloadRef.current++
+        cargar()
+        return
+      }
       setMsg({ tipo: 'err', texto: data?.error || error?.message || 'Error al guardar' })
       return
     }
