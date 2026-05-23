@@ -323,6 +323,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
   })
   const [datos, setDatos] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [errMsg, setErrMsg] = useState(null)
   const [canalActivo, setCanalActivo] = useState('todas')
 
   // Bloqueo de acceso por rol
@@ -340,16 +341,28 @@ export default function KpiVentasTotalesDashboard({ user }) {
 
   const cargar = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await db.rpc('fn_ventas_totales_dashboard', {
-      p_anio: periodo.anio, p_mes: periodo.mes,
-    })
-    if (error) {
-      console.error(error)
+    setErrMsg(null)
+    try {
+      const { data, error } = await db.rpc('fn_ventas_totales_dashboard', {
+        p_anio: periodo.anio, p_mes: periodo.mes,
+      })
+      if (error) {
+        console.error('[KpiVentasTotales] RPC error:', error)
+        setErrMsg((error.message || JSON.stringify(error)) + (error.hint ? ' · Hint: ' + error.hint : ''))
+        setDatos(null)
+      } else if (!data) {
+        setErrMsg('RPC retornó null (sin datos)')
+        setDatos(null)
+      } else {
+        setDatos(data)
+      }
+    } catch (e) {
+      console.error('[KpiVentasTotales] Exception:', e)
+      setErrMsg('Excepción: ' + (e.message || String(e)))
       setDatos(null)
-    } else {
-      setDatos(data || null)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [periodo.anio, periodo.mes])
 
   useEffect(() => { cargar() }, [cargar])
@@ -375,7 +388,23 @@ export default function KpiVentasTotalesDashboard({ user }) {
   }
 
   if (loading) return <div style={{ padding: 30, textAlign: 'center', color: c.textDim }}>Cargando dashboard…</div>
-  if (!datos) return <div style={{ padding: 30, textAlign: 'center', color: c.red }}>Error cargando datos</div>
+  if (!datos) return (
+    <div style={{ padding: 30, color: c.text, maxWidth: 800, margin: '20px auto' }}>
+      <div style={{ ...cardStyle, borderColor: c.red, textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
+        <div style={{ color: c.red, fontWeight: 700, fontSize: 18 }}>Error cargando datos</div>
+        {errMsg && (
+          <div style={{ marginTop: 10, padding: 12, background: c.input, borderRadius: 8, color: c.textDim, fontSize: 12, fontFamily: 'monospace', textAlign: 'left', wordBreak: 'break-word' }}>
+            {errMsg}
+          </div>
+        )}
+        <button onClick={cargar} style={{ ...btn, marginTop: 14, background: c.blue, color: '#000', fontWeight: 700 }}>🔄 Reintentar</button>
+        <div style={{ marginTop: 12, fontSize: 11, color: c.textDim }}>
+          Si el error persiste, abrí la consola del navegador (F12 → Console) para ver más detalle, o avisa al admin.
+        </div>
+      </div>
+    </div>
+  )
 
   const { periodo: per, canales, serie_diaria, bep, utilidad } = datos
   const canalSel = canales[canalActivo]
