@@ -447,7 +447,11 @@ export default function KpiVentasTotalesDashboard({ user }) {
           <div style={{ fontSize: 12, color: c.textDim }}>Informe Ejecutivo · Ventas Totales</div>
           <h1 style={{ margin: '4px 0', fontSize: 26 }}>📊 Ventas Totales — {MESES[periodo.mes-1]} {periodo.anio}</h1>
           <div style={{ fontSize: 13, color: c.textDim }}>
-            {per.dias_mes} días · Día {per.dia_actual} de {per.dias_mes} · Hoy: {fmtFechaLarga(per.hoy)}
+            {per.dias_mes} días · {per.data_completa_hasta && per.data_completa_hasta !== per.hoy ? (
+              <>Data completa hasta <span style={{ color: c.orange, fontWeight: 700 }}>{fmtFechaLarga(per.data_completa_hasta)}</span> (día {per.dia_actual} de {per.dias_mes}) · </>
+            ) : (
+              <>Día {per.dia_actual} de {per.dias_mes} · </>
+            )}Hoy: {fmtFechaLarga(per.hoy)}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
