@@ -86,7 +86,7 @@ function downloadCSV(filename, rows) {
 // ────────────────────────────────────────────────────────────
 // Gráfica de proyección + Punto de Equilibrio
 // ────────────────────────────────────────────────────────────
-function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilidad, sinIva }) {
+function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilidad, sinIva, bepActivo, diaBepActivo }) {
   if (!data || data.length === 0) {
     return <div style={{ padding: 30, textAlign: 'center', color: c.textDim }}>Sin datos para el período</div>
   }
@@ -130,7 +130,7 @@ function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilid
     }
   }
   const proyFinal = proyeccion[proyeccion.length - 1]?.acumulado || 0
-  const bepValor = canalKey === 'todas' ? bep.bep_mensual : null
+  const bepValor = canalKey === 'todas' ? bepActivo : null
 
   const maxVal = Math.max(
     bepValor || 0,
@@ -154,8 +154,8 @@ function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilid
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(p => p * maxVal)
 
   // Línea Día BEP (vertical)
-  const diaBepX = (canalKey === 'todas' && bep.dia_bep > 0 && bep.dia_bep <= diasMes)
-    ? xScale(bep.dia_bep) : null
+  const diaBepX = (canalKey === 'todas' && diaBepActivo > 0 && diaBepActivo <= diasMes)
+    ? xScale(diaBepActivo) : null
 
   return (
     <div style={{ width: '100%', overflowX: 'auto' }}>
@@ -180,7 +180,7 @@ function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilid
             <line x1={diaBepX} y1={padT} x2={diaBepX} y2={H - padB}
                   stroke={c.yellow} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />
             <text x={diaBepX} y={padT - 4} fill={c.yellow} fontSize="10" textAnchor="middle" fontWeight="700">
-              ⚖️ Día BEP: {bep.dia_bep}
+              ⚖️ Día BEP: {diaBepActivo}
             </text>
           </>
         )}
@@ -191,7 +191,7 @@ function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilid
             <line x1={padL} y1={bepY} x2={W - padR} y2={bepY}
                   stroke={c.yellow} strokeWidth="2.5" strokeDasharray="8 4" />
             <text x={W - padR} y={bepY - 6} fill={c.yellow} fontSize="11" textAnchor="end" fontWeight="700">
-              ⚖️ Punto Equilibrio: {fmtUSD(bep.bep_mensual)}
+              ⚖️ Punto Equilibrio: {fmtUSD(bepActivo)}
             </text>
           </>
         )}
@@ -250,13 +250,13 @@ function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilid
 // ────────────────────────────────────────────────────────────
 // Gráfica de waterfall P&L (utilidad proyectada)
 // ────────────────────────────────────────────────────────────
-function GraficaUtilidad({ canales, bep, utilidad }) {
-  const ingresos = Number(canales.todas.proyeccion)
-  const cogs = Number(utilidad.cv_proyectado)
-  const cf = Number(utilidad.cf_proyectado)
-  const util = Number(utilidad.utilidad_proyectada)
-  const ratioCv = Number(bep.ratio_cv) * 100
-  const margen = Number(bep.margen_contribucion) * 100
+function GraficaUtilidad({ canales, bep, utilidad, sinIva }) {
+  const ingresos = sinIva ? Number(canales.todas.proyeccion_si) : Number(canales.todas.proyeccion)
+  const cogs = sinIva ? Number(utilidad.cv_proyectado) : Number(utilidad.cv_proyectado_ci ?? utilidad.cv_proyectado)
+  const cf = sinIva ? Number(utilidad.cf_proyectado) : Number(utilidad.cf_proyectado_ci ?? utilidad.cf_proyectado)
+  const util = sinIva ? Number(utilidad.utilidad_proyectada) : Number(utilidad.utilidad_proyectada_ci ?? utilidad.utilidad_proyectada)
+  const ratioCv = (sinIva ? Number(bep.ratio_cv) : Number(bep.ratio_cv_ci ?? bep.ratio_cv)) * 100
+  const margen = (sinIva ? Number(bep.margen_contribucion) : Number(bep.margen_contribucion_ci ?? bep.margen_contribucion)) * 100
 
   const W = 1100, H = 280
   const padL = 60, padR = 30, padT = 20, padB = 60
@@ -413,19 +413,31 @@ export default function KpiVentasTotalesDashboard({ user }) {
   )
 
   const { periodo: per, canales, serie_diaria, bep, utilidad } = datos
-  // Helper que devuelve el campo según el toggle IVA. Sufijo '_si' = sin IVA.
-  const f = (suffix='') => sinIva ? (suffix ? suffix + '_si' : 'acumulado_si') : (suffix || 'acumulado')
   const canalSel = canales[canalActivo]
   const canalDef = CANALES.find(x => x.key === canalActivo)
-  // Valores derivados según toggle
+  // Valores derivados según toggle IVA. Sufijo '_si' = sin IVA, '_ci' = con IVA matched (COGS/CF inflados con 1.13).
   const acumActivo = sinIva ? Number(canalSel.acumulado_si) : Number(canalSel.acumulado)
   const proyActivo = sinIva ? Number(canalSel.proyeccion_si) : Number(canalSel.proyeccion)
   const ticketActivo = sinIva ? Number(canalSel.ticket_promedio_si) : Number(canalSel.ticket_promedio)
   const promDiarioActivo = sinIva ? Number(utilidad.promedio_diario_si) : Number(utilidad.promedio_diario)
+  // BEP/Utilidad — pares con/sin IVA (matching ambos lados)
+  const bepActivo = sinIva ? Number(bep.bep_mensual) : Number(bep.bep_mensual_ci ?? bep.bep_mensual)
+  const cfActivo = sinIva ? Number(bep.costos_fijos_total) : Number(bep.costos_fijos_total_ci ?? bep.costos_fijos_total)
+  const ratioCvActivo = sinIva ? Number(bep.ratio_cv) : Number(bep.ratio_cv_ci ?? bep.ratio_cv)
+  const margenContribActivo = sinIva ? Number(bep.margen_contribucion) : Number(bep.margen_contribucion_ci ?? bep.margen_contribucion)
+  const diaBepActivo = sinIva ? Number(bep.dia_bep) : Number(bep.dia_bep_ci ?? bep.dia_bep)
+  const faltanteBepActivo = sinIva ? Number(bep.faltante_para_bep) : Number(bep.faltante_para_bep_ci ?? bep.faltante_para_bep)
+  const porcAvanceBepActivo = sinIva ? Number(bep.porcentaje_avance_bep) : Number(bep.porcentaje_avance_bep_ci ?? bep.porcentaje_avance_bep)
+  const cogsRefActivo = sinIva ? Number(bep.cogs_referencia_3m) : Number(bep.cogs_referencia_ci ?? bep.cogs_referencia_3m)
+  const ventasRefActivo = sinIva ? Number(bep.ventas_referencia_3m) : Number(bep.ventas_referencia_ci ?? bep.ventas_referencia_3m)
+  const utilidadProyActivo = sinIva ? Number(utilidad.utilidad_proyectada) : Number(utilidad.utilidad_proyectada_ci ?? utilidad.utilidad_proyectada)
+  const cvProyActivo = sinIva ? Number(utilidad.cv_proyectado) : Number(utilidad.cv_proyectado_ci ?? utilidad.cv_proyectado)
+  const cfProyActivo = sinIva ? Number(utilidad.cf_proyectado) : Number(utilidad.cf_proyectado_ci ?? utilidad.cf_proyectado)
+  const margenNetoActivo = sinIva ? Number(utilidad.margen_neto_pct) : Number(utilidad.margen_neto_pct_ci ?? utilidad.margen_neto_pct)
 
-  const bepAvance = Number(bep.porcentaje_avance_bep) || 0
+  const bepAvance = porcAvanceBepActivo || 0
   const semaforoBep = bepAvance >= 100 ? c.green : bepAvance >= 80 ? c.yellow : c.red
-  const utilidadColor = Number(utilidad.utilidad_proyectada) >= 0 ? c.green : c.red
+  const utilidadColor = utilidadProyActivo >= 0 ? c.green : c.red
 
   return (
     <div style={{ background: c.bg, minHeight: '100vh', padding: 16, color: c.text, maxWidth: 1300, margin: '0 auto' }}>
@@ -449,28 +461,51 @@ export default function KpiVentasTotalesDashboard({ user }) {
           >
             {periodoOptions.map(o => <option key={`${o.anio}-${o.mes}`} value={`${o.anio}-${o.mes}`}>{o.label}</option>)}
           </select>
-          {/* Toggle Con IVA / Sin IVA */}
-          <div style={{ display: 'flex', background: c.input, border: `1px solid ${c.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <button
-              onClick={() => setSinIva(false)}
-              style={{
-                ...btn, borderRadius: 0,
-                background: !sinIva ? c.blue : 'transparent',
-                color: !sinIva ? '#000' : c.textDim,
-                fontWeight: !sinIva ? 700 : 500,
-                border: 'none',
-              }}
-            >Con IVA</button>
+          {/* Toggle IVA — pill segmented control */}
+          <div
+            role="group"
+            aria-label="Modo IVA"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: '#0f0f10',
+              border: `1px solid ${c.cardBorder}`,
+              borderRadius: 999,
+              padding: 3,
+              gap: 2,
+              position: 'relative',
+              height: 36,
+              minWidth: 178,
+            }}
+          >
             <button
               onClick={() => setSinIva(true)}
+              aria-pressed={sinIva}
               style={{
-                ...btn, borderRadius: 0,
+                position: 'relative', zIndex: 1,
+                padding: '0 14px', height: 28, lineHeight: '28px',
+                borderRadius: 999, border: 'none', cursor: 'pointer',
                 background: sinIva ? c.green : 'transparent',
-                color: sinIva ? '#000' : c.textDim,
-                fontWeight: sinIva ? 700 : 500,
-                border: 'none',
+                color: sinIva ? '#0a0a0a' : c.textDim,
+                fontSize: 12, fontWeight: sinIva ? 800 : 600,
+                letterSpacing: 0.2, transition: 'all 0.18s',
+                boxShadow: sinIva ? '0 1px 6px rgba(74,222,128,0.35)' : 'none',
               }}
             >Sin IVA</button>
+            <button
+              onClick={() => setSinIva(false)}
+              aria-pressed={!sinIva}
+              style={{
+                position: 'relative', zIndex: 1,
+                padding: '0 14px', height: 28, lineHeight: '28px',
+                borderRadius: 999, border: 'none', cursor: 'pointer',
+                background: !sinIva ? c.blue : 'transparent',
+                color: !sinIva ? '#0a0a0a' : c.textDim,
+                fontSize: 12, fontWeight: !sinIva ? 800 : 600,
+                letterSpacing: 0.2, transition: 'all 0.18s',
+                boxShadow: !sinIva ? '0 1px 6px rgba(96,165,250,0.35)' : 'none',
+              }}
+            >Con IVA</button>
           </div>
           <button onClick={cargar} style={{ ...btn, background: c.input, color: c.text, border: `1px solid ${c.border}` }}>🔄 Refrescar</button>
           <button onClick={exportarCSV} style={{ ...btn, background: c.greenDark, color: '#fff' }}>📥 Exportar CSV</button>
@@ -518,13 +553,13 @@ export default function KpiVentasTotalesDashboard({ user }) {
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: semaforoBep }}>
           <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>⚖️ Avance BEP</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: semaforoBep }}>{fmtPct(bepAvance)}</div>
-          <div style={{ fontSize: 11, color: c.textDim }}>BEP: {fmtUSDInt(bep.bep_mensual)}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: semaforoBep }}>{fmtPct(porcAvanceBepActivo)}</div>
+          <div style={{ fontSize: 11, color: c.textDim }}>BEP: {fmtUSDInt(bepActivo)}</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: utilidadColor }}>
           <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Utilidad Proyectada</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: utilidadColor }}>{fmtUSD(utilidad.utilidad_proyectada)}</div>
-          <div style={{ fontSize: 11, color: c.textDim }}>Margen: {fmtPct(utilidad.margen_neto_pct)}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: utilidadColor }}>{fmtUSD(utilidadProyActivo)}</div>
+          <div style={{ fontSize: 11, color: c.textDim }}>Margen: {fmtPct(margenNetoActivo)}</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center' }}>
           <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Ticket Promedio</div>
@@ -541,7 +576,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
         <div style={{ fontSize: 12, color: c.textDim, marginBottom: 10 }}>
           Línea blanca = ventas reales · Línea punteada {canalDef.short.toLowerCase()} = proyección lineal{canalActivo === 'todas' ? ' · Línea amarilla = BEP' : ''}
         </div>
-        <GraficaProyeccionBEP data={serie_diaria} periodo={per} canalKey={canalActivo} canalColor={canalDef.color} bep={bep} utilidad={utilidad} sinIva={sinIva} />
+        <GraficaProyeccionBEP data={serie_diaria} periodo={per} canalKey={canalActivo} canalColor={canalDef.color} bep={bep} utilidad={utilidad} sinIva={sinIva} bepActivo={bepActivo} diaBepActivo={diaBepActivo} />
       </div>
 
       {/* Sección Punto de Equilibrio + Utilidad proyectada (solo todas) */}
@@ -555,33 +590,34 @@ export default function KpiVentasTotalesDashboard({ user }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.orange}` }}>
                 <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Costos Fijos Mes</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: c.orange }}>{fmtUSD(bep.costos_fijos_total)}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c.orange }}>{fmtUSD(cfActivo)}</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
                   Planilla op: {fmtUSDInt(bep.cf_planilla_operativa)} · Ger: {fmtUSDInt(bep.cf_planilla_gerencial)}<br/>
                   Admin: {fmtUSDInt(bep.cf_admin)} · Local: {fmtUSDInt(bep.cf_local)}
+                  {!sinIva && <div style={{ marginTop: 4, fontStyle: 'italic' }}>× 1.13 (IVA pasthrough)</div>}
                 </div>
               </div>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.red}` }}>
                 <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Ratio CV (COGS/Ventas)</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: c.red }}>{(Number(bep.ratio_cv)*100).toFixed(2)}%</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c.red }}>{(ratioCvActivo*100).toFixed(2)}%</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
-                  COGS 3m: {fmtUSDInt(bep.cogs_referencia_3m)}<br/>
-                  Ventas 3m: {fmtUSDInt(bep.ventas_referencia_3m)}
+                  COGS ref: {fmtUSDInt(cogsRefActivo)}<br/>
+                  Ventas ref: {fmtUSDInt(ventasRefActivo)}
                 </div>
               </div>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.green}` }}>
                 <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Margen Contribución</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: c.green }}>{(Number(bep.margen_contribucion)*100).toFixed(2)}%</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c.green }}>{(margenContribActivo*100).toFixed(2)}%</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
-                  Por cada $1 vendido, ${Number(bep.margen_contribucion).toFixed(2)} contribuye a CF/utilidad
+                  Por cada $1 vendido, ${margenContribActivo.toFixed(2)} contribuye a CF/utilidad
                 </div>
               </div>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.yellow}` }}>
                 <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>BEP Mensual</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: c.yellow }}>{fmtUSD(bep.bep_mensual)}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c.yellow }}>{fmtUSD(bepActivo)}</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
-                  Día estimado: {bep.dia_bep > per.dias_mes ? `No alcanza (${bep.dia_bep > per.dias_mes ? 'sobrepasa el mes' : ''})` : `Día ${bep.dia_bep}`}<br/>
-                  Falta: {fmtUSD(bep.faltante_para_bep)}
+                  Día estimado: {diaBepActivo > per.dias_mes ? 'No alcanza' : `Día ${diaBepActivo}`}<br/>
+                  Falta: {fmtUSD(faltanteBepActivo)}
                 </div>
               </div>
             </div>
@@ -592,16 +628,16 @@ export default function KpiVentasTotalesDashboard({ user }) {
             <div style={{ fontSize: 12, color: c.textDim, marginBottom: 10 }}>
               Utilidad = Ingresos Proyectados − COGS Estimado − Costos Fijos · Proyección lineal sobre el día {per.dia_actual}
             </div>
-            <GraficaUtilidad canales={canales} bep={bep} utilidad={utilidad} />
+            <GraficaUtilidad canales={canales} bep={bep} utilidad={utilidad} sinIva={sinIva} />
             <div style={{ marginTop: 12, padding: 12, background: c.input, borderRadius: 8, borderLeft: `3px solid ${utilidadColor}` }}>
               <div style={{ fontSize: 13, color: c.text }}>
                 <strong style={{ color: utilidadColor }}>
-                  {Number(utilidad.utilidad_proyectada) >= 0 ? '✓ Utilidad positiva' : '✗ Utilidad negativa'}
+                  {utilidadProyActivo >= 0 ? '✓ Utilidad positiva' : '✗ Utilidad negativa'}
                 </strong>
-                : Si el ritmo se mantiene, cerrarás el mes con <strong>{fmtUSD(utilidad.utilidad_proyectada)}</strong> de utilidad neta
-                ({fmtPct(utilidad.margen_neto_pct)} margen).
-                {Number(utilidad.utilidad_proyectada) < 0 && (
-                  <span> Para llegar a BEP necesitás vender <strong>{fmtUSD(bep.faltante_para_bep)}</strong> más en los próximos {per.dias_mes - per.dia_actual} días.</span>
+                : Si el ritmo se mantiene, cerrarás el mes con <strong>{fmtUSD(utilidadProyActivo)}</strong> de utilidad neta
+                ({fmtPct(margenNetoActivo)} margen, base {sinIva?'Sin IVA':'Con IVA'}).
+                {utilidadProyActivo < 0 && (
+                  <span> Para llegar a BEP necesitás vender <strong>{fmtUSD(faltanteBepActivo)}</strong> más en los próximos {per.dias_mes - per.dia_actual} días.</span>
                 )}
               </div>
             </div>
