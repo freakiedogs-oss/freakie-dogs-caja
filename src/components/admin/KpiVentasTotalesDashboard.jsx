@@ -86,7 +86,7 @@ function downloadCSV(filename, rows) {
 // ────────────────────────────────────────────────────────────
 // Gráfica de proyección + Punto de Equilibrio
 // ────────────────────────────────────────────────────────────
-function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilidad }) {
+function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilidad, sinIva }) {
   if (!data || data.length === 0) {
     return <div style={{ padding: 30, textAlign: 'center', color: c.textDim }}>Sin datos para el período</div>
   }
@@ -107,7 +107,8 @@ function GraficaProyeccionBEP({ data, periodo, canalKey, canalColor, bep, utilid
     date.setDate(date.getDate() + (i - 1))
     const iso = date.toISOString().split('T')[0]
     const reg = data.find(d => d.fecha === iso)
-    const monto = reg ? Number(reg[canalKey] || 0) : 0
+    const canalField = sinIva ? canalKey + '_si' : canalKey
+    const monto = reg ? Number(reg[canalField] || 0) : 0
     const esFuturo = i > diaActual
     if (reg) acum += monto
     acumPorDia.push({
@@ -325,6 +326,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
   const [loading, setLoading] = useState(true)
   const [errMsg, setErrMsg] = useState(null)
   const [canalActivo, setCanalActivo] = useState('todas')
+  const [sinIva, setSinIva] = useState(true)  // toggle Con IVA / Sin IVA (default: sin IVA, métrica contable)
 
   // Bloqueo de acceso por rol
   if (!['admin','superadmin','ejecutivo','gerente'].includes(user.rol)) {
@@ -382,9 +384,13 @@ export default function KpiVentasTotalesDashboard({ user }) {
     const headers = ['Fecha', 'Día', 'Quanto', 'PEYA', 'Eventos', 'Total', 'Pedidos']
     const rows = [headers]
     ;(datos.serie_diaria || []).forEach(d => {
-      rows.push([d.fecha, DIAS_CORTO[diaSemanaIdx(d.fecha)], d.quanto, d.peya, d.eventos, d.todas, d.pedidos_todas])
+      const quanto = sinIva ? d.quanto_si : d.quanto
+      const peya = sinIva ? d.peya_si : d.peya
+      const eventos = sinIva ? d.eventos_si : d.eventos
+      const todas = sinIva ? d.todas_si : d.todas
+      rows.push([d.fecha, DIAS_CORTO[diaSemanaIdx(d.fecha)], quanto, peya, eventos, todas, d.pedidos_todas])
     })
-    downloadCSV(`ventas_totales_${periodo.anio}_${String(periodo.mes).padStart(2,'0')}.csv`, rows)
+    downloadCSV(`ventas_totales_${periodo.anio}_${String(periodo.mes).padStart(2,'0')}_${sinIva?'sin_iva':'con_iva'}.csv`, rows)
   }
 
   if (loading) return <div style={{ padding: 30, textAlign: 'center', color: c.textDim }}>Cargando dashboard…</div>
@@ -407,8 +413,15 @@ export default function KpiVentasTotalesDashboard({ user }) {
   )
 
   const { periodo: per, canales, serie_diaria, bep, utilidad } = datos
+  // Helper que devuelve el campo según el toggle IVA. Sufijo '_si' = sin IVA.
+  const f = (suffix='') => sinIva ? (suffix ? suffix + '_si' : 'acumulado_si') : (suffix || 'acumulado')
   const canalSel = canales[canalActivo]
   const canalDef = CANALES.find(x => x.key === canalActivo)
+  // Valores derivados según toggle
+  const acumActivo = sinIva ? Number(canalSel.acumulado_si) : Number(canalSel.acumulado)
+  const proyActivo = sinIva ? Number(canalSel.proyeccion_si) : Number(canalSel.proyeccion)
+  const ticketActivo = sinIva ? Number(canalSel.ticket_promedio_si) : Number(canalSel.ticket_promedio)
+  const promDiarioActivo = sinIva ? Number(utilidad.promedio_diario_si) : Number(utilidad.promedio_diario)
 
   const bepAvance = Number(bep.porcentaje_avance_bep) || 0
   const semaforoBep = bepAvance >= 100 ? c.green : bepAvance >= 80 ? c.yellow : c.red
@@ -436,6 +449,29 @@ export default function KpiVentasTotalesDashboard({ user }) {
           >
             {periodoOptions.map(o => <option key={`${o.anio}-${o.mes}`} value={`${o.anio}-${o.mes}`}>{o.label}</option>)}
           </select>
+          {/* Toggle Con IVA / Sin IVA */}
+          <div style={{ display: 'flex', background: c.input, border: `1px solid ${c.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            <button
+              onClick={() => setSinIva(false)}
+              style={{
+                ...btn, borderRadius: 0,
+                background: !sinIva ? c.blue : 'transparent',
+                color: !sinIva ? '#000' : c.textDim,
+                fontWeight: !sinIva ? 700 : 500,
+                border: 'none',
+              }}
+            >Con IVA</button>
+            <button
+              onClick={() => setSinIva(true)}
+              style={{
+                ...btn, borderRadius: 0,
+                background: sinIva ? c.green : 'transparent',
+                color: sinIva ? '#000' : c.textDim,
+                fontWeight: sinIva ? 700 : 500,
+                border: 'none',
+              }}
+            >Sin IVA</button>
+          </div>
           <button onClick={cargar} style={{ ...btn, background: c.input, color: c.text, border: `1px solid ${c.border}` }}>🔄 Refrescar</button>
           <button onClick={exportarCSV} style={{ ...btn, background: c.greenDark, color: '#fff' }}>📥 Exportar CSV</button>
         </div>
@@ -446,7 +482,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
         <span style={{ color: c.textDim, fontSize: 12, marginRight: 6 }}>FILTRAR POR CANAL:</span>
         {CANALES.map(cn => {
           const activo = canalActivo === cn.key
-          const valor = Number(canales[cn.key].acumulado)
+          const valor = sinIva ? Number(canales[cn.key].acumulado_si) : Number(canales[cn.key].acumulado)
           return (
             <button
               key={cn.key}
@@ -471,13 +507,13 @@ export default function KpiVentasTotalesDashboard({ user }) {
       {/* KPI Cards principales */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: canalDef.color }}>
-          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Venta Acumulada</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: canalDef.color }}>{fmtUSD(canalSel.acumulado)}</div>
+          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Venta Acumulada {sinIva ? 'Sin IVA' : 'Con IVA'}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: canalDef.color }}>{fmtUSD(acumActivo)}</div>
           <div style={{ fontSize: 11, color: c.textDim }}>{canalSel.pedidos} pedidos · {canalDef.label}</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center' }}>
           <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Proyección Lineal</div>
-          <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtUSD(canalSel.proyeccion)}</div>
+          <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtUSD(proyActivo)}</div>
           <div style={{ fontSize: 11, color: c.textDim }}>Promedio × días restantes</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: semaforoBep }}>
@@ -492,20 +528,20 @@ export default function KpiVentasTotalesDashboard({ user }) {
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center' }}>
           <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Ticket Promedio</div>
-          <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtUSD(canalSel.ticket_promedio)}</div>
-          <div style={{ fontSize: 11, color: c.textDim }}>Prom. diario: {fmtUSDInt(utilidad.promedio_diario)}</div>
+          <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtUSD(ticketActivo)}</div>
+          <div style={{ fontSize: 11, color: c.textDim }}>Prom. diario: {fmtUSDInt(promDiarioActivo)}</div>
         </div>
       </div>
 
       {/* Gráfica principal: Proyección + BEP */}
       <div style={cardStyle}>
         <div style={{ fontWeight: 700, marginBottom: 4 }}>
-          {canalDef.icon} Acumulado · Proyección {canalActivo === 'todas' ? '· Punto de Equilibrio' : ''} — {MESES[periodo.mes-1]} {periodo.anio}
+          {canalDef.icon} Acumulado · Proyección {canalActivo === 'todas' ? '· Punto de Equilibrio' : ''} ({sinIva ? 'Sin IVA' : 'Con IVA'}) — {MESES[periodo.mes-1]} {periodo.anio}
         </div>
         <div style={{ fontSize: 12, color: c.textDim, marginBottom: 10 }}>
           Línea blanca = ventas reales · Línea punteada {canalDef.short.toLowerCase()} = proyección lineal{canalActivo === 'todas' ? ' · Línea amarilla = BEP' : ''}
         </div>
-        <GraficaProyeccionBEP data={serie_diaria} periodo={per} canalKey={canalActivo} canalColor={canalDef.color} bep={bep} utilidad={utilidad} />
+        <GraficaProyeccionBEP data={serie_diaria} periodo={per} canalKey={canalActivo} canalColor={canalDef.color} bep={bep} utilidad={utilidad} sinIva={sinIva} />
       </div>
 
       {/* Sección Punto de Equilibrio + Utilidad proyectada (solo todas) */}
@@ -575,7 +611,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
 
       {/* Detalle diario */}
       <div style={cardStyle}>
-        <div style={{ fontWeight: 700, marginBottom: 12 }}>Detalle diario por canal</div>
+        <div style={{ fontWeight: 700, marginBottom: 12 }}>Detalle diario por canal <span style={{ fontWeight: 500, fontSize: 12, color: c.textDim }}>({sinIva ? 'Sin IVA' : 'Con IVA'})</span></div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 700 }}>
             <thead>
@@ -592,6 +628,10 @@ export default function KpiVentasTotalesDashboard({ user }) {
             <tbody>
               {(serie_diaria || []).map(d => {
                 const finde = [0,6].includes(d.dow)
+                const dQuanto = sinIva ? Number(d.quanto_si || 0) : Number(d.quanto || 0)
+                const dPeya = sinIva ? Number(d.peya_si || 0) : Number(d.peya || 0)
+                const dEventos = sinIva ? Number(d.eventos_si || 0) : Number(d.eventos || 0)
+                const dTotal = sinIva ? Number(d.todas_si || 0) : Number(d.todas || 0)
                 return (
                   <tr key={d.fecha} style={{
                     borderBottom: `1px solid ${c.border}`,
@@ -601,10 +641,10 @@ export default function KpiVentasTotalesDashboard({ user }) {
                     <td style={{ padding: 8, color: finde ? c.orange : c.textDim, fontWeight: finde ? 700 : 400 }}>
                       {DIAS_CORTO[d.dow]}
                     </td>
-                    <td style={{ padding: 8, textAlign: 'right' }}>{Number(d.quanto) > 0 ? fmtUSD(d.quanto) : '—'}</td>
-                    <td style={{ padding: 8, textAlign: 'right' }}>{Number(d.peya) > 0 ? fmtUSD(d.peya) : '—'}</td>
-                    <td style={{ padding: 8, textAlign: 'right' }}>{Number(d.eventos) > 0 ? fmtUSD(d.eventos) : '—'}</td>
-                    <td style={{ padding: 8, textAlign: 'right', fontWeight: 700, color: c.cyan }}>{fmtUSD(d.todas)}</td>
+                    <td style={{ padding: 8, textAlign: 'right' }}>{dQuanto > 0 ? fmtUSD(dQuanto) : '—'}</td>
+                    <td style={{ padding: 8, textAlign: 'right' }}>{dPeya > 0 ? fmtUSD(dPeya) : '—'}</td>
+                    <td style={{ padding: 8, textAlign: 'right' }}>{dEventos > 0 ? fmtUSD(dEventos) : '—'}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontWeight: 700, color: c.cyan }}>{fmtUSD(dTotal)}</td>
                     <td style={{ padding: 8, textAlign: 'right', color: c.textDim }}>{d.pedidos_todas}</td>
                   </tr>
                 )
