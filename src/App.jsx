@@ -55,6 +55,7 @@ const MiDespacho            = lazy(() => import('./components/empleado/MiDespach
 const DespachoOperativoView = lazy(() => import('./components/admin/DespachoOperativoView'))
 const DespachoKpiDashboard  = lazy(() => import('./components/admin/DespachoKpiDashboard'))
 const DeliveryKpiDashboard  = lazy(() => import('./components/admin/DeliveryKpiDashboard'))
+const KpiVentasTotalesDashboard = lazy(() => import('./components/admin/KpiVentasTotalesDashboard'))
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
@@ -63,7 +64,7 @@ const ROLE_DEFAULTS = {
   gerente: ['cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta'],
   admin: ['admin', 'kpis-venta', 'recepcion', 'despacho'],
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
-  superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'finanzas-dashboard', 'admin'],
+  superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
   bodeguero: ['recepcion', 'despacho', 'inventario', 'historial'],
   jefe_casa_matriz: ['despacho-operativo', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
   cocina: ['conteo', 'reporte', 'devoluciones'],
@@ -312,6 +313,8 @@ export default function App() {
         return <DespachoKpiDashboard user={user} />
       case 'kpi-delivery':
         return <DeliveryKpiDashboard user={user} />
+      case 'kpi-ventas-totales':
+        return <KpiVentasTotalesDashboard user={user} />
       case 'delivery':
         return <DeliveryView user={user} />
       case 'inventario-dash':

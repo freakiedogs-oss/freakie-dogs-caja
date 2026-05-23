@@ -1,4 +1,4 @@
-export const APP_VERSION = 'v2.3.0 · 5-May-2026 (KPIs de Venta dashboard)'
+export const APP_VERSION = 'v2.4.0 · 21-May-2026 (KPI Ventas Totales + BEP)'
 
 export const STORES = {
   M001: 'Cafetalón',
@@ -112,6 +112,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Finanzas',
     items: [
+      { key: 'kpi-ventas-totales', label: 'KPI Ventas Totales · BEP', icon: '💰', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'finanzas-dashboard', label: 'Dashboard Financiero', icon: '📊', roles: ['ejecutivo', 'superadmin'] },
       { key: 'dtes', label: 'DTEs', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
