@@ -75,6 +75,10 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   })
   const [newProvSaving, setNewProvSaving] = useState(false)
   const [categoriasGasto, setCategoriasGasto] = useState([])
+  // Subcategorías ya usadas en catálogo (datalist) + ID del proveedor genérico "Sin Proveedor"
+  const [subcategoriasExistentes, setSubcategoriasExistentes] = useState([])
+  const [sinProveedorId, setSinProveedorId] = useState(null)
+  const [sinProveedorSaving, setSinProveedorSaving] = useState(false)
 
   const cargandoCardRef = useRef(false)
 
@@ -132,12 +136,34 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   useEffect(() => { cargarCola() }, [cargarCola])
   useEffect(() => { cargarContadores() }, [cargarContadores])
 
-  // Cargar categorías_gasto una sola vez para el dropdown de "Nuevo proveedor"
+  // Cargar categorías_gasto + subcategorías existentes + ID del proveedor genérico
   useEffect(() => {
+    // 1) Categorías para dropdown de Nuevo Proveedor
     supabase.from('categorias_gasto')
       .select('id, nombre, grupo')
       .order('grupo').order('orden')
       .then(({ data }) => setCategoriasGasto(data || []))
+
+    // 2) Subcategorías únicas para el datalist (autocomplete con escritura libre)
+    supabase.from('catalogo_contable')
+      .select('subcategoria')
+      .eq('activo', true)
+      .is('duplicado_de', null)
+      .not('subcategoria', 'is', null)
+      .then(({ data }) => {
+        const unicas = [...new Set((data || []).map(r => (r.subcategoria || '').trim()).filter(Boolean))]
+        unicas.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+        setSubcategoriasExistentes(unicas)
+      })
+
+    // 3) Buscar ID del proveedor genérico "Factura Comercial Sin Proveedor"
+    supabase.from('catalogo_contable')
+      .select('id')
+      .eq('nombre_normalizado', 'FACTURA COMERCIAL SIN PROVEEDOR')
+      .eq('activo', true)
+      .is('duplicado_de', null)
+      .maybeSingle()
+      .then(({ data }) => { if (data?.id) setSinProveedorId(data.id) })
   }, [])
 
   // ── Cargar sugerencias de la card actual
@@ -314,6 +340,36 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
     setSkipped(s => new Set([...s, card.egreso.id]))
     setIdx(i => i + 1)
     showToast('⏭ Skipeado · queda al final', 'info')
+  }
+
+  // ── Asignar al proveedor genérico "Factura Comercial Sin Proveedor"
+  // Para facturas comerciales legítimas sin proveedor identificable (deja en P&L bajo Gastos Operativos · Varios)
+  const asignarSinProveedor = async () => {
+    if (!card?.egreso || sinProveedorSaving) return
+    if (!sinProveedorId) {
+      showToast('❌ Proveedor genérico no configurado. Verifica catalogo_contable.', 'error')
+      return
+    }
+    setSinProveedorSaving(true)
+    const { data, error } = await supabase.rpc('asignar_egreso_completo', {
+      p_egreso_id:           card.egreso.id,
+      p_proveedor_id:        sinProveedorId,
+      p_dte_match_id:        null,
+      p_asignado_por:        user?.id || null,
+      p_tiene_dte_proveedor: false,
+      p_tiene_bees_otro:     false,
+    })
+    setSinProveedorSaving(false)
+    if (error || !(data?.[0]?.ok)) {
+      showToast('❌ ' + (error?.message || data?.[0]?.msg || 'Error'), 'error')
+      return
+    }
+    setAsignadosSesion(x => x + 1)
+    showToast('📋 Asignado a "Sin Proveedor" · Cuenta en P&L (Gastos Operativos · Varios)', 'ok')
+    setPendientes(prev => prev.filter(p => p.id !== card.egreso.id))
+    setCard(null); setSplits([]); setSplitMode(false)
+    setSearch(''); setSearchResults([])
+    setCounts(c => ({ ...c, [tipo]: Math.max(0, c[tipo] - 1) }))
   }
 
   // ── Marcar No aplica P&L
@@ -823,6 +879,12 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
             {/* Acciones */}
             <div style={S.actions}>
               <button style={S.btnNoPl} onClick={noAplica}>🚫 No aplica</button>
+              <button style={S.btnSinProv}
+                      onClick={asignarSinProveedor}
+                      disabled={sinProveedorSaving}
+                      title="Factura comercial sin proveedor identificable — cuenta en P&L bajo Gastos Operativos · Varios">
+                {sinProveedorSaving ? '⏳…' : '📋 P&L sin Proveedor'}
+              </button>
               <button style={S.btnSkip} onClick={skip}>⏭ Skip</button>
               {!splitMode && (
                 <button style={S.btnSplit}
@@ -991,11 +1053,22 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
             </div>
 
             <div style={S.formRow}>
-              <label style={S.formLabel}>Subcategoría (opcional)</label>
+              <label style={S.formLabel}>
+                Subcategoría (opcional)
+                <span style={{ color: colors.gray, fontWeight: 400, textTransform: 'none', marginLeft: 6 }}>
+                  · {subcategoriasExistentes.length} ya en BD · escribe para filtrar o crear nueva
+                </span>
+              </label>
               <input style={S.formInput}
+                list="subcategorias-existentes-datalist"
                 value={newProvForm.subcategoria}
-                placeholder="Ej: Insumos Cocina, Servicios Públicos..."
+                placeholder="Empieza a escribir o elige de la lista…"
                 onChange={e => setNewProvForm(f => ({...f, subcategoria: e.target.value}))} />
+              <datalist id="subcategorias-existentes-datalist">
+                {subcategoriasExistentes.map(s => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
             </div>
 
             <div style={S.formRow}>
@@ -1105,6 +1178,7 @@ const S = {
 
   actions: { padding: '12px 16px', display: 'flex', gap: 8, flexWrap: 'wrap' },
   btnNoPl: { flex: 1, background: colors.card2, border: `1px solid ${colors.border}`, color: colors.gray, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
+  btnSinProv: { flex: 1, background: 'rgba(96,165,250,0.10)', border: '1px solid #2a4a7a', color: colors.blue, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', minWidth: 110 },
   btnSkip:  { flex: 1, background: colors.card2, border: '1px solid #7a5a10', color: colors.gold, padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
   btnOcr:   { flex: 1, background: colors.card2, border: '1px solid #7a2a4a', color: '#f9a8d4', padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
   btnSplit: { flex: 1, background: colors.card2, border: '1px solid #2a5a2a', color: '#86efac', padding: '10px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', minWidth: 90 },
