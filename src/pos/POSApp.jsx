@@ -111,6 +111,13 @@ export default function POSApp() {
     const u = { ...user, store_code: storeCode }
     setEffectiveUser(u)
     setScreen('home')
+    // Re-persist con el store seleccionado (para logs del proxy DTE)
+    try {
+      sessionStorage.setItem('pos_user', JSON.stringify({
+        id: u.id, pin: u.pin, rol: u.rol, store_code: u.store_code,
+        nombre: u.nombre, apellido: u.apellido,
+      }))
+    } catch {}
   }
 
   const handleLogout = () => {
@@ -118,6 +125,7 @@ export default function POSApp() {
     setEffectiveUser(null)
     setScreen('home')
     setCuentaCtx(null)
+    try { sessionStorage.removeItem('pos_user') } catch {}
   }
 
   const handleChangeStore = () => {

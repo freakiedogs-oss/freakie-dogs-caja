@@ -27,6 +27,14 @@ export default function POSLogin({ onLogin }) {
         if (!POS_ROLES.includes(data.rol)) {
           setErr('Sin acceso al POS'); setPin(''); return
         }
+        // Persistir para que dteService pueda leer el PIN al llamar el proxy
+        // (P0 audit 24-may-2026 — proxy serverless reemplaza API key hardcoded)
+        try {
+          sessionStorage.setItem('pos_user', JSON.stringify({
+            id: data.id, pin: data.pin, rol: data.rol, store_code: data.store_code,
+            nombre: data.nombre, apellido: data.apellido,
+          }))
+        } catch {}
         onLogin(data); return
       }
       // PIN de 4-5 dígitos sin match: seguir esperando más dígitos
