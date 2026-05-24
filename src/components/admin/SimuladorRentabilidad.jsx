@@ -153,6 +153,7 @@ function SucursalNuevaCard({ suc, enabled, onToggle, ventas, setVentas, alquiler
 export default function SimuladorRentabilidad({ user }) {
   const [base, setBase] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [errMsg, setErrMsg] = useState(null)
 
   // Variables globales
   const [crecimientoExistentes, setCrecimientoExistentes] = useState(0)
@@ -190,21 +191,31 @@ export default function SimuladorRentabilidad({ user }) {
     )
   }
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      const now = new Date()
-      const { data, error } = await db.rpc('fn_ventas_totales_dashboard', {
-        p_anio: now.getFullYear(), p_mes: now.getMonth() + 1,
-      })
-      if (cancelled) return
-      if (error) console.error(error)
-      setBase(data || null)
+  const cargar = useCallback(async () => {
+    setLoading(true)
+    setErrMsg(null)
+    try {
+      const { data, error } = await db.rpc('fn_simulador_base')
+      if (error) {
+        console.error('[SimuladorRentabilidad] RPC error:', error)
+        setErrMsg((error.message || JSON.stringify(error)) + (error.hint ? ' · Hint: ' + error.hint : ''))
+        setBase(null)
+      } else if (!data) {
+        setErrMsg('RPC retornó null (sin datos)')
+        setBase(null)
+      } else {
+        setBase(data)
+      }
+    } catch (e) {
+      console.error('[SimuladorRentabilidad] Exception:', e)
+      setErrMsg('Excepción: ' + (e.message || String(e)))
+      setBase(null)
+    } finally {
       setLoading(false)
-    })()
-    return () => { cancelled = true }
+    }
   }, [])
+
+  useEffect(() => { cargar() }, [cargar])
 
   const sim = useMemo(() => {
     if (!base) return null
@@ -274,7 +285,20 @@ export default function SimuladorRentabilidad({ user }) {
   }, [])
 
   if (loading) return <div style={{ padding: 30, textAlign: 'center', color: c.textDim }}>Cargando base actual…</div>
-  if (!base || !sim) return <div style={{ padding: 30, textAlign: 'center', color: c.red }}>Error cargando datos base</div>
+  if (!base || !sim) return (
+    <div style={{ padding: 30, color: c.text, maxWidth: 800, margin: '20px auto' }}>
+      <div style={{ ...cardStyle, borderColor: c.red, textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
+        <div style={{ color: c.red, fontWeight: 700, fontSize: 18 }}>Error cargando datos base</div>
+        {errMsg && (
+          <div style={{ marginTop: 10, padding: 12, background: c.input, borderRadius: 8, color: c.textDim, fontSize: 12, fontFamily: 'monospace', textAlign: 'left', wordBreak: 'break-word' }}>
+            {errMsg}
+          </div>
+        )}
+        <button onClick={cargar} style={{ marginTop: 14, padding: '8px 16px', borderRadius: 8, background: c.blue, color: '#000', fontWeight: 700, border: 'none', cursor: 'pointer' }}>🔄 Reintentar</button>
+      </div>
+    </div>
+  )
 
   const utilidadColor = sim.utilidad >= 0 ? c.green : c.red
   const margenColor = sim.margen_neto_pct >= metaRent ? c.green : sim.margen_neto_pct >= 0 ? c.yellow : c.red
