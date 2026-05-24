@@ -1,14 +1,63 @@
 /**
  * dteService.js — Cliente DTEaaS para el POS
  *
- * Llama a la Edge Function dte-service para emitir Factura (01) o CCF (03).
+ * Llama al PROXY serverless /api/dte-proxy (Vercel Edge Function) que reenvía
+ * al servicio DTE con la API key real desde process.env. Esto evita exponer
+ * DTE_API_KEY en el bundle del browser (P0 audit 24-may-2026).
+ *
+ * Auth: enviamos el PIN del usuario activo en el header X-POS-PIN. El proxy
+ * lo valida contra usuarios_erp y rechaza si el rol no está en la whitelist
+ * (cajero/cajera/gerente/admin/ejecutivo/superadmin).
+ *
  * Precios Freakie Dogs INCLUYEN IVA:
  *   - Factura: se envían tal cual (IVA embebido)
  *   - CCF: se extraen netos (precio / 1.13) porque CCF suma IVA encima
  */
 
-const DTE_BASE = 'https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/dte-service'
-const DTE_API_KEY = 'dk_live_6230574b3a01728fce1799ca8c7c5da904b39d9c29d37cfa'
+const DTE_PROXY_BASE = '/api/dte-proxy'
+
+/**
+ * Lee el PIN del usuario activo desde sessionStorage (set por POSLogin).
+ * Si no está, devuelve cadena vacía — el proxy responderá 401 y la UI
+ * mostrará el error.
+ */
+function getPosPin() {
+  try {
+    if (typeof window === 'undefined') return ''
+    const raw = sessionStorage.getItem('pos_user') || localStorage.getItem('pos_user')
+    if (!raw) return ''
+    const u = JSON.parse(raw)
+    return String(u?.pin || '')
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Wrapper genérico: POST al proxy con el header de auth.
+ */
+async function callProxy(op, body) {
+  const pin = getPosPin()
+  const res = await fetch(`${DTE_PROXY_BASE}/${op}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-POS-PIN': pin,
+    },
+    body: JSON.stringify(body),
+  })
+
+  let data
+  try {
+    data = await res.json()
+  } catch {
+    throw new Error(`DTE proxy: respuesta no-JSON (${res.status})`)
+  }
+  if (!res.ok || data?.success === false) {
+    throw new Error(data?.error || data?.message || `DTE error ${res.status}`)
+  }
+  return data
+}
 
 /**
  * Mapea método de pago POS → código MH
@@ -66,20 +115,7 @@ export async function emitFactura({ items, receptor, metodo }) {
     }
   }
 
-  const res = await fetch(`${DTE_BASE}/emit-factura`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': DTE_API_KEY,
-    },
-    body: JSON.stringify(body),
-  })
-
-  const data = await res.json()
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || data.message || `DTE error ${res.status}`)
-  }
-  return data
+  return callProxy('emit-factura', body)
 }
 
 /**
@@ -118,20 +154,7 @@ export async function emitCCF({ items, receptor, metodo }) {
   const totalPagarCCF = Math.round((totalCCF + ivaCCF) * 100) / 100
   body.pagos = [{ codigo: mapFormaPago(metodo), montoPago: totalPagarCCF, referencia: null, plazo: null, periodo: null }]
 
-  const res = await fetch(`${DTE_BASE}/emit-ccf`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': DTE_API_KEY,
-    },
-    body: JSON.stringify(body),
-  })
-
-  const data = await res.json()
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || data.message || `DTE error ${res.status}`)
-  }
-  return data
+  return callProxy('emit-ccf', body)
 }
 
 /**
@@ -167,20 +190,7 @@ export async function emitSujetoExcluido({ items, receptor, metodo }) {
     },
   }
 
-  const res = await fetch(`${DTE_BASE}/emit-sujeto-excluido`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': DTE_API_KEY,
-    },
-    body: JSON.stringify(body),
-  })
-
-  const data = await res.json()
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || data.message || `DTE error ${res.status}`)
-  }
-  return data
+  return callProxy('emit-sujeto-excluido', body)
 }
 
 /**
@@ -204,22 +214,9 @@ export async function emitDTE({ tipoDte, items, receptor, metodo }) {
  * @returns {Object} { success, codigo_generacion, estado, selloRecibido, hacienda_response }
  */
 export async function anularDTE({ codigoGeneracion, motivo, tipoAnulacion = 2 }) {
-  const res = await fetch(`${DTE_BASE}/invalidar`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': DTE_API_KEY,
-    },
-    body: JSON.stringify({
-      codigo_generacion: codigoGeneracion,
-      motivo,
-      tipoAnulacion,
-    }),
+  return callProxy('invalidar', {
+    codigo_generacion: codigoGeneracion,
+    motivo,
+    tipoAnulacion,
   })
-
-  const data = await res.json()
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || data.message || `Anulación error ${res.status}`)
-  }
-  return data
 }

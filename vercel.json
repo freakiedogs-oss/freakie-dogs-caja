@@ -4,6 +4,7 @@
   "rewrites": [
     { "source": "/sb/(.*)", "destination": "/api/supaproxy?_p=$1" },
     { "source": "/sb", "destination": "/api/supaproxy" },
+    { "source": "/api/dte-proxy/(.*)", "destination": "/api/dte-proxy?op=$1" },
     { "source": "/pos/(.*)", "destination": "/pos.html" },
     { "source": "/pos", "destination": "/pos.html" },
     { "source": "/((?!api/|sb/|sb$).*)", "destination": "/index.html" }
