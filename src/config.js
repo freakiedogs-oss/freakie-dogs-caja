@@ -113,6 +113,7 @@ export const NAV_SECTIONS = [
     label: 'Finanzas',
     items: [
       { key: 'kpi-ventas-totales', label: 'KPI Ventas Totales · BEP', icon: '💰', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
+      { key: 'simulador-rentabilidad', label: 'Simulador Rentabilidad', icon: '🎯', roles: ['superadmin', 'ejecutivo'] },
       { key: 'finanzas-dashboard', label: 'Dashboard Financiero', icon: '📊', roles: ['ejecutivo', 'superadmin'] },
       { key: 'dtes', label: 'DTEs', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
