@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
+import AjustePorCategoria from './AjustePorCategoria'
 
 /**
  * SimuladorRentabilidad — Análisis "what-if" interactivo para escenarios:
@@ -154,6 +155,7 @@ export default function SimuladorRentabilidad({ user }) {
   const [base, setBase] = useState(null)
   const [loading, setLoading] = useState(true)
   const [errMsg, setErrMsg] = useState(null)
+  const [tabActivo, setTabActivo] = useState('expansion')  // 'expansion' | 'ajuste'
 
   // Variables globales
   const [crecimientoExistentes, setCrecimientoExistentes] = useState(0)
@@ -308,14 +310,45 @@ export default function SimuladorRentabilidad({ user }) {
   return (
     <div style={{ background: c.bg, minHeight: '100vh', padding: 16, color: c.text, maxWidth: 1500, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: c.textDim }}>Análisis "what-if" · Sin IVA · base contable</div>
-        <h1 style={{ margin: '4px 0', fontSize: 26 }}>🎯 Simulador de Rentabilidad — Plan de Expansión</h1>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: c.textDim }}>Análisis financiero · Sin IVA · base contable</div>
+        <h1 style={{ margin: '4px 0', fontSize: 26 }}>🎯 Simulador de Rentabilidad</h1>
         <div style={{ fontSize: 13, color: c.textDim }}>
           Base actual: ventas grupo {fmtUSD(sim.ventas_grupo_si)}/mes · ratio CV {fmtPct(sim.ratio_cv_base * 100)} · CF {fmtUSD(sim.cf_actual)} · margen {fmtPct(margenBase)}
         </div>
       </div>
 
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, borderBottom: `1px solid ${c.cardBorder}` }}>
+        {[
+          { k: 'expansion', l: '📈 Plan de Expansión', desc: 'Nuevas aperturas + sliders globales' },
+          { k: 'ajuste',    l: '🔧 Ajuste por Categoría', desc: 'Datos reales + sliders por sucursal/categoría' },
+        ].map(t => {
+          const activo = tabActivo === t.k
+          return (
+            <button key={t.k} onClick={() => setTabActivo(t.k)}
+              style={{
+                padding: '10px 16px', borderRadius: '8px 8px 0 0',
+                background: activo ? c.card : 'transparent',
+                color: activo ? c.text : c.textDim,
+                border: 'none', borderBottom: activo ? `2px solid ${c.purple}` : '2px solid transparent',
+                cursor: 'pointer', fontSize: 13, fontWeight: activo ? 800 : 600,
+                transition: '0.15s', marginBottom: -1,
+              }}>
+              {t.l}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Contenido del tab Ajuste */}
+      {tabActivo === 'ajuste' && (
+        <AjustePorCategoria user={user} />
+      )}
+
+      {/* Contenido del tab Expansión */}
+      {tabActivo === 'expansion' && (
+      <>
       {/* Presets */}
       <div style={{ ...cardStyle, padding: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: c.textDim, marginRight: 4 }}>ESCENARIOS:</span>
@@ -484,6 +517,8 @@ export default function SimuladorRentabilidad({ user }) {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }
