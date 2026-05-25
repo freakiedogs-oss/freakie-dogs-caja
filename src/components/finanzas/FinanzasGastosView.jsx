@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { db as supabase } from '../../supabase'
 import { today, fmtDate, n } from '../../config'
 import ConciliarTinderTab from './ConciliarTinderTab'
+import { fetchAllRows } from '../../utils/fetchPaginated'
 
 const colors = { bg: '#1a1a2e', card: '#16213e', accent: '#e63946', gold: '#ffd60a', green: '#4ade80', blue: '#60a5fa' }
 
@@ -163,12 +164,13 @@ export default function FinanzasGastosView({ user }) {
     const maxFecha = new Date(Math.max(...fechas.map(f => new Date(f + 'T12:00:00'))))
     minFecha.setDate(minFecha.getDate() - 8)
     maxFecha.setDate(maxFecha.getDate() + 4)
-    const { data: dtes } = await supabase
-      .from('compras_dte')
+    // P0: rango de fechas amplio → puede superar 1000 filas. Paginar.
+    const dtes = await fetchAllRows(supabase, 'compras_dte', q => q
       .select('id, proveedor_nombre, fecha_emision, monto_total, tipo_dte, numero_control')
       .eq('cruzado', false)
       .gte('fecha_emision', minFecha.toISOString().split('T')[0])
       .lte('fecha_emision', maxFecha.toISOString().split('T')[0])
+    )
     const pool = dtes || []
     const usados = new Set()
     const newMap = {}
@@ -371,12 +373,13 @@ export default function FinanzasGastosView({ user }) {
     const maxF = new Date(Math.max(...fechas.map(f => new Date(f + 'T12:00:00'))))
     minF.setDate(minF.getDate() - 5)
     maxF.setDate(maxF.getDate() + 3)
-    const { data: dtes } = await supabase
-      .from('compras_dte')
+    // P0: rango de fechas amplio → puede superar 1000 filas. Paginar.
+    const dtes = await fetchAllRows(supabase, 'compras_dte', q => q
       .select('id, proveedor_nombre, fecha_emision, monto_total, tipo_dte, numero_control')
       .eq('cruzado', false)
       .gte('fecha_emision', minF.toISOString().split('T')[0])
       .lte('fecha_emision', maxF.toISOString().split('T')[0])
+    )
     const pool = dtes || []
     const usados = new Set()
     const newMap = {}
