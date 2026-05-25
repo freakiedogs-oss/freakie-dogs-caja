@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { db } from '../../supabase'
 import { STORES, n } from '../../config'
+import { paletaT as T } from '@/theme'
 
 /* ══════════════════════════════════════════════
    Rentabilidad × Sucursal — Fintech v2
@@ -11,17 +12,7 @@ const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'
 const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const SUC_KEYS = Object.keys(STORES).filter(s => s !== 'CM001')
 
-// ── Theme tokens ──
-const T = {
-  bg: '#0B0F1A', bgCard: '#111827', bgHover: '#1A2234', bgSurface: '#1E293B',
-  border: '#1E293B', borderLight: '#334155',
-  text: '#F1F5F9', textSec: '#94A3B8', textMuted: '#64748B',
-  accent: '#3B82F6', accentLight: '#60A5FA',
-  green: '#10B981', greenBg: 'rgba(16,185,129,0.1)',
-  red: '#EF4444', redBg: 'rgba(239,68,68,0.1)',
-  yellow: '#F59E0B', yellowBg: 'rgba(245,158,11,0.1)',
-  purple: '#8B5CF6',
-}
+// ── Theme tokens — ahora centralizados en src/theme.js (paletaT) ──
 
 // ── Mapeo categorías (mismo que FinanzasDashboard) ──
 // categoria_nombre → P&L group
@@ -43,7 +34,7 @@ const CATNAME_TO_PL = {
 // categoria_grupo fallback (includes both display names AND raw catalog values)
 const GRUPO_TO_PL = {
   'COGS': 'costo_comida', 'Gasto Local': 'costo_fijo', 'Gasto Venta': 'gastos_operativos',
-  'Gasto Admin': 'gastos_operativos', 'Inversión': 'activo_fijo', 'No Operativo': 'gasto_financiero',
+  'Gasto Admin': 'gasto_financiero', 'Inversión': 'activo_fijo', 'No Operativo': 'gastos_operativos',
   // Raw catalogo_contable.categoria values (in case categoria_grupo uses these)
   'costo_comida': 'costo_comida', 'insumo_venta': 'insumo_venta', 'limpieza': 'limpieza',
   'costo_fijo': 'costo_fijo', 'gastos_operativos': 'gastos_operativos',
@@ -124,14 +115,9 @@ async function fetchAll(table, select, filter) {
 // Uses CATNAME_TO_PL + GRUPO_TO_PL (same as FinanzasDashboard) for correct classification
 function buildPnL(ventas, gastos, conIva, planillaBySuc) {
   const ventasPorSuc = {}
-  const ventasPorSucFuente = {}
   ;(ventas || []).forEach(v => {
     if (!ventasPorSuc[v.store_code]) ventasPorSuc[v.store_code] = 0
-    const monto = conIva ? n(v.total_ventas) : n(v.total_ventas) / 1.13
-    ventasPorSuc[v.store_code] += monto
-    const fuente = v.fuente || 'POS'
-    if (!ventasPorSucFuente[v.store_code]) ventasPorSucFuente[v.store_code] = {}
-    ventasPorSucFuente[v.store_code][fuente] = (ventasPorSucFuente[v.store_code][fuente] || 0) + monto
+    ventasPorSuc[v.store_code] += conIva ? n(v.total_ventas_quanto) : n(v.total_ventas_quanto) / 1.13
   })
 
   // P&L groups per branch: { sucursal: { costoComida, gastosFijos, gastosOp, gastosFinan, planilla, planillaCorp, inversion } }
@@ -218,46 +204,21 @@ function buildPnL(ventas, gastos, conIva, planillaBySuc) {
   const totalGastosOp = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.totalGastos), 0)
   const totalUO = SUC_KEYS.reduce((s, k) => s + n(pnl[k]?.utilidadOperativa), 0)
 
-  return { pnl, ventasPorSuc, ventasPorSucFuente, totalVentas, totalCOGS, totalUB, totalGastosOp, totalUO, gastosPorCat, gastosPorSucCat, catToGrupo }
+  return { pnl, ventasPorSuc, totalVentas, totalCOGS, totalUB, totalGastosOp, totalUO, gastosPorCat, gastosPorSucCat, catToGrupo }
 }
 
 // ── Fetch period data ──
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
-  const [ventasRes, gastos, planillaRes, eventosRes, eventoEgresosRes, peyaRes] = await Promise.all([
-    db.from('v_quanto_ordenes_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta),
+  const [ventasRes, gastos, planillaRes] = await Promise.all([
+    db.from('v_ventas_unificadas').select('store_code, total_ventas_quanto, fecha, fuente').gte('fecha', desde).lt('fecha', hasta),
     fetchAll('v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
       q => q.gte('fecha', desde).lt('fecha', hasta)),
-    db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta),
-    db.from('eventos').select('fecha_evento, total_ventas, estado').gte('fecha_evento', desde).lt('fecha_evento', hasta).in('estado', ['cerrado', 'activo', 'aprobado']),
-    db.from('evento_egresos').select('created_at, monto, evento_id').gte('created_at', desde).lt('created_at', hasta),
-    // 18-may-2026: integrar ventas PeYa (delivery) por sucursal — antes solo Quanto (POS) → rentabilidad negativa
-    fetchAll('pedidos_peya', 'fecha_pedido, store_code, total_pedido, estado',
-      q => q.eq('estado', 'Entregado').gte('fecha_pedido', desde).lt('fecha_pedido', hasta))
+    // FIX 17-Abr-2026: leer planilla por sucursal desde vista nueva (gasto empresa = devengado + patronales)
+    db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta)
   ])
-  // Unificar ventas con fuente: POS (Quanto) + PEYA (delivery) + EVENTOS — 18-may-2026
-  const ventasConEventos = [
-    ...((ventasRes.data || []).map(v => ({ store_code: v.store_code, total_ventas: n(v.total_ventas) || 0, fecha: v.fecha, fuente: 'POS' }))),
-    ...((peyaRes || []).map(p => ({ store_code: p.store_code, total_ventas: n(p.total_pedido) || 0, fecha: p.fecha_pedido, fuente: 'PEYA' })).filter(v => v.total_ventas > 0 && v.store_code)),
-    ...((eventosRes.data || []).map(e => ({ store_code: 'EVT01', total_ventas: n(e.total_ventas) || 0, fecha: e.fecha_evento, fuente: 'EVENTOS' })).filter(e => e.total_ventas > 0))
-  ]
-  // Anexar egresos puntuales de eventos al array de gastos (categoria 'Costo Comida' por defecto)
-  const gastosConEventos = [
-    ...(gastos || []),
-    ...((eventoEgresosRes.data || []).map(g => ({
-      fecha: (g.created_at || '').substring(0,10),
-      proveedor_nombre: 'Evento - Gasto Puntual',
-      monto: n(g.monto) || 0,
-      monto_sin_iva: (n(g.monto) || 0) / 1.13,
-      categoria_nombre: 'Costo Comida',
-      categoria_grupo: 'COGS',
-      subcategoria_contable: 'Eventos',
-      origen: 'evento_egresos',
-      store_code: 'EVT01'
-    })))
-  ]
-  return buildPnL(ventasConEventos, gastosConEventos, conIva, planillaRes.data)
+  return buildPnL(ventasRes.data, gastos, conIva, planillaRes.data)
 }
 
 // ═══════════════════════════════════════════
@@ -338,8 +299,6 @@ export default function RentabilidadView({ user }) {
   const hoy = new Date(Date.now() - 6 * 3600 * 1000)
   const isCurrentMonth = hoy.getFullYear() === year && (hoy.getMonth() + 1) === month
   const diaActual = isCurrentMonth ? hoy.getDate() : daysInMonth(year, month)
-  // Vista por Sucursal usa siempre el día anterior (días con cierre completo)
-  const diaAyer = isCurrentMonth ? Math.max(1, hoy.getDate() - 1) : daysInMonth(year, month)
   const diasEnMes = daysInMonth(year, month)
   const pctMes = Math.round((diaActual / diasEnMes) * 100)
 
@@ -353,10 +312,6 @@ export default function RentabilidadView({ user }) {
       // Comparison periods (same # of days)
       const comp1m = prevMonth(year, month, 1)
       const prev1 = await fetchPeriod(comp1m.year, comp1m.month, diaActual, conIva)
-
-      // Vista por Sucursal: usar días cerrados (hasta ayer)
-      const currSuc = isCurrentMonth ? await fetchPeriod(year, month, diaAyer, conIva) : curr
-      const prev1Suc = isCurrentMonth ? await fetchPeriod(comp1m.year, comp1m.month, diaAyer, conIva) : prev1
 
       // 3M and 6M averages
       let sum3 = null, sum6 = null
@@ -414,7 +369,6 @@ export default function RentabilidadView({ user }) {
 
       setDatos({
         curr, prev1, avg3: sum3, avg6: sum6,
-        currSuc, prev1Suc,
         spark: { ventas: sparkVentas, ub: sparkUB, gastos: sparkGastos, uo: sparkUO },
         trend: {
           labels: trendLabels,
@@ -429,7 +383,7 @@ export default function RentabilidadView({ user }) {
       setToast({ msg: 'Error cargando datos: ' + err.message, tipo: 'error' })
     }
     setLoading(false)
-  }, [year, month, diaActual, diaAyer, conIva])
+  }, [year, month, diaActual, conIva])
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
@@ -437,14 +391,6 @@ export default function RentabilidadView({ user }) {
   const comp = useMemo(() => {
     if (!datos) return null
     if (compMode === '1m') return datos.prev1
-    if (compMode === '3m') return datos.avg3
-    return datos.avg6
-  }, [datos, compMode])
-
-  // Comparador para Vista por Sucursal (usa diaAyer)
-  const compSuc = useMemo(() => {
-    if (!datos) return null
-    if (compMode === '1m') return datos.prev1Suc
     if (compMode === '3m') return datos.avg3
     return datos.avg6
   }, [datos, compMode])
@@ -603,7 +549,7 @@ export default function RentabilidadView({ user }) {
                     <tbody>
                       {/* VENTAS */}
                       <tr style={sectionRow}><td colSpan={SUC_KEYS.length + 4} style={sectionTd}>INGRESOS</td></tr>
-                      <PnlRowVentas label="Ventas Netas" curr={datos.curr} comp={comp} />
+                      <PnlRow label="Ventas Netas" curr={datos.curr} comp={comp} field="venta" positive />
 
                       {/* COGS */}
                       <tr style={sectionRow}><td colSpan={SUC_KEYS.length + 4} style={sectionTd}>COSTO DE VENTAS</td></tr>
@@ -640,13 +586,13 @@ export default function RentabilidadView({ user }) {
             <div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: T.text }}>Resumen por Sucursal</div>
-                <div style={{ fontSize: 12, color: T.textMuted }}>Performance relativo — {MESES[month - 1]} 1-{diaAyer} vs {compLabel} (días cerrados)</div>
+                <div style={{ fontSize: 12, color: T.textMuted }}>Performance relativo — {MESES[month - 1]} 1-{diaActual} vs {compLabel}</div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 24 }}>
                 {SUC_KEYS.map(s => {
-                  const c = datos.currSuc.pnl[s]
-                  const p = compSuc?.pnl[s]
+                  const c = datos.curr.pnl[s]
+                  const p = comp?.pnl[s]
                   if (!c || !c.venta) return null
                   const dVenta = delta(c.venta, p?.venta)
                   const dUO = delta(c.utilidadOperativa, p?.utilidadOperativa)
@@ -927,47 +873,6 @@ const sectionTd = {
   textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: 'none',
 }
 
-function PnlRowVentas({ label, curr, comp }) {
-  const [expanded, setExpanded] = useState(false)
-  const FUENTES = ['POS', 'PEYA', 'EVENTOS']
-  const FUENTES_LABEL = { POS: 'POS (Quanto)', PEYA: 'PeYa (Delivery)', EVENTOS: 'Eventos' }
-  const totalCurr = SUC_KEYS.reduce((s, k) => s + n(curr.pnl[k]?.venta), 0)
-  const totalComp = comp ? SUC_KEYS.reduce((s, k) => s + n(comp.pnl[k]?.venta), 0) : 0
-  const bestDelta = delta(totalCurr, totalComp)
-  return (
-    <>
-      <tr style={{ cursor: 'pointer' }} onClick={() => setExpanded(!expanded)}>
-        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500, color: '#F1F5F9' }}>
-          <span style={{ display: 'inline-block', width: 12, color: '#94A3B8' }}>{expanded ? '▼' : '▶'}</span> {label}
-        </td>
-        {SUC_KEYS.map(s => {
-          const v = n(curr.pnl[s]?.venta)
-          return <td key={s} style={{ ...tdStyle, color: '#10B981', fontWeight: 500 }}>{fmt(v)}</td>
-        })}
-        <td style={tdStyle}><Delta label={bestDelta.label} dir={bestDelta.dir} /></td>
-        <td style={{ ...tdStyle, borderLeft: '2px solid #334155', fontWeight: 700, color: '#10B981' }}>{fmt(totalCurr)}</td>
-        <td style={tdStyle}><Delta label={bestDelta.label} dir={bestDelta.dir} /></td>
-      </tr>
-      {expanded && FUENTES.map(fuente => {
-        const totalFuente = SUC_KEYS.reduce((s, k) => s + n(curr.ventasPorSucFuente?.[k]?.[fuente]), 0)
-        if (totalFuente === 0) return null
-        return (
-          <tr key={fuente} style={{ background: 'rgba(148,163,184,0.05)' }}>
-            <td style={{ ...tdStyle, textAlign: 'left', paddingLeft: 28, fontSize: 12, color: '#94A3B8' }}>↳ {FUENTES_LABEL[fuente]}</td>
-            {SUC_KEYS.map(s => {
-              const v = n(curr.ventasPorSucFuente?.[s]?.[fuente])
-              return <td key={s} style={{ ...tdStyle, color: v > 0 ? '#94A3B8' : '#475569', fontSize: 12 }}>{v > 0 ? fmt(v) : '—'}</td>
-            })}
-            <td style={tdStyle}></td>
-            <td style={{ ...tdStyle, borderLeft: '2px solid #334155', color: '#94A3B8', fontSize: 12 }}>{fmt(totalFuente)}</td>
-            <td style={tdStyle}></td>
-          </tr>
-        )
-      })}
-    </>
-  )
-}
-
 function PnlRow({ label, curr, comp, field, positive, negative, subtotal, invertDelta, isFinal }) {
   const totalCurr = SUC_KEYS.reduce((s, k) => s + n(curr.pnl[k]?.[field]), 0)
   const totalComp = comp ? SUC_KEYS.reduce((s, k) => s + n(comp.pnl[k]?.[field]), 0) : 0
@@ -987,7 +892,7 @@ function PnlRow({ label, curr, comp, field, positive, negative, subtotal, invert
         const color = negative ? '#EF4444' : positive ? (v >= 0 ? '#10B981' : '#EF4444') : '#94A3B8'
         return (
           <td key={s} style={{ ...tdBase, color: subtotal ? (v >= 0 ? '#10B981' : '#EF4444') : color }}>
-            {negative ? '-' : (v < 0 ? '-' : '')}{fmt(Math.abs(v))}
+            {negative ? '-' : ''}{fmt(Math.abs(v))}
           </td>
         )
       })}
@@ -996,8 +901,8 @@ function PnlRow({ label, curr, comp, field, positive, negative, subtotal, invert
         <Delta label={bestDelta.label} dir={invertDelta ? (bestDelta.dir === 'up' ? 'down' : bestDelta.dir === 'down' ? 'up' : 'neutral') : bestDelta.dir} />
       </td>
       {/* Total */}
-      <td style={{ ...tdBase, borderLeft: `2px solid #334155`, fontWeight: 700, color: isFinal ? (totalCurr >= 0 ? '#10B981' : '#EF4444') : negative ? '#EF4444' : '#F1F5F9', fontSize: isFinal ? 14 : 13 }}>
-        {negative ? '-' : (totalCurr < 0 ? '-' : '')}{fmt(Math.abs(totalCurr))}
+      <td style={{ ...tdBase, borderLeft: `2px solid #334155`, fontWeight: 700, color: isFinal ? '#F1F5F9' : negative ? '#EF4444' : '#F1F5F9', fontSize: isFinal ? 14 : 13 }}>
+        {negative ? '-' : ''}{fmt(Math.abs(totalCurr))}
       </td>
       <td style={tdBase}>
         <Delta label={bestDelta.label} dir={invertDelta ? (bestDelta.dir === 'up' ? 'down' : bestDelta.dir === 'down' ? 'up' : 'neutral') : bestDelta.dir} />

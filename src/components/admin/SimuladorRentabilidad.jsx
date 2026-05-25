@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
 import AjustePorCategoria from './AjustePorCategoria'
+import { paletaSim as c } from '@/theme'
 
 /**
  * SimuladorRentabilidad — Análisis "what-if" interactivo para escenarios:
@@ -15,13 +16,7 @@ import AjustePorCategoria from './AjustePorCategoria'
  * Acceso: admin, superadmin, ejecutivo, gerente
  */
 
-const c = {
-  bg: '#0a0a0a', card: '#1a1a1a', cardBorder: '#2a2a2a', input: '#1e1e1e',
-  red: '#e63946', green: '#4ade80', greenDark: '#2d6a4f',
-  yellow: '#fbbf24', orange: '#f97316', blue: '#60a5fa',
-  purple: '#a78bfa', pink: '#ec4899', cyan: '#22d3ee',
-  border: '#333', text: '#f0f0f0', textDim: '#888', textOff: '#555',
-}
+// ── Paleta — ahora centralizada en src/theme.js (paletaSim) ──
 
 const cardStyle = {
   background: c.card, border: `1px solid ${c.cardBorder}`,

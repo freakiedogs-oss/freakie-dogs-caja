@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { fmtDate, n, STORES } from '../../config';
 import AsistenciaDigital from './AsistenciaDigital';
+import { paletaRRHH as C } from '@/theme';
 
 // ── Control de acceso ──
 const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'admin', 'superadmin'];
@@ -17,19 +18,7 @@ const CARGOS_REALES = [
 // ── TIPOS DE DESCUENTOS ──
 const TIPOS_DESCUENTOS = ['prestamo', 'uniforme', 'adelanto', 'daño', 'otro'];
 
-// ── Colores del tema ──
-const C = {
-  bg:       '#111',
-  bgCard:   '#1a1a1a',
-  bgInput:  '#222',
-  red:      '#e63946',
-  green:    '#4ade80',
-  yellow:   '#f59e0b',
-  blue:     '#3b82f6',
-  border:   '#2a2a2a',
-  text:     '#eee',
-  textDim:  '#666',
-};
+// ── Colores del tema — ahora centralizados en src/theme.js (paletaRRHH) ──
 
 // ── Roles que NO se pueden editar ──
 const ROLES_PROTEGIDOS = ['ejecutivo', 'admin', 'superadmin'];
