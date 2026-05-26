@@ -1,0 +1,5 @@
+@import './theme.kaeru.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
