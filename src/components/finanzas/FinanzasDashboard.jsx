@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
+import { paletaC as C } from '@/theme'
 
 // Componentes aislados lazy + defensivos (si fallan, ErrorBoundary los aísla)
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
@@ -52,16 +53,7 @@ const GRUPO_TO_PL = {
   'Gasto Admin': 'gastos_operativos', 'Inversión': 'activo_fijo', 'No Operativo': 'gasto_financiero',
 }
 
-// ── Brand colors ──
-const C = {
-  red: '#e63946', redDark: '#b91c2c', redBg: '#fef2f2',
-  green: '#2d6a4f', greenLight: '#4ade80', greenBg: '#f0fdf4',
-  dark: '#1a1a2e', card: '#16213e', cardAlt: '#0f3460',
-  gold: '#f4a261', goldBg: '#fffbeb',
-  blue: '#3b82f6', blueBg: '#eff6ff',
-  gray: '#6b7280', grayLight: '#f3f4f6', border: '#334155',
-  white: '#fff', textMuted: '#94a3b8',
-}
+// ── Brand colors — ahora centralizados en src/theme.js (paletaC) ──
 
 // ── Styles ──
 const sCard = { background: C.card, borderRadius: 12, padding: 16, marginBottom: 12, border: `1px solid ${C.border}` }
