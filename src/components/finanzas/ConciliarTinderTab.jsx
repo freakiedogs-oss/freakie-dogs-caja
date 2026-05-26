@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db as supabase } from '../../supabase'
 import { fmtDate, n } from '../../config'
+import { fetchAllRows } from '../../utils/fetchPaginated'
 
 const colors = {
   bg: '#1a1a2e', card: '#16213e', card2: '#1e2a4a',
@@ -535,15 +536,16 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
     ;(async () => {
       if (searchResults.length === 0) return
       const desde90 = new Date(Date.now() - 90*86400000).toISOString().split('T')[0]
-      const [dte, bees, sinDte] = await Promise.all([
-        supabase.from('compras_dte').select('proveedor_nombre').gte('fecha_emision', desde90),
+      const [dteRows, bees, sinDteRows] = await Promise.all([
+        // P0: compras_dte 90d > 1000 filas — paginar
+        fetchAllRows(supabase, 'compras_dte', q => q.select('proveedor_nombre').gte('fecha_emision', desde90)),
         supabase.from('compras_bees').select('id').gte('fecha', desde90).limit(1),
-        supabase.from('compras_sin_dte').select('proveedor_nombre').gte('fecha', desde90),
+        fetchAllRows(supabase, 'compras_sin_dte', q => q.select('proveedor_nombre').gte('fecha', desde90)),
       ])
       if (cancel) return
       const set = new Set()
-      ;(dte.data || []).forEach(d => set.add((d.proveedor_nombre || '').toUpperCase().trim()))
-      ;(sinDte.data || []).forEach(d => set.add((d.proveedor_nombre || '').toUpperCase().trim()))
+      ;(dteRows || []).forEach(d => set.add((d.proveedor_nombre || '').toUpperCase().trim()))
+      ;(sinDteRows || []).forEach(d => set.add((d.proveedor_nombre || '').toUpperCase().trim()))
       // Constancia siempre, si hay registros bees recientes
       if ((bees.data || []).length > 0) {
         set.add('LA CONSTANCIA')

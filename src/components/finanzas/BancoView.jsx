@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db } from '../../supabase'
+import { fetchAllRows } from '../../utils/fetchPaginated'
 
 // ─── Helpers ───────────────────────────────────────────────
 const fmt = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
@@ -7,19 +8,8 @@ const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('es-SV',
 const today = () => new Date().toISOString().slice(0, 10)
 const fmtPct = (n) => n != null ? `${Number(n).toFixed(1)}%` : '—'
 
-async function fetchAll(query, { pageSize = 1000 } = {}) {
-  const all = []
-  let from = 0
-  while (true) {
-    const { data, error } = await query.range(from, from + pageSize - 1)
-    if (error) throw error
-    if (!data || data.length === 0) break
-    all.push(...data)
-    if (data.length < pageSize) break
-    from += pageSize
-  }
-  return all
-}
+// Helper local removido — usaba builder pre-construido que muta entre iteraciones
+// (bug Supabase JS). Migrado a fetchAllRows(db, table, q => ...) del helper central.
 
 const ESTADO_COLOR = {
   sin_clasificar: { bg: '#7f1d1d', color: '#fca5a5', label: 'Sin clasificar' },
@@ -248,7 +238,10 @@ function TabResumen() {
     setLoading(true)
     try {
       const [txAll, cc] = await Promise.all([
-        fetchAll(db.from('bank_transacciones').select('fecha,debito,credito,estado,codigo_bac,descripcion,id,centro_costo_id').order('fecha', { ascending: false })),
+        fetchAllRows(db, 'bank_transacciones', q => q
+          .select('fecha,debito,credito,estado,codigo_bac,descripcion,id,centro_costo_id')
+          .order('fecha', { ascending: false })
+        ),
         db.from('centros_costo').select('id,nombre,tipo').eq('activo', true).order('orden'),
       ])
       setCentros(cc.data || [])
@@ -348,9 +341,10 @@ function TabWizard({ user, pushNotif }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchAll(
-        db.from('bank_transacciones').select('id,fecha,codigo_bac,descripcion,debito,credito,balance,estado,notas,referencia,direccion').eq('estado', 'sin_clasificar')
-          .order('debito', { ascending: false }).order('credito', { ascending: false })
+      const data = await fetchAllRows(db, 'bank_transacciones', q => q
+        .select('id,fecha,codigo_bac,descripcion,debito,credito,balance,estado,notas,referencia,direccion')
+        .eq('estado', 'sin_clasificar')
+        .order('debito', { ascending: false }).order('credito', { ascending: false })
       )
       setPendientes(data)
       setIdx(0)
@@ -889,9 +883,11 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
     (async () => {
       setLoading(true)
       try {
-        let q = db.from('v_compras_dte_para_match').select('proveedor_nombre, monto_para_match, ya_pagada')
-        if (!incluirPagadas) q = q.eq('ya_pagada', false)
-        const data = await fetchAll(q)
+        const data = await fetchAllRows(db, 'v_compras_dte_para_match', q => {
+          let qq = q.select('proveedor_nombre, monto_para_match, ya_pagada')
+          if (!incluirPagadas) qq = qq.eq('ya_pagada', false)
+          return qq
+        })
         const byProv = {}
         for (const f of data) {
           if (!byProv[f.proveedor_nombre]) byProv[f.proveedor_nombre] = { nombre: f.proveedor_nombre, count: 0, total: 0, count_pagadas: 0 }
@@ -1269,9 +1265,11 @@ function TabColaManual({ user }) {
     setLoading(true)
     try {
       // Usa la vista enriquecida que incluye proveedores matcheados
-      let q = db.from('v_bank_tx_con_match').select('id,fecha,codigo_bac,descripcion,debito,credito,estado,direccion,notas,referencia,categoria_efectiva,categoria_grupo,subcategoria,centro_costo_id,centro_costo_nombre,centro_costo_tipo,proveedores_matcheados,match_confianza,match_metodo,matches_count,monto_aplicado_total,sucursal_inferida,comprobante_info').order('fecha', { ascending: false })
-      if (filtroEstado !== 'todos') q = q.eq('estado', filtroEstado)
-      const data = await fetchAll(q)
+      const data = await fetchAllRows(db, 'v_bank_tx_con_match', q => {
+        let qq = q.select('id,fecha,codigo_bac,descripcion,debito,credito,estado,direccion,notas,referencia,categoria_efectiva,categoria_grupo,subcategoria,centro_costo_id,centro_costo_nombre,centro_costo_tipo,proveedores_matcheados,match_confianza,match_metodo,matches_count,monto_aplicado_total,sucursal_inferida,comprobante_info').order('fecha', { ascending: false })
+        if (filtroEstado !== 'todos') qq = qq.eq('estado', filtroEstado)
+        return qq
+      })
       setTx(data); setSeleccion(new Set())
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [filtroEstado])
@@ -1883,8 +1881,9 @@ function TabVincularDTE({ user, pushNotif }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await fetchAll(
-        db.from('v_gastos_sin_dte_pendientes_vinculacion').select('id,fecha,descripcion,monto_total,proveedor_nombre,proveedor_nit,categoria_nombre,catalogo_subcategoria,centro_costo_nombre').order('fecha', { ascending: false })
+      const all = await fetchAllRows(db, 'v_gastos_sin_dte_pendientes_vinculacion', q => q
+        .select('id,fecha,descripcion,monto_total,proveedor_nombre,proveedor_nit,categoria_nombre,catalogo_subcategoria,centro_costo_nombre')
+        .order('fecha', { ascending: false })
       )
       setGastos(all || [])
       const totalMonto = (all || []).reduce((s, g) => s + Number(g.monto_total || 0), 0)
@@ -2162,7 +2161,9 @@ function SubColaSocios({ user, pushNotif }) {
     setLoading(true)
     try {
       const [pendData, sociosData] = await Promise.all([
-        fetchAll(db.from('v_bank_tx_socio_pendientes').select('id,fecha,codigo_bac,descripcion,monto,direccion,socio_sugerido_id')),
+        fetchAllRows(db, 'v_bank_tx_socio_pendientes', q => q
+          .select('id,fecha,codigo_bac,descripcion,monto,direccion,socio_sugerido_id')
+        ),
         db.from('socios').select('id,nombre').eq('activo', true).order('nombre'),
       ])
       setPendientes(pendData || [])
@@ -2390,7 +2391,10 @@ function SubAportesFIFO() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await fetchAll(db.from('v_socio_aportes_detalle').select('id,socio_nombre,fecha_aporte,dias_antiguedad,monto_original,capital_repagado,capital_pendiente,interes_acumulado,interes_pagado,deuda_total,estado,fecha_ultimo_corte').order('fecha_aporte', { ascending: false }))
+      const all = await fetchAllRows(db, 'v_socio_aportes_detalle', q => q
+        .select('id,socio_nombre,fecha_aporte,dias_antiguedad,monto_original,capital_repagado,capital_pendiente,interes_acumulado,interes_pagado,deuda_total,estado,fecha_ultimo_corte')
+        .order('fecha_aporte', { ascending: false })
+      )
       setData(all || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [])
