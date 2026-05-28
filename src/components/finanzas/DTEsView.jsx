@@ -47,7 +47,7 @@ const sInput = {
 }
 const sSelect = { ...sInput, cursor: 'pointer' }
 const sBtn = (active) => ({
-  padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+  padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
   fontWeight: 700, fontSize: 11,
   background: active ? C.red : 'transparent',
   color: active ? C.white : C.textMuted,

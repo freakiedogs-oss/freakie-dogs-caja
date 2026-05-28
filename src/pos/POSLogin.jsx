@@ -87,7 +87,7 @@ export default function POSLogin({ onLogin }) {
       }}>
         {keys.map((k, i) => k === '' ? <div key={i} /> : (
           <button key={i} onClick={() => press(k)} style={{
-            padding: '16px', border: 'none', borderRadius: 12,
+            padding: '16px', borderRadius: 12,
             background: k === 'del' ? '#1e1e26' : '#1c1c22',
             color: '#e8e6ef', fontSize: k === 'del' ? 18 : 20,
             fontWeight: 700, cursor: 'pointer',
