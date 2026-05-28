@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
+import { useToast } from '../../hooks/useToast'
 
 /**
  * Card "Última data disponible" + botón Refrescar P&L
@@ -13,6 +14,7 @@ import { db } from '../../supabase'
  * No depende de NADA externo excepto `db` (supabase client).
  */
 export default function CardDataDisponible() {
+  const toast = useToast()
   const [dataDisp, setDataDisp] = useState(null)
   const [compIgualado, setCompIgualado] = useState([])
   const [comparador, setComparador] = useState('mes_anterior')
@@ -43,14 +45,15 @@ export default function CardDataDisponible() {
     try {
       const r = await db.rpc('fn_refresh_pl')
       if (r && r.error) {
-        alert('Error al refrescar: ' + r.error.message)
+        toast.error('Error al refrescar: ' + r.error.message)
       } else {
         await cargar()
         // Avisamos al dashboard que recargue
         window.dispatchEvent(new CustomEvent('freakie:refresh-pl'))
+        toast.success('P&L refrescado')
       }
     } catch (e) {
-      alert('Error: ' + (e && e.message ? e.message : 'desconocido'))
+      toast.error('Error: ' + (e && e.message ? e.message : 'desconocido'))
     }
     setRefreshing(false)
   }
@@ -62,6 +65,7 @@ export default function CardDataDisponible() {
         <button onClick={handleRefresh} disabled={refreshing} style={st.btn(refreshing)}>
           {refreshing ? '⏳ Refrescando…' : '🔄 Refrescar P&L'}
         </button>
+        <toast.Toast />
       </div>
     )
   }
@@ -88,6 +92,7 @@ export default function CardDataDisponible() {
       <button onClick={handleRefresh} disabled={refreshing} style={st.btn(refreshing)}>
         {refreshing ? '⏳ Refrescando…' : '🔄 Refrescar P&L'}
       </button>
+      <toast.Toast />
     </div>
   )
 }

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { db } from '../../supabase'
+import { useToast } from '../../hooks/useToast'
 
 export default function SplitCheckModal({ cuentaId, items, storeCode, userId, mesaRef, onClose, onSplit }) {
+  const toast = useToast()
   const [loading, setLoading] = useState(false)
   const [selectedItems, setSelectedItems] = useState({}) // { itemId: { selected: bool, qtyToMove: number } }
   const [accountData, setAccountData] = useState(null)
@@ -140,7 +142,7 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
       onSplit()
     } catch (err) {
       console.error('Error splitting check:', err)
-      alert('Error al dividir la cuenta: ' + err.message)
+      toast.error('Error al dividir la cuenta: ' + err.message)
     } finally {
       setLoading(false)
     }
@@ -320,6 +322,7 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
         <button className="pos-cancelar-btn" onClick={onClose} disabled={loading}>
           Cancelar
         </button>
+        <toast.Toast />
       </div>
     </div>
   )

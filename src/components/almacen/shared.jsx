@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { db } from '../../supabase';
+import { useToast } from '../../hooks/useToast';
 
 // ── NUEVO PROVEEDOR MODAL ────────────────────────────────────────
 export function NuevoProveedorModal({onSave,onClose}){
+  const toast = useToast();
   const [nombre,setNombre]=useState('');
   const [telefono,setTelefono]=useState('');
   const [correo,setCorreo]=useState('');
@@ -12,7 +14,7 @@ export function NuevoProveedorModal({onSave,onClose}){
   const [loading,setLoading]=useState(false);
 
   const guardar=async()=>{
-    if(!nombre.trim()){alert('Ingresa el nombre del proveedor');return;}
+    if(!nombre.trim()){toast.warning('Ingresa el nombre del proveedor');return;}
     setLoading(true);
     try{
       const {data,error}=await db.from('proveedores').insert({
@@ -27,7 +29,7 @@ export function NuevoProveedorModal({onSave,onClose}){
       if(error) throw error;
       onSave(data);
     }catch(e){
-      alert('Error: '+e.message);
+      toast.error('Error: '+e.message);
     }
     setLoading(false);
   };
@@ -66,6 +68,7 @@ export function NuevoProveedorModal({onSave,onClose}){
             {loading?'Guardando...':'✅ Guardar'}
           </button>
         </div>
+        <toast.Toast />
       </div>
     </div>
   );
@@ -73,6 +76,7 @@ export function NuevoProveedorModal({onSave,onClose}){
 
 // ── NUEVO PRODUCTO MODAL ──────────────────────────────────────
 export function NuevoProductoModal({onSave,onClose}){
+  const toast = useToast();
   const [nombre,setNombre]=useState('');
   const [categoria,setCategoria]=useState('');
   const [subcategoria,setSubcategoria]=useState('');
@@ -81,7 +85,7 @@ export function NuevoProductoModal({onSave,onClose}){
   const [loading,setLoading]=useState(false);
 
   const guardar=async()=>{
-    if(!nombre.trim()){alert('Ingresa el nombre del producto');return;}
+    if(!nombre.trim()){toast.warning('Ingresa el nombre del producto');return;}
     setLoading(true);
     try{
       const {data,error}=await db.from('catalogo_productos').insert({
@@ -95,7 +99,7 @@ export function NuevoProductoModal({onSave,onClose}){
       if(error) throw error;
       onSave(data);
     }catch(e){
-      alert('Error: '+e.message);
+      toast.error('Error: '+e.message);
     }
     setLoading(false);
   };
@@ -140,6 +144,7 @@ export function NuevoProductoModal({onSave,onClose}){
             {loading?'Guardando...':'✅ Guardar'}
           </button>
         </div>
+        <toast.Toast />
       </div>
     </div>
   );

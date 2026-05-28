@@ -5,6 +5,7 @@ import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
 import { emitDTE } from './dteService'
+import { useToast } from '../../hooks/useToast'
 
 // ──────────────────────────────────────────────
 // Constantes de display
@@ -55,6 +56,7 @@ function Clock() {
 export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
+  const toast = useToast()
 
   // Permisos del rol activo
   const perms = PERMISOS_POR_ROL[user.rol] || DEFAULT_PERMS
@@ -382,7 +384,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
 
     } catch (err) {
       console.error('Error al comandar:', err)
-      alert('Error al comandar: ' + err.message)
+      toast.error('Error al comandar: ' + err.message)
     } finally {
       setCommanding(false)
     }
@@ -988,6 +990,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           }}
         />
       )}
+      <toast.Toast />
     </div>
   )
 }

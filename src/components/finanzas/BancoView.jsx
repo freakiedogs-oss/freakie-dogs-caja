@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db } from '../../supabase'
 import { fetchAllRows } from '../../utils/fetchPaginated'
+import { useToast } from '../../hooks/useToast'
 
 // ─── Helpers ───────────────────────────────────────────────
 const fmt = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
@@ -329,6 +330,7 @@ function TabResumen() {
 // TAB WIZARD — corazón del sistema (1 tx a la vez con sugerencias)
 // ═══════════════════════════════════════════════════════════
 function TabWizard({ user, pushNotif }) {
+  const toast = useToast()
   const [pendientes, setPendientes] = useState([])
   const [idx, setIdx] = useState(0)
   const [sugerencias, setSugerencias] = useState([])
@@ -415,7 +417,7 @@ function TabWizard({ user, pushNotif }) {
       // Quitar de la lista local + avanzar
       setPendientes(ps => ps.filter(p => p.id !== actual.id))
       setIdx(i => Math.min(i, filtrados.length - 2))
-    } catch (e) { alert('Error: ' + e.message) } finally { setSaving(false) }
+    } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
   }
 
   const marcarComo = async (estado) => {
@@ -427,7 +429,7 @@ function TabWizard({ user, pushNotif }) {
         notas: (actual.notas || '') + ` [wizard:${estado}:${user?.rol || 'user'}]`,
       }).eq('id', actual.id)
       setPendientes(ps => ps.filter(p => p.id !== actual.id))
-    } catch (e) { alert('Error: ' + e.message) } finally { setSaving(false) }
+    } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
   }
 
   const onGastoCreado = async (gastoId) => {
@@ -558,6 +560,7 @@ function TabWizard({ user, pushNotif }) {
       {showCrearGasto && (
         <ModalCrearGasto bankTx={actual} comprobante={comprobante} user={user} onClose={() => setShowCrearGasto(false)} onCreated={onGastoCreado} />
       )}
+      <toast.Toast />
     </>
   )
 }
@@ -592,6 +595,7 @@ function autoDetectarCategoria(proveedor = '', descripcion = '') {
 // + auto-detección de categoría Planilla/ISSS/AFP/Impuestos
 // ═══════════════════════════════════════════════════════════
 function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
+  const toast = useToast()
   const [proveedores, setProveedores] = useState([])
   const [centros, setCentros] = useState([])
   const [categorias, setCategorias] = useState([])
@@ -669,7 +673,7 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
   }
 
   const crearProveedor = async () => {
-    if (!nuevoProv.nombre_dte.trim()) return alert('Nombre obligatorio')
+    if (!nuevoProv.nombre_dte.trim()) { toast.warning('Nombre obligatorio'); return }
     try {
       const { data, error } = await db.from('catalogo_contable').insert({
         nombre_dte: nuevoProv.nombre_dte.trim(),
@@ -685,11 +689,11 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
       setForm(f => ({ ...f, proveedor_nombre: data.nombre_dte, categoria_gasto_id: data.categoria || f.categoria_gasto_id }))
       setShowNuevoProv(false)
       setNuevoProv({ nombre_dte: '', categoria: '', subcategoria: '', sucursal_default: '' })
-    } catch (e) { alert('Error creando proveedor: ' + e.message) }
+    } catch (e) { toast.error('Error creando proveedor: ' + e.message) }
   }
 
   const guardar = async () => {
-    if (!form.proveedor_nombre || !form.monto_total || !form.fecha) return alert('Completa proveedor, monto y fecha')
+    if (!form.proveedor_nombre || !form.monto_total || !form.fecha) { toast.warning('Completa proveedor, monto y fecha'); return }
     setSaving(true)
     try {
       // Categoría final: la del form (auto-detected o manual)
@@ -735,7 +739,7 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
       }).select().single()
       if (error) throw error
       onCreated?.(data.id)
-    } catch (e) { alert('Error guardando gasto: ' + e.message) } finally { setSaving(false) }
+    } catch (e) { toast.error('Error guardando gasto: ' + e.message) } finally { setSaving(false) }
   }
 
   if (loading) return null
@@ -857,6 +861,7 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
           <button onClick={guardar} disabled={saving} style={{ ...btnSt, background: 'rgba(52,211,153,0.2)', border: '1px solid #34d399', color: '#6ee7b7' }}>{saving ? '⏳' : '💾 Guardar gasto'}</button>
         </div>
       </div>
+      <toast.Toast />
     </div>
   )
 }
@@ -865,6 +870,7 @@ function ModalCrearGasto({ bankTx, comprobante, user, onClose, onCreated }) {
 // MULTI-DTE SELECTOR — pagar varias facturas con un solo pago bancario
 // ═══════════════════════════════════════════════════════════
 function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
+  const toast = useToast()
   const [proveedoresPend, setProveedoresPend] = useState([])
   const [provFiltro, setProvFiltro] = useState('')
   const [provSeleccionado, setProvSeleccionado] = useState(null)
@@ -941,7 +947,7 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
   }
 
   const aplicar = async () => {
-    if (seleccionadas.size === 0) return alert('Selecciona al menos 1 factura')
+    if (seleccionadas.size === 0) { toast.warning('Selecciona al menos 1 factura'); return }
     if (!cuadra && !confirm(`La suma seleccionada (${fmt(sumaSeleccionada)}) no cuadra con el monto del banco (${fmt(target)}). ¿Continuar de todos modos?`)) return
     setSaving(true)
     try {
@@ -959,9 +965,9 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
       if (error) throw error
       const result = data?.[0]
       if (result?.notificaciones?.length) for (const n of result.notificaciones) pushNotif(n)
-      alert(`✅ ${result?.matches_creados || matches.length} facturas vinculadas (${fmt(result?.monto_aplicado_total || sumaSeleccionada)})`)
+      toast.success(`${result?.matches_creados || matches.length} facturas vinculadas (${fmt(result?.monto_aplicado_total || sumaSeleccionada)})`)
       onApplied?.()
-    } catch (e) { alert('Error: ' + e.message) } finally { setSaving(false) }
+    } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
   }
 
   if (!expanded) {
@@ -970,6 +976,7 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
         <button onClick={() => setExpanded(true)} style={{ ...btnSt, width: '100%', background: 'rgba(168,85,247,0.15)', border: '1px solid #a855f7', color: '#c4b5fd' }}>
           💼 Pagar múltiples facturas (multi-DTE) ▾
         </button>
+        <toast.Toast />
       </div>
     )
   }
@@ -1068,6 +1075,7 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
           </button>
         </>
       )}
+      <toast.Toast />
     </div>
   )
 }
@@ -1076,6 +1084,7 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
 // TAB COMPROBANTES — multi-upload + ZIP + cámara + galería
 // ═══════════════════════════════════════════════════════════
 function TabComprobantes({ user }) {
+  const toast = useToast()
   const [comprobantes, setComprobantes] = useState([])
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
@@ -1154,9 +1163,9 @@ function TabComprobantes({ user }) {
         const blob = await ent.async('blob')
         imgFiles.push(new File([blob], name, { type: blob.type || 'image/jpeg' }))
       }
-      if (imgFiles.length === 0) { alert('El ZIP no contiene imágenes válidas'); return }
+      if (imgFiles.length === 0) { toast.warning('El ZIP no contiene imágenes válidas'); return }
       await procesarFiles(imgFiles)
-    } catch (err) { alert('Error procesando ZIP: ' + err.message) } finally {
+    } catch (err) { toast.error('Error procesando ZIP: ' + err.message) } finally {
       setProcessing(false); if (zipRef.current) zipRef.current.value = ''
     }
   }
@@ -1240,6 +1249,7 @@ function TabComprobantes({ user }) {
           </div>
         )}
       </div>
+      <toast.Toast />
     </>
   )
 }
@@ -1248,6 +1258,7 @@ function TabComprobantes({ user }) {
 // TAB COLA MANUAL — versión bulk (igual a la anterior)
 // ═══════════════════════════════════════════════════════════
 function TabColaManual({ user }) {
+  const toast = useToast()
   const [tx, setTx] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroEstado, setFiltroEstado] = useState('sin_clasificar')
@@ -1305,12 +1316,12 @@ function TabColaManual({ user }) {
   const toggleSelAll = () => { if (seleccion.size === filtrados.length) setSeleccion(new Set()); else setSeleccion(new Set(filtrados.map(t => t.id))) }
 
   const aplicarBulk = async () => {
-    if (seleccion.size === 0) return alert('Selecciona al menos una')
+    if (seleccion.size === 0) { toast.warning('Selecciona al menos una'); return }
     if (!confirm(`Marcar ${seleccion.size} como "${bulkEstado}"?`)) return
     try {
       const { error } = await db.from('bank_transacciones').update({ estado: bulkEstado, notas: `[manual:${user?.rol || 'user'}_${today()}]` }).in('id', Array.from(seleccion))
       if (error) throw error; await load()
-    } catch (e) { alert('Error: ' + e.message) }
+    } catch (e) { toast.error('Error: ' + e.message) }
   }
 
   const revertir = async (id) => {
@@ -1323,11 +1334,11 @@ function TabColaManual({ user }) {
         notas: `[reverted:${user?.rol || 'user'}_${today()}]`,
       }).eq('id', id)
       await load()
-    } catch (e) { alert('Error: ' + e.message) }
+    } catch (e) { toast.error('Error: ' + e.message) }
   }
 
   const revertirBulk = async () => {
-    if (seleccion.size === 0) return alert('Selecciona al menos una')
+    if (seleccion.size === 0) { toast.warning('Selecciona al menos una'); return }
     if (!confirm(`Revertir ${seleccion.size} transacciones a sin_clasificar? (también borra sus matches)`)) return
     try {
       const ids = Array.from(seleccion)
@@ -1337,7 +1348,7 @@ function TabColaManual({ user }) {
         notas: `[reverted_bulk:${user?.rol || 'user'}_${today()}]`,
       }).in('id', ids)
       await load()
-    } catch (e) { alert('Error: ' + e.message) }
+    } catch (e) { toast.error('Error: ' + e.message) }
   }
 
   const ESTADOS_FILTRO = [
@@ -1491,6 +1502,7 @@ function TabColaManual({ user }) {
         </table>
         {filtrados.length > 200 && <div style={{ padding: 12, textAlign: 'center', color: '#888', fontSize: 11 }}>Mostrando 200 de {filtrados.length}.</div>}
       </div>
+      <toast.Toast />
     </>
   )
 }
@@ -1499,6 +1511,7 @@ function TabColaManual({ user }) {
 // TAB REGLAS
 // ═══════════════════════════════════════════════════════════
 function TabReglas() {
+  const toast = useToast()
   const [reglas, setReglas] = useState([])
   const [aprendizaje, setAprendizaje] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1521,12 +1534,12 @@ function TabReglas() {
     if (!confirm('Ejecutar motor ahora?')) return
     setRunning(true)
     try { const { data } = await db.rpc('bancoview_aplicar_reglas'); setLastRun(data || []); await load() }
-    catch (e) { alert('Error: ' + e.message) } finally { setRunning(false) }
+    catch (e) { toast.error('Error: ' + e.message) } finally { setRunning(false) }
   }
 
   const toggleRegla = async (id, activa) => {
     try { await db.from('bank_reglas_clasificacion').update({ activa: !activa }).eq('id', id); await load() }
-    catch (e) { alert('Error: ' + e.message) }
+    catch (e) { toast.error('Error: ' + e.message) }
   }
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
@@ -1542,9 +1555,9 @@ function TabReglas() {
             const { data, error } = await db.rpc('bancoview_aplicar_aprendizaje')
             if (error) throw error
             const r = data?.[0]
-            alert(`✅ ${r?.reglas_evaluadas || 0} reglas evaluadas · ${r?.transacciones_marcadas || 0} tx marcadas · ${r?.matches_creados || 0} matches creados`)
+            toast.success(`${r?.reglas_evaluadas || 0} reglas evaluadas · ${r?.transacciones_marcadas || 0} tx marcadas · ${r?.matches_creados || 0} matches creados`)
             await load()
-          } catch (e) { alert('Error: ' + e.message) } finally { setRunning(false) }
+          } catch (e) { toast.error('Error: ' + e.message) } finally { setRunning(false) }
         }} disabled={running} style={{ ...btnSt, background: 'rgba(168,85,247,0.15)', border: '1px solid #a855f7', color: '#c4b5fd', opacity: running ? 0.5 : 1 }}>
           🚀 Aplicar aprendizaje (reglas AUTO—)
         </button>
@@ -1602,6 +1615,7 @@ function TabReglas() {
           </table>
         </div>
       )}
+      <toast.Toast />
     </>
   )
 }
@@ -1612,6 +1626,7 @@ function TabReglas() {
 // Botón 1-click crea compras_sin_dte con categoría correcta + sincroniza catalogo_contable
 // ═══════════════════════════════════════════════════════════
 function TabAutoReconciliar({ user, pushNotif }) {
+  const toast = useToast()
   const [pendientes, setPendientes] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroMes, setFiltroMes] = useState('todos')
@@ -1685,7 +1700,7 @@ function TabAutoReconciliar({ user, pushNotif }) {
       // Quitar de la lista
       setPendientes(ps => ps.filter(p => p.bank_id !== item.bank_id))
     } catch (e) {
-      alert('Error reconciliando: ' + e.message)
+      toast.error('Error reconciliando: ' + e.message)
     } finally {
       setBusy(b => { const next = { ...b }; delete next[item.bank_id]; return next })
     }
@@ -1800,6 +1815,7 @@ function TabAutoReconciliar({ user, pushNotif }) {
           </tbody>
         </table>
       </div>
+      <toast.Toast />
     </>
   )
 }
@@ -1808,6 +1824,7 @@ function TabAutoReconciliar({ user, pushNotif }) {
 // TAB AUDITORÍA
 // ═══════════════════════════════════════════════════════════
 function TabAuditoria() {
+  const toast = useToast()
   const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -1825,7 +1842,7 @@ function TabAuditoria() {
   const undo = async (id) => {
     if (!confirm('Eliminar match? La tx vuelve a sin_clasificar.')) return
     try { await db.from('bank_match').delete().eq('id', id); await load() }
-    catch (e) { alert('Error: ' + e.message) }
+    catch (e) { toast.error('Error: ' + e.message) }
   }
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando…</div>
@@ -1860,6 +1877,7 @@ function TabAuditoria() {
           )
         })}</tbody>
       </table>
+      <toast.Toast />
     </div>
   )
 }
@@ -1868,6 +1886,7 @@ function TabAuditoria() {
 // TAB VINCULAR DTE — Gastos sin DTE → DTE generado después (F5.6)
 // ═══════════════════════════════════════════════════════════
 function TabVincularDTE({ user, pushNotif }) {
+  const toast = useToast()
   const [gastos, setGastos] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroProv, setFiltroProv] = useState('')
@@ -1928,7 +1947,7 @@ function TabVincularDTE({ user, pushNotif }) {
       setGastos(gs => gs.filter(g => g.id !== gastoId))
       setSugerencias(s => { const c = { ...s }; delete c[gastoId]; return c })
     } catch (e) {
-      alert('Error: ' + e.message)
+      toast.error('Error: ' + e.message)
     } finally {
       setSaving(s => ({ ...s, [gastoId]: false }))
     }
@@ -1941,7 +1960,7 @@ function TabVincularDTE({ user, pushNotif }) {
       await db.from('compras_sin_dte').update({ tipo: 'sin_dte_formal' }).eq('id', gastoId)
       setGastos(gs => gs.filter(g => g.id !== gastoId))
     } catch (e) {
-      alert('Error: ' + e.message)
+      toast.error('Error: ' + e.message)
     } finally {
       setSaving(s => ({ ...s, [gastoId]: false }))
     }
@@ -2014,6 +2033,7 @@ function TabVincularDTE({ user, pushNotif }) {
           ))}
         </div>
       )}
+      <toast.Toast />
     </div>
   )
 }
@@ -2151,6 +2171,7 @@ function TabSocios({ user, pushNotif }) {
 
 // Sub-tab Cola: bank_tx pendientes de clasificar como movimiento socio
 function SubColaSocios({ user, pushNotif }) {
+  const toast = useToast()
   const [pendientes, setPendientes] = useState([])
   const [socios, setSocios] = useState([])
   const [loading, setLoading] = useState(true)
@@ -2178,10 +2199,10 @@ function SubColaSocios({ user, pushNotif }) {
     const f = forms[tx.id] || {}
     const socioId = f.socio_id || tx.socio_sugerido_id
     const tipo = f.tipo
-    if (!socioId) { alert('Falta socio'); return }
-    if (!tipo) { alert('Falta tipo'); return }
+    if (!socioId) { toast.warning('Falta socio'); return }
+    if (!tipo) { toast.warning('Falta tipo'); return }
     const tipoConfig = TIPOS_MOV_SOCIO.find(t => t.val === tipo)
-    if (!tipoConfig) { alert('Tipo inválido'); return }
+    if (!tipoConfig) { toast.warning('Tipo inválido'); return }
     if (tipoConfig.dir === 'I' && tx.direccion !== 'I') {
       if (!confirm(`Tipo "${tipoConfig.label}" suele ser ingreso pero esta tx es egreso. ¿Continuar?`)) return
     }
@@ -2206,10 +2227,10 @@ function SubColaSocios({ user, pushNotif }) {
         setPendientes(p => p.filter(x => x.id !== tx.id))
         setForms(f2 => { const c = { ...f2 }; delete c[tx.id]; return c })
       } else {
-        alert('Error: ' + (result?.mensaje || 'desconocido'))
+        toast.error('Error: ' + (result?.mensaje || 'desconocido'))
       }
     } catch (e) {
-      alert('Error: ' + e.message)
+      toast.error('Error: ' + e.message)
     } finally {
       setSaving(s => ({ ...s, [tx.id]: false }))
     }
@@ -2283,11 +2304,13 @@ function SubColaSocios({ user, pushNotif }) {
           )}
         </div>
       )}
+      <toast.Toast />
     </div>
   )
 }
 
 function SubBalanceSocios() {
+  const toast = useToast()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [devengando, setDevengando] = useState(false)
@@ -2308,10 +2331,10 @@ function SubBalanceSocios() {
       const { data, error } = await db.rpc('bancoview_devengar_intereses_socios', { p_fecha_corte: today() })
       if (error) throw error
       const r = data?.[0]
-      alert(r?.mensaje || 'OK')
+      toast.success(r?.mensaje || 'OK')
       await load()
     } catch (e) {
-      alert('Error: ' + e.message)
+      toast.error('Error: ' + e.message)
     } finally {
       setDevengando(false)
     }
@@ -2379,6 +2402,7 @@ function SubBalanceSocios() {
           </tbody>
         </table>
       </div>
+      <toast.Toast />
     </div>
   )
 }

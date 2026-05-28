@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
+import { useToast } from '../hooks/useToast'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -95,6 +96,7 @@ function playBeep() {
 export default function KDSScreen({ user, onBack }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
+  const toast = useToast()
 
   const [mode,        setMode]        = useState('canal')    // 'canal' | 'estacion'
   const [filtroCanal, setFiltroCanal] = useState('todos')
@@ -259,7 +261,7 @@ export default function KDSScreen({ user, onBack }) {
         .single()
 
       if (cuenta?.estado === 'cobrada') {
-        alert('No se puede revertir una comanda de una cuenta cobrada.')
+        toast.warning('No se puede revertir una comanda de una cuenta cobrada.')
         return
       }
 
@@ -570,6 +572,7 @@ export default function KDSScreen({ user, onBack }) {
           )
         )}
       </div>
+      <toast.Toast />
     </div>
   )
 }

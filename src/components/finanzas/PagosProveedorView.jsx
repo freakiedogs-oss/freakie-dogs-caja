@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db, URL_SB, KEY_SB } from '../../supabase'
+import { useToast } from '../../hooks/useToast'
 
 // ─── Helpers ───────────────────────────────────────────────
 const fmt = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'
@@ -146,6 +147,7 @@ async function fetchAll(table, query) {
 // TAB 1: SUBIR PAGOS
 // ═══════════════════════════════════════════════════════════
 function SubirPagos({ user, proveedores, onSaved }) {
+  const toast = useToast()
   const [entries, setEntries] = useState([])
   const [saving, setSaving] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -305,7 +307,7 @@ function SubirPagos({ user, proveedores, onSaved }) {
       setEntries([])
       onSaved()
     } catch (err) {
-      alert('Error guardando: ' + err.message)
+      toast.error('Error guardando: ' + err.message)
     } finally {
       setSaving(false)
     }
@@ -488,6 +490,7 @@ function SubirPagos({ user, proveedores, onSaved }) {
           {saving ? '⏳ Guardando...' : `✅ Registrar ${entries.length} pago${entries.length > 1 ? 's' : ''}`}
         </button>
       )}
+      <toast.Toast />
     </div>
   )
 }
@@ -496,6 +499,7 @@ function SubirPagos({ user, proveedores, onSaved }) {
 // TAB 2: PENDIENTES DE CONCILIAR
 // ═══════════════════════════════════════════════════════════
 function PendientesConciliar({ pagos, onRefresh }) {
+  const toast = useToast()
   const pendientes = pagos.filter(p => p.estado !== 'conciliado')
   const [expandedId, setExpandedId] = useState(null)
   const [matchInput, setMatchInput] = useState('')
@@ -536,7 +540,7 @@ function PendientesConciliar({ pagos, onRefresh }) {
       compras_dte_id: dteId,
       monto_aplicado: monto,
     })
-    if (error) { alert(error.message); return }
+    if (error) { toast.error(error.message); return }
     await db.rpc('refresh_cxp')
     setMatchResults(prev => prev.filter(r => r.id !== dteId))
     onRefresh()
@@ -643,6 +647,7 @@ function PendientesConciliar({ pagos, onRefresh }) {
           )}
         </div>
       ))}
+      <toast.Toast />
     </div>
   )
 }
@@ -794,6 +799,7 @@ function CuentasPorPagar({ cxp, onRefresh }) {
 // TAB 4: HISTORIAL
 // ═══════════════════════════════════════════════════════════
 function HistorialPagos({ pagos, onRefresh }) {
+  const toast = useToast()
   const [expandedId, setExpandedId] = useState(null)
   const [editId, setEditId] = useState(null)
   const [editFields, setEditFields] = useState({})
@@ -832,7 +838,7 @@ function HistorialPagos({ pagos, onRefresh }) {
       monto: parseFloat(editFields.monto) || 0,
       updated_at: new Date().toISOString(),
     }).eq('id', id)
-    if (error) { alert(error.message); setSaving(false); return }
+    if (error) { toast.error(error.message); setSaving(false); return }
     setEditId(null)
     setSaving(false)
     onRefresh()
@@ -841,7 +847,7 @@ function HistorialPagos({ pagos, onRefresh }) {
   const revertApp = async (appId, pagoId) => {
     if (!confirm('¿Revertir esta aplicación? El DTE volverá a pendiente.')) return
     const { error } = await db.from('pagos_proveedor_aplicacion').delete().eq('id', appId)
-    if (error) { alert(error.message); return }
+    if (error) { toast.error(error.message); return }
     await db.rpc('refresh_cxp')
     onRefresh()
   }
@@ -850,7 +856,7 @@ function HistorialPagos({ pagos, onRefresh }) {
     if (!confirm('¿Eliminar este pago y todas sus aplicaciones?')) return
     await db.from('pagos_proveedor_aplicacion').delete().eq('pago_id', id)
     const { error } = await db.from('pagos_proveedor').delete().eq('id', id)
-    if (error) { alert(error.message); return }
+    if (error) { toast.error(error.message); return }
     await db.rpc('refresh_cxp')
     onRefresh()
   }
@@ -1015,6 +1021,7 @@ function HistorialPagos({ pagos, onRefresh }) {
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>Sin pagos registrados</div>
       )}
+      <toast.Toast />
     </div>
   )
 }

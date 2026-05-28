@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { NAV_SECTIONS, STORES } from '../../config';
 import DevOpsTab from './DevOpsTab';
+import DevOpsPipelineCard from './DevOpsPipelineCard';
 
 // ── Todos los nav_keys disponibles (flat) ──
 const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap(s =>
@@ -79,12 +80,13 @@ export default function SuperAdminView({ user }) {
       <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${c.border}`, overflowX: 'auto' }}>
         {[
           { k: 'devops', l: '🔧 DevOps' },
+          { k: 'pipeline-dte', l: '🩺 Pipeline DTE' },
           { k: 'usuarios', l: '👥 Usuarios' },
           { k: 'permisos', l: '🔐 Permisos' },
           { k: 'nuevo-rol', l: '➕ Nuevo Rol' },
         ].filter(t => {
-          // DevOps visible para ejecutivos y superadmin; el resto solo superadmin
-          if (t.k === 'devops') return true;
+          // DevOps + Pipeline DTE visibles para ejecutivos y superadmin; el resto solo superadmin
+          if (t.k === 'devops' || t.k === 'pipeline-dte') return true;
           return user?.rol === 'superadmin';
         }).map(t => (
           <button key={t.k} onClick={() => setTab(t.k)}
@@ -460,6 +462,7 @@ export default function SuperAdminView({ user }) {
     <div style={{ padding: '16px' }}>
       <TabBar />
       {tab === 'devops' && <DevOpsTab />}
+      {tab === 'pipeline-dte' && <DevOpsPipelineCard />}
       {tab === 'usuarios' && renderUsuarios()}
       {tab === 'permisos' && renderPermisos()}
       {tab === 'nuevo-rol' && renderNuevoRol()}
