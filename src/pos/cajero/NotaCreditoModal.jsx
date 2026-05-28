@@ -4,9 +4,23 @@ import { db } from '../../supabase'
 /**
  * NotaCreditoModal — Emitir NC (tipo 05) contra un DTE existente
  * Se abre desde HistorialCobros cuando el usuario quiere hacer una devolución parcial o total.
+ *
+ * Llama al proxy serverless /api/dte-proxy (auth por PIN). La API key DTE
+ * vive en process.env.DTE_API_KEY del proxy — NO en el bundle browser
+ * (P0 audit 24-may-2026).
  */
-const DTE_BASE = 'https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/dte-service'
-const DTE_API_KEY = 'dk_live_6230574b3a01728fce1799ca8c7c5da904b39d9c29d37cfa'
+const DTE_PROXY_BASE = '/api/dte-proxy'
+
+function getPosPin() {
+  try {
+    const raw = sessionStorage.getItem('pos_user') || localStorage.getItem('pos_user')
+    if (!raw) return ''
+    const u = JSON.parse(raw)
+    return String(u?.pin || '')
+  } catch {
+    return ''
+  }
+}
 
 export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
   const [motivo, setMotivo]     = useState('')
@@ -91,9 +105,9 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
         pagos: [{ codigo: '01', montoPago: Math.round(totalNC / 1.13 * 100) / 100 + Math.round(totalNC / 1.13 * 0.13 * 100) / 100, referencia: null, plazo: null, periodo: null }],
       }
 
-      const res = await fetch(`${DTE_BASE}/emit-nota-credito`, {
+      const res = await fetch(`${DTE_PROXY_BASE}/emit-nota-credito`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': DTE_API_KEY },
+        headers: { 'Content-Type': 'application/json', 'X-POS-PIN': getPosPin() },
         body: JSON.stringify(body),
       })
 
