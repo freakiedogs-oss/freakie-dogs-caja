@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
+import { useToast } from '../../hooks/useToast'
 
 /**
  * CustomerSearch — Búsqueda y creación rápida de clientes para CCF
@@ -9,6 +10,7 @@ import { db } from '../../supabase'
  * Permite crear cliente nuevo con campos mínimos para CCF.
  */
 export default function CustomerSearch({ onSelect, selected }) {
+  const toast = useToast()
   const [query, setQuery]       = useState('')
   const [results, setResults]   = useState([])
   const [loading, setLoading]   = useState(false)
@@ -69,7 +71,7 @@ export default function CustomerSearch({ onSelect, selected }) {
   // ── Crear cliente ──
   const handleCreate = async () => {
     if (!form.nombre || !form.nit || !form.nrc) {
-      alert('Nombre, NIT y NRC son obligatorios para CCF')
+      toast.warning('Nombre, NIT y NRC son obligatorios para CCF')
       return
     }
 
@@ -92,7 +94,7 @@ export default function CustomerSearch({ onSelect, selected }) {
       onSelect(data)
       setShowNew(false)
     } catch (err) {
-      alert('Error al crear cliente: ' + err.message)
+      toast.error('Error al crear cliente: ' + err.message)
     }
   }
 
@@ -198,6 +200,7 @@ export default function CustomerSearch({ onSelect, selected }) {
             }}
           >Cancelar</button>
         </div>
+        <toast.Toast />
       </div>
     )
   }
@@ -267,6 +270,7 @@ export default function CustomerSearch({ onSelect, selected }) {
           </span>
         </div>
       )}
+      <toast.Toast />
     </div>
   )
 }

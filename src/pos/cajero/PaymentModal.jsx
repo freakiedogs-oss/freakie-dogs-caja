@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import CustomerSearch from './CustomerSearch'
+import { useToast } from '../../hooks/useToast'
 
 const DTE_TYPES = [
   { key: 'ticket',  label: '🧾 Ticket',   desc: 'Comprobante interno' },
@@ -19,6 +20,7 @@ const METODO_DISPLAY = {
 const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 'Industrial', 'Hipotecario', 'Otro']
 
 export default function PaymentModal({ items, total, onConfirm, onComplete, onClose, saving }) {
+  const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
   const [efectivo, setEfectivo] = useState('')
   const [tarjeta, setTarjeta]   = useState('')
@@ -99,7 +101,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
       setDteError(result?.dteError || null)
       setConfirmed(true)
     } catch (err) {
-      alert('Error al procesar pago: ' + err.message)
+      toast.error('Error al procesar pago: ' + err.message)
     } finally {
       setProcessing(false)
     }
@@ -196,6 +198,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
             </button>
           </div>
         </div>
+        <toast.Toast />
       </div>
     )
   }
@@ -461,6 +464,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
         <button className="pos-cancelar-btn" onClick={onClose}>
           Cancelar
         </button>
+        <toast.Toast />
       </div>
     </div>
   )

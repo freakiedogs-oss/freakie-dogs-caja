@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { db } from '../../supabase'
+import { useToast } from '../../hooks/useToast'
 
 /**
  * NotaCreditoModal — Emitir NC (tipo 05) contra un DTE existente
@@ -23,6 +24,7 @@ function getPosPin() {
 }
 
 export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
+  const toast = useToast()
   const [motivo, setMotivo]     = useState('')
   const [items, setItems]       = useState(() =>
     (cuenta.pos_cuenta_items || []).map(it => ({
@@ -49,8 +51,8 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
   }
 
   const handleEmitir = async () => {
-    if (!motivo.trim()) { alert('Ingresa el motivo de la Nota de Crédito'); return }
-    if (itemsSeleccionados.length === 0) { alert('Selecciona al menos un ítem'); return }
+    if (!motivo.trim()) { toast.warning('Ingresa el motivo de la Nota de Crédito'); return }
+    if (itemsSeleccionados.length === 0) { toast.warning('Selecciona al menos un ítem'); return }
     setProcessing(true)
     setError(null)
 
@@ -238,6 +240,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
           {processing ? '⏳ Emitiendo NC...' : `📋 Emitir NC por $${totalNC.toFixed(2)}`}
         </button>
         <button className="pos-cancelar-btn" onClick={onClose}>Cancelar</button>
+        <toast.Toast />
       </div>
     </div>
   )

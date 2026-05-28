@@ -3,6 +3,7 @@ import { db } from '../supabase'
 import { STORES } from '../config'
 import { anularDTE } from './cajero/dteService'
 import NotaCreditoModal from './cajero/NotaCreditoModal'
+import { useToast } from '../hooks/useToast'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -51,6 +52,7 @@ function formatTime(isoStr) {
 export default function HistorialCobros({ user, onBack }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
+  const toast = useToast()
 
   const [cuentas, setCuentas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -126,7 +128,7 @@ export default function HistorialCobros({ user, onBack }) {
       setCuentas(cuentasData || [])
     } catch (err) {
       console.error('Error cargando historial:', err)
-      alert('Error al cargar historial: ' + err.message)
+      toast.error('Error al cargar historial: ' + err.message)
     } finally {
       setLoading(false)
     }
@@ -209,14 +211,14 @@ export default function HistorialCobros({ user, onBack }) {
   // ── ANULAR DTE ──
   const handleAnularDTE = async (cuenta) => {
     if (!cuenta.dte_uuid) {
-      alert('Esta cuenta no tiene código de generación DTE')
+      toast.warning('Esta cuenta no tiene código de generación DTE')
       return
     }
 
     // Check if invoice is older than 72h
     const horasDesde = (Date.now() - new Date(cuenta.cobrada_at).getTime()) / 3600000
     if (horasDesde > 72) {
-      alert('⚠️ Esta factura tiene más de 72 horas. La anulación puede ser rechazada por Hacienda.')
+      toast.warning('Esta factura tiene más de 72 horas. La anulación puede ser rechazada por Hacienda.')
       return
     }
 
@@ -227,7 +229,7 @@ export default function HistorialCobros({ user, onBack }) {
       '(Cancelar para no anular)'
     )
     if (!motivo || motivo.trim().length < 5) {
-      if (motivo !== null) alert('El motivo debe tener al menos 5 caracteres')
+      if (motivo !== null) toast.warning('El motivo debe tener al menos 5 caracteres')
       return
     }
 
@@ -257,17 +259,13 @@ export default function HistorialCobros({ user, onBack }) {
         })
         .eq('id', cuenta.id)
 
-      alert(
-        `✅ DTE Anulado exitosamente\n\n` +
-        `Sello: ${result.selloRecibido || 'N/A'}\n` +
-        `El documento ha sido invalidado ante Hacienda.`
-      )
+      toast.success(`DTE Anulado · Sello: ${result.selloRecibido || 'N/A'}`)
 
       // Refrescar lista
       setRefreshKey(k => k + 1)
     } catch (err) {
       console.error('Error anulando DTE:', err)
-      alert(`❌ Error al anular DTE:\n\n${err.message}`)
+      toast.error(`Error al anular DTE: ${err.message}`)
     } finally {
       setAnulando(null)
     }
@@ -498,6 +496,7 @@ export default function HistorialCobros({ user, onBack }) {
       {/* ── Nota de Crédito Modal ── */}
       {ncCuenta && <NotaCreditoModal cuenta={ncCuenta} onClose={() => { setNcCuenta(null); load() }} onSuccess={() => { /* no cerrar — el usuario ve resultado y da click en Cerrar */ }} />}
 
+      <toast.Toast />
     </div>
   )
 }
