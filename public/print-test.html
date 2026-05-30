@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Freakie POS · Prueba de impresión</title>
+<style>
+  :root{--bg:#141418;--surface:#1c1c22;--card:#1e1e26;--accent:#ff6b35;--teal:#2dd4a8;
+        --text:#e8e6ef;--muted:#8b8997;--border:#2a2a32;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);
+       color:var(--text);padding:16px;max-width:560px;margin:0 auto;line-height:1.4}
+  h1{font-size:20px;margin-bottom:2px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:14px;color:var(--teal);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+  input,select{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);
+        border-radius:10px;padding:10px;font-size:15px}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+  button{border:none;border-radius:12px;padding:14px 10px;font-size:15px;font-weight:700;cursor:pointer;color:#fff}
+  .b-comanda{background:var(--accent)}.b-pre{background:#5b6cff}.b-fact{background:var(--teal);color:#06241b}
+  .b-wide{grid-column:1/3}
+  .modebar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .modebar button{flex:1;padding:9px 6px;font-size:12px;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+  .modebar button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .hint{font-size:12px;color:var(--muted);margin-top:10px}
+  .ok{color:var(--teal)} .warn{color:var(--accent)}
+  pre{background:#0c0c10;border:1px solid var(--border);border-radius:10px;padding:10px;font-size:11px;
+      color:#9fe;overflow:auto;max-height:180px;white-space:pre-wrap;margin-top:8px}
+  .step{background:var(--surface);border-radius:10px;padding:10px;font-size:13px;margin-bottom:8px}
+  .step b{color:var(--teal)}
+  code{background:#0c0c10;padding:1px 6px;border-radius:6px;color:#ffd9a8}
+</style>
+</head>
+<body>
+  <h1>🍔 Freakie POS · Prueba de impresión</h1>
+  <div class="sub">RPT-006B · Cafetalón · <span id="ip">192.168.1.130:9100</span></div>
+
+  <div class="card">
+    <h2>1 · Configurar RawBT (una vez)</h2>
+    <div class="step"><b>1.</b> Instala <b>RawBT</b> desde Play Store en este tablet.</div>
+    <div class="step"><b>2.</b> Abre RawBT → menú → <b>Connection / Conexión</b> → tipo <b>Network / Wi-Fi</b>.</div>
+    <div class="step"><b>3.</b> IP <code>192.168.1.130</code> · Puerto <code>9100</code> → Guardar.</div>
+    <div class="step"><b>4.</b> En RawBT, ancho de papel <b>80mm</b> y "Print as image" <b>OFF</b> (para que respete los comandos ESC/POS).</div>
+    <div class="hint">El tablet debe estar en la <b>misma red Wi-Fi</b> que la impresora.</div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Modo de envío</h2>
+    <div class="modebar">
+      <button data-mode="escpos" class="on">RawBT ESC/POS</button>
+      <button data-mode="texto">RawBT texto</button>
+      <button data-mode="sistema">Sistema</button>
+    </div>
+    <div class="hint" id="modehint">ESC/POS = comandos reales (negritas, QR, corte). Recomendado.</div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Datos de prueba</h2>
+    <div class="row">
+      <div><label>Mesa</label><input id="mesa" value="5"></div>
+      <div><label>Orden #</label><input id="orden" value="1043"></div>
+    </div>
+    <label>Mesero/Cajero</label><input id="mesero" value="Jose">
+  </div>
+
+  <div class="card">
+    <h2>4 · Imprimir</h2>
+    <div class="btns">
+      <button class="b-comanda" onclick="go('comanda')">📋 COMANDA<br>(cocina)</button>
+      <button class="b-pre" onclick="go('precuenta')">🧾 PRE-CUENTA<br>(con precios)</button>
+      <button class="b-fact b-wide" onclick="go('factura')">💳 FACTURA / TICKET (con QR DGII)</button>
+    </div>
+    <div class="hint" id="status">Listo.</div>
+    <pre id="log" style="display:none"></pre>
+  </div>
+
+<script>
+// ───────── ESC/POS builder (inline, igual a src/pos/print/escpos.js) ─────────
+const PC850={'á':0xA0,'é':0x82,'í':0xA1,'ó':0xA2,'ú':0xA3,'Á':0xB5,'É':0x90,'Í':0xD6,'Ó':0xE0,'Ú':0xE9,'ñ':0xA4,'Ñ':0xA5,'ü':0x81,'Ü':0x9A,'¿':0xA8,'¡':0xAD,'°':0xF8};
+const FB={'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¿':'?','¡':'!','°':'o','–':'-','—':'-','’':"'","“":'"','”':'"','€':'EUR','…':'...','•':'*'};
+class Ticket{
+  constructor(cols=48){this.cols=cols;this.b=[];this.raw(0x1b,0x40).raw(0x1b,0x74,0x02);}
+  raw(...x){for(const v of x)this.b.push(v&0xff);return this;}
+  _e(ch){const c=ch.charCodeAt(0);if(c<128)return c;if(PC850[ch]!=null)return PC850[ch];const f=FB[ch];if(f&&f.length===1)return f.charCodeAt(0);return 0x3f;}
+  text(s=''){for(const ch of String(s)){const f=FB[ch];if(f&&f.length>1){for(const k of f)this.b.push(k.charCodeAt(0));}else this.b.push(this._e(ch));}return this;}
+  align(a){return this.raw(0x1b,0x61,a==='center'?1:a==='right'?2:0);}
+  bold(o=true){return this.raw(0x1b,0x45,o?1:0);}
+  invert(o=true){return this.raw(0x1d,0x42,o?1:0);}
+  size(w=1,h=1){return this.raw(0x1d,0x21,(((w-1)&7)<<4)|((h-1)&7));}
+  normal(){return this.size(1,1).bold(false).invert(false);}
+  feed(n=1){return this.raw(0x1b,0x64,n&0xff);}
+  ln(s=''){this.text(s);return this.raw(0x0a);}
+  hr(c='-'){return this.ln(c.repeat(this.cols));}
+  row(l,r){l=String(l);r=String(r);const sp=this.cols-l.length-r.length;if(sp<1){this.ln(l);return this.align('right').ln(r).align('left');}return this.ln(l+' '.repeat(sp)+r);}
+  wrap(s,ind=0){const w=String(s).split(/\s+/);let line='';const p=' '.repeat(ind);for(const x of w){const c=line?line+' '+x:x;if(c.length>this.cols){this.ln(line);line=p+x;}else line=c;}if(line)this.ln(line);return this;}
+  qr(d,sz=6){d=String(d);this.raw(0x1d,0x28,0x6b,3,0,0x31,0x43,sz);this.raw(0x1d,0x28,0x6b,3,0,0x31,0x45,0x31);const len=d.length+3;this.raw(0x1d,0x28,0x6b,len&0xff,(len>>8)&0xff,0x31,0x50,0x30);this.text(d);this.raw(0x1d,0x28,0x6b,3,0,0x31,0x51,0x30);return this;}
+  cut(){this.feed(4);return this.raw(0x1d,0x56,0x42,0x00);}
+  base64(){let s='';for(const x of this.b)s+=String.fromCharCode(x);return btoa(s);}
+}
+const money=n=>'$'+Number(n||0).toFixed(2);
+const horaSV=()=>new Date().toLocaleString('es-SV',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+const fechaISO=()=>new Date(Date.now()-6*3600*1000).toISOString().slice(0,10);
+
+// datos de prueba
+function sample(){
+  return {
+    storeName:'Plaza Cafetalón', mesa:document.getElementById('mesa').value,
+    orden:document.getElementById('orden').value, mesero:document.getElementById('mesero').value,
+    tipoLabel:'Comer aquí',
+    items:[
+      {qty:2,nombre:'Freakie Dog',precio:4.50,modificadores:['Extra queso','Sin cebolla'],nota:'Bien cocido'},
+      {qty:1,nombre:'Smash Burger Duo',precio:7.25,modificadores:['Papas curly']},
+      {qty:2,nombre:'Limonada de fresa',precio:2.00},
+    ],
+    subtotal:20.25, descuento:0, propina:0, total:20.25, metodoPago:'efectivo',
+    dte:{tipo:'factura',label:'FACTURA (Consumidor Final)',numeroControl:'DTE-01-M001P001-000000000001043',
+         codigoGeneracion:'5B2A1C90-AC42-4E51-9F3D-7A1E2C9D4B88',sello:'2026A1B2C3D4E5F60718293A4B5C6D7E8F90',fecha:new Date()},
+    cliente:null,
+  };
+}
+
+function buildComanda(c,cols=48){const t=new Ticket(cols);
+  t.align('center').bold(true).size(2,2).ln('COMANDA').normal();
+  t.bold(true).size(1,2).ln(c.mesa?('MESA '+c.mesa):(c.tipoLabel||'PARA LLEVAR').toUpperCase()).normal();
+  t.align('left').hr();
+  if(c.orden)t.row('Orden:','#'+c.orden);t.row('Hora:',horaSV());if(c.mesero)t.row('Mesero:',c.mesero);t.hr();
+  for(const it of c.items){t.bold(true).size(1,2).ln(String(it.qty).padStart(2,' ')+'  '+String(it.nombre).toUpperCase()).normal();
+    for(const m of it.modificadores||[])t.ln('     + '+m);if(it.nota){t.invert(true).wrap('  ! '+it.nota+'  ',5);t.invert(false);}}
+  t.hr().align('center').ln('- FIN -').feed(1).cut();return t;}
+
+function buildPreCuenta(c,cols=48){const t=new Ticket(cols);
+  t.align('center').bold(true).size(2,2).ln('FREAKIE DOGS').normal();
+  t.align('center').ln(c.storeName).bold(true).ln('* PRE-CUENTA *').bold(false).ln('NO ES COMPROBANTE FISCAL');
+  t.align('left').hr();if(c.mesa)t.row('Mesa:','#'+c.mesa);if(c.orden)t.row('Orden:','#'+c.orden);t.row('Fecha:',horaSV());if(c.mesero)t.row('Mesero:',c.mesero);t.hr();
+  for(const it of c.items){t.row((it.qty+'x '+it.nombre).slice(0,cols-9),money(it.precio*it.qty));for(const m of it.modificadores||[])t.ln('   + '+m);}
+  t.hr().row('SUBTOTAL',money(c.subtotal));if(c.descuento>0)t.row('DESCUENTO','-'+money(c.descuento));
+  t.bold(true).size(1,2).row('TOTAL',money(c.total)).normal();
+  t.feed(1).align('center').ln('Propina sugerida:').ln('10% '+money(c.total*0.1)+'   15% '+money(c.total*0.15));
+  t.feed(1).ln('Gracias por su visita').feed(1).cut();return t;}
+
+function buildFactura(c,cols=48){const t=new Ticket(cols);const dte=c.dte;
+  t.align('center').bold(true).size(2,2).ln('FREAKIE DOGS').normal();
+  t.align('center').ln('FREAKIE DOGS, S.A. de C.V.').ln('NIT: 0614-0512-231010').ln('NRC: 3368168').ln(c.storeName).hr();
+  t.align('center').bold(true).ln(dte?dte.label:'TICKET INTERNO').bold(false).align('left');
+  if(dte){if(dte.numeroControl)t.ln('N° Control: '+dte.numeroControl);if(dte.codigoGeneracion){t.ln('Cód. Generación:').ln(dte.codigoGeneracion);}if(dte.sello){t.ln('Sello:').wrap(dte.sello);}t.row('Fecha emisión:',fechaISO());}
+  t.hr();
+  for(const it of c.items)t.row((it.qty+'x '+it.nombre).slice(0,cols-9),money(it.precio*it.qty));
+  t.hr().row('SUBTOTAL',money(c.subtotal));if(c.descuento>0)t.row('DESCUENTO','-'+money(c.descuento));
+  t.bold(true).size(1,2).row('TOTAL',money(c.total)).normal();if(c.metodoPago)t.row('Pago:',c.metodoPago.toUpperCase());
+  if(dte&&dte.codigoGeneracion){const url='https://admin.factura.gob.sv/consultaPublica?ambiente=01&codGen='+dte.codigoGeneracion+'&fechaEmi='+fechaISO();
+    t.feed(1).align('center').ln('Consulta este DTE:').qr(url,6).ln('admin.factura.gob.sv');}
+  t.feed(1).align('center').ln('Gracias por su compra').ln('¡Vuelva pronto!').feed(1).cut();return t;}
+
+// texto plano (fallback RawBT estilo Kaeru)
+function plano(c,tipo){const L=[];const w=t=>L.push(t);
+  if(tipo==='comanda'){w('======== COMANDA ========');w(c.mesa?('   MESA '+c.mesa):'  PARA LLEVAR');w('Orden #'+c.orden+'  '+horaSV());if(c.mesero)w('Mesero: '+c.mesero);w('-------------------------');
+    for(const it of c.items){w(it.qty+'  '+it.nombre.toUpperCase());for(const m of it.modificadores||[])w('   + '+m);if(it.nota)w('   ! '+it.nota);}w('--------- FIN ---------');}
+  else{w('===== FREAKIE DOGS =====');w(c.storeName);w(tipo==='factura'?(c.dte?c.dte.label:'TICKET'):'PRE-CUENTA');w(horaSV());w('-------------------------');
+    for(const it of c.items)w(it.qty+'x '+it.nombre+'  '+money(it.precio*it.qty));w('-------------------------');w('TOTAL  '+money(c.total));
+    if(tipo==='factura'&&c.dte)w('DTE '+c.dte.numeroControl);}
+  w('\n\n\n');return L.join('\n');}
+
+// ───────── modo & despacho ─────────
+let MODE='escpos';
+document.querySelectorAll('.modebar button').forEach(btn=>btn.onclick=()=>{
+  document.querySelectorAll('.modebar button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');MODE=btn.dataset.mode;
+  document.getElementById('modehint').textContent=
+    MODE==='escpos'?'ESC/POS = comandos reales (negritas, QR, corte). Recomendado.':
+    MODE==='texto'?'Texto plano: RawBT lo formatea. Útil si ESC/POS sale raro.':
+    'Sistema: abre el diálogo de impresión del navegador (AirPrint/CUPS).';
+});
+
+function setStatus(msg,cls){const s=document.getElementById('status');s.innerHTML=msg;s.className='hint '+(cls||'');}
+function showLog(txt){const l=document.getElementById('log');l.style.display='block';l.textContent=txt;}
+
+function sysPrint(tipo,c){
+  const cols=48;const t={comanda:buildComanda,precuenta:buildPreCuenta,factura:buildFactura}[tipo](c,cols);
+  // render simple monospace para el navegador
+  const txt=plano(c,tipo);
+  const w=window.open('','_blank','width=420,height=640');
+  w.document.write('<pre style="font-family:monospace;font-size:13px;width:80mm">'+txt.replace(/</g,'&lt;')+'</pre><script>onload=()=>setTimeout(print,300)<\/script>');
+  w.document.close();
+}
+
+function go(tipo){
+  const c=sample();
+  try{
+    if(MODE==='sistema'){sysPrint(tipo,c);setStatus('Abriendo diálogo del sistema…');return;}
+    if(MODE==='texto'){
+      const url='rawbt:'+encodeURIComponent(plano(c,tipo));
+      fire(url);setStatus('Enviado a RawBT (texto) ✓','ok');return;
+    }
+    const t={comanda:buildComanda,precuenta:buildPreCuenta,factura:buildFactura}[tipo](c);
+    const b64=t.base64();
+    fire('rawbt:base64,'+b64);
+    setStatus('Enviado a RawBT (ESC/POS) ✓ — '+t.b.length+' bytes','ok');
+    showLog('rawbt:base64,'+b64.slice(0,120)+'…');
+  }catch(e){setStatus('Error: '+e.message,'warn');}
+}
+function fire(url){const a=document.createElement('a');a.href=url;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>a.remove(),1500);}
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
 import { emitDTE } from './dteService'
+import { printComanda, printPreCuenta, printFactura } from '../print/printService'
 import { useToast } from '../../hooks/useToast'
 
 // ──────────────────────────────────────────────
@@ -261,47 +262,38 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const newItems = items.filter(i => !i.saved)
   const hasNew   = newItems.length > 0
 
-  // ── PRE-CUENTA ──
-  const handlePreCuenta = () => {
+  // ── Normaliza el carrito al formato que espera printService ──
+  const buildCuentaPrint = (lista = items) => ({
+    storeCode,
+    storeName,
+    mesa: mesaActual,
+    tipoLabel: tipoInfo.label,
+    orden: null,
+    mesero: user?.nombre || user?.name || null,
+    cajero: user?.nombre || user?.name || null,
+    comandaNumero: comandaSeq,
+    items: lista.map(i => ({
+      nombre: i.nombre,
+      precio: i.precio,
+      qty: i.qty,
+      nota: i.nota || null,
+      modificadores: i.modificadores || i.mods || [],
+    })),
+    subtotal,
+    descuento: descuentoMonto,
+    total,
+    propinaSugerida: !!mesaActual,
+  })
+
+  // ── PRE-CUENTA (impresión térmica centralizada) ──
+  const handlePreCuenta = async () => {
     if (items.length === 0) return
-    const storeName_ = storeName
-    const mesaStr    = mesaActual ? `Mesa #${mesaActual}` : (tipoInfo.label)
-    const now        = new Date(Date.now() - 6 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 16)
-
-    const rows = items.map(i =>
-      `<tr>
-        <td>${i.qty}x</td>
-        <td>${i.nombre}${i.nota ? ` <span style="color:#888;font-size:11px">(${i.nota})</span>` : ''}</td>
-        <td style="text-align:right">$${(i.precio * i.qty).toFixed(2)}</td>
-      </tr>`
-    ).join('')
-
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Pre-Cuenta</title>
-    <style>
-      body { font-family: monospace; font-size: 13px; margin: 20px; max-width: 320px; }
-      h2 { text-align: center; margin: 0; font-size: 16px; }
-      .sub { text-align: center; color: #555; font-size: 11px; margin-bottom: 12px; }
-      table { width: 100%; border-collapse: collapse; }
-      td { padding: 3px 2px; vertical-align: top; }
-      .total { border-top: 1px dashed #333; margin-top: 8px; padding-top: 8px;
-               display:flex; justify-content:space-between; font-weight:bold; font-size:15px; }
-      .aviso { text-align:center; color:#888; font-size:10px; margin-top:14px; }
-      hr { border: none; border-top: 1px dashed #999; }
-    </style></head><body>
-    <h2>🍔 FREAKIE DOGS</h2>
-    <p class="sub">${storeName_} · ${mesaStr}<br>${now}</p>
-    <hr>
-    <table>${rows}</table>
-    <hr>
-    <div class="total"><span>SUBTOTAL</span><span>$${subtotal.toFixed(2)}</span></div>
-    <p class="aviso">— PRE-CUENTA —<br>No es documento fiscal</p>
-    <script>window.onload=()=>{window.print();}</script>
-    </body></html>`
-
-    const w = window.open('', '_blank', 'width=400,height=600')
-    w.document.write(html)
-    w.document.close()
+    try {
+      await printPreCuenta(buildCuentaPrint())
+    } catch (err) {
+      console.error('Error al imprimir pre-cuenta:', err)
+      toast.error('No se pudo imprimir la pre-cuenta')
+    }
   }
 
   // ── MOVER MESA ──
@@ -377,6 +369,14 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           comanda_numero: comandaSeq,
         }))
       )
+
+      // Imprime la comanda térmica con SOLO los ítems recién enviados a cocina
+      try {
+        await printComanda(buildCuentaPrint(newItems))
+      } catch (pErr) {
+        console.error('Comanda enviada pero no se imprimió:', pErr)
+        toast.error('Comanda guardada, pero no se imprimió')
+      }
 
       setComandaSeq(s => s + 1)
       setItems(prev => prev.map(i => ({ ...i, saved: true })))
@@ -532,6 +532,39 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         await db.rpc('pos_deducir_inventario', { p_cuenta_id: currentCuentaId, p_store_code: storeCode })
       } catch (invErr) {
         console.warn('Inventario no deducido:', invErr.message)
+      }
+
+      // 8. Imprimir factura / ticket (best-effort — no bloquea el cobro)
+      try {
+        const DTE_LABEL = {
+          factura: 'FACTURA (Consumidor Final)',
+          ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
+          se:      'FACTURA SUJETO EXCLUIDO',
+        }
+        const cliente = paymentData.cliente
+          ? { nombre: paymentData.cliente.nombre,
+              doc: paymentData.cliente.nit || paymentData.cliente.numDocumento || paymentData.cliente.nrc || null }
+          : null
+        await printFactura({
+          ...buildCuentaPrint(items),
+          propina:    paymentData.propina || 0,
+          total:      total + (paymentData.propina || 0),
+          metodoPago: paymentData.metodo,
+          iva:        dteResult?.monto_iva ?? null,
+          cliente,
+          fecha:      new Date(),
+          // Solo es fiscal si el DTE se emitió OK; si falló, sale como ticket interno
+          dte: dteResult ? {
+            tipo:             paymentData.tipoDte,
+            label:            DTE_LABEL[paymentData.tipoDte] || 'DTE',
+            numeroControl:    dteResult.numero_control || null,
+            codigoGeneracion: dteResult.codigo_generacion || null,
+            sello:            dteResult.sello_recepcion || null,
+            fecha:            new Date(),
+          } : null,
+        })
+      } catch (pErr) {
+        console.error('No se imprimió la factura:', pErr)
       }
 
       return { cuenta: { id: currentCuentaId }, dte: dteResult, dteError }
