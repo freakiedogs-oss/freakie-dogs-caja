@@ -534,44 +534,45 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         console.warn('Inventario no deducido:', invErr.message)
       }
 
-      // 8. Imprimir factura / ticket (best-effort — no bloquea el cobro)
-      try {
-        const DTE_LABEL = {
-          factura: 'FACTURA (Consumidor Final)',
-          ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
-          se:      'FACTURA SUJETO EXCLUIDO',
-        }
-        const cliente = paymentData.cliente
-          ? { nombre: paymentData.cliente.nombre,
-              doc: paymentData.cliente.nit || paymentData.cliente.numDocumento || paymentData.cliente.nrc || null }
-          : null
-        await printFactura({
-          ...buildCuentaPrint(items),
-          propina:    paymentData.propina || 0,
-          total:      total + (paymentData.propina || 0),
-          metodoPago: paymentData.metodo,
-          iva:        dteResult?.monto_iva ?? null,
-          cliente,
-          fecha:      new Date(),
-          // Solo es fiscal si el DTE se emitió OK; si falló, sale como ticket interno
-          dte: dteResult ? {
-            tipo:             paymentData.tipoDte,
-            label:            DTE_LABEL[paymentData.tipoDte] || 'DTE',
-            numeroControl:    dteResult.numero_control || null,
-            codigoGeneracion: dteResult.codigo_generacion || null,
-            sello:            dteResult.sello_recepcion || null,
-            fecha:            new Date(),
-          } : null,
-        })
-      } catch (pErr) {
-        console.error('No se imprimió la factura:', pErr)
-      }
-
+      // La impresión de la factura/ticket se dispara desde el botón de la
+      // pantalla de confirmación (PaymentModal → onPrintFactura), porque el
+      // navegador bloquea el deep-link rawbt: si no hay gesto del usuario
+      // reciente (la emisión del DTE a Hacienda puede tardar varios segundos).
       return { cuenta: { id: currentCuentaId }, dte: dteResult, dteError }
 
     } finally {
       setSaving(false)
     }
+  }
+
+  // Imprime factura/ticket desde el botón de confirmación (gesto del usuario).
+  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente }) => {
+    const DTE_LABEL = {
+      factura: 'FACTURA (Consumidor Final)',
+      ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
+      se:      'FACTURA SUJETO EXCLUIDO',
+    }
+    const clientePrint = cliente
+      ? { nombre: cliente.nombre, doc: cliente.nit || cliente.numero_documento || cliente.nrc || null }
+      : null
+    return printFactura({
+      ...buildCuentaPrint(items),
+      propina,
+      total:      total + (propina || 0),
+      metodoPago: metodo,
+      iva:        dteResult?.monto_iva ?? null,
+      cliente:    clientePrint,
+      fecha:      new Date(),
+      // Solo es fiscal si el DTE se emitió OK; si falló, sale como ticket interno
+      dte: dteResult ? {
+        tipo:             tipoDte,
+        label:            DTE_LABEL[tipoDte] || 'DTE',
+        numeroControl:    dteResult.numero_control || null,
+        codigoGeneracion: dteResult.codigo_generacion || null,
+        sello:            dteResult.sello_recepcion || null,
+        fecha:            new Date(),
+      } : null,
+    })
   }
 
   // handlePaymentConfirm devuelve resultado (NO cierra modal)
@@ -871,6 +872,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           total={total}
           onConfirm={handlePaymentConfirm}
           onComplete={handlePaymentComplete}
+          onPrintFactura={handlePrintFactura}
           onClose={() => setShowPayModal(false)}
           saving={saving}
         />

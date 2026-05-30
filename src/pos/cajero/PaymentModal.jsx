@@ -19,12 +19,14 @@ const METODO_DISPLAY = {
 
 const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 'Industrial', 'Hipotecario', 'Otro']
 
-export default function PaymentModal({ items, total, onConfirm, onComplete, onClose, saving }) {
+export default function PaymentModal({ items, total, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
   const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
   const [efectivo, setEfectivo] = useState('')
   const [tarjeta, setTarjeta]   = useState('')
-  const [propina, setPropina]   = useState('')
+  // Propina por defecto 10% del total
+  const [propina, setPropina]   = useState(() => (total > 0 ? (total * 0.10).toFixed(2) : ''))
+  const [printed, setPrinted]   = useState(false)
   const [tipoDte, setTipoDte]   = useState('ticket')
   const [ref, setRef]           = useState('')
   const [banco, setBanco]       = useState('')
@@ -191,8 +193,18 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
 
             <button
               className="pos-confirmar-btn"
+              onClick={() => {
+                onPrintFactura?.({ dteResult, tipoDte, propina: propinaNum, metodo, cliente })
+                setPrinted(true)
+              }}
+              style={{ marginTop: 12, background: '#2dd4a8', color: '#06241b' }}
+            >
+              🖨 {printed ? 'Imprimir de nuevo' : `Imprimir ${tipoDte === 'ticket' ? 'ticket' : 'factura'}`}
+            </button>
+            <button
+              className="pos-confirmar-btn"
               onClick={onComplete || onClose}
-              style={{ marginTop: 12 }}
+              style={{ marginTop: 8 }}
             >
               ✅ Nueva orden
             </button>
@@ -390,7 +402,40 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onCl
 
         {/* Propina */}
         <div className="pos-payment-field">
-          <label className="pos-payment-label">Propina (opcional)</label>
+          <label className="pos-payment-label">Propina</label>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+            {[10, 15, 20].map(pct => {
+              const val = total * pct / 100
+              const active = Math.abs(propinaNum - val) < 0.005 && propinaNum > 0
+              return (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => setPropina(val.toFixed(2))}
+                  style={{
+                    flex: 1, padding: '7px 4px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                    background: active ? '#2dd4a822' : '#1e1e26',
+                    border: `1px solid ${active ? '#2dd4a8' : '#2a2a32'}`,
+                    color: active ? '#2dd4a8' : '#e8e6ef',
+                  }}
+                >
+                  {pct}%<br /><span style={{ fontSize: 10, opacity: 0.8 }}>${val.toFixed(2)}</span>
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              onClick={() => setPropina('0')}
+              style={{
+                padding: '7px 10px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                background: propinaNum === 0 ? '#3a1a1a' : '#1e1e26',
+                border: `1px solid ${propinaNum === 0 ? '#f87171' : '#2a2a32'}`,
+                color: propinaNum === 0 ? '#f87171' : '#8b8997',
+              }}
+            >
+              Sin<br />propina
+            </button>
+          </div>
           <input
             className="pos-payment-input"
             type="number" step="0.25" min="0"
