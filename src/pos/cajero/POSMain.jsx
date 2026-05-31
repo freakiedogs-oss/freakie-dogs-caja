@@ -66,6 +66,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // Contexto de la cuenta actual
   const tipo     = cuentaCtx?.tipo     || 'para_llevar'
   const mesaRef  = cuentaCtx?.mesa_ref || null
+  // Demografía recibida al abrir mesa (POSHome) — se guarda al crear la cuenta
+  const paxCtx   = cuentaCtx?.pax || null
+  const paxFields = paxCtx ? { pax_mujeres: paxCtx.mujeres || 0, pax_hombres: paxCtx.hombres || 0, pax_ninos: paxCtx.ninos || 0 } : {}
   const tipoInfo = TIPO_INFO[tipo] || TIPO_INFO['para_llevar']
 
   // Menú data
@@ -328,6 +331,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             subtotal:   subtotal,
             iva:        0,
             total:      total,
+            ...paxFields,
           })
           .select()
           .single()
@@ -423,6 +427,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             dte_tipo:    DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id:  paymentData.cliente?.id || null,
             cobrada_at:  new Date().toISOString(),
+            ...paxFields,
           })
           .select()
           .single()

@@ -84,6 +84,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const [filtro,       setFiltro]       = useState('todos')   // clave activa
   const [refreshKey,   setRefreshKey]   = useState(0)
   const [mesaMenu,     setMesaMenu]     = useState(null)      // mesa con menú contextual
+  const [aperturaMesa, setAperturaMesa] = useState(null)      // mesa libre que se está abriendo (modal demografía)
+  const [pax,          setPax]          = useState({ m: 1, h: 1, k: 0 })
   const longPressRef   = useRef(null)
 
   // ── Carga ──
@@ -187,8 +189,26 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const handleMesaClick = (mesa) => {
     if (mesaMenu) { setMesaMenu(null); return } // cerrar menú si está abierto
     const c = cuentaPorMesa[String(mesa.numero)]
-    onStartOrder({ tipo: 'mesa', mesa_ref: String(mesa.numero), mesa_id: mesa.id, cuentaId: c?.id || null })
+    if (c) {
+      // Mesa ocupada → continuar su cuenta
+      onStartOrder({ tipo: 'mesa', mesa_ref: String(mesa.numero), mesa_id: mesa.id, cuentaId: c.id })
+    } else {
+      // Mesa libre → pedir demografía antes de abrir
+      setPax({ m: 1, h: 1, k: 0 })
+      setAperturaMesa(mesa)
+    }
   }
+
+  const handleAbrirMesa = () => {
+    if (!aperturaMesa) return
+    const m = aperturaMesa
+    setAperturaMesa(null)
+    onStartOrder({
+      tipo: 'mesa', mesa_ref: String(m.numero), mesa_id: m.id, cuentaId: null,
+      pax: { mujeres: pax.m, hombres: pax.h, ninos: pax.k },
+    })
+  }
+  const bump = (k, d) => setPax(p => ({ ...p, [k]: Math.max(0, p[k] + d) }))
 
   const handleCuentaClick = (c) => {
     onStartOrder({ tipo: c.tipo, mesa_ref: c.mesa_ref || null, mesa_id: null, cuentaId: c.id })
@@ -275,34 +295,41 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
               </div>
             </div>
 
-            <div className="poshome-mesas-grid">
-              {mesasZona.map(mesa => {
+            <div className="poshome-plano" style={{ position: 'relative', width: '100%', aspectRatio: '100 / 55', background: '#15110f', border: '1px dashed #43382f', borderRadius: 12, margin: '4px 0', overflow: 'hidden' }}>
+              {mesasZona.map((mesa, i) => {
                 const status  = getMesaStatus(mesa)
                 const cuenta  = cuentaPorMesa[String(mesa.numero)]
                 const colors  = MESA_STATUS_COLORS[status]
                 const itemCnt = cuenta?.pos_cuenta_items?.length || 0
+                // Posición: usa pos_x/pos_y (plano 100×55) o auto-grid si faltan
+                const hasPos = mesa.pos_x != null && parseFloat(mesa.pos_x) !== 0
+                const px = hasPos ? parseFloat(mesa.pos_x) : 5 + (i % 5) * 19
+                const py = hasPos ? parseFloat(mesa.pos_y) : 8 + Math.floor(i / 5) * 16
+                const pw = hasPos ? parseFloat(mesa.ancho || 13) : 15
+                const ph = hasPos ? parseFloat(mesa.alto || 10)  : 11
+                const redonda = (mesa.forma || '') === 'redonda'
                 return (
-                  <div key={mesa.id} style={{ position: 'relative' }}>
+                  <div key={mesa.id} style={{ position: 'absolute', left: `${px}%`, top: `${py / 55 * 100}%`, width: `${pw}%`, height: `${ph / 55 * 100}%` }}>
                   <button
                     className="poshome-mesa-tile"
-                    style={{ background: colors.bg, borderColor: colors.border }}
+                    style={{ width: '100%', height: '100%', margin: 0, background: colors.bg, borderColor: colors.border, borderRadius: redonda ? '50%' : 12, padding: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}
                     onClick={() => handleMesaClick(mesa)}
                     onTouchStart={() => handleMesaTouchStart(mesa)}
                     onTouchEnd={handleMesaTouchEnd}
                     onContextMenu={e => { e.preventDefault(); if (cuenta) setMesaMenu(mesa) }}
                   >
-                    <div className="poshome-mesa-num" style={{ color: colors.text }}>{mesa.numero}</div>
+                    <div className="poshome-mesa-num" style={{ color: colors.text, fontSize: 22, lineHeight: 1 }}>{mesa.numero}</div>
                     {status === 'libre' ? (
-                      <div className="poshome-mesa-status libre" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>libre · {mesa.capacidad || 4} <Icon name="users" size={12} /></div>
+                      <div className="poshome-mesa-status libre" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'center', fontSize: 10 }}>{mesa.capacidad || 4} <Icon name="users" size={10} /></div>
                     ) : (
                       <>
-                        <div className="poshome-mesa-total" style={{ color: colors.text }}>
+                        <div className="poshome-mesa-total" style={{ color: colors.text, fontSize: 13, fontWeight: 700 }}>
                           ${parseFloat(cuenta.subtotal || 0).toFixed(2)}
                         </div>
-                        <div className="poshome-mesa-meta">
-                          {itemCnt} ítem{itemCnt !== 1 ? 's' : ''} · {elapsed(cuenta.created_at)}
+                        <div className="poshome-mesa-meta" style={{ fontSize: 9 }}>
+                          {itemCnt} ít · {elapsed(cuenta.created_at)}
                         </div>
-                        {status === 'lista' && <div className="poshome-mesa-ready">✓ Lista</div>}
+                        {status === 'lista' && <div className="poshome-mesa-ready" style={{ fontSize: 9 }}>✓ Lista</div>}
                       </>
                     )}
                   </button>
@@ -316,11 +343,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                       <button
                         style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#f4a261', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
                         onClick={() => handleLiberarMesa(mesa)}
-                      >🔓 Liberar mesa</button>
+                      >Liberar mesa</button>
                       <button
                         style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#8b8997', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
                         onClick={() => setMesaMenu(null)}
-                      >✕ Cancelar</button>
+                      >Cancelar</button>
                     </div>
                   )}
                   </div>
@@ -450,6 +477,45 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </button>
         )}
       </div>
+
+      {/* ── MODAL APERTURA DE MESA (demografía) ── */}
+      {aperturaMesa && (
+        <div className="pos-modal-overlay" onClick={() => setAperturaMesa(null)}>
+          <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="pos-modal-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Icon name="users" size={18} color="#FFD900" /> Abrir Mesa #{aperturaMesa.numero}
+            </div>
+            <div style={{ color: '#9a9088', fontSize: 12, margin: '4px 0 14px' }}>
+              ¿Quiénes se sientan? Para estadística y ticket por persona.
+            </div>
+            {[
+              { k: 'm', label: 'Mujeres', color: '#ff7a6e' },
+              { k: 'h', label: 'Hombres', color: '#60a5fa' },
+              { k: 'k', label: 'Niños',   color: '#fbbf24', note: 'no cuentan para el promedio' },
+            ].map(row => (
+              <div key={row.k} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#241d19', border: '1px solid #332b27', borderRadius: 12, padding: '10px 14px', marginBottom: 9 }}>
+                <span style={{ flex: 1, fontWeight: 600, fontSize: 14, color: row.color }}>
+                  {row.label}{row.note && <span style={{ display: 'block', color: '#9a9088', fontWeight: 400, fontSize: 11 }}>{row.note}</span>}
+                </span>
+                <button onClick={() => bump(row.k, -1)} style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid #43382f', background: '#2b231e', color: '#fff', fontSize: 18, fontWeight: 700, cursor: 'pointer' }}>−</button>
+                <span style={{ minWidth: 22, textAlign: 'center', fontSize: 18, fontWeight: 800 }}>{pax[row.k]}</span>
+                <button onClick={() => bump(row.k, 1)} style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid #43382f', background: '#2b231e', color: '#fff', fontSize: 18, fontWeight: 700, cursor: 'pointer' }}>+</button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#2e1311', border: '1px solid #E62329', borderRadius: 12, padding: '11px 15px', margin: '6px 0 14px' }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#9a9088' }}>Total en mesa</div>
+                <div style={{ fontSize: 12, color: '#9a9088' }}>{pax.m}M · {pax.h}H · {pax.k}N</div>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#FFD900' }}>{pax.m + pax.h + pax.k}</div>
+            </div>
+            <button className="pos-confirmar-btn" onClick={handleAbrirMesa} disabled={pax.m + pax.h + pax.k === 0}>
+              Abrir mesa →
+            </button>
+            <button className="pos-cancelar-btn" onClick={() => setAperturaMesa(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
 
     </div>
   )
