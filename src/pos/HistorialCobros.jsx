@@ -49,7 +49,7 @@ function formatTime(isoStr) {
 // ──────────────────────────────────────────────
 // Componente Principal
 // ──────────────────────────────────────────────
-export default function HistorialCobros({ user, onBack }) {
+export default function HistorialCobros({ user, onBack, embedded = false }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
   const toast = useToast()
@@ -282,25 +282,21 @@ export default function HistorialCobros({ user, onBack }) {
   }
 
   return (
-    <div className="historial-cobros-root">
+    <div className="historial-cobros-root" style={embedded ? { height: '100%' } : undefined}>
 
-      {/* ── HEADER ── */}
+      {/* ── HEADER (oculto cuando va embebido en Órdenes) ── */}
+      {!embedded && (
       <header className="pos-header">
         <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
         <img src="/icon-192.png" className="pos-header-logo" alt="Freakie Dogs" />
         <span className="pos-header-brand">Freakie POS</span>
         <span className="pos-header-store">{storeName}</span>
-        <span
-          className="pos-header-btn"
-          style={{ background: '#2dd4a818', borderColor: '#2dd4a8', color: '#2dd4a8', cursor: 'default' }}
-        >
-          📋 Historial de Cobros
-        </span>
         <span className="pos-header-sep" />
         <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
         <button className="pos-header-btn danger" onClick={onBack}>Salir</button>
       </header>
+      )}
 
       {/* ── FILTRO DE FECHA ── */}
       <div style={{

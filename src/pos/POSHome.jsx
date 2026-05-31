@@ -480,7 +480,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {/* Historial: cajero+ (cajero, cajera, gerente, admin, ejecutivo, superadmin) */}
         {!MESERO_ROLES.includes(user.rol) && onGoToHistorial && (
           <button className="poshome-quick-btn" style={{ '--qt-color': '#2dd4a8' }} onClick={onGoToHistorial}>
-            <span className="poshome-quick-icon"><Icon name="list" size={22} /></span><span className="poshome-quick-label">Historial</span>
+            <span className="poshome-quick-icon"><Icon name="list" size={22} /></span><span className="poshome-quick-label">Órdenes</span>
           </button>
         )}
         {onGoToMenuAdmin && (

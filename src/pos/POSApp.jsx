@@ -3,7 +3,7 @@ import POSLogin from './POSLogin'
 import POSHome from './POSHome'
 import POSMain from './cajero/POSMain'
 import KDSScreen from './KDSScreen'
-import HistorialCobros from './HistorialCobros'
+import OrdenesView from './OrdenesView'
 import MenuAdminView from './admin/MenuAdminView'
 import { STORES } from '../config'
 
@@ -168,9 +168,9 @@ export default function POSApp() {
     return <KDSScreen user={posUser} onBack={handleBack} />
   }
 
-  // ── Historial de Cobros ──
+  // ── Órdenes (Activas + Historial) ──
   if (screen === 'historial') {
-    return <HistorialCobros user={posUser} onBack={handleBack} />
+    return <OrdenesView user={posUser} onBack={handleBack} onOpenOrder={handleStartOrder} />
   }
 
   // ── Admin Menú ──

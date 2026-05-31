@@ -806,6 +806,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               <span>${total.toFixed(2)}</span>
             </div>
 
+            {perms.preCuenta && items.length > 0 && (
+              <button
+                className="pos-clear-btn"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#e8e6ef', borderColor: '#43382f' }}
+                onClick={handlePreCuenta}
+              >
+                <Icon name="receipt" size={16} /> Pre-cuenta
+              </button>
+            )}
+
             {perms.comandar && (
               <button
                 className="pos-comandar-btn"
