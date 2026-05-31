@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
 import { fetchAllRows } from '../../utils/fetchPaginated'
 import { paletaC as C } from '@/theme'
+import { useToast } from '../../hooks/useToast'
 
 /* ═══════════════════════════════════════════════════════════════
    FREAKIE DOGS — Vista DTEs (item del sidebar Finanzas)
@@ -90,7 +91,7 @@ export default function DTEsView({ user }) {
         <button onClick={() => setSubtab('listado')} style={sBtn(subtab === 'listado')}>📋 Listado de DTEs</button>
         <button onClick={() => setSubtab('kpis')} style={sBtn(subtab === 'kpis')}>📊 Proveedores / Items / KPIs</button>
       </div>
-      {subtab === 'listado' ? <ListadoDTEs /> : <KPIsTab />}
+      {subtab === 'listado' ? <ListadoDTEs user={user} /> : <KPIsTab />}
     </div>
   )
 }
@@ -99,7 +100,8 @@ export default function DTEsView({ user }) {
 //   SUB-TAB 1: Listado de DTEs
 // ══════════════════════════════════════════════════════
 
-function ListadoDTEs() {
+function ListadoDTEs({ user }) {
+  const toast = useToast()
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
   const [categoriasOpts, setCategoriasOpts] = useState([])
@@ -115,11 +117,16 @@ function ListadoDTEs() {
   const [filtroEstadoPago, setFiltroEstadoPago] = useState('')
   const [filtroMetodo, setFiltroMetodo] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroInvalidado, setFiltroInvalidado] = useState('vigentes') // 'vigentes' | 'todos' | 'invalidados'
 
   // UI state
   const [expandedId, setExpandedId] = useState(null)
   const [items, setItems] = useState({}) // { dte_id: items[] }
   const [itemsLoading, setItemsLoading] = useState({})
+  const [invalModal, setInvalModal] = useState(null) // { dte, modo: 'invalidar'|'revertir' }
+
+  // Permisos: solo ejecutivo/superadmin/admin pueden invalidar DTEs
+  const canInvalidar = ['ejecutivo', 'superadmin', 'admin'].includes(user?.rol)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -173,6 +180,40 @@ function ListadoDTEs() {
     }
   }
 
+  // Invalidar / revertir DTE (proveedor refacturó sin emitir Nota de Crédito formal)
+  // RPC fn_invalidar_dte (SECURITY DEFINER, GRANT anon/auth)
+  const handleInvalidar = async ({ dte, modo, motivo }) => {
+    try {
+      const { data, error } = await db.rpc('fn_invalidar_dte', {
+        p_dte_id: dte.id,
+        p_codigo_gen: null,
+        p_motivo: motivo,
+        p_usuario_nombre: user?.nombre || user?.email || 'desconocido',
+        p_revertir: modo === 'revertir',
+      })
+      if (error) throw error
+      // Actualiza la fila in-place sin re-bajar todo el dataset
+      const updated = Array.isArray(data) ? data[0] : data
+      if (updated) {
+        setRows(prev => prev.map(r => r.id === dte.id ? { ...r,
+          invalidado: updated.invalidado,
+          fecha_invalidacion: updated.fecha_invalidacion,
+          motivo_invalidacion: updated.motivo_invalidacion,
+          invalidado_por: updated.invalidado_por,
+        } : r))
+      }
+      setInvalModal(null)
+      if (modo === 'revertir') {
+        toast.success('DTE re-activado — vuelve a contar en P&L y KPIs')
+      } else {
+        toast.success('DTE invalidado — excluido del P&L y KPIs')
+      }
+    } catch (e) {
+      console.error('fn_invalidar_dte', e)
+      toast.error('Error: ' + (e?.message || e))
+    }
+  }
+
   // Filtrado en memoria
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase()
@@ -188,9 +229,11 @@ function ListadoDTEs() {
       if (filtroEstadoPago && r.estado_pago !== filtroEstadoPago) return false
       if (filtroMetodo && r.metodo_pago !== filtroMetodo) return false
       if (filtroTipo && r.tipo_dte !== filtroTipo) return false
+      if (filtroInvalidado === 'vigentes' && r.invalidado) return false
+      if (filtroInvalidado === 'invalidados' && !r.invalidado) return false
       return true
     })
-  }, [rows, search, filtroCategoria, filtroSucursal, filtroEstadoPago, filtroMetodo, filtroTipo])
+  }, [rows, search, filtroCategoria, filtroSucursal, filtroEstadoPago, filtroMetodo, filtroTipo, filtroInvalidado])
 
   // Totales
   const totales = useMemo(() => {
@@ -277,6 +320,14 @@ function ListadoDTEs() {
               <option value="14">Sujeto Excluido (14)</option>
             </select>
           </div>
+          <div>
+            <label style={{ fontSize: 10, color: C.textMuted, display: 'block', marginBottom: 4 }}>Mostrar</label>
+            <select value={filtroInvalidado} onChange={e => setFiltroInvalidado(e.target.value)} style={sSelect}>
+              <option value="vigentes">Solo vigentes</option>
+              <option value="todos">Todos (incluye invalidados)</option>
+              <option value="invalidados">Solo invalidados</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -318,6 +369,7 @@ function ListadoDTEs() {
                 <th style={sTh}>Vencimiento</th>
                 <th style={sThR}>Saldo</th>
                 <th style={sTh}>PDF</th>
+                {canInvalidar && <th style={sTh} title="Invalidar / Revertir DTE">⊘</th>}
               </tr>
             </thead>
             <tbody>
@@ -327,14 +379,26 @@ function ListadoDTEs() {
                     onClick={() => toggleExpand(r.id)}
                     style={{
                       cursor: 'pointer',
-                      background: expandedId === r.id ? 'rgba(244,162,97,0.06)' : 'transparent',
+                      background: r.invalidado
+                        ? 'rgba(230,57,70,0.10)'
+                        : (expandedId === r.id ? 'rgba(244,162,97,0.06)' : 'transparent'),
+                      opacity: r.invalidado ? 0.65 : 1,
+                      textDecoration: r.invalidado ? 'line-through' : 'none',
                     }}
-                    onMouseEnter={e => { if (expandedId !== r.id) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
-                    onMouseLeave={e => { if (expandedId !== r.id) e.currentTarget.style.background = 'transparent' }}
+                    onMouseEnter={e => { if (!r.invalidado && expandedId !== r.id) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+                    onMouseLeave={e => { if (!r.invalidado && expandedId !== r.id) e.currentTarget.style.background = 'transparent' }}
                   >
                     <td style={sTd}>{expandedId === r.id ? '▾' : '▸'}</td>
                     <td style={sTd}>{r.fecha_emision}</td>
-                    <td style={sTd}><span style={sChip(C.gold)}>{r.tipo_dte_nombre || '—'}</span></td>
+                    <td style={sTd}>
+                      <span style={sChip(C.gold)}>{r.tipo_dte_nombre || '—'}</span>
+                      {r.invalidado && (
+                        <span
+                          style={{ ...sChip(C.red, 'rgba(230,57,70,0.20)'), marginLeft: 4, fontWeight: 700 }}
+                          title={r.motivo_invalidacion || ''}
+                        >INVALIDADO</span>
+                      )}
+                    </td>
                     <td style={{ ...sTd, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.proveedor_nombre}>
                       {r.proveedor_nombre || '—'}
                     </td>
@@ -375,10 +439,27 @@ function ListadoDTEs() {
                         >📄</a>
                       ) : '—'}
                     </td>
+                    {canInvalidar && (
+                      <td style={sTd}>
+                        {r.invalidado ? (
+                          <button
+                            onClick={e => { e.stopPropagation(); setInvalModal({ dte: r, modo: 'revertir' }) }}
+                            title={`Invalidado por ${r.invalidado_por || '—'} el ${r.fecha_invalidacion ? new Date(r.fecha_invalidacion).toLocaleDateString() : '—'}.\nMotivo: ${r.motivo_invalidacion || '—'}\n\nClick para REVERTIR.`}
+                            style={{ background: 'transparent', border: `1px solid ${C.greenLight}`, color: C.greenLight, borderRadius: 6, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
+                          >↻ Revertir</button>
+                        ) : (
+                          <button
+                            onClick={e => { e.stopPropagation(); setInvalModal({ dte: r, modo: 'invalidar' }) }}
+                            title="Invalidar este DTE (ej. refacturado por proveedor sin NC). Lo excluye del P&L y KPIs."
+                            style={{ background: 'transparent', border: `1px solid ${C.red}`, color: C.red, borderRadius: 6, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
+                          >⊘ Invalidar</button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                   {expandedId === r.id && (
                     <tr>
-                      <td colSpan={16} style={{ padding: 0, background: 'rgba(15,52,96,0.4)' }}>
+                      <td colSpan={canInvalidar ? 17 : 16} style={{ padding: 0, background: 'rgba(15,52,96,0.4)' }}>
                         <ExpandedRow
                           dte={r}
                           items={items[r.id]}
@@ -398,6 +479,99 @@ function ListadoDTEs() {
           </div>
         )}
       </div>
+
+      {invalModal && (
+        <InvalidarDTEModal
+          dte={invalModal.dte}
+          modo={invalModal.modo}
+          onClose={() => setInvalModal(null)}
+          onConfirm={(motivo) => handleInvalidar({ dte: invalModal.dte, modo: invalModal.modo, motivo })}
+        />
+      )}
+
+      <toast.Toast />
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════
+//   Modal Invalidar / Revertir DTE
+//   Usado cuando un proveedor refactura sin emitir NC formal.
+//   Llama a la RPC fn_invalidar_dte (SECURITY DEFINER).
+// ══════════════════════════════════════════════════════
+function InvalidarDTEModal({ dte, modo, onClose, onConfirm }) {
+  const [motivo, setMotivo] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const esRevertir = modo === 'revertir'
+  const titulo = esRevertir ? '↻ Revertir invalidación' : '⊘ Invalidar DTE'
+  const accion = esRevertir ? 'Revertir' : 'Invalidar'
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.()
+    if (!esRevertir && motivo.trim().length < 5) {
+      alert('Escribe un motivo (mínimo 5 caracteres). Ej: "Refacturado en CCF 1234".')
+      return
+    }
+    setEnviando(true)
+    await onConfirm(esRevertir ? '(revertido)' : motivo.trim())
+    setEnviando(false)
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        onClick={e => e.stopPropagation()}
+        style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, width: '100%', maxWidth: 520 }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 800, color: esRevertir ? C.greenLight : C.red, marginBottom: 12 }}>{titulo}</div>
+
+        <div style={{ background: C.cardAlt, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 12, color: C.white, lineHeight: 1.6 }}>
+          <div><strong style={{ color: C.gold }}>Proveedor:</strong> {dte.proveedor_nombre}</div>
+          <div><strong style={{ color: C.gold }}>NIT:</strong> <span style={{ fontFamily: 'monospace' }}>{dte.proveedor_nit}</span></div>
+          <div><strong style={{ color: C.gold }}>N° Control:</strong> <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{dte.numero_control}</span></div>
+          <div><strong style={{ color: C.gold }}>Cód. Generación:</strong> <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{dte.codigo_generacion}</span></div>
+          <div><strong style={{ color: C.gold }}>Fecha emisión:</strong> {dte.fecha_emision} · <strong style={{ color: C.gold }}>Total:</strong> {fmt(dte.monto_total)}</div>
+        </div>
+
+        {esRevertir ? (
+          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14 }}>
+            <p>Este DTE fue invalidado por <strong style={{ color: C.white }}>{dte.invalidado_por || '—'}</strong> el <strong style={{ color: C.white }}>{dte.fecha_invalidacion ? new Date(dte.fecha_invalidacion).toLocaleString() : '—'}</strong>.</p>
+            <p style={{ background: 'rgba(230,57,70,0.10)', borderLeft: `3px solid ${C.red}`, padding: 8, borderRadius: 4 }}>
+              <em>Motivo:</em> {dte.motivo_invalidacion || '—'}
+            </p>
+            <p>¿Re-activarlo? Volverá a contar en el P&L y KPIs de proveedor.</p>
+          </div>
+        ) : (
+          <>
+            <label style={{ fontSize: 11, color: C.gold, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Motivo de invalidación *</label>
+            <textarea
+              value={motivo}
+              onChange={e => setMotivo(e.target.value)}
+              placeholder='Ej: "Refacturado por el proveedor con CCF 5678 — DTE original duplicado".'
+              rows={3}
+              style={{ ...sInput, width: '100%', resize: 'vertical', fontFamily: 'inherit' }}
+              autoFocus
+            />
+            <div style={{ fontSize: 10, color: C.textMuted, marginTop: 6, marginBottom: 14, lineHeight: 1.5 }}>
+              ℹ️ El DTE queda en la BD pero se <strong>excluye del P&L</strong> y de KPIs por proveedor.
+              Lo normal es que el proveedor emita una <strong>Nota de Crédito</strong> formal; usa esta acción solo cuando no lo haga.
+            </div>
+          </>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose}
+            style={{ background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 14px', fontSize: 12, cursor: 'pointer' }}
+          >Cancelar</button>
+          <button type="submit" disabled={enviando}
+            style={{ background: esRevertir ? C.greenLight : C.red, color: C.white, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: enviando ? 'wait' : 'pointer', opacity: enviando ? 0.6 : 1 }}
+          >{enviando ? 'Procesando…' : accion}</button>
+        </div>
+      </form>
     </div>
   )
 }
@@ -409,6 +583,17 @@ function ListadoDTEs() {
 function ExpandedRow({ dte, items, loading }) {
   return (
     <div style={{ padding: 14 }}>
+      {dte.invalidado && (
+        <div style={{ background: 'rgba(230,57,70,0.12)', borderLeft: `3px solid ${C.red}`, borderRadius: 6, padding: 10, marginBottom: 12, fontSize: 12 }}>
+          <div style={{ color: C.red, fontWeight: 700, marginBottom: 4 }}>⊘ DTE INVALIDADO — excluido del P&L y KPIs</div>
+          <div style={{ color: C.white }}>
+            <strong>Motivo:</strong> {dte.motivo_invalidacion || '—'}<br/>
+            <span style={{ color: C.textMuted, fontSize: 11 }}>
+              Por {dte.invalidado_por || '—'} · {dte.fecha_invalidacion ? new Date(dte.fecha_invalidacion).toLocaleString() : '—'}
+            </span>
+          </div>
+        </div>
+      )}
       {/* Detalles de pago / cruce */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 8, marginBottom: 12 }}>
         <Field label="Código generación" value={dte.codigo_generacion} mono />
