@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import CustomerSearch from './CustomerSearch'
+import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
 
 const DTE_TYPES = [
-  { key: 'ticket',  label: '🧾 Ticket',   desc: 'Comprobante interno' },
-  { key: 'factura', label: '📄 Factura',   desc: 'Factura consumidor final' },
-  { key: 'ccf',     label: '🏢 CCF',       desc: 'Crédito Fiscal' },
-  { key: 'se',      label: '👤 Suj.Excl.', desc: 'Sujeto Excluido (DUI)' },
+  { key: 'ticket',  ic: 'receipt', label: 'Ticket',    desc: 'Comprobante interno' },
+  { key: 'factura', ic: 'card',    label: 'Factura',   desc: 'Factura consumidor final' },
+  { key: 'ccf',     ic: 'store',   label: 'CCF',       desc: 'Crédito Fiscal' },
+  { key: 'se',      ic: 'user',    label: 'Suj.Excl.', desc: 'Sujeto Excluido (DUI)' },
 ]
 
 const METODO_DISPLAY = {
-  efectivo:      { icon: '💵', label: 'Efectivo' },
-  tarjeta:       { icon: '💳', label: 'Tarjeta' },
-  link_pago:     { icon: '🔗', label: 'Link de Pago' },
-  transferencia: { icon: '🏦', label: 'Transferencia' },
-  mixto:         { icon: '🔀', label: 'Mixto' },
+  efectivo:      { ic: 'cash',    label: 'Efectivo' },
+  tarjeta:       { ic: 'card',    label: 'Tarjeta' },
+  link_pago:     { ic: 'link',    label: 'Link de Pago' },
+  transferencia: { ic: 'bank',    label: 'Transferencia' },
+  mixto:         { ic: 'shuffle', label: 'Mixto' },
 }
 
 const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 'Industrial', 'Hipotecario', 'Otro']
@@ -121,7 +122,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onPr
       <div className="pos-modal-overlay">
         <div className="pos-modal" style={{ maxWidth: 420 }}>
           <div className="pos-ticket">
-            <div className="pos-ticket-icon">✅</div>
+            <div className="pos-ticket-icon" style={{ display: 'flex', justifyContent: 'center' }}><Icon name="check" size={42} color="#2dd4a8" /></div>
             <div className="pos-ticket-title">¡Pago confirmado!</div>
 
             <div className="pos-ticket-detail">
@@ -131,7 +132,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onPr
               </div>
               <div className="pos-ticket-row">
                 <span className="lbl">Método</span>
-                <span className="val">{METODO_DISPLAY[metodo]?.icon} {METODO_DISPLAY[metodo]?.label || metodo}</span>
+                <span className="val" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name={METODO_DISPLAY[metodo]?.ic} size={14} /> {METODO_DISPLAY[metodo]?.label || metodo}</span>
               </div>
               {cambio > 0 && (
                 <div className="pos-ticket-row">
@@ -158,7 +159,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onPr
                 padding: '10px 12px', marginTop: 12, marginBottom: 8
               }}>
                 <div style={{ color: '#2dd4a8', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-                  📄 DTE Emitido — {dteResult.estado === 'PROCESADO' ? '✅ Aceptado por Hacienda' : dteResult.estado}
+                  DTE Emitido — {dteResult.estado === 'PROCESADO' ? 'Aceptado por Hacienda' : dteResult.estado}
                 </div>
                 <div style={{ fontSize: 11, color: '#8b8', lineHeight: 1.6 }}>
                   <div><b>Nº Control:</b> {dteResult.numero_control}</div>
@@ -246,7 +247,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onPr
               onClick={() => setMetodo(m)}
               style={{ fontSize: 12, padding: '6px 10px' }}
             >
-              {METODO_DISPLAY[m]?.icon}{' '}{METODO_DISPLAY[m]?.label}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name={METODO_DISPLAY[m]?.ic} size={15} /> {METODO_DISPLAY[m]?.label}</span>
             </button>
           ))}
         </div>
@@ -465,7 +466,7 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onPr
                 onClick={() => { setTipoDte(d.key); if (d.key !== 'ccf' && d.key !== 'se') setCliente(null) }}
                 title={d.desc}
               >
-                {d.label}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name={d.ic} size={15} /> {d.label}</span>
               </button>
             ))}
           </div>

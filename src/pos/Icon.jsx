@@ -38,6 +38,14 @@ const PATHS = {
   beer: '<path d="M17 11h1a3 3 0 0 1 0 6h-1"/><path d="M9 12v5M13 12v5"/><path d="M7 8.5V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V8.5"/><path d="M6 8.5a2 2 0 0 1 0-4 2.5 2.5 0 0 1 5 0 2.5 2.5 0 0 1 5 0 2 2 0 0 1 0 4z"/>',
   cart: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/>',
   utensils: '<path d="M3 2v7c0 1.1.9 2 2 2a2 2 0 0 0 2-2V2M5 11v11M16 2c-1.7 0-3 2-3 5s1 4 3 4v11"/>',
+  cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>',
+  shuffle: '<path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>',
+  bank: '<path d="M3 21h18M4 10h16M5 10V7l7-4 7 4v3M6 10v8M10 10v8M14 10v8M18 10v8"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.8-2.3-1.5-3.5C8.2 6.6 9 4 12 2c.5 3 2 4.2 3.3 5.5C16.5 8.8 18 10.6 18 13a6 6 0 0 1-12 0c0-1 .2-1.7.5-2.5"/>',
+  box: '<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+  rotate: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  circle: '<circle cx="12" cy="12" r="8"/>',
 };
 
 // Mapa emoji → icono (para categorías guardadas en BD con emoji)

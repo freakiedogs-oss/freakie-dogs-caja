@@ -4,24 +4,25 @@ import { STORES } from '../config'
 import { anularDTE } from './cajero/dteService'
 import NotaCreditoModal from './cajero/NotaCreditoModal'
 import { useToast } from '../hooks/useToast'
+import Icon from './Icon'
 
 // ──────────────────────────────────────────────
 // Constantes
 // ──────────────────────────────────────────────
 const TIPO_INFO = {
-  mesa:            { icon: '🪑', label: 'Mesas',       color: '#2dd4a8' },
-  para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
-  delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
-  pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
-  drive_through:   { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24' },
-  delivery_app:    { icon: '📲', label: 'App Delivery', color: '#f472b6' },
+  mesa:            { ic: 'armchair', label: 'Mesas',       color: '#2dd4a8' },
+  para_llevar:     { ic: 'bag',      label: 'Para Llevar', color: '#f4a261' },
+  delivery_propio: { ic: 'bike',     label: 'Delivery',    color: '#60a5fa' },
+  pedidos_ya:      { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa' },
+  drive_through:   { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24' },
+  delivery_app:    { ic: 'phone',    label: 'App Delivery', color: '#f472b6' },
 }
 
 const DTE_DISPLAY = {
-  '01': { icon: '📄', label: 'Factura' },
-  '03': { icon: '🏢', label: 'CCF' },
-  '14': { icon: '👤', label: 'Suj.Excl.' },
-  null: { icon: '🧾', label: 'Ticket' },
+  '01': { ic: 'receipt', label: 'Factura' },
+  '03': { ic: 'store',   label: 'CCF' },
+  '14': { ic: 'user',    label: 'Suj.Excl.' },
+  null: { ic: 'receipt', label: 'Ticket' },
 }
 
 // Reloj
@@ -107,6 +108,9 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
           dte_numero_control,
           dte_sello,
           cliente_id,
+          pax_total,
+          pax_mujeres,
+          pax_hombres,
           nc_codigo_generacion,
           nc_emitida_at,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
@@ -367,17 +371,23 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                     style={{ cursor: 'pointer' }}
                   >
                     <div className="historial-ticket-tipo">
-                      <span style={{ fontSize: 18 }}>{tipoInfo.icon}</span>
+                      <span style={{ display: 'inline-flex' }}><Icon name={tipoInfo.ic} size={17} color={tipoInfo.color} /></span>
                       <span style={{ color: tipoInfo.color, fontWeight: 600 }}>
                         {tipoInfo.label}
                         {cuenta.mesa_ref && ` #${cuenta.mesa_ref}`}
                       </span>
+                      {cuenta.tipo === 'mesa' && cuenta.pax_total > 0 && (
+                        <span style={{ color: '#8b8997', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 6 }}>
+                          · {cuenta.pax_total} <Icon name="users" size={11} />
+                          {(cuenta.pax_mujeres + cuenta.pax_hombres) > 0 && ` · $${(cuenta.total / (cuenta.pax_mujeres + cuenta.pax_hombres)).toFixed(2)}/pers`}
+                        </span>
+                      )}
                     </div>
 
                     <div className="historial-ticket-meta">
                       <span className="historial-ticket-time">{formatTime(cuenta.cobrada_at)}</span>
-                      <span className="historial-ticket-dte" style={{ color: '#8b8997' }}>
-                        {dteDisplay.icon} {dteDisplay.label}
+                      <span className="historial-ticket-dte" style={{ color: '#8b8997', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Icon name={dteDisplay.ic} size={12} /> {dteDisplay.label}
                         {cuenta.dte_numero_control && ` #${cuenta.dte_numero_control}`}
                       </span>
                     </div>

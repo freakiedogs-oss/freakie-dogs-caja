@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
+import Icon from './Icon'
 import { STORES } from '../config'
 import { useToast } from '../hooks/useToast'
 
@@ -7,12 +8,12 @@ import { useToast } from '../hooks/useToast'
 // Constantes
 // ──────────────────────────────────────────────
 const CANAL_INFO = {
-  mesa:            { icon: '🪑', label: 'Sucursal',    color: '#2dd4a8' },
-  para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
-  delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
-  pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
-  drive_through:   { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24' },
-  delivery_app:    { icon: '📲', label: 'App Delivery', color: '#f472b6' },
+  mesa:            { ic: 'armchair', label: 'Sucursal',    color: '#2dd4a8' },
+  para_llevar:     { ic: 'bag',      label: 'Para Llevar', color: '#f4a261' },
+  delivery_propio: { ic: 'bike',     label: 'Delivery',    color: '#60a5fa' },
+  pedidos_ya:      { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa' },
+  drive_through:   { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24' },
+  delivery_app:    { ic: 'phone',    label: 'App Delivery', color: '#f472b6' },
 }
 
 // Sucursal = mesa + para_llevar (se atienden juntos en cocina)
@@ -25,19 +26,19 @@ const CANAL_FILTER = {
 }
 
 const FILTROS = [
-  { key: 'todos',      icon: '📋', label: 'Todos'       },
-  { key: 'sucursal',   icon: '🏠', label: 'Sucursal'    },
-  { key: 'delivery',   icon: '🛵', label: 'Delivery'    },
-  { key: 'pedidos_ya', icon: '📱', label: 'PedidosYa'   },
-  { key: 'drive',      icon: '🚗', label: 'Drive Thru'  },
+  { key: 'todos',      ic: 'grid',     label: 'Todos'       },
+  { key: 'sucursal',   ic: 'armchair', label: 'Sucursal'    },
+  { key: 'delivery',   ic: 'bike',     label: 'Delivery'    },
+  { key: 'pedidos_ya', ic: 'bike',     label: 'PedidosYa'   },
+  { key: 'drive',      ic: 'car',      label: 'Drive Thru'  },
 ]
 
 const ESTACIONES = [
-  { key: 'general',  icon: '🍳', label: 'General'   },
-  { key: 'parrilla', icon: '🔥', label: 'Parrilla'  },
-  { key: 'freidora', icon: '🍟', label: 'Freidora'  },
-  { key: 'bebidas',  icon: '🥤', label: 'Bebidas'   },
-  { key: 'ensamble', icon: '📦', label: 'Ensamble'  },
+  { key: 'general',  ic: 'chef',  label: 'General'   },
+  { key: 'parrilla', ic: 'flame', label: 'Parrilla'  },
+  { key: 'freidora', ic: 'bag',   label: 'Freidora'  },
+  { key: 'bebidas',  ic: 'cup',   label: 'Bebidas'   },
+  { key: 'ensamble', ic: 'box',   label: 'Ensamble'  },
 ]
 
 // Tiempo transcurrido con color
@@ -284,7 +285,7 @@ export default function KDSScreen({ user, onBack }) {
   }
 
   // ── Render ──
-  const canalInfo = (canal) => CANAL_INFO[canal] || { icon: '📦', label: canal, color: '#8b8997' }
+  const canalInfo = (canal) => CANAL_INFO[canal] || { ic: 'box', label: canal, color: '#8b8997' }
 
   return (
     <div className="kds-root">
@@ -292,7 +293,7 @@ export default function KDSScreen({ user, onBack }) {
       {/* ── HEADER ── */}
       <header className="pos-header">
         <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
-        <span className="pos-header-brand">🍳 Cocina KDS</span>
+        <span className="pos-header-brand" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon name="chef" size={18} /> Cocina KDS</span>
         <span className="pos-header-store">{storeName}</span>
 
         {/* Toggle ACTIVAS / HISTORIAL */}
@@ -300,11 +301,11 @@ export default function KDSScreen({ user, onBack }) {
           <button
             className={`kds-mode-btn${tab === 'activas' ? ' active' : ''}`}
             onClick={() => setTab('activas')}
-          >🍳 Activas</button>
+          ><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="chef" size={15} /> Activas</span></button>
           <button
             className={`kds-mode-btn${tab === 'historial' ? ' active' : ''}`}
             onClick={() => setTab('historial')}
-          >📋 Historial</button>
+          ><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="list" size={15} /> Historial</span></button>
         </div>
 
         {tab === 'activas' && (
@@ -344,7 +345,7 @@ export default function KDSScreen({ user, onBack }) {
                   className={`poshome-filter-btn${filtroCanal === f.key ? ' active' : ''}`}
                   onClick={() => setFiltroCanal(f.key)}
                 >
-                  <span className="poshome-filter-icon">{f.icon}</span>
+                  <span className="poshome-filter-icon"><Icon name={f.ic} size={16} /></span>
                   <span className="poshome-filter-label">{f.label}</span>
                   {cnt > 0 && <span className="poshome-filter-badge">{cnt}</span>}
                 </button>
@@ -361,7 +362,7 @@ export default function KDSScreen({ user, onBack }) {
                   className={`poshome-filter-btn${filtroEst === e.key ? ' active' : ''}`}
                   onClick={() => setFiltroEst(e.key)}
                 >
-                  <span className="poshome-filter-icon">{e.icon}</span>
+                  <span className="poshome-filter-icon"><Icon name={e.ic} size={16} /></span>
                   <span className="poshome-filter-label">{e.label}</span>
                   {cnt > 0 && <span className="poshome-filter-badge">{cnt}</span>}
                 </button>
@@ -382,7 +383,7 @@ export default function KDSScreen({ user, onBack }) {
             </div>
           ) : comandas.length === 0 ? (
             <div className="kds-empty">
-              <div style={{ fontSize: 56 }}>✅</div>
+              <div style={{ display: 'flex', justifyContent: 'center' }}><Icon name="check" size={52} color="#2dd4a8" /></div>
               <div style={{ color: '#2dd4a8', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
                 Cocina al día
               </div>
@@ -408,7 +409,7 @@ export default function KDSScreen({ user, onBack }) {
                     {/* Card header */}
                     <div className="kds-card-header">
                       <div className="kds-card-title">
-                        <span style={{ color: info.color, fontSize: 18 }}>{info.icon}</span>
+                        <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
                         <span className="kds-card-canal" style={{ color: info.color }}>
                           {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
                         </span>
@@ -434,7 +435,7 @@ export default function KDSScreen({ user, onBack }) {
                             title="Toca para cambiar estado"
                           >
                             <span className="kds-item-status">
-                              {done ? '✅' : inProg ? '🔄' : '○'}
+                              {done ? <Icon name="check" size={14} color="#2dd4a8" /> : inProg ? <Icon name="rotate" size={14} color="#fbbf24" /> : <Icon name="circle" size={12} color="#6b6878" />}
                             </span>
                             <span className="kds-item-qty">{item.cantidad || 1}×</span>
                             <span className="kds-item-name">{item.nombre_item}</span>
@@ -473,7 +474,7 @@ export default function KDSScreen({ user, onBack }) {
             </div>
           ) : historial.length === 0 ? (
             <div className="kds-empty">
-              <div style={{ fontSize: 56 }}>📋</div>
+              <div style={{ display: 'flex', justifyContent: 'center' }}><Icon name="list" size={52} color="#43382f" /></div>
               <div style={{ color: '#8b8997', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
                 Sin completadas hoy
               </div>
@@ -519,7 +520,7 @@ export default function KDSScreen({ user, onBack }) {
                       {/* Card header */}
                       <div className="kds-card-header">
                         <div className="kds-card-title">
-                          <span style={{ color: info.color, fontSize: 18 }}>{info.icon}</span>
+                          <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
                           <span className="kds-card-canal" style={{ color: info.color }}>
                             {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
                           </span>
@@ -540,7 +541,7 @@ export default function KDSScreen({ user, onBack }) {
                             className="kds-item done"
                             style={{ opacity: 0.8 }}
                           >
-                            <span className="kds-item-status">✅</span>
+                            <span className="kds-item-status"><Icon name="check" size={13} color="#2dd4a8" /></span>
                             <span className="kds-item-qty">{item.cantidad || 1}×</span>
                             <span className="kds-item-name">{item.nombre_item}</span>
                             {item.nota && (
