@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { db } from './supabase'
-import { STORES } from './config'
+import { db } from '../supabase'
+import { STORES } from '../config'
 import Icon from './Icon'
 import HistorialCobros from './HistorialCobros'
 
