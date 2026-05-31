@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
 import Icon from './Icon'
+import PlanoEditor from './cajero/PlanoEditor'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -71,6 +72,7 @@ function elapsed(isoStr) {
 // ──────────────────────────────────────────────
 const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 const MESERO_ROLES = ['mesero', 'mesera']
+const EDIT_PLANO_ROLES = ['gerente', 'admin', 'ejecutivo', 'superadmin']
 
 export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToMenuAdmin, onChangeStore }) {
   const storeCode = user.store_code || 'S001'
@@ -84,6 +86,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const [filtro,       setFiltro]       = useState('todos')   // clave activa
   const [refreshKey,   setRefreshKey]   = useState(0)
   const [mesaMenu,     setMesaMenu]     = useState(null)      // mesa con menú contextual
+  const [showPlanoEditor, setShowPlanoEditor] = useState(false)
   const [aperturaMesa, setAperturaMesa] = useState(null)      // mesa libre que se está abriendo (modal demografía)
   const [pax,          setPax]          = useState({ m: 1, h: 1, k: 0 })
   const longPressRef   = useRef(null)
@@ -293,6 +296,15 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                   </button>
                 ))}
               </div>
+              {EDIT_PLANO_ROLES.includes(user.rol) && (
+                <button
+                  onClick={() => setShowPlanoEditor(true)}
+                  style={{ background: 'none', border: '1px solid #43382f', color: '#9a9088', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 8 }}
+                  title="Editar plano / agregar mesas"
+                >
+                  <Icon name="pencil" size={13} /> Editar plano
+                </button>
+              )}
             </div>
 
             <div className="poshome-plano" style={{ position: 'relative', width: '100%', aspectRatio: '100 / 55', background: '#15110f', border: '1px dashed #43382f', borderRadius: 12, margin: '4px 0', overflow: 'hidden' }}>
@@ -476,6 +488,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             <span className="poshome-quick-icon"><Icon name="pencil" size={22} /></span><span className="poshome-quick-label">Menú Admin</span>
           </button>
         )}
+        {EDIT_PLANO_ROLES.includes(user.rol) && (
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#2dd4a8' }} onClick={() => setShowPlanoEditor(true)}>
+            <span className="poshome-quick-icon"><Icon name="armchair" size={22} /></span><span className="poshome-quick-label">Editar Plano</span>
+          </button>
+        )}
       </div>
 
       {/* ── MODAL APERTURA DE MESA (demografía) ── */}
@@ -515,6 +532,15 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             <button className="pos-cancelar-btn" onClick={() => setAperturaMesa(null)}>Cancelar</button>
           </div>
         </div>
+      )}
+
+      {/* ── EDITOR DE PLANO (admin) ── */}
+      {showPlanoEditor && (
+        <PlanoEditor
+          storeCode={storeCode}
+          storeName={storeName}
+          onClose={(reload) => { setShowPlanoEditor(false); if (reload) setRefreshKey(k => k + 1) }}
+        />
       )}
 
     </div>
