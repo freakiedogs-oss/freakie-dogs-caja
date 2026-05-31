@@ -70,8 +70,8 @@ export default function MesaTransferModal({ storeCode, mesaActual, onTransfer, o
                   onClick={() => { if (!esActual && !ocupada) setSelected(mesaStr) }}
                   disabled={esActual || ocupada}
                   style={{
-                    background: isSelected ? '#ff6b3518' : colors.bg,
-                    border: `2px solid ${isSelected ? '#ff6b35' : colors.border}`,
+                    background: isSelected ? '#E6232918' : colors.bg,
+                    border: `2px solid ${isSelected ? '#E62329' : colors.border}`,
                     borderRadius: 10,
                     padding: '10px 6px',
                     textAlign: 'center',
@@ -80,7 +80,7 @@ export default function MesaTransferModal({ storeCode, mesaActual, onTransfer, o
                     transition: 'all 0.15s',
                   }}
                 >
-                  <div style={{ fontSize: 20, fontWeight: 900, color: isSelected ? '#ff6b35' : colors.text, fontFamily: 'monospace' }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: isSelected ? '#E62329' : colors.text, fontFamily: 'monospace' }}>
                     {mesa.numero}
                   </div>
                   <div style={{ fontSize: 9, color: ocupada ? '#f87171' : '#8b8997', marginTop: 2 }}>

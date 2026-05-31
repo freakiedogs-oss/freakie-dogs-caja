@@ -200,7 +200,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
                   type="checkbox"
                   checked={it.incluir}
                   onChange={() => toggleItem(idx)}
-                  style={{ accentColor: '#ff6b35' }}
+                  style={{ accentColor: '#E62329' }}
                 />
                 <span style={{ flex: 1, fontSize: 12, color: '#ccc' }}>{it.nombre}</span>
                 <input

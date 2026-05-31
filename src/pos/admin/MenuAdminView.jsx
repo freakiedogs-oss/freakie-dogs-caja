@@ -4,7 +4,7 @@ import { db } from '../../supabase'
 /* ── Paleta eye-efficient ── */
 const C = {
   bg: '#141418', surface: '#1c1c22', card: '#1e1e26',
-  accent: '#ff6b35', teal: '#2dd4a8', text: '#e8e6ef',
+  accent: '#E62329', teal: '#2dd4a8', text: '#e8e6ef',
   muted: '#8b8997', border: '#2a2a32', danger: '#f87171',
 }
 
@@ -166,7 +166,7 @@ function CategoriasTab({ menuId }) {
   useEffect(() => { setLoading(true); load() }, [load])
 
   const handleSave = async (cat) => {
-    const payload = { menu_id: menuId, nombre: cat.nombre, color: cat.color || '#FF6B35', icono: cat.icono || '', orden: cat.orden ?? cats.length, activo: cat.activo ?? true }
+    const payload = { menu_id: menuId, nombre: cat.nombre, color: cat.color || '#E62329', icono: cat.icono || '', orden: cat.orden ?? cats.length, activo: cat.activo ?? true }
     if (cat.id) {
       const { error } = await db.from('pos_menu_categorias').update(payload).eq('id', cat.id)
       if (error) { toast('Error: ' + error.message, false); return }
@@ -236,7 +236,7 @@ function CategoriasTab({ menuId }) {
 }
 
 function CatForm({ cat, onSave, onCancel }) {
-  const [f, setF] = useState({ nombre: cat.nombre || '', color: cat.color || '#FF6B35', icono: cat.icono || '', orden: cat.orden ?? 0, activo: cat.activo ?? true })
+  const [f, setF] = useState({ nombre: cat.nombre || '', color: cat.color || '#E62329', icono: cat.icono || '', orden: cat.orden ?? 0, activo: cat.activo ?? true })
   const upd = (k, v) => setF(p => ({ ...p, [k]: v }))
 
   return (

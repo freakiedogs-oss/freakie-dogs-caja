@@ -56,7 +56,7 @@ export default function POSLogin({ onLogin }) {
         alt="Freakie Dogs"
         style={{ width: 120, height: 120, borderRadius: 20, marginBottom: 12, objectFit: 'contain' }}
       />
-      <div style={{ fontWeight: 800, fontSize: 22, color: '#ff6b35' }}>
+      <div style={{ fontWeight: 800, fontSize: 22, color: '#E62329' }}>
         Freakie Dogs
       </div>
       <div style={{ color: '#8b8997', fontSize: 12, marginTop: 3, marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
@@ -71,8 +71,8 @@ export default function POSLogin({ onLogin }) {
         {[0,1,2,3,4,5].map(i => (
           <div key={i} style={{
             width: 14, height: 14, borderRadius: '50%',
-            background: pin.length > i ? '#ff6b35' : '#2a2a32',
-            border: '2px solid ' + (pin.length > i ? '#ff6b35' : '#2a2a32'),
+            background: pin.length > i ? '#E62329' : '#2a2a32',
+            border: '2px solid ' + (pin.length > i ? '#E62329' : '#2a2a32'),
             transition: 'all 0.1s'
           }} />
         ))}

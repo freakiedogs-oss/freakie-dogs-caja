@@ -206,7 +206,7 @@ export default function FloorPlanSelector({ storeCode, storeName, onSelectMesa, 
               const h       = parseFloat(mesa.alto)
               const ocupada = isOcupada(mesa)
               const hovered = hoveredMesa === mesa.id && !ocupada
-              const color   = ocupada ? '#ff6b35' : hovered ? '#6ef08f' : '#2dd4a8'
+              const color   = ocupada ? '#E62329' : hovered ? '#6ef08f' : '#2dd4a8'
               const bgColor = ocupada ? '#1a0a0a' : hovered ? '#0a2015' : '#0d1a18'
               const forma   = mesa.forma || 'cuadrada'
 
@@ -252,7 +252,7 @@ export default function FloorPlanSelector({ storeCode, storeName, onSelectMesa, 
                   <text
                     x={x + w / 2} y={y + h / 2 + 2.5}
                     textAnchor="middle" dominantBaseline="middle"
-                    fill={ocupada ? '#ff6b3588' : '#2dd4a866'}
+                    fill={ocupada ? '#E6232988' : '#2dd4a866'}
                     fontSize={2.2}
                     fontFamily="sans-serif"
                   >

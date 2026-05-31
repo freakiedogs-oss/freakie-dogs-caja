@@ -6,6 +6,7 @@ import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
 import { emitDTE } from './dteService'
 import { printComanda, printPreCuenta, printFactura } from '../print/printService'
+import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
 
 // ──────────────────────────────────────────────
@@ -639,8 +640,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             className="pos-header-btn"
             onClick={handlePreCuenta}
             title="Imprimir pre-cuenta"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
           >
-            🖨 Pre-cuenta
+            <Icon name="receipt" size={16} /> Pre-cuenta
           </button>
         )}
 
@@ -807,7 +809,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               >
                 {commanding
                   ? '⏳ Comandando...'
-                  : `🔔 COMANDAR${newItems.length > 0 ? ` (${newItems.reduce((s, i) => s + i.qty, 0)})` : ''}`
+                  : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <Icon name="bell" size={18} /> COMANDAR{newItems.length > 0 ? ` (${newItems.reduce((s, i) => s + i.qty, 0)})` : ''}
+                    </span>
                 }
               </button>
             )}
@@ -818,7 +822,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                 disabled={items.length === 0 || saving}
                 onClick={() => setShowPayModal(true)}
               >
-                {saving ? '...' : `💳 COBRAR $${total.toFixed(2)}`}
+                {saving ? '...' : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Icon name="card" size={18} /> COBRAR ${total.toFixed(2)}</span>}
               </button>
             ) : (
               <div style={{ textAlign: 'center', fontSize: 12, color: '#6b6878', padding: '8px 0' }}>

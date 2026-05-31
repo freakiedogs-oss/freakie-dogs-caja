@@ -95,7 +95,7 @@ export default function OrderTypeSelector({ onSelect, onClose, current, currentM
         <div style={{ width: '100%', maxWidth: 480 }}>
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <div style={{ fontSize: 40 }}>🍔</div>
-            <div style={{ fontSize: 20, fontWeight: 900, color: '#ff6b35', marginTop: 6 }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: '#E62329', marginTop: 6 }}>
               FREAKIE DOGS POS
             </div>
           </div>

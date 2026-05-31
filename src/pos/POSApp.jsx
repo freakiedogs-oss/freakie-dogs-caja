@@ -27,7 +27,7 @@ function StoreSelector({ user, onSelect, onLogout }) {
         alt="Freakie Dogs"
         style={{ width: 80, height: 80, borderRadius: 16, marginBottom: 10, objectFit: 'contain' }}
       />
-      <div style={{ fontWeight: 800, fontSize: 20, color: '#ff6b35', marginBottom: 4 }}>
+      <div style={{ fontWeight: 800, fontSize: 20, color: '#E62329', marginBottom: 4 }}>
         Freakie POS
       </div>
       <div style={{ color: '#8b8997', fontSize: 13, marginBottom: 6 }}>
@@ -48,7 +48,7 @@ function StoreSelector({ user, onSelect, onLogout }) {
               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
               transition: 'all 0.15s',
             }}
-            onMouseOver={e => { e.currentTarget.style.background = '#1e1e26'; e.currentTarget.style.borderColor = '#ff6b35' }}
+            onMouseOver={e => { e.currentTarget.style.background = '#1e1e26'; e.currentTarget.style.borderColor = '#E62329' }}
             onMouseOut={e => { e.currentTarget.style.background = '#1c1c22'; e.currentTarget.style.borderColor = '#2a2a32' }}
           >
             <span style={{ fontSize: 22 }}>🏪</span>

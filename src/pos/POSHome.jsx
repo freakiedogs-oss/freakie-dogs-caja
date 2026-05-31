@@ -1,27 +1,28 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
+import Icon from './Icon'
 
 // ──────────────────────────────────────────────
 // Constantes
 // ──────────────────────────────────────────────
 const TIPO_INFO = {
-  mesa:            { icon: '🪑', label: 'Mesas',       color: '#2dd4a8' },
-  para_llevar:     { icon: '🥡', label: 'Para Llevar', color: '#f4a261' },
-  delivery_propio: { icon: '🛵', label: 'Delivery',    color: '#60a5fa' },
-  delivery_app:    { icon: '📲', label: 'App Delivery', color: '#f472b6' },
-  pedidos_ya:      { icon: '📱', label: 'PedidosYa',   color: '#a78bfa' },
-  drive_through:   { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24' },
+  mesa:            { ic: 'armchair', label: 'Mesas',       color: '#2dd4a8' },
+  para_llevar:     { ic: 'bag',      label: 'Para Llevar', color: '#f4a261' },
+  delivery_propio: { ic: 'bike',     label: 'Delivery',    color: '#60a5fa' },
+  delivery_app:    { ic: 'phone',    label: 'App Delivery', color: '#f472b6' },
+  pedidos_ya:      { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa' },
+  drive_through:   { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24' },
 }
 
 const FILTROS = [
-  { key: 'todos',          icon: '📋', label: 'Todos'       },
-  { key: 'mesa',           icon: '🪑', label: 'Mesas'       },
-  { key: 'para_llevar',    icon: '🥡', label: 'Para Llevar' },
-  { key: 'delivery_propio',icon: '🛵', label: 'Delivery'    },
-  { key: 'delivery_app',   icon: '📲', label: 'App'         },
-  { key: 'pedidos_ya',     icon: '📱', label: 'PedidosYa'   },
-  { key: 'drive_through',  icon: '🚗', label: 'Drive Thru'  },
+  { key: 'todos',          ic: 'grid',     label: 'Todos'       },
+  { key: 'mesa',           ic: 'armchair', label: 'Mesas'       },
+  { key: 'para_llevar',    ic: 'bag',      label: 'Para Llevar' },
+  { key: 'delivery_propio',ic: 'bike',     label: 'Delivery'    },
+  { key: 'delivery_app',   ic: 'phone',    label: 'App'         },
+  { key: 'pedidos_ya',     ic: 'bike',     label: 'PedidosYa'   },
+  { key: 'drive_through',  ic: 'car',      label: 'Drive Thru'  },
 ]
 
 const ZONA_LABELS = {
@@ -217,7 +218,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           <button
             className="pos-header-store"
             onClick={onChangeStore}
-            style={{ cursor: 'pointer', background: 'none', border: '1px solid #2a2a32', borderRadius: 6, padding: '2px 8px', color: '#ff6b35', fontWeight: 700, fontSize: 13 }}
+            style={{ cursor: 'pointer', background: 'none', border: '1px solid #2a2a32', borderRadius: 6, padding: '2px 8px', color: '#E62329', fontWeight: 700, fontSize: 13 }}
             title="Cambiar sucursal"
           >
             {storeName} ▾
@@ -243,7 +244,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
               className={`poshome-filter-btn${filtro === f.key ? ' active' : ''}`}
               onClick={() => setFiltro(f.key)}
             >
-              <span className="poshome-filter-icon">{f.icon}</span>
+              <span className="poshome-filter-icon"><Icon name={f.ic} size={18} /></span>
               <span className="poshome-filter-label">{f.label}</span>
               {cnt > 0 && (
                 <span className="poshome-filter-badge">{cnt}</span>
@@ -309,7 +310,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                   {mesaMenu?.id === mesa.id && cuenta && (
                     <div style={{
                       position: 'absolute', top: 4, right: 4, zIndex: 50,
-                      background: '#1e1e26', border: '1px solid #ff6b35', borderRadius: 8,
+                      background: '#1e1e26', border: '1px solid #E62329', borderRadius: 8,
                       padding: '6px 0', minWidth: 140, boxShadow: '0 4px 20px rgba(0,0,0,.6)',
                     }}>
                       <button
@@ -339,7 +340,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             )}
             <div className="poshome-cuentas-list">
               {cuentasFiltradas.map(c => {
-                const info   = TIPO_INFO[c.tipo] || { icon: '📦', label: c.tipo, color: '#8b8997' }
+                const info   = TIPO_INFO[c.tipo] || { ic: 'bag', label: c.tipo, color: '#8b8997' }
                 const items  = c.pos_cuenta_items?.length || 0
                 return (
                   <button
@@ -348,7 +349,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                     style={{ borderLeftColor: info.color }}
                     onClick={() => handleCuentaClick(c)}
                   >
-                    <span className="poshome-cuenta-icon">{info.icon}</span>
+                    <span className="poshome-cuenta-icon"><Icon name={info.ic} size={20} color={info.color} /></span>
                     <div className="poshome-cuenta-info">
                       <span className="poshome-cuenta-label" style={{ color: info.color }}>
                         {info.label}{c.delivery_referencia ? ` #${c.delivery_referencia}` : ''}
@@ -376,7 +377,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {/* ── ESTADO VACÍO POR FILTRO ── */}
         {cuentasFiltradas.length === 0 && !mostrarPlano && (
           <div className="poshome-empty">
-            <div style={{ fontSize: 40 }}>{FILTROS.find(f => f.key === filtro)?.icon || '📋'}</div>
+            <div style={{ display: 'flex', justifyContent: 'center' }}><Icon name={FILTROS.find(f => f.key === filtro)?.ic || 'grid'} size={40} color="#8b8997" /></div>
             <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>
               Sin órdenes de {FILTROS.find(f => f.key === filtro)?.label || filtro}
             </div>
@@ -412,40 +413,40 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             style={{ '--qt-color': '#2dd4a8' }}
             onClick={() => setFiltro('mesa')}
           >
-            <span className="poshome-quick-icon">🪑</span>
+            <span className="poshome-quick-icon"><Icon name="armchair" size={22} /></span>
             <span className="poshome-quick-label">Mesas</span>
           </button>
         )}
         {/* Para Llevar / Delivery / PedidosYa / Drive: solo cajero+ (no mesero) */}
         {!MESERO_ROLES.includes(user.rol) && (<>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#f4a261' }} onClick={() => handleNueva('para_llevar')}>
-            <span className="poshome-quick-icon">🥡</span><span className="poshome-quick-label">Para Llevar</span>
+            <span className="poshome-quick-icon"><Icon name="bag" size={22} /></span><span className="poshome-quick-label">Para Llevar</span>
           </button>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#60a5fa' }} onClick={() => handleNueva('delivery_propio')}>
-            <span className="poshome-quick-icon">🛵</span><span className="poshome-quick-label">Delivery</span>
+            <span className="poshome-quick-icon"><Icon name="bike" size={22} /></span><span className="poshome-quick-label">Delivery</span>
           </button>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#a78bfa' }} onClick={() => handleNueva('pedidos_ya')}>
-            <span className="poshome-quick-icon">📱</span><span className="poshome-quick-label">PedidosYa</span>
+            <span className="poshome-quick-icon"><Icon name="bike" size={22} /></span><span className="poshome-quick-label">PedidosYa</span>
           </button>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#fbbf24' }} onClick={() => handleNueva('drive_through')}>
-            <span className="poshome-quick-icon">🚗</span><span className="poshome-quick-label">Drive Thru</span>
+            <span className="poshome-quick-icon"><Icon name="car" size={22} /></span><span className="poshome-quick-label">Drive Thru</span>
           </button>
         </>)}
         {/* KDS: acceso rápido para cocina / gerente / admin / ejecutivo */}
         {KDS_ROLES.includes(user.rol) && onGoToKDS && (
-          <button className="poshome-quick-btn" style={{ '--qt-color': '#ff6b35' }} onClick={onGoToKDS}>
-            <span className="poshome-quick-icon">🍳</span><span className="poshome-quick-label">Cocina KDS</span>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#E62329' }} onClick={onGoToKDS}>
+            <span className="poshome-quick-icon"><Icon name="chef" size={22} /></span><span className="poshome-quick-label">Cocina KDS</span>
           </button>
         )}
         {/* Historial: cajero+ (cajero, cajera, gerente, admin, ejecutivo, superadmin) */}
         {!MESERO_ROLES.includes(user.rol) && onGoToHistorial && (
           <button className="poshome-quick-btn" style={{ '--qt-color': '#2dd4a8' }} onClick={onGoToHistorial}>
-            <span className="poshome-quick-icon">📋</span><span className="poshome-quick-label">Historial</span>
+            <span className="poshome-quick-icon"><Icon name="list" size={22} /></span><span className="poshome-quick-label">Historial</span>
           </button>
         )}
         {onGoToMenuAdmin && (
-          <button className="poshome-quick-btn" style={{ '--qt-color': '#ff6b35' }} onClick={onGoToMenuAdmin}>
-            <span className="poshome-quick-icon">📝</span><span className="poshome-quick-label">Menú Admin</span>
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#E62329' }} onClick={onGoToMenuAdmin}>
+            <span className="poshome-quick-icon"><Icon name="pencil" size={22} /></span><span className="poshome-quick-label">Menú Admin</span>
           </button>
         )}
       </div>
