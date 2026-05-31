@@ -19,6 +19,9 @@ const METODO_DISPLAY = {
 
 const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 'Industrial', 'Hipotecario', 'Otro']
 
+// Tipo de documento (texto en pos_clientes) → código MH para el receptor
+const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residente': '02', 'Otro': '37' }
+
 export default function PaymentModal({ items, total, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
   const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
@@ -81,8 +84,11 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onPr
         nombre: cliente.nombre,
         nit: cliente.numero_documento,
         nrc: cliente.nrc,
+        // Para Factura (01) y Sujeto Excluido (14): receptor por documento
+        numDocumento: cliente.numero_documento || null,
+        tipoDocumento: DOC_MH[cliente.tipo_documento] || (cliente.numero_documento ? '36' : null),
         giro: cliente.giro,
-        codActividad: '56101',
+        codActividad: cliente.codigo_actividad || '56101',
         descActividad: cliente.giro || 'Restaurantes',
         nombreComercial: cliente.nombre_comercial || null,
         correo: cliente.email || null,
@@ -465,11 +471,12 @@ export default function PaymentModal({ items, total, onConfirm, onComplete, onPr
           </div>
         </div>
 
-        {/* ── CustomerSearch para CCF y SE ── */}
-        {(tipoDte === 'ccf' || tipoDte === 'se') && (
+        {/* ── CustomerSearch para Factura, CCF y SE ── */}
+        {(tipoDte === 'factura' || tipoDte === 'ccf' || tipoDte === 'se') && (
           <CustomerSearch
             selected={cliente}
             onSelect={setCliente}
+            tipoDte={tipoDte}
           />
         )}
 
