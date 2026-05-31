@@ -26,12 +26,12 @@ const FILTROS = [
 ]
 
 const ZONA_LABELS = {
-  interior:  '🏠 Interior',
-  principal: '🏠 Principal',
-  terraza:   '🌿 Terraza',
-  barra:     '🍺 Barra',
-  vip:       '⭐ VIP',
-  privado:   '🔒 Privado',
+  interior:  'Interior',
+  principal: 'Principal',
+  terraza:   'Terraza',
+  barra:     'Barra',
+  vip:       'VIP',
+  privado:   'Privado',
 }
 
 const ESTADO_ACTIVO = ['abierta', 'enviada_cocina', 'en_preparacion', 'lista', 'entregada']
@@ -261,7 +261,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {mostrarPlano && (
           <section className="poshome-section">
             <div className="poshome-section-header">
-              <span className="poshome-section-title">🪑 Plano de Mesas</span>
+              <span className="poshome-section-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon name="armchair" size={16} /> Plano de Mesas</span>
               <div className="poshome-zona-tabs">
                 {zonas.map(zona => (
                   <button
@@ -293,7 +293,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                   >
                     <div className="poshome-mesa-num" style={{ color: colors.text }}>{mesa.numero}</div>
                     {status === 'libre' ? (
-                      <div className="poshome-mesa-status libre">libre · {mesa.capacidad || 4}👥</div>
+                      <div className="poshome-mesa-status libre" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>libre · {mesa.capacidad || 4} <Icon name="users" size={12} /></div>
                     ) : (
                       <>
                         <div className="poshome-mesa-total" style={{ color: colors.text }}>
@@ -335,7 +335,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           <section className="poshome-section">
             {filtro === 'todos' && (
               <div className="poshome-section-header">
-                <span className="poshome-section-title">📋 Para Llevar / Delivery</span>
+                <span className="poshome-section-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon name="bag" size={16} /> Para Llevar / Delivery</span>
               </div>
             )}
             <div className="poshome-cuentas-list">
@@ -396,7 +396,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {/* ── ESTADO VACÍO GENERAL ── */}
         {cuentas.length === 0 && filtro === 'todos' && (
           <div className="poshome-empty">
-            <div style={{ fontSize: 48 }}>🍔</div>
+            <div style={{ display: 'flex', justifyContent: 'center' }}><Icon name="utensils" size={46} color="#43382f" /></div>
             <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>Sin órdenes activas</div>
             <div style={{ color: '#6b6878', fontSize: 12 }}>Usa los botones de abajo para crear una nueva</div>
           </div>

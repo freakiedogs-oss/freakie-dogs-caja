@@ -6,19 +6,19 @@ import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
 import { emitDTE } from './dteService'
 import { printComanda, printPreCuenta, printFactura } from '../print/printService'
-import Icon from '../Icon'
+import Icon, { EMOJI_ICON } from '../Icon'
 import { useToast } from '../../hooks/useToast'
 
 // ──────────────────────────────────────────────
 // Constantes de display
 // ──────────────────────────────────────────────
 const TIPO_INFO = {
-  'mesa':           { icon: '🪑', label: 'Mesa',        color: '#2dd4a8', canal: 'local'          },
-  'para_llevar':    { icon: '🥡', label: 'Para Llevar', color: '#f4a261', canal: 'para_llevar'     },
-  'delivery_propio':{ icon: '🛵', label: 'Delivery',    color: '#60a5fa', canal: 'delivery_propio' },
-  'pedidos_ya':     { icon: '📱', label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
-  'drive_through':  { icon: '🚗', label: 'Drive Thru',  color: '#fbbf24', canal: 'drive_through'   },
-  'delivery_app':   { icon: '📲', label: 'App Delivery', color: '#f472b6', canal: 'delivery_app'   },
+  'mesa':           { ic: 'armchair', label: 'Mesa',        color: '#2dd4a8', canal: 'local'          },
+  'para_llevar':    { ic: 'bag',      label: 'Para Llevar', color: '#f4a261', canal: 'para_llevar'     },
+  'delivery_propio':{ ic: 'bike',     label: 'Delivery',    color: '#60a5fa', canal: 'delivery_propio' },
+  'pedidos_ya':     { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
+  'drive_through':  { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24', canal: 'drive_through'   },
+  'delivery_app':   { ic: 'phone',    label: 'App Delivery', color: '#f472b6', canal: 'delivery_app'   },
 }
 
 // ── Permisos por rol ──
@@ -612,7 +612,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           className="pos-header-btn"
           style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
         >
-          {tipoInfo.icon} {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
+          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
         </span>
 
         {tipo === 'mesa' && perms.moverMesa && (
@@ -621,7 +621,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             onClick={() => setShowTransferModal(true)}
             title="Mover a otra mesa"
           >
-            ↔ Mesa
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="move" size={15} /> Mesa</span>
           </button>
         )}
 
@@ -631,7 +631,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             onClick={() => setShowSplitModal(true)}
             title="Dividir cuenta"
           >
-            ✂ Dividir
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="scissors" size={15} /> Dividir</span>
           </button>
         )}
 
@@ -673,7 +673,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                       : {}}
                     onClick={() => setActiveCat(cat.id)}
                   >
-                    <span className="pos-cat-icon">{cat.icono}</span>
+                    <span className="pos-cat-icon">{EMOJI_ICON[cat.icono] ? <Icon name={EMOJI_ICON[cat.icono]} size={16} /> : cat.icono}</span>
                     {cat.nombre}
                   </button>
                 ))}
@@ -712,7 +712,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               className="pos-order-type-badge"
               style={{ background: tipoInfo.color + '22', color: tipoInfo.color }}
             >
-              {tipoInfo.icon} {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
+              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
             </span>
             {cuentaId
               ? <span className="pos-order-open-badge">Cuenta Abierta</span>
@@ -724,7 +724,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           <div className="pos-order-items">
             {items.length === 0 ? (
               <div className="pos-order-empty">
-                <div className="pos-order-empty-icon">🛒</div>
+                <div className="pos-order-empty-icon" style={{ display: 'flex', justifyContent: 'center' }}><Icon name="cart" size={40} color="#43382f" /></div>
                 <div>Orden vacía</div>
                 <div style={{ fontSize: 11, color: '#2a2a2a' }}>Toca un producto</div>
               </div>
@@ -745,7 +745,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                   <div className="pos-order-item-info">
                     <div className="pos-order-item-name">{item.nombre}</div>
                     {item.nota && (
-                      <div className="pos-order-item-note">📝 {item.nota}</div>
+                      <div className="pos-order-item-note" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="pencil" size={11} /> {item.nota}</div>
                     )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
@@ -758,7 +758,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                           className="pos-order-item-del"
                           style={{ color: '#8b8997', fontSize: 12 }}
                           onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
-                        >📝</button>
+                        ><Icon name="pencil" size={13} /></button>
                         <button className="pos-order-item-del" onClick={() => removeItem(idx)}>✕</button>
                       </div>
                     )}
@@ -770,10 +770,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                         onClick={() => {
                           if (confirm(`¿Anular "${item.nombre}"?`)) removeItem(idx)
                         }}
-                      >🚫</button>
+                      ><Icon name="ban" size={13} /></button>
                     )}
                     {item.saved && !perms.anular && (
-                      <span style={{ fontSize: 10, color: '#6b6878', marginTop: 2 }} title="Solo cajera puede anular">🔒</span>
+                      <span style={{ marginTop: 2 }} title="Solo cajera puede anular"><Icon name="lock" size={12} color="#6b6878" /></span>
                     )}
                   </div>
                 </div>
@@ -826,7 +826,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               </button>
             ) : (
               <div style={{ textAlign: 'center', fontSize: 12, color: '#6b6878', padding: '8px 0' }}>
-                🔒 Cobro solo por cajera/gerente
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="lock" size={13} /> Cobro solo por cajera/gerente</span>
               </div>
             )}
 
@@ -853,7 +853,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       {showNoteModal !== null && (
         <div className="pos-modal-overlay" onClick={() => setShowNoteModal(null)}>
           <div className="pos-modal" onClick={e => e.stopPropagation()}>
-            <div className="pos-modal-title">📝 Nota para cocina</div>
+            <div className="pos-modal-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon name="pencil" size={16} /> Nota para cocina</div>
             <div className="pos-modal-sub">{items[showNoteModal]?.nombre}</div>
             <textarea
               className="pos-note-textarea"

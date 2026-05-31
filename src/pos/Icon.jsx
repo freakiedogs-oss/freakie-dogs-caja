@@ -32,6 +32,19 @@ const PATHS = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   ban: '<circle cx="12" cy="12" r="9"/><path d="M5 5l14 14"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v9h14v-9"/><path d="M12 8S10.5 3 8 4s.5 4 4 4zM12 8s1.5-5 4-4-.5 4-4 4z"/>',
+  cup: '<path d="M6 2h12l-1.4 18.1A2 2 0 0 1 14.6 22H9.4a2 2 0 0 1-2-1.9L6 2z"/><path d="M5 8h14"/>',
+  beer: '<path d="M17 11h1a3 3 0 0 1 0 6h-1"/><path d="M9 12v5M13 12v5"/><path d="M7 8.5V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V8.5"/><path d="M6 8.5a2 2 0 0 1 0-4 2.5 2.5 0 0 1 5 0 2.5 2.5 0 0 1 5 0 2 2 0 0 1 0 4z"/>',
+  cart: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/>',
+  utensils: '<path d="M3 2v7c0 1.1.9 2 2 2a2 2 0 0 0 2-2V2M5 11v11M16 2c-1.7 0-3 2-3 5s1 4 3 4v11"/>',
+};
+
+// Mapa emoji → icono (para categorías guardadas en BD con emoji)
+export const EMOJI_ICON = {
+  '🎁': 'gift', '🌭': 'utensils', '🍔': 'utensils', '🍟': 'bag', '🥪': 'utensils',
+  '🥤': 'cup', '🧃': 'cup', '☕': 'cup', '🍺': 'beer', '🍻': 'beer',
+  '➕': 'plus', '+': 'plus', '🍴': 'utensils', '🍕': 'utensils', '🛒': 'cart',
 };
 
 export default function Icon({ name, size = 20, color, className = '', style = {}, strokeWidth = 2 }) {
