@@ -46,6 +46,8 @@ const PATHS = {
   box: '<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
   rotate: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   circle: '<circle cx="12" cy="12" r="8"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  chevronLeft: '<path d="M15 18l-6-6 6-6"/>',
 };
 
 // Mapa emoji → icono (para categorías guardadas en BD con emoji)

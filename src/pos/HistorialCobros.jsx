@@ -315,13 +315,15 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             onClick={() => setFiltroFecha(f)}
             style={{
               padding: '6px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600,
-              border: '1px solid ' + (filtroFecha === f ? '#e63946' : '#333'),
-              background: filtroFecha === f ? '#e63946' : '#1e1e24',
+              border: '1px solid ' + (filtroFecha === f ? '#E62329' : '#333'),
+              background: filtroFecha === f ? '#E62329' : '#1e1e24',
               color: filtroFecha === f ? '#fff' : '#8b8997',
               cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
             }}
           >
-            {f === 'hoy' ? '📅 Hoy' : f === 'ayer' ? '⏪ Ayer' : '📆 Elegir fecha'}
+            <Icon name={f === 'ayer' ? 'chevronLeft' : 'calendar'} size={14} />
+            {f === 'hoy' ? 'Hoy' : f === 'ayer' ? 'Ayer' : 'Elegir fecha'}
           </button>
         ))}
         {filtroFecha === 'custom' && (
@@ -343,7 +345,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
 
         {cuentas.length === 0 ? (
           <div className="historial-empty">
-            <div style={{ fontSize: 48 }}>📋</div>
+            <div style={{ display: 'flex', justifyContent: 'center' }}><Icon name="receipt" size={46} color="#43382f" /></div>
             <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>
               {filtroFecha === 'hoy' ? 'Sin cobros hoy' : filtroFecha === 'ayer' ? 'Sin cobros ayer' : 'Sin cobros en esta fecha'}
             </div>
@@ -395,7 +397,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                     <div className="historial-ticket-total" style={{ color: '#2dd4a8', fontWeight: 700, fontSize: 16 }}>
                       ${parseFloat(cuenta.total || 0).toFixed(2)}
                       {cuenta.nc_codigo_generacion && (
-                        <div style={{ fontSize: 9, color: '#f87171', fontWeight: 600, marginTop: 2 }}>📋 NC emitida</div>
+                        <div style={{ fontSize: 9, color: '#f87171', fontWeight: 600, marginTop: 2 }}>NC emitida</div>
                       )}
                     </div>
 
@@ -454,22 +456,23 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                           className="historial-action-btn reimprimir"
                           onClick={() => handleReimprimir(cuenta)}
                           title="Reimprimir ticket"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                         >
-                          🖨 Reimprimir
+                          <Icon name="receipt" size={14} /> Reimprimir
                         </button>
                         {cuenta.dte_uuid && (cuenta.dte_tipo === '01' || cuenta.dte_tipo === '03') && !cuenta.nc_codigo_generacion && (
                           <button
                             className="historial-action-btn"
                             onClick={() => setNcCuenta(cuenta)}
                             title="Emitir Nota de Crédito contra este DTE"
-                            style={{ background: '#7f1d1d', borderColor: '#be123c' }}
+                            style={{ background: '#7f1d1d', borderColor: '#be123c', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                           >
-                            📋 NC
+                            <Icon name="receipt" size={13} /> NC
                           </button>
                         )}
                         {cuenta.nc_codigo_generacion && (
                           <span style={{ fontSize: 11, color: '#f87171', padding: '4px 8px', background: '#1a0a0a', borderRadius: 4, border: '1px solid #7f1d1d' }}>
-                            📋 NC: {cuenta.nc_codigo_generacion.slice(0, 8)}...
+                            NC: {cuenta.nc_codigo_generacion.slice(0, 8)}...
                           </span>
                         )}
                         <button

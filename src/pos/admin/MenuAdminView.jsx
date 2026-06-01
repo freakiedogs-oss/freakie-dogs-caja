@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
+import Icon from '../Icon'
 
 /* ── Paleta eye-efficient ── */
 const C = {
@@ -10,7 +11,7 @@ const C = {
 
 const TABS = [
   { key: 'categorias', label: '📂 Categorías' },
-  { key: 'items',      label: '🍔 Ítems' },
+  { key: 'items',      label: 'Ítems' },
   { key: 'grupos',     label: '⚙️ Grupos Modificadores' },
   { key: 'asignar',    label: '🔗 Asignar a Ítems' },
 ]
@@ -219,13 +220,13 @@ function CategoriasTab({ menuId }) {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{c.nombre}</div>
-              <div style={{ fontSize: 11, color: C.muted }}>Orden: {c.orden} · {c.activo ? '✅ Activa' : '⛔ Inactiva'}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>Orden: {c.orden} · {c.activo ? 'Activa' : 'Inactiva'}</div>
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
               <button onClick={() => handleMove(i, -1)} style={smallBtn}>▲</button>
               <button onClick={() => handleMove(i, 1)} style={smallBtn}>▼</button>
-              <button onClick={() => setEditCat(c)} style={smallBtn}>✏️</button>
-              <button onClick={() => handleDelete(c.id)} style={{ ...smallBtn, color: C.danger }}>🗑️</button>
+              <button onClick={() => setEditCat(c)} style={smallBtn}><Icon name="pencil" size={14} /></button>
+              <button onClick={() => handleDelete(c.id)} style={{ ...smallBtn, color: C.danger }}><Icon name="trash" size={14} /></button>
             </div>
           </div>
         ))}
@@ -384,10 +385,10 @@ function ItemsTab({ menuId }) {
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <button onClick={() => handleToggle(item)} style={{ ...smallBtn, background: item.disponible ? '#0d2818' : '#2a1a1a', color: item.disponible ? C.teal : C.danger, fontSize: 11 }}>
-                  {item.disponible ? '✅ Disponible' : '⛔ No disponible'}
+                  {item.disponible ? 'Disponible' : 'No disponible'}
                 </button>
-                <button onClick={() => setEditItem(item)} style={smallBtn}>✏️</button>
-                <button onClick={() => handleDelete(item.id)} style={{ ...smallBtn, color: C.danger }}>🗑️</button>
+                <button onClick={() => setEditItem(item)} style={smallBtn}><Icon name="pencil" size={14} /></button>
+                <button onClick={() => handleDelete(item.id)} style={{ ...smallBtn, color: C.danger }}><Icon name="trash" size={14} /></button>
               </div>
             </div>
           )
@@ -594,9 +595,9 @@ function GruposTab() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                  <button onClick={() => setEditMods(g.id)} style={smallBtn} title="Editar opciones">📋</button>
-                  <button onClick={() => setEditGrupo(g)} style={smallBtn}>✏️</button>
-                  <button onClick={() => handleDeleteGrupo(g.id)} style={{ ...smallBtn, color: C.danger }}>🗑️</button>
+                  <button onClick={() => setEditMods(g.id)} style={smallBtn} title="Editar opciones"><Icon name="list" size={14} /></button>
+                  <button onClick={() => setEditGrupo(g)} style={smallBtn}><Icon name="pencil" size={14} /></button>
+                  <button onClick={() => handleDeleteGrupo(g.id)} style={{ ...smallBtn, color: C.danger }}><Icon name="trash" size={14} /></button>
                 </div>
               </div>
             </div>
