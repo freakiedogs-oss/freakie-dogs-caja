@@ -4,6 +4,7 @@ import POSHome from './POSHome'
 import POSMain from './cajero/POSMain'
 import KDSScreen from './KDSScreen'
 import OrdenesView from './OrdenesView'
+import CierreTurno from './CierreTurno'
 import MenuAdminView from './admin/MenuAdminView'
 import { STORES } from '../config'
 
@@ -151,6 +152,8 @@ export default function POSApp() {
 
   const handleGoToMenuAdmin = () => setScreen('menu-admin')
 
+  const handleGoToCierre = () => setScreen('cierre')
+
   // ── Login ──
   if (!user) return <POSLogin onLogin={handleLogin} />
 
@@ -178,6 +181,11 @@ export default function POSApp() {
     return <MenuAdminView user={posUser} storeCode={posUser.store_code} onBack={handleBack} />
   }
 
+  // ── Cierre de caja (X/Z) ──
+  if (screen === 'cierre') {
+    return <CierreTurno user={posUser} onBack={handleBack} />
+  }
+
   // ── Home ──
   if (screen === 'home') {
     return (
@@ -187,6 +195,7 @@ export default function POSApp() {
         onLogout={handleLogout}
         onGoToKDS={handleGoToKDS}
         onGoToHistorial={handleGoToHistorial}
+        onGoToCierre={handleGoToCierre}
         onGoToMenuAdmin={canChangeStore ? handleGoToMenuAdmin : null}
         onChangeStore={canChangeStore ? handleChangeStore : null}
       />

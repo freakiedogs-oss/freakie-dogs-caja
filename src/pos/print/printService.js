@@ -316,6 +316,62 @@ function sendSistema(html) {
  * @param {object} cuenta  datos normalizados (ver builders)
  * @param {object} [opts]  { storeCode, modo }  (override de impresora)
  */
+/** CORTE de caja X/Z (turno). */
+export function buildCorte(c, cols = 48) {
+  const t = new Ticket(cols);
+  t.align('center').bold(true).size(2, 2).ln('FREAKIE DOGS').normal();
+  if (c.storeName) t.align('center').ln(c.storeName);
+  t.align('center').bold(true).ln(`CORTE ${c.tipo === 'Z' ? 'Z (CIERRE)' : 'X (LECTURA)'}`).bold(false);
+  t.ln(`Cajero: ${c.cajero || '-'}`);
+  if (c.abierto_at) t.ln(`Apertura: ${horaSV(c.abierto_at)}`);
+  t.ln(`Impreso: ${horaSV()}`);
+  t.align('left').hr();
+  t.row('Fondo apertura', money(c.fondo));
+  t.hr().bold(true).ln('VENTAS POR METODO').bold(false);
+  t.row('Efectivo', money(c.efectivo));
+  t.row('Tarjeta', money(c.tarjeta));
+  if (c.transferencia) t.row('Transferencia', money(c.transferencia));
+  if (c.link_pago) t.row('Link de pago', money(c.link_pago));
+  if (c.otros) t.row('Otros/Mixto', money(c.otros));
+  t.bold(true).size(1, 2).row('TOTAL', money(c.total)).normal();
+  t.row('Propinas', money(c.propinas));
+  t.row('Cuentas', String(c.n_cuentas || 0));
+  t.row('Cancelaciones', String(c.n_cancelaciones || 0));
+  t.row('Ticket prom.', money(c.ticket_promedio));
+  t.hr();
+  t.row('Efectivo esperado', money(c.efectivoEsperado));
+  if (c.tipo === 'Z') {
+    t.row('Efectivo contado', money(c.efectivoContado));
+    t.bold(true).row('Diferencia', money(c.difEfectivo)).bold(false);
+    t.row('A depositar', money(c.depositar));
+    if (c.obs) { t.hr().wrap('Obs: ' + c.obs); }
+  }
+  t.feed(1).align('center').ln(c.tipo === 'Z' ? '=== CIERRE DE TURNO ===' : '--- corte de lectura ---').feed(1);
+  t.cut();
+  return t;
+}
+
+function corteHTML(c) {
+  const L = [
+    { center: 1, big: 1, bold: 1, text: 'FREAKIE DOGS' },
+    ...(c.storeName ? [{ center: 1, text: c.storeName }] : []),
+    { center: 1, bold: 1, text: `CORTE ${c.tipo === 'Z' ? 'Z (CIERRE)' : 'X (LECTURA)'}` },
+    { text: `Cajero: ${c.cajero || '-'}` },
+    { hr: 1 },
+    { row: 1, left: 'Fondo', right: money(c.fondo) },
+    { row: 1, left: 'Efectivo', right: money(c.efectivo) },
+    { row: 1, left: 'Tarjeta', right: money(c.tarjeta) },
+    { row: 1, left: 'Transferencia', right: money(c.transferencia) },
+    { row: 1, bold: 1, left: 'TOTAL', right: money(c.total) },
+    { row: 1, left: 'Propinas', right: money(c.propinas) },
+    { row: 1, left: 'Efectivo esperado', right: money(c.efectivoEsperado) },
+  ];
+  if (c.tipo === 'Z') {
+    L.push({ row: 1, left: 'Contado', right: money(c.efectivoContado) }, { row: 1, bold: 1, left: 'Diferencia', right: money(c.difEfectivo) }, { row: 1, left: 'A depositar', right: money(c.depositar) });
+  }
+  return htmlDoc(`Corte ${c.tipo}`, L);
+}
+
 export async function imprimir(tipo, cuenta, opts = {}) {
   const storeCode = opts.storeCode || cuenta.storeCode;
   const imp = opts.impresora || (storeCode ? await getImpresora(storeCode) : null);
@@ -326,8 +382,9 @@ export async function imprimir(tipo, cuenta, opts = {}) {
     comanda: () => buildComanda(cuenta, cols),
     precuenta: () => buildPreCuenta(cuenta, cols),
     factura: () => buildFactura(cuenta, cols),
+    corte: () => buildCorte(cuenta, cols),
   };
-  const htmlers = { comanda: comandaHTML, precuenta: preCuentaHTML, factura: facturaHTML };
+  const htmlers = { comanda: comandaHTML, precuenta: preCuentaHTML, factura: facturaHTML, corte: corteHTML };
 
   if (modo === 'sistema') { sendSistema(htmlers[tipo](cuenta)); return { modo }; }
 
@@ -346,5 +403,6 @@ export async function imprimir(tipo, cuenta, opts = {}) {
 export const printComanda = (cuenta, opts) => imprimir('comanda', cuenta, opts);
 export const printPreCuenta = (cuenta, opts) => imprimir('precuenta', cuenta, opts);
 export const printFactura = (cuenta, opts) => imprimir('factura', cuenta, opts);
+export const printCorte = (tipo, cuenta, opts) => imprimir('corte', cuenta, opts);
 
-export default { imprimir, printComanda, printPreCuenta, printFactura, getImpresora, clearImpresoraCache, EMISOR };
+export default { imprimir, printComanda, printPreCuenta, printFactura, printCorte, getImpresora, clearImpresoraCache, EMISOR };
