@@ -1,9 +1,144 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
-import { STORES } from '../config'
+import { STORES, BUCKET_CIERRES } from '../config'
 import Icon from './Icon'
 import { useToast } from '../hooks/useToast'
 import { printCorte } from './print/printService'
+
+const MOTIVOS_EMPLEADO = ['Adelanto de Salario', 'Pago de Salario', 'Pago Propina']
+const _n = (v) => parseFloat(v) || 0
+
+async function uploadFoto(file, folder) {
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`
+  const { error } = await db.storage.from(BUCKET_CIERRES).upload(path, file, { cacheControl: '3600', upsert: false })
+  if (error) throw new Error(error.message)
+  return db.storage.from(BUCKET_CIERRES).getPublicUrl(path).data.publicUrl
+}
+
+const _modalBg = { position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }
+const _modal = { background: '#1c1c22', border: '1px solid #43382f', borderRadius: 16, padding: 18, width: 420, maxWidth: '95%', maxHeight: '90vh', overflow: 'auto' }
+const _inp = { width: '100%', background: '#241d19', border: '1px solid #332b27', color: '#f3efe9', borderRadius: 8, padding: '9px 11px', fontSize: 14, outline: 'none' }
+const _lbl = { fontSize: 13, color: '#9a9088', marginBottom: 5 }
+
+// ── Modal Egreso (clon del CierreForm: motivo + monto + persona/empleado + comentario + foto) ──
+function ModalEgreso({ motivos, empleadosSuc, onSave, onClose }) {
+  const [motivo, setMotivo] = useState(null)
+  const [monto, setMonto] = useState('')
+  const [persona, setPersona] = useState('')
+  const [empleadoId, setEmpleadoId] = useState(null)
+  const [showNuevo, setShowNuevo] = useState(false)
+  const [nom, setNom] = useState(''); const [ape, setApe] = useState('')
+  const [comentario, setComentario] = useState('')
+  const [foto, setFoto] = useState(null)
+  const fRef = useRef()
+  const esEmp = motivo && MOTIVOS_EMPLEADO.includes(motivo.nombre)
+  const personaOk = !motivo?.requiere_persona || (esEmp ? (empleadoId || (showNuevo && nom.trim() && ape.trim())) : persona.trim())
+  const ok = motivo && _n(monto) > 0 && personaOk && (!motivo.requiere_comentario || comentario.trim()) && (!motivo.requiere_foto || foto)
+
+  return (
+    <div style={_modalBg} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={_modal}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 14 }}>Agregar Egreso</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          {motivos.map(m => (
+            <div key={m.id} onClick={() => { setMotivo(m); setPersona(''); setEmpleadoId(null); setShowNuevo(false) }}
+              style={{ padding: '8px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', fontWeight: 600, background: motivo?.id === m.id ? '#E62329' : '#241d19', color: motivo?.id === m.id ? '#fff' : '#9a9088', border: `1.5px solid ${motivo?.id === m.id ? '#E62329' : '#332b27'}` }}>
+              {m.nombre}
+            </div>
+          ))}
+        </div>
+        {motivo && (<>
+          <div style={{ marginBottom: 10 }}><div style={_lbl}>Monto</div><input style={_inp} inputMode="decimal" placeholder="0.00" value={monto} onChange={e => setMonto(e.target.value)} /></div>
+          {motivo.requiere_persona && esEmp && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={_lbl}>Persona que recibe *</div>
+              {persona && !showNuevo && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: '#0d1a18', border: '1px solid #1f3a34', borderRadius: 10, marginBottom: 8 }}>
+                  <span style={{ flex: 1, fontWeight: 600, color: '#2dd4a8' }}>{persona}</span>
+                  <button onClick={() => { setPersona(''); setEmpleadoId(null) }} style={{ background: 'none', border: 'none', color: '#9a9088', cursor: 'pointer', fontSize: 16 }}>×</button>
+                </div>
+              )}
+              {!persona && !showNuevo && (
+                <div style={{ maxHeight: 200, overflowY: 'auto', borderRadius: 10, border: '1px solid #332b27' }}>
+                  {(empleadosSuc || []).map(emp => (
+                    <div key={emp.id} onClick={() => { setEmpleadoId(emp.id); setPersona(emp.nombre_completo); setShowNuevo(false) }}
+                      style={{ padding: '10px 12px', borderBottom: '1px solid #241d19', cursor: 'pointer', fontSize: 14, color: '#c9c2b8' }}>
+                      {emp.nombre_completo} <span style={{ fontSize: 11, color: '#6b6878' }}>· {emp.cargo || 'empleado'}</span>
+                    </div>
+                  ))}
+                  <div onClick={() => setShowNuevo(true)} style={{ padding: '10px 12px', cursor: 'pointer', fontSize: 13, color: '#60a5fa', borderTop: '1px solid #332b27', background: '#0d1420' }}>+ Agregar otra persona (externa)</div>
+                </div>
+              )}
+              {showNuevo && (
+                <div style={{ background: '#15110f', padding: 12, borderRadius: 10, border: '1px solid #332b27' }}>
+                  <div style={{ fontSize: 12, color: '#9a9088', marginBottom: 8 }}>Persona externa — nombre y apellido</div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <input style={{ ..._inp, fontSize: 13 }} value={nom} onChange={e => setNom(e.target.value)} placeholder="Nombre" />
+                    <input style={{ ..._inp, fontSize: 13 }} value={ape} onChange={e => setApe(e.target.value)} placeholder="Apellido" />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button style={{ ...ghostBtn }} onClick={() => setShowNuevo(false)}>Volver a lista</button>
+                    <button style={{ ...ghostBtn, color: '#E62329', borderColor: '#E62329' }} disabled={!nom.trim() || !ape.trim()} onClick={() => { setPersona(`${nom.trim()} ${ape.trim()}`); setEmpleadoId(null); setShowNuevo(false) }}>Confirmar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {motivo.requiere_persona && !esEmp && (
+            <div style={{ marginBottom: 12 }}><div style={_lbl}>Persona que recibe *</div><input style={_inp} value={persona} onChange={e => setPersona(e.target.value)} placeholder="Nombre completo" /></div>
+          )}
+          {motivo.requiere_comentario && (
+            <div style={{ marginBottom: 12 }}><div style={_lbl}>Comentario *</div><textarea style={{ ..._inp, resize: 'none' }} rows={2} value={comentario} onChange={e => setComentario(e.target.value)} placeholder="Describe el gasto..." /></div>
+          )}
+          {motivo.requiere_foto && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={_lbl}>Foto requerida *</div>
+              <input ref={fRef} type="file" accept="image/*" capture="environment" onChange={e => setFoto(e.target.files[0])} style={{ display: 'none' }} />
+              <button style={ghostBtn} onClick={() => fRef.current.click()}>{foto ? `✓ ${foto.name}` : '📷 Foto'}</button>
+            </div>
+          )}
+        </>)}
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <button style={{ ...ghostBtn, flex: 1, padding: '10px' }} onClick={onClose}>Cancelar</button>
+          <button disabled={!ok} onClick={() => ok && onSave({ motivo_id: motivo.id, motivo_nombre: motivo.nombre, monto: _n(monto), persona_recibe: persona.trim() || null, empleado_id: empleadoId, comentario: comentario.trim() || null, foto_file: foto || null, foto_url: null })}
+            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#E62329', color: '#fff', fontWeight: 800, cursor: 'pointer', opacity: ok ? 1 : 0.4 }}>Agregar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal Ingreso (clon: motivo + monto + evento + comentario) ──
+function ModalIngreso({ motivos, onSave, onClose }) {
+  const [motivo, setMotivo] = useState(null)
+  const [monto, setMonto] = useState('')
+  const [evento, setEvento] = useState('')
+  const [comentario, setComentario] = useState('')
+  const ok = motivo && _n(monto) > 0 && (!motivo.requiere_evento || evento.trim()) && (!motivo.requiere_comentario || comentario.trim())
+  return (
+    <div style={_modalBg} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={_modal}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 14 }}>Agregar Ingreso</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          {motivos.map(m => (
+            <div key={m.id} onClick={() => setMotivo(m)} style={{ padding: '8px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', fontWeight: 600, background: motivo?.id === m.id ? '#2563eb' : '#241d19', color: motivo?.id === m.id ? '#fff' : '#9a9088', border: `1.5px solid ${motivo?.id === m.id ? '#2563eb' : '#332b27'}` }}>{m.nombre}</div>
+          ))}
+        </div>
+        {motivo && (<>
+          <div style={{ marginBottom: 10 }}><div style={_lbl}>Monto</div><input style={_inp} inputMode="decimal" placeholder="0.00" value={monto} onChange={e => setMonto(e.target.value)} /></div>
+          {motivo.requiere_evento && <div style={{ marginBottom: 12 }}><div style={_lbl}>Nombre del evento *</div><input style={_inp} value={evento} onChange={e => setEvento(e.target.value)} placeholder="Nombre del evento" /></div>}
+          {motivo.requiere_comentario && <div style={{ marginBottom: 12 }}><div style={_lbl}>Comentario *</div><textarea style={{ ..._inp, resize: 'none' }} rows={2} value={comentario} onChange={e => setComentario(e.target.value)} placeholder="Explica el ingreso..." /></div>}
+        </>)}
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <button style={{ ...ghostBtn, flex: 1, padding: '10px' }} onClick={onClose}>Cancelar</button>
+          <button disabled={!ok} onClick={() => ok && onSave({ motivo_id: motivo.id, motivo_nombre: motivo.nombre, monto: _n(monto), nombre_evento: evento.trim() || null, comentario: comentario.trim() || null })}
+            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 800, cursor: 'pointer', opacity: ok ? 1 : 0.4 }}>Agregar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 /**
  * CierreTurno — Corte de caja X/Z del POS. Estructura CLONADA del CierreForm
@@ -56,8 +191,9 @@ export default function CierreTurno({ user, onBack }) {
   const [efectivoReal, setEfectivoReal] = useState('')
   const [obs, setObs]         = useState('')
   // add forms
-  const [egForm, setEgForm]   = useState(null) // {motivo_id, monto, persona, comentario}
-  const [inForm, setInForm]   = useState(null)
+  const [showEg, setShowEg]   = useState(false)
+  const [showIn, setShowIn]   = useState(false)
+  const [empleadosSuc, setEmpleadosSuc] = useState([])
 
   const loadTurno = useCallback(async () => {
     setLoading(true)
@@ -70,9 +206,13 @@ export default function CierreTurno({ user, onBack }) {
   useEffect(() => { loadTurno() }, [loadTurno])
 
   useEffect(() => {
-    db.from('motivos_egreso').select('id,nombre').eq('activo', true).then(({ data }) => setMotEg(data || [])).catch(() => {})
-    db.from('motivos_ingreso').select('id,nombre').then(({ data }) => setMotIn(data || [])).catch(() => {})
-  }, [])
+    db.from('motivos_egreso').select('id,nombre,requiere_persona,requiere_comentario,requiere_foto,orden').eq('activo', true).order('orden').then(({ data }) => setMotEg(data || [])).catch(() => {})
+    db.from('motivos_ingreso').select('id,nombre,requiere_evento,requiere_comentario,orden').order('orden').then(({ data }) => setMotIn(data || [])).catch(() => {})
+    // empleados de la sucursal (para egresos a empleado)
+    db.from('sucursales').select('id').eq('store_code', storeCode).maybeSingle().then(({ data: suc }) => {
+      if (suc) db.from('empleados').select('id,nombre_completo,cargo').eq('sucursal_id', suc.id).eq('activo', true).order('nombre_completo').then(({ data }) => setEmpleadosSuc(data || []))
+    }).catch(() => {})
+  }, [storeCode])
 
   const loadCorte = useCallback(async () => {
     if (!turno) return
@@ -121,6 +261,13 @@ export default function CierreTurno({ user, onBack }) {
     if (!confirm('¿Cerrar el turno? El corte Z es definitivo.')) return
     setSaving(true)
     try {
+      // Subir fotos de egresos (si las hay) y limpiar foto_file del jsonb
+      const egresosFinal = await Promise.all(egresos.map(async (e) => {
+        let foto_url = e.foto_url || null
+        if (e.foto_file) { try { foto_url = await uploadFoto(e.foto_file, `egresos/${storeCode}`) } catch (err) { console.warn('foto egreso no subida:', err.message) } }
+        const { foto_file, ...rest } = e
+        return { ...rest, foto_url }
+      }))
       const { error } = await db.from('pos_turnos').update({
         cerrado_at: new Date().toISOString(), estado: 'cerrado',
         sistema_efectivo: efSistema, sistema_tarjeta: n(corte?.tarjeta), sistema_transferencia: n(corte?.transferencia),
@@ -128,7 +275,7 @@ export default function CierreTurno({ user, onBack }) {
         sistema_propinas: n(corte?.propinas), sistema_num_cuentas: corte?.n_cuentas || 0,
         sistema_num_cancelaciones: corte?.n_cancelaciones || 0, sistema_ticket_promedio: n(corte?.ticket_promedio),
         conteo_efectivo: efReal, diferencia_efectivo: difDeposito, deposito_monto: efReal,
-        egresos: egresos, ingresos_extra: ingresos, notas: obs || null,
+        egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
       }).eq('id', turno.id)
       if (error) throw error
       toast.success('Turno cerrado (corte Z)')
@@ -164,20 +311,6 @@ export default function CierreTurno({ user, onBack }) {
       </div>
     )
   }
-
-  const addEgreso = () => {
-    if (!egForm?.motivo_id || !n(egForm.monto)) { toast.warning('Elige motivo y monto'); return }
-    const m = motEg.find(x => x.id === egForm.motivo_id)
-    setEgresos(p => [...p, { motivo_id: egForm.motivo_id, motivo_nombre: m?.nombre || 'Egreso', monto: n(egForm.monto), persona_recibe: egForm.persona || null, comentario: egForm.comentario || null }])
-    setEgForm(null)
-  }
-  const addIngreso = () => {
-    if (!inForm?.motivo_id || !n(inForm.monto)) { toast.warning('Elige motivo y monto'); return }
-    const m = motIn.find(x => x.id === inForm.motivo_id)
-    setIngresos(p => [...p, { motivo_id: inForm.motivo_id, motivo_nombre: m?.nombre || 'Ingreso', monto: n(inForm.monto), nombre_evento: inForm.evento || null, comentario: inForm.comentario || null }])
-    setInForm(null)
-  }
-  const inpStyle = { background: '#241d19', border: '1px solid #332b27', color: '#f3efe9', borderRadius: 8, padding: '8px 10px', fontSize: 13, outline: 'none', width: '100%' }
 
   return (
     <div className="poshome-root">{Header}
@@ -220,19 +353,9 @@ export default function CierreTurno({ user, onBack }) {
             <div style={card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <span style={{ ...secTitle, marginBottom: 0 }}>Egresos del día</span>
-                <button style={ghostBtn} onClick={() => setEgForm(egForm ? null : { motivo_id: '', monto: '', persona: '', comentario: '' })}>+ Agregar</button>
+                <button style={ghostBtn} onClick={() => setShowEg(true)}>+ Agregar</button>
               </div>
-              {egForm && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10, background: '#15110f', borderRadius: 8, padding: 10 }}>
-                  <select style={inpStyle} value={egForm.motivo_id} onChange={e => setEgForm(f => ({ ...f, motivo_id: e.target.value }))}>
-                    <option value="">Motivo…</option>{motEg.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                  </select>
-                  <input style={inpStyle} inputMode="decimal" placeholder="Monto" value={egForm.monto} onChange={e => setEgForm(f => ({ ...f, monto: e.target.value }))} />
-                  <input style={inpStyle} placeholder="Persona que recibe (opcional)" value={egForm.persona} onChange={e => setEgForm(f => ({ ...f, persona: e.target.value }))} />
-                  <button style={{ ...ghostBtn, color: '#2dd4a8', borderColor: '#1f3a34' }} onClick={addEgreso}>Agregar egreso</button>
-                </div>
-              )}
-              {egresos.length === 0 && !egForm && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin egresos</div>}
+              {egresos.length === 0 && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin egresos</div>}
               {egresos.map((e, i) => (
                 <div key={i} style={lineItem}>
                   <div><div style={{ fontWeight: 600, fontSize: 14 }}>{e.motivo_nombre}</div>{e.persona_recibe && <div style={{ fontSize: 12, color: '#9a9088' }}>→ {e.persona_recibe}</div>}</div>
@@ -247,18 +370,9 @@ export default function CierreTurno({ user, onBack }) {
             <div style={card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <span style={{ ...secTitle, marginBottom: 0 }}>Ingresos del día</span>
-                <button style={ghostBtn} onClick={() => setInForm(inForm ? null : { motivo_id: '', monto: '', evento: '', comentario: '' })}>+ Agregar</button>
+                <button style={ghostBtn} onClick={() => setShowIn(true)}>+ Agregar</button>
               </div>
-              {inForm && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10, background: '#15110f', borderRadius: 8, padding: 10 }}>
-                  <select style={inpStyle} value={inForm.motivo_id} onChange={e => setInForm(f => ({ ...f, motivo_id: e.target.value }))}>
-                    <option value="">Motivo…</option>{motIn.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                  </select>
-                  <input style={inpStyle} inputMode="decimal" placeholder="Monto" value={inForm.monto} onChange={e => setInForm(f => ({ ...f, monto: e.target.value }))} />
-                  <button style={{ ...ghostBtn, color: '#2dd4a8', borderColor: '#1f3a34' }} onClick={addIngreso}>Agregar ingreso</button>
-                </div>
-              )}
-              {ingresos.length === 0 && !inForm && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin ingresos</div>}
+              {ingresos.length === 0 && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin ingresos</div>}
               {ingresos.map((e, i) => (
                 <div key={i} style={lineItem}>
                   <div style={{ fontWeight: 600, fontSize: 14 }}>{e.motivo_nombre}</div>
@@ -302,6 +416,9 @@ export default function CierreTurno({ user, onBack }) {
           </>
         )}
       </div>
+
+      {showEg && <ModalEgreso motivos={motEg} empleadosSuc={empleadosSuc} onClose={() => setShowEg(false)} onSave={(e) => { setEgresos(p => [...p, e]); setShowEg(false) }} />}
+      {showIn && <ModalIngreso motivos={motIn} onClose={() => setShowIn(false)} onSave={(e) => { setIngresos(p => [...p, e]); setShowIn(false) }} />}
     </div>
   )
 }
