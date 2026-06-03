@@ -339,11 +339,14 @@ export function buildCorte(c, cols = 48) {
   t.row('Cancelaciones', String(c.n_cancelaciones || 0));
   t.row('Ticket prom.', money(c.ticket_promedio));
   t.hr();
-  t.row('Efectivo esperado', money(c.efectivoEsperado));
   if (c.tipo === 'Z') {
-    t.row('Efectivo contado', money(c.efectivoContado));
+    if (c.totalEgresos) t.row('(-) Egresos', money(c.totalEgresos));
+    if (c.totalIngresos) t.row('(+) Ingresos', money(c.totalIngresos));
+  }
+  t.row('Efectivo a depositar (calc)', money(c.efectivoEsperado));
+  if (c.tipo === 'Z') {
+    t.row('Efectivo real depositado', money(c.depositar));
     t.bold(true).row('Diferencia', money(c.difEfectivo)).bold(false);
-    t.row('A depositar', money(c.depositar));
     if (c.obs) { t.hr().wrap('Obs: ' + c.obs); }
   }
   t.feed(1).align('center').ln(c.tipo === 'Z' ? '=== CIERRE DE TURNO ===' : '--- corte de lectura ---').feed(1);
