@@ -232,6 +232,20 @@ export default function FinanzasDashboard({ user }) {
     loadData2026()
   }, [])
 
+  // ── Recargar P&L cuando el botón "Refrescar P&L" termina (fn_refresh_pl) ──
+  // 4-Jun-2026: antes solo CardVentasComparativo escuchaba este evento, por lo que
+  // el Estado de Resultados quedaba con el snapshot del mount aunque las MVs ya
+  // estuvieran refrescadas en BD.
+  useEffect(() => {
+    if (!ROLES.includes(user?.rol)) return
+    const h = () => {
+      setData2026(prev => prev ? { ...prev, peyaOrders: null } : prev)  // invalida lazy cache PeYa
+      loadData2026()
+    }
+    window.addEventListener('freakie:refresh-pl', h)
+    return () => window.removeEventListener('freakie:refresh-pl', h)
+  }, [])
+
   // ── Lazy load peyaOrders — solo cuando user abre TabPeya ──
   // pedidos_peya tiene ~22K filas. Cargarlo al inicio agregaba ~5s al dashboard.
   // Lazy: solo se trae cuando hace click en tab "peya".
