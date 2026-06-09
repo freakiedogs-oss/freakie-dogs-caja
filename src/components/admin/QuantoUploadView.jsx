@@ -130,6 +130,7 @@ function parseDte(filename, doc) {
 
   const itemRows = items.map((it) => ({
     orden_id: orderId,
+    _cg: ident.codigoGeneracion,
     numero_item: it.numItem,
     descripcion: it.descripcion || '',
     tipo_item: it.tipoItem,
@@ -203,11 +204,36 @@ export default function QuantoUploadView({ user }) {
       const flush = async () => {
         if (!bufCab.length) return
         try {
+          // 1) Insertar cabeceras (ignora duplicados por codigo_generacion)
           const { error: e1 } = await db.from('quanto_ordenes').upsert(bufCab, { onConflict: 'codigo_generacion', ignoreDuplicates: true })
           if (e1) throw e1
+          // 2) Resolver el id canónico de CADA orden (nuevas + las que ya existían).
+          //    Imprescindible: en re-uploads el id random generado en el cliente fue
+          //    descartado por el upsert, pero la orden ya tiene su id real en la BD.
           if (bufItems.length) {
-            const { error: e2 } = await db.from('quanto_orden_items').upsert(bufItems, { onConflict: 'orden_id,numero_item', ignoreDuplicates: true })
-            if (e2) throw e2
+            const cgs = [...new Set(bufCab.map((c) => c.codigo_generacion).filter(Boolean))]
+            const idByCg = new Map()
+            for (let k = 0; k < cgs.length; k += 200) {
+              const { data: ordRows, error: eSel } = await db
+                .from('quanto_ordenes')
+                .select('id, codigo_generacion')
+                .in('codigo_generacion', cgs.slice(k, k + 200))
+              if (eSel) throw eSel
+              for (const r of (ordRows || [])) idByCg.set(r.codigo_generacion, r.id)
+            }
+            // 3) Re-mapear orden_id al id canónico y descartar items sin orden padre
+            //    (en vez de reintentar un insert que viola la FK para siempre).
+            const clean = []
+            for (const it of bufItems) {
+              const canonical = idByCg.get(it._cg)
+              if (!canonical) continue
+              const { _cg, ...rest } = it
+              clean.push({ ...rest, orden_id: canonical })
+            }
+            if (clean.length) {
+              const { error: e2 } = await db.from('quanto_orden_items').upsert(clean, { onConflict: 'orden_id,numero_item', ignoreDuplicates: true })
+              if (e2) throw e2
+            }
           }
           ok += bufCab.length
         } catch (ex) {
