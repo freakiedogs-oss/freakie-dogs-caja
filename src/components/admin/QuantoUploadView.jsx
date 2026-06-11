@@ -333,8 +333,11 @@ export default function QuantoUploadView({ user }) {
         const aut = (r[idx['Autorizado por']] || '').trim()
         const tipo = (r[idx['Tipo de orden']] || '').trim()
         const canal = aut.toLowerCase().includes('drive') ? 'drivethrough' : (CANAL_MAP[tipo] || 'otro')
+        const codigoRaw = r[idx['Codigo de Generacion']]
         return {
-          codigo: r[idx['Codigo de Generacion']].toUpperCase(),
+          codigoRaw,
+          codigo: codigoRaw.trim().toUpperCase(),
+          tipo,
           canal,
           autorizado_por: aut || null,
           cliente_nombre: (r[idx['Cliente']] || '').trim() || null,
@@ -342,25 +345,55 @@ export default function QuantoUploadView({ user }) {
         }
       })
 
-      setCsvStatus({ phase: 'updating', msg: `${updates.length} órdenes a actualizar...`, total: updates.length, done: 0, ok: 0, err: 0 })
-      let ok = 0, err = 0
+      // codigo_generacion es columna UUID en BD: filas del CSV con código no-UUID
+      // (tickets anulados / no facturados / "N/A") reventaban el UPDATE con
+      // "invalid input syntax for type uuid" y se contaban como errores mudos.
+      // Validamos ANTES de tocar la BD y las reportamos aparte como "sin DTE".
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+      setCsvStatus({ phase: 'updating', msg: `${updates.length} filas a procesar...`, total: updates.length, done: 0, ok: 0, err: 0 })
+      let ok = 0, sinDte = 0, sinMatch = 0, err = 0
+      const sinDteMuestra = []   // hasta 20 códigos crudos para diagnóstico
+      const errList = []         // hasta 20 mensajes únicos de error real
       for (let i = 0; i < updates.length; i++) {
         const u = updates[i]
-        try {
-          const { error } = await db.from('quanto_ordenes').update({
-            canal_venta: u.canal,
-            autorizado_por: u.autorizado_por,
-            cliente_nombre: u.cliente_nombre,
-            dispositivo: u.dispositivo,
-          }).eq('codigo_generacion', u.codigo)
-          if (error) throw error
-          ok++
-        } catch { err++ }
+        if (!UUID_RE.test(u.codigo)) {
+          sinDte++
+          if (sinDteMuestra.length < 20) {
+            sinDteMuestra.push(`"${u.codigoRaw}" — Tipo: ${u.tipo || '(vacío)'} · Autorizado: ${u.autorizado_por || '(vacío)'}`)
+          }
+        } else {
+          try {
+            const { data, error } = await db.from('quanto_ordenes').update({
+              canal_venta: u.canal,
+              autorizado_por: u.autorizado_por,
+              cliente_nombre: u.cliente_nombre,
+              dispositivo: u.dispositivo,
+            }).eq('codigo_generacion', u.codigo).select('id')
+            if (error) throw error
+            // UUID válido pero la orden no existe en BD → "sin match", no "actualizada"
+            if ((data || []).length > 0) ok++
+            else sinMatch++
+          } catch (ex) {
+            err++
+            const m = String(ex?.message || ex)
+            console.error('Quanto CSV update error:', u.codigo, ex)
+            if (errList.length < 20 && !errList.includes(m)) errList.push(m)
+          }
+        }
         if ((i + 1) % 50 === 0) {
-          setCsvStatus({ phase: 'updating', msg: `${i + 1}/${updates.length}`, total: updates.length, done: i + 1, ok, err })
+          setCsvStatus({ phase: 'updating', msg: `${i + 1}/${updates.length} — ${ok} actualizadas · ${sinDte} sin DTE · ${sinMatch} sin match · ${err} errores`, total: updates.length, done: i + 1, ok, err })
         }
       }
-      setCsvStatus({ phase: 'done', msg: `✓ ${ok} actualizadas · ${err} errores`, total: updates.length, done: updates.length, ok, err })
+      setCsvStatus({
+        phase: err ? 'error' : 'done',
+        msg: `${err ? '⚠' : '✓'} ${ok} actualizadas · ${sinDte} sin DTE válido (omitidas) · ${sinMatch} sin orden en BD · ${err} errores`,
+        total: updates.length, done: updates.length, ok, err,
+        errores: errList,
+        avisos: sinDteMuestra.length
+          ? [`Muestra de códigos sin DTE válido (${Math.min(sinDteMuestra.length, 20)} de ${sinDte}):`, ...sinDteMuestra]
+          : [],
+      })
     } catch (ex) {
       setCsvStatus({ phase: 'error', msg: `✗ ${ex.message || ex}` })
     } finally {
@@ -517,6 +550,11 @@ export default function QuantoUploadView({ user }) {
         {s.errores?.length ? (
           <div style={{ marginTop: 6, color: '#f87171', fontSize: 12 }}>
             {s.errores.map((m, i) => <div key={i}>• {m}</div>)}
+          </div>
+        ) : null}
+        {s.avisos?.length ? (
+          <div style={{ marginTop: 6, color: '#fbbf24', fontSize: 12, maxHeight: 180, overflowY: 'auto' }}>
+            {s.avisos.map((m, i) => <div key={i}>{i === 0 ? m : `• ${m}`}</div>)}
           </div>
         ) : null}
         {s.total ? (
