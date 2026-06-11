@@ -55,6 +55,13 @@ function tsLocalToISO(v) {
   return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00-06:00`
 }
 
+// Normalizar codigo_generacion: en BD es columna UUID (PostgREST la devuelve
+// SIEMPRE en minúsculas), pero los DTE JSON traen codigoGeneracion en MAYÚSCULAS.
+// Sin esta normalización el Map de re-mapeo nunca matchea (bug items 8-10 jun 2026).
+function cgNorm(v) {
+  return String(v || '').trim().toLowerCase()
+}
+
 // canal_venta heurístico (cuando solo tenemos DTE sin CSV)
 function canalFromDte(store, propina) {
   if (FOOD_COURTS.includes(store)) return 'para_llevar'
@@ -197,49 +204,77 @@ export default function QuantoUploadView({ user }) {
       const jsonFiles = Object.keys(zip.files).filter(n => n.endsWith('.json'))
       setZipStatus({ phase: 'parsing', msg: `${jsonFiles.length} archivos JSON detectados...`, total: jsonFiles.length, done: 0, ok: 0, dup: 0, err: 0 })
 
-      let ok = 0, dup = 0, err = 0
+      let ok = 0, dup = 0, err = 0, okItems = 0, dupItems = 0, huerfanos = 0
+      const errList = []
       const BATCH = 50
       let bufCab = [], bufItems = []
 
       const flush = async () => {
         if (!bufCab.length) return
+        const nCab = bufCab.length
         try {
-          // 1) Insertar cabeceras (ignora duplicados por codigo_generacion)
-          const { error: e1 } = await db.from('quanto_ordenes').upsert(bufCab, { onConflict: 'codigo_generacion', ignoreDuplicates: true })
+          // 1) Upsert cabeceras (DO NOTHING en duplicados) devolviendo SOLO las filas
+          //    realmente insertadas → contador honesto: nuevas vs ya existentes.
+          const { data: insRows, error: e1 } = await db
+            .from('quanto_ordenes')
+            .upsert(bufCab, { onConflict: 'codigo_generacion', ignoreDuplicates: true })
+            .select('id, codigo_generacion')
           if (e1) throw e1
-          // 2) Resolver el id canónico de CADA orden (nuevas + las que ya existían).
-          //    Imprescindible: en re-uploads el id random generado en el cliente fue
-          //    descartado por el upsert, pero la orden ya tiene su id real en la BD.
+          const nuevas = (insRows || []).length
+          ok += nuevas
+          dup += nCab - nuevas
+
+          // 2) Resolver el id canónico de CADA orden del lote (nuevas + existentes).
+          //    ⚠️ codigo_generacion es UUID en BD: PostgREST lo devuelve en minúsculas
+          //    y el DTE lo trae en MAYÚSCULAS → normalizar SIEMPRE con cgNorm().
           if (bufItems.length) {
-            const cgs = [...new Set(bufCab.map((c) => c.codigo_generacion).filter(Boolean))]
             const idByCg = new Map()
-            for (let k = 0; k < cgs.length; k += 200) {
+            for (const r of (insRows || [])) idByCg.set(cgNorm(r.codigo_generacion), r.id)
+            const cgs = [...new Set(bufCab.map((c) => cgNorm(c.codigo_generacion)).filter(Boolean))]
+            const faltan = cgs.filter((cg) => !idByCg.has(cg))
+            for (let k = 0; k < faltan.length; k += 100) {
               const { data: ordRows, error: eSel } = await db
                 .from('quanto_ordenes')
                 .select('id, codigo_generacion')
-                .in('codigo_generacion', cgs.slice(k, k + 200))
+                .in('codigo_generacion', faltan.slice(k, k + 100))
               if (eSel) throw eSel
-              for (const r of (ordRows || [])) idByCg.set(r.codigo_generacion, r.id)
+              for (const r of (ordRows || [])) idByCg.set(cgNorm(r.codigo_generacion), r.id)
             }
-            // 3) Re-mapear orden_id al id canónico y descartar items sin orden padre
-            //    (en vez de reintentar un insert que viola la FK para siempre).
+
+            // 3) Re-mapear orden_id al id canónico. Items sin orden padre = huérfanos
+            //    (no se insertan: violarían la FK; se cuentan y se reportan).
             const clean = []
+            const seen = new Set()
             for (const it of bufItems) {
-              const canonical = idByCg.get(it._cg)
-              if (!canonical) continue
+              const canonical = idByCg.get(cgNorm(it._cg))
+              if (!canonical) { huerfanos++; continue }
+              const key = `${canonical}|${it.numero_item}`
+              if (seen.has(key)) continue
+              seen.add(key)
               const { _cg, ...rest } = it
               clean.push({ ...rest, orden_id: canonical })
             }
-            if (clean.length) {
-              const { error: e2 } = await db.from('quanto_orden_items').upsert(clean, { onConflict: 'orden_id,numero_item', ignoreDuplicates: true })
+
+            // 4) Insertar items idempotente (DO NOTHING por orden_id+numero_item).
+            //    Cubre también el backfill: órdenes que ya existían SIN items
+            //    reciben sus items al re-subir el ZIP. Chunks de 500 (límite PostgREST).
+            for (let k = 0; k < clean.length; k += 500) {
+              const slice = clean.slice(k, k + 500)
+              const { data: itRows, error: e2 } = await db
+                .from('quanto_orden_items')
+                .upsert(slice, { onConflict: 'orden_id,numero_item', ignoreDuplicates: true })
+                .select('id')
               if (e2) throw e2
+              okItems += (itRows || []).length
+              dupItems += slice.length - (itRows || []).length
             }
           }
-          ok += bufCab.length
         } catch (ex) {
-          // Si UNIQUE conflict, asumimos duplicado
-          if (String(ex.message || ex).match(/duplicate|unique/i)) dup += bufCab.length
-          else err += bufCab.length
+          // Error REAL: contar y mostrar el mensaje de Supabase, no tragarlo.
+          err += nCab
+          const m = String(ex?.message || ex)
+          console.error('Quanto ZIP flush error:', ex)
+          if (errList.length < 5 && !errList.includes(m)) errList.push(m)
         }
         bufCab = []; bufItems = []
       }
@@ -248,7 +283,7 @@ export default function QuantoUploadView({ user }) {
         const name = jsonFiles[i]
         try {
           const content = await zip.files[name].async('string')
-          const doc = JSON.parse(content.replace(/^﻿/, ''))
+          const doc = JSON.parse(content.replace(/^\uFEFF/, ''))
           const parsed = parseDte(name, doc)
           if (!parsed) { err++; continue }
           bufCab.push(parsed.cab)
@@ -258,11 +293,16 @@ export default function QuantoUploadView({ user }) {
         }
         if (bufCab.length >= BATCH) await flush()
         if ((i + 1) % 100 === 0) {
-          setZipStatus({ phase: 'inserting', msg: `${i + 1}/${jsonFiles.length}`, total: jsonFiles.length, done: i + 1, ok, dup, err })
+          setZipStatus({ phase: 'inserting', msg: `${i + 1}/${jsonFiles.length} — órdenes: ${ok} nuevas · ${dup} existentes · items: ${okItems} insertados`, total: jsonFiles.length, done: i + 1, ok, dup, err })
         }
       }
       await flush()
-      setZipStatus({ phase: 'done', msg: `✓ ${ok} insertados · ${dup} duplicados (omitidos) · ${err} errores`, total: jsonFiles.length, done: jsonFiles.length, ok, dup, err })
+      setZipStatus({
+        phase: err ? 'error' : 'done',
+        msg: `${err ? '⚠' : '✓'} Órdenes: ${ok} nuevas · ${dup} ya existían · ${err} con error — Items: ${okItems} insertados · ${dupItems} ya existían${huerfanos ? ` · ${huerfanos} huérfanos` : ''}`,
+        total: jsonFiles.length, done: jsonFiles.length, ok, dup, err,
+        errores: errList,
+      })
     } catch (ex) {
       setZipStatus({ phase: 'error', msg: `✗ ${ex.message || ex}` })
     } finally {
@@ -281,7 +321,7 @@ export default function QuantoUploadView({ user }) {
     setCsvStatus({ phase: 'reading', msg: `Leyendo ${file.name}...` })
     try {
       const text = await file.text()
-      const rows = parseCsv(text.replace(/^﻿/, ''))
+      const rows = parseCsv(text.replace(/^\uFEFF/, ''))
       const headers = rows.shift()
       // Indices de columnas que necesitamos (la 1ra ocurrencia de cada nombre, ojo con 'Sucursal' duplicada)
       const idx = {}
@@ -474,6 +514,11 @@ export default function QuantoUploadView({ user }) {
     return (
       <div style={{ marginTop: 12, padding: 12, background: '#0a1220', borderRadius: 8, fontSize: 13, color: colors[s.phase] || '#94a3b8' }}>
         <div style={{ fontWeight: 600 }}>{s.msg}</div>
+        {s.errores?.length ? (
+          <div style={{ marginTop: 6, color: '#f87171', fontSize: 12 }}>
+            {s.errores.map((m, i) => <div key={i}>• {m}</div>)}
+          </div>
+        ) : null}
         {s.total ? (
           <div style={{ marginTop: 8, height: 6, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
             <div style={{ width: `${(s.done / s.total) * 100}%`, height: '100%', background: colors[s.phase] || '#3b82f6', transition: 'width .3s' }} />
