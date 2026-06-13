@@ -105,17 +105,26 @@ export default function AsistenteView({ user = {}, onClose }) {
 
   const endpoint = `${SUPABASE_URL}/functions/v1/${FN_SLUG[BACKEND]}`;
   const headers = { "Content-Type": "application/json", apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` };
-  const buildBody = (q) =>
-    BACKEND === "gateway" ? { tenant_hint: "freakie", usuario, pregunta: q } : { pregunta: q, usuario };
+  const buildBody = (q, hist) =>
+    BACKEND === "gateway"
+      ? { tenant_hint: "freakie", usuario, pregunta: q, historial: hist }
+      : { pregunta: q, usuario, historial: hist };
 
   async function preguntar(qTexto) {
     const q = (qTexto ?? pregunta).trim();
     if (!q || cargando) return;
+    // Historial de la conversación (para aclaraciones / contexto)
+    const hist = items.flatMap((it) => {
+      const out = [{ role: "user", content: it.pregunta }];
+      if (it.resp?.respuesta) out.push({ role: "assistant", content: it.resp.respuesta });
+      else if (it.error) out.push({ role: "assistant", content: it.error });
+      return out;
+    }).slice(-12);
     setPregunta("");
     setItems((prev) => [...prev, { pregunta: q }]);
     setCargando(true);
     try {
-      const r = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(buildBody(q)) });
+      const r = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(buildBody(q, hist)) });
       const data = await r.json();
       setItems((prev) => {
         const next = [...prev];
@@ -199,10 +208,15 @@ export default function AsistenteView({ user = {}, onClose }) {
 
             {it.resp && (
               <div style={{ alignSelf: "flex-start", maxWidth: "100%", background: CARD, border: `1px solid ${BORDER}`, borderRadius: "14px 14px 14px 4px", padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-                {it.resp.nota && <div style={{ fontSize: 12, color: MUT }}>{it.resp.nota}</div>}
-                <Tabla filas={it.resp.filas} />
+                {it.resp.respuesta && <div style={{ fontSize: 14, color: TXT, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{it.resp.respuesta}</div>}
+                {Array.isArray(it.resp.filas) && it.resp.filas.length > 0 && (it.resp.filas.length > 1 || Object.keys(it.resp.filas[0] || {}).length > 1) && (
+                  <details style={{ fontSize: 12, color: MUT }}>
+                    <summary style={{ cursor: "pointer", userSelect: "none" }}>Ver datos ({it.resp.filas.length})</summary>
+                    <div style={{ marginTop: 6 }}><Tabla filas={it.resp.filas} /></div>
+                  </details>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: MUT }}>
-                  <span>{it.resp.ruta === "heuristica" ? `⚡ ${it.resp.intent}` : "🧠 IA"}</span>
+                  <span>🧠 IA</span>
                   {typeof it.resp.latencia_ms === "number" && <span>{it.resp.latencia_ms} ms</span>}
                   {it.resp.id && (
                     <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
