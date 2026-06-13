@@ -1,26 +1,22 @@
 // AsistenteFlotante.jsx — Botón flotante (FAB) del Chat IA, accesible en TODO momento.
 // ------------------------------------------------------------------
 // Montar UNA sola vez en el root de la app (FUERA del switch de vistas),
-// p.ej. al final del render de App.jsx, para que flote sobre cualquier pantalla:
+// p.ej. al final del render de App.jsx:
 //
 //   import AsistenteFlotante from "./components/dashboard/AsistenteFlotante";
 //   ...
-//   return (
-//     <>
-//       {/* ...tu app/router... */}
-//       <AsistenteFlotante user={user} />
-//     </>
-//   );
+//   return (<>{/* ...app/router... */}<AsistenteFlotante user={user} /></>);
 //
 // Coloca AsistenteFlotante.jsx junto a AsistenteView.jsx (mismo folder).
+// NOTA: el FAB y el panel usan estilos INLINE (no dependen de Tailwind),
+// para que se vean sí o sí aunque el build de Tailwind purgue clases arbitrarias.
 // ------------------------------------------------------------------
 import { useState } from "react";
 import AsistenteView from "./AsistenteView";
 
 const ROJO = "#E62329";
 
-// Roles que pueden ver el asistente (igual que el nav 'asistente-ai').
-// Ajustá esta lista si querés exponerlo a más roles.
+// Roles que pueden ver el asistente. Ajustá esta lista si querés exponerlo a más roles.
 const ROLES_PERMITIDOS = ["ejecutivo", "superadmin", "super", "admin"];
 
 export default function AsistenteFlotante({ user = {} }) {
@@ -28,26 +24,58 @@ export default function AsistenteFlotante({ user = {} }) {
   const rol = (user?.rol || "").toLowerCase();
   if (!ROLES_PERMITIDOS.includes(rol)) return null;
 
+  const narrow = typeof window !== "undefined" && window.innerWidth < 480;
+
+  const panelStyle = {
+    position: "fixed",
+    bottom: 88,
+    right: 16,
+    width: narrow ? "calc(100vw - 32px)" : 400,
+    height: "70vh",
+    maxHeight: 620,
+    zIndex: 2147483000,
+    background: "#ffffff",
+    borderRadius: 16,
+    boxShadow: "0 20px 50px rgba(0,0,0,0.30)",
+    border: "1px solid #e5e7eb",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+  };
+
+  const fabStyle = {
+    position: "fixed",
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 9999,
+    background: ROJO,
+    color: "#ffffff",
+    border: "none",
+    cursor: "pointer",
+    boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2147483000,
+  };
+
   return (
     <>
       {open && (
-        <div
-          role="dialog"
-          aria-label="Asistente IA"
-          className="fixed z-[60] bottom-24 right-4 flex flex-col overflow-hidden bg-white rounded-2xl shadow-2xl border border-gray-200
-                     w-[calc(100vw-2rem)] max-w-[400px] h-[70vh] max-h-[620px]"
-        >
-          <AsistenteView user={user} onClose={() => setOpen(false)} />
+        <div style={panelStyle} role="dialog" aria-label="Asistente IA">
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <AsistenteView user={user} onClose={() => setOpen(false)} />
+          </div>
         </div>
       )}
 
       <button
+        style={fabStyle}
         onClick={() => setOpen((o) => !o)}
         aria-label={open ? "Cerrar asistente IA" : "Abrir asistente IA"}
         title="Asistente IA"
-        className="fixed z-[60] bottom-5 right-5 w-14 h-14 rounded-full shadow-lg flex items-center justify-center
-                   text-white transition-transform hover:scale-105 active:scale-95 focus:outline-none"
-        style={{ backgroundColor: ROJO }}
       >
         {open ? (
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

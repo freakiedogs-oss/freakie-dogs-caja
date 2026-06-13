@@ -154,7 +154,7 @@ export default function AsistenteView({ user = {}, onClose }) {
   }
 
   return (
-    <div className="flex flex-col h-full max-w-3xl mx-auto">
+    <div className="flex flex-col h-full max-w-3xl mx-auto" style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
       <header className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: AMARILLO }}>
         <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-black" style={{ backgroundColor: ROJO }}>IA</div>
         <div>
