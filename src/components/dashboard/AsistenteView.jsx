@@ -1,28 +1,26 @@
-// AsistenteView.jsx — Chat IA del ERP Freakie Dogs
+// AsistenteView.jsx — Chat IA del ERP Freakie Dogs (tema oscuro)
 // ------------------------------------------------------------------
 // Consume el backend de IA y muestra la respuesta (cifra real desde un
-// SELECT en BD). Toggle de 1 linea entre F1 (ai-query, recomendado hoy)
-// y el gateway multi-ERP (ai-gateway, cutover futuro).
-//
-// Integracion:
-//   import AsistenteView from "./components/AsistenteView";
-//   <AsistenteView user={user} />     // user.rol, user.nombre, user.store_code
-//
-// Requiere VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el entorno.
+// SELECT en BD). Usa el proxy/cliente de la app (src/supabase.js).
+// Estilos INLINE (no dependen de Tailwind) para verse consistente.
 // ------------------------------------------------------------------
 import { useState, useRef, useEffect } from "react";
 import { URL_SB, KEY_SB } from "../../supabase";
 
-// === CONFIG ===
-// 'f1'      -> ai-query  : heuristicas + LLM. Mejor para Freakie HOY ($0, deterministico en lo comun).
-// 'gateway' -> ai-gateway: multi-ERP, log central con tenant_id. Es el cutover (LLM-only hasta portar heuristicas).
+// 'f1' -> ai-query | 'gateway' -> ai-gateway (multi-ERP, cutover)
 const BACKEND = "gateway";
-
 const FN_SLUG = { f1: "ai-query", gateway: "ai-gateway" };
+
+// Paleta (alineada al ERP oscuro)
 const ROJO = "#E62329";
 const AMARILLO = "#FFD900";
+const BG = "#141414";
+const CARD = "#1c1c1c";
+const BORDER = "#2a2a2a";
+const TXT = "#e8e8e8";
+const MUT = "#9a9a9a";
+const INPUTBG = "#1f1f1f";
 
-// Usa el cliente/proxy de la app (src/supabase.js): en PROD va por /sb, en dev directo.
 const SUPABASE_URL = URL_SB;
 const ANON_KEY = KEY_SB;
 
@@ -36,6 +34,18 @@ const SUGERENCIAS = [
   "¿Hasta qué fecha está la data?",
 ];
 
+const BrainIcon = ({ size = 18, color = "#fff" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+    <path d="M17.6 6.5a3 3 0 0 0 .4-1.4" />
+    <path d="M6 5.1a3 3 0 0 0 .4 1.4" />
+    <path d="M6 18a4 4 0 0 1-2-.5" />
+    <path d="M20 17.5a4 4 0 0 1-2 .5" />
+  </svg>
+);
+
 function fmtCell(v) {
   if (v === null || v === undefined) return "—";
   if (typeof v === "number") return Number.isInteger(v) ? v.toLocaleString("es-SV") : v.toLocaleString("es-SV", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -44,34 +54,33 @@ function fmtCell(v) {
 
 function Tabla({ filas }) {
   if (!Array.isArray(filas) || filas.length === 0)
-    return <div className="text-sm text-gray-500 italic">Sin resultados.</div>;
+    return <div style={{ fontSize: 13, color: MUT, fontStyle: "italic" }}>Sin resultados.</div>;
 
-  // Una sola fila con un solo valor -> mostrar como cifra grande
   const cols = Object.keys(filas[0]);
   if (filas.length === 1 && cols.length === 1) {
     return (
-      <div className="text-3xl font-bold" style={{ color: ROJO }}>
+      <div style={{ fontSize: 28, fontWeight: 800, color: ROJO }}>
         {fmtCell(filas[0][cols[0]])}
-        <span className="ml-2 text-sm font-normal text-gray-500">{cols[0]}</span>
+        <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 400, color: MUT }}>{cols[0]}</span>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="min-w-full text-sm">
+    <div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${BORDER}` }}>
+      <table style={{ minWidth: "100%", fontSize: 13, borderCollapse: "collapse" }}>
         <thead>
-          <tr style={{ backgroundColor: AMARILLO }}>
+          <tr style={{ background: AMARILLO }}>
             {cols.map((c) => (
-              <th key={c} className="px-3 py-2 text-left font-semibold text-gray-900 whitespace-nowrap">{c}</th>
+              <th key={c} style={{ padding: "6px 10px", textAlign: "left", fontWeight: 700, color: "#1a1a1a", whiteSpace: "nowrap" }}>{c}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {filas.map((row, i) => (
-            <tr key={i} className={i % 2 ? "bg-gray-50" : "bg-white"}>
+            <tr key={i} style={{ background: i % 2 ? "#171717" : "#1c1c1c" }}>
               {cols.map((c) => (
-                <td key={c} className="px-3 py-1.5 whitespace-nowrap tabular-nums">{fmtCell(row[c])}</td>
+                <td key={c} style={{ padding: "5px 10px", whiteSpace: "nowrap", color: TXT, fontVariantNumeric: "tabular-nums" }}>{fmtCell(row[c])}</td>
               ))}
             </tr>
           ))}
@@ -84,7 +93,7 @@ function Tabla({ filas }) {
 export default function AsistenteView({ user = {}, onClose }) {
   const [pregunta, setPregunta] = useState("");
   const [cargando, setCargando] = useState(false);
-  const [items, setItems] = useState([]); // {pregunta, resp?, error?, motivo?, sql?}
+  const [items, setItems] = useState([]);
   const [feedbackDado, setFeedbackDado] = useState({});
   const scrollRef = useRef(null);
 
@@ -92,22 +101,12 @@ export default function AsistenteView({ user = {}, onClose }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [items, cargando]);
 
-  const usuario = {
-    rol: user?.rol ?? null,
-    nombre: user?.nombre ?? null,
-    store_code: user?.store_code ?? null,
-  };
+  const usuario = { rol: user?.rol ?? null, nombre: user?.nombre ?? null, store_code: user?.store_code ?? null };
 
   const endpoint = `${SUPABASE_URL}/functions/v1/${FN_SLUG[BACKEND]}`;
-  const headers = {
-    "Content-Type": "application/json",
-    apikey: ANON_KEY,
-    Authorization: `Bearer ${ANON_KEY}`,
-  };
+  const headers = { "Content-Type": "application/json", apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` };
   const buildBody = (q) =>
-    BACKEND === "gateway"
-      ? { tenant_hint: "freakie", usuario, pregunta: q }
-      : { pregunta: q, usuario };
+    BACKEND === "gateway" ? { tenant_hint: "freakie", usuario, pregunta: q } : { pregunta: q, usuario };
 
   async function preguntar(qTexto) {
     const q = (qTexto ?? pregunta).trim();
@@ -156,27 +155,36 @@ export default function AsistenteView({ user = {}, onClose }) {
   }
 
   return (
-    <div className="flex flex-col h-full max-w-3xl mx-auto" style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <header className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: AMARILLO }}>
-        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-black" style={{ backgroundColor: ROJO }}>IA</div>
-        <div>
-          <h1 className="font-bold text-gray-900 leading-tight">Asistente Freakie</h1>
-          <p className="text-xs text-gray-500">Preguntá por ventas, gastos, planilla, banco, inventario…</p>
+    <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", background: BG, color: TXT }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${BORDER}` }}>
+        <div style={{ width: 34, height: 34, borderRadius: "50%", background: ROJO, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <BrainIcon size={18} color="#fff" />
         </div>
-        <span className="ml-auto text-[10px] uppercase tracking-wide px-2 py-1 rounded-full bg-gray-100 text-gray-500">
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>Asistente Freakie</div>
+          <div style={{ fontSize: 11, color: MUT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Preguntá por ventas, gastos, planilla, banco…</div>
+        </div>
+        <span style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1, padding: "3px 7px", borderRadius: 999, background: "#2a2a2a", color: "#9a9a9a" }}>
           {BACKEND === "gateway" ? "gateway" : "F1"}
         </span>
         {onClose && (
-          <button onClick={onClose} aria-label="Cerrar" className="text-gray-400 hover:text-gray-700 text-2xl leading-none px-1">×</button>
+          <button onClick={onClose} aria-label="Cerrar" style={{ background: "none", border: "none", color: MUT, fontSize: 22, lineHeight: 1, cursor: "pointer", padding: "0 2px" }}>×</button>
         )}
-      </header>
+      </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      {/* Body */}
+      <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
         {items.length === 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {SUGERENCIAS.map((s) => (
-              <button key={s} onClick={() => preguntar(s)}
-                className="text-sm px-3 py-1.5 rounded-full border border-gray-300 hover:border-gray-400 bg-white transition">
+              <button
+                key={s}
+                onClick={() => preguntar(s)}
+                onMouseOver={(e) => (e.currentTarget.style.borderColor = ROJO)}
+                onMouseOut={(e) => (e.currentTarget.style.borderColor = "#3a3a3a")}
+                style={{ fontSize: 12.5, padding: "6px 12px", borderRadius: 999, border: "1px solid #3a3a3a", background: "#1f1f1f", color: "#ddd", cursor: "pointer" }}
+              >
                 {s}
               </button>
             ))}
@@ -184,69 +192,63 @@ export default function AsistenteView({ user = {}, onClose }) {
         )}
 
         {items.map((it, i) => (
-          <div key={i} className="space-y-2">
-            <div className="flex justify-end">
-              <div className="px-3 py-2 rounded-2xl rounded-br-sm text-white text-sm max-w-[85%]" style={{ backgroundColor: ROJO }}>
-                {it.pregunta}
-              </div>
+          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ alignSelf: "flex-end", maxWidth: "85%", background: ROJO, color: "#fff", padding: "8px 12px", borderRadius: "14px 14px 4px 14px", fontSize: 14 }}>
+              {it.pregunta}
             </div>
 
             {it.resp && (
-              <div className="px-3 py-3 rounded-2xl rounded-bl-sm bg-gray-50 border border-gray-200 space-y-2">
-                {it.resp.nota && <div className="text-xs text-gray-500">{it.resp.nota}</div>}
+              <div style={{ alignSelf: "flex-start", maxWidth: "100%", background: CARD, border: `1px solid ${BORDER}`, borderRadius: "14px 14px 14px 4px", padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                {it.resp.nota && <div style={{ fontSize: 12, color: MUT }}>{it.resp.nota}</div>}
                 <Tabla filas={it.resp.filas} />
-                <div className="flex items-center gap-3 pt-1 text-[11px] text-gray-400">
-                  <span>{it.resp.ruta === "heuristica" ? `⚡ ${it.resp.intent}` : "🤖 IA"}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: MUT }}>
+                  <span>{it.resp.ruta === "heuristica" ? `⚡ ${it.resp.intent}` : "🧠 IA"}</span>
                   {typeof it.resp.latencia_ms === "number" && <span>{it.resp.latencia_ms} ms</span>}
                   {it.resp.id && (
-                    <span className="ml-auto flex items-center gap-1">
-                      <button onClick={() => enviarFeedback(it.resp.id, "up")}
-                        className={feedbackDado[it.resp.id] === "up" ? "opacity-100" : "opacity-50 hover:opacity-100"}>👍</button>
-                      <button onClick={() => enviarFeedback(it.resp.id, "down")}
-                        className={feedbackDado[it.resp.id] === "down" ? "opacity-100" : "opacity-50 hover:opacity-100"}>👎</button>
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                      <button onClick={() => enviarFeedback(it.resp.id, "up")} style={{ background: "none", border: "none", cursor: "pointer", opacity: feedbackDado[it.resp.id] === "up" ? 1 : 0.5 }}>👍</button>
+                      <button onClick={() => enviarFeedback(it.resp.id, "down")} style={{ background: "none", border: "none", cursor: "pointer", opacity: feedbackDado[it.resp.id] === "down" ? 1 : 0.5 }}>👎</button>
                     </span>
                   )}
                 </div>
                 {it.resp.sql && (
-                  <details className="text-[11px] text-gray-400">
-                    <summary className="cursor-pointer select-none">Ver SQL</summary>
-                    <pre className="mt-1 p-2 bg-gray-900 text-gray-100 rounded overflow-x-auto whitespace-pre-wrap">{it.resp.sql}</pre>
+                  <details style={{ fontSize: 11, color: MUT }}>
+                    <summary style={{ cursor: "pointer", userSelect: "none" }}>Ver SQL</summary>
+                    <pre style={{ marginTop: 6, padding: 8, background: "#0d0d0d", color: "#ddd", borderRadius: 6, overflowX: "auto", whiteSpace: "pre-wrap" }}>{it.resp.sql}</pre>
                   </details>
                 )}
               </div>
             )}
 
             {it.error && (
-              <div className="px-3 py-2 rounded-2xl rounded-bl-sm bg-red-50 border border-red-200 text-sm text-red-700">
+              <div style={{ alignSelf: "flex-start", maxWidth: "100%", background: "#3a1414", border: "1px solid #5a2a2a", color: "#ffb4b4", padding: "8px 12px", borderRadius: "14px 14px 14px 4px", fontSize: 13 }}>
                 {it.error}
-                {it.motivo && <div className="text-xs text-red-400 mt-1">{it.motivo}</div>}
+                {it.motivo && <div style={{ fontSize: 11, color: "#d98a8a", marginTop: 4 }}>{it.motivo}</div>}
               </div>
             )}
           </div>
         ))}
 
         {cargando && (
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: ROJO }} />
-            <span className="w-2 h-2 rounded-full animate-bounce [animation-delay:120ms]" style={{ backgroundColor: ROJO }} />
-            <span className="w-2 h-2 rounded-full animate-bounce [animation-delay:240ms]" style={{ backgroundColor: ROJO }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: MUT }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: ROJO, animation: "fdbounce 1s infinite" }} />
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: ROJO, animation: "fdbounce 1s infinite 0.15s" }} />
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: ROJO, animation: "fdbounce 1s infinite 0.3s" }} />
+            <style>{"@keyframes fdbounce{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-5px);opacity:1}}"}</style>
           </div>
         )}
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); preguntar(); }}
-        className="flex gap-2 px-4 py-3 border-t border-gray-200">
+      {/* Input */}
+      <form onSubmit={(e) => { e.preventDefault(); preguntar(); }} style={{ display: "flex", gap: 8, padding: "12px 14px", borderTop: `1px solid ${BORDER}` }}>
         <input
           value={pregunta}
           onChange={(e) => setPregunta(e.target.value)}
           placeholder="Escribí tu pregunta…"
-          className="flex-1 px-3 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2"
-          style={{ "--tw-ring-color": ROJO }}
           disabled={cargando}
+          style={{ flex: 1, padding: "9px 14px", borderRadius: 999, border: "1px solid #3a3a3a", background: INPUTBG, color: "#fff", outline: "none", fontSize: 14 }}
         />
-        <button type="submit" disabled={cargando || !pregunta.trim()}
-          className="px-5 py-2 rounded-full text-white font-semibold disabled:opacity-40 transition"
-          style={{ backgroundColor: ROJO }}>
+        <button type="submit" disabled={cargando || !pregunta.trim()} style={{ padding: "9px 18px", borderRadius: 999, border: "none", background: ROJO, color: "#fff", fontWeight: 600, cursor: cargando || !pregunta.trim() ? "default" : "pointer", opacity: cargando || !pregunta.trim() ? 0.45 : 1 }}>
           Enviar
         </button>
       </form>

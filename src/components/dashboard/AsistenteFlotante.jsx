@@ -1,23 +1,27 @@
-// AsistenteFlotante.jsx — Botón flotante (FAB) del Chat IA, accesible en TODO momento.
+// AsistenteFlotante.jsx — FAB del Chat IA (cerebro), accesible en TODO momento.
 // ------------------------------------------------------------------
-// Montar UNA sola vez en el root de la app (FUERA del switch de vistas),
-// p.ej. al final del render de App.jsx:
-//
+// Montar UNA sola vez en el root de App.jsx (fuera del switch de vistas):
 //   import AsistenteFlotante from "./components/dashboard/AsistenteFlotante";
-//   ...
-//   return (<>{/* ...app/router... */}<AsistenteFlotante user={user} /></>);
-//
-// Coloca AsistenteFlotante.jsx junto a AsistenteView.jsx (mismo folder).
-// NOTA: el FAB y el panel usan estilos INLINE (no dependen de Tailwind),
-// para que se vean sí o sí aunque el build de Tailwind purgue clases arbitrarias.
+//   <AsistenteFlotante user={user} />
+// Estilos INLINE (no dependen de Tailwind).
 // ------------------------------------------------------------------
 import { useState } from "react";
 import AsistenteView from "./AsistenteView";
 
 const ROJO = "#E62329";
-
-// Roles que pueden ver el asistente. Ajustá esta lista si querés exponerlo a más roles.
 const ROLES_PERMITIDOS = ["ejecutivo", "superadmin", "super", "admin"];
+
+const BrainIcon = ({ size = 26, color = "#fff" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+    <path d="M17.6 6.5a3 3 0 0 0 .4-1.4" />
+    <path d="M6 5.1a3 3 0 0 0 .4 1.4" />
+    <path d="M6 18a4 4 0 0 1-2-.5" />
+    <path d="M20 17.5a4 4 0 0 1-2 .5" />
+  </svg>
+);
 
 export default function AsistenteFlotante({ user = {} }) {
   const [open, setOpen] = useState(false);
@@ -34,10 +38,10 @@ export default function AsistenteFlotante({ user = {} }) {
     height: "70vh",
     maxHeight: 620,
     zIndex: 2147483000,
-    background: "#ffffff",
+    background: "#141414",
     borderRadius: 16,
-    boxShadow: "0 20px 50px rgba(0,0,0,0.30)",
-    border: "1px solid #e5e7eb",
+    boxShadow: "0 24px 60px rgba(0,0,0,0.55)",
+    border: "1px solid #2a2a2a",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
@@ -54,7 +58,7 @@ export default function AsistenteFlotante({ user = {} }) {
     color: "#ffffff",
     border: "none",
     cursor: "pointer",
-    boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+    boxShadow: "0 8px 22px rgba(230,35,41,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -82,9 +86,7 @@ export default function AsistenteFlotante({ user = {} }) {
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
         ) : (
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
+          <BrainIcon size={27} color="#fff" />
         )}
       </button>
     </>
