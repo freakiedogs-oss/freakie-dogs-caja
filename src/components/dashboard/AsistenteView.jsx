@@ -79,7 +79,7 @@ function Tabla({ filas }) {
   );
 }
 
-export default function AsistenteView({ user = {} }) {
+export default function AsistenteView({ user = {}, onClose }) {
   const [pregunta, setPregunta] = useState("");
   const [cargando, setCargando] = useState(false);
   const [items, setItems] = useState([]); // {pregunta, resp?, error?, motivo?, sql?}
@@ -164,6 +164,9 @@ export default function AsistenteView({ user = {} }) {
         <span className="ml-auto text-[10px] uppercase tracking-wide px-2 py-1 rounded-full bg-gray-100 text-gray-500">
           {BACKEND === "gateway" ? "gateway" : "F1"}
         </span>
+        {onClose && (
+          <button onClick={onClose} aria-label="Cerrar" className="text-gray-400 hover:text-gray-700 text-2xl leading-none px-1">×</button>
+        )}
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
