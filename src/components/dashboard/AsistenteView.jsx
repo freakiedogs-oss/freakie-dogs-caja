@@ -11,6 +11,7 @@
 // Requiere VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el entorno.
 // ------------------------------------------------------------------
 import { useState, useRef, useEffect } from "react";
+import { URL_SB, KEY_SB } from "../../supabase";
 
 // === CONFIG ===
 // 'f1'      -> ai-query  : heuristicas + LLM. Mejor para Freakie HOY ($0, deterministico en lo comun).
@@ -21,8 +22,9 @@ const FN_SLUG = { f1: "ai-query", gateway: "ai-gateway" };
 const ROJO = "#E62329";
 const AMARILLO = "#FFD900";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Usa el cliente/proxy de la app (src/supabase.js): en PROD va por /sb, en dev directo.
+const SUPABASE_URL = URL_SB;
+const ANON_KEY = KEY_SB;
 
 const SUGERENCIAS = [
   "Ventas por sucursal este mes",

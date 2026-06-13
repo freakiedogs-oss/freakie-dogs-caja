@@ -1,6 +1,7 @@
 import { useState, useCallback, lazy, Suspense } from 'react'
 import Sidebar from './components/layout/Sidebar'
 import LoginScreen from './components/layout/LoginScreen'
+import AsistenteFlotante from './components/dashboard/AsistenteFlotante'
 import LoadingScreen from './components/layout/LoadingScreen'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
@@ -348,6 +349,7 @@ export default function App() {
         </Suspense>
       </div>
       <Toast />
+      <AsistenteFlotante user={user} />
     </div>
   )
 }
