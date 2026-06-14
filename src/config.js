@@ -163,6 +163,7 @@ export const NAV_SECTIONS = [
     label: 'Super Admin',
     items: [
       { key: 'superadmin-panel', label: 'Panel Super Admin', icon: '🛡️', roles: ['superadmin', 'ejecutivo'] },
+      { key: 'plan-maestro', label: 'Plan Maestro IA', icon: '🧩', roles: ['superadmin', 'ejecutivo'] },
     ],
   },
 ]
