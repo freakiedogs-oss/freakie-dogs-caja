@@ -159,7 +159,8 @@ export default function AsistenteView({ user = {}, onClose }) {
     if (!id || feedbackDado[id]) return;
     setFeedbackDado((p) => ({ ...p, [id]: valor }));
     try {
-      await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ feedback_id: id, feedback: valor }) });
+      // feedback se guarda como smallint (1 = 👍, -1 = 👎)
+      await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ feedback_id: id, feedback: valor === "up" ? 1 : -1 }) });
     } catch (_) { /* best-effort */ }
   }
 
