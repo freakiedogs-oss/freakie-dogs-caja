@@ -34,6 +34,14 @@ const SUGERENCIAS = [
   "¿Hasta qué fecha está la data?",
 ];
 
+const AGENTES = [
+  { label: "🧠 Análisis del negocio", q: "dame un análisis del negocio, ¿cómo vamos?" },
+  { label: "📈 Análisis de ventas", q: "análisis de ventas" },
+  { label: "💸 Análisis de costos", q: "análisis de costos" },
+  { label: "🩺 Salud de datos", q: "¿qué problemas de datos hay?" },
+  { label: "📊 Brief del día", q: "dame el brief de hoy" },
+];
+
 const BrainIcon = ({ size = 18, color = "#fff" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
@@ -95,6 +103,7 @@ export default function AsistenteView({ user = {}, onClose }) {
   const [cargando, setCargando] = useState(false);
   const [items, setItems] = useState([]);
   const [feedbackDado, setFeedbackDado] = useState({});
+  const [menuAgentes, setMenuAgentes] = useState(false);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -255,18 +264,34 @@ export default function AsistenteView({ user = {}, onClose }) {
       </div>
 
       {/* Input */}
-      <form onSubmit={(e) => { e.preventDefault(); preguntar(); }} style={{ display: "flex", gap: 8, padding: "12px 14px", borderTop: `1px solid ${BORDER}` }}>
-        <input
-          value={pregunta}
-          onChange={(e) => setPregunta(e.target.value)}
-          placeholder="Escribí tu pregunta…"
-          disabled={cargando}
-          style={{ flex: 1, padding: "9px 14px", borderRadius: 999, border: "1px solid #3a3a3a", background: INPUTBG, color: "#fff", outline: "none", fontSize: 14 }}
-        />
-        <button type="submit" disabled={cargando || !pregunta.trim()} style={{ padding: "9px 18px", borderRadius: 999, border: "none", background: ROJO, color: "#fff", fontWeight: 600, cursor: cargando || !pregunta.trim() ? "default" : "pointer", opacity: cargando || !pregunta.trim() ? 0.45 : 1 }}>
-          Enviar
-        </button>
-      </form>
+      <div style={{ position: "relative", borderTop: `1px solid ${BORDER}` }}>
+        {menuAgentes && (
+          <div style={{ position: "absolute", bottom: "100%", left: 14, right: 14, marginBottom: 6, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 8, display: "flex", flexDirection: "column", gap: 2, boxShadow: "0 -10px 30px rgba(0,0,0,0.5)" }}>
+            <div style={{ fontSize: 11, color: MUT, padding: "2px 6px 4px" }}>Disparar un agente:</div>
+            {AGENTES.map((a) => (
+              <button key={a.q} onClick={() => { setMenuAgentes(false); preguntar(a.q); }}
+                onMouseOver={(e) => (e.currentTarget.style.background = "#262626")} onMouseOut={(e) => (e.currentTarget.style.background = "none")}
+                style={{ textAlign: "left", background: "none", border: "none", color: TXT, fontSize: 13.5, padding: "8px 8px", borderRadius: 8, cursor: "pointer" }}>
+                {a.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <form onSubmit={(e) => { e.preventDefault(); preguntar(); }} style={{ display: "flex", gap: 8, padding: "12px 14px" }}>
+          <button type="button" onClick={() => setMenuAgentes((v) => !v)} title="Agentes" aria-label="Agentes"
+            style={{ flexShrink: 0, width: 40, borderRadius: 999, border: "1px solid #3a3a3a", background: menuAgentes ? ROJO : INPUTBG, color: "#fff", cursor: "pointer", fontSize: 17 }}>⚡</button>
+          <input
+            value={pregunta}
+            onChange={(e) => setPregunta(e.target.value)}
+            placeholder="Escribí tu pregunta…"
+            disabled={cargando}
+            style={{ flex: 1, padding: "9px 14px", borderRadius: 999, border: "1px solid #3a3a3a", background: INPUTBG, color: "#fff", outline: "none", fontSize: 14, minWidth: 0 }}
+          />
+          <button type="submit" disabled={cargando || !pregunta.trim()} style={{ padding: "9px 18px", borderRadius: 999, border: "none", background: ROJO, color: "#fff", fontWeight: 600, cursor: cargando || !pregunta.trim() ? "default" : "pointer", opacity: cargando || !pregunta.trim() ? 0.45 : 1 }}>
+            Enviar
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
