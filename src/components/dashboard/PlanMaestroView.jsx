@@ -10,6 +10,16 @@ const ESTADO = {
   pendiente: { c: "#6b7280", t: "Pendiente" }, pausado: { c: "#52525b", t: "Pausado" },
 };
 const ROLES = ["superadmin", "super", "admin", "ejecutivo"];
+const COLOR = { verde: "#16a34a", amarillo: "#f59e0b", rojo: "#dc2626", pausado: "#6b7280", gris: "#6b7280" };
+
+function relTime(iso) {
+  if (!iso) return "nunca";
+  const ms = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(ms / 3600000), d = Math.floor(h / 24);
+  if (d > 0) return `hace ${d}d`;
+  if (h > 0) return `hace ${h}h`;
+  return "hace minutos";
+}
 
 const rpc = (fn, params = {}) =>
   fetch(`${URL_SB}/rest/v1/rpc/${fn}`, {
@@ -37,12 +47,15 @@ function Barra({ pct, color }) {
 
 export default function PlanMaestroView({ user = {} }) {
   const [data, setData] = useState(null);
+  const [agentes, setAgentes] = useState(null);
   const [loading, setLoading] = useState(true);
   const rol = (user?.rol || "").toLowerCase();
 
   const cargar = useCallback(() => {
     setLoading(true);
-    rpc("fn_ai_plan_dashboard").then((d) => setData(d)).catch(() => setData(null)).finally(() => setLoading(false));
+    Promise.all([rpc("fn_ai_plan_dashboard"), rpc("fn_ai_agentes_listar")])
+      .then(([d, a]) => { setData(d); setAgentes(a); })
+      .catch(() => {}).finally(() => setLoading(false));
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -82,6 +95,41 @@ export default function PlanMaestroView({ user = {} }) {
             <KPI label="Backlog huecos" value={m.backlog_pendiente} color={m.backlog_pendiente > 0 ? "#f59e0b" : "#16a34a"} />
             <KPI label="Consultas hoy" value={m.interacciones_hoy} />
           </div>
+
+          {/* Agentes en vivo */}
+          {agentes && (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", marginBottom: 8 }}>🤖 Agentes (estado vivo)</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {(agentes.cowork || []).map((a, i) => {
+                  const col = a.enabled ? (COLOR[a.estado] || COLOR.gris) : COLOR.pausado;
+                  return (
+                    <div key={"a" + i} style={{ display: "flex", alignItems: "center", gap: 10, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "8px 12px", opacity: a.enabled ? 1 : 0.6 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: "50%", background: col, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>{a.nombre} <span style={{ fontSize: 10, color: MUT }}>{a.categoria}</span></div>
+                        <div style={{ fontSize: 11, color: MUT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.cadencia} · última {relTime(a.ultima)}{a.resumen ? ` · ${a.resumen}` : ""}</div>
+                      </div>
+                      <span style={{ fontSize: 10, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>{a.enabled ? a.estado : "pausado"}</span>
+                    </div>
+                  );
+                })}
+                {(agentes.crons_ia || []).map((c, i) => {
+                  const col = COLOR[c.estado] || COLOR.gris;
+                  return (
+                    <div key={"c" + i} style={{ display: "flex", alignItems: "center", gap: 10, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "8px 12px" }}>
+                      <span style={{ width: 9, height: 9, borderRadius: "50%", background: col, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>{c.nombre} <span style={{ fontSize: 10, color: MUT }}>cron IA</span></div>
+                        <div style={{ fontSize: 11, color: MUT }}>{c.cadencia} · última {relTime(c.ultima)}</div>
+                      </div>
+                      <span style={{ fontSize: 10, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: "2px 8px" }}>{c.estado}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Categorías */}
           {cats.map((cat) => {
