@@ -50,6 +50,7 @@ const FinanzasDashboard  = lazy(() => import('./components/finanzas/FinanzasDash
 const BancoView          = lazy(() => import('./components/finanzas/BancoView'))
 const SuperAdminView     = lazy(() => import('./components/admin/SuperAdminView'))
 const PlanMaestroView    = lazy(() => import('./components/dashboard/PlanMaestroView'))
+const FinanzasAIView     = lazy(() => import('./components/dashboard/FinanzasAIView'))
 const QuantoUploadView   = lazy(() => import('./components/admin/QuantoUploadView'))
 const PagosProveedorView = lazy(() => import('./components/finanzas/PagosProveedorView'))
 const DTEsView           = lazy(() => import('./components/finanzas/DTEsView'))
@@ -299,6 +300,8 @@ export default function App() {
         return <FinanzasGastosView user={user} />
       case 'finanzas-dashboard':
         return <FinanzasDashboard user={user} />
+      case 'finanzas-ai':
+        return <FinanzasAIView user={user} />
       case 'banco':
         return <BancoView user={user} />
       case 'pagos-proveedor':

@@ -1,4 +1,4 @@
-export const APP_VERSION = 'v2.4.0 · 21-May-2026 (KPI Ventas Totales + BEP)'
+export const APP_VERSION = 'v2.5.0 · 14-Jun-2026 (Finanzas AI: P&L + diagnóstico)'
 
 export const STORES = {
   M001: 'Cafetalón',
@@ -112,6 +112,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Finanzas',
     items: [
+      { key: 'finanzas-ai', label: 'Finanzas AI', icon: '💰', roles: ['ejecutivo', 'superadmin'] },
       { key: 'kpi-ventas-totales', label: 'KPI Ventas Totales · BEP', icon: '💰', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'simulador-rentabilidad', label: 'Simulador Rentabilidad', icon: '🎯', roles: ['superadmin', 'ejecutivo'] },
       { key: 'finanzas-dashboard', label: 'Dashboard Financiero', icon: '📊', roles: ['ejecutivo', 'superadmin'] },
