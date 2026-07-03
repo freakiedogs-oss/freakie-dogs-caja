@@ -2614,138 +2614,162 @@ const uploadBtn = (disabled, color) => ({
   cursor: disabled ? 'not-allowed' : 'pointer', display: 'inline-block',
 })
 
-// ════════════════════════════════════════════════════════════
-// TAB ESTADO DE CUENTA — sube el .xls del BAC, parsea e ingiere
-// movimientos a bank_transacciones (dedup por referencia).
-// ════════════════════════════════════════════════════════════
-const _money = (v) => { const n = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return isNaN(n) ? 0 : n }
-const _ddmmyyyy = (s) => { const m = String(s || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? `${m[3]}-${m[2]}-${m[1]}` : null }
+// ============================================================
+// TAB ESTADO DE CUENTA - sube el .xls del BAC, parsea e ingiere
+// movimientos a bank_transacciones de forma idempotente via RPC
+// fn_import_bank_bac -> hash canonico md5(cuenta_id|fecha|ref|deb|cred),
+// consistente con Ene-May 2026 ya cargados. Inserta con cuenta_id=1.
+// ============================================================
+let _xlsxLoadedEC = false
+async function loadXLSX_EC() {
+  if (_xlsxLoadedEC || window.XLSX) { _xlsxLoadedEC = true; return }
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
+    s.onload = resolve; s.onerror = reject
+    document.head.appendChild(s)
+  })
+  _xlsxLoadedEC = true
+}
+const _moneyEC = (v) => { const n = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return isNaN(n) ? 0 : n }
+const _fechaEC = (s) => { const m = String(s || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? `${m[3]}-${m[2]}-${m[1]}` : null }
 
 function TabEstadoCuenta({ user }) {
   const toast = useToast()
+  const CUENTA_ID = 1 // BAC #201500451 USD
   const [estados, setEstados] = useState([])
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
+  const [parsing, setParsing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState(null)
   const [result, setResult] = useState(null)
 
   const load = async () => {
-    const { data } = await db.from('bank_estados_cuenta').select('*').order('created_at', { ascending: false }).limit(50)
-    setEstados(data || [])
+    try {
+      const { data } = await db.from('bank_estados_cuenta').select('*').eq('banco', 'BAC').order('created_at', { ascending: false }).limit(24)
+      setEstados(data || [])
+    } catch (e) { /* la tabla puede no existir aun */ }
   }
   useEffect(() => { load() }, [])
 
-  const parseBAC = (rows) => {
-    // rows = array de arrays (header:1). Layout BAC: 0=Fecha 1=Ref 3=Código 4=Desc 7=Débitos 8=Créditos 9=Balance
-    const movs = []
-    let saldoIni = null, saldoFin = null
-    for (const r of rows) {
-      const desc = String(r[4] ?? '')
-      if (saldoIni === null && /saldo inicial/i.test(desc)) saldoIni = _money(r[9])
-      const fecha = _ddmmyyyy(r[0])
-      if (!fecha) continue
-      const ref = String(r[1] ?? '').trim()
-      const deb = _money(r[7]), cre = _money(r[8]), bal = _money(r[9])
-      if (!ref && deb === 0 && cre === 0) continue
-      movs.push({ fecha, referencia: ref, codigo_bac: String(r[3] ?? '').trim() || null, descripcion: desc || null, debito: deb, credito: cre, balance: bal })
-      saldoFin = bal
-    }
-    return { movs, saldoIni, saldoFin }
-  }
-
-  const handleFile = async (file) => {
+  const onFile = async (file) => {
     if (!file) return
-    setBusy(true); setResult(null); setMsg('Subiendo archivo…')
+    setParsing(true); setResult(null); setPreview(null)
     try {
-      // 1) Subir el archivo al bucket
-      const safe = file.name.replace(/[^\w.\-]/g, '_')
-      const path = `${Date.now()}_${safe}`
-      const { error: upErr } = await db.storage.from('bank-estados-cuenta').upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
-      if (upErr) throw upErr
-      const archivo_url = db.storage.from('bank-estados-cuenta').getPublicUrl(path).data.publicUrl
-
-      let n_mov = 0, n_nuevos = 0, periodo = null, fdesde = null, fhasta = null, saldoIni = null, saldoFin = null
-      const esXls = /\.(xls|xlsx)$/i.test(file.name)
-      if (esXls) {
-        setMsg('Leyendo movimientos…')
-        await loadXLSX()
-        const buf = await file.arrayBuffer()
-        const wb = window.XLSX.read(buf, { type: 'array' })
-        const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' })
-        const { movs, saldoIni: si, saldoFin: sf } = parseBAC(rows)
-        saldoIni = si; saldoFin = sf; n_mov = movs.length
-        if (movs.length) {
-          const fechas = movs.map(m => m.fecha).sort()
-          fdesde = fechas[0]; fhasta = fechas[fechas.length - 1]; periodo = fdesde.slice(0, 7)
-          // dedup por referencia dentro del rango
-          setMsg('Verificando duplicados…')
-          const existentes = await fetchAllRows(db, 'bank_transacciones', q => q.select('referencia').gte('fecha', fdesde).lte('fecha', fhasta))
-          const setRef = new Set((existentes || []).map(x => String(x.referencia)))
-          const nuevos = movs.filter(m => m.referencia && !setRef.has(m.referencia))
-          n_nuevos = nuevos.length
-          if (nuevos.length) {
-            setMsg(`Insertando ${nuevos.length} movimientos nuevos…`)
-            const payload = nuevos.map((m, i) => ({
-              fecha: m.fecha, referencia: m.referencia, codigo_bac: m.codigo_bac,
-              descripcion: m.descripcion, debito: m.debito, credito: m.credito, balance: m.balance,
-              estado: 'sin_clasificar', hash_dedup: `bac-${m.referencia}-${m.fecha}-${i}`,
-              imported_at: new Date().toISOString(),
-            }))
-            // insertar en lotes de 300
-            for (let i = 0; i < payload.length; i += 300) {
-              const { error } = await db.from('bank_transacciones').insert(payload.slice(i, i + 300))
-              if (error) throw error
-            }
-          }
-        }
+      await loadXLSX_EC()
+      const buf = await file.arrayBuffer()
+      const wb = window.XLSX.read(buf, { type: 'array' })
+      const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' })
+      // Layout BAC: 0=Fecha 1=Referencia 3=Codigo 4=Descripcion 7=Debitos 8=Creditos 9=Balance
+      let saldoIni = null
+      const movs = []
+      for (const r of rows) {
+        const desc = String(r[4] ?? '')
+        if (saldoIni === null && /saldo inicial/i.test(desc)) saldoIni = _moneyEC(r[9])
+        const fecha = _fechaEC(r[0])
+        if (!fecha) continue
+        const ref = String(r[1] ?? '').trim()
+        const deb = _moneyEC(r[7]), cre = _moneyEC(r[8]), bal = _moneyEC(r[9])
+        if (!ref && deb === 0 && cre === 0) continue
+        movs.push({ fecha, referencia: ref, codigo_bac: String(r[3] ?? '').trim() || null, descripcion: desc || null, debito: deb, credito: cre, balance: bal })
       }
-
-      // 2) Registrar el estado de cuenta
-      await db.from('bank_estados_cuenta').insert({
-        banco: 'BAC', periodo, fecha_desde: fdesde, fecha_hasta: fhasta,
-        saldo_inicial: saldoIni, saldo_final: saldoFin, n_movimientos: n_mov, n_nuevos,
-        archivo_nombre: file.name, archivo_url, subido_por: user?.nombre || user?.rol || 'POS',
-      })
-      setResult({ n_mov, n_nuevos, esXls, periodo })
-      toast.success(esXls ? `Estado procesado: ${n_nuevos} movimientos nuevos de ${n_mov}` : 'Archivo subido')
-      load()
+      if (!movs.length) { toast.error('No se encontraron movimientos en el archivo'); setParsing(false); return }
+      const fechas = movs.map(m => m.fecha).sort()
+      const fdesde = fechas[0], fhasta = fechas[fechas.length - 1]
+      const totDeb = movs.reduce((s, m) => s + m.debito, 0)
+      const totCred = movs.reduce((s, m) => s + m.credito, 0)
+      let balanceOk = true
+      if (saldoIni != null) {
+        let saldo = saldoIni
+        for (const m of movs) { saldo = Math.round((saldo - m.debito + m.credito) * 100) / 100; if (Math.abs(saldo - m.balance) > 0.01) { balanceOk = false; break } }
+      }
+      setPreview({ movs, archivo: file.name, periodo: fdesde.slice(0, 7), fdesde, fhasta, totDeb, totCred, saldoIni, saldoFin: movs[movs.length - 1].balance, balanceOk })
     } catch (e) {
-      toast.error('Error: ' + (e.message || e))
-    } finally { setBusy(false); setMsg('') }
+      toast.error('Error leyendo archivo: ' + (e.message || e))
+    } finally { setParsing(false) }
   }
+
+  const importar = async () => {
+    if (!preview) return
+    setImporting(true)
+    try {
+      const { data, error } = await db.rpc('fn_import_bank_bac', { p_cuenta_id: CUENTA_ID, p_movs: preview.movs })
+      if (error) throw error
+      const res = data || {}
+      try {
+        await db.from('bank_estados_cuenta').insert({
+          banco: 'BAC', cuenta: '201500451', periodo: preview.periodo,
+          fecha_desde: preview.fdesde, fecha_hasta: preview.fhasta,
+          saldo_inicial: preview.saldoIni, saldo_final: preview.saldoFin,
+          n_movimientos: preview.movs.length, n_nuevos: res.insertados || 0,
+          archivo_nombre: preview.archivo, subido_por: user?.nombre || user?.rol || 'POS',
+        })
+      } catch (e) { /* registro opcional */ }
+      setResult(res); setPreview(null); load()
+      toast.success(`Importado: ${res.insertados || 0} nuevos - ${res.duplicados || 0} ya existian`)
+    } catch (e) {
+      toast.error('Error importando: ' + (e.message || e))
+    } finally { setImporting(false) }
+  }
+
+  const card = { background: '#1c1c22', border: '1px solid #2a2a32', borderRadius: 12, padding: 16, marginBottom: 14 }
+  const fmtMoney = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const fmtD = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('es-SV', { day: '2-digit', month: 'short' }) : '—'
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
-      <div style={{ background: '#1c1c22', border: '1px dashed #2a2a32', borderRadius: 12, padding: 20, textAlign: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 4 }}>🏦 Subir estado de cuenta BAC</div>
-        <div style={{ fontSize: 12, color: '#8b8997', marginBottom: 12 }}>
-          Sube el <b>.xls</b> del BAC. Se leen los movimientos y se cargan los nuevos a la conciliación (deduplica por referencia). PDF se guarda como archivo.
+      <div style={{ ...card, borderStyle: 'dashed', textAlign: 'center' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 4 }}>🏦 Subir estado de cuenta BAC</div>
+        <div style={{ fontSize: 12, color: '#8b8997', marginBottom: 14 }}>
+          Sube el <b>.xls</b> descargado del BAC (cuenta #201500451). Se leen los movimientos y se cargan los nuevos a la conciliacion. Es <b>idempotente</b>: re-subir el mismo mes no duplica nada.
         </div>
-        <label style={{ ...uploadBtn(busy, '#60a5fa'), opacity: busy ? 0.6 : 1 }}>
-          {busy ? (msg || 'Procesando…') : '📤 Elegir archivo (.xls / .pdf)'}
-          <input type="file" accept=".xls,.xlsx,.pdf" disabled={busy} style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleFile(f) }} />
+        <label style={{ display: 'inline-block', padding: '10px 20px', borderRadius: 8, background: parsing ? '#374151' : 'rgba(96,165,250,0.15)', border: '1px solid #60a5fa', color: '#60a5fa', fontWeight: 700, fontSize: 13, cursor: parsing ? 'not-allowed' : 'pointer' }}>
+          {parsing ? 'Leyendo…' : '📤 Elegir archivo .xls'}
+          <input type="file" accept=".xls,.xlsx" disabled={parsing || importing} style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onFile(f) }} />
         </label>
-        {result && (
-          <div style={{ marginTop: 12, fontSize: 13, color: '#34d399' }}>
-            ✓ {result.esXls ? `${result.n_mov} movimientos leídos · ${result.n_nuevos} nuevos cargados${result.periodo ? ` · ${result.periodo}` : ''}` : 'Archivo guardado'}
-          </div>
-        )}
       </div>
 
-      <div style={{ fontSize: 12, color: '#8b8997', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>Estados subidos</div>
+      {preview && (
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 10 }}>Previsualizacion - {preview.archivo}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8, fontSize: 12, color: '#d1d5db', marginBottom: 12 }}>
+            <div>Periodo: <b style={{ color: '#fff' }}>{fmtD(preview.fdesde)} → {fmtD(preview.fhasta)}</b></div>
+            <div>Movimientos: <b style={{ color: '#fff' }}>{preview.movs.length}</b></div>
+            <div>Total debitos: <b style={{ color: '#fca5a5' }}>{fmtMoney(preview.totDeb)}</b></div>
+            <div>Total creditos: <b style={{ color: '#6ee7b7' }}>{fmtMoney(preview.totCred)}</b></div>
+            {preview.saldoIni != null && <div>Saldo inicial: <b style={{ color: '#fff' }}>{fmtMoney(preview.saldoIni)}</b></div>}
+            <div>Saldo final: <b style={{ color: '#fff' }}>{fmtMoney(preview.saldoFin)}</b></div>
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 12, color: preview.balanceOk ? '#6ee7b7' : '#fbbf24' }}>
+            {preview.balanceOk ? '✓ Continuidad de balance verificada' : '⚠️ El balance no cuadra perfectamente - se importara igual (dedup por hash)'}
+          </div>
+          <button onClick={importar} disabled={importing} style={{ padding: '10px 20px', borderRadius: 8, background: importing ? '#374151' : 'rgba(52,211,153,0.15)', border: '1px solid #34d399', color: '#34d399', fontWeight: 700, fontSize: 13, cursor: importing ? 'not-allowed' : 'pointer' }}>
+            {importing ? 'Importando…' : `✅ Importar ${preview.movs.length} movimientos`}
+          </button>
+        </div>
+      )}
+
+      {result && (
+        <div style={{ ...card, background: '#064e3b', border: '1px solid #065f46' }}>
+          <div style={{ fontSize: 13, color: '#6ee7b7' }}>
+            ✅ Importacion lista - <b>{result.insertados}</b> nuevos cargados - <b>{result.duplicados}</b> ya existian (de {result.recibidos} leidos).
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: '#8b8997', textTransform: 'uppercase', letterSpacing: 0.4, margin: '6px 0 8px' }}>Estados subidos</div>
       {estados.length === 0 ? (
-        <div style={{ color: '#6b6878', fontSize: 13, padding: 16, textAlign: 'center' }}>Aún no hay estados de cuenta subidos.</div>
+        <div style={{ color: '#6b6878', fontSize: 13, padding: 16, textAlign: 'center' }}>Aun no hay estados de cuenta registrados.</div>
       ) : estados.map(e => (
         <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#1c1c22', border: '1px solid #2a2a32', borderRadius: 10, padding: '10px 14px', marginBottom: 8 }}>
           <span style={{ fontSize: 20 }}>🏦</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 13, color: '#e8e6ef' }}>{e.archivo_nombre || e.periodo || 'Estado'}</div>
             <div style={{ fontSize: 11, color: '#8b8997' }}>
-              {e.periodo || '—'} · {e.n_movimientos || 0} mov · {e.n_nuevos || 0} nuevos
-              {e.saldo_final != null && ` · saldo $${parseFloat(e.saldo_final).toFixed(2)}`}
+              {e.periodo || '—'} - {e.n_movimientos || 0} mov - {e.n_nuevos || 0} nuevos
+              {e.saldo_final != null && ` - saldo $${parseFloat(e.saldo_final).toFixed(2)}`}
             </div>
           </div>
-          {e.archivo_url && <a href={e.archivo_url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', fontSize: 12, textDecoration: 'none' }}>ver</a>}
         </div>
       ))}
     </div>
