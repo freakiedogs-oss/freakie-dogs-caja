@@ -25,6 +25,7 @@ const ESTADO_COLOR = {
 
 const TABS = [
   { key: 'resumen', label: '📊 Resumen' },
+  { key: 'revision', label: '✅ Revisión P&L' },
   { key: 'wizard', label: '⚡ Wizard' },
   { key: 'comprobantes', label: '📷 Comprobantes' },
   { key: 'estado-cuenta', label: '🏦 Estado de Cuenta' },
@@ -226,6 +227,7 @@ export default function BancoView({ user }) {
       </div>
 
       {tab === 'resumen' && <TabResumen />}
+      {tab === 'revision' && <TabRevisionPL user={user} />}
       {tab === 'wizard' && <TabWizard user={user} pushNotif={pushNotif} />}
       {tab === 'comprobantes' && <TabComprobantes user={user} />}
       {tab === 'estado-cuenta' && <TabEstadoCuenta user={user} />}
@@ -2574,6 +2576,251 @@ function SubPrestamos({ user, pushNotif }) {
     </div>
   )
 }
+
+// ═══════════════════════════════════════════════════════════
+// TAB REVISIÓN P&L — 3er riel (patrón kaeru, 2-Jul-2026)
+// Aprobar cada débito: DTE / P&L directo / No P&L.
+// Solo lo APROBADO como 'pl_directo' entra a v_gastos_consolidados
+// (origen banco_sin_dte). Planilla/ISSS/AFP = no_pl (entran devengadas).
+// ═══════════════════════════════════════════════════════════
+const DESTINO_META = {
+  dte: { label: 'Vía DTE', color: '#6ee7b7', bg: '#065f46', hint: 'Paga un DTE — el gasto ya cuenta por el riel DTE' },
+  pl_directo: { label: 'P&L directo', color: '#c4b5fd', bg: '#5b21b6', hint: 'Gasto sin DTE — entra al P&L por su categoría' },
+  no_pl: { label: 'No P&L', color: '#9ca3af', bg: '#374151', hint: 'Socio / traslado / planilla devengada — no afecta P&L' },
+}
+
+function TabRevisionPL({ user }) {
+  const toast = useToast()
+  const [tx, setTx] = useState([])
+  const [cats, setCats] = useState([])
+  const [sucs, setSucs] = useState([])
+  const [cuadre, setCuadre] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filtro, setFiltro] = useState('por_aprobar') // por_aprobar | sin_destino | aprobados | todos
+  const [filtroMes, setFiltroMes] = useState('todos')
+  const [filtroCat, setFiltroCat] = useState('todos')
+  const [search, setSearch] = useState('')
+  const [seleccion, setSeleccion] = useState(new Set())
+  const [expandido, setExpandido] = useState(null)
+  const [sugerencias, setSugerencias] = useState({}) // txId -> [dtes]
+  const [saving, setSaving] = useState(false)
+
+  const usuario = user?.nombre || user?.rol || 'ejecutivo'
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [txData, catRes, sucRes, cuadreRes] = await Promise.all([
+        fetchAllRows(db, 'bank_transacciones', q =>
+          q.select('id,fecha,codigo_bac,descripcion,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id')
+            .eq('direccion', 'D').order('fecha', { ascending: false })),
+        db.from('categorias_gasto').select('id,nombre,grupo').neq('grupo', 'Pasivo').order('orden'),
+        db.from('sucursales').select('store_code,nombre').eq('activa', true).order('store_code'),
+        db.from('v_banco_cuadre_mensual').select('*').order('mes', { ascending: false }),
+      ])
+      setTx(txData)
+      setCats(catRes.data || [])
+      setSucs(sucRes.data || [])
+      setCuadre(cuadreRes.data || [])
+      setSeleccion(new Set())
+    } catch (e) { toast.error('Error cargando: ' + e.message) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const meses = useMemo(() => ['todos', ...new Set(tx.map(t => (t.fecha || '').slice(0, 7))).values()].sort().reverse(), [tx])
+
+  const searchLow = search.trim().toLowerCase()
+  const filtrados = tx.filter(t => {
+    if (filtro === 'por_aprobar' && !(t.destino_pl === 'pl_directo' && !t.revisado)) return false
+    if (filtro === 'sin_destino' && t.destino_pl != null) return false
+    if (filtro === 'aprobados' && !t.revisado) return false
+    if (filtroMes !== 'todos' && !(t.fecha || '').startsWith(filtroMes)) return false
+    if (filtroCat === 'sin_categoria' && t.categoria_gasto_id) return false
+    if (filtroCat !== 'todos' && filtroCat !== 'sin_categoria' && t.categoria_gasto_id !== filtroCat) return false
+    if (searchLow && !`${t.descripcion || ''} ${t.categoria_gasto_id || ''} ${t.notas || ''}`.toLowerCase().includes(searchLow)) return false
+    return true
+  }).sort((a, b) => (Number(b.debito) || 0) - (Number(a.debito) || 0))
+
+  const totalFiltrado = filtrados.reduce((s, t) => s + (Number(t.debito) || 0), 0)
+  const cuadreMes = filtroMes !== 'todos' ? cuadre.find(c => c.mes === filtroMes) : null
+
+  const toggleSel = (id) => { const ns = new Set(seleccion); if (ns.has(id)) ns.delete(id); else ns.add(id); setSeleccion(ns) }
+  const toggleSelAll = () => { if (seleccion.size === filtrados.length) setSeleccion(new Set()); else setSeleccion(new Set(filtrados.map(t => t.id))) }
+
+  // ── Acciones ──
+  const autoClasificar = async () => {
+    setSaving(true)
+    try {
+      const r1 = await db.rpc('fn_banco_autoclasificar')
+      if (r1.error) throw r1.error
+      const r2 = await db.rpc('fn_banco_revision_auto', { p_usuario: usuario })
+      if (r2.error) throw r2.error
+      const n = Array.isArray(r1.data) ? r1.data[0]?.actualizados : r1.data?.actualizados
+      toast.success(`⚡ ${n ?? 0} clasificados por terceros · destinos propuestos: ${JSON.stringify(r2.data)}`)
+      await load()
+    } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
+  }
+
+  const revisar = async (t, patch = {}) => {
+    setSaving(true)
+    try {
+      const { error } = await db.rpc('fn_banco_revisar', {
+        p_id: t.id,
+        p_destino: patch.destino ?? t.destino_pl,
+        p_usuario: usuario,
+        p_categoria: patch.categoria ?? null,
+        p_sucursal: patch.sucursal ?? null,
+        p_dte: patch.dte ?? null,
+        p_revisado: patch.revisado ?? true,
+      })
+      if (error) throw error
+      await load()
+    } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
+  }
+
+  const aprobarBulk = async () => {
+    if (seleccion.size === 0) { toast.warning('Selecciona al menos uno'); return }
+    const sel = filtrados.filter(t => seleccion.has(t.id))
+    const sinDestino = sel.filter(t => !t.destino_pl)
+    if (sinDestino.length > 0) { toast.warning(`${sinDestino.length} sin destino — asígnales destino primero`); return }
+    if (!confirm(`Aprobar ${sel.length} débitos con su categoría/destino actual? Los 'P&L directo' entrarán al estado de resultados.`)) return
+    setSaving(true)
+    try {
+      for (const t of sel) {
+        const { error } = await db.rpc('fn_banco_revisar', { p_id: t.id, p_destino: t.destino_pl, p_usuario: usuario })
+        if (error) throw error
+      }
+      toast.success(`✅ ${sel.length} aprobados`)
+      await load()
+    } catch (e) { toast.error('Error: ' + e.message); await load() } finally { setSaving(false) }
+  }
+
+  const sugerirDte = async (t) => {
+    try {
+      const { data, error } = await db.rpc('fn_banco_sugerir_dte', { p_id: t.id })
+      if (error) throw error
+      setSugerencias(s => ({ ...s, [t.id]: data || [] }))
+      if (!data || data.length === 0) toast.info('Sin DTEs candidatos por monto/fecha')
+    } catch (e) { toast.error('Error: ' + e.message) }
+  }
+
+  // ── Render ──
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando débitos…</div>
+
+  const porAprobar = tx.filter(t => t.destino_pl === 'pl_directo' && !t.revisado)
+  const sinDestinoN = tx.filter(t => !t.destino_pl)
+  const aprobadosN = tx.filter(t => t.revisado)
+
+  return (
+    <div>
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 14 }}>
+        <KpiCard label="Por aprobar (P&L directo)" value={String(porAprobar.length)} sub={fmt(porAprobar.reduce((s, t) => s + Number(t.debito || 0), 0))} color="#c4b5fd" />
+        <KpiCard label="Sin destino" value={String(sinDestinoN.length)} sub={fmt(sinDestinoN.reduce((s, t) => s + Number(t.debito || 0), 0))} color="#fca5a5" />
+        <KpiCard label="Aprobados" value={String(aprobadosN.length)} sub="revisado=true" color="#6ee7b7" />
+        {cuadreMes && <KpiCard label={`Cuadre ${cuadreMes.mes}`} value={fmtPct(cuadreMes.pct_monto_representado)} sub={`Δcaja ${fmt(cuadreMes.delta_caja)}`} color="#60a5fa" />}
+      </div>
+
+      {/* Filtros + acciones */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+        {[['por_aprobar', '🟣 Por aprobar'], ['sin_destino', '🔴 Sin destino'], ['aprobados', '✅ Aprobados'], ['todos', 'Todos']].map(([k, l]) => (
+          <button key={k} onClick={() => setFiltro(k)} style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: filtro === k ? '2px solid #60a5fa' : '1px solid #444', background: filtro === k ? 'rgba(96,165,250,0.12)' : 'transparent', color: filtro === k ? '#60a5fa' : '#aaa' }}>{l}</button>
+        ))}
+        <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={selStyle}>{meses.map(m => <option key={m} value={m}>{m === 'todos' ? 'Todos los meses' : m}</option>)}</select>
+        <select value={filtroCat} onChange={e => setFiltroCat(e.target.value)} style={selStyle}>
+          <option value="todos">Todas las categorías</option><option value="sin_categoria">Sin categoría</option>
+          {cats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        </select>
+        <input placeholder="Buscar…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...selStyle, minWidth: 160 }} />
+        <div style={{ flex: 1 }} />
+        <button onClick={autoClasificar} disabled={saving} style={btnPrimario('#60a5fa')}>⚡ Auto-clasificar</button>
+        <button onClick={aprobarBulk} disabled={saving || seleccion.size === 0} style={btnPrimario('#6ee7b7')}>✅ Aprobar {seleccion.size > 0 ? `(${seleccion.size})` : 'selección'}</button>
+      </div>
+
+      <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>{filtrados.length} débitos · {fmt(totalFiltrado)} · Solo lo aprobado como <b style={{ color: '#c4b5fd' }}>P&L directo</b> entra al estado de resultados</div>
+
+      {/* Tabla */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead><tr style={{ color: '#888', textAlign: 'left', borderBottom: '1px solid #333' }}>
+            <th style={{ padding: 6 }}><input type="checkbox" checked={seleccion.size === filtrados.length && filtrados.length > 0} onChange={toggleSelAll} /></th>
+            <th style={{ padding: 6 }}>Fecha</th><th style={{ padding: 6 }}>Descripción</th><th style={{ padding: 6, textAlign: 'right' }}>Monto</th>
+            <th style={{ padding: 6 }}>Categoría</th><th style={{ padding: 6 }}>Sucursal</th><th style={{ padding: 6 }}>Destino</th><th style={{ padding: 6 }}></th>
+          </tr></thead>
+          <tbody>
+            {filtrados.slice(0, 300).map(t => {
+              const dm = t.destino_pl ? DESTINO_META[t.destino_pl] : null
+              const sugs = sugerencias[t.id]
+              return (
+                <FragmentRow key={t.id}>
+                  <tr style={{ borderBottom: '1px solid #262626', background: t.revisado ? 'rgba(110,231,183,0.04)' : 'transparent' }}>
+                    <td style={{ padding: 6 }}><input type="checkbox" checked={seleccion.has(t.id)} onChange={() => toggleSel(t.id)} /></td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap', color: '#aaa' }}>{fmtDate(t.fecha)}</td>
+                    <td style={{ padding: 6, maxWidth: 320 }}>
+                      <div style={{ color: '#e5e5e5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>
+                      <div style={{ fontSize: 10, color: '#666' }}>{t.codigo_bac}{t.es_automatico ? ' · ⚡auto' : ''}{t.revisado ? ` · ✓ ${t.revisado_por || ''}` : ''}</div>
+                    </td>
+                    <td style={{ padding: 6, textAlign: 'right', fontWeight: 700, color: '#fca5a5', whiteSpace: 'nowrap' }}>{fmt(t.debito)}</td>
+                    <td style={{ padding: 6 }}>
+                      <select value={t.categoria_gasto_id || ''} disabled={saving}
+                        onChange={e => revisar(t, { categoria: e.target.value || null, revisado: t.revisado })}
+                        style={{ ...selStyle, maxWidth: 150, background: t.categoria_gasto_id ? '#1a1a1a' : '#450a0a' }}>
+                        <option value="">— sin categoría —</option>
+                        {cats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: 6 }}>
+                      <select value={t.sucursal_default || ''} disabled={saving}
+                        onChange={e => revisar(t, { sucursal: e.target.value || null, revisado: t.revisado })}
+                        style={{ ...selStyle, maxWidth: 110 }}>
+                        <option value="">—</option>
+                        {sucs.map(s => <option key={s.store_code} value={s.store_code}>{s.store_code}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
+                      {['dte', 'pl_directo', 'no_pl'].map(d => (
+                        <button key={d} disabled={saving} title={DESTINO_META[d].hint}
+                          onClick={() => d === 'dte' ? sugerirDte(t) : revisar(t, { destino: d, revisado: t.revisado })}
+                          style={{ padding: '3px 7px', marginRight: 3, borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', border: 'none', background: t.destino_pl === d ? DESTINO_META[d].bg : '#262626', color: t.destino_pl === d ? DESTINO_META[d].color : '#777' }}>
+                          {DESTINO_META[d].label}
+                        </button>
+                      ))}
+                    </td>
+                    <td style={{ padding: 6 }}>
+                      {!t.revisado
+                        ? <button disabled={saving || !t.destino_pl} onClick={() => revisar(t)} title={t.destino_pl ? 'Aprobar' : 'Asigna destino primero'} style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: t.destino_pl ? '#065f46' : '#333', color: t.destino_pl ? '#6ee7b7' : '#666', fontWeight: 800, cursor: 'pointer', fontSize: 11 }}>✓</button>
+                        : <button disabled={saving} onClick={() => revisar(t, { revisado: false })} title="Quitar aprobación" style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #444', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11 }}>↩</button>}
+                    </td>
+                  </tr>
+                  {sugs && (
+                    <tr><td colSpan={8} style={{ padding: '4px 10px 10px 40px', background: '#111' }}>
+                      {sugs.length === 0
+                        ? <span style={{ fontSize: 11, color: '#777' }}>Sin DTEs candidatos (monto exacto, fecha −45/+5d). Si es gasto real sin factura → P&L directo.</span>
+                        : sugs.map(s => (
+                          <div key={s.dte_id} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 11, color: '#d1d5db', padding: '3px 0' }}>
+                            <span>📄 {s.proveedor} · {fmtDate(s.fecha)} · <b>{fmt(s.monto)}</b> ({s.delta_dias}d)</span>
+                            <button disabled={saving} onClick={() => { revisar(t, { destino: 'dte', dte: s.dte_id }); setSugerencias(sg => ({ ...sg, [t.id]: undefined })) }}
+                              style={{ padding: '2px 8px', borderRadius: 6, border: 'none', background: '#065f46', color: '#6ee7b7', fontWeight: 700, cursor: 'pointer', fontSize: 10 }}>Vincular → Vía DTE</button>
+                          </div>
+                        ))}
+                      <button onClick={() => setSugerencias(sg => ({ ...sg, [t.id]: undefined }))} style={{ marginTop: 4, background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 10 }}>cerrar</button>
+                    </td></tr>
+                  )}
+                </FragmentRow>
+              )
+            })}
+          </tbody>
+        </table>
+        {filtrados.length > 300 && <div style={{ padding: 10, fontSize: 11, color: '#888' }}>Mostrando 300 de {filtrados.length} — usa filtros para acotar.</div>}
+      </div>
+    </div>
+  )
+}
+
+function FragmentRow({ children }) { return <>{children}</> }
+
+const selStyle = { padding: '6px 8px', borderRadius: 8, border: '1px solid #444', background: '#1a1a1a', color: '#ddd', fontSize: 12 }
+const btnPrimario = (color) => ({ padding: '7px 14px', borderRadius: 8, border: `1px solid ${color}`, background: 'transparent', color, fontWeight: 800, fontSize: 12, cursor: 'pointer' })
 
 // ═══════════════════════════════════════════════════════════
 // SHARED COMPONENTS / STYLES
