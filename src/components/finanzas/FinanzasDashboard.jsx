@@ -6,6 +6,7 @@ import { paletaC as C } from '@/theme'
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
 const CardVentasComparativo = lazy(() => import('./CardVentasComparativo'))
 const ExcluidosPlTab = lazy(() => import('./ExcluidosPlTab'))
+const CashFlowNeto = lazy(() => import('./CashFlowNeto'))
 
 // ErrorBoundary defensivo — si el componente lazy crashea, no rompe el dashboard
 class ErrorBoundary extends React.Component {
@@ -1895,9 +1896,14 @@ function TabFlujoCaja({ months2026 }) {
 
   return (
     <div style={sCard}>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <CashFlowNeto />
+        </Suspense>
+      </ErrorBoundary>
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, letterSpacing: 2 }}>FREAKIE DOGS</div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: C.white, marginTop: 2 }}>Estado de Flujo de Caja</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.white, marginTop: 2 }}>Estado de Flujo de Caja <span style={{ fontSize: 11, color: C.textMuted, fontWeight: 400 }}>(método indirecto · estimado)</span></div>
         <div style={{ fontSize: 11, color: C.textMuted }}>Método indirecto · Ago 2025 — Abr 2026</div>
       </div>
 
