@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db, URL_SB, KEY_SB } from '../../supabase'
+import InfoTip from '../ui/InfoTip'
 import { useToast } from '../../hooks/useToast'
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -692,15 +693,15 @@ function CuentasPorPagar({ cxp, onRefresh }) {
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
         <div className="card" style={{ padding: 14, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Total por pagar</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Total por pagar <InfoTip text="Suma de todas las facturas (DTE) de proveedores que aún están sin pagar." /></div>
           <div style={{ fontSize: 20, fontWeight: 800, color: '#60a5fa' }}>{fmt(totalPendiente)}</div>
         </div>
         <div className="card" style={{ padding: 14, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Monto vencido</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Monto vencido <InfoTip text="De lo pendiente, cuánto ya pasó su fecha de vencimiento del crédito con el proveedor." /></div>
           <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444' }}>{fmt(totalVencido)}</div>
         </div>
         <div className="card" style={{ padding: 14, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Proveedores</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Proveedores <InfoTip text="Proveedores con saldo pendiente. El ⚠️ marca los que ya tienen facturas vencidas." /></div>
           <div style={{ fontSize: 20, fontWeight: 800, color: '#fbbf24' }}>
             {provConVencidos > 0 ? `${provConVencidos} ⚠️` : cxp.length}
           </div>

@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { db as supabase } from '../../supabase'
+import InfoTip from '../ui/InfoTip'
 import { fmtDate, n } from '../../config'
 
 const colors = {
@@ -109,7 +110,7 @@ export default function ExcluidosPlTab() {
     <div>
       <div style={S.header}>
         <div>
-          <div style={S.title}>🚫 Egresos Excluidos del P&amp;L</div>
+          <div style={S.title}>🚫 Egresos Excluidos del P&amp;L <InfoTip text="Egresos que NO cuentan en el P&L porque ya están contabilizados por otra fuente (un DTE, BEES, Excel o PeYa). Sirve para evitar el doble conteo." /></div>
           <div style={S.subtitle}>
             Egresos asignados a proveedores que ya están contabilizados por otra fuente (DTE / BEES / Excel / PeYa). No cuentan en P&amp;L para evitar doble conteo.
           </div>
@@ -147,11 +148,11 @@ export default function ExcluidosPlTab() {
       {/* KPIs */}
       <div style={S.kpiRow}>
         <div style={S.kpi}>
-          <div style={S.kpiLabel}>Total excluidos</div>
+          <div style={S.kpiLabel}>Total excluidos <InfoTip text="Cuántos egresos están marcados como excluidos del P&L." /></div>
           <div style={{ ...S.kpiValue, color: colors.accent }}>{kpis.n}</div>
         </div>
         <div style={S.kpi}>
-          <div style={S.kpiLabel}>Monto total excluido</div>
+          <div style={S.kpiLabel}>Monto total excluido <InfoTip text="Suma en dólares de esos egresos excluidos del P&L." /></div>
           <div style={{ ...S.kpiValue, color: colors.gold }}>{fmt$(kpis.total)}</div>
         </div>
         {Object.entries(kpis.porMotivo).map(([m, v]) => (

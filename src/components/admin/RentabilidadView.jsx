@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { db } from '../../supabase'
 import { STORES, n } from '../../config'
 import { paletaT as T } from '@/theme'
+import InfoTip from '../ui/InfoTip'
 
 /* ══════════════════════════════════════════════
    Rentabilidad × Sucursal — Fintech v2
@@ -466,7 +467,7 @@ export default function RentabilidadView({ user }) {
       {/* ═══ HEADER ═══ */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: T.text, letterSpacing: -0.3 }}>Rentabilidad × Sucursal</h2>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: T.text, letterSpacing: -0.3 }}>Rentabilidad × Sucursal <InfoTip text="Estado de resultados desglosado por sucursal: ventas, costo de comida, utilidad bruta y operativa de cada local, para ver cuáles ganan y cuáles pierden." /></h2>
           <span style={{ background: T.accent, color: '#fff', fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 100 }}>LIVE</span>
         </div>
         <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 14px', fontSize: 12, color: T.textMuted }}>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db as supabase } from '../../supabase'
+import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n } from '../../config'
 import ConciliarTinderTab from './ConciliarTinderTab'
 import { fetchAllRows } from '../../utils/fetchPaginated'
@@ -528,7 +529,7 @@ export default function FinanzasGastosView({ user }) {
   return (
     <div style={st.wrap}>
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: colors.accent }}>💸 Gastos de Caja</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: colors.accent }}>💸 Gastos de Caja <InfoTip text="Egresos registrados en los cierres de caja de las sucursales. Aquí se controlan, se clasifican por categoría de P&L y se cruzan contra su factura (DTE)." /></div>
         <div style={{ fontSize: 12, color: '#888' }}>Control y conciliación de egresos · Finanzas</div>
       </div>
 
@@ -589,17 +590,17 @@ export default function FinanzasGastosView({ user }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
             <div style={{ ...st.card, flex: '1 1 140px', margin: 0, textAlign: 'center' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: colors.gold }}>{fmt$(totalEgresos)}</div>
-              <div style={{ fontSize: 11, color: '#888' }}>Total egresos ({egresos.length})</div>
+              <div style={{ fontSize: 11, color: '#888' }}>Total egresos ({egresos.length}) <InfoTip text="Total en dólares de los egresos de caja del periodo; entre paréntesis, cuántos son." /></div>
             </div>
             <div style={{ ...st.card, flex: '1 1 140px', margin: 0, textAlign: 'center' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: sinCategoria > 0 ? colors.accent : colors.green }}>{sinCategoria}</div>
-              <div style={{ fontSize: 11, color: '#888' }}>Sin categoría P&L</div>
+              <div style={{ fontSize: 11, color: '#888' }}>Sin categoría P&L <InfoTip text="Egresos que aún no tienen categoría contable asignada — no entran bien al P&L hasta clasificarlos." /></div>
             </div>
             <div style={{ ...st.card, flex: '1 1 140px', margin: 0, textAlign: 'center' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: colors.blue }}>
                 {egresos.filter(r => r.estado_cruce === 'pendiente').length}
               </div>
-              <div style={{ fontSize: 11, color: '#888' }}>Pendientes cruce</div>
+              <div style={{ fontSize: 11, color: '#888' }}>Pendientes cruce <InfoTip text="Egresos que todavía no se han cruzado contra su factura (DTE) correspondiente." /></div>
             </div>
           </div>
 
