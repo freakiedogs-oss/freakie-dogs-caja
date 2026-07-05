@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
 import { paletaC as C } from '@/theme'
+import InfoTip from '../ui/InfoTip'
 
 // Componentes aislados lazy + defensivos (si fallan, ErrorBoundary los aísla)
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
@@ -1013,6 +1014,30 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
 //  TAB 2: ESTADO DE RESULTADOS (P&L)
 // ══════════════════════════════════════════════════════
 
+// Explicaciones (ⓘ) por línea del Estado de Resultados — lenguaje de dueño
+const PL_TIPS = {
+  ventas: 'Ingresos de TODOS los canales (Quanto/POS + PedidosYa entregados + Eventos). Sin IVA por defecto; incluye propina cobrada.',
+  costo_comida: 'Costo de los ingredientes de la comida vendida (COGS de alimentos). Palanca #1 de rentabilidad; meta típica <35% de ventas.',
+  insumo_venta: 'Empaques, desechables y otros insumos que se van directo con cada venta.',
+  limpieza: 'Productos e insumos de limpieza de los locales.',
+  costo_fijo: 'Costos fijos mensuales: alquiler de los locales + electricidad. No varían con las ventas.',
+  gastos_operativos: 'Gastos de operación varios: mantenimiento, servicios, papelería, software, etc.',
+  gastos_logisticos: 'Costos de logística y reparto: motoristas propios, combustible, envíos.',
+  gasto_financiero: 'Comisiones bancarias, intereses y costos financieros.',
+  planilla_legal: 'Sueldos líquidos del personal operativo (lo que reciben en mano, ya sin descuentos).',
+  isss_afp: 'Aporte patronal de seguridad social (ISSS) y pensión (AFP). "Real" si ya se pagó; "provisión" si aún se está acumulando.',
+  planilla_gerencial: 'Sueldos de gerencia y administración, provisionados cada mes.',
+  ebitda: 'Utilidad operativa antes de intereses, impuestos y depreciación. = Ventas − todos los costos y gastos operativos. Mide si el negocio gana dinero operando.',
+  impuestos: 'Impuestos según DGII (IVA neto, renta, municipales).',
+  utilidad: 'Utilidad neta contable del periodo: EBITDA − impuestos.',
+  activo_fijo: 'CapEx: compra de activos (equipo, mobiliario, remodelación). No es gasto del P&L, pero SÍ sale de caja.',
+  repago_capital_socios: 'Devolución de capital aportado por socios. No afecta el P&L; reduce la caja.',
+  repago_capital_prestamos: 'Pago del capital (no los intereses) de préstamos. Reduce caja, no es gasto del P&L.',
+  dividendos_pagados: 'Reparto de utilidades a los socios. Sale de caja; no es un gasto.',
+  aportes_socios_recibidos: 'Dinero que socios o préstamos inyectan al negocio. Entra a caja; no es una venta.',
+  caja_neta: 'Caja neta real: la utilidad neta ajustada por los movimientos que mueven efectivo pero no pasan por el P&L (CapEx, socios, préstamos, dividendos).',
+}
+
 function TabEstadoResultados({ months2026 }) {
   const allMonths = buildAllMonths(months2026)
   const [expanded, setExpanded] = useState({})  // { categoryKey: true }
@@ -1137,7 +1162,7 @@ function TabEstadoResultados({ months2026 }) {
                         {isExp ? '▼' : '▶'}
                       </span>
                     )}
-                    {line.label}
+                    {line.label}{PL_TIPS[line.key] ? <InfoTip text={PL_TIPS[line.key]} /> : null}
                   </td>
                   {allMonths.map((m, i) => {
                     const val = m[line.key] || 0
