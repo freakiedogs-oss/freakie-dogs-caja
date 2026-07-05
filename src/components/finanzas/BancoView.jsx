@@ -2611,9 +2611,9 @@ function TabRevisionPL({ user }) {
     setLoading(true)
     try {
       const [txData, catRes, sucRes, cuadreRes] = await Promise.all([
-        fetchAllRows(db, 'bank_transacciones', q =>
-          q.select('id,fecha,codigo_bac,descripcion,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id')
-            .eq('direccion', 'D').order('fecha', { ascending: false })),
+        fetchAllRows(db, 'v_banco_revision', q =>
+          q.select('id,fecha,codigo_bac,descripcion,referencia,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id,tercero_nombre,tercero_relacion,tercero_ambiguo,subcategoria_default,dte_proveedor,dte_monto')
+            .order('fecha', { ascending: false })),
         db.from('categorias_gasto').select('id,nombre,grupo').neq('grupo', 'Pasivo').order('orden'),
         db.from('sucursales').select('store_code,nombre').eq('activa', true).order('store_code'),
         db.from('v_banco_cuadre_mensual').select('*').order('mes', { ascending: false }),
@@ -2637,7 +2637,7 @@ function TabRevisionPL({ user }) {
     if (filtroMes !== 'todos' && !(t.fecha || '').startsWith(filtroMes)) return false
     if (filtroCat === 'sin_categoria' && t.categoria_gasto_id) return false
     if (filtroCat !== 'todos' && filtroCat !== 'sin_categoria' && t.categoria_gasto_id !== filtroCat) return false
-    if (searchLow && !`${t.descripcion || ''} ${t.categoria_gasto_id || ''} ${t.notas || ''}`.toLowerCase().includes(searchLow)) return false
+    if (searchLow && !`${t.descripcion || ''} ${t.tercero_nombre || ''} ${t.dte_proveedor || ''} ${t.referencia || ''} ${t.categoria_gasto_id || ''} ${t.notas || ''}`.toLowerCase().includes(searchLow)) return false
     return true
   }).sort((a, b) => (Number(b.debito) || 0) - (Number(a.debito) || 0))
 
@@ -2756,9 +2756,20 @@ function TabRevisionPL({ user }) {
                   <tr style={{ borderBottom: '1px solid #262626', background: t.revisado ? 'rgba(110,231,183,0.04)' : 'transparent' }}>
                     <td style={{ padding: 6 }}><input type="checkbox" checked={seleccion.has(t.id)} onChange={() => toggleSel(t.id)} /></td>
                     <td style={{ padding: 6, whiteSpace: 'nowrap', color: '#aaa' }}>{fmtDate(t.fecha)}</td>
-                    <td style={{ padding: 6, maxWidth: 320 }}>
-                      <div style={{ color: '#e5e5e5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>
-                      <div style={{ fontSize: 10, color: '#666' }}>{t.codigo_bac}{t.es_automatico ? ' · ⚡auto' : ''}{t.revisado ? ` · ✓ ${t.revisado_por || ''}` : ''}</div>
+                    <td style={{ padding: 6, maxWidth: 340 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                        <span style={{ color: '#fff', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.tercero_nombre || t.descripcion}
+                        </span>
+                        {t.tercero_relacion && <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 6, background: t.tercero_relacion === 'proveedor' ? '#1e3a5f' : '#5b21b6', color: t.tercero_relacion === 'proveedor' ? '#93c5fd' : '#c4b5fd', whiteSpace: 'nowrap' }}>{t.tercero_relacion}</span>}
+                        {t.tercero_ambiguo && <span title="Cuenta multipropósito — revisar con cuidado" style={{ fontSize: 10 }}>⚠️</span>}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.tercero_nombre ? `${t.descripcion} · ` : ''}{t.codigo_bac}{t.referencia ? ` · ref ${t.referencia}` : ''}{t.es_automatico ? ' · ⚡auto' : ''}{t.revisado ? ` · ✓ ${t.revisado_por || ''}` : ''}
+                      </div>
+                      {t.destino_pl === 'dte' && t.dte_proveedor && (
+                        <div style={{ fontSize: 10, color: '#6ee7b7' }}>📄 {t.dte_proveedor} · {fmt(t.dte_monto)}</div>
+                      )}
                     </td>
                     <td style={{ padding: 6, textAlign: 'right', fontWeight: 700, color: '#fca5a5', whiteSpace: 'nowrap' }}>{fmt(t.debito)}</td>
                     <td style={{ padding: 6 }}>
