@@ -926,22 +926,22 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       {/* KPIs Row */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Ventas Último Mes</div>
+          <div style={sH}>Ventas Último Mes <InfoTip text="Ventas netas del último mes con datos, de todos los canales (Quanto/POS + PeYa + Eventos), sin IVA. El % compara contra el mes anterior." /></div>
           <div style={sVal}>{fmt(latest?.ventas)}</div>
           <div style={sSub}>{latest?.label}{prev ? ` · ${delta(latest?.ventas, prev?.ventas)}` : ''}</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>EBITDA Último Mes</div>
+          <div style={sH}>EBITDA Último Mes <InfoTip text="Utilidad operativa del último mes: ventas menos todos los costos y gastos operativos, antes de impuestos, intereses y depreciación. El margen es EBITDA ÷ ventas." /></div>
           <div style={{ ...sVal, color: latest?.ebitda >= 0 ? C.greenLight : '#f87171' }}>{fmt(latest?.ebitda)}</div>
           <div style={sSub}>Margen: {pct(latest?.ventas ? latest.ebitda / latest.ventas : 0)}</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Costo Comida %</div>
+          <div style={sH}>Costo Comida % <InfoTip text="Costo de los ingredientes vendidos (food cost) como % de las ventas. Palanca #1 de rentabilidad; entre más bajo, mejor margen." /></div>
           <div style={sVal}>{pct(latest?.ventas ? latest.costo_comida / latest.ventas : 0)}</div>
           <div style={sSub}>Target: 50-55%</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Planilla / Ventas</div>
+          <div style={sH}>Planilla / Ventas <InfoTip text="Costo de la planilla operativa (sueldos líquidos del personal de sucursal) como % de las ventas. Objetivo: menos del 20%." /></div>
           <div style={sVal}>{pct(latest?.ventas ? latest.planilla_legal / latest.ventas : 0)}</div>
           <div style={sSub}>Target: &lt;20%</div>
         </div>
