@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
 import { paletaC as C } from '@/theme'
-import InfoTip from '../ui/InfoTip'
 
 // Componentes aislados lazy + defensivos (si fallan, ErrorBoundary los aísla)
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
 const CardVentasComparativo = lazy(() => import('./CardVentasComparativo'))
 const ExcluidosPlTab = lazy(() => import('./ExcluidosPlTab'))
-const CashFlowNeto = lazy(() => import('./CashFlowNeto'))
 
 // ErrorBoundary defensivo — si el componente lazy crashea, no rompe el dashboard
 class ErrorBoundary extends React.Component {
@@ -326,6 +324,7 @@ export default function FinanzasDashboard({ user }) {
         planillaGerencial,
         obligaciones,
         planillaOp,
+        planillaDesglose,
       ] = await Promise.all([
         fetchSimple('mv_finanzas_ventas_mensual',
           'mes, store_code, fuente, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros, num_dias, num_pedidos',
@@ -372,6 +371,9 @@ export default function FinanzasDashboard({ user }) {
         fetchAll('v_planilla_operativa_pl',
           'mes, pagado_real, provisionado, monto_pl, estado',
           q => q.gte('mes', '2026-01-01').order('mes')),
+        fetchAll('v_planilla_desglose_pl',
+          'mes, grupo, empleado_id, nombre_completo, cargo, propina, devengado',
+          q => q.gte('mes', '2026-01-01')),
       ])
       const bankSaldos = bankSaldosResp?.data
       const catData = catResp?.data
@@ -443,6 +445,7 @@ export default function FinanzasDashboard({ user }) {
         planillaGerencial,
         obligaciones,
         planillaOp,
+        planillaDesglose,
       })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
@@ -458,7 +461,7 @@ export default function FinanzasDashboard({ user }) {
     if (!data2026) return []
     const monthMap = {}
 
-    const initMonth = () => ({ ventas: 0, propinaCobrada: 0, ventaNeta: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, planilla_gerencial: 0, isss_afp: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
+    const initMonth = () => ({ ventas: 0, propinaCobrada: 0, ventaNeta: 0, bySuc: {}, pl: { costo_comida: 0, insumo_venta: 0, limpieza: 0, costo_fijo: 0, gastos_operativos: 0, gastos_logisticos: 0, gasto_financiero: 0, planilla_legal: 0, planilla_gerencial: 0, isss_afp: 0, impuestos: 0, activo_fijo: 0 }, plSubs: {}, planillaDesglose: {}, byProv: {}, egresos: 0, gastosOrigen: { compras_dte: 0, egresos_cierre: 0, descuadre: 0, compras_sin_dte: 0 }, cf: { repago_capital_socios: 0, repago_capital_prestamos: 0, aportes_socios_recibidos: 0, dividendos_pagados: 0 } })
 
     // Sales — 5-May-2026: ahora desde v_quanto_ordenes_diario
     // total_ventas    = con IVA con propina (lo que entró al cliente)
@@ -603,13 +606,26 @@ export default function FinanzasDashboard({ user }) {
       }
     })
 
-    // Planilla desglose por sucursal (para expansion en Estado de Resultados)
-    data2026.planillaPorSuc?.forEach(ps => {
-      const m = ps.fecha?.substring(0, 7)
+    // Planilla desglose 3 niveles (grupo → persona → salario normal + propina)
+    // Fuente: v_planilla_desglose_pl. El devengado suma EXACTO a la línea Planilla
+    // Operativa (v_planilla_operativa_pl). El patronal NO se incluye acá: ya se
+    // contabiliza en la línea ISSS+AFP, así que solo mostramos lo que suma a la línea.
+    data2026.planillaDesglose?.forEach(d => {
+      const m = d.mes?.substring(0, 7)
       if (!m || !monthMap[m]) return
-      const suc = ps.store_code || 'Corporativo / Eventos'
-      if (!monthMap[m].plSubs.planilla_legal) monthMap[m].plSubs.planilla_legal = {}
-      monthMap[m].plSubs.planilla_legal[suc] = (monthMap[m].plSubs.planilla_legal[suc] || 0) + (parseFloat(ps.monto) || 0)
+      const grupo = d.grupo || 'Sin grupo'
+      const dev = parseFloat(d.devengado) || 0
+      const prop = parseFloat(d.propina) || 0
+      const sn = dev - prop  // salario normal = base + viático + horas extra + bonos
+      const tree = monthMap[m].planillaDesglose
+      if (!tree[grupo]) tree[grupo] = { total: 0, personas: {} }
+      tree[grupo].total += dev
+      const eid = d.empleado_id || d.nombre_completo
+      if (!tree[grupo].personas[eid]) tree[grupo].personas[eid] = { nombre: d.nombre_completo, cargo: d.cargo, devengado: 0, salarioNormal: 0, propina: 0 }
+      const P = tree[grupo].personas[eid]
+      P.devengado += dev
+      P.salarioNormal += sn
+      P.propina += prop
     })
 
     // Movimientos socios (F6) — solo afectan caja, NO P&L (excepto salario_socio que ya viene en planillas y pago_interes que va a gasto_financiero)
@@ -926,22 +942,22 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       {/* KPIs Row */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Ventas Último Mes <InfoTip text="Ventas netas del último mes con datos, de todos los canales (Quanto/POS + PeYa + Eventos), sin IVA. El % compara contra el mes anterior." /></div>
+          <div style={sH}>Ventas Último Mes</div>
           <div style={sVal}>{fmt(latest?.ventas)}</div>
           <div style={sSub}>{latest?.label}{prev ? ` · ${delta(latest?.ventas, prev?.ventas)}` : ''}</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>EBITDA Último Mes <InfoTip text="Utilidad operativa del último mes: ventas menos todos los costos y gastos operativos, antes de impuestos, intereses y depreciación. El margen es EBITDA ÷ ventas." /></div>
+          <div style={sH}>EBITDA Último Mes</div>
           <div style={{ ...sVal, color: latest?.ebitda >= 0 ? C.greenLight : '#f87171' }}>{fmt(latest?.ebitda)}</div>
           <div style={sSub}>Margen: {pct(latest?.ventas ? latest.ebitda / latest.ventas : 0)}</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Costo Comida % <InfoTip text="Costo de los ingredientes vendidos (food cost) como % de las ventas. Palanca #1 de rentabilidad; entre más bajo, mejor margen." /></div>
+          <div style={sH}>Costo Comida %</div>
           <div style={sVal}>{pct(latest?.ventas ? latest.costo_comida / latest.ventas : 0)}</div>
           <div style={sSub}>Target: 50-55%</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Planilla / Ventas <InfoTip text="Costo de la planilla operativa (sueldos líquidos del personal de sucursal) como % de las ventas. Objetivo: menos del 20%." /></div>
+          <div style={sH}>Planilla / Ventas</div>
           <div style={sVal}>{pct(latest?.ventas ? latest.planilla_legal / latest.ventas : 0)}</div>
           <div style={sSub}>Target: &lt;20%</div>
         </div>
@@ -1014,30 +1030,6 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
 //  TAB 2: ESTADO DE RESULTADOS (P&L)
 // ══════════════════════════════════════════════════════
 
-// Explicaciones (ⓘ) por línea del Estado de Resultados — lenguaje de dueño
-const PL_TIPS = {
-  ventas: 'Ingresos de TODOS los canales (Quanto/POS + PedidosYa entregados + Eventos). Sin IVA por defecto; incluye propina cobrada.',
-  costo_comida: 'Costo de los ingredientes de la comida vendida (COGS de alimentos). Palanca #1 de rentabilidad; meta típica <35% de ventas.',
-  insumo_venta: 'Empaques, desechables y otros insumos que se van directo con cada venta.',
-  limpieza: 'Productos e insumos de limpieza de los locales.',
-  costo_fijo: 'Costos fijos mensuales: alquiler de los locales + electricidad. No varían con las ventas.',
-  gastos_operativos: 'Gastos de operación varios: mantenimiento, servicios, papelería, software, etc.',
-  gastos_logisticos: 'Costos de logística y reparto: motoristas propios, combustible, envíos.',
-  gasto_financiero: 'Comisiones bancarias, intereses y costos financieros.',
-  planilla_legal: 'Sueldos líquidos del personal operativo (lo que reciben en mano, ya sin descuentos).',
-  isss_afp: 'Aporte patronal de seguridad social (ISSS) y pensión (AFP). "Real" si ya se pagó; "provisión" si aún se está acumulando.',
-  planilla_gerencial: 'Sueldos de gerencia y administración, provisionados cada mes.',
-  ebitda: 'Utilidad operativa antes de intereses, impuestos y depreciación. = Ventas − todos los costos y gastos operativos. Mide si el negocio gana dinero operando.',
-  impuestos: 'Impuestos según DGII (IVA neto, renta, municipales).',
-  utilidad: 'Utilidad neta contable del periodo: EBITDA − impuestos.',
-  activo_fijo: 'CapEx: compra de activos (equipo, mobiliario, remodelación). No es gasto del P&L, pero SÍ sale de caja.',
-  repago_capital_socios: 'Devolución de capital aportado por socios. No afecta el P&L; reduce la caja.',
-  repago_capital_prestamos: 'Pago del capital (no los intereses) de préstamos. Reduce caja, no es gasto del P&L.',
-  dividendos_pagados: 'Reparto de utilidades a los socios. Sale de caja; no es un gasto.',
-  aportes_socios_recibidos: 'Dinero que socios o préstamos inyectan al negocio. Entra a caja; no es una venta.',
-  caja_neta: 'Caja neta real: la utilidad neta ajustada por los movimientos que mueven efectivo pero no pasan por el P&L (CapEx, socios, préstamos, dividendos).',
-}
-
 function TabEstadoResultados({ months2026 }) {
   const allMonths = buildAllMonths(months2026)
   const [expanded, setExpanded] = useState({})  // { categoryKey: true }
@@ -1065,6 +1057,38 @@ function TabEstadoResultados({ months2026 }) {
     })
     return result
   }, [allMonths])
+
+  // Árbol de planilla 3 niveles: grupo → persona → (salario normal + propina).
+  // Devengado agregado por mes; suma exacto a la línea Planilla Operativa.
+  const planillaTree = useMemo(() => {
+    const grupos = {}
+    allMonths.forEach(m => {
+      const des = m.planillaDesglose
+      if (!des) return
+      Object.entries(des).forEach(([grupo, gd]) => {
+        if (!grupos[grupo]) grupos[grupo] = { total: 0, perMonth: {}, personas: {} }
+        grupos[grupo].total += gd.total || 0
+        grupos[grupo].perMonth[m.key] = (grupos[grupo].perMonth[m.key] || 0) + (gd.total || 0)
+        Object.entries(gd.personas || {}).forEach(([eid, p]) => {
+          if (!grupos[grupo].personas[eid]) grupos[grupo].personas[eid] = { nombre: p.nombre, cargo: p.cargo, total: 0, perMonth: {}, sn: { total: 0, perMonth: {} }, prop: { total: 0, perMonth: {} } }
+          const P = grupos[grupo].personas[eid]
+          P.total += p.devengado || 0
+          P.perMonth[m.key] = (P.perMonth[m.key] || 0) + (p.devengado || 0)
+          P.sn.total += p.salarioNormal || 0
+          P.sn.perMonth[m.key] = (P.sn.perMonth[m.key] || 0) + (p.salarioNormal || 0)
+          P.prop.total += p.propina || 0
+          P.prop.perMonth[m.key] = (P.prop.perMonth[m.key] || 0) + (p.propina || 0)
+        })
+      })
+    })
+    return Object.entries(grupos)
+      .sort((a, b) => b[1].total - a[1].total)
+      .map(([grupo, g]) => ({
+        grupo, total: g.total, perMonth: g.perMonth,
+        personas: Object.entries(g.personas).map(([eid, p]) => ({ eid, ...p })).sort((a, b) => b.total - a.total),
+      }))
+  }, [allMonths])
+  const hasPlanillaTree = planillaTree.length > 0
 
   const plLines = [
     { key: 'ventas', label: 'VENTAS TOTALES', bold: true, positive: true },
@@ -1125,7 +1149,7 @@ function TabEstadoResultados({ months2026 }) {
               const rowBg = isSeparator ? '#2a2a3e' : isCFSection ? '#1a2540' : li % 2 ? '#192237' : C.card
               const prevLine = plLines[li - 1]
               const showCFHeader = isCFSection && (!prevLine || !prevLine.noPL)
-              const hasSubs = subsByCategory[line.key] && Object.keys(subsByCategory[line.key]).length > 0
+              const hasSubs = (subsByCategory[line.key] && Object.keys(subsByCategory[line.key]).length > 0) || (line.key === 'planilla_legal' && hasPlanillaTree)
               const isExp = !!expanded[line.key]
               return (
                 <React.Fragment key={line.key}>
@@ -1162,7 +1186,7 @@ function TabEstadoResultados({ months2026 }) {
                         {isExp ? '▼' : '▶'}
                       </span>
                     )}
-                    {line.label}{PL_TIPS[line.key] ? <InfoTip text={PL_TIPS[line.key]} /> : null}
+                    {line.label}
                   </td>
                   {allMonths.map((m, i) => {
                     const val = m[line.key] || 0
@@ -1192,7 +1216,7 @@ function TabEstadoResultados({ months2026 }) {
                   </td>
                 </tr>
                 {/* Filas hijas si está expandido */}
-                {hasSubs && isExp && Object.entries(subsByCategory[line.key]).map(([sub, info]) => {
+                {isExp && subsByCategory[line.key] && Object.entries(subsByCategory[line.key]).map(([sub, info]) => {
                   // Sub-filas informativas (prefijo ℹ️) — NO se suman al total, se muestran en gris
                   const esInfo = sub.startsWith('ℹ️')
                   const colorTxt = esInfo ? '#64748b' : '#94a3b8'
@@ -1231,6 +1255,63 @@ function TabEstadoResultados({ months2026 }) {
                     </td>
                   </tr>
                   )
+                })}
+                {/* Desglose planilla 3 niveles: grupo → persona → salario normal + propina */}
+                {line.key === 'planilla_legal' && isExp && hasPlanillaTree && planillaTree.flatMap(g => {
+                  const gKey = `pl::${g.grupo}`
+                  const gExp = !!expanded[gKey]
+                  const rows = [
+                    <tr key={gKey} style={{ background: '#0f1828', cursor: 'pointer' }} onClick={() => toggleExpand(gKey)}>
+                      <td style={{ ...sTdL, paddingLeft: 34, color: '#e2e8f0', fontSize: 10, fontWeight: 700, position: 'sticky', left: 0, background: '#0f1828', zIndex: 1, boxShadow: '2px 0 4px rgba(0,0,0,0.3)' }}>
+                        <span style={{ display: 'inline-block', width: 12, color: gExp ? C.gold : C.textMuted, fontSize: 9 }}>{gExp ? '▼' : '▶'}</span>
+                        {g.grupo}
+                      </td>
+                      {allMonths.map((m, i) => {
+                        const v = g.perMonth[m.key] || 0
+                        return <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#e2e8f0' : '#475569' }}>{v ? fmt(v) : '—'}</td>
+                      })}
+                      <td style={{ ...sTd(), fontSize: 10, color: '#e2e8f0', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>{fmt(g.total)}</td>
+                      <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>{totals[line.key] ? pct(g.total / totals[line.key]) : '—'}</td>
+                    </tr>
+                  ]
+                  if (gExp) {
+                    g.personas.forEach(p => {
+                      const pKey = `${gKey}::${p.eid}`
+                      const pExp = !!expanded[pKey]
+                      rows.push(
+                        <tr key={pKey} style={{ background: '#0c1320', cursor: 'pointer' }} onClick={() => toggleExpand(pKey)}>
+                          <td style={{ ...sTdL, paddingLeft: 50, color: '#cbd5e1', fontSize: 10, position: 'sticky', left: 0, background: '#0c1320', zIndex: 1, boxShadow: '2px 0 4px rgba(0,0,0,0.3)' }}>
+                            <span style={{ display: 'inline-block', width: 12, color: pExp ? C.gold : '#475569', fontSize: 9 }}>{pExp ? '▼' : '▶'}</span>
+                            {p.nombre}{p.cargo ? <span style={{ color: '#64748b', fontStyle: 'italic' }}> · {p.cargo}</span> : null}
+                          </td>
+                          {allMonths.map((m, i) => {
+                            const v = p.perMonth[m.key] || 0
+                            return <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#cbd5e1' : '#475569' }}>{v ? fmt(v) : '—'}</td>
+                          })}
+                          <td style={{ ...sTd(), fontSize: 10, color: '#cbd5e1', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>{fmt(p.total)}</td>
+                          <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>{g.total ? pct(p.total / g.total) : '—'}</td>
+                        </tr>
+                      )
+                      if (pExp) {
+                        const comps = [{ lbl: '💵 Salario normal', d: p.sn }, { lbl: '🎁 Propina', d: p.prop }]
+                        comps.forEach((c, ci) => {
+                          if (!c.d.total) return
+                          rows.push(
+                            <tr key={`${pKey}::c${ci}`} style={{ background: '#080e18' }}>
+                              <td style={{ ...sTdL, paddingLeft: 66, color: '#64748b', fontSize: 10, fontStyle: 'italic', position: 'sticky', left: 0, background: '#080e18', zIndex: 1, boxShadow: '2px 0 4px rgba(0,0,0,0.3)' }}>↳ {c.lbl}</td>
+                              {allMonths.map((m, i) => {
+                                const v = c.d.perMonth[m.key] || 0
+                                return <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#94a3b8' : '#475569' }}>{v ? fmt(v) : '—'}</td>
+                              })}
+                              <td style={{ ...sTd(), fontSize: 10, color: '#94a3b8', borderLeft: `1px solid ${C.border}` }}>{fmt(c.d.total)}</td>
+                              <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>{p.total ? pct(c.d.total / p.total) : '—'}</td>
+                            </tr>
+                          )
+                        })
+                      }
+                    })
+                  }
+                  return rows
                 })}
                 </React.Fragment>
               )
@@ -1921,14 +2002,9 @@ function TabFlujoCaja({ months2026 }) {
 
   return (
     <div style={sCard}>
-      <ErrorBoundary>
-        <Suspense fallback={null}>
-          <CashFlowNeto />
-        </Suspense>
-      </ErrorBoundary>
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, letterSpacing: 2 }}>FREAKIE DOGS</div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: C.white, marginTop: 2 }}>Estado de Flujo de Caja <span style={{ fontSize: 11, color: C.textMuted, fontWeight: 400 }}>(método indirecto · estimado)</span></div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.white, marginTop: 2 }}>Estado de Flujo de Caja</div>
         <div style={{ fontSize: 11, color: C.textMuted }}>Método indirecto · Ago 2025 — Abr 2026</div>
       </div>
 
