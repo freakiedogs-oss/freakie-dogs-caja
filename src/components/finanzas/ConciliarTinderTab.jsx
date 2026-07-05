@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db as supabase } from '../../supabase'
 import { fmtDate, n } from '../../config'
 import { fetchAllRows } from '../../utils/fetchPaginated'
+import InfoTip from '../ui/InfoTip'
 
 const colors = {
   bg: '#1a1a2e', card: '#16213e', card2: '#1e2a4a',
@@ -664,9 +665,9 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
           </button>
         </div>
         <div style={S.kpiRow}>
-          <KPI label="Pendientes" value={total} color={colors.gold} />
-          <KPI label="Asignados sesión" value={asignadosSesion} color={colors.green} />
-          <KPI label="Excluidos P&L" value={excluidosSesion} color={colors.accent} />
+          <KPI label="Pendientes" value={total} color={colors.gold} tip="Egresos de caja todavía sin proveedor asignado. Hay que clasificar cada uno para que entre correcto al P&L." />
+          <KPI label="Asignados sesión" value={asignadosSesion} color={colors.green} tip="Cuántos egresos asignaste a un proveedor en esta sesión de trabajo." />
+          <KPI label="Excluidos P&L" value={excluidosSesion} color={colors.accent} tip="Egresos marcados para NO contar en el P&L: traslados, anticipos y movimientos que no son gasto real del negocio." />
         </div>
       </div>
 
@@ -1101,10 +1102,10 @@ export default function ConciliarTinderTab({ user, filtroSucursal, filtroDesde, 
   )
 }
 
-function KPI({ label, value, color }) {
+function KPI({ label, value, color, tip }) {
   return (
     <div style={S.kpi}>
-      <div style={S.kpiLabel}>{label}</div>
+      <div style={S.kpiLabel}>{label}{tip ? <InfoTip text={tip} /> : null}</div>
       <div style={{ ...S.kpiValue, color }}>{value}</div>
     </div>
   )

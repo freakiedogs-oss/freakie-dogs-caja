@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
 import { fetchAllRows } from '../../utils/fetchPaginated'
 import { paletaC as C } from '@/theme'
+import InfoTip from '../ui/InfoTip'
 import { useToast } from '../../hooks/useToast'
 
 /* ═══════════════════════════════════════════════════════════════
@@ -81,7 +82,7 @@ export default function DTEsView({ user }) {
       {/* Header de vista */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ color: C.red, fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>FREAKIE DOGS</div>
-        <h1 style={{ color: C.white, fontSize: 24, fontWeight: 800, margin: '4px 0' }}>🧾 DTEs</h1>
+        <h1 style={{ color: C.white, fontSize: 24, fontWeight: 800, margin: '4px 0' }}>🧾 DTEs <InfoTip text="Documentos Tributarios Electrónicos: las facturas electrónicas de compra validadas por la DGII. Aquí se consultan por proveedor e ítem; alimentan el P&L y las cuentas por pagar." /></h1>
         <div style={{ color: C.textMuted, fontSize: 11 }}>
           Documentos Tributarios Electrónicos · Items · Pagos · KPIs por proveedor e item
         </div>
@@ -668,13 +669,13 @@ function Field({ label, value, color, mono, small }) {
   )
 }
 
-function KPI({ label, value, color }) {
+function KPI({ label, value, color, tip }) {
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
       padding: '8px 12px', minWidth: 110, flex: 1,
     }}>
-      <div style={{ fontSize: 9, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 9, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}{tip ? <InfoTip text={tip} /> : null}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color: color || C.white, marginTop: 2 }}>{value}</div>
     </div>
   )

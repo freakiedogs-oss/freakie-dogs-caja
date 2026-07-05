@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db } from '../../supabase'
 import { fetchAllRows } from '../../utils/fetchPaginated'
 import { useToast } from '../../hooks/useToast'
+import InfoTip from '../ui/InfoTip'
 
 // ─── Helpers ───────────────────────────────────────────────
 const fmt = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
@@ -203,7 +204,7 @@ export default function BancoView({ user }) {
   return (
     <div style={{ padding: '12px 16px', maxWidth: 1600, margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>🏦 BancoView — Conciliación Bancaria</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>🏦 BancoView — Conciliación Bancaria <InfoTip text="Emparejar cada movimiento del estado de cuenta BAC con su DTE, gasto o traslado, para que el P&L y la caja cuadren con lo que de verdad pasó por el banco." /></div>
         <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>BAC #201500451 USD · Auto-match conservador + Wizard manual + Aprendizaje</div>
       </div>
 
@@ -2849,10 +2850,10 @@ function DetailField({ label, value, mono, wide }) {
   )
 }
 
-function KpiCard({ label, value, sub, color }) {
+function KpiCard({ label, value, sub, color, tip }) {
   return (
     <div style={{ background: '#1f2937', borderRadius: 8, padding: 14, border: `1px solid ${color}33` }}>
-      <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>{label}{tip ? <InfoTip text={tip} /> : null}</div>
       <div style={{ fontSize: 24, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
       <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{sub}</div>
     </div>
