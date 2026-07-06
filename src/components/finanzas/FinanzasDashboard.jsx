@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
 import { paletaC as C } from '@/theme'
+import InfoTip from '../ui/InfoTip'
 
 // Componentes aislados lazy + defensivos (si fallan, ErrorBoundary los aísla)
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
 const CardVentasComparativo = lazy(() => import('./CardVentasComparativo'))
 const ExcluidosPlTab = lazy(() => import('./ExcluidosPlTab'))
+const CashFlowNeto = lazy(() => import('./CashFlowNeto'))
 
 // ErrorBoundary defensivo — si el componente lazy crashea, no rompe el dashboard
 class ErrorBoundary extends React.Component {
@@ -942,22 +944,22 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
       {/* KPIs Row */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Ventas Último Mes</div>
+          <div style={sH}>Ventas Último Mes <InfoTip text="Ventas netas del último mes con datos, de todos los canales (Quanto/POS + PeYa + Eventos), sin IVA. El % compara contra el mes anterior." /></div>
           <div style={sVal}>{fmt(latest?.ventas)}</div>
           <div style={sSub}>{latest?.label}{prev ? ` · ${delta(latest?.ventas, prev?.ventas)}` : ''}</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>EBITDA Último Mes</div>
+          <div style={sH}>EBITDA Último Mes <InfoTip text="Utilidad operativa del último mes: ventas menos todos los costos y gastos operativos, antes de impuestos, intereses y depreciación. El margen es EBITDA ÷ ventas." /></div>
           <div style={{ ...sVal, color: latest?.ebitda >= 0 ? C.greenLight : '#f87171' }}>{fmt(latest?.ebitda)}</div>
           <div style={sSub}>Margen: {pct(latest?.ventas ? latest.ebitda / latest.ventas : 0)}</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Costo Comida %</div>
+          <div style={sH}>Costo Comida % <InfoTip text="Costo de los ingredientes vendidos (food cost) como % de las ventas. Palanca #1 de rentabilidad; entre más bajo, mejor margen." /></div>
           <div style={sVal}>{pct(latest?.ventas ? latest.costo_comida / latest.ventas : 0)}</div>
           <div style={sSub}>Target: 50-55%</div>
         </div>
         <div style={sKPI(C.cardAlt)}>
-          <div style={sH}>Planilla / Ventas</div>
+          <div style={sH}>Planilla / Ventas <InfoTip text="Costo de la planilla operativa (sueldos líquidos del personal de sucursal) como % de las ventas. Objetivo: menos del 20%." /></div>
           <div style={sVal}>{pct(latest?.ventas ? latest.planilla_legal / latest.ventas : 0)}</div>
           <div style={sSub}>Target: &lt;20%</div>
         </div>
@@ -1029,6 +1031,30 @@ function TabDashboard({ months2026, ventasRaw, ventaspeya }) {
 // ══════════════════════════════════════════════════════
 //  TAB 2: ESTADO DE RESULTADOS (P&L)
 // ══════════════════════════════════════════════════════
+
+// Explicaciones (ⓘ) por línea del Estado de Resultados — lenguaje de dueño
+const PL_TIPS = {
+  ventas: 'Ingresos de TODOS los canales (Quanto/POS + PedidosYa entregados + Eventos). Sin IVA por defecto; incluye propina cobrada.',
+  costo_comida: 'Costo de los ingredientes de la comida vendida (COGS de alimentos). Palanca #1 de rentabilidad; meta típica <35% de ventas.',
+  insumo_venta: 'Empaques, desechables y otros insumos que se van directo con cada venta.',
+  limpieza: 'Productos e insumos de limpieza de los locales.',
+  costo_fijo: 'Costos fijos mensuales: alquiler de los locales + electricidad. No varían con las ventas.',
+  gastos_operativos: 'Gastos de operación varios: mantenimiento, servicios, papelería, software, etc.',
+  gastos_logisticos: 'Costos de logística y reparto: motoristas propios, combustible, envíos.',
+  gasto_financiero: 'Comisiones bancarias, intereses y costos financieros.',
+  planilla_legal: 'Sueldos líquidos del personal operativo (lo que reciben en mano, ya sin descuentos).',
+  isss_afp: 'Aporte patronal de seguridad social (ISSS) y pensión (AFP). "Real" si ya se pagó; "provisión" si aún se está acumulando.',
+  planilla_gerencial: 'Sueldos de gerencia y administración, provisionados cada mes.',
+  ebitda: 'Utilidad operativa antes de intereses, impuestos y depreciación. = Ventas − todos los costos y gastos operativos. Mide si el negocio gana dinero operando.',
+  impuestos: 'Impuestos según DGII (IVA neto, renta, municipales).',
+  utilidad: 'Utilidad neta contable del periodo: EBITDA − impuestos.',
+  activo_fijo: 'CapEx: compra de activos (equipo, mobiliario, remodelación). No es gasto del P&L, pero SÍ sale de caja.',
+  repago_capital_socios: 'Devolución de capital aportado por socios. No afecta el P&L; reduce la caja.',
+  repago_capital_prestamos: 'Pago del capital (no los intereses) de préstamos. Reduce caja, no es gasto del P&L.',
+  dividendos_pagados: 'Reparto de utilidades a los socios. Sale de caja; no es un gasto.',
+  aportes_socios_recibidos: 'Dinero que socios o préstamos inyectan al negocio. Entra a caja; no es una venta.',
+  caja_neta: 'Caja neta real: la utilidad neta ajustada por los movimientos que mueven efectivo pero no pasan por el P&L (CapEx, socios, préstamos, dividendos).',
+}
 
 function TabEstadoResultados({ months2026 }) {
   const allMonths = buildAllMonths(months2026)
@@ -1186,7 +1212,7 @@ function TabEstadoResultados({ months2026 }) {
                         {isExp ? '▼' : '▶'}
                       </span>
                     )}
-                    {line.label}
+                    {line.label}{PL_TIPS[line.key] ? <InfoTip text={PL_TIPS[line.key]} /> : null}
                   </td>
                   {allMonths.map((m, i) => {
                     const val = m[line.key] || 0
@@ -2002,9 +2028,14 @@ function TabFlujoCaja({ months2026 }) {
 
   return (
     <div style={sCard}>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <CashFlowNeto />
+        </Suspense>
+      </ErrorBoundary>
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, letterSpacing: 2 }}>FREAKIE DOGS</div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: C.white, marginTop: 2 }}>Estado de Flujo de Caja</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.white, marginTop: 2 }}>Estado de Flujo de Caja <span style={{ fontSize: 11, color: C.textMuted, fontWeight: 400 }}>(método indirecto · estimado)</span></div>
         <div style={{ fontSize: 11, color: C.textMuted }}>Método indirecto · Ago 2025 — Abr 2026</div>
       </div>
 
