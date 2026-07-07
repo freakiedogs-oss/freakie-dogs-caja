@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import InfoTip from '../ui/InfoTip'
 import { db } from '../../supabase';
 import { today, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
@@ -453,7 +454,7 @@ export default function InventarioFisico({user, onBack}){
         <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
           <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
-            <div style={{fontWeight:800,fontSize:18}}>📦 Inventario Físico</div>
+            <div style={{fontWeight:800,fontSize:18}}>📦 Inventario Físico <InfoTip text="Conteo físico real del inventario para compararlo contra el sistema y ajustar diferencias (mermas, faltantes)." /></div>
             <div style={{color:'#555',fontSize:12}}>Casa Matriz · Semanal</div>
           </div>
         </div>
@@ -514,7 +515,7 @@ export default function InventarioFisico({user, onBack}){
         <button onClick={()=>{if(dirtyCount>0){guardarProgreso();}setScreen('list');}}
           style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div style={{flex:1}}>
-          <div style={{fontWeight:800,fontSize:18}}>📦 Inventario Físico</div>
+          <div style={{fontWeight:800,fontSize:18}}>📦 Inventario Físico <InfoTip text="Conteo físico real del inventario para compararlo contra el sistema y ajustar diferencias (mermas, faltantes)." /></div>
           <div style={{color:'#555',fontSize:12}}>Casa Matriz · {today()}</div>
         </div>
       </div>

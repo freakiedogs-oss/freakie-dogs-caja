@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import InfoTip from '../ui/InfoTip'
 import { db } from '../../supabase';
 import { today, fmtDate, n } from '../../config';
 
@@ -210,7 +211,7 @@ export default function IncidentesProduccion({ user }) {
   // ── TABS ──
   const TabBar = () => (
     <div style={{ marginBottom: 16 }}>
-      <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#fff' }}>🚨 Incidentes Casa Matriz</h2>
+      <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#fff' }}>🚨 Incidentes Casa Matriz <InfoTip text="Registro de incidentes de producción en Casa Matriz: qué pasó, el responsable y su seguimiento." /></h2>
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #333', overflowX: 'auto' }}>
         {[
           { k: 'reportar', l: '📝 Reportar' },
