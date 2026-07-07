@@ -2,6 +2,7 @@ import { useState } from 'react'
 import CustomerSearch from './CustomerSearch'
 import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
+import { STORES_SIN_PROPINA } from '../../config'
 
 const DTE_TYPES = [
   { key: 'ticket',  ic: 'receipt', label: 'Ticket',    desc: 'Comprobante interno' },
@@ -23,13 +24,14 @@ const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 
 // Tipo de documento (texto en pos_clientes) → código MH para el receptor
 const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residente': '02', 'Otro': '37' }
 
-export default function PaymentModal({ items, total, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
+export default function PaymentModal({ items, total, storeCode, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
   const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
   const [efectivo, setEfectivo] = useState('')
   const [tarjeta, setTarjeta]   = useState('')
-  // Propina por defecto 10% del total
-  const [propina, setPropina]   = useState(() => (total > 0 ? (total * 0.10).toFixed(2) : ''))
+  // Propina por defecto 10% del total - 0 en food courts (STORES_SIN_PROPINA)
+  const sinPropinaDefault = STORES_SIN_PROPINA.includes(storeCode)
+  const [propina, setPropina]   = useState(() => (sinPropinaDefault ? '0' : (total > 0 ? (total * 0.10).toFixed(2) : '')))
   const [printed, setPrinted]   = useState(false)
   const [tipoDte, setTipoDte]   = useState('ticket')
   const [ref, setRef]           = useState('')

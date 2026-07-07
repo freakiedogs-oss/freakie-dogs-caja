@@ -6,6 +6,7 @@ export const STORES = {
   S002: 'Usulután',
   S003: 'Lourdes',
   S004: 'Venecia',
+  S006: 'Metro Centro 8va Etapa',
   EVT01: 'Eventos',
   CM001: 'Casa Matriz'
 }
@@ -16,9 +17,13 @@ export const STORES_SHORT = {
   S002: 'Usulután',
   S003: 'Lourdes',
   S004: 'Venecia',
+  S006: 'Metrocentro',
   EVT01: 'Eventos',
   CM001: 'Casa Matriz'
 }
+
+// Sucursales food court: propina 0 por defecto en el POS
+export const STORES_SIN_PROPINA = ['S006']
 
 export const BUCKET_CIERRES = 'cierres-fotos'
 export const BUCKET_DESPACHOS = 'despachos-fotos'
