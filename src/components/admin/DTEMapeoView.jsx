@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
+import InfoTip from '../ui/InfoTip'
 
 const ESTADOS = ['pendiente', 'confirmado', 'ignorar']
 const TABS = ['mapeo', 'unidades']
@@ -387,7 +388,7 @@ export default function DTEMapeoView({ user }) {
       {/* Header */}
       <div style={{ marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827' }}>
-          Mapeo DTE → Catalogo
+          Mapeo DTE → Catalogo <InfoTip text="Vincula cada tipo de gasto de las facturas (DTE) con su categoría del catálogo contable, para que caiga en la línea correcta del P&L. Aquí se ven los proveedores sin mapear." />
         </h2>
         <p style={{ margin: '4px 0 0', color: '#6B7280', fontSize: 13 }}>
           Vincula facturas DTE con ingredientes del catalogo y verifica la cadena de unidades hasta las recetas.

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
+import InfoTip from '../ui/InfoTip'
 
 /**
  * KpiVentasTotalesDashboard — Informe ejecutivo de TODAS las ventas.
@@ -445,7 +446,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontSize: 12, color: c.textDim }}>Informe Ejecutivo · Ventas Totales</div>
-          <h1 style={{ margin: '4px 0', fontSize: 26 }}>📊 Ventas Totales — {MESES[periodo.mes-1]} {periodo.anio}</h1>
+          <h1 style={{ margin: '4px 0', fontSize: 26 }}>📊 Ventas Totales — {MESES[periodo.mes-1]} {periodo.anio} <InfoTip text="Ventas totales de todos los canales en el mes, con proyección al cierre y avance hacia el punto de equilibrio (BEP)." /></h1>
           <div style={{ fontSize: 13, color: c.textDim }}>
             {per.dias_mes} días · {per.data_completa_hasta && per.data_completa_hasta !== per.hoy ? (
               <>Data completa hasta <span style={{ color: c.orange, fontWeight: 700 }}>{fmtFechaLarga(per.data_completa_hasta)}</span> (día {per.dia_actual} de {per.dias_mes}) · </>
@@ -546,27 +547,27 @@ export default function KpiVentasTotalesDashboard({ user }) {
       {/* KPI Cards principales */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: canalDef.color }}>
-          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Venta Acumulada {sinIva ? 'Sin IVA' : 'Con IVA'}</div>
+          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Venta Acumulada {sinIva ? 'Sin IVA' : 'Con IVA'} <InfoTip text="Ventas reales acumuladas del mes hasta la última fecha con datos." /></div>
           <div style={{ fontSize: 28, fontWeight: 800, color: canalDef.color }}>{fmtUSD(acumActivo)}</div>
           <div style={{ fontSize: 11, color: c.textDim }}>{canalSel.pedidos} pedidos · {canalDef.label}</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Proyección Lineal</div>
+          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Proyección Lineal <InfoTip text="Estimación de cómo cerrará el mes si se mantiene el ritmo actual (promedio diario × días del mes)." /></div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtUSD(proyActivo)}</div>
           <div style={{ fontSize: 11, color: c.textDim }}>Promedio × días restantes</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: semaforoBep }}>
-          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>⚖️ Avance BEP</div>
+          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>⚖️ Avance BEP <InfoTip text="Punto de Equilibrio (BEP): ventas necesarias para cubrir todos los costos. El avance indica qué tan cerca estás de no perder ni ganar." /></div>
           <div style={{ fontSize: 28, fontWeight: 800, color: semaforoBep }}>{fmtPct(porcAvanceBepActivo)}</div>
           <div style={{ fontSize: 11, color: c.textDim }}>BEP: {fmtUSDInt(bepActivo)}</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: utilidadColor }}>
-          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Utilidad Proyectada</div>
+          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Utilidad Proyectada <InfoTip text="Utilidad estimada al cierre = ventas proyectadas − COGS estimado − costos fijos. En rojo si se proyecta pérdida." /></div>
           <div style={{ fontSize: 28, fontWeight: 800, color: utilidadColor }}>{fmtUSD(utilidadProyActivo)}</div>
           <div style={{ fontSize: 11, color: c.textDim }}>Margen: {fmtPct(margenNetoActivo)}</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Ticket Promedio</div>
+          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Ticket Promedio <InfoTip text="Venta promedio por pedido (ventas ÷ número de pedidos)." /></div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtUSD(ticketActivo)}</div>
           <div style={{ fontSize: 11, color: c.textDim }}>Prom. diario: {fmtUSDInt(promDiarioActivo)}</div>
         </div>
@@ -593,7 +594,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.orange}` }}>
-                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Costos Fijos Mes</div>
+                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Costos Fijos Mes <InfoTip text="Gastos que no cambian con las ventas (alquiler, planilla base, servicios) del mes." /></div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: c.orange }}>{fmtUSD(cfActivo)}</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
                   Planilla op: {fmtUSDInt(bep.cf_planilla_operativa)} · Ger: {fmtUSDInt(bep.cf_planilla_gerencial)}<br/>
@@ -602,7 +603,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
                 </div>
               </div>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.red}` }}>
-                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Ratio CV (COGS/Ventas)</div>
+                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Ratio CV (COGS/Ventas) <InfoTip text="Costo variable: cuánto cuesta producir por cada dólar vendido (COGS ÷ ventas)." /></div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: c.red }}>{(ratioCvActivo*100).toFixed(2)}%</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
                   COGS ref: {fmtUSDInt(cogsRefActivo)}<br/>
@@ -610,14 +611,14 @@ export default function KpiVentasTotalesDashboard({ user }) {
                 </div>
               </div>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.green}` }}>
-                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Margen Contribución</div>
+                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Margen Contribución <InfoTip text="Lo que queda de cada venta para cubrir costos fijos = 1 − ratio de costo variable." /></div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: c.green }}>{(margenContribActivo*100).toFixed(2)}%</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
                   Por cada $1 vendido, ${margenContribActivo.toFixed(2)} contribuye a CF/utilidad
                 </div>
               </div>
               <div style={{ background: c.input, borderRadius: 8, padding: 12, borderLeft: `3px solid ${c.yellow}` }}>
-                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>BEP Mensual</div>
+                <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>BEP Mensual <InfoTip text="Punto de Equilibrio del mes: ventas necesarias para no perder ni ganar (costos fijos ÷ margen de contribución)." /></div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: c.yellow }}>{fmtUSD(bepActivo)}</div>
                 <div style={{ fontSize: 11, color: c.textDim, marginTop: 4 }}>
                   Día estimado: {diaBepActivo > per.dias_mes ? 'No alcanza' : `Día ${diaBepActivo}`}<br/>

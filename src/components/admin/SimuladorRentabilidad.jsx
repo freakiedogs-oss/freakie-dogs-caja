@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
 import AjustePorCategoria from './AjustePorCategoria'
 import { paletaSim as c } from '@/theme'
+import InfoTip from '../ui/InfoTip'
 
 /**
  * SimuladorRentabilidad — Análisis "what-if" interactivo para escenarios:
@@ -307,7 +308,7 @@ export default function SimuladorRentabilidad({ user }) {
       {/* Header */}
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: c.textDim }}>Análisis financiero · Sin IVA · base contable</div>
-        <h1 style={{ margin: '4px 0', fontSize: 26 }}>🎯 Simulador de Rentabilidad</h1>
+        <h1 style={{ margin: '4px 0', fontSize: 26 }}>🎯 Simulador de Rentabilidad <InfoTip text="Herramienta what-if: simula escenarios (abrir sucursales, cambiar precios o costos) y ve el impacto estimado en la rentabilidad antes de decidir." /></h1>
         <div style={{ fontSize: 13, color: c.textDim }}>
           Base actual: ventas grupo {fmtUSD(sim.ventas_grupo_si)}/mes · ratio CV {fmtPct(sim.ratio_cv_base * 100)} · CF {fmtUSD(sim.cf_actual)} · margen {fmtPct(margenBase)}
         </div>

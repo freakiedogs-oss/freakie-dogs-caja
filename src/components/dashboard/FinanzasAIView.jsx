@@ -5,6 +5,7 @@
 // Estilos INLINE (no dependen de Tailwind). Sin localStorage.
 import { useState, useEffect, useCallback } from "react";
 import { URL_SB, KEY_SB } from "../../supabase";
+import InfoTip from "../ui/InfoTip";
 
 const ROJO = "#E62329", BG = "#0f0f0f", CARD = "#1a1a1a", BORDER = "#2a2a2a", TXT = "#e8e8e8", MUT = "#9a9a9a";
 const VERDE = "#16a34a", AMBAR = "#f59e0b", ROJ2 = "#dc2626";
@@ -95,7 +96,7 @@ export default function FinanzasAIView({ user = {} }) {
   return (
     <div style={{ background: BG, color: TXT, minHeight: "100%", padding: "18px 20px 60px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>💰 Finanzas AI</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>💰 Finanzas AI <InfoTip text="Asistente financiero con IA: analiza el P&L, tendencias, variaciones y liquidez del negocio y entrega hallazgos y alertas en lenguaje simple." /></div>
         {d && <Badge estado={d.estado} />}
         <span style={{ fontSize: 12, color: MUT }}>Estado de resultados, tendencia y diagnóstico</span>
         <button onClick={cargar} style={{ marginLeft: "auto", background: CARD, border: `1px solid ${BORDER}`, color: TXT, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 13 }}>↻ Refrescar</button>
