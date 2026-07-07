@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n, STORES } from '../../config';
 
 // ── Roles ──
@@ -200,7 +201,7 @@ export default function DevolucionesView({ user }) {
   // ── TABS ──
   const TabBar = () => (
     <div style={{ marginBottom: 16 }}>
-      <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#fff' }}>🔄 Devoluciones</h2>
+      <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#fff' }}>🔄 Devoluciones <InfoTip text="Registro de productos devueltos o mermas: qué se devolvió, el motivo y su impacto en el inventario." /></h2>
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #333', overflowX: 'auto' }}>
         {[
           { k: 'crear', l: '📤 Nueva', show: esSucursal },

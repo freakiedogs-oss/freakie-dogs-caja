@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { STORES, fmtDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 import { Badge } from '../ui/Badge';
@@ -293,7 +294,7 @@ export default function MisPedidosView({ user, onBack }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>📦 Mis Pedidos</h2>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>📦 Mis Pedidos <InfoTip text="Los pedidos de insumos que hiciste a bodega / casa matriz y su estado (pendiente, en camino, entregado)." /></h2>
           <div style={{ color: '#888', fontSize: 13, marginTop: 2 }}>
             {sucursalNombre ? `Sucursal: ${sucursalNombre}` : 'Cargando sucursal…'}
           </div>

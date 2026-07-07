@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n, BUCKET_CIERRES as BUCKET } from '../../config';
 
 // ════════════════════════════════════════════════════════════════
@@ -170,7 +171,7 @@ export default function RecepcionBeesView({ user, show }) {
     <div style={{ padding: '16px 16px 100px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20 }}>🥤 Recepción BEES</h2>
+          <h2 style={{ margin: 0, fontSize: 20 }}>🥤 Recepción BEES <InfoTip text="Recepción de bebidas del proveedor BEES: confirma lo que llegó a cada sucursal y actualiza el stock de bebidas automáticamente." /></h2>
           <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
             La Constancia · {sucursal ? sucursal.nombre : esAdmin ? 'Todas las sucursales' : '—'}
           </div>
