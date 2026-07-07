@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
+import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n } from '../../config'
 import { useToast } from '../../hooks/useToast'
 
@@ -110,7 +111,7 @@ export default function MarketingView({ user }) {
 
   return (
     <div style={{ padding: '16px 12px', maxWidth: 800, margin: '0 auto' }}>
-      <h2 style={{ color: '#fff', margin: '0 0 4px' }}>📱 Marketing Analytics</h2>
+      <h2 style={{ color: '#fff', margin: '0 0 4px' }}>📱 Marketing Analytics <InfoTip text="Métricas de redes sociales y su correlación con las ventas: alcance, interacción y crecimiento." /></h2>
       <p style={{ color: '#888', fontSize: 13, margin: '0 0 16px' }}>Instagram + TikTok • Engagement vs Ventas</p>
 
       {/* KPIs */}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { STORES } from '../../config';
 
 /* ─── helpers ─── */
@@ -359,7 +360,7 @@ export default function InventarioDashboard({ user, onBack }) {
       {/* Header */}
       <div style={{ padding: '20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>📦 Inventario Global</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>📦 Inventario Global <InfoTip text="Vista consolidada del stock de todas las sucursales y la bodega: qué hay, dónde y cuánto." /></div>
           <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{sucursales.length} ubicaciones · {allInv.length} registros</div>
         </div>
         <button onClick={onBack} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#fff' }}>✕</button>

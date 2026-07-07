@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n } from '../../config';
 
 // ── Constants ──
@@ -79,7 +80,7 @@ export default function EventosView({ user }) {
       {/* ═══ SCREEN: LIST ═══ */}
       {screen === 'list' && (
         <>
-          <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, marginBottom: 16 }}>🎪 Eventos</h1>
+          <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, marginBottom: 16 }}>🎪 Eventos <InfoTip text="Gestión de eventos y catering: cotizaciones, ventas del evento (sin DTE) e inventario asignado." /></h1>
           <ListScreen user={user} eventos={eventos} onSelect={openEvent} onRefresh={fetchEventos} show={show} />
         </>
       )}

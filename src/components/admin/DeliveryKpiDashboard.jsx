@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
+import InfoTip from '../ui/InfoTip'
 
 /**
  * DeliveryKpiDashboard — Informe ejecutivo de Delivery Propio.
@@ -414,7 +415,7 @@ export default function DeliveryKpiDashboard({ user }) {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontSize: 12, color: c.textDim }}>Informe Ejecutivo · Solo Super Admin</div>
-          <h1 style={{ margin: '4px 0', fontSize: 26 }}>🛵 Delivery Propio — {MESES[periodo.mes-1]} {periodo.anio}</h1>
+          <h1 style={{ margin: '4px 0', fontSize: 26 }}>🛵 Delivery Propio — {MESES[periodo.mes-1]} {periodo.anio} <InfoTip text="Informe del delivery propio del mes: viajes, ingresos, bonos de motoristas y avance vs meta." /></h1>
           <div style={{ fontSize: 13, color: c.textDim }}>
             {per.dias_mes} días · {per.dias_semana_mes} L-V + {per.dias_finde_mes} S-D · Hoy: {fmtFechaLarga(per.hoy)}
           </div>

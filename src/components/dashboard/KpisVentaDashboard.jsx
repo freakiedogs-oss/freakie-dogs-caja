@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { STORES } from '../../config';
 
 const fmt$ = (v) => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -173,7 +174,7 @@ export default function KpisVentaDashboard({ user, onBack }) {
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 6 }}>← Volver</button>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 20 }}>📊 KPIs de Venta</div>
+            <div style={{ fontWeight: 800, fontSize: 20 }}>📊 KPIs de Venta <InfoTip text="Tablero de ventas: metas, resumen por canal y sucursal, Pareto de productos, desempeño por empleado y tendencia." /></div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
               Fuente: <code style={{ color: '#f59e0b' }}>quanto_ordenes</code> · 4 canales · Excluye PeYa
             </div>
