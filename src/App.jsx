@@ -29,6 +29,7 @@ const RecepcionBeesView  = lazy(() => import('./components/almacen/RecepcionBees
 const RecetasView        = lazy(() => import('./components/admin/RecetasView'))
 const PlanillaView       = lazy(() => import('./components/admin/PlanillaView'))
 const RRHHView           = lazy(() => import('./components/admin/RRHHView'))
+const ValidacionPlanillaView = lazy(() => import('./components/rrhh/ValidacionPlanillaView'))
 const RecibosDigitales   = lazy(() => import('./components/rrhh/RecibosDigitales'))
 const ProduccionDiaria   = lazy(() => import('./components/admin/ProduccionDiaria'))
 const ConciliacionView   = lazy(() => import('./components/admin/ConciliacionView'))
@@ -73,7 +74,7 @@ const ROLE_DEFAULTS = {
   bodeguero: ['recepcion', 'despacho', 'inventario', 'historial'],
   jefe_casa_matriz: ['despacho-operativo', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
   cocina: ['conteo', 'reporte', 'devoluciones'],
-  rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales'],
+  rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales', 'validacion-planilla'],
   contador: ['gastos', 'conciliacion', 'planilla'],
   despachador: ['mi-despacho', 'entregas', 'delivery'],
   motorista: ['mi-despacho', 'entregas', 'delivery'],
@@ -278,6 +279,8 @@ export default function App() {
         return <RecibosDigitales user={user} onBack={() => setScreen('home')} />
       case 'rrhh':
         return <RRHHView user={user} />
+      case 'validacion-planilla':
+        return <ValidacionPlanillaView user={user} />
       case 'horarios':
         return <HorariosView user={user} />
       case 'amonestaciones':
