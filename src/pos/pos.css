@@ -17,6 +17,8 @@
   overflow: hidden;
   background: #141418;
 }
+/* Cualquier pantalla del POS llena el ancho */
+#pos-root > * { flex: 1; min-width: 0; }
 
 /* ── HEADER ── */
 .pos-header {
