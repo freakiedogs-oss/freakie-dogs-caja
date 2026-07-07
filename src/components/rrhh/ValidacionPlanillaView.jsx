@@ -7,7 +7,7 @@ const money = (v) => (v == null || v === '') ? '—' : '$' + Number(v).toFixed(2
 const C = { bg: '#0f172a', card: '#1e293b', border: '#334155', text: '#e2e8f0', muted: '#94a3b8', red: '#ef4444', gold: '#f59e0b', green: '#22c55e', blue: '#3b82f6' }
 
 export default function ValidacionPlanillaView({ user }) {
-  if (!ALLOWED.includes(user?.id)) {
+  if (!ALLOWED.includes(user?.id) && user?.rol !== 'superadmin') {
     return <div style={{ padding: 40, textAlign: 'center', color: C.red, fontWeight: 700 }}>⛔ Acceso restringido — solo Jose y Majo</div>
   }
   const [rows, setRows] = useState([])

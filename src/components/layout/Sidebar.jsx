@@ -28,8 +28,8 @@ export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
   }, [])
 
   const hasAccess = (item) => {
-    if (item.users) return item.users.includes(user.id)
     if (user.rol === 'superadmin') return true
+    if (item.users) return item.users.includes(user.id)
     // Usar permisos de BD si están cargados, sino fallback a hardcoded
     const roles = dbPermisos ? (dbPermisos[item.key] || []) : item.roles
     if (roles.includes('*')) return true
