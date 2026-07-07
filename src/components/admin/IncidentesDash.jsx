@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import InfoTip from '../ui/InfoTip'
 import { db } from '../../supabase';
 import { STORES, STORES_SHORT, today, yesterday, shiftDate, n, BUCKET_CIERRES } from '../../config';
 import { useToast } from '../../hooks/useToast';
@@ -103,7 +104,7 @@ export default function IncidentesDash({user,onBack,defaultTab}){
       <Toast/>
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
         <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
-        <div style={{fontWeight:800,fontSize:18}}>📋 Reportes de Turno</div>
+        <div style={{fontWeight:800,fontSize:18}}>📋 Reportes de Turno <InfoTip text="Reportes e incidentes de cada turno: novedades, problemas y su seguimiento por sucursal." /></div>
       </div>
 
       {/* Tabs */}

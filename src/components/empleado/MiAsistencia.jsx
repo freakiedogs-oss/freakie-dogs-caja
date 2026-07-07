@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import InfoTip from '../ui/InfoTip'
 import { db } from '../../supabase';
 import { STORES } from '../../config';
 
@@ -222,7 +223,7 @@ export default function MiAsistencia({ user }) {
   return (
     <div style={{ padding: '16px 12px', maxWidth: 480, margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 18, fontWeight: 800, color: c.text }}>📍 Mi Asistencia</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: c.text }}>📍 Mi Asistencia <InfoTip text="Tu registro de entradas y salidas con geolocalización: aquí marcas y ves tu historial." /></div>
         <div style={{ fontSize: 13, color: c.textDim, marginTop: 2 }}>{user.nombre} · {storeName}</div>
       </div>
 

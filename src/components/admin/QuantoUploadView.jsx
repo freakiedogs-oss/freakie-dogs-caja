@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import InfoTip from '../ui/InfoTip'
 import { db } from '../../supabase'
 
 /* ═══════════════════════════════════════════════════════════
@@ -569,7 +570,7 @@ export default function QuantoUploadView({ user }) {
   return (
     <div style={{ padding: 24, maxWidth: 800, margin: '0 auto' }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ color: '#dc2626', fontSize: 24, fontWeight: 700, margin: 0 }}>📤 Importar QUANTO</h1>
+        <h1 style={{ color: '#dc2626', fontSize: 24, fontWeight: 700, margin: 0 }}>📤 Importar QUANTO <InfoTip text="Carga masiva de ventas desde QUANTO (archivos ZIP de DTEs en JSON) al ERP." /></h1>
         <p style={{ color: '#94a3b8', marginTop: 4, fontSize: 14 }}>
           Sube los reportes diarios de QUANTO POS y PedidosYa para poblar las tablas <code style={{ color: '#fbbf24' }}>quanto_ordenes</code> y <code style={{ color: '#fbbf24' }}>pedidos_peya</code>.
         </p>

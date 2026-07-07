@@ -2,6 +2,7 @@
 // Lee fn_ai_plan_dashboard() en vivo. Estilos inline (no dependen de Tailwind).
 // Uso:  import PlanMaestroView from "./components/dashboard/PlanMaestroView";  <PlanMaestroView user={user} />
 import { useState, useEffect, useCallback } from "react";
+import InfoTip from '../ui/InfoTip'
 import { URL_SB, KEY_SB } from "../../supabase";
 
 const ROJO = "#E62329", BG = "#0f0f0f", CARD = "#1a1a1a", BORDER = "#2a2a2a", TXT = "#e8e8e8", MUT = "#9a9a9a";
@@ -67,7 +68,7 @@ export default function PlanMaestroView({ user = {} }) {
   return (
     <div style={{ background: BG, color: TXT, minHeight: "100%", padding: "18px 20px 60px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>🧩 Plan Maestro IA</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>🧩 Plan Maestro IA <InfoTip text="Hoja de ruta viva de la IA y los agentes del ERP: qué está hecho, en progreso y pendiente, con estado en vivo." /></div>
         <span style={{ fontSize: 12, color: MUT }}>universo de agentes, memoria y herramientas</span>
         <button onClick={cargar} style={{ marginLeft: "auto", background: CARD, border: `1px solid ${BORDER}`, color: TXT, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 13 }}>↻ Refrescar</button>
       </div>

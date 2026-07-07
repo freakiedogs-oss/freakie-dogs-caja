@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import InfoTip from '../ui/InfoTip'
 import { db } from '../../supabase';
 import { NAV_SECTIONS, STORES } from '../../config';
 import DevOpsTab from './DevOpsTab';
@@ -76,7 +77,7 @@ export default function SuperAdminView({ user }) {
   // ══════════════════════════════════════════
   const TabBar = () => (
     <div style={{ marginBottom: 16 }}>
-      <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#fff' }}>🛡️ Super Admin</h2>
+      <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#fff' }}>🛡️ Super Admin <InfoTip text="Panel de administración del sistema: monitoreo (DevOps), auto-reparación, usuarios, roles y permisos." /></h2>
       <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${c.border}`, overflowX: 'auto' }}>
         {[
           { k: 'devops', l: '🔧 DevOps' },
