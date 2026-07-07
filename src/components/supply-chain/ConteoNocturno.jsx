@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { today, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
@@ -518,7 +519,7 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
         <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div>
-          <div style={{fontWeight:800,fontSize:18}}>📦 Pedido Sugerido</div>
+          <div style={{fontWeight:800,fontSize:18}}>📦 Pedido Sugerido <InfoTip text="Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo." /></div>
           <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo mínimo</span></div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { STORES } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
@@ -155,7 +156,7 @@ export default function StockLevelsView({ user, onBack }) {
 
       {/* Header */}
       <div style={{ padding: '20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontWeight: 800, fontSize: 18 }}>📊 Stock Mín / Máx</div>
+        <div style={{ fontWeight: 800, fontSize: 18 }}>📊 Stock Mín / Máx <InfoTip text="Niveles de stock mínimo y máximo por producto en cada sucursal. Definen cuándo reordenar y cuánto pedir." /></div>
         <button onClick={onBack} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#fff' }}>✕</button>
       </div>
 
@@ -207,15 +208,15 @@ export default function StockLevelsView({ user, onBack }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <div style={{ flex: 1, padding: '10px 12px', background: '#0a2e1a', borderRadius: 8, textAlign: 'center' }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: '#4ade80' }}>{items.filter(i => i.stock_minimo > 0).length}</div>
-          <div style={{ fontSize: 10, color: '#888' }}>Con mín</div>
+          <div style={{ fontSize: 10, color: '#888' }}>Con mín <InfoTip text="Productos que ya tienen un stock mínimo definido (pueden generar alerta de reorden)." /></div>
         </div>
         <div style={{ flex: 1, padding: '10px 12px', background: '#2e1a0a', borderRadius: 8, textAlign: 'center' }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: '#fb923c' }}>{items.filter(i => !i.stock_minimo || i.stock_minimo === 0).length}</div>
-          <div style={{ fontSize: 10, color: '#888' }}>Sin mín</div>
+          <div style={{ fontSize: 10, color: '#888' }}>Sin mín <InfoTip text="Productos sin stock mínimo configurado — no alertan hasta definirlo." /></div>
         </div>
         <div style={{ flex: 1, padding: '10px 12px', background: '#1a1a2e', borderRadius: 8, textAlign: 'center' }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: '#60a5fa' }}>{items.length}</div>
-          <div style={{ fontSize: 10, color: '#888' }}>Total</div>
+          <div style={{ fontSize: 10, color: '#888' }}>Total <InfoTip text="Total de productos en el catálogo de inventario." /></div>
         </div>
       </div>
 

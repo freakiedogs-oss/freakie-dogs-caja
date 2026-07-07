@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../../supabase';
+import InfoTip from '../ui/InfoTip'
 import { STORES, today, n } from '../../config';
 import { BUCKET_CIERRES as BUCKET } from '../../config';
 import { useToast } from '../../hooks/useToast';
@@ -118,7 +119,7 @@ export default function Deposito({ user, onBack }) {
           ‹
         </button>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>Depósito Bancario</div>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>Depósito Bancario <InfoTip text="Registra los depósitos del efectivo de caja al banco: cuánto se depositó, de qué días de venta y a qué cuenta." /></div>
           <div style={{ fontSize: 12, color: '#666' }}>{STORES[user.store_code]}</div>
         </div>
       </div>
