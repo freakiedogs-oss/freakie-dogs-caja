@@ -418,7 +418,7 @@ export default function KDSScreen({ user, onBack }) {
                           <span className="kds-card-num">#{comanda.comanda_numero}</span>
                         )}
                         {comanda.pager != null && (
-                          <span className="kds-card-num" style={{ background: '#ff6b35', color: '#fff' }}>📟 {comanda.pager}</span>
+                          <span className="kds-card-num" style={{ background: '#fbbf24', color: '#000', fontSize: 18, fontWeight: 800, padding: '2px 10px' }}>📟 {comanda.pager}</span>
                         )}
                       </div>
                       <span className="kds-card-timer" style={{ color: timer.color }}>
@@ -533,7 +533,7 @@ export default function KDSScreen({ user, onBack }) {
                             <span className="kds-card-num">#{comanda.comanda_numero}</span>
                           )}
                         {comanda.pager != null && (
-                          <span className="kds-card-num" style={{ background: '#ff6b35', color: '#fff' }}>📟 {comanda.pager}</span>
+                          <span className="kds-card-num" style={{ background: '#fbbf24', color: '#000', fontSize: 18, fontWeight: 800, padding: '2px 10px' }}>📟 {comanda.pager}</span>
                         )}
                         </div>
                         <span className="kds-card-timer" style={{ color: '#2dd4a8' }}>

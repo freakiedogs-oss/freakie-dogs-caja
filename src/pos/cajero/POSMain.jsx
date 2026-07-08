@@ -559,7 +559,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   }
 
   // Imprime factura/ticket desde el botón de confirmación (gesto del usuario).
-  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente }) => {
+  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente, pager }) => {
     const DTE_LABEL = {
       factura: 'FACTURA (Consumidor Final)',
       ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
@@ -571,6 +571,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     return printFactura({
       ...buildCuentaPrint(items),
       propina,
+      pager:      pager ?? null,
       total:      total + (propina || 0),
       metodoPago: metodo,
       iva:        dteResult?.monto_iva ?? null,

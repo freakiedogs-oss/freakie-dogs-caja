@@ -138,6 +138,7 @@ export function buildPreCuenta(c, cols = 48) {
 export function buildFactura(c, cols = 48) {
   const t = new Ticket(cols);
   t.align('center').bold(true).size(2, 2).ln('FREAKIE DOGS').normal();
+  if (c.pager != null) t.align('center').bold(true).size(2, 2).ln('PAGER ' + c.pager).normal();
   t.align('center').ln(EMISOR.razon);
   t.ln(`NIT: ${EMISOR.nit}`);
   t.ln(`NRC: ${EMISOR.nrc}`);
@@ -195,6 +196,7 @@ export function buildFactura(c, cols = 48) {
 function htmlDoc(title, bodyLines) {
   const rows = bodyLines.map((l) => {
     if (l.qr) return '<div class="c" style="margin:6px 0">' + l.qr + '</div>';
+    if (l.pagerBig != null) return '<div class="pager">PAGER ' + l.pagerBig + '</div>';
     if (l.hr) return '<hr>';
     if (l.center) return `<div class="c ${l.big ? 'big' : ''} ${l.bold ? 'b' : ''}">${l.text || ''}</div>`;
     if (l.row) return `<div class="r ${l.bold ? 'b' : ''}"><span>${l.left}</span><span>${l.right}</span></div>`;
@@ -205,7 +207,8 @@ function htmlDoc(title, bodyLines) {
   body{font-family:'Courier New',monospace;font-size:13px;width:80mm;margin:0 auto;padding:4mm 3mm;color:#000}
   .c{text-align:center}.b{font-weight:700}.big{font-size:20px}
   .r{display:flex;justify-content:space-between}
-  hr{border:none;border-top:1px dashed #000;margin:5px 0}</style></head>
+  hr{border:none;border-top:1px dashed #000;margin:5px 0}
+  .pager{text-align:center;font-weight:800;font-size:44px;border:3px solid #000;border-radius:8px;padding:2px 0;margin:6px 0}</style></head>
   <body>${rows}<script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
 }
 
@@ -254,6 +257,7 @@ function facturaHTML(c) {
   const dte = c.dte;
   const L = [
     { center: 1, big: 1, bold: 1, text: 'FREAKIE DOGS' },
+    ...(c.pager != null ? [{ pagerBig: c.pager }] : []),
     { center: 1, text: EMISOR.razon },
     { center: 1, text: `NIT ${EMISOR.nit} · NRC ${EMISOR.nrc}` },
     ...(c.storeName ? [{ center: 1, text: c.storeName }] : []),
