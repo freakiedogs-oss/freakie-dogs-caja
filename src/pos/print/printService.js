@@ -19,6 +19,7 @@
  */
 
 import { Ticket } from './escpos';
+import qrcode from 'qrcode-generator';
 import { db } from '../../supabase';
 
 // ── Datos fiscales del emisor (dte_service.businesses) ──
@@ -32,6 +33,11 @@ export const EMISOR = {
 };
 
 const DGII_CONSULTA = 'https://admin.factura.gob.sv/consultaPublica';
+
+function qrSvg(text, cell = 4) {
+  try { const qr = qrcode(0, 'M'); qr.addData(text); qr.make(); return qr.createSvgTag({ cellSize: cell, margin: 2, scalable: false }); }
+  catch (e) { return ''; }
+}
 
 // Cache de impresoras por store_code (evita query en cada impresión)
 const _cache = new Map();
@@ -188,6 +194,7 @@ export function buildFactura(c, cols = 48) {
 
 function htmlDoc(title, bodyLines) {
   const rows = bodyLines.map((l) => {
+    if (l.qr) return '<div class="c" style="margin:6px 0">' + l.qr + '</div>';
     if (l.hr) return '<hr>';
     if (l.center) return `<div class="c ${l.big ? 'big' : ''} ${l.bold ? 'b' : ''}">${l.text || ''}</div>`;
     if (l.row) return `<div class="r ${l.bold ? 'b' : ''}"><span>${l.left}</span><span>${l.right}</span></div>`;
@@ -267,7 +274,10 @@ function facturaHTML(c) {
   L.push({ row: 1, bold: 1, left: 'TOTAL', right: money(c.total) });
   if (c.propina > 0) L.push({ row: 1, left: 'Propina', right: money(c.propina) });
   if (dte?.codigoGeneracion) {
-    L.push({ center: 1, text: `DGII: ${DGII_CONSULTA}?codGen=${dte.codigoGeneracion}` });
+    const _qurl = `${DGII_CONSULTA}?ambiente=01&codGen=${dte.codigoGeneracion}&fechaEmi=${fechaISO(dte.fecha || c.fecha)}`;
+    const _svg = qrSvg(_qurl);
+    if (_svg) { L.push({ center: 1, text: 'Consulta este DTE en:' }); L.push({ qr: _svg }); L.push({ center: 1, text: 'admin.factura.gob.sv' }); }
+    else { L.push({ center: 1, text: `DGII: ${DGII_CONSULTA}?codGen=${dte.codigoGeneracion}` }); }
   }
   L.push({ center: 1, text: 'Gracias por su compra' });
   return htmlDoc('Factura', L);

@@ -2,13 +2,12 @@ import { useState } from 'react'
 import CustomerSearch from './CustomerSearch'
 import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
-import { STORES_SIN_PROPINA } from '../../config'
+import { STORES_SIN_PROPINA, STORES_FOOD_COURT } from '../../config'
 
 const DTE_TYPES = [
-  { key: 'ticket',  ic: 'receipt', label: 'Ticket',    desc: 'Comprobante interno' },
-  { key: 'factura', ic: 'card',    label: 'Factura',   desc: 'Factura consumidor final' },
-  { key: 'ccf',     ic: 'store',   label: 'CCF',       desc: 'Crédito Fiscal' },
-  { key: 'se',      ic: 'user',    label: 'Suj.Excl.', desc: 'Sujeto Excluido (DUI)' },
+  { key: 'factura', ic: 'receipt', label: 'Consumidor Final', desc: 'Factura — se envía a Hacienda' },
+  { key: 'ccf',     ic: 'store',   label: 'CCF',              desc: 'Crédito Fiscal' },
+  { key: 'se',      ic: 'user',    label: 'Suj.Excl.',        desc: 'Sujeto Excluido (DUI)' },
 ]
 
 const METODO_DISPLAY = {
@@ -31,9 +30,11 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
   const [tarjeta, setTarjeta]   = useState('')
   // Propina por defecto 10% del total - 0 en food courts (STORES_SIN_PROPINA)
   const sinPropinaDefault = STORES_SIN_PROPINA.includes(storeCode)
+  const esFoodCourt = STORES_FOOD_COURT.includes(storeCode)
   const [propina, setPropina]   = useState(() => (sinPropinaDefault ? '0' : (total > 0 ? (total * 0.10).toFixed(2) : '')))
+  const [pager, setPager]       = useState(null)
   const [printed, setPrinted]   = useState(false)
-  const [tipoDte, setTipoDte]   = useState('ticket')
+  const [tipoDte, setTipoDte]   = useState('factura')
   const [ref, setRef]           = useState('')
   const [banco, setBanco]       = useState('')
   const [confirmed, setConfirmed] = useState(false)
@@ -80,6 +81,7 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
       cambio,
       propina: propinaNum,
       tipoDte,
+      pager: esFoodCourt ? pager : null,
       referencia: refFinal,
       // Datos del cliente para DTE
       cliente: cliente ? {
@@ -152,6 +154,12 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
                 <span className="lbl">Documento</span>
                 <span className="val">{DTE_TYPES.find(d => d.key === tipoDte)?.label}</span>
               </div>
+              {pager != null && (
+                <div className="pos-ticket-row">
+                  <span className="lbl">Pager</span>
+                  <span className="val">#{pager}</span>
+                </div>
+              )}
             </div>
 
             {/* ── Resultado DTE ── */}
@@ -239,6 +247,27 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
             </div>
           )}
         </div>
+
+        {/* Pager (solo food court) */}
+        {esFoodCourt && (
+          <div className="pos-payment-field">
+            <label className="pos-payment-label">Pager del cliente</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 5, marginTop: 4 }}>
+              {Array.from({ length: 15 }, (_, i) => i + 1).map(n => (
+                <button key={n} type="button" onClick={() => setPager(pager === n ? null : n)}
+                  style={{ padding: '9px 0', borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                    background: pager === n ? '#ff6b35' : '#1e1e26',
+                    border: `1px solid ${pager === n ? '#ff6b35' : '#2a2a32'}`,
+                    color: pager === n ? '#fff' : '#8b8997' }}>{n}</button>
+              ))}
+              <button type="button" onClick={() => setPager(null)}
+                style={{ gridColumn: 'span 2', padding: '9px 0', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  background: pager == null ? '#3a1a1a' : '#1e1e26',
+                  border: `1px solid ${pager == null ? '#f87171' : '#2a2a32'}`,
+                  color: pager == null ? '#f87171' : '#8b8997' }}>Sin</button>
+            </div>
+          </div>
+        )}
 
         {/* Método de pago */}
         <div className="pos-method-tabs" style={{ flexWrap: 'wrap' }}>

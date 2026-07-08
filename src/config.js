@@ -25,6 +25,20 @@ export const STORES_SHORT = {
 // Sucursales food court: propina 0 por defecto en el POS
 export const STORES_SIN_PROPINA = ['S006']
 
+// Food court: propina 0 por defecto + asignacion de pager al cobrar
+export const STORES_FOOD_COURT = ['S006']
+
+// Codigos MH por sucursal (Hacienda). codEstable = store_code, punto de venta P001.
+export const STORE_ESTABLECIMIENTO = {
+  M001: { codEstable: 'M001', codPuntoVenta: 'P001' },
+  S001: { codEstable: 'S001', codPuntoVenta: 'P001' },
+  S002: { codEstable: 'S002', codPuntoVenta: 'P001' },
+  S003: { codEstable: 'S003', codPuntoVenta: 'P001' },
+  S004: { codEstable: 'S004', codPuntoVenta: 'P001' },
+  S005: { codEstable: 'S005', codPuntoVenta: 'P001' },
+  S006: { codEstable: 'S006', codPuntoVenta: 'P001' },
+}
+
 export const BUCKET_CIERRES = 'cierres-fotos'
 export const BUCKET_DESPACHOS = 'despachos-fotos'
 

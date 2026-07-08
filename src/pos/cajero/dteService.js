@@ -14,6 +14,8 @@
  *   - CCF: se extraen netos (precio / 1.13) porque CCF suma IVA encima
  */
 
+import { STORE_ESTABLECIMIENTO } from '../../config'
+
 const DTE_PROXY_BASE = '/api/dte-proxy'
 
 /**
@@ -96,12 +98,14 @@ function buildDteItems(items, tipoDte) {
  * Emitir Factura Consumidor Final (tipo 01)
  * Receptor es opcional para Factura.
  */
-export async function emitFactura({ items, receptor, metodo }) {
+export async function emitFactura({ items, receptor, metodo, storeCode }) {
   const totalPagar = items.reduce((s, it) => s + (it.precio * it.qty), 0)
+  const _est = STORE_ESTABLECIMIENTO[storeCode]
   const body = {
     items: buildDteItems(items, 'factura'),
     condicionOperacion: 1, // contado
     pagos: [{ codigo: mapFormaPago(metodo), montoPago: Math.round(totalPagar * 100) / 100, referencia: null, plazo: null, periodo: null }],
+    ...(_est ? { codEstable: _est.codEstable, codPuntoVenta: _est.codPuntoVenta } : {}),
   }
 
   // Receptor opcional para factura
@@ -197,8 +201,8 @@ export async function emitSujetoExcluido({ items, receptor, metodo }) {
  * Emitir DTE según tipo
  * @returns {Object} { success, document_id, codigo_generacion, numero_control, estado, sello_recepcion, monto_total, monto_iva }
  */
-export async function emitDTE({ tipoDte, items, receptor, metodo }) {
-  if (tipoDte === 'factura') return emitFactura({ items, receptor, metodo })
+export async function emitDTE({ tipoDte, items, receptor, metodo, storeCode }) {
+  if (tipoDte === 'factura') return emitFactura({ items, receptor, metodo, storeCode })
   if (tipoDte === 'ccf')     return emitCCF({ items, receptor, metodo })
   if (tipoDte === 'se')      return emitSujetoExcluido({ items, receptor, metodo })
   // 'ticket' = sin DTE fiscal

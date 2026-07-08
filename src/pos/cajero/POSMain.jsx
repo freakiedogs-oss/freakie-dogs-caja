@@ -499,6 +499,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         referencia:     paymentData.referencia || null,
       })
 
+      // 3b. Pager (food court): guardar en la cuenta y reflejar en la cola de cocina (KDS)
+      if (paymentData.pager != null) {
+        await db.from('pos_cuentas').update({ pager: paymentData.pager }).eq('id', currentCuentaId)
+        await db.from('pos_cocina_queue').update({ pager: paymentData.pager }).eq('cuenta_id', currentCuentaId)
+      }
+
       // 4. Emitir DTE (factura o CCF) — si falla, la venta YA se cobró
       if (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf' || paymentData.tipoDte === 'se') {
         try {
@@ -507,6 +513,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             items:    items, // todos los items de la cuenta
             receptor: paymentData.cliente || null,
             metodo:   paymentData.metodo,
+            storeCode: storeCode,
           })
 
           // 5. Guardar resultado DTE en la cuenta
