@@ -91,7 +91,7 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
   )
 
   return (
-    <div style={{ background: C.bg, minHeight: '100vh', color: C.text }}>
+    <div style={{ background: C.bg, height: '100vh', overflowY: 'auto', color: C.text }}>
       {/* Header */}
       <div className="pos-header">
         <button className="pos-header-btn" onClick={onBack}>← Volver</button>
