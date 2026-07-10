@@ -565,7 +565,14 @@ function GruposTab() {
   if (editMods !== null) {
     const grupo = grupos.find(g => g.id === editMods)
     if (!grupo) { setEditMods(null); return null }
-    return <ModsEditor grupo={grupo} onSaveMod={handleSaveMod} onDeleteMod={handleDeleteMod} onBack={() => { setEditMods(null); load() }} />
+    // Extras únicos de TODOS los grupos (para reutilizar y no duplicar)
+    const seen = new Map()
+    grupos.forEach(g => (g.pos_modificadores || []).forEach(m => {
+      const key = (m.nombre || '').trim().toLowerCase()
+      if (key && !seen.has(key)) seen.set(key, { nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
+    }))
+    const suggestions = [...seen.values()].sort((a, b) => a.nombre.localeCompare(b.nombre))
+    return <ModsEditor grupo={grupo} suggestions={suggestions} onSaveMod={handleSaveMod} onDeleteMod={handleDeleteMod} onBack={() => { setEditMods(null); load() }} />
   }
 
   return (
@@ -673,9 +680,22 @@ function GrupoForm({ grupo, onSave, onCancel }) {
   )
 }
 
-function ModsEditor({ grupo, onSaveMod, onDeleteMod, onBack }) {
+function ModsEditor({ grupo, suggestions = [], onSaveMod, onDeleteMod, onBack }) {
   const mods = grupo.pos_modificadores || []
   const [newMod, setNewMod] = useState({ nombre: '', nombre_corto: '', precio_extra: '', orden: mods.length })
+  const [showSug, setShowSug] = useState(false)
+
+  // Sugerencias: extras existentes que aún no están en este grupo y coinciden con lo escrito
+  const yaEnGrupo = new Set(mods.map(m => (m.nombre || '').trim().toLowerCase()))
+  const q = newMod.nombre.trim().toLowerCase()
+  const sugFiltradas = suggestions
+    .filter(s => !yaEnGrupo.has(s.nombre.trim().toLowerCase()))
+    .filter(s => !q || s.nombre.toLowerCase().includes(q))
+    .slice(0, 8)
+  const pickSug = (s) => {
+    setNewMod({ nombre: s.nombre, nombre_corto: s.nombre_corto || '', precio_extra: s.precio_extra > 0 ? String(s.precio_extra) : '', orden: mods.length })
+    setShowSug(false)
+  }
 
   return (
     <div style={{ maxWidth: 560 }}>
@@ -704,9 +724,34 @@ function ModsEditor({ grupo, onSaveMod, onDeleteMod, onBack }) {
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Agregar opción</div>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8 }}>
-          <div>
+          <div style={{ position: 'relative' }}>
             <label style={labelStyle}>Nombre *</label>
-            <input value={newMod.nombre} onChange={e => setNewMod(p => ({ ...p, nombre: e.target.value }))} style={inputStyle} placeholder="Ej: Sin cebolla" />
+            <input
+              value={newMod.nombre}
+              onChange={e => { setNewMod(p => ({ ...p, nombre: e.target.value })); setShowSug(true) }}
+              onFocus={() => setShowSug(true)}
+              onBlur={() => setTimeout(() => setShowSug(false), 150)}
+              style={inputStyle}
+              placeholder="Ej: Sin cebolla"
+              autoComplete="off"
+            />
+            {showSug && sugFiltradas.length > 0 && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: 220, overflowY: 'auto', zIndex: 30, boxShadow: '0 6px 16px rgba(0,0,0,.4)' }}>
+                <div style={{ padding: '6px 12px', fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Extras existentes — reutiliza</div>
+                {sugFiltradas.map((s, i) => (
+                  <div
+                    key={i}
+                    onMouseDown={() => pickSug(s)}
+                    style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 8, borderTop: `1px solid ${C.border}` }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.surface}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span>{s.nombre}{s.nombre_corto && <span style={{ color: C.muted, marginLeft: 6, fontSize: 11 }}>({s.nombre_corto})</span>}</span>
+                    <span style={{ color: s.precio_extra > 0 ? C.teal : C.muted, fontSize: 12, flexShrink: 0 }}>{s.precio_extra > 0 ? `+$${s.precio_extra.toFixed(2)}` : 'gratis'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label style={labelStyle}>Corto</label>
