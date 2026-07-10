@@ -661,6 +661,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         referencia:     paymentData.referencia || null,
       })
 
+      // 3b. Pager (food court): guardar en la cuenta y reflejar en la cola de cocina (KDS)
+      if (paymentData.pager != null) {
+        await db.from('pos_cuentas').update({ pager: paymentData.pager }).eq('id', currentCuentaId)
+        await db.from('pos_cocina_queue').update({ pager: paymentData.pager }).eq('cuenta_id', currentCuentaId)
+      }
+
       // 4. Emitir DTE (factura o CCF) — si falla, la venta YA se cobró
       if (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf' || paymentData.tipoDte === 'se') {
         try {
@@ -669,6 +675,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             items:    buildDteLineItems(items), // ítems + extras con precio como líneas separadas
             receptor: paymentData.cliente || null,
             metodo:   paymentData.metodo,
+            storeCode: storeCode,
           })
 
           // 5. Guardar resultado DTE en la cuenta
@@ -714,7 +721,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   }
 
   // Imprime factura/ticket desde el botón de confirmación (gesto del usuario).
-  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente }) => {
+  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente, pager }) => {
     const DTE_LABEL = {
       factura: 'FACTURA (Consumidor Final)',
       ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
@@ -726,6 +733,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     return printFactura({
       ...buildCuentaPrint(items),
       propina,
+      pager:      pager ?? null,
       total:      total + (propina || 0),
       metodoPago: metodo,
       iva:        dteResult?.monto_iva ?? null,
@@ -1088,6 +1096,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         <PaymentModal
           items={items}
           total={total}
+          storeCode={storeCode}
           onConfirm={handlePaymentConfirm}
           onComplete={handlePaymentComplete}
           onPrintFactura={handlePrintFactura}

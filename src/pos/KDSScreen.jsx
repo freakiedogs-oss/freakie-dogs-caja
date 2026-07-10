@@ -174,6 +174,7 @@ export default function KDSScreen({ user, onBack }) {
           comanda_numero: row.comanda_numero,
           canal:          row.canal || 'mesa',
           mesa_ref:       row.mesa_ref,
+          pager:          row.pager,
           recibido_at:    row.recibido_at,
           items:          [],
         })
@@ -416,6 +417,9 @@ export default function KDSScreen({ user, onBack }) {
                         {comanda.comanda_numero && (
                           <span className="kds-card-num">#{comanda.comanda_numero}</span>
                         )}
+                        {comanda.pager != null && (
+                          <span className="kds-card-num" style={{ background: '#fbbf24', color: '#000', fontSize: 18, fontWeight: 800, padding: '2px 10px' }}>📟 {comanda.pager}</span>
+                        )}
                       </div>
                       <span className="kds-card-timer" style={{ color: timer.color }}>
                         {timer.text}
@@ -501,6 +505,7 @@ export default function KDSScreen({ user, onBack }) {
                       comanda_numero: row.comanda_numero,
                       canal:          row.canal || 'mesa',
                       mesa_ref:       row.mesa_ref,
+          pager:          row.pager,
                       completado_at:  row.completado_at,
                       items:          [],
                     })
@@ -532,6 +537,9 @@ export default function KDSScreen({ user, onBack }) {
                           {comanda.comanda_numero && (
                             <span className="kds-card-num">#{comanda.comanda_numero}</span>
                           )}
+                        {comanda.pager != null && (
+                          <span className="kds-card-num" style={{ background: '#fbbf24', color: '#000', fontSize: 18, fontWeight: 800, padding: '2px 10px' }}>📟 {comanda.pager}</span>
+                        )}
                         </div>
                         <span className="kds-card-timer" style={{ color: '#2dd4a8' }}>
                           ✓ {timeStr}
