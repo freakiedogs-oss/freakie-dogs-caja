@@ -2,12 +2,12 @@ import { useState } from 'react'
 import CustomerSearch from './CustomerSearch'
 import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
-import { STORES_SIN_PROPINA, STORES_FOOD_COURT } from '../../config'
 
 const DTE_TYPES = [
-  { key: 'factura', ic: 'receipt', label: 'Consumidor Final', desc: 'Factura — se envía a Hacienda' },
-  { key: 'ccf',     ic: 'store',   label: 'CCF',              desc: 'Crédito Fiscal' },
-  { key: 'se',      ic: 'user',    label: 'Suj.Excl.',        desc: 'Sujeto Excluido (DUI)' },
+  { key: 'ticket',  ic: 'receipt', label: 'Ticket',    desc: 'Comprobante interno' },
+  { key: 'factura', ic: 'card',    label: 'Factura',   desc: 'Factura consumidor final' },
+  { key: 'ccf',     ic: 'store',   label: 'CCF',       desc: 'Crédito Fiscal' },
+  { key: 'se',      ic: 'user',    label: 'Suj.Excl.', desc: 'Sujeto Excluido (DUI)' },
 ]
 
 const METODO_DISPLAY = {
@@ -23,19 +23,15 @@ const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 
 // Tipo de documento (texto en pos_clientes) → código MH para el receptor
 const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residente': '02', 'Otro': '37' }
 
-export default function PaymentModal({ items, total, storeCode, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
+export default function PaymentModal({ items, total, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
   const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
   const [efectivo, setEfectivo] = useState('')
   const [tarjeta, setTarjeta]   = useState('')
-  // Propina por defecto 10% del total - 0 en food courts (STORES_SIN_PROPINA)
-  const sinPropinaDefault = STORES_SIN_PROPINA.includes(storeCode)
-  const esFoodCourt = STORES_FOOD_COURT.includes(storeCode)
-  const [propina, setPropina]   = useState(() => (sinPropinaDefault ? '0' : (total > 0 ? (total * 0.10).toFixed(2) : '')))
-  const [pager, setPager]       = useState(null)
-  const [showPagerModal, setShowPagerModal] = useState(false)
+  // Propina por defecto 10% del total
+  const [propina, setPropina]   = useState(() => (total > 0 ? (total * 0.10).toFixed(2) : ''))
   const [printed, setPrinted]   = useState(false)
-  const [tipoDte, setTipoDte]   = useState('factura')
+  const [tipoDte, setTipoDte]   = useState('ticket')
   const [ref, setRef]           = useState('')
   const [banco, setBanco]       = useState('')
   const [confirmed, setConfirmed] = useState(false)
@@ -66,7 +62,7 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
     return true
   }
 
-  const handleConfirm = async (pagerValue = pager) => {
+  const handleConfirm = async () => {
     setProcessing(true)
     setDteError(null)
 
@@ -82,7 +78,6 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
       cambio,
       propina: propinaNum,
       tipoDte,
-      pager: esFoodCourt ? pagerValue : null,
       referencia: refFinal,
       // Datos del cliente para DTE
       cliente: cliente ? {
@@ -155,12 +150,6 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
                 <span className="lbl">Documento</span>
                 <span className="val">{DTE_TYPES.find(d => d.key === tipoDte)?.label}</span>
               </div>
-              {pager != null && (
-                <div className="pos-ticket-row">
-                  <span className="lbl">Pager</span>
-                  <span className="val">#{pager}</span>
-                </div>
-              )}
             </div>
 
             {/* ── Resultado DTE ── */}
@@ -212,7 +201,7 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
             <button
               className="pos-confirmar-btn"
               onClick={() => {
-                onPrintFactura?.({ dteResult, tipoDte, propina: propinaNum, metodo, cliente, pager })
+                onPrintFactura?.({ dteResult, tipoDte, propina: propinaNum, metodo, cliente })
                 setPrinted(true)
               }}
               style={{ marginTop: 12, background: '#2dd4a8', color: '#06241b' }}
@@ -502,8 +491,8 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
               display: 'flex', justifyContent: 'space-between',
               fontSize: 11, color: '#8b8997', padding: '1px 0'
             }}>
-              <span>{it.qty}x {it.nombre}</span>
-              <span>${(it.precio * it.qty).toFixed(2)}</span>
+              <span>{it.qty}x {it.nombre}{(it.modificadores || []).length > 0 ? ` (${it.modificadores.map(m => m.nombre).join(', ')})` : ''}</span>
+              <span>${((it.precio + (it.precioExtra || 0)) * it.qty).toFixed(2)}</span>
             </div>
           ))}
         </div>
@@ -521,36 +510,13 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
         <button
           className="pos-confirmar-btn"
           disabled={!canConfirm() || saving || processing}
-          onClick={() => (esFoodCourt ? setShowPagerModal(true) : handleConfirm())}
+          onClick={handleConfirm}
         >
           {processing ? '⏳ Emitiendo DTE...' : saving ? '⏳ Procesando...' : `✅ Confirmar pago $${totalConProp.toFixed(2)}`}
         </button>
         <button className="pos-cancelar-btn" onClick={onClose}>
           Cancelar
         </button>
-
-        {showPagerModal && (
-          <div className="pos-modal-overlay" onClick={() => setShowPagerModal(false)} style={{ zIndex: 400 }}>
-            <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
-              <div className="pos-modal-title">📟 Asignar pager al cliente</div>
-              <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 12 }}>Elige el número de pager (1–15), o Sin pager si se acabaron.</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                {Array.from({ length: 15 }, (_, i) => i + 1).map(n => (
-                  <button key={n} type="button"
-                    onClick={() => { setPager(n); setShowPagerModal(false); handleConfirm(n) }}
-                    style={{ padding: '18px 0', borderRadius: 10, fontSize: 22, fontWeight: 800, cursor: 'pointer',
-                      background: '#1e1e26', border: '1px solid #ff6b35', color: '#ff6b35' }}>{n}</button>
-                ))}
-              </div>
-              <button type="button"
-                onClick={() => { setPager(null); setShowPagerModal(false); handleConfirm(null) }}
-                style={{ width: '100%', marginTop: 12, padding: '14px 0', borderRadius: 10, fontSize: 15, fontWeight: 700,
-                  cursor: 'pointer', background: '#3a1a1a', border: '1px solid #f87171', color: '#f87171' }}>
-                Sin pager
-              </button>
-            </div>
-          </div>
-        )}
         <toast.Toast />
       </div>
     </div>

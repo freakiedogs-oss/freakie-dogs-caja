@@ -37,6 +37,20 @@ const DEFAULT_PERMS = { comandar: false, moverMesa: false, preCuenta: false, anu
 // Mapeo tipoDte UI → código MH para CHECK constraint en BD
 const DTE_TIPO_MAP = { factura: '01', ccf: '03', se: '14', ticket: null }
 
+// Aplana el carrito a líneas de DTE: ítem base + una línea por cada extra con precio (>0).
+// Los extras gratis no generan línea. Cada extra hereda la cantidad del ítem padre.
+function buildDteLineItems(cart) {
+  const lines = []
+  cart.forEach(it => {
+    lines.push({ nombre: it.nombre, precio: it.precio, qty: it.qty })
+    ;(it.modificadores || []).forEach(m => {
+      const px = Number(m.precio_extra) || 0
+      if (px > 0) lines.push({ nombre: `  + ${m.nombre}`, precio: px, qty: it.qty })
+    })
+  })
+  return lines
+}
+
 // Reloj
 function Clock() {
   const [t, setT] = useState('')
@@ -90,6 +104,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const [showPayModal,      setShowPayModal]       = useState(false)
   const [showNoteModal,     setShowNoteModal]      = useState(null)
   const [noteText,          setNoteText]           = useState('')
+  const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [showTransferModal, setShowTransferModal]  = useState(false)
   const [showSplitModal,    setShowSplitModal]     = useState(false)
   const [saving,            setSaving]             = useState(false)
@@ -122,6 +137,34 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         .is('sucursal_id', null)
         .order('nombre')
 
+      // Grupos de modificadores asignados a ítems
+      const { data: asignData } = await db
+        .from('pos_item_modificadores')
+        .select(`
+          menu_item_id,
+          pos_modificadores_grupo (
+            id, nombre, tipo, obligatorio, min_selecciones, max_selecciones, orden, activo,
+            pos_modificadores ( id, nombre, nombre_corto, precio_extra, orden, activo )
+          )
+        `)
+
+      const modMap = {}  // menu_item_id -> [grupos normalizados]
+      ;(asignData || []).forEach(a => {
+        const g = a.pos_modificadores_grupo
+        if (!g || g.activo === false) return
+        const opciones = (g.pos_modificadores || [])
+          .filter(o => o.activo !== false)
+          .sort((x, y) => (x.orden || 0) - (y.orden || 0))
+        if (opciones.length === 0) return
+        if (!modMap[a.menu_item_id]) modMap[a.menu_item_id] = []
+        modMap[a.menu_item_id].push({
+          id: g.id, nombre: g.nombre, tipo: g.tipo,
+          obligatorio: g.obligatorio, min_selecciones: g.min_selecciones || 0,
+          max_selecciones: g.max_selecciones || 0, orden: g.orden || 0, opciones,
+        })
+      })
+      Object.values(modMap).forEach(arr => arr.sort((a, b) => a.orden - b.orden))
+
       if (menuData) {
         const map = {}
         menuData.forEach(m => {
@@ -131,7 +174,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               ...c,
               items: (c.pos_menu_items || [])
                 .filter(i => i.disponible)
-                .sort((a, b) => a.orden - b.orden),
+                .sort((a, b) => a.orden - b.orden)
+                .map(i => ({ ...i, modGrupos: modMap[i.id] || [] })),
             }))
           map[m.canal] = { id: m.id, nombre: m.nombre, categorias: cats }
         })
@@ -152,7 +196,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       setLoadingCuenta(true)
       const { data: itemsData } = await db
         .from('pos_cuenta_items')
-        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas')
+        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores')
         .eq('cuenta_id', cuentaCtx.cuentaId)
         .is('cancelado_motivo', null)
         .order('created_at')
@@ -166,6 +210,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           qty:    it.cantidad,
           nota:   it.notas || '',
           saved:  true,
+          modificadores: it.modificadores || [],
+          precioExtra:   parseFloat(it.precio_modificadores) || 0,
         }))
         setItems(loaded)
         setCommandedCount(loaded.length)
@@ -203,13 +249,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const itemsActivaCat = categorias.find(c => c.id === activeCat)?.items || []
 
   // ── Acciones de orden ──
-  const addItem = useCallback((product) => {
+  const addItemToCart = useCallback((product, modificadores = [], precioExtra = 0) => {
     setItems(prev => {
-      const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved)
-      if (idx >= 0) {
-        const next = [...prev]
-        next[idx] = { ...next[idx], qty: next[idx].qty + 1 }
-        return next
+      // Solo fusiona líneas idénticas cuando NO hay modificadores ni nota
+      if (modificadores.length === 0) {
+        const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved && (!i.modificadores || i.modificadores.length === 0))
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = { ...next[idx], qty: next[idx].qty + 1 }
+          return next
+        }
       }
       return [...prev, {
         id:     product.id,
@@ -219,9 +268,17 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         nota:   '',
         saved:  false,
         estacion: product.estacion || 'general',
+        modificadores,
+        precioExtra,
       }]
     })
   }, [])
+
+  const addItem = useCallback((product) => {
+    const grupos = product.modGrupos || []
+    if (grupos.length === 0) { addItemToCart(product, [], 0); return }
+    setModPicker(product)   // abre selector de modificadores
+  }, [addItemToCart])
 
   const removeItem = useCallback((idx) => {
     setItems(prev => {
@@ -256,7 +313,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   }
 
   // Totales
-  const subtotal = items.reduce((s, i) => s + i.precio * i.qty, 0)
+  const subtotal = items.reduce((s, i) => s + (i.precio + (i.precioExtra || 0)) * i.qty, 0)
   const descuentoMonto = descuentoTipo === 'porcentaje'
     ? Math.round(subtotal * descuento / 100 * 100) / 100
     : descuentoTipo === 'cortesia'
@@ -281,7 +338,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       precio: i.precio,
       qty: i.qty,
       nota: i.nota || null,
-      modificadores: i.modificadores || i.mods || [],
+      modificadores: (i.modificadores || []).map(m => Number(m.precio_extra) > 0
+        ? `${m.nombre} (+$${Number(m.precio_extra).toFixed(2)})`
+        : m.nombre),
     })),
     subtotal,
     descuento: descuentoMonto,
@@ -353,6 +412,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         precio_unitario: it.precio,
         cantidad:        it.qty,
         notas:           it.nota || null,
+        modificadores:   it.modificadores?.length ? it.modificadores : null,
+        precio_modificadores: it.precioExtra || 0,
+        subtotal:        (it.precio + (it.precioExtra || 0)) * it.qty,
         comanda_numero:  comandaSeq,
         enviado_cocina_at: new Date().toISOString(),
       }))
@@ -368,6 +430,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           nombre_item:    it.nombre,
           cantidad:       it.qty,
           nota:           it.nota || null,
+          modificadores:  it.modificadores?.length ? it.modificadores : null,
           estacion:       it.estacion || 'general',
           estado:         'pendiente',
           prioridad:      tipo === 'pedidos_ya' ? 8 : tipo === 'drive_through' ? 7 : 5,
@@ -466,6 +529,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           precio_unitario: it.precio,
           cantidad:        it.qty,
           notas:           it.nota || null,
+          modificadores:   it.modificadores?.length ? it.modificadores : null,
+          precio_modificadores: it.precioExtra || 0,
+          subtotal:        (it.precio + (it.precioExtra || 0)) * it.qty,
           comanda_numero:  comandaSeq,
           enviado_cocina_at: new Date().toISOString(),
         }))
@@ -481,6 +547,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             nombre_item:    it.nombre,
             cantidad:       it.qty,
             nota:           it.nota || null,
+            modificadores:  it.modificadores?.length ? it.modificadores : null,
             estacion:       it.estacion || 'general',
             estado:         'pendiente',
             prioridad:      5,
@@ -499,21 +566,14 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         referencia:     paymentData.referencia || null,
       })
 
-      // 3b. Pager (food court): guardar en la cuenta y reflejar en la cola de cocina (KDS)
-      if (paymentData.pager != null) {
-        await db.from('pos_cuentas').update({ pager: paymentData.pager }).eq('id', currentCuentaId)
-        await db.from('pos_cocina_queue').update({ pager: paymentData.pager }).eq('cuenta_id', currentCuentaId)
-      }
-
       // 4. Emitir DTE (factura o CCF) — si falla, la venta YA se cobró
       if (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf' || paymentData.tipoDte === 'se') {
         try {
           dteResult = await emitDTE({
             tipoDte:  paymentData.tipoDte,
-            items:    items, // todos los items de la cuenta
+            items:    buildDteLineItems(items), // ítems + extras con precio como líneas separadas
             receptor: paymentData.cliente || null,
             metodo:   paymentData.metodo,
-            storeCode: storeCode,
           })
 
           // 5. Guardar resultado DTE en la cuenta
@@ -559,7 +619,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   }
 
   // Imprime factura/ticket desde el botón de confirmación (gesto del usuario).
-  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente, pager }) => {
+  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente }) => {
     const DTE_LABEL = {
       factura: 'FACTURA (Consumidor Final)',
       ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
@@ -571,7 +631,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     return printFactura({
       ...buildCuentaPrint(items),
       propina,
-      pager:      pager ?? null,
       total:      total + (propina || 0),
       metodoPago: metodo,
       iva:        dteResult?.monto_iva ?? null,
@@ -757,13 +816,20 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                   <div className="pos-order-item-qty">{item.qty}</div>
                   <div className="pos-order-item-info">
                     <div className="pos-order-item-name">{item.nombre}</div>
+                    {(item.modificadores || []).length > 0 && (
+                      <div style={{ fontSize: 11, color: '#8b8997', lineHeight: 1.5 }}>
+                        {item.modificadores.map((m, i) => (
+                          <div key={i}>+ {m.nombre}{Number(m.precio_extra) > 0 ? ` ($${Number(m.precio_extra).toFixed(2)})` : ''}</div>
+                        ))}
+                      </div>
+                    )}
                     {item.nota && (
                       <div className="pos-order-item-note" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="pencil" size={11} /> {item.nota}</div>
                     )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                     <div className="pos-order-item-price">
-                      ${(item.precio * item.qty).toFixed(2)}
+                      ${((item.precio + (item.precioExtra || 0)) * item.qty).toFixed(2)}
                     </div>
                     {!item.saved && (
                       <div style={{ display: 'flex', gap: 2 }}>
@@ -892,12 +958,20 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         </div>
       )}
 
+      {/* Modal: Selección de modificadores */}
+      {modPicker && (
+        <ModPickerModal
+          product={modPicker}
+          onConfirm={(mods, extra) => { addItemToCart(modPicker, mods, extra); setModPicker(null) }}
+          onCancel={() => setModPicker(null)}
+        />
+      )}
+
       {/* Modal: Pago + DTE */}
       {showPayModal && (
         <PaymentModal
           items={items}
           total={total}
-          storeCode={storeCode}
           onConfirm={handlePaymentConfirm}
           onComplete={handlePaymentComplete}
           onPrintFactura={handlePrintFactura}
@@ -1054,6 +1128,115 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         />
       )}
       <toast.Toast />
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// ModPickerModal — selección de modificadores al agregar un ítem
+// ──────────────────────────────────────────────
+function ModPickerModal({ product, onConfirm, onCancel }) {
+  const grupos = product.modGrupos || []
+  const [sel, setSel] = useState({})   // grupoId -> [modId, ...]
+
+  const toggle = (g, m) => {
+    setSel(prev => {
+      const cur = prev[g.id] || []
+      if (g.tipo === 'unico') return { ...prev, [g.id]: [m.id] }
+      if (cur.includes(m.id)) return { ...prev, [g.id]: cur.filter(x => x !== m.id) }
+      if (g.max_selecciones > 0 && cur.length >= g.max_selecciones) return prev  // tope alcanzado
+      return { ...prev, [g.id]: [...cur, m.id] }
+    })
+  }
+
+  // Modificadores elegidos + precio extra total
+  const elegidos = []
+  grupos.forEach(g => (sel[g.id] || []).forEach(mid => {
+    const m = g.opciones.find(o => o.id === mid)
+    if (m) elegidos.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
+  }))
+  const extra = elegidos.reduce((s, m) => s + m.precio_extra, 0)
+
+  // Validación de grupos obligatorios / mínimos
+  const falta = grupos.find(g => {
+    const n = (sel[g.id] || []).length
+    if (g.obligatorio && n < 1) return true
+    if (g.min_selecciones > 0 && n < g.min_selecciones) return true
+    return false
+  })
+
+  const reqLabel = (g) => {
+    if (g.obligatorio || g.min_selecciones > 0) {
+      const min = Math.max(g.min_selecciones || 0, g.obligatorio ? 1 : 0)
+      return `Elige ${min}${g.max_selecciones > 0 && g.max_selecciones !== min ? `–${g.max_selecciones}` : ''}`
+    }
+    if (g.tipo === 'unico') return 'Elige 1 (opcional)'
+    return g.max_selecciones > 0 ? `Hasta ${g.max_selecciones} (opcional)` : 'Opcional'
+  }
+
+  return (
+    <div className="pos-modal-overlay" onClick={onCancel}>
+      <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: '85vh', overflowY: 'auto' }}>
+        <div className="pos-modal-title">{product.nombre}</div>
+        <div className="pos-modal-sub" style={{ marginBottom: 8 }}>Personaliza tu pedido</div>
+
+        {grupos.map(g => {
+          const cur = sel[g.id] || []
+          return (
+            <div key={g.id} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{g.nombre}</span>
+                <span style={{ fontSize: 11, color: '#8b8997' }}>{reqLabel(g)}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {g.opciones.map(m => {
+                  const on = cur.includes(m.id)
+                  const px = Number(m.precio_extra) || 0
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => toggle(g, m)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '10px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                        border: `1px solid ${on ? '#2dd4a8' : '#2a2a32'}`,
+                        background: on ? 'rgba(45,212,168,0.12)' : '#1c1c22',
+                        color: '#e8e6ef', fontSize: 14,
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 15 }}>{on ? (g.tipo === 'unico' ? '🔘' : '☑️') : (g.tipo === 'unico' ? '⚪' : '⬜')}</span>
+                        {m.nombre}
+                      </span>
+                      <span style={{ color: px > 0 ? '#2dd4a8' : '#8b8997', fontSize: 13, fontWeight: 600 }}>
+                        {px > 0 ? `+$${px.toFixed(2)}` : 'gratis'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 14px', fontSize: 14 }}>
+          <span style={{ color: '#8b8997' }}>Precio</span>
+          <span style={{ fontWeight: 700 }}>
+            ${(parseFloat(product.precio) + extra).toFixed(2)}
+            {extra > 0 && <span style={{ color: '#8b8997', fontWeight: 400, fontSize: 12 }}> (base ${parseFloat(product.precio).toFixed(2)} + ${extra.toFixed(2)})</span>}
+          </span>
+        </div>
+
+        <button
+          className="pos-confirmar-btn"
+          disabled={!!falta}
+          style={falta ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+          onClick={() => onConfirm(elegidos, extra)}
+        >
+          {falta ? `Falta elegir: ${falta.nombre}` : 'Agregar al pedido'}
+        </button>
+        <button className="pos-cancelar-btn" onClick={onCancel}>Cancelar</button>
+      </div>
     </div>
   )
 }
