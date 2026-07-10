@@ -244,6 +244,7 @@ function preCuentaHTML(c) {
   ];
   for (const it of c.items || []) {
     L.push({ row: 1, left: `${it.qty}x ${it.nombre}`, right: money(it.precio * it.qty) });
+    for (const m of it.modificadores || []) L.push({ text: `&nbsp;&nbsp;&nbsp;+ ${m}` });
     if (it.nota) L.push({ text: `&nbsp;&nbsp;&nbsp;(${it.nota})` });
   }
   L.push({ hr: 1 }, { row: 1, left: 'SUBTOTAL', right: money(c.subtotal) });
@@ -272,6 +273,7 @@ function facturaHTML(c) {
   L.push({ hr: 1 });
   for (const it of c.items || []) {
     L.push({ row: 1, left: `${it.qty}x ${it.nombre}`, right: money(it.precio * it.qty) });
+    for (const m of it.modificadores || []) L.push({ text: `&nbsp;&nbsp;&nbsp;+ ${m}` });
   }
   L.push({ hr: 1 }, { row: 1, left: 'SUBTOTAL', right: money(c.subtotal) });
   if (c.descuento > 0) L.push({ row: 1, left: 'DESCUENTO', right: `-${money(c.descuento)}` });
