@@ -47,6 +47,11 @@ function buildDteLineItems(cart) {
       const px = Number(m.precio_extra) || 0
       if (px > 0) lines.push({ nombre: `  + ${m.nombre}`, precio: px, qty: it.qty })
     })
+    // Extras de los componentes del combo
+    ;(it.componentes || []).forEach(c => (c.modificadores || []).forEach(m => {
+      const px = Number(m.precio_extra) || 0
+      if (px > 0) lines.push({ nombre: `  + ${m.nombre}`, precio: px, qty: it.qty * (c.cantidad || 1) })
+    }))
   })
   return lines
 }
@@ -105,6 +110,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const [showNoteModal,     setShowNoteModal]      = useState(null)
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
+  const [comboPicker,       setComboPicker]        = useState(null)  // combo con componentes por armar
   const [showTransferModal, setShowTransferModal]  = useState(false)
   const [showSplitModal,    setShowSplitModal]     = useState(false)
   const [saving,            setSaving]             = useState(false)
@@ -165,6 +171,32 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       })
       Object.values(modMap).forEach(arr => arr.sort((a, b) => a.orden - b.orden))
 
+      // Componentes de combos + info de ítems (nombre, estación) del menú cargado
+      const { data: comboData } = await db
+        .from('pos_combo_componentes')
+        .select('combo_item_id, componente_item_id, cantidad, orden')
+
+      const itemInfo = {}
+      ;(menuData || []).forEach(m => (m.pos_menu_categorias || []).forEach(c => (c.pos_menu_items || []).forEach(i => {
+        itemInfo[i.id] = { nombre: i.nombre, estacion: i.estacion, precio: i.precio }
+      })))
+
+      const comboMap = {}  // combo_item_id -> [componentes]
+      ;(comboData || []).forEach(cc => {
+        const info = itemInfo[cc.componente_item_id]
+        if (!info) return
+        if (!comboMap[cc.combo_item_id]) comboMap[cc.combo_item_id] = []
+        comboMap[cc.combo_item_id].push({
+          item_id: cc.componente_item_id,
+          nombre: info.nombre,
+          estacion: info.estacion || 'general',
+          cantidad: cc.cantidad || 1,
+          orden: cc.orden || 0,
+          modGrupos: modMap[cc.componente_item_id] || [],
+        })
+      })
+      Object.values(comboMap).forEach(arr => arr.sort((a, b) => a.orden - b.orden))
+
       if (menuData) {
         const map = {}
         menuData.forEach(m => {
@@ -175,7 +207,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               items: (c.pos_menu_items || [])
                 .filter(i => i.disponible)
                 .sort((a, b) => a.orden - b.orden)
-                .map(i => ({ ...i, modGrupos: modMap[i.id] || [] })),
+                .map(i => ({ ...i, modGrupos: modMap[i.id] || [], componentes: comboMap[i.id] || [] })),
             }))
           map[m.canal] = { id: m.id, nombre: m.nombre, categorias: cats }
         })
@@ -196,7 +228,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       setLoadingCuenta(true)
       const { data: itemsData } = await db
         .from('pos_cuenta_items')
-        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores')
+        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes')
         .eq('cuenta_id', cuentaCtx.cuentaId)
         .is('cancelado_motivo', null)
         .order('created_at')
@@ -212,6 +244,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           saved:  true,
           modificadores: it.modificadores || [],
           precioExtra:   parseFloat(it.precio_modificadores) || 0,
+          componentes:   it.componentes || [],
+          esCombo:       Array.isArray(it.componentes) && it.componentes.length > 0,
         }))
         setItems(loaded)
         setCommandedCount(loaded.length)
@@ -274,11 +308,71 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     })
   }, [])
 
+  const addComboToCart = useCallback((combo, componentes, generalMods, precioExtra) => {
+    setItems(prev => [...prev, {
+      id:     combo.id,
+      nombre: combo.nombre,
+      precio: parseFloat(combo.precio),
+      qty:    1,
+      nota:   '',
+      saved:  false,
+      estacion: combo.estacion || 'general',
+      esCombo: true,
+      componentes,                 // [{item_id,nombre,estacion,cantidad,modificadores:[...]}]
+      modificadores: generalMods || [],
+      precioExtra: precioExtra || 0,
+    }])
+  }, [])
+
   const addItem = useCallback((product) => {
+    const esCombo = (product.componentes || []).length > 0
+    if (esCombo) {
+      const hayQuePedir = (product.modGrupos || []).length > 0 ||
+        (product.componentes || []).some(c => (c.modGrupos || []).length > 0)
+      if (hayQuePedir) { setComboPicker(product); return }
+      // Combo sin modificadores: se agrega con sus componentes fijos
+      addComboToCart(product, product.componentes.map(c => ({
+        item_id: c.item_id, nombre: c.nombre, estacion: c.estacion, cantidad: c.cantidad, modificadores: [],
+      })), [], 0)
+      return
+    }
     const grupos = product.modGrupos || []
     if (grupos.length === 0) { addItemToCart(product, [], 0); return }
     setModPicker(product)   // abre selector de modificadores
-  }, [addItemToCart])
+  }, [addItemToCart, addComboToCart])
+
+  // Filas para la cola de cocina: un combo se explota en una fila por componente (cada uno a su estación)
+  const buildQueueRows = (lista, insertedItems, cuentaId, prioridad) =>
+    lista.flatMap((it, idx) => {
+      const base = {
+        cuenta_id:      cuentaId,
+        cuenta_item_id: insertedItems?.[idx]?.id || null,
+        store_code:     storeCode,
+        canal:          tipo,
+        mesa_ref:       mesaActual,
+        estado:         'pendiente',
+        prioridad,
+        comanda_numero: comandaSeq,
+      }
+      if (it.esCombo && (it.componentes || []).length) {
+        return it.componentes.map(c => ({
+          ...base,
+          nombre_item:   c.nombre,
+          cantidad:      (c.cantidad || 1) * it.qty,
+          nota:          [`Combo: ${it.nombre}`, it.nota].filter(Boolean).join(' · ') || null,
+          modificadores: c.modificadores?.length ? c.modificadores : null,
+          estacion:      c.estacion || 'general',
+        }))
+      }
+      return [{
+        ...base,
+        nombre_item:   it.nombre,
+        cantidad:      it.qty,
+        nota:          it.nota || null,
+        modificadores: it.modificadores?.length ? it.modificadores : null,
+        estacion:      it.estacion || 'general',
+      }]
+    })
 
   const removeItem = useCallback((idx) => {
     setItems(prev => {
@@ -333,15 +427,18 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     mesero: user?.nombre || user?.name || null,
     cajero: user?.nombre || user?.name || null,
     comandaNumero: comandaSeq,
-    items: lista.map(i => ({
-      nombre: i.nombre,
-      precio: i.precio,
-      qty: i.qty,
-      nota: i.nota || null,
-      modificadores: (i.modificadores || []).map(m => Number(m.precio_extra) > 0
+    items: lista.map(i => {
+      const modStr = (mods) => (mods || []).map(m => Number(m.precio_extra) > 0
         ? `${m.nombre} (+$${Number(m.precio_extra).toFixed(2)})`
-        : m.nombre),
-    })),
+        : m.nombre)
+      const modificadores = [...modStr(i.modificadores)]
+      // Combo: lista cada componente y debajo sus modificadores
+      ;(i.componentes || []).forEach(c => {
+        modificadores.push(`${c.cantidad > 1 ? c.cantidad + 'x ' : ''}${c.nombre}:`)
+        modStr(c.modificadores).forEach(s => modificadores.push('   ' + s))
+      })
+      return { nombre: i.nombre, precio: i.precio, qty: i.qty, nota: i.nota || null, modificadores }
+    }),
     subtotal,
     descuento: descuentoMonto,
     total,
@@ -437,28 +534,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         notas:           it.nota || null,
         modificadores:   it.modificadores?.length ? it.modificadores : null,
         precio_modificadores: it.precioExtra || 0,
+        componentes:     it.componentes?.length ? it.componentes : null,
         comanda_numero:  comandaSeq,
         enviado_cocina_at: new Date().toISOString(),
       }))
       const { data: insertedItems, error: itemsErr } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
       if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
+      const prioridadComanda = tipo === 'pedidos_ya' ? 8 : tipo === 'drive_through' ? 7 : 5
       await db.from('pos_cocina_queue').insert(
-        newItems.map((it, idx) => ({
-          cuenta_id:      currentCuentaId,
-          cuenta_item_id: insertedItems?.[idx]?.id || null,
-          store_code:     storeCode,
-          canal:          tipo,
-          mesa_ref:       mesaActual,
-          nombre_item:    it.nombre,
-          cantidad:       it.qty,
-          nota:           it.nota || null,
-          modificadores:  it.modificadores?.length ? it.modificadores : null,
-          estacion:       it.estacion || 'general',
-          estado:         'pendiente',
-          prioridad:      tipo === 'pedidos_ya' ? 8 : tipo === 'drive_through' ? 7 : 5,
-          comanda_numero: comandaSeq,
-        }))
+        buildQueueRows(newItems, insertedItems, currentCuentaId, prioridadComanda)
       )
 
       // Imprime la comanda térmica con SOLO los ítems recién enviados a cocina
@@ -554,6 +639,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           notas:           it.nota || null,
           modificadores:   it.modificadores?.length ? it.modificadores : null,
           precio_modificadores: it.precioExtra || 0,
+          componentes:     it.componentes?.length ? it.componentes : null,
           comanda_numero:  comandaSeq,
           enviado_cocina_at: new Date().toISOString(),
         }))
@@ -561,21 +647,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
         await db.from('pos_cocina_queue').insert(
-          itemsToSave.map((it, idx) => ({
-            cuenta_id:      currentCuentaId,
-            cuenta_item_id: insertedItems?.[idx]?.id || null,
-            store_code:     storeCode,
-            canal:          tipo,
-            mesa_ref:       mesaActual,
-            nombre_item:    it.nombre,
-            cantidad:       it.qty,
-            nota:           it.nota || null,
-            modificadores:  it.modificadores?.length ? it.modificadores : null,
-            estacion:       it.estacion || 'general',
-            estado:         'pendiente',
-            prioridad:      5,
-            comanda_numero: comandaSeq,
-          }))
+          buildQueueRows(itemsToSave, insertedItems, currentCuentaId, 5)
         )
       }
 
@@ -846,6 +918,18 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                         ))}
                       </div>
                     )}
+                    {(item.componentes || []).length > 0 && (
+                      <div style={{ fontSize: 11, color: '#8b8997', lineHeight: 1.5 }}>
+                        {item.componentes.map((c, ci) => (
+                          <div key={ci}>
+                            <span style={{ color: '#b8b4c0' }}>{c.cantidad > 1 ? `${c.cantidad}× ` : ''}{c.nombre}</span>
+                            {(c.modificadores || []).map((m, mi) => (
+                              <div key={mi} style={{ paddingLeft: 10 }}>+ {m.nombre}{Number(m.precio_extra) > 0 ? ` ($${Number(m.precio_extra).toFixed(2)})` : ''}</div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {item.nota && (
                       <div className="pos-order-item-note" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="pencil" size={11} /> {item.nota}</div>
                     )}
@@ -987,6 +1071,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           product={modPicker}
           onConfirm={(mods, extra) => { addItemToCart(modPicker, mods, extra); setModPicker(null) }}
           onCancel={() => setModPicker(null)}
+        />
+      )}
+
+      {/* Modal: Armar combo (modificadores por componente) */}
+      {comboPicker && (
+        <ComboModal
+          combo={comboPicker}
+          onConfirm={(componentes, generalMods, extra) => { addComboToCart(comboPicker, componentes, generalMods, extra); setComboPicker(null) }}
+          onCancel={() => setComboPicker(null)}
         />
       )}
 
@@ -1154,6 +1247,167 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     </div>
   )
 }
+
+// ──────────────────────────────────────────────
+// ComboModal — arma un combo: modificadores por cada componente
+// ──────────────────────────────────────────────
+function ComboModal({ combo, onConfirm, onCancel }) {
+  const [sel, setSel] = useState({})   // "secKey:grupoId" -> [modId,...]
+
+  // Secciones con grupos por elegir: nivel combo (general) + cada componente
+  const secciones = []
+  if ((combo.modGrupos || []).length) secciones.push({ key: 'combo', titulo: 'General', grupos: combo.modGrupos })
+  ;(combo.componentes || []).forEach((c, i) => {
+    if ((c.modGrupos || []).length) secciones.push({ key: 'c' + i, titulo: c.nombre, grupos: c.modGrupos })
+  })
+
+  const toggle = (secKey, g, m) => {
+    const k = secKey + ':' + g.id
+    setSel(prev => {
+      const cur = prev[k] || []
+      if (g.tipo === 'unico') return { ...prev, [k]: [m.id] }
+      if (cur.includes(m.id)) return { ...prev, [k]: cur.filter(x => x !== m.id) }
+      if (g.max_selecciones > 0 && cur.length >= g.max_selecciones) return prev
+      return { ...prev, [k]: [...cur, m.id] }
+    })
+  }
+
+  const modsDe = (secKey, grupos) => {
+    const out = []
+    ;(grupos || []).forEach(g => (sel[secKey + ':' + g.id] || []).forEach(mid => {
+      const m = g.opciones.find(o => o.id === mid)
+      if (m) out.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
+    }))
+    return out
+  }
+
+  const componentesOut = (combo.componentes || []).map((c, i) => ({
+    item_id: c.item_id, nombre: c.nombre, estacion: c.estacion, cantidad: c.cantidad,
+    modificadores: modsDe('c' + i, c.modGrupos),
+  }))
+  const generalMods = modsDe('combo', combo.modGrupos)
+
+  let extra = 0
+  componentesOut.forEach((c) => c.modificadores.forEach(m => { extra += (m.precio_extra || 0) * (c.cantidad || 1) }))
+  generalMods.forEach(m => { extra += m.precio_extra || 0 })
+
+  const falta = secciones.find(sec => sec.grupos.some(g => {
+    const n = (sel[sec.key + ':' + g.id] || []).length
+    if (g.obligatorio && n < 1) return true
+    if (g.min_selecciones > 0 && n < g.min_selecciones) return true
+    return false
+  }))
+
+  const reqLabel = (g) => {
+    if (g.obligatorio || g.min_selecciones > 0) {
+      const min = Math.max(g.min_selecciones || 0, g.obligatorio ? 1 : 0)
+      return `Elige ${min}${g.max_selecciones > 0 && g.max_selecciones !== min ? `–${g.max_selecciones}` : ''}`
+    }
+    if (g.tipo === 'unico') return 'Elige 1 (opcional)'
+    return g.max_selecciones > 0 ? `Hasta ${g.max_selecciones} (opcional)` : 'Opcional'
+  }
+
+  return (
+    <div className="pos-modal-overlay" onClick={onCancel}>
+      <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, maxHeight: '85vh', overflowY: 'auto' }}>
+        <div className="pos-modal-title">{combo.nombre}</div>
+        <div className="pos-modal-sub" style={{ marginBottom: 8 }}>Arma el combo</div>
+
+        {/* Lista de componentes del combo (informativa) + sus grupos */}
+        {(combo.componentes || []).map((c, i) => {
+          const grupos = c.modGrupos || []
+          return (
+            <div key={i} style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: grupos.length ? 6 : 0 }}>
+                {c.cantidad > 1 ? `${c.cantidad}× ` : ''}{c.nombre}
+                {grupos.length === 0 && <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · incluido</span>}
+              </div>
+              {grupos.map(g => (
+                <div key={g.id} style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: '#b8b4c0' }}>{g.nombre}</span>
+                    <span style={{ fontSize: 11, color: '#8b8997' }}>{reqLabel(g)}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {g.opciones.map(m => {
+                      const on = (sel['c' + i + ':' + g.id] || []).includes(m.id)
+                      const px = Number(m.precio_extra) || 0
+                      return (
+                        <button key={m.id} onClick={() => toggle('c' + i, g, m)} style={comboOptStyle(on)}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 15 }}>{on ? (g.tipo === 'unico' ? '🔘' : '☑️') : (g.tipo === 'unico' ? '⚪' : '⬜')}</span>
+                            {m.nombre}
+                          </span>
+                          <span style={{ color: px > 0 ? '#2dd4a8' : '#8b8997', fontSize: 13, fontWeight: 600 }}>{px > 0 ? `+$${px.toFixed(2)}` : 'gratis'}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })}
+
+        {/* Grupos a nivel combo (si el combo tiene grupos propios) */}
+        {(combo.modGrupos || []).length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>General</div>
+            {combo.modGrupos.map(g => (
+              <div key={g.id} style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: '#b8b4c0' }}>{g.nombre}</span>
+                  <span style={{ fontSize: 11, color: '#8b8997' }}>{reqLabel(g)}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {g.opciones.map(m => {
+                    const on = (sel['combo:' + g.id] || []).includes(m.id)
+                    const px = Number(m.precio_extra) || 0
+                    return (
+                      <button key={m.id} onClick={() => toggle('combo', g, m)} style={comboOptStyle(on)}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 15 }}>{on ? (g.tipo === 'unico' ? '🔘' : '☑️') : (g.tipo === 'unico' ? '⚪' : '⬜')}</span>
+                          {m.nombre}
+                        </span>
+                        <span style={{ color: px > 0 ? '#2dd4a8' : '#8b8997', fontSize: 13, fontWeight: 600 }}>{px > 0 ? `+$${px.toFixed(2)}` : 'gratis'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 14px', fontSize: 14 }}>
+          <span style={{ color: '#8b8997' }}>Precio</span>
+          <span style={{ fontWeight: 700 }}>
+            ${(parseFloat(combo.precio) + extra).toFixed(2)}
+            {extra > 0 && <span style={{ color: '#8b8997', fontWeight: 400, fontSize: 12 }}> (base ${parseFloat(combo.precio).toFixed(2)} + ${extra.toFixed(2)})</span>}
+          </span>
+        </div>
+
+        <button
+          className="pos-confirmar-btn"
+          disabled={!!falta}
+          style={falta ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+          onClick={() => onConfirm(componentesOut, generalMods, extra)}
+        >
+          {falta ? `Falta elegir en: ${falta.titulo}` : 'Agregar combo'}
+        </button>
+        <button className="pos-cancelar-btn" onClick={onCancel}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+const comboOptStyle = (on) => ({
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  padding: '9px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+  border: `1px solid ${on ? '#2dd4a8' : '#2a2a32'}`,
+  background: on ? 'rgba(45,212,168,0.12)' : '#1c1c22',
+  color: '#e8e6ef', fontSize: 14,
+})
 
 // ──────────────────────────────────────────────
 // ModPickerModal — selección de modificadores al agregar un ítem
