@@ -437,11 +437,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         notas:           it.nota || null,
         modificadores:   it.modificadores?.length ? it.modificadores : null,
         precio_modificadores: it.precioExtra || 0,
-        subtotal:        (it.precio + (it.precioExtra || 0)) * it.qty,
         comanda_numero:  comandaSeq,
         enviado_cocina_at: new Date().toISOString(),
       }))
-      const { data: insertedItems } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
+      const { data: insertedItems, error: itemsErr } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
+      if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
       await db.from('pos_cocina_queue').insert(
         newItems.map((it, idx) => ({
@@ -554,11 +554,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           notas:           it.nota || null,
           modificadores:   it.modificadores?.length ? it.modificadores : null,
           precio_modificadores: it.precioExtra || 0,
-          subtotal:        (it.precio + (it.precioExtra || 0)) * it.qty,
           comanda_numero:  comandaSeq,
           enviado_cocina_at: new Date().toISOString(),
         }))
-        const { data: insertedItems } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
+        const { data: insertedItems, error: itemsErr } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
+        if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
         await db.from('pos_cocina_queue').insert(
           itemsToSave.map((it, idx) => ({
