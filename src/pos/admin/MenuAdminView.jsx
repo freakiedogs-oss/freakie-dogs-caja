@@ -9,6 +9,9 @@ const C = {
   muted: '#8b8997', border: '#2a2a32', danger: '#f87171',
 }
 
+/* tipo permitido en DB: 'unico' | 'multiple' */
+const TIPO_LABEL = { unico: 'Uno solo', multiple: 'Varios' }
+
 const TABS = [
   { key: 'categorias', label: '📂 Categorías' },
   { key: 'items',      label: 'Ítems' },
@@ -508,7 +511,7 @@ function GruposTab() {
   useEffect(() => { load() }, [load])
 
   const handleSaveGrupo = async (g) => {
-    const payload = { nombre: g.nombre, tipo: g.tipo || 'checkbox', obligatorio: g.obligatorio ?? false, min_selecciones: parseInt(g.min_selecciones) || 0, max_selecciones: parseInt(g.max_selecciones) || 0, orden: g.orden ?? grupos.length, activo: g.activo ?? true }
+    const payload = { nombre: g.nombre, tipo: g.tipo || 'multiple', obligatorio: g.obligatorio ?? false, min_selecciones: parseInt(g.min_selecciones) || 0, max_selecciones: parseInt(g.max_selecciones) || 0, orden: g.orden ?? grupos.length, activo: g.activo ?? true }
     if (g.id) {
       const { error } = await db.from('pos_modificadores_grupo').update(payload).eq('id', g.id)
       if (error) { toast('Error: ' + error.message, false); return }
@@ -582,7 +585,7 @@ function GruposTab() {
                   <div style={{ fontWeight: 600, fontSize: 14 }}>
                     {g.nombre}
                     <span style={{ fontSize: 11, color: C.muted, marginLeft: 8 }}>
-                      {g.tipo} · {g.obligatorio ? 'Obligatorio' : 'Opcional'}
+                      {TIPO_LABEL[g.tipo] || g.tipo} · {g.obligatorio ? 'Obligatorio' : 'Opcional'}
                       {g.max_selecciones > 0 && ` · Max ${g.max_selecciones}`}
                     </span>
                   </div>
@@ -615,7 +618,7 @@ function GruposTab() {
 
 function GrupoForm({ grupo, onSave, onCancel }) {
   const [f, setF] = useState({
-    nombre: grupo.nombre || '', tipo: grupo.tipo || 'checkbox',
+    nombre: grupo.nombre || '', tipo: grupo.tipo || 'multiple',
     obligatorio: grupo.obligatorio ?? false,
     min_selecciones: grupo.min_selecciones ?? 0, max_selecciones: grupo.max_selecciones ?? 0,
     orden: grupo.orden ?? 0, activo: grupo.activo ?? true,
@@ -632,8 +635,8 @@ function GrupoForm({ grupo, onSave, onCancel }) {
         <div>
           <label style={labelStyle}>Tipo</label>
           <select value={f.tipo} onChange={e => upd('tipo', e.target.value)} style={inputStyle}>
-            <option value="radio">Radio (uno solo)</option>
-            <option value="checkbox">Checkbox (varios)</option>
+            <option value="unico">Uno solo (radio)</option>
+            <option value="multiple">Varios (checkbox)</option>
           </select>
         </div>
         <div>
@@ -678,7 +681,7 @@ function ModsEditor({ grupo, onSaveMod, onDeleteMod, onBack }) {
     <div style={{ maxWidth: 560 }}>
       <button onClick={onBack} style={{ ...smallBtn, marginBottom: 16 }}>← Volver a grupos</button>
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Opciones de: {grupo.nombre}</div>
-      <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>{grupo.tipo} · {grupo.obligatorio ? 'Obligatorio' : 'Opcional'}</div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>{TIPO_LABEL[grupo.tipo] || grupo.tipo} · {grupo.obligatorio ? 'Obligatorio' : 'Opcional'}</div>
 
       {/* Existing mods */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
