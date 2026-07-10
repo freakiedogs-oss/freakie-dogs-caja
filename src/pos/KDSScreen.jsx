@@ -74,20 +74,42 @@ function Clock() {
   return <span className="pos-header-clock">{t}</span>
 }
 
-// Beep de alerta para nuevas órdenes
+// Beep de alerta para nuevas órdenes.
+// Contexto de audio persistente; se "desbloquea"/reanuda con cualquier interacción
+// del usuario (política de autoplay del navegador).
+let _audioCtx = null
+function getAudioCtx() {
+  if (typeof window === 'undefined') return null
+  if (!_audioCtx) {
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)() } catch { return null }
+  }
+  if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {})
+  return _audioCtx
+}
+
+function _tone(ctx, freq, start, dur) {
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.connect(gain); gain.connect(ctx.destination)
+  osc.type = 'triangle'
+  const t = ctx.currentTime + start
+  osc.frequency.setValueAtTime(freq, t)
+  gain.gain.setValueAtTime(0.0001, t)
+  gain.gain.exponentialRampToValueAtTime(0.6, t + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  osc.start(t)
+  osc.stop(t + dur + 0.03)
+}
+
+// Campanita "ding-dong" repetida para llamar la atención en cocina
 function playBeep() {
+  const ctx = getAudioCtx()
+  if (!ctx) return
   try {
-    const ctx  = new (window.AudioContext || window.webkitAudioContext)()
-    const osc  = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type      = 'sine'
-    osc.frequency.setValueAtTime(880, ctx.currentTime)
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.4)
+    _tone(ctx, 988, 0.00, 0.18)   // B5
+    _tone(ctx, 1319, 0.20, 0.32)  // E6
+    _tone(ctx, 988, 0.58, 0.18)
+    _tone(ctx, 1319, 0.78, 0.34)
   } catch (_) {}
 }
 
@@ -108,8 +130,20 @@ export default function KDSScreen({ user, onBack }) {
   const [bumping,     setBumping]     = useState(null)       // cuenta_id+comanda en proceso
   const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial'
   const [reverting,   setReverting]   = useState(null)       // id de item en revert
-  const prevCount = useRef(0)
+  const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
   useTimer()  // fuerza re-render cada 10s para actualizar timers
+
+  // Desbloquear/reanudar audio con la primera interacción (autoplay policy)
+  useEffect(() => {
+    const unlock = () => getAudioCtx()
+    unlock()  // intento al montar (venimos de un clic de navegación)
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
 
   // ── Carga ──
   const load = useCallback(async () => {
@@ -121,9 +155,10 @@ export default function KDSScreen({ user, onBack }) {
       .order('recibido_at', { ascending: true })
 
     const rows = data || []
-    // Detectar nuevas órdenes para beep
-    if (rows.length > prevCount.current && prevCount.current > 0) playBeep()
-    prevCount.current = rows.length
+    // Beep si aparece alguna fila NUEVA (id no visto antes). La 1ª carga no suena.
+    const ids = new Set(rows.map(r => r.id))
+    if (prevIds.current && rows.some(r => !prevIds.current.has(r.id))) playBeep()
+    prevIds.current = ids
     setQueue(rows)
     setLoading(false)
   }, [storeCode])
