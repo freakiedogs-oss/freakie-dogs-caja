@@ -283,6 +283,8 @@ function ItemsTab({ menuId }) {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [editItem, setEditItem] = useState(null)
+  const [editCombo, setEditCombo] = useState(null)   // ítem cuyos componentes se editan
+  const [compCount, setCompCount] = useState({})      // combo_item_id -> nº componentes
 
   const load = useCallback(async () => {
     const [{ data: itemsData }, { data: catsData }] = await Promise.all([
@@ -291,6 +293,14 @@ function ItemsTab({ menuId }) {
     ])
     setItems(itemsData || [])
     setCats(catsData || [])
+    // Conteo de componentes por combo (solo de este menú)
+    const ids = (itemsData || []).map(i => i.id)
+    const cc = {}
+    if (ids.length) {
+      const { data: comps } = await db.from('pos_combo_componentes').select('combo_item_id').in('combo_item_id', ids)
+      ;(comps || []).forEach(r => { cc[r.combo_item_id] = (cc[r.combo_item_id] || 0) + 1 })
+    }
+    setCompCount(cc)
     setLoading(false)
   }, [menuId])
 
@@ -345,6 +355,10 @@ function ItemsTab({ menuId }) {
     return <ItemForm item={editItem} cats={cats} onSave={handleSave} onCancel={() => setEditItem(null)} />
   }
 
+  if (editCombo !== null) {
+    return <ComboComponentsEditor combo={editCombo} allItems={items} onBack={() => { setEditCombo(null); load() }} />
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -369,6 +383,7 @@ function ItemsTab({ menuId }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
         {filtered.map(item => {
           const cat = cats.find(c => c.id === item.categoria_id)
+          const esCombo = /combo/i.test(cat?.nombre || '')
           return (
             <div key={item.id} style={{
               background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12,
@@ -391,6 +406,11 @@ function ItemsTab({ menuId }) {
                   {item.disponible ? 'Disponible' : 'No disponible'}
                 </button>
                 <button onClick={() => setEditItem(item)} style={smallBtn}><Icon name="pencil" size={14} /></button>
+                {esCombo && (
+                  <button onClick={() => setEditCombo(item)} style={{ ...smallBtn, color: compCount[item.id] ? C.teal : C.muted, fontSize: 11 }} title="Componentes del combo">
+                    🍔 Componentes{compCount[item.id] ? ` (${compCount[item.id]})` : ''}
+                  </button>
+                )}
                 <button onClick={() => handleDelete(item.id)} style={{ ...smallBtn, color: C.danger }}><Icon name="trash" size={14} /></button>
               </div>
             </div>
@@ -485,6 +505,91 @@ function ItemForm({ item, cats, onSave, onCancel }) {
       <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
         <button onClick={() => onSave({ ...item, ...f })} disabled={!f.nombre.trim() || !f.precio} style={btnStyle(C.teal, '#0d2818')}>💾 Guardar</button>
         <button onClick={onCancel} style={btnStyle(C.border, C.muted)}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+/* ================================================================
+   ComboComponentsEditor — define los ítems que forman un combo
+   ================================================================ */
+function ComboComponentsEditor({ combo, allItems, onBack }) {
+  const [comps, setComps] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [addId, setAddId] = useState('')
+  const [addQty, setAddQty] = useState(1)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await db.from('pos_combo_componentes')
+      .select('id, cantidad, orden, componente_item_id')
+      .eq('combo_item_id', combo.id).order('orden')
+    setComps(data || [])
+    setLoading(false)
+  }, [combo.id])
+  useEffect(() => { load() }, [load])
+
+  const nombreDe = (id) => allItems.find(i => i.id === id)?.nombre || '(ítem eliminado)'
+  const estacionDe = (id) => allItems.find(i => i.id === id)?.estacion || null
+
+  const yaIds = new Set(comps.map(c => c.componente_item_id))
+  const candidatos = allItems
+    .filter(i => i.id !== combo.id && !yaIds.has(i.id))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+
+  const addComp = async () => {
+    if (!addId) return
+    const { error } = await db.from('pos_combo_componentes').insert([{
+      combo_item_id: combo.id, componente_item_id: addId, cantidad: parseInt(addQty) || 1, orden: comps.length,
+    }])
+    if (error) { toast('Error: ' + error.message, false); return }
+    setAddId(''); setAddQty(1); load()
+  }
+  const delComp = async (id) => {
+    await db.from('pos_combo_componentes').delete().eq('id', id)
+    toast('Componente quitado'); load()
+  }
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><div className="spin" style={{ width: 24, height: 24, margin: '0 auto' }} /></div>
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <button onClick={onBack} style={{ ...smallBtn, marginBottom: 16 }}>← Volver a ítems</button>
+      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Componentes de: {combo.nombre}</div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
+        Los ítems que forman el combo. Cada uno lleva sus propios modificadores (los grupos que le asignes en "Asignar a Ítems") y se mostrará por separado en cocina.
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
+        {comps.map(c => (
+          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px' }}>
+            <span style={{ fontWeight: 700, color: C.teal, minWidth: 28 }}>{c.cantidad}×</span>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontWeight: 600 }}>{nombreDe(c.componente_item_id)}</span>
+              {estacionDe(c.componente_item_id) && <span style={{ color: C.muted, fontSize: 11, marginLeft: 6 }}>🔧 {estacionDe(c.componente_item_id)}</span>}
+            </div>
+            <button onClick={() => delComp(c.id)} style={{ ...smallBtn, color: C.danger }}>✕</button>
+          </div>
+        ))}
+        {comps.length === 0 && <div style={{ color: C.muted, textAlign: 'center', padding: 16 }}>Sin componentes. Agrega los ítems que forman este combo abajo.</div>}
+      </div>
+
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Agregar componente</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 8 }}>
+          <div>
+            <label style={labelStyle}>Ítem</label>
+            <select value={addId} onChange={e => setAddId(e.target.value)} style={inputStyle}>
+              <option value="">— Elegir ítem —</option>
+              {candidatos.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Cantidad</label>
+            <input type="number" min="1" value={addQty} onChange={e => setAddQty(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+        <button disabled={!addId} onClick={addComp} style={{ ...btnStyle(C.teal, '#0d2818'), marginTop: 10, width: '100%', opacity: addId ? 1 : 0.5 }}>+ Agregar</button>
       </div>
     </div>
   )
