@@ -13,6 +13,7 @@ const TIPO = {
   drive_through:   { ic: 'car',      l: 'Drive Thru',  c: '#fbbf24' },
 }
 const ESTADO_ACTIVO = ['abierta', 'enviada_cocina', 'en_preparacion', 'lista', 'entregada']
+const ROLES_CANCELAR = ['cajero', 'cajera', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 
 function elapsed(iso) {
   if (!iso) return ''
@@ -42,6 +43,27 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
   }, [storeCode])
 
   useEffect(() => { if (tab === 'activas') loadActivas() }, [tab, loadActivas])
+
+  const canCancel = ROLES_CANCELAR.includes(user?.rol)
+
+  const handleCancelar = async (c, e) => {
+    e.stopPropagation()
+    const items = c.pos_cuenta_items?.length || 0
+    const label = c.mesa_ref ? `Mesa #${c.mesa_ref}` : (TIPO[c.tipo]?.l || c.tipo)
+    const motivo = window.prompt(`Cancelar orden ${label} (${items} ítem${items !== 1 ? 's' : ''}). Escribe el motivo:`, '')
+    if (motivo === null) return   // canceló el prompt
+    // Limpia la cola de cocina pendiente de esta orden
+    await db.from('pos_cocina_queue').delete().eq('cuenta_id', c.id).in('estado', ['pendiente', 'en_preparacion'])
+    // Nunca cancela una cuenta ya cobrada (para eso está la anulación/NC)
+    const { error } = await db.from('pos_cuentas').update({
+      estado: 'cancelada',
+      cancelada_motivo: motivo.trim() || 'Sin motivo',
+      cancelada_por: user.id,
+      updated_at: new Date().toISOString(),
+    }).eq('id', c.id).neq('estado', 'cobrada')
+    if (error) { window.alert('Error al cancelar: ' + error.message); return }
+    loadActivas()
+  }
 
   useEffect(() => {
     const sub = db.channel('ordenes_view_rt')
@@ -103,10 +125,12 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
                 const info  = TIPO[c.tipo] || { ic: 'bag', l: c.tipo, c: '#9a9088' }
                 const items = c.pos_cuenta_items?.length || 0
                 return (
-                  <button
+                  <div
                     key={c.id}
                     className="poshome-cuenta-row"
-                    style={{ borderLeftColor: info.c }}
+                    role="button"
+                    tabIndex={0}
+                    style={{ borderLeftColor: info.c, cursor: 'pointer' }}
                     onClick={() => onOpenOrder({ tipo: c.tipo, mesa_ref: c.mesa_ref || null, mesa_id: null, cuentaId: c.id })}
                   >
                     <span className="poshome-cuenta-icon"><Icon name={info.ic} size={20} color={info.c} /></span>
@@ -126,8 +150,21 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
                         : c.estado === 'entregada'   ? 'Entregada'
                         : 'Abierta'}
                     </span>
+                    {canCancel && (
+                      <button
+                        onClick={(e) => handleCancelar(c, e)}
+                        title="Cancelar orden (antes de cobrar)"
+                        style={{
+                          background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.35)',
+                          color: '#f87171', borderRadius: 8, padding: '6px 9px', cursor: 'pointer',
+                          fontSize: 13, lineHeight: 1, marginLeft: 4, flexShrink: 0,
+                        }}
+                      >
+                        <Icon name="trash" size={15} />
+                      </button>
+                    )}
                     <span className="poshome-cuenta-arrow">→</span>
-                  </button>
+                  </div>
                 )
               })}
             </div>
