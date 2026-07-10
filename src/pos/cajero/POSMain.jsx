@@ -349,6 +349,29 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   })
 
   // ── PRE-CUENTA (impresión térmica centralizada) ──
+  // Al salir: si la cuenta quedó sin ítems activos, cancelarla para no dejar órdenes vacías
+  const handleBack = async () => {
+    try {
+      if (cuentaId) {
+        const { count } = await db
+          .from('pos_cuenta_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('cuenta_id', cuentaId)
+          .is('cancelado_motivo', null)
+        if ((count || 0) === 0) {
+          await db.from('pos_cocina_queue').delete().eq('cuenta_id', cuentaId).in('estado', ['pendiente', 'en_preparacion'])
+          await db.from('pos_cuentas')
+            .update({ estado: 'cancelada', cancelada_motivo: 'Orden vacía al salir', updated_at: new Date().toISOString() })
+            .eq('id', cuentaId)
+            .neq('estado', 'cobrada')
+        }
+      }
+    } catch (e) {
+      console.error('No se pudo auto-cancelar orden vacía:', e)
+    }
+    onBack()
+  }
+
   const handlePreCuenta = async () => {
     if (items.length === 0) return
     try {
@@ -676,7 +699,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
 
       {/* ── HEADER ── */}
       <header className="pos-header">
-        <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
+        <button className="pos-header-btn" onClick={handleBack}>← Inicio</button>
         <img src="/icon-192.png" alt="Freakie Dogs" className="pos-header-logo" />
         <span className="pos-header-store">{storeName}</span>
 
