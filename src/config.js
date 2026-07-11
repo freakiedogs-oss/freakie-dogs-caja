@@ -77,6 +77,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Dashboards',
     items: [
+      { key: 'ventas-freakies', label: 'Ventas Freakies', icon: '🐕', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'kpis-venta', label: 'KPIs de Venta', icon: '📊', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'inventario-dash', label: 'Inventario Global', icon: '📦', roles: ['ejecutivo', 'admin'] },
       { key: 'kpi-delivery', label: 'KPI Delivery Propio', icon: '🛵', roles: ['superadmin'] },
