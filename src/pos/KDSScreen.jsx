@@ -473,18 +473,22 @@ export default function KDSScreen({ user, onBack }) {
                             onClick={() => toggleItem(item.id, item.estado)}
                             title="Toca para cambiar estado"
                           >
-                            <span className="kds-item-status">
-                              {done ? <Icon name="check" size={14} color="#2dd4a8" /> : inProg ? <Icon name="rotate" size={14} color="#fbbf24" /> : <Icon name="circle" size={12} color="#6b6878" />}
+                            <span className="kds-item-main">
+                              <span className="kds-item-status">
+                                {done ? <Icon name="check" size={14} color="#2dd4a8" /> : inProg ? <Icon name="rotate" size={14} color="#fbbf24" /> : <Icon name="circle" size={12} color="#6b6878" />}
+                              </span>
+                              <span className="kds-item-qty">{item.cantidad || 1}×</span>
+                              <span className="kds-item-name">{item.nombre_item}</span>
                             </span>
-                            <span className="kds-item-qty">{item.cantidad || 1}×</span>
-                            <span className="kds-item-name">{item.nombre_item}</span>
                             {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (
-                              <span className="kds-item-nota" style={{ color: '#2dd4a8' }}>
-                                {item.modificadores.map(m => `+ ${m.nombre}${Number(m.precio_extra) > 0 ? ` ($${Number(m.precio_extra).toFixed(2)})` : ''}`).join('  ')}
+                              <span className="kds-item-mods">
+                                {item.modificadores.map((m, mi) => (
+                                  <span key={mi} className="kds-mod-chip">+ {m.nombre}{Number(m.precio_extra) > 0 ? <span className="kds-mod-price"> ${Number(m.precio_extra).toFixed(2)}</span> : null}</span>
+                                ))}
                               </span>
                             )}
                             {item.nota && (
-                              <span className="kds-item-nota">📝 {item.nota}</span>
+                              <span className="kds-item-notarow">📝 {item.nota}</span>
                             )}
                           </button>
                         )
@@ -589,16 +593,20 @@ export default function KDSScreen({ user, onBack }) {
                             className="kds-item done"
                             style={{ opacity: 0.8 }}
                           >
-                            <span className="kds-item-status"><Icon name="check" size={13} color="#2dd4a8" /></span>
-                            <span className="kds-item-qty">{item.cantidad || 1}×</span>
-                            <span className="kds-item-name">{item.nombre_item}</span>
+                            <span className="kds-item-main">
+                              <span className="kds-item-status"><Icon name="check" size={13} color="#2dd4a8" /></span>
+                              <span className="kds-item-qty">{item.cantidad || 1}×</span>
+                              <span className="kds-item-name">{item.nombre_item}</span>
+                            </span>
                             {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (
-                              <span className="kds-item-nota" style={{ color: '#2dd4a8' }}>
-                                {item.modificadores.map(m => `+ ${m.nombre}${Number(m.precio_extra) > 0 ? ` ($${Number(m.precio_extra).toFixed(2)})` : ''}`).join('  ')}
+                              <span className="kds-item-mods">
+                                {item.modificadores.map((m, mi) => (
+                                  <span key={mi} className="kds-mod-chip">+ {m.nombre}{Number(m.precio_extra) > 0 ? <span className="kds-mod-price"> ${Number(m.precio_extra).toFixed(2)}</span> : null}</span>
+                                ))}
                               </span>
                             )}
                             {item.nota && (
-                              <span className="kds-item-nota">📝 {item.nota}</span>
+                              <span className="kds-item-notarow">📝 {item.nota}</span>
                             )}
                           </div>
                         ))}
