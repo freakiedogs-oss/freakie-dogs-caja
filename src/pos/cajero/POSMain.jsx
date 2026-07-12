@@ -676,6 +676,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             receptor: paymentData.cliente || null,
             metodo:   paymentData.metodo,
             storeCode: storeCode,
+            propina:  paymentData.propina || 0, // no gravada (no IVA) -> linea noGravado en el DTE
           })
 
           // 5. Guardar resultado DTE en la cuenta

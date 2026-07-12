@@ -98,13 +98,15 @@ function buildDteItems(items, tipoDte) {
  * Emitir Factura Consumidor Final (tipo 01)
  * Receptor es opcional para Factura.
  */
-export async function emitFactura({ items, receptor, metodo, storeCode }) {
+export async function emitFactura({ items, receptor, metodo, storeCode, propina }) {
+  const propinaNG = Math.round((Number(propina) || 0) * 100) / 100 // no gravada (no IVA — Art. 49 Ley IVA SV)
   const totalPagar = items.reduce((s, it) => s + (it.precio * it.qty), 0)
   const _est = STORE_ESTABLECIMIENTO[storeCode]
   const body = {
     items: buildDteItems(items, 'factura'),
     condicionOperacion: 1, // contado
-    pagos: [{ codigo: mapFormaPago(metodo), montoPago: Math.round(totalPagar * 100) / 100, referencia: null, plazo: null, periodo: null }],
+    ...(propinaNG > 0 ? { propina: propinaNG } : {}),
+    pagos: [{ codigo: mapFormaPago(metodo), montoPago: Math.round((totalPagar + propinaNG) * 100) / 100, referencia: null, plazo: null, periodo: null }],
     ...(_est ? { codEstable: _est.codEstable, codPuntoVenta: _est.codPuntoVenta } : {}),
   }
 
@@ -126,15 +128,17 @@ export async function emitFactura({ items, receptor, metodo, storeCode }) {
  * Emitir Comprobante de Crédito Fiscal (tipo 03)
  * Receptor OBLIGATORIO: nit, nrc, nombre, codActividad, descActividad, dirección
  */
-export async function emitCCF({ items, receptor, metodo }) {
+export async function emitCCF({ items, receptor, metodo, propina }) {
   if (!receptor?.nit || !receptor?.nrc || !receptor?.nombre) {
     throw new Error('CCF requiere datos del cliente: NIT, NRC y nombre')
   }
+  const propinaNG = Math.round((Number(propina) || 0) * 100) / 100 // no gravada (no IVA — Art. 49 Ley IVA SV)
 
   const body = {
     items: buildDteItems(items, 'ccf'),
     formaPago: mapFormaPago(metodo),
     condicionOperacion: 1,
+    ...(propinaNG > 0 ? { propina: propinaNG } : {}),
     receptor: {
       nit: receptor.nit.replace(/[-\s]/g, ''),
       nrc: receptor.nrc.replace(/[-\s]/g, ''),
@@ -156,7 +160,7 @@ export async function emitCCF({ items, receptor, metodo }) {
   const totalCCF = items.reduce((s, it) => s + (it.precio / 1.13 * it.qty), 0)
   const ivaCCF = Math.round(totalCCF * 0.13 * 100) / 100
   const totalPagarCCF = Math.round((totalCCF + ivaCCF) * 100) / 100
-  body.pagos = [{ codigo: mapFormaPago(metodo), montoPago: totalPagarCCF, referencia: null, plazo: null, periodo: null }]
+  body.pagos = [{ codigo: mapFormaPago(metodo), montoPago: Math.round((totalPagarCCF + propinaNG) * 100) / 100, referencia: null, plazo: null, periodo: null }]
 
   return callProxy('emit-ccf', body)
 }
@@ -201,9 +205,9 @@ export async function emitSujetoExcluido({ items, receptor, metodo }) {
  * Emitir DTE según tipo
  * @returns {Object} { success, document_id, codigo_generacion, numero_control, estado, sello_recepcion, monto_total, monto_iva }
  */
-export async function emitDTE({ tipoDte, items, receptor, metodo, storeCode }) {
-  if (tipoDte === 'factura') return emitFactura({ items, receptor, metodo, storeCode })
-  if (tipoDte === 'ccf')     return emitCCF({ items, receptor, metodo })
+export async function emitDTE({ tipoDte, items, receptor, metodo, storeCode, propina }) {
+  if (tipoDte === 'factura') return emitFactura({ items, receptor, metodo, storeCode, propina })
+  if (tipoDte === 'ccf')     return emitCCF({ items, receptor, metodo, propina })
   if (tipoDte === 'se')      return emitSujetoExcluido({ items, receptor, metodo })
   // 'ticket' = sin DTE fiscal
   return null
