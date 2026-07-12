@@ -334,6 +334,17 @@ export default function VentasFreakies({ user, onBack }) {
     return { pos, quanto: q, total: pos + q };
   }, [ventas]);
 
+  const porSucursal = useMemo(() => {
+    const acc = {};
+    for (const v of ventas) {
+      if (!acc[v.store]) acc[v.store] = { store: v.store, total: 0, canales: {} };
+      const k = CH_LABEL[v.canal] ? v.canal : 'otro';
+      acc[v.store].canales[k] = (acc[v.store].canales[k] || 0) + v.venta;
+      acc[v.store].total += v.venta;
+    }
+    return Object.values(acc).sort((a, b) => b.total - a.total);
+  }, [ventas]);
+
   const rangoDias = diasEntre(desde, hasta);
 
   // Nota de fuente para la selección actual
@@ -410,6 +421,53 @@ export default function VentasFreakies({ user, onBack }) {
             <KPI label="Descuentos" value={fmtUSD(kpis.descuentos)} />
             <KPI label="IVA" value={fmtUSD(kpis.iva)} />
           </div>
+
+          {/* Ventas por sucursal — composición por canal */}
+          <Card title="Ventas por sucursal · cómo se construye la venta">
+            {porSucursal.length ? (() => {
+              const maxTot = Math.max(...porSucursal.map((s) => s.total), 1);
+              const chPres = CH_ORDER.filter((k) => porSucursal.some((s) => (s.canales[k] || 0) > 0.005));
+              return (
+                <div>
+                  {/* Leyenda de canales */}
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {chPres.map((k) => (
+                      <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.muted2 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 2, background: CH_COLOR[k] }} />{CH_LABEL[k]}
+                      </span>
+                    ))}
+                  </div>
+                  {/* Barras apiladas por sucursal */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {porSucursal.map((s) => (
+                      <div key={s.store}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                          <span style={{ fontWeight: 600 }}>{s.store} · {nombreSuc(s.store)}</span>
+                          <b>{fmtUSD(s.total)}</b>
+                        </div>
+                        <div style={{ display: 'flex', width: `${s.total / maxTot * 100}%`, minWidth: 3, height: 24, borderRadius: 5, overflow: 'hidden', background: '#161616', border: '1px solid #ffffff10' }}>
+                          {chPres.map((k) => {
+                            const val = s.canales[k] || 0; if (val <= 0.005) return null;
+                            const segPct = s.total ? val / s.total * 100 : 0;
+                            return (
+                              <div key={k} title={`${CH_LABEL[k]}: ${fmtUSD(val)} · ${segPct.toFixed(1)}%`}
+                                style={{ width: `${segPct}%`, background: CH_COLOR[k], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, color: '#0a0a0a', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                                {segPct >= 12 ? `${Math.round(segPct)}%` : ''}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: C.muted, marginTop: 12, lineHeight: 1.5 }}>
+                    El ancho de cada barra = venta total de la sucursal (relativo a la mayor). Cada color es un canal
+                    y el % dentro del segmento es su peso en esa sucursal. Pasá el mouse para ver el monto exacto por canal.
+                  </div>
+                </div>
+              );
+            })() : <Empty />}
+          </Card>
 
           {/* Venta por hora */}
           <Card title="Venta total por hora">
