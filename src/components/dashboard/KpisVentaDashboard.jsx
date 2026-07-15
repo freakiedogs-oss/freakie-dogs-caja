@@ -9,7 +9,7 @@ const fmtN = (v) => v == null ? '—' : Number(v).toLocaleString('en-US');
 const fmtPct = (v) => v == null ? '—' : Number(v).toFixed(1) + '%';
 
 const ROLES_PERMITIDOS = ['admin', 'superadmin', 'ejecutivo', 'gerente'];
-const STORES_ACTIVAS = ['M001', 'S001', 'S002', 'S003', 'S004'];
+const STORES_ACTIVAS = ['M001', 'S001', 'S002', 'S003', 'S004', 'S006'];
 
 const CH_COLOR = {
   mesa: '#f59e0b',

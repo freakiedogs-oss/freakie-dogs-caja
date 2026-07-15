@@ -131,8 +131,8 @@ const HIST_SUCURSAL = {
   'Venecia Soyapango':  [0, 0, 0, 0, 28857.22],
 }
 
-const STORE_MAP = { M001: 'Santa Tecla', S001: 'PM Soyapango', S002: 'PM Usulután', S003: 'Gran Plaza Lourdes', S004: 'Venecia Soyapango' }
-const STORE_COLORS = { M001: '#e63946', S001: '#3b82f6', S002: '#f4a261', S003: '#4ade80', S004: '#a78bfa' }
+const STORE_MAP = { M001: 'Santa Tecla', S001: 'PM Soyapango', S002: 'PM Usulután', S003: 'Gran Plaza Lourdes', S004: 'Venecia Soyapango', S006: 'Metro Centro' }
+const STORE_COLORS = { M001: '#e63946', S001: '#3b82f6', S002: '#f4a261', S003: '#4ade80', S004: '#a78bfa', S006: '#f59e0b' }
 
 // ── Provider classification — loaded from catalogo_contable table ──
 // Fallback hardcoded map (used if DB fetch fails)
@@ -384,6 +384,7 @@ export default function FinanzasDashboard({ user }) {
       // Separar ventas Quanto y PeYa desde la matview
       const ventasQuantoMV = ventasMV.filter(v => v.fuente === 'quanto')
       const ventaspeyaMV   = ventasMV.filter(v => v.fuente === 'peya')
+      const ventasPosMV    = ventasMV.filter(v => v.fuente === 'pos')
 
       // Adaptar ventaspeya al shape que espera TabPeya y TabLiquidez:
       // { fecha, store_code, total } — granularidad mensual (suficiente para graficas)
@@ -391,6 +392,15 @@ export default function FinanzasDashboard({ user }) {
         fecha: v.mes,
         store_code: v.store_code === '_TODAS' ? null : v.store_code,
         total: parseFloat(v.total_ventas) || 0,
+        total_ventas: parseFloat(v.total_ventas) || 0,
+        total_sin_iva: parseFloat(v.total_sin_iva) || 0,
+      }))
+      // POS propio (S006) — fuente propia, paralela a Quanto/PeYa
+      const ventaspos = ventasPosMV.map(v => ({
+        fecha: v.mes,
+        store_code: v.store_code === '_TODAS' ? null : v.store_code,
+        total_ventas: parseFloat(v.total_ventas) || 0,
+        total_sin_iva: parseFloat(v.total_sin_iva) || 0,
       }))
 
       // Adaptar ventas Quanto al shape que espera months2026 useMemo
@@ -437,6 +447,7 @@ export default function FinanzasDashboard({ user }) {
         catalogo: catData || [],
         dhDtes,
         ventaspeya,
+        ventaspos,
         peya_liq,
         peyaOrders,
         movsSocios,
@@ -517,6 +528,18 @@ export default function FinanzasDashboard({ user }) {
       const totalAdj = conIva ? total : total / 1.13
       monthMap[m].ventas += totalAdj
     })
+    // POS propio (S006): sumar al total del mes (ya trae total_sin_iva)
+    const posVentasByMonth = {}
+    ;(data2026.ventaspos || []).forEach(v => {
+      const m = v.fecha?.substring(0, 7)
+      if (!m) return
+      const val = conIva ? (parseFloat(v.total_ventas) || 0) : (parseFloat(v.total_sin_iva) || 0)
+      posVentasByMonth[m] = (posVentasByMonth[m] || 0) + val
+    })
+    Object.entries(posVentasByMonth).forEach(([m, total]) => {
+      if (!monthMap[m]) monthMap[m] = initMonth()
+      monthMap[m].ventas += total
+    })
     // Acumular subcategorías de venta por mes
     Object.keys(monthMap).forEach(m => {
       const peyaBruto = peyaByMonth[m] || 0
@@ -527,8 +550,7 @@ export default function FinanzasDashboard({ user }) {
       const local = Math.max(0, monthMap[m].ventas - peya - eventos)
       const propina = monthMap[m].propinaCobrada || 0
       if (!monthMap[m].plSubs.ventas) monthMap[m].plSubs.ventas = {}
-      monthMap[m].plSubs.ventas['🏪 Venta Local (Quanto POS)'] = local      // ← incluye propina
-      monthMap[m].plSubs.ventas['🛵 PedidosYa (Delivery)'] = peya
+      // (canales/sucursales ahora en el arbol ventasTree; aqui solo info)
       if (eventos > 0) monthMap[m].plSubs.ventas['🎉 Eventos (cerrados)'] = eventos
       // Propina cobrada como sub-fila INFORMATIVA (ya está incluida en Venta Local arriba)
       if (propina > 0) monthMap[m].plSubs.ventas['ℹ️ Propina cobrada (incluida en Venta Local)'] = propina
@@ -1116,6 +1138,35 @@ function TabEstadoResultados({ months2026 }) {
   }, [allMonths])
   const hasPlanillaTree = planillaTree.length > 0
 
+  // Arbol de ventas: canal (Quanto / POS / PeYa) -> sucursal, para desglose en Estado de Resultados
+  const ventasTree = useMemo(() => {
+    if (!data2026) return []
+    const NOMBRE = { M001: 'Cafetalón', S001: 'Soyapango', S002: 'Usulután', S003: 'Lourdes', S004: 'Venecia', S006: 'Metro Centro' }
+    const mk = (key, label) => ({ key, label, total: 0, perMonth: {}, sucMap: {} })
+    const chans = {
+      quanto: mk('quanto', '🏪 Venta Local (Quanto)'),
+      pos:    mk('pos', '🏬 Venta Local POS (Metro Centro)'),
+      peya:   mk('peya', '🛵 PedidosYa (Delivery)'),
+    }
+    const add = (chan, arr) => (arr || []).forEach(v => {
+      const mkey = v.fecha?.substring(0, 7); if (!mkey) return
+      const gross = parseFloat(v.total_ventas) || parseFloat(v.total) || 0
+      const val = conIva ? gross : (parseFloat(v.total_sin_iva) || gross / 1.13)
+      if (!val) return
+      const sc = v.store_code || 'Otro'
+      chan.total += val; chan.perMonth[mkey] = (chan.perMonth[mkey] || 0) + val
+      if (!chan.sucMap[sc]) chan.sucMap[sc] = { sc, nombre: NOMBRE[sc] || sc, total: 0, perMonth: {} }
+      chan.sucMap[sc].total += val; chan.sucMap[sc].perMonth[mkey] = (chan.sucMap[sc].perMonth[mkey] || 0) + val
+    })
+    add(chans.quanto, data2026.ventas)
+    add(chans.pos, data2026.ventaspos)
+    add(chans.peya, data2026.ventaspeya)
+    return [chans.quanto, chans.pos, chans.peya]
+      .filter(c => c.total > 0.005)
+      .map(c => ({ ...c, sucs: Object.values(c.sucMap).sort((a, b) => b.total - a.total) }))
+  }, [data2026, conIva])
+  const hasVentasTree = ventasTree.length > 0
+
   const plLines = [
     { key: 'ventas', label: 'VENTAS TOTALES', bold: true, positive: true },
     { key: 'costo_comida', label: '(-) Costo de Comida', indent: true },
@@ -1175,7 +1226,7 @@ function TabEstadoResultados({ months2026 }) {
               const rowBg = isSeparator ? '#2a2a3e' : isCFSection ? '#1a2540' : li % 2 ? '#192237' : C.card
               const prevLine = plLines[li - 1]
               const showCFHeader = isCFSection && (!prevLine || !prevLine.noPL)
-              const hasSubs = (subsByCategory[line.key] && Object.keys(subsByCategory[line.key]).length > 0) || (line.key === 'planilla_legal' && hasPlanillaTree)
+              const hasSubs = (subsByCategory[line.key] && Object.keys(subsByCategory[line.key]).length > 0) || (line.key === 'planilla_legal' && hasPlanillaTree) || (line.key === 'ventas' && hasVentasTree)
               const isExp = !!expanded[line.key]
               return (
                 <React.Fragment key={line.key}>
@@ -1337,6 +1388,42 @@ function TabEstadoResultados({ months2026 }) {
                       }
                     })
                   }
+                  return rows
+                })}
+                {/* Desglose Ventas: canal -> sucursal */}
+                {line.key === 'ventas' && isExp && hasVentasTree && ventasTree.flatMap(ch => {
+                  const chKey = `ventas::${ch.key}`
+                  const chExp = !!expanded[chKey]
+                  const multi = ch.sucs.length > 1
+                  const rows = [
+                    <tr key={chKey} style={{ background: '#0f1828', cursor: multi ? 'pointer' : 'default' }} onClick={multi ? () => toggleExpand(chKey) : undefined}>
+                      <td style={{ ...sTdL, paddingLeft: 34, color: '#e2e8f0', fontSize: 10, fontWeight: 700, position: 'sticky', left: 0, background: '#0f1828', zIndex: 1, boxShadow: '2px 0 4px rgba(0,0,0,0.3)' }}>
+                        <span style={{ display: 'inline-block', width: 12, color: chExp ? C.gold : C.textMuted, fontSize: 9 }}>{multi ? (chExp ? '▼' : '▶') : ''}</span>
+                        {ch.label}
+                      </td>
+                      {allMonths.map((m, i) => {
+                        const v = ch.perMonth[m.key] || 0
+                        const vm = m.ventas || 0
+                        const pm = v && vm ? (v / vm) : null
+                        return <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#e2e8f0' : '#475569' }}><div>{v ? fmt(v) : '—'}</div>{pm !== null && <div style={{ fontSize: 8, color: '#64748b', marginTop: 1 }}>{pct(pm)}</div>}</td>
+                      })}
+                      <td style={{ ...sTd(), fontSize: 10, color: '#e2e8f0', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>{fmt(ch.total)}</td>
+                      <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>{totals.ventas ? pct(ch.total / totals.ventas) : '—'}</td>
+                    </tr>
+                  ]
+                  if (chExp && multi) ch.sucs.forEach(su => {
+                    rows.push(
+                      <tr key={`${chKey}::${su.sc}`} style={{ background: '#0c1320' }}>
+                        <td style={{ ...sTdL, paddingLeft: 50, color: '#cbd5e1', fontSize: 10, fontStyle: 'italic', position: 'sticky', left: 0, background: '#0c1320', zIndex: 1, boxShadow: '2px 0 4px rgba(0,0,0,0.3)' }}>↳ {su.nombre} <span style={{ color: '#64748b' }}>· {su.sc}</span></td>
+                        {allMonths.map((m, i) => {
+                          const v = su.perMonth[m.key] || 0
+                          return <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#cbd5e1' : '#475569' }}>{v ? fmt(v) : '—'}</td>
+                        })}
+                        <td style={{ ...sTd(), fontSize: 10, color: '#cbd5e1', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>{fmt(su.total)}</td>
+                        <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>{ch.total ? pct(su.total / ch.total) : '—'}</td>
+                      </tr>
+                    )
+                  })
                   return rows
                 })}
                 </React.Fragment>

@@ -278,6 +278,33 @@ export default function CierreTurno({ user, onBack }) {
         egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
       }).eq('id', turno.id)
       if (error) throw error
+      // -- Puente -> ventas_diarias (Dashboard de Cierres + Finanzas), igual que las sucursales Quanto --
+      try {
+        const _tv = parseFloat((efSistema + n(corte?.tarjeta) + n(corte?.transferencia) + n(corte?.link_pago)).toFixed(2))
+        const { data: _vd, error: _vdErr } = await db.from('ventas_diarias').upsert({
+          fecha: todayISO(), store_code: storeCode, turno: 'completo',
+          efectivo_quanto: efSistema, tarjeta_quanto: n(corte?.tarjeta),
+          ventas_transferencia: n(corte?.transferencia), ventas_link_pago: n(corte?.link_pago),
+          total_ventas_quanto: _tv, total_egresos: parseFloat(totalEg.toFixed(2)),
+          total_ingresos: parseFloat(totalIn.toFixed(2)), efectivo_calculado: parseFloat(efCalculado.toFixed(2)),
+          efectivo_real_depositar: efReal, diferencia_deposito: parseFloat(difDeposito.toFixed(2)),
+          estado: 'enviado', source: 'cierre', observaciones: obs || null,
+          creado_por: user.nombre || 'POS', creado_por_id: user.id || null,
+        }, { onConflict: 'fecha,store_code,turno' }).select().single()
+        if (!_vdErr && _vd) {
+          await db.from('egresos_cierre').delete().eq('cierre_id', _vd.id)
+          await db.from('ingresos_cierre').delete().eq('cierre_id', _vd.id)
+          if (egresosFinal.length) await db.from('egresos_cierre').insert(egresosFinal.map(e => ({
+            cierre_id: _vd.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
+            persona_recibe: e.persona_recibe || null, empleado_id: e.empleado_id || null,
+            comentario: e.comentario || null, foto_url: e.foto_url || null,
+          })))
+          if (ingresos.length) await db.from('ingresos_cierre').insert(ingresos.map(e => ({
+            cierre_id: _vd.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
+            nombre_evento: e.nombre_evento || null, comentario: e.comentario || null,
+          })))
+        }
+      } catch (_bridgeErr) { console.warn('bridge ventas_diarias:', _bridgeErr?.message) }
       toast.success('Turno cerrado (corte Z)')
       try { await printCorte('z', buildCorteData('Z')) } catch {}
       onBack()
