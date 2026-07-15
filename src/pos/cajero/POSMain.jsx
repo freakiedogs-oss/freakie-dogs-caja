@@ -651,15 +651,28 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         )
       }
 
-      // 3. Registrar pago
-      await db.from('pos_cuenta_pagos').insert({
-        cuenta_id:      currentCuentaId,
-        metodo:         paymentData.metodo,
-        monto:          total + (paymentData.propina || 0),
-        monto_recibido: paymentData.efectivo || null,
-        cambio:         paymentData.cambio   || 0,
-        referencia:     paymentData.referencia || null,
-      })
+      // 3. Registrar pago — con reintentos: una cuenta cobrada NUNCA debe quedar sin pago
+      {
+        const _pagoRow = {
+          cuenta_id:      currentCuentaId,
+          metodo:         paymentData.metodo,
+          monto:          total + (paymentData.propina || 0),
+          monto_recibido: paymentData.efectivo || null,
+          cambio:         paymentData.cambio   || 0,
+          referencia:     paymentData.referencia || null,
+        }
+        let _pagoOk = false
+        for (let _i = 1; _i <= 3 && !_pagoOk; _i++) {
+          const { error: _pagoErr } = await db.from('pos_cuenta_pagos').insert(_pagoRow)
+          if (!_pagoErr) { _pagoOk = true; break }
+          console.error('pos_cuenta_pagos intento ' + _i + ' fallo:', _pagoErr.message)
+          if (_i < 3) await new Promise(r => setTimeout(r, 400 * _i))
+        }
+        if (!_pagoOk) {
+          try { await db.from('pos_cuentas').update({ notas_internas: 'PAGO_NO_REGISTRADO metodo=' + paymentData.metodo + ' monto=' + (total + (paymentData.propina || 0)).toFixed(2) }).eq('id', currentCuentaId) } catch (_e) {}
+          try { toast.error('⚠️ El pago no se registró en el sistema — avisá a soporte (la venta sí se cobró)') } catch (_e) {}
+        }
+      }
 
       // 3b. Pager (food court): guardar en la cuenta y reflejar en la cola de cocina (KDS)
       if (paymentData.pager != null) {
