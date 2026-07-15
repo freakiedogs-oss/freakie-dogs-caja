@@ -763,7 +763,7 @@ export default function FinanzasDashboard({ user }) {
       ) : (
         <>
           {tab === 'dashboard' && <TabDashboard months2026={months2026} ventasRaw={data2026?.ventas} ventaspeya={data2026?.ventaspeya} />}
-          {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} />}
+          {tab === 'estado-resultados' && <TabEstadoResultados months2026={months2026} data2026={data2026} conIva={conIva} />}
           {tab === 'balance' && <TabBalance months2026={months2026} />}
           {tab === 'flujo-caja' && <TabFlujoCaja months2026={months2026} />}
           {tab === 'banco' && <TabBanco bancoMV={data2026?.bancoMV} bankSaldos={data2026?.bankSaldos} months2026={months2026} />}
@@ -1078,7 +1078,7 @@ const PL_TIPS = {
   caja_neta: 'Caja neta real: la utilidad neta ajustada por los movimientos que mueven efectivo pero no pasan por el P&L (CapEx, socios, préstamos, dividendos).',
 }
 
-function TabEstadoResultados({ months2026 }) {
+function TabEstadoResultados({ months2026, data2026, conIva }) {
   const allMonths = buildAllMonths(months2026)
   const [expanded, setExpanded] = useState({})  // { categoryKey: true }
   const toggleExpand = (k) => setExpanded(e => ({ ...e, [k]: !e[k] }))
