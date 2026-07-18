@@ -4,6 +4,7 @@ import { STORES, today } from '../../config'
 import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
+import ProductoModifiersModal from './ProductoModifiersModal'
 import { emitDTE } from './dteService'
 import { printComanda, printPreCuenta, printFactura } from '../print/printService'
 import Icon, { EMOJI_ICON } from '../Icon'
@@ -283,10 +284,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const itemsActivaCat = categorias.find(c => c.id === activeCat)?.items || []
 
   // ── Acciones de orden ──
-  const addItemToCart = useCallback((product, modificadores = [], precioExtra = 0) => {
+  const addItemToCart = useCallback((product, modificadores = [], precioExtra = 0, qty = 1, nota = '') => {
     setItems(prev => {
       // Solo fusiona líneas idénticas cuando NO hay modificadores ni nota
-      if (modificadores.length === 0) {
+      if (modificadores.length === 0 && !nota && qty === 1) {
         const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved && (!i.modificadores || i.modificadores.length === 0))
         if (idx >= 0) {
           const next = [...prev]
@@ -298,8 +299,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         id:     product.id,
         nombre: product.nombre,
         precio: parseFloat(product.precio),
-        qty:    1,
-        nota:   '',
+        qty,
+        nota,
         saved:  false,
         estacion: product.estacion || 'general',
         modificadores,
@@ -1266,6 +1267,32 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           }}
         />
       )}
+
+      {/* Modal: Modificadores de producto individual (Tab + dropdowns colapsados + cantidad + nota) */}
+      {modPicker && (
+        <ProductoModifiersModal
+          producto={modPicker}
+          grupos={modPicker.modGrupos || []}
+          onClose={() => setModPicker(null)}
+          onConfirm={({ qty, nota, modificadores, precioModificadores }) => {
+            addItemToCart(modPicker, modificadores, precioModificadores, qty, nota)
+            setModPicker(null)
+          }}
+        />
+      )}
+
+      {/* Modal: Combo con componentes (arma el combo eligiendo mods por cada componente) */}
+      {comboPicker && (
+        <ComboModal
+          combo={comboPicker}
+          onCancel={() => setComboPicker(null)}
+          onConfirm={(componentesOut, generalMods, extra) => {
+            addComboToCart(comboPicker, componentesOut, generalMods, extra)
+            setComboPicker(null)
+          }}
+        />
+      )}
+
       <toast.Toast />
     </div>
   )
