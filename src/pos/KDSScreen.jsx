@@ -92,6 +92,64 @@ function playBeep() {
 // ──────────────────────────────────────────────
 // KDSScreen
 // ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+// Bloque de modificadores + nota para el KDS
+// Lee item.pos_cuenta_items.modificadores (jsonb) y renderiza
+// con colores por grupo. Precio extra en verde.
+// Fallback: si no hay JOIN, muestra item.nota como antes.
+// ═══════════════════════════════════════════════════════
+function KdsModifiersBlock({ item }) {
+  // Modificadores vienen directo en el row de pos_cocina_queue (columna jsonb)
+  const mods = Array.isArray(item.modificadores) ? item.modificadores : []
+
+  // Si no hay mods estructurados, fallback a la nota como antes
+  if (mods.length === 0) {
+    if (!item.nota) return null
+    return <span className="kds-item-nota">📝 {item.nota}</span>
+  }
+
+  // Agrupar por grupo_nombre
+  const porGrupo = {}
+  for (const m of mods) {
+    const k = m.grupo_nombre || 'Modificadores'
+    if (!porGrupo[k]) porGrupo[k] = []
+    porGrupo[k].push(m)
+  }
+
+  // Extraer nota libre: el helper armarNotaKDS pone la nota libre en la última línea sin ':'
+  let notaLibre = ''
+  if (item.nota) {
+    const lineas = String(item.nota).split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+    const last = lineas[lineas.length - 1]
+    if (last && !last.includes(':')) notaLibre = last
+  }
+
+  return (
+    <div className="kds-item-mods">
+      {Object.entries(porGrupo).map(([grupo, opts]) => (
+        <div key={grupo} className="kds-mod-grupo">
+          <span className="kds-mod-grupo-nombre">{grupo}:</span>{' '}
+          {opts.map((m, i) => {
+            const pe = parseFloat(m.precio_extra) || 0
+            return (
+              <span key={i} className="kds-mod-opcion">
+                {i > 0 && ', '}
+                + {m.nombre}
+                {pe > 0 && (
+                  <span className="kds-mod-precio"> (+${pe.toFixed(2)})</span>
+                )}
+              </span>
+            )
+          })}
+        </div>
+      ))}
+      {notaLibre && (
+        <div className="kds-item-nota-libre">📝 {notaLibre}</div>
+      )}
+    </div>
+  )
+}
+
 export default function KDSScreen({ user, onBack }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
@@ -436,9 +494,7 @@ export default function KDSScreen({ user, onBack }) {
                             </span>
                             <span className="kds-item-qty">{item.cantidad || 1}×</span>
                             <span className="kds-item-name">{item.nombre_item}</span>
-                            {item.nota && (
-                              <span className="kds-item-nota">📝 {item.nota}</span>
-                            )}
+                            <KdsModifiersBlock item={item} />
                           </button>
                         )
                       })}
@@ -541,9 +597,7 @@ export default function KDSScreen({ user, onBack }) {
                             <span className="kds-item-status">✅</span>
                             <span className="kds-item-qty">{item.cantidad || 1}×</span>
                             <span className="kds-item-name">{item.nombre_item}</span>
-                            {item.nota && (
-                              <span className="kds-item-nota">📝 {item.nota}</span>
-                            )}
+                            <KdsModifiersBlock item={item} />
                           </div>
                         ))}
                       </div>

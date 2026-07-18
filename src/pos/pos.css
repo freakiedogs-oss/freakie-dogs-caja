@@ -1188,6 +1188,49 @@
   width: 100%;
   margin-top: 2px;
   font-style: italic;
+  white-space: pre-line; /* respeta saltos de línea entre grupos (backward compat) */
+}
+
+/* ── KDS: bloque de modificadores estructurados con colores ── */
+.kds-item .kds-item-mods {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+.kds-item .kds-mod-grupo {
+  display: block;
+  margin-bottom: 2px;
+}
+.kds-item .kds-mod-grupo-nombre {
+  color: #fbbf24 !important;      /* Amarillo/naranja fuerte — nombre del grupo destaca */
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: 11px;
+}
+.kds-item .kds-mod-opcion {
+  color: #e5e7eb !important;      /* Blanco/gris claro — opción normal */
+  font-weight: 500;
+}
+.kds-item .kds-mod-precio {
+  color: #10b981 !important;      /* Verde fuerte — precio extra destaca */
+  font-weight: 800;
+  background: rgba(16, 185, 129, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 2px;
+  font-size: 10px;
+}
+.kds-item .kds-item-nota-libre {
+  color: #a78bfa !important;      /* Morado — nota libre del cajero */
+  font-style: italic;
+  margin-top: 6px;
+  font-size: 11px;
+  display: block;
+  border-top: 1px dashed rgba(167, 139, 250, 0.3);
+  padding-top: 4px;
 }
 
 /* ── Footer ── */
