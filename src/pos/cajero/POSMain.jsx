@@ -356,22 +356,27 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         comanda_numero: comandaSeq,
       }
       if (it.esCombo && (it.componentes || []).length) {
-        return it.componentes.map(c => ({
-          ...base,
-          nombre_item:   c.nombre,
-          cantidad:      (c.cantidad || 1) * it.qty,
-          nota:          [`Combo: ${it.nombre}`, it.nota].filter(Boolean).join(' · ') || null,
-          modificadores: c.modificadores?.length ? c.modificadores : null,
-          estacion:      c.estacion || 'general',
-        }))
+        return it.componentes.map(c => {
+          const extraComp = (c.modificadores || []).reduce((s, m) => s + (parseFloat(m.precio_extra) || 0), 0)
+          return {
+            ...base,
+            nombre_item:          c.nombre,
+            cantidad:             (c.cantidad || 1) * it.qty,
+            nota:                 [`Combo: ${it.nombre}`, it.nota].filter(Boolean).join(' · ') || null,
+            modificadores:        c.modificadores?.length ? c.modificadores : null,
+            precio_modificadores: extraComp,
+            estacion:             c.estacion || 'general',
+          }
+        })
       }
       return [{
         ...base,
-        nombre_item:   it.nombre,
-        cantidad:      it.qty,
-        nota:          it.nota || null,
-        modificadores: it.modificadores?.length ? it.modificadores : null,
-        estacion:      it.estacion || 'general',
+        nombre_item:          it.nombre,
+        cantidad:             it.qty,
+        nota:                 it.nota || null,
+        modificadores:        it.modificadores?.length ? it.modificadores : null,
+        precio_modificadores: it.precioExtra || 0,
+        estacion:             it.estacion || 'general',
       }]
     })
 
