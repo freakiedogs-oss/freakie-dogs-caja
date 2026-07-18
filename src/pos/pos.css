@@ -1204,7 +1204,39 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.kds-mod-price { opacity: 0.7; font-weight: 500; }
+.kds-mod-price {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.18);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 3px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* Bloques agrupados por grupo_nombre */
+.kds-item-mods-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 26px;
+  margin-top: 3px;
+}
+.kds-mod-grupo-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.kds-mod-grupo-label {
+  color: #fbbf24;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  margin-right: 2px;
+}
+
 .kds-item-notarow {
   display: block;
   margin-left: 26px;
