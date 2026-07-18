@@ -480,13 +480,31 @@ export default function KDSScreen({ user, onBack }) {
                               <span className="kds-item-qty">{item.cantidad || 1}×</span>
                               <span className="kds-item-name">{item.nombre_item}</span>
                             </span>
-                            {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (
-                              <span className="kds-item-mods">
-                                {item.modificadores.map((m, mi) => (
-                                  <span key={mi} className="kds-mod-chip">+ {m.nombre}{Number(m.precio_extra) > 0 ? <span className="kds-mod-price"> ${Number(m.precio_extra).toFixed(2)}</span> : null}</span>
-                                ))}
-                              </span>
-                            )}
+                            {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {
+                              const porGrupo = {}
+                              item.modificadores.forEach(m => {
+                                const k = m.grupo_nombre || 'Modificadores'
+                                if (!porGrupo[k]) porGrupo[k] = []
+                                porGrupo[k].push(m)
+                              })
+                              return (
+                                <span className="kds-item-mods-grouped">
+                                  {Object.entries(porGrupo).map(([grupo, opts]) => (
+                                    <span key={grupo} className="kds-mod-grupo-block">
+                                      <span className="kds-mod-grupo-label">{grupo}:</span>
+                                      {opts.map((m, mi) => (
+                                        <span key={mi} className="kds-mod-chip">
+                                          + {m.nombre}
+                                          {Number(m.precio_extra) > 0 && (
+                                            <span className="kds-mod-price"> +${Number(m.precio_extra).toFixed(2)}</span>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  ))}
+                                </span>
+                              )
+                            })()}
                             {item.nota && (
                               <span className="kds-item-notarow">📝 {item.nota}</span>
                             )}
@@ -598,13 +616,31 @@ export default function KDSScreen({ user, onBack }) {
                               <span className="kds-item-qty">{item.cantidad || 1}×</span>
                               <span className="kds-item-name">{item.nombre_item}</span>
                             </span>
-                            {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (
-                              <span className="kds-item-mods">
-                                {item.modificadores.map((m, mi) => (
-                                  <span key={mi} className="kds-mod-chip">+ {m.nombre}{Number(m.precio_extra) > 0 ? <span className="kds-mod-price"> ${Number(m.precio_extra).toFixed(2)}</span> : null}</span>
-                                ))}
-                              </span>
-                            )}
+                            {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {
+                              const porGrupo = {}
+                              item.modificadores.forEach(m => {
+                                const k = m.grupo_nombre || 'Modificadores'
+                                if (!porGrupo[k]) porGrupo[k] = []
+                                porGrupo[k].push(m)
+                              })
+                              return (
+                                <span className="kds-item-mods-grouped">
+                                  {Object.entries(porGrupo).map(([grupo, opts]) => (
+                                    <span key={grupo} className="kds-mod-grupo-block">
+                                      <span className="kds-mod-grupo-label">{grupo}:</span>
+                                      {opts.map((m, mi) => (
+                                        <span key={mi} className="kds-mod-chip">
+                                          + {m.nombre}
+                                          {Number(m.precio_extra) > 0 && (
+                                            <span className="kds-mod-price"> +${Number(m.precio_extra).toFixed(2)}</span>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  ))}
+                                </span>
+                              )
+                            })()}
                             {item.nota && (
                               <span className="kds-item-notarow">📝 {item.nota}</span>
                             )}

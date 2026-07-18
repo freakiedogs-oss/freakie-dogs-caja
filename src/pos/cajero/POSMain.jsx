@@ -4,6 +4,7 @@ import { STORES, today } from '../../config'
 import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
+import ProductoModifiersModal from './ProductoModifiersModal'
 import { emitDTE } from './dteService'
 import { printComanda, printPreCuenta, printFactura } from '../print/printService'
 import Icon, { EMOJI_ICON } from '../Icon'
@@ -283,10 +284,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const itemsActivaCat = categorias.find(c => c.id === activeCat)?.items || []
 
   // ── Acciones de orden ──
-  const addItemToCart = useCallback((product, modificadores = [], precioExtra = 0) => {
+  const addItemToCart = useCallback((product, modificadores = [], precioExtra = 0, qty = 1, nota = '') => {
     setItems(prev => {
       // Solo fusiona líneas idénticas cuando NO hay modificadores ni nota
-      if (modificadores.length === 0) {
+      if (modificadores.length === 0 && !nota && qty === 1) {
         const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved && (!i.modificadores || i.modificadores.length === 0))
         if (idx >= 0) {
           const next = [...prev]
@@ -298,8 +299,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         id:     product.id,
         nombre: product.nombre,
         precio: parseFloat(product.precio),
-        qty:    1,
-        nota:   '',
+        qty,
+        nota,
         saved:  false,
         estacion: product.estacion || 'general',
         modificadores,
@@ -355,22 +356,27 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         comanda_numero: comandaSeq,
       }
       if (it.esCombo && (it.componentes || []).length) {
-        return it.componentes.map(c => ({
-          ...base,
-          nombre_item:   c.nombre,
-          cantidad:      (c.cantidad || 1) * it.qty,
-          nota:          [`Combo: ${it.nombre}`, it.nota].filter(Boolean).join(' · ') || null,
-          modificadores: c.modificadores?.length ? c.modificadores : null,
-          estacion:      c.estacion || 'general',
-        }))
+        return it.componentes.map(c => {
+          const extraComp = (c.modificadores || []).reduce((s, m) => s + (parseFloat(m.precio_extra) || 0), 0)
+          return {
+            ...base,
+            nombre_item:          c.nombre,
+            cantidad:             (c.cantidad || 1) * it.qty,
+            nota:                 [`Combo: ${it.nombre}`, it.nota].filter(Boolean).join(' · ') || null,
+            modificadores:        c.modificadores?.length ? c.modificadores : null,
+            precio_modificadores: extraComp,
+            estacion:             c.estacion || 'general',
+          }
+        })
       }
       return [{
         ...base,
-        nombre_item:   it.nombre,
-        cantidad:      it.qty,
-        nota:          it.nota || null,
-        modificadores: it.modificadores?.length ? it.modificadores : null,
-        estacion:      it.estacion || 'general',
+        nombre_item:          it.nombre,
+        cantidad:             it.qty,
+        nota:                 it.nota || null,
+        modificadores:        it.modificadores?.length ? it.modificadores : null,
+        precio_modificadores: it.precioExtra || 0,
+        estacion:             it.estacion || 'general',
       }]
     })
 
@@ -933,23 +939,59 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                   <div className="pos-order-item-qty">{item.qty}</div>
                   <div className="pos-order-item-info">
                     <div className="pos-order-item-name">{item.nombre}</div>
-                    {(item.modificadores || []).length > 0 && (
-                      <div style={{ fontSize: 11, color: '#8b8997', lineHeight: 1.5 }}>
-                        {item.modificadores.map((m, i) => (
-                          <div key={i}>+ {m.nombre}{Number(m.precio_extra) > 0 ? ` ($${Number(m.precio_extra).toFixed(2)})` : ''}</div>
-                        ))}
-                      </div>
-                    )}
+                    {(item.modificadores || []).length > 0 && (() => {
+                      const porGrupo = {}
+                      item.modificadores.forEach(m => {
+                        const k = m.grupo_nombre || 'Modificadores'
+                        if (!porGrupo[k]) porGrupo[k] = []
+                        porGrupo[k].push(m)
+                      })
+                      return (
+                        <div style={{ fontSize: 11, color: '#8b8997', lineHeight: 1.5, marginTop: 2 }}>
+                          {Object.entries(porGrupo).map(([grupo, opts]) => (
+                            <div key={grupo} style={{ marginBottom: 2 }}>
+                              <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{grupo}:</div>
+                              {opts.map((m, i) => (
+                                <div key={i} style={{ paddingLeft: 6 }}>
+                                  + {m.nombre}
+                                  {Number(m.precio_extra) > 0 && (
+                                    <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>+${Number(m.precio_extra).toFixed(2)}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
                     {(item.componentes || []).length > 0 && (
                       <div style={{ fontSize: 11, color: '#8b8997', lineHeight: 1.5 }}>
-                        {item.componentes.map((c, ci) => (
-                          <div key={ci}>
-                            <span style={{ color: '#b8b4c0' }}>{c.cantidad > 1 ? `${c.cantidad}× ` : ''}{c.nombre}</span>
-                            {(c.modificadores || []).map((m, mi) => (
-                              <div key={mi} style={{ paddingLeft: 10 }}>+ {m.nombre}{Number(m.precio_extra) > 0 ? ` ($${Number(m.precio_extra).toFixed(2)})` : ''}</div>
-                            ))}
-                          </div>
-                        ))}
+                        {item.componentes.map((c, ci) => {
+                          const porGrupo = {}
+                          ;(c.modificadores || []).forEach(m => {
+                            const k = m.grupo_nombre || 'Modificadores'
+                            if (!porGrupo[k]) porGrupo[k] = []
+                            porGrupo[k].push(m)
+                          })
+                          return (
+                            <div key={ci} style={{ marginTop: 3 }}>
+                              <span style={{ color: '#b8b4c0', fontWeight: 600 }}>{c.cantidad > 1 ? `${c.cantidad}× ` : ''}{c.nombre}</span>
+                              {Object.entries(porGrupo).map(([grupo, opts]) => (
+                                <div key={grupo} style={{ paddingLeft: 10, marginTop: 1 }}>
+                                  <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{grupo}:</div>
+                                  {opts.map((m, mi) => (
+                                    <div key={mi} style={{ paddingLeft: 6 }}>
+                                      + {m.nombre}
+                                      {Number(m.precio_extra) > 0 && (
+                                        <span style={{ color: '#10b981', fontWeight: 600, marginLeft: 4 }}>+${Number(m.precio_extra).toFixed(2)}</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                     {item.nota && (
@@ -1266,6 +1308,32 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           }}
         />
       )}
+
+      {/* Modal: Modificadores de producto individual (Tab + dropdowns colapsados + cantidad + nota) */}
+      {modPicker && (
+        <ProductoModifiersModal
+          producto={modPicker}
+          grupos={modPicker.modGrupos || []}
+          onClose={() => setModPicker(null)}
+          onConfirm={({ qty, nota, modificadores, precioModificadores }) => {
+            addItemToCart(modPicker, modificadores, precioModificadores, qty, nota)
+            setModPicker(null)
+          }}
+        />
+      )}
+
+      {/* Modal: Combo con componentes (arma el combo eligiendo mods por cada componente) */}
+      {comboPicker && (
+        <ComboModal
+          combo={comboPicker}
+          onCancel={() => setComboPicker(null)}
+          onConfirm={(componentesOut, generalMods, extra) => {
+            addComboToCart(comboPicker, componentesOut, generalMods, extra)
+            setComboPicker(null)
+          }}
+        />
+      )}
+
       <toast.Toast />
     </div>
   )
