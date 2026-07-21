@@ -331,7 +331,7 @@ export default function FinanzasDashboard({ user }) {
         fetchSimple('mv_finanzas_ventas_mensual',
           'mes, store_code, fuente, total_ventas, total_sin_iva, venta_neta, propina_cobrada, iva_recaudado, efectivo, tarjeta, otros, num_dias, num_pedidos',
           q => q.gte('mes', '2026-01-01').order('mes')),
-        fetchSimple('mv_finanzas_gastos_mensual',
+        fetchAll('mv_finanzas_gastos_mensual',
           'mes, store_code, categoria_gasto_id, categoria_nombre, categoria_grupo, subcategoria_contable, origen, proveedor_nombre, total_monto, total_sin_iva, num_movimientos',
           q => q.gte('mes', '2026-01-01').order('mes')),
         fetchSimple('mv_finanzas_banco_mensual',
@@ -1078,10 +1078,105 @@ const PL_TIPS = {
   caja_neta: 'Caja neta real: la utilidad neta ajustada por los movimientos que mueven efectivo pero no pasan por el P&L (CapEx, socios, préstamos, dividendos).',
 }
 
+// ─── Drill-down del Estado de Resultados: categorias que se pueden abrir hasta el DTE (2026-07-20) ───
+const PL_DRILL_CATS = new Set(['costo_comida','insumo_venta','limpieza','costo_fijo','gastos_operativos','gastos_logisticos','gasto_financiero','activo_fijo'])
+
+function DrillDTEModal({ drill, rows, loading, conIva, onClose }) {
+  const list = rows || []
+  const total = list.reduce((s, r) => s + (parseFloat(conIva ? r.con_iva : r.sin_iva) || 0), 0)
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
+        width: 'min(940px, 96vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column',
+        boxShadow: '0 12px 48px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${C.border}` }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: C.white }}>{drill.label} · {drill.mesLabel}</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>{list.length} movimientos · {conIva ? 'con IVA' : 'sin IVA'}</div>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'transparent', border: `1px solid ${C.border}`, color: C.textMuted,
+            borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+          }}>✕</button>
+        </div>
+        <div style={{ overflow: 'auto', padding: '4px 8px 8px' }}>
+          {loading ? (
+            <div style={{ padding: 24, textAlign: 'center', color: C.textMuted, fontSize: 12 }}>Cargando detalle…</div>
+          ) : list.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: C.textMuted, fontSize: 12 }}>Sin movimientos en este mes.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <th style={{ ...sTh, textAlign: 'left' }}>Fecha</th>
+                  <th style={{ ...sTh, textAlign: 'left' }}>Proveedor</th>
+                  <th style={{ ...sTh, textAlign: 'left' }}>N° Control / Origen</th>
+                  <th style={{ ...sTh, textAlign: 'right' }}>{conIva ? 'Con IVA' : 'Sin IVA'}</th>
+                  <th style={{ ...sTh, textAlign: 'left' }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <td style={{ ...sTdL, fontSize: 10, color: C.textMuted, whiteSpace: 'nowrap' }}>{r.fecha}</td>
+                    <td style={{ ...sTdL, fontSize: 11, color: C.white }}>
+                      {r.proveedor || '—'}
+                      {r.subcategoria ? <span style={{ color: C.textMuted, fontSize: 9 }}> · {r.subcategoria}</span> : null}
+                    </td>
+                    <td style={{ ...sTdL, fontSize: 10, color: C.textMuted }}>
+                      {r.numero_control
+                        ? (r.pdf_url
+                            ? <a href={r.pdf_url} target="_blank" rel="noreferrer" style={{ color: C.blue, textDecoration: 'none' }}>{r.numero_control}</a>
+                            : r.numero_control)
+                        : <span style={{ fontStyle: 'italic' }}>{r.origen === 'egresos_cierre' ? 'Cierre de caja' : (r.origen || '—')}</span>}
+                    </td>
+                    <td style={{ ...sTd(false), textAlign: 'right', color: C.white }}>{fmtD(conIva ? r.con_iva : r.sin_iva)}</td>
+                    <td style={{ ...sTdL, fontSize: 10, color: r.estado_pago === 'pagado' ? '#22c55e' : C.gold }}>{r.estado_pago || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: `2px solid ${C.red}` }}>
+                  <td colSpan={3} style={{ ...sTdL, fontWeight: 800, color: C.white }}>TOTAL ({conIva ? 'con IVA' : 'sin IVA'})</td>
+                  <td style={{ ...sTd(false), textAlign: 'right', fontWeight: 800, color: C.white }}>{fmtD(total)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TabEstadoResultados({ months2026, data2026, conIva }) {
   const allMonths = buildAllMonths(months2026)
   const [expanded, setExpanded] = useState({})  // { categoryKey: true }
   const toggleExpand = (k) => setExpanded(e => ({ ...e, [k]: !e[k] }))
+
+  // ─── Drill-down a DTEs (2026-07-20): click en una celda de gasto abre el detalle DTE por DTE ───
+  const [drill, setDrill] = useState(null)          // { mes, categoria, label, mesLabel }
+  const [drillRows, setDrillRows] = useState(null)
+  const [drillLoading, setDrillLoading] = useState(false)
+  useEffect(() => {
+    if (!drill) { setDrillRows(null); return }
+    let cancel = false
+    setDrillLoading(true)
+    db.rpc('fn_pl_detalle', { p_mes: drill.mes, p_categoria: drill.categoria })
+      .then(({ data, error }) => {
+        if (cancel) return
+        if (error) { console.error('fn_pl_detalle:', error); setDrillRows([]) }
+        else setDrillRows(data || [])
+        setDrillLoading(false)
+      })
+    return () => { cancel = true }
+  }, [drill])
 
   // Calcular subcategorías agregadas por categoría a través de todos los meses
   const subsByCategory = useMemo(() => {
@@ -1199,6 +1294,9 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
 
   return (
     <div style={sCard}>
+      {drill && (
+        <DrillDTEModal drill={drill} rows={drillRows} loading={drillLoading} conIva={conIva} onClose={() => setDrill(null)} />
+      )}
       <div style={{ textAlign: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: C.red, letterSpacing: 2 }}>FREAKIE DOGS</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: C.white, marginTop: 2 }}>Estado de Resultados Consolidado</div>
@@ -1270,11 +1368,18 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
                     const isNeg = !line.positive && val < 0
                     const ventasMes = m.ventas || 0
                     const pctMes = ventasMes && line.key !== 'ventas' ? (val / ventasMes) : null
+                    const canDrill = PL_DRILL_CATS.has(line.key) && m.is2026 && val !== 0
                     return (
-                      <td key={i} style={{
+                      <td key={i}
+                        onClick={canDrill ? () => setDrill({ mes: m.key + '-01', categoria: line.key, label: line.label, mesLabel: m.label }) : undefined}
+                        title={canDrill ? 'Ver los DTEs que componen esta celda' : undefined}
+                        style={{
                         ...sTd(isNeg || (line.computed && val < 0)),
                         fontWeight: line.bold ? 700 : 400,
                         fontSize: 11,
+                      cursor: canDrill ? 'pointer' : 'default',
+                        textDecoration: canDrill ? 'underline dotted rgba(255,255,255,0.35)' : 'none',
+                        textUnderlineOffset: 3,
                       }}>
                         <div>{val < 0 && line.computed ? '-' : ''}{fmt(val)}</div>
                         {pctMes !== null && val !== 0 && (
