@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
 import { paletaC as C } from '@/theme'
 import InfoTip from '../ui/InfoTip'
+import IngresoCanalConciliacion from './IngresoCanalConciliacion'
 
 // Componentes aislados lazy + defensivos (si fallan, ErrorBoundary los aísla)
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
@@ -1537,6 +1538,8 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
           </tbody>
         </table>
       </div>
+
+      <IngresoCanalConciliacion />
 
       {/* Margin analysis */}
       <div style={{ marginTop: 16 }}>
