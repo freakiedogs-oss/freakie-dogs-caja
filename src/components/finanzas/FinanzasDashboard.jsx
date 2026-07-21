@@ -3,6 +3,8 @@ import { db } from '../../supabase'
 import { paletaC as C } from '@/theme'
 import InfoTip from '../ui/InfoTip'
 import IngresoCanalConciliacion from './IngresoCanalConciliacion'
+import EfectivoConciliacion from './EfectivoConciliacion'
+import DebitosPorClasificar from './DebitosPorClasificar'
 
 // Componentes aislados lazy + defensivos (si fallan, ErrorBoundary los aísla)
 const CardDataDisponible = lazy(() => import('./CardDataDisponible'))
@@ -1540,6 +1542,8 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
       </div>
 
       <IngresoCanalConciliacion />
+      <EfectivoConciliacion />
+      <DebitosPorClasificar />
 
       {/* Margin analysis */}
       <div style={{ marginTop: 16 }}>
