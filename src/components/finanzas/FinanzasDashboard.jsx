@@ -1165,6 +1165,15 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
 
   // ─── Drill-down a DTEs (2026-07-20): click en una celda de gasto abre el detalle DTE por DTE ───
   const [drill, setDrill] = useState(null)          // { mes, categoria, label, mesLabel }
+  const [pagadoCat, setPagadoCat] = useState({})   // {categoria: %pagado} para la barra verde de totales
+  useEffect(() => {
+    db.from('v_pl_pagado_categoria_mensual').select('categoria,total,pagado').then(({ data }) => {
+      const acc = {}
+      for (const r of (data || [])) { const k = r.categoria; if (!acc[k]) acc[k] = { t: 0, p: 0 }; acc[k].t += (+r.total || 0); acc[k].p += (+r.pagado || 0) }
+      const out = {}; for (const k in acc) out[k] = acc[k].t ? Math.max(0, Math.min(100, 100 * acc[k].p / acc[k].t)) : 0
+      setPagadoCat(out)
+    })
+  }, [])
   const [drillRows, setDrillRows] = useState(null)
   const [drillLoading, setDrillLoading] = useState(false)
   useEffect(() => {
@@ -1393,7 +1402,7 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
                       </td>
                     )
                   })}
-                  <td style={{ ...sTd(totals[line.key] < 0 && line.computed), fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>
+                  <td title={pagadoCat[line.key] != null ? `Pagado ${pagadoCat[line.key].toFixed(0)}% del monto` : undefined} style={{ ...sTd(totals[line.key] < 0 && line.computed), fontWeight: 700, borderLeft: `1px solid ${C.border}`, backgroundImage: (line.indent && pagadoCat[line.key] != null && totals[line.key]) ? `linear-gradient(90deg, rgba(34,197,94,0.30) ${pagadoCat[line.key]}%, transparent ${pagadoCat[line.key]}%)` : undefined }}>
                     {totals[line.key] < 0 && line.computed ? '-' : ''}{fmt(totals[line.key])}
                   </td>
                   <td style={{ ...sTd(), fontSize: 11, color: C.textMuted }}>
