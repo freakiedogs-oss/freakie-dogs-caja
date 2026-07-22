@@ -124,10 +124,13 @@ export function buildPreCuenta(c, cols = 48) {
   t.hr();
   t.row('SUBTOTAL', money(c.subtotal));
   if (c.descuento > 0) t.row('DESCUENTO', `-${money(c.descuento)}`);
-  t.bold(true).size(1, 2).row('TOTAL', money(c.total)).normal();
   if (c.propinaSugerida) {
-    t.feed(1).align('center').ln('Propina sugerida:');
-    t.ln(`10% ${money(c.total * 0.10)}   15% ${money(c.total * 0.15)}`);
+    const propina = Math.round(c.subtotal * 0.10 * 100) / 100;
+    t.row('PROPINA (10%)', money(propina));
+    t.bold(true).size(1, 2).row('TOTAL', money(c.total + propina)).normal();
+    t.feed(1).align('center').ln('Propina 10% incluida (ajustable al pagar)');
+  } else {
+    t.bold(true).size(1, 2).row('TOTAL', money(c.total)).normal();
   }
   t.feed(1).align('center').ln('Gracias por su visita').feed(1);
   t.cut();
@@ -249,7 +252,14 @@ function preCuentaHTML(c) {
   }
   L.push({ hr: 1 }, { row: 1, left: 'SUBTOTAL', right: money(c.subtotal) });
   if (c.descuento > 0) L.push({ row: 1, left: 'DESCUENTO', right: `-${money(c.descuento)}` });
-  L.push({ row: 1, bold: 1, left: 'TOTAL', right: money(c.total) });
+  if (c.propinaSugerida) {
+    const propina = Math.round(c.subtotal * 0.10 * 100) / 100;
+    L.push({ row: 1, left: 'PROPINA (10%)', right: money(propina) });
+    L.push({ row: 1, bold: 1, left: 'TOTAL', right: money(c.total + propina) });
+    L.push({ center: 1, text: 'Propina 10% incluida (ajustable al pagar)' });
+  } else {
+    L.push({ row: 1, bold: 1, left: 'TOTAL', right: money(c.total) });
+  }
   L.push({ center: 1, text: 'Gracias por su visita' });
   return htmlDoc('Pre-Cuenta', L);
 }
