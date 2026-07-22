@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react'
 import { db } from '../../supabase'
 import { useToast } from '../../hooks/useToast'
 
+// Dividir cuenta: mueve ítems YA comandados (con dbId = fila en pos_cuenta_items) a una cuenta nueva.
+// Los ítems del carrito usan { id: menu_item_id, dbId: id de fila, qty, precio, precioExtra, ... }.
 export default function SplitCheckModal({ cuentaId, items, storeCode, userId, mesaRef, onClose, onSplit }) {
   const toast = useToast()
   const [loading, setLoading] = useState(false)
-  const [selectedItems, setSelectedItems] = useState({}) // { itemId: { selected: bool, qtyToMove: number } }
+  const [selectedItems, setSelectedItems] = useState({}) // { dbId: { selected, qtyToMove } }
   const [accountData, setAccountData] = useState(null)
 
-  // Load current account data to get subtotal, total, tipo, etc.
+  // Cargar la cuenta original (tipo, menu_id, demografía, etc.)
   useEffect(() => {
     const load = async () => {
       const { data } = await db
@@ -21,48 +23,54 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
     load()
   }, [cuentaId])
 
-  // Calculate totals
-  const originalItems = items || []
-  const originalSubtotal = originalItems.reduce((sum, item) => sum + (item.precio * item.cantidad), 0)
+  // Precio unitario REAL = base + modificadores (para cuadrar con el carrito)
+  const unit = (it) => (Number(it?.precio) || 0) + (Number(it?.precioExtra) || 0)
 
-  // Items selected for split
+  // Solo se pueden dividir ítems que ya existen en BD (comandados → tienen dbId)
+  const originalItems = (items || []).filter(it => it && it.dbId)
+  const hayPendientes = (items || []).some(it => it && !it.dbId)
+  const originalSubtotal = originalItems.reduce((sum, it) => sum + unit(it) * it.qty, 0)
+
+  // Ítems seleccionados para mover
   const selectedIds = Object.keys(selectedItems).filter(id => selectedItems[id].selected)
   const newAccountItems = selectedIds.map(id => {
-    const item = originalItems.find(i => i.id === id)
+    const it = originalItems.find(i => i.dbId === id)
+    if (!it) return null
     const qtyToMove = selectedItems[id].qtyToMove || 1
-    return { ...item, cantidad: qtyToMove }
-  })
-  const newAccountSubtotal = newAccountItems.reduce((sum, item) => sum + (item.precio * item.cantidad), 0)
-
-  // Remaining items
-  const remainingItems = originalItems.map(item => {
-    if (!selectedItems[item.id] || !selectedItems[item.id].selected) return item
-    const qtyToMove = selectedItems[item.id].qtyToMove || 1
-    const remaining = item.cantidad - qtyToMove
-    return remaining > 0 ? { ...item, cantidad: remaining } : null
+    return { ...it, qty: qtyToMove }
   }).filter(Boolean)
-  const remainingSubtotal = remainingItems.reduce((sum, item) => sum + (item.precio * item.cantidad), 0)
+  const newAccountSubtotal = newAccountItems.reduce((sum, it) => sum + unit(it) * it.qty, 0)
 
-  const handleToggleItem = (itemId) => {
+  // Ítems que quedan en la cuenta original
+  const remainingItems = originalItems.map(it => {
+    const sel = selectedItems[it.dbId]
+    if (!sel || !sel.selected) return it
+    const qtyToMove = sel.qtyToMove || 1
+    const rem = it.qty - qtyToMove
+    return rem > 0 ? { ...it, qty: rem } : null
+  }).filter(Boolean)
+  const remainingSubtotal = remainingItems.reduce((sum, it) => sum + unit(it) * it.qty, 0)
+
+  const handleToggleItem = (dbId) => {
     setSelectedItems(prev => {
-      const item = originalItems.find(i => i.id === itemId)
-      const isSelected = prev[itemId]?.selected
+      const isSelected = prev[dbId]?.selected
       return {
         ...prev,
-        [itemId]: {
+        [dbId]: {
           selected: !isSelected,
-          qtyToMove: !isSelected ? 1 : prev[itemId]?.qtyToMove || 1
-        }
+          qtyToMove: !isSelected ? 1 : prev[dbId]?.qtyToMove || 1,
+        },
       }
     })
   }
 
-  const handleQtyChange = (itemId, newQty) => {
-    const item = originalItems.find(i => i.id === itemId)
-    if (newQty < 1 || newQty > item.cantidad) return
+  const handleQtyChange = (dbId, newQty) => {
+    const it = originalItems.find(i => i.dbId === dbId)
+    if (!it) return
+    if (newQty < 1 || newQty > it.qty) return
     setSelectedItems(prev => ({
       ...prev,
-      [itemId]: { ...prev[itemId], qtyToMove: newQty }
+      [dbId]: { ...prev[dbId], qtyToMove: newQty },
     }))
   }
 
@@ -71,15 +79,20 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
     setLoading(true)
 
     try {
-      // 1. Create new pos_cuentas record
+      // 1. Crear la nueva cuenta (mismos campos que abre POSMain)
       const newCuenta = {
         store_code: storeCode,
+        cajero_id: userId,
         tipo: accountData.tipo,
         mesa_ref: mesaRef,
+        menu_id: accountData.menu_id || null,
         estado: 'abierta',
         subtotal: newAccountSubtotal,
+        iva: 0,
         total: newAccountSubtotal,
-        fecha_inicio: new Date().toISOString(),
+        pax_mujeres: accountData.pax_mujeres || 0,
+        pax_hombres: accountData.pax_hombres || 0,
+        pax_ninos: accountData.pax_ninos || 0,
       }
       const { data: createdCuenta, error: cuentaErr } = await db
         .from('pos_cuentas')
@@ -87,58 +100,56 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
         .select()
         .single()
       if (cuentaErr) throw cuentaErr
-
       const newCuentaId = createdCuenta.id
 
-      // 2. For each selected item, INSERT new pos_cuenta_items in new cuenta
-      const newItems = selectedIds.map(itemId => {
-        const item = originalItems.find(i => i.id === itemId)
-        const qtyToMove = selectedItems[itemId].qtyToMove
-        return {
-          cuenta_id: newCuentaId,
-          producto_id: item.producto_id,
-          nombre: item.nombre,
-          precio: item.precio,
-          cantidad: qtyToMove,
-          cuenta_origen_id: item.id,
-          movido_at: new Date().toISOString(),
-          movido_por: userId,
-        }
-      })
-      const { error: insertErr } = await db
-        .from('pos_cuenta_items')
-        .insert(newItems)
-      if (insertErr) throw insertErr
+      // 2. Mover cada ítem seleccionado
+      for (const dbId of selectedIds) {
+        const it = originalItems.find(i => i.dbId === dbId)
+        if (!it) continue
+        const qtyToMove = selectedItems[dbId].qtyToMove || 1
 
-      // 3. UPDATE original items: reduce qty or delete if all moved
-      for (const itemId of selectedIds) {
-        const item = originalItems.find(i => i.id === itemId)
-        const qtyToMove = selectedItems[itemId].qtyToMove
-        const remaining = item.cantidad - qtyToMove
-
-        if (remaining > 0) {
-          const { error: updateErr } = await db
+        if (qtyToMove >= it.qty) {
+          // Movimiento TOTAL: reasignar la fila a la nueva cuenta (conserva modificadores y la cola de cocina)
+          const { error } = await db
             .from('pos_cuenta_items')
-            .update({ cantidad: remaining })
-            .eq('id', itemId)
-          if (updateErr) throw updateErr
+            .update({ cuenta_id: newCuentaId, cuenta_origen_id: cuentaId, movido_at: new Date().toISOString(), movido_por: userId })
+            .eq('id', dbId)
+          if (error) throw error
         } else {
-          const { error: delErr } = await db
+          // Movimiento PARCIAL: reducir la original e insertar una fila nueva en la nueva cuenta
+          const { error: updErr } = await db
             .from('pos_cuenta_items')
-            .delete()
-            .eq('id', itemId)
-          if (delErr) throw delErr
+            .update({ cantidad: it.qty - qtyToMove })
+            .eq('id', dbId)
+          if (updErr) throw updErr
+
+          const { error: insErr } = await db
+            .from('pos_cuenta_items')
+            .insert({
+              cuenta_id: newCuentaId,
+              menu_item_id: it.id,
+              nombre: it.nombre,
+              cantidad: qtyToMove,
+              precio_unitario: Number(it.precio) || 0,
+              modificadores: it.modificadores?.length ? it.modificadores : null,
+              precio_modificadores: Number(it.precioExtra) || 0,
+              componentes: it.componentes?.length ? it.componentes : null,
+              cuenta_origen_id: cuentaId,
+              movido_at: new Date().toISOString(),
+              movido_por: userId,
+            })
+          if (insErr) throw insErr
         }
       }
 
-      // 4. UPDATE original pos_cuentas subtotal and total
-      const { error: updateCuentaErr } = await db
+      // 3. Actualizar totales de la cuenta original
+      const { error: updCuentaErr } = await db
         .from('pos_cuentas')
-        .update({ subtotal: remainingSubtotal, total: remainingSubtotal })
+        .update({ subtotal: remainingSubtotal, total: remainingSubtotal, updated_at: new Date().toISOString() })
         .eq('id', cuentaId)
-      if (updateCuentaErr) throw updateCuentaErr
+      if (updCuentaErr) throw updCuentaErr
 
-      // 5. Call onSplit callback
+      toast.success('Cuenta dividida')
       onSplit()
     } catch (err) {
       console.error('Error splitting check:', err)
@@ -168,15 +179,20 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
           <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 10 }}>
             Selecciona los ítems a mover a una nueva cuenta
           </div>
+          {hayPendientes && (
+            <div style={{ color: '#fbbf24', fontSize: 12, marginBottom: 10 }}>
+              Hay ítems sin comandar: solo se pueden dividir los ítems ya enviados a cocina.
+            </div>
+          )}
           <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #333', borderRadius: 8, padding: 12 }}>
             {originalItems.length === 0 ? (
-              <div style={{ color: '#8b8997', textAlign: 'center', padding: 24 }}>Sin ítems</div>
+              <div style={{ color: '#8b8997', textAlign: 'center', padding: 24 }}>No hay ítems comandados para dividir</div>
             ) : (
               originalItems.map(item => {
-                const itemSel = selectedItems[item.id] || { selected: false, qtyToMove: 1 }
+                const itemSel = selectedItems[item.dbId] || { selected: false, qtyToMove: 1 }
                 return (
                   <div
-                    key={item.id}
+                    key={item.dbId}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -191,19 +207,19 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                     <input
                       type="checkbox"
                       checked={itemSel.selected}
-                      onChange={() => handleToggleItem(item.id)}
+                      onChange={() => handleToggleItem(item.dbId)}
                       style={{ cursor: 'pointer' }}
                     />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 500 }}>{item.nombre}</div>
                       <div style={{ fontSize: 12, color: '#8b8997' }}>
-                        ${item.precio.toFixed(2)} × {item.cantidad} = ${(item.precio * item.cantidad).toFixed(2)}
+                        ${unit(item).toFixed(2)} × {item.qty} = ${(unit(item) * item.qty).toFixed(2)}
                       </div>
                     </div>
                     {itemSel.selected && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <button
-                          onClick={() => handleQtyChange(item.id, itemSel.qtyToMove - 1)}
+                          onClick={() => handleQtyChange(item.dbId, itemSel.qtyToMove - 1)}
                           disabled={itemSel.qtyToMove <= 1}
                           style={{
                             background: '#2a2a32',
@@ -220,9 +236,9 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                         <input
                           type="number"
                           min={1}
-                          max={item.cantidad}
+                          max={item.qty}
                           value={itemSel.qtyToMove}
-                          onChange={e => handleQtyChange(item.id, parseInt(e.target.value) || 1)}
+                          onChange={e => handleQtyChange(item.dbId, parseInt(e.target.value) || 1)}
                           style={{
                             width: 40,
                             textAlign: 'center',
@@ -235,8 +251,8 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                           }}
                         />
                         <button
-                          onClick={() => handleQtyChange(item.id, itemSel.qtyToMove + 1)}
-                          disabled={itemSel.qtyToMove >= item.cantidad}
+                          onClick={() => handleQtyChange(item.dbId, itemSel.qtyToMove + 1)}
+                          disabled={itemSel.qtyToMove >= item.qty}
                           style={{
                             background: '#2a2a32',
                             border: '1px solid #444',
@@ -268,9 +284,9 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                 <div style={{ color: '#8b8997' }}>Sin ítems</div>
               ) : (
                 remainingItems.map(item => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: '#ccc' }}>
-                    <span>{item.nombre} ×{item.cantidad}</span>
-                    <span>${(item.precio * item.cantidad).toFixed(2)}</span>
+                  <div key={item.dbId} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: '#ccc' }}>
+                    <span>{item.nombre} ×{item.qty}</span>
+                    <span>${(unit(item) * item.qty).toFixed(2)}</span>
                   </div>
                 ))
               )}
@@ -291,9 +307,9 @@ export default function SplitCheckModal({ cuentaId, items, storeCode, userId, me
                 <div style={{ color: '#8b8997' }}>Selecciona ítems arriba</div>
               ) : (
                 newAccountItems.map(item => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: '#ccc' }}>
-                    <span>{item.nombre} ×{item.cantidad}</span>
-                    <span>${(item.precio * item.cantidad).toFixed(2)}</span>
+                  <div key={item.dbId} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: '#ccc' }}>
+                    <span>{item.nombre} ×{item.qty}</span>
+                    <span>${(unit(item) * item.qty).toFixed(2)}</span>
                   </div>
                 ))
               )}
