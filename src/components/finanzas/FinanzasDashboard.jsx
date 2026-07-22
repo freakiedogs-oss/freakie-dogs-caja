@@ -1165,13 +1165,23 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
 
   // ─── Drill-down a DTEs (2026-07-20): click en una celda de gasto abre el detalle DTE por DTE ───
   const [drill, setDrill] = useState(null)          // { mes, categoria, label, mesLabel }
-  const [pagadoCat, setPagadoCat] = useState({})   // {categoria: %pagado} para la barra verde de totales
+  const [pagadoCat, setPagadoCat] = useState({})   // {categoria: %pagado} total (columna Total)
+  const [pagadoMes, setPagadoMes] = useState({})   // {categoria: {ym: %pagado}} por mes
   useEffect(() => {
-    db.from('v_pl_pagado_categoria_mensual').select('categoria,total,pagado').then(({ data }) => {
-      const acc = {}
-      for (const r of (data || [])) { const k = r.categoria; if (!acc[k]) acc[k] = { t: 0, p: 0 }; acc[k].t += (+r.total || 0); acc[k].p += (+r.pagado || 0) }
-      const out = {}; for (const k in acc) out[k] = acc[k].t ? Math.max(0, Math.min(100, 100 * acc[k].p / acc[k].t)) : 0
-      setPagadoCat(out)
+    db.from('v_pl_pagado_categoria_mensual').select('mes,categoria,total,pagado').then(({ data }) => {
+      const accT = {}, accM = {}
+      for (const r of (data || [])) {
+        const k = r.categoria, ym = (r.mes || '').substring(0, 7)
+        if (!accT[k]) accT[k] = { t: 0, p: 0 }
+        accT[k].t += (+r.total || 0); accT[k].p += (+r.pagado || 0)
+        if (!accM[k]) accM[k] = {}
+        if (!accM[k][ym]) accM[k][ym] = { t: 0, p: 0 }
+        accM[k][ym].t += (+r.total || 0); accM[k][ym].p += (+r.pagado || 0)
+      }
+      const pctOf = c => c.t ? Math.max(0, Math.min(100, 100 * c.p / c.t)) : 0
+      const outT = {}; for (const k in accT) outT[k] = pctOf(accT[k])
+      const outM = {}; for (const k in accM) { outM[k] = {}; for (const ym in accM[k]) outM[k][ym] = pctOf(accM[k][ym]) }
+      setPagadoCat(outT); setPagadoMes(outM)
     })
   }, [])
   const [drillRows, setDrillRows] = useState(null)
@@ -1381,18 +1391,22 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
                     const ventasMes = m.ventas || 0
                     const pctMes = ventasMes && line.key !== 'ventas' ? (val / ventasMes) : null
                     const canDrill = PL_DRILL_CATS.has(line.key) && m.is2026 && val !== 0
+                    const pm = (line.indent && val !== 0 && pagadoMes[line.key] && pagadoMes[line.key][m.key] != null) ? pagadoMes[line.key][m.key] : null
                     return (
                       <td key={i}
                         onClick={canDrill ? () => setDrill({ mes: m.key + '-01', categoria: line.key, label: line.label, mesLabel: m.label }) : undefined}
                         title={canDrill ? 'Ver los DTEs que componen esta celda' : undefined}
                         style={{
                         ...sTd(isNeg || (line.computed && val < 0)),
+                        position: 'relative',
+                        backgroundImage: pm != null ? `linear-gradient(90deg, rgba(34,197,94,0.28) ${pm}%, transparent ${pm}%)` : undefined,
                         fontWeight: line.bold ? 700 : 400,
                         fontSize: 11,
                       cursor: canDrill ? 'pointer' : 'default',
                         textDecoration: canDrill ? 'underline dotted rgba(255,255,255,0.35)' : 'none',
                         textUnderlineOffset: 3,
                       }}>
+                        {pm != null && <span title={`DTEs pagados: ${pm.toFixed(0)}% del monto de este mes`} style={{ position: 'absolute', top: 1, right: 3, fontSize: 8, fontWeight: 800, color: pm >= 90 ? '#22c55e' : pm >= 50 ? '#eab308' : '#ef4444' }}>{pm.toFixed(0)}%</span>}
                         <div>{val < 0 && line.computed ? '-' : ''}{fmt(val)}</div>
                         {pctMes !== null && val !== 0 && (
                           <div style={{ fontSize: 9, color: C.textMuted, fontWeight: 400, marginTop: 1 }}>
