@@ -35,7 +35,7 @@ const STORES_VENTAS = ['S006', 'M001', 'S001', 'S002', 'S003', 'S004'];
 //   'quanto' → lee de quanto_ordenes (POS legacy Quanto)
 const FUENTE_ACTUAL = {
   S006: 'pos',      // Metro Centro 8va Etapa — nació directo en POS propio (07-Jul-2026)
-  M001: 'quanto',   // Plaza Cafetalón
+  M001: 'pos',   // Plaza Cafetalón
   S001: 'quanto',   // Plaza Mundo Soyapango
   S002: 'quanto',   // Plaza Mundo Usulután
   S003: 'quanto',   // Grand Plaza Lourdes
@@ -48,6 +48,7 @@ const FUENTE_ACTUAL = {
 //   S001: '2026-08-01',
 // (Antes de esa fecha: Quanto. Ese día en adelante: POS propio.)
 const CUTOVER_POS = {
+  M001: '2026-07-22',   // Cafetalón migró de Quanto a POS propio
   // S006 no lleva corte: nunca tuvo Quanto, siempre fue POS propio.
 };
 
