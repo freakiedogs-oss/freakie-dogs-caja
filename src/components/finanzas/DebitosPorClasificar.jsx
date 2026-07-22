@@ -64,7 +64,7 @@ export default function DebitosPorClasificar() {
               <span style={{ fontSize: 12, color: C.white, fontWeight: 700 }}>{d.cuenta_destino || d.descripcion}{d.cuenta_destino && d.sugerido_origen && d.sugerido_origen !== 'freakie' && <span style={{ fontSize: 9, color: C.gold }}> · vía {d.sugerido_origen}</span>}</span>
               <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.white, whiteSpace: 'nowrap' }}>{fmt(d.debito)}</span>
             </div>
-            <div style={{ fontSize: 9, color: C.textMuted, marginBottom: 4 }}>{d.cuenta_destino ? d.descripcion + ' · ' : ''}{String(d.fecha).slice(0, 10)}{d.destino_pl ? ' · auto: ' + d.destino_pl : ''}</div>
+            <div style={{ fontSize: 9, color: C.textMuted, marginBottom: 4 }}>{d.cuenta_destino ? d.descripcion + ' · ' : ''}{String(d.fecha).slice(0, 10)}{d.destino_pl ? ' · auto: ' + d.destino_pl : ''}{d.concepto ? ' · 📝 ' + d.concepto : ''}{d.foto_url ? <a href={d.foto_url} target="_blank" rel="noreferrer" style={{ color: C.blue, marginLeft: 4 }}>📎 comprobante</a> : null}</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <select value={catOf(d)} onChange={e => setCats(c => ({ ...c, [d.id]: e.target.value }))} style={inp}>
                 {CATS.map(c => <option key={c} value={c}>{c}</option>)}
