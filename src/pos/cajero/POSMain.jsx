@@ -351,6 +351,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         store_code:     storeCode,
         canal:          tipo,
         mesa_ref:       mesaActual,
+        mesero:         user?.nombre || user?.name || null,
         estado:         'pendiente',
         prioridad,
         comanda_numero: comandaSeq,
@@ -422,6 +423,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const total = Math.max(0, subtotal - descuentoMonto)
   const newItems = items.filter(i => !i.saved)
   const hasNew   = newItems.length > 0
+
+  // ── Rol mesero: para asignar mesero_id en la cuenta ──
+  const esMesero = user?.rol === 'mesero' || user?.rol === 'mesera'
 
   // ── Normaliza el carrito al formato que espera printService ──
   const buildCuentaPrint = (lista = items) => ({
@@ -509,6 +513,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .insert({
             store_code: storeCode,
             cajero_id:  user.id,
+            mesero_id:  esMesero ? user.id : null,
             tipo:       tipo,
             mesa_ref:   mesaActual,
             menu_id:    menuActivo?.id || null,
@@ -589,6 +594,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .insert({
             store_code:  storeCode,
             cajero_id:   user.id,
+            mesero_id:   esMesero ? user.id : null,
             tipo:        tipo,
             mesa_ref:    mesaActual,
             menu_id:     menuActivo?.id || null,

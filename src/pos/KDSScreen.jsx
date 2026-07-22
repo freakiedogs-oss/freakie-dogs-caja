@@ -209,6 +209,7 @@ export default function KDSScreen({ user, onBack }) {
           comanda_numero: row.comanda_numero,
           canal:          row.canal || 'mesa',
           mesa_ref:       row.mesa_ref,
+          mesero:         row.mesero,
           pager:          row.pager,
           recibido_at:    row.recibido_at,
           items:          [],
@@ -461,6 +462,13 @@ export default function KDSScreen({ user, onBack }) {
                       </span>
                     </div>
 
+                    {comanda.mesero && (
+                      <div className="kds-card-mesero">
+                        <Icon name="user" size={14} color="#2dd4a8" />
+                        <span>{comanda.mesero}</span>
+                      </div>
+                    )}
+
                     {/* Items */}
                     <div className="kds-card-items">
                       {comanda.items.map(item => {
@@ -562,6 +570,7 @@ export default function KDSScreen({ user, onBack }) {
                       comanda_numero: row.comanda_numero,
                       canal:          row.canal || 'mesa',
                       mesa_ref:       row.mesa_ref,
+                      mesero:         row.mesero,
           pager:          row.pager,
                       completado_at:  row.completado_at,
                       items:          [],
@@ -602,6 +611,13 @@ export default function KDSScreen({ user, onBack }) {
                           ✓ {timeStr}
                         </span>
                       </div>
+
+                      {comanda.mesero && (
+                        <div className="kds-card-mesero">
+                          <Icon name="user" size={14} color="#2dd4a8" />
+                          <span>{comanda.mesero}</span>
+                        </div>
+                      )}
 
                       {/* Items */}
                       <div className="kds-card-items">

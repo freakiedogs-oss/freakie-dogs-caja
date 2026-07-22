@@ -1136,6 +1136,18 @@
   white-space: nowrap;
 }
 
+.kds-card-mesero {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2dd4a8;
+  background: rgba(45, 212, 168, 0.08);
+  border-bottom: 1px solid #222;
+}
+
 .kds-card-timer {
   font-size: 13px;
   font-weight: 800;
