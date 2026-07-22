@@ -2613,7 +2613,7 @@ function TabRevisionPL({ user }) {
     try {
       const [txData, catRes, sucRes, cuadreRes] = await Promise.all([
         fetchAllRows(db, 'v_banco_revision', q =>
-          q.select('id,fecha,codigo_bac,descripcion,referencia,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id,tercero_nombre,tercero_relacion,tercero_ambiguo,subcategoria_default,dte_proveedor,dte_monto')
+          q.select('id,fecha,codigo_bac,descripcion,referencia,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id,tercero_nombre,tercero_relacion,tercero_ambiguo,subcategoria_default,dte_proveedor,dte_monto,subcategoria,cuenta_origen,categoria_sugerida')
             .order('fecha', { ascending: false })),
         db.from('categorias_gasto').select('id,nombre,grupo').neq('grupo', 'Pasivo').order('orden'),
         db.from('sucursales').select('store_code,nombre').eq('activa', true).order('store_code'),
@@ -2673,6 +2673,7 @@ function TabRevisionPL({ user }) {
         p_sucursal: patch.sucursal ?? null,
         p_dte: patch.dte ?? null,
         p_revisado: patch.revisado ?? true,
+        p_subcategoria: patch.subcategoria || null,
       })
       if (error) throw error
       await load()
@@ -2764,6 +2765,7 @@ function TabRevisionPL({ user }) {
                         </span>
                         {t.tercero_relacion && <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 6, background: t.tercero_relacion === 'proveedor' ? '#1e3a5f' : '#5b21b6', color: t.tercero_relacion === 'proveedor' ? '#93c5fd' : '#c4b5fd', whiteSpace: 'nowrap' }}>{t.tercero_relacion}</span>}
                         {t.tercero_ambiguo && <span title="Cuenta multipropósito — revisar con cuidado" style={{ fontSize: 10 }}>⚠️</span>}
+                        {(t.cuenta_origen === 'kaeru' || t.cuenta_origen === 'kako') && <span title={`Nombre traído del directorio ${t.cuenta_origen}`} style={{ fontSize: 8, fontWeight: 800, padding: '1px 5px', borderRadius: 6, background: '#3f2d0a', color: '#fbbf24', whiteSpace: 'nowrap' }}>vía {t.cuenta_origen}</span>}
                       </div>
                       <div style={{ fontSize: 10, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.tercero_nombre ? `${t.descripcion} · ` : ''}{t.codigo_bac}{t.referencia ? ` · ref ${t.referencia}` : ''}{t.es_automatico ? ' · ⚡auto' : ''}{t.revisado ? ` · ✓ ${t.revisado_por || ''}` : ''}
@@ -2780,6 +2782,10 @@ function TabRevisionPL({ user }) {
                         <option value="">— sin categoría —</option>
                         {cats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                       </select>
+                      <input key={`sub-${t.id}-${t.subcategoria || ''}`} defaultValue={t.subcategoria || ''} disabled={saving}
+                        placeholder={t.subcategoria_default ? `sug: ${t.subcategoria_default}` : 'subcategoría'} title="Subcategoría (opcional) — se aprende como regla al aprobar"
+                        onBlur={e => { const v = e.target.value.trim(); if (v !== (t.subcategoria || '')) revisar(t, { subcategoria: v, revisado: t.revisado }) }}
+                        style={{ ...selStyle, maxWidth: 150, marginTop: 3, fontSize: 10, background: t.subcategoria ? '#0f1f17' : '#1a1a1a' }} />
                     </td>
                     <td style={{ padding: 6 }}>
                       <select value={t.sucursal_default || ''} disabled={saving}
