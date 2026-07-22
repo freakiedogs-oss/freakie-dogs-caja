@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { db } from '../../supabase'
 import { paletaC as C } from '@/theme'
+import InfoTip from '../ui/InfoTip'
 
 /* ═══════════════════════════════════════════════════════════
    FLUJO DE CAJA NETO — datos reales
@@ -109,6 +110,8 @@ export default function CashFlowNeto() {
               <Row label="Salidas" value={b.salidas != null ? -Math.abs(b.salidas) : null} />
               <div style={{ borderTop: `1px solid ${C.border}`, margin: '6px 0' }} />
               <Row label="Δ Caja del mes" value={b.delta_caja} bold color={Number(b.delta_caja) < 0 ? '#f87171' : C.greenLight} />
+              {b.salidas_provisiones_pasadas ? <Row label={<>(−) Salidas de provisiones pasadas <InfoTip text="Plata que salió del banco ESTE mes pagando gastos ya devengados en meses anteriores (ej. reintegro del Pago a Cuenta de Dic-2025 pagado en abril). Ya está dentro de Δ Caja; se separa para aislar la caja propia del mes." /></>} value={-Math.abs(b.salidas_provisiones_pasadas)} color={C.gold} /> : null}
+              {b.salidas_provisiones_pasadas ? <Row label={<>= Caja Neta Real (del mes) <InfoTip text="Δ Caja del mes excluyendo lo pagado por provisiones de meses anteriores = la caja que la operación de ESTE mes realmente movió." /></>} value={b.caja_neta_real} bold color={Number(b.caja_neta_real) < 0 ? '#f87171' : C.greenLight} /> : null}
               <div style={{ fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 1, margin: '8px 0 4px' }}>Salidas por destino</div>
               <Row label="Pago de DTE" value={bd.pago_dte != null ? -Math.abs(bd.pago_dte) : null} />
               <Row label="Gasto directo P&L" value={bd.gasto_directo_pl != null ? -Math.abs(bd.gasto_directo_pl) : null} />
