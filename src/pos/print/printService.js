@@ -393,7 +393,13 @@ function corteHTML(c) {
 
 export async function imprimir(tipo, cuenta, opts = {}) {
   const storeCode = opts.storeCode || cuenta.storeCode;
-  const imp = opts.impresora || (storeCode ? await getImpresora(storeCode) : null);
+  // Preferir la impresora YA cacheada (lectura sincrona). Un await de red aqui
+  // descarta la user-activation en Android y Chrome bloquea el deep-link rawbt:
+  // en silencio (sintoma: el boton "no hace nada"). Solo se consulta si no esta precargada.
+  let imp = opts.impresora || null;
+  if (!imp && storeCode) {
+    imp = _cache.has(storeCode) ? _cache.get(storeCode) : await getImpresora(storeCode);
+  }
   const cols = imp?.ancho_cols || 48;
   const modo = opts.modo || imp?.modo || 'rawbt';
 

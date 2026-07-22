@@ -6,7 +6,7 @@ import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
 import ProductoModifiersModal from './ProductoModifiersModal'
 import { emitDTE } from './dteService'
-import { printComanda, printPreCuenta, printFactura } from '../print/printService'
+import { printComanda, printPreCuenta, printFactura, getImpresora } from '../print/printService'
 import Icon, { EMOJI_ICON } from '../Icon'
 import { useToast } from '../../hooks/useToast'
 
@@ -79,6 +79,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
   const toast = useToast()
+
+  // Precarga la impresora de la sucursal al abrir el POS: asi al imprimir, el
+  // deep-link rawbt: se dispara SIN un await de red que en Android descartaria
+  // el gesto del usuario y bloquearia la impresion (pre-cuenta/comanda).
+  useEffect(() => { getImpresora(storeCode).catch(() => {}) }, [storeCode])
 
   // Permisos del rol activo
   const perms = PERMISOS_POR_ROL[user.rol] || DEFAULT_PERMS
