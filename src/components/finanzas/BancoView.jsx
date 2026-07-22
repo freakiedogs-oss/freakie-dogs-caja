@@ -2605,6 +2605,8 @@ function TabRevisionPL({ user }) {
   const [expandido, setExpandido] = useState(null)
   const [sugerencias, setSugerencias] = useState({}) // txId -> [dtes]
   const [saving, setSaving] = useState(false)
+  const [dteSel, setDteSel] = useState({})   // {txId: Set(dteIds)} multi-DTE
+  const [dteQuery, setDteQuery] = useState({})
   const [subcatOpts, setSubcatOpts] = useState([]) // catálogo de subcategorías (combobox)
 
   const usuario = user?.nombre || user?.rol || 'ejecutivo'
@@ -2705,8 +2707,41 @@ function TabRevisionPL({ user }) {
       const { data, error } = await db.rpc('fn_banco_sugerir_dte', { p_id: t.id })
       if (error) throw error
       setSugerencias(s => ({ ...s, [t.id]: data || [] }))
-      if (!data || data.length === 0) toast.info('Sin DTEs candidatos por monto/fecha')
+      if (!data || data.length === 0) toast.info('Sin DTEs por monto/fecha — busca por proveedor abajo')
     } catch (e) { toast.error('Error: ' + e.message) }
+  }
+  const buscarDtes = async (t, q) => {
+    const query = (q || '').trim()
+    setDteQuery(m => ({ ...m, [t.id]: query }))
+    if (query.length < 2) return
+    try {
+      const { data, error } = await db.from('compras_dte')
+        .select('id,numero_control,proveedor_nombre,fecha_emision,monto_total,estado_pago')
+        .ilike('proveedor_nombre', `%${query}%`)
+        .order('fecha_emision', { ascending: false }).limit(60)
+      if (error) throw error
+      setSugerencias(s => ({ ...s, [t.id]: (data || []).map(r => ({ dte_id: r.id, proveedor: r.proveedor_nombre, fecha: r.fecha_emision, monto: r.monto_total, estado_pago: r.estado_pago, numero_control: r.numero_control })) }))
+    } catch (e) { toast.error('Error: ' + e.message) }
+  }
+  const toggleDte = (txId, dteId) => setDteSel(m => {
+    const st = new Set(m[txId] || []); st.has(dteId) ? st.delete(dteId) : st.add(dteId)
+    return { ...m, [txId]: st }
+  })
+  const cerrarDte = (txId) => {
+    setSugerencias(sg => ({ ...sg, [txId]: undefined }))
+    setDteSel(m => { const c = { ...m }; delete c[txId]; return c })
+  }
+  const aplicarMultiDte = async (t) => {
+    const ids = Array.from(dteSel[t.id] || [])
+    if (ids.length === 0) return
+    setSaving(true)
+    try {
+      const { error } = await db.rpc('fn_banco_revisar_multi_dte', { p_id: t.id, p_dtes: ids, p_usuario: usuario })
+      if (error) throw error
+      toast.success(`✅ ${ids.length} DTE(s) vinculados a este débito`)
+      cerrarDte(t.id)
+      await load()
+    } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
   }
 
   // ── Render ──
@@ -2815,17 +2850,43 @@ function TabRevisionPL({ user }) {
                     </td>
                   </tr>
                   {sugs && (
-                    <tr><td colSpan={8} style={{ padding: '4px 10px 10px 40px', background: '#111' }}>
-                      {sugs.length === 0
-                        ? <span style={{ fontSize: 11, color: '#777' }}>Sin DTEs candidatos (monto exacto, fecha −45/+5d). Si es gasto real sin factura → P&L directo.</span>
-                        : sugs.map(s => (
-                          <div key={s.dte_id} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 11, color: '#d1d5db', padding: '3px 0' }}>
-                            <span>📄 {s.proveedor} · {fmtDate(s.fecha)} · <b>{fmt(s.monto)}</b> ({s.delta_dias}d)</span>
-                            <button disabled={saving} onClick={() => { revisar(t, { destino: 'dte', dte: s.dte_id }); setSugerencias(sg => ({ ...sg, [t.id]: undefined })) }}
-                              style={{ padding: '2px 8px', borderRadius: 6, border: 'none', background: '#065f46', color: '#6ee7b7', fontWeight: 700, cursor: 'pointer', fontSize: 10 }}>Vincular → Vía DTE</button>
+                    <tr><td colSpan={8} style={{ padding: '6px 10px 12px 40px', background: '#111' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                        <input autoFocus placeholder="Buscar DTE por proveedor…" defaultValue={dteQuery[t.id] || ''}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); buscarDtes(t, e.target.value) } }}
+                          onBlur={e => buscarDtes(t, e.target.value)}
+                          style={{ ...selStyle, minWidth: 240, fontSize: 11 }} />
+                        <span style={{ fontSize: 10, color: '#888' }}>Elige varios DTEs (incluso de distintos proveedores) que pague este mismo monto.</span>
+                      </div>
+                      {(!sugs || sugs.length === 0)
+                        ? <span style={{ fontSize: 11, color: '#777' }}>Escribe un proveedor para buscar sus DTEs. Si es gasto real sin factura → P&L directo.</span>
+                        : <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                            {sugs.map(s => {
+                              const selSet = dteSel[t.id] || new Set()
+                              return (
+                                <label key={s.dte_id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: '#d1d5db', padding: '3px 0', cursor: 'pointer' }}>
+                                  <input type="checkbox" checked={selSet.has(s.dte_id)} onChange={() => toggleDte(t.id, s.dte_id)} />
+                                  <span>📄 {s.proveedor}{s.numero_control ? ` · ${s.numero_control}` : ''} · {fmtDate(s.fecha)} · <b>{fmt(s.monto)}</b>{s.estado_pago ? ` · ${s.estado_pago}` : (s.delta_dias != null ? ` · ${s.delta_dias}d` : '')}</span>
+                                </label>
+                              )
+                            })}
+                          </div>}
+                      {(() => {
+                        const selSet = dteSel[t.id] || new Set()
+                        const sum = (sugs || []).filter(s => selSet.has(s.dte_id)).reduce((a, s) => a + Number(s.monto || 0), 0)
+                        const diff = Number(t.debito || 0) - sum
+                        const ok = Math.abs(diff) < 0.5
+                        return (
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                            <button disabled={saving || selSet.size === 0} onClick={() => aplicarMultiDte(t)}
+                              style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: selSet.size ? '#065f46' : '#333', color: selSet.size ? '#6ee7b7' : '#666', fontWeight: 800, cursor: selSet.size ? 'pointer' : 'default', fontSize: 11 }}>
+                              ✅ Vincular {selSet.size} DTE{selSet.size !== 1 ? 's' : ''} → Vía DTE
+                            </button>
+                            {selSet.size > 0 && <span style={{ fontSize: 11, color: ok ? '#6ee7b7' : '#fbbf24' }}>Σ {fmt(sum)} vs débito {fmt(t.debito)} · {ok ? 'cuadra ✓' : `dif ${fmt(diff)}`}</span>}
+                            <button onClick={() => cerrarDte(t.id)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 10 }}>cerrar</button>
                           </div>
-                        ))}
-                      <button onClick={() => setSugerencias(sg => ({ ...sg, [t.id]: undefined }))} style={{ marginTop: 4, background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 10 }}>cerrar</button>
+                        )
+                      })()}
                     </td></tr>
                   )}
                 </FragmentRow>
