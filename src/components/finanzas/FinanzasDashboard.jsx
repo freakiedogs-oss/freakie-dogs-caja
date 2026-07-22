@@ -1395,18 +1395,17 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
                     return (
                       <td key={i}
                         onClick={canDrill ? () => setDrill({ mes: m.key + '-01', categoria: line.key, label: line.label, mesLabel: m.label }) : undefined}
-                        title={canDrill ? 'Ver los DTEs que componen esta celda' : undefined}
+                        title={[pm != null ? `DTEs pagados: ${pm.toFixed(0)}% del monto de este mes` : null, canDrill ? 'Click para ver los DTEs' : null].filter(Boolean).join(' · ') || undefined}
                         style={{
                         ...sTd(isNeg || (line.computed && val < 0)),
                         position: 'relative',
-                        backgroundImage: pm != null ? `linear-gradient(90deg, rgba(34,197,94,0.28) ${pm}%, transparent ${pm}%)` : undefined,
                         fontWeight: line.bold ? 700 : 400,
                         fontSize: 11,
                       cursor: canDrill ? 'pointer' : 'default',
                         textDecoration: canDrill ? 'underline dotted rgba(255,255,255,0.35)' : 'none',
                         textUnderlineOffset: 3,
                       }}>
-                        {pm != null && <span title={`DTEs pagados: ${pm.toFixed(0)}% del monto de este mes`} style={{ position: 'absolute', top: 1, right: 3, fontSize: 8, fontWeight: 800, color: pm >= 90 ? '#22c55e' : pm >= 50 ? '#eab308' : '#ef4444' }}>{pm.toFixed(0)}%</span>}
+                        {pm != null && <span title={`DTEs pagados: ${pm.toFixed(0)}% del monto de este mes`} style={{ position: 'absolute', top: 4, right: 4, width: 7, height: 7, borderRadius: '50%', background: pm >= 90 ? '#22c55e' : pm >= 50 ? '#eab308' : '#ef4444', boxShadow: '0 0 0 1px rgba(0,0,0,0.35)' }} />}
                         <div>{val < 0 && line.computed ? '-' : ''}{fmt(val)}</div>
                         {pctMes !== null && val !== 0 && (
                           <div style={{ fontSize: 9, color: C.textMuted, fontWeight: 400, marginTop: 1 }}>
