@@ -87,29 +87,30 @@ function getAudioCtx() {
   return _audioCtx
 }
 
-function _tone(ctx, freq, start, dur) {
+function _tone(ctx, freq, start, dur, vol = 0.85, type = 'triangle') {
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
   osc.connect(gain); gain.connect(ctx.destination)
-  osc.type = 'triangle'
+  osc.type = type
   const t = ctx.currentTime + start
   osc.frequency.setValueAtTime(freq, t)
   gain.gain.setValueAtTime(0.0001, t)
-  gain.gain.exponentialRampToValueAtTime(0.6, t + 0.02)
+  gain.gain.exponentialRampToValueAtTime(vol, t + 0.02)
   gain.gain.exponentialRampToValueAtTime(0.0001, t + dur)
   osc.start(t)
   osc.stop(t + dur + 0.03)
 }
 
-// Campanita "ding-dong" repetida para llamar la atención en cocina
-function playBeep() {
+// Alarma FUERTE y reconocible (timbre bi-tonal, square) para nuevas órdenes en cocina
+function playAlarm() {
   const ctx = getAudioCtx()
   if (!ctx) return
   try {
-    _tone(ctx, 988, 0.00, 0.18)   // B5
-    _tone(ctx, 1319, 0.20, 0.32)  // E6
-    _tone(ctx, 988, 0.58, 0.18)
-    _tone(ctx, 1319, 0.78, 0.34)
+    _tone(ctx, 880,  0.00, 0.20, 0.9, 'square')
+    _tone(ctx, 1245, 0.22, 0.20, 0.9, 'square')
+    _tone(ctx, 880,  0.46, 0.20, 0.9, 'square')
+    _tone(ctx, 1245, 0.68, 0.20, 0.9, 'square')
+    _tone(ctx, 1245, 0.92, 0.36, 0.9, 'square')
   } catch (_) {}
 }
 
@@ -131,17 +132,43 @@ export default function KDSScreen({ user, onBack }) {
   const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial'
   const [reverting,   setReverting]   = useState(null)       // id de item en revert
   const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
+  const [soundReady, setSoundReady] = useState(false)   // audio desbloqueado por gesto
+  const [alarmOn,    setAlarmOn]    = useState(false)    // alarma insistente sonando
+  const wakeLockRef  = useRef(null)
   useTimer()  // fuerza re-render cada 10s para actualizar timers
 
-  // Desbloquear/reanudar audio con la primera interacción (autoplay policy)
+  // Habilitar sonido con un toque (los navegadores exigen un gesto del usuario)
+  const habilitarSonido = () => {
+    const ctx = getAudioCtx()
+    if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {})
+    try { playAlarm() } catch (_) {}
+    setSoundReady(true)
+  }
+
+  // Alarma insistente: suena y REPITE cada 5s mientras alarmOn, hasta que cocina toque una comanda
   useEffect(() => {
-    const unlock = () => getAudioCtx()
+    if (!alarmOn) return
+    playAlarm()
+    const id = setInterval(playAlarm, 5000)
+    return () => clearInterval(id)
+  }, [alarmOn])
+
+  // Desbloquear/reanudar audio con interacción o al volver a la pestaña (autoplay policy)
+  useEffect(() => {
+    const unlock = () => {
+      const ctx = getAudioCtx()
+      if (ctx && ctx.state === 'running') setSoundReady(true)
+    }
     unlock()  // intento al montar (venimos de un clic de navegación)
     window.addEventListener('pointerdown', unlock)
     window.addEventListener('keydown', unlock)
+    window.addEventListener('focus', unlock)
+    document.addEventListener('visibilitychange', unlock)
     return () => {
       window.removeEventListener('pointerdown', unlock)
       window.removeEventListener('keydown', unlock)
+      window.removeEventListener('focus', unlock)
+      document.removeEventListener('visibilitychange', unlock)
     }
   }, [])
 
@@ -155,12 +182,14 @@ export default function KDSScreen({ user, onBack }) {
       .order('recibido_at', { ascending: true })
 
     const rows = data || []
-    // Beep si aparece alguna fila NUEVA (id no visto antes). La 1ª carga no suena.
+    // Alarma si aparece alguna fila NUEVA (id no visto antes). La 1ª carga no suena.
     const ids = new Set(rows.map(r => r.id))
-    if (prevIds.current && rows.some(r => !prevIds.current.has(r.id))) playBeep()
+    const hayNuevos = prevIds.current && rows.some(r => !prevIds.current.has(r.id))
     prevIds.current = ids
     setQueue(rows)
     setLoading(false)
+    if (hayNuevos) setAlarmOn(true)
+    else if (rows.length === 0) setAlarmOn(false)   // nada pendiente → callar
   }, [storeCode])
 
   // ── Carga Historial (completadas hoy) ──
@@ -182,19 +211,65 @@ export default function KDSScreen({ user, onBack }) {
     loadHistorial()
   }, [load, loadHistorial])
 
-  // Realtime
+  // Realtime con reconexión automática
   useEffect(() => {
-    const sub = db.channel('kds_rt')
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'pos_cocina_queue',
-        filter: `store_code=eq.${storeCode}`,
-      }, () => {
-        load()
-        loadHistorial()
-      })
-      .subscribe()
-    return () => db.removeChannel(sub)
+    let sub = null
+    let retry = null
+    const suscribir = () => {
+      sub = db.channel('kds_rt_' + storeCode)
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'pos_cocina_queue',
+          filter: `store_code=eq.${storeCode}`,
+        }, () => {
+          load()
+          loadHistorial()
+        })
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            clearTimeout(retry)
+            retry = setTimeout(() => { try { db.removeChannel(sub) } catch (_) {} ; suscribir() }, 3000)
+          }
+        })
+    }
+    suscribir()
+    return () => { clearTimeout(retry); try { db.removeChannel(sub) } catch (_) {} }
   }, [storeCode, load, loadHistorial])
+
+  // Respaldo: polling cada 8s + recarga al reconectar wifi / volver a la pestaña.
+  // Si el tiempo real se cae, la cola NUNCA se queda congelada.
+  useEffect(() => {
+    const refrescar = () => { load(); loadHistorial() }
+    const poll = setInterval(refrescar, 8000)
+    const onVis = () => { if (document.visibilityState === 'visible') refrescar() }
+    window.addEventListener('online', refrescar)
+    window.addEventListener('focus', refrescar)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      clearInterval(poll)
+      window.removeEventListener('online', refrescar)
+      window.removeEventListener('focus', refrescar)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [load, loadHistorial])
+
+  // Mantener la pantalla de la tablet ENCENDIDA mientras el KDS está abierto
+  useEffect(() => {
+    const pedir = async () => {
+      try {
+        if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+        }
+      } catch (_) {}
+    }
+    pedir()
+    const onVis = () => { if (document.visibilityState === 'visible') pedir() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      try { wakeLockRef.current && wakeLockRef.current.release() } catch (_) {}
+      wakeLockRef.current = null
+    }
+  }, [])
 
   // ── Grouping ──
   // Agrupar queue por (cuenta_id + comanda_numero) → una "comanda"
@@ -248,6 +323,7 @@ export default function KDSScreen({ user, onBack }) {
   // ── Acciones ──
   // Marcar ítem individual como en_preparacion / listo
   const toggleItem = async (queueId, estadoActual) => {
+    setAlarmOn(false)   // cocina está atendiendo → callar alarma
     const siguiente = estadoActual === 'pendiente' ? 'en_preparacion'
       : estadoActual === 'en_preparacion' ? 'completado'
       : 'pendiente'
@@ -259,6 +335,7 @@ export default function KDSScreen({ user, onBack }) {
 
   // Marcar toda la comanda como LISTA → actualizar cuenta a 'lista'
   const bumparComanda = async (comanda) => {
+    setAlarmOn(false)   // cocina está atendiendo → callar alarma
     setBumping(comanda.key)
     try {
       // Marcar todos los ítems de esta comanda como completados
@@ -364,6 +441,13 @@ export default function KDSScreen({ user, onBack }) {
               {queue.length > 0 ? `● ${queue.length} pendiente${queue.length !== 1 ? 's' : ''}` : '● Sin órdenes'}
             </span>
           </>
+        )}
+        {!soundReady ? (
+          <button className="kds-mode-btn" style={{ background: '#166534', color: '#fff', borderColor: '#22c55e', fontWeight: 800 }} onClick={habilitarSonido}>🔔 Activar sonido</button>
+        ) : alarmOn ? (
+          <button className="kds-mode-btn" style={{ background: '#7f1d1d', color: '#fff', borderColor: '#ef4444', fontWeight: 800 }} onClick={() => setAlarmOn(false)}>🔕 Silenciar</button>
+        ) : (
+          <span style={{ fontSize: 12, color: '#2dd4a8', fontWeight: 700 }}>🔔 Sonido activo</span>
         )}
         <Clock />
       </header>
