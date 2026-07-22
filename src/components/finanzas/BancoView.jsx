@@ -2605,24 +2605,27 @@ function TabRevisionPL({ user }) {
   const [expandido, setExpandido] = useState(null)
   const [sugerencias, setSugerencias] = useState({}) // txId -> [dtes]
   const [saving, setSaving] = useState(false)
+  const [subcatOpts, setSubcatOpts] = useState([]) // catálogo de subcategorías (combobox)
 
   const usuario = user?.nombre || user?.rol || 'ejecutivo'
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [txData, catRes, sucRes, cuadreRes] = await Promise.all([
+      const [txData, catRes, sucRes, cuadreRes, subcatRes] = await Promise.all([
         fetchAllRows(db, 'v_banco_revision', q =>
           q.select('id,fecha,codigo_bac,descripcion,referencia,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id,tercero_nombre,tercero_relacion,tercero_ambiguo,subcategoria_default,dte_proveedor,dte_monto,subcategoria,cuenta_origen,categoria_sugerida')
             .order('fecha', { ascending: false })),
         db.from('categorias_gasto').select('id,nombre,grupo').neq('grupo', 'Pasivo').order('orden'),
         db.from('sucursales').select('store_code,nombre').eq('activa', true).order('store_code'),
         db.from('v_banco_cuadre_mensual').select('*').order('mes', { ascending: false }),
+        db.from('v_banco_subcategorias').select('subcategoria').limit(500),
       ])
       setTx(txData)
       setCats(catRes.data || [])
       setSucs(sucRes.data || [])
       setCuadre(cuadreRes.data || [])
+      setSubcatOpts((subcatRes.data || []).map(r => r.subcategoria).filter(Boolean))
       setSeleccion(new Set())
     } catch (e) { toast.error('Error cargando: ' + e.message) } finally { setLoading(false) }
   }, [])
@@ -2715,6 +2718,7 @@ function TabRevisionPL({ user }) {
 
   return (
     <div>
+      <datalist id="banco-subcats">{subcatOpts.map(s => <option key={s} value={s} />)}</datalist>
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 14 }}>
         <KpiCard label="Por aprobar (P&L directo)" value={String(porAprobar.length)} sub={fmt(porAprobar.reduce((s, t) => s + Number(t.debito || 0), 0))} color="#c4b5fd" />
@@ -2782,8 +2786,8 @@ function TabRevisionPL({ user }) {
                         <option value="">— sin categoría —</option>
                         {cats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                       </select>
-                      <input key={`sub-${t.id}-${t.subcategoria || ''}`} defaultValue={t.subcategoria || ''} disabled={saving}
-                        placeholder={t.subcategoria_default ? `sug: ${t.subcategoria_default}` : 'subcategoría'} title="Subcategoría (opcional) — se aprende como regla al aprobar"
+                      <input key={`sub-${t.id}-${t.subcategoria || ''}`} list="banco-subcats" defaultValue={t.subcategoria || ''} disabled={saving}
+                        placeholder={t.subcategoria_default ? `sug: ${t.subcategoria_default}` : 'subcategoría'} title="Subcategoría — escribe para filtrar, elige de la lista o crea una nueva; se aprende como regla al aprobar"
                         onBlur={e => { const v = e.target.value.trim(); if (v !== (t.subcategoria || '')) revisar(t, { subcategoria: v, revisado: t.revisado }) }}
                         style={{ ...selStyle, maxWidth: 150, marginTop: 3, fontSize: 10, background: t.subcategoria ? '#0f1f17' : '#1a1a1a' }} />
                     </td>
