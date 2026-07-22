@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { db } from './supabase'
+import { db } from '../supabase'
 import Icon from './Icon'
 
 // Roles que pueden AUTORIZAR (eliminar ítems comandados / anular cuenta)
