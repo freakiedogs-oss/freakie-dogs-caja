@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../../supabase'
 import { STORES, today } from '../../config'
 import PaymentModal from './PaymentModal'
@@ -8,6 +8,7 @@ import ProductoModifiersModal from './ProductoModifiersModal'
 import { emitDTE } from './dteService'
 import { printComanda, printPreCuenta, printFactura, getImpresora } from '../print/printService'
 import Icon, { EMOJI_ICON } from '../Icon'
+import PinAuthModal from '../PinAuthModal'
 import { useToast } from '../../hooks/useToast'
 
 // ──────────────────────────────────────────────
@@ -23,6 +24,47 @@ const TIPO_INFO = {
 }
 
 // ── Permisos por rol ──
+// Fila deslizable: arrastra a la izquierda para revelar el boton rojo "Eliminar".
+// Funciona con mouse (drag) y tactil (swipe). No bloquea el scroll vertical (touch-action: pan-y en CSS).
+function SwipeRow({ children, onDelete }) {
+  const [dx, setDx] = useState(0)
+  const [open, setOpen] = useState(false)
+  const start = useRef(null)
+  const REVEAL = 96
+
+  const down = (e) => { start.current = e.clientX; try { e.currentTarget.setPointerCapture(e.pointerId) } catch (_) {} }
+  const move = (e) => {
+    if (start.current == null) return
+    let d = e.clientX - start.current + (open ? -REVEAL : 0)
+    d = Math.min(0, Math.max(-REVEAL - 24, d))
+    setDx(d)
+  }
+  const up = () => {
+    if (start.current == null) return
+    start.current = null
+    const abierto = dx < -REVEAL / 2
+    setOpen(abierto); setDx(abierto ? -REVEAL : 0)
+  }
+
+  return (
+    <div className="swipe-wrap">
+      <button className="swipe-del" style={{ width: REVEAL }} onClick={() => { setOpen(false); setDx(0); onDelete() }}>
+        <Icon name="trash" size={20} /><span>Eliminar</span>
+      </button>
+      <div
+        className="swipe-fg"
+        style={{ transform: `translateX(${dx}px)`, transition: start.current == null ? 'transform .18s ease' : 'none' }}
+        onPointerDown={down}
+        onPointerMove={move}
+        onPointerUp={up}
+        onPointerCancel={up}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 const PERMISOS_POR_ROL = {
   mesero:    { comandar: true,  moverMesa: true,  preCuenta: true,  anular: false, editarGuardado: false, cobrar: false, descuento: false },
   mesera:    { comandar: true,  moverMesa: true,  preCuenta: true,  anular: false, editarGuardado: false, cobrar: false, descuento: false },
@@ -114,6 +156,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const [activeCat,         setActiveCat]         = useState(null)
   const [showPayModal,      setShowPayModal]       = useState(false)
   const [showNoteModal,     setShowNoteModal]      = useState(null)
+  const [pinAuth,           setPinAuth]            = useState(null)
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [comboPicker,       setComboPicker]        = useState(null)  // combo con componentes por armar
@@ -400,6 +443,47 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     })
   }, [perms.anular])
 
+  // Eliminar item: los NUEVOS (sin comandar) salen directo; los COMANDADOS exigen PIN de cajera/gerente.
+  const handleDeleteItem = (idx) => {
+    const item = items[idx]
+    if (!item) return
+    if (item.saved) {
+      setPinAuth({
+        titulo: 'Anular item comandado',
+        subtitulo: `"${item.nombre}" · requiere cajera o gerente`,
+        onOk: (auth) => { setPinAuth(null); doDeleteItem(idx, auth) },
+      })
+    } else {
+      doDeleteItem(idx, null)
+    }
+  }
+
+  const doDeleteItem = async (idx, auth) => {
+    const item = items[idx]
+    if (!item) return
+    if (item.saved) {
+      if (!item.dbId) { toast.error('Recarga la orden para anular este item'); return }
+      try {
+        await db.from('pos_cuenta_items')
+          .update({ cancelado_motivo: `Anulado en POS (${auth?.nombre || 'sup'})`, cancelado_por: auth?.id || null })
+          .eq('id', item.dbId)
+        await db.from('pos_cocina_queue').delete().eq('cuenta_item_id', item.dbId)
+        const next = items.filter((_, i) => i !== idx)
+        setItems(next)
+        if (cuentaId) {
+          const s = next.reduce((a, i) => a + (i.precio + (i.precioExtra || 0)) * i.qty, 0)
+          await db.from('pos_cuentas').update({ subtotal: s, total: s, updated_at: new Date().toISOString() }).eq('id', cuentaId)
+        }
+        toast.success('Item anulado')
+      } catch (e) {
+        toast.error('No se pudo anular: ' + e.message)
+      }
+    } else {
+      setItems(items.filter((_, i) => i !== idx))
+    }
+  }
+
+
   const saveNota = () => {
     if (showNoteModal === null) return
     setItems(prev => {
@@ -571,7 +655,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       }
 
       setComandaSeq(s => s + 1)
-      setItems(prev => prev.map(i => ({ ...i, saved: true })))
+      setItems(prev => {
+        let _k = 0
+        return prev.map(i => i.saved ? i : { ...i, saved: true, dbId: insertedItems?.[_k++]?.id ?? i.dbId ?? null })
+      })
       setCommandedCount(items.length)
 
     } catch (err) {
@@ -936,8 +1023,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
               </div>
             ) : (
               items.map((item, idx) => (
+                <SwipeRow key={idx} onDelete={() => handleDeleteItem(idx)}>
                 <div
-                  key={idx}
                   className={`pos-order-item${item.saved ? ' saved' : ' new'}`}
                 >
                   <div
@@ -1014,30 +1101,20 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
                       ${((item.precio + (item.precioExtra || 0)) * item.qty).toFixed(2)}
                     </div>
                     {!item.saved && (
-                      <div style={{ display: 'flex', gap: 2 }}>
-                        <button
-                          className="pos-order-item-del"
-                          style={{ color: '#8b8997', fontSize: 12 }}
-                          onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
-                        ><Icon name="pencil" size={13} /></button>
-                        <button className="pos-order-item-del" onClick={() => removeItem(idx)}>✕</button>
-                      </div>
-                    )}
-                    {item.saved && perms.anular && (
                       <button
                         className="pos-order-item-del"
-                        style={{ color: '#f8717130', fontSize: 11 }}
-                        title="Anular ítem (requiere cajera)"
-                        onClick={() => {
-                          if (confirm(`¿Anular "${item.nombre}"?`)) removeItem(idx)
-                        }}
-                      ><Icon name="ban" size={13} /></button>
+                        style={{ color: '#8b8997', fontSize: 13 }}
+                        title="Editar nota"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
+                      ><Icon name="pencil" size={14} /></button>
                     )}
-                    {item.saved && !perms.anular && (
-                      <span style={{ marginTop: 2 }} title="Solo cajera puede anular"><Icon name="lock" size={12} color="#6b6878" /></span>
+                    {item.saved && (
+                      <span className="pos-order-item-swipehint" title="Desliza a la izquierda para anular (requiere PIN)"><Icon name="lock" size={12} color="#6b6878" /></span>
                     )}
                   </div>
                 </div>
+                </SwipeRow>
               ))
             )}
           </div>
@@ -1159,6 +1236,14 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       )}
 
       {/* Modal: Pago + DTE */}
+      {pinAuth && (
+        <PinAuthModal
+          titulo={pinAuth.titulo}
+          subtitulo={pinAuth.subtitulo}
+          onSuccess={pinAuth.onOk}
+          onCancel={() => setPinAuth(null)}
+        />
+      )}
       {showPayModal && (
         <PaymentModal
           items={items}

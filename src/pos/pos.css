@@ -930,14 +930,14 @@
   border-top: 2px solid transparent;
   cursor: pointer;
   transition: all .15s;
-  color: #555;
+  color: #E62329;
 }
 .poshome-quick-btn:hover {
-  color: var(--qt-color, #E62329);
-  background: #232329;
+  color: #ff5a5f;
+  background: #2a1618;
 }
 .poshome-quick-icon { font-size: 20px; }
-.poshome-quick-label { font-size: 11px; font-weight: 600; }
+.poshome-quick-label { font-size: 12px; font-weight: 700; }
 
 /* ── Orden panel: badges ── */
 .pos-order-open-badge {
@@ -1566,3 +1566,71 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+
+/* ── Barra inferior: botones todos en rojo (más visibles) ── */
+/* (color base y hover editados arriba en .poshome-quick-btn) */
+
+/* ── Swipe para eliminar ítems del carrito ── */
+.swipe-wrap { position: relative; overflow: hidden; border-radius: 8px; }
+.swipe-fg {
+  position: relative;
+  z-index: 1;
+  background: #1c1c22;
+  touch-action: pan-y;
+  will-change: transform;
+}
+.swipe-del {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: #E62329;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  z-index: 0;
+}
+.swipe-del:active { background: #c81e24; }
+.pos-order-item-swipehint { margin-top: 2px; opacity: 0.6; }
+
+/* ── Modal PIN de autorización (eliminar comandado / anular) ── */
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.pin-key {
+  padding: 15px 0;
+  font-size: 20px;
+  font-weight: 700;
+  background: #2a2a32;
+  color: #f3efe9;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.pin-key:hover { background: #34343e; }
+.pin-key:active { background: #3d3d48; }
+.pin-key-sec { background: #241d19; font-size: 18px; }
+.pin-key-ok { background: #E62329; color: #fff; }
+.pin-key-ok:disabled { opacity: .4; cursor: not-allowed; }
+.pin-cancel {
+  width: 100%;
+  padding: 11px;
+  background: none;
+  border: 1px solid #333;
+  color: #9a9088;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pin-cancel:hover { background: #232329; color: #f3efe9; }

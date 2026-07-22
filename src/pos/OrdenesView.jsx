@@ -3,6 +3,7 @@ import { db } from '../supabase'
 import { STORES } from '../config'
 import Icon from './Icon'
 import HistorialCobros from './HistorialCobros'
+import PinAuthModal from './PinAuthModal'
 
 const TIPO = {
   mesa:            { ic: 'armchair', l: 'Mesa',        c: '#2dd4a8' },
@@ -29,6 +30,7 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
   const [tab, setTab]         = useState('activas')
   const [activas, setActivas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [pinAuth, setPinAuth] = useState(null)
 
   const loadActivas = useCallback(async () => {
     setLoading(true)
@@ -44,21 +46,27 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
 
   useEffect(() => { if (tab === 'activas') loadActivas() }, [tab, loadActivas])
 
-  const canCancel = ROLES_CANCELAR.includes(user?.rol)
+  // Anular cuenta: SIEMPRE requiere PIN de cajera/gerente (autorización con rastro)
+  const canCancel = true
 
-  const handleCancelar = async (c, e) => {
+  const pedirCancelar = (c, e) => {
     e.stopPropagation()
+    const label = c.mesa_ref ? `Mesa #${c.mesa_ref}` : (TIPO[c.tipo]?.l || c.tipo)
+    setPinAuth({ cuenta: c, label })
+  }
+
+  const doCancelar = async (c, auth) => {
     const items = c.pos_cuenta_items?.length || 0
     const label = c.mesa_ref ? `Mesa #${c.mesa_ref}` : (TIPO[c.tipo]?.l || c.tipo)
-    const motivo = window.prompt(`Cancelar orden ${label} (${items} ítem${items !== 1 ? 's' : ''}). Escribe el motivo:`, '')
+    const motivo = window.prompt(`Anular orden ${label} (${items} ítem${items !== 1 ? 's' : ''}). Escribe el motivo:`, '')
     if (motivo === null) return   // canceló el prompt
     // Limpia la cola de cocina pendiente de esta orden
     await db.from('pos_cocina_queue').delete().eq('cuenta_id', c.id).in('estado', ['pendiente', 'en_preparacion'])
     // Nunca cancela una cuenta ya cobrada (para eso está la anulación/NC)
     const { error } = await db.from('pos_cuentas').update({
       estado: 'cancelada',
-      cancelada_motivo: motivo.trim() || 'Sin motivo',
-      cancelada_por: user.id,
+      cancelada_motivo: (motivo.trim() || 'Sin motivo') + ` · autorizó ${auth?.nombre || ''}`,
+      cancelada_por: auth?.id || user.id,
       updated_at: new Date().toISOString(),
     }).eq('id', c.id).neq('estado', 'cobrada')
     if (error) { window.alert('Error al cancelar: ' + error.message); return }
@@ -152,7 +160,7 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
                     </span>
                     {canCancel && (
                       <button
-                        onClick={(e) => handleCancelar(c, e)}
+                        onClick={(e) => pedirCancelar(c, e)}
                         title="Cancelar orden (antes de cobrar)"
                         style={{
                           background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.35)',
@@ -170,6 +178,15 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
             </div>
           )}
         </div>
+      )}
+
+      {pinAuth && (
+        <PinAuthModal
+          titulo="Anular cuenta"
+          subtitulo={`${pinAuth.label} · requiere cajera o gerente`}
+          onSuccess={(auth) => { const c = pinAuth.cuenta; setPinAuth(null); doCancelar(c, auth) }}
+          onCancel={() => setPinAuth(null)}
+        />
       )}
     </div>
   )
