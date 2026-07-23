@@ -676,6 +676,18 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     let dteError  = null
 
     try {
+      // 0. Requiere turno abierto (1 caja por sucursal). Fail-open ante error de consulta.
+      let turnoId = null
+      try {
+        const { data: _t, error: _te } = await db.from('pos_turnos').select('id')
+          .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
+          .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+        if (!_te) {
+          if (!_t) { toast.warning('No hay turno abierto. Abri el turno en Cierre de caja antes de cobrar.'); setSaving(false); return }
+          turnoId = _t.id
+        }
+      } catch (_e) { /* fail-open: no bloquear la venta por error de consulta */ }
+
       let currentCuentaId = cuentaId
       const itemsToSave   = currentCuentaId ? newItems : items
 
@@ -686,6 +698,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .insert({
             store_code:  storeCode,
             cajero_id:   user.id,
+            turno_id:    turnoId,
             mesero_id:   esMesero ? user.id : null,
             tipo:        tipo,
             mesa_ref:    mesaActual,
@@ -727,6 +740,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             cliente_id: paymentData.cliente?.id || null,
             cobrada_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            turno_id:   turnoId,
           })
           .eq('id', currentCuentaId)
         if (updErr) throw new Error('Error al marcar cobrada: ' + updErr.message)

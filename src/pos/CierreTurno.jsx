@@ -216,7 +216,7 @@ export default function CierreTurno({ user, onBack }) {
 
   const loadCorte = useCallback(async () => {
     if (!turno) return
-    const { data, error } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: turno.abierto_at, p_hasta: new Date().toISOString(), p_turno_id: null })
+    const { data, error } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: turno.abierto_at, p_hasta: new Date().toISOString(), p_turno_id: turno.id })
     if (!error) setCorte(data)
   }, [turno, storeCode])
   useEffect(() => { loadCorte() }, [loadCorte])
