@@ -50,11 +50,15 @@ export const KDS_CONTADOR_LABELS = {
   papa_waffle:         'Papa Waffle',
 }
 
-// Normaliza un nombre para comparación: lowercase, sin acentos, trim
+// Normaliza un nombre para comparación:
+// lowercase, sin acentos, guiones/underscores → espacios, espacios colapsados
+// ̀-ͯ = combining marks (acentos y diacríticos separados por NFD)
 const norm = (s) => (s || '')
   .toLowerCase()
   .normalize('NFD')
   .replace(/[̀-ͯ]/g, '')
+  .replace(/[-_/]+/g, ' ')
+  .replace(/\s+/g, ' ')
   .trim()
 
 // Mapeo: nombre normalizado del item → { contador: cantidad, ... }
@@ -72,6 +76,8 @@ const RAW_MAP = {
   'combo chili dog':        { chili_dog: 1, papa: 1 },
   'pepsi combo':            { freakie_dog: 1, papa: 1 },
   'pepsi combo xl':         { freakie_dog: 2, papa: 1 },
+  'coca cola combo':        { freakie_dog: 1, papa: 1 },
+  'coca cola combo xl':     { freakie_dog: 2, papa: 1 },
   'burger duo':             { hamburguesa: 2, papa: 2 },
   'sweet burger duo':       { hamburguesa: 2, papa: 2 },
   'duo picossini':          { hamburguesa: 2, papa: 2, queso_frito: 1 },
