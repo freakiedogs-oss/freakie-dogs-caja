@@ -282,7 +282,7 @@ export default function CierreTurno({ user, onBack }) {
       try {
         const _tv = parseFloat((efSistema + n(corte?.tarjeta) + n(corte?.transferencia) + n(corte?.link_pago)).toFixed(2))
         const { data: _vd, error: _vdErr } = await db.from('ventas_diarias').upsert({
-          fecha: todayISO(), store_code: storeCode, turno: 'completo',
+          fecha: turno.fecha || todayISO(), store_code: storeCode, turno: 'completo',
           efectivo_quanto: efSistema, tarjeta_quanto: n(corte?.tarjeta),
           ventas_transferencia: n(corte?.transferencia), ventas_link_pago: n(corte?.link_pago),
           total_ventas_quanto: _tv, total_egresos: parseFloat(totalEg.toFixed(2)),
