@@ -1090,6 +1090,63 @@
   align-items: start;
 }
 
+/* ── Barra contador productos pendientes (solo S006 Metro Centro) ── */
+.kds-contador-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px;
+  background: #12111c;
+  border: 0.5px solid #2a2838;
+  border-radius: 10px;
+}
+.kds-contador-estacion {
+  background: #1a1826;
+  border-radius: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #6b6878;
+  min-width: 0;
+}
+.kds-contador-est-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+}
+.kds-contador-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 2px 12px;
+}
+.kds-contador-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+.kds-contador-item-label {
+  color: #d0d0d8;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kds-contador-item-num {
+  color: #fbbf24;
+  font-size: 18px;
+  font-weight: 700;
+  min-width: 20px;
+  text-align: right;
+}
+.kds-contador-vacio {
+  color: #4a4858;
+  font-size: 20px;
+  text-align: center;
+  padding: 4px 0;
+}
+
 /* ── Comanda card ── */
 .kds-card {
   background: #1a1a1a;
