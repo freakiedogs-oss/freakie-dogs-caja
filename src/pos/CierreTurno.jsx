@@ -274,7 +274,7 @@ export default function CierreTurno({ user, onBack }) {
         sistema_link_pago: n(corte?.link_pago), sistema_pedidos_ya: n(corte?.otros), sistema_total: n(corte?.total),
         sistema_propinas: n(corte?.propinas), sistema_num_cuentas: corte?.n_cuentas || 0,
         sistema_num_cancelaciones: corte?.n_cancelaciones || 0, sistema_ticket_promedio: n(corte?.ticket_promedio),
-        conteo_efectivo: efReal, diferencia_efectivo: difDeposito, deposito_monto: efReal,
+        conteo_efectivo: efReal, deposito_monto: efReal,
         egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
       }).eq('id', turno.id)
       if (error) throw error
