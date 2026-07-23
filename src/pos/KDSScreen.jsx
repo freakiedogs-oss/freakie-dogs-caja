@@ -217,11 +217,16 @@ export default function KDSScreen({ user, onBack }) {
   }, [load, loadHistorial])
 
   // Realtime con reconexión automática
+  // Channel name incluye timestamp único para evitar colisiones en re-mounts
+  // (fix: "cannot add postgres_changes callbacks after subscribe()")
   useEffect(() => {
     let sub = null
     let retry = null
+    let mounted = true
     const suscribir = () => {
-      sub = db.channel('kds_rt_' + storeCode)
+      if (!mounted) return
+      const channelName = 'kds_rt_' + storeCode + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+      sub = db.channel(channelName)
         .on('postgres_changes', {
           event: '*', schema: 'public', table: 'pos_cocina_queue',
           filter: `store_code=eq.${storeCode}`,
@@ -230,14 +235,23 @@ export default function KDSScreen({ user, onBack }) {
           loadHistorial()
         })
         .subscribe((status) => {
+          if (!mounted) return
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             clearTimeout(retry)
-            retry = setTimeout(() => { try { db.removeChannel(sub) } catch (_) {} ; suscribir() }, 3000)
+            retry = setTimeout(() => {
+              try { db.removeChannel(sub) } catch (_) {}
+              sub = null
+              suscribir()
+            }, 3000)
           }
         })
     }
     suscribir()
-    return () => { clearTimeout(retry); try { db.removeChannel(sub) } catch (_) {} }
+    return () => {
+      mounted = false
+      clearTimeout(retry)
+      if (sub) { try { db.removeChannel(sub) } catch (_) {} }
+    }
   }, [storeCode, load, loadHistorial])
 
   // Respaldo: polling cada 8s + recarga al reconectar wifi / volver a la pestaña.
