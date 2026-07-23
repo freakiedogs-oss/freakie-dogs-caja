@@ -3,6 +3,11 @@ import { db } from '../supabase'
 import Icon from './Icon'
 import { STORES } from '../config'
 import { useToast } from '../hooks/useToast'
+import {
+  KDS_CONTADOR_ESTACIONES,
+  KDS_CONTADOR_LABELS,
+  calcularContadoresS006,
+} from './kdsCounterMapS006'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -309,6 +314,11 @@ export default function KDSScreen({ user, onBack }) {
 
   const comandas = buildComandas(filteredQueue)
 
+  // Contador de productos pendientes por estación — solo S006 (Metro Centro)
+  // Se calcula sobre `queue` completa (no `filteredQueue`) porque el
+  // dictador quiere ver el total real independiente de qué filtro use.
+  const contadoresS006 = storeCode === 'S006' ? calcularContadoresS006(queue) : null
+
   // Conteos para badges
   const conteos = {}
   FILTROS.forEach(f => {
@@ -495,6 +505,31 @@ export default function KDSScreen({ user, onBack }) {
 
       {/* ── CUERPO ── */}
       <div className="kds-body">
+        {/* Barra contador productos pendientes — solo S006 (Metro Centro) */}
+        {tab === 'activas' && contadoresS006 && (
+          <div className="kds-contador-bar">
+            {KDS_CONTADOR_ESTACIONES.map(est => {
+              const items = est.items.filter(k => (contadoresS006[k] || 0) > 0)
+              return (
+                <div key={est.id} className="kds-contador-estacion" style={{ borderLeftColor: est.color }}>
+                  <div className="kds-contador-est-label" style={{ color: est.color }}>{est.label}</div>
+                  {items.length === 0 ? (
+                    <div className="kds-contador-vacio">—</div>
+                  ) : (
+                    <div className="kds-contador-items">
+                      {items.map(k => (
+                        <div key={k} className="kds-contador-item">
+                          <span className="kds-contador-item-label">{KDS_CONTADOR_LABELS[k]}</span>
+                          <span className="kds-contador-item-num">{contadoresS006[k]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
         {tab === 'activas' ? (
           // ── VISTA ACTIVAS ──
           loading ? (
