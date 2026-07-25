@@ -39,7 +39,7 @@ const FUENTE_ACTUAL = {
   S001: 'quanto',   // Plaza Mundo Soyapango
   S002: 'pos',   // Plaza Mundo Usulután
   S003: 'quanto',   // Grand Plaza Lourdes
-  S004: 'quanto',   // Paseo Venecia
+  S004: 'pos',   // Paseo Venecia
 };
 
 // ── Fechas de corte Quanto → POS propio (YYYY-MM-DD) ──
@@ -50,6 +50,7 @@ const FUENTE_ACTUAL = {
 const CUTOVER_POS = {
   M001: '2026-07-22',   // Cafetalón migró de Quanto a POS propio
   S002: '2026-07-24',   // Usulutan migro a POS propio
+  S004: '2026-07-25',   // Paseo Venecia migro de Quanto a POS propio
   // S006 no lleva corte: nunca tuvo Quanto, siempre fue POS propio.
 };
 
