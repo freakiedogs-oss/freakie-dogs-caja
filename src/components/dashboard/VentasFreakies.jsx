@@ -63,13 +63,13 @@ const C = {
 // Colores de canal (consistentes con KPIs de Venta)
 const CH_COLOR = {
   mesa: '#f59e0b', para_llevar: '#3b82f6', delivery_propio: '#ec4899',
-  drivethrough: '#14b8a6', delivery_app: '#22d3ee', otro: '#888',
+  drivethrough: '#14b8a6', delivery_app: '#22d3ee', pedidos_ya: '#a855f7', otro: '#888',
 };
 const CH_LABEL = {
   mesa: 'Mesa', para_llevar: 'Para llevar', delivery_propio: 'Delivery propio',
-  drivethrough: 'Drive-thru', delivery_app: 'Delivery app', otro: 'Otro',
+  drivethrough: 'Drive-thru', delivery_app: 'Delivery app', pedidos_ya: 'PeYa', otro: 'Otro',
 };
-const CH_ORDER = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough', 'delivery_app', 'otro'];
+const CH_ORDER = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough', 'delivery_app', 'pedidos_ya', 'otro'];
 // Métodos de pago Quanto (códigos DTE MH) → etiqueta
 const METODO_QUANTO = { '01': 'Efectivo', '02': 'Tarjeta', '03': 'Tarjeta', '04': 'Cheque', '05': 'Transferencia', '08': 'Otros' };
 const METODO_COLOR = { Efectivo: '#4ade80', Tarjeta: '#60a5fa', Transferencia: '#a78bfa', Cheque: '#f59e0b', Otros: '#888', Mixto: '#ec4899' };

@@ -700,7 +700,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             cajero_id:   user.id,
             turno_id:    turnoId,
             mesero_id:   esMesero ? user.id : null,
-            tipo:        tipo,
+            tipo:        paymentData.metodo === 'pedidos_ya' ? 'pedidos_ya' : tipo,
             mesa_ref:    mesaActual,
             menu_id:     menuActivo?.id || null,
             estado:      'cobrada',
@@ -728,6 +728,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .from('pos_cuentas')
           .update({
             estado:     'cobrada',
+            ...(paymentData.metodo === 'pedidos_ya' ? { tipo: 'pedidos_ya' } : {}),
             subtotal,
             iva:        0,
             propina:    paymentData.propina || 0,

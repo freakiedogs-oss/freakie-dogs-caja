@@ -16,6 +16,7 @@ const METODO_DISPLAY = {
   link_pago:     { ic: 'link',    label: 'Link de Pago' },
   transferencia: { ic: 'bank',    label: 'Transferencia' },
   mixto:         { ic: 'shuffle', label: 'Mixto' },
+  pedidos_ya:    { ic: 'bike',    label: 'CxC PeYa' },
 }
 
 const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 'Industrial', 'Hipotecario', 'Otro']
@@ -251,11 +252,15 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
 
         {/* Método de pago */}
         <div className="pos-method-tabs" style={{ flexWrap: 'wrap' }}>
-          {['efectivo','tarjeta','link_pago','transferencia','mixto'].map(m => (
+          {['efectivo','tarjeta','link_pago','transferencia','mixto','pedidos_ya'].map(m => (
             <button
               key={m}
               className={`pos-method-tab${metodo === m ? ' active' : ''}`}
-              onClick={() => setMetodo(m)}
+              onClick={() => {
+                setMetodo(m)
+                if (m === 'pedidos_ya') { setTipoDte('ticket'); setPropina('0'); setCliente(null) }
+                else if (tipoDte === 'ticket') { setTipoDte('factura') }
+              }}
               style={{ fontSize: 12, padding: '6px 10px' }}
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name={METODO_DISPLAY[m]?.ic} size={15} /> {METODO_DISPLAY[m]?.label}</span>
@@ -418,6 +423,15 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
           </>
         )}
 
+        {/* CxC PeYa (cuenta por cobrar) */}
+        {metodo === 'pedidos_ya' && (
+          <div className="pos-payment-field">
+            <div style={{ background: '#1a1420', border: '1px solid #6b2d6b', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#e0b3e0' }}>
+              &#128690; <b>Cuenta por Cobrar &mdash; PedidosYa.</b> Se registra la venta por ${totalConProp.toFixed(2)}, pero NO entra efectivo a la caja. PeYa liquida el viernes. Sin DTE (solo ticket interno).
+            </div>
+          </div>
+        )}
+
         {/* Propina */}
         <div className="pos-payment-field">
           <label className="pos-payment-label">Propina</label>
@@ -464,7 +478,8 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
           />
         </div>
 
-        {/* Tipo DTE */}
+        {/* Tipo DTE — oculto para CxC PeYa (sin DTE) */}
+        {metodo !== 'pedidos_ya' && (
         <div style={{ marginBottom: 12 }}>
           <label className="pos-payment-label" style={{ display: 'block', marginBottom: 6 }}>
             Documento fiscal
@@ -482,6 +497,7 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
             ))}
           </div>
         </div>
+        )}
 
         {/* ── CustomerSearch para Factura, CCF y SE ── */}
         {(tipoDte === 'factura' || tipoDte === 'ccf' || tipoDte === 'se') && (
