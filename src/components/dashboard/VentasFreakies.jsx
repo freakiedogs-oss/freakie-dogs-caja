@@ -50,7 +50,7 @@ const FUENTE_ACTUAL = {
 const CUTOVER_POS = {
   M001: '2026-07-22',   // Cafetalón migró de Quanto a POS propio
   S002: '2026-07-24',   // Usulutan migro a POS propio
-  S004: '2026-07-25',   // Paseo Venecia migro de Quanto a POS propio
+  S004: '2026-07-26',   // Paseo Venecia (25-Jul siguio en Quanto; corte real 26-Jul)
   // S006 no lleva corte: nunca tuvo Quanto, siempre fue POS propio.
 };
 
