@@ -328,10 +328,10 @@ export default function KDSScreen({ user, onBack }) {
 
   const comandas = buildComandas(filteredQueue)
 
-  // Contador de productos pendientes por estación — solo S006 (Metro Centro)
-  // Se calcula sobre `queue` completa (no `filteredQueue`) porque el
-  // dictador quiere ver el total real independiente de qué filtro use.
-  const contadoresS006 = storeCode === 'S006' ? calcularContadoresS006(queue) : null
+  // Contador de productos pendientes por estación — TODAS las sucursales.
+  // Se calcula sobre `queue` completa (no `filteredQueue`) para ver el
+  // total real independiente de qué filtro use la cocina.
+  const contadoresS006 = calcularContadoresS006(queue)
 
   // Conteos para badges
   const conteos = {}
@@ -519,7 +519,7 @@ export default function KDSScreen({ user, onBack }) {
 
       {/* ── CUERPO ── */}
       <div className="kds-body">
-        {/* Barra contador productos pendientes — solo S006 (Metro Centro) */}
+        {/* Barra contador productos pendientes — todas las sucursales */}
         {tab === 'activas' && contadoresS006 && (
           <div className="kds-contador-bar">
             {KDS_CONTADOR_ESTACIONES.map(est => {

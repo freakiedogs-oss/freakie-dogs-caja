@@ -36,6 +36,7 @@ function Mi({ label, value, onChange, readOnly, hint }) {
 
 export default function Deposito({ user, onBack }) {
   const { show, Toast } = useToast();
+  const [storeCode, setStoreCode] = useState(user.store_code || '');
   const [monto, setMonto] = useState('');
   const [fechaDep, setFechaDep] = useState(today());
   const [dias, setDias] = useState([today()]);
@@ -51,16 +52,16 @@ export default function Deposito({ user, onBack }) {
   });
 
   useEffect(() => {
-    if (dias.length === 0) {
+    if (dias.length === 0 || !storeCode) {
       setCierresDias([]);
       return;
     }
     db.from('ventas_diarias')
       .select('fecha,efectivo_real_depositar,efectivo_calculado,diferencia_deposito,estado,turno')
-      .eq('store_code', user.store_code)
+      .eq('store_code', storeCode)
       .in('fecha', dias)
       .then(({ data }) => setCierresDias(data || []));
-  }, [dias]);
+  }, [dias, storeCode]);
 
   const montoEsperado = cierresDias.reduce((s, c) => s + n(c.efectivo_real_depositar), 0);
   const difDep = n(monto) - montoEsperado;
@@ -68,6 +69,10 @@ export default function Deposito({ user, onBack }) {
     n(monto) > 0 && montoEsperado > 0 ? (Math.abs(difDep) < 1 ? 'diff-ok' : Math.abs(difDep) <= 5 ? 'diff-warn' : 'diff-err') : '';
 
   const submit = async () => {
+    if (!storeCode) {
+      show('⚠️ Selecciona la sucursal');
+      return;
+    }
     if (!n(monto)) {
       show('⚠️ Ingresa el monto');
       return;
@@ -83,14 +88,14 @@ export default function Deposito({ user, onBack }) {
     setLoading(true);
     let fotosUrls = [];
     try {
-      fotosUrls = await Promise.all(fotos.map((f) => uploadFoto(f, `depositos/${user.store_code}`)));
+      fotosUrls = await Promise.all(fotos.map((f) => uploadFoto(f, `depositos/${storeCode}`)));
     } catch (e) {
       show('❌ Error subiendo foto: ' + e.message);
       setLoading(false);
       return;
     }
     const { error } = await db.from('depositos_bancarios').insert({
-      store_code: user.store_code,
+      store_code: storeCode,
       monto: n(monto),
       fecha_deposito: fechaDep,
       dias_cubiertos: dias,
@@ -120,12 +125,21 @@ export default function Deposito({ user, onBack }) {
         </button>
         <div>
           <div style={{ fontWeight: 800, fontSize: 17 }}>Depósito Bancario <InfoTip text="Registra los depósitos del efectivo de caja al banco: cuánto se depositó, de qué días de venta y a qué cuenta." /></div>
-          <div style={{ fontSize: 12, color: '#666' }}>{STORES[user.store_code]}</div>
+          <div style={{ fontSize: 12, color: '#666' }}>{STORES[storeCode] || 'Selecciona la sucursal abajo'}</div>
         </div>
       </div>
 
       <div className="card">
         <div className="sec-title">Datos del depósito</div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Sucursal</div>
+          <select className="inp" value={storeCode} onChange={(e) => setStoreCode(e.target.value)}>
+            <option value="">— Selecciona sucursal —</option>
+            {Object.entries(STORES).map(([code, nombre]) => (
+              <option key={code} value={code}>{code} · {nombre}</option>
+            ))}
+          </select>
+        </div>
         <Mi label="Monto depositado" value={monto} onChange={setMonto} />
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 13, color: '#aaa', marginBottom: 5 }}>Fecha del depósito</div>
