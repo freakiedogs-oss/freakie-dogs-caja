@@ -328,12 +328,27 @@ async function sendBridge(ticket, imp) {
   if (!res.ok) throw new Error(`bridge ${res.status}`);
 }
 
-/** Imprime por window.print() con HTML. */
+/** Imprime por window.print() usando un iframe oculto EN LA MISMA pagina.
+ *  No abre popup (Chrome no lo bloquea). Con Chrome --kiosk-printing sale
+ *  directo a la impresora predeterminada, SIN dialogo (como QUANTO). */
 function sendSistema(html) {
-  const w = window.open('', '_blank', 'width=420,height=640');
-  if (!w) { alert('Permite ventanas emergentes para imprimir.'); return; }
-  w.document.write(html);
-  w.document.close();
+  const old = document.getElementById('__pos_print_frame');
+  if (old) old.remove();
+  const f = document.createElement('iframe');
+  f.id = '__pos_print_frame';
+  f.setAttribute('aria-hidden', 'true');
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  f.srcdoc = html; // mismo origen; el propio HTML dispara window.print() en su onload
+  f.onload = () => {
+    try {
+      f.contentWindow.addEventListener('afterprint', () => {
+        setTimeout(() => { try { f.remove(); } catch (_) {} }, 500);
+      }, { once: true });
+    } catch (_) {}
+  };
+  document.body.appendChild(f);
+  // limpieza de respaldo por si 'afterprint' no dispara (kiosk-printing a veces no lo emite)
+  setTimeout(() => { const el = document.getElementById('__pos_print_frame'); if (el) el.remove(); }, 120000);
 }
 
 /**
