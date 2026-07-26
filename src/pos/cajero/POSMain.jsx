@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../../supabase'
-import { STORES, today } from '../../config'
+import { STORES, STORES_SIN_COMANDA, today } from '../../config'
 import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
@@ -646,12 +646,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         buildQueueRows(newItems, insertedItems, currentCuentaId, prioridadComanda)
       )
 
-      // Imprime la comanda térmica con SOLO los ítems recién enviados a cocina
-      try {
-        await printComanda(buildCuentaPrint(newItems))
-      } catch (pErr) {
-        console.error('Comanda enviada pero no se imprimió:', pErr)
-        toast.error('Comanda guardada, pero no se imprimió')
+      // Imprime la comanda térmica con SOLO los ítems recién enviados a cocina.
+      // Venecia (S004) y otras en STORES_SIN_COMANDA no imprimen comanda al comandar;
+      // la orden igual queda en el KDS (pos_cocina_queue).
+      if (!STORES_SIN_COMANDA.includes(storeCode)) {
+        try {
+          await printComanda(buildCuentaPrint(newItems))
+        } catch (pErr) {
+          console.error('Comanda enviada pero no se imprimió:', pErr)
+          toast.error('Comanda guardada, pero no se imprimió')
+        }
       }
 
       setComandaSeq(s => s + 1)
