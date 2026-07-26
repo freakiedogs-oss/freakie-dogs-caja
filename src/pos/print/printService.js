@@ -421,6 +421,20 @@ export async function imprimir(tipo, cuenta, opts = {}) {
   };
   const htmlers = { comanda: comandaHTML, precuenta: preCuentaHTML, factura: facturaHTML, corte: corteHTML };
 
+  // App nativa propia (Freakie POS APK): TIENE PRIORIDAD si esta presente.
+  // WebView + window.AndroidPrinter.printRaw(ip,puerto,base64) => socket TCP a la impresora.
+  // Corre en cualquier tablet, incl. Amazon Fire, SIN RawBT ni Google Play.
+  const _nativo = (() => {
+    try { return (window.AndroidPrinter && window.AndroidPrinter.isNativePrinter()) ? window.AndroidPrinter : null; }
+    catch (e) { return null; }
+  })();
+  if (_nativo) {
+    try {
+      _nativo.printRaw(imp?.ip_address || '192.168.1.130', imp?.puerto || 9100, builders[tipo]().base64());
+      return { modo: 'app' };
+    } catch (e) { console.error('[print] app nativa fallo, cae a modo normal', e); }
+  }
+
   if (modo === 'sistema') { sendSistema(htmlers[tipo](cuenta)); return { modo }; }
 
   const ticket = builders[tipo]();

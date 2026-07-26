@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-26 — App Android propia de impresión (Freakie POS APK)
+- **Por qué:** RawBT **no corre en las tablets Amazon Fire** — su código hace un chequeo de licencia de Google Play, que Fire OS no tiene. Como las Fire son parte del parque de tablets, la impresión quedaba rota ahí. La salida es una **app propia**: WebView que carga el POS + puente JS→socket TCP:9100. Usa solo APIs base de Android, sin Google Play Services, así que corre en Fire igual que en Android normal.
+- **Diseño:** la app es "tonta" — solo recibe `(ip, puerto, base64)` y escribe al socket. Toda la lógica sigue en el POS, que le pasa la IP desde `pos_impresoras`. Eso da **cero configuración por tablet** (el gran dolor de RawBT) y ninguna credencial vive en el APK.
+- **Integración (`src/pos/print/printService.js`):** en `imprimir()`, antes del check de `modo === 'sistema'`, se detecta `window.AndroidPrinter.isNativePrinter()`. Si está, **tiene prioridad**; si falla, cae al flujo normal. En navegador sigue RawBT/`window.print` como hoy — la misma web sirve los 3 casos sin romper ninguna tienda.
+- **Build sin Android Studio:** GitHub Actions (`.github/workflows/android.yml`) compila y firma el APK en la nube; se baja de Artifacts y se sideloadea (las Fire ya tienen "orígenes desconocidos" ON). El keystore se genera con **openssl** (formato PKCS12) porque el Mac no tiene Java para `keytool`. Vive en `~/freakie.keystore`, **fuera del repo** — con él se firman todas las versiones futuras. Secretos en GitHub: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`.
+- **Fix al recuperar:** el `MainActivity.kt` original cargaba `https://pos.freakiedogs.com`, que **no existe** (NXDOMAIN) — es un nombre aspiracional del MAESTRO (§Fase POS). Se apuntó al deploy real `https://freakie-dogs-caja.vercel.app`.
+- **Rescate:** este trabajo nació en una task de **Cowork** en la MacBook y quedó sin commitear (frenó `keytool` por falta de Java). Se recuperó desde el espejo Syncthing (`~/MacBook-Mirror/Documents/Freakies/Claude/freakie-dogs-caja`) copiando **archivos**, no con git: el `.git` de ese espejo está corrupto (Syncthing no replica los objetos — 51 borrados fantasma). **Lección: el espejo Syncthing sirve para archivos, nunca como fuente git.** La fuente de verdad es GitHub.
+- Pendiente: generar keystore + cargar secretos + primer run de Actions → probar APK en la Fire de Paseo Venecia (S004). Después: feedback de impresión en pantalla, abrir gaveta, auto-update y rollout a las 8 tiendas.
+
 ## 2026-07-26 — Proyecto centralizado en Freakie HQ (Mac mini)
 - El repo se clonó en el Mac mini (`~/Proyectos/freakie-dogs-caja`) como parte de mover los proyectos al servidor 24/7 ("Freakie HQ"), accesible desde MacBook y teléfono.
 - Se agregó este `CLAUDE.md` + `memoria.md` con el **ritual de inicio estándar** (leer MAESTRO → memoria → Notion), para que cada task entre en contexto igual, ya sea desde terminal o desde Remote Control.

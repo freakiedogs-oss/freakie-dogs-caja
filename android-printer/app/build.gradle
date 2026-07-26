@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.freakiedogs.pos'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.freakiedogs.pos"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            def ksFile = System.getenv("KEYSTORE_FILE") ?: "freakie.keystore"
+            storeFile file(ksFile)
+            storePassword System.getenv("KS_PASS")
+            keyAlias System.getenv("KS_ALIAS")
+            keyPassword System.getenv("KS_PASS")
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+}
