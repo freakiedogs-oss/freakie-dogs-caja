@@ -25,8 +25,9 @@ export const STORES_SHORT = {
 // Sucursales food court: propina 0 por defecto en el POS
 export const STORES_SIN_PROPINA = ['S006', 'S002']
 
-// Food court: propina 0 por defecto + asignacion de pager al cobrar
-export const STORES_FOOD_COURT = ['S006', 'S002']
+// Food court: asignacion de pager al cobrar (KDS + ticket). La propina 0 la
+// controla STORES_SIN_PROPINA, aparte — S001 tiene pager pero mantiene propina.
+export const STORES_FOOD_COURT = ['S006', 'S002', 'S001']
 
 // Sucursales que NO imprimen comanda de cocina al comandar (la orden igual entra al KDS)
 export const STORES_SIN_COMANDA = ['S004']
