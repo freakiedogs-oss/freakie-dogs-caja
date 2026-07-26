@@ -35,7 +35,7 @@ class MainActivity : Activity() {
         web.addJavascriptInterface(Bridge(), "AndroidPrinter")
         // Deploy real del POS. Si algun dia se registra pos.freakiedogs.com
         // (aspiracional en el MAESTRO), se cambia aca y se recompila.
-        web.loadUrl("https://freakie-dogs-caja.vercel.app")
+        web.loadUrl("https://freakie-dogs-caja.vercel.app/pos")
     }
 
     override fun onBackPressed() {
