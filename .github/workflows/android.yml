@@ -1,0 +1,35 @@
+name: build-apk
+on:
+  push:
+    paths:
+      - 'android-printer/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Decodificar keystore
+        working-directory: android-printer
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/freakie.keystore
+      - name: Compilar APK release firmado
+        working-directory: android-printer
+        env:
+          KEYSTORE_FILE: freakie.keystore
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          gradle wrapper --gradle-version 8.7
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Subir APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: freakie-pos-apk
+          path: android-printer/app/build/outputs/apk/release/*.apk
