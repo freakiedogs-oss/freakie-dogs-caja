@@ -102,6 +102,18 @@ export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
           })}
         </div>
 
+        {/* Manual del ERP — página aparte, se abre en pestaña nueva. Visible para todos. */}
+        <a
+          className="sidebar-item"
+          href="/manual-pos.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ textDecoration: 'none', margin: '4px 8px', borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 12 }}
+        >
+          <span className="sidebar-item-icon">📖</span>
+          Manual del ERP
+        </a>
+
         {/* User info */}
         <div className="sidebar-user">
           <div className="sidebar-user-info">

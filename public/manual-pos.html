@@ -1,0 +1,829 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Manual del ERP — Freakie Dogs</title></head><body>
+<style>
+  :root{
+    --paper:#faf7f2; --card:#ffffff; --ink:#211a16; --ink-soft:#6b6058;
+    --line:#e9ded1; --line-strong:#dccbb8;
+    --accent:#d8382c; --accent-ink:#ffffff; --accent-2:#e6941a;
+    --good:#2f855a; --good-bg:#e7f4ec; --warn:#b4770a; --warn-bg:#fbf1dc;
+    --danger:#c0392b; --danger-bg:#fbe9e7; --info:#2b6cb0; --info-bg:#e7f0f9;
+    --shadow:0 1px 2px rgba(40,25,15,.05),0 8px 24px rgba(40,25,15,.06);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#161210; --card:#211a15; --ink:#f3e9dd; --ink-soft:#ab9e90; --line:#302620; --line-strong:#3d3128;
+    --accent:#f2594a; --accent-ink:#1a0f0d; --accent-2:#f2ad3f; --good:#63c48d; --good-bg:#16281f;
+    --warn:#e2a53c; --warn-bg:#2a2113; --danger:#ef6a5c; --danger-bg:#2c1613; --info:#6aa9e0; --info-bg:#132132;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);}}
+  :root[data-theme="light"]{--paper:#faf7f2;--card:#fff;--ink:#211a16;--ink-soft:#6b6058;--line:#e9ded1;--line-strong:#dccbb8;--accent:#d8382c;--accent-ink:#fff;--accent-2:#e6941a;--good:#2f855a;--good-bg:#e7f4ec;--warn:#b4770a;--warn-bg:#fbf1dc;--danger:#c0392b;--danger-bg:#fbe9e7;--info:#2b6cb0;--info-bg:#e7f0f9;--shadow:0 1px 2px rgba(40,25,15,.05),0 8px 24px rgba(40,25,15,.06)}
+  :root[data-theme="dark"]{--paper:#161210;--card:#211a15;--ink:#f3e9dd;--ink-soft:#ab9e90;--line:#302620;--line-strong:#3d3128;--accent:#f2594a;--accent-ink:#1a0f0d;--accent-2:#f2ad3f;--good:#63c48d;--good-bg:#16281f;--warn:#e2a53c;--warn-bg:#2a2113;--danger:#ef6a5c;--danger-bg:#2c1613;--info:#6aa9e0;--info-bg:#132132;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35)}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.62;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+  .topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .topbar-in{max-width:1180px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:14px}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:-.02em}
+  .logo .mark{width:30px;height:30px;border-radius:9px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:17px;box-shadow:var(--shadow)}
+  .logo small{font-weight:600;color:var(--ink-soft)}
+  .topbar .ver{margin-left:auto;font:600 12px/1 var(--mono);color:var(--ink-soft);border:1px solid var(--line-strong);padding:6px 9px;border-radius:999px}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+  .layout{display:grid;grid-template-columns:260px 1fr;gap:52px;align-items:start}
+  @media (max-width:900px){.layout{grid-template-columns:1fr;gap:8px}}
+
+  .hero{padding:52px 0 32px;border-bottom:1px solid var(--line);grid-column:1/-1}
+  .hero .kicker{font:700 12px/1 var(--sans);letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+  .hero h1{font-size:clamp(30px,5vw,46px);line-height:1.04;letter-spacing:-.03em;margin:14px 0 0;text-wrap:balance;font-weight:820}
+  .hero p{margin:16px 0 0;max-width:64ch;color:var(--ink-soft);font-size:17px}
+  .hero .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .tag{font:600 12.5px/1 var(--sans);padding:7px 11px;border-radius:999px;background:var(--card);border:1px solid var(--line-strong);color:var(--ink-soft);display:inline-flex;gap:6px;align-items:center}
+  .tag b{color:var(--ink);font-weight:700}
+
+  .toc{position:sticky;top:74px;align-self:start;padding-top:38px;max-height:calc(100vh - 88px);overflow-y:auto}
+  @media (max-width:900px){.toc{position:static;padding:14px 0 0;max-height:none}}
+  .toc-h{font:700 11px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 10px;padding-left:12px}
+  .toc ol{list-style:none;margin:0;padding:0;counter-reset:toc}
+  .toc li{counter-increment:toc}
+  .toc a{display:flex;gap:9px;align-items:baseline;padding:6px 12px;border-radius:8px;color:var(--ink-soft);font-size:13.5px;font-weight:550;border-left:2px solid transparent}
+  .toc a::before{content:counter(toc);font:800 10px/1 var(--mono);color:var(--accent-ink);background:var(--accent-2);border-radius:5px;min-width:18px;height:16px;display:inline-flex;align-items:center;justify-content:center}
+  .toc a:hover{background:color-mix(in srgb,var(--accent) 8%,transparent);text-decoration:none;color:var(--ink)}
+  .toc a.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink);border-left-color:var(--accent);font-weight:700}
+
+  main{padding:38px 0 90px;min-width:0}
+  section{scroll-margin-top:72px;padding:20px 0 30px;border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:0}
+  .sec-num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:var(--accent);color:var(--accent-ink);font:800 13px/1 var(--sans)}
+  h2{font-size:25px;line-height:1.12;letter-spacing:-.02em;margin:12px 0 4px;font-weight:790;text-wrap:balance}
+  .lead{color:var(--ink-soft);font-size:15px;max-width:70ch;margin:6px 0 4px}
+  h3{font-size:16.5px;margin:24px 0 6px;font-weight:730;letter-spacing:-.01em;scroll-margin-top:72px}
+  p,li{font-size:15px}main p{max-width:70ch}
+
+  ol.steps{list-style:none;counter-reset:step;max-width:68ch;padding:0;margin:12px 0}
+  ol.steps>li{counter-increment:step;position:relative;padding:2px 0 13px 42px;margin:0;font-size:15px}
+  ol.steps>li::before{content:counter(step);position:absolute;left:0;top:0;width:27px;height:27px;background:var(--card);border:1.5px solid var(--accent);color:var(--accent);border-radius:50%;display:grid;place-items:center;font:800 12.5px/1 var(--sans)}
+  ol.steps>li::after{content:"";position:absolute;left:13px;top:29px;bottom:2px;width:1.5px;background:var(--line-strong)}
+  ol.steps>li:last-child::after{display:none}
+  ul.plain{list-style:none;padding:0;margin:12px 0}
+  ul.plain>li{position:relative;padding:3px 0 3px 22px;max-width:70ch}
+  ul.plain>li::before{content:"";position:absolute;left:4px;top:12px;width:6px;height:6px;border-radius:50%;background:var(--accent-2)}
+  strong,b{font-weight:720}
+  kbd{font:600 12.5px/1 var(--mono);background:var(--card);border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:6px;padding:3px 6px;color:var(--ink)}
+
+  /* module blocks (back-office) */
+  .mod{padding:16px 0 6px;border-top:1px dashed var(--line)}
+  .mod:first-of-type{border-top:0}
+  .mod .who{font-size:12.5px;color:var(--ink-soft);margin:0 0 6px;display:flex;flex-wrap:wrap;gap:4px 10px}
+  .mod .who b{color:var(--ink);font-weight:700}
+  ol.tight{margin:8px 0 8px 4px;padding:0;list-style:none;counter-reset:t}
+  ol.tight>li{counter-increment:t;position:relative;padding:2px 0 3px 26px;font-size:14.5px;max-width:70ch}
+  ol.tight>li::before{content:counter(t);position:absolute;left:0;top:1px;width:18px;height:18px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);border-radius:5px;font:800 11px/18px var(--mono);text-align:center}
+  .mnote{font-size:13.3px;color:var(--ink-soft);background:var(--card);border-left:3px solid var(--accent-2);padding:8px 12px;border-radius:0 8px 8px 0;margin:8px 0 4px;max-width:70ch}
+  .mnote b{color:var(--ink)}
+
+  .modidx{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 14px}
+  .modidx a{font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:999px;background:var(--card);border:1px solid var(--line-strong);color:var(--ink-soft)}
+  .modidx a:hover{color:var(--ink);border-color:var(--accent);text-decoration:none}
+
+  .note{display:grid;grid-template-columns:auto 1fr;gap:12px;margin:18px 0;padding:14px 16px;border-radius:12px;border:1px solid var(--line-strong);background:var(--card);max-width:70ch}
+  .note .ic{font-size:18px;line-height:1.5}.note p{margin:0}
+  .note.tip{background:var(--good-bg);border-color:color-mix(in srgb,var(--good) 35%,var(--line))}
+  .note.warn{background:var(--warn-bg);border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+  .note.stop{background:var(--danger-bg);border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}
+  .note.info{background:var(--info-bg);border-color:color-mix(in srgb,var(--info) 35%,var(--line))}
+  .note b.lead2{display:block;margin-bottom:2px;color:var(--ink)}
+
+  .grid{display:grid;gap:12px;margin:16px 0}
+  .grid.two{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .mini{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;box-shadow:var(--shadow)}
+  .mini h4{margin:0 0 4px;font-size:14.5px;font-weight:720;display:flex;align-items:center;gap:8px}
+  .mini p{margin:0;font-size:13.5px;color:var(--ink-soft)}
+  .emoji{font-size:16px}
+
+  .tablewrap{overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:520px;background:var(--card)}
+  th,td{text-align:left;padding:11px 14px;font-size:14px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);background:color-mix(in srgb,var(--accent) 6%,var(--card))}
+  tbody tr:last-child td{border-bottom:0}
+  .mono{font:600 12.5px/1.4 var(--mono);background:color-mix(in srgb,var(--ink) 6%,transparent);padding:2px 6px;border-radius:5px}
+  .pill{display:inline-block;font:700 11px/1 var(--sans);padding:4px 9px;border-radius:999px;background:color-mix(in srgb,var(--accent-2) 20%,transparent);color:var(--ink)}
+  .matrix td:not(:first-child),.matrix th:not(:first-child){text-align:center;white-space:nowrap}
+  .yes{color:var(--good);font-weight:800}.no{color:var(--ink-soft);opacity:.5}
+  .auth{display:inline-block;font:700 10px/1 var(--sans);letter-spacing:.03em;text-transform:uppercase;color:var(--warn);background:var(--warn-bg);border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line));padding:3px 6px;border-radius:6px}
+  .matrix tbody td:first-child{font-weight:650}
+
+  .log{border-left:2px solid var(--line-strong);margin:16px 0;padding-left:20px}
+  .log .row{position:relative;padding:0 0 16px}
+  .log .row::before{content:"";position:absolute;left:-25.5px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--paper)}
+  .log time{font:700 12px/1 var(--mono);color:var(--accent)}.log p{margin:4px 0 0;font-size:14px;color:var(--ink-soft)}
+
+  footer{grid-column:1/-1;border-top:1px solid var(--line);padding:26px 0 60px;color:var(--ink-soft);font-size:13.5px;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+
+  @media print{.topbar,.toc{display:none}.layout{grid-template-columns:1fr}body{background:#fff;color:#000}section,.mod{break-inside:avoid;border-color:#ccc}.note,.mini,table,.mnote{box-shadow:none}}
+</style>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <span class="logo"><span class="mark">🍔</span> Freakie Dogs <small>· ERP</small></span>
+    <span class="ver">v2.0 · borrador</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="layout">
+
+    <header class="hero">
+      <div class="kicker">Manual de operación</div>
+      <h1>Manual del ERP de Freakie Dogs</h1>
+      <p>Guía de todos los módulos del sistema: caja/POS, inventario, producción, delivery, finanzas, RRHH, eventos y administración. Con qué hace cada uno, quién lo usa y cómo se opera.</p>
+      <div class="meta">
+        <span class="tag">🗓️ Actualizado <b>26 jul 2026</b></span>
+        <span class="tag">📖 Versión <b>2.0 (borrador)</b></span>
+        <span class="tag">🧩 <b>~50 módulos</b></span>
+      </div>
+    </header>
+
+    <nav class="toc" aria-label="Contenido">
+      <p class="toc-h">Áreas</p>
+      <ol>
+        <li><a href="#a-empezar">Empezar aquí</a></li>
+        <li><a href="#b-pos">Caja / POS</a></li>
+        <li><a href="#c-empleado">Mi espacio (empleado)</a></li>
+        <li><a href="#d-caja-bo">Caja — back-office</a></li>
+        <li><a href="#e-dashboards">Dashboards y ventas</a></li>
+        <li><a href="#f-almacen">Almacén e inventario</a></li>
+        <li><a href="#g-supply">Abastecimiento sucursal</a></li>
+        <li><a href="#h-produccion">Producción (Casa Matriz)</a></li>
+        <li><a href="#i-delivery">Delivery y despacho</a></li>
+        <li><a href="#j-finanzas">Finanzas y contabilidad</a></li>
+        <li><a href="#k-rrhh">RRHH y planilla</a></li>
+        <li><a href="#l-eventos">Eventos</a></li>
+        <li><a href="#m-marketing">Marketing</a></li>
+        <li><a href="#n-admin">Administración y sistema</a></li>
+        <li><a href="#o-impresion">Impresión por tienda</a></li>
+        <li><a href="#p-cambios">Historial de cambios</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <!-- ============ A · EMPEZAR ============ -->
+      <section id="a-empezar">
+        <span class="sec-num">1</span>
+        <h2>Empezar aquí</h2>
+        <p class="lead">El ERP abre según tu <strong>rol</strong>. Con tu PIN entrás con los permisos y menús de tu puesto.</p>
+        <h3 id="a-roles">Roles y permisos del POS</h3>
+        <div class="grid two">
+          <div class="mini"><h4>🧑‍🍳 Mesero / Mesera</h4><p>Toma órdenes, comanda, mueve de mesa e imprime pre-cuenta.</p></div>
+          <div class="mini"><h4>💵 Cajero / Cajera</h4><p>+ cobrar, editar órdenes comandadas y anular ítems.</p></div>
+          <div class="mini"><h4>👔 Gerente / Admin</h4><p>+ descuentos y cortesías, y el back-office.</p></div>
+        </div>
+        <div class="tablewrap">
+          <table class="matrix">
+            <thead><tr><th>Acción (en caja)</th><th>Mesero/a</th><th>Cajero/a</th><th>Gerente +</th></tr></thead>
+            <tbody>
+              <tr><td>Tomar orden y comandar</td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td></tr>
+              <tr><td>Pre-cuenta / Cambiar de mesa</td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td></tr>
+              <tr><td>Anular ítem <b>nuevo</b> (sin comandar)</td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td></tr>
+              <tr><td>Cobrar / facturar · Editar comandado</td><td><span class="no">✗</span></td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td></tr>
+              <tr><td>Anular ítem comandado · Anular orden</td><td><span class="auth">PIN</span></td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td></tr>
+              <tr><td>Descuentos y cortesías</td><td><span class="no">✗</span></td><td><span class="no">✗</span></td><td><span class="yes">✓</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note info"><span class="ic">🔑</span><p><b class="lead2">"PIN" = autorización.</b>El mesero inicia la acción, pero la confirma una cajera/gerente con su PIN. Queda registrado quién autorizó. En el back-office (finanzas, RRHH, admin) el acceso a cada módulo lo define el rol y el Panel Super Admin.</p></div>
+        <div class="note warn"><span class="ic">🔒</span><p><b class="lead2">Tu PIN es tuyo.</b>No lo compartas. Cobros, anulaciones, descuentos y aprobaciones quedan con tu nombre.</p></div>
+
+        <h3 id="a-sesion">Iniciar sesión</h3>
+        <ol class="steps">
+          <li>Abrí el sistema en la pantalla de la sucursal.</li>
+          <li>Escribí tu <strong>PIN personal</strong>.</li>
+          <li>Entrás a tu sucursal con tu menú según rol; tu nombre aparece arriba.</li>
+        </ol>
+      </section>
+
+      <!-- ============ B · POS ============ -->
+      <section id="b-pos">
+        <span class="sec-num">2</span>
+        <h2>Caja / POS — operación diaria</h2>
+        <p class="lead">El corazón de la sucursal: tomar órdenes, comandar a cocina, cobrar, facturar y cerrar caja.</p>
+        <div class="modidx">
+          <a href="#b-inicio">Inicio POS</a><a href="#b-turno">Abrir turno</a><a href="#b-orden">Tomar orden</a><a href="#b-comandar">Comandar</a><a href="#b-editar">Anular ítems</a><a href="#b-mesa">Cambiar mesa</a><a href="#b-desc">Descuentos</a><a href="#b-precuenta">Pre-cuenta</a><a href="#b-cobrar">Cobrar</a><a href="#b-pager">Pagers</a><a href="#b-dividir">Dividir</a><a href="#b-kds">Cocina (KDS)</a><a href="#b-ordenes">Órdenes</a><a href="#b-historial">Historial / NC</a><a href="#b-cierre">Cierre X/Z</a>
+        </div>
+
+        <h3 id="b-inicio">Inicio del POS</h3>
+        <p>Plano de mesas por zona (libre / activa / lista), cuentas abiertas para llevar/delivery y barra para crear órdenes e ir a Cocina, Órdenes y Cierre.</p>
+        <ul class="plain">
+          <li>Tocá una <strong>mesa libre</strong> → pide demografía (mujeres/hombres/niños) y abre la cuenta. Una <strong>ocupada</strong> continúa su cuenta.</li>
+          <li>Mantené presionada una mesa ocupada para <strong>liberarla</strong>. Los botones de Cierre, Para llevar y Editar plano aparecen solo para cajero+.</li>
+        </ul>
+
+        <h3 id="b-turno">Abrir turno de caja</h3>
+        <p>Antes de <strong>cobrar</strong> la caja necesita un <strong>turno abierto</strong> (amarra ventas, efectivo y cierre a vos).</p>
+        <div class="note stop"><span class="ic">🚫</span><p><b class="lead2">Sin turno abierto no se cobra.</b>Comandar y pre-cuenta sí funcionan sin turno.</p></div>
+
+        <h3 id="b-orden">Tomar una orden</h3>
+        <div class="grid two">
+          <div class="mini"><h4><span class="emoji">🪑</span> Mesa</h4><p>Abre el plano del piso para elegir la mesa.</p></div>
+          <div class="mini"><h4><span class="emoji">🥡</span> Para Llevar</h4><p>El cliente espera en el mostrador.</p></div>
+          <div class="mini"><h4><span class="emoji">📱</span> PedidosYa</h4><p>Se anota la referencia del pedido.</p></div>
+        </div>
+        <ul class="plain">
+          <li>Tocá los productos; si tienen <strong>modificadores</strong> (extras, sin cebolla…) se abre la ventana para elegirlos.</li>
+          <li>Ajustá <strong>cantidad</strong> y agregá <strong>nota</strong> para cocina.</li>
+        </ul>
+
+        <h3 id="b-comandar">Comandar a cocina</h3>
+        <p>Envía los ítems nuevos a la cocina (KDS) y, según la tienda, imprime la comanda. Podés seguir agregando y comandar de nuevo (otra ronda).</p>
+        <div class="note info"><span class="ic">🖨️</span><p><b class="lead2">Paseo Venecia (S004) no imprime comanda.</b>La orden igual llega al KDS; solo se omite el ticket.</p></div>
+
+        <h3 id="b-editar">Editar y anular ítems</h3>
+        <div class="grid two">
+          <div class="mini"><h4>🆕 Ítem sin comandar</h4><p>Se quita directo, sin autorización.</p></div>
+          <div class="mini"><h4>🍳 Ítem comandado</h4><p>Deslizá a la izquierda → pide <strong>PIN de cajera/gerente</strong>. Queda registrado y sale de cocina.</p></div>
+        </div>
+
+        <h3 id="b-mesa">Cambiar de mesa</h3>
+        <p>Pasá una orden de mesa a otra sin perder ítems. Disponible para meseros y arriba, solo en órdenes tipo <em>mesa</em>.</p>
+
+        <h3 id="b-desc">Descuentos y cortesías</h3>
+        <p>Solo <strong>gerente / admin</strong>. Tres tipos: <strong>porcentaje</strong>, <strong>monto fijo</strong> o <strong>cortesía</strong> (100%). Queda registrado quién lo autorizó.</p>
+
+        <h3 id="b-precuenta">Pre-cuenta</h3>
+        <p>Imprime el detalle <em>sin</em> cobrar, para que el cliente revise antes de pagar. No genera factura.</p>
+
+        <h3 id="b-cobrar">Cobrar y facturar</h3>
+        <p>Cierra la venta, registra el pago y emite el <strong>documento fiscal (DTE)</strong> con QR de Hacienda.</p>
+        <div class="tablewrap"><table><thead><tr><th>Método</th><th>Cómo funciona</th></tr></thead><tbody>
+          <tr><td><b>💵 Efectivo</b></td><td>Escribís con cuánto paga; calcula el cambio.</td></tr>
+          <tr><td><b>💳 Tarjeta</b></td><td>Cobro total con tarjeta.</td></tr>
+          <tr><td><b>🏦 Transferencia</b></td><td>Con referencia.</td></tr>
+          <tr><td><b>🔀 Mixto</b></td><td>Efectivo + tarjeta (deben sumar el total).</td></tr>
+          <tr><td><b>🛵 CxC PeYa</b></td><td>Cuenta por cobrar de PedidosYa; no entra a efectivo.</td></tr>
+        </tbody></table></div>
+        <p>La <strong>propina</strong> viene sugerida al 10% (en food court, en cero). Confirmás método y monto → se emite la factura.</p>
+        <div class="note stop"><span class="ic">⚠️</span><p><b class="lead2">La factura es real ante Hacienda.</b>Si te equivocaste en algo ya cobrado, se corrige con <a href="#b-historial">nota de crédito</a> o anulación del DTE, no repitiendo la factura.</p></div>
+
+        <h3 id="b-pager">Pagers (food court)</h3>
+        <p>Al <strong>cobrar</strong> se abre "Asignar pager": elegí el número (1–15) que le das al cliente, o "Sin pager". Queda en el KDS y el ticket. Con pager: <strong>Metro Centro (S006), Usulután (S002) y Soyapango (S001)</strong>.</p>
+
+        <h3 id="b-dividir">Dividir la cuenta</h3>
+        <p>Separá una cuenta en varias; repartí los ítems y cobrá cada una por separado (cada una con su factura).</p>
+
+        <h3 id="b-kds">Cocina (KDS)</h3>
+        <p class="who"><b>Quién:</b> cocina (y gerente/admin con acceso rápido).</p>
+        <p>Pantalla de cocina en tiempo real: comandas pendientes con temporizador y alarma. Muestra pager, modificadores y notas.</p>
+        <ol class="tight">
+          <li>Tocá "🔔 Activar sonido" (el navegador lo exige una vez).</li>
+          <li>Filtrá por Canal (Sucursal/Delivery/PedidosYa/Drive) o Estación (parrilla, freidora, bebidas, ensamble).</li>
+          <li>Tocá cada ítem para avanzarlo (pendiente → en preparación → completado).</li>
+          <li>Tocá <strong>"LISTA"</strong> para marcar toda la comanda como lista.</li>
+        </ol>
+        <div class="mnote">Alarma insistente cada 5s ante órdenes nuevas hasta que cocina toque una comanda. En "Historial" se puede "Revertir" una comanda (salvo cuentas ya cobradas).</div>
+
+        <h3 id="b-ordenes">Órdenes (activas / anular)</h3>
+        <p class="who"><b>Quién:</b> cajero / gerente.</p>
+        <ol class="tight">
+          <li>En "Activas" ves las cuentas con tipo, ítems, total, tiempo y estado.</li>
+          <li>Tocá una orden para abrirla/continuarla.</li>
+          <li>Para <strong>anular la orden completa</strong>: ícono de basura → <strong>PIN de cajera/gerente</strong> → escribí el motivo.</li>
+        </ol>
+        <div class="mnote"><b>Nunca</b> se anula así una cuenta ya cobrada (para eso está la nota de crédito / anulación de DTE). La anulación limpia la cola de cocina y queda registrada.</div>
+
+        <h3 id="b-historial">Historial de cobros · Reimprimir · Nota de crédito</h3>
+        <p class="who"><b>Quién:</b> cajero / gerente.</p>
+        <ol class="tight">
+          <li>Filtrá por fecha (Hoy / Ayer / elegir).</li>
+          <li>Tocá un ticket para ver ítems y totales.</li>
+          <li><strong>Reimprimir</strong>: saca otra copia (marcada "TICKET REIMPRESO") — no cobra de nuevo.</li>
+          <li><strong>NC</strong>: emite Nota de Crédito contra la factura (devolución total o parcial), con motivo.</li>
+          <li><strong>Anular DTE</strong>: anula la factura ante Hacienda (motivo mín. 5 caracteres + confirmación).</li>
+        </ol>
+        <div class="note stop"><span class="ic">🛑</span><p><b class="lead2">Anular un DTE es IRREVERSIBLE ante Hacienda.</b>Se advierte/bloquea si la factura tiene más de 72h o ya está anulada. Operación sensible — ante dudas, consultá administración.</p></div>
+
+        <h3 id="b-cierre">Cierre de turno (Corte X / Z)</h3>
+        <ol class="tight">
+          <li>Si no hay turno abierto: ingresá el <strong>fondo</strong> y "Abrir turno".</li>
+          <li>Las ventas del turno (efectivo, tarjeta, transferencia, link) vienen del sistema (solo lectura).</li>
+          <li><strong>Corte X</strong>: lectura parcial, imprime sin cerrar.</li>
+          <li><strong>Corte Z</strong>: agregá egresos e ingresos, ingresá el <strong>efectivo real a depositar</strong>, revisá la diferencia y "Cerrar turno (Z) e imprimir".</li>
+        </ol>
+        <div class="mnote">El corte Z es <b>definitivo</b> (pide confirmación). Cerrá siempre tu propio turno; uno sin cerrar desordena el corte del día siguiente.</div>
+      </section>
+
+      <!-- ============ C · EMPLEADO ============ -->
+      <section id="c-empleado">
+        <span class="sec-num">3</span>
+        <h2>Mi espacio (empleado)</h2>
+        <p class="lead">Lo que cada empleado usa para sí mismo.</p>
+
+        <div class="mod">
+          <h3 id="c-asistencia">📍 Mi Asistencia</h3>
+          <p>Marcá entrada y salida con GPS, y consultá tu historial y tu horario semanal.</p>
+          <p class="who"><b>Quién:</b> todos los empleados.</p>
+          <ol class="tight"><li>En "Marcar", esperá que el GPS active y muestre la distancia al local.</li><li>Tocá "Marcar Entrada"; al salir, "Marcar Salida".</li><li>Revisá "Historial" (últimos 14) y "Mi Horario".</li></ol>
+          <div class="mnote">Si estás fuera del radio de la sucursal (≈200m) igual registra, pero marca "fuera de geocerca" y alerta a RRHH. Requiere permiso de GPS.</div>
+        </div>
+        <div class="mod">
+          <h3 id="c-boleta">🧾 Mi Boleta</h3>
+          <p>Consultá tus boletas de pago: ingresos, deducciones y neto a recibir.</p>
+          <p class="who"><b>Quién:</b> todos los empleados.</p>
+          <div class="mnote">Se generan al cerrar cada quincena. Si no aparecen, contactá a RRHH.</div>
+        </div>
+        <div class="mod">
+          <h3 id="c-despacho">🚚 Mi Despacho (motorista)</h3>
+          <p>Para motoristas: marcá tu llegada a Casa Matriz y tu salida hacia las sucursales; mide el tiempo con semáforo.</p>
+          <p class="who"><b>Quién:</b> despachador, motorista.</p>
+          <ol class="tight"><li>Confirmá GPS dentro del radio de matriz y "Marcar llegada".</li><li>Si llegaste tarde, registrá el motivo (obligatorio).</li><li>Elegí las sucursales que llevás y "Marcar salida / Despachado".</li></ol>
+          <div class="mnote">Hay ventana de anulación (≈5 min) tras marcar. El motivo de tardanza es bloqueante para marcar salida.</div>
+        </div>
+        <div class="mod">
+          <h3 id="c-pendientes">📋 Mis Pendientes</h3>
+          <p>Vista consolidada de todo lo que falta hacer: recepciones sin DTE, devoluciones, incidentes abiertos, OC/pedidos sin aprobar, despachos en curso, entregas en ruta y planillas sin aprobar.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, admin.</p>
+          <div class="mnote">Cada tarjeta lleva directo al módulo. "Todo al día" en verde cuando no hay pendientes.</div>
+        </div>
+      </section>
+
+      <!-- ============ D · CAJA BACK-OFFICE ============ -->
+      <section id="d-caja-bo">
+        <span class="sec-num">4</span>
+        <h2>Caja — back-office</h2>
+        <p class="lead">Registro y control del efectivo de las sucursales desde el ERP.</p>
+        <div class="mod">
+          <h3 id="d-deposito">🏦 Depósito Bancario</h3>
+          <p>Registrá los depósitos del efectivo de caja al banco y qué días de venta cubren; cruza contra el efectivo esperado de los cierres.</p>
+          <p class="who"><b>Quién:</b> caja / encargados de sucursal.</p>
+          <ol class="tight"><li>Sucursal, monto depositado y fecha.</li><li>Marcá los días (últimos 7) que cubre el depósito.</li><li>Revisá el "Cruce de Montos" (✓ cuadra / sobrante / faltante).</li><li>Agregá <strong>foto del voucher</strong> (obligatoria) y "Registrar Depósito".</li></ol>
+          <div class="mnote">Tolerancia: &lt;$1 OK, ≤$5 advertencia, &gt;$5 error. Queda "pendiente" de revisión por admin.</div>
+        </div>
+        <div class="mod">
+          <h3 id="d-cierreform">Cierre de Caja (back-office)</h3>
+          <p>Formulario del ERP para el cierre diario por sucursal: ventas por método, egresos e ingresos, efectivo calculado vs real. (El POS tiene su propio Corte Z.)</p>
+          <div class="mnote">Egresos a empleado ("Adelanto", "Pago de Salario", "Pago Propina") permiten elegir de la lista de empleados. Cada motivo puede exigir persona, comentario y/o foto.</div>
+        </div>
+        <div class="mod">
+          <h3 id="d-reporte">Reporte de Turno</h3>
+          <p>Parte diario del turno: sin novedad o con incidentes (personal, operaciones, clientes, higiene), ausencias, mejoras propuestas, notas y fotos.</p>
+          <div class="mnote">Se puede enviar/editar solo dentro de 72h desde que terminó el día; no permite fecha futura.</div>
+        </div>
+      </section>
+
+      <!-- ============ E · DASHBOARDS ============ -->
+      <section id="e-dashboards">
+        <span class="sec-num">5</span>
+        <h2>Dashboards y ventas</h2>
+        <p class="lead">Reportes de venta y salud del negocio para gerencia y dirección.</p>
+        <div class="modidx"><a href="#e-ventas">Ventas Freakies</a><a href="#e-kpis">KPIs de Venta</a><a href="#e-bep">KPI Ventas · BEP</a><a href="#e-invglobal">Inventario Global</a><a href="#e-finai">Finanzas AI</a><a href="#e-plan">Plan Maestro IA</a></div>
+
+        <div class="mod">
+          <h3 id="e-ventas">🐕 Ventas Freakies</h3>
+          <p>Venta en vivo de la cadena (POS propio + legacy Quanto): KPIs, venta por hora, mapa de calor día×hora, canales, top productos y métodos de pago.</p>
+          <p class="who"><b>Quién:</b> admin, superadmin, ejecutivo, gerente.</p>
+          <ol class="tight"><li>Elegí sucursal (o "Todas") y el rango de fechas (flechas ‹ › o "Hoy").</li><li>Leé los KPIs (órdenes, ingresos, ticket, clientes, propinas, descuentos, IVA).</li><li>Revisá barras por sucursal, curva por hora y mapa de calor.</li></ol>
+          <div class="mnote"><b>PeYa NO se incluye</b> acá. Cada sucursal se lee de POS propio o Quanto según su fecha de corte.</div>
+        </div>
+        <div class="mod">
+          <h3 id="e-kpis">📊 KPIs de Venta</h3>
+          <p>Tablero mensual con metas por canal/sucursal, Pareto 80/20 de productos, desempeño por empleado, tendencia de 5 meses e insights de IA.</p>
+          <p class="who"><b>Quién:</b> admin, superadmin, ejecutivo, gerente.</p>
+          <div class="mnote">Excluye PeYa. Meta = 40% mes anterior + 40% mismo mes año pasado + 20% promedio 3 meses. Insights se generan a las 06:00.</div>
+        </div>
+        <div class="mod">
+          <h3 id="e-bep">💰 KPI Ventas Totales · BEP</h3>
+          <p>Ventas del mes de todos los canales (Quanto, PeYa, Eventos) vs el <strong>punto de equilibrio</strong>, con proyección de cierre y utilidad.</p>
+          <p class="who"><b>Quién:</b> admin, superadmin, ejecutivo, gerente.</p>
+          <ol class="tight"><li>Elegí mes y toggle Sin/Con IVA (default Sin IVA).</li><li>Filtrá por canal (el BEP y la utilidad solo salen con "Todas").</li><li>Leé las 5 tarjetas KPI y la gráfica de acumulado vs proyección vs BEP.</li></ol>
+        </div>
+        <div class="mod">
+          <h3 id="e-invglobal">📦 Inventario Global</h3>
+          <p>Stock consolidado de todas las sucursales y bodega, con semáforo (agotado, crítico, bajo, OK, exceso) y ubicaciones con más alertas primero.</p>
+          <p class="who"><b>Quién:</b> supervisión / gerencia.</p>
+          <div class="mnote">Drive Thru Lourdes (S005) se fusiona en Lourdes (S003). Es de consulta.</div>
+        </div>
+        <div class="mod">
+          <h3 id="e-finai">🤖 Finanzas AI</h3>
+          <p>Asistente financiero automático: P&amp;L del mes, tendencia de EBITDA, variaciones, liquidez y un diagnóstico con semáforo en lenguaje simple. No es un chat.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, superadmin.</p>
+          <div class="mnote">Solo lectura. Botón "Refrescar" para recalcular.</div>
+        </div>
+        <div class="mod">
+          <h3 id="e-plan">🧩 Plan Maestro IA</h3>
+          <p>Vista del universo de agentes/iniciativas de IA del proyecto y su progreso.</p>
+          <p class="who"><b>Quién:</b> superadmin, ejecutivo.</p>
+        </div>
+      </section>
+
+      <!-- ============ F · ALMACEN ============ -->
+      <section id="f-almacen">
+        <span class="sec-num">6</span>
+        <h2>Almacén e inventario (Casa Matriz)</h2>
+        <p class="lead">Entrada, salida y control del inventario de la bodega central.</p>
+        <div class="modidx"><a href="#f-recepcion">Recepción</a><a href="#f-despacho">Despacho</a><a href="#f-inventario">Inventario</a><a href="#f-historial">Historial</a><a href="#f-oc">Órdenes de Compra</a><a href="#f-stock">Stock Mín/Máx</a><a href="#f-fisico">Inventario Físico</a><a href="#f-kardex">Kardex</a><a href="#f-bees">Recepción BEES</a></div>
+
+        <div class="mod">
+          <h3 id="f-recepcion">Recepción</h3>
+          <p>Registra la entrada de mercadería de proveedores a la bodega y la suma al inventario. Puede venir precargada del DTE que llega por correo.</p>
+          <p class="who"><b>Quién:</b> bodeguero, jefe de Casa Matriz, admin.</p>
+          <ol class="tight"><li>"+ Nueva Recepción" (o abrí una tarjeta "Por confirmar").</li><li>Elegí proveedor; si tiene OC aprobada, los productos se precargan.</li><li>Agregá productos con cantidad, unidad y precio.</li><li>Escribí los últimos 4 dígitos del DTE + foto del DTE físico y confirmá.</li></ol>
+          <div class="mnote">Si el precio difiere &gt;5% del último, alerta. Cantidad distinta a lo esperado → "con diferencias". Confirmar una recepción ligada a una OC cierra esa orden.</div>
+        </div>
+        <div class="mod">
+          <h3 id="f-despacho">Despacho</h3>
+          <p>Prepara y envía a las sucursales lo que pidieron, asigna motorista y descuenta el stock. Imprime hoja de despacho con firmas.</p>
+          <p class="who"><b>Quién:</b> bodeguero, jefe de Casa Matriz, admin.</p>
+          <ol class="tight"><li>En "Pendientes", "Preparar Despacho" sobre el pedido de una sucursal.</li><li>Ajustá cantidades, elegí motorista y "Crear Despacho".</li><li>En "En proceso", "Marcar Despachado" cuando el motorista sale.</li></ol>
+          <div class="mnote">El stock se descuenta <b>al crear</b> el despacho. Un pedido con despacho en proceso no se puede volver a preparar (anti-duplicado).</div>
+        </div>
+        <div class="mod">
+          <h3 id="f-inventario">Inventario</h3>
+          <p>Stock actual de la bodega, con alerta de los productos bajo mínimo (en naranja). Solo consulta.</p>
+          <p class="who"><b>Quién:</b> bodeguero, jefe de Casa Matriz, admin.</p>
+        </div>
+        <div class="mod">
+          <h3 id="f-historial">Historial (de recepciones)</h3>
+          <p>Lista las últimas recepciones, permite editarlas/eliminarlas dentro de 72h, y ayuda a cuadrar cada una contra el DTE contable.</p>
+          <p class="who"><b>Quién:</b> bodeguero, jefe de Casa Matriz, admin.</p>
+          <div class="mnote">Pasadas 72h queda bloqueada. Editar/eliminar revierte el inventario. Los banners cruzan DTE del correo vs recepción y muestran las que están sin DTE contabilizado.</div>
+        </div>
+        <div class="mod">
+          <h3 id="f-oc">Órdenes de Compra</h3>
+          <p>Crea OC a proveedores con cantidades sugeridas según stock bajo mínimo, las manda a aprobación y las deja listas para precargarse al recibir.</p>
+          <p class="who"><b>Quién:</b> compras, admin (aprobar: admin/bodeguero/jefe CM).</p>
+          <ol class="tight"><li>"+ Nueva OC", elegí proveedor (precarga bajo-mínimo).</li><li>Ajustá cantidades y "Crear OC — Enviar a Aprobación".</li><li>Aprobá o cancelá desde el detalle (solo las "Pendiente").</li></ol>
+        </div>
+        <div class="mod">
+          <h3 id="f-stock">Stock Mín/Máx</h3>
+          <p>Define los niveles mínimo y máximo por producto y sucursal (base de las alertas y del reorden).</p>
+          <p class="who"><b>Quién:</b> jefe de Casa Matriz, admin, ejecutivo.</p>
+          <div class="mnote">Los productos sin mínimo no alertan hasta configurarlos. Admin/ejecutivo pueden "Auto-llenar desde promedios de otras sucursales".</div>
+        </div>
+        <div class="mod">
+          <h3 id="f-fisico">Inventario Físico</h3>
+          <p>Guía el conteo físico de la bodega, lo compara con el sistema y al finalizar ajusta el stock a lo contado + reporte de faltantes/sobrantes.</p>
+          <p class="who"><b>Quién:</b> jefe de Casa Matriz, admin, ejecutivo.</p>
+          <ol class="tight"><li>"+ Iniciar Nuevo Inventario" (o continuá uno).</li><li>Contá por categoría (+/− o "= Sistema").</li><li>"Finalizar" (no se puede si falta contar algo) → ajusta el stock y descarga CSV.</li></ol>
+          <div class="mnote">Finalizar <b>sobrescribe</b> el stock del sistema a lo contado.</div>
+        </div>
+        <div class="mod">
+          <h3 id="f-kardex">Kardex</h3>
+          <p>Centro de control del inventario por producto, en 5 pestañas: <strong>Inventario</strong> (catálogo), <strong>Mapeo Compras</strong> (vincular descripciones de facturas), <strong>Recetas</strong>, <strong>Historial</strong> de movimientos y <strong>Ajustes</strong> manuales.</p>
+          <p class="who"><b>Quién:</b> jefe de Casa Matriz, admin, ejecutivo.</p>
+          <div class="mnote">El ajuste manual exige motivo (mín. 5 caracteres), actualiza el stock al instante y deja rastro en el historial.</div>
+        </div>
+        <div class="mod">
+          <h3 id="f-bees">Recepción BEES</h3>
+          <p>Registra pedidos de bebidas de BEES (La Constancia) desde una foto del comprobante: el sistema lee los datos (OCR) y al confirmar suma el stock de bebidas de la sucursal.</p>
+          <p class="who"><b>Quién:</b> gerente, cajero, cocina, jefe de Casa Matriz, admin, ejecutivo.</p>
+          <ol class="tight"><li>"Subir foto" del comprobante BEES; el OCR extrae factura, pedido e ítems.</li><li>Verificá/corregí y guardá (queda "En tránsito").</li><li>Al llegar, ajustá cantidades recibidas y "Confirmar recepción".</li></ol>
+          <div class="mnote">El primer OCR baja un motor (~5MB, 10-30s). Ítems no mapeados al catálogo se omiten del inventario. Reabrir una recepción ya inventariada no descuenta stock solo.</div>
+        </div>
+      </section>
+
+      <!-- ============ G · SUPPLY ============ -->
+      <section id="g-supply">
+        <span class="sec-num">7</span>
+        <h2>Abastecimiento de sucursal</h2>
+        <p class="lead">Lo que cada tienda usa para pedir insumos a Casa Matriz y recibirlos.</p>
+        <div class="mod">
+          <h3 id="g-conteo">🌙 Conteo Nocturno</h3>
+          <p>Inventario de cierre por sucursal: se cuenta cada producto, se compara con el teórico y se genera un <strong>pedido sugerido</strong> al almacén.</p>
+          <p class="who"><b>Quién:</b> gerente / cocina (su sucursal); ejecutivo/admin eligen sucursal.</p>
+          <ol class="tight"><li>Contá por categoría (− / + o "= Teórico"); hay que llegar al 100%.</li><li>"Guardar Conteo" → arma el pedido sugerido (bajo mínimo primero).</li><li>Ajustá cantidades y "Enviar" al almacén (o "Omitir Pedido").</li></ol>
+          <div class="mnote">Editable hasta 6h después; luego abre un conteo nuevo (turno PM). Enviar pedido borra cualquier pedido activo previo (solo 1 vigente).</div>
+        </div>
+        <div class="mod">
+          <h3 id="g-pedidos">📦 Mis Pedidos</h3>
+          <p>Consulta (solo lectura) del historial de pedidos de insumos y su estado: enviado → preparando → despachado → recibido, con línea de tiempo y comparación solicitado/despachado/recibido.</p>
+          <p class="who"><b>Quién:</b> gerente/cocina (su sucursal); ejecutivo/admin/jefe CM todas.</p>
+        </div>
+        <div class="mod">
+          <h3 id="g-entregas">✅ Confirmar Entregas</h3>
+          <p>La sucursal (o el motorista/despachador) confirma la recepción de los pedidos que llegan del almacén, cerrando el ciclo del despacho.</p>
+          <p class="who"><b>Quién:</b> despachador, motorista, domicilios, gerente, cocina.</p>
+          <div class="mnote">Es el paso final del flujo Despacho → En ruta → <b>Recibido</b>. <span style="opacity:.8">(Detalle de pasos por confirmar con el equipo.)</span></div>
+        </div>
+      </section>
+
+      <!-- ============ H · PRODUCCION ============ -->
+      <section id="h-produccion">
+        <span class="sec-num">8</span>
+        <h2>Producción (Casa Matriz)</h2>
+        <p class="lead">Recetas, producción diaria e incidentes de la cocina central.</p>
+        <div class="mod">
+          <h3 id="h-recetas">📖 Recetas / BOM</h3>
+          <p>Catálogo de recetas (platos, sub-recetas, porcionados) con su lista de ingredientes; calcula el costo de cada receta y lo compara con el precio de venta (margen).</p>
+          <p class="who"><b>Quién:</b> admin, ejecutivo, jefe de Casa Matriz (editar: PIN de personas autorizadas).</p>
+          <div class="mnote">El costo con sub-recetas se calcula recursivamente. El rendimiento ("Rinde X") se edita en línea.</div>
+        </div>
+        <div class="mod">
+          <h3 id="h-prod">🏭 Producción Diaria</h3>
+          <p>Registra lo producido cada día en Casa Matriz (sub-recetas/porcionados), descuenta la materia prima y guarda el costo por lote.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, producción, jefe de Casa Matriz, admin.</p>
+          <ol class="tight"><li>Elegí quién produjo y la receta (sub-receta/porcionado).</li><li>Ingresá las tandas (muestra ingredientes necesarios vs stock).</li><li>Turno + fecha y "Registrar Producción" → genera lote y descuenta inventario.</li></ol>
+          <div class="mnote">Avisa si falta stock pero no bloquea el registro. Trabaja fijo sobre Casa Matriz.</div>
+        </div>
+        <div class="mod">
+          <h3 id="h-incidentescm">🚨 Incidentes Casa Matriz</h3>
+          <p>Registra incidentes de producción (calidad, equipo, seguridad/higiene, faltante de materia prima, merma) con severidad y seguimiento.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, producción, jefe de Casa Matriz, admin.</p>
+          <div class="mnote">En "Pendientes" se resuelven los que requieren seguimiento; "Historial" filtra por fecha/categoría/severidad.</div>
+        </div>
+        <div class="mod">
+          <h3 id="h-devoluciones">🔄 Devoluciones</h3>
+          <p>Una sucursal devuelve producto a Casa Matriz (error de despacho, vencimiento, calidad, sobrante); CM lo recibe o rechaza, ajustando inventario.</p>
+          <p class="who"><b>Quién:</b> crear: gerente/cocina de sucursal · recibir: jefe de Casa Matriz/producción.</p>
+          <div class="mnote">Al recibir, suma el stock a Casa Matriz y lo descuenta de la sucursal origen.</div>
+        </div>
+      </section>
+
+      <!-- ============ I · DELIVERY ============ -->
+      <section id="i-delivery">
+        <span class="sec-num">9</span>
+        <h2>Delivery y despacho</h2>
+        <p class="lead">Delivery propio (no PeYa) y el KPI de despacho de motoristas.</p>
+        <div class="mod">
+          <h3 id="i-panel">🛵 Panel Delivery</h3>
+          <p>Gestiona el delivery propio en 3 pestañas: despacho de pedidos a domicilio, registro de viajes y bonos mensuales por viaje.</p>
+          <p class="who"><b>Quién:</b> despachador (registra); aprobar bonos: ejecutivo/admin/superadmin.</p>
+          <ol class="tight"><li><b>Despacho:</b> "+ Nuevo Pedido", asigná conductor y movés el estado (pendiente → asignado → en camino → entregado).</li><li><b>Viajes:</b> registrá conductor, tipo, distancia y "fuera de horario".</li><li><b>Bonos:</b> elegí el mes, "Calcular y Guardar Bonos" y "Aprobar Bono".</li></ol>
+          <div class="mnote">Tarifas configurables: entrega &lt;17km ≈ $0.50, ≥17km ≈ $1.00, mandado ≈ $0.50, fuera de horario $3 flat (exclusivo).</div>
+        </div>
+        <div class="mod">
+          <h3 id="i-opdespacho">📦 Operación Despacho</h3>
+          <p>Pantalla operativa (bodega) en tiempo real: despachos del día, alerta si un motorista espera demasiado, y justificación de retrasos.</p>
+          <p class="who"><b>Quién:</b> jefe de Casa Matriz, producción.</p>
+          <ol class="tight"><li>Se refresca sola cada 20s; alerta roja si alguien supera el umbral (~45 min).</li><li>"Justificar" un registro: categoría (falta de producto, error de pedido, etc.) + detalle.</li></ol>
+          <div class="mnote">Solo justifica retrasos; no edita ni borra marcajes. Si salió en rojo, el detalle es obligatorio.</div>
+        </div>
+        <div class="mod">
+          <h3 id="i-kpidespacho">📊 KPI Despacho</h3>
+          <p>Mide el tiempo del ciclo de despacho (llegada → salida) con semáforo, por motorista y por sucursal destino, y reporta llegadas tarde.</p>
+          <p class="who"><b>Quién:</b> superadmin.</p>
+          <div class="mnote">Umbrales (verde/amarillo/rojo, default 30/45 min) configurables. Exporta CSV (pantalla muestra 200; CSV trae todo).</div>
+        </div>
+      </section>
+
+      <!-- ============ J · FINANZAS ============ -->
+      <section id="j-finanzas">
+        <span class="sec-num">10</span>
+        <h2>Finanzas y contabilidad</h2>
+        <p class="lead">P&amp;L, facturas de compra (DTE), conciliación bancaria, pagos a proveedores y rentabilidad. Módulos sensibles — acceso restringido.</p>
+        <div class="modidx"><a href="#j-dtes">DTEs</a><a href="#j-gastos">Gastos de Caja</a><a href="#j-concil">Conciliación</a><a href="#j-banco">BancoView</a><a href="#j-mapeo">Mapeo DTE</a><a href="#j-pagos">Pagos &amp; CxP</a><a href="#j-dashfin">Dashboard Financiero</a><a href="#j-rent">Rentabilidad x Sucursal</a><a href="#j-simu">Simulador</a></div>
+
+        <div class="mod">
+          <h3 id="j-dtes">🧾 DTEs</h3>
+          <p>Consulta de los Documentos Tributarios Electrónicos de compra (facturas de proveedores validadas por Hacienda). No se emiten a mano; alimentan el P&amp;L y las cuentas por pagar.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, admin, superadmin, contador (invalidar: solo ejecutivo/admin/superadmin).</p>
+          <div class="mnote">Invalidar un DTE exige motivo (mín. 5 caracteres); queda en base pero fuera del P&amp;L/KPIs y con registro de quién lo hizo. No modifica nada ante Hacienda.</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-gastos">💸 Gastos de Caja</h3>
+          <p>Controla y concilia los egresos pagados desde la caja: clasifica cada gasto en su categoría contable y lo cruza con su DTE.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, contador, admin.</p>
+          <ol class="tight"><li>Filtrá (sucursal/fechas/motivo) y editá cada egreso (categoría P&amp;L, estado de cruce, foto).</li><li>"Conciliar Proveedores": emparejá gasto con su DTE (tipo "Tinder").</li><li>"Registrar Sin DTE": cargá compras con factura física/informal.</li></ol>
+          <div class="mnote">El cruce automático usa tolerancias (~±12% monto, ±7 días) con semáforo de confianza.</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-concil">🏦 Conciliación</h3>
+          <p>Cruza las ventas con tarjeta contra el procesador (Serfinsa) y las facturas de compra (DTE) contra el sistema, para detectar diferencias.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, admin, contador, superadmin.</p>
+          <div class="mnote">El estado de cruce es un flag interno, no una operación ante Hacienda. Alerta si la diferencia acumulada supera umbrales ($50/$200).</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-banco">🏛️ BancoView (Conciliación bancaria)</h3>
+          <p>Empareja cada movimiento del estado de cuenta del banco con su DTE, gasto o traslado, para que el P&amp;L y la caja cuadren con lo que pasó por el banco.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, superadmin.</p>
+          <ol class="tight"><li>Subí el .xls del BAC en "Estado de Cuenta".</li><li>Dejá que "Auto-Reconciliar" empareje lo evidente.</li><li>Usá el "Wizard" / "Cola Manual" y "Vincular DTE" para el resto.</li></ol>
+          <div class="mnote">Movimientos de socios (aporte, préstamo, dividendo, salario) se clasifican aparte. Cuenta principal BAC USD.</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-mapeo">🔗 Mapeo DTE → Catálogo</h3>
+          <p>Vincula la descripción de cada renglón de las facturas con el producto del catálogo y define el factor de conversión de unidades (ej. factura en "cajas", catálogo en "lb").</p>
+          <p class="who"><b>Quién:</b> ejecutivo, admin.</p>
+          <div class="mnote">No se confirma un mapeo sin producto asignado. "Verificar Unidades" revisa la cadena DTE → Catálogo → Receta. Factor: caja 6×5lb → 30, kg → 2.205, misma unidad → 1.</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-pagos">💰 Pagos &amp; CxP</h3>
+          <p>Paga a proveedores y controla lo que se les debe: subís comprobantes del BAC (OCR), se cruzan contra las facturas (CCF/DTE) y ves saldos y vencimientos por proveedor.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, superadmin.</p>
+          <ol class="tight"><li>"Subir Pagos": arrastrá comprobantes; autocompleta proveedor, monto, fecha, CCF.</li><li>"Registrar N pagos" (auto-aplica a facturas cuando cuadra).</li><li>"Pendientes"/"Cuentas x Pagar": asigná a mano y revisá saldos/vencimientos.</li></ol>
+          <div class="mnote">Auto-concilia solo si últimos dígitos y montos cuadran (±$0.01). No modifica nada ante Hacienda.</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-dashfin">📈 Dashboard Financiero</h3>
+          <p>Tablero central: ventas, costos, P&amp;L, balance, flujo de caja, liquidez, PeYa, proveedores y conciliación, combinando histórico 2025 con 2026 en vivo. 10 pestañas.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, admin, superadmin.</p>
+          <div class="mnote">Escribe datos al clasificar débitos (Gasto P&amp;L / No P&amp;L / vía DTE), gestionar catálogo de proveedores y liquidaciones PeYa. Toggle Sin/Con IVA global.</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-rent">💹 Rentabilidad × Sucursal</h3>
+          <p>P&amp;L por sucursal (ventas, costo de comida, utilidad bruta y operativa) para ver cuáles ganan y cuáles pierden, comparado contra períodos anteriores.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, admin.</p>
+          <div class="mnote">Integra POS (Quanto) + PeYa + Eventos. Los gastos "CORP" (Casa Matriz, admin, motoristas) se prorratean por peso de venta. El toggle IVA es solo de presentación.</div>
+        </div>
+        <div class="mod">
+          <h3 id="j-simu">🎯 Simulador Rentabilidad</h3>
+          <p>"Qué pasaría si": simula abrir sucursales, crecer ventas o bajar el costo de comida, y ve el impacto en la utilidad antes de decidir. No guarda nada.</p>
+          <p class="who"><b>Quién:</b> superadmin, ejecutivo.</p>
+          <div class="mnote">2 pestañas: "Plan de Expansión" (sliders + aperturas) y "Ajuste por Categoría" (recortes por sucursal/categoría sobre el último mes cerrado).</div>
+        </div>
+      </section>
+
+      <!-- ============ K · RRHH ============ -->
+      <section id="k-rrhh">
+        <span class="sec-num">11</span>
+        <h2>RRHH y planilla</h2>
+        <p class="lead">Empleados, horarios, nómina, propinas y disciplina. Datos confidenciales.</p>
+        <div class="modidx"><a href="#k-rrhh-main">Recursos Humanos</a><a href="#k-horarios">Horarios</a><a href="#k-nomina">Nómina / Planilla</a><a href="#k-valid">Validación Planilla</a><a href="#k-recibos">Recibos Digitales</a><a href="#k-amonest">Amonestaciones</a><a href="#k-propinas">Propinas</a></div>
+
+        <div class="mod">
+          <h3 id="k-rrhh-main">👥 Recursos Humanos</h3>
+          <p>Fichas de empleados (datos, cargo, salario, banco), asistencia, descuentos de nómina, usuarios con PIN y cuentas bancarias de terceros. 6 pestañas.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, rrhh, admin, superadmin.</p>
+          <ol class="tight"><li>"Empleados" → "+ Nuevo" (o ✏️ editar); nombre, cargo, sucursal y salario obligatorios.</li><li>Dar de baja con ▼/▲ (desactiva, no borra).</li></ol>
+          <div class="mnote">La pestaña GPS Asistencia gestiona alertas de irregularidades, correcciones por PIN y el radio de geocerca por sucursal. Usuarios ejecutivo/admin están protegidos de edición.</div>
+        </div>
+        <div class="mod">
+          <h3 id="k-horarios">📅 Horarios</h3>
+          <p>Arma el calendario semanal de turnos por empleado y sucursal, con bloques por día (Mañana, Tarde, Noche, Extra, Descanso).</p>
+          <p class="who"><b>Quién:</b> rrhh, ejecutivo, admin (todas); gerente/cocina/jefe CM su sucursal.</p>
+          <ol class="tight"><li>Elegí sucursal y semana; tocá la celda empleado/día.</li><li>Elegí 🔒 permanente o ⚡ solo esta semana; poné etiqueta y horas.</li><li>"📋 Copiar semana ant." trae los turnos de la semana pasada.</li></ol>
+          <div class="mnote">Un override (⚡) tapa la plantilla permanente (🔒) solo esa semana.</div>
+        </div>
+        <div class="mod">
+          <h3 id="k-nomina">💵 Nómina / Planilla</h3>
+          <p>Genera corridas quincenales, calcula salarios, descuentos de ley e ISR, y permite ajustar la asistencia antes de aprobar y pagar.</p>
+          <p class="who"><b>Quién:</b> ejecutivo, rrhh, contador, admin.</p>
+          <ol class="tight"><li>"+ Nueva Corrida" (quincena + mes) → queda "borrador".</li><li>"🔄 Calcular Nómina" (genera asistencia y montos).</li><li>Revisá/ajustá; "✓ Aprobar" (PIN) y luego "💳 Marcar Pagada" (PIN).</li></ol>
+          <div class="mnote">Aprobar y Pagar están protegidos por PIN de un grupo reducido de personas, no por rol.</div>
+        </div>
+        <div class="mod">
+          <h3 id="k-valid">✅ Validación de Planilla</h3>
+          <p>Audita la planilla importada de Excel contra la base: cruza el nombre del Excel con el empleado/código real y marca las filas que no cuadran.</p>
+          <p class="who"><b>Quién:</b> acceso muy restringido (usuarios específicos / superadmin).</p>
+          <div class="mnote">Filas rojas → "Confirmar" (misma persona) o "Reasignar" al empleado correcto.</div>
+        </div>
+        <div class="mod">
+          <h3 id="k-recibos">🧾 Recibos Digitales</h3>
+          <p>Genera las boletas de pago de cada planilla (devengado, deducciones, neto) con ajustes y recibo imprimible.</p>
+          <p class="who"><b>Quién:</b> RRHH / administración de nómina.</p>
+          <div class="mnote">Con ✏️ ajustás viático, bonos, propinas, adelantos, préstamos; recalcula el neto. Guardar boletas no duplica (por empleado+período).</div>
+        </div>
+        <div class="mod">
+          <h3 id="k-amonest">⚖️ Amonestaciones</h3>
+          <p>Registro disciplinario: documenta incidentes por empleado y emite amonestaciones con acta imprimible.</p>
+          <p class="who"><b>Quién:</b> RRHH.</p>
+          <ol class="tight"><li>"+ Nuevo Incidente" (empleado, tipo, descripción, testigos).</li><li>"Amonestar": el sistema sugiere el nivel según historial (verbal → escrita → suspensión → despido).</li><li>"Confirmar + Generar Acta".</li></ol>
+          <div class="mnote">El acta es confidencial, con firmas de empleado y RRHH. El despido genera "Carta de Despido".</div>
+        </div>
+        <div class="mod">
+          <h3 id="k-propinas">💰 Propinas Mensuales</h3>
+          <p>Consolida la propina del mes por sucursal y reparte el 90% entre los empleados que "ganan" propina.</p>
+          <p class="who"><b>Quién:</b> solo M001, S003, S004 · evaluar/aprobar: ejecutivo/superadmin.</p>
+          <ol class="tight"><li>"Resumen": mes y total recaudado / 90% a distribuir.</li><li>"Evaluar": marcá ❌ a quien pierde (motivo obligatorio).</li><li>"Guardar Evaluación" → "Aprobar y Pasar a Planilla".</li></ol>
+          <div class="mnote">Aprobada queda bloqueada. La empresa retiene el 10%.</div>
+        </div>
+      </section>
+
+      <!-- ============ L · EVENTOS ============ -->
+      <section id="l-eventos">
+        <span class="sec-num">12</span>
+        <h2>Eventos</h2>
+        <div class="mod">
+          <h3 id="l-eventos-m">🎪 Eventos y catering</h3>
+          <p>Gestiona eventos de punta a punta: menú, pedido de insumos a Casa Matriz, ventas rápidas (sin DTE), egresos, personal, devoluciones y cierre/aprobación financiera.</p>
+          <p class="who"><b>Quién:</b> eventos / responsable; aprobar cierre: ejecutivo/admin/superadmin.</p>
+          <ol class="tight"><li>Creá el evento (nombre, fecha, cliente, precio) y "Activar".</li><li>Armá el <b>Menú</b> (del catálogo POS o personalizado) y enviá el <b>Pedido a CM</b>.</li><li><b>Ventas</b>: carrito rápido por método de pago.</li><li><b>Cierre</b>: efectivo de cambio, egresos, personal, devoluciones → "Cerrar Evento" → admin "Aprobar".</li></ol>
+          <div class="mnote">Cerrado/aprobado bloquea la edición de ventas, egresos y staff.</div>
+        </div>
+      </section>
+
+      <!-- ============ M · MARKETING ============ -->
+      <section id="m-marketing">
+        <span class="sec-num">13</span>
+        <h2>Marketing</h2>
+        <div class="mod">
+          <h3 id="m-analytics">📱 Analytics Redes</h3>
+          <p>Métricas de redes (Instagram + TikTok) y su correlación con ventas: feed de posts con engagement, mejores horarios/contenido y campañas.</p>
+          <p class="who"><b>Quién:</b> marketing.</p>
+          <ol class="tight"><li>Revisá KPIs y filtrá por plataforma.</li><li>"+ Registrar Post" con métricas (likes, alcance, etc.).</li><li>"Correlación": ve el "lift" de ventas de cada post.</li></ol>
+          <div class="mnote">Las métricas diarias se pueblan por Make.com al conectar las APIs; hoy pueden estar vacías.</div>
+        </div>
+      </section>
+
+      <!-- ============ N · ADMIN ============ -->
+      <section id="n-admin">
+        <span class="sec-num">14</span>
+        <h2>Administración y sistema</h2>
+        <p class="lead">Revisión de cierres, incidentes, carga de datos y configuración del sistema.</p>
+        <div class="modidx"><a href="#n-cierres">Dashboard de Cierres</a><a href="#n-incidentes">Incidentes</a><a href="#n-quanto">Importar QUANTO</a><a href="#n-super">Panel Super Admin</a></div>
+
+        <div class="mod">
+          <h3 id="n-cierres">⚙️ Dashboard de Cierres</h3>
+          <p>Revisa y aprueba los cierres de caja diarios por sucursal: consolida turnos, muestra ventas, egresos (con foto), ingresos y depósito, con KPI de descuadre.</p>
+          <p class="who"><b>Quién:</b> admin.</p>
+          <ol class="tight"><li>Elegí rango/estado/sucursal y revisá la barra de estados.</li><li>Abrí una sucursal; verificá egresos con foto y el depósito → "✓ Confirmo: monto coincide".</li><li>Comentario + "✓ Aprobar" o "⚠ Corrección".</li></ol>
+          <div class="mnote">Aprobar afecta a todos los turnos del día. Editable solo 72h tras la aprobación.</div>
+        </div>
+        <div class="mod">
+          <h3 id="n-incidentes">🚨 Incidentes</h3>
+          <p>Muestra los reportes de turno de las sucursales y las acciones pendientes derivadas, para resolverlas con notas y fotos de evidencia.</p>
+          <p class="who"><b>Quién:</b> gerente, admin.</p>
+          <ol class="tight"><li>Rango de fechas + sucursal.</li><li>"📋 Reportes": incidentes, ausencias/tardanzas, notas.</li><li>"⚡ Acciones": abrí una, notas + hasta 3 fotos → "✓ Marcar Resuelta".</li></ol>
+          <div class="mnote">Una acción resuelta queda de solo lectura.</div>
+        </div>
+        <div class="mod">
+          <h3 id="n-quanto">📤 Importar QUANTO</h3>
+          <p>Sube en 3 pasos los archivos diarios que alimentan las ventas: ZIP de DTEs de Quanto, CSV de Tickets de Quanto y CSV de PedidosYa.</p>
+          <p class="who"><b>Quién:</b> admin, superadmin, ejecutivo.</p>
+          <ol class="tight"><li>Paso 1: ZIP de DTEs (crea órdenes).</li><li>Paso 2: CSV de Tickets (agrega canal, empleado, cliente).</li><li>Paso 3 (opcional): CSV de PedidosYa.</li></ol>
+          <div class="mnote">Es idempotente: se puede resubir sin duplicar. Subí primero el ZIP y luego los Tickets.</div>
+        </div>
+        <div class="mod">
+          <h3 id="n-super">🛡️ Panel Super Admin</h3>
+          <p>Administración del sistema: monitoreo y auto-reparación (DevOps), salud del pipeline de DTEs, usuarios, y <strong>permisos por rol</strong> (qué módulos ve cada rol).</p>
+          <p class="who"><b>Quién:</b> superadmin (ejecutivo ve solo DevOps y Pipeline DTE).</p>
+          <ol class="tight"><li>"🔧 DevOps": estado general + "🩺 Run Auto-Fix".</li><li>"👥 Usuarios": crear/editar (PIN 4-6 dígitos, rol, sucursal).</li><li>"🔐 Permisos": elegí un rol y marcá los módulos que puede ver.</li></ol>
+          <div class="mnote">Acá se controla qué módulos aparecen para cada rol en todo el ERP.</div>
+        </div>
+      </section>
+
+      <!-- ============ O · IMPRESION ============ -->
+      <section id="o-impresion">
+        <span class="sec-num">15</span>
+        <h2>Impresión por tienda</h2>
+        <p class="lead">Cada sucursal imprime según su equipo. Si algo no imprime, mirá acá primero.</p>
+        <div class="tablewrap"><table><thead><tr><th>Sucursal</th><th>Equipo</th><th>Cómo imprime</th></tr></thead><tbody>
+          <tr><td>Cafetalón · <span class="mono">M001</span></td><td>Tablet Android</td><td>Impresora WiFi de red (RawBT / app)</td></tr>
+          <tr><td>Soyapango · <span class="mono">S001</span></td><td>PC Windows</td><td>Puente local a impresora de red <span class="pill">bridge</span></td></tr>
+          <tr><td>Usulután · <span class="mono">S002</span></td><td>PC Windows</td><td>Diálogo de Windows <span class="pill">sistema</span></td></tr>
+          <tr><td>Paseo Venecia · <span class="mono">S004</span></td><td>Tablet Amazon Fire</td><td>App <b>Freakie POS</b> → impresora WiFi</td></tr>
+          <tr><td>Metro Centro · <span class="mono">S006</span></td><td>PC Windows</td><td>Diálogo de Windows <span class="pill">sistema</span></td></tr>
+        </tbody></table></div>
+        <ul class="plain">
+          <li><strong>Tablet (Fire/Android):</strong> que esté en el <strong>WiFi de la impresora</strong> de la tienda, no en otra red ni datos.</li>
+          <li><strong>Windows con puente (Soyapango):</strong> que el <strong>puente esté corriendo</strong> (arranca solo al prender la PC; si no, abrilo desde Inicio).</li>
+          <li><strong>Windows con diálogo:</strong> elegí la <strong>impresora de recibos</strong> (no "Guardar como PDF").</li>
+          <li>Si persiste, avisá a soporte con la sucursal y qué imprimías (pre-cuenta, comanda o factura).</li>
+        </ul>
+      </section>
+
+      <!-- ============ P · CAMBIOS ============ -->
+      <section id="p-cambios">
+        <span class="sec-num">16</span>
+        <h2>Historial de cambios</h2>
+        <p class="lead">Este manual se actualiza cuando cambia el ERP. Lo más nuevo, arriba.</p>
+        <div class="log">
+          <div class="row"><time>26 jul 2026 — v2.0</time><p>Manual ampliado a <b>todo el ERP</b>: se agregaron todas las áreas (Empleado, Dashboards, Almacén, Abastecimiento, Producción, Delivery, Finanzas, RRHH, Eventos, Marketing y Administración) con ~50 módulos documentados desde el código.</p></div>
+          <div class="row"><time>26 jul 2026 — v1.1</time><p>Robustecido el POS: matriz de permisos, anulaciones, cambio de mesa, descuentos, dividir cuenta, reimprimir, notas de crédito y autorizaciones por PIN.</p></div>
+          <div class="row"><time>26 jul 2026 — v1.0</time><p>Primera versión: sesión, turno, órdenes, comandar, cobrar, pagers, cierre e impresión por tienda.</p></div>
+        </div>
+      </section>
+
+      <footer>
+        <span>🍔 <b>Freakie Dogs</b> — Manual del ERP</span>
+        <span>Borrador para revisión · 26 jul 2026</span>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script>
+  (function(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+    var map = {};
+    links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+    var secs = links.map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); }).filter(Boolean);
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){ l.classList.remove('on'); });
+          if(map[e.target.id]) map[e.target.id].classList.add('on');
+        }
+      });
+    }, {rootMargin:'-30% 0px -65% 0px', threshold:0});
+    secs.forEach(function(s){ obs.observe(s); });
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(!reduce){
+      links.forEach(function(a){
+        a.addEventListener('click', function(ev){
+          var el = document.getElementById(a.getAttribute('href').slice(1));
+          if(el){ ev.preventDefault(); el.scrollIntoView({behavior:'smooth',block:'start'}); history.replaceState(null,'',a.getAttribute('href')); }
+        });
+      });
+    }
+    // smooth-scroll para los indices de modulos internos
+    document.querySelectorAll('.modidx a, a[href^="#"]').forEach(function(a){
+      if(a.closest('.toc')) return;
+      a.addEventListener('click', function(ev){
+        var id=a.getAttribute('href'); if(!id||id.charAt(0)!=='#') return;
+        var el=document.getElementById(id.slice(1));
+        if(el && !window.matchMedia('(prefers-reduced-motion: reduce)').matches){ ev.preventDefault(); el.scrollIntoView({behavior:'smooth',block:'start'}); history.replaceState(null,'',id); }
+      });
+    });
+  })();
+</script>
+</body></html>
