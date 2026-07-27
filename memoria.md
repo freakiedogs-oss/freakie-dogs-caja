@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-26 — Manual del ERP (HTML) publicado en el POS
+- **Qué:** manual de usuario HTML de TODO el ERP (~50 módulos en 16 áreas), autocontenido, tema claro/oscuro, índice por área con scrollspy. Vive en **`public/manual-pos.html`** → producción `https://freakie-dogs-caja.vercel.app/manual-pos.html` (compartible suelto) y enlazado en `src/components/layout/Sidebar.jsx` ("📖 Manual del ERP", pestaña nueva, visible a todos los roles). PR #24.
+- **Cómo se armó:** contenido generado leyendo el código real de cada módulo (5 subagentes en paralelo por área: Almacén, Finanzas, Admin, Dashboards/Caja/Empleado, RRHH/Producción/SupplyChain/Delivery/Eventos/Marketing). Diseño validado antes por Jose vía artifact borrador.
+- **Mantenimiento:** al cambiar algo del ERP, editar `public/manual-pos.html` y sumar entrada en su sección "Historial de cambios" (va v2.0).
+- **Pendiente/verificar:** "Confirmar Entregas" quedó a alto nivel; el acceso real por rol de los módulos back-office lo rige Panel Super Admin → Permisos; aprobar/editar Nómina y Recetas usan PIN de personas autorizadas (no el rol).
+
 ## 2026-07-26 — Impresión en producción: Venecia (S004, Fire) y Soyapango (S001, Windows)
 - **Venecia (S004) — APK propio funcionando:** se completaron los pendientes del APK. Keystore PKCS12 generado con **openssl** (`~/freakie.keystore`, alias `freakie`, fuera del repo) porque el Mac no tiene Java; 3 secretos cargados a GitHub (`KEYSTORE_BASE64/PASSWORD`, `KEY_ALIAS`). El workflow `build-apk` (Actions) compila y firma el APK. **Tope con OAuth:** el token de `git`/`gh` no tenía scope `workflow`; se resolvió con `gh auth refresh -s workflow` y push del workflow forzando la credencial de gh (`git -c credential.helper='!gh auth git-credential'`). El APK se distribuyó por **Tailscale Funnel** desde el mini (`https://joses-mac-mini.tailf3e161.ts.net/freakie-pos.apk`), no por hosts públicos (0x0/tmpfiles caídos/flaky).
 - **Fix APK:** cargaba la raíz del ERP; se apuntó a **`/pos`** (v1.1). El WebView ya inyecta `AndroidPrinter`.
