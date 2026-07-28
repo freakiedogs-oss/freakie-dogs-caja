@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-27 — P&L: doble conteo de PeYa + PeYa sin desglose (jun/jul)
+- **Qué:** migración `migration_mv_ventas_pos_excluir_pedidos_ya` + fix `QuantoUploadView.jsx` + backfill `pedidos_peya`.
+- **Bug A — doble conteo PeYa:** el POS interno registra órdenes PeYa como `pos_cuentas.tipo='pedidos_ya'`; entraban en la fuente `pos` del P&L Y en la fuente `peya` (archivo `pedidos_peya`). Fix: vista nueva `v_pos_ventas_diario_sin_peya` (= `v_pos_ventas_diario` con `tipo IS DISTINCT FROM 'pedidos_ya'`) y la matview lee esa vista en la rama `pos`. El archivo PeYa queda como única fuente de la venta PeYa (es el fidedigno: precio real del cliente, aunque PeYa liquide menos). Impacto julio: ~$2,522 c/IVA. **Aislado a propósito**: `v_ventas_sucursal_diario` sigue usando `v_pos_ventas_diario` (no toca PeYa ahí porque esa vista no suma el archivo).
+- **Bug B — PeYa "Otro" en jun/jul:** el reporte PeYa **dejó de traer "ID del local"** desde junio → `store_code` NULL → se agrupaba como "Otro". Pero **"Nombre del local" sigue** viniendo. Fix: (1) backfill `store_code` desde `nombre_local` (mapeo 1:1: Freakie Dogs=M001, …Soyapango=S001, …Usulután=S002, Lourdes=S003, …Paseo Venecia=S004); (2) `QuantoUploadView.jsx` ahora cae a `NOMBRE_TO_STORE_PEYA[nombre_local]` si no hay `local_id`.
+- **Recordatorio:** re-GRANT anon/authenticated tras cada DROP+CREATE de la matview. Ver [[freakie-cierres-multi-turno]].
+
 ## 2026-07-27 — P&L: ventas del POS interno fugadas (lista negra en matview)
 - **Qué:** migración `migration_mv_ventas_pos_sin_lista_negra` (Supabase `public`) — recrea `mv_finanzas_ventas_mensual` quitando la lista negra hardcodeada `ARRAY['M001','S001','S002','S003','S004','EVT01']` de la rama `pos`; queda solo `<> 'EVT01'`. Índice único `(mes,store_code,fuente)` recreado (habilita el REFRESH CONCURRENTLY del botón "Refrescar P&L"). Copia documental en `Contexto/SQL/`.
 - **Síntoma (lo detectó Jose):** el P&L de "Casa Matriz" mostraba julio "cayendo" ($237K); sospechó que solo entraban ventas Quanto y no las del POS interno. Correcto.
