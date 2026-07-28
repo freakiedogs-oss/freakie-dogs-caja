@@ -1,0 +1,37 @@
+-- migration_fn_ventas_totales_dashboard_pos_consistente.sql
+-- Fecha: 2026-07-28
+-- Aplicada a Supabase (btboxlwfqcbrdfrlnwln, schema public) via CREATE OR REPLACE FUNCTION.
+--
+-- CONTEXTO:
+--   El dashboard "KPI Ventas Totales · BEP" (KpiVentasTotalesDashboard.jsx) NO lee la
+--   matview del P&L; llama al RPC fn_ventas_totales_dashboard. Ese RPC arrastraba los
+--   mismos dos bugs que ya se corrigieron en mv_finanzas_ventas_mensual:
+--     1) Lista negra hardcodeada en la fuente POS:
+--          FROM v_pos_ventas_diario WHERE store_code NOT IN ('M001','S001','S002','S003','S004','EVT01')
+--        -> excluia el POS interno de las sucursales migradas (solo contaba S006).
+--        Faltaban ~$14,937 sin IVA en julio-2026; "Todas" $241,047 -> $255,984.
+--     2) Usaba v_pos_ventas_diario (con tipo='pedidos_ya') -> riesgo de doble conteo de
+--        PeYa al quitar la lista negra (PeYa ya entra por el archivo pedidos_peya).
+--
+-- FIX (consistencia total con el P&L):
+--   La CTE 'po' y las subqueries del mes previo (ventas_ant) ahora leen
+--   v_pos_ventas_diario_sin_peya y filtran solo store_code <> 'EVT01'.
+--
+-- El cuerpo completo del CREATE OR REPLACE FUNCTION quedo aplicado en la DB
+-- (ver migracion fn_ventas_totales_dashboard_pos_consistente). Aqui se documenta
+-- solo el diff conceptual; el frontend suma el canal 'pos' (chip + tabla + CSV).
+--
+-- DIFF (rama POS del mes en curso):
+--   -  FROM v_pos_ventas_diario
+--   -  WHERE fecha BETWEEN v_inicio_mes AND v_corte
+--   -    AND store_code NOT IN ('M001','S001','S002','S003','S004','EVT01')
+--   +  FROM v_pos_ventas_diario_sin_peya
+--   +  WHERE fecha BETWEEN v_inicio_mes AND v_corte
+--   +    AND store_code <> 'EVT01'
+--
+-- DIFF (subqueries POS del mes previo, ci y si):
+--   -  FROM v_pos_ventas_diario WHERE ... AND store_code NOT IN ('M001','S001','S002','S003','S004','EVT01')
+--   +  FROM v_pos_ventas_diario_sin_peya WHERE ... AND store_code <> 'EVT01'
+--
+-- Nota: CREATE OR REPLACE FUNCTION preserva los GRANT/EXECUTE (no aplica el gotcha
+-- del DROP de matviews).

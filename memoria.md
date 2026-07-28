@@ -2,6 +2,33 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-28 — P&L: "Venta Local" unificada por sucursal (Quanto + POS interno)
+- **Qué:** en `FinanzasDashboard.jsx`, el árbol de ventas del Estado de Resultados fusiona los dos bloques ("Venta Local (Quanto)" + "Venta Local POS (Metro Centro)") en **un solo canal "Venta Local"** con una fila por sucursal = Quanto + POS interno del mes. Así se ve la **evolución continua** de cada sucursal aunque migre de Quanto al POS interno (antes se partía en 2 tablas).
+- **Marca de fuente por celda:** cada celda sucursal-mes lleva un superíndice — `Q` (verde)=Quanto, `I` (azul)=POS interno, `Q·I` (dorado)=mes de transición — y en **hover** muestra el desglose exacto (Quanto $X · POS interno $Y). `srcPerMonth` en `ventasTree` guarda el split.
+- **Quitado** "(Metro Centro)" del título (ahora muestra todas las sucursales). PedidosYa sigue como canal aparte.
+- Solo frontend (sin DB). Ver [[freakie-cierres-multi-turno]].
+
+## 2026-07-28 — KPI Ventas Totales·BEP: consistencia con el P&L
+- **Qué:** migración `fn_ventas_totales_dashboard_pos_consistente` (RPC) + `KpiVentasTotalesDashboard.jsx` (chip/tabla/CSV del canal POS).
+- **Problema:** el dashboard "KPI Ventas Totales · BEP" **no** lee la matview; usa el RPC `fn_ventas_totales_dashboard`, que arrastraba los mismos 2 bugs ya corregidos en el P&L: (1) **lista negra** `store_code NOT IN ('M001','S001','S002','S003','S004','EVT01')` en la fuente POS → solo contaba S006, faltaban las migradas; (2) leía `v_pos_ventas_diario` (con `pedidos_ya`). Resultado: "Todas" julio subcontaba **~$14,937 s/IVA** ($241,047 en vez de $255,984). Además el frontend no mostraba el canal POS (invisible dentro de "Todas").
+- **Fix:** la CTE `po` y las subqueries del mes previo ahora leen `v_pos_ventas_diario_sin_peya` con `store_code <> 'EVT01'` (idéntico criterio que la matview). Frontend: agregado canal `pos` ("POS Interno", `c.blue`) a `CANALES`, a la tabla de detalle diario y al export CSV.
+- **Verificado:** RPC julio (corte 26-jul) → Todas $255,984 = Quanto $149,745 + PeYa $42,894 + POS $63,345 + Eventos $0. Consistente con el P&L. `CREATE OR REPLACE FUNCTION` preserva grants (no aplica el gotcha del DROP de matview). Ver [[freakie-cierres-multi-turno]].
+
+## 2026-07-27 — P&L: doble conteo de PeYa + PeYa sin desglose (jun/jul)
+- **Qué:** migración `migration_mv_ventas_pos_excluir_pedidos_ya` + fix `QuantoUploadView.jsx` + backfill `pedidos_peya`.
+- **Bug A — doble conteo PeYa:** el POS interno registra órdenes PeYa como `pos_cuentas.tipo='pedidos_ya'`; entraban en la fuente `pos` del P&L Y en la fuente `peya` (archivo `pedidos_peya`). Fix: vista nueva `v_pos_ventas_diario_sin_peya` (= `v_pos_ventas_diario` con `tipo IS DISTINCT FROM 'pedidos_ya'`) y la matview lee esa vista en la rama `pos`. El archivo PeYa queda como única fuente de la venta PeYa (es el fidedigno: precio real del cliente, aunque PeYa liquide menos). Impacto julio: ~$2,522 c/IVA. **Aislado a propósito**: `v_ventas_sucursal_diario` sigue usando `v_pos_ventas_diario` (no toca PeYa ahí porque esa vista no suma el archivo).
+- **Bug B — PeYa "Otro" en jun/jul:** el reporte PeYa **dejó de traer "ID del local"** desde junio → `store_code` NULL → se agrupaba como "Otro". Pero **"Nombre del local" sigue** viniendo. Fix: (1) backfill `store_code` desde `nombre_local` (mapeo 1:1: Freakie Dogs=M001, …Soyapango=S001, …Usulután=S002, Lourdes=S003, …Paseo Venecia=S004); (2) `QuantoUploadView.jsx` ahora cae a `NOMBRE_TO_STORE_PEYA[nombre_local]` si no hay `local_id`.
+- **Recordatorio:** re-GRANT anon/authenticated tras cada DROP+CREATE de la matview. Ver [[freakie-cierres-multi-turno]].
+
+## 2026-07-27 — P&L: ventas del POS interno fugadas (lista negra en matview)
+- **Qué:** migración `migration_mv_ventas_pos_sin_lista_negra` (Supabase `public`) — recrea `mv_finanzas_ventas_mensual` quitando la lista negra hardcodeada `ARRAY['M001','S001','S002','S003','S004','EVT01']` de la rama `pos`; queda solo `<> 'EVT01'`. Índice único `(mes,store_code,fuente)` recreado (habilita el REFRESH CONCURRENTLY del botón "Refrescar P&L"). Copia documental en `Contexto/SQL/`.
+- **Síntoma (lo detectó Jose):** el P&L de "Casa Matriz" mostraba julio "cayendo" ($237K); sospechó que solo entraban ventas Quanto y no las del POS interno. Correcto.
+- **Causa raíz:** la matview arma la fila Ventas de 4 fuentes: `quanto` (v_quanto_ordenes_diario), `peya` (pedidos_peya), `pos` (v_pos_ventas_diario) y eventos. La rama `pos` **excluía a la fuerza** M001/S001/S002/S003/S004 (diseño viejo: solo S006 usaba POS interno). Pero en julio **M001, S001, S002 y S004 migraron de Quanto al POS interno**; Quanto corta el día de la migración y el POS interno arranca al siguiente (0 días solapados) → esas ventas post-migración caían en la lista negra y **se perdían**.
+- **Impacto:** Julio recuperó **+$22,981.95 c/IVA (~$20,338 s/IVA)** — POS interno pasó de solo S006 ($57,423) a M001+S001+S002+S004+S006 ($80,405). Meses viejos suben centavos (órdenes de prueba del POS interno en M001: Abr $119, May $148.51, Jun $9.35). Total julio: $237K → ~$258K s/IVA.
+- **Por qué el UNION no dobla:** Quanto importa solo ventas Quanto y el POS interno solo las suyas — son disjuntas. Único día con dato en ambas: S001 7-jul ($624 Quanto + $8.50 POS interno), pero son ventas distintas (prueba), no la misma duplicada. Se mantiene `<> 'EVT01'` porque eventos SÍ se suman aparte desde tabla `eventos` en `FinanzasDashboard.jsx`.
+- **Ventaja:** cualquier sucursal que migre al POS interno ahora entra sola, sin re-editar la matview. Ver [[freakie-cierres-multi-turno]].
+- **⚠️ Lección (susto en vivo):** tras recrear la matview, al "Refrescar P&L" el dashboard mostró **todas las ventas 2026 en ~$0** y los % de costos disparados (miles de %). Causa: `DROP MATERIALIZED VIEW` **borra los GRANT**; la app lee por rol `anon` vía proxy `/sb` y sin `SELECT` recibía 0 filas (los datos nunca se fueron — con rol privilegiado se veían llenos). Fix: `GRANT SELECT ON public.mv_finanzas_ventas_mensual TO anon, authenticated;` (igual que `mv_finanzas_gastos_mensual`). **Regla:** todo DROP+CREATE de matview/vista que lea la app debe re-GRANTear a `anon, authenticated`.
+
 ## 2026-07-27 — POS: rediseño de cierres (X = cambio de turno, Z = cierre del día)
 - **Qué:** `CierreTurno.jsx` + migración `pos_turnos_tipo_cierre` (columna `tipo_cierre`: null=abierto · `X` · `Z`).
 - **Modelo nuevo (definido con Jose):**

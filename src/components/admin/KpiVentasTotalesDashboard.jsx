@@ -45,6 +45,7 @@ const CANALES = [
   { key: 'todas',   label: 'Todas',          icon: '🌐', color: c.cyan,    short: 'Total' },
   { key: 'quanto',  label: 'Quanto (POS)',   icon: '🍔', color: c.green,   short: 'Quanto' },
   { key: 'peya',    label: 'PEYA',           icon: '🛵', color: c.pink,    short: 'PEYA' },
+  { key: 'pos',     label: 'POS Interno',    icon: '🏪', color: c.blue,    short: 'POS' },
   { key: 'eventos', label: 'Eventos',        icon: '🎉', color: c.purple,  short: 'Eventos' },
 ]
 
@@ -382,14 +383,15 @@ export default function KpiVentasTotalesDashboard({ user }) {
 
   const exportarCSV = () => {
     if (!datos) return
-    const headers = ['Fecha', 'Día', 'Quanto', 'PEYA', 'Eventos', 'Total', 'Pedidos']
+    const headers = ['Fecha', 'Día', 'Quanto', 'PEYA', 'POS Interno', 'Eventos', 'Total', 'Pedidos']
     const rows = [headers]
     ;(datos.serie_diaria || []).forEach(d => {
       const quanto = sinIva ? d.quanto_si : d.quanto
       const peya = sinIva ? d.peya_si : d.peya
+      const pos = sinIva ? d.pos_si : d.pos
       const eventos = sinIva ? d.eventos_si : d.eventos
       const todas = sinIva ? d.todas_si : d.todas
-      rows.push([d.fecha, DIAS_CORTO[diaSemanaIdx(d.fecha)], quanto, peya, eventos, todas, d.pedidos_todas])
+      rows.push([d.fecha, DIAS_CORTO[diaSemanaIdx(d.fecha)], quanto, peya, pos, eventos, todas, d.pedidos_todas])
     })
     downloadCSV(`ventas_totales_${periodo.anio}_${String(periodo.mes).padStart(2,'0')}_${sinIva?'sin_iva':'con_iva'}.csv`, rows)
   }
@@ -661,6 +663,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
                 <th style={{ textAlign: 'left', padding: 8, color: c.textDim }}>Día</th>
                 <th style={{ textAlign: 'right', padding: 8, color: c.green }}>Quanto</th>
                 <th style={{ textAlign: 'right', padding: 8, color: c.pink }}>PEYA</th>
+                <th style={{ textAlign: 'right', padding: 8, color: c.blue }}>POS Interno</th>
                 <th style={{ textAlign: 'right', padding: 8, color: c.purple }}>Eventos</th>
                 <th style={{ textAlign: 'right', padding: 8, color: c.cyan, fontWeight: 700 }}>Total</th>
                 <th style={{ textAlign: 'right', padding: 8, color: c.textDim }}>Pedidos</th>
@@ -671,6 +674,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
                 const finde = [0,6].includes(d.dow)
                 const dQuanto = sinIva ? Number(d.quanto_si || 0) : Number(d.quanto || 0)
                 const dPeya = sinIva ? Number(d.peya_si || 0) : Number(d.peya || 0)
+                const dPos = sinIva ? Number(d.pos_si || 0) : Number(d.pos || 0)
                 const dEventos = sinIva ? Number(d.eventos_si || 0) : Number(d.eventos || 0)
                 const dTotal = sinIva ? Number(d.todas_si || 0) : Number(d.todas || 0)
                 return (
@@ -684,6 +688,7 @@ export default function KpiVentasTotalesDashboard({ user }) {
                     </td>
                     <td style={{ padding: 8, textAlign: 'right' }}>{dQuanto > 0 ? fmtUSD(dQuanto) : '—'}</td>
                     <td style={{ padding: 8, textAlign: 'right' }}>{dPeya > 0 ? fmtUSD(dPeya) : '—'}</td>
+                    <td style={{ padding: 8, textAlign: 'right' }}>{dPos > 0 ? fmtUSD(dPos) : '—'}</td>
                     <td style={{ padding: 8, textAlign: 'right' }}>{dEventos > 0 ? fmtUSD(dEventos) : '—'}</td>
                     <td style={{ padding: 8, textAlign: 'right', fontWeight: 700, color: c.cyan }}>{fmtUSD(dTotal)}</td>
                     <td style={{ padding: 8, textAlign: 'right', color: c.textDim }}>{d.pedidos_todas}</td>

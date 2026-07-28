@@ -1260,25 +1260,38 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
     if (!data2026) return []
     const NOMBRE = { M001: 'Cafetalón', S001: 'Soyapango', S002: 'Usulután', S003: 'Lourdes', S004: 'Venecia', S006: 'Metro Centro' }
     const mk = (key, label) => ({ key, label, total: 0, perMonth: {}, sucMap: {} })
-    const chans = {
-      quanto: mk('quanto', '🏪 Venta Local (Quanto)'),
-      pos:    mk('pos', '🏬 Venta Local POS (Metro Centro)'),
-      peya:   mk('peya', '🛵 PedidosYa (Delivery)'),
-    }
-    const add = (chan, arr) => (arr || []).forEach(v => {
+    // Venta Local = Quanto + POS interno UNIFICADOS por sucursal (para ver la evolución
+    // continua aunque la sucursal migre de Quanto al POS interno). Cada celda guarda la
+    // fuente (q=Quanto, p=POS interno) para marcarla y mostrar el desglose en hover.
+    const local = mk('local', '🏪 Venta Local')
+    const peya  = mk('peya',  '🛵 PedidosYa (Delivery)')
+    const addLocal = (arr, src) => (arr || []).forEach(v => {
       const mkey = v.fecha?.substring(0, 7); if (!mkey) return
       const gross = parseFloat(v.total_ventas) || parseFloat(v.total) || 0
       const val = conIva ? gross : (parseFloat(v.total_sin_iva) || gross / 1.13)
       if (!val) return
       const sc = v.store_code || 'Otro'
-      chan.total += val; chan.perMonth[mkey] = (chan.perMonth[mkey] || 0) + val
-      if (!chan.sucMap[sc]) chan.sucMap[sc] = { sc, nombre: NOMBRE[sc] || sc, total: 0, perMonth: {} }
-      chan.sucMap[sc].total += val; chan.sucMap[sc].perMonth[mkey] = (chan.sucMap[sc].perMonth[mkey] || 0) + val
+      local.total += val; local.perMonth[mkey] = (local.perMonth[mkey] || 0) + val
+      if (!local.sucMap[sc]) local.sucMap[sc] = { sc, nombre: NOMBRE[sc] || sc, total: 0, perMonth: {}, srcPerMonth: {} }
+      const s = local.sucMap[sc]
+      s.total += val; s.perMonth[mkey] = (s.perMonth[mkey] || 0) + val
+      if (!s.srcPerMonth[mkey]) s.srcPerMonth[mkey] = { q: 0, p: 0 }
+      s.srcPerMonth[mkey][src] += val
     })
-    add(chans.quanto, data2026.ventas)
-    add(chans.pos, data2026.ventaspos)
-    add(chans.peya, data2026.ventaspeya)
-    return [chans.quanto, chans.pos, chans.peya]
+    const addPeya = (arr) => (arr || []).forEach(v => {
+      const mkey = v.fecha?.substring(0, 7); if (!mkey) return
+      const gross = parseFloat(v.total_ventas) || parseFloat(v.total) || 0
+      const val = conIva ? gross : (parseFloat(v.total_sin_iva) || gross / 1.13)
+      if (!val) return
+      const sc = v.store_code || 'Otro'
+      peya.total += val; peya.perMonth[mkey] = (peya.perMonth[mkey] || 0) + val
+      if (!peya.sucMap[sc]) peya.sucMap[sc] = { sc, nombre: NOMBRE[sc] || sc, total: 0, perMonth: {} }
+      peya.sucMap[sc].total += val; peya.sucMap[sc].perMonth[mkey] = (peya.sucMap[sc].perMonth[mkey] || 0) + val
+    })
+    addLocal(data2026.ventas, 'q')      // Quanto
+    addLocal(data2026.ventaspos, 'p')   // POS interno (ya sin PeYa)
+    addPeya(data2026.ventaspeya)
+    return [local, peya]
       .filter(c => c.total > 0.005)
       .map(c => ({ ...c, sucs: Object.values(c.sucMap).sort((a, b) => b.total - a.total) }))
   }, [data2026, conIva])
@@ -1530,6 +1543,7 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
                       <td style={{ ...sTdL, paddingLeft: 34, color: '#e2e8f0', fontSize: 10, fontWeight: 700, position: 'sticky', left: 0, background: '#0f1828', zIndex: 1, boxShadow: '2px 0 4px rgba(0,0,0,0.3)' }}>
                         <span style={{ display: 'inline-block', width: 12, color: chExp ? C.gold : C.textMuted, fontSize: 9 }}>{multi ? (chExp ? '▼' : '▶') : ''}</span>
                         {ch.label}
+                        {ch.key === 'local' && <span title="Fuente por celda — Q: Quanto · I: POS interno · Q·I: mes de transición" style={{ marginLeft: 6, fontSize: 8, fontWeight: 400, color: '#64748b' }}>· <span style={{ color: '#4ade80' }}>Q</span>uanto / POS <span style={{ color: '#60a5fa' }}>I</span>nterno</span>}
                       </td>
                       {allMonths.map((m, i) => {
                         const v = ch.perMonth[m.key] || 0
@@ -1547,7 +1561,15 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
                         <td style={{ ...sTdL, paddingLeft: 50, color: '#cbd5e1', fontSize: 10, fontStyle: 'italic', position: 'sticky', left: 0, background: '#0c1320', zIndex: 1, boxShadow: '2px 0 4px rgba(0,0,0,0.3)' }}>↳ {su.nombre} <span style={{ color: '#64748b' }}>· {su.sc}</span></td>
                         {allMonths.map((m, i) => {
                           const v = su.perMonth[m.key] || 0
-                          return <td key={i} style={{ ...sTd(), fontSize: 10, color: v ? '#cbd5e1' : '#475569' }}>{v ? fmt(v) : '—'}</td>
+                          const src = su.srcPerMonth?.[m.key]
+                          let mark = null, mColor = null, title
+                          if (src && v) {
+                            const hasQ = src.q > 0.005, hasP = src.p > 0.005
+                            if (hasQ && hasP) { mark = 'Q·I'; mColor = C.gold; title = `Quanto ${fmt(src.q)} · POS interno ${fmt(src.p)}` }
+                            else if (hasQ) { mark = 'Q'; mColor = '#4ade80'; title = `Quanto ${fmt(src.q)}` }
+                            else if (hasP) { mark = 'I'; mColor = '#60a5fa'; title = `POS interno ${fmt(src.p)}` }
+                          }
+                          return <td key={i} title={title} style={{ ...sTd(), fontSize: 10, color: v ? '#cbd5e1' : '#475569' }}>{v ? fmt(v) : '—'}{mark && <sup style={{ fontSize: 7, marginLeft: 2, color: mColor, fontStyle: 'normal' }}>{mark}</sup>}</td>
                         })}
                         <td style={{ ...sTd(), fontSize: 10, color: '#cbd5e1', fontWeight: 700, borderLeft: `1px solid ${C.border}` }}>{fmt(su.total)}</td>
                         <td style={{ ...sTd(), fontSize: 10, color: C.textMuted }}>{ch.total ? pct(su.total / ch.total) : '—'}</td>

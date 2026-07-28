@@ -34,6 +34,16 @@ const LOCAL_TO_STORE_PEYA = {
   '593019': 'S004',
 }
 
+// Fallback: nombre del local → store_code. El reporte PeYa dejó de traer
+// "ID del local" (jun-2026 en adelante); "Nombre del local" sigue presente.
+const NOMBRE_TO_STORE_PEYA = {
+  'Freakie Dogs': 'M001',
+  'Freakie Dogs Plaza Mundo Soyapango': 'S001',
+  'Freakie Dogs Plaza Mundo Usulutan': 'S002',
+  'Freakie Dogs Lourdes': 'S003',
+  'Freakie Dogs - Paseo Venecia': 'S004',
+}
+
 // Helpers PeYa CSV (formato europeo: "9,50" → 9.50  |  "1.234,56" → 1234.56)
 function numEU(v) {
   if (v == null || v === '') return null
@@ -438,11 +448,13 @@ export default function QuantoUploadView({ user }) {
         const nro = r[idx['Nro de pedido']]
         if (!nro) continue
         const localId = r[idx['ID del local']] || ''
+        const nombreLocal = r[idx['Nombre del local']] || null
         records.push({
           nro_pedido: parseInt(nro, 10),
           local_id: parseInt(localId, 10) || null,
-          store_code: LOCAL_TO_STORE_PEYA[localId] || null,
-          nombre_local: r[idx['Nombre del local']] || null,
+          // Deriva por ID del local; si el reporte no lo trae, cae al nombre del local
+          store_code: LOCAL_TO_STORE_PEYA[localId] || NOMBRE_TO_STORE_PEYA[nombreLocal] || null,
+          nombre_local: nombreLocal,
           metodo_entrega: r[idx['Método de entrega']] || null,
           forma_pago: r[idx['Forma de pago']] || null,
           pedido_programado: boolifyES(r[idx['Pedido programado']]),
