@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-27 — P&L: ventas del POS interno fugadas (lista negra en matview)
+- **Qué:** migración `migration_mv_ventas_pos_sin_lista_negra` (Supabase `public`) — recrea `mv_finanzas_ventas_mensual` quitando la lista negra hardcodeada `ARRAY['M001','S001','S002','S003','S004','EVT01']` de la rama `pos`; queda solo `<> 'EVT01'`. Índice único `(mes,store_code,fuente)` recreado (habilita el REFRESH CONCURRENTLY del botón "Refrescar P&L"). Copia documental en `Contexto/SQL/`.
+- **Síntoma (lo detectó Jose):** el P&L de "Casa Matriz" mostraba julio "cayendo" ($237K); sospechó que solo entraban ventas Quanto y no las del POS interno. Correcto.
+- **Causa raíz:** la matview arma la fila Ventas de 4 fuentes: `quanto` (v_quanto_ordenes_diario), `peya` (pedidos_peya), `pos` (v_pos_ventas_diario) y eventos. La rama `pos` **excluía a la fuerza** M001/S001/S002/S003/S004 (diseño viejo: solo S006 usaba POS interno). Pero en julio **M001, S001, S002 y S004 migraron de Quanto al POS interno**; Quanto corta el día de la migración y el POS interno arranca al siguiente (0 días solapados) → esas ventas post-migración caían en la lista negra y **se perdían**.
+- **Impacto:** Julio recuperó **+$22,981.95 c/IVA (~$20,338 s/IVA)** — POS interno pasó de solo S006 ($57,423) a M001+S001+S002+S004+S006 ($80,405). Meses viejos suben centavos (órdenes de prueba del POS interno en M001: Abr $119, May $148.51, Jun $9.35). Total julio: $237K → ~$258K s/IVA.
+- **Por qué el UNION no dobla:** Quanto importa solo ventas Quanto y el POS interno solo las suyas — son disjuntas. Único día con dato en ambas: S001 7-jul ($624 Quanto + $8.50 POS interno), pero son ventas distintas (prueba), no la misma duplicada. Se mantiene `<> 'EVT01'` porque eventos SÍ se suman aparte desde tabla `eventos` en `FinanzasDashboard.jsx`.
+- **Ventaja:** cualquier sucursal que migre al POS interno ahora entra sola, sin re-editar la matview. Ver [[freakie-cierres-multi-turno]].
+- **⚠️ Lección (susto en vivo):** tras recrear la matview, al "Refrescar P&L" el dashboard mostró **todas las ventas 2026 en ~$0** y los % de costos disparados (miles de %). Causa: `DROP MATERIALIZED VIEW` **borra los GRANT**; la app lee por rol `anon` vía proxy `/sb` y sin `SELECT` recibía 0 filas (los datos nunca se fueron — con rol privilegiado se veían llenos). Fix: `GRANT SELECT ON public.mv_finanzas_ventas_mensual TO anon, authenticated;` (igual que `mv_finanzas_gastos_mensual`). **Regla:** todo DROP+CREATE de matview/vista que lea la app debe re-GRANTear a `anon, authenticated`.
+
 ## 2026-07-27 — POS: rediseño de cierres (X = cambio de turno, Z = cierre del día)
 - **Qué:** `CierreTurno.jsx` + migración `pos_turnos_tipo_cierre` (columna `tipo_cierre`: null=abierto · `X` · `Z`).
 - **Modelo nuevo (definido con Jose):**
