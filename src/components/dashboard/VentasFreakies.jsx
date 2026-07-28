@@ -36,9 +36,9 @@ const STORES_VENTAS = ['S006', 'M001', 'S001', 'S002', 'S003', 'S004'];
 const FUENTE_ACTUAL = {
   S006: 'pos',      // Metro Centro 8va Etapa — nació directo en POS propio (07-Jul-2026)
   M001: 'pos',   // Plaza Cafetalón
-  S001: 'quanto',   // Plaza Mundo Soyapango
+  S001: 'pos',   // Plaza Mundo Soyapango
   S002: 'pos',   // Plaza Mundo Usulután
-  S003: 'quanto',   // Grand Plaza Lourdes
+  S003: 'quanto',   // Grand Plaza Lourdes — aún en Quanto
   S004: 'pos',   // Paseo Venecia
 };
 
@@ -51,6 +51,7 @@ const CUTOVER_POS = {
   M001: '2026-07-22',   // Cafetalón migró de Quanto a POS propio
   S002: '2026-07-24',   // Usulutan migro a POS propio
   S004: '2026-07-26',   // Paseo Venecia (25-Jul siguio en Quanto; corte real 26-Jul)
+  S001: '2026-07-27',   // Soyapango migró a POS propio (arrancó el 27-Jul)
   // S006 no lleva corte: nunca tuvo Quanto, siempre fue POS propio.
 };
 
