@@ -216,11 +216,14 @@ export default function CierreTurno({ user, onBack }) {
     // Sin caja abierta: precargar el fondo con el efectivo contado del último CAMBIO DE
     // TURNO (X) del día — la gaveta que recibe el siguiente cajero (arrastre).
     if (!data) {
-      const { data: ult } = await db.from('pos_turnos').select('conteo_efectivo')
+      // conteo_efectivo guarda el efectivo de VENTAS del turno (para la columna generada
+      // diferencia_efectivo = conteo − sistema_efectivo). La gaveta completa que arrastra =
+      // conteo_efectivo + fondo_apertura de ese turno.
+      const { data: ult } = await db.from('pos_turnos').select('conteo_efectivo,fondo_apertura')
         .eq('store_code', storeCode).eq('fecha', todayISO()).eq('tipo_cierre', 'X')
         .not('conteo_efectivo', 'is', null)
         .order('cerrado_at', { ascending: false }).limit(1).maybeSingle()
-      if (ult && ult.conteo_efectivo != null) setFondoInput(String(ult.conteo_efectivo))
+      if (ult && ult.conteo_efectivo != null) setFondoInput(String(_n(ult.conteo_efectivo) + _n(ult.fondo_apertura)))
     }
     setLoading(false)
   }, [storeCode])
@@ -353,7 +356,9 @@ export default function CierreTurno({ user, onBack }) {
       const { error } = await db.from('pos_turnos').update({
         cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'X',
         ...snapshotSistema(),
-        conteo_efectivo: efReal, deposito_monto: 0, diferencia_efectivo: difTurno,
+        // conteo_efectivo = efectivo de VENTAS contado (gaveta − fondo); la columna generada
+        // diferencia_efectivo = conteo − sistema_efectivo da el sobrante/faltante. NO deposita.
+        conteo_efectivo: r2(efReal - fondoRecibido), deposito_monto: 0,
         egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
       }).eq('id', turno.id)
       if (error) throw error
@@ -376,7 +381,9 @@ export default function CierreTurno({ user, onBack }) {
       const { error } = await db.from('pos_turnos').update({
         cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'Z',
         ...snapshotSistema(),
-        conteo_efectivo: efReal, deposito_monto: depositoDia, diferencia_efectivo: difDia,
+        // conteo_efectivo = efectivo del día a depositar (gaveta − fondo base). El depósito
+        // del día es lo mismo. diferencia_efectivo (generada) = conteo − sistema_efectivo.
+        conteo_efectivo: depositoDia, deposito_monto: depositoDia,
         egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
       }).eq('id', turno.id)
       if (error) throw error
