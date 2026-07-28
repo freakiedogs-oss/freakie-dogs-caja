@@ -142,10 +142,19 @@ function ModalIngreso({ motivos, onSave, onClose }) {
 }
 
 /**
- * CierreTurno — Corte de caja X/Z del POS. Estructura CLONADA del CierreForm
- * del ERP (mismas secciones) pero alimentada desde el POS (RPC pos_corte) y
- * persistida en pos_turnos. Las ventas por método son de solo lectura
- * (vienen del sistema según lo cobrado en el turno).
+ * CierreTurno — Corte de caja del POS. DOS tipos de cierre:
+ *
+ *   • Corte X (cambio de turno): cierra la caja del cajero actual. Sus ventas quedan
+ *     amarradas a él (arqueo por cajero), NO deposita, y libera la caja para que el
+ *     siguiente cajero abra. La gaveta se ARRASTRA: el fondo del siguiente turno se
+ *     precarga con el efectivo contado en este X. Puede haber varios X por día.
+ *
+ *   • Corte Z (cierre del día): UNO SOLO por día. Muestra el acumulado del día completo
+ *     (todos los turnos), se cuenta la gaveta, se deposita el efectivo del día (el fondo
+ *     base se queda), y se arma la fila 'completo' de ventas_diarias vía
+ *     pos_rebuild_cierre_dia (que SUMA todos los turnos cerrados del día).
+ *
+ * Guardrails: 1 sola caja abierta por sucursal · no abrir si el día ya se cerró con Z.
  */
 const fmt = (n) => `$${parseFloat(n || 0).toFixed(2)}`
 const n = (v) => parseFloat(v) || 0
@@ -178,33 +187,42 @@ export default function CierreTurno({ user, onBack }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
-  const [turno, setTurno]     = useState(null)
-  const [corte, setCorte]     = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [tab, setTab]         = useState('z')
+  const [turno, setTurno]       = useState(null)
+  const [corte, setCorte]       = useState(null)     // corte del TURNO actual (para X)
+  const [corteDia, setCorteDia] = useState(null)     // corte del DÍA completo (para Z)
+  const [diaInfo, setDiaInfo]   = useState({ fondoBase: 0, prevEgr: 0, prevIng: 0, zExiste: false, nTurnos: 0 })
+  const [loading, setLoading]   = useState(true)
+  const [tab, setTab]           = useState('x')       // 'x' = cambio de turno · 'z' = cierre del día
   const [fondoInput, setFondoInput] = useState('200')
-  const [saving, setSaving]   = useState(false)
+  const [saving, setSaving]     = useState(false)
 
-  const [motEg, setMotEg]     = useState([])
-  const [motIn, setMotIn]     = useState([])
-  const [egresos, setEgresos] = useState([])
+  const [motEg, setMotEg]       = useState([])
+  const [motIn, setMotIn]       = useState([])
+  const [egresos, setEgresos]   = useState([])
   const [ingresos, setIngresos] = useState([])
   const [efectivoReal, setEfectivoReal] = useState('')
-  const [obs, setObs]         = useState('')
-  // add forms
-  const [showEg, setShowEg]   = useState(false)
-  const [showIn, setShowIn]   = useState(false)
+  const [obs, setObs]           = useState('')
+  const [showEg, setShowEg]     = useState(false)
+  const [showIn, setShowIn]     = useState(false)
   const [empleadosSuc, setEmpleadosSuc] = useState([])
 
+  // ── Turno abierto de ESTA caja (guardrail: 1 caja abierta por sucursal) ──
   const loadTurno = useCallback(async () => {
     setLoading(true)
-    // Turno abierto de ESTA CAJA (no solo del cajero actual): permite cerrar con Z un
-    // turno que otro cajero dejó abierto en el cambio de turno (evita turnos colgados sin Z).
     const { data } = await db.from('pos_turnos').select('*')
-      .eq('store_code', storeCode)
-      .eq('nivel', 'cajero').eq('estado', 'abierto')
+      .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
       .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
-    setTurno(data || null); setLoading(false)
+    setTurno(data || null)
+    // Sin caja abierta: precargar el fondo con el efectivo contado del último CAMBIO DE
+    // TURNO (X) del día — la gaveta que recibe el siguiente cajero (arrastre).
+    if (!data) {
+      const { data: ult } = await db.from('pos_turnos').select('conteo_efectivo')
+        .eq('store_code', storeCode).eq('fecha', todayISO()).eq('tipo_cierre', 'X')
+        .not('conteo_efectivo', 'is', null)
+        .order('cerrado_at', { ascending: false }).limit(1).maybeSingle()
+      if (ult && ult.conteo_efectivo != null) setFondoInput(String(ult.conteo_efectivo))
+    }
+    setLoading(false)
   }, [storeCode])
   useEffect(() => { loadTurno() }, [loadTurno])
 
@@ -217,6 +235,7 @@ export default function CierreTurno({ user, onBack }) {
     }).catch(() => {})
   }, [storeCode])
 
+  // ── Corte del TURNO actual (para X) ──
   const loadCorte = useCallback(async () => {
     if (!turno) return
     const { data, error } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: turno.abierto_at, p_hasta: new Date().toISOString(), p_turno_id: turno.id })
@@ -224,12 +243,39 @@ export default function CierreTurno({ user, onBack }) {
   }, [turno, storeCode])
   useEffect(() => { loadCorte() }, [loadCorte])
 
+  // ── Datos del DÍA (para Z): corte acumulado + fondo base + egresos/ingresos de otros turnos + ¿ya hubo Z? ──
+  const loadDia = useCallback(async () => {
+    if (!turno) return
+    const desde = `${todayISO()}T00:00:00-06:00`
+    const { data: cd } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: desde, p_hasta: new Date().toISOString(), p_turno_id: null })
+    setCorteDia(cd || null)
+    const { data: turnos } = await db.from('pos_turnos')
+      .select('id,fondo_apertura,egresos,ingresos_extra,tipo_cierre,abierto_at')
+      .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero')
+      .order('abierto_at', { ascending: true })
+    const arr = turnos || []
+    const sumJson = (rows, key) => rows.reduce((s, t) => s + (Array.isArray(t[key]) ? t[key].reduce((a, e) => a + _n(e.monto), 0) : 0), 0)
+    const otros = arr.filter(t => t.id !== turno.id)
+    setDiaInfo({
+      fondoBase: arr.length ? _n(arr[0].fondo_apertura) : _n(turno.fondo_apertura),
+      prevEgr: sumJson(otros, 'egresos'),
+      prevIng: sumJson(otros, 'ingresos_extra'),
+      zExiste: arr.some(t => t.tipo_cierre === 'Z'),
+      nTurnos: arr.length,
+    })
+  }, [turno, storeCode])
+  useEffect(() => { loadDia() }, [loadDia])
+
+  // ── Abrir caja ──
   const abrirTurno = async () => {
     setSaving(true)
     try {
-      // No abrir si la caja ya tiene un turno abierto: debe cerrarse con corte Z primero.
+      // Guardrail 1: no abrir si la caja ya tiene un turno abierto (1 caja por sucursal).
       const { data: yaAbierto } = await db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto').limit(1).maybeSingle()
-      if (yaAbierto) { toast.error('Esta caja ya tiene un turno ABIERTO. Ciérralo con corte Z antes de abrir uno nuevo.'); setSaving(false); return }
+      if (yaAbierto) { toast.error('Esta caja ya tiene un turno ABIERTO. Ciérralo (X o Z) antes de abrir otro.'); setSaving(false); return }
+      // Guardrail 2: no abrir si el día ya se cerró con Z.
+      const { data: yaZ } = await db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('fecha', todayISO()).eq('tipo_cierre', 'Z').limit(1).maybeSingle()
+      if (yaZ) { toast.error('El día ya fue cerrado con corte Z. No se pueden abrir más turnos hoy.'); setSaving(false); return }
       const { count } = await db.from('pos_turnos').select('*', { count: 'exact', head: true }).eq('store_code', storeCode).eq('fecha', todayISO())
       const { data, error } = await db.from('pos_turnos').insert({
         store_code: storeCode, cajero_id: user.id, nivel: 'cajero', fecha: todayISO(),
@@ -240,75 +286,129 @@ export default function CierreTurno({ user, onBack }) {
     } catch (e) { toast.error('Error al abrir turno: ' + e.message) } finally { setSaving(false) }
   }
 
-  // ── Totales (clonado del CierreForm) ──
-  const efSistema = n(corte?.efectivo)
-  const fondo = n(turno?.fondo_apertura)
+  // ── Totales / arqueo ──
   const totalEg = egresos.reduce((s, e) => s + n(e.monto), 0)
   const totalIn = ingresos.reduce((s, e) => s + n(e.monto), 0)
-  const totalVentas = efSistema + n(corte?.tarjeta) + n(corte?.transferencia) + n(corte?.link_pago)
-  const efCalculado = efSistema - totalEg + totalIn
+  const fondoRecibido = n(turno?.fondo_apertura)
   const efReal = n(efectivoReal)
-  const difDeposito = efReal - efCalculado
-  const difColor = efReal === 0 ? '#9a9088' : Math.abs(difDeposito) < 1 ? '#2dd4a8' : Math.abs(difDeposito) <= 5 ? '#facc15' : '#f87171'
+  const r2 = (x) => Math.round(x * 100) / 100
 
-  const buildCorteData = (tipo) => ({
-    tipo, storeCode, storeName, cajero: user.nombre || '', fecha: todayISO(), abierto_at: turno?.abierto_at, fondo,
-    efectivo: efSistema, tarjeta: n(corte?.tarjeta), transferencia: n(corte?.transferencia), link_pago: n(corte?.link_pago),
-    otros: n(corte?.otros), total: n(corte?.total), propinas: n(corte?.propinas), n_cuentas: corte?.n_cuentas || 0,
-    n_cancelaciones: corte?.n_cancelaciones || 0, ticket_promedio: n(corte?.ticket_promedio),
-    efectivoEsperado: efCalculado,
-    ...(tipo === 'Z' ? { conteo: {}, efectivoContado: efReal, difEfectivo: difDeposito, depositar: efReal, obs,
-      totalEgresos: totalEg, totalIngresos: totalIn } : {}),
+  // X (cambio de turno): arqueo del cajero actual (fondo recibido + sus ventas efectivo)
+  const efSisTurno = n(corte?.efectivo)
+  const espTurno = r2(fondoRecibido + efSisTurno - totalEg + totalIn)
+  const difTurno = r2(efReal - espTurno)
+
+  // Z (cierre del día): arqueo del día completo
+  const efSisDia = n(corteDia?.efectivo)
+  const diaEgr = r2(diaInfo.prevEgr + totalEg)
+  const diaIng = r2(diaInfo.prevIng + totalIn)
+  const cashDia = r2(efSisDia - diaEgr + diaIng)            // efectivo generado en el día (a depositar)
+  const espDia = r2(diaInfo.fondoBase + cashDia)            // efectivo que debe haber en gaveta
+  const difDia = r2(efReal - espDia)
+  const depositoDia = r2(efReal - diaInfo.fondoBase)        // se deposita; queda el fondo base
+
+  const esZ = tab === 'z'
+  const A = esZ
+    ? { corte: corteDia, esp: espDia, dif: difDia, ventasLabel: 'Ventas del día (acumulado)' }
+    : { corte, esp: espTurno, dif: difTurno, ventasLabel: 'Ventas del turno (sistema)' }
+  const totalVentas = n(A.corte?.efectivo) + n(A.corte?.tarjeta) + n(A.corte?.transferencia) + n(A.corte?.link_pago)
+  const difColor = efReal === 0 ? '#9a9088' : Math.abs(A.dif) < 1 ? '#2dd4a8' : Math.abs(A.dif) <= 5 ? '#facc15' : '#f87171'
+
+  const subirFotos = async (list) => Promise.all(list.map(async (e) => {
+    let foto_url = e.foto_url || null
+    if (e.foto_file) { try { foto_url = await uploadFoto(e.foto_file, `egresos/${storeCode}`) } catch (err) { console.warn('foto egreso no subida:', err.message) } }
+    const { foto_file, ...rest } = e
+    return { ...rest, foto_url }
+  }))
+
+  // snapshot del sistema para el turno actual (se guarda igual en X y en Z)
+  const snapshotSistema = () => ({
+    sistema_efectivo: efSisTurno, sistema_tarjeta: n(corte?.tarjeta), sistema_transferencia: n(corte?.transferencia),
+    sistema_link_pago: n(corte?.link_pago), sistema_pedidos_ya: n(corte?.otros), sistema_total: n(corte?.total),
+    sistema_propinas: n(corte?.propinas), sistema_num_cuentas: corte?.n_cuentas || 0,
+    sistema_num_cancelaciones: corte?.n_cancelaciones || 0, sistema_ticket_promedio: n(corte?.ticket_promedio),
   })
-  const imprimirX = async () => { try { await printCorte('x', buildCorteData('X')) } catch (e) { toast.error('No se imprimió: ' + e.message) } }
 
-  const cerrarZ = async () => {
-    if (!efectivoReal) { toast.warning('Ingresa el efectivo real a depositar'); return }
-    if (!(await confirmAsync('¿Cerrar el turno? El corte Z es definitivo.', { title: 'Corte Z', confirmText: 'Cerrar turno', danger: true }))) return
+  const buildCorteData = (tipo) => {
+    const c = tipo === 'Z' ? corteDia : corte
+    return {
+      tipo, storeCode, storeName, cajero: user.nombre || '', fecha: todayISO(), abierto_at: turno?.abierto_at,
+      fondo: tipo === 'Z' ? diaInfo.fondoBase : fondoRecibido,
+      efectivo: n(c?.efectivo), tarjeta: n(c?.tarjeta), transferencia: n(c?.transferencia), link_pago: n(c?.link_pago),
+      otros: n(c?.otros), total: n(c?.total), propinas: n(c?.propinas), n_cuentas: c?.n_cuentas || 0,
+      n_cancelaciones: c?.n_cancelaciones || 0, ticket_promedio: n(c?.ticket_promedio),
+      efectivoEsperado: tipo === 'Z' ? espDia : espTurno,
+      conteo: {}, efectivoContado: efReal, difEfectivo: tipo === 'Z' ? difDia : difTurno,
+      depositar: tipo === 'Z' ? depositoDia : 0, obs, totalEgresos: totalEg, totalIngresos: totalIn,
+    }
+  }
+
+  // ── Corte X: cierra la caja del cajero (cambio de turno). No deposita, no arma el día. ──
+  const cerrarX = async () => {
+    if (!efectivoReal) { toast.warning('Cuenta e ingresa el efectivo de la gaveta'); return }
+    if (!(await confirmAsync('¿Cerrar tu caja (cambio de turno)? Tus ventas quedan amarradas a vos y la caja queda libre para el siguiente cajero. NO se deposita todavía.', { title: 'Corte X · cambio de turno', confirmText: 'Cerrar mi caja', danger: true }))) return
     setSaving(true)
     try {
-      // Subir fotos de egresos (si las hay) y limpiar foto_file del jsonb
-      const egresosFinal = await Promise.all(egresos.map(async (e) => {
-        let foto_url = e.foto_url || null
-        if (e.foto_file) { try { foto_url = await uploadFoto(e.foto_file, `egresos/${storeCode}`) } catch (err) { console.warn('foto egreso no subida:', err.message) } }
-        const { foto_file, ...rest } = e
-        return { ...rest, foto_url }
-      }))
+      const egresosFinal = await subirFotos(egresos)
       const { error } = await db.from('pos_turnos').update({
-        cerrado_at: new Date().toISOString(), estado: 'cerrado',
-        sistema_efectivo: efSistema, sistema_tarjeta: n(corte?.tarjeta), sistema_transferencia: n(corte?.transferencia),
-        sistema_link_pago: n(corte?.link_pago), sistema_pedidos_ya: n(corte?.otros), sistema_total: n(corte?.total),
-        sistema_propinas: n(corte?.propinas), sistema_num_cuentas: corte?.n_cuentas || 0,
-        sistema_num_cancelaciones: corte?.n_cancelaciones || 0, sistema_ticket_promedio: n(corte?.ticket_promedio),
-        conteo_efectivo: efReal, deposito_monto: efReal,
+        cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'X',
+        ...snapshotSistema(),
+        conteo_efectivo: efReal, deposito_monto: 0, diferencia_efectivo: difTurno,
         egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
       }).eq('id', turno.id)
       if (error) throw error
-      // -- Puente -> ventas_diarias. El día 'completo' = SUMA de TODOS los turnos cerrados
-      // del día (no solo este turno). Así el corte Z arrastra AM+PM al Dashboard de Cierres,
-      // el 2º turno ya no sobrescribe al 1º, y Pedidos Ya queda desglosado (fuera del depósito).
+      toast.success('Caja cerrada (X). El siguiente cajero ya puede abrir.')
+      try { await printCorte('x', buildCorteData('X')) } catch {}
+      onBack()
+    } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
+  }
+
+  // ── Corte Z: cierre del DÍA (1 por día). Deposita y arma ventas_diarias con TODOS los turnos. ──
+  const cerrarZ = async () => {
+    if (diaInfo.zExiste) { toast.error('El día ya fue cerrado con corte Z.'); return }
+    if (!efectivoReal) { toast.warning('Cuenta e ingresa el efectivo de la gaveta'); return }
+    if (!(await confirmAsync('¿Cerrar el DÍA con corte Z? Es definitivo y solo se hace una vez al día. Incluye todos los turnos.', { title: 'Corte Z · cierre del día', confirmText: 'Cerrar el día', danger: true }))) return
+    setSaving(true)
+    try {
+      const egresosFinal = await subirFotos(egresos)
+      // 1. Cierra ESTE turno con su propio snapshot (para que el rebuild sume bien por turno);
+      //    el depósito y el conteo son del DÍA completo.
+      const { error } = await db.from('pos_turnos').update({
+        cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'Z',
+        ...snapshotSistema(),
+        conteo_efectivo: efReal, deposito_monto: depositoDia, diferencia_efectivo: difDia,
+        egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
+      }).eq('id', turno.id)
+      if (error) throw error
+      // 2. Arma el día completo en ventas_diarias (suma TODOS los turnos cerrados del día).
       try {
         const { data: cierreId, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
           p_store_code: storeCode, p_fecha: turno.fecha || todayISO(),
           p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null,
         })
         if (!_rpcErr && cierreId) {
-          // Detalle de egresos/ingresos SOLO de este turno (no borra los de otros turnos del día
-          // ni la conciliación de Finanzas). turno_id lo hace idempotente si se re-cierra.
-          await db.from('egresos_cierre').delete().eq('cierre_id', cierreId).eq('turno_id', turno.id)
-          await db.from('ingresos_cierre').delete().eq('cierre_id', cierreId).eq('turno_id', turno.id)
-          if (egresosFinal.length) await db.from('egresos_cierre').insert(egresosFinal.map(e => ({
-            cierre_id: cierreId, turno_id: turno.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
-            persona_recibe: e.persona_recibe || null, empleado_id: e.empleado_id || null,
-            comentario: e.comentario || null, foto_url: e.foto_url || null,
-          })))
-          if (ingresos.length) await db.from('ingresos_cierre').insert(ingresos.map(e => ({
-            cierre_id: cierreId, turno_id: turno.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
-            nombre_evento: e.nombre_evento || null, comentario: e.comentario || null,
-          })))
+          // Detalle de egresos/ingresos del DÍA COMPLETO (todos los turnos) para Finanzas.
+          const { data: turnosDia } = await db.from('pos_turnos')
+            .select('id,egresos,ingresos_extra')
+            .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero').eq('estado', 'cerrado')
+          await db.from('egresos_cierre').delete().eq('cierre_id', cierreId)
+          await db.from('ingresos_cierre').delete().eq('cierre_id', cierreId)
+          const egRows = [], inRows = []
+          for (const t of (turnosDia || [])) {
+            for (const e of (Array.isArray(t.egresos) ? t.egresos : [])) egRows.push({
+              cierre_id: cierreId, turno_id: t.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
+              persona_recibe: e.persona_recibe || null, empleado_id: e.empleado_id || null, comentario: e.comentario || null, foto_url: e.foto_url || null,
+            })
+            for (const i of (Array.isArray(t.ingresos_extra) ? t.ingresos_extra : [])) inRows.push({
+              cierre_id: cierreId, turno_id: t.id, motivo_id: i.motivo_id, motivo_nombre: i.motivo_nombre, monto: n(i.monto),
+              nombre_evento: i.nombre_evento || null, comentario: i.comentario || null,
+            })
+          }
+          if (egRows.length) await db.from('egresos_cierre').insert(egRows)
+          if (inRows.length) await db.from('ingresos_cierre').insert(inRows)
         }
       } catch (_bridgeErr) { console.warn('bridge ventas_diarias:', _bridgeErr?.message) }
-      toast.success('Turno cerrado (corte Z)')
+      toast.success('Día cerrado (corte Z)')
       try { await printCorte('z', buildCorteData('Z')) } catch {}
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
@@ -334,8 +434,8 @@ export default function CierreTurno({ user, onBack }) {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }}>
           <Icon name="cash" size={48} color="#43382f" />
           <div style={{ fontSize: 18, fontWeight: 800 }}>Abrir caja</div>
-          <div style={{ color: '#9a9088', fontSize: 13, textAlign: 'center', maxWidth: 280 }}>Ingresa el fondo de apertura para comenzar el turno.</div>
-          <div style={{ width: 220 }}><Mi label="Fondo de apertura" value={fondoInput} onChange={setFondoInput} hint="efectivo en caja" /></div>
+          <div style={{ color: '#9a9088', fontSize: 13, textAlign: 'center', maxWidth: 300 }}>Ingresa el efectivo con el que recibís la caja (la gaveta del turno anterior, o el fondo base si sos el primero del día).</div>
+          <div style={{ width: 220 }}><Mi label="Fondo / gaveta recibida" value={fondoInput} onChange={setFondoInput} hint="efectivo en caja" /></div>
           <button className="pos-cobrar-btn" style={{ width: 220 }} disabled={saving} onClick={abrirTurno}>{saving ? '...' : 'Abrir turno'}</button>
         </div>
       </div>
@@ -344,106 +444,123 @@ export default function CierreTurno({ user, onBack }) {
 
   return (
     <div className="poshome-root">{Header}
-      {/* Tabs X / Z */}
+      {/* Tabs X (cambio de turno) / Z (cierre del día) */}
       <div style={{ display: 'flex', gap: 6, margin: '12px 18px 0', background: '#241d19', border: '1px solid #332b27', borderRadius: 11, padding: 4, width: 'max-content' }}>
-        {[['x', 'Corte X (lectura)'], ['z', 'Corte Z (cierre)']].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? '#E62329' : 'none', border: 'none', color: tab === k ? '#fff' : '#9a9088', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 9, cursor: 'pointer' }}>{l}</button>
+        {[['x', 'Cambio de turno (X)'], ['z', 'Cierre del día (Z)']].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? '#E62329' : 'none', border: 'none', color: tab === k ? '#fff' : '#9a9088', fontWeight: 700, fontSize: 13, padding: '8px 16px', borderRadius: 9, cursor: 'pointer' }}>{l}</button>
         ))}
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 18, maxWidth: 480, width: '100%', margin: '0 auto' }}>
         <div style={{ fontSize: 12, color: '#9a9088', marginBottom: 10 }}>
-          Turno {new Date(turno.abierto_at).toLocaleString('es-SV', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })} · Fondo {fmt(fondo)}
+          Turno #{turno.numero_turno} · {user.nombre?.split(' ')[0]} · abrió {new Date(turno.abierto_at).toLocaleString('es-SV', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })} · recibió {fmt(fondoRecibido)}
+        </div>
+
+        {esZ && diaInfo.zExiste && (
+          <div style={{ ...card, border: '1px solid #dc3545', color: '#f8d7da', background: '#2a1416' }}>⚠ El día ya fue cerrado con corte Z. No se puede volver a cerrar.</div>
+        )}
+        <div style={{ ...card, background: '#15110f', borderColor: '#332b27', fontSize: 12, color: '#9a9088', lineHeight: 1.5 }}>
+          {esZ
+            ? 'Corte Z · cierre del DÍA (uno por día): incluye todos los turnos, se cuenta la gaveta y se deposita el efectivo del día. El fondo base se queda.'
+            : 'Corte X · cambio de turno: cierra tu caja (tus ventas quedan amarradas a vos), no deposita y libera la caja. La gaveta la recibe el siguiente cajero.'}
         </div>
 
         {/* VENTAS (sistema, read-only) */}
         <div style={card}>
-          <div style={secTitle}>Ventas del turno (sistema)</div>
-          <Mi label="Efectivo" value={efSistema.toFixed(2)} readOnly hint="del sistema" />
-          <Mi label="Tarjeta" value={n(corte?.tarjeta).toFixed(2)} readOnly hint="del sistema" />
-          <Mi label="Transferencia" value={n(corte?.transferencia).toFixed(2)} readOnly hint="del sistema" />
-          <Mi label="Link de pago" value={n(corte?.link_pago).toFixed(2)} readOnly hint="del sistema" />
+          <div style={secTitle}>{A.ventasLabel}</div>
+          <Mi label="Efectivo" value={n(A.corte?.efectivo).toFixed(2)} readOnly hint="del sistema" />
+          <Mi label="Tarjeta" value={n(A.corte?.tarjeta).toFixed(2)} readOnly hint="del sistema" />
+          <Mi label="Transferencia" value={n(A.corte?.transferencia).toFixed(2)} readOnly hint="del sistema" />
+          <Mi label="Link de pago" value={n(A.corte?.link_pago).toFixed(2)} readOnly hint="del sistema" />
           <div style={{ ...row, marginTop: 4 }}>
-            <span style={{ fontSize: 13, color: '#9a9088' }}>Total ventas</span>
+            <span style={{ fontSize: 13, color: '#9a9088' }}>Total ventas {esZ ? 'del día' : 'del turno'}</span>
             <span style={{ fontWeight: 800, fontSize: 16, color: '#FFD900' }}>{fmt(totalVentas)}</span>
           </div>
           <div style={{ ...row }}>
-            <span style={{ fontSize: 12, color: '#9a9088' }}>Propinas {fmt(corte?.propinas)}</span>
-            <span style={{ fontSize: 12, color: '#9a9088' }}>{corte?.n_cuentas || 0} cuentas · prom {fmt(corte?.ticket_promedio)}</span>
+            <span style={{ fontSize: 12, color: '#9a9088' }}>Propinas {fmt(A.corte?.propinas)}</span>
+            <span style={{ fontSize: 12, color: '#9a9088' }}>{A.corte?.n_cuentas || 0} cuentas · prom {fmt(A.corte?.ticket_promedio)}</span>
           </div>
+          {esZ && diaInfo.nTurnos > 1 && <div style={{ fontSize: 11, color: '#6b6878', marginTop: 6 }}>Acumulado de {diaInfo.nTurnos} turnos del día.</div>}
         </div>
 
-        {tab === 'x' ? (
-          <button className="pos-cobrar-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }} onClick={imprimirX}>
-            <Icon name="receipt" size={17} color="#fff" /> Imprimir corte X
+        {/* EGRESOS */}
+        <div style={card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ ...secTitle, marginBottom: 0 }}>Egresos del turno</span>
+            <button style={ghostBtn} onClick={() => setShowEg(true)}>+ Agregar</button>
+          </div>
+          {egresos.length === 0 && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin egresos</div>}
+          {egresos.map((e, i) => (
+            <div key={i} style={lineItem}>
+              <div><div style={{ fontWeight: 600, fontSize: 14 }}>{e.motivo_nombre}</div>{e.persona_recibe && <div style={{ fontSize: 12, color: '#9a9088' }}>→ {e.persona_recibe}</div>}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontWeight: 700, color: '#f87171' }}>{fmt(e.monto)}</span>
+                <button onClick={() => setEgresos(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#6b6878', cursor: 'pointer', fontSize: 18 }}>×</button></div>
+            </div>
+          ))}
+          {totalEg > 0 && <div style={{ ...row, marginTop: 4 }}><span style={{ fontSize: 13, color: '#9a9088' }}>Total egresos</span><span style={{ fontWeight: 700, color: '#f87171' }}>{fmt(totalEg)}</span></div>}
+        </div>
+
+        {/* INGRESOS */}
+        <div style={card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ ...secTitle, marginBottom: 0 }}>Ingresos del turno</span>
+            <button style={ghostBtn} onClick={() => setShowIn(true)}>+ Agregar</button>
+          </div>
+          {ingresos.length === 0 && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin ingresos</div>}
+          {ingresos.map((e, i) => (
+            <div key={i} style={lineItem}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{e.motivo_nombre}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontWeight: 700, color: '#2dd4a8' }}>{fmt(e.monto)}</span>
+                <button onClick={() => setIngresos(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#6b6878', cursor: 'pointer', fontSize: 18 }}>×</button></div>
+            </div>
+          ))}
+          {totalIn > 0 && <div style={{ ...row, marginTop: 4 }}><span style={{ fontSize: 13, color: '#9a9088' }}>Total ingresos</span><span style={{ fontWeight: 700, color: '#2dd4a8' }}>{fmt(totalIn)}</span></div>}
+        </div>
+
+        {/* RESUMEN DE EFECTIVO */}
+        <div style={card}>
+          <div style={secTitle}>Resumen de efectivo {esZ ? '· día' : '· turno'}</div>
+          <div style={row}><span style={{ fontSize: 13, color: '#9a9088' }}>{esZ ? 'Fondo base del día' : 'Fondo / gaveta recibida'}</span><span style={{ fontWeight: 600 }}>{fmt(esZ ? diaInfo.fondoBase : fondoRecibido)}</span></div>
+          <div style={row}><span style={{ fontSize: 13, color: '#9a9088' }}>(+) Ventas efectivo {esZ ? 'del día' : 'del turno'}</span><span style={{ fontWeight: 600 }}>{fmt(esZ ? efSisDia : efSisTurno)}</span></div>
+          <div style={row}><span style={{ fontSize: 13, color: '#9a9088' }}>(−) Egresos {esZ ? 'del día' : ''}</span><span style={{ fontWeight: 600, color: '#f87171' }}>-{fmt(esZ ? diaEgr : totalEg)}</span></div>
+          <div style={row}><span style={{ fontSize: 13, color: '#9a9088' }}>(+) Ingresos {esZ ? 'del día' : ''}</span><span style={{ fontWeight: 600, color: '#2dd4a8' }}>+{fmt(esZ ? diaIng : totalIn)}</span></div>
+          <div style={{ ...row, borderBottom: '2px solid #332b27', paddingBottom: 12, marginBottom: 12 }}>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Efectivo esperado en gaveta</span>
+            <span style={{ fontWeight: 800, fontSize: 17 }}>{fmt(A.esp)}</span>
+          </div>
+          <Mi label="Efectivo contado en gaveta" star value={efectivoReal} onChange={setEfectivoReal} hint="requerido" />
+          {efReal > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#15110f', borderRadius: 8, padding: '10px 14px', marginTop: 4 }}>
+              <span style={{ fontSize: 14 }}>Diferencia</span>
+              <span style={{ fontWeight: 800, fontSize: 18, color: difColor }}>
+                {Math.abs(A.dif) < 0.01 ? '✓ Cuadra' : A.dif > 0 ? `+${fmt(A.dif)} sobrante` : `${fmt(Math.abs(A.dif))} faltante`}
+              </span>
+            </div>
+          )}
+          {esZ ? (
+            <div style={{ ...row, marginTop: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#FFD900' }}>A depositar (queda el fondo {fmt(diaInfo.fondoBase)})</span>
+              <span style={{ fontWeight: 800, fontSize: 16, color: '#FFD900' }}>{fmt(depositoDia)}</span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: '#6b6878', marginTop: 8, lineHeight: 1.5 }}>No se deposita en el cambio de turno: entregás la gaveta ({fmt(efReal || espTurno)}) al siguiente cajero. El depósito se hace en el cierre Z del día.</div>
+          )}
+        </div>
+
+        {/* OBSERVACIONES */}
+        <div style={card}>
+          <div style={secTitle}>Observaciones</div>
+          <textarea value={obs} onChange={e => setObs(e.target.value)} rows={2} placeholder="Notas del cierre…" style={{ width: '100%', background: '#241d19', border: '1px solid #332b27', color: '#f3efe9', borderRadius: 8, padding: '9px 11px', fontSize: 13, outline: 'none', resize: 'vertical' }} />
+        </div>
+
+        {esZ ? (
+          <button className="pos-cobrar-btn" disabled={saving || diaInfo.zExiste} onClick={cerrarZ} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Icon name="check" size={17} color="#fff" /> {saving ? 'Cerrando…' : 'Cerrar el día (Z) e imprimir'}
           </button>
         ) : (
-          <>
-            {/* EGRESOS */}
-            <div style={card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ ...secTitle, marginBottom: 0 }}>Egresos del día</span>
-                <button style={ghostBtn} onClick={() => setShowEg(true)}>+ Agregar</button>
-              </div>
-              {egresos.length === 0 && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin egresos</div>}
-              {egresos.map((e, i) => (
-                <div key={i} style={lineItem}>
-                  <div><div style={{ fontWeight: 600, fontSize: 14 }}>{e.motivo_nombre}</div>{e.persona_recibe && <div style={{ fontSize: 12, color: '#9a9088' }}>→ {e.persona_recibe}</div>}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontWeight: 700, color: '#f87171' }}>{fmt(e.monto)}</span>
-                    <button onClick={() => setEgresos(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#6b6878', cursor: 'pointer', fontSize: 18 }}>×</button></div>
-                </div>
-              ))}
-              {totalEg > 0 && <div style={{ ...row, marginTop: 4 }}><span style={{ fontSize: 13, color: '#9a9088' }}>Total egresos</span><span style={{ fontWeight: 700, color: '#f87171' }}>{fmt(totalEg)}</span></div>}
-            </div>
-
-            {/* INGRESOS */}
-            <div style={card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ ...secTitle, marginBottom: 0 }}>Ingresos del día</span>
-                <button style={ghostBtn} onClick={() => setShowIn(true)}>+ Agregar</button>
-              </div>
-              {ingresos.length === 0 && <div style={{ color: '#6b6878', fontSize: 13, textAlign: 'center', padding: '6px 0' }}>Sin ingresos</div>}
-              {ingresos.map((e, i) => (
-                <div key={i} style={lineItem}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{e.motivo_nombre}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontWeight: 700, color: '#2dd4a8' }}>{fmt(e.monto)}</span>
-                    <button onClick={() => setIngresos(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#6b6878', cursor: 'pointer', fontSize: 18 }}>×</button></div>
-                </div>
-              ))}
-              {totalIn > 0 && <div style={{ ...row, marginTop: 4 }}><span style={{ fontSize: 13, color: '#9a9088' }}>Total ingresos</span><span style={{ fontWeight: 700, color: '#2dd4a8' }}>{fmt(totalIn)}</span></div>}
-            </div>
-
-            {/* RESUMEN DE EFECTIVO */}
-            <div style={card}>
-              <div style={secTitle}>Resumen de efectivo</div>
-              <div style={row}><span style={{ fontSize: 13, color: '#9a9088' }}>Efectivo (sistema)</span><span style={{ fontWeight: 600 }}>{fmt(efSistema)}</span></div>
-              <div style={row}><span style={{ fontSize: 13, color: '#9a9088' }}>(−) Total egresos</span><span style={{ fontWeight: 600, color: '#f87171' }}>-{fmt(totalEg)}</span></div>
-              <div style={row}><span style={{ fontSize: 13, color: '#9a9088' }}>(+) Total ingresos</span><span style={{ fontWeight: 600, color: '#2dd4a8' }}>+{fmt(totalIn)}</span></div>
-              <div style={{ ...row, borderBottom: '2px solid #332b27', paddingBottom: 12, marginBottom: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 700 }}>Efectivo calculado a depositar</span>
-                <span style={{ fontWeight: 800, fontSize: 17 }}>{fmt(efCalculado)}</span>
-              </div>
-              <Mi label="Efectivo REAL que vas a depositar" star value={efectivoReal} onChange={setEfectivoReal} hint="requerido" />
-              {efReal > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#15110f', borderRadius: 8, padding: '10px 14px', marginTop: 4 }}>
-                  <span style={{ fontSize: 14 }}>Diferencia</span>
-                  <span style={{ fontWeight: 800, fontSize: 18, color: difColor }}>
-                    {Math.abs(difDeposito) < 0.01 ? '✓ Cuadra' : difDeposito > 0 ? `+${fmt(difDeposito)} sobrante` : `${fmt(Math.abs(difDeposito))} faltante`}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* OBSERVACIONES */}
-            <div style={card}>
-              <div style={secTitle}>Observaciones</div>
-              <textarea value={obs} onChange={e => setObs(e.target.value)} rows={2} placeholder="Notas del cierre…" style={{ width: '100%', background: '#241d19', border: '1px solid #332b27', color: '#f3efe9', borderRadius: 8, padding: '9px 11px', fontSize: 13, outline: 'none', resize: 'vertical' }} />
-            </div>
-
-            <button className="pos-cobrar-btn" disabled={saving} onClick={cerrarZ} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <Icon name="check" size={17} color="#fff" /> {saving ? 'Cerrando…' : 'Cerrar turno (Z) e imprimir'}
-            </button>
-          </>
+          <button className="pos-cobrar-btn" disabled={saving} onClick={cerrarX} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Icon name="check" size={17} color="#fff" /> {saving ? 'Cerrando…' : 'Cerrar mi caja (X) e imprimir'}
+          </button>
         )}
       </div>
 
