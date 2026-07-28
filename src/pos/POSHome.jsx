@@ -3,6 +3,7 @@ import { db } from '../supabase'
 import { STORES } from '../config'
 import Icon from './Icon'
 import PlanoEditor from './cajero/PlanoEditor'
+import { confirmAsync } from './confirmDialog'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -181,7 +182,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const handleLiberarMesa = async (mesa) => {
     const c = cuentaPorMesa[String(mesa.numero)]
     if (!c) return
-    if (!confirm(`¿Liberar mesa ${mesa.numero}? La cuenta se cerrará como cobrada.`)) return
+    if (!(await confirmAsync(`¿Liberar mesa ${mesa.numero}? La cuenta se cerrará como cobrada.`, { title: 'Liberar mesa', confirmText: 'Liberar', danger: true }))) return
     await db.from('pos_cuentas')
       .update({ estado: 'cobrada', cobrada_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', c.id)

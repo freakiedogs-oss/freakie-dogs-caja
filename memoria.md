@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-27 — POS: confirmación in-app (arreglo del cierre Z en la APK)
+- **Qué:** nuevo módulo `src/pos/confirmDialog.jsx` (`confirmAsync()` promise-based + `<ConfirmHost/>` montado en `pos-main.jsx`) que reemplaza a `window.confirm()` en el POS. Migrados: cierre **Z** (`CierreTurno`), liberar mesa (`POSHome`), quitar ítems no comandados (`POSMain`), y 4 borrados de `MenuAdminView`.
+- **Por qué:** en Venecia (S004) el corte **Z "no dejaba" cerrar**. Causa: el POS corre dentro del **WebView de la APK Android** (Fire tablet, `android-printer/…/MainActivity.kt` con `WebChromeClient()` base) y ahí `window.confirm()` en modo kiosk **devuelve `false`** → el `if (!confirm(...)) return` cancelaba la acción sin aviso. El cobro no usa confirm, por eso sí cobraban. En la base el turno seguía `abierto` (nunca llegaba al UPDATE; RLS/triggers descartados).
+- **Excluido a propósito:** el `confirm()` de anulación de DTE en `HistorialCobros.jsx` (facturación ante Hacienda — no se toca sin OK de Jose; ese flujo se hace desde navegador). Queda pendiente migrarlo.
+- **Extra detectado:** Venecia tenía 2 turnos abiertos el 27-Jul (Katherine AM + Alejandro PM); hay que cerrarlos ambos con Z.
+
 ## 2026-07-27 — POS: bloquear comandar sin caja abierta
 - **Qué:** `handleComandar` (`src/pos/cajero/POSMain.jsx`) ahora exige un **turno de cajero abierto** en la sucursal ANTES de crear/enviar la comanda. Sin caja abierta → bloquea con toast ("No hay caja abierta…"). *Fail-open* ante error de consulta (un hipo de red no frena la venta), mismo criterio que ya usaba el cobro (`saveCuenta`). Además la cuenta queda atada al turno (`turno_id`) desde que se comanda, no solo al cobrar.
 - **Por qué:** el cobro ya exigía caja abierta, pero comandar no validaba nada. El 27-jul Soyapango (S001) arrancó el POS interno **sin abrir caja** → tomó 53 comandas ($648) que quedaron en `lista`/`enviada_cocina` y **no se pudieron cobrar** (sin turno no hay cobro), sin aparecer en *Ventas Freakies* (que solo cuenta `cobrada`) ni facturarse. Este guardrail evita que se repita. Ver [[freakie-cierres-multi-turno]].

@@ -4,6 +4,7 @@ import { STORES, BUCKET_CIERRES } from '../config'
 import Icon from './Icon'
 import { useToast } from '../hooks/useToast'
 import { printCorte } from './print/printService'
+import { confirmAsync } from './confirmDialog'
 
 const MOTIVOS_EMPLEADO = ['Adelanto de Salario', 'Pago de Salario', 'Pago Propina']
 const _n = (v) => parseFloat(v) || 0
@@ -263,7 +264,7 @@ export default function CierreTurno({ user, onBack }) {
 
   const cerrarZ = async () => {
     if (!efectivoReal) { toast.warning('Ingresa el efectivo real a depositar'); return }
-    if (!confirm('¿Cerrar el turno? El corte Z es definitivo.')) return
+    if (!(await confirmAsync('¿Cerrar el turno? El corte Z es definitivo.', { title: 'Corte Z', confirmText: 'Cerrar turno', danger: true }))) return
     setSaving(true)
     try {
       // Subir fotos de egresos (si las hay) y limpiar foto_file del jsonb
