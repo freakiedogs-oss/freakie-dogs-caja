@@ -592,6 +592,22 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // ── COMANDAR ──
   const handleComandar = async () => {
     if (!hasNew || !perms.comandar) return
+
+    // 0. Requiere caja/turno abierto (1 caja por sucursal) ANTES de comandar.
+    //    Sin caja abierta las cuentas quedan sin poder cobrarse (no se puede cobrar
+    //    sin turno) y se acumulan abiertas. Fail-open ante error de consulta: un fallo
+    //    de red no debe frenar la operación, igual que en el cobro.
+    let turnoId = null
+    try {
+      const { data: _t, error: _te } = await db.from('pos_turnos').select('id')
+        .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
+        .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+      if (!_te) {
+        if (!_t) { toast.warning('No hay caja abierta. Abrí la caja/turno en Cierre de caja antes de comandar.'); return }
+        turnoId = _t.id
+      }
+    } catch (_e) { /* fail-open: no bloquear la comanda por error de consulta */ }
+
     setCommanding(true)
     try {
       let currentCuentaId = cuentaId
@@ -602,6 +618,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .insert({
             store_code: storeCode,
             cajero_id:  user.id,
+            turno_id:   turnoId,
             mesero_id:  esMesero ? user.id : null,
             tipo:       tipo,
             mesa_ref:   mesaActual,
