@@ -197,12 +197,14 @@ export default function CierreTurno({ user, onBack }) {
 
   const loadTurno = useCallback(async () => {
     setLoading(true)
+    // Turno abierto de ESTA CAJA (no solo del cajero actual): permite cerrar con Z un
+    // turno que otro cajero dejó abierto en el cambio de turno (evita turnos colgados sin Z).
     const { data } = await db.from('pos_turnos').select('*')
-      .eq('store_code', storeCode).eq('cajero_id', user.id)
+      .eq('store_code', storeCode)
       .eq('nivel', 'cajero').eq('estado', 'abierto')
       .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
     setTurno(data || null); setLoading(false)
-  }, [storeCode, user.id])
+  }, [storeCode])
   useEffect(() => { loadTurno() }, [loadTurno])
 
   useEffect(() => {
@@ -224,6 +226,9 @@ export default function CierreTurno({ user, onBack }) {
   const abrirTurno = async () => {
     setSaving(true)
     try {
+      // No abrir si la caja ya tiene un turno abierto: debe cerrarse con corte Z primero.
+      const { data: yaAbierto } = await db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto').limit(1).maybeSingle()
+      if (yaAbierto) { toast.error('Esta caja ya tiene un turno ABIERTO. Ciérralo con corte Z antes de abrir uno nuevo.'); setSaving(false); return }
       const { count } = await db.from('pos_turnos').select('*', { count: 'exact', head: true }).eq('store_code', storeCode).eq('fecha', todayISO())
       const { data, error } = await db.from('pos_turnos').insert({
         store_code: storeCode, cajero_id: user.id, nivel: 'cajero', fecha: todayISO(),
@@ -278,29 +283,26 @@ export default function CierreTurno({ user, onBack }) {
         egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
       }).eq('id', turno.id)
       if (error) throw error
-      // -- Puente -> ventas_diarias (Dashboard de Cierres + Finanzas), igual que las sucursales Quanto --
+      // -- Puente -> ventas_diarias. El día 'completo' = SUMA de TODOS los turnos cerrados
+      // del día (no solo este turno). Así el corte Z arrastra AM+PM al Dashboard de Cierres,
+      // el 2º turno ya no sobrescribe al 1º, y Pedidos Ya queda desglosado (fuera del depósito).
       try {
-        const _tv = parseFloat((efSistema + n(corte?.tarjeta) + n(corte?.transferencia) + n(corte?.link_pago)).toFixed(2))
-        const { data: _vd, error: _vdErr } = await db.from('ventas_diarias').upsert({
-          fecha: turno.fecha || todayISO(), store_code: storeCode, turno: 'completo',
-          efectivo_quanto: efSistema, tarjeta_quanto: n(corte?.tarjeta),
-          ventas_transferencia: n(corte?.transferencia), ventas_link_pago: n(corte?.link_pago),
-          total_ventas_quanto: _tv, total_egresos: parseFloat(totalEg.toFixed(2)),
-          total_ingresos: parseFloat(totalIn.toFixed(2)), efectivo_calculado: parseFloat(efCalculado.toFixed(2)),
-          efectivo_real_depositar: efReal, diferencia_deposito: parseFloat(difDeposito.toFixed(2)),
-          estado: 'enviado', source: 'cierre', observaciones: obs || null,
-          creado_por: user.nombre || 'POS', creado_por_id: user.id || null,
-        }, { onConflict: 'fecha,store_code,turno' }).select().single()
-        if (!_vdErr && _vd) {
-          await db.from('egresos_cierre').delete().eq('cierre_id', _vd.id)
-          await db.from('ingresos_cierre').delete().eq('cierre_id', _vd.id)
+        const { data: cierreId, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
+          p_store_code: storeCode, p_fecha: turno.fecha || todayISO(),
+          p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null,
+        })
+        if (!_rpcErr && cierreId) {
+          // Detalle de egresos/ingresos SOLO de este turno (no borra los de otros turnos del día
+          // ni la conciliación de Finanzas). turno_id lo hace idempotente si se re-cierra.
+          await db.from('egresos_cierre').delete().eq('cierre_id', cierreId).eq('turno_id', turno.id)
+          await db.from('ingresos_cierre').delete().eq('cierre_id', cierreId).eq('turno_id', turno.id)
           if (egresosFinal.length) await db.from('egresos_cierre').insert(egresosFinal.map(e => ({
-            cierre_id: _vd.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
+            cierre_id: cierreId, turno_id: turno.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
             persona_recibe: e.persona_recibe || null, empleado_id: e.empleado_id || null,
             comentario: e.comentario || null, foto_url: e.foto_url || null,
           })))
           if (ingresos.length) await db.from('ingresos_cierre').insert(ingresos.map(e => ({
-            cierre_id: _vd.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
+            cierre_id: cierreId, turno_id: turno.id, motivo_id: e.motivo_id, motivo_nombre: e.motivo_nombre, monto: n(e.monto),
             nombre_evento: e.nombre_evento || null, comentario: e.comentario || null,
           })))
         }
