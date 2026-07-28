@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-28 — P&L: "Venta Local" unificada por sucursal (Quanto + POS interno)
+- **Qué:** en `FinanzasDashboard.jsx`, el árbol de ventas del Estado de Resultados fusiona los dos bloques ("Venta Local (Quanto)" + "Venta Local POS (Metro Centro)") en **un solo canal "Venta Local"** con una fila por sucursal = Quanto + POS interno del mes. Así se ve la **evolución continua** de cada sucursal aunque migre de Quanto al POS interno (antes se partía en 2 tablas).
+- **Marca de fuente por celda:** cada celda sucursal-mes lleva un superíndice — `Q` (verde)=Quanto, `I` (azul)=POS interno, `Q·I` (dorado)=mes de transición — y en **hover** muestra el desglose exacto (Quanto $X · POS interno $Y). `srcPerMonth` en `ventasTree` guarda el split.
+- **Quitado** "(Metro Centro)" del título (ahora muestra todas las sucursales). PedidosYa sigue como canal aparte.
+- Solo frontend (sin DB). Ver [[freakie-cierres-multi-turno]].
+
 ## 2026-07-28 — KPI Ventas Totales·BEP: consistencia con el P&L
 - **Qué:** migración `fn_ventas_totales_dashboard_pos_consistente` (RPC) + `KpiVentasTotalesDashboard.jsx` (chip/tabla/CSV del canal POS).
 - **Problema:** el dashboard "KPI Ventas Totales · BEP" **no** lee la matview; usa el RPC `fn_ventas_totales_dashboard`, que arrastraba los mismos 2 bugs ya corregidos en el P&L: (1) **lista negra** `store_code NOT IN ('M001','S001','S002','S003','S004','EVT01')` en la fuente POS → solo contaba S006, faltaban las migradas; (2) leía `v_pos_ventas_diario` (con `pedidos_ya`). Resultado: "Todas" julio subcontaba **~$14,937 s/IVA** ($241,047 en vez de $255,984). Además el frontend no mostraba el canal POS (invisible dentro de "Todas").
