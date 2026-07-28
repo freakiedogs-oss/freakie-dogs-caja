@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
 import Icon from '../Icon'
+import { confirmAsync } from '../confirmDialog'
 
 /* ── Paleta eye-efficient ── */
 const C = {
@@ -185,7 +186,7 @@ function CategoriasTab({ menuId }) {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('¿Eliminar categoría? Los ítems quedarán sin categoría.')) return
+    if (!(await confirmAsync('¿Eliminar categoría? Los ítems quedarán sin categoría.', { title: 'Eliminar categoría', confirmText: 'Eliminar', danger: true }))) return
     const { error } = await db.from('pos_menu_categorias').delete().eq('id', id)
     if (error) { toast('Error: ' + error.message, false); return }
     toast('Categoría eliminada')
@@ -342,7 +343,7 @@ function ItemsTab({ menuId }) {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('¿Eliminar este ítem del menú?')) return
+    if (!(await confirmAsync('¿Eliminar este ítem del menú?', { title: 'Eliminar ítem', confirmText: 'Eliminar', danger: true }))) return
     const { error } = await db.from('pos_menu_items').delete().eq('id', id)
     if (error) { toast('Error: ' + error.message, false); return }
     toast('Ítem eliminado')
@@ -631,7 +632,7 @@ function GruposTab() {
   }
 
   const handleDeleteGrupo = async (id) => {
-    if (!confirm('¿Eliminar grupo y todas sus opciones?')) return
+    if (!(await confirmAsync('¿Eliminar grupo y todas sus opciones?', { title: 'Eliminar grupo', confirmText: 'Eliminar', danger: true }))) return
     // Delete mods first, then grupo
     await db.from('pos_item_modificadores').delete().eq('grupo_id', id)
     await db.from('pos_modificadores').delete().eq('grupo_id', id)
@@ -655,7 +656,7 @@ function GruposTab() {
   }
 
   const handleDeleteMod = async (modId) => {
-    if (!confirm('¿Eliminar modificador?')) return
+    if (!(await confirmAsync('¿Eliminar modificador?', { title: 'Eliminar modificador', confirmText: 'Eliminar', danger: true }))) return
     await db.from('pos_modificadores').delete().eq('id', modId)
     toast('Modificador eliminado')
     load()

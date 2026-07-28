@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../../supabase'
 import { STORES, STORES_SIN_COMANDA, today } from '../../config'
+import { confirmAsync } from '../confirmDialog'
 import PaymentModal from './PaymentModal'
 import MesaTransferModal from './MesaTransferModal'
 import SplitCheckModal from './SplitCheckModal'
@@ -495,10 +496,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     setNoteText('')
   }
 
-  const clearNewItems = () => {
+  const clearNewItems = async () => {
     const newItems = items.filter(i => !i.saved)
     if (newItems.length === 0) return
-    if (!confirm('¿Quitar los ítems no comandados?')) return
+    if (!(await confirmAsync('¿Quitar los ítems no comandados?', { title: 'Quitar ítems', confirmText: 'Quitar', danger: true }))) return
     setItems(prev => prev.filter(i => i.saved))
   }
 
