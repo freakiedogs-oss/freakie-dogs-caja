@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-28 — KPI Ventas Totales·BEP: consistencia con el P&L
+- **Qué:** migración `fn_ventas_totales_dashboard_pos_consistente` (RPC) + `KpiVentasTotalesDashboard.jsx` (chip/tabla/CSV del canal POS).
+- **Problema:** el dashboard "KPI Ventas Totales · BEP" **no** lee la matview; usa el RPC `fn_ventas_totales_dashboard`, que arrastraba los mismos 2 bugs ya corregidos en el P&L: (1) **lista negra** `store_code NOT IN ('M001','S001','S002','S003','S004','EVT01')` en la fuente POS → solo contaba S006, faltaban las migradas; (2) leía `v_pos_ventas_diario` (con `pedidos_ya`). Resultado: "Todas" julio subcontaba **~$14,937 s/IVA** ($241,047 en vez de $255,984). Además el frontend no mostraba el canal POS (invisible dentro de "Todas").
+- **Fix:** la CTE `po` y las subqueries del mes previo ahora leen `v_pos_ventas_diario_sin_peya` con `store_code <> 'EVT01'` (idéntico criterio que la matview). Frontend: agregado canal `pos` ("POS Interno", `c.blue`) a `CANALES`, a la tabla de detalle diario y al export CSV.
+- **Verificado:** RPC julio (corte 26-jul) → Todas $255,984 = Quanto $149,745 + PeYa $42,894 + POS $63,345 + Eventos $0. Consistente con el P&L. `CREATE OR REPLACE FUNCTION` preserva grants (no aplica el gotcha del DROP de matview). Ver [[freakie-cierres-multi-turno]].
+
 ## 2026-07-27 — P&L: doble conteo de PeYa + PeYa sin desglose (jun/jul)
 - **Qué:** migración `migration_mv_ventas_pos_excluir_pedidos_ya` + fix `QuantoUploadView.jsx` + backfill `pedidos_peya`.
 - **Bug A — doble conteo PeYa:** el POS interno registra órdenes PeYa como `pos_cuentas.tipo='pedidos_ya'`; entraban en la fuente `pos` del P&L Y en la fuente `peya` (archivo `pedidos_peya`). Fix: vista nueva `v_pos_ventas_diario_sin_peya` (= `v_pos_ventas_diario` con `tipo IS DISTINCT FROM 'pedidos_ya'`) y la matview lee esa vista en la rama `pos`. El archivo PeYa queda como única fuente de la venta PeYa (es el fidedigno: precio real del cliente, aunque PeYa liquide menos). Impacto julio: ~$2,522 c/IVA. **Aislado a propósito**: `v_ventas_sucursal_diario` sigue usando `v_pos_ventas_diario` (no toca PeYa ahí porque esa vista no suma el archivo).
