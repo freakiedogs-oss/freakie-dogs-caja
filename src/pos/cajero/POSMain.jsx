@@ -589,7 +589,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const handlePreCuenta = async () => {
     if (items.length === 0) return
     try {
-      await printPreCuenta(buildCuentaPrint())
+      const r = await printPreCuenta(buildCuentaPrint())
+      if (r && r.ok === false) toast.error('⚠️ No se imprimió la pre-cuenta — revisá la impresora / puente')
     } catch (err) {
       console.error('Error al imprimir pre-cuenta:', err)
       toast.error('No se pudo imprimir la pre-cuenta')
@@ -718,7 +719,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       // la orden igual queda en el KDS (pos_cocina_queue).
       if (!STORES_SIN_COMANDA.includes(storeCode)) {
         try {
-          await printComanda(buildCuentaPrint(newItems))
+          const r = await printComanda(buildCuentaPrint(newItems))
+          if (r && r.ok === false) toast.error('⚠️ Comanda guardada, pero NO se imprimió — revisá la impresora / puente')
         } catch (pErr) {
           console.error('Comanda enviada pero no se imprimió:', pErr)
           toast.error('Comanda guardada, pero no se imprimió')
@@ -927,7 +929,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   }
 
   // Imprime factura/ticket desde el botón de confirmación (gesto del usuario).
-  const handlePrintFactura = ({ dteResult, tipoDte, propina = 0, metodo, cliente, pager }) => {
+  const handlePrintFactura = async ({ dteResult, tipoDte, propina = 0, metodo, cliente, pager }) => {
     const DTE_LABEL = {
       factura: 'FACTURA (Consumidor Final)',
       ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
@@ -936,7 +938,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     const clientePrint = cliente
       ? { nombre: cliente.nombre, doc: cliente.nit || cliente.numero_documento || cliente.nrc || null }
       : null
-    return printFactura({
+    const r = await printFactura({
       ...buildCuentaPrint(items),
       propina,
       pager:      pager ?? null,
@@ -955,6 +957,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         fecha:            new Date(),
       } : null,
     })
+    if (r && r.ok === false) toast.error('⚠️ El ticket NO se imprimió — revisá la impresora / puente (la venta SÍ quedó registrada)')
+    return r
   }
 
   // handlePaymentConfirm devuelve resultado (NO cierra modal)

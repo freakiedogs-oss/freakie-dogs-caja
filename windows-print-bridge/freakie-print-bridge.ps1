@@ -2,10 +2,17 @@
 # Escucha en http://127.0.0.1:9110/ (loopback, NO requiere administrador) y
 # reenvia los bytes ESC/POS que le manda el POS (web) a la impresora de red.
 # No instala nada: usa .NET que ya viene en Windows.
-# Puede correr oculto (via el .vbs) o visible (via el .bat). Registra actividad
-# en 'puente-log.txt' en su misma carpeta.
+# Puede correr oculto (via watchdog/.vbs) o visible (via el .bat). Registra
+# actividad en 'puente-log.txt' en su misma carpeta.
+#
+# Blindado (28-Jul-2026):
+#  - Si el puerto 9110 ya esta ocupado por un puente SANO, sale en silencio (no
+#    arranca un segundo ni tira el error rojo). Si es un zombie, lo reporta y
+#    sale para que el watchdog lo limpie. Ya NO se queda colgado en Read-Host.
+#  - Responde GET /health (200) para que el watchdog sepa si esta vivo.
+#  - Un error en una peticion (o un timeout de impresora) NUNCA mata el loop:
+#    cada iteracion, incluido AcceptTcpClient, esta protegida.
 
-$ErrorActionPreference = 'Stop'
 $port = 9110
 $logFile = Join-Path $PSScriptRoot 'puente-log.txt'
 
@@ -15,22 +22,43 @@ function Log($m) {
   try { Add-Content -Path $logFile -Value $line -Encoding UTF8 } catch {}
 }
 
+function Test-PuenteSano {
+  try {
+    $r = Invoke-WebRequest -Uri ("http://127.0.0.1:{0}/health" -f $port) -TimeoutSec 2 -UseBasicParsing
+    return ($r.StatusCode -eq 200)
+  } catch { return $false }
+}
+
 $addr = [System.Net.IPAddress]::Loopback
 $server = New-Object System.Net.Sockets.TcpListener($addr, $port)
 try {
   $server.Start()
 } catch {
-  Log ("No se pudo abrir el puerto {0}: {1}" -f $port, $_.Exception.Message)
-  Read-Host "Enter para salir"; exit 1
+  # Puerto ocupado: casi seguro ya hay un puente corriendo.
+  if (Test-PuenteSano) {
+    Log ("Ya hay un puente ACTIVO y sano en {0} - no arranco otro." -f $port)
+    exit 0
+  }
+  Log ("No se pudo abrir el puerto {0} y el que lo ocupa NO responde (zombie): {1}" -f $port, $_.Exception.Message)
+  Log "El watchdog lo limpiara, o corre 'Reiniciar-Puente.bat'."
+  exit 1
 }
 
 Log "================================================"
 Log "  Freakie POS - Puente de impresion ACTIVO"
-Log ("  Escuchando: http://127.0.0.1:{0}/" -f $port)
+Log ("  Escuchando: http://127.0.0.1:{0}/  (health: /health)" -f $port)
 Log "================================================"
 
 while ($true) {
-  $client = $server.AcceptTcpClient()
+  $client = $null
+  try {
+    $client = $server.AcceptTcpClient()
+  } catch {
+    Log ("ERROR aceptando conexion: {0}" -f $_.Exception.Message)
+    Start-Sleep -Milliseconds 200
+    continue
+  }
+
   $ns = $null
   try {
     $ns = $client.GetStream()
@@ -70,11 +98,17 @@ while ($true) {
       $bodyMs.Write($buf, 0, $read)
     }
 
-    $cors = "Access-Control-Allow-Origin: $origin`r`nAccess-Control-Allow-Methods: POST, OPTIONS`r`nAccess-Control-Allow-Headers: content-type`r`nAccess-Control-Allow-Private-Network: true`r`n"
+    $cors = "Access-Control-Allow-Origin: $origin`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: content-type`r`nAccess-Control-Allow-Private-Network: true`r`n"
 
     if ($method -eq 'OPTIONS') {
       $resp = "HTTP/1.1 204 No Content`r`n$cors" + "Content-Length: 0`r`nConnection: close`r`n`r`n"
       $rb = [System.Text.Encoding]::ASCII.GetBytes($resp); $ns.Write($rb, 0, $rb.Length); $ns.Flush()
+    }
+    elseif ($method -eq 'GET') {
+      # Salud / estado (lo usa el watchdog; tambien sirve para probar en el navegador).
+      $out = 'Freakie print bridge OK'
+      $resp = "HTTP/1.1 200 OK`r`n$cors" + "Content-Type: text/plain`r`nContent-Length: $($out.Length)`r`nConnection: close`r`n`r`n$out"
+      $rb = [System.Text.Encoding]::UTF8.GetBytes($resp); $ns.Write($rb, 0, $rb.Length); $ns.Flush()
     }
     elseif ($method -eq 'POST') {
       $bodyText = [System.Text.Encoding]::UTF8.GetString($bodyMs.ToArray())

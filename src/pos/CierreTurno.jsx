@@ -363,7 +363,7 @@ export default function CierreTurno({ user, onBack }) {
       }).eq('id', turno.id)
       if (error) throw error
       toast.success('Caja cerrada (X). El siguiente cajero ya puede abrir.')
-      try { await printCorte('x', buildCorteData('X')) } catch {}
+      try { const _r = await printCorte('x', buildCorteData('X')); if (_r && _r.ok === false) toast.error('⚠️ El corte X no se imprimió — revisá la impresora / puente') } catch {}
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
   }
@@ -416,7 +416,7 @@ export default function CierreTurno({ user, onBack }) {
         }
       } catch (_bridgeErr) { console.warn('bridge ventas_diarias:', _bridgeErr?.message) }
       toast.success('Día cerrado (corte Z)')
-      try { await printCorte('z', buildCorteData('Z')) } catch {}
+      try { const _r = await printCorte('z', buildCorteData('Z')); if (_r && _r.ok === false) toast.error('⚠️ El corte Z no se imprimió — revisá la impresora / puente') } catch {}
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
   }

@@ -446,21 +446,36 @@ export async function imprimir(tipo, cuenta, opts = {}) {
   if (_nativo) {
     try {
       _nativo.printRaw(imp?.ip_address || '192.168.1.130', imp?.puerto || 9100, builders[tipo]().base64());
-      return { modo: 'app' };
+      return { ok: true, modo: 'app' };
     } catch (e) { console.error('[print] app nativa fallo, cae a modo normal', e); }
   }
 
-  if (modo === 'sistema') { sendSistema(htmlers[tipo](cuenta)); return { modo }; }
+  if (modo === 'sistema') { sendSistema(htmlers[tipo](cuenta)); return { ok: true, modo: 'sistema' }; }
 
   const ticket = builders[tipo]();
+
+  // modo 'bridge': el puente local es la ÚNICA vía real de impresión en esa PC
+  // (impresora de red SIN driver en Windows). Si el puente no responde, NO tiene
+  // sentido caer al diálogo de Windows (solo ofrece "Guardar como PDF"): mejor
+  // reportar el fallo para que el POS avise en pantalla "no se imprimió".
+  if (modo === 'bridge') {
+    try {
+      await sendBridge(ticket, imp);
+      return { ok: true, modo: 'bridge' };
+    } catch (e) {
+      console.error('[print] bridge no respondió (¿puente caído?)', e);
+      return { ok: false, modo: 'bridge', error: e.message };
+    }
+  }
+
+  // modo 'rawbt': si algo falla, cae a 'sistema' (comportamiento establecido en tablets).
   try {
-    if (modo === 'bridge') { await sendBridge(ticket, imp); return { modo }; }
-    sendRawBT(ticket); // 'rawbt'
-    return { modo };
+    sendRawBT(ticket);
+    return { ok: true, modo: 'rawbt' };
   } catch (e) {
-    console.error('[print] fallo, fallback a sistema', e);
+    console.error('[print] rawbt falló, fallback a sistema', e);
     sendSistema(htmlers[tipo](cuenta));
-    return { modo: 'sistema', fallback: true, error: e.message };
+    return { ok: true, modo: 'sistema', fallback: true, error: e.message };
   }
 }
 
