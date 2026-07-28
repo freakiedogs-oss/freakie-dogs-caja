@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-27 — POS: rediseño de cierres (X = cambio de turno, Z = cierre del día)
+- **Qué:** `CierreTurno.jsx` + migración `pos_turnos_tipo_cierre` (columna `tipo_cierre`: null=abierto · `X` · `Z`).
+- **Modelo nuevo (definido con Jose):**
+  - **Corte X = cambio de turno:** cierra la caja del cajero (sus ventas quedan amarradas por `turno_id`), **arqueo por cajero** (cuenta su gaveta: fondo recibido + ventas efectivo − egresos + ingresos), **NO deposita**, y **libera la caja**. La **gaveta se arrastra**: el fondo del siguiente turno se precarga con el efectivo contado en el X. Varios X por día.
+  - **Corte Z = cierre del día (UNO por día):** muestra el **acumulado del día** (todos los turnos, vía `pos_corte` con `turno_id=null`), se cuenta la gaveta, **se deposita el efectivo del día** (el fondo base se queda) y se arma `ventas_diarias` 'completo' con `pos_rebuild_cierre_dia` (suma todos los turnos cerrados). Cada turno guarda su propio snapshot `sistema_*` para que la suma no doble-cuente; solo el Z lleva `deposito_monto` (=día). El Z reescribe `egresos_cierre`/`ingresos_cierre` con el detalle de TODOS los turnos.
+- **Guardrails:** 1 sola caja abierta por sucursal + **no abrir si el día ya se cerró con Z**.
+- **Por qué:** antes el X era solo lectura y el Z cerraba el turno individual → cada cambio de turno dejaba turnos colgados o 2 cajas abiertas (caso Venecia 27-Jul). Ver [[freakie-cierres-multi-turno]].
+
 ## 2026-07-27 — POS: confirmación in-app (arreglo del cierre Z en la APK)
 - **Qué:** nuevo módulo `src/pos/confirmDialog.jsx` (`confirmAsync()` promise-based + `<ConfirmHost/>` montado en `pos-main.jsx`) que reemplaza a `window.confirm()` en el POS. Migrados: cierre **Z** (`CierreTurno`), liberar mesa (`POSHome`), quitar ítems no comandados (`POSMain`), y 4 borrados de `MenuAdminView`.
 - **Por qué:** en Venecia (S004) el corte **Z "no dejaba" cerrar**. Causa: el POS corre dentro del **WebView de la APK Android** (Fire tablet, `android-printer/…/MainActivity.kt` con `WebChromeClient()` base) y ahí `window.confirm()` en modo kiosk **devuelve `false`** → el `if (!confirm(...)) return` cancelaba la acción sin aviso. El cobro no usa confirm, por eso sí cobraban. En la base el turno seguía `abierto` (nunca llegaba al UPDATE; RLS/triggers descartados).
