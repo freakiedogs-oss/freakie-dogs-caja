@@ -165,6 +165,18 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const [showSplitModal,    setShowSplitModal]     = useState(false)
   const [saving,            setSaving]             = useState(false)
   const [commanding,        setCommanding]         = useState(false)
+  // Candado SÍNCRONO anti doble-comanda: se fija antes de cualquier await, por lo que
+  // aunque el cajero apriete COMANDAR varias veces (tablet lenta), solo la 1ra pasa.
+  // El disabled={commanding} del botón depende de estado async y llega tarde.
+  const commandingRef = useRef(false)
+  // Token de idempotencia por "tap de COMANDAR". Persiste entre reintentos (si el
+  // insert llegó al server pero al cliente se le cortó la red) y se limpia al éxito,
+  // para que la DB rebote el reenvío en vez de duplicar la orden en el KDS.
+  const comandaUidRef = useRef(null)
+  // Si el cajero edita los ítems, el token deja de ser válido: el próximo COMANDAR
+  // arranca uno nuevo. Así el token solo deduplica un reenvío IDÉNTICO (nunca
+  // descarta un ítem que cambió por reusar su `linea`).
+  useEffect(() => { comandaUidRef.current = null }, [items])
   const [loadingCuenta,     setLoadingCuenta]      = useState(!!cuentaCtx?.cuentaId)
 
   // Descuento
@@ -392,8 +404,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   }, [addItemToCart, addComboToCart])
 
   // Filas para la cola de cocina: un combo se explota en una fila por componente (cada uno a su estación)
-  const buildQueueRows = (lista, insertedItems, cuentaId, prioridad) =>
-    lista.flatMap((it, idx) => {
+  const buildQueueRows = (lista, insertedItems, cuentaId, prioridad, comandaUid) => {
+    let linea = 0
+    return lista.flatMap((it, idx) => {
       const base = {
         cuenta_id:      cuentaId,
         cuenta_item_id: insertedItems?.[idx]?.id || null,
@@ -404,6 +417,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         estado:         'pendiente',
         prioridad,
         comanda_numero: comandaSeq,
+        comanda_uid:    comandaUid,
       }
       if (it.esCombo && (it.componentes || []).length) {
         return it.componentes.map(c => {
@@ -416,6 +430,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             modificadores:        c.modificadores?.length ? c.modificadores : null,
             precio_modificadores: extraComp,
             estacion:             c.estacion || 'general',
+            linea:                linea++,
           }
         })
       }
@@ -427,8 +442,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         modificadores:        it.modificadores?.length ? it.modificadores : null,
         precio_modificadores: it.precioExtra || 0,
         estacion:             it.estacion || 'general',
+        linea:                linea++,
       }]
     })
+  }
 
   const removeItem = useCallback((idx) => {
     setItems(prev => {
@@ -593,6 +610,23 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // ── COMANDAR ──
   const handleComandar = async () => {
     if (!hasNew || !perms.comandar) return
+    // Candado síncrono: si ya hay una comanda en vuelo, ignorá los toques extra.
+    if (commandingRef.current) return
+    commandingRef.current = true
+
+    // Token de idempotencia: nuevo por cada tap; en un reintento manual se reutiliza
+    // el mismo (no se limpió por el error previo) → la DB rebota el duplicado en el KDS.
+    // Fallback UUID v4 por si el WebView de la tablet no expone crypto.randomUUID.
+    const firstAttempt = !comandaUidRef.current
+    if (firstAttempt) {
+      comandaUidRef.current = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+          })
+    }
+    const comandaUid = comandaUidRef.current
 
     // 0. Requiere caja/turno abierto (1 caja por sucursal) ANTES de comandar.
     //    Sin caja abierta las cuentas quedan sin poder cobrarse (no se puede cobrar
@@ -604,7 +638,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
         .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
       if (!_te) {
-        if (!_t) { toast.warning('No hay caja abierta. Abrí la caja/turno en Cierre de caja antes de comandar.'); return }
+        if (!_t) { commandingRef.current = false; toast.warning('No hay caja abierta. Abrí la caja/turno en Cierre de caja antes de comandar.'); return }
         turnoId = _t.id
       }
     } catch (_e) { /* fail-open: no bloquear la comanda por error de consulta */ }
@@ -612,6 +646,14 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     setCommanding(true)
     try {
       let currentCuentaId = cuentaId
+
+      // Reintento: si el insert previo SÍ creó la cuenta pero se perdió la respuesta,
+      // recuperala por el token en vez de crear una cuenta fantasma.
+      if (!currentCuentaId && !firstAttempt) {
+        const { data: prevC } = await db.from('pos_cuentas').select('id')
+          .eq('comanda_uid', comandaUid).limit(1).maybeSingle()
+        if (prevC?.id) { currentCuentaId = prevC.id; setCuentaId(currentCuentaId) }
+      }
 
       if (!currentCuentaId) {
         const { data: cuenta, error } = await db
@@ -628,6 +670,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
             subtotal:   subtotal,
             iva:        0,
             total:      total,
+            comanda_uid: comandaUid,
             ...paxFields,
           })
           .select()
@@ -643,7 +686,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           .eq('id', currentCuentaId)
       }
 
-      const toInsert = newItems.map(it => ({
+      const toInsert = newItems.map((it, idx) => ({
         cuenta_id:       currentCuentaId,
         menu_item_id:    it.id,
         nombre:          it.nombre,
@@ -655,13 +698,19 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         componentes:     it.componentes?.length ? it.componentes : null,
         comanda_numero:  comandaSeq,
         enviado_cocina_at: new Date().toISOString(),
+        comanda_uid:     comandaUid,
+        linea:           idx,
       }))
-      const { data: insertedItems, error: itemsErr } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
+      // upsert ignoreDuplicates: un reenvío con el mismo (comanda_uid, linea) NO duplica.
+      const { data: insertedItems, error: itemsErr } = await db.from('pos_cuenta_items')
+        .upsert(toInsert, { onConflict: 'comanda_uid,linea', ignoreDuplicates: true })
+        .select('id')
       if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
       const prioridadComanda = tipo === 'pedidos_ya' ? 8 : tipo === 'drive_through' ? 7 : 5
-      await db.from('pos_cocina_queue').insert(
-        buildQueueRows(newItems, insertedItems, currentCuentaId, prioridadComanda)
+      await db.from('pos_cocina_queue').upsert(
+        buildQueueRows(newItems, insertedItems, currentCuentaId, prioridadComanda, comandaUid),
+        { onConflict: 'comanda_uid,linea', ignoreDuplicates: true }
       )
 
       // Imprime la comanda térmica con SOLO los ítems recién enviados a cocina.
@@ -682,11 +731,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         return prev.map(i => i.saved ? i : { ...i, saved: true, dbId: insertedItems?.[_k++]?.id ?? i.dbId ?? null })
       })
       setCommandedCount(items.length)
+      comandaUidRef.current = null   // éxito → el próximo tap arranca un token nuevo
 
     } catch (err) {
       console.error('Error al comandar:', err)
       toast.error('Error al comandar: ' + err.message)
     } finally {
+      commandingRef.current = false
       setCommanding(false)
     }
   }
