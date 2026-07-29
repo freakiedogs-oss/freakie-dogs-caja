@@ -1,6 +1,6 @@
-// Freakie Dogs ERP — Service Worker v7
+// Freakie Dogs ERP — Service Worker v8
 // IMPORTANTE: incrementar versión en cada deploy para invalidar cache
-const CACHE = 'fd-erp-v7';
+const CACHE = 'fd-erp-v8';
 
 // Al instalar: cachea el shell de la app
 self.addEventListener('install', e => {
