@@ -18,6 +18,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         pos:  resolve(__dirname, 'pos.html'),
+        menu: resolve(__dirname, 'menu.html'),
       },
       output: {
         manualChunks(id) {
