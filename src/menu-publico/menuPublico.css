@@ -702,3 +702,88 @@ button { font-family: inherit; }
   }
   .mp-hero { border-radius: 0; }
 }
+
+/* ── Menú vivo: carga + modificadores (Fase 1) ── */
+.mp-cargando {
+  text-align: center;
+  color: #888;
+  font-size: 14px;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.mp-spinner {
+  width: 28px; height: 28px;
+  border: 3px solid #eee;
+  border-top-color: #E63946;
+  border-radius: 50%;
+  animation: mp-spin 0.8s linear infinite;
+}
+@keyframes mp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mp-spinner { animation-duration: 2s; } }
+
+.mp-card-personaliza {
+  font-size: 11px;
+  font-weight: 600;
+  color: #E63946;
+  background: #fdecee;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* Grupos de modificadores */
+.mp-grupo {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+.mp-grupo.error .mp-grupo-nombre { color: #E63946; }
+.mp-grupo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.mp-grupo-nombre { font-size: 15px; font-weight: 700; color: #222; }
+.mp-grupo-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: #999; background: #f3f3f3; padding: 3px 8px; border-radius: 999px;
+}
+.mp-grupo-badge.req { color: #b52a37; background: #fdecee; }
+.mp-grupo-hint { font-size: 12px; color: #aaa; margin-left: auto; }
+.mp-grupo-error { font-size: 12px; color: #E63946; margin-top: 6px; font-weight: 600; }
+
+.mp-opciones { display: flex; flex-direction: column; gap: 8px; }
+.mp-opcion {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1.5px solid #e6e6e6;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.mp-opcion::before {
+  content: "";
+  width: 20px; height: 20px;
+  flex: 0 0 20px;
+  border: 2px solid #ccc;
+  transition: all .12s;
+}
+.mp-opcion.check::before { border-radius: 6px; }
+.mp-opcion.radio::before { border-radius: 50%; }
+.mp-opcion.active { border-color: #E63946; background: #fff6f7; }
+.mp-opcion.active::before {
+  border-color: #E63946;
+  background: #E63946;
+  box-shadow: inset 0 0 0 3px #fff;
+}
+.mp-opcion-nombre { flex: 1; font-weight: 500; }
+.mp-opcion-extra { font-weight: 700; color: #E63946; font-size: 13px; }

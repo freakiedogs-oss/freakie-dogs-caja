@@ -1,12 +1,21 @@
 // ────────────────────────────────────────────────────────────────────
 // Menú Público — Freakie Dogs (reemplazo de BuhoPay)
-// Réplica visual del catálogo BuhoPay. Entry: /menu (menu.html)
+// Entry: /menu (menu.html). El menú se lee EN VIVO del POS
+// (RPC menu_publico_delivery → canal delivery_propio, con modificadores),
+// así los precios y opciones son los mismos que cobra la caja.
 // ────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { db } from '../supabase'
-import { CATEGORIAS, PRODUCTOS, NEGOCIO, BANNERS } from './catalogoBuho'
+import { NEGOCIO, BANNERS } from './catalogoBuho'
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
+
+// Emoji decorativo por categoría (el POS no guarda emoji)
+const EMOJI_CAT = {
+  combos: '🌭🍟🥤', 'freakie burger': '🍔', individuales: '🌭',
+  'fries & sides': '🍟', bebidas: '🥤', cervezas: '🍺', extras: '⭐',
+}
+const emojiDe = (nombre) => EMOJI_CAT[(nombre || '').toLowerCase()] || ''
 
 // ── Perfil del cliente recurrente ──────────────────────────────────
 // Se guarda SOLO en este dispositivo (localStorage), no en el servidor:
@@ -47,7 +56,10 @@ function abiertoAhora() {
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════
 export default function MenuPublico() {
-  const [categoriaActiva, setCategoriaActiva] = useState(CATEGORIAS[0].id)
+  const [menu, setMenu] = useState([])          // [{id,nombre,orden,items:[{...,grupos}]}]
+  const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState(false)
+  const [categoriaActiva, setCategoriaActiva] = useState('')
   const [carrito, setCarrito] = useState([])
   const [productoModal, setProductoModal] = useState(null)
   const [carritoAbierto, setCarritoAbierto] = useState(false)
@@ -56,6 +68,22 @@ export default function MenuPublico() {
   const [showTop, setShowTop] = useState(false)
   const seccionesRef = useRef({})
   const abierto = abiertoAhora()
+
+  // Cargar el menú en vivo del POS (canal delivery_propio)
+  useEffect(() => {
+    let vivo = true
+    db.rpc('menu_publico_delivery')
+      .then(({ data, error }) => {
+        if (!vivo) return
+        if (error) { setErrorCarga(true); return }
+        const cats = (data || []).filter(c => (c.items || []).length > 0)
+        setMenu(cats)
+        if (cats[0]) setCategoriaActiva(cats[0].id)
+      })
+      .catch(() => vivo && setErrorCarga(true))
+      .finally(() => vivo && setCargando(false))
+    return () => { vivo = false }
+  }, [])
 
   // Toast (auto-hide 2s)
   useEffect(() => {
@@ -70,24 +98,25 @@ export default function MenuPublico() {
       setShowTop(window.scrollY > 400)
       // Detectar categoría visible
       const viewport = window.scrollY + 200
-      for (const cat of CATEGORIAS) {
+      for (const cat of menu) {
         const el = seccionesRef.current[cat.id]
         if (el && el.offsetTop <= viewport) setCategoriaActiva(cat.id)
       }
     }
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+  }, [menu])
 
   const totalCarrito = useMemo(
-    () => carrito.reduce((s, it) => s + it.precio * it.qty, 0),
+    () => carrito.reduce((s, it) => s + (it.precio + (it.precioMods || 0)) * it.qty, 0),
     [carrito]
   )
   const cantidadCarrito = carrito.reduce((s, it) => s + it.qty, 0)
 
   const agregarAlCarrito = (producto, qty = 1, nota = '', mods = []) => {
+    const precioMods = mods.reduce((s, m) => s + (Number(m.precio_extra) || 0), 0)
     setCarrito(prev => {
-      // Si mismo producto sin nota ni mods → suma qty
+      // Mismo producto sin nota ni mods → suma qty
       if (!nota && mods.length === 0) {
         const idx = prev.findIndex(i => i.id === producto.id && !i.nota && (!i.mods || i.mods.length === 0))
         if (idx >= 0) {
@@ -96,7 +125,11 @@ export default function MenuPublico() {
           return next
         }
       }
-      return [...prev, { lineaId: Date.now() + Math.random(), ...producto, qty, nota, mods }]
+      return [...prev, {
+        lineaId: Date.now() + Math.random(),
+        id: producto.id, nombre: producto.nombre, precio: Number(producto.precio),
+        precioMods, qty, nota, mods,
+      }]
     })
     setToast('Producto añadido')
   }
@@ -105,13 +138,6 @@ export default function MenuPublico() {
     const el = seccionesRef.current[catId]
     if (el) window.scrollTo({ top: el.offsetTop - 60, behavior: 'smooth' })
   }
-
-  const productosPorCategoria = useMemo(() => {
-    const map = {}
-    for (const cat of CATEGORIAS) map[cat.id] = []
-    for (const p of PRODUCTOS) if (map[p.categoria]) map[p.categoria].push(p)
-    return map
-  }, [])
 
   return (
     <div className="mp-page">
@@ -124,30 +150,42 @@ export default function MenuPublico() {
         <HeaderNegocio />
 
         {/* TABS CATEGORIAS (sticky) */}
-        <div className="mp-tabs-wrap">
-          <div className="mp-tabs">
-            {CATEGORIAS.map(cat => (
-              <button
-                key={cat.id}
-                className={`mp-tab ${categoriaActiva === cat.id ? 'active' : ''}`}
-                onClick={() => scrollACategoria(cat.id)}
-              >
-                {cat.nombre} {cat.emoji}
-              </button>
-            ))}
+        {menu.length > 0 && (
+          <div className="mp-tabs-wrap">
+            <div className="mp-tabs">
+              {menu.map(cat => (
+                <button
+                  key={cat.id}
+                  className={`mp-tab ${categoriaActiva === cat.id ? 'active' : ''}`}
+                  onClick={() => scrollACategoria(cat.id)}
+                >
+                  {cat.nombre} {emojiDe(cat.nombre)}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* ESTADOS DE CARGA */}
+        {cargando && (
+          <div className="mp-cargando">
+            <div className="mp-spinner" /> Cargando el menú…
+          </div>
+        )}
+        {errorCarga && !cargando && (
+          <div className="mp-cargando">😕 No pudimos cargar el menú. Recargá la página o intentá en un momento.</div>
+        )}
 
         {/* SECCIONES POR CATEGORIA */}
-        {CATEGORIAS.map(cat => (
+        {menu.map(cat => (
           <section
             key={cat.id}
             ref={el => { if (el) seccionesRef.current[cat.id] = el }}
             className="mp-seccion"
           >
-            <h2 className="mp-seccion-titulo">{cat.nombre} {cat.emoji}</h2>
+            <h2 className="mp-seccion-titulo">{cat.nombre} {emojiDe(cat.nombre)}</h2>
             <div className="mp-productos">
-              {productosPorCategoria[cat.id].map(prod => (
+              {(cat.items || []).map(prod => (
                 <ProductoCard
                   key={prod.id}
                   producto={prod}
@@ -307,6 +345,7 @@ function HeaderNegocio() {
 }
 
 function ProductoCard({ producto, onClick }) {
+  const tieneOpciones = (producto.grupos || []).length > 0
   return (
     <button className="mp-card" onClick={onClick}>
       <div className="mp-card-info">
@@ -316,22 +355,14 @@ function ProductoCard({ producto, onClick }) {
         )}
         <div className="mp-card-precio-row">
           <span className="mp-card-precio">{fmt(producto.precio)}</span>
-          {producto.destacado && <span className="mp-card-star">⭐</span>}
-          {producto.like && <span className="mp-card-like">👍</span>}
+          {tieneOpciones && <span className="mp-card-personaliza">Personalizable</span>}
         </div>
       </div>
       <div className="mp-card-foto">
-        {producto.imagen ? (
-          <img
-            src={producto.imagen}
-            alt={producto.nombre}
-            loading="lazy"
-            className={producto.artwork ? 'contain' : ''}
-          />
+        {producto.imagen_url ? (
+          <img src={producto.imagen_url} alt={producto.nombre} loading="lazy" />
         ) : (
-          <div className="mp-card-foto-placeholder">
-            🍔
-          </div>
+          <div className="mp-card-foto-placeholder">🌭</div>
         )}
       </div>
     </button>
@@ -341,10 +372,46 @@ function ProductoCard({ producto, onClick }) {
 function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   const [qty, setQty] = useState(1)
   const [nota, setNota] = useState('')
-  const [mods, setMods] = useState([])
+  // sel: { [grupoId]: [ {id,nombre,precio_extra}, ... ] }
+  const [sel, setSel] = useState({})
+  const [intento, setIntento] = useState(false)
 
-  const precioTotal = producto.precio * qty +
-    mods.reduce((s, m) => s + (m.precio_extra || 0) * qty, 0)
+  const grupos = producto.grupos || []
+  const esUnico = (g) => (g.max === 1) || g.tipo === 'unico' || g.tipo === 'single'
+  const requerido = (g) => g.obligatorio || (Number(g.min) || 0) > 0
+  const minDe = (g) => g.obligatorio ? Math.max(1, Number(g.min) || 0) : (Number(g.min) || 0)
+
+  const toggle = (g, op) => {
+    setSel(prev => {
+      const actual = prev[g.id] || []
+      const ya = actual.some(x => x.id === op.id)
+      let next
+      if (esUnico(g)) {
+        next = ya ? [] : [op]
+      } else if (ya) {
+        next = actual.filter(x => x.id !== op.id)
+      } else {
+        if (g.max && actual.length >= g.max) return prev  // tope alcanzado
+        next = [...actual, op]
+      }
+      return { ...prev, [g.id]: next }
+    })
+  }
+
+  const modsPlanos = useMemo(
+    () => Object.entries(sel).flatMap(([grupoId, ops]) =>
+      ops.map(o => ({ id: o.id, nombre: o.nombre, precio_extra: Number(o.precio_extra) || 0, grupoId }))),
+    [sel]
+  )
+  const extrasUnidad = modsPlanos.reduce((s, m) => s + m.precio_extra, 0)
+  const precioTotal = (Number(producto.precio) + extrasUnidad) * qty
+
+  const faltantes = grupos.filter(g => (sel[g.id]?.length || 0) < minDe(g))
+
+  const confirmar = () => {
+    if (faltantes.length > 0) { setIntento(true); return }
+    onAgregar(qty, nota, modsPlanos)
+  }
 
   return (
     <div className="mp-modal-overlay" onClick={onClose}>
@@ -352,10 +419,10 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
         <button className="mp-modal-close" onClick={onClose}>×</button>
 
         <div className="mp-modal-hero">
-          {producto.imagen ? (
-            <img src={producto.imagen} alt={producto.nombre} />
+          {producto.imagen_url ? (
+            <img src={producto.imagen_url} alt={producto.nombre} />
           ) : (
-            <div className="mp-modal-hero-placeholder">🍔</div>
+            <div className="mp-modal-hero-placeholder">🌭</div>
           )}
         </div>
 
@@ -366,15 +433,41 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
           )}
           <div className="mp-modal-precio">{fmt(producto.precio)}</div>
 
-          {/* MODIFICADORES — placeholder hasta que Cesar mande capturas */}
-          {producto.modificadores && producto.modificadores.length > 0 && (
-            <div className="mp-modal-mods">
-              {/* TODO: renderizar grupos de modificadores */}
-              <div className="mp-modal-mods-todo">
-                Modificadores próximamente
+          {/* GRUPOS DE MODIFICADORES */}
+          {grupos.map(g => {
+            const cuenta = sel[g.id]?.length || 0
+            const incompleto = intento && cuenta < minDe(g)
+            return (
+              <div key={g.id} className={`mp-grupo ${incompleto ? 'error' : ''}`}>
+                <div className="mp-grupo-head">
+                  <span className="mp-grupo-nombre">{g.nombre}</span>
+                  {requerido(g)
+                    ? <span className="mp-grupo-badge req">Obligatorio</span>
+                    : <span className="mp-grupo-badge">Opcional</span>}
+                  {g.max > 1 && <span className="mp-grupo-hint">Hasta {g.max}</span>}
+                </div>
+                <div className="mp-opciones">
+                  {(g.opciones || []).map(op => {
+                    const activa = (sel[g.id] || []).some(x => x.id === op.id)
+                    return (
+                      <button
+                        key={op.id}
+                        type="button"
+                        className={`mp-opcion ${activa ? 'active' : ''} ${esUnico(g) ? 'radio' : 'check'}`}
+                        onClick={() => toggle(g, op)}
+                      >
+                        <span className="mp-opcion-nombre">{op.nombre}</span>
+                        {Number(op.precio_extra) > 0 && (
+                          <span className="mp-opcion-extra">+{fmt(op.precio_extra)}</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                {incompleto && <div className="mp-grupo-error">Elegí al menos {minDe(g)}</div>}
               </div>
-            </div>
-          )}
+            )
+          })}
 
           {/* NOTA */}
           <div className="mp-modal-nota-wrap">
@@ -392,25 +485,16 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
           {/* CANTIDAD + AGREGAR */}
           <div className="mp-modal-footer">
             <div className="mp-qty">
-              <button
-                className="mp-qty-btn"
-                onClick={() => setQty(q => Math.max(1, q - 1))}
-                disabled={qty <= 1}
-              >−</button>
+              <button className="mp-qty-btn" onClick={() => setQty(q => Math.max(1, q - 1))} disabled={qty <= 1}>−</button>
               <span className="mp-qty-num">{qty}</span>
-              <button
-                className="mp-qty-btn"
-                onClick={() => setQty(q => q + 1)}
-              >+</button>
+              <button className="mp-qty-btn" onClick={() => setQty(q => q + 1)}>+</button>
             </div>
             <button
               className="mp-btn-agregar"
               disabled={!abierto}
-              onClick={() => onAgregar(qty, nota, mods)}
+              onClick={confirmar}
             >
-              {abierto
-                ? `Añadir · ${fmt(precioTotal)}`
-                : 'Cerrado ahora'}
+              {abierto ? `Añadir · ${fmt(precioTotal)}` : 'Cerrado ahora'}
             </button>
           </div>
         </div>
@@ -451,9 +535,11 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout }) {
                   <div className="mp-linea-nombre">{it.nombre}</div>
                   {it.nota && <div className="mp-linea-nota">📝 {it.nota}</div>}
                   {it.mods && it.mods.map((m, i) => (
-                    <div key={i} className="mp-linea-mod">+ {m.nombre}</div>
+                    <div key={i} className="mp-linea-mod">
+                      + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
+                    </div>
                   ))}
-                  <div className="mp-linea-precio">{fmt(it.precio * it.qty)}</div>
+                  <div className="mp-linea-precio">{fmt((it.precio + (it.precioMods || 0)) * it.qty)}</div>
                 </div>
                 <div className="mp-linea-controles">
                   <button className="mp-qty-btn" onClick={() => updateQty(it.lineaId, -1)}>−</button>
