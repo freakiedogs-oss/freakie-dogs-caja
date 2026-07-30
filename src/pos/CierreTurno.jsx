@@ -347,7 +347,7 @@ export default function CierreTurno({ user, onBack }) {
   const buildCorteData = (tipo) => {
     const c = tipo === 'Z' ? corteDia : corte
     return {
-      tipo, storeCode, storeName, cajero: user.nombre || '', fecha: todayISO(), abierto_at: turno?.abierto_at,
+      tipo, storeCode, caja, storeName, cajero: user.nombre || '', fecha: todayISO(), abierto_at: turno?.abierto_at,
       fondo: tipo === 'Z' ? diaInfo.fondoBase : fondoRecibido,
       efectivo: n(c?.efectivo), tarjeta: n(c?.tarjeta), transferencia: n(c?.transferencia), link_pago: n(c?.link_pago),
       otros: n(c?.otros), total: n(c?.total), propinas: n(c?.propinas), n_cuentas: c?.n_cuentas || 0,

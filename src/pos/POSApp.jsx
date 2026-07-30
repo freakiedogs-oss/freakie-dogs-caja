@@ -87,11 +87,12 @@ function CajaSelector({ user, onSelect, onLogout }) {
 
   useEffect(() => {
     let alive = true
-    db.from('pos_impresoras').select('caja,nombre').eq('store_code', user.store_code).eq('activa', true)
+    db.from('pos_impresoras').select('caja,nombre,rol').eq('store_code', user.store_code).eq('activa', true)
       .then(({ data }) => {
         if (!alive) return
         const map = new Map()
-        ;(data || []).forEach(r => { if (r.caja) map.set(r.caja, r.nombre) })
+        // 1 entrada por caja; preferí el nombre de la impresora principal (no la de solo-precuenta)
+        ;(data || []).forEach(r => { if (r.caja && (!map.has(r.caja) || r.rol !== 'precuenta')) map.set(r.caja, r.nombre) })
         const list = Array.from(map, ([caja, nombre]) => ({ caja, nombre }))
         if (list.length >= 2) setCajas(list)
         else onSelect(list.length === 1 ? list[0].caja : null) // 1 o 0 cajas → sin selección
