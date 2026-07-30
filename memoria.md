@@ -2,6 +2,18 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-30 — Fix: alta de clientes desde el POS fallaba (check constraint) — Metro Freakies en vivo
+- **Síntoma:** en Metro Freakies, al "Crear y seleccionar" cliente para factura: `Error al crear cliente: new row for relation "pos_clientes" violates check constraint "pos_clientes_tipo_cliente_check"`.
+- **Causa raíz (2 bugs en `src/pos/cajero/CustomerSearch.jsx`):**
+  1. Línea 78 mandaba `tipo_cliente: tipoDte` → el **tipo de DTE** (`'ccf'`/`'factura'`/`'se'`) en una columna que es **clasificación CRM** (CHECK: `regular/frecuente/vip/corporativo/evento`). Este era el error visible.
+  2. `tipo_documento` se guarda como **etiqueta** (`'NIT'`, `'DUI'`, `'Pasaporte'`, `'Carnet de residente'`, `'Otro'`) — que es justo lo que `PaymentModal.DOC_MH` espera para mapear al código MH (13/36/03/02/37) al emitir el DTE — pero el CHECK viejo solo aceptaba **minúsculas** (`nit/dui/pasaporte/otro`). Bug latente que saltaba apenas se arreglara el #1.
+- **Nota:** los 49 clientes existentes vinieron de un import (12-abr) con `tipo_documento` NULL, por eso este alta desde el POS nunca había funcionado con documento.
+- **Fix DB (inmediato, sin deploy — migración `fix_pos_clientes_alta_pos`):**
+  - Amplié `pos_clientes_tipo_documento_check` para aceptar las **etiquetas** que usa la app (NULL sigue válido).
+  - Agregué trigger `pos_clientes_sanitize_biu` (BEFORE INSERT/UPDATE): si `tipo_cliente` no es una clasificación válida → lo normaliza a `'regular'`. Desbloqueó la caja en vivo **al instante** y queda como red de seguridad. Probado con insert simulado (rollback): pasó constraints, coerció `'ccf'`→`'regular'`.
+- **Fix código (PR, para deploy):** `CustomerSearch.jsx:78` `tipo_cliente: 'regular'` (ya no `tipoDte`). Branch `fix/pos-clientes-tipo-cliente`.
+- **Por qué se amplió el CHECK en vez de pasar el código a minúsculas:** `PaymentModal.DOC_MH` (línea 25) mapea por etiqueta; tocar eso movería la ruta fiscal del DTE. Ampliar el CHECK mantiene el contrato existente CustomerSearch→DB→PaymentModal→DTE sin riesgo fiscal.
+
 ## 2026-07-30 — Quitado el guardrail 50% de `v_data_disponible_resumen` (pedido de Jose)
 - **Síntoma:** Jose subió el Quanto de **Lourdes (S003)** hasta 07-29 pero la card "📅 Última data" seguía diciendo **Quanto 07-26**, y el **KPI Ventas Totales · BEP** cortaba todo al 26. Sospecha de "algo se rompió con los arreglos del dashboard".
 - **Diagnóstico (NO era bug ni Lourdes faltando):** el dato de Lourdes está 100% absorbido en todas las fuentes (`quanto_ordenes`, `mv_finanzas_ventas_mensual` $36,398/29d, `v_quanto_ordenes_diario`, `fn_ventas_comparativo_igualado`); el P&L Estado de Resultados ya lo incluye. El 07-26 lo ponía la heurística de "día completo ≥ 50% del baseline de 7d" en `v_data_disponible_resumen`: los días 27/28/29 **solo tenían Quanto de Lourdes** (~50 órdenes vs baseline ~600 de las 6 tiendas) → los marcaba incompletos. La causa real es que **M001(21) / S002(23) / S004(25) / S001(26) están atrasadas subiendo su Quanto**, no Lourdes.
