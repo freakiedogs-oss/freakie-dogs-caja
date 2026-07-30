@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-29 — Delivery: puente delivery→POS REDISEÑADO (gated por pago) + checkout cableado
+- **Qué:** rediseñé el puente para que **NO comande al INSERT** (como hacía `fn_delivery_to_pos` de Cesar) sino **al confirmar el pago Karina**. Migraciones `delivery_puente_gated_por_pago` + `delivery_puente_estados_validos`.
+- **Cómo quedó:**
+  - **Quité** el trigger `trg_delivery_to_pos` (la función queda definida; rollback = recrear trigger).
+  - `crear_pedido_delivery(p jsonb)` (grant **anon**): valida precios contra el menú real, guarda shape canónico `{menu_item_id, nombre, precio, cantidad, modificadores:[{id,nombre,precio_extra}], precio_modificadores, nota, subtotal}`, estado **`recibida`**, SIN comandar. Actualiza el CRM. El menú (`MenuPublico.jsx` Checkout) ya lo llama (adiós insert directo).
+  - `confirmar_pago_delivery(delivery_id, sucursal_id, metodo)` (grant **authenticated only** — NO anon: si no, cualquiera marcaría pagado = comida gratis): setea sucursal+método, estado **`preparando`**, y llama…
+  - `_comanda_delivery(delivery_id)` (interno): crea `pos_cuentas` (tipo `delivery_propio`, estado `enviada_cocina`, IVA 13% incl.) + `pos_cuenta_items` (**menu_item_id UUID exacto**, sin matching por nombre) + `pos_cocina_queue` (KDS). Idempotente (si ya tiene `pos_cuenta_id`, no duplica).
+- **Estados válidos (CHECK):** `recibida→preparando→lista→en_camino→entregada→cancelada` (femenino; coincide con `auto_registro_viaje`). ⚠️ `DeliveryView` usa `pendiente/asignado/en_camino/entregado` → **viola este CHECK** = más evidencia de que la torre está rota (arreglar en Fase 3).
+- **Probado end-to-end en SQL** (creado y limpiado): crear→`recibida` sin cuenta POS; confirmar→`preparando` + cuenta `enviada_cocina` + item + KDS comanda; 2º confirm no duplica. ✓
+- **Pendiente para que Karina lo use:** la torre de control necesita el botón "confirmar pago" cableado a `confirmar_pago_delivery`, y como es `authenticated`-only y el ERP hoy es anon → depende de **Fase 0-B** (o una edge con service_role). Ruteo de sucursal por ubicación = Fase 2 (hoy el pedido entra sin sucursal; Karina la pasa a `confirmar_pago_delivery`).
+- **vercel.json:** agregué rewrite `/menu`→`menu.html` (URL limpia para el link de Instagram).
+- **Para Cesar:** le cambié su trigger de auto-comanda; pasarle este resumen.
+
 ## 2026-07-29 — Delivery Fase 1: HALLAZGO — ya existe pipeline auto-comanda de Cesar (PARAR y coordinar)
 - **Qué apareció:** al empezar Fase 1 (menú vivo) descubrí un pipeline **en producción** sobre `delivery_clientes`: trigger **`fn_delivery_to_pos()` BEFORE INSERT** que crea `pos_cuentas` (tipo `delivery_app`, estado `abierta`) + `pos_cuenta_items` + empuja a **`pos_cocina_queue` (KDS)** en el mismo INSERT. Además AFTER UPDATE: `auto_registro_viaje` + `sync_sucursal_on_delivery_update`. Es trabajo de Cesar (ramas kpi-delivery/despacho).
 - **Conflictos con el flujo que quiere Jose:**

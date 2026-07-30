@@ -594,48 +594,37 @@ function Checkout({ items, total, onClose, onEnviado }) {
     }
     setEnviando(true)
     try {
-      // Costo de envío placeholder — el despachador lo ajusta al aceptar
-      const costoEnvio = tipo === 'delivery' ? 0 : 0
-      const numeroOrden = 'WEB-' + Date.now().toString().slice(-8)
-      const { error: dbErr } = await db.from('delivery_clientes').insert({
-        numero_orden: numeroOrden,
-        cliente_nombre: nombre.trim(),
-        cliente_telefono: telefono.trim(),
-        cliente_direccion: tipo === 'delivery' ? `[${zona}] ${direccion.trim()}` : 'PICKUP',
-        items: items.map(i => ({
-          id: i.id,
-          nombre: i.nombre,
-          precio: i.precio,
-          qty: i.qty,
-          nota: i.nota || null,
-          mods: i.mods || [],
-        })),
-        metodo_pago: metodoPago,
-        subtotal: total,
-        costo_envio: costoEnvio,
-        total: total + costoEnvio,
-        estado: 'pendiente',
-        notas_cliente: notas.trim() || null,
+      // El pedido se crea vía RPC: valida precios contra el menú real,
+      // guarda el shape canónico y entra 'recibida' SIN comandar. La comanda
+      // a cocina la dispara Karina al confirmar el pago (torre de control).
+      const { data, error: rpcErr } = await db.rpc('crear_pedido_delivery', {
+        p: {
+          cliente_nombre: nombre.trim(),
+          cliente_telefono: telefono.trim(),
+          tipo,
+          cliente_direccion: tipo === 'delivery' ? `[${zona}] ${direccion.trim()}` : null,
+          zona: tipo === 'delivery' ? zona : null,
+          metodo_pago: metodoPago,
+          notas_cliente: notas.trim() || null,
+          items: items.map(i => ({
+            menu_item_id: i.id,
+            cantidad: i.qty,
+            nota: i.nota || null,
+            modificadores: (i.mods || []).map(m => m.id),
+          })),
+        },
       })
-      if (dbErr) throw dbErr
+      if (rpcErr) throw rpcErr
+      if (!data?.ok) throw new Error('respuesta inesperada')
 
-      // Recordar datos en este dispositivo para el próximo pedido
+      // Recordar datos en este dispositivo para el próximo pedido (el CRM
+      // server-side lo actualiza la propia RPC).
       guardarPerfil({
         nombre: nombre.trim(),
         telefono: telefono.trim(),
         direccion: direccion.trim(),
         zona,
       })
-
-      // Registrar/actualizar en el CRM (tabla aislada) para marketing futuro:
-      // promos a frecuentes, cumpleaños, reactivación. Va por RPC SECURITY
-      // DEFINER (anon no toca la tabla directo). No bloquea el pedido si falla.
-      db.rpc('registrar_cliente_delivery', {
-        p_telefono: telefono.trim(),
-        p_nombre: nombre.trim() || null,
-        p_direccion: tipo === 'delivery' ? (direccion.trim() || null) : null,
-        p_zona: tipo === 'delivery' ? (zona || null) : null,
-      }).catch(() => {})
 
       onEnviado()
     } catch (err) {
