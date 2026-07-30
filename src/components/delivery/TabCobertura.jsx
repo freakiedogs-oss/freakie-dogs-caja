@@ -46,9 +46,9 @@ export default function TabCobertura({ show = () => {} }) {
         if (list[0]) setSelId(list[0].id);
       });
 
-    // ── Drivers en vivo (Realtime) ──────────────────────────────────
+    // ── Drivers en vivo (Realtime + polling de respaldo) ────────────
     const drivers = driversRef.current;
-    const FRESCO_MS = 5 * 60 * 1000; // 5 min sin actualizar = se cae del mapa
+    const FRESCO_MS = 15 * 60 * 1000; // 15 min sin señal = se cae del mapa
     const quitar = (id) => { if (id && drivers[id]) { drivers[id].remove(); delete drivers[id]; setNDrivers(Object.keys(drivers).length); } };
     const upsert = (r) => {
       if (!r || r.lat == null || r.lng == null) return;
@@ -68,11 +68,17 @@ export default function TabCobertura({ show = () => {} }) {
       setNDrivers(Object.keys(drivers).length);
     };
 
-    db.from('driver_ubicaciones').select('*').eq('en_linea', true).then(({ data }) => {
-      (data || []).forEach((r) => {
-        if (Date.now() - new Date(r.updated_at).getTime() < FRESCO_MS) upsert(r);
-      });
-    });
+    // Polling de respaldo: refleja el estado real de la DB aunque Realtime
+    // falle o el driver emita esporádicamente. Reconcilia (agrega/actualiza/quita).
+    const refrescar = async () => {
+      const { data } = await db.from('driver_ubicaciones').select('*').eq('en_linea', true);
+      const frescos = (data || []).filter(r => r.lat != null && Date.now() - new Date(r.updated_at).getTime() < FRESCO_MS);
+      const vivos = new Set(frescos.map(r => r.empleado_id));
+      frescos.forEach(upsert);
+      Object.keys(drivers).forEach(id => { if (!vivos.has(id)) quitar(id); }); // se cayeron / stale
+    };
+    refrescar();
+    const poll = setInterval(refrescar, 15000);
 
     const canal = db.channel('torre-drivers')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_ubicaciones' }, (p) => {
@@ -81,7 +87,7 @@ export default function TabCobertura({ show = () => {} }) {
       })
       .subscribe();
 
-    return () => { db.removeChannel(canal); map.remove(); mapRef.current = null; };
+    return () => { clearInterval(poll); db.removeChannel(canal); map.remove(); mapRef.current = null; };
   }, []);
 
   // Marcadores de todas las sucursales (contexto)

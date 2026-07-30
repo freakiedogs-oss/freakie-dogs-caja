@@ -71,11 +71,23 @@ function Compartir({ yo }) {
   const [error, setError] = useState('')
   const watchRef = useRef(null)
   const lastSentRef = useRef(0)
+  const wakeRef = useRef(null)
+
+  // Mantener la pantalla despierta (si no, el GPS se corta al bloquear)
+  const pedirWakeLock = async () => {
+    try { if ('wakeLock' in navigator) wakeRef.current = await navigator.wakeLock.request('screen') } catch { /* noop */ }
+  }
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible' && activo && !wakeRef.current) pedirWakeLock() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [activo])
 
   const iniciar = () => {
     setError('')
     if (!navigator.geolocation) { setError('Tu teléfono no permite ubicación.'); return }
     setActivo(true); setEstado('Buscando señal GPS…')
+    pedirWakeLock()
     watchRef.current = navigator.geolocation.watchPosition(
       async (pos) => {
         const { latitude: lat, longitude: lng, heading, accuracy } = pos.coords
@@ -97,10 +109,14 @@ function Compartir({ yo }) {
   }
   const detener = () => {
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
+    if (wakeRef.current) { wakeRef.current.release().catch(() => {}); wakeRef.current = null }
     setActivo(false); setEstado('')
     db.rpc('desconectar_driver', { p_empleado_id: yo.id }).catch(() => {})
   }
-  useEffect(() => () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current) }, [])
+  useEffect(() => () => {
+    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
+    if (wakeRef.current) wakeRef.current.release().catch(() => {})
+  }, [])
 
   return (
     <div style={{ textAlign: 'center', paddingTop: 10 }}>
