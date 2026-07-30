@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { db } from '../supabase'
 import POSLogin from './POSLogin'
 import POSHome from './POSHome'
 import POSMain from './cajero/POSMain'
@@ -72,6 +73,62 @@ function StoreSelector({ user, onSelect, onLogout }) {
   )
 }
 
+// Etiqueta amigable por caja (sucursales con 2+ cajas, ej. Lourdes)
+const CAJA_LABELS = {
+  general: { icon: '🧾', label: 'Caja General' },
+  drive:   { icon: '🚗', label: 'Drive Thru' },
+}
+
+// ── Selector de Caja ──
+// Sucursales con 2+ impresoras/cajas muestran el selector; las de 1 sola caja
+// (todas las demás) auto-seleccionan y siguen directo (cero cambio para ellas).
+function CajaSelector({ user, onSelect, onLogout }) {
+  const [cajas, setCajas] = useState(null) // null = cargando
+
+  useEffect(() => {
+    let alive = true
+    db.from('pos_impresoras').select('caja,nombre').eq('store_code', user.store_code).eq('activa', true)
+      .then(({ data }) => {
+        if (!alive) return
+        const map = new Map()
+        ;(data || []).forEach(r => { if (r.caja) map.set(r.caja, r.nombre) })
+        const list = Array.from(map, ([caja, nombre]) => ({ caja, nombre }))
+        if (list.length >= 2) setCajas(list)
+        else onSelect(list.length === 1 ? list[0].caja : null) // 1 o 0 cajas → sin selección
+      })
+      .catch(() => onSelect(null))
+    return () => { alive = false }
+  }, [user.store_code])
+
+  if (!cajas) {
+    return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#141418', color: '#8b8997', fontSize: 14 }}>Cargando cajas…</div>
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#141418', padding: '0 24px' }}>
+      <img src="/icon-192.png" alt="Freakie Dogs" style={{ width: 80, height: 80, borderRadius: 16, marginBottom: 10, objectFit: 'contain' }} />
+      <div style={{ fontWeight: 800, fontSize: 20, color: '#E62329', marginBottom: 4 }}>Freakie POS</div>
+      <div style={{ color: '#8b8997', fontSize: 13, marginBottom: 6 }}>Hola, {user.nombre?.split(' ')[0]} 👋</div>
+      <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 28, textTransform: 'uppercase', letterSpacing: '0.5px' }}>¿Qué caja vas a abrir?</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 320 }}>
+        {cajas.map(({ caja, nombre }) => {
+          const meta = CAJA_LABELS[caja] || { icon: '🗄️', label: caja }
+          return (
+            <button key={caja} onClick={() => onSelect(caja)}
+              style={{ padding: '16px 20px', border: '1px solid #2a2a32', borderRadius: 12, background: '#1c1c22', color: '#e8e6ef', fontSize: 16, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s' }}
+              onMouseOver={e => { e.currentTarget.style.background = '#1e1e26'; e.currentTarget.style.borderColor = '#E62329' }}
+              onMouseOut={e => { e.currentTarget.style.background = '#1c1c22'; e.currentTarget.style.borderColor = '#2a2a32' }}>
+              <span style={{ fontSize: 22 }}>{meta.icon}</span>
+              <span style={{ flex: 1, textAlign: 'left' }}>{meta.label}<div style={{ color: '#8b8997', fontSize: 11, fontWeight: 400 }}>{nombre}</div></span>
+            </button>
+          )
+        })}
+      </div>
+      <button onClick={onLogout} style={{ marginTop: 32, padding: '10px 24px', border: '1px solid #2a2a32', borderRadius: 8, background: 'transparent', color: '#8b8997', fontSize: 13, cursor: 'pointer' }}>← Cambiar usuario</button>
+    </div>
+  )
+}
+
 /**
  * POSApp — Router principal del POS
  *
@@ -100,10 +157,10 @@ export default function POSApp() {
       setUser(userData)
       setScreen('store-select')
     } else {
-      // Ir directo al POS con su sucursal asignada
+      // Con su sucursal asignada → elegir caja (auto-salta si la sucursal tiene 1 sola)
       setUser(userData)
       setEffectiveUser(userData)
-      setScreen('home')
+      setScreen('caja-select')
     }
   }
 
@@ -111,7 +168,7 @@ export default function POSApp() {
     // Sobreescribir store_code del usuario para esta sesión POS
     const u = { ...user, store_code: storeCode }
     setEffectiveUser(u)
-    setScreen('home')
+    setScreen('caja-select')
     // Re-persist con el store seleccionado (para logs del proxy DTE)
     try {
       sessionStorage.setItem('pos_user', JSON.stringify({
@@ -119,6 +176,20 @@ export default function POSApp() {
         nombre: u.nombre, apellido: u.apellido,
       }))
     } catch {}
+  }
+
+  const handleCajaSelect = (caja) => {
+    setEffectiveUser(prev => {
+      const u = { ...(prev || user), caja: caja || null }
+      try {
+        sessionStorage.setItem('pos_user', JSON.stringify({
+          id: u.id, pin: u.pin, rol: u.rol, store_code: u.store_code, caja: u.caja,
+          nombre: u.nombre, apellido: u.apellido,
+        }))
+      } catch {}
+      return u
+    })
+    setScreen('home')
   }
 
   const handleLogout = () => {
@@ -160,6 +231,11 @@ export default function POSApp() {
   // ── Store Selector (ejecutivo/admin/superadmin) ──
   if (screen === 'store-select') {
     return <StoreSelector user={user} onSelect={handleStoreSelect} onLogout={handleLogout} />
+  }
+
+  // ── Caja Selector (sucursales con 2+ cajas, ej. Lourdes; auto-salta si 1 sola) ──
+  if (screen === 'caja-select') {
+    return <CajaSelector user={effectiveUser || user} onSelect={handleCajaSelect} onLogout={handleLogout} />
   }
 
   // Desde aquí usamos effectiveUser (con store_code correcto)

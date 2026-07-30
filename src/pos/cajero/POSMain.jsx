@@ -120,13 +120,14 @@ function Clock() {
 // ──────────────────────────────────────────────
 export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   const storeCode = user.store_code || 'S001'
+  const caja = user.caja || null   // multi-caja (Lourdes): null = sucursal de 1 sola caja
   const storeName = STORES[storeCode] || storeCode
   const toast = useToast()
 
   // Precarga la impresora de la sucursal al abrir el POS: asi al imprimir, el
   // deep-link rawbt: se dispara SIN un await de red que en Android descartaria
   // el gesto del usuario y bloquearia la impresion (pre-cuenta/comanda).
-  useEffect(() => { getImpresora(storeCode).catch(() => {}) }, [storeCode])
+  useEffect(() => { getImpresora(storeCode, caja).catch(() => {}) }, [storeCode, caja])
 
   // Permisos del rol activo
   const perms = PERMISOS_POR_ROL[user.rol] || DEFAULT_PERMS
@@ -537,6 +538,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
   // ── Normaliza el carrito al formato que espera printService ──
   const buildCuentaPrint = (lista = items) => ({
     storeCode,
+    caja,
     storeName,
     mesa: mesaActual,
     tipoLabel: tipoInfo.label,
@@ -635,9 +637,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
     //    de red no debe frenar la operación, igual que en el cobro.
     let turnoId = null
     try {
-      const { data: _t, error: _te } = await db.from('pos_turnos').select('id')
+      let _q = db.from('pos_turnos').select('id')
         .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
-        .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+      _q = caja ? _q.eq('caja', caja) : _q.is('caja', null)
+      const { data: _t, error: _te } = await _q.order('abierto_at', { ascending: false }).limit(1).maybeSingle()
       if (!_te) {
         if (!_t) { commandingRef.current = false; toast.warning('No hay caja abierta. Abrí la caja/turno en Cierre de caja antes de comandar.'); return }
         turnoId = _t.id
@@ -754,9 +757,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       // 0. Requiere turno abierto (1 caja por sucursal). Fail-open ante error de consulta.
       let turnoId = null
       try {
-        const { data: _t, error: _te } = await db.from('pos_turnos').select('id')
+        let _q = db.from('pos_turnos').select('id')
           .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
-          .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+        _q = caja ? _q.eq('caja', caja) : _q.is('caja', null)
+        const { data: _t, error: _te } = await _q.order('abierto_at', { ascending: false }).limit(1).maybeSingle()
         if (!_te) {
           if (!_t) { toast.warning('No hay turno abierto. Abri el turno en Cierre de caja antes de cobrar.'); setSaving(false); return }
           turnoId = _t.id
