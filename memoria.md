@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-29 — Delivery Fase 2: ruteo de sucursal por ubicación (GPS)
+- **Backend:** RPC `sucursal_mas_cercana(lat,lng)` (SECURITY DEFINER, grant anon) — haversine sobre las 5 sucursales con `tiene_delivery`; devuelve `{sucursal_id, nombre, distancia_km, en_cobertura}` (cobertura = ≤20 km de la más cercana). Probado: Santa Tecla→Lourdes 2.66km, Usulután→S002 0km, Honduras→fuera, null→error controlado.
+- **`crear_pedido_delivery`** ahora auto-rutea: si el pedido llega con `cliente_lat/lng` y está en cobertura, setea `sucursal_id` a la más cercana (Karina puede overridear al confirmar pago). Probado: pedido con coords de Santa Tecla → S003 Lourdes auto-asignada.
+- **Frontend** (`MenuPublico.jsx` Checkout): botón "📍 Usar mi ubicación" (`navigator.geolocation`) → llama la RPC → muestra "Te atiende X · a Y km" o aviso de fuera de cobertura / permiso denegado. Manda `cliente_lat/lng` al crear el pedido. Estilos `.mp-geo-*`. Build OK.
+- **Pendiente Fase 2 (mejora):** pin arrastrable en un mapa (Leaflet+OSM) para precisión fina; hoy usa el GPS del navegador directo. Costo de envío por distancia sigue en $0 (lo define Karina).
+
 ## 2026-07-29 — Delivery: puente delivery→POS REDISEÑADO (gated por pago) + checkout cableado
 - **Qué:** rediseñé el puente para que **NO comande al INSERT** (como hacía `fn_delivery_to_pos` de Cesar) sino **al confirmar el pago Karina**. Migraciones `delivery_puente_gated_por_pago` + `delivery_puente_estados_validos`.
 - **Cómo quedó:**

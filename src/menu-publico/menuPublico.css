@@ -787,3 +787,38 @@ button { font-family: inherit; }
 }
 .mp-opcion-nombre { flex: 1; font-weight: 500; }
 .mp-opcion-extra { font-weight: 700; color: #E63946; font-size: 13px; }
+
+/* ── Ubicación / ruteo (Fase 2) ── */
+.mp-geo-btn {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px dashed #E63946;
+  border-radius: 12px;
+  background: #fff6f7;
+  color: #b52a37;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .12s;
+}
+.mp-geo-btn:hover:not(:disabled) { background: #fdecee; }
+.mp-geo-btn:disabled { opacity: .6; cursor: default; }
+.mp-geo-ok {
+  margin-top: 8px;
+  background: #eafaf0;
+  border: 1px solid #58c07f;
+  color: #1c6b3c;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.mp-geo-ok b { font-weight: 800; }
+.mp-geo-warn {
+  margin-top: 8px;
+  background: #fff8e6;
+  border: 1px solid #f4b942;
+  color: #7a5200;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 13px;
+}

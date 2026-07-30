@@ -580,6 +580,28 @@ function Checkout({ items, total, onClose, onEnviado }) {
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
+  // Ubicación / ruteo de sucursal (Fase 2)
+  const [geoEstado, setGeoEstado] = useState('idle') // idle|buscando|ok|denegado|error
+  const [ubic, setUbic] = useState(null)             // {lat,lng}
+  const [ruteo, setRuteo] = useState(null)           // resultado de sucursal_mas_cercana
+
+  const usarMiUbicacion = () => {
+    if (!navigator.geolocation) { setGeoEstado('error'); return }
+    setGeoEstado('buscando')
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude, lng = pos.coords.longitude
+        setUbic({ lat, lng })
+        try {
+          const { data } = await db.rpc('sucursal_mas_cercana', { p_lat: lat, p_lng: lng })
+          setRuteo(data || null)
+        } catch { setRuteo(null) }
+        setGeoEstado('ok')
+      },
+      () => setGeoEstado('denegado'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    )
+  }
 
   const cumpleMinimo = total >= NEGOCIO.consumoMinimo || tipo === 'pickup'
 
@@ -604,6 +626,8 @@ function Checkout({ items, total, onClose, onEnviado }) {
           tipo,
           cliente_direccion: tipo === 'delivery' ? `[${zona}] ${direccion.trim()}` : null,
           zona: tipo === 'delivery' ? zona : null,
+          cliente_lat: tipo === 'delivery' ? (ubic?.lat ?? null) : null,
+          cliente_lng: tipo === 'delivery' ? (ubic?.lng ?? null) : null,
           metodo_pago: metodoPago,
           notas_cliente: notas.trim() || null,
           items: items.map(i => ({
@@ -677,9 +701,31 @@ function Checkout({ items, total, onClose, onEnviado }) {
             />
           </div>
 
-          {/* SI DELIVERY: DIRECCIÓN + ZONA */}
+          {/* SI DELIVERY: UBICACIÓN + DIRECCIÓN + ZONA */}
           {tipo === 'delivery' && (
             <>
+              <div className="mp-field">
+                <label>Tu ubicación (para asignar la sucursal)</label>
+                <button type="button" className="mp-geo-btn" onClick={usarMiUbicacion} disabled={geoEstado === 'buscando'}>
+                  {geoEstado === 'buscando' ? '📍 Buscando…' : '📍 Usar mi ubicación'}
+                </button>
+                {geoEstado === 'ok' && ruteo?.en_cobertura && (
+                  <div className="mp-geo-ok">
+                    ✅ Te atiende <b>{ruteo.nombre}</b> · a {ruteo.distancia_km} km
+                  </div>
+                )}
+                {geoEstado === 'ok' && ruteo && !ruteo.en_cobertura && (
+                  <div className="mp-geo-warn">
+                    ⚠️ Estás fuera de nuestra cobertura de reparto. Podés seguir con el pedido y te confirmamos por WhatsApp.
+                  </div>
+                )}
+                {geoEstado === 'denegado' && (
+                  <div className="mp-geo-warn">No pudimos leer tu ubicación. Igual podés pedir; te ubicamos por la dirección.</div>
+                )}
+                {geoEstado === 'error' && (
+                  <div className="mp-geo-warn">Tu navegador no permite ubicación. Seguí con la dirección.</div>
+                )}
+              </div>
               <div className="mp-field">
                 <label>Zona *</label>
                 <select value={zona} onChange={e => setZona(e.target.value)}>
