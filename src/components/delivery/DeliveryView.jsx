@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { db } from '../../supabase';
 import { today, n } from '../../config';
+
+// Cobertura usa Leaflet (mapa): lazy para no cargarlo hasta abrir ese tab
+const TabCobertura = lazy(() => import('./TabCobertura'));
 
 // ── Paleta ──────────────────────────────────────────────────────────────────
 const c = {
@@ -63,7 +66,7 @@ export default function DeliveryView({ user, show = () => {} }) {
     <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh' }}>
       {/* TABS */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {[['despacho','📋 Despacho'],['viajes','🚗 Viajes'],['bonos','💰 Bonos']].map(([k, etq]) => (
+        {[['despacho','📋 Despacho'],['viajes','🚗 Viajes'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura']].map(([k, etq]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
@@ -73,9 +76,14 @@ export default function DeliveryView({ user, show = () => {} }) {
         ))}
       </div>
 
-      {tab === 'despacho' && <TabDespacho user={user} show={show} puedeAprobar={puedeAprobar} />}
-      {tab === 'viajes'   && <TabViajes   user={user} show={show} />}
-      {tab === 'bonos'    && <TabBonos    user={user} show={show} puedeAprobar={puedeAprobar} />}
+      {tab === 'despacho'  && <TabDespacho user={user} show={show} puedeAprobar={puedeAprobar} />}
+      {tab === 'viajes'    && <TabViajes   user={user} show={show} />}
+      {tab === 'bonos'     && <TabBonos    user={user} show={show} puedeAprobar={puedeAprobar} />}
+      {tab === 'cobertura' && (
+        <Suspense fallback={<div style={{ color: c.dim, padding: 20 }}>Cargando mapa…</div>}>
+          <TabCobertura show={show} />
+        </Suspense>
+      )}
     </div>
   );
 }

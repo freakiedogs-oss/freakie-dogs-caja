@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-29 — Delivery: torre → tab Cobertura (polígonos editables por sucursal)
+- **Pedido de Jose:** en la torre, ver y editar la zona de cobertura de cada sucursal en un mapa, con **polígonos** (no círculos) editables moviendo las puntas.
+- **Backend** (migración `delivery_cobertura_poligonos`): columna `sucursales.cobertura_geojson jsonb` (GeoJSON Polygon; NULL = fallback por radio). `_punto_en_poligono(lat,lng,geo)` (ray casting, inmutable). `sucursal_mas_cercana` reescrita: elige la sucursal cuyo **polígono** contiene el punto; sin polígono usa radio ≤20 km; entre las que cubren, la más cercana (devuelve `por_poligono`). RPC `guardar_cobertura_sucursal(sucursal_id, geojson)` (SECURITY DEFINER, valida Polygon ≥4 pts, grant anon+auth). Probado: punto dentro→M001 por polígono, Soyapango→S001 por radio; limpiado.
+- **Frontend:** `src/components/delivery/TabCobertura.jsx` — **Leaflet + OpenStreetMap (sin API key) + leaflet-geoman** para dibujar/editar polígonos. Selector de sucursal, botones Dibujar/Guardar/Quitar, marcadores de las 5 sucursales. Integrado como 4º tab **🗺️ Cobertura** en `DeliveryView` vía `lazy`+`Suspense` (Leaflet queda en chunk propio de 432 KB, NO carga hasta abrir el tab). Deps nuevas: `leaflet`, `@geoman-io/leaflet-geoman-free`. Build OK.
+- **Ojo:** las otras tabs de `DeliveryView` (despacho/viajes/bonos) siguen con el drift de estados de Cesar (usan `pendiente/asignado` que violan el CHECK) — no las toqué; se arreglan en la reconstrucción de la torre (Fase 3 / 0-B).
+
 ## 2026-07-29 — Delivery Fase 2: ruteo de sucursal por ubicación (GPS)
 - **Backend:** RPC `sucursal_mas_cercana(lat,lng)` (SECURITY DEFINER, grant anon) — haversine sobre las 5 sucursales con `tiene_delivery`; devuelve `{sucursal_id, nombre, distancia_km, en_cobertura}` (cobertura = ≤20 km de la más cercana). Probado: Santa Tecla→Lourdes 2.66km, Usulután→S002 0km, Honduras→fuera, null→error controlado.
 - **`crear_pedido_delivery`** ahora auto-rutea: si el pedido llega con `cliente_lat/lng` y está en cobertura, setea `sucursal_id` a la más cercana (Karina puede overridear al confirmar pago). Probado: pedido con coords de Santa Tecla → S003 Lourdes auto-asignada.
