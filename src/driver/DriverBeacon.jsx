@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { db } from '../supabase'
 
 const KEY = 'freakie_driver_v1'
-const ENVIO_MS = 8000
+const HEARTBEAT_MS = 15000  // reenvío en reposo (quieto). Al moverse manda antes (throttle 4s)
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const fmtMes = (m) => { if (!m) return ''; const [y, mo] = m.split('-'); return `${MESES[+mo - 1]} ${y}` }
@@ -122,7 +122,7 @@ function Compartir({ yo }) {
     )
     // Heartbeat: reenvía la última posición cada 10s aunque el driver esté quieto
     // (watchPosition solo dispara al moverse → sin esto se pone "stale").
-    hbRef.current = setInterval(enviar, ENVIO_MS)
+    hbRef.current = setInterval(enviar, HEARTBEAT_MS)
   }
   const detener = () => {
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
