@@ -192,6 +192,8 @@ function Mi({ label, value, onChange, readOnly, hint, star }) {
 export default function CierreTurno({ user, onBack }) {
   const toast = useToast()
   const storeCode = user.store_code || 'S001'
+  const caja = user.caja || null   // multi-caja (Lourdes): null = 1 sola caja por sucursal
+  const cajaF = (q) => (caja ? q.eq('caja', caja) : q.is('caja', null))
   const storeName = STORES[storeCode] || storeCode
 
   const [turno, setTurno]       = useState(null)
@@ -218,8 +220,8 @@ export default function CierreTurno({ user, onBack }) {
   // ── Turno abierto de ESTA caja (guardrail: 1 caja abierta por sucursal) ──
   const loadTurno = useCallback(async () => {
     setLoading(true)
-    const { data } = await db.from('pos_turnos').select('*')
-      .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
+    const { data } = await cajaF(db.from('pos_turnos').select('*')
+      .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto'))
       .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
     setTurno(data || null)
     // Sin caja abierta: precargar el fondo con el efectivo contado del último CAMBIO DE
@@ -228,9 +230,9 @@ export default function CierreTurno({ user, onBack }) {
       // conteo_efectivo guarda el efectivo de VENTAS del turno (para la columna generada
       // diferencia_efectivo = conteo − sistema_efectivo). La gaveta completa que arrastra =
       // conteo_efectivo + fondo_apertura de ese turno.
-      const { data: ult } = await db.from('pos_turnos').select('conteo_efectivo,fondo_apertura')
+      const { data: ult } = await cajaF(db.from('pos_turnos').select('conteo_efectivo,fondo_apertura')
         .eq('store_code', storeCode).eq('fecha', todayISO()).eq('tipo_cierre', 'X')
-        .not('conteo_efectivo', 'is', null)
+        .not('conteo_efectivo', 'is', null))
         .order('cerrado_at', { ascending: false }).limit(1).maybeSingle()
       if (ult && ult.conteo_efectivo != null) setFondoInput(String(_n(ult.conteo_efectivo) + _n(ult.fondo_apertura)))
     }
@@ -250,7 +252,7 @@ export default function CierreTurno({ user, onBack }) {
   // ── Corte del TURNO actual (para X) ──
   const loadCorte = useCallback(async () => {
     if (!turno) return
-    const { data, error } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: turno.abierto_at, p_hasta: new Date().toISOString(), p_turno_id: turno.id })
+    const { data, error } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: turno.abierto_at, p_hasta: new Date().toISOString(), p_turno_id: turno.id, p_caja: caja })
     if (!error) setCorte(data)
   }, [turno, storeCode])
   useEffect(() => { loadCorte() }, [loadCorte])
@@ -259,11 +261,11 @@ export default function CierreTurno({ user, onBack }) {
   const loadDia = useCallback(async () => {
     if (!turno) return
     const desde = `${todayISO()}T00:00:00-06:00`
-    const { data: cd } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: desde, p_hasta: new Date().toISOString(), p_turno_id: null })
+    const { data: cd } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: desde, p_hasta: new Date().toISOString(), p_turno_id: null, p_caja: caja })
     setCorteDia(cd || null)
-    const { data: turnos } = await db.from('pos_turnos')
+    const { data: turnos } = await cajaF(db.from('pos_turnos')
       .select('id,fondo_apertura,egresos,ingresos_extra,tipo_cierre,abierto_at')
-      .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero')
+      .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero'))
       .order('abierto_at', { ascending: true })
     const arr = turnos || []
     const sumJson = (rows, key) => rows.reduce((s, t) => s + (Array.isArray(t[key]) ? t[key].reduce((a, e) => a + _n(e.monto), 0) : 0), 0)
@@ -283,14 +285,14 @@ export default function CierreTurno({ user, onBack }) {
     setSaving(true)
     try {
       // Guardrail 1: no abrir si la caja ya tiene un turno abierto (1 caja por sucursal).
-      const { data: yaAbierto } = await db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto').limit(1).maybeSingle()
+      const { data: yaAbierto } = await cajaF(db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')).limit(1).maybeSingle()
       if (yaAbierto) { toast.error('Esta caja ya tiene un turno ABIERTO. Ciérralo (X o Z) antes de abrir otro.'); setSaving(false); return }
       // Guardrail 2: no abrir si el día ya se cerró con Z.
-      const { data: yaZ } = await db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('fecha', todayISO()).eq('tipo_cierre', 'Z').limit(1).maybeSingle()
+      const { data: yaZ } = await cajaF(db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('fecha', todayISO()).eq('tipo_cierre', 'Z')).limit(1).maybeSingle()
       if (yaZ) { toast.error('El día ya fue cerrado con corte Z. No se pueden abrir más turnos hoy.'); setSaving(false); return }
-      const { count } = await db.from('pos_turnos').select('*', { count: 'exact', head: true }).eq('store_code', storeCode).eq('fecha', todayISO())
+      const { count } = await cajaF(db.from('pos_turnos').select('*', { count: 'exact', head: true }).eq('store_code', storeCode).eq('fecha', todayISO()))
       const { data, error } = await db.from('pos_turnos').insert({
-        store_code: storeCode, cajero_id: user.id, nivel: 'cajero', fecha: todayISO(),
+        store_code: storeCode, caja, cajero_id: user.id, nivel: 'cajero', fecha: todayISO(),
         numero_turno: (count || 0) + 1, fondo_apertura: n(fondoInput), abierto_at: new Date().toISOString(), estado: 'abierto',
       }).select().single()
       if (error) throw error

@@ -39,22 +39,22 @@ function qrSvg(text, cell = 4) {
   catch (e) { return ''; }
 }
 
-// Cache de impresoras por store_code (evita query en cada impresión)
+// Cache de impresoras por (store_code, caja) — evita query en cada impresión.
 const _cache = new Map();
+const _ckey = (storeCode, caja) => `${storeCode}|${caja || ''}`;
 
-/** Lee (y cachea) la impresora activa de una sucursal. */
-export async function getImpresora(storeCode, { force = false } = {}) {
-  if (!force && _cache.has(storeCode)) return _cache.get(storeCode);
-  const { data, error } = await db
-    .from('pos_impresoras')
-    .select('*')
+/** Lee (y cachea) la impresora activa de una sucursal/caja.
+ *  `caja` NULL = sucursal de 1 sola caja (comportamiento actual). */
+export async function getImpresora(storeCode, caja = null, { force = false } = {}) {
+  const key = _ckey(storeCode, caja);
+  if (!force && _cache.has(key)) return _cache.get(key);
+  let q = db.from('pos_impresoras').select('*')
     .eq('store_code', storeCode)
-    .eq('activa', true)
-    .order('rol', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .eq('activa', true);
+  if (caja) q = q.eq('caja', caja);
+  const { data, error } = await q.order('rol', { ascending: true }).limit(1).maybeSingle();
   if (error) { console.error('[print] getImpresora', error); return null; }
-  _cache.set(storeCode, data);
+  _cache.set(key, data);
   return data;
 }
 
@@ -421,9 +421,11 @@ export async function imprimir(tipo, cuenta, opts = {}) {
   // Preferir la impresora YA cacheada (lectura sincrona). Un await de red aqui
   // descarta la user-activation en Android y Chrome bloquea el deep-link rawbt:
   // en silencio (sintoma: el boton "no hace nada"). Solo se consulta si no esta precargada.
+  const caja = opts.caja ?? cuenta.caja ?? null;
   let imp = opts.impresora || null;
   if (!imp && storeCode) {
-    imp = _cache.has(storeCode) ? _cache.get(storeCode) : await getImpresora(storeCode);
+    const _k = _ckey(storeCode, caja);
+    imp = _cache.has(_k) ? _cache.get(_k) : await getImpresora(storeCode, caja);
   }
   const cols = imp?.ancho_cols || 48;
   const modo = opts.modo || imp?.modo || 'rawbt';

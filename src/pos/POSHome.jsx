@@ -250,6 +250,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         ) : (
           <span className="pos-header-store">{storeName}</span>
         )}
+        {user.caja && (
+          <span className="pos-header-store" style={{ background: '#1e1e26', border: '1px solid #E62329', borderRadius: 6, padding: '2px 8px', color: '#f0a01e', fontWeight: 700, fontSize: 12 }}>
+            {user.caja === 'drive' ? '🚗 Drive Thru' : user.caja === 'general' ? '🧾 General' : `🗄️ ${user.caja}`}
+          </span>
+        )}
         <span className="pos-header-sep" />
         <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
