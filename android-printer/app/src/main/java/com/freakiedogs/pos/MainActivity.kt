@@ -29,10 +29,15 @@ class MainActivity : Activity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
+            // Siempre revalidar contra el servidor: el POS es web viva y se actualiza seguido.
+            cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
         web.webViewClient = WebViewClient()
         web.webChromeClient = WebChromeClient()
         web.addJavascriptInterface(Bridge(), "AndroidPrinter")
+        // Borra la caché HTTP del WebView en cada arranque para que SIEMPRE cargue la
+        // versión más nueva del POS (evita quedarse pegado en un bundle viejo).
+        web.clearCache(true)
         // Deploy real del POS. Si algun dia se registra pos.freakiedogs.com
         // (aspiracional en el MAESTRO), se cambia aca y se recompila.
         web.loadUrl("https://freakie-dogs-caja.vercel.app/pos")
