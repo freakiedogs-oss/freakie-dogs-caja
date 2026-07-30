@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-30 — Delivery Fase 8 MERGEADA a main + limpieza de tabs viejas
+- **Merge:** PR #38 (14 commits) → **main** (`a3f80c9`). Sale a producción: `/menu` público (menú vivo del POS), `/driver` (beacon motorista), torre con 📥 Pedidos + 🗺️ Cobertura. Las migraciones ya estaban aplicadas en prod, así que el merge **reconcilia el frontend con la DB** (el menú viejo de main ni guardaba: su estado `'pendiente'` violaba el CHECK).
+- **Usuarios de prueba borrados** (los 5 `TEST` con PIN 4701xx–4705xx) — no quedan logins de prueba en prod.
+- **Tabs viejas eliminadas** (pedido de Jose): `TabDespacho` + `PedidoCard` + `TabViajes` (~346 líneas). Estaban **rotas de raíz**: Despacho usaba columnas inexistentes (`empleado_id`, `direccion`, `zona`), estados que violan el CHECK (`pendiente/asignado`) y ya no podía leer `delivery_clientes` (cerramos SELECT anon); Viajes leía `empleados.nombre` (es `nombre_completo`) → lista vacía. **0 filas** en `viajes_delivery`/`bonos_delivery_mensual` ⇒ nadie las usaba, borrado sin pérdida. Torre queda: **📥 Pedidos · 💰 Bonos · 🗺️ Cobertura**.
+- **Arreglado de paso:** `TabBonos` tenía el mismo drift (`select id,nombre,cargo`) → ahora `nombre:nombre_completo` (alias), así los bonos sí listan motoristas.
+- **Hueco abierto:** ya no hay UI para registrar viajes de **entrega** a mano (los mandados sí, desde 📦 Mandado en Pedidos). Se cubre en **Fase 5**: cuando el driver marque "entregado" el viaje se registra solo y alimenta el bono.
+
 ## 2026-07-29 — Driver PWA: historial + métricas + mandados (falta el disparo por Telegram)
 - **Pedido de Jose:** en la PWA del driver, historial de viajes + métricas (viajes/km/$bono); y poder asignar **mandados** (cuentan como viaje para el bono), idealmente por mensaje de Telegram en un grupo de drivers.
 - **Backend** (migración `driver_historial_metricas_mandados` + `torre_asignar_mandado_sucursal`): `_tarifa_viaje(tipo,dist,fuera)` (misma lógica que DeliveryView.calcTarifa, desde `config_delivery`: mandado/normal $0.50, ≥17km $1.00, fuera horario $3.00). `mis_viajes_driver(empleado_id,mes?)`, `mis_metricas_driver(...)` (viajes/km/bono/desglose) — grant anon (el driver se identifica por empleado_id; baja sensibilidad, gate por PIN en Fase 5). `torre_asignar_mandado(token, empleado_id, sucursal_id, desc, dist?, fuera?)` inserta `viajes_delivery` tipo='mandado' (⚠️ `viajes_delivery.sucursal_id` es NOT NULL → sucursal obligatoria; `pos_cuentas.delivery_motorista_id`→usuarios_erp ya mapeado en Fase 4). Probado: 2 mandados → bono $3.50.
