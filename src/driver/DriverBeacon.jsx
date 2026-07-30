@@ -70,8 +70,26 @@ function Compartir({ yo }) {
   const [ultima, setUltima] = useState(null)
   const [error, setError] = useState('')
   const watchRef = useRef(null)
+  const posRef = useRef(null)     // última posición conocida {lat,lng,heading,accuracy}
+  const hbRef = useRef(null)      // heartbeat interval
   const lastSentRef = useRef(0)
   const wakeRef = useRef(null)
+
+  // Enviar la última posición conocida (reusado por watch + heartbeat)
+  const enviar = async () => {
+    const p = posRef.current
+    if (!p) return
+    const ahora = Date.now()
+    if (ahora - lastSentRef.current < 4000) return // throttle anti-spam
+    lastSentRef.current = ahora
+    try {
+      await db.rpc('actualizar_ubicacion_driver', {
+        p_empleado_id: yo.id, p_nombre: yo.nombre, p_lat: p.lat, p_lng: p.lng,
+        p_rumbo: p.heading, p_exactitud: p.accuracy,
+      })
+      setEstado('📡 Compartiendo tu ubicación con la central')
+    } catch { setEstado('⚠️ Sin conexión — reintentando…') }
+  }
 
   // Mantener la pantalla despierta (si no, el GPS se corta al bloquear)
   const pedirWakeLock = async () => {
@@ -89,32 +107,33 @@ function Compartir({ yo }) {
     setActivo(true); setEstado('Buscando señal GPS…')
     pedirWakeLock()
     watchRef.current = navigator.geolocation.watchPosition(
-      async (pos) => {
+      (pos) => {
         const { latitude: lat, longitude: lng, heading, accuracy } = pos.coords
+        posRef.current = {
+          lat, lng,
+          heading: (heading != null && !Number.isNaN(heading)) ? heading : null,
+          accuracy: accuracy ?? null,
+        }
         setUltima({ lat, lng, at: new Date() })
-        const ahora = Date.now()
-        if (ahora - lastSentRef.current < ENVIO_MS) return
-        lastSentRef.current = ahora
-        try {
-          await db.rpc('actualizar_ubicacion_driver', {
-            p_empleado_id: yo.id, p_nombre: yo.nombre, p_lat: lat, p_lng: lng,
-            p_rumbo: (heading != null && !Number.isNaN(heading)) ? heading : null, p_exactitud: accuracy ?? null,
-          })
-          setEstado('📡 Compartiendo tu ubicación con la central')
-        } catch { setEstado('⚠️ Sin conexión — reintentando…') }
+        enviar() // enviar apenas hay señal
       },
-      (err) => { setActivo(false); setError(err.code === 1 ? 'Permiso de ubicación denegado.' : 'No se pudo leer el GPS.') },
+      (err) => { setError(err.code === 1 ? 'Permiso de ubicación denegado.' : 'No se pudo leer el GPS.') },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     )
+    // Heartbeat: reenvía la última posición cada 10s aunque el driver esté quieto
+    // (watchPosition solo dispara al moverse → sin esto se pone "stale").
+    hbRef.current = setInterval(enviar, ENVIO_MS)
   }
   const detener = () => {
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
+    if (hbRef.current != null) { clearInterval(hbRef.current); hbRef.current = null }
     if (wakeRef.current) { wakeRef.current.release().catch(() => {}); wakeRef.current = null }
     setActivo(false); setEstado('')
     db.rpc('desconectar_driver', { p_empleado_id: yo.id }).catch(() => {})
   }
   useEffect(() => () => {
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
+    if (hbRef.current != null) clearInterval(hbRef.current)
     if (wakeRef.current) wakeRef.current.release().catch(() => {})
   }, [])
 
