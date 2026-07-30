@@ -71,3 +71,57 @@ body { background: #f0efec; color: #1a1416; }
 @media (prefers-reduced-motion: reduce) { .tk-spin { animation-duration: 2.4s } .tk-hero-ic { animation: none } }
 
 .tk-foot { text-align: center; font-size: 11.5px; color: #b0a8ae; padding: 16px; }
+
+/* ── Zona de juego (Fase 7) ── */
+.jg { margin: 16px 18px 6px; border: 1px solid #eee; border-radius: 16px; overflow: hidden; }
+.jg-head { padding: 14px 15px 10px; background: linear-gradient(135deg,#2b1055,#7b2d8e); color: #fff; }
+.jg-t { font-size: 16px; font-weight: 850; }
+.jg-s { font-size: 12px; opacity: .85; margin-top: 3px; line-height: 1.45; }
+.jg-s b { color: #ffd54a; }
+
+.jg-play {
+  display: block; width: calc(100% - 24px); margin: 12px; padding: 14px;
+  border: none; border-radius: 12px; background: #E63946; color: #fff;
+  font-size: 15px; font-weight: 800; cursor: pointer;
+}
+.jg-box { position: relative; }
+.jg-canvas { display: block; width: 100%; height: 240px; touch-action: none; background: #2b1055; }
+.jg-load { height: 240px; display: grid; place-items: center; color: #999; font-size: 13px; }
+.jg-hint {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  font-size: 11.5px; color: rgba(255,255,255,.85); background: rgba(0,0,0,.35);
+  padding: 4px 10px; border-radius: 999px; pointer-events: none;
+}
+.jg-fin { padding: 12px; background: #faf8f6; display: flex; flex-direction: column; gap: 9px; }
+.jg-fin-t { font-size: 14px; text-align: center; }
+.jg-fin-t b { color: #E63946; font-size: 18px; }
+.jg-fin-row { display: flex; gap: 8px; }
+.jg-input {
+  flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; font-size: 14px;
+}
+.jg-btn {
+  padding: 10px 14px; border: none; border-radius: 10px; background: #E63946; color: #fff;
+  font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.jg-btn:disabled { background: #ccc; }
+.jg-btn.ghost { background: #eee; color: #444; flex: 1; }
+.jg-btn.share { background: #1a1416; flex: 1.4; }
+.jg-ok { text-align: center; font-size: 14px; color: #2f9e57; font-weight: 700; }
+.jg-err { text-align: center; font-size: 13px; color: #E63946; }
+
+.jg-lb { padding: 12px 14px 14px; }
+.jg-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.jg-tabs button {
+  flex: 1; padding: 7px; border: none; border-radius: 8px; background: #f0ecea;
+  color: #8a8288; font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.jg-tabs button.on { background: #1a1416; color: #fff; }
+.jg-rank { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.jg-rank li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; font-size: 13.5px; }
+.jg-rank li.top { background: #fff8e6; }
+.jg-pos { width: 22px; text-align: center; font-weight: 800; color: #b0a8ae; }
+.jg-rank li.top .jg-pos { color: inherit; }
+.jg-alias { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jg-score { font-weight: 800; color: #E63946; font-variant-numeric: tabular-nums; }
+.jg-vacio { font-size: 12.5px; color: #8a8288; text-align: center; padding: 14px 4px; }
+.jg-premio { font-size: 11.5px; color: #8a8288; text-align: center; margin-top: 10px; line-height: 1.5; }
