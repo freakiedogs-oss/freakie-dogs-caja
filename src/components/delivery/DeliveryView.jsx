@@ -3,6 +3,7 @@ import { db } from '../../supabase';
 import { today, n } from '../../config';
 
 import TabPedidos from './TabPedidos';
+import TabParametros from './TabParametros';
 // Cobertura usa Leaflet (mapa): lazy para no cargarlo hasta abrir ese tab
 const TabCobertura = lazy(() => import('./TabCobertura'));
 
@@ -67,7 +68,7 @@ export default function DeliveryView({ user, show = () => {} }) {
     <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh' }}>
       {/* TABS */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {[['pedidos','📥 Pedidos'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura']].map(([k, etq]) => (
+        {[['pedidos','📥 Pedidos'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura'],['parametros','⚙️ Parámetros']].map(([k, etq]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
@@ -78,6 +79,7 @@ export default function DeliveryView({ user, show = () => {} }) {
       </div>
 
       {tab === 'pedidos'   && <TabPedidos  show={show} />}
+      {tab === 'parametros' && <TabParametros show={show} />}
       {tab === 'bonos'     && <TabBonos    user={user} show={show} puedeAprobar={puedeAprobar} />}
       {tab === 'cobertura' && (
         <Suspense fallback={<div style={{ color: c.dim, padding: 20 }}>Cargando mapa…</div>}>
@@ -106,7 +108,7 @@ function TabBonos({ user, show, puedeAprobar }) {
       db.from('empleados').select('id,nombre:nombre_completo,cargo').in('cargo', CARGOS_DRIVER).eq('activo', true),
       db.from('viajes_delivery').select('*').like('fecha', mes + '%'),
       db.from('config_delivery').select('parametro,valor'),
-      db.from('bonos_delivery_mensual').select('*, empleados(nombre,cargo)').eq('mes', mes),
+      db.from('bonos_delivery_mensual').select('*, empleados(nombre_completo,cargo)').eq('mes', mes),
     ]);
     setDrivers(emp.data || []);
     setViajes(vjs.data || []);
