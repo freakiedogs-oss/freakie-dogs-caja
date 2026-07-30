@@ -75,7 +75,7 @@ export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) 
       email: form.email || null,
       telefono: form.telefono || null,
       tipo_persona: persona === 'natural' ? 'natural' : 'juridica',
-      tipo_cliente: tipoDte,
+      tipo_cliente: 'regular',   // clasificación CRM; NO el tipo de DTE (tipoDte)
     }
 
     if (esCCF) {
