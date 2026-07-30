@@ -30,7 +30,7 @@ export const STORES_SIN_PROPINA = ['S006', 'S002']
 export const STORES_FOOD_COURT = ['S006', 'S002', 'S001']
 
 // Sucursales que NO imprimen comanda de cocina al comandar (la orden igual entra al KDS)
-export const STORES_SIN_COMANDA = ['S004']
+export const STORES_SIN_COMANDA = ['S004', 'S003']
 
 // Codigos MH por sucursal (Hacienda). codEstable = store_code, punto de venta P001.
 export const STORE_ESTABLECIMIENTO = {
