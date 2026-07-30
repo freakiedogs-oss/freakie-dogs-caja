@@ -16,9 +16,10 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
-        pos:  resolve(__dirname, 'pos.html'),
-        menu: resolve(__dirname, 'menu.html'),
+        main:   resolve(__dirname, 'index.html'),
+        pos:    resolve(__dirname, 'pos.html'),
+        menu:   resolve(__dirname, 'menu.html'),
+        driver: resolve(__dirname, 'driver.html'),
       },
       output: {
         manualChunks(id) {
