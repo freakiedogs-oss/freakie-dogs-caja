@@ -640,7 +640,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
       let _q = db.from('pos_turnos').select('id')
         .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
       _q = caja ? _q.eq('caja', caja) : _q.is('caja', null)
-      const { data: _t, error: _te } = await _q.order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+      let { data: _t, error: _te } = await _q.order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+      // Auto-heal (transición multi-caja): si tengo caja pero no hay turno de esa caja,
+      // adoptá MI propio turno huérfano abierto sin caja (lo abrí antes de tener caja asignada).
+      if (!_te && !_t && caja) {
+        const { data: _orf } = await db.from('pos_turnos').select('id')
+          .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
+          .eq('cajero_id', user.id).is('caja', null)
+          .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+        if (_orf) { await db.from('pos_turnos').update({ caja }).eq('id', _orf.id); _t = _orf }
+      }
       if (!_te) {
         if (!_t) { commandingRef.current = false; toast.warning('No hay caja abierta. Abrí la caja/turno en Cierre de caja antes de comandar.'); return }
         turnoId = _t.id
@@ -760,7 +769,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         let _q = db.from('pos_turnos').select('id')
           .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
         _q = caja ? _q.eq('caja', caja) : _q.is('caja', null)
-        const { data: _t, error: _te } = await _q.order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+        let { data: _t, error: _te } = await _q.order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+        // Auto-heal (transición multi-caja): adoptá MI turno huérfano abierto sin caja.
+        if (!_te && !_t && caja) {
+          const { data: _orf } = await db.from('pos_turnos').select('id')
+            .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')
+            .eq('cajero_id', user.id).is('caja', null)
+            .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+          if (_orf) { await db.from('pos_turnos').update({ caja }).eq('id', _orf.id); _t = _orf }
+        }
         if (!_te) {
           if (!_t) { toast.warning('No hay turno abierto. Abri el turno en Cierre de caja antes de cobrar.'); setSaving(false); return }
           turnoId = _t.id
