@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react
 import { db } from '../../supabase';
 import { today, n } from '../../config';
 
+import TabPedidos from './TabPedidos';
 // Cobertura usa Leaflet (mapa): lazy para no cargarlo hasta abrir ese tab
 const TabCobertura = lazy(() => import('./TabCobertura'));
 
@@ -58,7 +59,7 @@ const fmtMes = m => { if (!m) return ''; const [y, mo] = m.split('-'); return `$
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function DeliveryView({ user, show = () => {} }) {
-  const [tab, setTab] = useState('viajes');
+  const [tab, setTab] = useState('pedidos');
   const rol = user?.rol || '';
   const puedeAprobar = ['ejecutivo', 'superadmin', 'admin'].includes(rol);
 
@@ -66,7 +67,7 @@ export default function DeliveryView({ user, show = () => {} }) {
     <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh' }}>
       {/* TABS */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {[['despacho','📋 Despacho'],['viajes','🚗 Viajes'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura']].map(([k, etq]) => (
+        {[['pedidos','📥 Pedidos'],['despacho','📋 Despacho'],['viajes','🚗 Viajes'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura']].map(([k, etq]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
@@ -76,6 +77,7 @@ export default function DeliveryView({ user, show = () => {} }) {
         ))}
       </div>
 
+      {tab === 'pedidos'   && <TabPedidos  show={show} />}
       {tab === 'despacho'  && <TabDespacho user={user} show={show} puedeAprobar={puedeAprobar} />}
       {tab === 'viajes'    && <TabViajes   user={user} show={show} />}
       {tab === 'bonos'     && <TabBonos    user={user} show={show} puedeAprobar={puedeAprobar} />}
