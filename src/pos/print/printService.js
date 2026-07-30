@@ -39,23 +39,42 @@ function qrSvg(text, cell = 4) {
   catch (e) { return ''; }
 }
 
-// Cache de impresoras por (store_code, caja) — evita query en cada impresión.
+// Cache por (store_code, caja) — guarda el ARRAY de impresoras activas de esa caja.
 const _cache = new Map();
 const _ckey = (storeCode, caja) => `${storeCode}|${caja || ''}`;
 
-/** Lee (y cachea) la impresora activa de una sucursal/caja.
- *  `caja` NULL = sucursal de 1 sola caja (comportamiento actual). */
-export async function getImpresora(storeCode, caja = null, { force = false } = {}) {
+// Elige la impresora según el TIPO de documento dentro de una caja:
+//  - 'precuenta' → la de meseros (rol='precuenta') si existe;
+//  - resto (comanda/factura/corte) → la principal (rol != 'precuenta').
+// Una caja con 1 sola impresora siempre la devuelve (comportamiento normal).
+function pickImpresora(rows, tipo) {
+  const list = rows || [];
+  if (tipo === 'precuenta') {
+    const pre = list.find(r => r && r.rol === 'precuenta');
+    if (pre) return pre;
+  }
+  return list.find(r => r && r.rol !== 'precuenta') || list[0] || null;
+}
+
+/** Lee (y cachea) TODAS las impresoras activas de una sucursal/caja. */
+export async function getImpresoras(storeCode, caja = null, { force = false } = {}) {
   const key = _ckey(storeCode, caja);
   if (!force && _cache.has(key)) return _cache.get(key);
   let q = db.from('pos_impresoras').select('*')
     .eq('store_code', storeCode)
     .eq('activa', true);
   if (caja) q = q.eq('caja', caja);
-  const { data, error } = await q.order('rol', { ascending: true }).limit(1).maybeSingle();
-  if (error) { console.error('[print] getImpresora', error); return null; }
-  _cache.set(key, data);
-  return data;
+  const { data, error } = await q.order('rol', { ascending: true });
+  if (error) { console.error('[print] getImpresoras', error); return []; }
+  const rows = data || [];
+  _cache.set(key, rows);
+  return rows;
+}
+
+/** Impresora concreta para un documento. `tipo` null = la principal de la caja. */
+export async function getImpresora(storeCode, caja = null, tipo = null, opts = {}) {
+  const rows = await getImpresoras(storeCode, caja, opts);
+  return pickImpresora(rows, tipo);
 }
 
 export function clearImpresoraCache() { _cache.clear(); }
@@ -425,7 +444,8 @@ export async function imprimir(tipo, cuenta, opts = {}) {
   let imp = opts.impresora || null;
   if (!imp && storeCode) {
     const _k = _ckey(storeCode, caja);
-    imp = _cache.has(_k) ? _cache.get(_k) : await getImpresora(storeCode, caja);
+    const rows = _cache.has(_k) ? _cache.get(_k) : await getImpresoras(storeCode, caja);
+    imp = pickImpresora(rows, tipo);
   }
   const cols = imp?.ancho_cols || 48;
   const modo = opts.modo || imp?.modo || 'rawbt';
