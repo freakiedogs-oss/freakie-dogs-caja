@@ -3,6 +3,8 @@ import Sidebar from './components/layout/Sidebar'
 import LoginScreen from './components/layout/LoginScreen'
 import AsistenteFlotante from './components/dashboard/AsistenteFlotante'
 import InboxFlotante from './components/dashboard/InboxFlotante'
+import ReportarProblema from './components/soporte/ReportarProblema'
+import { db } from './supabase'
 import LoadingScreen from './components/layout/LoadingScreen'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
@@ -364,6 +366,8 @@ export default function App() {
       <Toast />
       <AsistenteFlotante user={user} />
       <InboxFlotante user={user} />
+      <ReportarProblema db={db} tenant="freakie" storeCode={user.store_code}
+        reporterName={[user.nombre, user.apellido].filter(Boolean).join(' ')} />
     </div>
   )
 }
