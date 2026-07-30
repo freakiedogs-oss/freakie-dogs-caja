@@ -5,6 +5,14 @@
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef } from 'react'
 
+// Coleccionables con fotos reales del menú (sprites de ~4 KB c/u)
+const SPRITES = [
+  'https://btboxlwfqcbrdfrlnwln.supabase.co/storage/v1/object/public/menu/sprites/freakie-fries.jpg',
+  'https://btboxlwfqcbrdfrlnwln.supabase.co/storage/v1/object/public/menu/sprites/aros-de-cebolla.jpg',
+  'https://btboxlwfqcbrdfrlnwln.supabase.co/storage/v1/object/public/menu/sprites/queso-frito.jpg',
+]
+const PUNTOS_COMBO = 25
+
 const SUELO = 0.78          // altura del piso (proporción del alto)
 const GRAV = 0.65
 const SALTO = -11.6
@@ -31,11 +39,16 @@ export default function HotDogDash({ onGameOver, onScore }) {
     resize()
     window.addEventListener('resize', resize)
 
+    // Precarga de sprites (si falla la red, el juego sigue sin coleccionables)
+    const imgs = SPRITES.map(src => { const i = new Image(); i.crossOrigin = 'anonymous'; i.src = src; return i })
+    const listo = (i) => i.complete && i.naturalWidth > 0
+
     // Estado
-    let dog, obs, score, vel, t, corriendo, fin, chispas
+    let dog, obs, score, vel, t, corriendo, fin, chispas, premios, flotantes
     const reset = () => {
       dog = { x: W * 0.16, y: piso, vy: 0, w: 46, h: 26, enSuelo: true }
       obs = []; score = 0; vel = V0; t = 0; corriendo = true; fin = false; chispas = []
+      premios = []; flotantes = []
       onScore?.(0)
     }
     reset()
@@ -52,6 +65,11 @@ export default function HotDogDash({ onGameOver, onScore }) {
       obs.push({ x: W + 20, w: tipo === 'cono' ? 24 : 20, h, tipo })
     }
     let prox = 60
+    let proxPremio = 150
+    const nuevoPremio = () => {
+      const alto = piso - (34 + Math.random() * 58)   // a veces obliga a saltar
+      premios.push({ x: W + 24, y: alto, r: 15, img: Math.floor(Math.random() * imgs.length), tomado: false })
+    }
 
     // ── Dibujo ───────────────────────────────────────────────────
     const fondo = () => {
@@ -147,6 +165,18 @@ export default function HotDogDash({ onGameOver, onScore }) {
       }
     }
 
+    const dibujarPremio = (p) => {
+      const im = imgs[p.img]
+      ctx.save()
+      // aro brillante
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 3, 0, 7)
+      ctx.fillStyle = 'rgba(255,213,74,' + (0.55 + 0.35 * Math.sin(t * 0.15)) + ')'; ctx.fill()
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.closePath(); ctx.clip()
+      if (listo(im)) ctx.drawImage(im, p.x - p.r, p.y - p.r, p.r * 2, p.r * 2)
+      else { ctx.fillStyle = '#ffd54a'; ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2) }
+      ctx.restore()
+    }
+
     // ── Loop ─────────────────────────────────────────────────────
     const loop = () => {
       t++
@@ -172,13 +202,35 @@ export default function HotDogDash({ onGameOver, onScore }) {
             break
           }
         }
+        // coleccionables del menú: +25 pts
+        if (--proxPremio <= 0) { nuevoPremio(); proxPremio = 190 + Math.random() * 170 }
+        premios.forEach(p => { p.x -= vel })
+        premios = premios.filter(p => p.x > -30 && !p.tomado)
+        const cx = dog.x + dog.w / 2, cy = dog.y - dog.h / 2
+        for (const p of premios) {
+          if (Math.hypot(cx - p.x, cy - p.y) < p.r + 18) {
+            p.tomado = true; score += PUNTOS_COMBO
+            flotantes.push({ x: p.x, y: p.y, vida: 40 })
+          }
+        }
+        flotantes.forEach(f2 => { f2.y -= 1.1; f2.vida-- })
+        flotantes = flotantes.filter(f2 => f2.vida > 0)
+
         score += 0.14 * (vel / V0)
         vel = Math.min(VMAX, V0 + score * 0.012)
         if (t % 6 === 0) onScore?.(Math.floor(score))
       }
 
       obs.forEach(dibujarObs)
+      premios.forEach(dibujarPremio)
       dibujarDog()
+
+      // "+25" al agarrar un producto
+      ctx.textAlign = 'center'; ctx.font = '800 14px system-ui, sans-serif'
+      flotantes.forEach(f2 => {
+        ctx.fillStyle = 'rgba(255,213,74,' + Math.min(1, f2.vida / 25) + ')'
+        ctx.fillText('+' + PUNTOS_COMBO, f2.x, f2.y)
+      })
 
       // chispas del choque
       chispas.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.35; ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, 3, 3) })

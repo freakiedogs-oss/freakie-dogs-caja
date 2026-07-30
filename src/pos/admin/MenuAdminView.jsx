@@ -140,7 +140,7 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
         ) : (
           <>
             {tab === 'categorias' && <CategoriasTab menuId={menuId} />}
-            {tab === 'items' && <ItemsTab menuId={menuId} />}
+            {tab === 'items' && <ItemsTab menuId={menuId} canal={menus.find(m => m.id === menuId)?.canal} />}
             {tab === 'grupos' && <GruposTab />}
             {tab === 'asignar' && <AsignarTab menuId={menuId} />}
           </>
@@ -277,7 +277,9 @@ function CatForm({ cat, onSave, onCancel }) {
 /* ================================================================
    TAB 2: Ítems — CRUD with category filter
    ================================================================ */
-function ItemsTab({ menuId }) {
+function ItemsTab({ menuId, canal }) {
+  // El marcador de menú público SOLO aplica al canal de delivery propio
+  const esDelivery = canal === 'delivery_propio'
   const [items, setItems] = useState([])
   const [cats, setCats] = useState([])
   const [filterCat, setFilterCat] = useState('all')
@@ -323,6 +325,7 @@ function ItemsTab({ menuId }) {
       tiempo_preparacion_min: parseInt(item.tiempo_preparacion_min) || null,
       estacion: item.estacion || null,
       imagen_url: item.imagen_url || null,
+      ...(esDelivery ? { visible_publico: item.visible_publico ?? true } : {}),
     }
     if (item.id) {
       const { error } = await db.from('pos_menu_items').update(payload).eq('id', item.id)
@@ -334,6 +337,11 @@ function ItemsTab({ menuId }) {
       toast('Ítem creado')
     }
     setEditItem(null)
+    load()
+  }
+
+  const handleTogglePublico = async (item) => {
+    await db.from('pos_menu_items').update({ visible_publico: !(item.visible_publico ?? true) }).eq('id', item.id)
     load()
   }
 
@@ -353,7 +361,7 @@ function ItemsTab({ menuId }) {
   if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><div className="spin" style={{ width: 24, height: 24, margin: '0 auto' }} /></div>
 
   if (editItem !== null) {
-    return <ItemForm item={editItem} cats={cats} onSave={handleSave} onCancel={() => setEditItem(null)} />
+    return <ItemForm item={editItem} cats={cats} esDelivery={esDelivery} onSave={handleSave} onCancel={() => setEditItem(null)} />
   }
 
   if (editCombo !== null) {
@@ -406,6 +414,15 @@ function ItemsTab({ menuId }) {
                 <button onClick={() => handleToggle(item)} style={{ ...smallBtn, background: item.disponible ? '#0d2818' : '#2a1a1a', color: item.disponible ? C.teal : C.danger, fontSize: 11 }}>
                   {item.disponible ? 'Disponible' : 'No disponible'}
                 </button>
+                {esDelivery && (
+                  <button onClick={() => handleTogglePublico(item)}
+                    title="Mostrar u ocultar este ítem en el menú público de los clientes"
+                    style={{ ...smallBtn, fontSize: 11,
+                      background: (item.visible_publico ?? true) ? '#1a2333' : '#2a1a1a',
+                      color: (item.visible_publico ?? true) ? '#60a5fa' : C.muted }}>
+                    {(item.visible_publico ?? true) ? '🌐 En menú público' : '🚫 Oculto al público'}
+                  </button>
+                )}
                 <button onClick={() => setEditItem(item)} style={smallBtn}><Icon name="pencil" size={14} /></button>
                 {esCombo && (
                   <button onClick={() => setEditCombo(item)} style={{ ...smallBtn, color: compCount[item.id] ? C.teal : C.muted, fontSize: 11 }} title="Componentes del combo">
@@ -423,7 +440,7 @@ function ItemsTab({ menuId }) {
   )
 }
 
-function ItemForm({ item, cats, onSave, onCancel }) {
+function ItemForm({ item, cats, esDelivery, onSave, onCancel }) {
   const [f, setF] = useState({
     nombre: item.nombre || '', nombre_corto: item.nombre_corto || '', descripcion: item.descripcion || '',
     precio: item.precio ?? '', precio_combo: item.precio_combo ?? '',
@@ -432,6 +449,7 @@ function ItemForm({ item, cats, onSave, onCancel }) {
     requiere_preparacion: item.requiere_preparacion ?? true,
     tiempo_preparacion_min: item.tiempo_preparacion_min ?? '',
     estacion: item.estacion || '', imagen_url: item.imagen_url || '',
+    visible_publico: item.visible_publico ?? true,
   })
   const upd = (k, v) => setF(p => ({ ...p, [k]: v }))
 
@@ -501,6 +519,12 @@ function ItemForm({ item, cats, onSave, onCancel }) {
         <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
           <input type="checkbox" checked={f.requiere_preparacion} onChange={e => upd('requiere_preparacion', e.target.checked)} /> Requiere preparación
         </label>
+        {esDelivery && (
+          <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#60a5fa' }}
+                 title="Si lo desmarcás, el ítem no aparece en el menú público de los clientes (sigue disponible en el POS)">
+            <input type="checkbox" checked={f.visible_publico} onChange={e => upd('visible_publico', e.target.checked)} /> 🌐 Mostrar en menú público
+          </label>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
