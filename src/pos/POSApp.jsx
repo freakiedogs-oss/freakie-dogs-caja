@@ -3,6 +3,7 @@ import { db } from '../supabase'
 import POSLogin from './POSLogin'
 import POSHome from './POSHome'
 import POSMain from './cajero/POSMain'
+import ReportarProblema from '../components/soporte/ReportarProblema'
 import KDSScreen from './KDSScreen'
 import OrdenesView from './OrdenesView'
 import CierreTurno from './CierreTurno'
@@ -266,26 +267,32 @@ export default function POSApp() {
   // ── Home ──
   if (screen === 'home') {
     return (
-      <POSHome
-        user={posUser}
-        onStartOrder={handleStartOrder}
-        onLogout={handleLogout}
-        onGoToKDS={handleGoToKDS}
-        onGoToHistorial={handleGoToHistorial}
-        onGoToCierre={handleGoToCierre}
-        onGoToMenuAdmin={canChangeStore ? handleGoToMenuAdmin : null}
-        onChangeStore={canChangeStore ? handleChangeStore : null}
-      />
+      <>
+        <POSHome
+          user={posUser}
+          onStartOrder={handleStartOrder}
+          onLogout={handleLogout}
+          onGoToKDS={handleGoToKDS}
+          onGoToHistorial={handleGoToHistorial}
+          onGoToCierre={handleGoToCierre}
+          onGoToMenuAdmin={canChangeStore ? handleGoToMenuAdmin : null}
+          onChangeStore={canChangeStore ? handleChangeStore : null}
+        />
+        <ReportarProblema db={db} tenant="freakie" storeCode={posUser.store_code} reporterName={posUser.nombre} />
+      </>
     )
   }
 
   // ── Ordering ──
   return (
-    <POSMain
-      user={posUser}
-      cuentaCtx={cuentaCtx}
-      onBack={handleBack}
-      onLogout={handleLogout}
-    />
+    <>
+      <POSMain
+        user={posUser}
+        cuentaCtx={cuentaCtx}
+        onBack={handleBack}
+        onLogout={handleLogout}
+      />
+      <ReportarProblema db={db} tenant="freakie" storeCode={posUser.store_code} reporterName={posUser.nombre} />
+    </>
   )
 }
