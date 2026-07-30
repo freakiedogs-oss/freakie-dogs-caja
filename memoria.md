@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-30 — Menú público: visibilidad por ítem + coleccionables del menú en el juego
+- **Problema:** el menú del POS `delivery_propio` (79 ítems) incluye cosas que NO son vendibles al cliente: add-ons, toppings sueltos, merch e internos.
+- **Análisis:** comparé contra el catálogo BuhoPay (31 coinciden, 48 no). ⚠️ **El criterio "no estaba en Buho" NO alcanza**: ahí caen bebidas, cervezas y combos que sí son vendibles. El criterio correcto es la **naturaleza del ítem** (categoría + nombre).
+- **Migración `menu_visible_publico`:** columna `pos_menu_items.visible_publico bool default true` (**solo se usa en el canal delivery_propio**); `menu_publico_delivery()` filtra por ella. Ocultos por defecto **19**: agrandados/cambio de bebida (4), toppings sueltos (8), merch (6) y `Soda Empleados`. Quedan **60 visibles** (bebidas y cervezas incluidas). Los ocultos **siguen disponibles en el POS**.
+- **Admin** (`MenuAdminView` → tab Ítems): botón **🌐 En menú público / 🚫 Oculto al público** por tarjeta + checkbox en el form. **Solo aparece si el menú es `delivery_propio`** (se pasa `canal` desde el selector); en otros canales ni se muestra ni se escribe la columna.
+- **Juego:** coleccionables con **fotos reales del menú** (sprites ~4 KB en `menu/sprites/`) que dan +25 pts. ⚠️ **Recalibré el anti-trampa** (`juego_recalibrar_antitrampa`): con los coleccionables el ritmo real sube a ~25 pts/s y el umbral viejo (15) **marcaba legítimos como sospechosos**; ahora 40 pts/s (99999 en 3s sigue cayendo).
+- ⚠️ **Coordinación:** este commit nació por error sobre la rama ajena `feat/apk-v1.2-nocache` (otra sesión). Se movió a rama propia desde `main` con cherry-pick y **se restauró la rama ajena a su estado remoto** — nunca se pusheó contaminada. Recordatorio: verificar `git status -sb` antes de commitear cuando hay varias sesiones en el repo.
+
 ## 2026-07-30 — Fix: alta de clientes desde el POS fallaba (check constraint) — Metro Freakies en vivo
 - **Síntoma:** en Metro Freakies, al "Crear y seleccionar" cliente para factura: `Error al crear cliente: new row for relation "pos_clientes" violates check constraint "pos_clientes_tipo_cliente_check"`.
 - **Causa raíz (2 bugs en `src/pos/cajero/CustomerSearch.jsx`):**
