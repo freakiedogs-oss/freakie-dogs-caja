@@ -265,8 +265,8 @@ export default function MenuPublico() {
         <div className="mp-cerrado-banner">
           <div className="mp-cerrado-icon">🏪</div>
           <div>
-            <div className="mp-cerrado-titulo">Nos encontramos cerrados</div>
-            <div className="mp-cerrado-sub">Regresa en nuestro próximo horario de apertura.</div>
+            <div className="mp-cerrado-titulo">Estamos fuera de horario</div>
+            <div className="mp-cerrado-sub">Podés dejar tu pedido igual — lo atendemos al abrir.</div>
           </div>
         </div>
       )}
@@ -491,10 +491,9 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
             </div>
             <button
               className="mp-btn-agregar"
-              disabled={!abierto}
               onClick={confirmar}
             >
-              {abierto ? `Añadir · ${fmt(precioTotal)}` : 'Cerrado ahora'}
+              {`Añadir · ${fmt(precioTotal)}`}
             </button>
           </div>
         </div>

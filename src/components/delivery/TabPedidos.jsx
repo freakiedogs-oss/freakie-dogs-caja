@@ -28,6 +28,11 @@ export default function TabPedidos({ show = () => {} }) {
   const [err, setErr] = useState('');
   const [confirmando, setConfirmando] = useState(null);
   const [asignando, setAsignando] = useState(null);
+  const [todosDrivers, setTodosDrivers] = useState([]);
+  const [sucursales, setSucursales] = useState([]);
+  const [mOpen, setMOpen] = useState(false);
+  const [mForm, setMForm] = useState({ driver: '', sucursal: '', desc: '', dist: '', fuera: false });
+  const [mSaving, setMSaving] = useState(false);
   const pollRef = useRef(null);
 
   const cargar = useCallback(async (tk) => {
@@ -70,6 +75,29 @@ export default function TabPedidos({ show = () => {} }) {
       setToken(data.token);
       setPin('');
     } catch (e) { setErr(e.message || 'PIN incorrecto'); }
+  };
+
+  // Cargar drivers + sucursales una vez (para el form de mandado)
+  useEffect(() => {
+    if (!token) return;
+    db.rpc('drivers_disponibles').then(({ data }) => setTodosDrivers(data || []));
+    db.from('sucursales').select('id,store_code,nombre').eq('tiene_delivery', true).eq('activa', true)
+      .then(({ data }) => setSucursales(data || []));
+  }, [token]);
+
+  const asignarMandado = async () => {
+    if (!mForm.driver || !mForm.sucursal || !mForm.desc.trim()) { show('⚠️ Completá motorista, sucursal y descripción'); return; }
+    setMSaving(true);
+    try {
+      const { data, error } = await db.rpc('torre_asignar_mandado', {
+        p_token: token, p_empleado_id: mForm.driver, p_sucursal_id: mForm.sucursal,
+        p_descripcion: mForm.desc.trim(), p_distancia_km: Number(mForm.dist) || 0, p_fuera_horario: mForm.fuera,
+      });
+      if (error) throw error;
+      show(`📦 Mandado asignado (${data.motorista}) · bono ${'$' + Number(data.tarifa).toFixed(2)}`);
+      setMForm({ driver: '', sucursal: '', desc: '', dist: '', fuera: false }); setMOpen(false);
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setMSaving(false); }
   };
 
   const salir = () => { localStorage.removeItem(TOKEN_KEY); setToken(''); setSesion(null); setPedidos([]); };
@@ -143,10 +171,41 @@ export default function TabPedidos({ show = () => {} }) {
           {sesion?.nombre ? `${sesion.nombre} · ` : ''}{recibidas.length} por cobrar · {pedidos.length} activos
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setMOpen(o => !o)} style={mini('#f97316')}>📦 Mandado</button>
           <button onClick={() => cargar(token)} style={mini('#333')}>{cargando ? '…' : '↻ Actualizar'}</button>
           <button onClick={salir} style={mini('#333')}>Salir</button>
         </div>
       </div>
+
+      {/* Form de mandado (cuenta como viaje para el bono del motorista) */}
+      {mOpen && (
+        <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, padding: 14, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12, color: c.dim }}>Asignar un mandado a un motorista (suma a su bono).</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <select value={mForm.driver} onChange={e => setMForm(f => ({ ...f, driver: e.target.value }))} style={selSt}>
+              <option value="">— motorista —</option>
+              {todosDrivers.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+            </select>
+            <select value={mForm.sucursal} onChange={e => setMForm(f => ({ ...f, sucursal: e.target.value }))} style={selSt}>
+              <option value="">— sucursal —</option>
+              {sucursales.map(s => <option key={s.id} value={s.id}>{s.store_code} · {s.nombre}</option>)}
+            </select>
+          </div>
+          <input value={mForm.desc} onChange={e => setMForm(f => ({ ...f, desc: e.target.value }))}
+            placeholder="Descripción del mandado" style={{ ...selSt, width: '100%' }} />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input value={mForm.dist} onChange={e => setMForm(f => ({ ...f, dist: e.target.value.replace(/[^\d.]/g, '') }))}
+              placeholder="km (opcional)" style={{ ...selSt, width: 110 }} inputMode="decimal" />
+            <label style={{ fontSize: 12, color: c.dim, display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="checkbox" checked={mForm.fuera} onChange={e => setMForm(f => ({ ...f, fuera: e.target.checked }))} />
+              Fuera de horario ($3)
+            </label>
+            <button onClick={asignarMandado} disabled={mSaving} style={{ ...mini('#f97316'), marginLeft: 'auto' }}>
+              {mSaving ? '…' : 'Asignar mandado'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {err && <div style={{ color: c.red, fontSize: 13, marginBottom: 10 }}>{err}</div>}
       {pedidos.length === 0 && !cargando && <div style={{ color: c.dim, textAlign: 'center', padding: 30 }}>No hay pedidos activos.</div>}
@@ -218,3 +277,7 @@ const mini = (bg, fg = '#fff') => ({
   padding: '8px 12px', borderRadius: 8, background: bg, color: fg, border: 'none',
   cursor: 'pointer', fontSize: 12, fontWeight: 700,
 });
+const selSt = {
+  background: '#1e1e1e', border: '1px solid #333', borderRadius: 8,
+  padding: '8px 10px', color: '#f0f0f0', fontSize: 12, flex: 1, minWidth: 130,
+};
