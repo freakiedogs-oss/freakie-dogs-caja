@@ -8,6 +8,21 @@ import { CATEGORIAS, PRODUCTOS, NEGOCIO, BANNERS } from './catalogoBuho'
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
 
+// ── Perfil del cliente recurrente ──────────────────────────────────
+// Se guarda SOLO en este dispositivo (localStorage), no en el servidor:
+// así el cliente que ya pidió no rellena todo otra vez, y NO abrimos un
+// hueco de privacidad (una búsqueda por teléfono desde el menú público
+// —rol anon— dejaría que cualquiera obtenga nombre+dirección ajenos).
+// El perfil server-side para la CRM de Karina se lee por el canal
+// autenticado de la torre de control (Fase 0-B).
+const PERFIL_KEY = 'freakie_cliente_v1'
+function leerPerfil() {
+  try { return JSON.parse(localStorage.getItem(PERFIL_KEY)) || {} } catch { return {} }
+}
+function guardarPerfil(p) {
+  try { localStorage.setItem(PERFIL_KEY, JSON.stringify(p)) } catch { /* modo incógnito / storage lleno */ }
+}
+
 // Horario del día actual en El Salvador (UTC-6)
 function horarioHoy() {
   const d = new Date(Date.now() - 6 * 3600 * 1000)
@@ -468,11 +483,13 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout }) {
 }
 
 function Checkout({ items, total, onClose, onEnviado }) {
+  const perfil = useMemo(leerPerfil, [])
+  const clienteConocido = !!(perfil.nombre || perfil.telefono)
   const [tipo, setTipo] = useState('delivery') // 'delivery' | 'pickup'
-  const [nombre, setNombre] = useState('')
-  const [telefono, setTelefono] = useState('')
-  const [direccion, setDireccion] = useState('')
-  const [zona, setZona] = useState('')
+  const [nombre, setNombre] = useState(perfil.nombre || '')
+  const [telefono, setTelefono] = useState(perfil.telefono || '')
+  const [direccion, setDireccion] = useState(perfil.direccion || '')
+  const [zona, setZona] = useState(perfil.zona || '')
   const [notas, setNotas] = useState('')
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [enviando, setEnviando] = useState(false)
@@ -515,6 +532,25 @@ function Checkout({ items, total, onClose, onEnviado }) {
         notas_cliente: notas.trim() || null,
       })
       if (dbErr) throw dbErr
+
+      // Recordar datos en este dispositivo para el próximo pedido
+      guardarPerfil({
+        nombre: nombre.trim(),
+        telefono: telefono.trim(),
+        direccion: direccion.trim(),
+        zona,
+      })
+
+      // Registrar/actualizar en el CRM (tabla aislada) para marketing futuro:
+      // promos a frecuentes, cumpleaños, reactivación. Va por RPC SECURITY
+      // DEFINER (anon no toca la tabla directo). No bloquea el pedido si falla.
+      db.rpc('registrar_cliente_delivery', {
+        p_telefono: telefono.trim(),
+        p_nombre: nombre.trim() || null,
+        p_direccion: tipo === 'delivery' ? (direccion.trim() || null) : null,
+        p_zona: tipo === 'delivery' ? (zona || null) : null,
+      }).catch(() => {})
+
       onEnviado()
     } catch (err) {
       console.error('Error enviando pedido:', err)
@@ -533,6 +569,12 @@ function Checkout({ items, total, onClose, onEnviado }) {
         </div>
 
         <div className="mp-drawer-body">
+          {clienteConocido && (
+            <div className="mp-cliente-conocido">
+              👋 ¡Hola de nuevo{perfil.nombre ? `, ${perfil.nombre.split(' ')[0]}` : ''}! Ya llenamos tus datos — revisalos y confirmá.
+            </div>
+          )}
+
           {/* TIPO */}
           <div className="mp-tipo-toggle">
             <button

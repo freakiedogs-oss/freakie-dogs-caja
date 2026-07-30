@@ -538,6 +538,16 @@ button { font-family: inherit; }
 .mp-btn-checkout:disabled { background: #ccc; cursor: not-allowed; }
 
 /* ── Checkout ── */
+.mp-cliente-conocido {
+  background: #fff4e0;
+  border: 1px solid #f4b942;
+  color: #7a5200;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
 .mp-tipo-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
