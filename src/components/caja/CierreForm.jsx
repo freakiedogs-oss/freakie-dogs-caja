@@ -614,6 +614,12 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       show(`⚠️ Ya existe un cierre "${turno}" para esta fecha`);
       return;
     }
+    // Guardrail: nunca un cierre con fecha futura (raíz del bug "mes equivocado":
+    // al ponerse al día con el mes anterior el date-picker dejaba el mes actual).
+    if (!isEdit && fecha > today()) {
+      show('⚠️ No puedes crear un cierre con fecha futura. Revisa el mes y el día.');
+      return;
+    }
     setLoading(true);
     const storeCode = existingCierre?.store_code || selectedStore;
     const payload = {
@@ -826,6 +832,7 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
             type="date"
             className="inp"
             value={fecha}
+            max={today()}
             readOnly={isEdit}
             onChange={(e) => setFecha(e.target.value)}
             style={{ background: isEdit ? '#161616' : undefined, color: isEdit ? '#555' : '#fff' }}

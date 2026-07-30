@@ -159,6 +159,13 @@ function ModalIngreso({ motivos, onSave, onClose }) {
 const fmt = (n) => `$${parseFloat(n || 0).toFixed(2)}`
 const n = (v) => parseFloat(v) || 0
 const todayISO = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10)
+// Hora actual de El Salvador (UTC-6, sin DST) — mismo criterio que todayISO()
+const horaSV = () => new Date(Date.now() - 6 * 3600 * 1000).getUTCHours()
+// A partir de esta hora el día YA NO se puede cerrar con X: se fuerza el corte Z.
+// Motivo: Venecia terminó el día con X el 27-jul (22:10) y el 29-jul (21:55) -> el día
+// quedó sin cerrar, sin depósito y sin fila en ventas_diarias (hubo que reconstruirlo a mano).
+// Todos los cambios de turno legítimos registrados ocurren entre las 10:00 y las 16:14.
+const HORA_FORZAR_Z = 19
 
 // estilos (equivalentes a .card/.sec-title/.row del ERP, en inline para el POS)
 const card = { background: '#1c1c22', border: '1px solid #2a2a32', borderRadius: 12, padding: 14, marginBottom: 12 }
@@ -192,7 +199,9 @@ export default function CierreTurno({ user, onBack }) {
   const [corteDia, setCorteDia] = useState(null)     // corte del DÍA completo (para Z)
   const [diaInfo, setDiaInfo]   = useState({ fondoBase: 0, prevEgr: 0, prevIng: 0, zExiste: false, nTurnos: 0 })
   const [loading, setLoading]   = useState(true)
-  const [tab, setTab]           = useState('x')       // 'x' = cambio de turno · 'z' = cierre del día
+  // 'x' = cambio de turno · 'z' = cierre del día. Pasadas las HORA_FORZAR_Z arranca en Z
+  // (antes arrancaba siempre en 'x' y el botón Z ni se renderizaba hasta tocar la pestaña).
+  const [tab, setTab]           = useState(() => (horaSV() >= HORA_FORZAR_Z ? 'z' : 'x'))
   const [fondoInput, setFondoInput] = useState('200')
   const [saving, setSaving]     = useState(false)
 
@@ -311,6 +320,7 @@ export default function CierreTurno({ user, onBack }) {
   const depositoDia = r2(efReal - diaInfo.fondoBase)        // se deposita; queda el fondo base
 
   const esZ = tab === 'z'
+  const forzarZ = horaSV() >= HORA_FORZAR_Z   // pasada la hora de cierre, X queda bloqueado
   const A = esZ
     ? { corte: corteDia, esp: espDia, dif: difDia, ventasLabel: 'Ventas del día (acumulado)' }
     : { corte, esp: espTurno, dif: difTurno, ventasLabel: 'Ventas del turno (sistema)' }
@@ -348,6 +358,13 @@ export default function CierreTurno({ user, onBack }) {
 
   // ── Corte X: cierra la caja del cajero (cambio de turno). No deposita, no arma el día. ──
   const cerrarX = async () => {
+    // Guardrail: pasada la hora de cierre, el día debe cerrarse con Z (nunca con X).
+    // Se evalúa acá (y no solo en el render) para que valga aunque la pantalla lleve rato abierta.
+    if (horaSV() >= HORA_FORZAR_Z) {
+      toast.error(`Después de las ${HORA_FORZAR_Z}:00 el día se cierra con corte Z, no con X. Te cambié a la pestaña "Cierre del día (Z)".`)
+      setTab('z')
+      return
+    }
     if (!efectivoReal) { toast.warning('Cuenta e ingresa el efectivo de la gaveta'); return }
     if (!(await confirmAsync('¿Cerrar tu caja (cambio de turno)? Tus ventas quedan amarradas a vos y la caja queda libre para el siguiente cajero. NO se deposita todavía.', { title: 'Corte X · cambio de turno', confirmText: 'Cerrar mi caja', danger: true }))) return
     setSaving(true)
@@ -453,9 +470,17 @@ export default function CierreTurno({ user, onBack }) {
     <div className="poshome-root">{Header}
       {/* Tabs X (cambio de turno) / Z (cierre del día) */}
       <div style={{ display: 'flex', gap: 6, margin: '12px 18px 0', background: '#241d19', border: '1px solid #332b27', borderRadius: 11, padding: 4, width: 'max-content' }}>
-        {[['x', 'Cambio de turno (X)'], ['z', 'Cierre del día (Z)']].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? '#E62329' : 'none', border: 'none', color: tab === k ? '#fff' : '#9a9088', fontWeight: 700, fontSize: 13, padding: '8px 16px', borderRadius: 9, cursor: 'pointer' }}>{l}</button>
-        ))}
+        {[['x', 'Cambio de turno (X)'], ['z', 'Cierre del día (Z)']].map(([k, l]) => {
+          const bloqueada = k === 'x' && forzarZ
+          return (
+            <button key={k}
+              onClick={() => {
+                if (bloqueada) { toast.warning(`Después de las ${HORA_FORZAR_Z}:00 el día se cierra con corte Z.`); return }
+                setTab(k)
+              }}
+              style={{ background: tab === k ? '#E62329' : 'none', border: 'none', color: bloqueada ? '#5a544e' : tab === k ? '#fff' : '#9a9088', fontWeight: 700, fontSize: 13, padding: '8px 16px', borderRadius: 9, cursor: bloqueada ? 'not-allowed' : 'pointer', textDecoration: bloqueada ? 'line-through' : 'none' }}>{l}</button>
+          )
+        })}
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 18, maxWidth: 480, width: '100%', margin: '0 auto' }}>
@@ -465,6 +490,12 @@ export default function CierreTurno({ user, onBack }) {
 
         {esZ && diaInfo.zExiste && (
           <div style={{ ...card, border: '1px solid #dc3545', color: '#f8d7da', background: '#2a1416' }}>⚠ El día ya fue cerrado con corte Z. No se puede volver a cerrar.</div>
+        )}
+        {forzarZ && !diaInfo.zExiste && (
+          <div style={{ ...card, border: '1px solid #FFD900', color: '#FFD900', background: '#2a2410' }}>
+            🌙 Ya pasaron las {HORA_FORZAR_Z}:00 — este es el <b>cierre del día (Z)</b>. El cambio de turno (X) quedó bloqueado
+            para que el día no quede sin cerrar ni depositar.
+          </div>
         )}
         <div style={{ ...card, background: '#15110f', borderColor: '#332b27', fontSize: 12, color: '#9a9088', lineHeight: 1.5 }}>
           {esZ
