@@ -214,6 +214,17 @@
 - **Doc de diseño en Notion:** 🛟 Soporte IA — Resolver de la mini (subpágina de Freakie Dogs, `3aa24fa10edc810ebcbaf750d12241b9`).
 - **Pendiente Fase 2:** bot de Telegram (token de @BotFather), ejecutar acción tras aprobación de Jose, botones Aprobar/Rechazar, cablear `ai_inbox`/`ai_agentes_estado` (coordinar con Cesar), guardrail duro.
 
+## 2026-07-30 — Lourdes (S003) migra a POS propio: multi-caja + ruteo de impresoras
+- **Contexto:** Lourdes es la última sucursal que faltaba migrar de Quanto al POS propio. Tablets Android (no Fire) → app nativa Freakie POS, **sin RawBT**. Tiene **2 cajas** (General + Drive Thru) y **3 impresoras**.
+- **Multi-caja por sucursal (PR #44):** nuevo concepto `caja` (columna en `pos_impresoras` y `pos_turnos`; NULL = sucursal de 1 sola caja = las otras 5 tiendas sin cambios). Selector de caja al login (`CajaSelector` en `POSApp`, auto-salta si hay 1 sola). Turno/cierre por caja (aperturas, guardrails "1 turno por caja", corte X por turno, corte-día Z por caja). RPC `pos_corte` ganó `p_caja` opcional (NULL = idéntico a hoy). La sesión lleva `posUser.caja`; badge de caja activa en el header.
+- **Ruteo de impresora por (caja, tipo) (PR #45):** `pickImpresora(rows, tipo)` en `printService`: `getImpresoras()` cachea el array por (store,caja) e `imprimir()` elige por tipo. **precuenta → impresora rol='precuenta'** (meseros); resto (comanda/factura/corte) → principal (rol≠precuenta). Corte lleva `caja`.
+- **Impresoras Lourdes (self-test 29-Jul, todas EPSON ESC/POS 80mm, DHCP off, puerto 9100):**
+  - **General** `192.168.1.7` (WiFi CLARO_2.4GHz_B22767) · caja=general, rol=todo → factura/comanda/corte de la caja general.
+  - **Meseros** `192.168.1.8` (WiFi) · caja=general, rol=precuenta → SOLO pre-cuenta de la caja general.
+  - **Drive Thru** `192.168.1.100` (Ethernet CABLE) · caja=drive, rol=todo → TODO lo de la caja drive.
+  - Ojo IP: las 3 muestran Ethernet default `.100`; funciona porque General y Meseros van por WiFi (sin cable) y solo Drive usa `.100` cableada. Jose confirmó General sin cable.
+- Pendiente: instalar APK en las tablets (WiFi CLARO_2.4GHz_B22767), probar los 3 flujos, y fijar la fecha de corte (CUTOVER) Quanto→POS de S003 en el dashboard.
+
 ## 2026-07-26 — Manual del ERP (HTML) publicado en el POS
 - **Qué:** manual de usuario HTML de TODO el ERP (~50 módulos en 16 áreas), autocontenido, tema claro/oscuro, índice por área con scrollspy. Vive en **`public/manual-pos.html`** → producción `https://freakie-dogs-caja.vercel.app/manual-pos.html` (compartible suelto) y enlazado en `src/components/layout/Sidebar.jsx` ("📖 Manual del ERP", pestaña nueva, visible a todos los roles). PR #24.
 - **Cómo se armó:** contenido generado leyendo el código real de cada módulo (5 subagentes en paralelo por área: Almacén, Finanzas, Admin, Dashboards/Caja/Empleado, RRHH/Producción/SupplyChain/Delivery/Eventos/Marketing). Diseño validado antes por Jose vía artifact borrador.
