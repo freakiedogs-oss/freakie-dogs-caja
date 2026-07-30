@@ -7,6 +7,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import { db } from '../supabase'
 
 const MapaEnVivo = lazy(() => import('./MapaEnVivo'))
+const Juego = lazy(() => import('./Juego'))
 
 const PASOS = [
   { k: 'recibida',   ic: '📝', t: 'Pedido recibido',  sub: 'Te vamos a escribir para coordinar el pago' },
@@ -94,6 +95,13 @@ export default function TrackingPedido() {
         {d.direccion && <div className="tk-dir">📍 {d.direccion}</div>}
         {d.sucursal && <div className="tk-dir">🏪 Sale de {d.sucursal}</div>}
       </div>
+
+      {/* Juego mientras espera (no cuando ya llegó) */}
+      {!entregado && (
+        <Suspense fallback={null}>
+          <Juego trackingToken={token} />
+        </Suspense>
+      )}
 
       {entregado && (
         <div className="tk-gracias">

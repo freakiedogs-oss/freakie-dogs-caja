@@ -11,6 +11,14 @@
 - **Reversión:** la def vieja usaba CTEs `quanto_por_dia`/`quanto_baseline` (avg 7d) + `peya_por_dia`/`peya_baseline` con `WHERE n >= COALESCE(avg_7d,0)*0.5`. Restaurar esa def vuelve al corte con guardrail.
 - **Pendiente natural:** subir el Quanto de M001/S002/S004/S001 hasta el 29 para que el corte quede parejo entre tiendas.
 
+## 2026-07-30 — Delivery Fase 7: juego HotDog Dash + leaderboard en la pantalla de espera
+- **Backend** (migración `juego_scores_leaderboard`): tabla `juego_scores` (juego, alias, score, duracion_seg, fecha SV, tracking_token, `sospechoso`, `premiado`), RLS on sin policies (solo por RPC). `juego_guardar_score(alias, score, dur, juego, tracking_token)` y `juego_leaderboard(juego, limite)` → `{dia, mes}` con la **mejor marca por alias**.
+- **Anti-trampa (probado):** ritmo plausible (`score > dur*15+50` ⇒ `sospechoso=true`), tope 40 partidas/hora por alias, alias sanitizado (regex, 20 chars) y obligatorio, `score` con CHECK 0..1M. **Las marcas sospechosas NO entran al leaderboard** (se guardan para revisión). El premio se valida a mano antes de entregarlo — el score sale del navegador, no hay forma barata de hacerlo infalsificable.
+- ⚠️ Índice `to_char(fecha,'YYYY-MM')` **rechazado por Postgres** (no IMMUTABLE); alcanza con `(juego, fecha, score desc)`.
+- **Frontend:** `src/tracking/Juego.jsx` (shell: jugar, guardar marca, leaderboard Hoy/Mes, botón **📲 Publicá tu marca** con Web Share API + fallback a portapapeles) y `src/tracking/juegos/HotDogDash.jsx` (**Canvas puro, sin librerías**): hot dog dibujado a mano (pan, salchicha, zigzag de mostaza, patitas animadas), tema **carnaval** (gradiente feria, banderines, luces parpadeantes, carpa, piso a rayas), obstáculos cono/botella, salto por tap/click/espacio, velocidad progresiva, chispas al chocar.
+- **Extensible:** `src/tracking/juegos/index.js` es un **registro** — para sumar Flappy Dog se crea el componente con la misma interfaz (`{onScore, onGameOver}`) y se agrega al array; el leaderboard ya separa por `juego`.
+- Ambos van en **chunks lazy** (HotDogDash 4.7 KB, Juego 4.1 KB): no se descargan hasta que el cliente toca "Jugar". El juego se oculta cuando el pedido está `entregada`.
+
 ## 2026-07-30 — Delivery Fase 6: tracking del cliente + mapa en vivo
 - **Backend** (migraciones `delivery_fase6_tracking_cliente` + `tracking_pedido_fix_record`): col `delivery_clientes.tracking_token uuid` (default random, índice único) = link no adivinable. RPC **`tracking_pedido(token)`** (grant anon) devuelve SOLO lo mínimo: estado, número, total, ítems (nombre+cantidad), dirección, sucursal, **primer nombre** del motorista y ETA (4 min/km + 5 base).
 - **Privacidad (probado):** la ubicación del motorista se expone **únicamente** si `estado='en_camino'` Y la señal es fresca (<5 min) — en `recibida`/`lista` devuelve NULL aunque el driver esté emitiendo. No expone teléfono ni nombre completo del cliente; token inválido → `no_encontrado`.
