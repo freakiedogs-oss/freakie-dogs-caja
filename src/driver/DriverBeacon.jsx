@@ -1,14 +1,14 @@
 // ────────────────────────────────────────────────────────────────────
-// Freakie Motorista — PWA del driver.
-// Tabs: 📡 Compartir ubicación · 🧾 Mi historial · 📊 Mis métricas.
-// Germen de la PWA del motorista (Fase 5): luego suma PIN + pedidos
-// asignados (recoger / entregar).
+// Freakie Motorista — PWA del driver (Fase 5).
+// Tabs: 📦 Pedidos (recoger/entregar) · 🧾 Historial · 📊 Métricas.
+// El GPS se comparte SOLO mientras hay una entrega en curso (ahorro de
+// batería) — se prende al recoger y se apaga al entregar el último.
 // ────────────────────────────────────────────────────────────────────
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { db } from '../supabase'
 
 const KEY = 'freakie_driver_v1'
-const HEARTBEAT_MS = 15000  // reenvío en reposo (quieto). Al moverse manda antes (throttle 4s)
+const HEARTBEAT_MS = 15000
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const fmtMes = (m) => { if (!m) return ''; const [y, mo] = m.split('-'); return `${MESES[+mo - 1]} ${y}` }
@@ -16,12 +16,33 @@ const fmtMes = (m) => { if (!m) return ''; const [y, mo] = m.split('-'); return 
 export default function DriverBeacon() {
   const [drivers, setDrivers] = useState([])
   const [yo, setYo] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)) || null } catch { return null } })
-  const [tab, setTab] = useState('compartir')
+  const [tab, setTab] = useState('pedidos')
+  const [pedidos, setPedidos] = useState([])
+  const beacon = useBeacon(yo)
+
+  const cargarPedidos = useCallback(async () => {
+    if (!yo) return
+    const { data } = await db.rpc('mis_pedidos_driver', { p_empleado_id: yo.id })
+    setPedidos(data || [])
+  }, [yo])
 
   useEffect(() => { if (!yo) db.rpc('drivers_disponibles').then(({ data }) => setDrivers(data || [])) }, [yo])
+  useEffect(() => {
+    if (!yo) return
+    cargarPedidos()
+    const t = setInterval(cargarPedidos, 20000)
+    return () => clearInterval(t)
+  }, [yo, cargarPedidos])
+
+  // GPS automático: encendido mientras haya una entrega en curso
+  const enRuta = pedidos.some(p => p.estado === 'en_camino')
+  useEffect(() => {
+    if (enRuta && !beacon.activo) beacon.iniciar()
+    if (!enRuta && beacon.activo && beacon.auto) beacon.detener()
+  }, [enRuta]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const elegir = (d) => { setYo(d); try { localStorage.setItem(KEY, JSON.stringify(d)) } catch { /* noop */ } }
-  const cambiar = () => { setYo(null); try { localStorage.removeItem(KEY) } catch { /* noop */ } }
+  const cambiar = () => { beacon.detener(); setYo(null); try { localStorage.removeItem(KEY) } catch { /* noop */ } }
 
   if (!yo) {
     return (
@@ -43,19 +64,27 @@ export default function DriverBeacon() {
     <div style={S.appPage}>
       <header style={S.header}>
         <span style={{ fontWeight: 800, color: '#E63946' }}>🛵 {yo.nombre.split(' ')[0]}</span>
-        <button style={S.linkSm} onClick={cambiar}>Cambiar</button>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: beacon.activo ? '#4ade80' : '#666' }}>
+            {beacon.activo ? '📡 En línea' : '○ Sin compartir'}
+          </span>
+          <button style={S.linkSm} onClick={cambiar}>Cambiar</button>
+        </span>
       </header>
 
       <main style={S.main}>
-        {tab === 'compartir' && <Compartir yo={yo} />}
+        {tab === 'pedidos'   && <Pedidos yo={yo} pedidos={pedidos} recargar={cargarPedidos} beacon={beacon} />}
         {tab === 'historial' && <Historial yo={yo} />}
         {tab === 'metricas'  && <Metricas  yo={yo} />}
       </main>
 
       <nav style={S.nav}>
-        {[['compartir','📡','Compartir'],['historial','🧾','Historial'],['metricas','📊','Métricas']].map(([k, ic, et]) => (
+        {[['pedidos','📦','Pedidos'],['historial','🧾','Historial'],['metricas','📊','Métricas']].map(([k, ic, et]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...S.navBtn, color: tab === k ? '#E63946' : '#888' }}>
-            <div style={{ fontSize: 20 }}>{ic}</div>{et}
+            <div style={{ fontSize: 20, position: 'relative' }}>
+              {ic}
+              {k === 'pedidos' && pedidos.length > 0 && <span style={S.badge}>{pedidos.length}</span>}
+            </div>{et}
           </button>
         ))}
       </nav>
@@ -63,104 +92,159 @@ export default function DriverBeacon() {
   )
 }
 
-// ── 📡 Compartir ubicación ──────────────────────────────────────────
-function Compartir({ yo }) {
+// ── Beacon de ubicación (hook compartido) ───────────────────────────
+function useBeacon(yo) {
   const [activo, setActivo] = useState(false)
-  const [estado, setEstado] = useState('')
+  const [auto, setAuto] = useState(false)
   const [ultima, setUltima] = useState(null)
   const [error, setError] = useState('')
-  const watchRef = useRef(null)
-  const posRef = useRef(null)     // última posición conocida {lat,lng,heading,accuracy}
-  const hbRef = useRef(null)      // heartbeat interval
-  const lastSentRef = useRef(0)
-  const wakeRef = useRef(null)
+  const watchRef = useRef(null); const hbRef = useRef(null)
+  const posRef = useRef(null); const lastSentRef = useRef(0); const wakeRef = useRef(null)
 
-  // Enviar la última posición conocida (reusado por watch + heartbeat)
-  const enviar = async () => {
+  const enviar = useCallback(async () => {
     const p = posRef.current
-    if (!p) return
+    if (!p || !yo) return
     const ahora = Date.now()
-    if (ahora - lastSentRef.current < 4000) return // throttle anti-spam
+    if (ahora - lastSentRef.current < 4000) return
     lastSentRef.current = ahora
     try {
       await db.rpc('actualizar_ubicacion_driver', {
         p_empleado_id: yo.id, p_nombre: yo.nombre, p_lat: p.lat, p_lng: p.lng,
         p_rumbo: p.heading, p_exactitud: p.accuracy,
       })
-      setEstado('📡 Compartiendo tu ubicación con la central')
-    } catch { setEstado('⚠️ Sin conexión — reintentando…') }
-  }
+    } catch { /* reintenta en el próximo heartbeat */ }
+  }, [yo])
 
-  // Mantener la pantalla despierta (si no, el GPS se corta al bloquear)
-  const pedirWakeLock = async () => {
-    try { if ('wakeLock' in navigator) wakeRef.current = await navigator.wakeLock.request('screen') } catch { /* noop */ }
-  }
-  useEffect(() => {
-    const onVis = () => { if (document.visibilityState === 'visible' && activo && !wakeRef.current) pedirWakeLock() }
-    document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
-  }, [activo])
-
-  const iniciar = () => {
-    setError('')
-    if (!navigator.geolocation) { setError('Tu teléfono no permite ubicación.'); return }
-    setActivo(true); setEstado('Buscando señal GPS…')
-    pedirWakeLock()
+  const iniciar = useCallback((esAuto = true) => {
+    if (watchRef.current != null || !navigator.geolocation) return
+    setError(''); setActivo(true); setAuto(esAuto)
+    try { if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(w => { wakeRef.current = w }).catch(() => {}) } catch { /* noop */ }
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lng, heading, accuracy } = pos.coords
-        posRef.current = {
-          lat, lng,
-          heading: (heading != null && !Number.isNaN(heading)) ? heading : null,
-          accuracy: accuracy ?? null,
-        }
+        posRef.current = { lat, lng, heading: (heading != null && !Number.isNaN(heading)) ? heading : null, accuracy: accuracy ?? null }
         setUltima({ lat, lng, at: new Date() })
-        enviar() // enviar apenas hay señal
+        enviar()
       },
-      (err) => { setError(err.code === 1 ? 'Permiso de ubicación denegado.' : 'No se pudo leer el GPS.') },
+      (err) => setError(err.code === 1 ? 'Permiso de ubicación denegado.' : 'No se pudo leer el GPS.'),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     )
-    // Heartbeat: reenvía la última posición cada 10s aunque el driver esté quieto
-    // (watchPosition solo dispara al moverse → sin esto se pone "stale").
     hbRef.current = setInterval(enviar, HEARTBEAT_MS)
-  }
-  const detener = () => {
+  }, [enviar])
+
+  const detener = useCallback(() => {
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
     if (hbRef.current != null) { clearInterval(hbRef.current); hbRef.current = null }
     if (wakeRef.current) { wakeRef.current.release().catch(() => {}); wakeRef.current = null }
-    setActivo(false); setEstado('')
-    db.rpc('desconectar_driver', { p_empleado_id: yo.id }).catch(() => {})
-  }
+    setActivo(false); setAuto(false)
+    if (yo) db.rpc('desconectar_driver', { p_empleado_id: yo.id }).catch(() => {})
+  }, [yo])
+
   useEffect(() => () => {
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
     if (hbRef.current != null) clearInterval(hbRef.current)
     if (wakeRef.current) wakeRef.current.release().catch(() => {})
   }, [])
 
+  return { activo, auto, ultima, error, iniciar, detener }
+}
+
+// ── 📦 Mis pedidos ──────────────────────────────────────────────────
+function Pedidos({ yo, pedidos, recargar, beacon }) {
+  const [ocupado, setOcupado] = useState(null)
+  const [msg, setMsg] = useState('')
+
+  const recoger = async (p) => {
+    setOcupado(p.id)
+    try {
+      await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: p.id })
+      beacon.iniciar()   // empieza a compartir ubicación al salir
+      setMsg('🚀 ¡En camino! Estamos compartiendo tu ubicación.')
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
+
+  const entregar = async (p, metodo) => {
+    setOcupado(p.id)
+    try {
+      const { data, error } = await db.rpc('driver_marcar_entregado', {
+        p_empleado_id: yo.id, p_delivery_id: p.id, p_metodo_cobrado: metodo,
+      })
+      if (error) throw error
+      setMsg(`✅ Entregado · ${data.distancia_km} km · bono ${fmt(data.bono)}`)
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
+
+  if (pedidos.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', paddingTop: 40 }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>☕</div>
+        <div style={S.dim}>No tenés pedidos asignados.<br />Te avisamos cuando la central te asigne uno.</div>
+        {msg && <div style={{ ...S.ok, marginTop: 16 }}>{msg}</div>}
+      </div>
+    )
+  }
+
   return (
-    <div style={{ textAlign: 'center', paddingTop: 10 }}>
-      {!activo
-        ? <button style={S.mainBtn} onClick={iniciar}>▶️ Compartir mi ubicación</button>
-        : <button style={{ ...S.mainBtn, background: '#444' }} onClick={detener}>⏹️ Dejar de compartir</button>}
-      {estado && <div style={activo ? S.ok : S.dim}>{estado}</div>}
-      {ultima && <div style={S.dim}>Última señal: {ultima.at.toLocaleTimeString('es-SV')}<br />{ultima.lat.toFixed(5)}, {ultima.lng.toFixed(5)}</div>}
-      {error && <div style={S.err}>{error}</div>}
-      <div style={{ fontSize: 12, color: '#555', marginTop: 20 }}>Dejá esta pantalla abierta mientras repartís.</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {msg && <div style={S.banner}>{msg}</div>}
+      {pedidos.map(p => (
+        <div key={p.id} style={S.pedidoCard}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 800 }}>{p.numero_orden}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: p.estado === 'en_camino' ? '#f97316' : '#4ade80' }}>
+              {p.estado === 'en_camino' ? '🚀 En camino' : '📦 Listo para recoger'}
+            </span>
+          </div>
+          <div style={{ fontSize: 15, marginTop: 6 }}>{p.cliente_nombre}</div>
+          <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{p.cliente_direccion}</div>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>🏪 {p.sucursal} · {fmt(p.total)} · {p.metodo_pago}</div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            <a href={`tel:${p.cliente_telefono}`} style={{ ...S.btnSm('#333'), textDecoration: 'none' }}>📞 Llamar</a>
+            {p.cliente_lat && (
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${p.cliente_lat},${p.cliente_lng}`}
+                 target="_blank" rel="noopener" style={{ ...S.btnSm('#2563eb'), textDecoration: 'none' }}>🗺️ Cómo llegar</a>
+            )}
+          </div>
+
+          {p.estado === 'lista' ? (
+            <button disabled={ocupado === p.id} onClick={() => recoger(p)} style={{ ...S.accion('#E63946'), marginTop: 10 }}>
+              {ocupado === p.id ? '…' : '📦 Ya lo recogí — salgo'}
+            </button>
+          ) : (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Al entregar, ¿cómo te pagó?</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {[['efectivo','💵 Efectivo'],['tarjeta','💳 Tarjeta'],['transferencia','🏦 Transfer.']].map(([m, et]) => (
+                  <button key={m} disabled={ocupado === p.id} onClick={() => entregar(p, m)} style={S.accion('#16a34a', true)}>
+                    {ocupado === p.id ? '…' : et}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+      <div style={{ fontSize: 11, color: '#555', textAlign: 'center', marginTop: 4 }}>
+        Al entregar se registra tu viaje y suma a tu bono. Después liquidás en caja.
+      </div>
     </div>
   )
 }
 
-// ── 🧾 Mi historial ─────────────────────────────────────────────────
+// ── 🧾 Historial ────────────────────────────────────────────────────
 function Historial({ yo }) {
   const [viajes, setViajes] = useState(null)
   useEffect(() => { db.rpc('mis_viajes_driver', { p_empleado_id: yo.id }).then(({ data }) => setViajes(data || [])) }, [yo])
-
   if (viajes === null) return <div style={S.dim}>Cargando…</div>
   if (viajes.length === 0) return <div style={{ ...S.dim, textAlign: 'center', paddingTop: 30 }}>Todavía no tenés viajes este mes.</div>
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>Este mes · {viajes.length} viaje(s)</div>
+      <div style={{ fontSize: 12, color: '#888' }}>Este mes · {viajes.length} viaje(s)</div>
       {viajes.map(v => (
         <div key={v.id} style={S.rowCard}>
           <div>
@@ -177,11 +261,10 @@ function Historial({ yo }) {
   )
 }
 
-// ── 📊 Mis métricas ─────────────────────────────────────────────────
+// ── 📊 Métricas ─────────────────────────────────────────────────────
 function Metricas({ yo }) {
   const [m, setM] = useState(null)
   useEffect(() => { db.rpc('mis_metricas_driver', { p_empleado_id: yo.id }).then(({ data }) => setM(data || null)) }, [yo])
-
   if (!m) return <div style={S.dim}>Cargando…</div>
   return (
     <div>
@@ -215,16 +298,19 @@ const S = {
   main: { flex: 1, padding: 16, overflowY: 'auto', paddingBottom: 80 },
   nav: { position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: '#161616', borderTop: '1px solid #2a2a2a' },
   navBtn: { flex: 1, background: 'none', border: 'none', padding: '10px 0 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' },
+  badge: { position: 'absolute', top: -4, right: -10, background: '#E63946', color: '#fff', fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '1px 5px' },
   card: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 18, padding: '28px 22px', width: '100%', maxWidth: 380, textAlign: 'center' },
+  pedidoCard: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 },
   logo: { fontSize: 54, marginBottom: 6 },
   h1: { fontSize: 22, fontWeight: 800, margin: '0 0 6px', color: '#E63946' },
   sub: { fontSize: 14, color: '#aaa', margin: '0 0 16px' },
   lista: { display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '55vh', overflowY: 'auto' },
   driverBtn: { padding: '13px 14px', borderRadius: 12, border: '1px solid #333', background: '#1e1e1e', color: '#f0f0f0', fontSize: 15, fontWeight: 600, cursor: 'pointer', textAlign: 'left' },
-  mainBtn: { width: '100%', maxWidth: 360, padding: '16px', borderRadius: 14, border: 'none', background: '#E63946', color: '#fff', fontSize: 17, fontWeight: 800, cursor: 'pointer', marginBottom: 14 },
-  ok: { fontSize: 14, color: '#4ade80', margin: '6px 0', fontWeight: 600 },
+  ok: { fontSize: 14, color: '#4ade80', fontWeight: 600 },
   dim: { fontSize: 13, color: '#888', margin: '8px 0', lineHeight: 1.5 },
-  err: { fontSize: 13, color: '#E63946', margin: '10px 0', fontWeight: 600 },
+  banner: { background: '#1e2a1e', border: '1px solid #2f5f3f', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#a7e8bd' },
   linkSm: { background: 'none', border: 'none', color: '#888', fontSize: 12, textDecoration: 'underline', cursor: 'pointer' },
   rowCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '12px 14px' },
+  btnSm: (bg) => ({ padding: '8px 12px', borderRadius: 8, background: bg, color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-block' }),
+  accion: (bg, chico) => ({ padding: chico ? '11px 12px' : '14px', borderRadius: 12, background: bg, color: '#fff', border: 'none', fontSize: chico ? 13 : 15, fontWeight: 800, cursor: 'pointer', width: chico ? 'auto' : '100%', flex: chico ? 1 : 'none' }),
 }
