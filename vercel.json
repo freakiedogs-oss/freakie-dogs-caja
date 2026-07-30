@@ -9,6 +9,8 @@
     { "source": "/pos", "destination": "/pos.html" },
     { "source": "/menu/(.*)", "destination": "/menu.html" },
     { "source": "/menu", "destination": "/menu.html" },
+    { "source": "/driver/(.*)", "destination": "/driver.html" },
+    { "source": "/driver", "destination": "/driver.html" },
     { "source": "/((?!api/|sb/|sb$).*)", "destination": "/index.html" }
   ]
 }

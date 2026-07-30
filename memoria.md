@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-29 — Delivery: drivers en vivo en el mapa de la torre + beacon del motorista
+- **Pedido de Jose:** en el mismo mapa de cobertura, ver la ubicación real de los drivers.
+- **Backend** (migración `driver_ubicaciones_realtime`): tabla `driver_ubicaciones` (empleado_id PK, lat/lng/rumbo/exactitud, en_linea, updated_at) con **Realtime** (agregada a `supabase_realtime`, replica identity full, policy SELECT anon). RPCs SECURITY DEFINER: `actualizar_ubicacion_driver(...)` (upsert, anon), `desconectar_driver(id)`, `drivers_disponibles()` (lista motoristas por cargo). Ojo: `empleados` usa `nombre_completo` (no `nombre` — DeliveryView vuelve a estar roto por eso).
+- **Torre** (`TabCobertura.jsx`): marcadores 🛵 de drivers en vivo vía suscripción Realtime a `driver_ubicaciones`; se actualizan solos, caen del mapa a los 5 min sin señal; contador "N en línea".
+- **Beacon del motorista** (nuevo 4º entry Vite `driver.html` → `src/driver/DriverBeacon.jsx`, ruta `/driver`): el driver elige su nombre (recordado en localStorage) y comparte GPS (`watchPosition`, envía cada ≤8s vía RPC); botón detener → `desconectar_driver`. Es el **germen de la PWA del motorista (Fase 5)** — luego suma PIN + pedidos asignados (recoger/entregar). Deps: ya estaban (leaflet). Build OK.
+- **Privacidad:** `driver_ubicaciones` tiene SELECT anon (la torre es anon hoy); moverlo tras identidad authenticated en Fase 0-B junto con el resto.
+
 ## 2026-07-29 — Delivery: torre → tab Cobertura (polígonos editables por sucursal)
 - **Pedido de Jose:** en la torre, ver y editar la zona de cobertura de cada sucursal en un mapa, con **polígonos** (no círculos) editables moviendo las puntas.
 - **Backend** (migración `delivery_cobertura_poligonos`): columna `sucursales.cobertura_geojson jsonb` (GeoJSON Polygon; NULL = fallback por radio). `_punto_en_poligono(lat,lng,geo)` (ray casting, inmutable). `sucursal_mas_cercana` reescrita: elige la sucursal cuyo **polígono** contiene el punto; sin polígono usa radio ≤20 km; entre las que cubren, la más cercana (devuelve `por_poligono`). RPC `guardar_cobertura_sucursal(sucursal_id, geojson)` (SECURITY DEFINER, valida Polygon ≥4 pts, grant anon+auth). Probado: punto dentro→M001 por polígono, Soyapango→S001 por radio; limpiado.

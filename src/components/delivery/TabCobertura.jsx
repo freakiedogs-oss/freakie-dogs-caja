@@ -20,10 +20,12 @@ export default function TabCobertura({ show = () => {} }) {
   const mapRef = useRef(null);
   const polyRef = useRef(null);
   const markersRef = useRef([]);
+  const driversRef = useRef({}); // empleado_id → L.marker
   const [sucursales, setSucursales] = useState([]);
   const [selId, setSelId] = useState('');
   const [msg, setMsg] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [nDrivers, setNDrivers] = useState(0);
 
   // Init del mapa (una vez) + carga de sucursales
   useEffect(() => {
@@ -44,7 +46,42 @@ export default function TabCobertura({ show = () => {} }) {
         if (list[0]) setSelId(list[0].id);
       });
 
-    return () => { map.remove(); mapRef.current = null; };
+    // ── Drivers en vivo (Realtime) ──────────────────────────────────
+    const drivers = driversRef.current;
+    const FRESCO_MS = 5 * 60 * 1000; // 5 min sin actualizar = se cae del mapa
+    const quitar = (id) => { if (id && drivers[id]) { drivers[id].remove(); delete drivers[id]; setNDrivers(Object.keys(drivers).length); } };
+    const upsert = (r) => {
+      if (!r || r.lat == null || r.lng == null) return;
+      if (r.en_linea === false) { quitar(r.empleado_id); return; }
+      const ll = [r.lat, r.lng];
+      if (drivers[r.empleado_id]) {
+        drivers[r.empleado_id].setLatLng(ll).setTooltipContent(`🛵 ${r.nombre || 'Motorista'}`);
+      } else {
+        const icon = L.divIcon({
+          className: 'fk-driver',
+          html: '<div style="font-size:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">🛵</div>',
+          iconSize: [26, 26], iconAnchor: [13, 13],
+        });
+        drivers[r.empleado_id] = L.marker(ll, { icon, zIndexOffset: 1000 })
+          .addTo(map).bindTooltip(`🛵 ${r.nombre || 'Motorista'}`);
+      }
+      setNDrivers(Object.keys(drivers).length);
+    };
+
+    db.from('driver_ubicaciones').select('*').eq('en_linea', true).then(({ data }) => {
+      (data || []).forEach((r) => {
+        if (Date.now() - new Date(r.updated_at).getTime() < FRESCO_MS) upsert(r);
+      });
+    });
+
+    const canal = db.channel('torre-drivers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_ubicaciones' }, (p) => {
+        if (p.eventType === 'DELETE') quitar(p.old?.empleado_id);
+        else upsert(p.new);
+      })
+      .subscribe();
+
+    return () => { db.removeChannel(canal); map.remove(); mapRef.current = null; };
   }, []);
 
   // Marcadores de todas las sucursales (contexto)
@@ -130,9 +167,14 @@ export default function TabCobertura({ show = () => {} }) {
 
   return (
     <div>
-      <div style={{ fontSize: 13, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
-        Dibujá la zona de reparto de cada sucursal como un polígono y movés las puntas para ajustarla.
-        Un pedido se rutea a la sucursal cuyo polígono lo contiene. Sin polígono, la sucursal cubre por radio (≤20 km).
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: '#888', lineHeight: 1.5, flex: 1, minWidth: 240 }}>
+          Dibujá la zona de reparto de cada sucursal como un polígono y movés las puntas para ajustarla.
+          Un pedido se rutea a la sucursal cuyo polígono lo contiene. Sin polígono, la sucursal cubre por radio (≤20 km).
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: nDrivers > 0 ? '#4ade80' : '#888', whiteSpace: 'nowrap' }}>
+          🛵 {nDrivers} en línea
+        </div>
       </div>
 
       {/* Selector de sucursal */}
