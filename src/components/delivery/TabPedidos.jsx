@@ -22,9 +22,12 @@ export default function TabPedidos({ show = () => {} }) {
   const [sesion, setSesion] = useState(null);
   const [pin, setPin] = useState('');
   const [pedidos, setPedidos] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [asignSel, setAsignSel] = useState({}); // orderId → motorista_id
   const [cargando, setCargando] = useState(false);
   const [err, setErr] = useState('');
   const [confirmando, setConfirmando] = useState(null);
+  const [asignando, setAsignando] = useState(null);
   const pollRef = useRef(null);
 
   const cargar = useCallback(async (tk) => {
@@ -32,9 +35,13 @@ export default function TabPedidos({ show = () => {} }) {
     if (!t) return;
     setCargando(true);
     try {
-      const { data, error } = await db.rpc('torre_listar_pedidos', { p_token: t });
+      const [{ data, error }, dr] = await Promise.all([
+        db.rpc('torre_listar_pedidos', { p_token: t }),
+        db.rpc('drivers_en_linea'),
+      ]);
       if (error) throw error;
       setPedidos(data || []);
+      setDrivers(dr?.data || []);
       setErr('');
     } catch (e) {
       // token expirado / inválido → volver a pedir PIN
@@ -83,6 +90,21 @@ export default function TabPedidos({ show = () => {} }) {
       await cargar(token);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo confirmar')); }
     finally { setConfirmando(null); }
+  };
+
+  const asignar = async (p) => {
+    const motoristaId = asignSel[p.id] || p.motorista_sugerido?.motorista_id;
+    if (!motoristaId) { show('⚠️ Elegí un motorista'); return; }
+    setAsignando(p.id);
+    try {
+      const { error } = await db.rpc('torre_asignar_motorista', {
+        p_token: token, p_delivery_id: p.id, p_motorista_id: motoristaId,
+      });
+      if (error) throw error;
+      show('🛵 Motorista asignado');
+      await cargar(token);
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo asignar')); }
+    finally { setAsignando(null); }
   };
 
   const waLink = (tel, p) => {
@@ -151,14 +173,39 @@ export default function TabPedidos({ show = () => {} }) {
                    style={{ ...mini('#25D366'), textDecoration: 'none', display: 'inline-block' }}>💬 WhatsApp</a>
 
                 {p.estado === 'recibida' && (
-                  <>
-                    <button disabled={confirmando === p.id || fueraCobertura}
-                      onClick={() => confirmar(p, p.metodo_pago || 'efectivo')} style={mini(c.red)}>
-                      {confirmando === p.id ? 'Enviando…' : '✅ Confirmar pago → cocina'}
-                    </button>
-                  </>
+                  <button disabled={confirmando === p.id || fueraCobertura}
+                    onClick={() => confirmar(p, p.metodo_pago || 'efectivo')} style={mini(c.red)}>
+                    {confirmando === p.id ? 'Enviando…' : '✅ Confirmar pago → cocina'}
+                  </button>
                 )}
               </div>
+
+              {/* Asignación de motorista cuando cocina lo marca LISTA */}
+              {p.estado === 'lista' && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${c.border}` }}>
+                  {p.motorista_id ? (
+                    <div style={{ fontSize: 13, color: c.green }}>🛵 Asignado: <b>{p.motorista_nombre}</b></div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: c.dim, marginBottom: 6 }}>
+                      {p.motorista_sugerido
+                        ? <>Sugerido: <b style={{ color: c.text }}>{p.motorista_sugerido.nombre}</b> · a {p.motorista_sugerido.distancia_km} km</>
+                        : 'Sin motoristas en línea cerca — elegí uno manualmente.'}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select
+                      value={asignSel[p.id] || p.motorista_id || p.motorista_sugerido?.motorista_id || ''}
+                      onChange={e => setAsignSel(s => ({ ...s, [p.id]: e.target.value }))}
+                      style={{ background: c.input, border: '1px solid #333', borderRadius: 8, padding: '8px 10px', color: c.text, fontSize: 12 }}>
+                      <option value="">— motorista en línea —</option>
+                      {drivers.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+                    </select>
+                    <button disabled={asignando === p.id} onClick={() => asignar(p)} style={mini(c.blue)}>
+                      {asignando === p.id ? '…' : (p.motorista_id ? 'Cambiar' : '🛵 Asignar')}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
