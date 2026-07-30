@@ -20,6 +20,7 @@ export default defineConfig({
         pos:    resolve(__dirname, 'pos.html'),
         menu:   resolve(__dirname, 'menu.html'),
         driver: resolve(__dirname, 'driver.html'),
+        track:  resolve(__dirname, 'track.html'),
       },
       output: {
         manualChunks(id) {

@@ -1,0 +1,73 @@
+/* ── Tracking del pedido — pantalla del cliente ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+body { background: #f0efec; color: #1a1416; }
+
+.tk-page { min-height: 100vh; padding: 0 0 30px; }
+.tk-wrap { max-width: 560px; margin: 0 auto; background: #fff; min-height: 100vh; padding-bottom: 20px; }
+
+.tk-marca {
+  background: #E63946; color: #fff; text-align: center;
+  font-weight: 900; letter-spacing: .04em; font-size: 15px; padding: 12px;
+}
+
+/* Hero de estado */
+.tk-hero { text-align: center; padding: 30px 22px 22px; }
+.tk-hero-ic { font-size: 60px; line-height: 1; margin-bottom: 10px; animation: tk-pop .4s ease-out; }
+@keyframes tk-pop { from { transform: scale(.6); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+.tk-hero-t { font-size: 24px; font-weight: 850; letter-spacing: -.02em; }
+.tk-hero-s { font-size: 14px; color: #7a7278; margin-top: 5px; }
+.tk-eta {
+  display: inline-block; margin-top: 14px; background: #fff4e0; border: 1px solid #f4b942;
+  color: #7a5200; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 999px;
+}
+
+/* Mapa */
+.tk-mapa { height: 260px; width: 100%; }
+.tk-mapa-ph {
+  height: 90px; display: flex; align-items: center; justify-content: center;
+  background: #faf8f6; color: #999; font-size: 13px; border-block: 1px solid #eee;
+}
+
+/* Línea de tiempo */
+.tk-pasos { list-style: none; padding: 20px 22px 8px; display: flex; flex-direction: column; gap: 0; }
+.tk-paso { display: flex; align-items: center; gap: 12px; padding: 9px 0; position: relative; opacity: .38; }
+.tk-paso::before {
+  content: ''; position: absolute; left: 15px; top: 30px; bottom: -9px; width: 2px; background: #e6e0da;
+}
+.tk-paso:last-child::before { display: none; }
+.tk-paso.hecho, .tk-paso.activo { opacity: 1; }
+.tk-paso.hecho::before { background: #2f9e57; }
+.tk-punto {
+  width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 15px;
+  background: #f0ecea; border: 2px solid #e6e0da; z-index: 1;
+}
+.tk-paso.hecho .tk-punto { background: #2f9e57; border-color: #2f9e57; color: #fff; font-weight: 800; }
+.tk-paso.activo .tk-punto { background: #fff; border-color: #E63946; box-shadow: 0 0 0 4px rgba(230,57,70,.15); }
+.tk-paso-t { font-size: 14.5px; font-weight: 600; }
+.tk-paso.activo .tk-paso-t { color: #E63946; font-weight: 800; }
+
+/* Resumen */
+.tk-card { margin: 12px 18px; border: 1px solid #eee; border-radius: 14px; padding: 15px; }
+.tk-card-h { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 14px; margin-bottom: 10px; }
+.tk-total { color: #E63946; }
+.tk-items { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.tk-items li { font-size: 13.5px; color: #4a4448; }
+.tk-qty { color: #999; font-weight: 700; margin-right: 3px; }
+.tk-dir { font-size: 12.5px; color: #8a8288; margin-top: 9px; }
+
+.tk-gracias {
+  text-align: center; padding: 22px; font-size: 16px; font-weight: 800; line-height: 1.6;
+}
+.tk-gracias span { display: block; font-size: 13px; font-weight: 500; color: #8a8288; margin-top: 2px; }
+
+.tk-cargando, .tk-error { text-align: center; padding: 60px 24px; color: #8a8288; font-size: 14px; }
+.tk-spin {
+  display: inline-block; width: 22px; height: 22px; vertical-align: -5px; margin-right: 8px;
+  border: 3px solid #eee; border-top-color: #E63946; border-radius: 50%; animation: tk-rot .8s linear infinite;
+}
+@keyframes tk-rot { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) { .tk-spin { animation-duration: 2.4s } .tk-hero-ic { animation: none } }
+
+.tk-foot { text-align: center; font-size: 11.5px; color: #b0a8ae; padding: 16px; }
