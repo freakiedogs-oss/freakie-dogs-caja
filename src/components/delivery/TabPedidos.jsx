@@ -135,9 +135,13 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setAsignando(null); }
   };
 
+  const trackUrl = (p) => `${location.origin}/track?t=${p.tracking_token}`;
   const waLink = (tel, p) => {
     const num = String(tel || '').replace(/\D/g, '');
-    const msg = `Hola! Soy de Freakie Dogs 🌭 Sobre tu pedido ${p.numero_orden} por ${fmt(p.total)}. ¿Cómo querés pagar (efectivo/transferencia)?`;
+    const base = `Hola! Soy de Freakie Dogs 🌭 Sobre tu pedido ${p.numero_orden} por ${fmt(p.total)}.`;
+    const msg = p.estado === 'recibida'
+      ? `${base} ¿Cómo querés pagar (efectivo/transferencia)?`
+      : `${base} Seguí tu pedido en vivo acá: ${trackUrl(p)}`;
     return `https://wa.me/503${num}?text=${encodeURIComponent(msg)}`;
   };
 
