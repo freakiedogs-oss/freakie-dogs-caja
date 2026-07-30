@@ -2,6 +2,20 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-29 — Cierres fantasma por "mes equivocado" (fecha futura) → limpieza + guardrail de raíz (DB + frontend)
+- **Disparador:** Jazz (Soyapango) reenvió que "se le duplicó un cierre del 29 en tecla" (Cafetalón/M001). Al abrir el form de Cierre de Caja del 29 salía "Ya hay 1 cierre para esta fecha".
+- **Causa raíz (confirmada, sistémica — NO fue typo aislado):** el form **`src/components/caja/CierreForm.jsx`** usa `<input type="date">` **sin `max` ni validación de fecha futura**. `today()` (`config.js:49`) está bien resuelto para UTC-6, no hay bug de timezone. Cuando el personal se pone al día con los **últimos días del mes anterior** en los primeros días del mes nuevo, el date-picker de iOS deja el **mes actual** → el cierre queda con **fecha futura** y **duplica** el cierre real del mes anterior. Todos los casos hallados producen fecha futura al momento de crearse.
+- **Casos encontrados y limpiados (backup → borrado, verificados como duplicados EXACTOS por huella de egresos):**
+  - **M001** 29/07 (`1ba8ce4d…`, $1797.01, 20 egresos incl. salarios $495.19) = duplicado exacto de **M001 29/06** (`fe6fd648…`, aprobado, mismos 20 egresos, total egresos $804.24). NADA se perdió.
+  - **S002** 29/07 (`cb0d9a55…`) = dup exacto de **S002 29/06**; **S002** 30/07 (`351449ba…`) = dup exacto de **S002 30/06** (aprobado). Creados 02/07 por Karla (poniéndose al día con jun 29/30).
+- **Ambiguos, NO tocados (para revisión de Jose):** **S003** tiene filas viejas creadas a inicio de mes con fecha a fin del mismo mes (may 28/29 `aprobado` con data única = probablemente reales/import; may 30 vs jun 30 = casi-dup pero cada uno es único de su día). Parecen data importada, distinto al bug reciente. Query para re-listar futuros: `select … from ventas_diarias where fecha > (created_at at time zone 'America/El_Salvador')::date`.
+- **Fix de raíz aplicado:**
+  1. **DB (defensa dura):** migración `guardrail_ventas_diarias_no_fecha_futura` — trigger `trg_vd_no_fecha_futura` BEFORE INSERT/UPDATE OF fecha en `ventas_diarias` que lanza excepción si `fecha > (now() at time zone 'America/El_Salvador')::date`. Probado: futuro rechazado, hoy pasa.
+  2. **Frontend:** `CierreForm.jsx` — `max={today()}` en el input date + check `if (!isEdit && fecha > today())` en `handleSubmit`. Build OK. (No aplica en modo edición: fecha es `readOnly`.)
+- **Impacto P&L:** el branch `egresos_cierre` de `v_gastos_consolidados` **no filtra por estado del cierre**, así que los gastos (no-salario) de estos fantasmas contaban mal fechados en jul-2026; bajan al próximo REFRESH de `mv_finanzas_gastos_mensual` (correcto). Salarios se excluían por `motivo_nombre`, no afectaban P&L. Ventas fantasma no afectan ingresos (revenue = Quanto).
+- **Backups restaurables (local mini, fuera de git/Syncthing por nómina):** `~/freakie-db-backups/2026-07-29_M001_cierre-fantasma_1ba8ce4d_RESTORE.sql` y `~/freakie-db-backups/2026-07-29_S002_cierres-fantasma_mes-equivocado_RESTORE.sql`.
+- Ver [[freakie-cierres-multi-turno]].
+
 ## 2026-07-28 — Impresión Soyapango (S001): puente blindado + watchdog + aviso en pantalla
 - **Qué:** endurecimiento del puente de impresión Windows (`windows-print-bridge/`) + feedback de impresión en el POS (`src/pos/print/printService.js`, `POSMain.jsx`, `CierreTurno.jsx`).
 - **Síntoma (Jose):** la impresora de Plaza Mundo Soyapango "no imprime". Foto de la PC mostraba `No se pudo abrir el puerto 9110: ... una dirección de socket ...` al abrir el `.bat`. Apretaron una tecla (cerraron esa ventana) y **empezó a imprimir sin reiniciar**.
