@@ -1,21 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 /**
- * Botón flotante "Reportar problema" (variante db-based: Freakie / Eatalia).
- * El personal describe un problema (y opcionalmente adjunta una foto) → se crea un ticket
- * en `soporte_tickets`; el resolver de la mini lo diagnostica/resuelve/escala.
+ * "Reportar problema" (variante db-based: Freakie / Eatalia).
+ * Dos modos:
+ *   - Uncontrolled (default): renderiza un botón flotante (FAB) + modal.
+ *   - Controlled: pasá `open` + `onClose` → renderiza SOLO el modal (para dispararlo desde un
+ *     ítem del menú, sin FAB flotante).
+ * Sube una foto opcional al bucket `soporte-fotos` y crea un ticket en `soporte_tickets`.
  *
- * Props: db (cliente supabase), tenant, storeCode?, reporterName?, canal?
+ * Props: db, tenant, storeCode?, reporterName?, canal?, open?, onClose?
  */
 const BUCKET = 'soporte-fotos'
 
-export default function ReportarProblema({ db, tenant, storeCode = null, reporterName = null, canal = 'pos' }) {
-  const [open, setOpen] = useState(false)
+export default function ReportarProblema({ db, tenant, storeCode = null, reporterName = null, canal = 'pos', open: openProp, onClose }) {
+  const controlled = typeof onClose === 'function'
+  const [openState, setOpenState] = useState(false)
+  const open = controlled ? !!openProp : openState
   const [texto, setTexto] = useState('')
   const [foto, setFoto] = useState(null)
   const [estado, setEstado] = useState('idle') // idle | enviando | ok | error
 
-  function reset() { setTexto(''); setFoto(null); setEstado('idle') }
+  const cerrar = () => { if (controlled) onClose(); else setOpenState(false) }
+  useEffect(() => { if (open) setEstado('idle') }, [open])
 
   async function enviar() {
     const desc = texto.trim()
@@ -38,26 +44,28 @@ export default function ReportarProblema({ db, tenant, storeCode = null, reporte
     })
     if (error) { setEstado('error'); return }
     setEstado('ok'); setTexto(''); setFoto(null)
-    setTimeout(() => { setOpen(false); setEstado('idle') }, 2600)
+    setTimeout(() => { cerrar() }, 2600)
   }
 
   return (
     <>
-      <button
-        onClick={() => { setOpen(true); reset() }}
-        title="Reportar un problema"
-        style={{
-          position: 'fixed', left: 16, bottom: 16, zIndex: 9998,
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: '#b0342a', color: '#fff', border: 'none', borderRadius: 999,
-          padding: '11px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-          boxShadow: '0 4px 14px rgba(0,0,0,.35)', fontFamily: 'inherit',
-        }}>
-        🛟 Reportar problema
-      </button>
+      {!controlled && (
+        <button
+          onClick={() => { setOpenState(true); setTexto(''); setFoto(null); setEstado('idle') }}
+          title="Reportar un problema"
+          style={{
+            position: 'fixed', left: 16, bottom: 16, zIndex: 9998,
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: '#b0342a', color: '#fff', border: 'none', borderRadius: 999,
+            padding: '11px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(0,0,0,.35)', fontFamily: 'inherit',
+          }}>
+          🛟 Reportar problema
+        </button>
+      )}
 
       {open && (
-        <div onClick={() => setOpen(false)} style={{
+        <div onClick={cerrar} style={{
           position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,.55)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
         }}>
@@ -68,7 +76,7 @@ export default function ReportarProblema({ db, tenant, storeCode = null, reporte
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <h3 style={{ margin: 0, fontSize: 18 }}>🛟 Reportar un problema</h3>
-              <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', color: '#b9ada0', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
+              <button onClick={cerrar} style={{ background: 'none', border: 'none', color: '#b9ada0', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
             <p style={{ margin: '2px 0 12px', fontSize: 13, color: '#b9ada0' }}>
               Contá qué está pasando (no imprime, no loguea, se pega, etc.). Podés adjuntar una foto. El equipo lo revisa y te responde acá mismo.
