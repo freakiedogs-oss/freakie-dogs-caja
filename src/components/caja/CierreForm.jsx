@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { db } from '../../supabase';
 import { STORES, today, n } from '../../config';
 import { BUCKET_CIERRES as BUCKET } from '../../config';
+import QrFotoUpload from '../ui/QrFotoUpload';
 import { useToast } from '../../hooks/useToast';
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
@@ -53,6 +54,7 @@ function ModalEgreso({ motivos, onSave, onClose, empleadosSuc }) {
   const [nuevoApellido, setNuevoApellido] = useState('');
   const [comentario, setComentario] = useState('');
   const [foto, setFoto] = useState(null);
+  const [fotoUrl, setFotoUrl] = useState(null);
   const fRef = useRef();
 
   const esMotEmpleado = motivo && MOTIVOS_EMPLEADO.includes(motivo.nombre);
@@ -66,7 +68,7 @@ function ModalEgreso({ motivos, onSave, onClose, empleadosSuc }) {
     n(monto) > 0 &&
     personaOk &&
     (!motivo.requiere_comentario || comentario.trim()) &&
-    (!motivo.requiere_foto || foto);
+    (!motivo.requiere_foto || foto || fotoUrl);
 
   const selectEmpleado = (emp) => {
     setEmpleadoId(emp.id);
@@ -242,12 +244,22 @@ function ModalEgreso({ motivos, onSave, onClose, empleadosSuc }) {
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={(e) => setFoto(e.target.files[0])}
+                  onChange={(e) => { setFoto(e.target.files[0]); setFotoUrl(null); }}
                   style={{ display: 'none' }}
                 />
-                <button className="btn btn-ghost" onClick={() => fRef.current.click()} style={{ width: 'auto', padding: '10px 20px' }}>
-                  {foto ? `✓ ${foto.name}` : '📷 Foto'}
-                </button>
+                {fotoUrl ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: '#0d1a18', border: '1px solid #1f3a34', borderRadius: 10, maxWidth: 320 }}>
+                    <span style={{ flex: 1, color: '#2dd4a8', fontWeight: 600 }}>✓ Foto recibida del teléfono</span>
+                    <button onClick={() => setFotoUrl(null)} style={{ background: 'none', border: 'none', color: '#9a9088', cursor: 'pointer', fontSize: 16 }}>×</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: 8, maxWidth: 320 }}>
+                    <button className="btn btn-ghost" onClick={() => fRef.current.click()} style={{ padding: '10px 20px' }}>
+                      {foto ? `✓ ${foto.name}` : '📷 Foto (cámara / archivo)'}
+                    </button>
+                    <QrFotoUpload onFoto={(url) => { setFotoUrl(url); setFoto(null); }} />
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -268,7 +280,7 @@ function ModalEgreso({ motivos, onSave, onClose, empleadosSuc }) {
                 empleado_id: empleadoId,
                 comentario: comentario.trim() || null,
                 foto_file: foto || null,
-                foto_url: null,
+                foto_url: fotoUrl || null,
               })
             }
             disabled={!ok}

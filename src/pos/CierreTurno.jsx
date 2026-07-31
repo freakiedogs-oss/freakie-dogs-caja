@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES, BUCKET_CIERRES } from '../config'
+import QrFotoUpload from '../components/ui/QrFotoUpload'
 import Icon from './Icon'
 import { useToast } from '../hooks/useToast'
 import { printCorte } from './print/printService'
@@ -32,10 +33,11 @@ function ModalEgreso({ motivos, empleadosSuc, onSave, onClose }) {
   const [nom, setNom] = useState(''); const [ape, setApe] = useState('')
   const [comentario, setComentario] = useState('')
   const [foto, setFoto] = useState(null)
+  const [fotoUrl, setFotoUrl] = useState(null)
   const fRef = useRef()
   const esEmp = motivo && MOTIVOS_EMPLEADO.includes(motivo.nombre)
   const personaOk = !motivo?.requiere_persona || (esEmp ? (empleadoId || (showNuevo && nom.trim() && ape.trim())) : persona.trim())
-  const ok = motivo && _n(monto) > 0 && personaOk && (!motivo.requiere_comentario || comentario.trim()) && (!motivo.requiere_foto || foto)
+  const ok = motivo && _n(monto) > 0 && personaOk && (!motivo.requiere_comentario || comentario.trim()) && (!motivo.requiere_foto || foto || fotoUrl)
 
   return (
     <div style={_modalBg} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -95,14 +97,24 @@ function ModalEgreso({ motivos, empleadosSuc, onSave, onClose }) {
           {motivo.requiere_foto && (
             <div style={{ marginBottom: 12 }}>
               <div style={_lbl}>Foto requerida *</div>
-              <input ref={fRef} type="file" accept="image/*" capture="environment" onChange={e => setFoto(e.target.files[0])} style={{ display: 'none' }} />
-              <button style={ghostBtn} onClick={() => fRef.current.click()}>{foto ? `✓ ${foto.name}` : '📷 Foto'}</button>
+              <input ref={fRef} type="file" accept="image/*" capture="environment" onChange={e => { setFoto(e.target.files[0]); setFotoUrl(null) }} style={{ display: 'none' }} />
+              {fotoUrl ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: '#0d1a18', border: '1px solid #1f3a34', borderRadius: 10 }}>
+                  <span style={{ flex: 1, color: '#2dd4a8', fontWeight: 600 }}>✓ Foto recibida del teléfono</span>
+                  <button onClick={() => setFotoUrl(null)} style={{ background: 'none', border: 'none', color: '#9a9088', cursor: 'pointer', fontSize: 16 }}>×</button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <button style={ghostBtn} onClick={() => fRef.current.click()}>{foto ? `✓ ${foto.name}` : '📷 Foto (cámara / archivo)'}</button>
+                  <QrFotoUpload onFoto={(url) => { setFotoUrl(url); setFoto(null) }} />
+                </div>
+              )}
             </div>
           )}
         </>)}
         <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
           <button style={{ ...ghostBtn, flex: 1, padding: '10px' }} onClick={onClose}>Cancelar</button>
-          <button disabled={!ok} onClick={() => ok && onSave({ motivo_id: motivo.id, motivo_nombre: motivo.nombre, monto: _n(monto), persona_recibe: persona.trim() || null, empleado_id: empleadoId, comentario: comentario.trim() || null, foto_file: foto || null, foto_url: null })}
+          <button disabled={!ok} onClick={() => ok && onSave({ motivo_id: motivo.id, motivo_nombre: motivo.nombre, monto: _n(monto), persona_recibe: persona.trim() || null, empleado_id: empleadoId, comentario: comentario.trim() || null, foto_file: foto || null, foto_url: fotoUrl || null })}
             style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#E62329', color: '#fff', fontWeight: 800, cursor: 'pointer', opacity: ok ? 1 : 0.4 }}>Agregar</button>
         </div>
       </div>
