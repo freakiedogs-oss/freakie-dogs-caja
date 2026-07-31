@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import SubirFotoItem from './SubirFotoItem'
 import { db } from '../../supabase'
 import Icon from '../Icon'
 import { confirmAsync } from '../confirmDialog'
@@ -509,8 +510,14 @@ function ItemForm({ item, cats, esDelivery, onSave, onCancel }) {
         </div>
       </div>
 
-      <label style={labelStyle}>URL imagen</label>
+      <label style={labelStyle}>Foto del ítem</label>
       <input value={f.imagen_url} onChange={e => upd('imagen_url', e.target.value)} style={inputStyle} placeholder="https://..." />
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <SubirFotoItem itemId={item.id} C={C} onSubida={(url) => upd('imagen_url', url)} />
+        {f.imagen_url && (
+          <img src={f.imagen_url} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}`, marginTop: 8 }} />
+        )}
+      </div>
 
       <div style={{ display: 'flex', gap: 16, marginTop: 14 }}>
         <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
