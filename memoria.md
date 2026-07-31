@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 5-Ago-2026 — PR #60 rebaseado + hallazgo: el envío de DTE por correo está en CERO
+
+**Contexto:** PR #60 (`feat/cobro-correo-cliente-obligatorio`, del 31-Jul) hace **obligatorio el correo del cliente** al adjuntarlo a un cobro Factura/CCF, para poder auto-enviarle el DTE (JSON+PDF). Estaba abierto y 89 commits atrás de `main`. Se **rebaseó sobre `main`** (recreado por cherry-pick del único commit `94c937c`; conflictos resueltos: `PaymentModal.jsx` conservó el prop `tipo` de main + el helper `validEmail`; `memoria.md` se tomó de main). **NO se mergeó**: toca facturación, lo aprueba Jose.
+
+**Hallazgo al auditar el pipeline (importante):** el envío por correo **NO está funcionando**.
+- Infra desplegada: edge function `freakie-dte-email` (v3, ACTIVE) + pg_cron `freakie-dte-email-sweep` (cada minuto, `freakie_dte_email_sweep()`) + Apps Script bajo `freakiedogs@gmail.com`. El sweep solo toma DTE de las últimas 2h con `receptor.correo` no nulo.
+- **Agosto: 2,986 DTE sellados de Freakie, solo 3 con correo de receptor, y 0 entregados** (`pos_dte_email_log`: 3 filas, todas `pending`, `to_email` null). Causa raíz doble: (1) el POS no captura el correo (PR #60 sin mergear) → 99.9% de DTE salen sin correo; (2) aun con correo, la edge function no completa el envío (queda en `pending`, nunca pasa a `sent`). El sweep no reintenta pasadas 2h, así que esos 3 quedaron colgados para siempre.
+- **Para que empiecen a salir correos** hacen falta LAS DOS cosas: mergear PR #60 (capturar correo en caja) **y** arreglar la entrega (por qué la función queda en `pending`).
+
 ## 5-Ago-2026 — Motorista visible en las órdenes de Delivery del POS
 
 Pedido de Jose: en el POS (tab Delivery), cada orden debe mostrar el motorista responsable, para que la caja
