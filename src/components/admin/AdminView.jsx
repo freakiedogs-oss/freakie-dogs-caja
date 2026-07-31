@@ -86,6 +86,19 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   const allStoreCodes=Object.keys(STORES).filter(sc=>sc!=='CM001');
   const esRangoSimple=fechaDesde===fechaHasta;
 
+  // Cajas por sucursal (multi-caja: Lourdes) → separar cierres por caja
+  const CAJA_LABEL={general:'General',drive:'Drive Thru'};
+  const [cajasStore,setCajasStore]=useState({});
+  useEffect(()=>{
+    db.from('pos_impresoras').select('store_code,caja').eq('activa',true).then(({data})=>{
+      const m={};
+      (data||[]).forEach(r=>{ if(r.caja){ if(!m[r.store_code]) m[r.store_code]=new Set(); m[r.store_code].add(r.caja); } });
+      const out={}; Object.entries(m).forEach(([s,set])=>{ out[s]=Array.from(set); });
+      setCajasStore(out);
+    });
+  },[]);
+  const cajasDe=(sc)=> (cajasStore[sc]&&cajasStore[sc].length>=2)?cajasStore[sc]:[null];
+
   const cargar=async()=>{
     setLoading(true);
     const [cRes,dRes,accRes]=await Promise.all([
@@ -103,7 +116,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   const groupByStoreDate=useCallback((cierresArr)=>{
     const map={};
     for(const c of cierresArr){
-      const key=`${c.store_code}|${c.fecha}`;
+      const key=`${c.store_code}|${c.fecha}|${c.caja||''}`;
       if(!map[key]) map[key]=[];
       map[key].push(c);
     }
@@ -170,8 +183,8 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
   const matchSuc=(sc)=> filtroSuc==='todas'||filtroSuc===sc;
 
   // Status de una sucursal en una fecha — ahora consolida todos los turnos
-  const getStatus=(sc,fecha)=>{
-    const group=cierres.filter(x=>x.store_code===sc&&x.fecha===fecha);
+  const getStatus=(sc,fecha,caja=null)=>{
+    const group=cierres.filter(x=>x.store_code===sc&&x.fecha===fecha&&(x.caja||null)===(caja||null));
     if(group.length===0) return {tipo:'faltante'};
     const c=consolidarCierres(group);
     const dep=depositos.find(d=>d.store_code===sc&&(d.fotos_urls||[]).length>0);
@@ -261,14 +274,18 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
 
     if(esRangoSimple){
       const stores=filtroSuc==='todas'?allStoreCodes:[filtroSuc];
-      return stores.map(sc=>{
-        const s=getStatus(sc,fechaDesde);
-        if(filtroEstado!=='todos'){
-          const tipoMatch=filtroEstado===s.tipo||(filtroEstado==='enviado'&&s.tipo==='revision');
-          if(!tipoMatch) return null;
+      const out=[];
+      for(const sc of stores){
+        for(const caja of cajasDe(sc)){
+          const s=getStatus(sc,fechaDesde,caja);
+          if(filtroEstado!=='todos'){
+            const tipoMatch=filtroEstado===s.tipo||(filtroEstado==='enviado'&&s.tipo==='revision');
+            if(!tipoMatch) continue;
+          }
+          out.push({sc,caja,s});
         }
-        return {sc,s};
-      }).filter(Boolean);
+      }
+      return out;
     } else {
       // Agrupar por store_code+fecha → una tarjeta por grupo
       const grouped=groupByStoreDate(cierres);
@@ -279,7 +296,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
         const dep=depositos.find(d=>d.store_code===c.store_code&&(d.fotos_urls||[]).length>0);
         if(!matchEstado(c.estado,dep)) continue;
         const tipo=getTipo(c,dep);
-        items.push({sc:c.store_code,s:{tipo,cierre:c,group,dep:dep||null}});
+        items.push({sc:c.store_code,caja:c.caja||null,s:{tipo,cierre:c,group,dep:dep||null}});
       }
       // Ordenar por fecha desc, luego store_code
       items.sort((a,b)=>b.s.cierre.fecha.localeCompare(a.s.cierre.fecha)||a.sc.localeCompare(b.sc));
@@ -303,7 +320,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
           <div className="modal">
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
               <div>
-                <div style={{fontWeight:800,fontSize:17}}>{STORES[selected.store_code]||selected.store_code}</div>
+                <div style={{fontWeight:800,fontSize:17}}>{STORES[selected.store_code]||selected.store_code}{selected.caja?` · ${CAJA_LABEL[selected.caja]||selected.caja}`:''}</div>
                 <div style={{fontSize:13,color:'#666'}}>{selected.fecha} · {datosModal.turno} · {datosModal.creado_por}</div>
               </div>
               <EstadoBadge estado={datosModal.estado}/>
@@ -613,17 +630,17 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
         displayItems.length===0?(
           <div style={{textAlign:'center',color:'#444',padding:30}}>Sin resultados para los filtros seleccionados</div>
         ):(
-          displayItems.map(({sc,s},idx)=>{
+          displayItems.map(({sc,caja,s},idx)=>{
             const cfg=STATUS_CFG[s.tipo];
             const c=s.cierre;
             const group=s.group||[c].filter(Boolean);
             return(
-              <div key={`${sc}-${c?.fecha||idx}`}
+              <div key={`${sc}-${caja||''}-${c?.fecha||idx}`}
                 onClick={c?()=>abrirDetalle(c,group):undefined}
                 style={{background:cfg.bg,border:`1.5px solid ${cfg.border}`,borderRadius:12,padding:'14px 16px',marginBottom:10,cursor:c?'pointer':'default',opacity:s.tipo==='faltante'?.5:1}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div>
-                    <div style={{fontWeight:700,fontSize:15}}>{STORES[sc]}</div>
+                    <div style={{fontWeight:700,fontSize:15}}>{STORES[sc]}{caja?` · ${CAJA_LABEL[caja]||caja}`:''}</div>
                     {c&&(
                       <div style={{fontSize:12,color:'#888',marginTop:2}}>
                         {!esRangoSimple&&`${c.fecha} · `}

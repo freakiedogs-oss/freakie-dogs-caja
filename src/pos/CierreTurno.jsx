@@ -422,13 +422,13 @@ export default function CierreTurno({ user, onBack }) {
       try {
         const { data: cierreId, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
           p_store_code: storeCode, p_fecha: turno.fecha || todayISO(),
-          p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null,
+          p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null, p_caja: caja,
         })
         if (!_rpcErr && cierreId) {
           // Detalle de egresos/ingresos del DÍA COMPLETO (todos los turnos) para Finanzas.
-          const { data: turnosDia } = await db.from('pos_turnos')
+          const { data: turnosDia } = await cajaF(db.from('pos_turnos')
             .select('id,egresos,ingresos_extra')
-            .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero').eq('estado', 'cerrado')
+            .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero').eq('estado', 'cerrado'))
           await db.from('egresos_cierre').delete().eq('cierre_id', cierreId)
           await db.from('ingresos_cierre').delete().eq('cierre_id', cierreId)
           const egRows = [], inRows = []
