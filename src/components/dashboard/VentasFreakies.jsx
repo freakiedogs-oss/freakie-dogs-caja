@@ -38,7 +38,7 @@ const FUENTE_ACTUAL = {
   M001: 'pos',   // Plaza Cafetalón
   S001: 'pos',   // Plaza Mundo Soyapango
   S002: 'pos',   // Plaza Mundo Usulután
-  S003: 'quanto',   // Grand Plaza Lourdes — aún en Quanto
+  S003: 'pos',   // Grand Plaza Lourdes — POS propio (corte 30-Jul-2026)
   S004: 'pos',   // Paseo Venecia
 };
 
@@ -52,6 +52,7 @@ const CUTOVER_POS = {
   S002: '2026-07-24',   // Usulutan migro a POS propio
   S004: '2026-07-26',   // Paseo Venecia (25-Jul siguio en Quanto; corte real 26-Jul)
   S001: '2026-07-27',   // Soyapango migró a POS propio (arrancó el 27-Jul)
+  S003: '2026-07-30',   // Grand Plaza Lourdes — corte a mitad de día 30-Jul (mañana Quanto, tarde POS). De aquí en adelante: POS propio.
   // S006 no lleva corte: nunca tuvo Quanto, siempre fue POS propio.
 };
 
