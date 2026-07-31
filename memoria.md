@@ -2,6 +2,11 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-31 — Cobro POS: correo del cliente obligatorio al adjuntarlo (para auto-envío DTE)
+- **Por qué:** el auto-envío del DTE por correo (ver entrada de abajo) solo funciona si el DTE lleva correo de receptor, pero el UI empujaba a NO capturarlo (cliente "opcional", correo con nota "solo si lo pide", clientes viejos sin email). Resultado: casi todo salía "Consumidor Final" sin destinatario.
+- **Cambio (PR, rama `feat/cobro-correo-cliente-obligatorio`):** en `CustomerSearch.jsx` + `PaymentModal.jsx`. Al **adjuntar un cliente** al cobro (Factura/CCF, NO Suj.Excl.): se muestra el **correo editable**; si falta, es **obligatorio** (bloquea "Confirmar pago" con aviso). Al crear cliente nuevo en Factura el correo también pasa a obligatorio. El correo editado se **guarda en la ficha** (`pos_clientes.email`) para futuras ventas. `validEmail` en ambos. Build ok.
+- **Nota:** Suj.Excl. (compras a proveedor) queda con correo opcional. Consumidor Final sin cliente adjunto sigue sin pedir correo (no hay a quién enviar).
+
 ## 2026-07-31 — Costo de envío por distancia (parametrizable) + subir fotos del menú desde el ERP
 - **Costo de envío** (migraciones `delivery_costo_envio_tramos`, `crear_pedido_con_costo_envio`, `torre_config_envio_admin`). Reglas de Jose: **pedido mínimo $3.98**, **gratis desde $20**, y por distancia **<2 km $0.50 · 2–5 km $1.00 · 5–7 km $2.00 · >7 km $3.00**. Tabla `config_envio_tramos` (km_hasta NULL = último tramo) + params `envio_gratis_desde` / `pedido_minimo` en `config_delivery`. RPC `calcular_costo_envio(km, subtotal)`. `crear_pedido_delivery` ahora calcula el envío real por la distancia a la sucursal ruteada, lo guarda en `costo_envio`, suma al `total` y **rechaza pedidos bajo el mínimo**. Probado: 0.1 km→$0.50, tramos ok, gratis ≥$20, mínimo rechazado.
 - **Checkout del cliente:** muestra "Envío · X km" con el costo real (o **¡GRATIS!**) y el aviso *"Agregá $N más y el envío te sale gratis"*. El total del botón ya incluye envío.
@@ -16,6 +21,17 @@
 - **Admin** (`MenuAdminView` → tab Ítems): botón **🌐 En menú público / 🚫 Oculto al público** por tarjeta + checkbox en el form. **Solo aparece si el menú es `delivery_propio`** (se pasa `canal` desde el selector); en otros canales ni se muestra ni se escribe la columna.
 - **Juego:** coleccionables con **fotos reales del menú** (sprites ~4 KB en `menu/sprites/`) que dan +25 pts. ⚠️ **Recalibré el anti-trampa** (`juego_recalibrar_antitrampa`): con los coleccionables el ritmo real sube a ~25 pts/s y el umbral viejo (15) **marcaba legítimos como sospechosos**; ahora 40 pts/s (99999 en 3s sigue cayendo).
 - ⚠️ **Coordinación:** este commit nació por error sobre la rama ajena `feat/apk-v1.2-nocache` (otra sesión). Se movió a rama propia desde `main` con cherry-pick y **se restauró la rama ajena a su estado remoto** — nunca se pusheó contaminada. Recordatorio: verificar `git status -sb` antes de commitear cuando hay varias sesiones en el repo.
+
+## 2026-07-31 — DTE por correo al cliente (Freakie): construido de cero + auto-envío
+- **Problema:** el DTE se sella bien pero al cliente NUNCA le llegaba el correo con JSON+PDF. Causa: `dte-service` (v39) solo firma/transmite/guarda — **no envía correo**. Kaeru/Kako sí tienen `kaeru-dte-email`/`kako-dte-email` (POSTean a un Google Apps Script que arma el PDF y manda por Gmail). **Freakie no tenía equivalente** (9,298 DTEs desde abril, 0 enviados; solo 52 con correo de receptor embebido sin usar).
+- **Solución (espeja Kaeru):**
+  1. **Apps Script** desplegado por Jose bajo `freakiedogs@gmail.com` (remitente "Freakie Dogs"). Código en `docs/dte/AppsScript-Freakie-DTE-Email.gs`. Recibe `{secret,to,nombre,tipo,codigoGeneracion,...,dteJson}`, genera PDF (HTML→PDF) + adjunta JSON, envía. Secret = `ENVIODTESFREAKIES` (case-sensitive; ⚠️ los cambios de código en Apps Script solo aplican al publicar **versión nueva**).
+  2. **Edge function `freakie-dte-email`** (deploy, verify_jwt=false, gate `x-fn-secret`): lee `dte_service.documents` por `codigo_generacion`, saca correo del receptor, POSTea al Apps Script, loguea. Env con fallback: `FREAKIE_EMAIL_URL`, `FREAKIE_EMAIL_SECRET` (baked; **no** commiteado a git).
+  3. **Tabla `public.pos_dte_email_log`** (idempotencia/auditoría, Freakie-owned; no toca la tabla fiscal compartida).
+  4. **Auto-envío:** `cron.job` #54 `freakie-dte-email-sweep` (cada min): barre facturas/CCF de Freakie selladas **con correo de receptor**, ventana 2h (no reenvía histórico), llama al edge function. Idempotente.
+- **Probado:** DTE `7CAFEFE7…` enviado OK a joseisart2008@gmail.com (JSON+PDF), Jose confirmó que llega y se ve bien.
+- **⚠️ Clave operativa:** solo sale correo si el cajero **adjunta el cliente CON email** antes de confirmar. Las ventas "Consumidor Final" (como TODAS las de hoy) no tienen a quién enviarse.
+- **Pendiente:** factura de Giovanny (Metro, 2x Burger Duo $29.98, del error inicial) **nunca se emitió como DTE** tras el fallo → no hay qué reenviar; decidir si se emite nueva.
 
 ## 2026-07-30 — Fix: alta de clientes desde el POS fallaba (check constraint) — Metro Freakies en vivo
 - **Síntoma:** en Metro Freakies, al "Crear y seleccionar" cliente para factura: `Error al crear cliente: new row for relation "pos_clientes" violates check constraint "pos_clientes_tipo_cliente_check"`.

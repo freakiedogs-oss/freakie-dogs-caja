@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../../supabase'
 import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
@@ -27,6 +27,7 @@ const onlyDigits = s => (s || '').replace(/\D/g, '')
 const validDUI = s => /^\d{9}$/.test(onlyDigits(s))
 const validNIT = s => { const d = onlyDigits(s); return d.length === 14 || d.length === 9 }
 const validNRC = s => /^\d{1,8}$/.test(onlyDigits(s))
+const validEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim())
 
 export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) {
   const toast = useToast()
@@ -39,6 +40,23 @@ export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) 
   const [showNew, setShowNew] = useState(false)
   const [persona, setPersona] = useState('empresa')   // 'natural' | 'empresa'
   const [saving, setSaving]   = useState(false)
+
+  // Correo del cliente seleccionado (editable en línea; obligatorio p/ enviar el DTE, salvo SE)
+  const [emailEdit, setEmailEdit] = useState('')
+  const [emailSaved, setEmailSaved] = useState(false)
+  const origEmailRef = useRef('')
+  useEffect(() => {
+    setEmailEdit(selected?.email || '')
+    origEmailRef.current = selected?.email || ''
+    setEmailSaved(false)
+  }, [selected?.id])
+  // Guarda el correo en la ficha del cliente (para completar sus datos a futuro)
+  const persistEmail = async () => {
+    const v = (emailEdit || '').trim()
+    if (!selected?.id || !validEmail(v) || v === origEmailRef.current) return
+    const { error } = await db.from('pos_clientes').update({ email: v }).eq('id', selected.id)
+    if (!error) { origEmailRef.current = v; setEmailSaved(true) }
+  }
 
   const [form, setForm] = useState({
     nombre: '', docTipoMH: '36', docNum: '', nit: '', nrc: '',
@@ -99,6 +117,7 @@ export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) 
       const tipoTxt = TIPO_DOC.find(t => t[0] === form.docTipoMH)?.[1] || 'DUI'
       const num = onlyDigits(form.docNum)
       if (esSE && !validDUI(form.docNum)) { toast.warning('Sujeto Excluido requiere DUI de 9 dígitos'); return }
+      if (!esSE && !validEmail(form.email)) { toast.warning('El correo es obligatorio para enviarle la factura al cliente'); return }
       if (num) {
         if (form.docTipoMH === '13' && !validDUI(num)) { toast.warning('DUI inválido: 9 dígitos'); return }
         if (form.docTipoMH === '36' && !validNIT(num)) { toast.warning('NIT inválido: 14 dígitos (o 9)'); return }
@@ -159,6 +178,27 @@ export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) 
           </div>
           <button onClick={() => onSelect(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 14, padding: '4px 8px' }}>✕</button>
         </div>
+
+        {/* Correo — se le envía el DTE aquí. Obligatorio (salvo Sujeto Excluido) */}
+        {!esSE && (() => {
+          const falta = !validEmail(emailEdit)
+          return (
+            <div style={{ marginTop: 8 }}>
+              <label style={{ color: falta ? '#fbbf24' : '#8b8997', fontSize: 11, display: 'block', marginBottom: 3 }}>
+                {falta ? 'Correo * — obligatorio para enviarle la factura' : 'Correo (se le enviará el DTE aquí)'}
+              </label>
+              <input
+                style={{ background: '#1e1e26', border: `1px solid ${falta ? '#92400e' : '#1a3a32'}`, borderRadius: 6, color: '#e8e6ef', padding: '7px 10px', fontSize: 12, width: '100%', outline: 'none' }}
+                type="email" placeholder="cliente@correo.com" value={emailEdit}
+                onChange={e => { const v = e.target.value; setEmailEdit(v); setEmailSaved(false); onSelect({ ...selected, email: v }) }}
+                onBlur={persistEmail}
+              />
+              {falta
+                ? <div style={{ fontSize: 10, color: '#d97706', marginTop: 3 }}>Agregá el correo del cliente para completar sus datos y poder enviarle la factura.</div>
+                : (emailSaved && <div style={{ fontSize: 10, color: '#2dd4a8', marginTop: 3 }}>✓ Correo guardado en la ficha del cliente</div>)}
+            </div>
+          )
+        })()}
       </div>
     )
   }
@@ -225,9 +265,9 @@ export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) 
                 <input style={F} placeholder={esSE || form.docTipoMH === '13' ? '00000000-0' : '0614-000000-000-0'}
                   value={form.docNum} onChange={e => set('docNum', e.target.value)} /></div>
             </div>
-            <label style={L}>Correo (para enviar el DTE)</label>
+            <label style={L}>{esSE ? 'Correo (para enviar el DTE)' : 'Correo * — se le enviará la factura aquí'}</label>
             <input style={F} type="email" placeholder="cliente@correo.com" value={form.email} onChange={e => set('email', e.target.value)} />
-            {!esSE && <div style={{ fontSize: 11, color: '#8b8997', marginBottom: 4 }}>La factura puede emitirse sin estos datos; complétalos solo si el cliente los pide.</div>}
+            {!esSE && <div style={{ fontSize: 11, color: '#8b8997', marginBottom: 4 }}>El documento (DUI/NIT) es opcional; el correo es obligatorio para poder enviarle la factura.</div>}
           </>
         )}
 

@@ -24,6 +24,8 @@ const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 
 // Tipo de documento (texto en pos_clientes) → código MH para el receptor
 const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residente': '02', 'Otro': '37' }
 
+const validEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim())
+
 export default function PaymentModal({ items, total, storeCode, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
   const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
@@ -64,6 +66,8 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
     if (metodo === 'mixto' && Math.abs(totalMixto - totalConProp) >= 0.01) return false
     // CCF y SE requieren cliente seleccionado
     if ((tipoDte === 'ccf' || tipoDte === 'se') && !cliente) return false
+    // Si se adjuntó un cliente (factura/ccf), su correo es obligatorio para enviarle el DTE
+    if (cliente && tipoDte !== 'se' && !validEmail(cliente.email)) return false
     return true
   }
 
@@ -531,6 +535,16 @@ export default function PaymentModal({ items, total, storeCode, onConfirm, onCom
             marginBottom: 8, fontSize: 11, color: '#d97706'
           }}>
             ⚠️ Selecciona un cliente para emitir {tipoDte === 'ccf' ? 'CCF' : 'Sujeto Excluido'}
+          </div>
+        )}
+
+        {/* Cliente adjunto sin correo → obligatorio para enviarle el DTE */}
+        {cliente && tipoDte !== 'se' && !validEmail(cliente.email) && (
+          <div style={{
+            background: '#2a1a0a', borderRadius: 6, padding: '6px 10px',
+            marginBottom: 8, fontSize: 11, color: '#d97706'
+          }}>
+            ⚠️ Agregá el correo de <b>{cliente.nombre}</b> arriba para poder enviarle la factura.
           </div>
         )}
 
