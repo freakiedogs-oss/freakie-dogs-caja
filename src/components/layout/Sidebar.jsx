@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { db } from '../../supabase'
 import { NAV_SECTIONS, STORES } from '../../config'
+import ReportarProblema from '../soporte/ReportarProblema'
 
 export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
   const [open, setOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [dbPermisos, setDbPermisos] = useState(null) // { nav_key: [roles] }
+  const [soporteOpen, setSoporteOpen] = useState(false)
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768)
@@ -114,6 +116,16 @@ export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
           Manual del ERP
         </a>
 
+        {/* Reportar problema — abre el modal de soporte (crea ticket para el resolver) */}
+        <button
+          className="sidebar-item"
+          onClick={() => { setSoporteOpen(true); setOpen(false) }}
+          style={{ background: 'none', border: 'none', width: 'calc(100% - 16px)', margin: '4px 8px', textAlign: 'left', cursor: 'pointer', color: '#e5877d', font: 'inherit' }}
+        >
+          <span className="sidebar-item-icon">🛟</span>
+          Reportar problema
+        </button>
+
         {/* User info */}
         <div className="sidebar-user">
           <div className="sidebar-user-info">
@@ -126,6 +138,10 @@ export default function Sidebar({ user, currentScreen, onNavigate, onLogout }) {
           <button className="sidebar-logout" onClick={onLogout} title="Cerrar sesión">⏻</button>
         </div>
       </nav>
+
+      <ReportarProblema db={db} tenant="freakie" storeCode={user.store_code}
+        reporterName={[user.nombre, user.apellido].filter(Boolean).join(' ')}
+        open={soporteOpen} onClose={() => setSoporteOpen(false)} />
     </>
   )
 }

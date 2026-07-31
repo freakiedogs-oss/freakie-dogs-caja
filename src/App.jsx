@@ -3,14 +3,13 @@ import Sidebar from './components/layout/Sidebar'
 import LoginScreen from './components/layout/LoginScreen'
 import AsistenteFlotante from './components/dashboard/AsistenteFlotante'
 import InboxFlotante from './components/dashboard/InboxFlotante'
-import ReportarProblema from './components/soporte/ReportarProblema'
-import { db } from './supabase'
 import LoadingScreen from './components/layout/LoadingScreen'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
 
 // ── Lazy imports — cada ruta carga su chunk sólo cuando se navega ──
 const CierreForm         = lazy(() => import('./components/caja/CierreForm'))
+const CorteXZView        = lazy(() => import('./components/caja/CorteXZView'))
 const ReporteForm        = lazy(() => import('./components/caja/ReporteForm'))
 const Deposito           = lazy(() => import('./components/caja/Deposito'))
 const AdminView          = lazy(() => import('./components/admin/AdminView'))
@@ -218,6 +217,10 @@ export default function App() {
 
       // Caja
       case 'cierre':
+        // Corte X/Z unificado (mismo componente del POS) — ventas auto + fotos + por caja
+        return <CorteXZView user={user} onBack={() => setScreen('home')} />
+      case 'cierre-edit':
+        // Edición completa de un cierre existente (desde el Dashboard de Cierres / admin)
         return (
           <CierreForm
             user={user}
@@ -271,7 +274,7 @@ export default function App() {
           <AdminView
             user={user}
             onBack={() => setScreen('home')}
-            onEditCierre={(c) => { setEditCierre(c); setScreen('cierre'); }}
+            onEditCierre={(c) => { setEditCierre(c); setScreen('cierre-edit'); }}
           />
         )
       case 'incidentes':
@@ -366,8 +369,6 @@ export default function App() {
       <Toast />
       <AsistenteFlotante user={user} />
       <InboxFlotante user={user} />
-      <ReportarProblema db={db} tenant="freakie" storeCode={user.store_code}
-        reporterName={[user.nombre, user.apellido].filter(Boolean).join(' ')} />
     </div>
   )
 }
