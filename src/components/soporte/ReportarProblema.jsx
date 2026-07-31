@@ -1,39 +1,50 @@
 import { useState } from 'react'
 
 /**
- * Botón flotante "Reportar problema" — reutilizable en los 4 ERPs.
- * El personal describe un problema y se crea un ticket en `soporte_tickets`;
- * el resolver de la mini lo diagnostica/resuelve/escala.
+ * Botón flotante "Reportar problema" (variante db-based: Freakie / Eatalia).
+ * El personal describe un problema (y opcionalmente adjunta una foto) → se crea un ticket
+ * en `soporte_tickets`; el resolver de la mini lo diagnostica/resuelve/escala.
  *
- * Props:
- *   db          — cliente supabase del ERP (createClient ya inicializado)
- *   tenant      — 'freakie' | 'kaeru' | 'kako' | 'eatalia'
- *   storeCode   — código de la sucursal del usuario (opcional)
- *   reporterName— nombre del que reporta (opcional)
- *   canal       — 'pos' | 'erp' (default 'pos')
+ * Props: db (cliente supabase), tenant, storeCode?, reporterName?, canal?
  */
+const BUCKET = 'soporte-fotos'
+
 export default function ReportarProblema({ db, tenant, storeCode = null, reporterName = null, canal = 'pos' }) {
   const [open, setOpen] = useState(false)
   const [texto, setTexto] = useState('')
+  const [foto, setFoto] = useState(null)
   const [estado, setEstado] = useState('idle') // idle | enviando | ok | error
+
+  function reset() { setTexto(''); setFoto(null); setEstado('idle') }
 
   async function enviar() {
     const desc = texto.trim()
     if (desc.length < 5) { setEstado('error'); return }
     setEstado('enviando')
+
+    let fotos = []
+    if (foto) {
+      const safe = (foto.name || 'foto.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${tenant}/${Date.now()}-${safe}`
+      const { error: upErr } = await db.storage.from(BUCKET).upload(path, foto, { contentType: foto.type, upsert: false })
+      if (upErr) { setEstado('error'); return }
+      const { data } = db.storage.from(BUCKET).getPublicUrl(path)
+      if (data?.publicUrl) fotos = [data.publicUrl]
+    }
+
     const { error } = await db.from('soporte_tickets').insert({
       tenant, canal, store_code: storeCode, reportado_por: reporterName || 'Personal',
-      descripcion: desc,
+      descripcion: desc, fotos_urls: fotos,
     })
     if (error) { setEstado('error'); return }
-    setEstado('ok'); setTexto('')
+    setEstado('ok'); setTexto(''); setFoto(null)
     setTimeout(() => { setOpen(false); setEstado('idle') }, 2600)
   }
 
   return (
     <>
       <button
-        onClick={() => { setOpen(true); setEstado('idle') }}
+        onClick={() => { setOpen(true); reset() }}
         title="Reportar un problema"
         style={{
           position: 'fixed', left: 16, bottom: 16, zIndex: 9998,
@@ -60,7 +71,7 @@ export default function ReportarProblema({ db, tenant, storeCode = null, reporte
               <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', color: '#b9ada0', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
             <p style={{ margin: '2px 0 12px', fontSize: 13, color: '#b9ada0' }}>
-              Contá qué está pasando (no imprime, no loguea, se pega, etc.). El equipo lo revisa y te responde acá mismo.
+              Contá qué está pasando (no imprime, no loguea, se pega, etc.). Podés adjuntar una foto. El equipo lo revisa y te responde acá mismo.
             </p>
 
             {estado === 'ok' ? (
@@ -78,6 +89,17 @@ export default function ReportarProblema({ db, tenant, storeCode = null, reporte
                     border: '1px solid #43382d', borderRadius: 10, padding: 12, fontSize: 15,
                     resize: 'vertical', fontFamily: 'inherit',
                   }} />
+
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer',
+                  background: '#171310', border: '1px dashed #43382d', borderRadius: 10, padding: '10px 12px',
+                  color: foto ? '#7bc07b' : '#b9ada0', fontSize: 14,
+                }}>
+                  📷 {foto ? `Foto lista: ${foto.name.slice(0, 28)}` : 'Adjuntar foto (opcional)'}
+                  <input type="file" accept="image/*" capture="environment"
+                    onChange={(e) => setFoto(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+                </label>
+
                 {estado === 'error' && (
                   <div style={{ color: '#ef6a5c', fontSize: 13, marginTop: 6 }}>
                     {texto.trim().length < 5 ? 'Escribí un poco más de detalle 🙏' : 'No se pudo enviar, probá de nuevo.'}
@@ -94,7 +116,7 @@ export default function ReportarProblema({ db, tenant, storeCode = null, reporte
                     cursor: estado === 'enviando' ? 'default' : 'pointer', opacity: estado === 'enviando' ? .7 : 1,
                     fontFamily: 'inherit',
                   }}>
-                  {estado === 'enviando' ? 'Enviando…' : 'Enviar reporte'}
+                  {estado === 'enviando' ? (foto ? 'Subiendo foto y enviando…' : 'Enviando…') : 'Enviar reporte'}
                 </button>
               </>
             )}
