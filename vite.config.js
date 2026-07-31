@@ -18,6 +18,7 @@ export default defineConfig({
       input: {
         main:   resolve(__dirname, 'index.html'),
         pos:    resolve(__dirname, 'pos.html'),
+        foto:   resolve(__dirname, 'foto.html'),
         menu:   resolve(__dirname, 'menu.html'),
         driver: resolve(__dirname, 'driver.html'),
         track:  resolve(__dirname, 'track.html'),
