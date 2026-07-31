@@ -602,7 +602,20 @@ function Checkout({ items, total, onClose, onEnviado }) {
     )
   }
 
-  const cumpleMinimo = total >= NEGOCIO.consumoMinimo || tipo === 'pickup'
+  // Costo de envío según distancia a la sucursal ruteada (parametrizable en la torre)
+  const [envio, setEnvio] = useState(null)
+  useEffect(() => {
+    if (tipo !== 'delivery') { setEnvio(null); return }
+    let vivo = true
+    db.rpc('calcular_costo_envio', { p_distancia_km: ruteo?.distancia_km ?? 0, p_subtotal: total })
+      .then(({ data }) => { if (vivo) setEnvio(data || null) })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [tipo, total, ruteo?.distancia_km])
+
+  const costoEnvio = tipo === 'delivery' ? Number(envio?.costo ?? 0) : 0
+  const totalConEnvio = total + costoEnvio
+  const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
   const enviar = async () => {
     setError('')
@@ -611,7 +624,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
     if (tipo === 'delivery') {
       if (!direccion.trim()) return setError('Dirección requerida para delivery')
       if (!zona) return setError('Elegí tu zona')
-      if (!cumpleMinimo) return setError(`Consumo mínimo ${fmt(NEGOCIO.consumoMinimo)} para delivery`)
+      if (!cumpleMinimo) return setError(`Pedido mínimo ${fmt(envio?.minimo ?? NEGOCIO.consumoMinimo)} para delivery`)
     }
     setEnviando(true)
     try {
@@ -781,13 +794,20 @@ function Checkout({ items, total, onClose, onEnviado }) {
             </div>
             {tipo === 'delivery' && (
               <div className="mp-resumen-row mp-resumen-envio">
-                <span>Envío</span>
-                <span>Se calcula al aceptar</span>
+                <span>Envío{ruteo?.distancia_km != null ? ` · ${ruteo.distancia_km} km` : ''}</span>
+                {envio?.gratis
+                  ? <span className="mp-envio-gratis">¡GRATIS! 🎉</span>
+                  : <span>{envio ? fmt(costoEnvio) : '—'}</span>}
+              </div>
+            )}
+            {tipo === 'delivery' && envio && !envio.gratis && Number(envio.falta_para_gratis) > 0 && (
+              <div className="mp-envio-tip">
+                Agregá {fmt(envio.falta_para_gratis)} más y el envío te sale gratis 🚀
               </div>
             )}
             <div className="mp-resumen-total">
               <span>Total</span>
-              <span>{fmt(total)}</span>
+              <span>{fmt(totalConEnvio)}</span>
             </div>
           </div>
 
@@ -800,7 +820,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
             onClick={enviar}
             disabled={enviando}
           >
-            {enviando ? 'Enviando...' : `Confirmar pedido · ${fmt(total)}`}
+            {enviando ? 'Enviando...' : `Confirmar pedido · ${fmt(totalConEnvio)}`}
           </button>
         </div>
       </div>

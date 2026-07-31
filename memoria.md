@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-31 — Costo de envío por distancia (parametrizable) + subir fotos del menú desde el ERP
+- **Costo de envío** (migraciones `delivery_costo_envio_tramos`, `crear_pedido_con_costo_envio`, `torre_config_envio_admin`). Reglas de Jose: **pedido mínimo $3.98**, **gratis desde $20**, y por distancia **<2 km $0.50 · 2–5 km $1.00 · 5–7 km $2.00 · >7 km $3.00**. Tabla `config_envio_tramos` (km_hasta NULL = último tramo) + params `envio_gratis_desde` / `pedido_minimo` en `config_delivery`. RPC `calcular_costo_envio(km, subtotal)`. `crear_pedido_delivery` ahora calcula el envío real por la distancia a la sucursal ruteada, lo guarda en `costo_envio`, suma al `total` y **rechaza pedidos bajo el mínimo**. Probado: 0.1 km→$0.50, tramos ok, gratis ≥$20, mínimo rechazado.
+- **Checkout del cliente:** muestra "Envío · X km" con el costo real (o **¡GRATIS!**) y el aviso *"Agregá $N más y el envío te sale gratis"*. El total del botón ya incluye envío.
+- **Torre → ⚙️ Parámetros:** sección nueva **🛵 Costo de envío al cliente** — edita pedido mínimo, envío-gratis-desde y los **tramos** (agregar/quitar/editar km y costo). Solo admin/superadmin/ejecutivo (validado server-side).
+- **Subir fotos desde el ERP** (Menú → Ítems → editar): botón **📷 Subir foto** + preview. La imagen se **comprime en el navegador** (canvas, 900 px, JPEG 0.74) → sube ~150 KB en vez de los 3-5 MB del celular.
+- ⚠️ **Decisión de seguridad:** la carga NO usa la anon key (dejaría el bucket escribible por cualquiera, la key es pública). Va por la **edge function `menu-foto`** (`verify_jwt=false`, auth propia): valida el **token de sesión de staff** + rol, tipo y tamaño, y escribe con `service_role`. Si no hay sesión, el componente pide el PIN inline. El bucket `menu` sigue con **solo lectura pública**.
+
 ## 2026-07-30 — Menú público: visibilidad por ítem + coleccionables del menú en el juego
 - **Problema:** el menú del POS `delivery_propio` (79 ítems) incluye cosas que NO son vendibles al cliente: add-ons, toppings sueltos, merch e internos.
 - **Análisis:** comparé contra el catálogo BuhoPay (31 coinciden, 48 no). ⚠️ **El criterio "no estaba en Buho" NO alcanza**: ahí caen bebidas, cervezas y combos que sí son vendibles. El criterio correcto es la **naturaleza del ítem** (categoría + nombre).
