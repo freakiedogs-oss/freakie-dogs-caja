@@ -866,25 +866,39 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
         )
       }
 
-      // 3. Registrar pago — con reintentos: una cuenta cobrada NUNCA debe quedar sin pago
+      // 3. Registrar pago — con reintentos: una cuenta cobrada NUNCA debe quedar sin pago.
+      //    MIXTO se guarda como DOS pagos (efectivo + tarjeta) para que el corte y los
+      //    reportes cuenten cada parte en su método. Antes iba todo como un pago 'mixto'
+      //    y se perdía el desglose efectivo/tarjeta en el cuadre de caja.
       {
-        const _pagoRow = {
-          cuenta_id:      currentCuentaId,
-          metodo:         paymentData.metodo,
-          monto:          total + (paymentData.propina || 0),
-          monto_recibido: paymentData.efectivo || null,
-          cambio:         paymentData.cambio   || 0,
-          referencia:     paymentData.referencia || null,
+        const _montoTotal = total + (paymentData.propina || 0)
+        let _pagoRows
+        if (paymentData.metodo === 'mixto') {
+          const _ef = Math.min(Math.round((Number(paymentData.efectivo) || 0) * 100) / 100, _montoTotal)
+          const _tj = Math.round((_montoTotal - _ef) * 100) / 100
+          _pagoRows = []
+          if (_ef > 0) _pagoRows.push({ cuenta_id: currentCuentaId, metodo: 'efectivo', monto: _ef, monto_recibido: _ef, cambio: 0, referencia: null })
+          if (_tj > 0) _pagoRows.push({ cuenta_id: currentCuentaId, metodo: 'tarjeta', monto: _tj, monto_recibido: null, cambio: 0, referencia: paymentData.referencia || null })
+          if (_pagoRows.length === 0) _pagoRows.push({ cuenta_id: currentCuentaId, metodo: 'efectivo', monto: _montoTotal, monto_recibido: _montoTotal, cambio: 0, referencia: null })
+        } else {
+          _pagoRows = [{
+            cuenta_id:      currentCuentaId,
+            metodo:         paymentData.metodo,
+            monto:          _montoTotal,
+            monto_recibido: paymentData.efectivo || null,
+            cambio:         paymentData.cambio   || 0,
+            referencia:     paymentData.referencia || null,
+          }]
         }
         let _pagoOk = false
         for (let _i = 1; _i <= 3 && !_pagoOk; _i++) {
-          const { error: _pagoErr } = await db.from('pos_cuenta_pagos').insert(_pagoRow)
+          const { error: _pagoErr } = await db.from('pos_cuenta_pagos').insert(_pagoRows)
           if (!_pagoErr) { _pagoOk = true; break }
           console.error('pos_cuenta_pagos intento ' + _i + ' fallo:', _pagoErr.message)
           if (_i < 3) await new Promise(r => setTimeout(r, 400 * _i))
         }
         if (!_pagoOk) {
-          try { await db.from('pos_cuentas').update({ notas_internas: 'PAGO_NO_REGISTRADO metodo=' + paymentData.metodo + ' monto=' + (total + (paymentData.propina || 0)).toFixed(2) }).eq('id', currentCuentaId) } catch (_e) {}
+          try { await db.from('pos_cuentas').update({ notas_internas: 'PAGO_NO_REGISTRADO metodo=' + paymentData.metodo + ' monto=' + _montoTotal.toFixed(2) }).eq('id', currentCuentaId) } catch (_e) {}
           try { toast.error('⚠️ El pago no se registró en el sistema — avisá a soporte (la venta sí se cobró)') } catch (_e) {}
         }
       }
