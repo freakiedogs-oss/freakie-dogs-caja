@@ -4,7 +4,11 @@ import { APP_VERSION } from '../config'
 import Icon from './Icon'
 
 // Roles que pueden usar el POS
-const POS_ROLES = ['cajero', 'cajera', 'mesero', 'mesera', 'cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
+// 'telefono' es la central de delivery (Karina): entra al POS para agregarle
+// ítems a un pedido que el cliente amplía por WhatsApp. No puede autorizar
+// borrados ni anulaciones — eso sigue pidiendo PIN de caja o gerencia
+// (ver ROLES_AUTORIZA en PinAuthModal).
+const POS_ROLES = ['cajero', 'cajera', 'mesero', 'mesera', 'cocina', 'telefono', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 
 // Dominios oficiales — si el host no está aquí (ni localhost), avisar "enlace antiguo"
 const CANONICAL_HOSTS = ['freakie-dogs-caja.vercel.app', 'erp.freakiedogs.com', 'erp.freakiedogs.sv', 'pos.freakiedogs.com']
