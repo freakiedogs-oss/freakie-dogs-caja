@@ -194,24 +194,48 @@ const LATIDO_MS = 5 * 60 * 1000
 
 function useDisponible(yo) {
   const [disponible, setDisponible] = useState(false)
+  const [info, setInfo] = useState(null)   // sucursal, distancia y atraso al marcarse
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
   const latidoRef = useRef(null)
+
+  // Una sola lectura del GPS, no un rastreo: solo para comprobar que está en
+  // la sucursal. Se pide desde el toque del botón, que es cuando el navegador
+  // permite mostrar el pedido de permiso.
+  const dondeEstoy = () => new Promise((res, rej) => {
+    if (!navigator.geolocation) return rej(new Error('Tu teléfono no comparte ubicación.'))
+    navigator.geolocation.getCurrentPosition(
+      (pos) => res({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => rej(new Error(err.code === 1
+        ? 'Necesitamos tu ubicación para marcarte de turno. Activala y volvé a intentar.'
+        : 'No pudimos leer tu ubicación. Salí al aire libre y probá de nuevo.')),
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
+  })
 
   const marcar = useCallback(async (activo) => {
     if (!yo || ocupado) return
     setOcupado(true); setError('')
     try {
-      const { error: e } = await db.rpc('driver_disponible', {
+      let donde = null
+      try { donde = await dondeEstoy() } catch (e) { if (activo) throw e }
+
+      const { data, error: e } = await db.rpc('driver_disponible', {
         p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: activo,
+        p_lat: donde?.lat ?? null, p_lng: donde?.lng ?? null,
       })
       if (e) throw e
       setDisponible(activo)
+      setInfo(activo ? data : null)
+
       if (latidoRef.current) { clearInterval(latidoRef.current); latidoRef.current = null }
       if (activo) {
+        // El latido mantiene el alta viva. No vuelve a pedir GPS: la sucursal
+        // ya quedó comprobada al marcarse.
         latidoRef.current = setInterval(() => {
-          db.rpc('driver_disponible', { p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true })
-            .catch(() => {})
+          db.rpc('driver_disponible', {
+            p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true,
+            p_lat: donde?.lat ?? null, p_lng: donde?.lng ?? null,
+          }).catch(() => {})
         }, LATIDO_MS)
       }
     } catch (e) { setError(e.message || 'No se pudo avisar a la central') }
@@ -220,7 +244,7 @@ function useDisponible(yo) {
 
   useEffect(() => () => { if (latidoRef.current) clearInterval(latidoRef.current) }, [])
 
-  return { disponible, ocupado, error, marcar }
+  return { disponible, ocupado, error, info, marcar }
 }
 
 function useBeacon(yo) {
@@ -322,8 +346,10 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           </div>
           <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>
             {dispo.disponible
-              ? 'La central te puede asignar pedidos.'
-              : 'Marcate de turno para que la central te asigne pedidos.'}
+              ? (dispo.info?.sucursal
+                  ? `Marcaste entrada en ${dispo.info.sucursal}. La central te puede asignar pedidos.`
+                  : 'La central te puede asignar pedidos.')
+              : 'Tenés que estar en tu sucursal para marcarte de turno.'}
           </div>
         </div>
       </div>
@@ -334,15 +360,21 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                  border: dispo.disponible ? '1px solid #444' : 'none',
                  color: dispo.disponible ? '#aaa' : '#fff',
                  opacity: dispo.ocupado ? .6 : 1 }}>
-        {dispo.ocupado ? '…' : dispo.disponible ? 'Terminé mi turno' : '🟢 Estoy de turno'}
+        {dispo.ocupado ? '📍 Verificando dónde estás…' : dispo.disponible ? 'Terminé mi turno' : '🟢 Estoy de turno'}
       </button>
 
       {dispo.error && <div style={S.dispoErr}>⚠️ {dispo.error}</div>}
 
+      {dispo.disponible && dispo.info?.minutos_tarde > 0 && (
+        <div style={S.tarde}>
+          ⏰ Marcaste {dispo.info.minutos_tarde} min después de tu hora de entrada.
+        </div>
+      )}
+
       <div style={S.dispoPie}>
         {beacon.activo
           ? '📡 Compartiendo tu ubicación porque vas en camino con un pedido.'
-          : 'Tu ubicación NO se comparte hasta que salgas con un pedido.'}
+          : 'Usamos tu ubicación una sola vez, para confirmar que estás en la sucursal. Después no se comparte hasta que salgas con un pedido.'}
       </div>
     </div>
   )
@@ -508,6 +540,8 @@ const S = {
   dispoFila: { display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 },
   dispoBtn: { width: '100%', padding: '13px 0', borderRadius: 12, fontSize: 14.5,
               fontWeight: 700, cursor: 'pointer' },
+  tarde: { fontSize: 12, color: '#fbbf24', background: '#2a2416', border: '1px solid #4a3f1a',
+           borderRadius: 9, padding: '8px 10px', marginTop: 8, lineHeight: 1.4 },
   dispoErr: { fontSize: 12, color: '#f87171', marginTop: 8 },
   dispoPie: { fontSize: 11.5, color: '#777', marginTop: 10, lineHeight: 1.45, textAlign: 'center' },
   instalar: { marginTop: 18, padding: '12px 14px', borderRadius: 14, background: '#161616',
