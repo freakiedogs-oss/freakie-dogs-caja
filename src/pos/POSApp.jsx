@@ -149,6 +149,7 @@ export default function POSApp() {
   const [user,       setUser]       = useState(null)
   const [screen,     setScreen]     = useState('home')
   const [cuentaCtx,  setCuentaCtx]  = useState(null)
+  const [soporteOpen, setSoporteOpen] = useState(false)  // modal "Reportar problema" (controlado desde el header, no FAB)
 
   // Para roles multi-sucursal: store_code elegido en el selector
   const [effectiveUser, setEffectiveUser] = useState(null)
@@ -277,8 +278,10 @@ export default function POSApp() {
           onGoToCierre={handleGoToCierre}
           onGoToMenuAdmin={canChangeStore ? handleGoToMenuAdmin : null}
           onChangeStore={canChangeStore ? handleChangeStore : null}
+          onReport={() => setSoporteOpen(true)}
         />
-        <ReportarProblema db={db} tenant="freakie" storeCode={posUser.store_code} reporterName={posUser.nombre} />
+        <ReportarProblema db={db} tenant="freakie" storeCode={posUser.store_code} reporterName={posUser.nombre}
+          open={soporteOpen} onClose={() => setSoporteOpen(false)} />
       </>
     )
   }
@@ -291,8 +294,10 @@ export default function POSApp() {
         cuentaCtx={cuentaCtx}
         onBack={handleBack}
         onLogout={handleLogout}
+        onReport={() => setSoporteOpen(true)}
       />
-      <ReportarProblema db={db} tenant="freakie" storeCode={posUser.store_code} reporterName={posUser.nombre} />
+      <ReportarProblema db={db} tenant="freakie" storeCode={posUser.store_code} reporterName={posUser.nombre}
+        open={soporteOpen} onClose={() => setSoporteOpen(false)} />
     </>
   )
 }
