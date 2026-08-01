@@ -2,6 +2,38 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 1-Ago-2026 — Auditoría: la llave pública ejecutaba SQL arbitrario y leía el certificado de Hacienda
+
+**Lo peor, ya cerrado.** Con la `anon key` (pública, va en el bundle) se podía llamar:
+- `exec_sql_batch(sql_text)` → `EXECUTE` del texto recibido **como dueño de la base**.
+  Control total: leer, borrar o alterar cualquier cosa. La usaba el cierre de caja
+  para un SELECT que nunca funcionó (esa función devuelve `'ok'`, no filas, y la
+  tabla `quanto_transacciones` no existe). Código muerto, puerta abierta.
+- `dte_get_certificate(business_id)` → la **llave privada del certificado MH**.
+  Con eso se firman DTEs a nombre de la empresa.
+- 11 funciones `dte_*` más (emitir, tokens, documentos).
+
+Se les quitó el permiso a `anon`/`authenticated`. `service_role` lo conserva
+**explícito**, que es como las llama `dte-service` (usa `SUPABASE_SERVICE_ROLE_KEY`,
+verificado en su código). La facturación no cambia.
+
+⚠️ **Error propio:** al revocar de `PUBLIC` también se le quitó a `service_role`, que
+heredaba el permiso de ahí (las funciones nacen con `GRANT EXECUTE TO PUBLIC`). La
+facturación quedó caída ~1 min hasta el grant explícito. **Al revocar de PUBLIC,
+siempre re-otorgar a service_role en la misma migración.**
+
+**Lo que sigue abierto** (advisor de Supabase, 744 hallazgos):
+- 2 ERROR: 5 tablas sin RLS (`banco_reglas`, `planilla_validacion`,
+  `planilla_valid_override`, `soporte_kb`, un backup) y 25 vistas `SECURITY DEFINER`
+  (planilla, banco, ventas) que ignoran el RLS de quien consulta.
+- 193 políticas `USING (true)` sobre 147 tablas → RLS anulado de hecho. `anon` con
+  ALL sobre bancos, planilla, POS; DELETE sobre `pagos_proveedor`.
+- ~190 funciones `SECURITY DEFINER` llamables por `anon` sin login.
+- `public/dashboard-ejecutivo.html` y `dashboard-operativo.html` se publican tal cual
+  y consultan `ventas_diarias` con la llave pública **sin ningún login**. Quedaron
+  fuera del build del dominio público; en el del ERP siguen accesibles.
+
+
 ## 1-Ago-2026 — Los PINs salen del navegador; administrarlos ahora deja rastro
 
 **Qué pasaba.** Con la llave pública (`anon`, que va en el bundle y por lo tanto
