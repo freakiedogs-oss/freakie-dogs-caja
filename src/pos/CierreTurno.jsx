@@ -4,7 +4,7 @@ import { STORES, BUCKET_CIERRES } from '../config'
 import QrFotoUpload from '../components/ui/QrFotoUpload'
 import Icon from './Icon'
 import { useToast } from '../hooks/useToast'
-import { printCorte } from './print/printService'
+import { printCorte, getImpresoras } from './print/printService'
 import { confirmAsync } from './confirmDialog'
 
 const MOTIVOS_EMPLEADO = ['Adelanto de Salario', 'Pago de Salario', 'Pago Propina']
@@ -206,6 +206,8 @@ export default function CierreTurno({ user, onBack }) {
   const storeCode = user.store_code || 'S001'
   const caja = user.caja || null   // multi-caja (Lourdes): null = 1 sola caja por sucursal
   const cajaF = (q) => (caja ? q.eq('caja', caja) : q.is('caja', null))
+  // Precarga las impresoras de esta caja para que el corte tenga la impresora lista.
+  useEffect(() => { getImpresoras(storeCode, caja).catch(() => {}) }, [storeCode, caja])
   const storeName = STORES[storeCode] || storeCode
 
   const [turno, setTurno]       = useState(null)
@@ -394,7 +396,7 @@ export default function CierreTurno({ user, onBack }) {
       }).eq('id', turno.id)
       if (error) throw error
       toast.success('Caja cerrada (X). El siguiente cajero ya puede abrir.')
-      try { const _r = await printCorte('x', buildCorteData('X')); if (_r && _r.ok === false) toast.error('⚠️ El corte X no se imprimió — revisá la impresora / puente') } catch {}
+      try { const _r = await printCorte('x', buildCorteData('X')); if (_r && _r.ok === false) toast.error('⚠️ Corte X no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte X no impreso: ' + (_pe?.message || 'error')) }
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
   }
@@ -447,7 +449,7 @@ export default function CierreTurno({ user, onBack }) {
         }
       } catch (_bridgeErr) { console.warn('bridge ventas_diarias:', _bridgeErr?.message) }
       toast.success('Día cerrado (corte Z)')
-      try { const _r = await printCorte('z', buildCorteData('Z')); if (_r && _r.ok === false) toast.error('⚠️ El corte Z no se imprimió — revisá la impresora / puente') } catch {}
+      try { const _r = await printCorte('z', buildCorteData('Z')); if (_r && _r.ok === false) toast.error('⚠️ Corte Z no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte Z no impreso: ' + (_pe?.message || 'error')) }
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
   }
