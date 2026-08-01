@@ -30,11 +30,18 @@ function Badge({ estado }) {
   return <span style={{ fontSize: 12, fontWeight: 700, color: c, border: `1px solid ${c}`, borderRadius: 999, padding: "3px 12px" }}>{t}</span>;
 }
 
-// Fila del P&L con barra de % sobre ventas
-function PLRow({ label, valor, porcentaje, color, fuerte }) {
+// Fila del P&L con barra de % sobre ventas. Si trae onClick, es desglosable (drill-down).
+function PLRow({ label, valor, porcentaje, color, fuerte, onClick, abierto }) {
+  const clickable = typeof onClick === "function";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${BORDER}` }}>
-      <div style={{ width: 150, fontSize: fuerte ? 14 : 13, color: fuerte ? "#fff" : TXT, fontWeight: fuerte ? 700 : 500 }}>{label}</div>
+    <div onClick={onClick}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${BORDER}`,
+               cursor: clickable ? "pointer" : "default", borderRadius: clickable ? 6 : 0 }}
+      title={clickable ? "Ver detalle" : undefined}>
+      <div style={{ width: 150, fontSize: fuerte ? 14 : 13, color: fuerte ? "#fff" : TXT, fontWeight: fuerte ? 700 : 500 }}>
+        {clickable && <span style={{ color: MUT, marginRight: 4, display: "inline-block", transform: abierto ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>}
+        {label}
+      </div>
       <div style={{ flex: 1, height: 8, background: "#222", borderRadius: 999, overflow: "hidden" }}>
         <div style={{ width: `${Math.min(100, Math.abs(porcentaje || 0))}%`, height: "100%", background: color || ROJO }} />
       </div>
@@ -77,6 +84,8 @@ export default function FinanzasAIView({ user = {} }) {
   const [d, setD] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
+  const [det, setDet] = useState(null);       // drill-down COGS/Opex: { grupo, data }
+  const [detLoad, setDetLoad] = useState(false);
   const rol = (user?.rol || "").toLowerCase();
 
   const cargar = useCallback(() => {
@@ -92,6 +101,15 @@ export default function FinanzasAIView({ user = {} }) {
 
   const a = d?.pl?.actual || {}, prev = d?.pl?.anterior || {};
   const liq = d?.liquidez || {}, vari = d?.variaciones || {}, hall = d?.hallazgos || [], tend = d?.tendencia || [];
+
+  const abrirDetalle = (grupo) => {
+    if (det?.grupo === grupo) { setDet(null); return; } // click de nuevo → cerrar
+    setDetLoad(true); setDet({ grupo });
+    rpc("fn_ai_fin_pl_detalle", { p_mes: `${a.mes}-01`, p_grupo: grupo })
+      .then((r) => setDet({ grupo, data: r }))
+      .catch(() => setDet(null))
+      .finally(() => setDetLoad(false));
+  };
 
   return (
     <div style={{ background: BG, color: TXT, minHeight: "100%", padding: "18px 20px 60px" }}>
@@ -120,8 +138,10 @@ export default function FinanzasAIView({ user = {} }) {
             <div style={{ fontSize: 11, color: MUT, padding: "4px 0 8px 150px" }}>
               Quanto {money0(a.ventas_quanto)} · PeYa {money0(a.ventas_peya)} · Eventos {money0(a.ventas_eventos)}
             </div>
-            <PLRow label="− COGS (comida)" valor={a.cogs} porcentaje={a.cogs_pct} color={ROJO} />
-            <PLRow label="− Gastos operativos" valor={a.opex} porcentaje={a.opex_pct} color="#a855f7" />
+            <PLRow label="− COGS (comida)" valor={a.cogs} porcentaje={a.cogs_pct} color={ROJO}
+              onClick={() => abrirDetalle("COGS")} abierto={det?.grupo === "COGS"} />
+            <PLRow label="− Gastos operativos" valor={a.opex} porcentaje={a.opex_pct} color="#a855f7"
+              onClick={() => abrirDetalle("Opex")} abierto={det?.grupo === "Opex"} />
             <PLRow label="− Planilla" valor={a.planilla} porcentaje={a.planilla_pct} color="#f59e0b" />
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0 2px" }}>
               <div style={{ width: 150, fontSize: 15, color: "#fff", fontWeight: 800 }}>= EBITDA</div>
@@ -132,6 +152,7 @@ export default function FinanzasAIView({ user = {} }) {
             <div style={{ fontSize: 11.5, color: MUT, marginTop: 8 }}>
               Mes anterior ({prev.mes}): ventas {money0(prev.ventas)} · EBITDA <b style={{ color: (prev.ebitda || 0) >= 0 ? VERDE : ROJ2 }}>{money(prev.ebitda)}</b> ({pct(prev.margen_pct)})
             </div>
+            {det && <DetallePL det={det} loading={detLoad} onClose={() => setDet(null)} />}
           </div>
 
           {/* Tendencia */}
@@ -255,6 +276,62 @@ function Stat({ label, val, col }) {
     <div style={{ minWidth: 96 }}>
       <div style={{ fontSize: 10, color: MUT, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
       <div style={{ fontSize: 15, fontWeight: 800, color: col || TXT }}>{val}</div>
+    </div>
+  );
+}
+
+// Panel de drill-down: desglose de COGS / Opex por categoría + ítems (proveedor, fecha, monto).
+function DetallePL({ det, loading, onClose }) {
+  const data = det?.data;
+  const cats = data?.por_categoria || [];
+  const items = data?.items || [];
+  const maxCat = Math.max(1, ...cats.map((c) => Math.abs(Number(c.total) || 0)));
+  const fdate = (s) => (s ? String(s).slice(5) : ""); // MM-DD
+  return (
+    <div style={{ marginTop: 12, background: "#141414", border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>Detalle · {det.grupo}{data ? ` · ${data.mes}` : ""}</div>
+        {data && <span style={{ fontSize: 12, color: MUT }}>{money(data.total)} · {data.count} docs</span>}
+        <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: MUT, fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
+      </div>
+      {loading && <div style={{ color: MUT, fontSize: 13, padding: 8 }}>Cargando detalle…</div>}
+      {!loading && data && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+          {/* Por categoría */}
+          <div>
+            <div style={{ fontSize: 11, color: MUT, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Por categoría</div>
+            {cats.map((c, i) => (
+              <div key={i} style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: TXT, marginBottom: 3 }}>
+                  <span>{c.categoria} <span style={{ color: MUT }}>· {c.n}</span></span>
+                  <span style={{ fontWeight: 700 }}>{money0(c.total)}</span>
+                </div>
+                <div style={{ height: 6, background: "#222", borderRadius: 999, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(100, Math.abs(Number(c.total) || 0) / maxCat * 100)}%`, height: "100%", background: det.grupo === "COGS" ? ROJO : "#a855f7" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Ítems (top) */}
+          <div>
+            <div style={{ fontSize: 11, color: MUT, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+              Mayores gastos {data.truncado ? "(top 60)" : ""}
+            </div>
+            <div style={{ maxHeight: 260, overflowY: "auto", paddingRight: 4 }}>
+              {items.map((it, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "5px 0", borderBottom: `1px solid ${BORDER}` }}>
+                  <span style={{ color: TXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: MUT }}>{fdate(it.fecha)}</span> {it.proveedor}
+                    {it.tipo_dte === "05" && <span style={{ color: VERDE, marginLeft: 4 }}>(NC)</span>}
+                  </span>
+                  <span style={{ color: (Number(it.monto) || 0) < 0 ? VERDE : TXT, fontWeight: 600, whiteSpace: "nowrap" }}>{money0(it.monto)}</span>
+                </div>
+              ))}
+              {items.length === 0 && <div style={{ color: MUT, fontSize: 12 }}>Sin documentos.</div>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
