@@ -797,7 +797,12 @@ function Checkout({ items, total, onClose, onEnviado }) {
                 <span>Envío{ruteo?.distancia_km != null ? ` · ${ruteo.distancia_km} km` : ''}</span>
                 {envio?.gratis
                   ? <span className="mp-envio-gratis">¡GRATIS! 🎉</span>
-                  : <span>{envio ? fmt(costoEnvio) : '—'}</span>}
+                  : <span>{envio ? fmt(costoEnvio) : '—'}{envio && envio.estimado === false ? ' *' : ''}</span>}
+              </div>
+            )}
+            {tipo === 'delivery' && envio && envio.estimado === false && (
+              <div className="mp-envio-tip">
+                * Sin tu ubicación no podemos calcular el envío exacto. Te confirmamos el monto por WhatsApp antes de cobrarte.
               </div>
             )}
             {tipo === 'delivery' && envio && !envio.gratis && Number(envio.falta_para_gratis) > 0 && (

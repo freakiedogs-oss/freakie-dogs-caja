@@ -2,6 +2,17 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-07-31 — Stress test 500 órdenes + 3 puntos ciegos corregidos
+- **Método:** 500 pedidos por el flujo completo (crear→comandar→KDS→lista→asignar→recoger→entregar→viaje) dentro de un `DO $$` que termina en `RAISE` ⇒ **rollback total**. Producción nunca ve los datos (aislamiento de transacción: sin commit no hay Realtime, ni KDS, ni cuentas POS) y **el DTE no se toca** (la emisión ocurre al cobrar en el POS, paso que el test no ejecuta). Verificado con baseline antes/después: 8 pedidos / 0 viajes / 389 cuentas, idénticos. Los resultados salen en el mensaje de la excepción.
+- **Ronda 1 (500):** 358 creados, 142 rechazados por mínimo, 297 ruteados, 0 errores de flujo, 0 inconsistencias de total/envío/bono, 0 números de orden duplicados. 9 ms por pedido.
+- **PUNTOS CIEGOS ENCONTRADOS (3, corregidos en `fix_puntos_ciegos_pedidos`):**
+  1. 🔴 **Envío mal cobrado sin distancia**: fuera de cobertura o sin GPS, `coalesce(dist,0)` caía en el tramo más barato ⇒ un cliente en Honduras pagaba **$0.50**. Ahora `calcular_costo_envio` con `p_distancia_km IS NULL` cobra el **tramo más alto** y devuelve `estimado:false`; el checkout avisa "te confirmamos el monto por WhatsApp".
+  2. 🔴 **Sin tope de cantidad**: se aceptó un pedido de 999.999 unidades (**$11.9 M**). Ahora **máx 50 por línea** con mensaje que deriva a WhatsApp.
+  3. 🔴 **Teléfono podía quedar vacío**: `regexp_replace` dejaba `''` con entrada basura ⇒ Karina sin forma de contactar. Ahora exige **≥8 dígitos**.
+- **Defensas que YA funcionaban (confirmadas):** ítem oculto del menú público → rechazado; ítem de otro canal → rechazado; **modificador ajeno no suma precio** (anti-manipulación); doble comanda → 1 sola cuenta; motorista ajeno no puede entregar; doble entrega → 1 solo viaje (sin doble bono).
+- **Ronda 2 (500, tras los fixes):** **500/500** creados, comandados, al KDS, a lista, entregados y con viaje registrado. 0 errores, **0 inconsistencias**, 0 duplicados, 237 envíos gratis, 63 con envío a confirmar. 11.6 ms por pedido (~86 pedidos/seg).
+- **Pendiente detectado, no bloqueante:** el menú deja armar un carrito bajo el mínimo y solo avisa al confirmar (28% de rechazos en la ronda 1) — conviene avisar en el carrito, no al final.
+
 ## 2026-07-31 — Costo de envío por distancia (parametrizable) + subir fotos del menú desde el ERP
 - **Costo de envío** (migraciones `delivery_costo_envio_tramos`, `crear_pedido_con_costo_envio`, `torre_config_envio_admin`). Reglas de Jose: **pedido mínimo $3.98**, **gratis desde $20**, y por distancia **<2 km $0.50 · 2–5 km $1.00 · 5–7 km $2.00 · >7 km $3.00**. Tabla `config_envio_tramos` (km_hasta NULL = último tramo) + params `envio_gratis_desde` / `pedido_minimo` en `config_delivery`. RPC `calcular_costo_envio(km, subtotal)`. `crear_pedido_delivery` ahora calcula el envío real por la distancia a la sucursal ruteada, lo guarda en `costo_envio`, suma al `total` y **rechaza pedidos bajo el mínimo**. Probado: 0.1 km→$0.50, tramos ok, gratis ≥$20, mínimo rechazado.
 - **Checkout del cliente:** muestra "Envío · X km" con el costo real (o **¡GRATIS!**) y el aviso *"Agregá $N más y el envío te sale gratis"*. El total del botón ya incluye envío.
