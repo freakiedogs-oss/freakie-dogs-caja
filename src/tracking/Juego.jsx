@@ -64,7 +64,8 @@ export default function Juego({ trackingToken, numeroOrden }) {
   }
 
   const compartir = async () => {
-    const txt = `¡Hice ${final?.score ?? score} puntos en HotDog Dash de Freakie Dogs! 🌭🎪 ¿Me superás?`
+    const emo = PERSONAJES.find(x => x.id === personaje)?.emoji || '🌭'
+    const txt = `¡Hice ${final?.score ?? score} puntos en Freakies Carreritas! ${emo}🎪 ¿Me superás?`
       + (numeroOrden ? `\nMi pedido: ${numeroOrden} @freakiedogs` : ' @freakiedogs')
     try {
       if (navigator.share) await navigator.share({ text: txt, url: location.origin + '/menu' })
