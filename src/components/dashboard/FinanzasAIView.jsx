@@ -160,6 +160,16 @@ export default function FinanzasAIView({ user = {} }) {
               <Mini label="Deuda préstamos" val={money0(liq.deuda_prestamos)} col={ROJ2} />
               <Mini label="Posición neta" val={money0(liq.posicion_neta)} col={(liq.posicion_neta || 0) >= 0 ? VERDE : ROJ2} />
             </div>
+            {Array.isArray(liq.posibles_duplicados) && liq.posibles_duplicados.length > 0 && (
+              <div style={{ background: "#2a1e0a", border: `1px solid ${AMBAR}`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, color: AMBAR, fontWeight: 700, marginBottom: 4 }}>⚠️ Posibles préstamos duplicados</div>
+                <div style={{ fontSize: 12, color: TXT, lineHeight: 1.5 }}>
+                  {liq.posibles_duplicados.map((x) => `${x.institucion} (${money0(x.monto)})`).join(" · ")} aparecen repetidos.
+                  {" "}Sin duplicados, la deuda sería <b style={{ color: "#fff" }}>{money0(liq.deuda_estimada_sin_dup)}</b> y la posición neta{" "}
+                  <b style={{ color: (liq.posicion_neta_sin_dup || 0) >= 0 ? VERDE : ROJ2 }}>{money0(liq.posicion_neta_sin_dup)}</b> (−{money0(liq.monto_duplicado_estimado)}).
+                </div>
+              </div>
+            )}
             {(liq.prestamos || []).slice(0, 4).map((p, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: MUT, padding: "3px 0" }}>
                 <span>{p.institucion}</span><span>{money0(p.capital_pendiente)}</span>
