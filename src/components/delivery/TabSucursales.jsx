@@ -1,0 +1,144 @@
+// ────────────────────────────────────────────────────────────────────
+// Torre · Sucursales y horarios de delivery
+// Cada tienda tiene su horario por día y su switch de delivery.
+// Usa la misma sesión de staff (PIN) que la pestaña de Pedidos.
+// ────────────────────────────────────────────────────────────────────
+import { useEffect, useState } from 'react';
+import { db } from '../../supabase';
+
+const TOKEN_KEY = 'freakie_torre_token';
+const c = { card: '#1a1a1a', border: '#2a2a2a', input: '#1e1e1e', red: '#e63946',
+            green: '#4ade80', yellow: '#fbbf24', text: '#f0f0f0', dim: '#888' };
+const DIAS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+export default function TabSucursales({ show = () => {} }) {
+  const [token] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
+  const [sucs, setSucs] = useState(null);
+  const [abierta, setAbierta] = useState(null);   // sucursal expandida
+  const [guardando, setGuardando] = useState(null);
+  const [err, setErr] = useState('');
+
+  const cargar = () => db.rpc('torre_sucursales_horarios', { p_token: token })
+    .then(({ data, error }) => { if (error) setErr(error.message); else setSucs(data || []); });
+
+  useEffect(() => { if (token) cargar(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!token) return <div style={{ color: c.dim, textAlign: 'center', padding: 30 }}>Entrá con tu PIN en la pestaña 📥 Pedidos para ver esta sección.</div>;
+  if (err) return <div style={{ color: c.red, padding: 20 }}>{err}</div>;
+  if (!sucs) return <div style={{ color: c.dim, padding: 20 }}>Cargando…</div>;
+
+  const setHorario = (sucId, dia, campo, valor) => {
+    setSucs(prev => prev.map(s => s.id !== sucId ? s : {
+      ...s, horarios: s.horarios.map(h => h.dia !== dia ? h : { ...h, [campo]: valor }),
+    }));
+  };
+
+  const guardarDia = async (suc, h) => {
+    setGuardando(`${suc.id}-${h.dia}`);
+    try {
+      const { error } = await db.rpc('torre_guardar_horario', {
+        p_token: token, p_sucursal_id: suc.id, p_dia: h.dia,
+        p_apertura: h.apertura, p_cierre: h.cierre, p_abierto: h.abierto,
+      });
+      if (error) throw error;
+      show(`✅ ${suc.nombre} · ${DIAS[h.dia]} guardado`);
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo guardar')); }
+    finally { setGuardando(null); }
+  };
+
+  const toggleDelivery = async (suc) => {
+    const nuevo = !suc.tiene_delivery;
+    setGuardando(suc.id);
+    try {
+      const { error } = await db.rpc('torre_toggle_delivery', {
+        p_token: token, p_sucursal_id: suc.id, p_activo: nuevo,
+      });
+      if (error) throw error;
+      setSucs(prev => prev.map(s => s.id === suc.id ? { ...s, tiene_delivery: nuevo } : s));
+      show(nuevo ? `🛵 ${suc.nombre} ya reparte a domicilio` : `⏸️ ${suc.nombre} sin delivery`);
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo cambiar')); }
+    finally { setGuardando(null); }
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: c.dim, marginBottom: 14, lineHeight: 1.5 }}>
+        Horario de cada tienda y si reparte a domicilio. Las que están sin delivery no reciben
+        pedidos del menú público, pero conservan su horario para cuando se activen.
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {sucs.map(s => {
+          const abiertoPanel = abierta === s.id;
+          return (
+            <div key={s.id} style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, overflow: 'hidden' }}>
+              {/* Encabezado */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 14, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 700 }}>{s.nombre}</div>
+                  <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>{s.store_code}</div>
+                </div>
+
+                <button onClick={() => toggleDelivery(s)} disabled={guardando === s.id}
+                  title={s.tiene_delivery ? 'Dejar de repartir a domicilio' : 'Empezar a repartir a domicilio'}
+                  style={{
+                    padding: '7px 13px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                    background: s.tiene_delivery ? '#14351f' : '#2a1a1a',
+                    color: s.tiene_delivery ? c.green : c.dim,
+                  }}>
+                  {guardando === s.id ? '…' : s.tiene_delivery ? '🛵 Reparte a domicilio' : '⏸️ Sin delivery'}
+                </button>
+
+                <button onClick={() => setAbierta(abiertoPanel ? null : s.id)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${c.border}`,
+                           background: 'none', color: c.text, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  {abiertoPanel ? 'Cerrar' : '🕐 Horarios'}
+                </button>
+              </div>
+
+              {/* Horario semanal */}
+              {abiertoPanel && (
+                <div style={{ borderTop: `1px solid ${c.border}`, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(s.horarios || []).map(h => (
+                    <div key={h.dia} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ width: 88, fontSize: 13, color: h.abierto ? c.text : c.dim }}>{DIAS[h.dia]}</span>
+
+                      <input type="time" value={h.apertura} disabled={!h.abierto}
+                        onChange={e => setHorario(s.id, h.dia, 'apertura', e.target.value)}
+                        style={inp(h.abierto)} />
+                      <span style={{ color: c.dim, fontSize: 12 }}>a</span>
+                      <input type="time" value={h.cierre} disabled={!h.abierto}
+                        onChange={e => setHorario(s.id, h.dia, 'cierre', e.target.value)}
+                        style={inp(h.abierto)} />
+
+                      <label style={{ fontSize: 12, color: c.dim, display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={h.abierto}
+                          onChange={e => setHorario(s.id, h.dia, 'abierto', e.target.checked)} />
+                        {h.abierto ? 'Abre' : 'Cerrado'}
+                      </label>
+
+                      <button onClick={() => guardarDia(s, h)} disabled={guardando === `${s.id}-${h.dia}`}
+                        style={{ marginLeft: 'auto', padding: '6px 11px', borderRadius: 8, border: 'none',
+                                 background: c.red, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                        {guardando === `${s.id}-${h.dia}` ? '…' : 'Guardar'}
+                      </button>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                    Hora de El Salvador. Destildá “Abre” para marcar el día como cerrado.
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const inp = (activo) => ({
+  background: c.input, border: `1px solid #333`, borderRadius: 8, padding: '7px 9px',
+  color: activo ? c.text : c.dim, fontSize: 13, opacity: activo ? 1 : .5,
+});
