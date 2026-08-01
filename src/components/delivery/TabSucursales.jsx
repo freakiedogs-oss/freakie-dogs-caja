@@ -17,6 +17,7 @@ export default function TabSucursales({ show = () => {} }) {
   const [abierta, setAbierta] = useState(null);   // sucursal expandida
   const [guardando, setGuardando] = useState(null);
   const [err, setErr] = useState('');
+  const [ubicando, setUbicando] = useState(null);   // sucursal cuya ubicación se está fijando
 
   const cargar = () => db.rpc('torre_sucursales_horarios', { p_token: token })
     .then(({ data, error }) => { if (error) setErr(error.message); else setSucs(data || []); });
@@ -44,6 +45,44 @@ export default function TabSucursales({ show = () => {} }) {
       show(`✅ ${suc.nombre} · ${DIAS[h.dia]} guardado`);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo guardar')); }
     finally { setGuardando(null); }
+  };
+
+  // Fija el punto de la sucursal con la ubicación de quien está parado ahí.
+  // Es la forma confiable: las coordenadas cargadas a ojo desde un mapa suelen
+  // quedar a cientos de metros, y entonces nadie puede marcarse de turno.
+  const fijarAqui = async (suc) => {
+    if (!navigator.geolocation) { show('❌ Este dispositivo no comparte ubicación'); return; }
+    setUbicando(suc.id);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      if (accuracy > 60) {
+        show(`⚠️ Tu ubicación tiene ±${Math.round(accuracy)} m de margen. Salí al aire libre y probá otra vez.`);
+        setUbicando(null); return;
+      }
+      try {
+        const { error } = await db.rpc('torre_guardar_ubicacion_sucursal', {
+          p_token: token, p_sucursal_id: suc.id, p_lat: lat, p_lng: lng, p_radio: null,
+        });
+        if (error) throw error;
+        setSucs(prev => prev.map(s => s.id === suc.id ? { ...s, lat, lng } : s));
+        show(`📍 ${suc.nombre} quedó fijada acá (±${Math.round(accuracy)} m)`);
+      } catch (e) { show('❌ ' + (e.message || 'No se pudo guardar')); }
+      finally { setUbicando(null); }
+    }, () => {
+      show('❌ No pudimos leer tu ubicación. Revisá el permiso.');
+      setUbicando(null);
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  };
+
+  const guardarRadio = async (suc, metros) => {
+    try {
+      const { error } = await db.rpc('torre_guardar_ubicacion_sucursal', {
+        p_token: token, p_sucursal_id: suc.id, p_lat: suc.lat, p_lng: suc.lng, p_radio: metros,
+      });
+      if (error) throw error;
+      setSucs(prev => prev.map(s => s.id === suc.id ? { ...s, radio_alta_m: metros } : s));
+      show(`✅ ${suc.nombre}: los motoristas se marcan hasta ${metros} m`);
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo guardar')); }
   };
 
   const toggleDelivery = async (suc) => {
@@ -127,6 +166,44 @@ export default function TabSucursales({ show = () => {} }) {
                   ))}
                   <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
                     Hora de El Salvador. Destildá “Abre” para marcar el día como cerrado.
+                  </div>
+
+                  {/* Punto del local: de acá depende que los motoristas puedan marcarse de turno */}
+                  <div style={{ borderTop: `1px solid ${c.border}`, marginTop: 12, paddingTop: 12 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: c.text, marginBottom: 4 }}>
+                      📍 Ubicación del local
+                    </div>
+                    <div style={{ fontSize: 11.5, color: c.dim, lineHeight: 1.5, marginBottom: 10 }}>
+                      Los motoristas solo pueden marcarse de turno estando cerca de este punto.
+                      {s.lat
+                        ? <> Está en <a href={`https://www.google.com/maps?q=${s.lat},${s.lng}`}
+                              target="_blank" rel="noreferrer" style={{ color: c.green }}>
+                              {Number(s.lat).toFixed(5)}, {Number(s.lng).toFixed(5)}
+                            </a>. Verificalo en el mapa; si no cae sobre el local, paráte adentro y fijalo de nuevo.</>
+                        : <> <b style={{ color: c.red }}>Todavía no está puesta</b>, así que nadie puede marcarse de turno acá.</>}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button onClick={() => fijarAqui(s)} disabled={ubicando === s.id}
+                        title="Usá tu ubicación actual como punto del local. Tenés que estar adentro."
+                        style={{ padding: '9px 13px', borderRadius: 9, border: 'none', background: c.red,
+                                 color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                        {ubicando === s.id ? '📍 Leyendo tu ubicación…' : '📍 Estoy acá, fijar este punto'}
+                      </button>
+
+                      <label style={{ fontSize: 12, color: c.dim, display: 'flex', gap: 6, alignItems: 'center' }}>
+                        Radio
+                        <select value={s.radio_alta_m || 100}
+                          onChange={e => guardarRadio(s, Number(e.target.value))}
+                          disabled={!s.lat} style={{ ...inp(true), padding: '6px 8px' }}>
+                          {[50, 100, 150, 200, 300, 500].map(m => <option key={m} value={m}>{m} m</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#666', marginTop: 8, lineHeight: 1.45 }}>
+                      Dentro de un centro comercial el GPS se desvía: si los motoristas no logran
+                      marcarse estando ahí, subí el radio en vez de mover el punto.
+                    </div>
                   </div>
                 </div>
               )}
