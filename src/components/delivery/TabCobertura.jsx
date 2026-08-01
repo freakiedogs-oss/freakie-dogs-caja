@@ -41,8 +41,10 @@ export default function TabCobertura({ show = () => {} }) {
     setTimeout(() => map.invalidateSize(), 150);
 
     db.from('sucursales')
-      .select('id,store_code,nombre,lat,lng,cobertura_geojson,radio_alta_m')
-      .eq('tiene_delivery', true).eq('activa', true)
+      // Todas las activas, no solo las que reparten: las que hoy tienen el
+      // delivery apagado igual tienen motoristas que marcan turno ahí.
+      .select('id,store_code,nombre,lat,lng,cobertura_geojson,radio_alta_m,tiene_delivery')
+      .eq('activa', true).in('tipo', ['restaurante', 'food_court'])
       .then(({ data }) => {
         const list = (data || []).filter(s => s.lat != null && s.lng != null);
         setSucursales(list);
@@ -104,13 +106,33 @@ export default function TabCobertura({ show = () => {} }) {
 
     radiosRef.current = sucursales.map(s =>
       L.circle([s.lat, s.lng], {
-        radius: s.radio_alta_m || 100, color: RED, weight: 1,
-        fillColor: RED, fillOpacity: 0.07, dashArray: '4 4',
+        radius: s.radio_alta_m || 100, color: '#fbbf24', weight: 2,
+        fillColor: '#fbbf24', fillOpacity: 0.15, dashArray: '6 5', interactive: false,
       }).addTo(map)
     );
 
     markersRef.current = sucursales.map((s, i) => {
-      const m = L.marker([s.lat, s.lng], { draggable: true, autoPan: true })
+      // Alfiler dibujado a mano: el marcador que trae Leaflet depende de una
+      // imagen que el empaquetador no incluye, y salía roto.
+      const icon = L.divIcon({
+        className: '',
+        iconSize: [30, 42],
+        iconAnchor: [15, 42],
+        tooltipAnchor: [0, -38],
+        html: `
+          <div style="position:relative;width:30px;height:42px;cursor:grab;">
+            <div style="
+              position:absolute;left:3px;top:0;width:24px;height:24px;
+              background:${RED};border:2.5px solid #fff;border-radius:50% 50% 50% 0;
+              transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.55);"></div>
+            <div style="
+              position:absolute;left:0;top:24px;width:30px;text-align:center;
+              font:700 10px/12px system-ui,sans-serif;color:#fff;
+              text-shadow:0 1px 3px rgba(0,0,0,.9);">${s.store_code}</div>
+          </div>`,
+      });
+
+      const m = L.marker([s.lat, s.lng], { draggable: true, autoPan: true, icon })
         .addTo(map)
         .bindTooltip(`${s.store_code} · ${s.nombre} — arrastralo para corregirlo`);
 
@@ -232,7 +254,7 @@ export default function TabCobertura({ show = () => {} }) {
             background: selId === s.id ? RED : '#222',
             color: selId === s.id ? '#fff' : '#aaa',
           }}>
-            {s.store_code} {s.cobertura_geojson ? '▨' : '○'}
+            {s.store_code} {s.cobertura_geojson ? '▨' : '○'}{s.tiene_delivery ? '' : ' ⏸'}
           </button>
         ))}
       </div>
@@ -257,7 +279,7 @@ export default function TabCobertura({ show = () => {} }) {
       <div ref={mapEl} style={{ height: '62vh', minHeight: 380, borderRadius: 12, overflow: 'hidden', border: '1px solid #2a2a2a' }} />
 
       <div style={{ fontSize: 11, color: '#666', marginTop: 8 }}>
-        ▨ = tiene polígono · ○ = por radio. Mapa © OpenStreetMap.
+        ▨ = tiene polígono · ○ = por radio · ⏸ = sin delivery. Mapa © OpenStreetMap.
       </div>
     </div>
   );
