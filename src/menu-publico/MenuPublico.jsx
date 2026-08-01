@@ -57,6 +57,7 @@ function abiertoAhora() {
 // ═══════════════════════════════════════════════════════════════════
 export default function MenuPublico() {
   const [menu, setMenu] = useState([])          // [{id,nombre,orden,items:[{...,grupos}]}]
+  const [reglas, setReglas] = useState(null)    // {minimo, gratis_desde} del servidor
   const [cargando, setCargando] = useState(true)
   const [errorCarga, setErrorCarga] = useState(false)
   const [categoriaActiva, setCategoriaActiva] = useState('')
@@ -68,6 +69,13 @@ export default function MenuPublico() {
   const [showTop, setShowTop] = useState(false)
   const seccionesRef = useRef({})
   const abierto = abiertoAhora()
+
+  // Reglas de pedido mínimo / envío gratis (para avisar desde el carrito)
+  useEffect(() => {
+    db.rpc('calcular_costo_envio', { p_distancia_km: 0, p_subtotal: 0 })
+      .then(({ data }) => data && setReglas({ minimo: Number(data.minimo), gratisDesde: Number(data.gratis_desde) }))
+      .catch(() => {})
+  }, [])
 
   // Cargar el menú en vivo del POS (canal delivery_propio)
   useEffect(() => {
@@ -237,6 +245,7 @@ export default function MenuPublico() {
         <CarritoDrawer
           items={carrito}
           total={totalCarrito}
+          reglas={reglas}
           onClose={() => setCarritoAbierto(false)}
           onUpdate={setCarrito}
           onCheckout={() => { setCarritoAbierto(false); setCheckoutOpen(true) }}
@@ -502,7 +511,9 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   )
 }
 
-function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout }) {
+function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) {
+  const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
+  const faltaGratis = reglas ? Math.max(0, reglas.gratisDesde - total) : 0
   const removeLinea = (lineaId) => {
     onUpdate(items.filter(i => i.lineaId !== lineaId))
   }
@@ -553,12 +564,22 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout }) {
 
         {items.length > 0 && (
           <div className="mp-drawer-footer">
+            {faltaMinimo > 0 && (
+              <div className="mp-falta-minimo">
+                Te faltan <b>{fmt(faltaMinimo)}</b> para el pedido mínimo de {fmt(reglas.minimo)} 🛵
+              </div>
+            )}
+            {faltaMinimo === 0 && faltaGratis > 0 && (
+              <div className="mp-falta-gratis">
+                Agregá <b>{fmt(faltaGratis)}</b> más y el envío te sale <b>gratis</b> 🚀
+              </div>
+            )}
             <div className="mp-drawer-total">
               <span>Total</span>
               <span className="mp-drawer-total-num">{fmt(total)}</span>
             </div>
-            <button className="mp-btn-checkout" onClick={onCheckout}>
-              Continuar al pedido →
+            <button className="mp-btn-checkout" onClick={onCheckout} disabled={faltaMinimo > 0}>
+              {faltaMinimo > 0 ? `Mínimo ${fmt(reglas.minimo)} para pedir` : 'Continuar al pedido →'}
             </button>
           </div>
         )}
