@@ -128,8 +128,24 @@ export default function KDSScreen({ user, onBack }) {
   const toast = useToast()
 
   const [mode,        setMode]        = useState('canal')    // 'canal' | 'estacion'
-  const [filtroCanal, setFiltroCanal] = useState('todos')
+  // Varios canales a la vez: hay pantallas a cargo de 2 canales y no del resto
+  // (p.ej. sucursal + PedidosYa, sin delivery). Se recuerda por dispositivo.
+  const [canalesSel,  setCanalesSel]  = useState(() => {
+    try {
+      const g = JSON.parse(localStorage.getItem('kds_canales') || 'null')
+      return Array.isArray(g) && g.length ? g : []
+    } catch { return [] }
+  })
   const [filtroEst,   setFiltroEst]   = useState('general')
+
+  // Sin selección = ver todo (evita quedarse con la pantalla vacía sin querer)
+  const guardarCanales = (arr) => {
+    setCanalesSel(arr)
+    try { localStorage.setItem('kds_canales', JSON.stringify(arr)) } catch { /* modo privado */ }
+  }
+  const toggleCanal = (key) => {
+    guardarCanales(canalesSel.includes(key) ? canalesSel.filter(k => k !== key) : [...canalesSel, key])
+  }
   const [queue,       setQueue]       = useState([])         // rows de pos_cocina_queue
   const [historial,   setHistorial]   = useState([])         // rows de pos_cocina_queue completadas hoy
   const [loading,     setLoading]     = useState(true)
@@ -319,8 +335,9 @@ export default function KDSScreen({ user, onBack }) {
   // ── Filtrar según modo + filtro activo ──
   const filteredQueue = queue.filter(row => {
     if (mode === 'canal') {
-      const canales = CANAL_FILTER[filtroCanal]
-      return canales ? canales.includes(row.canal) : true
+      if (canalesSel.length === 0) return true          // sin filtro = todo
+      const permitidos = canalesSel.flatMap(k => CANAL_FILTER[k] || [])
+      return permitidos.includes(row.canal)
     } else {
       return row.estacion === filtroEst
     }
@@ -331,7 +348,11 @@ export default function KDSScreen({ user, onBack }) {
   // Contador de productos pendientes por estación — TODAS las sucursales.
   // Se calcula sobre `queue` completa (no `filteredQueue`) para ver el
   // total real independiente de qué filtro use la cocina.
-  const contadoresS006 = calcularContadoresS006(queue)
+  // Las tarjetas de estación cuentan solo lo que la pantalla tiene seleccionado
+  const colaVisible = (mode === 'canal' && canalesSel.length > 0)
+    ? queue.filter(r => canalesSel.flatMap(k => CANAL_FILTER[k] || []).includes(r.canal))
+    : queue
+  const contadoresS006 = calcularContadoresS006(colaVisible)
 
   // Conteos para badges
   const conteos = {}
@@ -462,7 +483,9 @@ export default function KDSScreen({ user, onBack }) {
 
             <span className="pos-header-sep" />
             <span style={{ fontSize: 12, color: queue.length > 0 ? '#fbbf24' : '#2dd4a8', fontWeight: 700 }}>
-              {queue.length > 0 ? `● ${queue.length} pendiente${queue.length !== 1 ? 's' : ''}` : '● Sin órdenes'}
+              {colaVisible.length > 0
+                ? `● ${colaVisible.length} pendiente${colaVisible.length !== 1 ? 's' : ''}${canalesSel.length ? ' (filtrado)' : ''}`
+                : '● Sin órdenes'}
             </span>
           </>
         )}
@@ -484,11 +507,14 @@ export default function KDSScreen({ user, onBack }) {
               const cnt = conteos[f.key] ?? 0
               // Ocultar Drive Thru si no es Lourdes (S003)
               if (f.key === 'drive' && storeCode !== 'S003') return null
+              const esTodos = f.key === 'todos'
+              const activo  = esTodos ? canalesSel.length === 0 : canalesSel.includes(f.key)
               return (
                 <button
                   key={f.key}
-                  className={`poshome-filter-btn${filtroCanal === f.key ? ' active' : ''}`}
-                  onClick={() => setFiltroCanal(f.key)}
+                  title={esTodos ? 'Ver todos los canales' : (activo ? 'Quitar este canal' : 'Sumar este canal')}
+                  className={`poshome-filter-btn${activo ? ' active' : ''}`}
+                  onClick={() => esTodos ? guardarCanales([]) : toggleCanal(f.key)}
                 >
                   <span className="poshome-filter-icon"><Icon name={f.ic} size={16} /></span>
                   <span className="poshome-filter-label">{f.label}</span>
