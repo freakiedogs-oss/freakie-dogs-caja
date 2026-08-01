@@ -623,6 +623,14 @@ function Checkout({ items, total, onClose, onEnviado }) {
     )
   }
 
+  // Tiendas donde se puede recoger (pickup)
+  const [tiendas, setTiendas] = useState([])
+  const [tiendaSel, setTiendaSel] = useState('')
+  useEffect(() => {
+    if (tipo !== 'pickup' || tiendas.length) return
+    db.rpc('sucursales_pickup').then(({ data }) => setTiendas(data || [])).catch(() => {})
+  }, [tipo]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Costo de envío según distancia a la sucursal ruteada (parametrizable en la torre)
   const [envio, setEnvio] = useState(null)
   useEffect(() => {
@@ -642,6 +650,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
     setError('')
     if (!nombre.trim()) return setError('Ingresá tu nombre')
     if (!telefono.trim() || telefono.trim().length < 8) return setError('Teléfono inválido')
+    if (tipo === 'pickup' && !tiendaSel) return setError('Elegí en qué tienda vas a recoger')
     if (tipo === 'delivery') {
       if (!direccion.trim()) return setError('Dirección requerida para delivery')
       if (!zona) return setError('Elegí tu zona')
@@ -659,6 +668,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
           tipo,
           cliente_direccion: tipo === 'delivery' ? `[${zona}] ${direccion.trim()}` : null,
           zona: tipo === 'delivery' ? zona : null,
+          sucursal_id: tipo === 'pickup' ? tiendaSel : null,
           cliente_lat: tipo === 'delivery' ? (ubic?.lat ?? null) : null,
           cliente_lng: tipo === 'delivery' ? (ubic?.lng ?? null) : null,
           metodo_pago: metodoPago,
@@ -733,6 +743,25 @@ function Checkout({ items, total, onClose, onEnviado }) {
               placeholder="7777-7777"
             />
           </div>
+
+          {/* SI PICKUP: en qué tienda retira */}
+          {tipo === 'pickup' && (
+            <div className="mp-field">
+              <label>¿En qué tienda lo recogés? *</label>
+              <select value={tiendaSel} onChange={e => setTiendaSel(e.target.value)}>
+                <option value="">Elegí la tienda</option>
+                {tiendas.map(t => (
+                  <option key={t.id} value={t.id}>{t.nombre}</option>
+                ))}
+              </select>
+              {tiendaSel && (
+                <div className="mp-pickup-info">
+                  🏪 Te esperamos en <b>{tiendas.find(t => t.id === tiendaSel)?.nombre}</b>
+                  {tiendas.find(t => t.id === tiendaSel)?.direccion ? ` · ${tiendas.find(t => t.id === tiendaSel).direccion}` : ''}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* SI DELIVERY: UBICACIÓN + DIRECCIÓN + ZONA */}
           {tipo === 'delivery' && (
