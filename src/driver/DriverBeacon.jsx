@@ -14,8 +14,10 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 const fmtMes = (m) => { if (!m) return ''; const [y, mo] = m.split('-'); return `${MESES[+mo - 1]} ${y}` }
 
 export default function DriverBeacon() {
-  const [drivers, setDrivers] = useState([])
   const [yo, setYo] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)) || null } catch { return null } })
+  const [pin, setPin] = useState('')
+  const [errPin, setErrPin] = useState('')
+  const [entrando, setEntrando] = useState(false)
   const [tab, setTab] = useState('pedidos')
   const [pedidos, setPedidos] = useState([])
   const beacon = useBeacon(yo)
@@ -26,7 +28,6 @@ export default function DriverBeacon() {
     setPedidos(data || [])
   }, [yo])
 
-  useEffect(() => { if (!yo) db.rpc('drivers_disponibles').then(({ data }) => setDrivers(data || [])) }, [yo])
   useEffect(() => {
     if (!yo) return
     cargarPedidos()
@@ -41,7 +42,19 @@ export default function DriverBeacon() {
     if (!enRuta && beacon.activo && beacon.auto) beacon.detener()
   }, [enRuta]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const elegir = (d) => { setYo(d); try { localStorage.setItem(KEY, JSON.stringify(d)) } catch { /* noop */ } }
+  const entrar = async () => {
+    if (pin.length < 4 || entrando) return
+    setEntrando(true); setErrPin('')
+    try {
+      const { data, error } = await db.rpc('driver_login', { p_pin: pin })
+      if (error) throw error
+      if (!data) { setErrPin('PIN incorrecto'); setPin(''); return }
+      setYo(data)
+      try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
+    } catch (e) {
+      setErrPin(e.message || 'No se pudo entrar'); setPin('')
+    } finally { setEntrando(false) }
+  }
   const cambiar = () => { beacon.detener(); setYo(null); try { localStorage.removeItem(KEY) } catch { /* noop */ } }
 
   if (!yo) {
@@ -50,11 +63,27 @@ export default function DriverBeacon() {
         <div style={S.card}>
           <div style={S.logo}>🛵</div>
           <h1 style={S.h1}>Freakie Motorista</h1>
-          <p style={S.sub}>Elegí tu nombre para empezar.</p>
-          <div style={S.lista}>
-            {drivers.length === 0 && <div style={S.dim}>Cargando motoristas…</div>}
-            {drivers.map(d => <button key={d.id} style={S.driverBtn} onClick={() => elegir(d)}>{d.nombre}</button>)}
+          <p style={S.sub}>Entrá con tu PIN.</p>
+          <div style={S.puntos}>
+            {[0, 1, 2, 3, 4, 5].map(i => (
+              <span key={i} style={{ ...S.punto, ...(i < pin.length ? S.puntoLleno : null) }} />
+            ))}
           </div>
+          {errPin && <div style={S.errPin}>⚠️ {errPin}</div>}
+          <div style={S.teclado}>
+            {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((d, i) => d === '' ? <span key={i} /> : (
+              <button key={i} style={S.tecla}
+                onClick={() => {
+                  setErrPin('')
+                  if (d === '⌫') setPin(p => p.slice(0, -1))
+                  else setPin(p => (p + d).slice(0, 6))
+                }}>{d}</button>
+            ))}
+          </div>
+          <button style={{ ...S.entrarBtn, opacity: pin.length >= 4 && !entrando ? 1 : .45 }}
+            disabled={pin.length < 4 || entrando} onClick={entrar}>
+            {entrando ? 'Verificando…' : 'Entrar'}
+          </button>
         </div>
       </div>
     )
@@ -325,8 +354,16 @@ const S = {
   logo: { fontSize: 54, marginBottom: 6 },
   h1: { fontSize: 22, fontWeight: 800, margin: '0 0 6px', color: '#E63946' },
   sub: { fontSize: 14, color: '#aaa', margin: '0 0 16px' },
-  lista: { display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '55vh', overflowY: 'auto' },
-  driverBtn: { padding: '13px 14px', borderRadius: 12, border: '1px solid #333', background: '#1e1e1e', color: '#f0f0f0', fontSize: 15, fontWeight: 600, cursor: 'pointer', textAlign: 'left' },
+  // Entrada por PIN: teclado grande, pensado para usarse con una mano en la moto
+  puntos: { display: 'flex', gap: 10, justifyContent: 'center', margin: '18px 0 6px' },
+  punto: { width: 13, height: 13, borderRadius: '50%', border: '1.5px solid #444', display: 'inline-block' },
+  puntoLleno: { background: '#e63946', borderColor: '#e63946' },
+  errPin: { color: '#f87171', fontSize: 13, textAlign: 'center', margin: '6px 0' },
+  teclado: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, margin: '14px 0' },
+  tecla: { padding: '16px 0', borderRadius: 14, border: '1px solid #333', background: '#1e1e1e',
+           color: '#f0f0f0', fontSize: 22, fontWeight: 600, cursor: 'pointer' },
+  entrarBtn: { width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: '#e63946',
+               color: '#fff', fontSize: 16, fontWeight: 700, cursor: 'pointer' },
   ok: { fontSize: 14, color: '#4ade80', fontWeight: 600 },
   dim: { fontSize: 13, color: '#888', margin: '8px 0', lineHeight: 1.5 },
   banner: { background: '#1e2a1e', border: '1px solid #2f5f3f', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#a7e8bd' },
