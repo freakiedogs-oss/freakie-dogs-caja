@@ -59,6 +59,7 @@ export default function TabPedidos({ show = () => {} }) {
   const [sucursales, setSucursales] = useState([]);
   const [asignSel, setAsignSel] = useState({});
   const [sucSel, setSucSel] = useState({});
+  const [reasignando, setReasignando] = useState(null);   // pedido cuyo motorista se está cambiando
   const [cargando, setCargando] = useState(false);
   const [ultima, setUltima] = useState(null);
   const [err, setErr] = useState('');
@@ -184,9 +185,15 @@ export default function TabPedidos({ show = () => {} }) {
     if (!mid) { show('⚠️ Elegí un motorista'); return; }
     setOcupado(p.id);
     try {
-      const { error } = await db.rpc('torre_asignar_motorista', { p_token: token, p_delivery_id: p.id, p_motorista_id: mid });
+      const { data, error } = await db.rpc('torre_asignar_motorista', {
+        p_token: token, p_delivery_id: p.id, p_motorista_id: mid });
       if (error) throw error;
-      show('🛵 Motorista asignado'); await cargar(token);
+      // El servidor dice si fue un cambio, para que quede claro qué pasó
+      show(data?.reasignado
+        ? `🔄 ${p.numero_orden}: pasó de ${data.anterior} a ${data.motorista}`
+        : `🛵 ${data?.motorista || 'Motorista'} asignado`);
+      setAsignSel(s => ({ ...s, [p.id]: '' }));
+      await cargar(token);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
     finally { setOcupado(null); }
   };
@@ -238,6 +245,7 @@ export default function TabPedidos({ show = () => {} }) {
   const porEstado = (k) => pedidos.filter(p => p.estado === k);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
+                       reasignando, setReasignando,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado };
 
@@ -416,6 +424,7 @@ function Historial({ historial }) {
 
 // ── Tarjeta de pedido ──
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
+                   reasignando, setReasignando,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado }) {
   const reloj = useReloj(p.created_at);
@@ -509,9 +518,43 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         </div>
       )}
 
-      {/* Ya asignado pero todavía en el local */}
+      {/* Ya asignado pero todavía en el local: se puede cambiar de motorista
+          hasta que salga. Después no, porque el pedido ya va en su moto. */}
       {p.estado === 'lista' && p.motorista_id && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+            <span style={{ fontSize: 12, color: c.text, flex: 1, minWidth: 0,
+                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              🛵 {p.repartidor_nombre}
+            </span>
+            <button onClick={() => setReasignando(r => r === p.id ? null : p.id)}
+                    style={{ ...btn('none', c.dim), border: `1px solid ${c.border}`,
+                             fontSize: 11, padding: '4px 9px' }}>
+              {reasignando === p.id ? 'Dejar así' : 'Cambiar'}
+            </button>
+          </div>
+
+          {reasignando === p.id && (
+            <>
+              <select value={asignSel[p.id] || ''}
+                      onChange={e => setAsignSel(s => ({ ...s, [p.id]: e.target.value }))}
+                      style={{ ...sel, width: '100%', marginBottom: 6 }}>
+                <option value="">— pasárselo a —</option>
+                {drivers.filter(d => d.id !== p.motorista_id).map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.nombre}{d.sucursal ? ` · ${d.sucursal}` : ''}
+                    {d.pedidos > 0 ? ` · lleva ${d.pedidos}` : ' · libre'}
+                  </option>
+                ))}
+              </select>
+              <button disabled={ocupado === p.id || !asignSel[p.id]}
+                      onClick={() => asignar(p).then(() => setReasignando(null))}
+                      style={{ ...btn(c.blue), width: '100%', fontSize: 12, marginBottom: 6 }}>
+                {ocupado === p.id ? '…' : '🔄 Reasignar'}
+              </button>
+            </>
+          )}
+
           <button disabled={ocupado === p.id} onClick={() => marcarEnCamino(p)}
                   style={{ ...btn(c.orange), width: '100%', fontSize: 12 }}>
             {ocupado === p.id ? '…' : '🛵 Ya salió'}
