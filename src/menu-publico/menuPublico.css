@@ -836,3 +836,9 @@ button { font-family: inherit; }
 }
 .mp-falta-minimo { background: #fdecee; border: 1px solid #E63946; color: #b52a37; }
 .mp-falta-gratis { background: #eafaf0; border: 1px solid #58c07f; color: #1c6b3c; }
+
+/* Confirmación de tienda para retirar */
+.mp-pickup-info {
+  margin-top: 8px; background: #eafaf0; border: 1px solid #58c07f; color: #1c6b3c;
+  border-radius: 10px; padding: 9px 12px; font-size: 13px;
+}
