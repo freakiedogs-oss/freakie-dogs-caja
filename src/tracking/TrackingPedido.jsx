@@ -115,7 +115,7 @@ export default function TrackingPedido() {
       {!entregado && (
         <div ref={juegoRef}>
           <Suspense fallback={null}>
-            <Juego trackingToken={token} />
+            <Juego trackingToken={token} numeroOrden={d.numero_orden} />
           </Suspense>
         </div>
       )}
