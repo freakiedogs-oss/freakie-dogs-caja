@@ -75,7 +75,7 @@ const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 const MESERO_ROLES = ['mesero', 'mesera']
 const EDIT_PLANO_ROLES = ['gerente', 'admin', 'ejecutivo', 'superadmin']
 
-export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToCierre, onGoToMenuAdmin, onChangeStore }) {
+export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToCierre, onGoToMenuAdmin, onChangeStore, onReport }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
@@ -258,6 +258,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         <span className="pos-header-sep" />
         <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
+        {onReport && <button className="pos-header-btn" onClick={onReport} title="Reportar un problema" aria-label="Reportar un problema">🛟</button>}
         <button className="pos-header-btn danger" onClick={onLogout}>Salir</button>
       </header>
 

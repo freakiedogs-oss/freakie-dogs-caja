@@ -1069,6 +1069,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         <span className="pos-header-sep" />
         <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
+        {onReport && <button className="pos-header-btn" onClick={onReport} title="Reportar un problema" aria-label="Reportar un problema">🛟</button>}
         <button className="pos-header-btn danger" onClick={onLogout}>Salir</button>
       </header>
 
