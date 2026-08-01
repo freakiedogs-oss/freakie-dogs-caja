@@ -361,11 +361,10 @@ function HeaderNegocio() {
   return (
     <div className="mp-header">
       <div className="mp-logo">
-        <div className="mp-logo-inner">Freakie<br/>Dogs</div>
+        <img src="/icon-512.png" alt="Freakie Dogs" className="mp-logo-img" />
       </div>
-      <div className="mp-header-nombre">{NEGOCIO.descripcion}</div>
+      <div className="mp-header-nombre">🎮 Mientras esperás, hacé correr al hot dog y ganate un combo</div>
       <div className="mp-header-info">
-        <div className="mp-info-row">📍 <a href="#ubicacion">Ver Ubicación</a></div>
         <div className="mp-info-row">🕐 <span>{hoy}: {horario}</span></div>
         <div className="mp-info-row">$ Moneda: United State Dollar</div>
       </div>

@@ -33,15 +33,20 @@ export default function Juego({ trackingToken }) {
   }
 
   const terminar = (s) => {
-    setFinal({ score: s, dur: Math.max(1, Math.round((Date.now() - inicio) / 1000)) })
+    const partida = { score: s, dur: Math.max(1, Math.round((Date.now() - inicio) / 1000)) }
+    setFinal(partida)
+    // Si ya nos dio su nombre antes, la marca se guarda sola: pedir un paso
+    // extra hacía que casi nadie quedara en el ranking.
+    if (alias.trim()) guardar(partida)
   }
 
-  const guardar = async () => {
-    if (!alias.trim() || !final) return
+  const guardar = async (partida) => {
+    const p = partida || final
+    if (!alias.trim() || !p) return
     try {
       localStorage.setItem(ALIAS_KEY, alias.trim())
       const { data, error } = await db.rpc('juego_guardar_score', {
-        p_alias: alias.trim(), p_score: final.score, p_duracion_seg: final.dur,
+        p_alias: alias.trim(), p_score: p.score, p_duracion_seg: p.dur,
         p_juego: juegoId, p_tracking_token: trackingToken || null,
       })
       if (error) throw error
@@ -66,6 +71,10 @@ export default function Juego({ trackingToken }) {
         <div>
           <h2 className="jg-t">{juego.emoji} {juego.nombre}</h2>
           <p className="jg-s">{juego.tagline} · <b>la marca más alta del día gana un combo</b> 🏆</p>
+          <p className="jg-reglas">
+            Para participar por el combo del día o el premio del mes,
+            <b> publicá tu marca en tus redes y etiquetá a @freakiedogs</b> 📲
+          </p>
         </div>
       </header>
 
@@ -82,11 +91,12 @@ export default function Juego({ trackingToken }) {
             <div className="jg-fin">
               {!guardado ? (
                 <>
-                  <div className="jg-fin-t">Marca: <b>{final.score}</b></div>
+                  <div className="jg-fin-t">Hiciste <b>{final.score}</b></div>
+                  <div className="jg-fin-sub">Poné tu nombre para entrar al ranking 🏆</div>
                   <div className="jg-fin-row">
                     <input value={alias} onChange={e => setAlias(e.target.value.slice(0, 20))}
-                      placeholder="Tu nombre" className="jg-input" />
-                    <button className="jg-btn" onClick={guardar} disabled={!alias.trim()}>Guardar</button>
+                      placeholder="Tu nombre" className="jg-input" autoFocus />
+                    <button className="jg-btn" onClick={() => guardar()} disabled={!alias.trim()}>Guardar</button>
                   </div>
                 </>
               ) : guardado.error ? (
@@ -126,7 +136,10 @@ export default function Juego({ trackingToken }) {
             ))}
           </ol>
         )}
-        {tab === 'dia' && <div className="jg-premio">El #1 de hoy se gana un combo 🌭 — mostrá tu marca en la tienda.</div>}
+        <div className="jg-premio">
+          {tab === 'dia' ? 'El #1 de hoy se gana un combo 🌭' : 'La mejor marca del mes se lleva el premio grande 🎁'}
+          <br />Para reclamarlo: <b>publicá tu marca y etiquetá a @freakiedogs</b>, y mostralo en la tienda.
+        </div>
       </div>
     </section>
   )
