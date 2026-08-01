@@ -15,6 +15,8 @@ import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 const RED = '#e63946';
 const CENTRO_SV = [13.72, -89.20];
 
+const TOKEN_KEY = 'freakie_torre_token';
+
 export default function TabCobertura({ show = () => {} }) {
   const mapEl = useRef(null);
   const mapRef = useRef(null);
@@ -26,6 +28,7 @@ export default function TabCobertura({ show = () => {} }) {
   const [msg, setMsg] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [nDrivers, setNDrivers] = useState(0);
+  const radiosRef = useRef([]);   // círculos que muestran hasta dónde se pueden marcar de turno
 
   // Init del mapa (una vez) + carga de sucursales
   useEffect(() => {
@@ -38,7 +41,7 @@ export default function TabCobertura({ show = () => {} }) {
     setTimeout(() => map.invalidateSize(), 150);
 
     db.from('sucursales')
-      .select('id,store_code,nombre,lat,lng,cobertura_geojson')
+      .select('id,store_code,nombre,lat,lng,cobertura_geojson,radio_alta_m')
       .eq('tiene_delivery', true).eq('activa', true)
       .then(({ data }) => {
         const list = (data || []).filter(s => s.lat != null && s.lng != null);
@@ -90,18 +93,52 @@ export default function TabCobertura({ show = () => {} }) {
     return () => { clearInterval(poll); db.removeChannel(canal); map.remove(); mapRef.current = null; };
   }, []);
 
-  // Marcadores de todas las sucursales (contexto)
+  // Marcadores de las sucursales — ARRASTRABLES.
+  // De este punto depende que los motoristas puedan marcarse de turno, y las
+  // coordenadas venían cargadas a ojo. El círculo muestra hasta dónde alcanza.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !sucursales.length) return;
     markersRef.current.forEach(m => m.remove());
-    markersRef.current = sucursales.map(s =>
-      L.circleMarker([s.lat, s.lng], { radius: 7, color: RED, fillColor: RED, fillOpacity: 1, weight: 2 })
-        .addTo(map).bindTooltip(`${s.store_code} · ${s.nombre}`)
+    radiosRef.current.forEach(c => c.remove());
+
+    radiosRef.current = sucursales.map(s =>
+      L.circle([s.lat, s.lng], {
+        radius: s.radio_alta_m || 100, color: RED, weight: 1,
+        fillColor: RED, fillOpacity: 0.07, dashArray: '4 4',
+      }).addTo(map)
     );
+
+    markersRef.current = sucursales.map((s, i) => {
+      const m = L.marker([s.lat, s.lng], { draggable: true, autoPan: true })
+        .addTo(map)
+        .bindTooltip(`${s.store_code} · ${s.nombre} — arrastralo para corregirlo`);
+
+      m.on('drag', (e) => radiosRef.current[i]?.setLatLng(e.latlng));
+
+      m.on('dragend', async (e) => {
+        const { lat, lng } = e.target.getLatLng();
+        const token = localStorage.getItem(TOKEN_KEY) || '';
+        try {
+          const { error } = await db.rpc('torre_guardar_ubicacion_sucursal', {
+            p_token: token, p_sucursal_id: s.id, p_lat: lat, p_lng: lng, p_radio: null,
+          });
+          if (error) throw error;
+          setSucursales(prev => prev.map(x => x.id === s.id ? { ...x, lat, lng } : x));
+          show(`📍 ${s.nombre} movida`);
+        } catch (err) {
+          // Se devuelve al lugar anterior para no dejar en pantalla algo que no se guardó
+          m.setLatLng([s.lat, s.lng]);
+          radiosRef.current[i]?.setLatLng([s.lat, s.lng]);
+          show('❌ ' + (err.message || 'No se pudo mover'));
+        }
+      });
+      return m;
+    });
+
     const grp = L.featureGroup(markersRef.current);
     try { map.fitBounds(grp.getBounds().pad(0.3)); } catch { /* 1 punto */ }
-  }, [sucursales]);
+  }, [sucursales]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cargar el polígono de la sucursal seleccionada (editable)
   useEffect(() => {
@@ -177,6 +214,9 @@ export default function TabCobertura({ show = () => {} }) {
         <div style={{ fontSize: 13, color: '#888', lineHeight: 1.5, flex: 1, minWidth: 240 }}>
           Dibujá la zona de reparto de cada sucursal como un polígono y movés las puntas para ajustarla.
           Un pedido se rutea a la sucursal cuyo polígono lo contiene. Sin polígono, la sucursal cubre por radio (≤20 km).
+          <br />
+          <b style={{ color: '#f0f0f0' }}>📍 Los alfileres son las sucursales: arrastralos hasta el local exacto.</b>{' '}
+          El círculo punteado marca hasta dónde puede un motorista marcarse de turno. Se guarda solo al soltar.
         </div>
         <div style={{ fontSize: 12, fontWeight: 700, color: nDrivers > 0 ? '#4ade80' : '#888', whiteSpace: 'nowrap' }}>
           🛵 {nDrivers} en línea
