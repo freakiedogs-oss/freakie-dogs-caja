@@ -52,6 +52,7 @@ export default function DriverBeacon() {
   const [tab, setTab] = useState('pedidos')
   const [pedidos, setPedidos] = useState([])
   const beacon = useBeacon(yo)
+  const dispo = useDisponible(yo)
 
   const cargarPedidos = useCallback(async () => {
     if (!yo) return
@@ -80,13 +81,24 @@ export default function DriverBeacon() {
       const { data, error } = await db.rpc('driver_login', { p_pin: pin })
       if (error) throw error
       if (!data) { setErrPin('PIN incorrecto'); setPin(''); return }
+      setPin('')          // que no quede escrito para el próximo que abra la app
       setYo(data)
       try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
     } catch (e) {
       setErrPin(e.message || 'No se pudo entrar'); setPin('')
     } finally { setEntrando(false) }
   }
-  const cambiar = () => { beacon.detener(); setYo(null); try { localStorage.removeItem(KEY) } catch { /* noop */ } }
+  // Salir: se apaga el GPS, se da de baja de la central y se limpia todo,
+  // incluido el PIN escrito — si no, la pantalla vuelve con los puntitos
+  // llenos y al tocar Entrar reingresa el mismo motorista.
+  const cambiar = () => {
+    beacon.detener()
+    dispo.marcar(false)
+    setPin(''); setErrPin('')
+    setPedidos([])
+    setYo(null)
+    try { localStorage.removeItem(KEY) } catch { /* noop */ }
+  }
 
   if (!yo) {
     return (
@@ -145,12 +157,12 @@ export default function DriverBeacon() {
           <span style={{ fontSize: 11, fontWeight: 700, color: beacon.activo ? '#4ade80' : '#666' }}>
             {beacon.activo ? '📡 En línea' : '○ Sin compartir'}
           </span>
-          <button style={S.linkSm} onClick={cambiar}>Cambiar</button>
+          <button style={S.salirBtn} onClick={cambiar}>Salir</button>
         </span>
       </header>
 
       <main style={S.main}>
-        {tab === 'pedidos'   && <Pedidos yo={yo} pedidos={pedidos} recargar={cargarPedidos} beacon={beacon} />}
+        {tab === 'pedidos'   && <Pedidos yo={yo} pedidos={pedidos} recargar={cargarPedidos} beacon={beacon} dispo={dispo} />}
         {tab === 'historial' && <Historial yo={yo} />}
         {tab === 'metricas'  && <Metricas  yo={yo} />}
       </main>
@@ -170,6 +182,43 @@ export default function DriverBeacon() {
 }
 
 // ── Beacon de ubicación (hook compartido) ───────────────────────────
+// ── Disponibilidad ──────────────────────────────────────────────────
+// Darse de alta NO comparte ubicación: solo le avisa a la central que está
+// de turno. Un latido cada 5 min mantiene el alta viva (la central descarta
+// a quien no dio señales en 30 min), y no cuesta batería ni datos apreciables.
+const LATIDO_MS = 5 * 60 * 1000
+
+function useDisponible(yo) {
+  const [disponible, setDisponible] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState('')
+  const latidoRef = useRef(null)
+
+  const marcar = useCallback(async (activo) => {
+    if (!yo || ocupado) return
+    setOcupado(true); setError('')
+    try {
+      const { error: e } = await db.rpc('driver_disponible', {
+        p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: activo,
+      })
+      if (e) throw e
+      setDisponible(activo)
+      if (latidoRef.current) { clearInterval(latidoRef.current); latidoRef.current = null }
+      if (activo) {
+        latidoRef.current = setInterval(() => {
+          db.rpc('driver_disponible', { p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true })
+            .catch(() => {})
+        }, LATIDO_MS)
+      }
+    } catch (e) { setError(e.message || 'No se pudo avisar a la central') }
+    finally { setOcupado(false) }
+  }, [yo, ocupado])
+
+  useEffect(() => () => { if (latidoRef.current) clearInterval(latidoRef.current) }, [])
+
+  return { disponible, ocupado, error, marcar }
+}
+
 function useBeacon(yo) {
   const [activo, setActivo] = useState(false)
   const [auto, setAuto] = useState(false)
@@ -227,7 +276,7 @@ function useBeacon(yo) {
 }
 
 // ── 📦 Mis pedidos ──────────────────────────────────────────────────
-function Pedidos({ yo, pedidos, recargar, beacon }) {
+function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [ocupado, setOcupado] = useState(null)
   const [cambiarPago, setCambiarPago] = useState(null)
   const [msg, setMsg] = useState('')
@@ -257,18 +306,59 @@ function Pedidos({ yo, pedidos, recargar, beacon }) {
     finally { setOcupado(null) }
   }
 
+  // Darse de alta no comparte ubicación: solo le dice a la central que está de
+  // turno. El GPS arranca solo, al marcar que salió con un pedido.
+  const Disponibilidad = () => (
+    <div style={{ ...S.dispo, borderColor: dispo.disponible ? '#2f5f3f' : '#3a2a2a' }}>
+      <div style={S.dispoFila}>
+        <span style={{ fontSize: 26 }}>{dispo.disponible ? '🟢' : '⚪'}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: dispo.disponible ? '#4ade80' : '#f0f0f0' }}>
+            {dispo.disponible ? 'Estás de turno' : 'No estás de turno'}
+          </div>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>
+            {dispo.disponible
+              ? 'La central te puede asignar pedidos.'
+              : 'Marcate de turno para que la central te asigne pedidos.'}
+          </div>
+        </div>
+      </div>
+
+      <button onClick={() => dispo.marcar(!dispo.disponible)} disabled={dispo.ocupado}
+        style={{ ...S.dispoBtn,
+                 background: dispo.disponible ? 'none' : '#16a34a',
+                 border: dispo.disponible ? '1px solid #444' : 'none',
+                 color: dispo.disponible ? '#aaa' : '#fff',
+                 opacity: dispo.ocupado ? .6 : 1 }}>
+        {dispo.ocupado ? '…' : dispo.disponible ? 'Terminé mi turno' : '🟢 Estoy de turno'}
+      </button>
+
+      {dispo.error && <div style={S.dispoErr}>⚠️ {dispo.error}</div>}
+
+      <div style={S.dispoPie}>
+        {beacon.activo
+          ? '📡 Compartiendo tu ubicación porque vas en camino con un pedido.'
+          : 'Tu ubicación NO se comparte hasta que salgas con un pedido.'}
+      </div>
+    </div>
+  )
+
   if (pedidos.length === 0) {
     return (
-      <div style={{ textAlign: 'center', paddingTop: 40 }}>
-        <div style={{ fontSize: 40, marginBottom: 10 }}>☕</div>
-        <div style={S.dim}>No tenés pedidos asignados.<br />Te avisamos cuando la central te asigne uno.</div>
-        {msg && <div style={{ ...S.ok, marginTop: 16 }}>{msg}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Disponibilidad />
+        <div style={{ textAlign: 'center', paddingTop: 14 }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>☕</div>
+          <div style={S.dim}>No tenés pedidos asignados.<br />Te avisamos cuando la central te asigne uno.</div>
+        </div>
+        {msg && <div style={{ ...S.ok, marginTop: 4 }}>{msg}</div>}
       </div>
     )
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Disponibilidad />
       {msg && <div style={S.banner}>{msg}</div>}
       {pedidos.map(p => (
         <div key={p.id} style={S.pedidoCard}>
@@ -410,6 +500,12 @@ const S = {
   teclado: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, margin: '14px 0' },
   tecla: { padding: '16px 0', borderRadius: 14, border: '1px solid #333', background: '#1e1e1e',
            color: '#f0f0f0', fontSize: 22, fontWeight: 600, cursor: 'pointer' },
+  dispo: { padding: '14px', borderRadius: 14, background: '#161616', border: '1px solid #3a2a2a' },
+  dispoFila: { display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 },
+  dispoBtn: { width: '100%', padding: '13px 0', borderRadius: 12, fontSize: 14.5,
+              fontWeight: 700, cursor: 'pointer' },
+  dispoErr: { fontSize: 12, color: '#f87171', marginTop: 8 },
+  dispoPie: { fontSize: 11.5, color: '#777', marginTop: 10, lineHeight: 1.45, textAlign: 'center' },
   instalar: { marginTop: 18, padding: '12px 14px', borderRadius: 14, background: '#161616',
               border: '1px solid #2a2a2a' },
   instalarTit: { fontSize: 13, fontWeight: 700, color: '#f0f0f0', marginBottom: 4 },
@@ -421,6 +517,8 @@ const S = {
   ok: { fontSize: 14, color: '#4ade80', fontWeight: 600 },
   dim: { fontSize: 13, color: '#888', margin: '8px 0', lineHeight: 1.5 },
   banner: { background: '#1e2a1e', border: '1px solid #2f5f3f', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#a7e8bd' },
+  salirBtn: { background: 'none', border: '1px solid #333', color: '#aaa', fontSize: 12,
+              fontWeight: 600, padding: '7px 12px', borderRadius: 9, cursor: 'pointer', flexShrink: 0 },
   linkSm: { background: 'none', border: 'none', color: '#888', fontSize: 12, textDecoration: 'underline', cursor: 'pointer' },
   rowCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '12px 14px' },
   btnSm: (bg) => ({ padding: '8px 12px', borderRadius: 8, background: bg, color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-block' }),
