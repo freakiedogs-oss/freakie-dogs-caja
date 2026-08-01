@@ -336,7 +336,7 @@ export default function App() {
       case 'simulador-rentabilidad':
         return <SimuladorRentabilidad user={user} />
       case 'delivery':
-        return <DeliveryView user={user} />
+        return <DeliveryView user={user} show={show} />
       case 'inventario-dash':
         return <InventarioDashboard user={user} onBack={() => setScreen('home')} />
       case 'marketing':
