@@ -17,6 +17,29 @@ const EMOJI_CAT = {
 }
 const emojiDe = (nombre) => EMOJI_CAT[(nombre || '').toLowerCase()] || ''
 
+// Cómo desbloquear la ubicación según el teléfono. En iPhone, si Localización
+// está en "Nunca" para el navegador, el sistema NO vuelve a preguntar: el modal
+// de permiso no aparece nunca, así que hablar del "candado" no sirve.
+function comoPermitirUbicacion() {
+  const ua = navigator.userAgent || ''
+  const esIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const esAndroid = /Android/.test(ua)
+  if (esIOS) return {
+    titulo: 'Activá la ubicación en tu iPhone',
+    pasos: ['Abrí Ajustes', 'Privacidad y seguridad → Localización', 'Elegí tu navegador (Safari o Chrome)',
+            'Marcá “Preguntar la próxima vez” o “Al usar la app”', 'Volvé acá y tocá Reintentar'],
+  }
+  if (esAndroid) return {
+    titulo: 'Activá la ubicación en tu Android',
+    pasos: ['Abrí Ajustes', 'Aplicaciones → tu navegador (Chrome)', 'Permisos → Ubicación',
+            'Elegí “Permitir solo mientras se usa la app”', 'Volvé acá y tocá Reintentar'],
+  }
+  return {
+    titulo: 'Activá la ubicación en tu navegador',
+    pasos: ['Tocá el candado 🔒 junto a la dirección web', 'Buscá Ubicación', 'Elegí Permitir', 'Tocá Reintentar'],
+  }
+}
+
 // ── Perfil del cliente recurrente ──────────────────────────────────
 // Se guarda SOLO en este dispositivo (localStorage), no en el servidor:
 // así el cliente que ya pidió no rellena todo otra vez, y NO abrimos un
@@ -803,13 +826,19 @@ function Checkout({ items, total, onClose, onEnviado }) {
                     ⚠️ Estás fuera de nuestra cobertura de reparto. Podés seguir con el pedido y te confirmamos por WhatsApp.
                   </div>
                 )}
-                {geoEstado === 'denegado' && (
-                  <div className="mp-geo-warn">
-                    Tu teléfono tiene bloqueada la ubicación para esta página.<br />
-                    Tocá el <b>🔒 candado</b> junto a la dirección web → <b>Ubicación</b> → <b>Permitir</b>, y volvé a intentar.
-                    <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
-                  </div>
-                )}
+                {geoEstado === 'denegado' && (() => {
+                  const g = comoPermitirUbicacion()
+                  return (
+                    <div className="mp-geo-warn">
+                      <b>{g.titulo}</b>
+                      <ol className="mp-geo-pasos">{g.pasos.map((paso, i) => <li key={i}>{paso}</li>)}</ol>
+                      <div className="mp-geo-nota">
+                        Si preferís no hacerlo ahora, seguí igual y escribí bien tu dirección — te confirmamos el envío por WhatsApp.
+                      </div>
+                      <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                    </div>
+                  )
+                })()}
                 {geoEstado === 'sin_senal' && (
                   <div className="mp-geo-warn">
                     No encontramos señal de ubicación. Probá cerca de una ventana o con los datos móviles encendidos.
