@@ -6,8 +6,10 @@
 import { useEffect, useState, Suspense } from 'react'
 import { db } from '../supabase'
 import { JUEGOS, juegoPorId } from './juegos'
+import { PERSONAJES } from './juegos/FreakiesCarreritas'
 
 const ALIAS_KEY = 'freakie_juego_alias'
+const PERSONAJE_KEY = 'freakie_juego_personaje'
 
 export default function Juego({ trackingToken, numeroOrden }) {
   const [juegoId] = useState(JUEGOS[0].id)
@@ -17,6 +19,7 @@ export default function Juego({ trackingToken, numeroOrden }) {
   const [final, setFinal] = useState(null)       // marca de la partida terminada
   const [inicio, setInicio] = useState(0)
   const [alias, setAlias] = useState(() => localStorage.getItem(ALIAS_KEY) || '')
+  const [personaje, setPersonaje] = useState(() => localStorage.getItem(PERSONAJE_KEY) || 'hotdog')
   const [guardado, setGuardado] = useState(null)
   const [tab, setTab] = useState('dia')
   const [lb, setLb] = useState(null)
@@ -26,6 +29,11 @@ export default function Juego({ trackingToken, numeroOrden }) {
   const cargarLb = () => db.rpc('juego_leaderboard', { p_juego: juegoId, p_limite: 8 })
     .then(({ data }) => setLb(data || { dia: [], mes: [] }))
   useEffect(() => { cargarLb() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const elegirPersonaje = (id) => {
+    setPersonaje(id)
+    try { localStorage.setItem(PERSONAJE_KEY, id) } catch { /* modo privado */ }
+  }
 
   const jugar = () => {
     setScore(0); setFinal(null); setGuardado(null)
@@ -81,11 +89,23 @@ export default function Juego({ trackingToken, numeroOrden }) {
       </header>
 
       {!jugando ? (
-        <button className="jg-play" onClick={jugar}>▶︎ Jugar mientras esperás</button>
+        <div className="jg-inicio">
+          <div className="jg-elige">¿Con quién corrés?</div>
+          <div className="jg-personajes">
+            {PERSONAJES.map(p => (
+              <button key={p.id} onClick={() => elegirPersonaje(p.id)}
+                className={`jg-personaje${personaje === p.id ? ' on' : ''}`}>
+                <span className="jg-personaje-em">{p.emoji}</span>
+                <span className="jg-personaje-nom">{p.nombre}</span>
+              </button>
+            ))}
+          </div>
+          <button className="jg-play" onClick={jugar}>▶︎ Jugar mientras esperás</button>
+        </div>
       ) : (
         <div className="jg-box">
           <Suspense fallback={<div className="jg-load">Cargando…</div>}>
-            <juego.Comp key={partida} onScore={setScore} onGameOver={terminar} />
+            <juego.Comp key={`${partida}-${personaje}`} personaje={personaje} onScore={setScore} onGameOver={terminar} />
           </Suspense>
           {!final && <div className="jg-hint">Tocá la pantalla para saltar</div>}
 
