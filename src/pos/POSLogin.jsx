@@ -112,7 +112,7 @@ export default function POSLogin({ onLogin }) {
             nombre: data.nombre, apellido: data.apellido,
           }))
         } catch {}
-        onLogin(data); return
+        onLogin({ ...data, pin: np }); return
       }
       setErr('PIN incorrecto'); setErrDetails('Verifica con tu supervisor.'); setPin('')
     } catch (e) {
