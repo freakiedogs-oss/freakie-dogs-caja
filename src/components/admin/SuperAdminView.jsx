@@ -128,8 +128,11 @@ export default function SuperAdminView({ user }) {
           { k: 'permisos', l: '🔐 Permisos' },
           { k: 'nuevo-rol', l: '➕ Nuevo Rol' },
         ].filter(t => {
-          // DevOps + Pipeline DTE visibles para ejecutivos y superadmin; el resto solo superadmin
+          // DevOps + Pipeline DTE: ejecutivos y superadmin
           if (t.k === 'devops' || t.k === 'pipeline-dte') return true;
+          // Usuarios (ver y cambiar PINs): superadmin y ejecutivos, y solo ellos
+          if (t.k === 'usuarios') return ['superadmin', 'ejecutivo'].includes(user?.rol);
+          // Permisos y roles siguen siendo cosa del superadmin
           return user?.rol === 'superadmin';
         }).map(t => (
           <button key={t.k} onClick={() => setTab(t.k)}

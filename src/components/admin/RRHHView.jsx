@@ -98,7 +98,7 @@ export default function RRHHView({ user }) {
     { id: 'asistencia-digital', label: '📍 GPS Asistencia' },
     { id: 'asistencia',         label: '📋 Asistencia Manual' },
     { id: 'descuentos',         label: '💰 Descuentos' },
-    ...(canEdit ? [{ id: 'usuarios-pin', label: '🔑 Usuarios PIN' }] : []),
+    ...(canEdit ? [{ id: 'usuarios-pin', label: '👥 Accesos' }] : []),
     ...(canEdit ? [{ id: 'cuentas-bancarias', label: '🏦 Cuentas Bancarias' }] : []),
   ];
 
@@ -623,7 +623,6 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
   const [tokenAdmin, setTokenAdmin] = useState('');
   const [pidePin, setPidePin] = useState(null);   // {tipo:'guardar'|'ver', usuario?}
   const [pinAdmin, setPinAdmin] = useState('');
-  const [pinesVistos, setPinesVistos] = useState({});   // { usuarioId: '1234' }
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -652,8 +651,7 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
       const { data, error } = await db.rpc('erp_admin_sesion', { p_pin: pinAdmin });
       if (error) throw error;
       setTokenAdmin(data.token); setPidePin(null); setPinAdmin('');
-      if (pidePin?.tipo === 'ver') revelarCon(data.token, pidePin.usuario);
-      else guardarCon(data.token);
+      guardarCon(data.token);
     } catch (e) { show(e.message || 'PIN incorrecto', false); setPinAdmin(''); }
   };
 
@@ -663,21 +661,6 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
     }
     if (!tokenAdmin) { setPidePin({ tipo: 'guardar' }); return; }
     guardarCon(tokenAdmin);
-  };
-
-  const verPin = (u) => {
-    if (!tokenAdmin) { setPidePin({ tipo: 'ver', usuario: u }); return; }
-    revelarCon(tokenAdmin, u);
-  };
-
-  const revelarCon = async (token, u) => {
-    try {
-      const { data, error } = await db.rpc('erp_pin_revelar', { p_token: token, p_usuario_id: u.id });
-      if (error) throw error;
-      setPinesVistos(p => ({ ...p, [u.id]: data.pin }));
-      // Se vuelve a tapar solo, para que no quede a la vista
-      setTimeout(() => setPinesVistos(p => { const n = { ...p }; delete n[u.id]; return n; }), 20000);
-    } catch (e) { show(e.message || 'No se pudo mostrar el PIN', false); setTokenAdmin(''); }
   };
 
   const guardarCon = async (token) => {
@@ -701,14 +684,16 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
 
   return (
     <div>
+      <div style={{ fontSize: 12, color: C.textDim, marginBottom: 10, lineHeight: 1.5 }}>
+        Acá se asigna el rol y la sucursal de cada persona. Los PINs se ven y se
+        cambian en <b>Super Admin → Usuarios</b>, solo con cuenta de ejecutivo.
+      </div>
       {/* Confirmación con PIN antes de cambiar el rol o la sucursal de alguien */}
       {pidePin && (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
                       padding: 14, marginBottom: 12 }}>
           <div style={{ fontSize: 12.5, color: C.text, marginBottom: 8 }}>
-            {pidePin?.tipo === 'ver'
-              ? <>Confirmá con tu PIN para ver el de <b>{pidePin.usuario?.nombre}</b>. Queda anotado quién lo consultó.</>
-              : <>Confirmá con tu PIN para guardar los cambios de <b>{editando?.nombre}</b></>}
+            Confirmá con tu PIN para guardar los cambios de <b>{editando?.nombre}</b>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <input type="password" inputMode="numeric" value={pinAdmin} autoFocus placeholder="Tu PIN"
@@ -751,7 +736,6 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
           <thead>
             <tr style={{ background: C.bgCard }}>
               <th style={thS}>Nombre</th>
-              <th style={thS}>PIN</th>
               <th style={thS}>Rol</th>
               <th style={thS}>Sucursal</th>
               {canEdit && <th style={thS}>Acc.</th>}
@@ -776,18 +760,6 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
                     ) : (
                       <span style={{ fontWeight: 600 }}>{u.nombre} {u.apellido}</span>
                     )}
-                  </td>
-                  <td style={{ ...tdS, fontFamily: 'monospace', color: C.yellow, whiteSpace: 'nowrap' }}>
-                    {pinesVistos[u.id]
-                      ? <span style={{ color: C.green, fontWeight: 700, letterSpacing: 1.5 }}>{pinesVistos[u.id]}</span>
-                      : <>
-                          <span style={{ letterSpacing: 2, color: C.textDim }}>••••</span>
-                          <button onClick={() => verPin(u)} title="Ver el PIN por 20 segundos (queda anotado)"
-                            style={{ marginLeft: 6, padding: '2px 6px', borderRadius: 6, cursor: 'pointer',
-                                     border: `1px solid ${C.border}`, background: 'none', color: C.yellow, fontSize: 11 }}>
-                            👁
-                          </button>
-                        </>}
                   </td>
                   <td style={tdS}>
                     {isEditing ? (
