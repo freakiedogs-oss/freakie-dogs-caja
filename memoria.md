@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2026-08-01 — Stress test 1000 secuenciales + 200 concurrentes: el flujo aguanta
+- **1000 secuenciales** (dentro de transacción con rollback, producción no ve nada): **1000/1000** creados, comandados, al KDS, a lista, entregados y con viaje registrado. **0 errores, 0 inconsistencias** de total/envío/bono, 0 números de orden duplicados. 12.1 ms promedio, **peor caso 155 ms**, ~83 pedidos/seg. (475 con envío gratis, 125 con envío a confirmar, 800 ruteados solos.)
+- **100 concurrentes reales** (curl paralelo contra PostgREST como el menú público, conexiones independientes): **100/100 ok**, 0 errores, **0 números de orden duplicados**, 1.07 s (~93 req/s).
+- **100 concurrentes con el MISMO teléfono** (peor caso de contención — todos golpean el mismo registro del CRM): **100/100 ok**, 0 errores, y el CRM quedó con **1 sola fila con `total_pedidos = 100` exacto** ⇒ el `on conflict do update ... total_pedidos + 1` **no pierde actualizaciones** bajo concurrencia. 1.41 s.
+- **Los concurrentes SÍ commitean** (no hay rollback posible con conexiones separadas): se crearon 200 pedidos `ZZQA-*` en estado `recibida` que **no tocan KDS ni POS** (no se comandan) y se borraron enseguida. Verificado después: 0 cuentas POS huérfanas; las cuentas nuevas del período son tráfico real de M001/S003/S001 (sin referencia `WEB-`).
+- **UX corregida antes del test** (PR #62): el carrito ahora avisa *"te faltan $X para el pedido mínimo"* y bloquea el botón con el motivo, en vez de rechazar recién al confirmar (era el 28% de rechazos de la primera ronda).
+- **Conclusión:** el flujo aguanta carga y concurrencia sin corrupción de datos. El cuello de botella no apareció a este volumen.
+
 ## 2026-07-31 — Stress test 500 órdenes + 3 puntos ciegos corregidos
 - **Método:** 500 pedidos por el flujo completo (crear→comandar→KDS→lista→asignar→recoger→entregar→viaje) dentro de un `DO $$` que termina en `RAISE` ⇒ **rollback total**. Producción nunca ve los datos (aislamiento de transacción: sin commit no hay Realtime, ni KDS, ni cuentas POS) y **el DTE no se toca** (la emisión ocurre al cobrar en el POS, paso que el test no ejecuta). Verificado con baseline antes/después: 8 pedidos / 0 viajes / 389 cuentas, idénticos. Los resultados salen en el mensaje de la excepción.
 - **Ronda 1 (500):** 358 creados, 142 rechazados por mínimo, 297 ruteados, 0 errores de flujo, 0 inconsistencias de total/envío/bono, 0 números de orden duplicados. 9 ms por pedido.
