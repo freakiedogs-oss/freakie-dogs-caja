@@ -11,7 +11,9 @@ import MenuAdminView from './admin/MenuAdminView'
 import { STORES } from '../config'
 
 // Roles que pueden elegir sucursal al entrar al POS
-const MULTI_STORE_ROLES = ['ejecutivo', 'admin', 'superadmin']
+// La central de delivery atiende pedidos de todas las sucursales, así que
+// necesita cambiar de tienda igual que un ejecutivo.
+const MULTI_STORE_ROLES = ['telefono', 'ejecutivo', 'admin', 'superadmin']
 
 // Sucursales disponibles en POS (excluye Casa Matriz)
 const POS_STORES = Object.entries(STORES)
