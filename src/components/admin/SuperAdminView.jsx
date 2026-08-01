@@ -50,9 +50,8 @@ export default function SuperAdminView({ user }) {
   // ── Cargar usuarios ──
   const cargarUsuarios = useCallback(async () => {
     setLoadingUsers(true);
-    const { data } = await db.from('usuarios_erp')
-      .select('id,nombre,apellido,pin,rol,store_code,activo')
-      .order('nombre');
+    // Por RPC: el PIN ajeno no viaja al navegador
+    const { data } = await db.rpc('erp_usuarios_listar', { p_pin_admin: user?.pin || '' });
     setUsuarios(data || []);
     setLoadingUsers(false);
   }, []);
@@ -140,23 +139,17 @@ export default function SuperAdminView({ user }) {
     }
     setSavingUser(true);
     try {
-      if (creandoUser) {
-        const { error } = await db.from('usuarios_erp').insert({
-          nombre: formUser.nombre, apellido: formUser.apellido || '',
-          pin: formUser.pin, rol: formUser.rol,
-          store_code: formUser.store_code || null, activo: formUser.activo,
-        });
-        if (error) throw error;
-        setMsgUser({ t: 'ok', m: `✅ Usuario ${formUser.nombre} creado` });
-      } else {
-        const { error } = await db.from('usuarios_erp').update({
-          nombre: formUser.nombre, apellido: formUser.apellido || '',
-          pin: formUser.pin, rol: formUser.rol,
-          store_code: formUser.store_code || null, activo: formUser.activo,
-        }).eq('id', editUser);
-        if (error) throw error;
-        setMsgUser({ t: 'ok', m: `✅ Usuario actualizado` });
-      }
+      // Crear/editar por RPC: valida en el servidor que quien pide sea admin
+      const { error } = await db.rpc('erp_usuario_guardar', {
+        p_pin_admin: user?.pin || '',
+        p_id: creandoUser ? null : editUser,
+        p_nombre: formUser.nombre, p_apellido: formUser.apellido || '',
+        p_rol: formUser.rol, p_store_code: formUser.store_code || null,
+        p_activo: formUser.activo,
+        p_pin_nuevo: formUser.pin || null,
+      });
+      if (error) throw error;
+      setMsgUser({ t: 'ok', m: creandoUser ? `✅ Usuario ${formUser.nombre} creado` : '✅ Usuario actualizado' });
       setEditUser(null);
       setCreandoUser(false);
       cargarUsuarios();
