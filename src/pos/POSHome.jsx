@@ -102,7 +102,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         .eq('activa', true)
         .order('numero'),
       db.from('pos_cuentas')
-        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, cliente_nombre, delivery_direccion, delivery_referencia, delivery_plataforma, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
+        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, cliente_nombre, delivery_direccion, delivery_referencia, delivery_plataforma, delivery_metodo_pago, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
         .eq('store_code', storeCode)
         .in('estado', ESTADO_ACTIVO)
         .order('created_at'),
@@ -402,6 +402,18 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                       </span>
                       <span className="poshome-cuenta-items">
                         {c.cliente_nombre ? `👤 ${c.cliente_nombre} · ` : ''}{items} ítem{items !== 1 ? 's' : ''}
+                        {/* Con qué acordó pagar el cliente. Es referencia: la
+                            cajera escoge al cerrar y puede ponerlo distinto si
+                            el motorista le dice que cambió. */}
+                        {(() => {
+                          const m = { efectivo: '💵 Efectivo', tarjeta: '💳 Tarjeta',
+                                      transferencia: '🏦 Transferencia', link: '🔗 Link' };
+                          return c.delivery_metodo_pago
+                            ? <> · <b style={{ color: '#4ade80' }}>
+                                {m[c.delivery_metodo_pago] || c.delivery_metodo_pago}
+                              </b></>
+                            : null;
+                        })()}
                       </span>
                     </div>
                     <span className="poshome-cuenta-total">${parseFloat(c.subtotal || 0).toFixed(2)}</span>

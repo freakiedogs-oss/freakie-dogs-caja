@@ -237,6 +237,25 @@ function useDisponible(yo) {
     finally { setOcupado(false) }
   }, [yo, ocupado])
 
+  // El turno vive en el servidor, no en esta pantalla: al abrir la app hay
+  // que preguntarlo. Si no, recargar mostraba 'No estás de turno' aunque la
+  // central lo estuviera viendo en línea.
+  useEffect(() => {
+    if (!yo) return
+    let vivo = true
+    db.rpc('driver_estado_turno', { p_empleado_id: yo.id }).then(({ data }) => {
+      if (!vivo || !data?.disponible) return
+      setDisponible(true)
+      if (!latidoRef.current) {
+        latidoRef.current = setInterval(() => {
+          db.rpc('driver_disponible', { p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true })
+            .catch(() => {})
+        }, LATIDO_MS)
+      }
+    })
+    return () => { vivo = false }
+  }, [yo])
+
   useEffect(() => () => { if (latidoRef.current) clearInterval(latidoRef.current) }, [])
 
   return { disponible, ocupado, error, info, marcar }
@@ -470,9 +489,20 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <a href={`tel:${p.cliente_telefono}`} style={{ ...S.btnSm('#333'), textDecoration: 'none' }}>📞 Llamar</a>
-            {p.cliente_lat && (
-              <a href={`https://www.google.com/maps/dir/?api=1&destination=${p.cliente_lat},${p.cliente_lng}`}
-                 target="_blank" rel="noopener" style={{ ...S.btnSm('#2563eb'), textDecoration: 'none' }}>🗺️ Cómo llegar</a>
+            {/* Muchos clientes no dan permiso de ubicación y solo escriben la
+                dirección. Antes ahí no salía ningún botón; ahora se busca por
+                texto, que es lo que haría el motorista a mano. */}
+            {(p.cliente_lat || p.cliente_direccion) && (
+              <a href={p.cliente_lat
+                    ? `https://www.google.com/maps/dir/?api=1&destination=${p.cliente_lat},${p.cliente_lng}`
+                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                        String(p.cliente_direccion).replace(/^\[[^\]]*\]\s*/, '') + ', El Salvador')}`}
+                 target="_blank" rel="noopener" style={{ ...S.btnSm('#2563eb'), textDecoration: 'none' }}>
+                {p.cliente_lat ? '🗺️ Cómo llegar' : '🔎 Buscar dirección'}
+              </a>
+            )}
+            {!p.cliente_lat && (
+              <span style={S.sinGps}>Sin ubicación exacta — confirmá por teléfono</span>
             )}
           </div>
 
@@ -617,6 +647,7 @@ const S = {
   teclado: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, margin: '14px 0' },
   tecla: { padding: '16px 0', borderRadius: 14, border: '1px solid #333', background: '#1e1e1e',
            color: '#f0f0f0', fontSize: 22, fontWeight: 600, cursor: 'pointer' },
+  sinGps: { fontSize: 11.5, color: '#fbbf24', alignSelf: 'center' },
   motivo: { width: '100%', padding: '11px 12px', borderRadius: 10, textAlign: 'left',
             border: '1px solid #3a3230', background: '#1e1a19', color: '#e8e2df',
             fontSize: 13.5, fontWeight: 600, cursor: 'pointer' },
