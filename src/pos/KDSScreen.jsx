@@ -319,6 +319,8 @@ export default function KDSScreen({ user, onBack }) {
           comanda_numero: row.comanda_numero,
           canal:          row.canal || 'mesa',
           mesa_ref:       row.mesa_ref,
+          cliente:        row.cliente,
+          total:          row.total,
           mesero:         row.mesero,
           pager:          row.pager,
           recibido_at:    row.recibido_at,
@@ -615,6 +617,16 @@ export default function KDSScreen({ user, onBack }) {
                         {comanda.pager != null && (
                           <span className="kds-card-num" style={{ background: '#fbbf24', color: '#000', fontSize: 18, fontWeight: 800, padding: '2px 10px' }}>📟 {comanda.pager}</span>
                         )}
+                        {/* De quién es la bolsa y cuánto vale: cocina lo necesita
+                            para armarla y para cotejarla cuando pasan a recogerla. */}
+                        {comanda.cliente && (
+                          <span className="kds-card-cliente">
+                            {comanda.cliente}
+                            {comanda.total != null && (
+                              <b> · ${Number(comanda.total).toFixed(2)}</b>
+                            )}
+                          </span>
+                        )}
                       </div>
                       <span className="kds-card-timer" style={{ color: timer.color }}>
                         {timer.text}
@@ -728,6 +740,8 @@ export default function KDSScreen({ user, onBack }) {
                       cuenta_id:      row.cuenta_id,
                       comanda_numero: row.comanda_numero,
                       canal:          row.canal || 'mesa',
+                    cliente:        row.cliente,
+                    total:          row.total,
                       mesa_ref:       row.mesa_ref,
                       mesero:         row.mesero,
           pager:          row.pager,
