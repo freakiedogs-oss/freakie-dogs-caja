@@ -152,6 +152,7 @@ function useBeacon(yo) {
 // ── 📦 Mis pedidos ──────────────────────────────────────────────────
 function Pedidos({ yo, pedidos, recargar, beacon }) {
   const [ocupado, setOcupado] = useState(null)
+  const [cambiarPago, setCambiarPago] = useState(null)
   const [msg, setMsg] = useState('')
 
   const recoger = async (p) => {
@@ -173,6 +174,7 @@ function Pedidos({ yo, pedidos, recargar, beacon }) {
       })
       if (error) throw error
       setMsg(`✅ Entregado · ${data.distancia_km} km · bono ${fmt(data.bono)}`)
+      setCambiarPago(null)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -217,14 +219,33 @@ function Pedidos({ yo, pedidos, recargar, beacon }) {
             </button>
           ) : (
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Al entregar, ¿cómo te pagó?</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {[['efectivo','💵 Efectivo'],['tarjeta','💳 Tarjeta'],['transferencia','🏦 Transfer.']].map(([m, et]) => (
-                  <button key={m} disabled={ocupado === p.id} onClick={() => entregar(p, m)} style={S.accion('#16a34a', true)}>
-                    {ocupado === p.id ? '…' : et}
+              {/* El método ya viene definido desde el pedido (y confirmado por
+                  la central). El motorista solo entrega; corregirlo es la
+                  excepción, no el paso obligatorio. */}
+              {cambiarPago === p.id ? (
+                <>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>¿Con qué te pagó realmente?</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[['efectivo','💵 Efectivo'],['tarjeta','💳 Tarjeta'],['transferencia','🏦 Transfer.']].map(([m, et]) => (
+                      <button key={m} disabled={ocupado === p.id} onClick={() => entregar(p, m)} style={S.accion('#16a34a', true)}>
+                        {ocupado === p.id ? '…' : et}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => setCambiarPago(null)} style={S.linkChico}>Cancelar</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12.5, color: '#aaa', marginBottom: 8 }}>
+                    Cobrar <b style={{ color: '#f0f0f0' }}>{fmt(p.total)}</b> en <b style={{ color: '#f0f0f0' }}>{p.metodo_pago || 'efectivo'}</b>
+                  </div>
+                  <button disabled={ocupado === p.id} onClick={() => entregar(p, p.metodo_pago || 'efectivo')}
+                          style={S.accion('#16a34a')}>
+                    {ocupado === p.id ? '…' : '✅ Entregado'}
                   </button>
-                ))}
-              </div>
+                  <button onClick={() => setCambiarPago(p.id)} style={S.linkChico}>Me pagó de otra forma</button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -312,5 +333,6 @@ const S = {
   linkSm: { background: 'none', border: 'none', color: '#888', fontSize: 12, textDecoration: 'underline', cursor: 'pointer' },
   rowCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '12px 14px' },
   btnSm: (bg) => ({ padding: '8px 12px', borderRadius: 8, background: bg, color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-block' }),
+  linkChico: { background: 'none', border: 'none', color: '#888', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', marginTop: 8, padding: 0 },
   accion: (bg, chico) => ({ padding: chico ? '11px 12px' : '14px', borderRadius: 12, background: bg, color: '#fff', border: 'none', fontSize: chico ? 13 : 15, fontWeight: 800, cursor: 'pointer', width: chico ? 'auto' : '100%', flex: chico ? 1 : 'none' }),
 }
