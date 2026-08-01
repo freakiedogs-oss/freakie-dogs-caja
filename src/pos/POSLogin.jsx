@@ -53,21 +53,21 @@ export default function POSLogin({ onLogin }) {
     let cancelled = false
     ;(async () => {
       try {
-        const { error } = await db.from('usuarios_erp').select('id').limit(1)
+        const { error } = await db.rpc('erp_ping')
         if (cancelled) return
         if (error) { setHealthOk(false); setHealthErr(`${error.code || ''} ${error.message || String(error)}`.trim()) }
         else { setHealthOk(true); setHealthErr('') }
       } catch (e) { if (!cancelled) { setHealthOk(false); setHealthErr(`EXC: ${e?.message || String(e)}`) } }
 
       try {
-        const r = await fetch('https://btboxlwfqcbrdfrlnwln.supabase.co/rest/v1/usuarios_erp?select=id&limit=1', { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } })
+        const r = await fetch('https://btboxlwfqcbrdfrlnwln.supabase.co/rest/v1/rpc/erp_ping', { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } })
         if (cancelled) return
         if (r.ok) { setRawFetchOk(true); setRawFetchDetails(`${r.status} OK`) }
         else { setRawFetchOk(false); const t = await r.text().catch(() => ''); setRawFetchDetails(`${r.status} ${r.statusText} ${t.slice(0, 80)}`) }
       } catch (e) { if (!cancelled) { setRawFetchOk(false); setRawFetchDetails(`FAIL: ${e?.message || String(e)}`) } }
 
       try {
-        const r = await fetch(`${window.location.origin}/sb/rest/v1/usuarios_erp?select=id&limit=1`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } })
+        const r = await fetch(`${window.location.origin}/sb/rest/v1/rpc/erp_ping`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } })
         if (cancelled) return
         if (r.ok) { setProxyFetchOk(true); setProxyFetchDetails(`${r.status} OK`) }
         else { setProxyFetchOk(false); const t = await r.text().catch(() => ''); setProxyFetchDetails(`${r.status} ${r.statusText} ${t.slice(0, 80)}`) }
@@ -94,9 +94,10 @@ export default function POSLogin({ onLogin }) {
     abortRef.current = ac
     setLoading(true); setErr(''); setErrDetails('')
     try {
+      // Validación del PIN en el servidor (la tabla ya no se lee desde acá)
       const { data, error } = await db
-        .from('usuarios_erp').select('*').eq('pin', np).eq('activo', true)
-        .abortSignal(ac.signal).maybeSingle()
+        .rpc('erp_login', { p_pin: np })
+        .abortSignal(ac.signal)
       if (pin !== np && pin.length >= MIN_PIN) return // el PIN cambió mientras consultábamos
       setLoading(false)
       if (error) {
@@ -107,7 +108,7 @@ export default function POSLogin({ onLogin }) {
         if (!POS_ROLES.includes(data.rol)) { setErr('Sin acceso al POS'); setErrDetails('Tu rol no tiene permiso para el punto de venta.'); setPin(''); return }
         try {
           sessionStorage.setItem('pos_user', JSON.stringify({
-            id: data.id, pin: data.pin, rol: data.rol, store_code: data.store_code,
+            id: data.id, pin: np, rol: data.rol, store_code: data.store_code,
             nombre: data.nombre, apellido: data.apellido,
           }))
         } catch {}

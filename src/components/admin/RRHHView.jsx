@@ -130,7 +130,7 @@ export default function RRHHView({ user }) {
         {tab === 'asistencia-digital' && <AsistenciaDigital sucursales={sucursales} user={user} />}
         {tab === 'asistencia'         && <TabAsistencia   sucursales={sucursales} show={show} />}
         {tab === 'descuentos'         && <TabDescuentos   canEdit={canEdit} show={show} />}
-        {tab === 'usuarios-pin'       && <TabUsuariosPIN  canEdit={canEdit} sucursales={sucursales} show={show} />}
+        {tab === 'usuarios-pin'       && <TabUsuariosPIN  canEdit={canEdit} sucursales={sucursales} show={show} user={user} />}
         {tab === 'cuentas-bancarias'  && <TabCuentasBancarias canEdit={canEdit} show={show} />}
       </div>
 
@@ -610,7 +610,7 @@ function TabDescuentos({ canEdit, show }) {
 // ═══════════════════════════════════════════════════════════════
 // TAB 5: USUARIOS PIN (usuarios_erp)
 // ═══════════════════════════════════════════════════════════════
-function TabUsuariosPIN({ canEdit, sucursales, show }) {
+function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroSucursal, setFiltroSucursal] = useState('');
@@ -620,12 +620,11 @@ function TabUsuariosPIN({ canEdit, sucursales, show }) {
 
   const cargar = useCallback(async () => {
     setLoading(true);
-    const { data } = await db.from('usuarios_erp')
-      .select('id, nombre, apellido, pin, rol, store_code, activo')
-      .order('nombre');
+    // Los usuarios llegan por RPC: el PIN ajeno nunca viaja al navegador
+    const { data } = await db.rpc('erp_usuarios_listar', { p_pin_admin: user?.pin || '' });
     setUsuarios(data || []);
     setLoading(false);
-  }, []);
+  }, [user?.pin]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -644,12 +643,12 @@ function TabUsuariosPIN({ canEdit, sucursales, show }) {
     }
     setSaving(true);
     try {
-      const { error } = await db.from('usuarios_erp').update({
-        store_code: editando.store_code,
-        rol:        editando.rol,
-        nombre:     editando.nombre,
-        apellido:   editando.apellido,
-      }).eq('id', editando.id);
+      const { error } = await db.rpc('erp_usuario_guardar', {
+        p_pin_admin: user?.pin || '', p_id: editando.id,
+        p_nombre: editando.nombre, p_apellido: editando.apellido,
+        p_rol: editando.rol, p_store_code: editando.store_code,
+        p_activo: editando.activo ?? true, p_pin_nuevo: null,
+      });
       if (error) { show('Error: ' + error.message, false); setSaving(false); return; }
       show('✓ Usuario actualizado');
       setEditando(null);

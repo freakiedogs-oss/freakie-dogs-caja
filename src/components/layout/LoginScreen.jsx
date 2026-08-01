@@ -169,13 +169,11 @@ export default function LoginScreen({ onLogin }) {
     setErr('');
     setErrDetails('');
     try {
+      // El PIN se valida en el servidor: la tabla de usuarios ya no se lee
+      // desde el navegador (antes cualquiera podía leer todos los PINs).
       const { data, error } = await db
-        .from('usuarios_erp')
-        .select('*')
-        .eq('pin', np)
-        .eq('activo', true)
-        .abortSignal(ac.signal)
-        .maybeSingle();
+        .rpc('erp_login', { p_pin: np })
+        .abortSignal(ac.signal);
 
       // Si mientras queryeábamos el usuario cambió el PIN (otro dígito), ignorar
       if (pin !== np && pin.length >= MIN_PIN) return;
