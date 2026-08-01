@@ -249,6 +249,12 @@ export default function TabPedidos({ show = () => {} }) {
           <div style={{ fontSize: 15, fontWeight: 800 }}>Pedidos a domicilio</div>
           <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>
             {sesion?.nombre ? `${sesion.nombre} · ` : ''}{pedidos.length} activos · 🛵 {drivers.length} en línea
+            {drivers.length > 0 && (() => {
+              const libres = drivers.filter(d => !d.pedidos).length;
+              return libres === drivers.length ? ' (todos libres)'
+                   : libres === 0 ? ' (todos con pedido)'
+                   : ` (${libres} libre${libres === 1 ? '' : 's'})`;
+            })()}
             {ultima && ` · ${ultima.toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}`}
           </div>
         </div>
@@ -480,7 +486,15 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                   onChange={e => setAsignSel(s => ({ ...s, [p.id]: e.target.value }))}
                   style={{ ...sel, width: '100%', marginBottom: 6 }}>
             <option value="">— motorista en línea —</option>
-            {drivers.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+            {drivers.map(d => (
+              <option key={d.id} value={d.id}>
+                {d.nombre}
+                {d.sucursal ? ` · ${d.sucursal}` : ''}
+                {d.pedidos > 0
+                  ? ` · lleva ${d.pedidos}${d.en_ruta > 0 ? ` (${d.en_ruta} en ruta)` : ''}`
+                  : ' · libre'}
+              </option>
+            ))}
           </select>
           <button disabled={ocupado === p.id} onClick={() => asignar(p)}
                   style={{ ...btn(c.blue), width: '100%', fontSize: 12 }}>
