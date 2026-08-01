@@ -13,11 +13,42 @@ const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const fmtMes = (m) => { if (!m) return ''; const [y, mo] = m.split('-'); return `${MESES[+mo - 1]} ${y}` }
 
+// ── Instalar en la pantalla de inicio ─────────────────────────────
+// Android/Chrome deja abrir el diálogo del sistema (guardado en window.__instalar
+// por driver.html). iPhone no tiene forma de pedirlo por código: ahí solo se
+// pueden dar las instrucciones. Si ya está instalada, no se ofrece nada.
+function useInstalar() {
+  const yaInstalada = typeof window !== 'undefined' &&
+    (window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true)
+  const esIOS = typeof navigator !== 'undefined' &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+
+  const [puedeAndroid, setPuedeAndroid] = useState(() => typeof window !== 'undefined' && !!window.__instalar)
+  useEffect(() => {
+    const avisar = () => setPuedeAndroid(true)
+    window.addEventListener('freakie:instalable', avisar)
+    return () => window.removeEventListener('freakie:instalable', avisar)
+  }, [])
+
+  const instalar = async () => {
+    const ev = window.__instalar
+    if (!ev) return
+    ev.prompt()
+    await ev.userChoice
+    window.__instalar = null
+    setPuedeAndroid(false)
+  }
+
+  return { yaInstalada, esIOS, puedeAndroid, instalar }
+}
+
 export default function DriverBeacon() {
   const [yo, setYo] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)) || null } catch { return null } })
   const [pin, setPin] = useState('')
   const [errPin, setErrPin] = useState('')
   const [entrando, setEntrando] = useState(false)
+  const inst = useInstalar()
   const [tab, setTab] = useState('pedidos')
   const [pedidos, setPedidos] = useState([])
   const beacon = useBeacon(yo)
@@ -84,6 +115,23 @@ export default function DriverBeacon() {
             disabled={pin.length < 4 || entrando} onClick={entrar}>
             {entrando ? 'Verificando…' : 'Entrar'}
           </button>
+
+          {!inst.yaInstalada && (inst.puedeAndroid || inst.esIOS) && (
+            <div style={S.instalar}>
+              <div style={S.instalarTit}>📲 Tenela a mano</div>
+              {inst.puedeAndroid ? (
+                <>
+                  <p style={S.instalarTxt}>Agregala a tu pantalla de inicio y abrila como una app, sin buscar el link.</p>
+                  <button style={S.instalarBtn} onClick={inst.instalar}>Agregar a la pantalla de inicio</button>
+                </>
+              ) : (
+                <p style={S.instalarTxt}>
+                  En tu iPhone: tocá <b>Compartir</b> <span style={{ fontSize: 15 }}>􀈂</span> abajo en Safari,
+                  bajá y elegí <b>“Agregar a inicio”</b>. Te queda como una app más.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -362,6 +410,12 @@ const S = {
   teclado: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, margin: '14px 0' },
   tecla: { padding: '16px 0', borderRadius: 14, border: '1px solid #333', background: '#1e1e1e',
            color: '#f0f0f0', fontSize: 22, fontWeight: 600, cursor: 'pointer' },
+  instalar: { marginTop: 18, padding: '12px 14px', borderRadius: 14, background: '#161616',
+              border: '1px solid #2a2a2a' },
+  instalarTit: { fontSize: 13, fontWeight: 700, color: '#f0f0f0', marginBottom: 4 },
+  instalarTxt: { fontSize: 12.5, color: '#999', lineHeight: 1.5, margin: '0 0 10px' },
+  instalarBtn: { width: '100%', padding: '11px 0', borderRadius: 12, border: '1px solid #e63946',
+                 background: 'none', color: '#e63946', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' },
   entrarBtn: { width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: '#e63946',
                color: '#fff', fontSize: 16, fontWeight: 700, cursor: 'pointer' },
   ok: { fontSize: 14, color: '#4ade80', fontWeight: 600 },

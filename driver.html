@@ -10,6 +10,18 @@
   <meta name="apple-mobile-web-app-title" content="Freakie Motorista">
   <link rel="icon" href="/icon.png">
   <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="manifest" href="/driver.webmanifest">
+  <script>
+    // Android/Chrome avisa por acá cuando la app se puede instalar. El navegador
+    // solo permite abrir el diálogo desde un gesto del usuario, así que se guarda
+    // el evento y la pantalla de entrada ofrece el botón.
+    window.__instalar = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      window.__instalar = e;
+      window.dispatchEvent(new Event('freakie:instalable'));
+    });
+  </script>
 </head>
 <body>
   <div id="driver-root"></div>
