@@ -92,12 +92,16 @@ export default function DriverBeacon() {
   // incluido el PIN escrito — si no, la pantalla vuelve con los puntitos
   // llenos y al tocar Entrar reingresa el mismo motorista.
   const cambiar = () => {
-    beacon.detener()
-    dispo.marcar(false)
-    setPin(''); setErrPin('')
-    setPedidos([])
-    setYo(null)
+    // Se borra la sesión ANTES de nada, y se recarga la página en vez de
+    // confiar en el estado de React: la app vive instalada en el teléfono y
+    // puede estar corriendo una versión vieja en caché. Así salir funciona
+    // siempre, sin importar en qué versión esté el motorista.
     try { localStorage.removeItem(KEY) } catch { /* noop */ }
+    beacon.detener()
+    if (yo) {
+      db.rpc('driver_disponible', { p_empleado_id: yo.id, p_activo: false }).catch(() => {})
+    }
+    window.location.replace('/driver?_=' + Date.now())
   }
 
   if (!yo) {
