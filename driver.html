@@ -12,6 +12,16 @@
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="manifest" href="/driver.webmanifest">
   <script>
+    // Cerrar sesión: se hace con un enlace normal a /driver?salir=1 y se limpia
+    // ACÁ, antes de que cargue la app. Así salir no depende de que un manejador
+    // de clic de React llegue a ejecutarse.
+    try {
+      if (location.search.indexOf('salir=1') !== -1) {
+        localStorage.removeItem('freakie_driver_v1');
+        history.replaceState({}, '', '/driver');
+      }
+    } catch (e) { /* noop */ }
+
     // Android/Chrome avisa por acá cuando la app se puede instalar. El navegador
     // solo permite abrir el diálogo desde un gesto del usuario, así que se guarda
     // el evento y la pantalla de entrada ofrece el botón.

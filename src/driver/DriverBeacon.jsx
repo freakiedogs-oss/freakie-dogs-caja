@@ -91,17 +91,12 @@ export default function DriverBeacon() {
   // Salir: se apaga el GPS, se da de baja de la central y se limpia todo,
   // incluido el PIN escrito — si no, la pantalla vuelve con los puntitos
   // llenos y al tocar Entrar reingresa el mismo motorista.
-  const cambiar = () => {
-    // Se borra la sesión ANTES de nada, y se recarga la página en vez de
-    // confiar en el estado de React: la app vive instalada en el teléfono y
-    // puede estar corriendo una versión vieja en caché. Así salir funciona
-    // siempre, sin importar en qué versión esté el motorista.
+  // Aviso al servidor de que termina el turno. Es sólo eso: la salida de la
+  // sesión la hace el enlace de abajo, que navega aunque este código no corra.
+  const avisarSalida = () => {
     try { localStorage.removeItem(KEY) } catch { /* noop */ }
     beacon.detener()
-    if (yo) {
-      db.rpc('driver_disponible', { p_empleado_id: yo.id, p_activo: false }).catch(() => {})
-    }
-    window.location.replace('/driver?_=' + Date.now())
+    if (yo) db.rpc('driver_disponible', { p_empleado_id: yo.id, p_activo: false }).catch(() => {})
   }
 
   if (!yo) {
@@ -161,7 +156,7 @@ export default function DriverBeacon() {
           <span style={{ fontSize: 11, fontWeight: 700, color: beacon.activo ? '#4ade80' : '#666' }}>
             {beacon.activo ? '📡 En línea' : '○ Sin compartir'}
           </span>
-          <button style={S.salirBtn} onClick={cambiar}>Salir</button>
+          <a href="/driver?salir=1" onClick={avisarSalida} style={S.salirBtn}>Salir</a>
         </span>
       </header>
 
@@ -556,7 +551,8 @@ const S = {
   dim: { fontSize: 13, color: '#888', margin: '8px 0', lineHeight: 1.5 },
   banner: { background: '#1e2a1e', border: '1px solid #2f5f3f', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#a7e8bd' },
   salirBtn: { background: 'none', border: '1px solid #333', color: '#aaa', fontSize: 12,
-              fontWeight: 600, padding: '7px 12px', borderRadius: 9, cursor: 'pointer', flexShrink: 0 },
+              fontWeight: 600, padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+              flexShrink: 0, textDecoration: 'none', display: 'inline-block' },
   linkSm: { background: 'none', border: 'none', color: '#888', fontSize: 12, textDecoration: 'underline', cursor: 'pointer' },
   rowCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '12px 14px' },
   btnSm: (bg) => ({ padding: '8px 12px', borderRadius: 8, background: bg, color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-block' }),
