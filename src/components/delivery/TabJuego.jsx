@@ -86,7 +86,7 @@ export default function TabJuego({ show = () => {} }) {
               <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                 {g.telefono && (
                   <a href={`https://wa.me/503${String(g.telefono).replace(/\D/g, '')}?text=${encodeURIComponent(
-                        `¡Felicidades ${g.alias}! 🏆 Ganaste el combo del día en HotDog Dash con ${g.score} puntos. Mostranos tu posteo con el pedido ${g.pedido || ''} y pasá a reclamarlo 🌭`)}`}
+                        `¡Felicidades ${g.alias}! 🏆 Ganaste el combo del día en Freakies Carreritas con ${g.score} puntos. Mostranos tu posteo con el pedido ${g.pedido || ''} y pasá a reclamarlo 🌭`)}`}
                      target="_blank" rel="noopener"
                      style={{ ...btn('#25D366'), textDecoration: 'none' }}>💬 Avisarle</a>
                 )}

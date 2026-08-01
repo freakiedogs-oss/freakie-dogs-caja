@@ -1,9 +1,16 @@
 // ────────────────────────────────────────────────────────────────────
-// HotDog Dash — corredor de un botón, tema carnaval.
-// Un hot dog de Freakie esquiva obstáculos; la velocidad sube con el score.
+// Freakies Carreritas — corredor de un botón, tema carnaval.
+// El cliente elige con qué corre: hot dog, hamburguesa o papas. Esquiva
+// obstáculos y la velocidad sube con el puntaje.
 // Controles: tap / click / espacio (saltar). Canvas puro, sin librerías.
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef } from 'react'
+
+export const PERSONAJES = [
+  { id: 'hotdog', nombre: 'Hot dog',    emoji: '🌭' },
+  { id: 'burger', nombre: 'Hamburguesa', emoji: '🍔' },
+  { id: 'papas',  nombre: 'Papas',       emoji: '🍟' },
+]
 
 // Coleccionables con fotos reales del menú (sprites de ~4 KB c/u)
 const SPRITES = [
@@ -19,7 +26,7 @@ const SALTO = -11.6
 const V0 = 5.2              // velocidad inicial
 const VMAX = 12
 
-export default function HotDogDash({ onGameOver, onScore }) {
+export default function FreakiesCarreritas({ onGameOver, onScore, personaje = 'hotdog' }) {
   const cv = useRef(null)
   const api = useRef({})
 
@@ -113,35 +120,83 @@ export default function HotDogDash({ onGameOver, onScore }) {
       ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(0, piso + 9, W, H - piso - 9)
     }
 
-    const dibujarDog = () => {
-      const { x, y, w, h } = dog
-      const bob = dog.enSuelo ? Math.sin(t * 0.5) * 1.4 : 0
-      ctx.save(); ctx.translate(x, y - h + bob)
-
-      // patitas
-      ctx.strokeStyle = '#f0b27a'; ctx.lineWidth = 3.4; ctx.lineCap = 'round'
+    // ── Personajes ─────────────────────────────────────────────
+    const patitas = (w, h, color) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 3.4; ctx.lineCap = 'round'
       const fase = dog.enSuelo ? Math.sin(t * 0.55) * 7 : 4
       ctx.beginPath(); ctx.moveTo(w * 0.32, h - 2); ctx.lineTo(w * 0.32 - fase, h + 8)
       ctx.moveTo(w * 0.62, h - 2); ctx.lineTo(w * 0.62 + fase, h + 8); ctx.stroke()
+    }
+    const carita = (w, ojoX, ojoY) => {
+      ctx.fillStyle = '#22140f'
+      ctx.beginPath(); ctx.arc(ojoX, ojoY, 2.1, 0, 7); ctx.fill()
+      ctx.strokeStyle = '#22140f'; ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.arc(ojoX - 2, ojoY + 3, 3.4, 0.15, Math.PI - 0.3); ctx.stroke()
+    }
 
-      // pan
-      ctx.fillStyle = '#e8b06b'
-      redondo(-2, 4, w + 4, h - 4, 11); ctx.fill()
-      // salchicha
-      ctx.fillStyle = '#d1503f'
-      redondo(1, 0, w - 2, h - 11, 8); ctx.fill()
-      // mostaza
+    const dibujarHotDog = (w, h) => {
+      patitas(w, h, '#f0b27a')
+      ctx.fillStyle = '#e8b06b'; redondo(-2, 4, w + 4, h - 4, 11); ctx.fill()
+      ctx.fillStyle = '#d1503f'; redondo(1, 0, w - 2, h - 11, 8); ctx.fill()
       ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 2.6; ctx.beginPath()
       for (let i = 0; i <= 5; i++) {
         const px = 6 + i * ((w - 12) / 5), py = 4 + (i % 2 ? 4 : 0)
         i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)
       }
       ctx.stroke()
-      // ojo + sonrisa
-      ctx.fillStyle = '#22140f'
-      ctx.beginPath(); ctx.arc(w - 11, 6, 2.1, 0, 7); ctx.fill()
-      ctx.strokeStyle = '#22140f'; ctx.lineWidth = 1.5
-      ctx.beginPath(); ctx.arc(w - 13, 9, 3.4, 0.15, Math.PI - 0.3); ctx.stroke()
+      carita(w, w - 11, 6)
+    }
+
+    const dibujarBurger = (w, h) => {
+      patitas(w, h, '#e8b06b')
+      // pan de abajo
+      ctx.fillStyle = '#d99a52'; redondo(0, h - 9, w, 9, 4); ctx.fill()
+      // carne
+      ctx.fillStyle = '#7b4322'; redondo(1, h - 15, w - 2, 7, 3); ctx.fill()
+      // queso asomando
+      ctx.fillStyle = '#f6c445'
+      ctx.beginPath(); ctx.moveTo(2, h - 15); ctx.lineTo(w - 2, h - 15)
+      ctx.lineTo(w - 6, h - 10); ctx.lineTo(w - 11, h - 15); ctx.lineTo(w - 15, h - 10)
+      ctx.lineTo(w - 20, h - 15); ctx.closePath(); ctx.fill()
+      // lechuga
+      ctx.fillStyle = '#5fb85f'
+      ctx.beginPath(); ctx.moveTo(1, h - 17)
+      for (let i = 0; i < 5; i++) ctx.arc(4 + i * ((w - 8) / 4), h - 18, 3.6, Math.PI, 0)
+      ctx.lineTo(w - 1, h - 15); ctx.lineTo(1, h - 15); ctx.closePath(); ctx.fill()
+      // pan de arriba + ajonjolí
+      ctx.fillStyle = '#e8b06b'
+      ctx.beginPath(); ctx.moveTo(0, h - 18); ctx.quadraticCurveTo(w / 2, -3, w, h - 18); ctx.closePath(); ctx.fill()
+      ctx.fillStyle = '#fff5dc'
+      ;[[w * .3, h - 24], [w * .5, h - 27], [w * .68, h - 23]].forEach(([sx, sy]) => {
+        ctx.beginPath(); ctx.ellipse(sx, sy, 1.7, 1.1, .4, 0, 7); ctx.fill()
+      })
+      carita(w, w - 12, h - 21)
+    }
+
+    const dibujarPapas = (w, h) => {
+      patitas(w, h, '#e8b06b')
+      // papas asomando
+      ctx.fillStyle = '#f6c445'
+      ;[0, 1, 2, 3, 4].forEach(i => {
+        const px = 5 + i * ((w - 14) / 4), alto = 13 + (i % 2 ? 6 : 0)
+        redondo(px, -alto + 8, 5, alto, 2); ctx.fill()
+      })
+      // caja a rayas
+      ctx.fillStyle = '#e63946'
+      ctx.beginPath(); ctx.moveTo(2, 6); ctx.lineTo(w - 2, 6)
+      ctx.lineTo(w - 6, h + 2); ctx.lineTo(6, h + 2); ctx.closePath(); ctx.fill()
+      ctx.fillStyle = '#f7f2ea'
+      for (let i = 0; i < 3; i++) { ctx.fillRect(6 + i * ((w - 12) / 3), 8, 4, h - 6) }
+      carita(w, w - 13, 15)
+    }
+
+    const dibujarDog = () => {
+      const { x, y, w, h } = dog
+      const bob = dog.enSuelo ? Math.sin(t * 0.5) * 1.4 : 0
+      ctx.save(); ctx.translate(x, y - h + bob)
+      if (personaje === 'burger') dibujarBurger(w, h)
+      else if (personaje === 'papas') dibujarPapas(w, h)
+      else dibujarHotDog(w, h)
       ctx.restore()
     }
 
@@ -262,9 +317,9 @@ export default function HotDogDash({ onGameOver, onScore }) {
       window.removeEventListener('keydown', tecla)
       canvas.removeEventListener('pointerdown', tap)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [personaje]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return <canvas ref={cv} className="jg-canvas" onContextMenu={e => e.preventDefault()} />
 }
 
-HotDogDash.reiniciar = (ref) => ref?.current?.reset?.()
+

@@ -6,11 +6,11 @@ import { lazy } from 'react'
 
 export const JUEGOS = [
   {
-    id: 'hotdog_dash',
-    nombre: 'HotDog Dash',
-    emoji: '🌭',
-    tagline: 'Saltá los conos de la feria',
-    Comp: lazy(() => import('./HotDogDash')),
+    id: 'carreritas',
+    nombre: 'Freakies Carreritas',
+    emoji: '🏁',
+    tagline: 'Elegí tu corredor y saltá los conos de la feria',
+    Comp: lazy(() => import('./FreakiesCarreritas')),
   },
   // { id: 'flappy_dog', nombre: 'Flappy Dog', emoji: '🪽', Comp: lazy(() => import('./FlappyDog')) },
 ]

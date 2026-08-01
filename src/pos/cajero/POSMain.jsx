@@ -118,7 +118,7 @@ function Clock() {
 // ──────────────────────────────────────────────
 // POSMain
 // ──────────────────────────────────────────────
-export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
+export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport }) {
   const storeCode = user.store_code || 'S001'
   const caja = user.caja || null   // multi-caja (Lourdes): null = sucursal de 1 sola caja
   const storeName = STORES[storeCode] || storeCode
