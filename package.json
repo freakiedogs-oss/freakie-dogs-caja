@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-delivery.mjs",
     "preview": "vite preview",
-    "build:delivery": "VITE_TARGET=delivery vite build && node scripts/build-delivery.mjs"
+    "build:delivery": "VITE_TARGET=delivery npm run build"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

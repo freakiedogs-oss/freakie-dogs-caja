@@ -6,6 +6,15 @@
 // no tienen nada que hacer, así que se borran del resultado.
 import { rm, copyFile } from 'node:fs/promises'
 
+// Corre en TODOS los builds, pero solo hace algo cuando el proyecto está
+// marcado como el del delivery. Así ambos proyectos de Vercel usan el mismo
+// `npm run build` de siempre y la única diferencia es una variable de entorno,
+// que es mucho más fácil de configurar que sobreescribir el comando.
+if (process.env.VITE_TARGET !== 'delivery') {
+  console.log('· build del ERP: se deja el resultado tal cual')
+  process.exit(0)
+}
+
 const FUERA = [
   'dashboard-ejecutivo.html',   // ventas diarias, sin login
   'dashboard-operativo.html',   // idem
