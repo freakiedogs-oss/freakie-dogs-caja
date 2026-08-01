@@ -36,7 +36,7 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
     setLoading(true)
     const { data } = await db
       .from('pos_cuentas')
-      .select('id, tipo, mesa_ref, estado, subtotal, total, created_at, cliente_nombre, delivery_referencia, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
+      .select('id, tipo, mesa_ref, estado, subtotal, total, created_at, cliente_nombre, delivery_referencia, delivery_metodo_pago, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
       .eq('store_code', storeCode)
       .in('estado', ESTADO_ACTIVO)
       .order('created_at')
