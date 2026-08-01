@@ -24,6 +24,7 @@ export default function TabPedidos({ show = () => {} }) {
   const [pedidos, setPedidos] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [asignSel, setAsignSel] = useState({}); // orderId → motorista_id
+  const [sucSel, setSucSel] = useState({});     // orderId → sucursal_id (cuando no hay ubicación)
   const [cargando, setCargando] = useState(false);
   const [err, setErr] = useState('');
   const [confirmando, setConfirmando] = useState(null);
@@ -103,11 +104,13 @@ export default function TabPedidos({ show = () => {} }) {
   const salir = () => { localStorage.removeItem(TOKEN_KEY); setToken(''); setSesion(null); setPedidos([]); };
 
   const sucursalParaConfirmar = (p) =>
-    p.sucursal_id || (p.ruteo_sugerido?.en_cobertura ? p.ruteo_sugerido.sucursal_id : null);
+    p.sucursal_id
+    || (p.ruteo_sugerido?.en_cobertura ? p.ruteo_sugerido.sucursal_id : null)
+    || sucSel[p.id] || null;
 
   const confirmar = async (p, metodo) => {
     const suc = sucursalParaConfirmar(p);
-    if (!suc) { show('⚠️ Sin sucursal (fuera de cobertura). Asigná una manualmente.'); return; }
+    if (!suc) { show('⚠️ Elegí de qué sucursal sale el pedido'); return; }
     setConfirmando(p.id);
     try {
       const { data, error } = await db.rpc('torre_confirmar_pago', {
@@ -217,7 +220,7 @@ export default function TabPedidos({ show = () => {} }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {pedidos.map(p => {
           const suc = p.sucursal_nombre || (p.ruteo_sugerido?.en_cobertura ? `sugerida: ${p.ruteo_sugerido.nombre}` : null);
-          const fueraCobertura = !p.sucursal_id && !p.ruteo_sugerido?.en_cobertura;
+          const necesitaSucursal = !p.sucursal_id && !p.ruteo_sugerido?.en_cobertura;
           const nItems = Array.isArray(p.items) ? p.items.reduce((s, i) => s + (i.cantidad || 1), 0) : 0;
           return (
             <div key={p.id} style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, padding: 14 }}>
@@ -228,20 +231,39 @@ export default function TabPedidos({ show = () => {} }) {
               <div style={{ fontSize: 14 }}>{p.cliente_nombre || 'Cliente'} · {fmt(p.total)}</div>
               <div style={{ fontSize: 12, color: c.dim, marginTop: 2 }}>{p.cliente_direccion}</div>
               <div style={{ fontSize: 12, color: c.dim, marginTop: 2 }}>
-                {nItems} ítem(s){suc ? ` · 🏪 ${suc}` : ''}{fueraCobertura ? ' · ⚠️ fuera de cobertura' : ''}
+                {nItems} ítem(s){suc ? ` · 🏪 ${suc}` : ''}{necesitaSucursal ? ' · ⚠️ sin ubicación' : ''}
               </div>
 
               <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                 <a href={waLink(p.cliente_telefono, p)} target="_blank" rel="noopener"
                    style={{ ...mini('#25D366'), textDecoration: 'none', display: 'inline-block' }}>💬 WhatsApp</a>
 
-                {p.estado === 'recibida' && (
-                  <button disabled={confirmando === p.id || fueraCobertura}
+                {p.estado === 'recibida' && !necesitaSucursal && (
+                  <button disabled={confirmando === p.id}
                     onClick={() => confirmar(p, p.metodo_pago || 'efectivo')} style={mini(c.red)}>
                     {confirmando === p.id ? 'Enviando…' : '✅ Confirmar pago → cocina'}
                   </button>
                 )}
               </div>
+
+              {/* Sin ubicación del cliente: Karina elige de qué sucursal sale */}
+              {p.estado === 'recibida' && necesitaSucursal && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${c.border}` }}>
+                  <div style={{ fontSize: 12, color: c.yellow, marginBottom: 6 }}>
+                    {p.cliente_direccion ? '📍 El cliente no compartió ubicación' : '📍 Sin ubicación'} — elegí de qué sucursal sale
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select value={sucSel[p.id] || ''} onChange={e => setSucSel(s2 => ({ ...s2, [p.id]: e.target.value }))} style={selSt}>
+                      <option value="">— sucursal —</option>
+                      {sucursales.map(s2 => <option key={s2.id} value={s2.id}>{s2.store_code} · {s2.nombre}</option>)}
+                    </select>
+                    <button disabled={confirmando === p.id || !sucSel[p.id]}
+                      onClick={() => confirmar(p, p.metodo_pago || 'efectivo')} style={mini(c.red)}>
+                      {confirmando === p.id ? 'Enviando…' : '✅ Confirmar pago → cocina'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Asignación de motorista cuando cocina lo marca LISTA */}
               {p.estado === 'lista' && (
