@@ -5,6 +5,7 @@ import { today, n } from '../../config';
 import TabPedidos from './TabPedidos';
 import TabParametros from './TabParametros';
 import TabSucursales from './TabSucursales';
+import TabJuego from './TabJuego';
 // Cobertura usa Leaflet (mapa): lazy para no cargarlo hasta abrir ese tab
 const TabCobertura = lazy(() => import('./TabCobertura'));
 
@@ -69,7 +70,7 @@ export default function DeliveryView({ user, show = () => {} }) {
     <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh' }}>
       {/* TABS */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {[['pedidos','📥 Pedidos'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura'],['sucursales','🏪 Sucursales'],['parametros','⚙️ Parámetros']].map(([k, etq]) => (
+        {[['pedidos','📥 Pedidos'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura'],['sucursales','🏪 Sucursales'],['juego','🏆 Juego'],['parametros','⚙️ Parámetros']].map(([k, etq]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
@@ -81,6 +82,7 @@ export default function DeliveryView({ user, show = () => {} }) {
 
       {tab === 'pedidos'   && <TabPedidos  show={show} />}
       {tab === 'sucursales' && <TabSucursales show={show} />}
+      {tab === 'juego' && <TabJuego show={show} />}
       {tab === 'parametros' && <TabParametros show={show} />}
       {tab === 'bonos'     && <TabBonos    user={user} show={show} puedeAprobar={puedeAprobar} />}
       {tab === 'cobertura' && (
