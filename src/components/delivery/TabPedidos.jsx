@@ -128,8 +128,16 @@ export default function TabPedidos({ show = () => {} }) {
   };
   const salir = () => { localStorage.removeItem(TOKEN_KEY); setToken(''); setSesion(null); setPedidos([]); };
 
-  const sucursalDe = (p) => p.sucursal_id
-    || (p.ruteo_sugerido?.en_cobertura ? p.ruteo_sugerido.sucursal_id : null) || sucSel[p.id] || null;
+  // Lo que elige la central MANDA sobre lo que sugirió el sistema. Antes iba
+  // último y por eso cambiar la sucursal a mano no tenía ningún efecto.
+  const sucursalDe = (p) => sucSel[p.id]
+    || p.sucursal_id
+    || (p.ruteo_sugerido?.en_cobertura ? p.ruteo_sugerido.sucursal_id : null)
+    || null;
+
+  // La que propuso el sistema, para mostrarla marcada y poder avisar si se cambió
+  const sucursalSugerida = (p) => p.sucursal_id
+    || (p.ruteo_sugerido?.en_cobertura ? p.ruteo_sugerido.sucursal_id : null) || null;
 
   const confirmar = async (p) => {
     const suc = sucursalDe(p);
@@ -229,7 +237,7 @@ export default function TabPedidos({ show = () => {} }) {
 
   const porEstado = (k) => pedidos.filter(p => p.estado === k);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
-  const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucSel, setSucSel,
+  const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado };
 
@@ -401,11 +409,12 @@ function Historial({ historial }) {
 }
 
 // ── Tarjeta de pedido ──
-function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucSel, setSucSel,
+function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado }) {
   const reloj = useReloj(p.created_at);
-  const faltaSucursal = !sucursalDe(p);
+  const sugerida = sucursalSugerida(p);
+  const cambiada = !!sucSel[p.id] && sucSel[p.id] !== sugerida;
   const nItems = Array.isArray(p.items) ? p.items.reduce((s, i) => s + (i.cantidad || 1), 0) : 0;
   const suc = p.sucursal_nombre || (p.ruteo_sugerido?.en_cobertura ? p.ruteo_sugerido.nombre : null);
 
@@ -430,24 +439,29 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
             onClick={() => { navigator.clipboard?.writeText(trackUrl(p)); show('🔗 Link de seguimiento copiado'); }}
             style={{ ...btn('#333'), fontSize: 11.5, padding: '6px 10px' }}>🔗</button>
         )}
-        {p.estado === 'recibida' && !faltaSucursal && (
-          <button disabled={ocupado === p.id} onClick={() => confirmar(p)}
-            style={{ ...btn(c.red), fontSize: 11.5, padding: '6px 10px', flex: 1 }}>
-            {ocupado === p.id ? '…' : '✅ Cobrado'}
-          </button>
-        )}
       </div>
 
-      {/* Sin ubicación: elegir sucursal */}
-      {p.estado === 'recibida' && faltaSucursal && (
+      {/* Antes de cobrar: de qué sucursal sale. Siempre editable — el sistema
+          propone por la ubicación del cliente, pero la central decide. */}
+      {p.estado === 'recibida' && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
-          <div style={{ fontSize: 11, color: c.yellow, marginBottom: 5 }}>📍 Sin ubicación — ¿de qué sucursal sale?</div>
-          <select value={sucSel[p.id] || ''} onChange={e => setSucSel(s => ({ ...s, [p.id]: e.target.value }))}
-                  style={{ ...sel, width: '100%', marginBottom: 6 }}>
-            <option value="">— sucursal —</option>
-            {sucursales.map(s => <option key={s.id} value={s.id}>{s.store_code} · {s.nombre}</option>)}
+          <div style={{ fontSize: 11, color: sugerida ? c.dim : c.yellow, marginBottom: 5 }}>
+            {sugerida
+              ? (cambiada ? '🏪 Sucursal cambiada a mano' : '🏪 Sale de — el sistema la escogió por la dirección')
+              : '📍 Sin ubicación — ¿de qué sucursal sale?'}
+          </div>
+          <select value={sucursalDe(p) || ''}
+                  onChange={e => setSucSel(s => ({ ...s, [p.id]: e.target.value }))}
+                  style={{ ...sel, width: '100%', marginBottom: 6,
+                           borderColor: cambiada ? c.yellow : '#333' }}>
+            <option value="">— elegí la sucursal —</option>
+            {sucursales.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.store_code} · {s.nombre}{s.id === sugerida ? '  (sugerida)' : ''}
+              </option>
+            ))}
           </select>
-          <button disabled={ocupado === p.id || !sucSel[p.id]} onClick={() => confirmar(p)}
+          <button disabled={ocupado === p.id || !sucursalDe(p)} onClick={() => confirmar(p)}
                   style={{ ...btn(c.red), width: '100%', fontSize: 12 }}>
             {ocupado === p.id ? '…' : '✅ Confirmar pago'}
           </button>
