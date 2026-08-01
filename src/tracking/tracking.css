@@ -180,3 +180,8 @@ body { background: #f0efec; color: #1a1416; }
   .tk-invita-dog { animation-duration: 14s }
   .tk-invita-cta { animation: none }
 }
+
+/* Número de pedido en el concurso */
+.jg-orden { background: rgba(255,213,74,.22); padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
+.jg-ped { display: block; font-size: 10.5px; color: #b0a8ae; font-weight: 500; margin-top: 1px; }
+.jg-ok-nota { font-size: 11.5px; font-weight: 500; color: #8a8288; display: inline-block; margin-top: 3px; line-height: 1.4; }

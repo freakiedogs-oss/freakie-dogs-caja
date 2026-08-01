@@ -9,7 +9,7 @@ import { JUEGOS, juegoPorId } from './juegos'
 
 const ALIAS_KEY = 'freakie_juego_alias'
 
-export default function Juego({ trackingToken }) {
+export default function Juego({ trackingToken, numeroOrden }) {
   const [juegoId] = useState(JUEGOS[0].id)
   const [jugando, setJugando] = useState(false)
   const [partida, setPartida] = useState(0)      // key para reiniciar
@@ -57,6 +57,7 @@ export default function Juego({ trackingToken }) {
 
   const compartir = async () => {
     const txt = `¡Hice ${final?.score ?? score} puntos en HotDog Dash de Freakie Dogs! 🌭🎪 ¿Me superás?`
+      + (numeroOrden ? `\nMi pedido: ${numeroOrden} @freakiedogs` : ' @freakiedogs')
     try {
       if (navigator.share) await navigator.share({ text: txt, url: location.origin + '/menu' })
       else { await navigator.clipboard.writeText(`${txt} ${location.origin}/menu`); alert('¡Copiado! Pegalo en tu historia 📲') }
@@ -72,8 +73,9 @@ export default function Juego({ trackingToken }) {
           <h2 className="jg-t">{juego.emoji} {juego.nombre}</h2>
           <p className="jg-s">{juego.tagline} · <b>la marca más alta del día gana un combo</b> 🏆</p>
           <p className="jg-reglas">
-            Para participar por el combo del día o el premio del mes,
-            <b> publicá tu marca en tus redes y etiquetá a @freakiedogs</b> 📲
+            Para participar por el combo del día o el premio del mes:
+            <b> publicá tu marca, etiquetá a @freakiedogs e incluí tu número de pedido</b>
+            {numeroOrden ? <> — el tuyo es <b className="jg-orden">{numeroOrden}</b></> : null} 📲
           </p>
         </div>
       </header>
@@ -105,7 +107,9 @@ export default function Juego({ trackingToken }) {
                 <div className="jg-ok">
                   {guardado.revision
                     ? '✅ Marca guardada (en revisión)'
-                    : <>🏅 ¡Quedaste <b>#{guardado.posicion_dia}</b> del día!</>}
+                    : <>🏅 ¡Quedaste <b>#{guardado.posicion_dia}</b> del día!
+                        {guardado.numero_orden && <><br /><span className="jg-ok-nota">Publicá tu marca con <b>{guardado.numero_orden}</b> y @freakiedogs para reclamar</span></>}
+                      </>}
                 </div>
               )}
               <div className="jg-fin-row">
@@ -130,7 +134,10 @@ export default function Juego({ trackingToken }) {
             {lista.map((r, i) => (
               <li key={i} className={i === 0 ? 'top' : ''}>
                 <span className="jg-pos">{i === 0 ? '🏆' : i + 1}</span>
-                <span className="jg-alias">{r.alias}</span>
+                <span className="jg-alias">
+                  {r.alias}
+                  {r.pedido && <span className="jg-ped">{r.pedido}</span>}
+                </span>
                 <span className="jg-score">{r.score}</span>
               </li>
             ))}
@@ -138,7 +145,7 @@ export default function Juego({ trackingToken }) {
         )}
         <div className="jg-premio">
           {tab === 'dia' ? 'El #1 de hoy se gana un combo 🌭' : 'La mejor marca del mes se lleva el premio grande 🎁'}
-          <br />Para reclamarlo: <b>publicá tu marca y etiquetá a @freakiedogs</b>, y mostralo en la tienda.
+          <br />El posteo tiene que llevar <b>tu número de pedido</b> y etiquetar a <b>@freakiedogs</b>; sin eso no cuenta.
         </div>
       </div>
     </section>
