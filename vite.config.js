@@ -3,6 +3,18 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 
+// El menú público se despliega en su propio proyecto de Vercel
+// (freakiedelivery.vercel.app), separado del ERP. Con VITE_TARGET=delivery se
+// compilan SOLO las pantallas de cara al cliente: el código del ERP y del POS
+// no llega siquiera a subirse a ese dominio.
+const soloDelivery = process.env.VITE_TARGET === 'delivery'
+
+const ENTRADAS_PUBLICAS = {
+  menu:   resolve(__dirname, 'menu.html'),    // el menú para pedir
+  track:  resolve(__dirname, 'track.html'),   // seguimiento + juego
+  driver: resolve(__dirname, 'driver.html'),  // app de los motoristas
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -15,7 +27,7 @@ export default defineConfig({
     sourcemap: 'hidden',
     chunkSizeWarningLimit: 600,
     rollupOptions: {
-      input: {
+      input: soloDelivery ? ENTRADAS_PUBLICAS : {
         main:   resolve(__dirname, 'index.html'),
         pos:    resolve(__dirname, 'pos.html'),
         foto:   resolve(__dirname, 'foto.html'),

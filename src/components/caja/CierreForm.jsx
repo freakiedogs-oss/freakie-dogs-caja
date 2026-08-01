@@ -560,35 +560,13 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       });
   }, [fecha, selectedStore]);
 
-  useEffect(() => {
-    if (isEdit || !fecha || !selectedStore) return;
-    setFetching(true);
-    db.rpc('exec_sql_batch', {
-      sql_text: `
-      SELECT
-        COALESCE(SUM(CASE WHEN metodo_pago ILIKE '%efectivo%' THEN total ELSE 0 END),0)::numeric(10,2) as ef,
-        COALESCE(SUM(CASE WHEN metodo_pago ILIKE '%tarjeta%' OR metodo_pago ILIKE '%card%' THEN total ELSE 0 END),0)::numeric(10,2) as tar,
-        COALESCE(SUM(CASE WHEN metodo_pago ILIKE '%transfer%' THEN total ELSE 0 END),0)::numeric(10,2) as tra,
-        COALESCE(SUM(CASE WHEN metodo_pago ILIKE '%link%' THEN total ELSE 0 END),0)::numeric(10,2) as lnk
-      FROM quanto_transacciones
-      WHERE store_code='${selectedStore}' AND fecha::date='${fecha}'
-    `,
-    }).then(({ data, error }) => {
-      if (!error && data) {
-        const r = Array.isArray(data) ? data[0] : data;
-        if (r && r.ef !== undefined) {
-          setVentas({
-            efectivo_quanto: String(r.ef || 0),
-            tarjeta_quanto: String(r.tar || 0),
-            ventas_transferencia: String(r.tra || 0),
-            ventas_link_pago: String(r.lnk || 0),
-          });
-          show('✓ Ventas QUANTO cargadas');
-        }
-      }
-      setFetching(false);
-    });
-  }, [fecha, selectedStore]);
+  // Acá se pre-llenaban las ventas de QUANTO, pero nunca funcionó: mandaba un
+  // SELECT armado a mano a exec_sql_batch (que devuelve 'ok', no filas) contra
+  // la tabla quanto_transacciones, que no existe. El resultado caía siempre en
+  // el `if` de abajo y no pasaba nada. Se quita: era además la única puerta
+  // desde el navegador a ejecutar SQL arbitrario en la base.
+  // Si se quiere el pre-llenado de verdad, hay que hacerlo contra las tablas
+  // quanto que sí existen y con una función propia.
 
   const ef = n(ventas.efectivo_quanto);
   const totalEg = egresos.reduce((s, e) => s + n(e.monto), 0);

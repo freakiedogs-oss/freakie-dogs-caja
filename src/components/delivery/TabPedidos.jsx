@@ -7,6 +7,7 @@
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { db } from '../../supabase';
+import { URL_DELIVERY } from '../../config';
 
 const TOKEN_KEY = 'freakie_torre_token';
 const c = {
@@ -170,7 +171,9 @@ export default function TabPedidos({ show = () => {} }) {
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
   };
 
-  const trackUrl = (p) => `${location.origin}/track?t=${p.tracking_token}`;
+  // Apunta al dominio público del delivery, NO al del ERP donde corre la torre:
+  // este link se lo mandamos al cliente por WhatsApp.
+  const trackUrl = (p) => `${URL_DELIVERY}/track?t=${p.tracking_token}`;
   const waLink = (tel, p) => {
     const num = String(tel || '').replace(/\D/g, '');
     const base = `Hola! Soy de Freakie Dogs 🌭 Sobre tu pedido ${p.numero_orden} por ${fmt(p.total)}.`;

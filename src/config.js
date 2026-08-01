@@ -1,5 +1,11 @@
 export const APP_VERSION = 'v2.5.0 · 14-Jun-2026 (Finanzas AI: P&L + diagnóstico)'
 
+// Dominio público del delivery (menú, seguimiento y juego). Va aparte del ERP
+// para no darle a los clientes ninguna pista de dónde vive el POS.
+// La torre de control corre en el dominio del ERP, así que los links que se le
+// mandan al cliente NO pueden salir de location.origin: tienen que apuntar acá.
+export const URL_DELIVERY = 'https://freakiedelivery.vercel.app'
+
 export const STORES = {
   M001: 'Cafetalón',
   S001: 'Soyapango',
