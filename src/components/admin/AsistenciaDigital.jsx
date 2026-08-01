@@ -304,7 +304,8 @@ function CorreccionesPanel({ sucursales, user }) {
     if (!empleadoPin) return;
     setBuscando(true);
     setEmpleado(null);
-    const { data } = await db.from('usuarios_erp').select('id,nombre,apellido,pin,rol,store_code').eq('pin', empleadoPin).maybeSingle();
+    // El PIN se valida en el servidor (la tabla ya no se lee desde el navegador)
+    const { data } = await db.rpc('erp_buscar_por_pin', { p_pin: empleadoPin });
     setEmpleado(data || false);
     if (data) {
       const { data: regs } = await db.from('asistencia')
@@ -344,7 +345,7 @@ function CorreccionesPanel({ sucursales, user }) {
         <div>
           <div style={{ ...cardStyle, borderLeft: `3px solid ${c.blue}` }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: c.text }}>{empleado.nombre} {empleado.apellido}</div>
-            <div style={{ fontSize: 12, color: c.textDim }}>PIN {empleado.pin} · {empleado.rol} · {empleado.store_code}</div>
+            <div style={{ fontSize: 12, color: c.textDim }}>{empleado.rol} · {empleado.store_code}</div>
           </div>
 
           <div style={{ marginBottom: 10 }}>
