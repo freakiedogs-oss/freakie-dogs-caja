@@ -142,12 +142,12 @@ export default function KpisVentaDashboard({ user, onBack }) {
           insightsResp,
           md,
         ] = await Promise.all([
-          db.rpc('obtener_kpis_venta_canal', { p_pin: user.pin, p_fecha_desde: fechaDesde, p_fecha_hasta: fechaHasta }),
+          db.rpc('obtener_kpis_venta_canal', { p_usuario_id: user.id, p_fecha_desde: fechaDesde, p_fecha_hasta: fechaHasta }),
           fetchTopItemsPareto(fechaDesde, fechaHasta),
           fetchEmpleados(fechaDesde, fechaHasta),
-          fetchTendencia(user.pin),
-          db.rpc('obtener_insights_kpis', { p_pin: user.pin, p_mes: mesSel }),
-          fetchMetasData(user.pin, mesSel),
+          fetchTendencia(user.id),
+          db.rpc('obtener_insights_kpis', { p_usuario_id: user.id, p_mes: mesSel }),
+          fetchMetasData(user.id, mesSel),
         ]);
         if (kpisResp.error) throw kpisResp.error;
         setKpisRaw(kpisResp.data || []);
@@ -163,7 +163,7 @@ export default function KpisVentaDashboard({ user, onBack }) {
       setLoading(false);
     };
     load();
-  }, [mesSel, user?.pin]);
+  }, [mesSel, user?.id]);
 
   const datos = useMemo(() => calcularDatos(kpisRaw), [kpisRaw]);
 
@@ -416,7 +416,7 @@ async function fetchEmpleados(fechaDesde, fechaHasta) {
   return result;
 }
 
-async function fetchTendencia(pin) {
+async function fetchTendencia(usuarioId) {
   const now = new Date(Date.now() - 6 * 3600 * 1000);
   const out = [];
   for (let i = 4; i >= 0; i--) {
@@ -424,7 +424,7 @@ async function fetchTendencia(pin) {
     const next = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 0));
     const desde = m.toISOString().split('T')[0];
     const hasta = next.toISOString().split('T')[0];
-    const { data } = await db.rpc('obtener_kpis_venta_canal', { p_pin: pin, p_fecha_desde: desde, p_fecha_hasta: hasta });
+    const { data } = await db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: desde, p_fecha_hasta: hasta });
     const sum = { mes: m, mesa: { ord: 0, monto: 0 }, llevar: { ord: 0, monto: 0 }, delivery: { ord: 0, monto: 0 }, drive: { ord: 0, monto: 0 } };
     (data || []).forEach(r => {
       const k = r.canal_venta === 'mesa' ? 'mesa'
@@ -439,7 +439,7 @@ async function fetchTendencia(pin) {
 }
 
 // ── Cálculo de Metas ──
-async function fetchMetasData(pin, mesSelISO) {
+async function fetchMetasData(usuarioId, mesSelISO) {
   const ahora = new Date(Date.now() - 6 * 3600 * 1000);
   const mesActualISO = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), 1)).toISOString().split('T')[0];
   const esMesActual = mesSelISO === mesActualISO;
@@ -469,11 +469,11 @@ async function fetchMetasData(pin, mesSelISO) {
 
   // Queries paralelas
   const [actual, antMismoDias, antCompleto, mesAAtotal, ...promQueries] = await Promise.all([
-    db.rpc('obtener_kpis_venta_canal', { p_pin: pin, p_fecha_desde: mesSelISO, p_fecha_hasta: mesSiguiente(mesSelISO) }),
-    db.rpc('obtener_kpis_venta_canal', { p_pin: pin, p_fecha_desde: mesAntDesde, p_fecha_hasta: mesAntHastaMismoDias }),
-    db.rpc('obtener_kpis_venta_canal', { p_pin: pin, p_fecha_desde: mesAntDesde, p_fecha_hasta: mesAntHastaCompleto }),
-    db.rpc('obtener_kpis_venta_canal', { p_pin: pin, p_fecha_desde: mesAADesde, p_fecha_hasta: mesAAHasta }),
-    ...last3.map(m => db.rpc('obtener_kpis_venta_canal', { p_pin: pin, p_fecha_desde: m.desde, p_fecha_hasta: m.hasta })),
+    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesSelISO, p_fecha_hasta: mesSiguiente(mesSelISO) }),
+    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesAntDesde, p_fecha_hasta: mesAntHastaMismoDias }),
+    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesAntDesde, p_fecha_hasta: mesAntHastaCompleto }),
+    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesAADesde, p_fecha_hasta: mesAAHasta }),
+    ...last3.map(m => db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: m.desde, p_fecha_hasta: m.hasta })),
   ]);
 
   const agruparPorCanalSucursal = (rows) => {
