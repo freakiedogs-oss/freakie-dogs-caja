@@ -41,10 +41,10 @@ export default function TabCobertura({ show = () => {} }) {
     setTimeout(() => map.invalidateSize(), 150);
 
     db.from('sucursales')
-      // Todas las activas, no solo las que reparten: las que hoy tienen el
-      // delivery apagado igual tienen motoristas que marcan turno ahí.
-      .select('id,store_code,nombre,lat,lng,cobertura_geojson,radio_alta_m,tiene_delivery')
-      .eq('activa', true).in('tipo', ['restaurante', 'food_court'])
+      // Solo las que reparten. Si algún día se enciende el delivery de otra
+      // sucursal, aparece acá sola.
+      .select('id,store_code,nombre,lat,lng,cobertura_geojson,radio_alta_m')
+      .eq('tiene_delivery', true).eq('activa', true)
       .then(({ data }) => {
         const list = (data || []).filter(s => s.lat != null && s.lng != null);
         setSucursales(list);
@@ -254,7 +254,7 @@ export default function TabCobertura({ show = () => {} }) {
             background: selId === s.id ? RED : '#222',
             color: selId === s.id ? '#fff' : '#aaa',
           }}>
-            {s.store_code} {s.cobertura_geojson ? '▨' : '○'}{s.tiene_delivery ? '' : ' ⏸'}
+            {s.store_code} {s.cobertura_geojson ? '▨' : '○'}
           </button>
         ))}
       </div>
@@ -279,7 +279,7 @@ export default function TabCobertura({ show = () => {} }) {
       <div ref={mapEl} style={{ height: '62vh', minHeight: 380, borderRadius: 12, overflow: 'hidden', border: '1px solid #2a2a2a' }} />
 
       <div style={{ fontSize: 11, color: '#666', marginTop: 8 }}>
-        ▨ = tiene polígono · ○ = por radio · ⏸ = sin delivery. Mapa © OpenStreetMap.
+        ▨ = tiene polígono · ○ = por radio. Mapa © OpenStreetMap.
       </div>
     </div>
   );
