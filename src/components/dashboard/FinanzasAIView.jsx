@@ -105,6 +105,8 @@ export default function FinanzasAIView({ user = {} }) {
       {loading && <div style={{ color: MUT, padding: 20 }}>Calculando P&L…</div>}
       {err && <div style={{ color: AMBAR, padding: 20 }}>{err}</div>}
 
+      <RangoAnalisis />
+
       {!loading && d && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 14, marginTop: 8 }}>
 
@@ -214,6 +216,116 @@ function Mini({ label, val, col }) {
     <div style={{ flex: 1, background: "#161616", border: `1px solid ${BORDER}`, borderRadius: 10, padding: "10px 12px" }}>
       <div style={{ fontSize: 17, fontWeight: 800, color: col }}>{val}</div>
       <div style={{ fontSize: 10.5, color: MUT, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+    </div>
+  );
+}
+
+// Barras de una serie (EBITDA o Ventas) con línea cero. Maneja 1..90+ barras (día o mes).
+function BarsSerie({ serie, campo }) {
+  if (!serie || !serie.length) return <div style={{ color: MUT, fontSize: 12, padding: 12 }}>Sin datos en el rango.</div>;
+  const W = 720, H = 180, pad = 26, bw = (W - pad * 2) / serie.length;
+  const vals = serie.map((s) => Number(s[campo]) || 0);
+  const max = Math.max(...vals, 0), min = Math.min(...vals, 0), rng = max - min || 1;
+  const y0 = pad + (max / rng) * (H - pad * 2);
+  const step = Math.ceil(serie.length / 12); // máx ~12 etiquetas para no amontonar
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
+      <line x1={pad} y1={y0} x2={W - pad} y2={y0} stroke={BORDER} strokeWidth="1" />
+      {serie.map((s, i) => {
+        const v = Number(s[campo]) || 0;
+        const h = (Math.abs(v) / rng) * (H - pad * 2);
+        const x = pad + i * bw + bw * 0.16, w = bw * 0.68;
+        const y = v >= 0 ? y0 - h : y0;
+        const col = campo === "ventas" ? "#3b82f6" : (v >= 0 ? VERDE : ROJ2);
+        const et = s.etiqueta || "";
+        const lab = et.length > 7 ? et.slice(8) : et.slice(5); // día→DD, mes→MM
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={w} height={Math.max(1, h)} rx="2" fill={col} opacity="0.85" />
+            {i % step === 0 && <text x={x + w / 2} y={H - 8} fontSize="8.5" fill={MUT} textAnchor="middle">{lab}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function Stat({ label, val, col }) {
+  return (
+    <div style={{ minWidth: 96 }}>
+      <div style={{ fontSize: 10, color: MUT, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: col || TXT }}>{val}</div>
+    </div>
+  );
+}
+
+// Análisis por rango de fechas: elegís desde/hasta; ≤2 meses se muestra por día, más se agrupa por mes.
+function RangoAnalisis() {
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const now = new Date();
+  const ini0 = new Date(now.getFullYear(), now.getMonth(), 1);
+  const [desde, setDesde] = useState(fmt(ini0));
+  const [hasta, setHasta] = useState(fmt(now));
+  const [campo, setCampo] = useState("ebitda");
+  const [r, setR] = useState(null);
+  const [ld, setLd] = useState(false);
+
+  const traer = useCallback((d0, d1) => {
+    setLd(true);
+    rpc("fn_ai_fin_serie", { p_desde: d0, p_hasta: d1 })
+      .then((x) => setR(x && x.serie ? x : null))
+      .finally(() => setLd(false));
+  }, []);
+  useEffect(() => { traer(desde, hasta); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const aplicar = (d0, d1) => { setDesde(d0); setHasta(d1); traer(d0, d1); };
+  const preset = (meses, tipo) => {
+    const n = new Date();
+    if (tipo === "mesActual") return aplicar(fmt(new Date(n.getFullYear(), n.getMonth(), 1)), fmt(n));
+    if (tipo === "mesPasado") return aplicar(fmt(new Date(n.getFullYear(), n.getMonth() - 1, 1)), fmt(new Date(n.getFullYear(), n.getMonth(), 0)));
+    if (tipo === "anio") return aplicar(fmt(new Date(n.getFullYear(), 0, 1)), fmt(n));
+    return aplicar(fmt(new Date(n.getFullYear(), n.getMonth() - meses + 1, 1)), fmt(n)); // últimos N meses
+  };
+
+  const t = r?.totales || {};
+  const btn = (activo) => ({ background: activo ? ROJO : CARD, border: `1px solid ${activo ? ROJO : BORDER}`, color: activo ? "#fff" : TXT, borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 12 });
+  const inp = { background: "#171310", color: TXT, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, colorScheme: "dark" };
+
+  return (
+    <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 16, marginTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>📅 Análisis por rango</div>
+        <input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} style={inp} />
+        <span style={{ color: MUT }}>→</span>
+        <input type="date" value={hasta} min={desde} onChange={(e) => setHasta(e.target.value)} style={inp} />
+        <button onClick={() => traer(desde, hasta)} style={{ ...btn(false), fontWeight: 700 }}>Ver</button>
+        <div style={{ width: 1, height: 20, background: BORDER, margin: "0 2px" }} />
+        <button onClick={() => preset(0, "mesActual")} style={btn(false)}>Este mes</button>
+        <button onClick={() => preset(0, "mesPasado")} style={btn(false)}>Mes pasado</button>
+        <button onClick={() => preset(3)} style={btn(false)}>3 meses</button>
+        <button onClick={() => preset(0, "anio")} style={btn(false)}>Este año</button>
+        {r && <span style={{ marginLeft: "auto", fontSize: 11, color: MUT }}>Agrupado por {r.bucket === "mes" ? "mes" : "día"}</span>}
+      </div>
+
+      {ld && <div style={{ color: MUT, padding: 12 }}>Calculando…</div>}
+      {!ld && r && (
+        <>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${BORDER}` }}>
+            <Stat label="Ventas" val={money0(t.ventas)} col="#3b82f6" />
+            <Stat label="COGS" val={money0(t.cogs) + (t.cogs_pct != null ? ` · ${t.cogs_pct}%` : "")} col={ROJO} />
+            <Stat label="Opex" val={money0(t.opex) + (t.opex_pct != null ? ` · ${t.opex_pct}%` : "")} col="#a855f7" />
+            <Stat label="Planilla" val={money0(t.planilla) + (t.planilla_pct != null ? ` · ${t.planilla_pct}%` : "")} col={AMBAR} />
+            <Stat label="EBITDA" val={money0(t.ebitda)} col={(t.ebitda || 0) >= 0 ? VERDE : ROJ2} />
+            <Stat label="Margen" val={pct(t.margen_pct)} col={(t.margen_pct || 0) >= 0 ? VERDE : ROJ2} />
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+            <button onClick={() => setCampo("ebitda")} style={btn(campo === "ebitda")}>EBITDA</button>
+            <button onClick={() => setCampo("ventas")} style={btn(campo === "ventas")}>Ventas</button>
+          </div>
+          <BarsSerie serie={r.serie} campo={campo} />
+          {r.nota && <div style={{ fontSize: 11, color: MUT, fontStyle: "italic", marginTop: 6 }}>{r.nota}</div>}
+        </>
+      )}
     </div>
   );
 }
