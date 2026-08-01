@@ -133,3 +133,50 @@ body { background: #f0efec; color: #1a1416; }
 }
 .jg-reglas b { color: #ffd54a; }
 .jg-fin-sub { font-size: 12.5px; color: #8a8288; text-align: center; margin-top: -3px; }
+
+/* ── Invitación al juego: hot dog corriendo ── */
+.tk-invita {
+  display: block; width: calc(100% - 36px); margin: 4px 18px 0; padding: 0;
+  border: none; border-radius: 14px; overflow: hidden; cursor: pointer;
+  background: linear-gradient(135deg, #2b1055, #7b2d8e 55%, #e0563f);
+  box-shadow: 0 6px 18px rgba(123,45,142,.28);
+  text-align: left; font: inherit; color: #fff;
+}
+.tk-invita:active { transform: scale(.99); }
+
+/* pista con suelo a rayas de feria */
+.tk-invita-pista {
+  position: relative; height: 42px; overflow: hidden;
+  background-image: repeating-linear-gradient(90deg, #e63946 0 14px, #f7f2ea 14px 28px);
+  background-size: 28px 5px; background-repeat: repeat-x; background-position: 0 100%;
+}
+.tk-invita-dog {
+  position: absolute; bottom: 7px; left: -34px; font-size: 26px;
+  animation: tk-corre 4.5s linear infinite;
+}
+.tk-invita-dog.dos { animation-delay: 2.25s; opacity: .45; font-size: 20px; bottom: 9px; }
+@keyframes tk-corre {
+  0%   { transform: translateX(0) translateY(0) }
+  18%  { transform: translateX(22vw) translateY(-13px) }
+  30%  { transform: translateX(36vw) translateY(0) }
+  55%  { transform: translateX(62vw) translateY(-15px) }
+  70%  { transform: translateX(76vw) translateY(0) }
+  100% { transform: translateX(112vw) translateY(0) }
+}
+
+.tk-invita-txt {
+  padding: 10px 14px 12px; font-size: 13px; line-height: 1.45;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.tk-invita-txt b { color: #ffd54a; }
+.tk-invita-cta {
+  margin-left: auto; background: #ffd54a; color: #3a1114;
+  font-size: 12px; font-weight: 800; padding: 5px 11px; border-radius: 999px;
+  animation: tk-late 1.8s ease-in-out infinite;
+}
+@keyframes tk-late { 0%,100% { transform: translateY(0) } 50% { transform: translateY(2px) } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-invita-dog { animation-duration: 14s }
+  .tk-invita-cta { animation: none }
+}

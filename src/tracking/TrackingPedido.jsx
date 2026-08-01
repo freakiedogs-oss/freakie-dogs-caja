@@ -3,7 +3,7 @@
 // Entra por /track?t=<tracking_token>. Se refresca cada 15s.
 // Cuando el pedido va en camino aparece el mapa con el motorista en vivo.
 // ────────────────────────────────────────────────────────────────────
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { db } from '../supabase'
 
 const MapaEnVivo = lazy(() => import('./MapaEnVivo'))
@@ -21,6 +21,7 @@ const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 
 export default function TrackingPedido() {
   const [token] = useState(() => new URLSearchParams(location.search).get('t') || '')
+  const juegoRef = useRef(null)
   const [d, setD] = useState(null)
   const [error, setError] = useState('')
 
@@ -56,6 +57,20 @@ export default function TrackingPedido() {
           <div className="tk-eta">Llega en ~{d.eta_min} min{d.motorista ? ` · ${d.motorista} lo lleva` : ''}</div>
         )}
       </div>
+
+      {/* Invitación al juego: hot dog corriendo a lo ancho */}
+      {!entregado && (
+        <button className="tk-invita" onClick={() => juegoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+          <div className="tk-invita-pista">
+            <span className="tk-invita-dog">🌭</span>
+            <span className="tk-invita-dog dos">🌭</span>
+          </div>
+          <div className="tk-invita-txt">
+            <b>¿Se te hace largo?</b> Hacé correr al hot dog y ganate un combo
+            <span className="tk-invita-cta">Jugar ↓</span>
+          </div>
+        </button>
+      )}
 
       {/* Mapa en vivo mientras va en camino */}
       {enCamino && d.driver_lat && (
@@ -98,9 +113,11 @@ export default function TrackingPedido() {
 
       {/* Juego mientras espera (no cuando ya llegó) */}
       {!entregado && (
-        <Suspense fallback={null}>
-          <Juego trackingToken={token} />
-        </Suspense>
+        <div ref={juegoRef}>
+          <Suspense fallback={null}>
+            <Juego trackingToken={token} />
+          </Suspense>
+        </div>
       )}
 
       {entregado && (
