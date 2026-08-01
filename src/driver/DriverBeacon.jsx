@@ -302,6 +302,7 @@ function useBeacon(yo) {
 function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [ocupado, setOcupado] = useState(null)
   const [cambiarPago, setCambiarPago] = useState(null)
+  const [devolviendo, setDevolviendo] = useState(null)
   const [msg, setMsg] = useState('')
 
   // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
@@ -327,6 +328,28 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: p.id })
       beacon.iniciar()   // empieza a compartir ubicación al salir
       setMsg('🚀 ¡En camino! Estamos compartiendo tu ubicación.')
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
+
+  const MOTIVOS = [
+    'Se me descompuso la moto',
+    'No encontré la dirección',
+    'El cliente no contesta',
+    'El cliente ya no lo quiere',
+    'Otro',
+  ]
+
+  const devolver = async (p, motivo) => {
+    setOcupado(p.id)
+    try {
+      const { error } = await db.rpc('driver_devolver_pedido', {
+        p_empleado_id: yo.id, p_delivery_id: p.id, p_motivo: motivo, p_detalle: null,
+      })
+      if (error) throw error
+      setMsg(`↩️ ${p.numero_orden} devuelto a la sucursal. La central lo va a reasignar.`)
+      setDevolviendo(null)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -454,7 +477,23 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               {/* El método ya viene definido desde el pedido (y confirmado por
                   la central). El motorista solo entrega; corregirlo es la
                   excepción, no el paso obligatorio. */}
-              {cambiarPago === p.id ? (
+              {devolviendo === p.id ? (
+                <>
+                  <div style={{ fontSize: 12.5, color: '#f0f0f0', marginBottom: 3, fontWeight: 700 }}>
+                    ¿Qué pasó?
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#8b807a', marginBottom: 9, lineHeight: 1.45 }}>
+                    El pedido vuelve a la sucursal y la central se lo pasa a otro.
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {MOTIVOS.map(m => (
+                      <button key={m} disabled={ocupado === p.id} onClick={() => devolver(p, m)}
+                              style={S.motivo}>{ocupado === p.id ? '…' : m}</button>
+                    ))}
+                  </div>
+                  <button onClick={() => setDevolviendo(null)} style={S.linkChico}>Cancelar</button>
+                </>
+              ) : cambiarPago === p.id ? (
                 <>
                   <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>¿Con qué te pagó realmente?</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -476,6 +515,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                     {ocupado === p.id ? '…' : '✅ Entregado'}
                   </button>
                   <button onClick={() => setCambiarPago(p.id)} style={S.linkChico}>Me pagó de otra forma</button>
+                  <button onClick={() => setDevolviendo(p.id)} style={S.linkChico}>↩️ No lo pude entregar</button>
                 </>
               )}
             </div>
@@ -565,6 +605,9 @@ const S = {
   teclado: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, margin: '14px 0' },
   tecla: { padding: '16px 0', borderRadius: 14, border: '1px solid #333', background: '#1e1e1e',
            color: '#f0f0f0', fontSize: 22, fontWeight: 600, cursor: 'pointer' },
+  motivo: { width: '100%', padding: '11px 12px', borderRadius: 10, textAlign: 'left',
+            border: '1px solid #3a3230', background: '#1e1a19', color: '#e8e2df',
+            fontSize: 13.5, fontWeight: 600, cursor: 'pointer' },
   resumen: { background: '#1c1512', border: '1px solid #3a2a22', borderRadius: 14, padding: '13px 14px' },
   resumenT: { fontSize: 14, fontWeight: 700, color: '#fbbf24' },
   resumenBtn: { width: '100%', marginTop: 10, padding: '12px 0', borderRadius: 12, border: 'none',

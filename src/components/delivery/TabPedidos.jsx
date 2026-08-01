@@ -456,6 +456,22 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         )}
       </div>
 
+      {/* Volvió de la calle: la central tiene que notarlo. Puede que el
+          problema sea la dirección y no el motorista. */}
+      {p.devolucion && (
+        <div style={{
+          background: '#2a1a12', border: `1px solid ${c.orange}`, borderRadius: 9,
+          padding: '8px 10px', marginTop: 8, fontSize: 11.5, lineHeight: 1.45, color: '#fbbf24',
+        }}>
+          <b>↩️ Devuelto{p.devolucion.veces > 1 ? ` ${p.devolucion.veces} veces` : ''}</b>
+          {' — '}{p.devolucion.motivo}
+          <div style={{ color: '#a08a6a', marginTop: 2 }}>
+            {p.devolucion.motorista} · {new Date(p.devolucion.momento)
+              .toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        </div>
+      )}
+
       {/* Antes de cobrar: de qué sucursal sale. Siempre editable — el sistema
           propone por la ubicación del cliente, pero la central decide. */}
       {p.estado === 'recibida' && (
