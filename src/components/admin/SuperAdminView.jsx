@@ -47,14 +47,57 @@ export default function SuperAdminView({ user }) {
   const [savingRol, setSavingRol] = useState(false);
   const [msgRol, setMsgRol] = useState(null);
 
+  // ── Sesión de administración de PINs ──
+  // El token vive solo en memoria: si recargás la página se vuelve a pedir el
+  // PIN. Así tu PIN no queda guardado en el teléfono ni en el navegador.
+  const [tokenAdmin, setTokenAdmin] = useState('');
+  const [pinAdmin, setPinAdmin] = useState('');
+  const [abriendoSesion, setAbriendoSesion] = useState(false);
+  const [errSesion, setErrSesion] = useState('');
+  const [pinesVistos, setPinesVistos] = useState({});   // { usuarioId: '1234' }
+  const [bitacora, setBitacora] = useState(null);
+
+  const abrirSesionAdmin = async () => {
+    if (pinAdmin.length < 4 || abriendoSesion) return;
+    setAbriendoSesion(true); setErrSesion('');
+    try {
+      const { data, error } = await db.rpc('erp_admin_sesion', { p_pin: pinAdmin });
+      if (error) throw error;
+      setTokenAdmin(data.token);
+      setPinAdmin('');
+    } catch (e) { setErrSesion(e.message || 'No se pudo abrir la sesión'); setPinAdmin(''); }
+    setAbriendoSesion(false);
+  };
+
+  const verPin = async (u) => {
+    try {
+      const { data, error } = await db.rpc('erp_pin_revelar', { p_token: tokenAdmin, p_usuario_id: u.id });
+      if (error) throw error;
+      setPinesVistos(p => ({ ...p, [u.id]: data.pin }));
+      // Se vuelve a tapar solo, para que no quede a la vista en el mostrador
+      setTimeout(() => setPinesVistos(p => { const n = { ...p }; delete n[u.id]; return n; }), 20000);
+    } catch (e) { setMsgUser({ t: 'error', m: e.message }); }
+  };
+
+  const verBitacora = async () => {
+    if (bitacora) { setBitacora(null); return; }
+    try {
+      const { data, error } = await db.rpc('erp_pin_bitacora', { p_token: tokenAdmin, p_limite: 50 });
+      if (error) throw error;
+      setBitacora(data || []);
+    } catch (e) { setMsgUser({ t: 'error', m: e.message }); }
+  };
+
   // ── Cargar usuarios ──
   const cargarUsuarios = useCallback(async () => {
+    if (!tokenAdmin) { setUsuarios([]); return; }
     setLoadingUsers(true);
-    // Por RPC: el PIN ajeno no viaja al navegador
-    const { data } = await db.rpc('erp_usuarios_listar', { p_pin_admin: user?.pin || '' });
+    // Por RPC y con token: ningún PIN viaja al navegador salvo que lo pidas uno por uno
+    const { data, error } = await db.rpc('erp_usuarios_listar', { p_token: tokenAdmin });
+    if (error) { setMsgUser({ t: 'error', m: error.message }); setTokenAdmin(''); }
     setUsuarios(data || []);
     setLoadingUsers(false);
-  }, []);
+  }, [tokenAdmin]);
 
   // ── Cargar permisos ──
   const cargarPermisos = useCallback(async () => {
@@ -116,7 +159,9 @@ export default function SuperAdminView({ user }) {
   // ══════════════════════════════════════════
   const iniciarEdicion = (u) => {
     setEditUser(u.id);
-    setFormUser({ nombre: u.nombre, apellido: u.apellido, pin: u.pin, rol: u.rol, store_code: u.store_code || '', activo: u.activo });
+    // El PIN arranca vacío a propósito: vacío = no se toca. Así editar el
+    // nombre de alguien nunca le cambia el PIN sin querer.
+    setFormUser({ nombre: u.nombre, apellido: u.apellido, pin: '', rol: u.rol, store_code: u.store_code || '', activo: u.activo });
     setCreandoUser(false);
     setMsgUser(null);
   };
@@ -129,19 +174,21 @@ export default function SuperAdminView({ user }) {
   };
 
   const guardarUsuario = async () => {
-    if (!formUser.nombre || !formUser.pin || !formUser.rol) {
-      setMsgUser({ t: 'error', m: 'Nombre, PIN y Rol son obligatorios' }); return;
+    if (!formUser.nombre || !formUser.rol) {
+      setMsgUser({ t: 'error', m: 'Nombre y Rol son obligatorios' }); return;
     }
-    // Verificar PIN duplicado
-    const existente = usuarios.find(u => u.pin === formUser.pin && u.id !== editUser);
-    if (existente) {
-      setMsgUser({ t: 'error', m: `PIN ${formUser.pin} ya está asignado a ${existente.nombre} ${existente.apellido}` }); return;
+    if (creandoUser && !formUser.pin) {
+      setMsgUser({ t: 'error', m: 'Un usuario nuevo necesita PIN' }); return;
+    }
+    if (formUser.pin && !/^\d{4,6}$/.test(formUser.pin)) {
+      setMsgUser({ t: 'error', m: 'El PIN debe ser de 4 a 6 dígitos' }); return;
     }
     setSavingUser(true);
     try {
-      // Crear/editar por RPC: valida en el servidor que quien pide sea admin
+      // Crear/editar por RPC: el servidor valida la sesión de admin, revisa que
+      // el PIN no esté repetido y anota el cambio en la bitácora.
       const { error } = await db.rpc('erp_usuario_guardar', {
-        p_pin_admin: user?.pin || '',
+        p_token: tokenAdmin,
         p_id: creandoUser ? null : editUser,
         p_nombre: formUser.nombre, p_apellido: formUser.apellido || '',
         p_rol: formUser.rol, p_store_code: formUser.store_code || null,
@@ -159,13 +206,63 @@ export default function SuperAdminView({ user }) {
     setSavingUser(false);
   };
 
-  const renderUsuarios = () => (
+  // Sin sesión de admin no se muestra nada: primero tu PIN.
+  const renderPuertaAdmin = () => (
+    <div>
+      <Alert type={msgUser?.t} msg={msgUser?.m} onClose={() => setMsgUser(null)} />
+      <div className="card" style={{ padding: 20, maxWidth: 380, margin: '20px auto', textAlign: 'center' }}>
+        <div style={{ fontSize: 34, marginBottom: 6 }}>🔑</div>
+        <h3 style={{ margin: '0 0 6px', fontSize: 15, color: c.text }}>Administración de PINs</h3>
+        <p style={{ fontSize: 12, color: c.dim, lineHeight: 1.5, margin: '0 0 16px' }}>
+          Ingresá tu PIN para abrir una sesión de 30 minutos. Los PINs del personal
+          están tapados: podés destapar el que necesités uno por uno, y cada vez
+          queda anotado quién lo vio.
+        </p>
+        <input type="password" inputMode="numeric" value={pinAdmin} autoFocus placeholder="Tu PIN"
+          onChange={e => { setErrSesion(''); setPinAdmin(e.target.value.replace(/\D/g, '').slice(0, 6)); }}
+          onKeyDown={e => e.key === 'Enter' && abrirSesionAdmin()}
+          style={{ ...inp, textAlign: 'center', fontSize: 20, letterSpacing: 6, marginBottom: 10 }} />
+        <button onClick={abrirSesionAdmin} disabled={pinAdmin.length < 4 || abriendoSesion}
+          style={{ ...btn(c.blue), width: '100%' }}>
+          {abriendoSesion ? '⏳ Verificando…' : 'Entrar'}
+        </button>
+        {errSesion && <div style={{ color: '#f87171', fontSize: 12, marginTop: 10 }}>⚠️ {errSesion}</div>}
+      </div>
+    </div>
+  );
+
+  const renderUsuarios = () => !tokenAdmin ? renderPuertaAdmin() : (
     <div>
       <Alert type={msgUser?.t} msg={msgUser?.m} onClose={() => setMsgUser(null)} />
 
-      <button onClick={iniciarCreacion} style={{ ...btn(c.blue), marginBottom: 12, width: '100%' }}>
-        ➕ Crear Nuevo Usuario
-      </button>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button onClick={iniciarCreacion} style={{ ...btn(c.blue), flex: 1, minWidth: 150 }}>
+          ➕ Crear Nuevo Usuario
+        </button>
+        <button onClick={verBitacora} style={btn('#555')}>
+          {bitacora ? '✕ Cerrar bitácora' : '📋 Bitácora'}
+        </button>
+        <button onClick={() => { setTokenAdmin(''); setPinesVistos({}); setBitacora(null); setEditUser(null); }}
+          title="Cerrar la sesión de administración de PINs" style={btn('#555')}>🔒 Cerrar</button>
+      </div>
+
+      {bitacora && (
+        <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: c.text, marginBottom: 8 }}>
+            Quién vio o cambió PINs
+          </div>
+          {bitacora.length === 0
+            ? <div style={{ fontSize: 12, color: c.dim }}>Todavía no hay movimientos.</div>
+            : bitacora.map((b, i) => (
+              <div key={i} style={{ fontSize: 11.5, color: c.dim, padding: '4px 0', borderTop: i ? '1px solid #2a2a2a' : undefined }}>
+                <span style={{ color: c.text }}>{b.actor}</span>
+                {' '}{{ vio: 'vio el PIN de', cambio_pin: 'cambió el PIN de', creo: 'creó a', edito: 'editó a' }[b.accion] || b.accion}{' '}
+                <span style={{ color: c.yellow }}>{b.objetivo}</span>
+                {' · '}{new Date(b.momento).toLocaleString('es-SV', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            ))}
+        </div>
+      )}
 
       {/* Formulario edición/creación */}
       {editUser && (
@@ -183,8 +280,10 @@ export default function SuperAdminView({ user }) {
               <input value={formUser.apellido} onChange={e => setFormUser(f => ({ ...f, apellido: e.target.value }))} style={inp} />
             </div>
             <div>
-              <label style={lbl}>PIN * (4-6 dígitos)</label>
-              <input value={formUser.pin} onChange={e => setFormUser(f => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} style={inp} maxLength={6} />
+              <label style={lbl}>{creandoUser ? 'PIN * (4-6 dígitos)' : 'Nuevo PIN (opcional)'}</label>
+              <input value={formUser.pin} maxLength={6} style={inp}
+                placeholder={creandoUser ? '4 a 6 dígitos' : 'Dejalo vacío para no cambiarlo'}
+                onChange={e => setFormUser(f => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} />
             </div>
             <div>
               <label style={lbl}>Rol *</label>
@@ -235,11 +334,23 @@ export default function SuperAdminView({ user }) {
                 {u.nombre} {u.apellido}
               </div>
               <div style={{ fontSize: 11, color: c.dim, marginTop: 2 }}>
-                PIN: {u.pin} · <span style={{ color: c.yellow }}>{u.rol}</span> · {STORES[u.store_code] || u.store_code || '—'}
+                PIN:{' '}
+                {pinesVistos[u.id]
+                  ? <span style={{ color: c.green, fontWeight: 700, letterSpacing: 1.5 }}>{pinesVistos[u.id]}</span>
+                  : <span style={{ letterSpacing: 2 }}>{'•'.repeat(u.pin_largo || 4)}</span>}
+                {' · '}<span style={{ color: c.yellow }}>{u.rol}</span> · {STORES[u.store_code] || u.store_code || '—'}
               </div>
             </div>
-            <div style={{ fontSize: 11, color: u.activo ? c.green : '#f87171' }}>
-              {u.activo ? '✅' : '❌'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button onClick={e => { e.stopPropagation(); verPin(u); }}
+                title="Destapar el PIN por 20 segundos (queda anotado en la bitácora)"
+                style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${c.blue}`,
+                         background: 'none', color: c.blue, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                {pinesVistos[u.id] ? '👁 Visible' : '👁 Ver PIN'}
+              </button>
+              <span style={{ fontSize: 11, color: u.activo ? c.green : '#f87171' }}>
+                {u.activo ? '✅' : '❌'}
+              </span>
             </div>
           </div>
         </div>

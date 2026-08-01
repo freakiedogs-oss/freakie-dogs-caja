@@ -4,7 +4,8 @@ import { n } from '../../config';
 
 // ── Usuarios con acceso de edición ──
 const EDIT_EMAILS = ['joseisart2008@gmail.com'];
-const EDIT_PINS = ['2000', '1000', '4844', '231155']; // Cesar Rodriguez, Jose Isart, Denny Stefany, Super Admin
+// Quién puede editar recetas. Va por rol, no por una lista de PINs en el código.
+const ROLES_EDITAN = ['ejecutivo', 'jefe_casa_matriz', 'superadmin'];
 
 // ── Unidades fijas ──
 const UNIDADES = [
@@ -27,7 +28,7 @@ export default function RecetasView({ user }) {
   const [showNewReceta, setShowNewReceta] = useState(false);
   const [editRend, setEditRend] = useState(null); // { valor, unidad } for inline rendimiento edit
 
-  const canEdit = EDIT_PINS.includes(user?.pin);
+  const canEdit = ROLES_EDITAN.includes(user?.rol);
 
   // ── Cargar datos ──
   const cargar = useCallback(async () => {

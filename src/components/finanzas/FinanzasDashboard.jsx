@@ -26,7 +26,6 @@ class ErrorBoundary extends React.Component {
    ═══════════════════════════════════════════ */
 
 const ROLES = ['ejecutivo', 'admin', 'superadmin']
-const EDIT_PINS = ['1000', '2000', '231155']
 
 // Mapa categorías_gasto.nombre → P&L key (la vista devuelve nombres legibles de categorias_gasto)
 const CATNAME_TO_PL = {

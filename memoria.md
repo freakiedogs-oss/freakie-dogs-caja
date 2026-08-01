@@ -2,6 +2,43 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 1-Ago-2026 — Los PINs salen del navegador; administrarlos ahora deja rastro
+
+**Qué pasaba.** Con la llave pública (`anon`, que va en el bundle y por lo tanto
+es visible para cualquiera) se podía leer la columna `pin` de `usuarios_erp`
+completa, incluidos los de admin, sin haber entrado a ningún lado. Además había
+PINs reales escritos en el código fuente (`EDIT_PINS` en Planilla, Recetas y
+Finanzas) y por lo tanto guardados en git.
+
+**Qué se hizo** (PR #88, sobre lo que ya traía #87):
+- `usuarios_erp`: permiso **por columna**. La columna `pin` no se puede leer;
+  el resto (nombre, rol, sucursal) sí, para no romper las siete pantallas que
+  arman listas de personal. Sin INSERT/UPDATE/DELETE desde el navegador.
+- `erp_login` y `erp_buscar_por_pin` con freno anti-fuerza bruta: 0.4 s por
+  intento fallido (10.000 combinaciones ≈ 1 h) y bloqueo a los 25 fallos en
+  10 min. Tabla `login_intentos`.
+- Administración de PINs por sesión, no por PIN: `erp_admin_sesion` devuelve un
+  token de 30 min (vive solo en memoria, no en localStorage). `erp_pin_revelar`
+  destapa **un** PIN a la vez y lo anota en `usuarios_pin_bitacora` (quién vio
+  el de quién y cuándo); en pantalla se vuelve a tapar a los 20 s.
+- El campo "nuevo PIN" al editar arranca vacío = no se toca. Antes cargaba el
+  PIN enmascarado y guardar tras editar solo el nombre le habría grabado
+  `••••` a esa persona, dejándola sin poder entrar. No alcanzó a pasarle a
+  nadie porque la pantalla ya estaba caída, pero el servidor ahora además
+  rechaza cualquier PIN que no sean 4-6 dígitos.
+- `EDIT_PINS` fuera: quién aprueba planillas o edita recetas va por **rol**.
+- Los KPIs de venta identificaban a la persona por su PIN solo para averiguar
+  su rol; ahora por su `id`, que no es secreto.
+
+**Lo que sigue abierto.** La misma llave pública todavía abre ~24 tablas
+sensibles sin login: planillas (1206 registros de salarios), `bank_*` (5120
+movimientos), `pagos_proveedor` (con DELETE), `empleados` (con UPDATE),
+`pos_cuentas` (8973 ventas). Poner el menú público en otra URL **no** arregla
+esto: la llave es la misma y ya está en internet. El camino es exigir sesión de
+staff reusando `staff_sesiones`, cerrando por capas y verificando qué pantalla
+depende de cada tabla antes de tocarla.
+
+
 ## 2026-08-01 — Stress test 1000 secuenciales + 200 concurrentes: el flujo aguanta
 - **1000 secuenciales** (dentro de transacción con rollback, producción no ve nada): **1000/1000** creados, comandados, al KDS, a lista, entregados y con viaje registrado. **0 errores, 0 inconsistencias** de total/envío/bono, 0 números de orden duplicados. 12.1 ms promedio, **peor caso 155 ms**, ~83 pedidos/seg. (475 con envío gratis, 125 con envío a confirmar, 800 ruteados solos.)
 - **100 concurrentes reales** (curl paralelo contra PostgREST como el menú público, conexiones independientes): **100/100 ok**, 0 errores, **0 números de orden duplicados**, 1.07 s (~93 req/s).

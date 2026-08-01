@@ -3,8 +3,10 @@ import { db } from '../../supabase';
 import { n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
-// PINs ejecutivos: Jose=1000, Cesar=2000, Maria Jose=7700 (RRHH)
-const EDIT_PINS = ['1000', '2000', '7700', '231155'];
+// Quién puede aprobar y marcar pagada una planilla. Antes era una lista de
+// PINs escrita acá mismo (y por lo tanto guardada en git); ahora va por rol,
+// que se administra desde Super Admin sin tocar código.
+const ROLES_APRUEBAN = ['ejecutivo', 'rrhh', 'superadmin'];
 const ALLOWED_ROLES = ['ejecutivo', 'rrhh', 'contador', 'admin', 'superadmin'];
 
 const fmt$ = (val) => {
@@ -79,7 +81,7 @@ export default function PlanillaView({ user }) {
   const [savingAsist, setSavingAsist] = useState(false);
 
   const canView = ALLOWED_ROLES.includes(user?.rol);
-  const canApprove = EDIT_PINS.includes(user?.pin);
+  const canApprove = ROLES_APRUEBAN.includes(user?.rol);
   const canEditAsist = ['ejecutivo', 'rrhh', 'admin'].includes(user?.rol);
 
   // ── Cargar datos base ──
@@ -270,10 +272,16 @@ export default function PlanillaView({ user }) {
   const solicitarPIN = (accion) => { setPinAction(accion); setPinInput(''); setShowPINModal(true); };
 
   const procesarAccion = async () => {
-    if (!EDIT_PINS.includes(pinInput)) { show('PIN incorrecto'); return; }
     if (!selected) return;
     setSaving(true);
     try {
+      // El PIN se valida en el servidor: acá no hay lista de PINs que copiar.
+      const { data: quien, error: errPin } = await db.rpc('erp_login', { p_pin: pinInput });
+      if (errPin) { show(errPin.message || 'No se pudo validar'); setSaving(false); return; }
+      if (!quien) { show('PIN incorrecto'); setSaving(false); return; }
+      if (!ROLES_APRUEBAN.includes(quien.rol)) {
+        show(`${quien.nombre}: ese rol no puede aprobar planillas`); setSaving(false); return;
+      }
       const updates = pinAction === 'aprobar'
         ? { estado: 'aprobada', aprobada_por: user.id }
         : { estado: 'pagada' };

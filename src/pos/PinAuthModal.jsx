@@ -5,7 +5,9 @@ import Icon from './Icon'
 // Roles que pueden AUTORIZAR (eliminar ítems comandados / anular cuenta)
 export const ROLES_AUTORIZA = ['cajero', 'cajera', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 
-// Modal de autorización por PIN. Valida contra usuarios_erp y exige un rol autorizado.
+// Modal de autorización por PIN. El PIN se valida EN EL SERVIDOR (erp_login):
+// el navegador nunca consulta la tabla de usuarios, así el PIN no viaja ni se
+// puede adivinar disparando consultas desde afuera. Exige un rol autorizado.
 // onSuccess recibe el usuario que autorizó { id, nombre, apellido, rol }.
 export default function PinAuthModal({ titulo = 'Autorización requerida', subtitulo, onSuccess, onCancel, roles = ROLES_AUTORIZA }) {
   const [pin, setPin] = useState('')
@@ -18,12 +20,10 @@ export default function PinAuthModal({ titulo = 'Autorización requerida', subti
   const validar = async () => {
     if (pin.length < 4 || checking) return
     setChecking(true); setErr('')
-    const { data, error } = await db
-      .from('usuarios_erp')
-      .select('id, nombre, apellido, rol')
-      .eq('pin', pin).eq('activo', true).maybeSingle()
+    const { data, error } = await db.rpc('erp_login', { p_pin: pin })
     setChecking(false)
-    if (error || !data) { setErr('PIN incorrecto'); setPin(''); return }
+    if (error) { setErr(error.message || 'No se pudo validar'); setPin(''); return }
+    if (!data)  { setErr('PIN incorrecto'); setPin(''); return }
     if (!roles.includes(data.rol)) { setErr(`${data.nombre}: ese rol no puede autorizar`); setPin(''); return }
     onSuccess(data)
   }

@@ -618,13 +618,21 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
   const [editando, setEditando] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Sesión de administración: se pide el PIN al momento de guardar, no antes.
+  // Consultar la lista no necesita nada especial porque los PINs ya no viajan.
+  const [tokenAdmin, setTokenAdmin] = useState('');
+  const [pidePin, setPidePin] = useState(false);
+  const [pinAdmin, setPinAdmin] = useState('');
+
   const cargar = useCallback(async () => {
     setLoading(true);
-    // Los usuarios llegan por RPC: el PIN ajeno nunca viaja al navegador
-    const { data } = await db.rpc('erp_usuarios_listar', { p_pin_admin: user?.pin || '' });
+    // La tabla ya no expone el PIN, así que se puede leer nombre/rol/sucursal directo
+    const { data } = await db.from('usuarios_erp')
+      .select('id,nombre,apellido,rol,store_code,activo')
+      .order('nombre');
     setUsuarios(data || []);
     setLoading(false);
-  }, [user?.pin]);
+  }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -637,14 +645,28 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
 
   const rolesUnicos = [...new Set(usuarios.map(u => u.rol).filter(Boolean))].sort();
 
+  const abrirSesion = async () => {
+    try {
+      const { data, error } = await db.rpc('erp_admin_sesion', { p_pin: pinAdmin });
+      if (error) throw error;
+      setTokenAdmin(data.token); setPidePin(false); setPinAdmin('');
+      guardarCon(data.token);
+    } catch (e) { show(e.message || 'PIN incorrecto', false); setPinAdmin(''); }
+  };
+
   const guardar = async () => {
     if (!editando.store_code || !editando.rol) {
       show('Sucursal y rol son requeridos', false); return;
     }
+    if (!tokenAdmin) { setPidePin(true); return; }
+    guardarCon(tokenAdmin);
+  };
+
+  const guardarCon = async (token) => {
     setSaving(true);
     try {
       const { error } = await db.rpc('erp_usuario_guardar', {
-        p_pin_admin: user?.pin || '', p_id: editando.id,
+        p_token: token, p_id: editando.id,
         p_nombre: editando.nombre, p_apellido: editando.apellido,
         p_rol: editando.rol, p_store_code: editando.store_code,
         p_activo: editando.activo ?? true, p_pin_nuevo: null,
@@ -661,6 +683,28 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
 
   return (
     <div>
+      {/* Confirmación con PIN antes de cambiar el rol o la sucursal de alguien */}
+      {pidePin && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+                      padding: 14, marginBottom: 12 }}>
+          <div style={{ fontSize: 12.5, color: C.text, marginBottom: 8 }}>
+            Confirmá con tu PIN para guardar los cambios de <b>{editando?.nombre}</b>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input type="password" inputMode="numeric" value={pinAdmin} autoFocus placeholder="Tu PIN"
+              onChange={e => setPinAdmin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={e => e.key === 'Enter' && abrirSesion()}
+              style={{ ...inp, width: 120, textAlign: 'center' }} />
+            <button onClick={abrirSesion} disabled={pinAdmin.length < 4}
+              style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: C.accent || '#e63946',
+                       color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Confirmar</button>
+            <button onClick={() => { setPidePin(false); setPinAdmin(''); }}
+              style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: '#333',
+                       color: '#aaa', fontSize: 12, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <select value={filtroSucursal} onChange={e => setFiltroSucursal(e.target.value)}
