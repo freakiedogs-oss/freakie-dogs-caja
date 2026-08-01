@@ -605,22 +605,39 @@ function Checkout({ items, total, onClose, onEnviado }) {
   const [ubic, setUbic] = useState(null)             // {lat,lng}
   const [ruteo, setRuteo] = useState(null)           // resultado de sucursal_mas_cercana
 
+  // Ubicación en dos intentos: primero por red/wifi (rápido y funciona
+  // dentro de centros comerciales), y si falla se reintenta con el GPS
+  // fino. Con un solo intento de alta precisión el navegador cortaba a
+  // los 10 s en interiores y el cliente veía "no pudimos leer tu ubicación".
   const usarMiUbicacion = () => {
-    if (!navigator.geolocation) { setGeoEstado('error'); return }
+    if (!navigator.geolocation) { setGeoEstado('sin_soporte'); return }
     setGeoEstado('buscando')
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude, lng = pos.coords.longitude
-        setUbic({ lat, lng })
-        try {
-          const { data } = await db.rpc('sucursal_mas_cercana', { p_lat: lat, p_lng: lng })
-          setRuteo(data || null)
-        } catch { setRuteo(null) }
-        setGeoEstado('ok')
+
+    const ok = async (pos) => {
+      const lat = pos.coords.latitude, lng = pos.coords.longitude
+      setUbic({ lat, lng })
+      try {
+        const { data } = await db.rpc('sucursal_mas_cercana', { p_lat: lat, p_lng: lng })
+        setRuteo(data || null)
+      } catch { setRuteo(null) }
+      setGeoEstado('ok')
+    }
+
+    const falla = (err) => {
+      // 1 = permiso denegado · 2 = sin señal · 3 = se agotó el tiempo
+      if (err?.code === 1) setGeoEstado('denegado')
+      else if (err?.code === 2) setGeoEstado('sin_senal')
+      else setGeoEstado('lento')
+    }
+
+    // Intento 1: rápido, por red (no exige GPS fino)
+    navigator.geolocation.getCurrentPosition(ok,
+      () => {
+        // Intento 2: GPS fino, con más paciencia
+        navigator.geolocation.getCurrentPosition(ok, falla,
+          { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 })
       },
-      () => setGeoEstado('denegado'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    )
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 })
   }
 
   // Tiendas donde se puede recoger (pickup)
@@ -767,9 +784,14 @@ function Checkout({ items, total, onClose, onEnviado }) {
           {tipo === 'delivery' && (
             <>
               <div className="mp-field">
-                <label>Tu ubicación (para asignar la sucursal)</label>
+                <label>Tu ubicación *</label>
+                <div className="mp-geo-ayuda">
+                  Con tu ubicación asignamos la tienda más cercana y calculamos el envío exacto. Sin ella, te lo confirmamos por WhatsApp.
+                </div>
                 <button type="button" className="mp-geo-btn" onClick={usarMiUbicacion} disabled={geoEstado === 'buscando'}>
-                  {geoEstado === 'buscando' ? '📍 Buscando…' : '📍 Usar mi ubicación'}
+                  {geoEstado === 'buscando' ? '📍 Buscando tu ubicación…'
+                    : geoEstado === 'ok' ? '📍 Cambiar mi ubicación'
+                    : '📍 Usar mi ubicación'}
                 </button>
                 {geoEstado === 'ok' && ruteo?.en_cobertura && (
                   <div className="mp-geo-ok">
@@ -782,10 +804,26 @@ function Checkout({ items, total, onClose, onEnviado }) {
                   </div>
                 )}
                 {geoEstado === 'denegado' && (
-                  <div className="mp-geo-warn">No pudimos leer tu ubicación. Igual podés pedir; te ubicamos por la dirección.</div>
+                  <div className="mp-geo-warn">
+                    Tu teléfono tiene bloqueada la ubicación para esta página.<br />
+                    Tocá el <b>🔒 candado</b> junto a la dirección web → <b>Ubicación</b> → <b>Permitir</b>, y volvé a intentar.
+                    <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                  </div>
                 )}
-                {geoEstado === 'error' && (
-                  <div className="mp-geo-warn">Tu navegador no permite ubicación. Seguí con la dirección.</div>
+                {geoEstado === 'sin_senal' && (
+                  <div className="mp-geo-warn">
+                    No encontramos señal de ubicación. Probá cerca de una ventana o con los datos móviles encendidos.
+                    <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                  </div>
+                )}
+                {geoEstado === 'lento' && (
+                  <div className="mp-geo-warn">
+                    Tardó demasiado en ubicarte. Podés reintentar, o seguir y escribir bien tu dirección — te confirmamos el envío por WhatsApp.
+                    <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                  </div>
+                )}
+                {geoEstado === 'sin_soporte' && (
+                  <div className="mp-geo-warn">Tu navegador no permite compartir ubicación. Escribí bien tu dirección y te confirmamos el envío por WhatsApp.</div>
                 )}
               </div>
               <div className="mp-field">
