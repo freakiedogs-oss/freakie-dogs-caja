@@ -59,16 +59,23 @@ export default function TabCobertura({ show = () => {} }) {
       if (!r || r.lat == null || r.lng == null) return;
       if (r.en_linea === false) { quitar(r.empleado_id); return; }
       const ll = [r.lat, r.lng];
+      // Rodando = mandó GPS hace poco. Si no, es la posición con la que se
+      // marcó de turno: está en la sucursal esperando.
+      const rodando = Date.now() - new Date(r.updated_at).getTime() < 90 * 1000;
+      const etiqueta = `${rodando ? '🛵' : '🅿️'} ${r.nombre || 'Motorista'}` +
+                       (rodando ? ' — en ruta' : ' — en la sucursal');
+      const html = rodando
+        ? '<div style="font-size:24px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))">🛵</div>'
+        : '<div style="font-size:19px;opacity:.75;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))">🅿️</div>';
+
       if (drivers[r.empleado_id]) {
-        drivers[r.empleado_id].setLatLng(ll).setTooltipContent(`🛵 ${r.nombre || 'Motorista'}`);
+        drivers[r.empleado_id].setLatLng(ll).setTooltipContent(etiqueta)
+          .setIcon(L.divIcon({ className: 'fk-driver', html, iconSize: [28, 28], iconAnchor: [14, 14] }));
       } else {
-        const icon = L.divIcon({
-          className: 'fk-driver',
-          html: '<div style="font-size:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">🛵</div>',
-          iconSize: [26, 26], iconAnchor: [13, 13],
-        });
-        drivers[r.empleado_id] = L.marker(ll, { icon, zIndexOffset: 1000 })
-          .addTo(map).bindTooltip(`🛵 ${r.nombre || 'Motorista'}`);
+        drivers[r.empleado_id] = L.marker(ll, {
+          icon: L.divIcon({ className: 'fk-driver', html, iconSize: [28, 28], iconAnchor: [14, 14] }),
+          zIndexOffset: 1000,
+        }).addTo(map).bindTooltip(etiqueta);
       }
       setNDrivers(Object.keys(drivers).length);
     };
@@ -279,7 +286,7 @@ export default function TabCobertura({ show = () => {} }) {
       <div ref={mapEl} style={{ height: '62vh', minHeight: 380, borderRadius: 12, overflow: 'hidden', border: '1px solid #2a2a2a' }} />
 
       <div style={{ fontSize: 11, color: '#666', marginTop: 8 }}>
-        ▨ = tiene polígono · ○ = por radio. Mapa © OpenStreetMap.
+        ▨ = tiene polígono · ○ = por radio · 🛵 en ruta · 🅿️ en la sucursal. Mapa © OpenStreetMap.
       </div>
     </div>
   );
