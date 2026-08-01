@@ -466,10 +466,25 @@ export async function imprimir(tipo, cuenta, opts = {}) {
     catch (e) { return null; }
   })();
   if (_nativo) {
+    // Sin impresora resuelta: NO imprimir a una IP al azar (antes caía a 192.168.1.130 = Venecia).
+    if (!imp || !imp.ip_address) {
+      console.error('[print] app nativa: no se encontró impresora', { storeCode, caja, tipo });
+      return { ok: false, modo: 'app', error: 'No se encontró impresora para esta caja' };
+    }
     try {
-      _nativo.printRaw(imp?.ip_address || '192.168.1.130', imp?.puerto || 9100, builders[tipo]().base64());
-      return { ok: true, modo: 'app' };
-    } catch (e) { console.error('[print] app nativa fallo, cae a modo normal', e); }
+      const b64 = builders[tipo]().base64();
+      // Esperar el resultado REAL del socket (MainActivity llama window.__printResult(ok, err)).
+      const res = await new Promise((resolve) => {
+        let done = false;
+        const fin = (ok, err) => { if (done) return; done = true; try { window.__printResult = null; } catch (_) {} resolve({ ok, err }); };
+        try { window.__printResult = (ok, err) => fin(!!ok, err); } catch (_) {}
+        try { _nativo.printRaw(imp.ip_address, imp.puerto || 9100, b64); }
+        catch (e) { fin(false, e && e.message); }
+        setTimeout(() => fin(false, 'la impresora no respondió (timeout)'), 6000);
+      });
+      if (res.ok) return { ok: true, modo: 'app' };
+      return { ok: false, modo: 'app', error: res.err || 'la impresora no respondió' };
+    } catch (e) { console.error('[print] app nativa fallo', e); return { ok: false, modo: 'app', error: e && e.message }; }
   }
 
   if (modo === 'sistema') { sendSistema(htmlers[tipo](cuenta)); return { ok: true, modo: 'sistema' }; }
