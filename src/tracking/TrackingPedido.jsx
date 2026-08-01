@@ -83,7 +83,13 @@ export default function TrackingPedido() {
         </Suspense>
       )}
       {enCamino && !d.driver_lat && (
-        <div className="tk-mapa-ph">📡 Buscando la señal del motorista…</div>
+        // Sin motorista asignado no hay señal que esperar: decirlo así haría
+        // pensar que algo falla. Solo se promete el mapa cuando hay alguien.
+        <div className="tk-mapa-ph">
+          {d.motorista
+            ? '📡 Buscando la señal del motorista…'
+            : '🛵 Tu pedido ya salió y va en camino'}
+        </div>
       )}
 
       {/* Línea de tiempo */}
