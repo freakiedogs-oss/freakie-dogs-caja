@@ -146,6 +146,31 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
 
+  // Mientras la app de los motoristas no esté al día, la central mueve el
+  // pedido a mano para que el cliente vea en su seguimiento que ya salió.
+  const marcarEnCamino = async (p) => {
+    setOcupado(p.id);
+    try {
+      const { error } = await db.rpc('torre_marcar_en_camino', { p_token: token, p_delivery_id: p.id });
+      if (error) throw error;
+      show(`🛵 ${p.numero_orden} va en camino`);
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
+  const marcarEntregado = async (p) => {
+    setOcupado(p.id);
+    try {
+      const { error } = await db.rpc('torre_marcar_entregado', {
+        p_token: token, p_delivery_id: p.id, p_metodo_cobrado: null });
+      if (error) throw error;
+      show(`✅ ${p.numero_orden} entregado`);
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
   const asignar = async (p) => {
     const mid = asignSel[p.id] || p.motorista_sugerido?.motorista_id;
     if (!mid) { show('⚠️ Elegí un motorista'); return; }
@@ -205,7 +230,8 @@ export default function TabPedidos({ show = () => {} }) {
   const porEstado = (k) => pedidos.filter(p => p.estado === k);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucSel, setSucSel,
-                       asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show };
+                       asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
+                   marcarEnCamino, marcarEntregado };
 
   return (
     <div>
@@ -376,7 +402,8 @@ function Historial({ historial }) {
 
 // ── Tarjeta de pedido ──
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucSel, setSucSel,
-                   asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show }) {
+                   asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
+                   marcarEnCamino, marcarEntregado }) {
   const reloj = useReloj(p.created_at);
   const faltaSucursal = !sucursalDe(p);
   const nItems = Array.isArray(p.items) ? p.items.reduce((s, i) => s + (i.cantidad || 1), 0) : 0;
@@ -444,6 +471,32 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
           <button disabled={ocupado === p.id} onClick={() => asignar(p)}
                   style={{ ...btn(c.blue), width: '100%', fontSize: 12 }}>
             {ocupado === p.id ? '…' : '🛵 Asignar'}
+          </button>
+          <button disabled={ocupado === p.id} onClick={() => marcarEnCamino(p)}
+                  title="Avisale al cliente que ya salió, sin esperar a que el motorista lo marque"
+                  style={{ ...btn('none', c.orange), width: '100%', fontSize: 11.5,
+                           marginTop: 6, border: `1px solid ${c.orange}` }}>
+            Ya salió, sin asignar
+          </button>
+        </div>
+      )}
+
+      {/* Ya asignado pero todavía en el local */}
+      {p.estado === 'lista' && p.motorista_id && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
+          <button disabled={ocupado === p.id} onClick={() => marcarEnCamino(p)}
+                  style={{ ...btn(c.orange), width: '100%', fontSize: 12 }}>
+            {ocupado === p.id ? '…' : '🛵 Ya salió'}
+          </button>
+        </div>
+      )}
+
+      {/* En ruta: cerrarlo desde la central */}
+      {p.estado === 'en_camino' && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
+          <button disabled={ocupado === p.id} onClick={() => marcarEntregado(p)}
+                  style={{ ...btn(c.green, '#04210f'), width: '100%', fontSize: 12 }}>
+            {ocupado === p.id ? '…' : '✅ Entregado'}
           </button>
         </div>
       )}
