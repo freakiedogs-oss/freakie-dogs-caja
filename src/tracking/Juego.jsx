@@ -21,6 +21,7 @@ export default function Juego({ trackingToken, numeroOrden }) {
   const [alias, setAlias] = useState(() => localStorage.getItem(ALIAS_KEY) || '')
   const [personaje, setPersonaje] = useState(() => localStorage.getItem(PERSONAJE_KEY) || 'hotdog')
   const [guardado, setGuardado] = useState(null)
+  const [miMejor, setMiMejor] = useState(() => Number(localStorage.getItem('freakie_juego_mejor') || 0))
   const [tab, setTab] = useState('dia')
   const [lb, setLb] = useState(null)
 
@@ -58,7 +59,11 @@ export default function Juego({ trackingToken, numeroOrden }) {
         p_juego: juegoId, p_tracking_token: trackingToken || null,
       })
       if (error) throw error
-      setGuardado(data)
+      setGuardado({ ...data, score: p.score, record: p.score > miMejor })
+      if (p.score > miMejor) {
+        setMiMejor(p.score)
+        try { localStorage.setItem('freakie_juego_mejor', String(p.score)) } catch { /* modo privado */ }
+      }
       cargarLb()
     } catch (e) { setGuardado({ error: e.message || 'No se pudo guardar' }) }
   }
@@ -126,9 +131,14 @@ export default function Juego({ trackingToken, numeroOrden }) {
                 <div className="jg-err">{guardado.error}</div>
               ) : (
                 <div className="jg-ok">
+                  <div className="jg-resultado">
+                    Esta partida: <b>{guardado.score}</b>
+                    {miMejor > guardado.score && <span className="jg-mejor"> · tu mejor: {miMejor}</span>}
+                  </div>
+                  {guardado.record && <div className="jg-record">🎉 ¡Tu nuevo récord!</div>}
                   {guardado.revision
                     ? '✅ Marca guardada (en revisión)'
-                    : <>🏅 ¡Quedaste <b>#{guardado.posicion_dia}</b> del día!
+                    : <>🏅 Vas <b>#{guardado.posicion_dia}</b> del día
                         {guardado.numero_orden && <><br /><span className="jg-ok-nota">Publicá tu marca con <b>{guardado.numero_orden}</b> y @freakiedogs para reclamar</span></>}
                       </>}
                 </div>
@@ -148,6 +158,7 @@ export default function Juego({ trackingToken, numeroOrden }) {
           <button className={tab === 'dia' ? 'on' : ''} onClick={() => setTab('dia')}>Hoy</button>
           <button className={tab === 'mes' ? 'on' : ''} onClick={() => setTab('mes')}>Este mes</button>
         </div>
+        <div className="jg-lb-nota">Se muestra la mejor marca de cada jugador</div>
         {lista.length === 0 ? (
           <div className="jg-vacio">Todavía nadie jugó {tab === 'dia' ? 'hoy' : 'este mes'} — ¡sé el primero! 🌭</div>
         ) : (
