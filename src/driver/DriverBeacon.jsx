@@ -304,6 +304,23 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [cambiarPago, setCambiarPago] = useState(null)
   const [msg, setMsg] = useState('')
 
+  // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
+  // que salgan a la calle con alguno sin marcar.
+  const recogerTodos = async () => {
+    const listos = pedidos.filter(x => x.estado === 'lista')
+    if (!listos.length) return
+    setOcupado('todos')
+    try {
+      for (const x of listos) {
+        await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: x.id })
+      }
+      beacon.iniciar()
+      setMsg(`🚀 Saliste con ${listos.length} pedidos. Estamos compartiendo tu ubicación.`)
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
+
   const recoger = async (p) => {
     setOcupado(p.id)
     try {
@@ -387,10 +404,27 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
     )
   }
 
+  const listos = pedidos.filter(x => x.estado === 'lista').length
+  const rodando = pedidos.filter(x => x.estado === 'en_camino').length
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Disponibilidad />
       {msg && <div style={S.banner}>{msg}</div>}
+
+      {pedidos.length > 1 && (
+        <div style={S.resumen}>
+          <div style={S.resumenT}>
+            Tenés {pedidos.length} pedidos
+            {rodando > 0 && listos > 0 && ` · ${rodando} en ruta, ${listos} por recoger`}
+          </div>
+          {listos > 1 && (
+            <button disabled={ocupado === 'todos'} onClick={recogerTodos} style={S.resumenBtn}>
+              {ocupado === 'todos' ? 'Marcando…' : `📦 Salgo con los ${listos}`}
+            </button>
+          )}
+        </div>
+      )}
       {pedidos.map(p => (
         <div key={p.id} style={S.pedidoCard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -531,6 +565,10 @@ const S = {
   teclado: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, margin: '14px 0' },
   tecla: { padding: '16px 0', borderRadius: 14, border: '1px solid #333', background: '#1e1e1e',
            color: '#f0f0f0', fontSize: 22, fontWeight: 600, cursor: 'pointer' },
+  resumen: { background: '#1c1512', border: '1px solid #3a2a22', borderRadius: 14, padding: '13px 14px' },
+  resumenT: { fontSize: 14, fontWeight: 700, color: '#fbbf24' },
+  resumenBtn: { width: '100%', marginTop: 10, padding: '12px 0', borderRadius: 12, border: 'none',
+                background: '#E63946', color: '#fff', fontSize: 14.5, fontWeight: 800, cursor: 'pointer' },
   dispo: { padding: '14px', borderRadius: 14, background: '#161616', border: '1px solid #3a2a2a' },
   dispoFila: { display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 },
   dispoBtn: { width: '100%', padding: '13px 0', borderRadius: 12, fontSize: 14.5,
