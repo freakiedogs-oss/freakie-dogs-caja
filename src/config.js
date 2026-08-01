@@ -22,8 +22,9 @@ export const STORES_SHORT = {
   CM001: 'Casa Matriz'
 }
 
-// Sucursales food court: propina 0 por defecto en el POS
-export const STORES_SIN_PROPINA = ['S006', 'S002']
+// Food courts: propina 0% por defecto en TODOS los canales (Metro, Usulután, Plaza Mundo Soyapango).
+// (Los restaurantes llevan 10% por defecto solo en canal Mesa — ver PaymentModal.)
+export const STORES_SIN_PROPINA = ['S006', 'S002', 'S001']
 
 // Food court: asignacion de pager al cobrar (KDS + ticket). La propina 0 la
 // controla STORES_SIN_PROPINA, aparte — S001 tiene pager pero mantiene propina.

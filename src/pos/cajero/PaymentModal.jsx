@@ -24,15 +24,20 @@ const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 
 // Tipo de documento (texto en pos_clientes) → código MH para el receptor
 const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residente': '02', 'Otro': '37' }
 
-export default function PaymentModal({ items, total, storeCode, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
+export default function PaymentModal({ items, total, storeCode, tipo, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
   const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
   const [efectivo, setEfectivo] = useState('')
   const [tarjeta, setTarjeta]   = useState('')
-  // Propina por defecto 10% del total - 0 en food courts (STORES_SIN_PROPINA)
+  // Propina por defecto:
+  //  • Food courts (STORES_SIN_PROPINA): 0% en TODOS los canales.
+  //  • Restaurantes: 10% SOLO en canal Mesa; 0% en los demás canales.
   const sinPropinaDefault = STORES_SIN_PROPINA.includes(storeCode)
   const esFoodCourt = STORES_FOOD_COURT.includes(storeCode)
-  const [propina, setPropina]   = useState(() => (sinPropinaDefault ? '0' : (total > 0 ? (total * 0.10).toFixed(2) : '')))
+  const esMesa = tipo === 'mesa' || tipo === 'local'
+  const [propina, setPropina]   = useState(() => (
+    sinPropinaDefault ? '0' : (esMesa && total > 0 ? (total * 0.10).toFixed(2) : '0')
+  ))
   const [pager, setPager]       = useState(null)
   const [showPagerModal, setShowPagerModal] = useState(false)
   const [printed, setPrinted]   = useState(false)

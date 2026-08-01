@@ -1362,6 +1362,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout }) {
           items={items}
           total={total}
           storeCode={storeCode}
+          tipo={tipo}
           onConfirm={handlePaymentConfirm}
           onComplete={handlePaymentComplete}
           onPrintFactura={handlePrintFactura}
