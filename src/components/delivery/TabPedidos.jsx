@@ -500,7 +500,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       )}
 
       {/* Listo: asignar motorista */}
-      {p.estado === 'lista' && !p.motorista_id && (
+      {['preparando','lista'].includes(p.estado) && !p.motorista_id && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
           {p.motorista_sugerido && (
             <div style={{ fontSize: 11, color: c.dim, marginBottom: 5 }}>
@@ -536,12 +536,17 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
 
       {/* Ya asignado pero todavía en el local: se puede cambiar de motorista
           hasta que salga. Después no, porque el pedido ya va en su moto. */}
-      {p.estado === 'lista' && p.motorista_id && (
+      {['preparando','lista'].includes(p.estado) && p.motorista_id && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
             <span style={{ fontSize: 12, color: c.text, flex: 1, minWidth: 0,
                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               🛵 {p.repartidor_nombre}
+              {(() => {
+                const d = drivers.find(x => x.id === p.motorista_id);
+                return d && d.pedidos > 1
+                  ? <b style={{ color: c.yellow }}> · lleva {d.pedidos}</b> : null;
+              })()}
             </span>
             <button onClick={() => setReasignando(r => r === p.id ? null : p.id)}
                     style={{ ...btn('none', c.dim), border: `1px solid ${c.border}`,
@@ -571,10 +576,16 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
             </>
           )}
 
-          <button disabled={ocupado === p.id} onClick={() => marcarEnCamino(p)}
-                  style={{ ...btn(c.orange), width: '100%', fontSize: 12 }}>
-            {ocupado === p.id ? '…' : '🛵 Ya salió'}
-          </button>
+          {p.estado === 'lista' ? (
+            <button disabled={ocupado === p.id} onClick={() => marcarEnCamino(p)}
+                    style={{ ...btn(c.orange), width: '100%', fontSize: 12 }}>
+              {ocupado === p.id ? '…' : '🛵 Ya salió'}
+            </button>
+          ) : (
+            <div style={{ fontSize: 11.5, color: c.dim, textAlign: 'center' }}>
+              Reservado — sale cuando cocina lo marque listo
+            </div>
+          )}
         </div>
       )}
 

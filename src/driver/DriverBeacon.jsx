@@ -429,6 +429,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
 
   const listos = pedidos.filter(x => x.estado === 'lista').length
   const rodando = pedidos.filter(x => x.estado === 'en_camino').length
+  const cocinando = pedidos.filter(x => !['lista', 'en_camino'].includes(x.estado)).length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -439,7 +440,10 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
         <div style={S.resumen}>
           <div style={S.resumenT}>
             Tenés {pedidos.length} pedidos
-            {rodando > 0 && listos > 0 && ` · ${rodando} en ruta, ${listos} por recoger`}
+          </div>
+          <div style={S.resumenS}>
+            {[rodando && `${rodando} en ruta`, listos && `${listos} por recoger`,
+              cocinando && `${cocinando} todavía en cocina`].filter(Boolean).join(' · ')}
           </div>
           {listos > 1 && (
             <button disabled={ocupado === 'todos'} onClick={recogerTodos} style={S.resumenBtn}>
@@ -452,8 +456,12 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
         <div key={p.id} style={S.pedidoCard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 800 }}>{p.numero_orden}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: p.estado === 'en_camino' ? '#f97316' : '#4ade80' }}>
-              {p.estado === 'en_camino' ? '🚀 En camino' : '📦 Listo para recoger'}
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                           color: p.estado === 'en_camino' ? '#f97316'
+                                : p.estado === 'lista' ? '#4ade80' : '#8b807a' }}>
+              {p.estado === 'en_camino' ? '🚀 En camino'
+                : p.estado === 'lista' ? '📦 Listo para recoger'
+                : '⏳ Todavía en cocina'}
             </span>
           </div>
           <div style={{ fontSize: 15, marginTop: 6 }}>{p.cliente_nombre}</div>
@@ -468,7 +476,11 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
             )}
           </div>
 
-          {p.estado === 'lista' ? (
+          {p.estado !== 'lista' && p.estado !== 'en_camino' ? (
+            <div style={S.esperando}>
+              Este ya es tuyo. Te avisamos apenas cocina lo termine.
+            </div>
+          ) : p.estado === 'lista' ? (
             <button disabled={ocupado === p.id} onClick={() => recoger(p)} style={{ ...S.accion('#E63946'), marginTop: 10 }}>
               {ocupado === p.id ? '…' : '📦 Ya lo recogí — salgo'}
             </button>
@@ -608,6 +620,10 @@ const S = {
   motivo: { width: '100%', padding: '11px 12px', borderRadius: 10, textAlign: 'left',
             border: '1px solid #3a3230', background: '#1e1a19', color: '#e8e2df',
             fontSize: 13.5, fontWeight: 600, cursor: 'pointer' },
+  resumenS: { fontSize: 12.5, color: '#a99f99', marginTop: 3 },
+  esperando: { marginTop: 10, padding: '11px 12px', borderRadius: 10, background: '#1e1a19',
+               border: '1px dashed #3a3230', color: '#8b807a', fontSize: 12.5,
+               textAlign: 'center', lineHeight: 1.45 },
   resumen: { background: '#1c1512', border: '1px solid #3a2a22', borderRadius: 14, padding: '13px 14px' },
   resumenT: { fontSize: 14, fontWeight: 700, color: '#fbbf24' },
   resumenBtn: { width: '100%', marginTop: 10, padding: '12px 0', borderRadius: 12, border: 'none',
