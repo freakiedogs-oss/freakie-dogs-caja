@@ -1,10 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import PantallaDeError from '../components/ui/PantallaDeError'
 import DriverBeacon from './DriverBeacon'
 
 ReactDOM.createRoot(document.getElementById('driver-root')).render(
   <React.StrictMode>
-    <DriverBeacon />
+    <PantallaDeError>
+      <DriverBeacon />
+    </PantallaDeError>
   </React.StrictMode>
 )
 
