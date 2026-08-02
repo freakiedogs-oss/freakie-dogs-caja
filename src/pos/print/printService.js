@@ -206,6 +206,12 @@ export function buildFactura(c, cols = 48) {
     t.feed(1).align('center').ln('Consulta este DTE en:').qr(url, 6);
     t.ln('admin.factura.gob.sv');
   }
+  // Una reimpresión tiene que distinguirse del original: si no, se pueden
+  // entregar dos tickets idénticos del mismo cobro.
+  if (c.reimpresion) {
+    t.feed(1).align('center').bold(true).ln('*** TICKET REIMPRESO ***').bold(false);
+    t.ln('No es un nuevo cobro');
+  }
   t.feed(1).align('center').ln('Gracias por su compra').ln('¡Vuelva pronto!').feed(1);
   t.cut();
   return t;
