@@ -59,7 +59,8 @@ export default function TabPedidos({ show = () => {} }) {
   const [sucursales, setSucursales] = useState([]);
   const [asignSel, setAsignSel] = useState({});
   const [sucSel, setSucSel] = useState({});
-  const [reasignando, setReasignando] = useState(null);   // pedido cuyo motorista se está cambiando
+  const [reasignando, setReasignando] = useState(null);
+  const [cancelando, setCancelando] = useState(null);   // pedido cuyo motorista se está cambiando
   const [cargando, setCargando] = useState(false);
   const [ultima, setUltima] = useState(null);
   const [err, setErr] = useState('');
@@ -157,6 +158,32 @@ export default function TabPedidos({ show = () => {} }) {
 
   // Mientras la app de los motoristas no esté al día, la central mueve el
   // pedido a mano para que el cliente vea en su seguimiento que ya salió.
+  const MOTIVOS_CANCELA = [
+    'Pedido duplicado',
+    'El cliente no pagó',
+    'El cliente se arrepintió',
+    'No llegamos a esa dirección',
+    'Producto agotado',
+    'Otro',
+  ];
+
+  // Sacar del tablero lo que no va a suceder. Queda documentado con motivo
+  // y autor: si ya había entrado a cocina, es comida perdida y hay que saberlo.
+  const cancelar = async (p, motivo) => {
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_cancelar_pedido', {
+        p_token: token, p_delivery_id: p.id, p_motivo: motivo, p_detalle: null });
+      if (error) throw error;
+      show(data?.habia_entrado_a_cocina
+        ? `🚫 ${p.numero_orden} cancelado — ya estaba en cocina, avisá a la sucursal`
+        : `🚫 ${p.numero_orden} cancelado`);
+      setCancelando(null);
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
   const marcarEnCamino = async (p) => {
     setOcupado(p.id);
     try {
@@ -245,7 +272,7 @@ export default function TabPedidos({ show = () => {} }) {
   const porEstado = (k) => pedidos.filter(p => p.estado === k);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
-                       reasignando, setReasignando,
+                       reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado };
 
@@ -587,6 +614,43 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
             </div>
           )}
         </div>
+      )}
+
+      {/* Cancelar: para duplicados, clientes que no pagan, arrepentidos.
+          Solo mientras no se haya entregado. */}
+      {p.estado !== 'entregada' && (
+        cancelando === p.id ? (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
+            <div style={{ fontSize: 11.5, color: c.red, fontWeight: 700, marginBottom: 3 }}>
+              ¿Por qué se cancela?
+            </div>
+            {p.pos_cuenta_id && (
+              <div style={{ fontSize: 11, color: c.yellow, marginBottom: 6, lineHeight: 1.4 }}>
+                ⚠️ Ya está en cocina. Avisale a la sucursal para que no lo preparen.
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {MOTIVOS_CANCELA.map(m => (
+                <button key={m} disabled={ocupado === p.id} onClick={() => cancelar(p, m)}
+                        style={{ ...btn('none', c.text), border: `1px solid ${c.border}`,
+                                 fontSize: 11.5, textAlign: 'left', padding: '8px 10px' }}>
+                  {ocupado === p.id ? '…' : m}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setCancelando(null)}
+                    style={{ ...btn('none', c.dim), fontSize: 11, marginTop: 6, width: '100%' }}>
+              Dejar así
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setCancelando(p.id)}
+                  title="Sacar este pedido del tablero"
+                  style={{ ...btn('none', c.dim), border: `1px solid ${c.border}`,
+                           fontSize: 11, marginTop: 8, width: '100%' }}>
+            🚫 Cancelar pedido
+          </button>
+        )
       )}
 
       {/* En ruta: cerrarlo desde la central */}

@@ -321,6 +321,7 @@ export default function KDSScreen({ user, onBack }) {
           mesa_ref:       row.mesa_ref,
           cliente:        row.cliente,
           total:          row.total,
+          nota_pedido:    row.nota_pedido,
           mesero:         row.mesero,
           pager:          row.pager,
           recibido_at:    row.recibido_at,
@@ -627,6 +628,11 @@ export default function KDSScreen({ user, onBack }) {
                             )}
                           </span>
                         )}
+                        {/* Nota del pedido completo (la escribe el cliente en el
+                            menú web). Va una sola vez, no por ítem. */}
+                        {comanda.nota_pedido && (
+                          <span className="kds-card-notaped">📌 {comanda.nota_pedido}</span>
+                        )}
                       </div>
                       <span className="kds-card-timer" style={{ color: timer.color }}>
                         {timer.text}
@@ -742,6 +748,7 @@ export default function KDSScreen({ user, onBack }) {
                       canal:          row.canal || 'mesa',
                     cliente:        row.cliente,
                     total:          row.total,
+                    nota_pedido:    row.nota_pedido,
                       mesa_ref:       row.mesa_ref,
                       mesero:         row.mesero,
           pager:          row.pager,
