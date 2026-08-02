@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2-Ago-2026 — Gráfico de tendencia por sucursal en Ventas Freakies — PR #124
+
+Jose pidió, en el dashboard **Ventas Freakies** (`src/components/dashboard/VentasFreakies.jsx`), un gráfico para ver **el comportamiento de la venta de cada sucursal en el tiempo** como líneas.
+
+**Qué se agregó:** sección "Tendencia de venta por sucursal" (gráfico de líneas SVG, una línea por sucursal, color estable por `store_code`).
+- **Aparece solo si el rango es de más de 1 día** (`rangoDias > 1`).
+- **Toggle Día / Semana / Mes.** Semana = lunes ISO; Mes = `YYYY-MM`. El botón **Mes se habilita solo con rangos de más de 60 días** (`rangoDias > 60`); si no, cae a Semana.
+- Eje X cubre todos los períodos del rango (los sin venta = 0, para ver arranques de sucursales migradas). Puntos con tooltip cuando hay ≤31 buckets.
+
+**Por qué así:** todo se calcula **en el cliente** desde el array `ventas` ya cargado (`dia`/`store`/`venta`); no toca queries, DB ni facturación. SVG sin dependencias nuevas, mismo patrón que `HourArea`. Respeta el ruteo Quanto/POS existente.
+
+**Coordinación:** se detectó que el working tree estaba en la rama de otra sesión (`fix/lourdes-corte-por-cajero`, PR #123); el cambio se reencauzó a rama propia `feat/tendencia-ventas-sucursal` desde `main` para no contaminar ese PR. `npm run build` ✅.
+
 ## 2-Ago-2026 — Corte X/Z se enganchaba por caja y no por cajero (bug Lourdes) — PR #123
 
 Wendy reportó que en Lourdes el **Corte X** salía **idéntico** para dos personas (mismas cifras $378.05 / 44 cuentas / fondo $100 / abrió 11:02), cambiando solo el **nombre** del encabezado. Lourdes es **multi-caja** (`general` 🧾 $100 / `drive` 🚗 $20). **No había pérdida de datos**: en `pos_turnos` los dos turnos estaban bien y separados (Jocelyn/general $378.05; Keyri/drive $39.96).
