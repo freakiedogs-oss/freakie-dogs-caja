@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 2-Ago-2026 — Corte X/Z se enganchaba por caja y no por cajero (bug Lourdes) — PR #123
+
+Wendy reportó que en Lourdes el **Corte X** salía **idéntico** para dos personas (mismas cifras $378.05 / 44 cuentas / fondo $100 / abrió 11:02), cambiando solo el **nombre** del encabezado. Lourdes es **multi-caja** (`general` 🧾 $100 / `drive` 🚗 $20). **No había pérdida de datos**: en `pos_turnos` los dos turnos estaban bien y separados (Jocelyn/general $378.05; Keyri/drive $39.96).
+
+**Causa:** `CierreTurno.loadTurno` resolvía el turno abierto solo por `store_code + caja`, nunca por el cajero logueado. Si dos entraban a la misma caja (Keyri eligió "General" en el selector de login en vez de "Drive"), veían el mismo corte; el nombre salía del usuario logueado. Riesgo: cerrar el turno ajeno.
+
+**Fix (PR #123):**
+1. `CierreTurno` filtra el turno por `cajero_id` — prop `ownTurnoOnly` (default `true`, POS). `CorteXZView` pasa `ownTurnoOnly={false}` para que un supervisor siga abriendo el corte de una caja desde el ERP sin romperse.
+2. `POSApp/CajaSelector`: al elegir una caja ya abierta por otra persona, avisa con el nombre del dueño antes de entrar.
+3. Encabezado del corte muestra el **dueño del turno** + rótulo de caja (🧾 General / 🚗 Drive).
+
+Solo afecta Lourdes (S003, única con 2 cajas). `npm run build` ✅. Rama `fix/lourdes-corte-por-cajero`.
+
 ## 1-Ago-2026 — Auditoría: la llave pública ejecutaba SQL arbitrario y leía el certificado de Hacienda
 
 **Lo peor, ya cerrado.** Con la `anon key` (pública, va en el bundle) se podía llamar:

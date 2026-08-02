@@ -87,6 +87,27 @@ const CAJA_LABELS = {
 // (todas las demás) auto-seleccionan y siguen directo (cero cambio para ellas).
 function CajaSelector({ user, onSelect, onLogout }) {
   const [cajas, setCajas] = useState(null) // null = cargando
+  const [busy, setBusy]   = useState(null) // caja que se está verificando
+  const [warn, setWarn]   = useState(null) // { caja, nombre } → caja ya abierta por OTRO cajero
+
+  // Al elegir caja: si ya tiene un turno abierto de OTRA persona, avisar antes de entrar
+  // (evita que un cajero termine viendo/cerrando el corte de otro — bug Lourdes).
+  const pick = async (caja) => {
+    setBusy(caja)
+    try {
+      const { data: t } = await db.from('pos_turnos').select('cajero_id')
+        .eq('store_code', user.store_code).eq('caja', caja).eq('nivel', 'cajero').eq('estado', 'abierto')
+        .limit(1).maybeSingle()
+      if (t && t.cajero_id && t.cajero_id !== user.id) {
+        const { data: dueno } = await db.from('usuarios_erp').select('nombre').eq('id', t.cajero_id).maybeSingle()
+        setBusy(null)
+        setWarn({ caja, nombre: dueno?.nombre || 'otro cajero' })
+        return
+      }
+    } catch { /* si falla el chequeo, no bloqueamos: seguimos al corte */ }
+    setBusy(null)
+    onSelect(caja)
+  }
 
   useEffect(() => {
     let alive = true
@@ -118,16 +139,34 @@ function CajaSelector({ user, onSelect, onLogout }) {
         {cajas.map(({ caja, nombre }) => {
           const meta = CAJA_LABELS[caja] || { icon: '🗄️', label: caja }
           return (
-            <button key={caja} onClick={() => onSelect(caja)}
-              style={{ padding: '16px 20px', border: '1px solid #2a2a32', borderRadius: 12, background: '#1c1c22', color: '#e8e6ef', fontSize: 16, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s' }}
-              onMouseOver={e => { e.currentTarget.style.background = '#1e1e26'; e.currentTarget.style.borderColor = '#E62329' }}
+            <button key={caja} onClick={() => pick(caja)} disabled={!!busy}
+              style={{ padding: '16px 20px', border: '1px solid #2a2a32', borderRadius: 12, background: '#1c1c22', color: '#e8e6ef', fontSize: 16, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: busy && busy !== caja ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s' }}
+              onMouseOver={e => { if (!busy) { e.currentTarget.style.background = '#1e1e26'; e.currentTarget.style.borderColor = '#E62329' } }}
               onMouseOut={e => { e.currentTarget.style.background = '#1c1c22'; e.currentTarget.style.borderColor = '#2a2a32' }}>
               <span style={{ fontSize: 22 }}>{meta.icon}</span>
-              <span style={{ flex: 1, textAlign: 'left' }}>{meta.label}<div style={{ color: '#8b8997', fontSize: 11, fontWeight: 400 }}>{nombre}</div></span>
+              <span style={{ flex: 1, textAlign: 'left' }}>{meta.label}<div style={{ color: '#8b8997', fontSize: 11, fontWeight: 400 }}>{busy === caja ? 'Verificando…' : nombre}</div></span>
             </button>
           )
         })}
       </div>
+
+      {warn && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'grid', placeItems: 'center', padding: 24, zIndex: 50 }}>
+          <div style={{ background: '#1c1c22', border: '1px solid #4a3f10', borderRadius: 14, padding: 24, maxWidth: 340, width: '100%', textAlign: 'center' }}>
+            <div style={{ fontSize: 34, marginBottom: 8 }}>⚠️</div>
+            <div style={{ fontWeight: 800, fontSize: 17, color: '#FFD900', marginBottom: 8 }}>Caja ya abierta</div>
+            <div style={{ color: '#c9c6d1', fontSize: 14, lineHeight: 1.5, marginBottom: 20 }}>
+              La <b>{(CAJA_LABELS[warn.caja] || { label: warn.caja }).label}</b> ya la abrió <b>{warn.nombre?.split(' ')[0]}</b>. Si no sos vos, elegí tu propia caja para no cerrar el corte de otra persona.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => setWarn(null)}
+                style={{ padding: '13px', borderRadius: 10, border: 'none', background: '#E62329', color: '#fff', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>Elegir otra caja</button>
+              <button onClick={() => { const c = warn.caja; setWarn(null); onSelect(c) }}
+                style={{ padding: '11px', borderRadius: 10, border: '1px solid #2a2a32', background: 'transparent', color: '#8b8997', fontSize: 13, cursor: 'pointer' }}>Soy {warn.nombre?.split(' ')[0]}, entrar de todos modos</button>
+            </div>
+          </div>
+        </div>
+      )}
       <button onClick={onLogout} style={{ marginTop: 32, padding: '10px 24px', border: '1px solid #2a2a32', borderRadius: 8, background: 'transparent', color: '#8b8997', fontSize: 13, cursor: 'pointer' }}>← Cambiar usuario</button>
     </div>
   )
