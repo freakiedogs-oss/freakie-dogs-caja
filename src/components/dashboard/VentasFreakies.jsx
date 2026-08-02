@@ -79,6 +79,17 @@ const METODO_COLOR = { Efectivo: '#4ade80', Tarjeta: '#60a5fa', Transferencia: '
 
 const DOW = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
+// ── Color por sucursal (estable por store_code) para el gráfico de tendencia ──
+const STORE_COLOR = {
+  S006: '#e63946', M001: '#f59e0b', S001: '#4ade80',
+  S002: '#60a5fa', S003: '#a78bfa', S004: '#22d3ee',
+};
+const STORE_FALLBACK = ['#ec4899', '#14b8a6', '#facc15', '#fb923c', '#38bdf8', '#f472b6'];
+const storeColor = (store, i) => STORE_COLOR[store] || STORE_FALLBACK[i % STORE_FALLBACK.length];
+
+// Granularidades del gráfico de tendencia
+const TABS_GRAN = [{ k: 'dia', label: 'Día' }, { k: 'semana', label: 'Semana' }, { k: 'mes', label: 'Mes' }];
+
 const fmtUSD = (v) => '$' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtUSD0 = (v) => '$' + Math.round(Number(v) || 0).toLocaleString('en-US');
 const fmtN = (v) => (Number(v) || 0).toLocaleString('en-US');
@@ -88,6 +99,30 @@ const hoyISO = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().split(
 const addDays = (iso, nd) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + nd); return d.toISOString().split('T')[0]; };
 const fmtDMY = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return d.toLocaleDateString('es-SV', { day: '2-digit', month: 'short', year: 'numeric' }); };
 const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) + 1;
+
+// ── Buckets de tiempo para la tendencia (día / semana / mes) ──
+// Semana = lunes de esa semana (ISO). Mes = YYYY-MM.
+const weekStartISO = (iso) => {
+  const d = new Date(iso + 'T12:00:00');
+  const dow = d.getDay();                 // 0=Dom … 6=Sáb
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow)); // → lunes
+  return d.toISOString().split('T')[0];
+};
+const periodKey = (iso, gran) =>
+  gran === 'mes' ? iso.slice(0, 7) : gran === 'semana' ? weekStartISO(iso) : iso;
+const bucketLabel = (k, gran) => {
+  if (gran === 'mes') return new Date(k + '-01T12:00:00').toLocaleDateString('es-SV', { month: 'short', year: '2-digit' });
+  return new Date(k + 'T12:00:00').toLocaleDateString('es-SV', { day: '2-digit', month: 'short' });
+};
+// Lista ordenada de buckets que cubren [desde, hasta] (incluye períodos sin venta → se ven como 0)
+function buildBuckets(desde, hasta, gran) {
+  const keys = [], seen = new Set();
+  for (let cur = desde; cur <= hasta; cur = addDays(cur, 1)) {
+    const k = periodKey(cur, gran);
+    if (!seen.has(k)) { seen.add(k); keys.push(k); }
+  }
+  return keys;
+}
 
 // ── Resolver segmentos de fuente para una sucursal en el rango [desde,hasta] ──
 function segmentsFor(store, desde, hasta) {
@@ -227,6 +262,7 @@ export default function VentasFreakies({ user, onBack }) {
   const [desde, setDesde] = useState(hoyISO());
   const [hasta, setHasta] = useState(hoyISO());
   const [sucursalSel, setSucursalSel] = useState(sucDefault);
+  const [granularidad, setGranularidad] = useState('dia'); // 'dia' | 'semana' | 'mes'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [ventas, setVentas] = useState([]);
@@ -352,6 +388,27 @@ export default function VentasFreakies({ user, onBack }) {
 
   const rangoDias = diasEntre(desde, hasta);
 
+  // Tendencia de venta por sucursal (líneas). Solo con más de 1 día.
+  // Mes se habilita con más de 60 días; si no, cae a semana.
+  const mesOK = rangoDias > 60;
+  const granEff = granularidad === 'mes' && !mesOK ? 'semana' : granularidad;
+  const tendencia = useMemo(() => {
+    if (rangoDias <= 1) return null;
+    const buckets = buildBuckets(desde, hasta, granEff);
+    const idx = new Map(buckets.map((k, i) => [k, i]));
+    const perStore = {};
+    for (const v of ventas) {
+      const bi = idx.get(periodKey(v.dia, granEff));
+      if (bi === undefined) continue;
+      (perStore[v.store] = perStore[v.store] || new Array(buckets.length).fill(0))[bi] += v.venta;
+    }
+    const series = Object.entries(perStore)
+      .map(([store, vals]) => ({ store, vals, total: vals.reduce((a, b) => a + b, 0) }))
+      .sort((a, b) => b.total - a.total);
+    const max = Math.max(1, ...series.flatMap((s) => s.vals));
+    return { buckets, series, max };
+  }, [ventas, desde, hasta, granEff, rangoDias]);
+
   // Nota de fuente para la selección actual
   const nota = (() => {
     if (sucursalSel === 'todas')
@@ -473,6 +530,37 @@ export default function VentasFreakies({ user, onBack }) {
               );
             })() : <Empty />}
           </Card>
+
+          {/* Tendencia de venta por sucursal — solo con más de 1 día */}
+          {rangoDias > 1 && tendencia && tendencia.series.length > 0 && (
+            <Card title="Tendencia de venta por sucursal">
+              <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                {TABS_GRAN.map((t) => {
+                  const disabled = t.k === 'mes' && !mesOK;
+                  const active = granEff === t.k;
+                  return (
+                    <button key={t.k} disabled={disabled} onClick={() => setGranularidad(t.k)}
+                      title={disabled ? 'Se habilita con rangos de más de 60 días' : ''}
+                      style={{
+                        background: active ? C.red : '#1a1a1a',
+                        border: `1px solid ${active ? C.red : '#333'}`,
+                        color: disabled ? '#555' : active ? '#fff' : '#ccc',
+                        padding: '5px 14px', borderRadius: 6, fontSize: 12.5, fontWeight: 700,
+                        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
+                      }}>{t.label}</button>
+                  );
+                })}
+                <span style={{ fontSize: 11, color: C.muted, marginLeft: 4 }}>
+                  {rangoDias} días · {tendencia.buckets.length} {granEff === 'mes' ? 'meses' : granEff === 'semana' ? 'semanas' : 'días'}
+                </span>
+              </div>
+              <LineChartMulti data={tendencia} gran={granEff} nombreSuc={nombreSuc} />
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 12, lineHeight: 1.5 }}>
+                Cada línea es una sucursal: su venta total por {granEff === 'mes' ? 'mes' : granEff === 'semana' ? 'semana' : 'día'}.
+                Cambiá la granularidad con Día / Semana / Mes. El toggle mensual se habilita con rangos de más de 60 días.
+              </div>
+            </Card>
+          )}
 
           {/* Venta por hora */}
           <Card title="Venta total por hora">
@@ -616,6 +704,60 @@ function Card({ title, children }) {
 }
 function Empty() {
   return <div style={{ color: '#555', padding: '28px 0', textAlign: 'center', fontSize: 13 }}>Sin ventas en el rango</div>;
+}
+
+// SVG multi-línea — tendencia de venta por sucursal (sin dependencias)
+function LineChartMulti({ data, gran, nombreSuc }) {
+  const { buckets, series, max } = data;
+  const W = 1000, H = 300, padL = 54, padR = 14, padT = 14, padB = 40;
+  const n = buckets.length;
+  const xFor = (i) => padL + (n <= 1 ? (W - padL - padR) / 2 : (i * (W - padL - padR)) / (n - 1));
+  const yFor = (v) => padT + (H - padT - padB) * (1 - v / max);
+  const ticks = 4;
+  const labelEvery = Math.max(1, Math.ceil(n / 8));
+  const showDots = n <= 31;
+  return (
+    <div>
+      {/* Leyenda de sucursales */}
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
+        {series.map((s, i) => (
+          <span key={s.store} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#aaa' }}>
+            <span style={{ width: 14, height: 3, borderRadius: 2, background: storeColor(s.store, i) }} />
+            {s.store} · {nombreSuc(s.store)} <span style={{ color: '#666' }}>{fmtUSD0(s.total)}</span>
+          </span>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="300" style={{ display: 'block' }}>
+        {Array.from({ length: ticks + 1 }).map((_, i) => {
+          const v = (max * i) / ticks, y = yFor(v);
+          return (
+            <g key={i}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#ffffff10" strokeWidth="1" />
+              <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="11" fill="#666">{fmtUSD0(v)}</text>
+            </g>
+          );
+        })}
+        {buckets.map((k, i) => (i % labelEvery === 0 || i === n - 1) ? (
+          <text key={i} x={xFor(i)} y={H - 12} textAnchor="middle" fontSize="10.5" fill="#666">{bucketLabel(k, gran)}</text>
+        ) : null)}
+        {series.map((s, si) => {
+          const col = storeColor(s.store, si);
+          const pts = s.vals.map((v, i) => `${xFor(i)},${yFor(v)}`);
+          return (
+            <g key={s.store}>
+              <path d={`M ${pts.join(' L ')}`} fill="none" stroke={col} strokeWidth="2.5"
+                strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              {showDots && s.vals.map((v, i) => (
+                <circle key={i} cx={xFor(i)} cy={yFor(v)} r="3" fill={col}>
+                  <title>{`${s.store} · ${nombreSuc(s.store)} · ${bucketLabel(buckets[i], gran)}: ${fmtUSD(v)}`}</title>
+                </circle>
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
 }
 
 // SVG area chart — venta por hora (sin dependencias)
