@@ -1,37 +1,76 @@
-// Freakie Dogs ERP — Service Worker v9
-// IMPORTANTE: incrementar versión en cada deploy para invalidar cache
-const CACHE = 'fd-erp-v9';
+// Freakie Dogs ERP — Service Worker v10
+//
+// Por qué cambió: la versión anterior cacheaba TODO, incluido el index.html.
+// Al desplegar, los archivos de la app cambian de nombre; si el teléfono se
+// quedaba con el index viejo pedía archivos que ya no existen y la app abría
+// en negro. Pasaba sobre todo en celular, donde la señal falla y el fallback
+// a cache se dispara seguido.
+//
+// Regla nueva:
+//   · El HTML no se sirve de cache mientras haya red: es lo que decide qué
+//     archivos carga la app, así que tiene que ser siempre el actual.
+//   · Los archivos de /assets/ llevan hash en el nombre — cambian en cada
+//     build — así que cachearlos no puede dejar nada viejo.
+//   · Las llamadas a la base nunca pasan por acá.
+const CACHE = 'fd-erp-v10';
 
-// Al instalar: cachea el shell de la app
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(['/', '/index.html']))
-  );
-  self.skipWaiting();
-});
+self.addEventListener('install', () => self.skipWaiting());
 
-// Al activar: limpia caches viejos
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch: network-first (siempre datos frescos de Supabase), fallback a cache
-self.addEventListener('fetch', e => {
-  // Para peticiones a Supabase siempre usa red directamente
-  if (e.request.url.includes('supabase.co')) return;
+const esNavegacion = (req) =>
+  req.mode === 'navigate' ||
+  (req.method === 'GET' && (req.headers.get('accept') || '').includes('text/html'));
 
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  // Datos: derecho a la red, sin intermediarios
+  if (url.pathname.startsWith('/sb') || url.hostname.endsWith('supabase.co')) return;
+
+  // HTML: red primero; el guardado solo si de plano no hay red
+  if (esNavegacion(req)) {
+    e.respondWith(
+      fetch(req)
+        .then(res => {
+          const copia = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copia));
+          return res;
+        })
+        .catch(() => caches.match(req).then(r => r || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // Archivos con hash: se pueden servir de cache sin riesgo de quedar viejos
   e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
+    caches.match(req).then(guardado =>
+      guardado || fetch(req).then(res => {
+        if (res.ok && url.pathname.startsWith('/assets/')) {
+          const copia = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copia));
+        }
         return res;
       })
-      .catch(() => caches.match(e.request))
+    )
   );
+});
+
+// La app pide limpiar todo cuando detecta que quedó con archivos viejos
+// (ver el manejador de errores en main.jsx).
+self.addEventListener('message', e => {
+  if (e.data === 'limpiar-cache') {
+    caches.keys()
+      .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.registration.unregister())
+      .then(() => e.source && e.source.postMessage('cache-limpia'));
+  }
 });
