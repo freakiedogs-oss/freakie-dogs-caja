@@ -743,13 +743,45 @@ button { font-family: inherit; }
   border-top: 1px solid #f0f0f0;
 }
 .mp-grupo.error .mp-grupo-nombre { color: #E63946; }
+/* Cabecera plegable. Los grupos arrancan cerrados: en combos de varios hot
+   dogs la lista era larguísima y la gente se perdía scroleando. Cerrado, el
+   resumen dice qué se eligió o qué falta, así se revisa sin abrir nada. */
 .mp-grupo-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 2px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
+.mp-grupo-check {
+  flex: 0 0 22px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid #d8d3ce;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; color: #b9b2ab;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.mp-grupo.abierto .mp-grupo-check { border-color: #e63946; color: #e63946; }
+.mp-grupo-head[aria-expanded="false"] .mp-grupo-check:not(:empty) { }
+.mp-grupo-textos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mp-grupo-resumen {
+  font-size: 12.5px; color: #8b837c; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-grupo-flecha { flex: 0 0 auto; color: #b9b2ab; font-size: 11px; }
+.mp-grupo.error .mp-grupo-check { border-color: #e63946; background: #fdecee; color: #b52a37; }
+.mp-grupo.error .mp-grupo-resumen { color: #b52a37; font-weight: 600; }
+/* Cuando ya se eligió, el círculo se llena: se ve de un vistazo qué falta */
+.mp-grupo-check:not(:empty) { background: #16a34a; border-color: #16a34a; color: #fff; }
+.mp-grupo.error .mp-grupo-check:empty { background: #fdecee; }
+.mp-opciones[hidden] { display: none; }
 .mp-grupo-nombre { font-size: 15px; font-weight: 700; color: #222; }
 .mp-grupo-badge {
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;

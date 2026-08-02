@@ -406,11 +406,23 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   // sel: { [grupoId]: [ {id,nombre,precio_extra}, ... ] }
   const [sel, setSel] = useState({})
   const [intento, setIntento] = useState(false)
+  // Acordeón: un grupo abierto a la vez. Arrancan TODOS cerrados — con combos
+  // de varios hot dogs la lista se hacía larguísima y la gente se perdía
+  // scroleando sin saber qué le faltaba.
+  const [grupoAbierto, setGrupoAbierto] = useState(null)
 
   const grupos = producto.grupos || []
   const esUnico = (g) => (g.max === 1) || g.tipo === 'unico' || g.tipo === 'single'
   const requerido = (g) => g.obligatorio || (Number(g.min) || 0) > 0
   const minDe = (g) => g.obligatorio ? Math.max(1, Number(g.min) || 0) : (Number(g.min) || 0)
+
+  // El siguiente grupo al que conviene llevar a la persona: el primero que
+  // todavía no cumple su mínimo.
+  const siguientePendiente = (desdeId) => {
+    const i = grupos.findIndex(g => g.id === desdeId)
+    const resto = [...grupos.slice(i + 1), ...grupos.slice(0, Math.max(0, i))]
+    return resto.find(g => (sel[g.id]?.length || 0) < minDe(g))?.id ?? null
+  }
 
   const toggle = (g, op) => {
     setSel(prev => {
@@ -427,6 +439,11 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
       }
       return { ...prev, [g.id]: next }
     })
+    // En los de una sola opción ya no hay nada más que hacer ahí: se cierra y
+    // se abre el siguiente que falte, para no obligar a buscarlo scroleando.
+    if (esUnico(g)) {
+      setTimeout(() => setGrupoAbierto(a => (a === g.id ? siguientePendiente(g.id) : a)), 180)
+    }
   }
 
   const modsPlanos = useMemo(
@@ -440,7 +457,11 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   const faltantes = grupos.filter(g => (sel[g.id]?.length || 0) < minDe(g))
 
   const confirmar = () => {
-    if (faltantes.length > 0) { setIntento(true); return }
+    if (faltantes.length > 0) {
+      setIntento(true)
+      setGrupoAbierto(faltantes[0].id)   // llevarlo a lo que falta, no dejarlo buscando
+      return
+    }
     onAgregar(qty, nota, modsPlanos)
   }
 
@@ -468,16 +489,32 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
           {grupos.map(g => {
             const cuenta = sel[g.id]?.length || 0
             const incompleto = intento && cuenta < minDe(g)
+            const listo = cuenta >= minDe(g) && cuenta > 0
+            const estaAbierto = grupoAbierto === g.id
+            const elegidas = (sel[g.id] || []).map(o => o.nombre).join(', ')
             return (
-              <div key={g.id} className={`mp-grupo ${incompleto ? 'error' : ''}`}>
-                <div className="mp-grupo-head">
-                  <span className="mp-grupo-nombre">{g.nombre}</span>
-                  {requerido(g)
-                    ? <span className="mp-grupo-badge req">Obligatorio</span>
-                    : <span className="mp-grupo-badge">Opcional</span>}
-                  {g.max > 1 && <span className="mp-grupo-hint">Hasta {g.max}</span>}
-                </div>
-                <div className="mp-opciones">
+              <div key={g.id} className={`mp-grupo ${incompleto ? 'error' : ''} ${estaAbierto ? 'abierto' : ''}`}>
+                <button type="button" className="mp-grupo-head"
+                        aria-expanded={estaAbierto}
+                        onClick={() => setGrupoAbierto(a => (a === g.id ? null : g.id))}>
+                  <span className="mp-grupo-check" aria-hidden="true">
+                    {listo ? '✓' : requerido(g) ? '' : '+'}
+                  </span>
+                  <span className="mp-grupo-textos">
+                    <span className="mp-grupo-nombre">{g.nombre}</span>
+                    {/* Cerrado, el resumen dice qué se eligió o qué falta: así no
+                        hay que abrir cada grupo para revisar el pedido. */}
+                    <span className="mp-grupo-resumen">
+                      {elegidas
+                        ? elegidas
+                        : requerido(g)
+                          ? `Elegí ${minDe(g)}`
+                          : g.max > 1 ? `Opcional · hasta ${g.max}` : 'Opcional'}
+                    </span>
+                  </span>
+                  <span className="mp-grupo-flecha" aria-hidden="true">{estaAbierto ? '▲' : '▼'}</span>
+                </button>
+                <div className="mp-opciones" hidden={!estaAbierto}>
                   {(g.opciones || []).map(op => {
                     const activa = (sel[g.id] || []).some(x => x.id === op.id)
                     return (
