@@ -272,7 +272,7 @@ export default function TabPedidos({ show = () => {} }) {
   const porEstado = (k) => pedidos.filter(p => p.estado === k);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
-                       reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
+                       reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado };
 
@@ -451,7 +451,7 @@ function Historial({ historial }) {
 
 // ── Tarjeta de pedido ──
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
-                   reasignando, setReasignando,
+                   reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado }) {
   const reloj = useReloj(p.created_at);
