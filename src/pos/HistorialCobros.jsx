@@ -5,6 +5,7 @@ import { anularDTE } from './cajero/dteService'
 import NotaCreditoModal from './cajero/NotaCreditoModal'
 import { useToast } from '../hooks/useToast'
 import Icon from './Icon'
+import { printFactura } from './print/printService'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -152,62 +153,54 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
   }, [storeCode])
 
   // ── REIMPRIMIR TICKET ──
-  const handleReimprimir = (cuenta) => {
-    const tipoInfo = TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']
-    const storeName_ = storeName
-    const tipoStr = tipoInfo.label
-    const mesaStr = cuenta.mesa_ref ? `Mesa #${cuenta.mesa_ref}` : tipoStr
-    const hora = formatTime(cuenta.cobrada_at)
+  // Antes abría una ventana nueva con window.open y window.print(). En una
+  // tablet o en la app instalada esa ventana sale SIN barra de navegación,
+  // así que la cajera quedaba atrapada y tenía que cerrar y reabrir el POS.
+  // Ahora sale por la impresora térmica, igual que el ticket original.
+  const [reimprimiendo, setReimprimiendo] = useState(null)
 
-    const items = cuenta.pos_cuenta_items || []
-    const rows = items
-      .map(i =>
-        `<tr>
-          <td>${i.cantidad}x</td>
-          <td>${i.nombre}${i.notas ? ` <span style="color:#888;font-size:11px">(${i.notas})</span>` : ''}</td>
-          <td style="text-align:right">$${(parseFloat(i.precio_unitario) * i.cantidad).toFixed(2)}</td>
-        </tr>`
-      )
-      .join('')
+  const handleReimprimir = async (cuenta) => {
+    setReimprimiendo(cuenta.id)
+    try {
+      const items = (cuenta.pos_cuenta_items || []).map(i => ({
+        cantidad: i.cantidad,
+        nombre: i.nombre,
+        precio: parseFloat(i.precio_unitario) || 0,
+        modificadores: [],
+        nota: i.notas || null,
+      }))
 
-    // DTE info
-    const dteDisplay = DTE_DISPLAY[cuenta.dte_tipo] || DTE_DISPLAY[null]
-    const dteInfoStr = cuenta.dte_numero_control
-      ? `${dteDisplay.icon} ${dteDisplay.label} #${cuenta.dte_numero_control}`
-      : `${dteDisplay.icon} ${dteDisplay.label}`
-
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Ticket</title>
-    <style>
-      body { font-family: monospace; font-size: 13px; margin: 20px; max-width: 320px; }
-      h2 { text-align: center; margin: 0; font-size: 16px; }
-      .sub { text-align: center; color: #555; font-size: 11px; margin-bottom: 12px; }
-      table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-      td { padding: 3px 2px; vertical-align: top; }
-      .total-row { border-top: 1px dashed #333; padding-top: 8px;
-               display:flex; justify-content:space-between; font-weight:bold; font-size:15px; margin: 8px 0; }
-      .propina-row { display:flex; justify-content:space-between; font-size:13px; color:#666; }
-      .dte-info { text-align:center; color:#555; font-size:11px; margin-top:14px; padding:8px 0;
-                 border-top:1px dashed #999; border-bottom:1px dashed #999; }
-      .aviso { text-align:center; color:#888; font-size:10px; margin-top:14px; }
-      hr { border: none; border-top: 1px dashed #999; }
-    </style></head><body>
-    <h2>🍔 FREAKIE DOGS</h2>
-    <p class="sub">${storeName_} · ${mesaStr}<br>${hora}</p>
-    <hr>
-    <table>${rows}</table>
-    <hr>
-    <div class="total-row"><span>SUBTOTAL</span><span>$${parseFloat(cuenta.subtotal || 0).toFixed(2)}</span></div>
-    ${cuenta.propina ? `<div class="propina-row"><span>PROPINA</span><span>$${parseFloat(cuenta.propina).toFixed(2)}</span></div>` : ''}
-    <div class="total-row"><span>TOTAL</span><span>$${parseFloat(cuenta.total || 0).toFixed(2)}</span></div>
-    <div class="dte-info">${dteInfoStr}</div>
-    <p class="aviso">— TICKET REIMPRESO —</p>
-    <script>window.onload=()=>{window.print();}</script>
-    </body></html>`
-
-    const w = window.open('', '_blank', 'width=400,height=600')
-    w.document.write(html)
-    w.document.close()
+      const r = await printFactura({
+        storeCode,
+        storeName,
+        mesa: cuenta.mesa_ref || null,
+        tipoLabel: (TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']).label,
+        cajero: user?.nombre || user?.name || null,
+        items,
+        subtotal: parseFloat(cuenta.subtotal || 0),
+        propina: parseFloat(cuenta.propina || 0),
+        total: parseFloat(cuenta.total || 0),
+        fecha: cuenta.cobrada_at ? new Date(cuenta.cobrada_at) : new Date(),
+        reimpresion: true,
+        dte: cuenta.dte_numero_control ? {
+          tipo: cuenta.dte_tipo,
+          label: cuenta.dte_tipo === '03' ? 'COMPROBANTE DE CRÉDITO FISCAL' : 'FACTURA ELECTRÓNICA',
+          numeroControl: cuenta.dte_numero_control,
+          codigoGeneracion: cuenta.dte_uuid || null,
+          sello: cuenta.dte_sello || null,
+          fecha: cuenta.cobrada_at ? new Date(cuenta.cobrada_at) : new Date(),
+        } : null,
+      })
+      if (r && r.ok === false) {
+        toast.error('No se pudo imprimir — revisá la impresora o el puente')
+      } else {
+        toast.success('Ticket reimpreso')
+      }
+    } catch (e) {
+      toast.error('No se pudo reimprimir: ' + (e.message || 'error desconocido'))
+    } finally {
+      setReimprimiendo(null)
+    }
   }
 
   const [anulando, setAnulando] = useState(null) // id de la cuenta en proceso
@@ -455,10 +448,11 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                         <button
                           className="historial-action-btn reimprimir"
                           onClick={() => handleReimprimir(cuenta)}
+                          disabled={reimprimiendo === cuenta.id}
                           title="Reimprimir ticket"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                         >
-                          <Icon name="receipt" size={14} /> Reimprimir
+                          <Icon name="receipt" size={14} /> {reimprimiendo === cuenta.id ? 'Imprimiendo…' : 'Reimprimir'}
                         </button>
                         {cuenta.dte_uuid && (cuenta.dte_tipo === '01' || cuenta.dte_tipo === '03') && !cuenta.nc_codigo_generacion && (
                           <button
