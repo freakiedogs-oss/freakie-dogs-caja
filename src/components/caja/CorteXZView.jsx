@@ -40,7 +40,7 @@ export default function CorteXZView({ user, onBack }) {
 
   // Corte en marcha → el mismo CierreTurno del POS
   if (go && store && cajaReady) {
-    return <CierreTurno user={{ ...user, store_code: store, caja: caja || null }} onBack={() => setGo(false)} />
+    return <CierreTurno user={{ ...user, store_code: store, caja: caja || null }} onBack={() => setGo(false)} ownTurnoOnly={false} />
   }
 
   // ── Selector ──

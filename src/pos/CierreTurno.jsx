@@ -201,7 +201,10 @@ function Mi({ label, value, onChange, readOnly, hint, star }) {
   )
 }
 
-export default function CierreTurno({ user, onBack }) {
+// ownTurnoOnly=true (POS): el cajero solo ve/cierra SU propio turno de la caja.
+// ownTurnoOnly=false (ERP/CorteXZView): un supervisor puede abrir el corte de la
+// caja aunque el turno lo haya abierto otra persona.
+export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const toast = useToast()
   const storeCode = user.store_code || 'S001'
   const caja = user.caja || null   // multi-caja (Lourdes): null = 1 sola caja por sucursal
@@ -211,6 +214,7 @@ export default function CierreTurno({ user, onBack }) {
   const storeName = STORES[storeCode] || storeCode
 
   const [turno, setTurno]       = useState(null)
+  const [duenoNombre, setDuenoNombre] = useState('') // nombre del cajero DUEÑO del turno (no el logueado)
   const [corte, setCorte]       = useState(null)     // corte del TURNO actual (para X)
   const [corteDia, setCorteDia] = useState(null)     // corte del DÍA completo (para Z)
   const [diaInfo, setDiaInfo]   = useState({ fondoBase: 0, prevEgr: 0, prevIng: 0, zExiste: false, nTurnos: 0 })
@@ -231,12 +235,16 @@ export default function CierreTurno({ user, onBack }) {
   const [showIn, setShowIn]     = useState(false)
   const [empleadosSuc, setEmpleadosSuc] = useState([])
 
-  // ── Turno abierto de ESTA caja (guardrail: 1 caja abierta por sucursal) ──
+  // ── Turno abierto de ESTE cajero en ESTA caja ──
+  // Se filtra por cajero_id ADEMÁS de por caja: si otra persona ya abrió esta caja,
+  // cada quien ve/cierra SOLO su propio turno y nunca el corte ajeno (bug Lourdes:
+  // dos sesiones sobre la misma caja mostraban el mismo Corte X con distinto nombre).
   const loadTurno = useCallback(async () => {
     setLoading(true)
-    const { data } = await cajaF(db.from('pos_turnos').select('*')
+    let q = cajaF(db.from('pos_turnos').select('*')
       .eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto'))
-      .order('abierto_at', { ascending: false }).limit(1).maybeSingle()
+    if (ownTurnoOnly) q = q.eq('cajero_id', user.id)
+    const { data } = await q.order('abierto_at', { ascending: false }).limit(1).maybeSingle()
     setTurno(data || null)
     // Sin caja abierta: precargar el fondo con el efectivo contado del último CAMBIO DE
     // TURNO (X) del día — la gaveta que recibe el siguiente cajero (arrastre).
@@ -251,8 +259,18 @@ export default function CierreTurno({ user, onBack }) {
       if (ult && ult.conteo_efectivo != null) setFondoInput(String(_n(ult.conteo_efectivo) + _n(ult.fondo_apertura)))
     }
     setLoading(false)
-  }, [storeCode])
+  }, [storeCode, caja, user.id, ownTurnoOnly])
   useEffect(() => { loadTurno() }, [loadTurno])
+
+  // Nombre del cajero DUEÑO del turno (para el encabezado): en el POS coincide con el
+  // logueado, pero en el corte desde el ERP puede ser otra persona.
+  useEffect(() => {
+    const cid = turno?.cajero_id
+    if (!cid) { setDuenoNombre(''); return }
+    if (cid === user.id) { setDuenoNombre(user.nombre || ''); return }
+    db.from('usuarios_erp').select('nombre').eq('id', cid).maybeSingle()
+      .then(({ data }) => setDuenoNombre(data?.nombre || '')).catch(() => setDuenoNombre(''))
+  }, [turno?.cajero_id, user.id, user.nombre])
 
   useEffect(() => {
     db.from('motivos_egreso').select('id,nombre,requiere_persona,requiere_comentario,requiere_foto,orden').eq('activo', true).order('orden').then(({ data }) => setMotEg(data || [])).catch(() => {})
@@ -500,8 +518,13 @@ export default function CierreTurno({ user, onBack }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 18, maxWidth: 480, width: '100%', margin: '0 auto' }}>
+        {caja && (
+          <div style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: '#FFD900', background: '#2a2410', border: '1px solid #4a3f10', borderRadius: 8, padding: '3px 10px', marginBottom: 8 }}>
+            {caja === 'drive' ? '🚗 Drive Thru' : caja === 'general' ? '🧾 Caja General' : `🗄️ ${caja}`}
+          </div>
+        )}
         <div style={{ fontSize: 12, color: '#9a9088', marginBottom: 10 }}>
-          Turno #{turno.numero_turno} · {user.nombre?.split(' ')[0]} · abrió {new Date(turno.abierto_at).toLocaleString('es-SV', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })} · recibió {fmt(fondoRecibido)}
+          Turno #{turno.numero_turno} · {(duenoNombre || user.nombre)?.split(' ')[0]} · abrió {new Date(turno.abierto_at).toLocaleString('es-SV', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })} · recibió {fmt(fondoRecibido)}
         </div>
 
         {esZ && diaInfo.zExiste && (
