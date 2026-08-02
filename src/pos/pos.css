@@ -1183,6 +1183,21 @@
   text-overflow: ellipsis;
 }
 
+/* Nota del pedido completo. Amarilla y ancha porque suele traer cosas que
+   cambian la preparación o la entrega ('sin cebolla', 'cambio de 20'). */
+.kds-card-notaped {
+  flex-basis: 100%;
+  margin-top: 5px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: rgba(251, 191, 36, .12);
+  border-left: 3px solid #fbbf24;
+  color: #fbbf24;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 /* Nombre del cliente y total en la comanda. Cocina lo usa para armar la
    bolsa correcta y para cotejarla cuando el motorista pasa a recogerla.
    Ocupa toda la fila para que no se corte con nombres largos. */
