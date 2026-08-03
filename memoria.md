@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 3-Ago-2026 — Menú público salía "Lunes: Cerrado" con el panel abierto — horario quemado → en vivo desde BD
+
+**Síntoma (Jose, lunes 3-ago):** el menú público mostraba **"Lunes: Cerrado"** y banner "fuera de horario", aunque en el **Panel Delivery** todas las sucursales tenían el lunes **Abre 11:00–21:00**. NO era problema de zona horaria: el cálculo de hora SV en `MenuPublico.jsx` (`Date.now() - 6h` + `getUTC*`) es correcto.
+
+**Causa raíz:** el menú tenía el horario **quemado** en `catalogoBuho.js` (`NEGOCIO.horarios`, con `lunes: 'Cerrado'` y aperturas 10:00) y **nunca leía la BD**. Dos fuentes de verdad desconectadas: el panel escribe en `horarios_sucursal` (RPC `torre_guardar_horario`), el menú leía un objeto estático.
+
+**Parche rápido (commit f2cdd2c):** fallback alineado a M001 (lunes abierto, 11:00). Destapó el lunes ya.
+
+**Fix de raíz (commit 40e378f):**
+- Nueva RPC anon **`menu_publico_horario()`** (SECURITY DEFINER, STABLE, grant a anon/authenticated). Agrega SOLO sucursales `activa AND tiene_delivery` (las que reciben pedidos del menú), calcula en **`America/El_Salvador`** y devuelve `{abierto_ahora, dia, hoy:{apertura,cierre,abierto}, semana[7]}`. `abierto_ahora` = existe alguna tienda con delivery abierta en este instante; `hoy` = ventana más amplia (min apertura / max cierre) entre las abiertas.
+- `MenuPublico.jsx`: `horarioHoy(bd)`/`abiertoAhora(bd)` usan la RPC como **fuente primaria** y sólo caen al horario quemado si la BD no responde. `HeaderNegocio` recibe `horarioBD` por prop. Ahora editar horarios en la torre se refleja en el menú **sin redeploy**.
+
+**Datos:** delivery = M001/S001/S002/S003 (todos abren lunes 11:00). S004/S006 tienen `tiene_delivery=false` → no cuentan para el menú. `npm run build` ✅.
+
+**Pendiente/idea:** el menú es un único storefront (horario agregado); si se quisiera horario por zona/sucursal ruteada habría que refinar. El horario quemado quedó sólo como respaldo.
+
 ## 2-Ago-2026 — Gráfico de tendencia por sucursal en Ventas Freakies — PR #124
 
 Jose pidió, en el dashboard **Ventas Freakies** (`src/components/dashboard/VentasFreakies.jsx`), un gráfico para ver **el comportamiento de la venta de cada sucursal en el tiempo** como líneas.
