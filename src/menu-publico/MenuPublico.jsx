@@ -55,16 +55,31 @@ function guardarPerfil(p) {
   try { localStorage.setItem(PERFIL_KEY, JSON.stringify(p)) } catch { /* modo incógnito / storage lleno */ }
 }
 
-// Horario del día actual en El Salvador (UTC-6)
-function horarioHoy() {
-  const d = new Date(Date.now() - 6 * 3600 * 1000)
-  const dias = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado']
-  const dia = dias[d.getUTCDay()]
-  return { dia, horario: NEGOCIO.horarios[dia] || 'Cerrado' }
+// Número de día (0=domingo) en hora de El Salvador (UTC-6, sin DST). Sólo se
+// usa en el fallback local; la fuente primaria es la BD (ver horarioHoy).
+function diaHoySV() {
+  return new Date(Date.now() - 6 * 3600 * 1000).getUTCDay()
 }
 
-function abiertoAhora() {
-  const { horario } = horarioHoy()
+// Horario de HOY. Fuente PRIMARIA: BD en vivo (RPC menu_publico_horario, el
+// mismo dato que edita el Panel Delivery, agregado sobre las sucursales con
+// delivery y calculado en hora de El Salvador). Si la BD no responde, cae al
+// horario de respaldo quemado en NEGOCIO.horarios (catalogoBuho.js).
+function horarioHoy(bd) {
+  if (bd && bd.hoy) {
+    const h = bd.hoy
+    return { dia: bd.dia, horario: h.abierto ? `${h.apertura} - ${h.cierre}` : 'Cerrado' }
+  }
+  const dias = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado']
+  const dia = diaHoySV()
+  return { dia, horario: NEGOCIO.horarios[dias[dia]] || 'Cerrado' }
+}
+
+function abiertoAhora(bd) {
+  // Con dato de BD, el servidor ya resolvió "abierto ahora" (hora SV real).
+  if (bd) return !!bd.abierto_ahora
+  // Fallback local sobre el horario de respaldo.
+  const { horario } = horarioHoy(null)
   if (!horario || horario === 'Cerrado') return false
   const m = horario.match(/^(\d{2}):(\d{2}).*?(\d{2}):(\d{2})$/)
   if (!m) return false
@@ -90,8 +105,17 @@ export default function MenuPublico() {
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [toast, setToast] = useState(null)
   const [showTop, setShowTop] = useState(false)
+  const [horarioBD, setHorarioBD] = useState(null)   // horario en vivo del Panel Delivery
   const seccionesRef = useRef({})
-  const abierto = abiertoAhora()
+  const abierto = abiertoAhora(horarioBD)
+
+  // Horario del storefront en vivo desde la BD (mismo dato que el Panel Delivery).
+  // Si falla, horarioHoy/abiertoAhora caen al horario de respaldo quemado.
+  useEffect(() => {
+    db.rpc('menu_publico_horario')
+      .then(({ data }) => data && setHorarioBD(data))
+      .catch(() => {})
+  }, [])
 
   // Reglas de pedido mínimo / envío gratis (para avisar desde el carrito)
   useEffect(() => {
@@ -178,7 +202,7 @@ export default function MenuPublico() {
         <HeroBanner />
 
         {/* LOGO + INFO NEGOCIO */}
-        <HeaderNegocio />
+        <HeaderNegocio horarioBD={horarioBD} />
 
         {/* TABS CATEGORIAS (sticky) */}
         {menu.length > 0 && (
@@ -353,10 +377,10 @@ function HeroBanner() {
   )
 }
 
-function HeaderNegocio() {
-  const { horario } = horarioHoy()
+function HeaderNegocio({ horarioBD }) {
+  const { dia, horario } = horarioHoy(horarioBD)
   const nombresDia = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
-  const hoy = nombresDia[new Date(Date.now() - 6 * 3600 * 1000).getUTCDay()]
+  const hoy = nombresDia[dia]
 
   return (
     <div className="mp-header">
