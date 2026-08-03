@@ -726,12 +726,18 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         { onConflict: 'comanda_uid,linea', ignoreDuplicates: true }
       )
 
+      // Blindaje (incidente Metro Centro 3-Ago-2026): NUNCA imprimir una comanda
+      // si la orden no quedó realmente guardada en BD. Si llegamos aquí sin
+      // currentCuentaId, algo falló silenciosamente antes → no imprimimos un
+      // ticket que la cocina prepararía y que no existiría como venta.
+      if (!currentCuentaId) throw new Error('La orden no se guardó — no se imprime la comanda')
+
       // Imprime la comanda térmica con SOLO los ítems recién enviados a cocina.
       // Venecia (S004) y otras en STORES_SIN_COMANDA no imprimen comanda al comandar;
       // la orden igual queda en el KDS (pos_cocina_queue).
       if (!STORES_SIN_COMANDA.includes(storeCode)) {
         try {
-          const r = await printComanda(buildCuentaPrint(newItems))
+          const r = await printComanda(buildCuentaPrint(newItems), { cuentaId: currentCuentaId })
           if (r && r.ok === false) toast.error('⚠️ Comanda guardada, pero NO se imprimió — revisá la impresora / puente')
         } catch (pErr) {
           console.error('Comanda enviada pero no se imprimió:', pErr)

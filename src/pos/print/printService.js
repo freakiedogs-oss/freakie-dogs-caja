@@ -441,7 +441,41 @@ function corteHTML(c) {
   return htmlDoc(`Corte ${c.tipo}`, L);
 }
 
+// Auditoría de impresión (fire-and-forget). Deja traza de TODA impresión, aunque
+// la venta no exista en BD — así una comanda impresa sin orden guardada queda
+// visible (cuenta_id null). Nunca debe romper ni frenar la impresión.
+function logImpresion(tipo, cuenta, opts, res) {
+  try {
+    const storeCode = opts.storeCode || cuenta?.storeCode || null;
+    const caja = opts.caja ?? cuenta?.caja ?? null;
+    const cuentaId = opts.cuentaId ?? cuenta?.cuentaId ?? cuenta?.cuenta_id ?? null;
+    const items = Array.isArray(cuenta?.items) ? cuenta.items : [];
+    db.from('pos_impresion_log').insert({
+      store_code: storeCode,
+      caja,
+      tipo,
+      cuenta_id: cuentaId,
+      resumen: {
+        n_items: items.length,
+        total: cuenta?.total ?? null,
+        mesa: cuenta?.mesa ?? null,
+        comanda: cuenta?.comandaNumero ?? null,
+        cajero: cuenta?.cajero ?? null,
+      },
+      ok: res?.ok ?? null,
+      modo: res?.modo ?? null,
+      error: res?.error ?? null,
+    }).then(({ error }) => { if (error) console.warn('[print] log falló', error.message); });
+  } catch (e) { console.warn('[print] log excepción', e); }
+}
+
 export async function imprimir(tipo, cuenta, opts = {}) {
+  const res = await _imprimir(tipo, cuenta, opts);
+  logImpresion(tipo, cuenta, opts, res);   // no await: no frena la impresión
+  return res;
+}
+
+async function _imprimir(tipo, cuenta, opts = {}) {
   const storeCode = opts.storeCode || cuenta.storeCode;
   // Preferir la impresora YA cacheada (lectura sincrona). Un await de red aqui
   // descarta la user-activation en Android y Chrome bloquea el deep-link rawbt:
