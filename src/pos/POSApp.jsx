@@ -85,7 +85,7 @@ const CAJA_LABELS = {
 // ── Selector de Caja ──
 // Sucursales con 2+ impresoras/cajas muestran el selector; las de 1 sola caja
 // (todas las demás) auto-seleccionan y siguen directo (cero cambio para ellas).
-function CajaSelector({ user, onSelect, onLogout }) {
+function CajaSelector({ user, onSelect, onLogout, onGoKDS }) {
   const [cajas, setCajas] = useState(null) // null = cargando
   const [busy, setBusy]   = useState(null) // caja que se está verificando
   const [warn, setWarn]   = useState(null) // { caja, nombre } → caja ya abierta por OTRO cajero
@@ -150,6 +150,15 @@ function CajaSelector({ user, onSelect, onLogout }) {
         })}
       </div>
 
+      {/* La cocina (KDS) solo lee la cola por sucursal: no necesita abrir caja. */}
+      {onGoKDS && (
+        <button onClick={onGoKDS}
+          style={{ marginTop: 14, padding: '13px 20px', border: '1px dashed #3a3a44', borderRadius: 12, background: 'transparent', color: '#c9c6d1', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, width: '100%', maxWidth: 320 }}>
+          <span style={{ fontSize: 20 }}>👨‍🍳</span>
+          <span style={{ flex: 1, textAlign: 'left' }}>Solo pantalla de cocina (KDS)<div style={{ fontSize: 11, fontWeight: 400, color: '#6b6878' }}>No necesita abrir caja</div></span>
+        </button>
+      )}
+
       {warn && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'grid', placeItems: 'center', padding: 24, zIndex: 50 }}>
           <div style={{ background: '#1c1c22', border: '1px solid #4a3f10', borderRadius: 14, padding: 24, maxWidth: 340, width: '100%', textAlign: 'center' }}>
@@ -191,6 +200,7 @@ export default function POSApp() {
   const [screen,     setScreen]     = useState('home')
   const [cuentaCtx,  setCuentaCtx]  = useState(null)
   const [soporteOpen, setSoporteOpen] = useState(false)  // modal "Reportar problema" (controlado desde el header, no FAB)
+  const [kdsReturn, setKdsReturn] = useState('home')     // a dónde vuelve el "← Volver" del KDS
 
   // Para roles multi-sucursal: store_code elegido en el selector
   const [effectiveUser, setEffectiveUser] = useState(null)
@@ -261,7 +271,12 @@ export default function POSApp() {
     setScreen('home')
   }
 
-  const handleGoToKDS = () => setScreen('kds')
+  const handleGoToKDS = () => { setKdsReturn('home'); setScreen('kds') }
+
+  // KDS directo desde el selector de caja: la cocina no abre caja (vuelve al selector).
+  const handleGoKDSFromCaja = () => { setKdsReturn('caja-select'); setScreen('kds') }
+
+  const handleBackFromKDS = () => { setCuentaCtx(null); setScreen(kdsReturn) }
 
   const handleGoToHistorial = () => setScreen('historial')
 
@@ -279,7 +294,7 @@ export default function POSApp() {
 
   // ── Caja Selector (sucursales con 2+ cajas, ej. Lourdes; auto-salta si 1 sola) ──
   if (screen === 'caja-select') {
-    return <CajaSelector user={effectiveUser || user} onSelect={handleCajaSelect} onLogout={handleLogout} />
+    return <CajaSelector user={effectiveUser || user} onSelect={handleCajaSelect} onLogout={handleLogout} onGoKDS={handleGoKDSFromCaja} />
   }
 
   // Desde aquí usamos effectiveUser (con store_code correcto)
@@ -288,7 +303,7 @@ export default function POSApp() {
 
   // ── KDS ──
   if (screen === 'kds') {
-    return <KDSScreen user={posUser} onBack={handleBack} />
+    return <KDSScreen user={posUser} onBack={handleBackFromKDS} />
   }
 
   // ── Órdenes (Activas + Historial) ──
