@@ -15,6 +15,14 @@ Jose pidió, en el dashboard **Ventas Freakies** (`src/components/dashboard/Vent
 
 **Coordinación:** se detectó que el working tree estaba en la rama de otra sesión (`fix/lourdes-corte-por-cajero`, PR #123); el cambio se reencauzó a rama propia `feat/tendencia-ventas-sucursal` desde `main` para no contaminar ese PR. `npm run build` ✅.
 
+## 2-Ago-2026 — El KDS quedaba bloqueado tras el selector de caja (Lourdes) — PR #125
+
+Efecto colateral del aviso "Caja ya abierta" (PR #123): en Lourdes, para llegar al **KDS** había que pasar por el selector de caja, y el aviso dejaba la cocina bloqueada. El KDS solo lee la cola por `store_code` — no necesita caja ni turno.
+
+**Fix (PR #125):** botón **"👨‍🍳 Solo pantalla de cocina (KDS)"** en el `CajaSelector` que entra directo al KDS sin abrir caja (solo aparece en sucursales con 2+ cajas). Estado `kdsReturn` en `POSApp` para que "← Volver" regrese al selector o a Home según de dónde se entró. No toca cobros. `npm run build` ✅.
+
+**Pendiente/idea de fondo:** pedir la caja solo al cobrar/cerrar (no al entrar) — login → Home directo. Más limpio pero toca el routing de impresora (usa `user.caja`); se dejó para evaluar aparte.
+
 ## 2-Ago-2026 — Corte X/Z se enganchaba por caja y no por cajero (bug Lourdes) — PR #123
 
 Wendy reportó que en Lourdes el **Corte X** salía **idéntico** para dos personas (mismas cifras $378.05 / 44 cuentas / fondo $100 / abrió 11:02), cambiando solo el **nombre** del encabezado. Lourdes es **multi-caja** (`general` 🧾 $100 / `drive` 🚗 $20). **No había pérdida de datos**: en `pos_turnos` los dos turnos estaban bien y separados (Jocelyn/general $378.05; Keyri/drive $39.96).
