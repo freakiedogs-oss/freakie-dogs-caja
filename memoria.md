@@ -24,6 +24,35 @@ Seguimiento del incidente de abajo: el candado de versión (PR #126) quedaba **s
 
 **Nota importante:** de esas ~30 órdenes **no hay rastro reconstruible desde BD** (impresión modo `sistema` = `window.print`, sin log central hasta ahora). Única fuente = **rollo físico** de la impresora / historial de la PC Windows. Pendiente operativo: contar el rollo y decidir re-ingreso + DTE (NO tocar facturación sin OK de Jose). `npm run build` ✅ (version.json = `ed163f9` coincide con id horneado). Falta merge del PR + deploy para que las tablets tomen el candado.
 
+## 3-Ago-2026 — Tab Bonos de la torre: tablero de bonos + costeo de delivery (rediseño)
+
+**Síntoma:** la tab 💰 Bonos del Panel Delivery mostraba "Sin viajes" aunque había **94 viajes en agosto**.
+**Causa raíz:** filtraba con `db.from('viajes_delivery').select('*').like('fecha', mes+'%')` y `.like` sobre
+columna `date` no funciona en PostgREST → vacío. Además el monto/tiempo vive en `delivery_clientes` (RLS por rol)
+y los salarios son confidenciales, así que no se podían leer con rol anon.
+
+**Solución:**
+- **RPC gateada `torre_bonos_delivery(p_token uuid, p_mes text)`** (SECURITY DEFINER, valida `_staff_valida`,
+  exige rol admin/superadmin/ejecutivo/gerente). Devuelve viajes del mes enriquecidos (km, tiempo real
+  recogido→entregado, monto y nº de orden de `delivery_clientes`), drivers activos con paga fija y ventas por
+  sucursal. Filtra por rango de fecha (evita el bug del `.like`). Token de staff = `localStorage['freakie_torre_token']`.
+- **Nuevo `src/components/delivery/TabBonos.jsx`** (se sacó de `DeliveryView.jsx`): KPIs arriba
+  (**Costo de delivery % = (costo fijo + bono viajes) ÷ ventas**, coloreado), **comparación por sucursal**,
+  y árbol **sucursal → driver → día → viaje** con km/tiempo/monto. Agrupa las órdenes de un mismo viaje
+  **infiriendo por la hora de recogida** (< 180 s = misma salida; verificado: el botón "Salir con todos" de
+  la PWA marca todas casi al mismo `recogido_at`). El cálculo de bono por viaje (`bonoDriver`) NO cambió.
+
+**Costeo de salario (confirmado con Jose):** paga fija = `empleados.salario_mensual` (base) + `viatico_mensual`
+(bono inicial fijo; ej. 450+250=700, 450+200=650). Prestaciones patronales **ISSS 7.5% (tope base $1000 → máx $75)
++ AFP 8.75%** sobre la base; el viático no cotiza. Tasas **editables en `config_delivery`** (`patronal_isss_pct`,
+`patronal_isss_tope`, `patronal_afp_pct`, sembradas con default). Cuentan sólo drivers `activo AND es_delivery_driver
+AND cargo='Motorista'` (se excluyen "Motorista Interno"/internos). En el mes corriente el costo fijo se **prorratea**
+por días transcurridos. Drivers con sueldo/viático en $0 se marcan en la UI (RRHH los completa; la tab no edita salarios).
+
+**Validado:** RPC end-to-end (13 drivers, 98 viajes ago), aritmética M001 (fija $2650 + ISSS $180 + AFP $210 =
+$3040/mes) y `npm run build` ✅. Pendiente futuro si Jose lo quiere exacto: modelo de "ronda" real (id de salida
+estampado por el motorista) en vez de inferir por tiempos.
+
 ## 3-Ago-2026 — Menú público salía "Lunes: Cerrado" con el panel abierto — horario quemado → en vivo desde BD
 
 **Síntoma (Jose, lunes 3-ago):** el menú público mostraba **"Lunes: Cerrado"** y banner "fuera de horario", aunque en el **Panel Delivery** todas las sucursales tenían el lunes **Abre 11:00–21:00**. NO era problema de zona horaria: el cálculo de hora SV en `MenuPublico.jsx` (`Date.now() - 6h` + `getUTC*`) es correcto.
