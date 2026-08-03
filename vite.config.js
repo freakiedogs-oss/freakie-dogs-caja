@@ -2,6 +2,30 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
+import { execSync } from 'child_process'
+
+// ── Identificador de build (candado de versión) ─────────────────────────────
+// Cambia en cada deploy. La tablet lleva este id "horneado" en el bundle; la
+// app pregunta por /version.json (nunca cacheado) y, si el servidor tiene otro
+// id, la pantalla de login fuerza la actualización ANTES de dejar entrar.
+// En Vercel usamos el SHA del commit; en local, el git corto; si no hay git,
+// un sello de tiempo del build.
+const BUILD_ID = (() => {
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA
+  if (sha) return sha.slice(0, 8)
+  try { return execSync('git rev-parse --short HEAD').toString().trim() } catch { /* sin git */ }
+  return 'b' + Date.now()
+})()
+
+// Emite dist/version.json con el id del build (leído por el candado de versión).
+function emitVersionJson() {
+  return {
+    name: 'emit-version-json',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build: BUILD_ID }) })
+    },
+  }
+}
 
 // El menú público se despliega en su propio proyecto de Vercel
 // (freakiedelivery.vercel.app), separado del ERP. Con VITE_TARGET=delivery se
@@ -16,7 +40,10 @@ const ENTRADAS_PUBLICAS = {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), emitVersionJson()],
+  define: {
+    __BUILD_ID__: JSON.stringify(BUILD_ID),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

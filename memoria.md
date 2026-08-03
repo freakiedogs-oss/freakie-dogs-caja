@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 3-Ago-2026 — Metro Centro: ~30 comandas impresas sin guardarse (tablet con build viejo) → candado de versión + log de impresión + blindaje
+
+**Síntoma (Jhon/Jose, lunes 3-ago ~11:45):** en Metro Centro (S006) "las órdenes no llegaban al KDS". La tablet del KDS estaba bien (sucursal correcta, conectada, "Sin órdenes"). En BD: **cero cuentas/ítems/cola de S006 en todo el día** hasta las 11:54, mientras el resto de sucursales vendía normal. **No habían abierto la caja.** Pero además reportaron que **sí les imprimió ~30 tickets** de comanda sin mostrar el aviso "abrí caja" — y esas ~30 **no quedaron registradas en ningún lado** (ni venta, ni ítems, ni DTE).
+
+**Causa raíz:** el código actual bloquea el comandar sin caja (aviso + `return`) e imprime la comanda **solo después** de guardar la orden (`throw` si falla). Que imprimiera sin guardar ⇒ **la tablet corría un bundle VIEJO cacheado** (PWA, `sw.js`), de antes del guardrail. Clásico tablet fija pegada en versión vieja.
+
+**Fixes (rama `fix/pos-version-gate-print-audit`):**
+1. **Candado de versión en el login** (`src/pos/versionGate.js` + `LoginGate` en `POSApp.jsx`). Cada build hornea `__BUILD_ID__` (git SHA, vía `vite.config.js` `define`) y publica `dist/version.json` (plugin `emitVersionJson`, servido sin caché). En la pantalla de login la app compara el id que corre vs. el del servidor; si difieren limpia caché+SW y recarga sola ("Actualizando…"). **Solo antes del login** (nunca en medio de un cobro). Fail-open sin internet. Tope anti-bucle (2 recargas).
+2. **Log de auditoría de impresión** — tabla `pos_impresion_log` (migración aplicada; RLS: insert anon, select authenticated). `printService.imprimir()` registra TODA impresión (fire-and-forget) con `store_code/caja/tipo/cuenta_id/resumen/ok/modo`. **`cuenta_id` null en una `comanda` = ticket huérfano sin venta** (índice parcial para detectarlo). Ya no quedamos ciegos.
+3. **Blindaje del comandar** (`POSMain.jsx`): `if (!currentCuentaId) throw` antes de imprimir → jamás se imprime una comanda si la orden no quedó guardada. Se pasa `cuentaId` al log.
+
+**Nota importante:** de esas ~30 órdenes **no hay rastro reconstruible desde BD** (impresión modo `sistema` = `window.print`, sin log central hasta ahora). Única fuente = **rollo físico** de la impresora / historial de la PC Windows. Pendiente operativo: contar el rollo y decidir re-ingreso + DTE (NO tocar facturación sin OK de Jose). `npm run build` ✅ (version.json = `ed163f9` coincide con id horneado). Falta merge del PR + deploy para que las tablets tomen el candado.
+
 ## 3-Ago-2026 — Menú público salía "Lunes: Cerrado" con el panel abierto — horario quemado → en vivo desde BD
 
 **Síntoma (Jose, lunes 3-ago):** el menú público mostraba **"Lunes: Cerrado"** y banner "fuera de horario", aunque en el **Panel Delivery** todas las sucursales tenían el lunes **Abre 11:00–21:00**. NO era problema de zona horaria: el cálculo de hora SV en `MenuPublico.jsx` (`Date.now() - 6h` + `getUTC*`) es correcto.
