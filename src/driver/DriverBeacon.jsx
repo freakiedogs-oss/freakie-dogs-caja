@@ -6,6 +6,7 @@
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { db } from '../supabase'
+import UpdateGate from '../components/layout/UpdateGate'
 
 const KEY = 'freakie_driver_v1'
 const HEARTBEAT_MS = 15000
@@ -101,6 +102,7 @@ export default function DriverBeacon() {
 
   if (!yo) {
     return (
+      <UpdateGate>
       <div style={S.page}>
         <div style={S.card}>
           <div style={S.logo}>🛵</div>
@@ -145,6 +147,7 @@ export default function DriverBeacon() {
           )}
         </div>
       </div>
+      </UpdateGate>
     )
   }
 

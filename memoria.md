@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 3-Ago-2026 — Candado de versión extendido a los 3 logins (POS + ERP + Driver)
+
+Seguimiento del incidente de abajo: el candado de versión (PR #126) quedaba **solo en el POS**. Se extendió a los **3 logins distintos** que tenemos, cada uno con su propia entrada/deploy:
+- **ERP / back-office** → `index.html` → `App.jsx` (`freakie-dogs-caja.vercel.app`).
+- **POS** → `pos.html` → `POSApp.jsx` (`freakie-dogs-caja.vercel.app/pos`).
+- **Driver PWA** → `driver.html` → `DriverBeacon.jsx` (proyecto Vercel aparte `freakiedelivery.vercel.app/driver`, build `VITE_TARGET=delivery`).
+
+**Refactor:** el hook se movió a `src/hooks/versionGate.js` y se creó `src/components/layout/UpdateGate.jsx` (componente compartido) que envuelve cada login. `emitVersionJson` corre en **ambos** builds (ERP y delivery), así cada origen sirve su propio `/version.json` y el gate compara contra el suyo (fetch relativo). `npm run build` (ERP) y `VITE_TARGET=delivery vite build` ✅.
+
 ## 3-Ago-2026 — Metro Centro: ~30 comandas impresas sin guardarse (tablet con build viejo) → candado de versión + log de impresión + blindaje
 
 **Síntoma (Jhon/Jose, lunes 3-ago ~11:45):** en Metro Centro (S006) "las órdenes no llegaban al KDS". La tablet del KDS estaba bien (sucursal correcta, conectada, "Sin órdenes"). En BD: **cero cuentas/ítems/cola de S006 en todo el día** hasta las 11:54, mientras el resto de sucursales vendía normal. **No habían abierto la caja.** Pero además reportaron que **sí les imprimió ~30 tickets** de comanda sin mostrar el aviso "abrí caja" — y esas ~30 **no quedaron registradas en ningún lado** (ni venta, ni ítems, ni DTE).
