@@ -9,26 +9,7 @@ import OrdenesView from './OrdenesView'
 import CierreTurno from './CierreTurno'
 import MenuAdminView from './admin/MenuAdminView'
 import { STORES } from '../config'
-import { useVersionGate } from './versionGate'
-
-// ── Candado de versión (solo en login) ──
-// Si la tablet corre un bundle viejo, fuerza la actualización ANTES de dejar
-// entrar. Va envolviendo el login para que la recarga nunca ocurra con una
-// sesión operando (sin carrito que perder). Fail-open sin internet.
-function LoginGate({ children }) {
-  const status = useVersionGate()
-  if (status === 'updating') {
-    return (
-      <div style={{ minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#141418', padding: '0 24px', textAlign: 'center' }}>
-        <img src="/icon-192.png" alt="Freakie Dogs" style={{ width: 88, height: 88, borderRadius: 18, marginBottom: 18, objectFit: 'contain' }} />
-        <div className="spin" style={{ width: 30, height: 30, marginBottom: 16 }} />
-        <div style={{ fontWeight: 800, fontSize: 18, color: '#E62329', marginBottom: 6 }}>Actualizando app…</div>
-        <div style={{ color: '#8b8997', fontSize: 13, maxWidth: 280 }}>Bajando la última versión. La app se reinicia sola en un momento.</div>
-      </div>
-    )
-  }
-  return children
-}
+import UpdateGate from '../components/layout/UpdateGate'
 
 // Roles que pueden elegir sucursal al entrar al POS
 // La central de delivery atiende pedidos de todas las sucursales, así que
@@ -305,7 +286,7 @@ export default function POSApp() {
   const handleGoToCierre = () => setScreen('cierre')
 
   // ── Login ──
-  if (!user) return <LoginGate><POSLogin onLogin={handleLogin} /></LoginGate>
+  if (!user) return <UpdateGate><POSLogin onLogin={handleLogin} /></UpdateGate>
 
   // ── Store Selector (ejecutivo/admin/superadmin) ──
   if (screen === 'store-select') {
