@@ -379,14 +379,17 @@ export const NEGOCIO = {
   descripcion: 'Freakie Dogs - Ese extra extraordinario 🌭🔥🌭',
   moneda: 'USD',
   consumoMinimo: 3.98,
+  // Horario de respaldo (fallback). La fuente real es la BD por sucursal
+  // (Panel Delivery → RPC torre_*); el menú lo consulta en vivo y sólo cae
+  // acá si la BD no responde. Alineado con Plaza Cafetalón (M001).
   horarios: {
-    domingo:   '10:00 - 21:00',
-    lunes:     'Cerrado',
-    martes:    '10:00 - 21:00',
-    miercoles: '10:00 - 21:00',
-    jueves:    '10:00 - 21:00',
-    viernes:   '10:00 - 22:00',
-    sabado:    '10:00 - 22:00',
+    domingo:   '11:00 - 21:00',
+    lunes:     '11:00 - 21:00',
+    martes:    '11:00 - 21:00',
+    miercoles: '11:00 - 21:00',
+    jueves:    '11:00 - 21:00',
+    viernes:   '11:00 - 22:00',
+    sabado:    '11:00 - 22:00',
   },
   // Zonas de cobertura del delivery propio
   zonasDelivery: ['Usulután', 'Soyapango', 'Lourdes', 'Santa Tecla', 'San Salvador'],
