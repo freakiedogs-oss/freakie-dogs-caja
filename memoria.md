@@ -2,6 +2,18 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 3-Ago-2026 — Asistencia de motoristas en la tab Bonos
+
+Sobre la tab Bonos (PR #128) se agregó el **récord de asistencia por driver**: hora de llegada/salida,
+minutos tarde, y acumulados del mes (días trabajados, horas disponibles, min tarde).
+- **Fuente:** los motoristas marcan en la tabla **`asistencia`** (por `usuario_id` = `usuarios_erp.id`),
+  NO en `asistencia_diaria`/`asistencia_gps` (esas están vacías para drivers). Campos: `hora_entrada`,
+  `hora_salida` (timestamptz), `minutos_tarde`. "Horas disponibles" = jornada entrada→salida.
+- **RPC:** `torre_bonos_delivery` ahora también devuelve `asistencia` (entrada/salida en hora SV, min tarde, horas).
+- **UI (`TabBonos.jsx`):** resumen por driver (N días · H horas · M min tarde), y en el drill-down cada día
+  muestra `🕐 entrada→salida · Nm tarde`. Los días se arman por la **unión** de días con viajes y días con marca.
+- `npm run build` ✅. PR aparte desde main.
+
 ## 3-Ago-2026 — Candado de versión extendido a los 3 logins (POS + ERP + Driver)
 
 Seguimiento del incidente de abajo: el candado de versión (PR #126) quedaba **solo en el POS**. Se extendió a los **3 logins distintos** que tenemos, cada uno con su propia entrada/deploy:
