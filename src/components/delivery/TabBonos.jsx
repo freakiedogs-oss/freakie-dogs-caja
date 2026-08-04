@@ -127,9 +127,21 @@ export default function TabBonos({ user, show = () => {}, puedeAprobar = false }
     const viajes = data.viajes || [];
     const ventasMap = Object.fromEntries((data.ventas_por_sucursal || []).map(v => [v.store_code, n(v.ventas)]));
 
+    const asisAll = data.asistencia || [];
     const porDriver = drivers.map(d => {
       const vjs = viajes.filter(v => v.empleado_id === d.empleado_id);
-      return { ...d, vjs, bono: bonoDriver(vjs, cfg), costo: costoFijo(d, cfg), saved: guardados.find(g => g.empleado_id === d.empleado_id) };
+      const asis = asisAll.filter(a => a.empleado_id === d.empleado_id);
+      const asisByDay = Object.fromEntries(asis.map(a => [a.fecha, a]));
+      const asisTot = {
+        dias: new Set(asis.filter(a => a.entrada).map(a => a.fecha)).size,
+        minTarde: asis.reduce((s, a) => s + n(a.minutos_tarde), 0),
+        horas: asis.reduce((s, a) => s + n(a.horas), 0),
+      };
+      return {
+        ...d, vjs, asis, asisByDay, asisTot,
+        bono: bonoDriver(vjs, cfg), costo: costoFijo(d, cfg),
+        saved: guardados.find(g => g.empleado_id === d.empleado_id),
+      };
     });
 
     const byStore = {};
@@ -261,10 +273,11 @@ export default function TabBonos({ user, show = () => {}, puedeAprobar = false }
                 {abierta && s.drivers.map(d => {
                   const drvOpen = openDrv === d.empleado_id;
                   const incompleto = d.cuenta_salario && (n(d.salario_mensual) === 0 || n(d.viatico_mensual) === 0);
-                  // Días con actividad
-                  const dias = Object.values(d.vjs.reduce((acc, v) => {
-                    (acc[v.fecha] ||= { fecha: v.fecha, vjs: [] }).vjs.push(v); return acc;
-                  }, {})).sort((a, b) => b.fecha.localeCompare(a.fecha));
+                  // Días con actividad = unión de días con viajes y días con marca de asistencia
+                  const acc = {};
+                  for (const v of d.vjs) (acc[v.fecha] ||= { fecha: v.fecha, vjs: [] }).vjs.push(v);
+                  for (const a of d.asis) (acc[a.fecha] ||= { fecha: a.fecha, vjs: [] });
+                  const dias = Object.values(acc).sort((a, b) => b.fecha.localeCompare(a.fecha));
                   return (
                     <div key={d.empleado_id} style={{ borderTop: '1px solid #262626', marginTop: 6, paddingTop: 6 }}>
                       <div onClick={() => setOpenDrv(drvOpen ? null : d.empleado_id)}
@@ -275,7 +288,10 @@ export default function TabBonos({ user, show = () => {}, puedeAprobar = false }
                           {incompleto && <span style={{ fontSize: 10, color: c.yellow }}> ⚠️ falta sueldo/viático</span>}
                           {d.saved?.estado && <span style={{ fontSize: 10, color: d.saved.estado === 'aprobado' ? c.green : c.yellow }}> · {d.saved.estado}</span>}
                         </span>
-                        <span style={{ fontSize: 12, color: c.dim }}>{d.vjs.length} viajes · <b style={{ color: c.green }}>{fmt(d.bono.total)}</b></span>
+                        <span style={{ fontSize: 12, color: c.dim, textAlign: 'right' }}>
+                          {d.vjs.length} viajes · <b style={{ color: c.green }}>{fmt(d.bono.total)}</b>
+                          <div style={{ fontSize: 10 }}>📅 {d.asisTot.dias}d · ⏱ {d.asisTot.horas.toFixed(1)}h{d.asisTot.minTarde > 0 && <> · <span style={{ color: c.orange }}>⏰ {d.asisTot.minTarde}m tarde</span></>}</div>
+                        </span>
                       </div>
 
                       {drvOpen && (
@@ -285,17 +301,29 @@ export default function TabBonos({ user, show = () => {}, puedeAprobar = false }
                             Bono: Nrm {d.bono.normal} · Lrg {d.bono.larga} · F.Hr {d.bono.fuera} · Mnd {d.bono.mandados}
                             {d.cuenta_salario && <> · Fija {fmt(d.costo.fija)} + ISSS {fmt(d.costo.isss)} + AFP {fmt(d.costo.afp)} = <b>{fmt(d.costo.total)}</b></>}
                           </div>
+                          {/* Resumen de asistencia del mes */}
+                          <div style={{ fontSize: 11, padding: '4px 0', color: c.dim, borderBottom: '1px solid #262626' }}>
+                            Asistencia: <b style={{ color: c.text }}>{d.asisTot.dias}</b> días trabajados ·
+                            <b style={{ color: c.text }}> {d.asisTot.horas.toFixed(1)}</b> h disponibles ·
+                            <b style={{ color: d.asisTot.minTarde > 0 ? c.orange : c.text }}> {d.asisTot.minTarde}</b> min tarde acum.
+                          </div>
                           {dias.map(dia => {
                             const diaKey = d.empleado_id + '|' + dia.fecha;
                             const diaOpen = openDia === diaKey;
                             const bonoDia = bonoDriver(dia.vjs, cfg).total;
                             const rondas = agruparRondas(dia.vjs);
+                            const a = d.asisByDay[dia.fecha];
                             return (
                               <div key={diaKey} style={{ borderTop: '1px dashed #2a2a2a' }}>
                                 <div onClick={() => setOpenDia(diaOpen ? null : diaKey)}
-                                  style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', padding: '4px 0', fontSize: 12 }}>
-                                  <span style={{ color: c.blue }}>{diaOpen ? '▾' : '▸'} {dia.fecha} <span style={{ color: c.dim }}>({rondas.length} viaje{rondas.length !== 1 ? 's' : ''}, {dia.vjs.length} órdenes)</span></span>
-                                  <span style={{ color: c.green }}>{fmt(bonoDia)}</span>
+                                  style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', padding: '4px 0', fontSize: 12, gap: 8 }}>
+                                  <span style={{ color: c.blue }}>{diaOpen ? '▾' : '▸'} {dia.fecha} <span style={{ color: c.dim }}>({rondas.length} viaje{rondas.length !== 1 ? 's' : ''}, {dia.vjs.length} órd.)</span></span>
+                                  <span style={{ color: c.dim, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                    {a
+                                      ? <>🕐 {a.entrada || '—'}→{a.salida || '…'}{a.minutos_tarde > 0 && <span style={{ color: c.orange }}> · {a.minutos_tarde}m tarde</span>} · </>
+                                      : <span style={{ color: c.off }}>sin marca · </span>}
+                                    <span style={{ color: c.green }}>{fmt(bonoDia)}</span>
+                                  </span>
                                 </div>
                                 {diaOpen && rondas.map((r, i) => (
                                   <div key={i} style={{ margin: '4px 0 8px', paddingLeft: 10, borderLeft: `2px solid ${r.viajes.length > 1 ? c.purple : '#333'}` }}>
