@@ -225,6 +225,19 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
 
+  // Para llevar: el cliente retira en el local. Sin motorista ni envío; se cierra
+  // solo cuando la caja cobra la cuenta (pasa a históricos).
+  const marcarParaLlevar = async (p) => {
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_marcar_para_llevar', { p_token: token, p_delivery_id: p.id });
+      if (error) throw error;
+      show(`🥡 ${data?.numero_orden || p.numero_orden}: para retirar en local`);
+      await cargar(token);
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
   const asignarMandado = async () => {
     if (!mForm.driver || !mForm.sucursal || !mForm.desc.trim()) { show('⚠️ Completá motorista, sucursal y descripción'); return; }
     try {
@@ -274,7 +287,7 @@ export default function TabPedidos({ show = () => {} }) {
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado };
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar };
 
   return (
     <div>
@@ -453,7 +466,8 @@ function Historial({ historial }) {
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado }) {
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar }) {
+  const paraLlevar = p.tipo === 'para_llevar';
   const reloj = useReloj(p.created_at);
   const sugerida = sucursalSugerida(p);
   const cambiada = !!sucSel[p.id] && sucSel[p.id] !== sugerida;
@@ -466,6 +480,12 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         <span style={{ fontWeight: 800, fontSize: compacta ? 12.5 : 14 }}>{p.numero_orden}</span>
         <span style={{ fontSize: 11, fontWeight: 700, color: reloj.color }}>{reloj.txt}</span>
       </div>
+      {paraLlevar && (
+        <div style={{ display: 'inline-block', marginTop: 5, fontSize: 11, fontWeight: 800,
+                      color: '#111', background: c.yellow, borderRadius: 6, padding: '2px 8px' }}>
+          🥡 Para retirar en local
+        </div>
+      )}
       <div style={{ fontSize: compacta ? 13 : 14.5, marginTop: 4 }}>{p.cliente_nombre || 'Cliente'}</div>
       <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2, lineHeight: 1.4 }}>{p.cliente_direccion}</div>
       <div style={{ fontSize: 11.5, color: c.dim, marginTop: 4 }}>
@@ -526,8 +546,8 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         </div>
       )}
 
-      {/* Listo: asignar motorista */}
-      {['preparando','lista'].includes(p.estado) && !p.motorista_id && (
+      {/* Listo: asignar motorista (no aplica a los "para llevar") */}
+      {['preparando','lista'].includes(p.estado) && !p.motorista_id && !paraLlevar && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
           {p.motorista_sugerido && (
             <div style={{ fontSize: 11, color: c.dim, marginBottom: 5 }}>
@@ -557,6 +577,12 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                   style={{ ...btn('none', c.orange), width: '100%', fontSize: 11.5,
                            marginTop: 6, border: `1px solid ${c.orange}` }}>
             Ya salió, sin asignar
+          </button>
+          <button disabled={ocupado === p.id} onClick={() => marcarParaLlevar(p)}
+                  title="El cliente retira en el local: sin motorista ni envío. Se cierra al cobrarse en caja."
+                  style={{ ...btn('none', c.yellow), width: '100%', fontSize: 11.5,
+                           marginTop: 6, border: `1px solid ${c.yellow}` }}>
+            🥡 Para llevar (retira en local)
           </button>
         </div>
       )}
@@ -653,13 +679,20 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         )
       )}
 
-      {/* En ruta: cerrarlo desde la central */}
+      {/* En ruta: cerrarlo desde la central. El "para llevar" no lo cierra la
+          central — se va solo cuando la caja cobra la cuenta. */}
       {p.estado === 'en_camino' && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
-          <button disabled={ocupado === p.id} onClick={() => marcarEntregado(p)}
-                  style={{ ...btn(c.green, '#04210f'), width: '100%', fontSize: 12 }}>
-            {ocupado === p.id ? '…' : '✅ Entregado'}
-          </button>
+          {paraLlevar ? (
+            <div style={{ fontSize: 11.5, color: c.dim, textAlign: 'center', lineHeight: 1.4 }}>
+              🧾 Se cierra al cobrarse en caja
+            </div>
+          ) : (
+            <button disabled={ocupado === p.id} onClick={() => marcarEntregado(p)}
+                    style={{ ...btn(c.green, '#04210f'), width: '100%', fontSize: 12 }}>
+              {ocupado === p.id ? '…' : '✅ Entregado'}
+            </button>
+          )}
         </div>
       )}
     </div>
