@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 4-Ago-2026 — App del driver: tab 💵 Cobros (conciliación de dinero)
+
+Al entregar, el pedido desaparecía de la vista del motorista (`mis_pedidos_driver` solo trae activos) y el
+Historial (`mis_viajes_driver`) solo muestra el bono `Entrega·km·$0.50`, sin cliente ni monto → confusión al
+entregar el dinero (pedido de Wendy/Jose).
+
+- **RPC `mis_entregas_driver(p_empleado_id)`**: entregas del motorista del **día** + cualquiera **pendiente de
+  cerrar** (cobrado=false) de días previos. Trae cliente, #orden, monto, método, `cobrado`/`cobrado_at`. `cobrado`
+  lo marca la caja al cerrar la cuenta (trigger `trg_pos_cobro_delivery` → `fn_pos_cobro_update_delivery`).
+- **Nueva tab 💵 Cobros** en `DriverBeacon.jsx`: resumen (efectivo por entregar), lista **⏳ Pendientes de cerrar**
+  y **✅ Pagadas hoy**. Cada entrega pasa a ✅ Pagado cuando la cajera cierra la orden. Badge con nº de pendientes.
+  Se refresca con el poll de 20s existente.
+
+Así el driver ve lo mismo que la caja por cada entrega y sabe cuáles no ha cuadrado. `npm run build` ✅.
+Validar en vivo: que al cerrar la cuenta en caja el pedido pase a ✅ Pagado (depende del flip de `cobrado`).
+
 ## 4-Ago-2026 — Pedidos "para llevar" en la torre + estado de sucursal en 3 modos
 
 Entran pedidos por el canal de delivery que en realidad son **para retirar en local**. Antes Kari solo podía

@@ -52,14 +52,21 @@ export default function DriverBeacon() {
   const inst = useInstalar()
   const [tab, setTab] = useState('pedidos')
   const [pedidos, setPedidos] = useState([])
+  const [cobros, setCobros] = useState([])   // entregas por cuadrar (día + pendientes)
   const beacon = useBeacon(yo)
   const dispo = useDisponible(yo)
 
   const cargarPedidos = useCallback(async () => {
     if (!yo) return
-    const { data } = await db.rpc('mis_pedidos_driver', { p_empleado_id: yo.id })
-    setPedidos(data || [])
+    const [ped, cob] = await Promise.all([
+      db.rpc('mis_pedidos_driver', { p_empleado_id: yo.id }),
+      db.rpc('mis_entregas_driver', { p_empleado_id: yo.id }),
+    ])
+    setPedidos(ped.data || [])
+    setCobros(cob.data || [])
   }, [yo])
+
+  const pendientesCobro = cobros.filter(o => !o.cobrado).length
 
   useEffect(() => {
     if (!yo) return
@@ -165,19 +172,23 @@ export default function DriverBeacon() {
 
       <main style={S.main}>
         {tab === 'pedidos'   && <Pedidos yo={yo} pedidos={pedidos} recargar={cargarPedidos} beacon={beacon} dispo={dispo} />}
+        {tab === 'cobros'    && <Cobros cobros={cobros} />}
         {tab === 'historial' && <Historial yo={yo} />}
         {tab === 'metricas'  && <Metricas  yo={yo} />}
       </main>
 
       <nav style={S.nav}>
-        {[['pedidos','📦','Pedidos'],['historial','🧾','Historial'],['metricas','📊','Métricas']].map(([k, ic, et]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ ...S.navBtn, color: tab === k ? '#E63946' : '#888' }}>
-            <div style={{ fontSize: 20, position: 'relative' }}>
-              {ic}
-              {k === 'pedidos' && pedidos.length > 0 && <span style={S.badge}>{pedidos.length}</span>}
-            </div>{et}
-          </button>
-        ))}
+        {[['pedidos','📦','Pedidos'],['cobros','💵','Cobros'],['historial','🧾','Historial'],['metricas','📊','Métricas']].map(([k, ic, et]) => {
+          const n = k === 'pedidos' ? pedidos.length : k === 'cobros' ? pendientesCobro : 0;
+          return (
+            <button key={k} onClick={() => setTab(k)} style={{ ...S.navBtn, color: tab === k ? '#E63946' : '#888' }}>
+              <div style={{ fontSize: 20, position: 'relative' }}>
+                {ic}
+                {n > 0 && <span style={S.badge}>{n}</span>}
+              </div>{et}
+            </button>
+          );
+        })}
       </nav>
     </div>
   )
@@ -569,6 +580,86 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       ))}
       <div style={{ fontSize: 11, color: '#555', textAlign: 'center', marginTop: 4 }}>
         Al entregar se registra tu viaje y suma a tu bono. Después liquidás en caja.
+      </div>
+    </div>
+  )
+}
+
+// ── 💵 Cobros ───────────────────────────────────────────────────────
+// Conciliación de dinero: lo mismo que ve la caja por cada entrega (cliente,
+// monto, método) y su estado. Se marca ✅ Pagado solo cuando la cajera cierra
+// la orden en caja, así el motorista sabe cuáles todavía debe cuadrar.
+function CobroCard({ o }) {
+  return (
+    <div style={{ ...S.rowCard, alignItems: 'flex-start', gap: 10,
+                  borderLeft: `3px solid ${o.cobrado ? '#4ade80' : '#fbbf24'}` }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{o.cliente_nombre || 'Cliente'}</div>
+        <div style={{ fontSize: 12, color: '#aaa', marginTop: 1 }}>
+          {o.numero_orden} · {o.metodo_pago || '—'}{o.store_code ? ` · ${o.store_code}` : ''}
+        </div>
+        <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
+          Entregado {o.entregado_at}{o.cobrado && o.cobrado_at ? ` · cerrado ${o.cobrado_at}` : ''}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>{fmt(o.total)}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: o.cobrado ? '#4ade80' : '#fbbf24' }}>
+          {o.cobrado ? '✅ Pagado' : '⏳ Pendiente'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Cobros({ cobros }) {
+  const pendientes = cobros.filter(o => !o.cobrado)
+  const pagadas    = cobros.filter(o => o.cobrado)
+  const efectivoPend = pendientes
+    .filter(o => /efectivo/i.test(o.metodo_pago || ''))
+    .reduce((s, o) => s + Number(o.total || 0), 0)
+
+  if (cobros.length === 0) {
+    return <div style={{ ...S.dim, textAlign: 'center', paddingTop: 30 }}>
+      No tenés entregas para cuadrar. Acá aparecen tus entregas del día y las que falten cerrar en caja.
+    </div>
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Resumen: lo que falta cuadrar */}
+      <div style={{ background: pendientes.length ? '#2a2410' : '#122a19',
+                    border: `1px solid ${pendientes.length ? '#fbbf24' : '#4ade80'}`,
+                    borderRadius: 12, padding: 12 }}>
+        {pendientes.length ? (
+          <>
+            <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 800 }}>
+              ⏳ {pendientes.length} entrega(s) sin cerrar en caja
+            </div>
+            <div style={{ fontSize: 12, color: '#ccc', marginTop: 3 }}>
+              Efectivo por entregar: <b style={{ color: '#fff' }}>{fmt(efectivoPend)}</b>
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 13, color: '#4ade80', fontWeight: 800 }}>✅ Todo cuadrado</div>
+        )}
+      </div>
+
+      {pendientes.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>Pendientes de cerrar en caja</div>
+          {pendientes.map(o => <CobroCard key={o.id} o={o} />)}
+        </>
+      )}
+
+      {pagadas.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Pagadas hoy</div>
+          {pagadas.map(o => <CobroCard key={o.id} o={o} />)}
+        </>
+      )}
+
+      <div style={{ fontSize: 11, color: '#555', textAlign: 'center', marginTop: 6 }}>
+        Cada entrega pasa a ✅ Pagado cuando la cajera cierra la orden en caja.
       </div>
     </div>
   )
