@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 3-Ago-2026 — Fix: efectivo/cambio mal capturado en el cobro (rejilla de `step`)
+
+Reporte de Frank (gary rigo): 2 tickets de S001 con **vuelto corto** (total $14.99 dio $4.75 en vez de $5.01; total $4.00 dio $0.75 en vez de $1.00).
+- **Causa raíz:** `PaymentModal.jsx` — el input "Efectivo recibido" tenía `step="0.25"` con `min={totalConProp}`. El `min` es el **step-base**, así que la rejilla de valores válidos era `total + 0.25·k` → **nunca** un billete redondo (14.99 → 19.74/19.99, 4.00 → 4.75…). Chrome/Edge **cambian el valor de un `input[type=number]` al hacer scroll/rueda** sobre el campo enfocado → en la tablet ELO un roce bajaba $20.00 → 19.74 y el vuelto (bien calculado sobre ese monto) salía corto ~$0.25.
+- **Prueba:** en BD el **100%** de los `monto_recibido` anómalos caía exactamente en `total + 0.25·k`. Concentrado en **S001 (Soyapango)**: 38 casos 28-jul→3-ago, ~$3.39 de menos a clientes. Resto de sucursales: ruido (1-2¢). **Sin impacto fiscal** (DTE/total/IVA correctos; solo el efectivo/cambio).
+- **Fix (commit `f97db75`, push directo a main):** input efectivo → `step="any"` y se **quita `min`** (la validación `efectivo >= total` ya existe en `canConfirm`, línea ~68). `onWheel={e => e.currentTarget.blur()}` en los **4** inputs numéricos (efectivo, mixto ef/tarjeta, propina) + `inputMode="decimal"`. `npm run build` ✅.
+- **Pendiente/ojo:** requiere **deploy de Vercel + que la tablet de S001 tome el build nuevo** (candado de versión) para verse. Opcional: cuadrar en caja las 38 ventas de S001 (listado disponible por SQL).
+
 ## 3-Ago-2026 — Asistencia de motoristas en la tab Bonos
 
 Sobre la tab Bonos (PR #128) se agregó el **récord de asistencia por driver**: hora de llegada/salida,
