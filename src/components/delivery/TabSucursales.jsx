@@ -85,16 +85,25 @@ export default function TabSucursales({ show = () => {} }) {
     } catch (e) { show('❌ ' + (e.message || 'No se pudo guardar')); }
   };
 
-  const toggleDelivery = async (suc) => {
-    const nuevo = !suc.tiene_delivery;
+  // Estado operativo en 3 modos (reusa activa + tiene_delivery)
+  const modoDe = (s) => !s.activa ? 'inactiva' : s.tiene_delivery ? 'con_delivery' : 'solo_llevar';
+  const MODOS = [
+    { k: 'con_delivery', etq: '🛵 Con delivery', col: c.green,  msg: 'reparte a domicilio' },
+    { k: 'solo_llevar',  etq: '🥡 Solo para llevar', col: c.yellow, msg: 'activa solo para retirar' },
+    { k: 'inactiva',     etq: '⏸️ Inactiva', col: c.dim, msg: 'no recibe pedidos' },
+  ];
+  const setModo = async (suc, modo) => {
+    if (modoDe(suc) === modo) return;
     setGuardando(suc.id);
     try {
-      const { error } = await db.rpc('torre_toggle_delivery', {
-        p_token: token, p_sucursal_id: suc.id, p_activo: nuevo,
+      const { error } = await db.rpc('torre_set_modo_sucursal', {
+        p_token: token, p_sucursal_id: suc.id, p_modo: modo,
       });
       if (error) throw error;
-      setSucs(prev => prev.map(s => s.id === suc.id ? { ...s, tiene_delivery: nuevo } : s));
-      show(nuevo ? `🛵 ${suc.nombre} ya reparte a domicilio` : `⏸️ ${suc.nombre} sin delivery`);
+      const activa = modo !== 'inactiva';
+      const tiene_delivery = modo === 'con_delivery';
+      setSucs(prev => prev.map(s => s.id === suc.id ? { ...s, activa, tiene_delivery } : s));
+      show(`🏪 ${suc.nombre}: ${MODOS.find(m => m.k === modo).msg}`);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo cambiar')); }
     finally { setGuardando(null); }
   };
@@ -102,8 +111,9 @@ export default function TabSucursales({ show = () => {} }) {
   return (
     <div>
       <div style={{ fontSize: 13, color: c.dim, marginBottom: 14, lineHeight: 1.5 }}>
-        Horario de cada tienda y si reparte a domicilio. Las que están sin delivery no reciben
-        pedidos del menú público, pero conservan su horario para cuando se activen.
+        Horario y estado de cada tienda. <b>Con delivery</b> reparte a domicilio; <b>Solo para llevar</b>
+        recibe pedidos pero solo para retirar en el local (sin motoristas); <b>Inactiva</b> no recibe pedidos.
+        Todas conservan su horario para cuando se reactiven.
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -118,16 +128,23 @@ export default function TabSucursales({ show = () => {} }) {
                   <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>{s.store_code}</div>
                 </div>
 
-                <button onClick={() => toggleDelivery(s)} disabled={guardando === s.id}
-                  title={s.tiene_delivery ? 'Dejar de repartir a domicilio' : 'Empezar a repartir a domicilio'}
-                  style={{
-                    padding: '7px 13px', borderRadius: 999, border: 'none', cursor: 'pointer',
-                    fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-                    background: s.tiene_delivery ? '#14351f' : '#2a1a1a',
-                    color: s.tiene_delivery ? c.green : c.dim,
-                  }}>
-                  {guardando === s.id ? '…' : s.tiene_delivery ? '🛵 Reparte a domicilio' : '⏸️ Sin delivery'}
-                </button>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {MODOS.map(m => {
+                    const activo = modoDe(s) === m.k;
+                    return (
+                      <button key={m.k} onClick={() => setModo(s, m.k)} disabled={guardando === s.id}
+                        style={{
+                          padding: '6px 11px', borderRadius: 999,
+                          border: `1px solid ${activo ? m.col : c.border}`, cursor: 'pointer',
+                          fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+                          background: activo ? m.col + '22' : 'transparent',
+                          color: activo ? m.col : c.dim,
+                        }}>
+                        {guardando === s.id && activo ? '…' : m.etq}
+                      </button>
+                    );
+                  })}
+                </div>
 
                 <button onClick={() => setAbierta(abiertoPanel ? null : s.id)}
                   style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${c.border}`,

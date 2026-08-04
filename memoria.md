@@ -2,6 +2,25 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 4-Ago-2026 — Pedidos "para llevar" en la torre + estado de sucursal en 3 modos
+
+Entran pedidos por el canal de delivery que en realidad son **para retirar en local**. Antes Kari solo podía
+asignar motorista. Ahora:
+- **`delivery_clientes.tipo`** nuevo (`'delivery' | 'para_llevar'`, default delivery; los pedidos actuales no cambian).
+- **`torre_marcar_para_llevar(p_token, p_delivery_id)`**: pasa el pedido a "En ruta" etiquetado 🥡 (sin motorista ni envío).
+- **`fn_pos_cobro_update_delivery`** extendido: al cobrar la cuenta en caja, un `para_llevar` pasa a `entregada` →
+  sale del board a históricos. El delivery normal no cambia (lo cierra el motorista).
+- **`crear_pedido_delivery`**: el pickup del menú (ya mandaba `tipo:'pickup'`) nace `para_llevar`.
+- **`torre_listar_pedidos`** devuelve `tipo`; **TabPedidos**: botón "🥡 Para llevar (retira en local)" en la sección de
+  asignar, etiqueta en la tarjeta, y en "En ruta" muestra "🧾 Se cierra al cobrarse en caja" (sin botón Entregado).
+
+**Sucursal en 3 estados** (reusa `activa` + `tiene_delivery`, sin columna nueva): Con delivery / **Solo para llevar** /
+Inactiva. RPC `torre_set_modo_sucursal(p_token, p_sucursal_id, p_modo)`; `torre_sucursales_horarios` ahora expone
+`activa` e incluye inactivas (para reactivarlas). **TabSucursales**: control segmentado de 3 botones. Caso Venecia (S004):
+puede quedar "solo para llevar" si no tiene drivers.
+
+`npm run build` ✅. Backend probado con rollback (para_llevar: tipo/estado/envío OK).
+
 ## 3-Ago-2026 — Fix: efectivo/cambio mal capturado en el cobro (rejilla de `step`)
 
 Reporte de Frank (gary rigo): 2 tickets de S001 con **vuelto corto** (total $14.99 dio $4.75 en vez de $5.01; total $4.00 dio $0.75 en vez de $1.00).
