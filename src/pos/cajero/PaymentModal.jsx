@@ -281,11 +281,12 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
               <input
                 className="pos-payment-input"
                 type="number"
-                step="0.25"
-                min={totalConProp}
+                inputMode="decimal"
+                step="any"
                 placeholder={`Mín $${totalConProp.toFixed(2)}`}
                 value={efectivo}
                 onChange={e => setEfectivo(e.target.value)}
+                onWheel={e => e.currentTarget.blur()}
                 autoFocus
               />
             </div>
@@ -393,10 +394,11 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
               <label className="pos-payment-label">Efectivo</label>
               <input
                 className="pos-payment-input"
-                type="number" step="0.01" min="0"
+                type="number" inputMode="decimal" step="0.01" min="0"
                 placeholder="$0.00"
                 value={efectivo}
                 onChange={e => setEfectivo(e.target.value)}
+                onWheel={e => e.currentTarget.blur()}
                 autoFocus
               />
             </div>
@@ -406,10 +408,11 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
               </label>
               <input
                 className="pos-payment-input"
-                type="number" step="0.01" min="0"
+                type="number" inputMode="decimal" step="0.01" min="0"
                 placeholder="$0.00"
                 value={tarjeta}
                 onChange={e => setTarjeta(e.target.value)}
+                onWheel={e => e.currentTarget.blur()}
               />
             </div>
             <div style={{
@@ -475,10 +478,11 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
           </div>
           <input
             className="pos-payment-input"
-            type="number" step="0.25" min="0"
+            type="number" inputMode="decimal" step="0.01" min="0"
             placeholder="$0.00"
             value={propina}
             onChange={e => setPropina(e.target.value)}
+            onWheel={e => e.currentTarget.blur()}
             style={{ fontSize: 14, padding: '8px 12px' }}
           />
         </div>
