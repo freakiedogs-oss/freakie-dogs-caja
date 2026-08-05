@@ -163,7 +163,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
     setReimprimiendo(cuenta.id)
     try {
       const items = (cuenta.pos_cuenta_items || []).map(i => ({
-        cantidad: i.cantidad,
+        qty: i.cantidad,          // buildFactura lee it.qty (no it.cantidad)
         nombre: i.nombre,
         precio: parseFloat(i.precio_unitario) || 0,
         modificadores: [],
