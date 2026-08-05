@@ -2,6 +2,25 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 5-Ago-2026 — KPIs de Venta: migrado de Quanto al POS interno (desde 1-ago)
+
+Quanto quedó desfasado. El dashboard **KPIs de Venta** (`KpisVentaDashboard.jsx`) ahora lee del **POS interno**
+desde el 1-ago (Quanto solo histórico). `quanto_ordenes` tiene 0 filas en agosto → corte seguro.
+
+- **Vista `v_kpis_venta_canal` reescrita:** rama Quanto cortada en `fecha < '2026-08-01'`; rama POS incluye **todas**
+  las sucursales desde el 1-ago (antes excluía S001/S003, que seguían en Quanto). **2 bugs de datos corregidos:**
+  (a) `drive_through` no se mapeaba (caía al ELSE); (b) `pedidos_ya`/`delivery_app` se contaban como `para_llevar`.
+  Ahora se filtran los 4 canales (mesa, para_llevar, delivery_propio, drivethrough) y se **excluye PeYa/App**
+  (decisión de Jose). Verificado: cuadra exacto por canal vs crudo del POS.
+- **Nuevos RPC POS** (gateados con `_rol_usuario`): `obtener_ventas_empleado` (atribuye a `coalesce(mesero_id, cajero_id)`
+  → nombre de `usuarios_erp`) y `obtener_top_items_venta` (Pareto desde `pos_cuenta_items`, excluye cancelados).
+  La tab **Por Empleado** estaba vacía (dependía de `quanto.autorizado_por` por CSV) → ahora funciona.
+- **Frontend:** `fetchEmpleados`/`fetchTopItemsPareto` reescritos para usar los RPC (misma forma de salida, se
+  borraron los lectores de `quanto_ordenes`/`quanto_orden_items` con chunking). Cabecera: "POS interno (desde 1-ago)".
+- El **Resumen/Metas/Tendencia** derivan de la vista → migran solos. `STORES_ACTIVAS` ya tenía las 6 sucursales.
+- Verificado (agosto): 6 sucursales (S001 $6.2k, S003 $4.4k incluidas), empleados 30 filas ~$46k, items 331. `npm run build` ✅.
+- Límite: Empleados y Top Items quedan POS-only (Quanto no daba empleado; ítems históricos de Quanto fuera de esas 2 tabs).
+
 ## 4-Ago-2026 — Meseros pueden comandar "Para Llevar" en el POS
 
 Reporte (Lourdes): a los meseros no les salían los botones de abajo para comandar otros tipos de orden.
