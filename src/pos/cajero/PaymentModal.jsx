@@ -218,7 +218,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
             <button
               className="pos-confirmar-btn"
               onClick={() => {
-                onPrintFactura?.({ dteResult, tipoDte, propina: propinaNum, metodo, cliente, pager })
+                onPrintFactura?.({ dteResult, tipoDte, propina: propinaNum, metodo, cliente, pager, efectivo: efectivoNum, cambio })
                 setPrinted(true)
               }}
               style={{ marginTop: 12, background: '#2dd4a8', color: '#06241b' }}

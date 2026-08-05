@@ -2,6 +2,18 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 5-Ago-2026 — Tickets: canal de venta, mesa, método de pago y cambio
+
+Pedido de Jose: que los tickets impresos muestren el **canal de venta** (mesa/llevar/drive/delivery/PeYa), el
+**nº de mesa** si es mesa, el **método de pago**, y si es **efectivo el cambio** a entregar.
+- **`buildFactura` (`printService.js`):** agrega `Canal: {tipoLabel}` + `Mesa: #{n}` (si hay), y bajo "Pago:"
+  imprime `Recibido:` y `CAMBIO` (grande) cuando vienen `recibido`/`cambio`. (Comanda y pre-cuenta ya mostraban canal/mesa.)
+- **Cobro:** `PaymentModal` ya calcula el cambio; ahora pasa `efectivo`/`cambio` a `onPrintFactura`, y `POSMain.handlePrintFactura`
+  los reenvía a `printFactura` como `recibido`/`cambio` (solo si método=efectivo). El `tipoLabel`/`mesa` ya iban en `buildCuentaPrint`.
+- **Reimpresión (`HistorialCobros`):** la consulta ahora trae `pos_cuenta_pagos (metodo, monto_recibido, cambio)`;
+  se calcula `metodoPago` (mixto si hay varios pagos) y, si hubo efectivo, `recibido`/`cambio`, y se pasan a `printFactura`.
+`npm run build` ✅.
+
 ## 5-Ago-2026 — Reimpresión del Historial no ruteaba por caja (Lourdes multi-caja)
 
 En Lourdes, reimprimir una factura desde **Historial de Órdenes** salía en la impresora equivocada.
