@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 4-Ago-2026 — Meseros pueden comandar "Para Llevar" en el POS
+
+Reporte (Lourdes): a los meseros no les salían los botones de abajo para comandar otros tipos de orden.
+**Causa:** no era bug ni config de sucursal — `POSHome.jsx` escondía Para Llevar/Delivery/PedidosYa/Drive Thru
+(+ Historial/Cierre) para `MESERO_ROLES=['mesero','mesera']`; al mesero solo le quedaba "Nueva mesa". Aplica a
+cualquier mesero (M001, S003, S004), no solo Lourdes; donde entran como cajera sí ven todo.
+**Cambio (pedido de Jose):** sacar **Para Llevar** del bloque excluido → ahora meseros ven **Mesas + Para Llevar**.
+Delivery/PedidosYa/Drive Thru siguen solo cajero+. `npm run build` ✅.
+
 ## 4-Ago-2026 — App del driver: tab 💵 Cobros (conciliación de dinero)
 
 Al entregar, el pedido desaparecía de la vista del motorista (`mis_pedidos_driver` solo trae activos) y el

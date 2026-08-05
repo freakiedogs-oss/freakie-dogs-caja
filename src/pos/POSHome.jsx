@@ -475,11 +475,12 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             <span className="poshome-quick-label">Mesas</span>
           </button>
         )}
-        {/* Para Llevar / Delivery / PedidosYa / Drive: solo cajero+ (no mesero) */}
+        {/* Para Llevar: también los meseros pueden comandarlo */}
+        <button className="poshome-quick-btn" style={{ '--qt-color': '#f4a261' }} onClick={() => handleNueva('para_llevar')}>
+          <span className="poshome-quick-icon"><Icon name="bag" size={22} /></span><span className="poshome-quick-label">Para Llevar</span>
+        </button>
+        {/* Delivery / PedidosYa / Drive: solo cajero+ (no mesero) */}
         {!MESERO_ROLES.includes(user.rol) && (<>
-          <button className="poshome-quick-btn" style={{ '--qt-color': '#f4a261' }} onClick={() => handleNueva('para_llevar')}>
-            <span className="poshome-quick-icon"><Icon name="bag" size={22} /></span><span className="poshome-quick-label">Para Llevar</span>
-          </button>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#60a5fa' }} onClick={() => handleNueva('delivery_propio')}>
             <span className="poshome-quick-icon"><Icon name="bike" size={22} /></span><span className="poshome-quick-label">Delivery</span>
           </button>
