@@ -182,6 +182,10 @@ export function buildFactura(c, cols = 48) {
     t.row('Fecha:', horaSV(c.fecha));
   }
 
+  // Canal de venta (y número de mesa si aplica)
+  t.row('Canal:', c.tipoLabel || 'Para llevar');
+  if (c.mesa) t.row('Mesa:', `#${c.mesa}`);
+
   if (c.cliente?.nombre) {
     t.hr().ln(`Cliente: ${c.cliente.nombre}`);
     if (c.cliente.doc) t.ln(`Doc: ${c.cliente.doc}`);
@@ -199,6 +203,11 @@ export function buildFactura(c, cols = 48) {
   t.bold(true).size(1, 2).row('TOTAL', money(c.total)).normal();
   if (c.propina > 0) t.row('Propina', money(c.propina));
   if (c.metodoPago) t.row('Pago:', String(c.metodoPago).toUpperCase());
+  // Efectivo: detallar recibido y cambio a entregar al cliente
+  if (c.recibido != null && c.cambio != null) {
+    t.row('Recibido:', money(c.recibido));
+    t.bold(true).size(1, 2).row('CAMBIO', money(c.cambio)).normal();
+  }
 
   // QR de consulta pública DGII
   if (dte?.codigoGeneracion) {
