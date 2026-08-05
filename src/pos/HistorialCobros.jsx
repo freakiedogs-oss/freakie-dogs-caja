@@ -173,6 +173,9 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
       const r = await printFactura({
         storeCode,
         storeName,
+        // Multi-caja (Lourdes): rutear a la impresora de la caja en la que está
+        // logueada la persona que reimprime; sin esto caía en cualquiera.
+        caja: user?.caja || null,
         mesa: cuenta.mesa_ref || null,
         tipoLabel: (TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']).label,
         cajero: user?.nombre || user?.name || null,
