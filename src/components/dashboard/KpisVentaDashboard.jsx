@@ -143,8 +143,8 @@ export default function KpisVentaDashboard({ user, onBack }) {
           md,
         ] = await Promise.all([
           db.rpc('obtener_kpis_venta_canal', { p_usuario_id: user.id, p_fecha_desde: fechaDesde, p_fecha_hasta: fechaHasta }),
-          fetchTopItemsPareto(fechaDesde, fechaHasta),
-          fetchEmpleados(fechaDesde, fechaHasta),
+          fetchTopItemsPareto(user.id, fechaDesde, fechaHasta),
+          fetchEmpleados(user.id, fechaDesde, fechaHasta),
           fetchTendencia(user.id),
           db.rpc('obtener_insights_kpis', { p_usuario_id: user.id, p_mes: mesSel }),
           fetchMetasData(user.id, mesSel),
@@ -176,7 +176,7 @@ export default function KpisVentaDashboard({ user, onBack }) {
           <div>
             <div style={{ fontWeight: 800, fontSize: 20 }}>📊 KPIs de Venta <InfoTip text="Tablero de ventas: metas, resumen por canal y sucursal, Pareto de productos, desempeño por empleado y tendencia." /></div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-              Fuente: <code style={{ color: '#f59e0b' }}>quanto_ordenes</code> · 4 canales · Excluye PeYa
+              Fuente: <code style={{ color: '#f59e0b' }}>POS interno</code> (desde 1-ago) · histórico Quanto · 4 canales · Excluye PeYa
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -286,97 +286,27 @@ function calcularDatos(kpisRaw) {
   return { sucursales: sucArr, totalCanal, ordCanal, ticketCanal, total, ordTotal };
 }
 
-// FIX: paginación con .range() para evitar el límite de 1000 filas
-async function fetchAllOrdenes(fechaDesde, fechaHasta) {
-  const all = [];
-  let from = 0;
-  const PAGE = 1000;
-  while (true) {
-    const { data, error } = await db.from('quanto_ordenes')
-      .select('id,store_code')
-      .gte('fecha', fechaDesde).lte('fecha', fechaHasta)
-      .in('store_code', STORES_ACTIVAS)
-      .in('canal_venta', CH_KEYS)
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all;
-}
 
-async function fetchAllOrdenesEmpleados(fechaDesde, fechaHasta) {
-  const all = [];
-  let from = 0;
-  const PAGE = 1000;
-  while (true) {
-    const { data, error } = await db.from('quanto_ordenes')
-      .select('store_code,autorizado_por,total_pagar')
-      .gte('fecha', fechaDesde).lte('fecha', fechaHasta)
-      .in('store_code', STORES_ACTIVAS)
-      .not('autorizado_por', 'is', null)
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all;
-}
-
-async function fetchTopItemsPareto(fechaDesde, fechaHasta) {
-  const ords = await fetchAllOrdenes(fechaDesde, fechaHasta);
-  if (!ords || ords.length === 0) return {};
-
-  const idsBySuc = {};
-  ords.forEach(o => { (idsBySuc[o.store_code] = idsBySuc[o.store_code] || []).push(o.id); });
-
-  // OLA 4.6 — Paralelización de chunks: en lugar de await secuencial dentro del for,
-  // construir Promise.all con TODOS los chunks de TODAS las sucursales y lanzarlos paralelo.
-  // Antes: 5 suc × 2-3 chunks × ~500ms = ~5-7 seg secuencial.
-  // Después: ~500ms (la query más lenta).
-  const allChunkPromises = [];
-  const chunkMeta = []; // mantiene orden: { sc, idx }
-  for (const sc of Object.keys(idsBySuc)) {
-    const ids = idsBySuc[sc];
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500);
-      allChunkPromises.push(db.from('quanto_orden_items')
-        .select('descripcion,cantidad,precio_unitario,es_propina')
-        .in('orden_id', chunk));
-      chunkMeta.push({ sc });
-    }
-  }
-  const allResponses = await Promise.all(allChunkPromises);
-
-  // Agrupar items por sucursal
-  const itemsBySuc = {};
-  allResponses.forEach((resp, i) => {
-    const sc = chunkMeta[i].sc;
-    if (!itemsBySuc[sc]) itemsBySuc[sc] = [];
-    if (resp.data) itemsBySuc[sc].push(...resp.data);
+// Top items (Pareto 80/20) desde el POS interno (RPC obtener_top_items_venta).
+async function fetchTopItemsPareto(usuarioId, fechaDesde, fechaHasta) {
+  const { data, error } = await db.rpc('obtener_top_items_venta', {
+    p_usuario_id: usuarioId, p_fecha_desde: fechaDesde, p_fecha_hasta: fechaHasta,
   });
+  if (error || !data) return {};
+
+  const bySuc = {};
+  for (const r of data) {
+    const desc = (r.nombre || '').trim();
+    if (!desc || desc.toLowerCase() === 'domicilio') continue;
+    (bySuc[r.store_code] = bySuc[r.store_code] || []).push({
+      producto: titulize(desc), unidades: Number(r.cantidad || 0), monto: Number(r.monto || 0),
+    });
+  }
 
   const result = {};
-  for (const sc of Object.keys(idsBySuc)) {
-    const allItems = itemsBySuc[sc] || [];
-
-    const agg = {};
-    for (const it of allItems) {
-      if (it.es_propina) continue;
-      const desc = (it.descripcion || '').trim();
-      if (!desc || desc.toLowerCase() === 'domicilio') continue;
-      if (!agg[desc]) agg[desc] = { producto: titulize(desc), unidades: 0, monto: 0 };
-      agg[desc].unidades += Number(it.cantidad || 0);
-      agg[desc].monto += Number(it.cantidad || 0) * Number(it.precio_unitario || 0);
-    }
-
-    const total = Object.values(agg).reduce((s, x) => s + x.monto, 0);
-    const sorted = Object.values(agg).sort((a, b) => b.monto - a.monto);
-
+  for (const sc of Object.keys(bySuc)) {
+    const sorted = bySuc[sc].sort((a, b) => b.monto - a.monto);
+    const total = sorted.reduce((s, x) => s + x.monto, 0);
     let acum = 0;
     const corte80 = [];
     for (const x of sorted) {
@@ -389,20 +319,22 @@ async function fetchTopItemsPareto(fechaDesde, fechaHasta) {
   return result;
 }
 
-async function fetchEmpleados(fechaDesde, fechaHasta) {
-  const data = await fetchAllOrdenesEmpleados(fechaDesde, fechaHasta);
+// Ventas por empleado desde el POS interno (RPC obtener_ventas_empleado).
+async function fetchEmpleados(usuarioId, fechaDesde, fechaHasta) {
+  const { data, error } = await db.rpc('obtener_ventas_empleado', {
+    p_usuario_id: usuarioId, p_fecha_desde: fechaDesde, p_fecha_hasta: fechaHasta,
+  });
   const result = {};
-  if (!data) return result;
+  if (error || !data) return result;
 
   for (const r of data) {
     const sc = r.store_code;
-    const emp = r.autorizado_por.trim();
+    const nombre = r.empleado_nombre || '—';
+    const key = r.empleado_id || nombre;
     if (!result[sc]) result[sc] = { total: 0, ord: 0, empleados: {} };
-    if (!result[sc].empleados[emp]) result[sc].empleados[emp] = { nombre: emp, ord: 0, monto: 0 };
-    result[sc].empleados[emp].ord += 1;
-    result[sc].empleados[emp].monto += Number(r.total_pagar || 0);
-    result[sc].total += Number(r.total_pagar || 0);
-    result[sc].ord += 1;
+    result[sc].empleados[key] = { nombre, ord: Number(r.ordenes || 0), monto: Number(r.monto || 0) };
+    result[sc].total += Number(r.monto || 0);
+    result[sc].ord += Number(r.ordenes || 0);
   }
 
   for (const sc of Object.keys(result)) {
