@@ -102,7 +102,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         .eq('activa', true)
         .order('numero'),
       db.from('pos_cuentas')
-        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, cliente_nombre, delivery_direccion, delivery_referencia, delivery_plataforma, delivery_metodo_pago, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
+        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, cliente_nombre, delivery_direccion, delivery_referencia, delivery_plataforma, delivery_metodo_pago, repartidor_nombre, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
         .eq('store_code', storeCode)
         .in('estado', ESTADO_ACTIVO)
         .order('created_at'),
@@ -415,6 +415,12 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                             : null;
                         })()}
                       </span>
+                      {/* Motorista responsable: para saber a quién reclamarle y cerrar la cuenta */}
+                      {c.tipo === 'delivery_propio' && (
+                        <span className="poshome-cuenta-items" style={{ color: c.repartidor_nombre ? '#60a5fa' : '#f59e0b' }}>
+                          🛵 {c.repartidor_nombre || 'Sin motorista asignado'}
+                        </span>
+                      )}
                     </div>
                     <span className="poshome-cuenta-total">${parseFloat(c.subtotal || 0).toFixed(2)}</span>
                     <span className="poshome-cuenta-time">{elapsed(c.created_at)}</span>

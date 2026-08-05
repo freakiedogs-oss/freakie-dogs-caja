@@ -2,6 +2,18 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 5-Ago-2026 — Motorista visible en las órdenes de Delivery del POS
+
+Pedido de Jose: en el POS (tab Delivery), cada orden debe mostrar el motorista responsable, para que la caja
+sepa a quién reclamarle y poder cerrarla. El motorista vive en `delivery_clientes.motorista_id/repartidor_nombre`;
+`torre_asignar_motorista` ya lo guardaba ahí y ya tocaba la `pos_cuenta` ligada (`delivery_motorista_id`).
+- **Backend:** nueva columna `pos_cuentas.repartidor_nombre` (text). `torre_asignar_motorista` ahora también
+  estampa el nombre en la cuenta POS al asignar/reasignar. Backfill de las cuentas de delivery abiertas desde
+  `delivery_clientes.repartidor_nombre`.
+- **Frontend `POSHome.jsx`:** el select de `pos_cuentas` trae `repartidor_nombre`; la tarjeta de delivery muestra
+  `🛵 {motorista}` (azul) o `🛵 Sin motorista asignado` (ámbar). Se actualiza en vivo por el realtime de pos_cuentas.
+`npm run build` ✅.
+
 ## 5-Ago-2026 — KPIs de Venta: migrado de Quanto al POS interno (desde 1-ago)
 
 Quanto quedó desfasado. El dashboard **KPIs de Venta** (`KpisVentaDashboard.jsx`) ahora lee del **POS interno**
