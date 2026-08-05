@@ -2,6 +2,18 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 5-Ago-2026 — Reimpresión del Historial no ruteaba por caja (Lourdes multi-caja)
+
+En Lourdes, reimprimir una factura desde **Historial de Órdenes** salía en la impresora equivocada.
+**Causa:** `HistorialCobros.jsx` → `handleReimprimir` llamaba `printFactura({...})` **sin `caja`**; `imprimir()`
+resuelve `caja = opts.caja ?? cuenta.caja ?? null`, y con `caja=null` en sucursal multi-caja agarra cualquier
+impresora principal de la sucursal (no la de la caja del cajero). El flujo normal del POS sí pasa `caja`
+(`POSMain.jsx:123`, `user.caja`).
+**Fix:** pasar `caja: user?.caja || null` en el `printFactura` de la reimpresión → cae en la impresora de la
+caja logueada (general → .7, drive → .100). `npm run build` ✅.
+Aparte (config física Lourdes): Caja general WiFi `.7`, Meseros WiFi `.8` (gateway debe ser `.1`, quedó en `.101`),
+Autoservicio por cable `.100` (única cableada). Ver `pos_impresoras` S003.
+
 ## 5-Ago-2026 — Motorista visible en las órdenes de Delivery del POS
 
 Pedido de Jose: en el POS (tab Delivery), cada orden debe mostrar el motorista responsable, para que la caja
