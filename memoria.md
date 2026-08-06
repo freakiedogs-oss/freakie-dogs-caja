@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 6-Ago-2026 — Capa de sugerencia de motorista (torre) + turno/almuerzo/bitácora
+
+Bloque grande del roadmap de delivery. Modelo de disponibilidad corregido a **turno abierto** (en_linea, sin
+ventana de frescura); `desconectar_driver` ya NO cierra turno (era la causa real de "se desconecta": la app apaga
+el GPS al terminar cada ruta). Auto-cierre nocturno (cron 4am). **Almuerzo**: `driver_almorzar`/`driver_fin_almuerzo`
+(+ `almuerzo_inicio`, `asistencia.almuerzo_min`), sigue asignable, Kari lo ve "🍽️ almorzando".
+**Bitácora** `delivery_asignaciones_log` (cada asignación de Kari con contexto: elegido vs sugerido, carga, candidatos, etc.).
+**Sugerencia:** `sugerir_motoristas(sucursal, n)` puntúa por **carga·25 + cercanía·4 + almuerzo·15** y devuelve ranking
+con razón; `sugerir_motorista` = top1 (mejora auto la de `torre_listar_pedidos`, que ahora también trae `sugeridos`).
+`TabPedidos`: chips de "💡 Sugeridos (tocá para asignar)", #1 destacado ⭐ — cada toque asigna y se registra (loop de
+aprendizaje). Roadmap: capturar (hecho) → sugerir (hecho) → asistir/automatizar con la data. `npm run build` ✅.
+Ver [[freakie-driver-disponibilidad-turno]].
+
 ## 5-Ago-2026 — Delivery Fase 1: desconexión de turno + desglose de bono en Métricas
 
 Primer bloque de las mejoras del flujo delivery (roadmap acordado con Jose).
