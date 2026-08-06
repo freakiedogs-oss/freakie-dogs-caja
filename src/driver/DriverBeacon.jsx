@@ -13,6 +13,13 @@ import UpdateGate from '../components/layout/UpdateGate'
 const KEY = 'freakie_driver_v1'
 const HEARTBEAT_MS = 15000
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
+// En El Salvador las llamadas del delivery se hacen por WhatsApp. Normalizamos
+// el número a formato internacional (503 + 8 dígitos) para abrir el chat.
+const waHref = (tel) => {
+  const d = String(tel || '').replace(/\D/g, '')
+  if (d.length < 8) return null
+  return `https://wa.me/${d.length === 8 ? '503' + d : d}`
+}
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const fmtMes = (m) => { if (!m) return ''; const [y, mo] = m.split('-'); return `${MESES[+mo - 1]} ${y}` }
 
@@ -593,7 +600,12 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <a href={`tel:${p.cliente_telefono}`} style={{ ...S.btnSm('#333'), textDecoration: 'none' }}>📞 Llamar</a>
+            {waHref(p.cliente_telefono) && (
+              <a href={waHref(p.cliente_telefono)} target="_blank" rel="noopener"
+                 style={{ ...S.btnSm('#25D366'), textDecoration: 'none', color: '#04220f' }}>💬 WhatsApp</a>
+            )}
+            <a href={`tel:${p.cliente_telefono}`} style={{ ...S.btnSm('#333'), textDecoration: 'none' }}
+               title="Llamada normal">📞</a>
             {/* Muchos clientes no dan permiso de ubicación y solo escriben la
                 dirección. Antes ahí no salía ningún botón; ahora se busca por
                 texto, que es lo que haría el motorista a mano. */}
