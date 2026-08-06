@@ -681,6 +681,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
   const [zona, setZona] = useState(perfil.zona || '')
   const [notas, setNotas] = useState('')
   const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [pagaCon, setPagaCon] = useState('')   // billete con que paga (para el vuelto)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
   // Ubicación / ruteo de sucursal (Fase 2)
@@ -772,6 +773,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
           cliente_lat: tipo === 'delivery' ? (ubic?.lat ?? null) : null,
           cliente_lng: tipo === 'delivery' ? (ubic?.lng ?? null) : null,
           metodo_pago: metodoPago,
+          paga_con: metodoPago === 'efectivo' ? (parseFloat(pagaCon) || null) : null,
           notas_cliente: notas.trim() || null,
           items: items.map(i => ({
             menu_item_id: i.id,
@@ -951,6 +953,15 @@ function Checkout({ items, total, onClose, onEnviado }) {
               ))}
             </div>
           </div>
+
+          {/* Con cuánto paga (efectivo): para que el motorista lleve el cambio */}
+          {metodoPago === 'efectivo' && (
+            <div className="mp-field">
+              <label>¿Con cuánto vas a pagar? <span style={{ color: '#8a8a8a', fontWeight: 400 }}>(para llevarte el cambio)</span></label>
+              <input type="number" inputMode="decimal" min="0" step="0.01" value={pagaCon}
+                     onChange={e => setPagaCon(e.target.value)} placeholder="Ej: 20" />
+            </div>
+          )}
 
           {/* NOTAS */}
           <div className="mp-field">
