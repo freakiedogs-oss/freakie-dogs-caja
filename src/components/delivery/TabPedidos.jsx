@@ -311,6 +311,7 @@ export default function TabPedidos({ show = () => {} }) {
           {verHistorial ? '← Tablero' : '🧾 Historial'}
         </button>
         <button onClick={() => cargar(token)} style={btn('#333')} title="Actualizar">{cargando ? '…' : '↻'}</button>
+        <a href="/manual-torre.html" target="_blank" rel="noopener" style={{ ...btn('#333'), textDecoration: 'none', display: 'inline-block' }}>📘 Manual</a>
         <button onClick={salir} style={btn('#333')}>Salir</button>
       </div>
 
