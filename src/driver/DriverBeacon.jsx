@@ -583,6 +583,11 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           <div style={{ fontSize: 15, marginTop: 6 }}>{p.cliente_nombre}</div>
           <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{p.cliente_direccion}</div>
           <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>🏪 {p.sucursal} · {fmt(p.total)} · {p.metodo_pago}</div>
+          {/efectivo/i.test(p.metodo_pago || '') && p.paga_con > 0 && (
+            <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginTop: 4 }}>
+              💵 Paga con {fmt(p.paga_con)} → llevá cambio <b>{fmt(Math.max(0, p.paga_con - p.total))}</b>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <a href={`tel:${p.cliente_telefono}`} style={{ ...S.btnSm('#333'), textDecoration: 'none' }}>📞 Llamar</a>
@@ -591,11 +596,17 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                 texto, que es lo que haría el motorista a mano. */}
             {(p.cliente_lat || p.cliente_direccion) && (
               <a href={p.cliente_lat
-                    ? `https://www.google.com/maps/dir/?api=1&destination=${p.cliente_lat},${p.cliente_lng}`
-                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                        String(p.cliente_direccion).replace(/^\[[^\]]*\]\s*/, '') + ', El Salvador')}`}
+                    ? `https://waze.com/ul?ll=${p.cliente_lat},${p.cliente_lng}&navigate=yes`
+                    : `https://waze.com/ul?q=${encodeURIComponent(
+                        String(p.cliente_direccion).replace(/^\[[^\]]*\]\s*/, '') + ', El Salvador')}&navigate=yes`}
+                 target="_blank" rel="noopener" style={{ ...S.btnSm('#33ccff'), textDecoration: 'none', color: '#04212b' }}>
+                {p.cliente_lat ? '🧭 Waze' : '🧭 Waze (buscar)'}
+              </a>
+            )}
+            {p.cliente_lat && (
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${p.cliente_lat},${p.cliente_lng}`}
                  target="_blank" rel="noopener" style={{ ...S.btnSm('#2563eb'), textDecoration: 'none' }}>
-                {p.cliente_lat ? '🗺️ Cómo llegar' : '🔎 Buscar dirección'}
+                🗺️ Maps
               </a>
             )}
             {!p.cliente_lat && (
@@ -777,6 +788,17 @@ function Historial({ yo }) {
               {v.fuera_horario && <span style={{ color: '#f97316', fontSize: 11, marginLeft: 6 }}>fuera de horario</span>}
             </div>
             <div style={{ fontSize: 12, color: '#888' }}>{v.fecha}{v.descripcion ? ` · ${v.descripcion}` : ''}</div>
+            {v.cliente && <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>👤 {v.cliente}{v.orden ? ` · ${v.orden}` : ''}</div>}
+            {v.direccion && <div style={{ fontSize: 11.5, color: '#777', marginTop: 1 }}>📍 {String(v.direccion).replace(/^\[[^\]]*\]\s*/, '')}</div>}
+            {(v.asignado || v.entregado) && (
+              <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
+                🕐 {v.asignado ? `asignado ${v.asignado}` : ''}{v.asignado && v.entregado ? ' → ' : ''}{v.entregado ? `entregado ${v.entregado}` : ''}
+              </div>
+            )}
+            {v.lat && (
+              <a href={`https://waze.com/ul?ll=${v.lat},${v.lng}&navigate=yes`} target="_blank" rel="noopener"
+                 style={{ fontSize: 11, color: '#33ccff', textDecoration: 'none', display: 'inline-block', marginTop: 2 }}>🧭 Waze</a>
+            )}
           </div>
           <div style={{ fontWeight: 800, color: '#4ade80' }}>{fmt(v.tarifa)}</div>
         </div>
