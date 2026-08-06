@@ -5,6 +5,8 @@
 // batería) — se prende al recoger y se apaga al entregar el último.
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { db } from '../supabase'
 import UpdateGate from '../components/layout/UpdateGate'
 
@@ -775,6 +777,7 @@ function Cobros({ cobros }) {
 // ── 🧾 Historial ────────────────────────────────────────────────────
 function Historial({ yo }) {
   const [viajes, setViajes] = useState(null)
+  const [ruta, setRuta] = useState(null)   // viaje cuya ruta se está mostrando
   useEffect(() => { db.rpc('mis_viajes_driver', { p_empleado_id: yo.id }).then(({ data }) => setViajes(data || [])) }, [yo])
   if (viajes === null) return <div style={S.dim}>Cargando…</div>
   if (viajes.length === 0) return <div style={{ ...S.dim, textAlign: 'center', paddingTop: 30 }}>Todavía no tenés viajes este mes.</div>
@@ -797,13 +800,95 @@ function Historial({ yo }) {
               </div>
             )}
             {v.lat && (
-              <a href={`https://waze.com/ul?ll=${v.lat},${v.lng}&navigate=yes`} target="_blank" rel="noopener"
-                 style={{ fontSize: 11, color: '#33ccff', textDecoration: 'none', display: 'inline-block', marginTop: 2 }}>🧭 Waze</a>
+              <div style={{ display: 'flex', gap: 12, marginTop: 4, alignItems: 'center' }}>
+                <a href={`https://waze.com/ul?ll=${v.lat},${v.lng}&navigate=yes`} target="_blank" rel="noopener"
+                   style={{ fontSize: 11, color: '#33ccff', textDecoration: 'none' }}>🧭 Waze</a>
+                <button onClick={() => setRuta(v)}
+                   style={{ fontSize: 11, color: '#a78bfa', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>🗺️ Ver ruta</button>
+              </div>
             )}
           </div>
           <div style={{ fontWeight: 800, color: '#4ade80' }}>{fmt(v.tarifa)}</div>
         </div>
       ))}
+      {ruta && <RutaModal yo={yo} viaje={ruta} onClose={() => setRuta(null)} />}
+    </div>
+  )
+}
+
+// ── 🗺️ Ruta real de un viaje ────────────────────────────────────────
+// Mapa Leaflet + OpenStreetMap (sin API key). Dibuja el origen (sucursal),
+// el destino (cliente) y el rastro GPS grabado durante la entrega. Si el
+// viaje es anterior a que se activara la grabación, no hay rastro: se
+// muestra una línea recta punteada origen→destino y se avisa.
+function RutaModal({ yo, viaje, onClose }) {
+  const mapEl = useRef(null); const mapRef = useRef(null)
+  const [estado, setEstado] = useState('cargando') // cargando | ok | sin_rastro | error
+  const [meta, setMeta] = useState(null)
+
+  useEffect(() => {
+    let cancel = false
+    db.rpc('viaje_ruta_driver', { p_empleado_id: yo.id, p_viaje_id: viaje.id }).then(({ data, error }) => {
+      if (cancel) return
+      if (error || !data) { setEstado('error'); return }
+      setMeta(data)
+      const org = data.origen, dst = data.destino, pts = data.puntos || []
+      if (!mapEl.current) return
+      const map = L.map(mapEl.current, { zoomControl: true, attributionControl: false })
+      mapRef.current = map
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map)
+      const bounds = []
+      if (org?.lat != null) {
+        L.circleMarker([org.lat, org.lng], { radius: 8, color: '#4ade80', fillColor: '#4ade80', fillOpacity: 1, weight: 2 })
+          .addTo(map).bindTooltip('🏪 ' + (org.nombre || 'Sucursal'))
+        bounds.push([org.lat, org.lng])
+      }
+      if (dst?.lat != null) {
+        L.circleMarker([dst.lat, dst.lng], { radius: 8, color: '#e63946', fillColor: '#e63946', fillOpacity: 1, weight: 2 })
+          .addTo(map).bindTooltip('📍 ' + (dst.direccion || 'Cliente'))
+        bounds.push([dst.lat, dst.lng])
+      }
+      if (pts.length >= 2) {
+        const ll = pts.map(p => [p.lat, p.lng])
+        L.polyline(ll, { color: '#33ccff', weight: 4, opacity: 0.9 }).addTo(map)
+        ll.forEach(x => bounds.push(x))
+        setEstado('ok')
+      } else {
+        if (org?.lat != null && dst?.lat != null) {
+          L.polyline([[org.lat, org.lng], [dst.lat, dst.lng]], { color: '#888', weight: 3, dashArray: '6 8' }).addTo(map)
+        }
+        setEstado('sin_rastro')
+      }
+      if (bounds.length) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 })
+      else map.setView([13.7, -89.2], 12)
+      setTimeout(() => map.invalidateSize(), 120)
+    })
+    return () => { cancel = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null } }
+  }, [yo, viaje])
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000,
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#161616', width: '100%', maxWidth: 520,
+            borderRadius: '18px 18px 0 0', overflow: 'hidden', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #2a2a2a' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>🗺️ Ruta del viaje</div>
+            <div style={{ fontSize: 11.5, color: '#888' }}>
+              {viaje.fecha}{meta?.orden ? ` · ${meta.orden}` : ''}
+              {meta?.recogido ? ` · salió ${meta.recogido}` : ''}{meta?.entregado ? ` → entregó ${meta.entregado}` : ''}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid #333', color: '#aaa', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>✕</button>
+        </div>
+        <div ref={mapEl} style={{ height: '58vh', width: '100%', background: '#222' }} />
+        <div style={{ padding: '10px 16px', fontSize: 11.5, color: '#888', borderTop: '1px solid #2a2a2a' }}>
+          {estado === 'cargando' && 'Cargando ruta…'}
+          {estado === 'error' && '❌ No se pudo cargar la ruta.'}
+          {estado === 'ok' && <span>🟢 Sucursal · 🔵 recorrido real ({(meta?.puntos || []).length} puntos) · 🔴 cliente{meta?.distancia_km ? ` · ${Number(meta.distancia_km).toFixed(1)} km` : ''}</span>}
+          {estado === 'sin_rastro' && '⚠️ Sin rastro GPS de este viaje (anterior a la grabación de rutas). La línea punteada es solo referencia sucursal→cliente.'}
+        </div>
+      </div>
     </div>
   )
 }
