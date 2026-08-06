@@ -565,6 +565,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                 {d.pedidos > 0
                   ? ` · lleva ${d.pedidos}${d.en_ruta > 0 ? ` (${d.en_ruta} en ruta)` : ''}`
                   : ' · libre'}
+                {d.almorzando ? ` · 🍽️ almorzando${d.almuerzo_min ? ` ${d.almuerzo_min}m` : ''}` : ''}
               </option>
             ))}
           </select>
@@ -618,6 +619,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                   <option key={d.id} value={d.id}>
                     {d.nombre}{d.sucursal ? ` · ${d.sucursal}` : ''}
                     {d.pedidos > 0 ? ` · lleva ${d.pedidos}` : ' · libre'}
+                    {d.almorzando ? ' · 🍽️ almorzando' : ''}
                   </option>
                 ))}
               </select>
