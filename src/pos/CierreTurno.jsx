@@ -402,6 +402,12 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     if (!efectivoReal) { toast.warning('Cuenta e ingresa el efectivo de la gaveta'); return }
     if (!(await confirmAsync('¿Cerrar tu caja (cambio de turno)? Tus ventas quedan amarradas a vos y la caja queda libre para el siguiente cajero. NO se deposita todavía.', { title: 'Corte X · cambio de turno', confirmText: 'Cerrar mi caja', danger: true }))) return
     setSaving(true)
+    // Disparar el corte AQUÍ, dentro del gesto del botón. Los await de guardado
+    // (subir fotos, update) consumen la user-activation y Android/Chrome bloquea
+    // el deep-link rawbt EN SILENCIO — por eso las comandas imprimen (salen al
+    // tocar) pero el corte no salía. La impresora ya está precargada (useEffect
+    // de arriba), así que la impresión es síncrona y conserva el gesto.
+    const _print = printCorte('x', buildCorteData('X'))
     try {
       const egresosFinal = await subirFotos(egresos)
       const { error } = await db.from('pos_turnos').update({
@@ -414,7 +420,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       }).eq('id', turno.id)
       if (error) throw error
       toast.success('Caja cerrada (X). El siguiente cajero ya puede abrir.')
-      try { const _r = await printCorte('x', buildCorteData('X')); if (_r && _r.ok === false) toast.error('⚠️ Corte X no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte X no impreso: ' + (_pe?.message || 'error')) }
+      try { const _r = await _print; if (_r && _r.ok === false) toast.error('⚠️ Corte X no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte X no impreso: ' + (_pe?.message || 'error')) }
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
   }
@@ -425,6 +431,12 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     if (!efectivoReal) { toast.warning('Cuenta e ingresa el efectivo de la gaveta'); return }
     if (!(await confirmAsync('¿Cerrar el DÍA con corte Z? Es definitivo y solo se hace una vez al día. Incluye todos los turnos.', { title: 'Corte Z · cierre del día', confirmText: 'Cerrar el día', danger: true }))) return
     setSaving(true)
+    // Corte DENTRO del gesto del botón: el cierre Z hace aún más await (subir
+    // fotos, update, RPC pos_rebuild_cierre_dia, egresos/ingresos) y todos
+    // consumen la user-activation → Android/Chrome bloquea el deep-link rawbt en
+    // silencio y el corte no imprime. La data del Z ya está en estado (corteDia)
+    // y la impresora precargada, así que se puede disparar antes de guardar.
+    const _print = printCorte('z', buildCorteData('Z'))
     try {
       const egresosFinal = await subirFotos(egresos)
       // 1. Cierra ESTE turno con su propio snapshot (para que el rebuild sume bien por turno);
@@ -467,7 +479,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
         }
       } catch (_bridgeErr) { console.warn('bridge ventas_diarias:', _bridgeErr?.message) }
       toast.success('Día cerrado (corte Z)')
-      try { const _r = await printCorte('z', buildCorteData('Z')); if (_r && _r.ok === false) toast.error('⚠️ Corte Z no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte Z no impreso: ' + (_pe?.message || 'error')) }
+      try { const _r = await _print; if (_r && _r.ok === false) toast.error('⚠️ Corte Z no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte Z no impreso: ' + (_pe?.message || 'error')) }
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
   }
