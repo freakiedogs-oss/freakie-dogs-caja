@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 6-Ago-2026 — Manuales de Torre y Drivers
+
+Cierre del bloque de delivery: dos manuales HTML autocontenidos (mobile-first, tema oscuro) en `public/`:
+`manual-driver.html` (motoristas: turno, almuerzo, recibir/salir con pedidos, Waze, cobrar/vuelto, entregar con
+confirmación, Cobros/conciliación, Historial, Métricas) y `manual-torre.html` (Kari: tablero 4 etapas, cobrar,
+asignar con sugerencias ⭐, reasignar, para llevar, mandados, sucursales 3 estados + horarios, bonos/costeo, reporte
+diario). Se sirven en `/manual-driver.html` y `/manual-torre.html`. Cada rol solo ve lo suyo. `npm run build` ✅.
+
 ## 6-Ago-2026 — Capa de sugerencia de motorista (torre) + turno/almuerzo/bitácora
 
 Bloque grande del roadmap de delivery. Modelo de disponibilidad corregido a **turno abierto** (en_linea, sin
