@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 5-Ago-2026 — Delivery Fase 1: desconexión de turno + desglose de bono en Métricas
+
+Primer bloque de las mejoras del flujo delivery (roadmap acordado con Jose).
+- **Desconexión al iniciar turno (fix):** el "latido" que mantiene vivo el turno es un `setInterval` cada 5 min
+  (`useDisponible` en `DriverBeacon.jsx`); los navegadores móviles lo **congelan en segundo plano** → a los 30 min
+  sin señal la central da de baja. Fix: listener `visibilitychange` que re-marca `driver_disponible` al volver a
+  primer plano. (El congelamiento intermitente queda por diagnosticar en campo.)
+- **Métricas con desglose del bono:** `mis_metricas_driver` ahora devuelve `desglose` por tipo (entregas cerca <umbral,
+  largas ≥umbral, fuera de horario, mandados) con cantidad·tarifa=bono; verificado que suma exacto el bono_total. La tab
+  Métricas del driver muestra una card por tipo + total → el driver corrobora de dónde sale su bono (incluye fuera-de-hora
+  y mandados, que antes no se veían).
+- Pendiente Fase 1/2: sonido/notificación al caer pedido, notificar mandados en vivo (hoy solo salen en métricas/historial),
+  botón de confirmación al dar Entregado. Roadmap completo en el chat.
+- Reporte de órdenes abiertas para WhatsApp: creado RPC `reporte_ordenes_abiertas()` (texto listo). Falta enganchar envío
+  diario a Telegram vía @FreakieDogsBot (el envío vive en edge functions/mini, no en la BD). `npm run build` ✅.
+
 ## 5-Ago-2026 — Tickets: canal de venta, mesa, método de pago y cambio
 
 Pedido de Jose: que los tickets impresos muestren el **canal de venta** (mesa/llevar/drive/delivery/PeYa), el

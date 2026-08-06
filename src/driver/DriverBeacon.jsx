@@ -272,6 +272,20 @@ function useDisponible(yo) {
 
   useEffect(() => () => { if (latidoRef.current) clearInterval(latidoRef.current) }, [])
 
+  // Los navegadores móviles CONGELAN el setInterval del latido cuando la app
+  // queda en segundo plano (pantalla bloqueada) → a los 30 min sin señal la
+  // central da de baja el turno ("se desconecta después de un rato"). Al volver
+  // a primer plano re-marcamos de una para recuperar el turno enseguida.
+  useEffect(() => {
+    if (!yo) return
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || !disponible) return
+      db.rpc('driver_disponible', { p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true }).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [yo, disponible])
+
   return { disponible, ocupado, error, info, marcar }
 }
 
@@ -704,10 +718,32 @@ function Metricas({ yo }) {
         <Kpi label="Bono generado" val={fmt(m.bono_total)} color="#4ade80" big />
         <Kpi label="Mandados" val={m.mandados} color="#fbbf24" />
       </div>
-      <div style={{ fontSize: 12, color: '#888', marginTop: 14, lineHeight: 1.6 }}>
-        🚗 {m.entregas} entregas · 📦 {m.mandados} mandados · 🌙 {m.fuera_horario} fuera de horario
+      {/* Desglose del bono por tipo de viaje — para que el driver corrobore de dónde sale */}
+      <div style={{ fontSize: 12, color: '#888', margin: '18px 0 8px', fontWeight: 700 }}>De dónde sale tu bono</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {(m.desglose || []).map(d => {
+          const emoji = { normal: '🛵', larga: '🛣️', fuera: '🌙', mandado: '📦' }[d.key] || '•'
+          const activo = d.cantidad > 0
+          return (
+            <div key={d.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '10px 14px',
+                    opacity: activo ? 1 : 0.5 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{emoji} {d.label}</div>
+                <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>{d.cantidad} × {fmt(d.tarifa)}</div>
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#4ade80' }}>{fmt(d.bono)}</div>
+            </div>
+          )
+        })}
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid #2a2a2a', marginTop: 2 }}>
+          <span style={{ fontSize: 13, fontWeight: 800 }}>TOTAL</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: '#4ade80' }}>{fmt(m.bono_total)}</span>
+        </div>
       </div>
-      <div style={{ fontSize: 11, color: '#555', marginTop: 12 }}>El bono se confirma al cierre del mes por administración.</div>
+      <div style={{ fontSize: 11, color: '#666', marginTop: 8 }}>
+        "Entregas largas" = {m.umbral_km} km o más. El bono se confirma al cierre del mes por administración.
+      </div>
     </div>
   )
 }
