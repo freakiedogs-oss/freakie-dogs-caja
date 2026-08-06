@@ -228,6 +228,7 @@ const LATIDO_MS = 5 * 60 * 1000
 
 function useDisponible(yo) {
   const [disponible, setDisponible] = useState(false)
+  const [almorzando, setAlmorzando] = useState(false)
   const [info, setInfo] = useState(null)   // sucursal, distancia y atraso al marcarse
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
@@ -285,6 +286,7 @@ function useDisponible(yo) {
     db.rpc('driver_estado_turno', { p_empleado_id: yo.id }).then(({ data }) => {
       if (!vivo || !data?.disponible) return
       setDisponible(true)
+      setAlmorzando(!!data?.almorzando)
       if (!latidoRef.current) {
         latidoRef.current = setInterval(() => {
           db.rpc('driver_disponible', { p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true })
@@ -311,7 +313,31 @@ function useDisponible(yo) {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [yo, disponible])
 
-  return { disponible, ocupado, error, info, marcar }
+  // Almuerzo: sigue de turno (asignable); Kari lo ve "Almorzando". Vuelve con el
+  // botón o al empezar una ruta (ahí el server cierra el almuerzo solo).
+  const almorzar = useCallback(async () => {
+    if (!yo || ocupado) return
+    setOcupado(true); setError('')
+    try {
+      const { error: e } = await db.rpc('driver_almorzar', { p_empleado_id: yo.id })
+      if (e) throw e
+      setAlmorzando(true)
+    } catch (e) { setError(e.message || 'No se pudo marcar el almuerzo') }
+    finally { setOcupado(false) }
+  }, [yo, ocupado])
+
+  const finAlmuerzo = useCallback(async () => {
+    if (!yo || ocupado) return
+    setOcupado(true); setError('')
+    try {
+      const { error: e } = await db.rpc('driver_fin_almuerzo', { p_empleado_id: yo.id })
+      if (e) throw e
+      setAlmorzando(false)
+    } catch (e) { setError(e.message || 'No se pudo cerrar el almuerzo') }
+    finally { setOcupado(false) }
+  }, [yo, ocupado])
+
+  return { disponible, almorzando, ocupado, error, info, marcar, almorzar, finAlmuerzo }
 }
 
 function useBeacon(yo) {
@@ -447,13 +473,15 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const Disponibilidad = () => (
     <div style={{ ...S.dispo, borderColor: dispo.disponible ? '#2f5f3f' : '#3a2a2a' }}>
       <div style={S.dispoFila}>
-        <span style={{ fontSize: 26 }}>{dispo.disponible ? '🟢' : '⚪'}</span>
+        <span style={{ fontSize: 26 }}>{dispo.almorzando ? '🍽️' : dispo.disponible ? '🟢' : '⚪'}</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: dispo.disponible ? '#4ade80' : '#f0f0f0' }}>
-            {dispo.disponible ? 'Estás de turno' : 'No estás de turno'}
+          <div style={{ fontSize: 14, fontWeight: 700, color: dispo.almorzando ? '#fbbf24' : dispo.disponible ? '#4ade80' : '#f0f0f0' }}>
+            {dispo.almorzando ? 'Almorzando' : dispo.disponible ? 'Estás de turno' : 'No estás de turno'}
           </div>
           <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>
-            {dispo.disponible
+            {dispo.almorzando
+              ? 'Seguís disponible — la central puede asignarte para que salgas al terminar.'
+              : dispo.disponible
               ? (dispo.info?.sucursal
                   ? `Marcaste entrada en ${dispo.info.sucursal}. La central te puede asignar pedidos.`
                   : 'La central te puede asignar pedidos.')
@@ -470,6 +498,21 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                  opacity: dispo.ocupado ? .6 : 1 }}>
         {dispo.ocupado ? '📍 Verificando dónde estás…' : dispo.disponible ? 'Terminé mi turno' : '🟢 Estoy de turno'}
       </button>
+
+      {/* Almuerzo: seguís de turno; al volver o al salir con un pedido se cierra solo */}
+      {dispo.disponible && (
+        dispo.almorzando ? (
+          <button onClick={dispo.finAlmuerzo} disabled={dispo.ocupado}
+            style={{ ...S.dispoBtn, marginTop: 8, background: '#b45309', border: 'none', color: '#fff' }}>
+            🍽️ Terminé de almorzar
+          </button>
+        ) : (
+          <button onClick={dispo.almorzar} disabled={dispo.ocupado}
+            style={{ ...S.dispoBtn, marginTop: 8, background: 'none', border: '1px solid #b45309', color: '#fbbf24' }}>
+            🍽️ Salir a almorzar
+          </button>
+        )
+      )}
 
       {dispo.error && <div style={S.dispoErr}>⚠️ {dispo.error}</div>}
 
