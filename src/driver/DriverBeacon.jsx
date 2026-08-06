@@ -55,6 +55,24 @@ export default function DriverBeacon() {
   const [cobros, setCobros] = useState([])   // entregas por cuadrar (día + pendientes)
   const beacon = useBeacon(yo)
   const dispo = useDisponible(yo)
+  const audioCtxRef = useRef(null)
+  const prevPedIds = useRef(null)
+
+  // Beep + vibración cuando cae un pedido nuevo. El audio se desbloquea al
+  // Entrar (los navegadores móviles no dejan sonar sin un gesto previo).
+  const beep = useCallback(() => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext
+      const ctx = audioCtxRef.current || (audioCtxRef.current = new AC())
+      if (ctx.state === 'suspended') ctx.resume()
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      o.type = 'sine'; g.gain.value = 0.18; o.connect(g); g.connect(ctx.destination)
+      const t = ctx.currentTime
+      o.frequency.setValueAtTime(880, t); o.frequency.setValueAtTime(660, t + 0.15)
+      o.start(t); o.stop(t + 0.32)
+      navigator.vibrate?.([200, 80, 200])
+    } catch { /* sin audio */ }
+  }, [])
 
   const cargarPedidos = useCallback(async () => {
     if (!yo) return
@@ -62,9 +80,14 @@ export default function DriverBeacon() {
       db.rpc('mis_pedidos_driver', { p_empleado_id: yo.id }),
       db.rpc('mis_entregas_driver', { p_empleado_id: yo.id }),
     ])
-    setPedidos(ped.data || [])
+    const lista = ped.data || []
+    const ids = lista.map(p => p.id)
+    // Suena solo si aparece un pedido con id no visto (no en la primera carga)
+    if (prevPedIds.current && ids.some(id => !prevPedIds.current.has(id))) beep()
+    prevPedIds.current = new Set(ids)
+    setPedidos(lista)
     setCobros(cob.data || [])
-  }, [yo])
+  }, [yo, beep])
 
   const pendientesCobro = cobros.filter(o => !o.cobrado).length
 
@@ -91,6 +114,8 @@ export default function DriverBeacon() {
       if (!data) { setErrPin('PIN incorrecto'); setPin(''); return }
       setPin('')          // que no quede escrito para el próximo que abra la app
       setYo(data)
+      // Desbloquear el audio ahora que hay un gesto (para que el beep suene luego)
+      try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) { audioCtxRef.current = audioCtxRef.current || new AC(); audioCtxRef.current.resume?.() } } catch { /* noop */ }
       try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
     } catch (e) {
       setErrPin(e.message || 'No se pudo entrar'); setPin('')
@@ -350,6 +375,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [ocupado, setOcupado] = useState(null)
   const [cambiarPago, setCambiarPago] = useState(null)
   const [devolviendo, setDevolviendo] = useState(null)
+  const [confirmando, setConfirmando] = useState(null)   // evita marcar Entregado por accidente
   const [msg, setMsg] = useState('')
 
   // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
@@ -575,12 +601,24 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                   </div>
                   <button onClick={() => setCambiarPago(null)} style={S.linkChico}>Cancelar</button>
                 </>
+              ) : confirmando === p.id ? (
+                <>
+                  <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
+                    ¿Confirmás la entrega de {p.numero_orden}?
+                  </div>
+                  <button disabled={ocupado === p.id}
+                          onClick={() => { setConfirmando(null); entregar(p, p.metodo_pago || 'efectivo') }}
+                          style={S.accion('#16a34a')}>
+                    {ocupado === p.id ? '…' : '✅ Sí, entregado'}
+                  </button>
+                  <button onClick={() => setConfirmando(null)} style={S.linkChico}>No, volver</button>
+                </>
               ) : (
                 <>
                   <div style={{ fontSize: 12.5, color: '#aaa', marginBottom: 8 }}>
                     Cobrar <b style={{ color: '#f0f0f0' }}>{fmt(p.total)}</b> en <b style={{ color: '#f0f0f0' }}>{p.metodo_pago || 'efectivo'}</b>
                   </div>
-                  <button disabled={ocupado === p.id} onClick={() => entregar(p, p.metodo_pago || 'efectivo')}
+                  <button disabled={ocupado === p.id} onClick={() => setConfirmando(p.id)}
                           style={S.accion('#16a34a')}>
                     {ocupado === p.id ? '…' : '✅ Entregado'}
                   </button>
