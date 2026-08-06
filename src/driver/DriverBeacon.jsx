@@ -191,6 +191,7 @@ export default function DriverBeacon() {
           <span style={{ fontSize: 11, fontWeight: 700, color: beacon.activo ? '#4ade80' : '#666' }}>
             {beacon.activo ? '📡 En línea' : '○ Sin compartir'}
           </span>
+          <a href="/manual-driver.html" target="_blank" rel="noopener" style={S.salirBtn}>📘 Manual</a>
           <a href="/driver?salir=1" onClick={avisarSalida} style={S.salirBtn}>Salir</a>
         </span>
       </header>
