@@ -221,6 +221,28 @@ export default function LoginScreen({ onLogin }) {
     setErrDetails('');
   };
 
+  // ─── Teclado físico (para quienes trabajan en compu) ────────
+  //  Dígitos escriben, Backspace/Delete borra, Enter envía el PIN ya.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return; // no secuestrar atajos
+      if (e.key >= '0' && e.key <= '9' && e.key.length === 1) {
+        press(e.key); e.preventDefault();
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        press('del'); e.preventDefault();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (pin.length >= MIN_PIN && !loading) {
+          if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+          runLogin(pin);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin, loading]);
+
   // ─── Limpieza de caché / SW para usuarios atascados ─────────
   const clearCacheAndReload = async () => {
     try {
