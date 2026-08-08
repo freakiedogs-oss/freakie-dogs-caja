@@ -119,8 +119,10 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
     try{
       const {data}=await db.from('despacho_items').select('id,despacho_id,producto_id,descripcion,cantidad_solicitada,cantidad_despachada,unidad,unidad_medida').eq('despacho_id',despacho.id);
       setItems(data||[]);
+      return data||[];
     }catch(e){show('❌ '+e.message);}
-    setLoadingItems(false);
+    finally{setLoadingItems(false);}
+    return [];
   };
 
   const marcarDespachado=async()=>{
@@ -145,8 +147,9 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
   };
 
   const reimprimir=async()=>{
-    if(items.length===0) await cargarItems();
-    const its=items.length>0?items:[];
+    // Usar el valor devuelto: setState no es sincrónico, leer `items` del closure
+    // tras await daba [] → hoja en blanco.
+    const its = items.length>0 ? items : (await cargarItems());
     const groups={};
     its.forEach(it=>{const cat='General';if(!groups[cat])groups[cat]=[];groups[cat].push(it);});
     const grouped=Object.entries(groups).map(([cat,arr])=>[cat,arr.map(it=>({qty_despacho:it.cantidad_despachada,catalogo_productos:{nombre:it.descripcion,unidad_medida:it.unidad_medida}}))]);
