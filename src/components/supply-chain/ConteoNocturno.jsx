@@ -320,8 +320,16 @@ export default function ConteoNocturno({user,onBack}){
       const {error:itemErr}=await db.from('pedido_items').insert(pedidoItems);
       if(itemErr)throw itemErr;
 
+      // #11: revisar stock de Casa Matriz → avisar lo que queda en pedido
+      const {data:rev}=await db.rpc('revisar_stock_cm_pedido',{p_pedido_id:pedido.id});
+      const faltan=rev?.sin_stock||[];
       setGenerandoPedido(false);
-      show('✓ Pedido enviado al almacén');
+      if(faltan.length>0){
+        const lista=faltan.slice(0,8).map(f=>`• ${f.nombre} (CM: ${Number(f.cm||0)})`).join('\n');
+        window.alert(`✓ Pedido enviado.\n\n⚠️ Casa Matriz NO tiene stock de ${faltan.length} producto(s) — quedan en pedido:\n${lista}${faltan.length>8?`\n…y ${faltan.length-8} más`:''}`);
+      } else {
+        show('✓ Pedido enviado al almacén');
+      }
       setTimeout(()=>onBack(), 2000);
     }catch(e){
       show('❌ Error creando pedido: '+e.message);
