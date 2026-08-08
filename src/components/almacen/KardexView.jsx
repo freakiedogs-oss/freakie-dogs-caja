@@ -478,6 +478,7 @@ export default function KardexView({ user, show }) {
      ══════════════════════════════════════════════════════════════════════ */
   const TABS_K = [
     { id: 'inventario',  label: '📦 Inventario' },
+    { id: 'conteo',      label: '🌙 Lista Conteo' },
     { id: 'mapeo',       label: '🔗 Mapeo Compras' },
     { id: 'recetas',     label: '📋 Recetas' },
     { id: 'movimientos', label: '📊 Historial' },
@@ -801,6 +802,8 @@ export default function KardexView({ user, show }) {
         {/* ═══════════════════════════════════════════════════════════════
             TAB 3: RECETAS
         ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'conteo' && <ConteoLista user={user} />}
+
         {activeTab === 'recetas' && <RecetasView user={user} />}
 
         {/* ═══════════════════════════════════════════════════════════════
@@ -983,6 +986,113 @@ function UnidadesModal({ item, onClose, onSaved }) {
           <button onClick={guardar} disabled={saving} style={{ background: '#4ade80', color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Mantenimiento de la lista del Conteo Nocturno (dentro de Kardex) ──
+function ConteoLista({ user }) {
+  const puede = ['jefe_casa_matriz', 'ejecutivo', 'admin', 'superadmin'].includes(user?.rol);
+  const [data, setData] = useState(null);
+  const [cats, setCats] = useState([]);
+  const [openG, setOpenG] = useState({});
+  const [openR, setOpenR] = useState({});
+  const [adding, setAdding] = useState(false);
+  const [nuevaCat, setNuevaCat] = useState('');
+
+  const cargar = async () => {
+    const [d, c] = await Promise.all([db.rpc('conteo_lista'), db.rpc('conteo_categorias')]);
+    setData(d.data || null); setCats(c.data || []);
+  };
+  useEffect(() => { cargar(); }, []);
+
+  const setItem = async (id, patch) => {
+    await db.rpc('set_conteo_item', { p_producto_id: id, p_incluir: patch.incluir ?? null, p_categoria: patch.categoria ?? null, p_orden: patch.orden ?? null });
+    cargar();
+  };
+  const quitar = async (id, nombre) => {
+    if (!window.confirm(`¿Quitar "${nombre}" de la lista de conteo?`)) return;
+    await db.rpc('set_conteo_item', { p_producto_id: id, p_incluir: false }); cargar();
+  };
+  const agregar = async (prod) => {
+    await db.rpc('set_conteo_item', { p_producto_id: prod.id, p_incluir: true, p_categoria: nuevaCat || 'Sin grupo' });
+    setAdding(false); setNuevaCat(''); cargar();
+  };
+
+  const C = { card: '#1a1a1a', card2: '#151515', border: '#2a2a2a', dim: '#8a8a8a', green: '#4ade80', blue: '#60a5fa' };
+  if (!data) return <div style={{ color: C.dim, padding: 12 }}>Cargando…</div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: C.dim }}>{data.total} productos en el conteo</div>
+        <div style={{ flex: 1 }} />
+        {puede && !adding && <button onClick={() => setAdding(true)} style={{ background: C.green, color: '#04220f', border: 'none', borderRadius: 8, padding: '6px 12px', fontWeight: 700, cursor: 'pointer' }}>+ Agregar producto</button>}
+      </div>
+
+      {puede && adding && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 6 }}>Buscá un producto del catálogo y elegí su grupo:</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select value={nuevaCat} onChange={e => setNuevaCat(e.target.value)} style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 8, padding: '7px 10px', fontSize: 13 }}>
+              <option value="">Grupo…</option>
+              {cats.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <CatalogoSearch placeholder="Buscar producto…" onSelect={agregar} />
+            </div>
+            <button onClick={() => setAdding(false)} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 12px', cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {(data.grupos || []).map(g => (
+          <div key={g.grupo} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+            <div onClick={() => setOpenG(o => ({ ...o, [g.grupo]: !o[g.grupo] }))} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <div style={{ flex: 1, fontWeight: 700 }}>{g.grupo}</div>
+              <span style={{ fontSize: 12, color: C.dim }}>{g.n}</span>
+              <span style={{ color: C.dim }}>{openG[g.grupo] ? '▲' : '▼'}</span>
+            </div>
+            {openG[g.grupo] && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {(g.items || []).map(it => (
+                  <div key={it.id} style={{ background: C.card2, borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <TipoPill tipo={it.tipo} />
+                      <div style={{ flex: 1, minWidth: 140, fontSize: 13 }}>
+                        {it.nombre} <span style={{ color: C.dim, fontSize: 11 }}>· {it.unidad || 'u'}</span>
+                        {it.receta && <span onClick={() => setOpenR(o => ({ ...o, [it.id]: !o[it.id] }))} style={{ color: C.blue, fontSize: 11, marginLeft: 8, cursor: 'pointer' }}>{openR[it.id] ? '▾ receta' : '▸ receta'}</span>}
+                      </div>
+                      {puede && (
+                        <>
+                          <select value={it.grupo || g.grupo} onChange={e => setItem(it.id, { categoria: e.target.value })}
+                            style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }} title="Mover de grupo">
+                            {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <input type="number" defaultValue={it.orden ?? ''} onBlur={e => setItem(it.id, { orden: e.target.value === '' ? null : Number(e.target.value) })}
+                            placeholder="orden" style={{ width: 56, background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }} title="Orden" />
+                          <button onClick={() => quitar(it.id, it.nombre)} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>Quitar</button>
+                        </>
+                      )}
+                    </div>
+                    {it.receta && openR[it.id] && (
+                      <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: `2px solid ${C.blue}` }}>
+                        <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>Receta: {it.receta.nombre}</div>
+                        {(it.receta.ingredientes || []).map((ing, k) => (
+                          <div key={k} style={{ fontSize: 12 }}>• {ing.nombre} <span style={{ color: C.dim }}>{ing.cantidad} {ing.unidad || ''}{ing.tipo === 'sub_receta' ? ' (sub)' : ''}</span></div>
+                        ))}
+                        {(!it.receta.ingredientes || it.receta.ingredientes.length === 0) && <div style={{ fontSize: 12, color: C.dim }}>Sin ingredientes cargados.</div>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {!puede && <div style={{ fontSize: 11, color: C.dim, marginTop: 10 }}>Solo jefe de almacén y ejecutivos pueden editar la lista.</div>}
     </div>
   );
 }
