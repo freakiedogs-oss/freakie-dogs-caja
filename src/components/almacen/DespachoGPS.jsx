@@ -25,6 +25,7 @@ export default function DespachoGPS({ user }) {
   const mapRef = useRef(null);
   const markers = useRef({});
   const [online, setOnline] = useState([]);
+  const [filtro, setFiltro] = useState('todos'); // todos | despacho | delivery
   const [mandados, setMandados] = useState([]);
   const [broadcasting, setBroadcasting] = useState(false);
   const watchId = useRef(null);
@@ -49,7 +50,7 @@ export default function DespachoGPS({ user }) {
   }, []);
 
   const cargarOnline = useCallback(async () => {
-    const { data } = await db.from('driver_ubicaciones').select('empleado_id,nombre,lat,lng,rumbo,updated_at,en_linea').eq('en_linea', true);
+    const { data } = await db.from('driver_ubicaciones').select('empleado_id,nombre,lat,lng,rumbo,updated_at,en_linea,tipo').eq('en_linea', true);
     const now = Date.now();
     const frescos = (data || []).filter(d => d.lat && d.lng && (now - new Date(d.updated_at).getTime()) < FRESH_MS);
     setOnline(frescos);
@@ -70,18 +71,24 @@ export default function DespachoGPS({ user }) {
     return () => { db.removeChannel(ch); clearInterval(iv); };
   }, [cargarOnline, cargarMandados]);
 
-  // pintar markers
+  const esDespacho = (o) => (o.tipo || 'delivery') === 'despacho';
+  const colorDe = (o) => esDespacho(o) ? '#fb923c' : '#60a5fa'; // interno naranja, delivery azul
+
+  // pintar markers (respeta el filtro)
   useEffect(() => {
     const map = mapRef.current; if (!map) return;
-    const vivos = new Set(online.map(o => o.empleado_id));
+    const visibles = online.filter(o => filtro === 'todos' || (o.tipo || 'delivery') === filtro);
+    const vivos = new Set(visibles.map(o => o.empleado_id));
     Object.keys(markers.current).forEach(id => { if (!vivos.has(id)) { map.removeLayer(markers.current[id]); delete markers.current[id]; } });
-    online.forEach(o => {
+    visibles.forEach(o => {
       const ll = [o.lat, o.lng];
-      if (markers.current[o.empleado_id]) markers.current[o.empleado_id].setLatLng(ll);
-      else markers.current[o.empleado_id] = L.marker(ll).addTo(map).bindTooltip(o.nombre || 'Motorista', { permanent: false });
+      const col = colorDe(o);
+      if (markers.current[o.empleado_id]) { markers.current[o.empleado_id].setLatLng(ll).setStyle({ fillColor: col, color: col }); }
+      else markers.current[o.empleado_id] = L.circleMarker(ll, { radius: 9, weight: 2, color: col, fillColor: col, fillOpacity: 0.85 })
+        .addTo(map).bindTooltip(`${esDespacho(o) ? '🛵 ' : '🛍️ '}${o.nombre || 'Motorista'}`, { permanent: false });
     });
-    if (online.length) { try { map.fitBounds(online.map(o => [o.lat, o.lng]), { padding: [40, 40], maxZoom: 15 }); } catch { /* noop */ } }
-  }, [online]);
+    if (visibles.length) { try { map.fitBounds(visibles.map(o => [o.lat, o.lng]), { padding: [40, 40], maxZoom: 15 }); } catch { /* noop */ } }
+  }, [online, filtro]);
 
   // ── beacon GPS ──
   const toggleBeacon = async () => {
@@ -101,6 +108,7 @@ export default function DespachoGPS({ user }) {
         p_empleado_id: user.id, p_nombre: user.nombre || 'Motorista',
         p_lat: p.coords.latitude, p_lng: p.coords.longitude,
         p_rumbo: p.coords.heading || null, p_exactitud: p.coords.accuracy || null,
+        p_tipo: 'despacho',
       }).catch(() => {});
     }, (e) => { alert('GPS: ' + e.message); }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });
     setBroadcasting(true);
@@ -144,14 +152,32 @@ export default function DespachoGPS({ user }) {
         )}
       </div>
 
+      {/* Filtro delivery / internos */}
+      {(() => {
+        const nDesp = online.filter(o => (o.tipo || 'delivery') === 'despacho').length;
+        const nDel = online.filter(o => (o.tipo || 'delivery') === 'delivery').length;
+        const chip = (id, label, dot) => (
+          <button key={id} onClick={() => setFiltro(id)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 16, border: 'none', cursor: 'pointer',
+                     fontSize: 12, fontWeight: 700, background: filtro === id ? C.red : '#222', color: filtro === id ? '#fff' : '#aaa' }}>
+            {dot && <span style={{ width: 9, height: 9, borderRadius: '50%', background: dot, display: 'inline-block' }} />}{label}
+          </button>
+        );
+        return (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {chip('todos', `Todos (${online.length})`, null)}
+            {chip('despacho', `🛵 Internos (${nDesp})`, '#fb923c')}
+            {chip('delivery', `🛍️ Delivery (${nDel})`, '#60a5fa')}
+          </div>
+        );
+      })()}
+
       {/* Mapa en vivo */}
       <div style={{ position: 'relative', marginBottom: 8 }}>
         <div ref={mapEl} style={{ height: '42vh', minHeight: 260, borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.border}` }} />
-        <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 500, background: 'rgba(0,0,0,.65)', color: '#fff', fontSize: 11, padding: '4px 8px', borderRadius: 8 }}>
-          🟢 {online.length} en línea
-        </div>
       </div>
-      {online.length === 0 && <div style={{ color: C.dim, fontSize: 12, marginBottom: 8 }}>Ningún motorista compartiendo ubicación ahora.</div>}
+      {online.filter(o => filtro === 'todos' || (o.tipo || 'delivery') === filtro).length === 0 &&
+        <div style={{ color: C.dim, fontSize: 12, marginBottom: 8 }}>Ningún motorista {filtro === 'despacho' ? 'interno ' : filtro === 'delivery' ? 'de delivery ' : ''}compartiendo ubicación ahora.</div>}
 
       {/* Mandados / bitácora */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
