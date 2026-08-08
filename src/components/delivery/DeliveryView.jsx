@@ -7,6 +7,7 @@ import TabJuego from './TabJuego';
 import TabBonos from './TabBonos';
 // Cobertura usa Leaflet (mapa): lazy para no cargarlo hasta abrir ese tab
 const TabCobertura = lazy(() => import('./TabCobertura'));
+const DespachoGPS = lazy(() => import('../almacen/DespachoGPS'));
 
 // ── Paleta ──────────────────────────────────────────────────────────────────
 const c = {
@@ -25,7 +26,7 @@ export default function DeliveryView({ user, show = () => {} }) {
     <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh' }}>
       {/* TABS */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {[['pedidos','📥 Pedidos'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura'],['sucursales','🏪 Sucursales'],['juego','🏆 Juego'],['parametros','⚙️ Parámetros']].map(([k, etq]) => (
+        {[['pedidos','📥 Pedidos'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura'],['despacho-gps','🛵 Despacho GPS'],['sucursales','🏪 Sucursales'],['juego','🏆 Juego'],['parametros','⚙️ Parámetros']].map(([k, etq]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
@@ -43,6 +44,11 @@ export default function DeliveryView({ user, show = () => {} }) {
       {tab === 'cobertura' && (
         <Suspense fallback={<div style={{ color: c.dim, padding: 20 }}>Cargando mapa…</div>}>
           <TabCobertura show={show} />
+        </Suspense>
+      )}
+      {tab === 'despacho-gps' && (
+        <Suspense fallback={<div style={{ color: c.dim, padding: 20 }}>Cargando mapa…</div>}>
+          <DespachoGPS user={user} />
         </Suspense>
       )}
     </div>
