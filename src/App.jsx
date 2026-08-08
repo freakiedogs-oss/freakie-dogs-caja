@@ -23,6 +23,7 @@ const MisPedidosView     = lazy(() => import('./components/supply-chain/MisPedid
 const InventarioSucursal = lazy(() => import('./components/supply-chain/InventarioSucursal'))
 const RecepcionTab       = lazy(() => import('./components/almacen/RecepcionTab'))
 const DespachoTab        = lazy(() => import('./components/almacen/DespachoTab'))
+const DespachoGPS        = lazy(() => import('./components/almacen/DespachoGPS'))
 const InventarioTab      = lazy(() => import('./components/almacen/InventarioTab'))
 const HistorialTab       = lazy(() => import('./components/almacen/HistorialTab'))
 const StockLevelsView    = lazy(() => import('./components/almacen/StockLevelsView'))
@@ -337,6 +338,8 @@ export default function App() {
       // KPI Despacho a Motoristas
       case 'mi-despacho':
         return <MiDespacho user={user} />
+      case 'despacho-gps':
+        return <DespachoGPS user={user} />
       case 'despacho-operativo':
         return <DespachoOperativoView user={user} />
       case 'kpi-despacho':
