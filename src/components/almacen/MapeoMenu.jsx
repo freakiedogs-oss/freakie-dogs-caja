@@ -217,76 +217,119 @@ function Nodo({ n, depth }) {
   );
 }
 
-// ── Modal de enlace: receta o producto directo (BEES) ────────────────
+// ── Modal: constructor de componentes (1..N recetas y/o bebidas) ──────
+// Un platillo simple = 1 receta (o 1 producto). Un combo = varias recetas
+// y/o bebidas. Se guarda vía set_menu_item_componentes (que arma la receta
+// combo detrás). Reutiliza recetas y catalogo existentes.
 function EnlazarModal({ fila, onClose, onDone }) {
-  const [modo, setModo] = useState('receta');
-  const [q, setQ] = useState('');
+  const [comps, setComps] = useState([]);        // {tipo,id,nombre,cantidad}
   const [recetas, setRecetas] = useState([]);
+  const [addModo, setAddModo] = useState(null);   // 'receta' | 'producto' | null
+  const [q, setQ] = useState('');
   const [prods, setProds] = useState([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     db.from('recetas').select('id,nombre,tipo,costo_calculado').eq('activo', true)
       .order('nombre').then(({ data }) => setRecetas(data || []));
-  }, []);
+    db.rpc('menu_item_componentes', { p_menu_item_id: fila.menu_item_id })
+      .then(({ data }) => setComps(Array.isArray(data) ? data.map(c => ({ ...c, cantidad: Number(c.cantidad) || 1 })) : []));
+  }, [fila.menu_item_id]);
+
   useEffect(() => {
-    if (modo !== 'producto' || q.length < 2) { setProds([]); return; }
+    if (addModo !== 'producto' || q.length < 2) { setProds([]); return; }
     const t = setTimeout(() => {
       db.from('catalogo_productos').select('id,nombre,tipo').ilike('nombre', `%${q}%`)
         .limit(25).then(({ data }) => setProds(data || []));
     }, 250);
     return () => clearTimeout(t);
-  }, [q, modo]);
+  }, [q, addModo]);
 
-  const pickReceta = async (r) => {
-    setBusy(true);
-    const { data } = await db.rpc('mapear_menu_item', { p_menu_item_id: fila.menu_item_id, p_receta_id: r.id });
-    setBusy(false);
-    if (data?.ok) onDone(); else alert('Error: ' + (data?.error || 'no se pudo enlazar'));
+  const add = (tipo, o) => {
+    if (comps.some(c => c.tipo === tipo && c.id === o.id)) { setAddModo(null); setQ(''); return; }
+    setComps(cs => [...cs, { tipo, id: o.id, nombre: o.nombre, cantidad: 1 }]);
+    setAddModo(null); setQ('');
   };
-  const pickProducto = async (p) => {
+  const setCant = (i, v) => setComps(cs => cs.map((c, j) => j === i ? { ...c, cantidad: v } : c));
+  const quitar = (i) => setComps(cs => cs.filter((_, j) => j !== i));
+
+  const guardar = async () => {
     setBusy(true);
-    const { data } = await db.rpc('mapear_menu_item_producto', { p_menu_item_id: fila.menu_item_id, p_producto_id: p.id });
+    const payload = comps.map(c => ({ tipo: c.tipo, id: c.id, cantidad: Number(c.cantidad) || 1 }));
+    const { data, error } = await db.rpc('set_menu_item_componentes', { p_menu_item_id: fila.menu_item_id, p_componentes: payload });
     setBusy(false);
-    if (data?.ok) onDone(); else alert('Error: ' + (data?.error || 'no se pudo enlazar'));
+    if (!error && data?.ok) onDone(); else alert('Error: ' + (error?.message || data?.error || 'no se pudo guardar'));
   };
 
   const recetasF = recetas.filter(r => !q || r.nombre.toLowerCase().includes(q.toLowerCase()));
+  const esCombo = comps.length > 1;
 
   return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:50,
         display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14,
-          width:'100%', maxWidth:520, maxHeight:'80vh', display:'flex', flexDirection:'column', color:C.text }}>
+          width:'100%', maxWidth:540, maxHeight:'85vh', display:'flex', flexDirection:'column', color:C.text }}>
         <div style={{ padding:'14px 16px', borderBottom:`1px solid ${C.border}` }}>
-          <div style={{ fontWeight:800, fontSize:15 }}>Enlazar «{fila.nombre}»</div>
-          <div style={{ fontSize:11, color:C.dim }}>Se aplica a los {(fila.canales||[]).length} canales con este nombre.</div>
+          <div style={{ fontWeight:800, fontSize:15 }}>Componer «{fila.nombre}» {esCombo && <span style={{ color:C.blue, fontSize:11 }}>· combo</span>}</div>
+          <div style={{ fontSize:11, color:C.dim }}>
+            Agregá 1 o varias recetas y/o bebidas. Se aplica a los {(fila.canales||[]).length} canales con este nombre.
+          </div>
         </div>
-        <div style={{ display:'flex', gap:6, padding:'10px 16px 0' }}>
-          {[['receta','🍔 A una receta'],['producto','🥤 Producto directo (BEES/bebida)']].map(([id,l])=>(
-            <button key={id} onClick={()=>setModo(id)} style={{ padding:'6px 10px', borderRadius:8, border:'none',
-                cursor:'pointer', fontSize:12, fontWeight:700, background: modo===id ? C.red : '#222', color: modo===id ? '#fff' : '#888' }}>{l}</button>
+
+        {/* Componentes actuales */}
+        <div style={{ overflowY:'auto', padding:'12px 16px', flex:1 }}>
+          {comps.length === 0 && <Empty t="Sin componentes. Agregá una receta o una bebida abajo." />}
+          {comps.map((c, i) => (
+            <div key={c.tipo+c.id} style={{ display:'flex', alignItems:'center', gap:8, background:C.panel,
+                border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 10px', marginBottom:6 }}>
+              <span style={{ fontSize:15 }}>{c.tipo==='receta' ? '🍔' : '🥤'}</span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:600, fontSize:13, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nombre}</div>
+                <div style={{ fontSize:10, color:C.dim }}>{c.tipo==='receta' ? 'receta' : 'bebida/producto'}</div>
+              </div>
+              <input type="number" step="0.01" min="0" value={c.cantidad}
+                onChange={e=>setCant(i, e.target.value)}
+                style={{ width:64, background:C.card, border:`1px solid ${C.border}`, borderRadius:6, padding:'5px 6px', color:C.text, fontSize:13, textAlign:'right' }} />
+              <button onClick={()=>quitar(i)} style={{ ...btn(false), color:C.red }}>✕</button>
+            </div>
           ))}
-        </div>
-        <div style={{ padding:'10px 16px' }}>
-          <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
-            placeholder={modo==='receta' ? 'Buscar receta…' : 'Buscar producto (min 2 letras)…'}
-            style={{ width:'100%', background:C.panel, border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 12px', color:C.text, fontSize:13 }} />
-        </div>
-        <div style={{ overflowY:'auto', padding:'0 16px 16px', flex:1 }}>
-          {modo === 'receta' ? (
-            recetasF.length === 0 ? <Empty t="Sin recetas. Creala primero en la pestaña Recetas." /> :
-            recetasF.map(r => (
-              <Item key={r.id} onClick={()=>!busy && pickReceta(r)}
-                nombre={r.nombre} sub={`${r.tipo}${r.costo_calculado?` · costo $${Number(r.costo_calculado).toFixed(2)}`:''}`} />
-            ))
-          ) : (
-            q.length < 2 ? <Empty t="Escribí para buscar el producto de compra (ej. Coca-Cola)." /> :
-            prods.length === 0 ? <Empty t="Sin resultados." /> :
-            prods.map(p => (
-              <Item key={p.id} onClick={()=>!busy && pickProducto(p)} nombre={p.nombre} sub={p.tipo} />
-            ))
+
+          {/* Añadir */}
+          {!addModo && (
+            <div style={{ display:'flex', gap:8, marginTop:8 }}>
+              <button onClick={()=>{setAddModo('receta'); setQ('');}} style={{ ...btn(false), flex:1 }}>🍔 Agregar receta</button>
+              <button onClick={()=>{setAddModo('producto'); setQ('');}} style={{ ...btn(false), flex:1 }}>🥤 Agregar bebida/producto</button>
+            </div>
           )}
+          {addModo && (
+            <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10 }}>
+              <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+                placeholder={addModo==='receta' ? 'Buscar receta…' : 'Buscar producto (min 2 letras)…'}
+                style={{ width:'100%', background:C.panel, border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 12px', color:C.text, fontSize:13, marginBottom:8 }} />
+              <div style={{ maxHeight:220, overflowY:'auto' }}>
+                {addModo === 'receta'
+                  ? (recetasF.length === 0 ? <Empty t="Sin recetas. Creala en la pestaña Recetas." />
+                     : recetasF.map(r => <Item key={r.id} onClick={()=>add('receta', r)} nombre={r.nombre}
+                         sub={`${r.tipo}${r.costo_calculado?` · costo $${Number(r.costo_calculado).toFixed(2)}`:''}`} />))
+                  : (q.length < 2 ? <Empty t="Escribí para buscar (ej. Coca-Cola)." />
+                     : prods.length === 0 ? <Empty t="Sin resultados." />
+                     : prods.map(p => <Item key={p.id} onClick={()=>add('producto', p)} nombre={p.nombre} sub={p.tipo} />))}
+              </div>
+              <button onClick={()=>{setAddModo(null); setQ('');}} style={{ ...btn(false), marginTop:6 }}>Cancelar</button>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:'12px 16px', borderTop:`1px solid ${C.border}`, display:'flex', gap:8, alignItems:'center' }}>
+          <div style={{ fontSize:11, color:C.dim, flex:1 }}>
+            {comps.length===0 ? 'Guardar vacío = quitar el mapeo.' : esCombo ? `Combo de ${comps.length} componentes.` : '1 componente = enlace directo.'}
+          </div>
+          <button onClick={onClose} style={btn(false)}>Cancelar</button>
+          <button onClick={guardar} disabled={busy}
+            style={{ background:C.green, color:'#0a0a0a', border:'none', borderRadius:8, padding:'8px 16px', fontWeight:800, cursor:'pointer', fontSize:13 }}>
+            {busy ? 'Guardando…' : 'Guardar'}
+          </button>
         </div>
       </div>
     </div>
