@@ -147,17 +147,18 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
   };
 
   const reimprimir=async()=>{
-    // Usar el valor devuelto: setState no es sincrónico, leer `items` del closure
-    // tras await daba [] → hoja en blanco.
-    const its = items.length>0 ? items : (await cargarItems());
+    // RPC hoja_despacho: trae conteo nocturno + enviado + resultante por item
+    const {data}=await db.rpc('hoja_despacho',{p_despacho_id:despacho.id});
+    const its=(data?.items)||[];
     const groups={};
-    its.forEach(it=>{const cat='General';if(!groups[cat])groups[cat]=[];groups[cat].push(it);});
-    const grouped=Object.entries(groups).map(([cat,arr])=>[cat,arr.map(it=>({qty_despacho:it.cantidad_despachada,catalogo_productos:{nombre:it.descripcion,unidad_medida:it.unidad_medida}}))]);
+    its.forEach(it=>{const cat=it.grupo||'General';if(!groups[cat])groups[cat]=[];groups[cat].push(it);});
+    const grouped=Object.entries(groups).map(([cat,arr])=>[cat,arr.map(it=>({
+      nombre:it.nombre,unidad:it.unidad,conteo:it.conteo,enviado:it.enviado,resultante:it.resultante
+    }))]);
     imprimirHojaDespacho({
-      sucursal:despacho.sucursales?.nombre||'',
+      sucursal:despacho.sucursales?.nombre||data?.sucursal||'',
       fecha:fmtDate(despacho.fecha_despacho),
       motorista:despacho.motorista_nombre||'—',
-      items:its,
       grouped
     });
   };
@@ -205,22 +206,27 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
 }
 
 // ── IMPRIMIR HOJA DE DESPACHO ─────────────────────────────────
-function imprimirHojaDespacho({sucursal,fecha,motorista,items,grouped}){
+// grouped: [ [categoria, [{nombre, unidad, conteo, enviado, resultante}]] ]
+function imprimirHojaDespacho({sucursal,fecha,motorista,grouped}){
+  const fmt=(v)=>{ const nn=Number(v||0); return Number.isInteger(nn)?String(nn):nn.toFixed(2); };
+  const td='padding:6px 8px;border-bottom:1px solid #ddd';
   const rows=grouped.map(([cat,its])=>
-    `<tr><td colspan="4" style="background:#eee;font-weight:700;padding:6px 8px;font-size:13px">${cat}</td></tr>`+
-    its.filter(it=>parseFloat(it.qty_despacho)>0).map(it=>
+    `<tr><td colspan="6" style="background:#eee;font-weight:700;padding:6px 8px;font-size:13px">${cat}</td></tr>`+
+    its.filter(it=>parseFloat(it.enviado)>0).map(it=>
       `<tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd">${it.catalogo_productos?.nombre||'Producto'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center">${it.qty_despacho} ${it.catalogo_productos?.unidad_medida||''}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;width:80px"></td>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd;width:120px"></td>
+        <td style="${td}">${it.nombre||'Producto'}</td>
+        <td style="${td};text-align:center;color:#555">${fmt(it.conteo)}</td>
+        <td style="${td};text-align:center;font-weight:700">${fmt(it.enviado)} ${it.unidad||''}</td>
+        <td style="${td};text-align:center;font-weight:700;background:#f4f4f4">${fmt(it.resultante)}</td>
+        <td style="${td};text-align:center;width:70px"></td>
+        <td style="${td};width:110px"></td>
       </tr>`
     ).join('')
   ).join('');
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Despacho ${sucursal}</title>
-    <style>@media print{@page{margin:12mm}body{font-family:Arial,sans-serif;font-size:14px;color:#000}}
-    body{font-family:Arial,sans-serif;font-size:14px}table{width:100%;border-collapse:collapse;margin-top:12px}
-    th{background:#333;color:#fff;padding:8px;text-align:left;font-size:13px}
+    <style>@media print{@page{margin:10mm;size:landscape}body{font-family:Arial,sans-serif;font-size:13px;color:#000}}
+    body{font-family:Arial,sans-serif;font-size:13px}table{width:100%;border-collapse:collapse;margin-top:12px}
+    th{background:#333;color:#fff;padding:8px;text-align:left;font-size:12px}
     .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
     .logo{font-size:22px;font-weight:900}.firma{margin-top:40px;display:flex;justify-content:space-between;gap:40px}
     .firma-box{flex:1;text-align:center;border-top:1px solid #000;padding-top:8px;font-size:12px}</style></head>
@@ -229,7 +235,7 @@ function imprimirHojaDespacho({sucursal,fecha,motorista,items,grouped}){
     <div style="text-align:right"><div><strong>Destino:</strong> ${sucursal}</div>
     <div><strong>Fecha:</strong> ${fecha}</div>
     <div><strong>Motorista:</strong> ${motorista||'—'}</div></div></div>
-    <table><thead><tr><th>Producto</th><th style="text-align:center">Cant. Despachada</th><th style="text-align:center">Recibido</th><th>Observaciones</th></tr></thead>
+    <table><thead><tr><th>Producto</th><th style="text-align:center">Conteo actual</th><th style="text-align:center">Enviado</th><th style="text-align:center">Stock resultante</th><th style="text-align:center">Recibido</th><th>Observaciones</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div style="margin-top:20px;padding:10px;border:1px dashed #999;border-radius:6px;font-size:12px;color:#666">
     <strong>Notas generales:</strong>_______________________________________________</div>
@@ -258,10 +264,16 @@ function PrepararDespacho({pedido,user,show,onBack}){
     // Load motoristas
     db.from('usuarios_erp').select('id,nombre').in('rol',['despachador','motorista']).order('nombre')
       .then(({data})=>setMotoristas(data||[]));
-    // Load pedido items
+    // Load pedido items + conteo nocturno actual de la sucursal (para la hoja)
     db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,precio_referencia)').eq('pedido_id',pedido.id)
-      .then(({data})=>{
-        setPitems((data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0)})));
+      .then(async({data})=>{
+        const its=(data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0),conteo:0}));
+        const ids=its.map(it=>it.producto_id).filter(Boolean);
+        if(ids.length){
+          const {data:cmap}=await db.rpc('conteo_actual_sucursal',{p_sucursal_id:pedido.sucursal_id,p_producto_ids:ids});
+          if(cmap) its.forEach(it=>{ it.conteo=Number(cmap[it.producto_id]||0); });
+        }
+        setPitems(its);
         setLoading(false);
       });
   },[pedido.id]);
@@ -395,6 +407,8 @@ function PrepararDespacho({pedido,user,show,onBack}){
                 </div>
                 <div style={{fontSize:12,color:'#666',marginBottom:10}}>
                   Solicitado: <strong style={{color:'#f0f0f0'}}>{it.cantidad_solicitada} {it.catalogo_productos?.unidad_medida||''}</strong>
+                  <span style={{marginLeft:10,color:'#888'}}>· Conteo suc.: <strong style={{color:'#fbbf24'}}>{n(it.conteo||0)}</strong></span>
+                  <span style={{marginLeft:10,color:'#888'}}>· Resultante: <strong style={{color:'#4ade80'}}>{n(it.conteo||0)+n(it.qty_despacho||0)}</strong></span>
                 </div>
                 <div>
                   <label>Cantidad a despachar</label>
@@ -434,12 +448,15 @@ function PrepararDespacho({pedido,user,show,onBack}){
               {saving?'Creando despacho...':'📦 Crear Despacho'}
             </button>
             <button className="btn btn-ghost" style={{flex:'0 0 auto',padding:'14px 18px'}} onClick={()=>{
+              const g=grouped.map(([cat,items])=>[cat,items.map(it=>{
+                const conteo=n(it.conteo||0), enviado=n(it.qty_despacho||0);
+                return {nombre:it.catalogo_productos?.nombre||'Producto',unidad:it.catalogo_productos?.unidad_medida||it.unidad||'',conteo,enviado,resultante:conteo+enviado};
+              })]);
               imprimirHojaDespacho({
                 sucursal:pedido.sucursales?.nombre||pedido.sucursal_id,
                 fecha:new Date().toLocaleDateString('es-SV',{day:'2-digit',month:'short',year:'numeric'}),
                 motorista,
-                items:pitems,
-                grouped
+                grouped:g
               });
             }}>🖨️</button>
           </div>

@@ -91,6 +91,82 @@ function Timeline({ estado, despacho }) {
   );
 }
 
+// ── #12 PEDIDO DE EMERGENCIA (aditivo, sin exigir conteo) ────────
+function PedidoEmergenciaModal({ sucursalId, sucursalNombre, user, onClose, onDone }) {
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState([]);
+  const [sel, setSel] = useState([]); // {producto_id, nombre, unidad, cantidad}
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setRes([]); return; }
+    const t = setTimeout(() => {
+      db.from('catalogo_productos').select('id,nombre,unidad_medida,tipo')
+        .eq('activo', true).ilike('nombre', `%${q.trim()}%`).limit(20)
+        .then(({ data }) => setRes(data || []));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const add = (p) => {
+    if (sel.some(s => s.producto_id === p.id)) return;
+    setSel(s => [...s, { producto_id: p.id, nombre: p.nombre, unidad: p.unidad_medida || 'unidad', cantidad: 1 }]);
+    setQ(''); setRes([]);
+  };
+  const setCant = (id, v) => setSel(s => s.map(x => x.producto_id === id ? { ...x, cantidad: v } : x));
+  const quitar = (id) => setSel(s => s.filter(x => x.producto_id !== id));
+
+  const enviar = async () => {
+    const items = sel.filter(s => n(s.cantidad) > 0).map(s => ({ producto_id: s.producto_id, cantidad: n(s.cantidad), unidad: s.unidad }));
+    if (items.length === 0) return;
+    setBusy(true);
+    const { data, error } = await db.rpc('crear_pedido_emergencia', { p_sucursal_id: sucursalId, p_items: items, p_usuario_id: user.id });
+    setBusy(false);
+    if (!error && data?.ok) onDone(`🚨 Pedido de emergencia enviado (${data.items} items)`);
+    else alert('Error: ' + (error?.message || data?.error || 'no se pudo crear'));
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #3a1414', borderRadius: 14, width: '100%', maxWidth: 520, maxHeight: '85vh', display: 'flex', flexDirection: 'column', color: '#f0f0f0' }}>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #2a2a2a' }}>
+          <div style={{ fontWeight: 800, fontSize: 15, color: '#f87171' }}>🚨 Pedido de emergencia</div>
+          <div style={{ fontSize: 11, color: '#888' }}>{sucursalNombre} · se suma al pedido del día, no exige conteo</div>
+        </div>
+        <div style={{ padding: '12px 16px' }}>
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar producto (min 2 letras)…"
+            style={{ width: '100%', boxSizing: 'border-box', background: '#111', border: '1px solid #2a2a2a', borderRadius: 8, padding: '9px 12px', color: '#fff', fontSize: 13 }} />
+          {res.length > 0 && (
+            <div style={{ marginTop: 6, maxHeight: 180, overflowY: 'auto', border: '1px solid #2a2a2a', borderRadius: 8 }}>
+              {res.map(p => (
+                <button key={p.id} onClick={() => add(p)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #222', color: '#eee', padding: '8px 10px', cursor: 'pointer', fontSize: 13 }}>
+                  {p.nombre} <span style={{ color: '#666', fontSize: 11 }}>· {p.unidad_medida || 'u'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ overflowY: 'auto', padding: '0 16px', flex: 1 }}>
+          {sel.length === 0 && <div style={{ color: '#666', fontSize: 12, textAlign: 'center', padding: 16 }}>Agregá productos que necesitás con urgencia.</div>}
+          {sel.map(s => (
+            <div key={s.producto_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #222' }}>
+              <div style={{ flex: 1, fontSize: 13 }}>{s.nombre} <span style={{ color: '#666', fontSize: 11 }}>{s.unidad}</span></div>
+              <input type="number" min="0" step="0.01" value={s.cantidad} onChange={e => setCant(s.producto_id, e.target.value)}
+                style={{ width: 70, background: '#111', border: '1px solid #2a2a2a', borderRadius: 6, padding: '5px 6px', color: '#fff', fontSize: 13, textAlign: 'right' }} />
+              <button onClick={() => quitar(s.producto_id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid #2a2a2a', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-sm" disabled={busy || sel.length === 0} onClick={enviar}
+            style={{ background: '#dc2626', color: '#fff', fontWeight: 700 }}>{busy ? 'Enviando…' : `Enviar (${sel.length})`}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MisPedidosView({ user, onBack }) {
   const { show, Toast } = useToast();
 
@@ -112,6 +188,7 @@ export default function MisPedidosView({ user, onBack }) {
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [showEmerg, setShowEmerg] = useState(false);
 
   const canViewAll = ROLES_VER_TODAS.includes(user.rol);
 
@@ -169,7 +246,7 @@ export default function MisPedidosView({ user, onBack }) {
       for (let i = 0; i < pedIds.length; i += 15) {
         const batch = pedIds.slice(i, i + 15);
         const { data: pi, error: ePI } = await db.from('pedido_items')
-          .select('id,pedido_id,producto_id,cantidad_solicitada,cantidad_despachada,unidad')
+          .select('id,pedido_id,producto_id,cantidad_solicitada,cantidad_despachada,unidad,sin_stock_cm')
           .in('pedido_id', batch);
         if (ePI) throw ePI;
         (pi || []).forEach(it => {
@@ -266,6 +343,7 @@ export default function MisPedidosView({ user, onBack }) {
               <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {prod?.nombre || it.producto_id.slice(0, 8)}
                 <span style={{ color: '#666', fontSize: 11, marginLeft: 4 }}>{it.unidad || prod?.unidad_medida || ''}</span>
+                {it.sin_stock_cm && <span title="Casa Matriz sin stock — queda en pedido" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#f87171', background: '#3a1414', padding: '1px 6px', borderRadius: 10 }}>⏳ queda en pedido</span>}
               </div>
               <div style={{ textAlign: 'right', color: '#fff' }}>{solicit}</div>
               <div style={{ textAlign: 'right', color: despach > 0 ? '#fbbf24' : '#666' }}>{despach || '—'}</div>
@@ -304,16 +382,29 @@ export default function MisPedidosView({ user, onBack }) {
             {sucursalNombre ? `Sucursal: ${sucursalNombre}` : 'Cargando sucursal…'}
           </div>
         </div>
-        {canViewAll && sucursales.length > 0 && (
-          <select className="input" value={sucursalId || ''} onChange={e => {
-            setSucursalId(e.target.value);
-            const s = sucursales.find(s => s.id === e.target.value);
-            setSucursalNombre(s?.nombre || '');
-          }}>
-            {sucursales.map(s => <option key={s.id} value={s.id}>{s.store_code} — {s.nombre}</option>)}
-          </select>
-        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {sucursalId && (
+            <button className="btn btn-sm" style={{ background: '#7f1d1d', color: '#fff', fontWeight: 700 }}
+              onClick={() => setShowEmerg(true)}>🚨 Pedido de emergencia</button>
+          )}
+          {canViewAll && sucursales.length > 0 && (
+            <select className="input" value={sucursalId || ''} onChange={e => {
+              setSucursalId(e.target.value);
+              const s = sucursales.find(s => s.id === e.target.value);
+              setSucursalNombre(s?.nombre || '');
+            }}>
+              {sucursales.map(s => <option key={s.id} value={s.id}>{s.store_code} — {s.nombre}</option>)}
+            </select>
+          )}
+        </div>
       </div>
+      {showEmerg && (
+        <PedidoEmergenciaModal
+          sucursalId={sucursalId} sucursalNombre={sucursalNombre} user={user}
+          onClose={() => setShowEmerg(false)}
+          onDone={(msg) => { setShowEmerg(false); show(msg); cargar(); }}
+        />
+      )}
 
       {/* Filtros */}
       <RangoFechas desde={desde} hasta={hasta} setDesde={setDesde} setHasta={setHasta} />
