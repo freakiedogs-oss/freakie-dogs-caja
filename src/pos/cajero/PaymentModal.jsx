@@ -1,8 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import CustomerSearch from './CustomerSearch'
 import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
 import { STORES_SIN_PROPINA, STORES_FOOD_COURT } from '../../config'
+import { db } from '../../supabase'
+
+// Sucursales que verifican pagers en uso (evita asignar 2 clientes al mismo pager)
+// Solo S006 por ahora (piloto Metrocentro). Extender a S001/S002 después de validar.
+const STORES_PAGER_LOOKUP = ['S006']
 
 const DTE_TYPES = [
   { key: 'factura', ic: 'receipt', label: 'Consumidor Final', desc: 'Factura — se envía a Hacienda' },
@@ -42,6 +47,36 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
   ))
   const [pager, setPager]       = useState(null)
   const [showPagerModal, setShowPagerModal] = useState(false)
+  const [pagersOcupados, setPagersOcupados] = useState([])  // números en uso (activos en KDS)
+  const [loadingPagers, setLoadingPagers]   = useState(false)
+  const usaLookupPagers = STORES_PAGER_LOOKUP.includes(storeCode)
+
+  // Cuando se abre el modal de pagers en S006, consulta pos_cocina_queue para
+  // saber cuáles están en uso (orden aún no completada). Se refresca cada vez
+  // que se abre — cocina bumpa la comanda y el pager queda libre solo.
+  useEffect(() => {
+    if (!showPagerModal || !usaLookupPagers) return
+    let cancelado = false
+    setLoadingPagers(true)
+    ;(async () => {
+      const { data, error } = await db
+        .from('pos_cocina_queue')
+        .select('pager')
+        .eq('store_code', storeCode)
+        .not('pager', 'is', null)
+        .neq('estado', 'completado')
+      if (cancelado) return
+      if (error) {
+        console.error('No se pudieron traer los pagers en uso:', error.message)
+        setPagersOcupados([])
+      } else {
+        const nums = [...new Set((data || []).map(r => Number(r.pager)).filter(n => n > 0))]
+        setPagersOcupados(nums)
+      }
+      setLoadingPagers(false)
+    })()
+    return () => { cancelado = true }
+  }, [showPagerModal, usaLookupPagers, storeCode])
   const [printed, setPrinted]   = useState(false)
   const [tipoDte, setTipoDte]   = useState('factura')
   const [ref, setRef]           = useState('')
@@ -222,7 +257,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
             <button
               className="pos-confirmar-btn"
               onClick={() => {
-                onPrintFactura?.({ dteResult, tipoDte, propina: propinaNum, metodo, cliente, pager })
+                onPrintFactura?.({ dteResult, tipoDte, propina: propinaNum, metodo, cliente, pager, efectivo: efectivoNum, cambio })
                 setPrinted(true)
               }}
               style={{ marginTop: 12, background: '#2dd4a8', color: '#06241b' }}
@@ -572,14 +607,36 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
           <div className="pos-modal-overlay" onClick={() => setShowPagerModal(false)} style={{ zIndex: 400 }}>
             <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
               <div className="pos-modal-title">📟 Asignar pager al cliente</div>
-              <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 12 }}>Elige el número de pager (1–15), o Sin pager si se acabaron.</div>
+              <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 12 }}>
+                {usaLookupPagers
+                  ? (loadingPagers
+                      ? 'Cargando pagers disponibles...'
+                      : (pagersOcupados.length > 0
+                          ? `Los pagers grises están en uso (${pagersOcupados.length} activos en cocina). Elige uno libre o Sin pager.`
+                          : 'Todos los pagers están libres. Elige uno (1–15) o Sin pager.'))
+                  : 'Elige el número de pager (1–15), o Sin pager si se acabaron.'}
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                {Array.from({ length: 15 }, (_, i) => i + 1).map(n => (
-                  <button key={n} type="button"
-                    onClick={() => { setPager(n); setShowPagerModal(false); handleConfirm(n) }}
-                    style={{ padding: '18px 0', borderRadius: 10, fontSize: 22, fontWeight: 800, cursor: 'pointer',
-                      background: '#1e1e26', border: '1px solid #ff6b35', color: '#ff6b35' }}>{n}</button>
-                ))}
+                {Array.from({ length: 15 }, (_, i) => i + 1).map(n => {
+                  const enUso = usaLookupPagers && pagersOcupados.includes(n)
+                  return (
+                    <button key={n} type="button"
+                      disabled={enUso || loadingPagers}
+                      onClick={() => { if (enUso || loadingPagers) return; setPager(n); setShowPagerModal(false); handleConfirm(n) }}
+                      title={enUso ? 'Pager en uso — orden aún en cocina' : ''}
+                      style={{
+                        padding: '18px 0', borderRadius: 10, fontSize: 22, fontWeight: 800,
+                        cursor: (enUso || loadingPagers) ? 'not-allowed' : 'pointer',
+                        background: enUso ? '#2a2a2a' : '#1e1e26',
+                        border: `1px solid ${enUso ? '#4a4a4a' : '#ff6b35'}`,
+                        color: enUso ? '#666' : '#ff6b35',
+                        opacity: enUso ? 0.5 : 1,
+                        position: 'relative',
+                      }}>
+                      {enUso ? `🔒${n}` : n}
+                    </button>
+                  )
+                })}
               </div>
               <button type="button"
                 onClick={() => { setPager(null); setShowPagerModal(false); handleConfirm(null) }}

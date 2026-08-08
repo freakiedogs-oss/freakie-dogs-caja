@@ -970,7 +970,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   }
 
   // Imprime factura/ticket desde el botón de confirmación (gesto del usuario).
-  const handlePrintFactura = async ({ dteResult, tipoDte, propina = 0, metodo, cliente, pager }) => {
+  const handlePrintFactura = async ({ dteResult, tipoDte, propina = 0, metodo, cliente, pager, efectivo, cambio }) => {
     const DTE_LABEL = {
       factura: 'FACTURA (Consumidor Final)',
       ccf:     'COMPROBANTE DE CRÉDITO FISCAL',
@@ -985,6 +985,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       pager:      pager ?? null,
       total:      total + (propina || 0),
       metodoPago: metodo,
+      // Efectivo: para imprimir recibido y cambio a entregar
+      recibido:   metodo === 'efectivo' && efectivo != null ? efectivo : null,
+      cambio:     metodo === 'efectivo' && cambio != null ? cambio : null,
       iva:        dteResult?.monto_iva ?? null,
       cliente:    clientePrint,
       fecha:      new Date(),

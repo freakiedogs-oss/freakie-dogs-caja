@@ -2,14 +2,74 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
-## 5-Ago-2026 — PR #60 rebaseado + hallazgo: el envío de DTE por correo está en CERO
+## 8-Ago-2026 — PR #60 mergeado (correo obligatorio) + hallazgo: envío de DTE por correo en CERO
 
-**Contexto:** PR #60 (`feat/cobro-correo-cliente-obligatorio`, del 31-Jul) hace **obligatorio el correo del cliente** al adjuntarlo a un cobro Factura/CCF, para poder auto-enviarle el DTE (JSON+PDF). Estaba abierto y 89 commits atrás de `main`. Se **rebaseó sobre `main`** (recreado por cherry-pick del único commit `94c937c`; conflictos resueltos: `PaymentModal.jsx` conservó el prop `tipo` de main + el helper `validEmail`; `memoria.md` se tomó de main). **NO se mergeó**: toca facturación, lo aprueba Jose.
+PR #60 (`feat/cobro-correo-cliente-obligatorio`) hace **obligatorio el correo del cliente** al adjuntarlo a un cobro Factura/CCF, para poder auto-enviarle el DTE. Rebaseado sobre `main` (conflicto en `memoria.md` resuelto por unión; `PaymentModal.jsx` auto-merge limpio) y mergeado con OK de Jose.
 
 **Hallazgo al auditar el pipeline (importante):** el envío por correo **NO está funcionando**.
-- Infra desplegada: edge function `freakie-dte-email` (v3, ACTIVE) + pg_cron `freakie-dte-email-sweep` (cada minuto, `freakie_dte_email_sweep()`) + Apps Script bajo `freakiedogs@gmail.com`. El sweep solo toma DTE de las últimas 2h con `receptor.correo` no nulo.
-- **Agosto: 2,986 DTE sellados de Freakie, solo 3 con correo de receptor, y 0 entregados** (`pos_dte_email_log`: 3 filas, todas `pending`, `to_email` null). Causa raíz doble: (1) el POS no captura el correo (PR #60 sin mergear) → 99.9% de DTE salen sin correo; (2) aun con correo, la edge function no completa el envío (queda en `pending`, nunca pasa a `sent`). El sweep no reintenta pasadas 2h, así que esos 3 quedaron colgados para siempre.
-- **Para que empiecen a salir correos** hacen falta LAS DOS cosas: mergear PR #60 (capturar correo en caja) **y** arreglar la entrega (por qué la función queda en `pending`).
+- Infra desplegada: edge function `freakie-dte-email` + pg_cron `freakie-dte-email-sweep` (cada minuto) + Apps Script bajo `freakiedogs@gmail.com`. El sweep solo toma DTE de las últimas 2h con `receptor.correo` no nulo.
+- **Agosto: 2,986 DTE sellados, solo 3 con correo de receptor, 0 entregados.** Causa raíz doble: (1) el POS no capturaba el correo (lo arregla #60); (2) aun con correo, la edge function no completa el envío (queda en `pending`, nunca `sent`), y el sweep no reintenta pasadas 2h. **Pendiente: arreglar la entrega** (por qué queda en `pending`).
+
+## 6-Ago-2026 — Manuales de Torre y Drivers
+
+Cierre del bloque de delivery: dos manuales HTML autocontenidos (mobile-first, tema oscuro) en `public/`:
+`manual-driver.html` (motoristas: turno, almuerzo, recibir/salir con pedidos, Waze, cobrar/vuelto, entregar con
+confirmación, Cobros/conciliación, Historial, Métricas) y `manual-torre.html` (Kari: tablero 4 etapas, cobrar,
+asignar con sugerencias ⭐, reasignar, para llevar, mandados, sucursales 3 estados + horarios, bonos/costeo, reporte
+diario). Se sirven en `/manual-driver.html` y `/manual-torre.html`. Cada rol solo ve lo suyo. `npm run build` ✅.
+
+## 6-Ago-2026 — Capa de sugerencia de motorista (torre) + turno/almuerzo/bitácora
+
+Bloque grande del roadmap de delivery. Modelo de disponibilidad corregido a **turno abierto** (en_linea, sin
+ventana de frescura); `desconectar_driver` ya NO cierra turno (era la causa real de "se desconecta": la app apaga
+el GPS al terminar cada ruta). Auto-cierre nocturno (cron 4am). **Almuerzo**: `driver_almorzar`/`driver_fin_almuerzo`
+(+ `almuerzo_inicio`, `asistencia.almuerzo_min`), sigue asignable, Kari lo ve "🍽️ almorzando".
+**Bitácora** `delivery_asignaciones_log` (cada asignación de Kari con contexto: elegido vs sugerido, carga, candidatos, etc.).
+**Sugerencia:** `sugerir_motoristas(sucursal, n)` puntúa por **carga·25 + cercanía·4 + almuerzo·15** y devuelve ranking
+con razón; `sugerir_motorista` = top1 (mejora auto la de `torre_listar_pedidos`, que ahora también trae `sugeridos`).
+`TabPedidos`: chips de "💡 Sugeridos (tocá para asignar)", #1 destacado ⭐ — cada toque asigna y se registra (loop de
+aprendizaje). Roadmap: capturar (hecho) → sugerir (hecho) → asistir/automatizar con la data. `npm run build` ✅.
+Ver [[freakie-driver-disponibilidad-turno]].
+
+## 5-Ago-2026 — Delivery Fase 1: desconexión de turno + desglose de bono en Métricas
+
+Primer bloque de las mejoras del flujo delivery (roadmap acordado con Jose).
+- **Desconexión al iniciar turno (fix):** el "latido" que mantiene vivo el turno es un `setInterval` cada 5 min
+  (`useDisponible` en `DriverBeacon.jsx`); los navegadores móviles lo **congelan en segundo plano** → a los 30 min
+  sin señal la central da de baja. Fix: listener `visibilitychange` que re-marca `driver_disponible` al volver a
+  primer plano. (El congelamiento intermitente queda por diagnosticar en campo.)
+- **Métricas con desglose del bono:** `mis_metricas_driver` ahora devuelve `desglose` por tipo (entregas cerca <umbral,
+  largas ≥umbral, fuera de horario, mandados) con cantidad·tarifa=bono; verificado que suma exacto el bono_total. La tab
+  Métricas del driver muestra una card por tipo + total → el driver corrobora de dónde sale su bono (incluye fuera-de-hora
+  y mandados, que antes no se veían).
+- Pendiente Fase 1/2: sonido/notificación al caer pedido, notificar mandados en vivo (hoy solo salen en métricas/historial),
+  botón de confirmación al dar Entregado. Roadmap completo en el chat.
+- Reporte de órdenes abiertas para WhatsApp: creado RPC `reporte_ordenes_abiertas()` (texto listo). Falta enganchar envío
+  diario a Telegram vía @FreakieDogsBot (el envío vive en edge functions/mini, no en la BD). `npm run build` ✅.
+
+## 5-Ago-2026 — Tickets: canal de venta, mesa, método de pago y cambio
+
+Pedido de Jose: que los tickets impresos muestren el **canal de venta** (mesa/llevar/drive/delivery/PeYa), el
+**nº de mesa** si es mesa, el **método de pago**, y si es **efectivo el cambio** a entregar.
+- **`buildFactura` (`printService.js`):** agrega `Canal: {tipoLabel}` + `Mesa: #{n}` (si hay), y bajo "Pago:"
+  imprime `Recibido:` y `CAMBIO` (grande) cuando vienen `recibido`/`cambio`. (Comanda y pre-cuenta ya mostraban canal/mesa.)
+- **Cobro:** `PaymentModal` ya calcula el cambio; ahora pasa `efectivo`/`cambio` a `onPrintFactura`, y `POSMain.handlePrintFactura`
+  los reenvía a `printFactura` como `recibido`/`cambio` (solo si método=efectivo). El `tipoLabel`/`mesa` ya iban en `buildCuentaPrint`.
+- **Reimpresión (`HistorialCobros`):** la consulta ahora trae `pos_cuenta_pagos (metodo, monto_recibido, cambio)`;
+  se calcula `metodoPago` (mixto si hay varios pagos) y, si hubo efectivo, `recibido`/`cambio`, y se pasan a `printFactura`.
+`npm run build` ✅.
+
+## 5-Ago-2026 — Reimpresión del Historial no ruteaba por caja (Lourdes multi-caja)
+
+En Lourdes, reimprimir una factura desde **Historial de Órdenes** salía en la impresora equivocada.
+**Causa:** `HistorialCobros.jsx` → `handleReimprimir` llamaba `printFactura({...})` **sin `caja`**; `imprimir()`
+resuelve `caja = opts.caja ?? cuenta.caja ?? null`, y con `caja=null` en sucursal multi-caja agarra cualquier
+impresora principal de la sucursal (no la de la caja del cajero). El flujo normal del POS sí pasa `caja`
+(`POSMain.jsx:123`, `user.caja`).
+**Fix:** pasar `caja: user?.caja || null` en el `printFactura` de la reimpresión → cae en la impresora de la
+caja logueada (general → .7, drive → .100). `npm run build` ✅.
+Aparte (config física Lourdes): Caja general WiFi `.7`, Meseros WiFi `.8` (gateway debe ser `.1`, quedó en `.101`),
+Autoservicio por cable `.100` (única cableada). Ver `pos_impresoras` S003.
 
 ## 5-Ago-2026 — Motorista visible en las órdenes de Delivery del POS
 

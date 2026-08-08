@@ -207,8 +207,8 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
 
-  const asignar = async (p) => {
-    const mid = asignSel[p.id] || p.motorista_sugerido?.motorista_id;
+  const asignar = async (p, forzado) => {
+    const mid = forzado || asignSel[p.id] || p.motorista_sugerido?.motorista_id;
     if (!mid) { show('⚠️ Elegí un motorista'); return; }
     setOcupado(p.id);
     try {
@@ -311,6 +311,7 @@ export default function TabPedidos({ show = () => {} }) {
           {verHistorial ? '← Tablero' : '🧾 Historial'}
         </button>
         <button onClick={() => cargar(token)} style={btn('#333')} title="Actualizar">{cargando ? '…' : '↻'}</button>
+        <a href="/manual-torre.html" target="_blank" rel="noopener" style={{ ...btn('#333'), textDecoration: 'none', display: 'inline-block' }}>📘 Manual</a>
         <button onClick={salir} style={btn('#333')}>Salir</button>
       </div>
 
@@ -549,9 +550,20 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       {/* Listo: asignar motorista (no aplica a los "para llevar") */}
       {['preparando','lista'].includes(p.estado) && !p.motorista_id && !paraLlevar && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
-          {p.motorista_sugerido && (
-            <div style={{ fontSize: 11, color: c.dim, marginBottom: 5 }}>
-              Cerca: <b style={{ color: c.text }}>{p.motorista_sugerido.nombre}</b> ({p.motorista_sugerido.distancia_km} km)
+          {p.sugeridos?.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: c.dim, marginBottom: 4 }}>💡 Sugeridos (tocá para asignar):</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {p.sugeridos.map((s, i) => (
+                  <button key={s.motorista_id} disabled={ocupado === p.id} title={s.razon}
+                    onClick={() => asignar(p, s.motorista_id)}
+                    style={{ ...btn(i === 0 ? c.green : 'none', i === 0 ? '#04210f' : c.text),
+                             fontSize: 11.5, padding: '5px 9px',
+                             border: i === 0 ? 'none' : `1px solid ${c.border}` }}>
+                    {i === 0 ? '⭐ ' : ''}{(s.nombre || '').split(' ')[0]}{s.razon ? ` · ${s.razon}` : ''}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           <select value={asignSel[p.id] || p.motorista_sugerido?.motorista_id || ''}
@@ -565,6 +577,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                 {d.pedidos > 0
                   ? ` · lleva ${d.pedidos}${d.en_ruta > 0 ? ` (${d.en_ruta} en ruta)` : ''}`
                   : ' · libre'}
+                {d.almorzando ? ` · 🍽️ almorzando${d.almuerzo_min ? ` ${d.almuerzo_min}m` : ''}` : ''}
               </option>
             ))}
           </select>
@@ -618,6 +631,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                   <option key={d.id} value={d.id}>
                     {d.nombre}{d.sucursal ? ` · ${d.sucursal}` : ''}
                     {d.pedidos > 0 ? ` · lleva ${d.pedidos}` : ' · libre'}
+                    {d.almorzando ? ' · 🍽️ almorzando' : ''}
                   </option>
                 ))}
               </select>

@@ -121,6 +121,12 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             cantidad,
             notas,
             menu_item_id
+          ),
+          pos_cuenta_pagos (
+            metodo,
+            monto,
+            monto_recibido,
+            cambio
           )
         `)
         .eq('store_code', storeCode)
@@ -163,19 +169,31 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
     setReimprimiendo(cuenta.id)
     try {
       const items = (cuenta.pos_cuenta_items || []).map(i => ({
-        cantidad: i.cantidad,
+        qty: i.cantidad,          // buildFactura lee it.qty (no it.cantidad)
         nombre: i.nombre,
         precio: parseFloat(i.precio_unitario) || 0,
         modificadores: [],
         nota: i.notas || null,
       }))
 
+      // Pago(s): método (si hay varios = mixto) y, si hubo efectivo, recibido/cambio
+      const pagos = cuenta.pos_cuenta_pagos || []
+      const metodoPago = pagos.length === 0 ? null
+        : pagos.length > 1 ? 'mixto' : pagos[0].metodo
+      const pagoEfectivo = pagos.find(p => p.metodo === 'efectivo')
+
       const r = await printFactura({
         storeCode,
         storeName,
+        // Multi-caja (Lourdes): rutear a la impresora de la caja en la que está
+        // logueada la persona que reimprime; sin esto caía en cualquiera.
+        caja: user?.caja || null,
         mesa: cuenta.mesa_ref || null,
         tipoLabel: (TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']).label,
         cajero: user?.nombre || user?.name || null,
+        metodoPago,
+        recibido: pagoEfectivo?.monto_recibido != null ? parseFloat(pagoEfectivo.monto_recibido) : null,
+        cambio:   pagoEfectivo?.cambio != null ? parseFloat(pagoEfectivo.cambio) : null,
         items,
         subtotal: parseFloat(cuenta.subtotal || 0),
         propina: parseFloat(cuenta.propina || 0),

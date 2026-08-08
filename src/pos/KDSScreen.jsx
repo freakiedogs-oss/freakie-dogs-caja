@@ -348,6 +348,19 @@ export default function KDSScreen({ user, onBack }) {
 
   const comandas = buildComandas(filteredQueue)
 
+  // Pendientes que el filtro activo NO está mostrando. Si la vista filtrada
+  // queda vacía pero hay órdenes en otros canales, NO hay que decir "Cocina al
+  // día" (engañoso). Caso real Cafetalón: 28 de PedidosYa esperando mientras el
+  // filtro estaba en "Sucursal" → cocina veía "sin órdenes" y no las hacía.
+  const hayFiltro = mode === 'canal' && canalesSel.length > 0
+  const canalesOcultosPend = hayFiltro
+    ? FILTROS
+        .filter(f => !canalesSel.includes(f.key))
+        .map(f => ({ label: f.label, n: queue.filter(r => (CANAL_FILTER[f.key] || []).includes(r.canal)).length }))
+        .filter(c => c.n > 0)
+    : []
+  const nOcultosPend = canalesOcultosPend.reduce((s, c) => s + c.n, 0)
+
   // Contador de productos pendientes por estación — TODAS las sucursales.
   // Se calcula sobre `queue` completa (no `filteredQueue`) para ver el
   // total real independiente de qué filtro use la cocina.
@@ -581,15 +594,33 @@ export default function KDSScreen({ user, onBack }) {
               <span>Cargando cocina...</span>
             </div>
           ) : comandas.length === 0 ? (
-            <div className="kds-empty">
-              <div style={{ display: 'flex', justifyContent: 'center' }}><Icon name="check" size={52} color="#2dd4a8" /></div>
-              <div style={{ color: '#2dd4a8', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
-                Cocina al día
+            nOcultosPend > 0 ? (
+              // El filtro está ocultando órdenes pendientes de otros canales.
+              <div className="kds-empty">
+                <div style={{ fontSize: 46 }}>⚠️</div>
+                <div style={{ color: '#fbbf24', fontSize: 18, fontWeight: 800, marginTop: 8 }}>
+                  {nOcultosPend} orden{nOcultosPend !== 1 ? 'es' : ''} pendiente{nOcultosPend !== 1 ? 's' : ''} que NO estás viendo
+                </div>
+                <div style={{ color: '#c9c7d1', fontSize: 14, marginTop: 6 }}>
+                  Están en: {canalesOcultosPend.map(c => `${c.label} (${c.n})`).join(' · ')}
+                </div>
+                <button onClick={() => guardarCanales([])}
+                  style={{ marginTop: 18, background: '#fbbf24', color: '#1a1a1a', fontWeight: 800,
+                           border: 'none', borderRadius: 12, padding: '12px 22px', fontSize: 15, cursor: 'pointer' }}>
+                  Ver TODOS los canales
+                </button>
               </div>
-              <div style={{ color: '#8b8997', fontSize: 13, marginTop: 4 }}>
-                Sin órdenes pendientes
+            ) : (
+              <div className="kds-empty">
+                <div style={{ display: 'flex', justifyContent: 'center' }}><Icon name="check" size={52} color="#2dd4a8" /></div>
+                <div style={{ color: '#2dd4a8', fontSize: 18, fontWeight: 700, marginTop: 12 }}>
+                  Cocina al día
+                </div>
+                <div style={{ color: '#8b8997', fontSize: 13, marginTop: 4 }}>
+                  Sin órdenes pendientes
+                </div>
               </div>
-            </div>
+            )
           ) : (
             <div className="kds-cards-grid">
               {comandas.map(comanda => {

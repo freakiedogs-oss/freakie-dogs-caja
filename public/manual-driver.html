@@ -1,0 +1,96 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Manual del Motorista — Freakie Dogs</title>
+<style>
+  :root{--bg:#141418;--card:#1c1c22;--line:#2a2a33;--ink:#f0f0f3;--soft:#9a9aa5;
+        --red:#e63946;--green:#4ade80;--yellow:#fbbf24;--blue:#60a5fa;--waze:#33ccff;
+        --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+  header{text-align:center;padding:22px 0 10px}
+  header .logo{font-size:40px}
+  h1{font-size:24px;margin:6px 0 2px}
+  header p{color:var(--soft);margin:0}
+  h2{font-size:18px;margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:10px 0}
+  ol{margin:6px 0;padding-left:20px}li{margin:5px 0}
+  .tip{border-left:3px solid var(--green);background:#12281c;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:14.5px}
+  .warn{border-left:3px solid var(--yellow);background:#2a2410;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:14.5px}
+  .btn{display:inline-block;padding:3px 9px;border-radius:7px;font-weight:700;font-size:13px}
+  .b-green{background:#14351f;color:var(--green)}.b-yellow{background:#2a2410;color:var(--yellow)}
+  .b-waze{background:#0c3a49;color:var(--waze)}.b-red{background:#2e1311;color:#f2594a}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+  .tabs span{background:#26262e;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px}
+  footer{color:var(--soft);text-align:center;font-size:12px;margin-top:34px}
+  code{background:#26262e;padding:1px 6px;border-radius:6px;font-size:13px}
+</style></head><body>
+<div class="wrap">
+<header>
+  <div class="logo">🛵</div>
+  <h1>Manual del Motorista</h1>
+  <p>Freakie Delivery · cómo usar tu app día a día</p>
+</header>
+
+<h2>1 · Entrar</h2>
+<div class="card">
+  <ol>
+    <li>Abrí la app <b>Freakie Motorista</b> y poné tu <b>PIN</b>.</li>
+    <li>Tocá <b>“🟢 Estoy de turno”</b> parado en tu sucursal. Con eso <b>marcás tu entrada</b>.</li>
+  </ol>
+  <div class="tip">✅ Al marcar entrada quedás <b>disponible toda la jornada</b>. Aunque bloquees el teléfono o termines una entrega, <b>seguís en turno</b> — la central te sigue viendo. Solo salís cuando tocás <b>“Terminé mi turno”</b> al final del día.</div>
+</div>
+
+<h2>🍽️ · Almuerzo</h2>
+<div class="card">
+  <ol>
+    <li>Cuando te vas a almorzar tocá <span class="btn b-yellow">🍽️ Salir a almorzar</span>.</li>
+    <li>Al volver tocá <span class="btn b-yellow">🍽️ Terminé de almorzar</span> — <b>o</b> simplemente salí con un pedido y se cierra solo.</li>
+  </ol>
+  <div class="tip">Mientras almorzás <b>seguís disponible</b>: la central te puede dejar un pedido listo para que salgas apenas termines. Se registra cuánto duró tu almuerzo.</div>
+</div>
+
+<h2>📦 · Recibir y salir con pedidos</h2>
+<div class="card">
+  <ol>
+    <li>Cuando cae un pedido, la app <b>suena y vibra</b> 🔔. Aparece en la pestaña <b>Pedidos</b>.</li>
+    <li>Cuando ya lo tenés en mano, tocá <b>“Salir con todos”</b> (o el botón de cada pedido). Ahí <b>empieza a compartir tu ubicación</b> 📡 para que el cliente te siga.</li>
+    <li>Para llegar, tocá <span class="btn b-waze">🧭 Waze</span> — te abre la navegación directo al punto. (También hay 🗺️ Maps.)</li>
+  </ol>
+  <div class="warn">Si el pedido no tiene ubicación exacta, el botón busca por la dirección. Igual confirmá por 📞 con el cliente si hay dudas — hay colonias/calles con el mismo nombre.</div>
+</div>
+
+<h2>💵 · Cobrar y entregar</h2>
+<div class="card">
+  <ol>
+    <li>Fijate el <b>método de pago</b> del pedido. Si es <b>efectivo</b> y el cliente avisó con cuánto paga, verás: <b>“Paga con $20 → llevá cambio $6.75”</b>. Llevá el cambio.</li>
+    <li>Al entregar, tocá <span class="btn b-green">✅ Entregado</span> y luego <b>confirmá</b> (“¿Confirmás la entrega?”). Ese paso extra evita marcarlo por accidente.</li>
+    <li>Si el cliente pagó de otra forma, usá <b>“Me pagó de otra forma”</b>. Si no lo pudiste entregar, <b>“↩️ No lo pude entregar”</b> y elegí el motivo.</li>
+  </ol>
+</div>
+
+<h2>💵 · Cobros — cuadrar tu dinero</h2>
+<div class="card">
+  <p>La pestaña <span class="tabs" style="display:inline"><span>💵 Cobros</span></span> te muestra tus entregas y <b>cuáles todavía no se cerraron en caja</b>:</p>
+  <ul>
+    <li><span class="btn b-yellow">⏳ Pendiente</span> = falta que la cajera cierre esa orden. Ahí sabés el <b>efectivo que aún debés entregar</b>.</li>
+    <li><span class="btn b-green">✅ Pagado</span> = la cajera ya cerró esa orden. Cuadrado.</li>
+  </ul>
+  <div class="tip">Arriba te suma <b>“Efectivo por entregar”</b>. Así sabés exactamente cuánto llevar a caja y no hay confusiones.</div>
+</div>
+
+<h2>🧾 · Historial y 📊 Métricas</h2>
+<div class="card">
+  <p><b>Historial:</b> cada viaje con el cliente, la dirección, y la hora en que te lo asignaron y lo entregaste.</p>
+  <p><b>Métricas:</b> tu <b>bono del mes desglosado</b> por tipo de viaje — entregas cerca, largas, fuera de horario y mandados — con cantidad × tarifa. Así corroborás de dónde sale cada dólar de tu bono.</p>
+  <div class="warn">El bono se confirma al cierre del mes por administración.</div>
+</div>
+
+<h2>🔚 · Terminar el día</h2>
+<div class="card">
+  <p>Al final de tu jornada tocá <span class="btn b-red">Terminé mi turno</span>. Con eso salís de disponible y se cierra tu asistencia del día.</p>
+</div>
+
+<footer>Freakie Dogs · Manual del Motorista · uso interno</footer>
+</div></body></html>

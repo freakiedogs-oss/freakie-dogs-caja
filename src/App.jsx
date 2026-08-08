@@ -29,7 +29,9 @@ const InventarioFisico   = lazy(() => import('./components/almacen/InventarioFis
 const ComprasTab         = lazy(() => import('./components/almacen/ComprasTab'))
 const KardexView         = lazy(() => import('./components/almacen/KardexView'))
 const RecepcionBeesView  = lazy(() => import('./components/almacen/RecepcionBeesView'))
+const RecepcionDTE       = lazy(() => import('./components/almacen/RecepcionDTE'))
 const RecetasView        = lazy(() => import('./components/admin/RecetasView'))
+const CosteoView         = lazy(() => import('./components/admin/CosteoView'))
 const PlanillaView       = lazy(() => import('./components/admin/PlanillaView'))
 const RRHHView           = lazy(() => import('./components/admin/RRHHView'))
 const ValidacionPlanillaView = lazy(() => import('./components/rrhh/ValidacionPlanillaView'))
@@ -71,11 +73,11 @@ const ROLE_DEFAULTS = {
   cajero: ['cierre', 'reporte', 'deposito', 'conteo'],
   cajera: ['cierre', 'reporte', 'deposito', 'conteo'],
   gerente: ['cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta'],
-  admin: ['admin', 'kpis-venta', 'recepcion', 'despacho'],
+  admin: ['admin', 'kpis-venta', 'recepcion-dte', 'recepcion', 'despacho'],
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
   superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
-  bodeguero: ['recepcion', 'despacho', 'inventario', 'historial'],
-  jefe_casa_matriz: ['despacho-operativo', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
+  bodeguero: ['recepcion-dte', 'recepcion', 'despacho', 'inventario', 'historial'],
+  jefe_casa_matriz: ['despacho-operativo', 'recepcion-dte', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
   cocina: ['conteo', 'reporte', 'devoluciones'],
   rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales', 'validacion-planilla'],
   contador: ['gastos', 'conciliacion', 'planilla'],
@@ -244,6 +246,8 @@ export default function App() {
       // Almacén
       case 'recepcion':
         return <RecepcionTab user={user} show={show} />
+      case 'recepcion-dte':
+        return <RecepcionDTE user={user} show={show} />
       case 'despacho':
         return <DespachoTab user={user} show={show} />
       case 'inventario':
@@ -282,6 +286,8 @@ export default function App() {
         return <IncidentesDash user={user} onBack={() => setScreen('home')} />
       case 'recetas':
         return <RecetasView user={user} />
+      case 'costeo':
+        return <CosteoView user={user} />
       case 'planilla':
         return <PlanillaView user={user} />
       case 'recibos-digitales':

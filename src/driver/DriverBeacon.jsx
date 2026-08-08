@@ -5,12 +5,21 @@
 // batería) — se prende al recoger y se apaga al entregar el último.
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { db } from '../supabase'
 import UpdateGate from '../components/layout/UpdateGate'
 
 const KEY = 'freakie_driver_v1'
 const HEARTBEAT_MS = 15000
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
+// En El Salvador las llamadas del delivery se hacen por WhatsApp. Normalizamos
+// el número a formato internacional (503 + 8 dígitos) para abrir el chat.
+const waHref = (tel) => {
+  const d = String(tel || '').replace(/\D/g, '')
+  if (d.length < 8) return null
+  return `https://wa.me/${d.length === 8 ? '503' + d : d}`
+}
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const fmtMes = (m) => { if (!m) return ''; const [y, mo] = m.split('-'); return `${MESES[+mo - 1]} ${y}` }
 
@@ -55,6 +64,24 @@ export default function DriverBeacon() {
   const [cobros, setCobros] = useState([])   // entregas por cuadrar (día + pendientes)
   const beacon = useBeacon(yo)
   const dispo = useDisponible(yo)
+  const audioCtxRef = useRef(null)
+  const prevPedIds = useRef(null)
+
+  // Beep + vibración cuando cae un pedido nuevo. El audio se desbloquea al
+  // Entrar (los navegadores móviles no dejan sonar sin un gesto previo).
+  const beep = useCallback(() => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext
+      const ctx = audioCtxRef.current || (audioCtxRef.current = new AC())
+      if (ctx.state === 'suspended') ctx.resume()
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      o.type = 'sine'; g.gain.value = 0.18; o.connect(g); g.connect(ctx.destination)
+      const t = ctx.currentTime
+      o.frequency.setValueAtTime(880, t); o.frequency.setValueAtTime(660, t + 0.15)
+      o.start(t); o.stop(t + 0.32)
+      navigator.vibrate?.([200, 80, 200])
+    } catch { /* sin audio */ }
+  }, [])
 
   const cargarPedidos = useCallback(async () => {
     if (!yo) return
@@ -62,9 +89,14 @@ export default function DriverBeacon() {
       db.rpc('mis_pedidos_driver', { p_empleado_id: yo.id }),
       db.rpc('mis_entregas_driver', { p_empleado_id: yo.id }),
     ])
-    setPedidos(ped.data || [])
+    const lista = ped.data || []
+    const ids = lista.map(p => p.id)
+    // Suena solo si aparece un pedido con id no visto (no en la primera carga)
+    if (prevPedIds.current && ids.some(id => !prevPedIds.current.has(id))) beep()
+    prevPedIds.current = new Set(ids)
+    setPedidos(lista)
     setCobros(cob.data || [])
-  }, [yo])
+  }, [yo, beep])
 
   const pendientesCobro = cobros.filter(o => !o.cobrado).length
 
@@ -91,6 +123,8 @@ export default function DriverBeacon() {
       if (!data) { setErrPin('PIN incorrecto'); setPin(''); return }
       setPin('')          // que no quede escrito para el próximo que abra la app
       setYo(data)
+      // Desbloquear el audio ahora que hay un gesto (para que el beep suene luego)
+      try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) { audioCtxRef.current = audioCtxRef.current || new AC(); audioCtxRef.current.resume?.() } } catch { /* noop */ }
       try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
     } catch (e) {
       setErrPin(e.message || 'No se pudo entrar'); setPin('')
@@ -166,6 +200,7 @@ export default function DriverBeacon() {
           <span style={{ fontSize: 11, fontWeight: 700, color: beacon.activo ? '#4ade80' : '#666' }}>
             {beacon.activo ? '📡 En línea' : '○ Sin compartir'}
           </span>
+          <a href="/manual-driver.html" target="_blank" rel="noopener" style={S.salirBtn}>📘 Manual</a>
           <a href="/driver?salir=1" onClick={avisarSalida} style={S.salirBtn}>Salir</a>
         </span>
       </header>
@@ -203,6 +238,7 @@ const LATIDO_MS = 5 * 60 * 1000
 
 function useDisponible(yo) {
   const [disponible, setDisponible] = useState(false)
+  const [almorzando, setAlmorzando] = useState(false)
   const [info, setInfo] = useState(null)   // sucursal, distancia y atraso al marcarse
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
@@ -260,6 +296,7 @@ function useDisponible(yo) {
     db.rpc('driver_estado_turno', { p_empleado_id: yo.id }).then(({ data }) => {
       if (!vivo || !data?.disponible) return
       setDisponible(true)
+      setAlmorzando(!!data?.almorzando)
       if (!latidoRef.current) {
         latidoRef.current = setInterval(() => {
           db.rpc('driver_disponible', { p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true })
@@ -272,7 +309,45 @@ function useDisponible(yo) {
 
   useEffect(() => () => { if (latidoRef.current) clearInterval(latidoRef.current) }, [])
 
-  return { disponible, ocupado, error, info, marcar }
+  // Los navegadores móviles CONGELAN el setInterval del latido cuando la app
+  // queda en segundo plano (pantalla bloqueada) → a los 30 min sin señal la
+  // central da de baja el turno ("se desconecta después de un rato"). Al volver
+  // a primer plano re-marcamos de una para recuperar el turno enseguida.
+  useEffect(() => {
+    if (!yo) return
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || !disponible) return
+      db.rpc('driver_disponible', { p_empleado_id: yo.id, p_nombre: yo.nombre, p_activo: true }).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [yo, disponible])
+
+  // Almuerzo: sigue de turno (asignable); Kari lo ve "Almorzando". Vuelve con el
+  // botón o al empezar una ruta (ahí el server cierra el almuerzo solo).
+  const almorzar = useCallback(async () => {
+    if (!yo || ocupado) return
+    setOcupado(true); setError('')
+    try {
+      const { error: e } = await db.rpc('driver_almorzar', { p_empleado_id: yo.id })
+      if (e) throw e
+      setAlmorzando(true)
+    } catch (e) { setError(e.message || 'No se pudo marcar el almuerzo') }
+    finally { setOcupado(false) }
+  }, [yo, ocupado])
+
+  const finAlmuerzo = useCallback(async () => {
+    if (!yo || ocupado) return
+    setOcupado(true); setError('')
+    try {
+      const { error: e } = await db.rpc('driver_fin_almuerzo', { p_empleado_id: yo.id })
+      if (e) throw e
+      setAlmorzando(false)
+    } catch (e) { setError(e.message || 'No se pudo cerrar el almuerzo') }
+    finally { setOcupado(false) }
+  }, [yo, ocupado])
+
+  return { disponible, almorzando, ocupado, error, info, marcar, almorzar, finAlmuerzo }
 }
 
 function useBeacon(yo) {
@@ -336,6 +411,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [ocupado, setOcupado] = useState(null)
   const [cambiarPago, setCambiarPago] = useState(null)
   const [devolviendo, setDevolviendo] = useState(null)
+  const [confirmando, setConfirmando] = useState(null)   // evita marcar Entregado por accidente
   const [msg, setMsg] = useState('')
 
   // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
@@ -407,13 +483,15 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const Disponibilidad = () => (
     <div style={{ ...S.dispo, borderColor: dispo.disponible ? '#2f5f3f' : '#3a2a2a' }}>
       <div style={S.dispoFila}>
-        <span style={{ fontSize: 26 }}>{dispo.disponible ? '🟢' : '⚪'}</span>
+        <span style={{ fontSize: 26 }}>{dispo.almorzando ? '🍽️' : dispo.disponible ? '🟢' : '⚪'}</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: dispo.disponible ? '#4ade80' : '#f0f0f0' }}>
-            {dispo.disponible ? 'Estás de turno' : 'No estás de turno'}
+          <div style={{ fontSize: 14, fontWeight: 700, color: dispo.almorzando ? '#fbbf24' : dispo.disponible ? '#4ade80' : '#f0f0f0' }}>
+            {dispo.almorzando ? 'Almorzando' : dispo.disponible ? 'Estás de turno' : 'No estás de turno'}
           </div>
           <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>
-            {dispo.disponible
+            {dispo.almorzando
+              ? 'Seguís disponible — la central puede asignarte para que salgas al terminar.'
+              : dispo.disponible
               ? (dispo.info?.sucursal
                   ? `Marcaste entrada en ${dispo.info.sucursal}. La central te puede asignar pedidos.`
                   : 'La central te puede asignar pedidos.')
@@ -430,6 +508,21 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                  opacity: dispo.ocupado ? .6 : 1 }}>
         {dispo.ocupado ? '📍 Verificando dónde estás…' : dispo.disponible ? 'Terminé mi turno' : '🟢 Estoy de turno'}
       </button>
+
+      {/* Almuerzo: seguís de turno; al volver o al salir con un pedido se cierra solo */}
+      {dispo.disponible && (
+        dispo.almorzando ? (
+          <button onClick={dispo.finAlmuerzo} disabled={dispo.ocupado}
+            style={{ ...S.dispoBtn, marginTop: 8, background: '#b45309', border: 'none', color: '#fff' }}>
+            🍽️ Terminé de almorzar
+          </button>
+        ) : (
+          <button onClick={dispo.almorzar} disabled={dispo.ocupado}
+            style={{ ...S.dispoBtn, marginTop: 8, background: 'none', border: '1px solid #b45309', color: '#fbbf24' }}>
+            🍽️ Salir a almorzar
+          </button>
+        )
+      )}
 
       {dispo.error && <div style={S.dispoErr}>⚠️ {dispo.error}</div>}
 
@@ -500,19 +593,35 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           <div style={{ fontSize: 15, marginTop: 6 }}>{p.cliente_nombre}</div>
           <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{p.cliente_direccion}</div>
           <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>🏪 {p.sucursal} · {fmt(p.total)} · {p.metodo_pago}</div>
+          {/efectivo/i.test(p.metodo_pago || '') && p.paga_con > 0 && (
+            <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginTop: 4 }}>
+              💵 Paga con {fmt(p.paga_con)} → llevá cambio <b>{fmt(Math.max(0, p.paga_con - p.total))}</b>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <a href={`tel:${p.cliente_telefono}`} style={{ ...S.btnSm('#333'), textDecoration: 'none' }}>📞 Llamar</a>
+            {waHref(p.cliente_telefono) && (
+              <a href={waHref(p.cliente_telefono)} target="_blank" rel="noopener"
+                 style={{ ...S.btnSm('#25D366'), textDecoration: 'none', color: '#04220f' }}>💬 WhatsApp</a>
+            )}
+            <a href={`tel:${p.cliente_telefono}`} style={{ ...S.btnSm('#333'), textDecoration: 'none' }}
+               title="Llamada normal">📞</a>
             {/* Muchos clientes no dan permiso de ubicación y solo escriben la
                 dirección. Antes ahí no salía ningún botón; ahora se busca por
                 texto, que es lo que haría el motorista a mano. */}
             {(p.cliente_lat || p.cliente_direccion) && (
               <a href={p.cliente_lat
-                    ? `https://www.google.com/maps/dir/?api=1&destination=${p.cliente_lat},${p.cliente_lng}`
-                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                        String(p.cliente_direccion).replace(/^\[[^\]]*\]\s*/, '') + ', El Salvador')}`}
+                    ? `https://waze.com/ul?ll=${p.cliente_lat},${p.cliente_lng}&navigate=yes`
+                    : `https://waze.com/ul?q=${encodeURIComponent(
+                        String(p.cliente_direccion).replace(/^\[[^\]]*\]\s*/, '') + ', El Salvador')}&navigate=yes`}
+                 target="_blank" rel="noopener" style={{ ...S.btnSm('#33ccff'), textDecoration: 'none', color: '#04212b' }}>
+                {p.cliente_lat ? '🧭 Waze' : '🧭 Waze (buscar)'}
+              </a>
+            )}
+            {p.cliente_lat && (
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${p.cliente_lat},${p.cliente_lng}`}
                  target="_blank" rel="noopener" style={{ ...S.btnSm('#2563eb'), textDecoration: 'none' }}>
-                {p.cliente_lat ? '🗺️ Cómo llegar' : '🔎 Buscar dirección'}
+                🗺️ Maps
               </a>
             )}
             {!p.cliente_lat && (
@@ -561,12 +670,24 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                   </div>
                   <button onClick={() => setCambiarPago(null)} style={S.linkChico}>Cancelar</button>
                 </>
+              ) : confirmando === p.id ? (
+                <>
+                  <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
+                    ¿Confirmás la entrega de {p.numero_orden}?
+                  </div>
+                  <button disabled={ocupado === p.id}
+                          onClick={() => { setConfirmando(null); entregar(p, p.metodo_pago || 'efectivo') }}
+                          style={S.accion('#16a34a')}>
+                    {ocupado === p.id ? '…' : '✅ Sí, entregado'}
+                  </button>
+                  <button onClick={() => setConfirmando(null)} style={S.linkChico}>No, volver</button>
+                </>
               ) : (
                 <>
                   <div style={{ fontSize: 12.5, color: '#aaa', marginBottom: 8 }}>
                     Cobrar <b style={{ color: '#f0f0f0' }}>{fmt(p.total)}</b> en <b style={{ color: '#f0f0f0' }}>{p.metodo_pago || 'efectivo'}</b>
                   </div>
-                  <button disabled={ocupado === p.id} onClick={() => entregar(p, p.metodo_pago || 'efectivo')}
+                  <button disabled={ocupado === p.id} onClick={() => setConfirmando(p.id)}
                           style={S.accion('#16a34a')}>
                     {ocupado === p.id ? '…' : '✅ Entregado'}
                   </button>
@@ -668,6 +789,7 @@ function Cobros({ cobros }) {
 // ── 🧾 Historial ────────────────────────────────────────────────────
 function Historial({ yo }) {
   const [viajes, setViajes] = useState(null)
+  const [ruta, setRuta] = useState(null)   // viaje cuya ruta se está mostrando
   useEffect(() => { db.rpc('mis_viajes_driver', { p_empleado_id: yo.id }).then(({ data }) => setViajes(data || [])) }, [yo])
   if (viajes === null) return <div style={S.dim}>Cargando…</div>
   if (viajes.length === 0) return <div style={{ ...S.dim, textAlign: 'center', paddingTop: 30 }}>Todavía no tenés viajes este mes.</div>
@@ -682,10 +804,103 @@ function Historial({ yo }) {
               {v.fuera_horario && <span style={{ color: '#f97316', fontSize: 11, marginLeft: 6 }}>fuera de horario</span>}
             </div>
             <div style={{ fontSize: 12, color: '#888' }}>{v.fecha}{v.descripcion ? ` · ${v.descripcion}` : ''}</div>
+            {v.cliente && <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>👤 {v.cliente}{v.orden ? ` · ${v.orden}` : ''}</div>}
+            {v.direccion && <div style={{ fontSize: 11.5, color: '#777', marginTop: 1 }}>📍 {String(v.direccion).replace(/^\[[^\]]*\]\s*/, '')}</div>}
+            {(v.asignado || v.entregado) && (
+              <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
+                🕐 {v.asignado ? `asignado ${v.asignado}` : ''}{v.asignado && v.entregado ? ' → ' : ''}{v.entregado ? `entregado ${v.entregado}` : ''}
+              </div>
+            )}
+            {v.lat && (
+              <div style={{ display: 'flex', gap: 12, marginTop: 4, alignItems: 'center' }}>
+                <a href={`https://waze.com/ul?ll=${v.lat},${v.lng}&navigate=yes`} target="_blank" rel="noopener"
+                   style={{ fontSize: 11, color: '#33ccff', textDecoration: 'none' }}>🧭 Waze</a>
+                <button onClick={() => setRuta(v)}
+                   style={{ fontSize: 11, color: '#a78bfa', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>🗺️ Ver ruta</button>
+              </div>
+            )}
           </div>
           <div style={{ fontWeight: 800, color: '#4ade80' }}>{fmt(v.tarifa)}</div>
         </div>
       ))}
+      {ruta && <RutaModal yo={yo} viaje={ruta} onClose={() => setRuta(null)} />}
+    </div>
+  )
+}
+
+// ── 🗺️ Ruta real de un viaje ────────────────────────────────────────
+// Mapa Leaflet + OpenStreetMap (sin API key). Dibuja el origen (sucursal),
+// el destino (cliente) y el rastro GPS grabado durante la entrega. Si el
+// viaje es anterior a que se activara la grabación, no hay rastro: se
+// muestra una línea recta punteada origen→destino y se avisa.
+function RutaModal({ yo, viaje, onClose }) {
+  const mapEl = useRef(null); const mapRef = useRef(null)
+  const [estado, setEstado] = useState('cargando') // cargando | ok | sin_rastro | error
+  const [meta, setMeta] = useState(null)
+
+  useEffect(() => {
+    let cancel = false
+    db.rpc('viaje_ruta_driver', { p_empleado_id: yo.id, p_viaje_id: viaje.id }).then(({ data, error }) => {
+      if (cancel) return
+      if (error || !data) { setEstado('error'); return }
+      setMeta(data)
+      const org = data.origen, dst = data.destino, pts = data.puntos || []
+      if (!mapEl.current) return
+      const map = L.map(mapEl.current, { zoomControl: true, attributionControl: false })
+      mapRef.current = map
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map)
+      const bounds = []
+      if (org?.lat != null) {
+        L.circleMarker([org.lat, org.lng], { radius: 8, color: '#4ade80', fillColor: '#4ade80', fillOpacity: 1, weight: 2 })
+          .addTo(map).bindTooltip('🏪 ' + (org.nombre || 'Sucursal'))
+        bounds.push([org.lat, org.lng])
+      }
+      if (dst?.lat != null) {
+        L.circleMarker([dst.lat, dst.lng], { radius: 8, color: '#e63946', fillColor: '#e63946', fillOpacity: 1, weight: 2 })
+          .addTo(map).bindTooltip('📍 ' + (dst.direccion || 'Cliente'))
+        bounds.push([dst.lat, dst.lng])
+      }
+      if (pts.length >= 2) {
+        const ll = pts.map(p => [p.lat, p.lng])
+        L.polyline(ll, { color: '#33ccff', weight: 4, opacity: 0.9 }).addTo(map)
+        ll.forEach(x => bounds.push(x))
+        setEstado('ok')
+      } else {
+        if (org?.lat != null && dst?.lat != null) {
+          L.polyline([[org.lat, org.lng], [dst.lat, dst.lng]], { color: '#888', weight: 3, dashArray: '6 8' }).addTo(map)
+        }
+        setEstado('sin_rastro')
+      }
+      if (bounds.length) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 })
+      else map.setView([13.7, -89.2], 12)
+      setTimeout(() => map.invalidateSize(), 120)
+    })
+    return () => { cancel = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null } }
+  }, [yo, viaje])
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000,
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#161616', width: '100%', maxWidth: 520,
+            borderRadius: '18px 18px 0 0', overflow: 'hidden', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #2a2a2a' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>🗺️ Ruta del viaje</div>
+            <div style={{ fontSize: 11.5, color: '#888' }}>
+              {viaje.fecha}{meta?.orden ? ` · ${meta.orden}` : ''}
+              {meta?.recogido ? ` · salió ${meta.recogido}` : ''}{meta?.entregado ? ` → entregó ${meta.entregado}` : ''}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid #333', color: '#aaa', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>✕</button>
+        </div>
+        <div ref={mapEl} style={{ height: '58vh', width: '100%', background: '#222' }} />
+        <div style={{ padding: '10px 16px', fontSize: 11.5, color: '#888', borderTop: '1px solid #2a2a2a' }}>
+          {estado === 'cargando' && 'Cargando ruta…'}
+          {estado === 'error' && '❌ No se pudo cargar la ruta.'}
+          {estado === 'ok' && <span>🟢 Sucursal · 🔵 recorrido real ({(meta?.puntos || []).length} puntos) · 🔴 cliente{meta?.distancia_km ? ` · ${Number(meta.distancia_km).toFixed(1)} km` : ''}</span>}
+          {estado === 'sin_rastro' && '⚠️ Sin rastro GPS de este viaje (anterior a la grabación de rutas). La línea punteada es solo referencia sucursal→cliente.'}
+        </div>
+      </div>
     </div>
   )
 }
@@ -704,10 +919,32 @@ function Metricas({ yo }) {
         <Kpi label="Bono generado" val={fmt(m.bono_total)} color="#4ade80" big />
         <Kpi label="Mandados" val={m.mandados} color="#fbbf24" />
       </div>
-      <div style={{ fontSize: 12, color: '#888', marginTop: 14, lineHeight: 1.6 }}>
-        🚗 {m.entregas} entregas · 📦 {m.mandados} mandados · 🌙 {m.fuera_horario} fuera de horario
+      {/* Desglose del bono por tipo de viaje — para que el driver corrobore de dónde sale */}
+      <div style={{ fontSize: 12, color: '#888', margin: '18px 0 8px', fontWeight: 700 }}>De dónde sale tu bono</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {(m.desglose || []).map(d => {
+          const emoji = { normal: '🛵', larga: '🛣️', fuera: '🌙', mandado: '📦' }[d.key] || '•'
+          const activo = d.cantidad > 0
+          return (
+            <div key={d.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '10px 14px',
+                    opacity: activo ? 1 : 0.5 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{emoji} {d.label}</div>
+                <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>{d.cantidad} × {fmt(d.tarifa)}</div>
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#4ade80' }}>{fmt(d.bono)}</div>
+            </div>
+          )
+        })}
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid #2a2a2a', marginTop: 2 }}>
+          <span style={{ fontSize: 13, fontWeight: 800 }}>TOTAL</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: '#4ade80' }}>{fmt(m.bono_total)}</span>
+        </div>
       </div>
-      <div style={{ fontSize: 11, color: '#555', marginTop: 12 }}>El bono se confirma al cierre del mes por administración.</div>
+      <div style={{ fontSize: 11, color: '#666', marginTop: 8 }}>
+        "Entregas largas" = {m.umbral_km} km o más. El bono se confirma al cierre del mes por administración.
+      </div>
     </div>
   )
 }
