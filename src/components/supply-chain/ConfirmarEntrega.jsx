@@ -126,54 +126,35 @@ export default function ConfirmarEntrega({user,onBack}){
   };
 
   const confirmarEntrega=async()=>{
-    if(!selectedDespacho||!foto){show('⚠️ Falta foto de recepción');return;}
+    if(!selectedDespacho)return;
     try{
       setActualizando(true);
-      let fotoUrl='';
-      const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
-      const path=`despachos/${selectedDespacho.id}/${Date.now()}_${Math.random().toString(36).slice(2,7)}.${ext}`;
-      const {error:uploadErr}=await db.storage.from('despachos-fotos').upload(path,foto,{cacheControl:'3600',upsert:false});
-      if(uploadErr)throw new Error(uploadErr.message);
-      const {data:pubData}=db.storage.from('despachos-fotos').getPublicUrl(path);
-      fotoUrl=pubData.publicUrl;
-
-      const {error:despErr}=await db.from('despachos_sucursal')
-        .update({
-          estado:'recibido',
-          hora_recepcion:new Date().toISOString(),
-          foto_recepcion_url:fotoUrl,
-          notas_recepcion:notas,
-          recibido_por:user.id
-        })
-        .eq('id',selectedDespacho.id);
-      if(despErr)throw despErr;
-
-      // Batch update despacho_items
-      await Promise.all(items.map((item,i)=>
-        db.from('despacho_items').update({
-          cantidad_recibida:item.cantidad_recibida,
-          notas:itemsNotas[i]||''
-        }).eq('id',item.id).then(res=>{if(res.error)throw res.error;})
-      ));
-
-      // Batch update inventario
-      const itemsWithProduct=items.filter(it=>it.producto_id);
-      const batchSize=10;
-      for(let b=0;b<itemsWithProduct.length;b+=batchSize){
-        const batch=itemsWithProduct.slice(b,b+batchSize);
-        const stocks=await Promise.all(batch.map(it=>
-          db.from('inventario').select('stock_actual')
-            .eq('sucursal_id',selectedDespacho.sucursal_id)
-            .eq('producto_id',it.producto_id).maybeSingle()
-        ));
-        await Promise.all(batch.map((it,j)=>
-          db.from('inventario').upsert({
-            sucursal_id:selectedDespacho.sucursal_id,
-            producto_id:it.producto_id,
-            stock_actual:(stocks[j]?.data?.stock_actual||0)+(it.cantidad_recibida||0)
-          },{onConflict:'producto_id,sucursal_id'}).then(res=>{if(res.error)throw res.error;})
-        ));
+      // Foto OPCIONAL (antes era obligatoria y frenaba: 78% no se confirmaba)
+      let fotoUrl=null;
+      if(foto){
+        const ext=(foto.name.split('.').pop()||'jpg').toLowerCase();
+        const path=`despachos/${selectedDespacho.id}/${Date.now()}_${Math.random().toString(36).slice(2,7)}.${ext}`;
+        const {error:uploadErr}=await db.storage.from('despachos-fotos').upload(path,foto,{cacheControl:'3600',upsert:false});
+        if(uploadErr)throw new Error(uploadErr.message);
+        const {data:pubData}=db.storage.from('despachos-fotos').getPublicUrl(path);
+        fotoUrl=pubData.publicUrl;
       }
+
+      // Recepción ATÓMICA: suma el inventario de la sucursal vía kardex_mover y
+      // cierra el pedido, todo en el RPC (una transacción, con asiento de kardex).
+      const {error}=await db.rpc('despacho_confirmar',{
+        p_despacho_id:selectedDespacho.id,
+        p_usuario:user.id,
+        p_foto_url:fotoUrl,
+        p_items:items.map(it=>({despacho_item_id:it.id, producto_id:it.producto_id, cantidad_recibida:it.cantidad_recibida})),
+      });
+      if(error)throw error;
+
+      // Notas (el RPC no las toca)
+      const conNota=items.filter((_,i)=>itemsNotas[i]);
+      if(conNota.length) await Promise.all(items.map((item,i)=>
+        itemsNotas[i]?db.from('despacho_items').update({notas:itemsNotas[i]}).eq('id',item.id):Promise.resolve()));
+      if(notas) await db.from('despachos_sucursal').update({notas_recepcion:notas}).eq('id',selectedDespacho.id);
 
       show('✅ Entrega confirmada');
       setSelectedDespacho(null);
@@ -291,7 +272,7 @@ export default function ConfirmarEntrega({user,onBack}){
 
       <div ref={bottomRef}/>
 
-      <button onClick={confirmarEntrega} disabled={actualizando||!foto} className="btn btn-red" style={{width:'100%',fontSize:15,padding:16,marginBottom:12}}>
+      <button onClick={confirmarEntrega} disabled={actualizando} className="btn btn-red" style={{width:'100%',fontSize:15,padding:16,marginBottom:12}}>
         {actualizando?'Confirmando...':'✅ Confirmar Entrega'}
       </button>
       <button onClick={()=>setSelectedDespacho(null)} className="btn btn-ghost" style={{width:'100%',fontSize:15,padding:14}}>
