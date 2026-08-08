@@ -136,6 +136,7 @@ export const NAV_SECTIONS = [
     label: 'Producción',
     items: [
       { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz'] },
+      { key: 'costeo', label: 'Costeo / Márgenes', icon: '💰', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz'] },
       { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'] },
       { key: 'incidentes-cm', label: 'Incidentes CM', icon: '🚨', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'] },
       { key: 'devoluciones', label: 'Devoluciones', icon: '🔄', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'gerente', 'cocina', 'admin'] },

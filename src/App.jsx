@@ -31,6 +31,7 @@ const KardexView         = lazy(() => import('./components/almacen/KardexView'))
 const RecepcionBeesView  = lazy(() => import('./components/almacen/RecepcionBeesView'))
 const RecepcionDTE       = lazy(() => import('./components/almacen/RecepcionDTE'))
 const RecetasView        = lazy(() => import('./components/admin/RecetasView'))
+const CosteoView         = lazy(() => import('./components/admin/CosteoView'))
 const PlanillaView       = lazy(() => import('./components/admin/PlanillaView'))
 const RRHHView           = lazy(() => import('./components/admin/RRHHView'))
 const ValidacionPlanillaView = lazy(() => import('./components/rrhh/ValidacionPlanillaView'))
@@ -285,6 +286,8 @@ export default function App() {
         return <IncidentesDash user={user} onBack={() => setScreen('home')} />
       case 'recetas':
         return <RecetasView user={user} />
+      case 'costeo':
+        return <CosteoView user={user} />
       case 'planilla':
         return <PlanillaView user={user} />
       case 'recibos-digitales':
