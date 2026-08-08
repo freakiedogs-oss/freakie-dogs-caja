@@ -172,6 +172,18 @@ export default function RecetasView({ user }) {
 
   const emptyRow = () => ({ tipo_ingrediente: 'materia_prima', producto_id: null, sub_receta_id: null, cantidad: 0, unidad_medida: 'unidad', merma_pct: 0, notas: '' });
 
+  // Crear un ingrediente (MP) al vuelo mientras se edita la receta → puebla Inventario
+  const crearIngredienteInline = async (idx) => {
+    const nombre = window.prompt('Nombre del nuevo ingrediente (Materia Prima):');
+    if (!nombre || !nombre.trim()) return;
+    const { data } = await db.rpc('crear_ingrediente', { p_nombre: nombre.trim(), p_unidad: 'unidad', p_tipo: 'materia_prima' });
+    if (!data?.ok) { alert('No se pudo crear el ingrediente'); return; }
+    const nuevo = { id: data.id, nombre: data.nombre, unidad_medida: data.unidad || 'unidad', codigo: data.codigo };
+    setCatalogo(cur => cur.some(c => c.id === nuevo.id) ? cur : [...cur, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    setEditIngredients(cur => cur.map((r, i) => i === idx ? { ...r, producto_id: nuevo.id, unidad_medida: nuevo.unidad_medida, _nombre: nuevo.nombre } : r));
+    if (data.reusado) alert(`Ya existía "${nuevo.nombre}" — se usó ese.`);
+  };
+
   // ── Render ──
   if (loading) return <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>Cargando recetas...</div>;
 
@@ -439,12 +451,14 @@ export default function RecetasView({ user }) {
                 {ing.tipo_ingrediente === 'materia_prima' ? (
                   <select style={{ ...inp, fontSize: 12 }} value={ing.producto_id || ''}
                     onChange={e => {
+                      if (e.target.value === '__new__') { crearIngredienteInline(idx); return; }
                       const arr = [...editIngredients];
                       const prod = catalogo.find(c => c.id === e.target.value);
                       arr[idx] = { ...arr[idx], producto_id: e.target.value, unidad_medida: prod?.unidad_medida || 'unidad', _nombre: prod?.nombre };
                       setEditIngredients(arr);
                     }}>
                     <option value="">— Seleccionar producto —</option>
+                    <option value="__new__">➕ Crear ingrediente nuevo…</option>
                     {catalogo.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.unidad_medida})</option>)}
                   </select>
                 ) : (
