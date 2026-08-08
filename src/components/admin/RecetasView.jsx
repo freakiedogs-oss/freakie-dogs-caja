@@ -34,7 +34,9 @@ export default function RecetasView({ user }) {
   const cargar = useCallback(async () => {
     setLoading(true);
     const [rRes, iRes, cRes] = await Promise.all([
-      db.from('recetas').select('id,nombre,tipo,categoria,rendimiento,unidad_rendimiento,precio_venta,notas,activo,costo_calculado').eq('activo', true).order('tipo').order('nombre'),
+      // Solo bloques de CM: sub-recetas + porcionados. Los platos/combos del
+      // menú se componen en Menú (BOM), no se listan acá (evita redundancia).
+      db.from('recetas').select('id,nombre,tipo,categoria,rendimiento,unidad_rendimiento,precio_venta,notas,activo,costo_calculado').eq('activo', true).in('tipo', ['sub_receta', 'porcionado']).order('tipo').order('nombre'),
       db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,costo_calculado)'),
       db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).order('nombre'),
     ]);
@@ -194,7 +196,6 @@ export default function RecetasView({ user }) {
         <input style={inp} value={editReceta?.nombre || ''} onChange={e => setEditReceta({ ...editReceta, nombre: e.target.value })} />
         <label style={lbl}>Tipo</label>
         <select style={inp} value={editReceta?.tipo || 'sub_receta'} onChange={e => setEditReceta({ ...editReceta, tipo: e.target.value })}>
-          <option value="plato_menu">Plato del Menú</option>
           <option value="sub_receta">Sub-receta</option>
           <option value="porcionado">Porcionado</option>
         </select>
@@ -229,7 +230,7 @@ export default function RecetasView({ user }) {
   if (!sel) return (
     <div style={{ padding: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18, color: '#fff' }}>🍔 Recetas / BOM</h2>
+        <h2 style={{ margin: 0, fontSize: 18, color: '#fff' }}>🥣 Recetas / Bloques CM</h2>
         {canEdit && (
           <button className="btn-primary" style={{ fontSize: 12, padding: '6px 12px' }}
             onClick={() => { setEditReceta({ nombre: '', tipo: 'sub_receta', categoria: '', rendimiento: 1, unidad_rendimiento: 'porcion' }); setShowNewReceta(true); }}>
@@ -237,10 +238,14 @@ export default function RecetasView({ user }) {
           </button>
         )}
       </div>
+      <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
+        Solo <b>sub-recetas y porcionados</b> (lo que se prepara en Casa Matriz y se reúsa). Los platos y combos del menú
+        se arman en <b>Menú (BOM)</b> usando estos bloques + ingredientes del conteo.
+      </div>
 
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-        {[['todos', 'Todos'], ['plato_menu', 'Menú'], ['sub_receta', 'Sub-recetas'], ['porcionado', 'Porcionados']].map(([k, l]) => (
+        {[['todos', 'Todos'], ['sub_receta', 'Sub-recetas'], ['porcionado', 'Porcionados']].map(([k, l]) => (
           <button key={k} onClick={() => setFiltro(k)}
             style={{ padding: '4px 12px', borderRadius: 16, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer',
               background: filtro === k ? '#e63946' : '#333', color: filtro === k ? '#fff' : '#aaa' }}>
@@ -255,7 +260,7 @@ export default function RecetasView({ user }) {
 
       {/* Resumen */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {[['plato_menu', '🍔'], ['sub_receta', '🥣'], ['porcionado', '📦']].map(([t, icon]) => {
+        {[['sub_receta', '🥣'], ['porcionado', '📦']].map(([t, icon]) => {
           const cnt = recetas.filter(r => r.tipo === t).length;
           return <div key={t} style={{ background: '#1a1a2e', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#aaa' }}>{icon} {cnt}</div>;
         })}

@@ -231,6 +231,7 @@ function EnlazarModal({ fila, onClose, onDone }) {
 
   useEffect(() => {
     db.from('recetas').select('id,nombre,tipo,costo_calculado').eq('activo', true)
+      .neq('tipo', 'combo')   // los combos son envoltorios del BOM, no se anidan
       .order('nombre').then(({ data }) => setRecetas(data || []));
     db.rpc('menu_item_componentes', { p_menu_item_id: fila.menu_item_id })
       .then(({ data }) => setComps(Array.isArray(data) ? data.map(c => ({ ...c, cantidad: Number(c.cantidad) || 1 })) : []));
