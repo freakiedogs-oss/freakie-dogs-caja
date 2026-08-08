@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<title>Guía Visual de Combos — Freakie Dogs</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  body { background: #f4f4f4; color: #1a1a1a; padding: 20px; }
+  .container { max-width: 1400px; margin: 0 auto; }
+  header { text-align: center; padding: 20px 0 30px; }
+  h1 { color: #E63946; font-size: 32px; margin-bottom: 8px; }
+  .subtitle { color: #666; font-size: 14px; }
+  .filters { display: flex; gap: 8px; justify-content: center; margin: 20px 0; flex-wrap: wrap; }
+  .filter { padding: 8px 16px; background: white; border: 2px solid #e0e0e0; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.15s; }
+  .filter:hover { border-color: #E63946; }
+  .filter.active { background: #E63946; color: white; border-color: #E63946; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+  .card { background: white; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .foto { width: 100%; aspect-ratio: 4/3; background: #f4f4f4; position: relative; overflow: hidden; }
+  .foto::before {
+    content: "🍔"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 60px; opacity: 0.25; z-index: 0;
+  }
+  .foto img {
+    position: relative; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block;
+    background: white;
+  }
+  .foto.sin-foto::before { content: "📷 sin foto"; font-size: 14px; color: #999; opacity: 0.6; font-weight: 600; }
+  .body { padding: 14px 16px 16px; }
+  .nombre { font-size: 17px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+  .precio { font-size: 20px; font-weight: 800; color: #E63946; margin-bottom: 10px; }
+  .frituras { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+  .fritura { background: #FFF7E6; border: 1px solid #FFD591; color: #8C4A00; padding: 4px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .fritura.especial { background: #FFE0E0; border-color: #FFB0B0; color: #A00000; }
+  .nota { font-size: 12px; color: #666; line-height: 1.45; padding-top: 8px; border-top: 1px solid #f0f0f0; }
+  .sin-fritura { color: #999; font-style: italic; font-size: 11px; }
+  footer { text-align: center; margin-top: 40px; padding: 20px; color: #999; font-size: 11px; }
+  .status { background: white; padding: 12px 18px; border-radius: 10px; margin-bottom: 20px; font-size: 13px; color: #666; border-left: 4px solid #E63946; }
+  @media print { .filters, .status { display: none; } .card { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>🍔 Guía Visual de Combos</h1>
+  <p class="subtitle">29 combos habilitados en el POS · Fotos desde Supabase Storage</p>
+</header>
+
+<div class="status">
+  ℹ️ Si las fotos no cargan: verificá conexión a internet. Las imágenes vienen de <code>btboxlwfqcbrdfrlnwln.supabase.co</code> (bucket público <b>menu/items/</b>).
+</div>
+
+<div class="filters">
+  <button class="filter active" data-f="todos">Todos (29)</button>
+  <button class="filter" data-f="sazonada">Con papa sazonada</button>
+  <button class="filter" data-f="fancy">Con Fancy / Mini Fancy</button>
+  <button class="filter" data-f="varios">Multi-tipo (Freakie Box, Combros)</button>
+  <button class="filter" data-f="picossini">Con Queso Frito</button>
+  <button class="filter" data-f="aros">Con Aros de Cebolla</button>
+  <button class="filter" data-f="sin-foto">Sin foto (falta subir)</button>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<footer>
+  Composición de frituras: mapeo dictado por Cesar. Los combos <b>Sin foto</b> se pueden agregar desde el POS admin (SubirFotoItem que armó Jose).
+</footer>
+</div>
+
+<script>
+const S = 'https://btboxlwfqcbrdfrlnwln.supabase.co/storage/v1/object/public/menu/items/';
+
+// Solo URLs de Supabase Storage confirmadas (bucket público)
+const combos = [
+  {n:"Combo Freakie Dog",     p:3.99,  img:null,                                f:["1 Papa Sazonada"], nota:"Freakie Dog + 1 papa + bebida", cat:["sazonada","sin-foto"]},
+  {n:"Coca-Cola Combo",       p:3.99,  img:null,                                f:["1 Papa Sazonada"], nota:"1 hot dog o hamburguesa + 1 papa + Coca-Cola XL", cat:["sazonada","sin-foto"]},
+  {n:"Coca-Cola Combo XL",    p:5.99,  img:null,                                f:["1 Papa Sazonada"], nota:"Doble hot dog o hamburguesa doble + 1 papa + Coca-Cola XL", cat:["sazonada","sin-foto"]},
+  {n:"Combo Chilli Dog",      p:5.99,  img:S+"combo-chilli-dog.jpg",            f:["1 Papa Sazonada"], nota:"Chili dog + 1 papa + bebida", cat:["sazonada"]},
+  {n:"Combo Super Freak",     p:5.99,  img:S+"combo-super-freak.jpg",           f:["1 Papa Sazonada"], nota:"Super Freak + 1 papa + bebida", cat:["sazonada"]},
+  {n:"Combo Hamburguesa",     p:7.99,  img:null,                                f:["1 Papa Sazonada"], nota:"Hamburguesa + 1 papa + bebida", cat:["sazonada","sin-foto"]},
+  {n:"La Clasica Burger",     p:7.99,  img:null,                                f:["1 Papa Sazonada"], nota:"Ham. clásica + 1 papa + bebida", cat:["sazonada","sin-foto"]},
+  {n:"Pilsener Freakie Combo",p:4.99,  img:S+"pilsener-freakie-combo.jpg",      f:["1 Papa Sazonada"], nota:"1 freakie dog + 1 papa + 1 cerveza Pilsener", cat:["sazonada"]},
+  {n:"COMBO FREAKIE BURGER",  p:9.50,  img:null,                                f:["1 Papa Sazonada"], nota:"1 hamburguesa + 1 papa + bebida", cat:["sazonada","sin-foto"]},
+  {n:"Combo Duo",             p:7.99,  img:null,                                f:["2 Papas Sazonadas"], nota:"2 freakie dogs + 2 papas + 2 bebidas", cat:["sazonada","sin-foto"]},
+  {n:"Burger Duo",            p:14.99, img:null,                                f:["2 Papas Sazonadas"], nota:"2 hamburguesas + 2 papas + 2 bebidas", cat:["sazonada","sin-foto"]},
+  {n:"Sweet Burger Duo",      p:17.99, img:S+"sweet-burger-duo.jpg",            f:["2 Papas Sazonadas"], nota:"2 Sweet Freaks + 2 papas + 2 bebidas", cat:["sazonada"]},
+  {n:"Combo GOL-OSO",         p:24.99, img:S+"combo-gol-oso.jpg",               f:["2 Papas Sazonadas"], nota:"2 hamburguesas + 2 papas", cat:["sazonada"]},
+  {n:"Burger Box",            p:19.99, img:S+"burger-box.jpg",                  f:["2 Papas Sazonadas"], nota:"2 sliders + 2 papas + bebidas", cat:["sazonada"]},
+  {n:"Pilsener Burger Box",   p:20.99, img:S+"pilsener-burger-box.jpg",         f:["2 Papas Sazonadas"], nota:"Burger Box + 1 cerveza Pilsener", cat:["sazonada"]},
+  {n:"Combo Trío",            p:11.99, img:S+"combo-trio.jpg",                  f:["3 Papas Sazonadas"], nota:"3 freakie dogs + 3 papas + 3 bebidas", cat:["sazonada"]},
+  {n:"Freakie Family",        p:15.99, img:S+"freakie-family.jpg",              f:["4 Papas Sazonadas"], nota:"4 freakie dogs + 4 papas + 4 bebidas", cat:["sazonada"]},
+  {n:"Agrandado (Soda y Papa)", p:1.25, img:null,                               f:["+1 Papa Sazonada"], nota:"Add-on: agrega 1 papa + soda al combo base", cat:["sazonada","sin-foto"]},
+
+  {n:"Combo Fancy Duo",       p:10.99, img:S+"combo-fancy-duo.jpg",             f:["1 Mini Fancy"], nota:"2 freakie dogs + 1 MINI FANCY + 2 bebidas", cat:["fancy"]},
+  {n:"Royal Truffle Combo",   p:21.99, img:S+"royal-truffle-combo.jpg",         f:["1 Mini Fancy con parmesano y trufa"], nota:"Royal Truffle Burger + 1 MINI FANCY con parmesano + bebida", cat:["fancy"]},
+  {n:"Pilsener Royal Truffle Combo", p:20.99, img:S+"pilsener-royal-truffle-combo.jpg", f:["1 Mini Fancy con parmesano y trufa"], nota:"Royal Truffle + 1 MINI FANCY + 1 cerveza Pilsener", cat:["fancy"]},
+  {n:"Fancy Fries Combo",     p:18.99, img:S+"fancy-fries-combo.jpg",           f:["1 Fancy grande"], nota:"4 hot dogs + 1 FANCY grande + 4 bebidas", cat:["fancy"]},
+
+  {n:"Duo Picossini",         p:17.99, img:S+"duo-picossini.jpg",               f:["2 Papas Sazonadas", "1 Queso Frito"], nota:"2 picossini + 2 papas + 1 queso frito", cat:["sazonada","picossini"]},
+  {n:"Combpleto",             p:31.99, img:S+"combpleto.jpg",                   f:["2 Papas Sazonadas", "1 Queso Frito"], nota:"Familiar: 2 papas + 1 queso frito", cat:["sazonada","picossini","varios"]},
+  {n:"Chili Duo",             p:14.99, img:S+"chili-duo.jpg",                   f:["2 Papas Sazonadas", "1 Aros Cebolla"], nota:"2 chili dogs + 2 papas + 1 aros", cat:["sazonada","aros"]},
+  {n:"Combros",               p:14.99, img:S+"combros.jpg",                     f:["1 Papa Sazonada", "1 Papa Blanca", "1 Aros Cebolla"], nota:"4 hot dogs + 1 papa + 1 blanca + 1 aros", cat:["sazonada","aros","varios"]},
+  {n:"Freakie Box",           p:14.99, img:S+"freakie-box.jpg",                 f:["1 Papa Sazonada", "1 Papa Blanca", "1 Papa Waffle", "1 Aros"], nota:"Familia: 1 papa + 1 blanca + 1 waffle + 1 aros", cat:["sazonada","aros","varios"]},
+
+  {n:"Pilsener Freakie Burger", p:8.99, img:S+"pilsener-freakie-burger.jpg",    f:[], nota:"Solo hamburguesa + 1 cerveza (sin fritura estándar)", cat:[]},
+  {n:"Pastel Sweet Freak Completo", p:34.99, img:null,                          f:[], nota:"🍰 Postre (pedir con anticipación) — sin fritura", cat:["sin-foto"]},
+];
+
+const grid = document.getElementById('grid');
+function render(filter='todos') {
+  const filtrados = combos.filter(c => filter==='todos' || c.cat.includes(filter));
+  grid.innerHTML = filtrados.map(c => {
+    const fBadges = c.f.length
+      ? c.f.map(f => {
+          const especial = /mini fancy|fancy grande|waffle|blanca|queso frito|aros/i.test(f);
+          return '<span class="fritura ' + (especial ? 'especial' : '') + '">🍟 ' + f + '</span>';
+        }).join('')
+      : '<span class="sin-fritura">Sin fritura estándar</span>';
+    const fotoInner = c.img
+      ? '<img src="' + c.img + '" alt="' + c.n + '" loading="lazy" referrerpolicy="no-referrer" crossorigin="anonymous">'
+      : '';
+    const fotoClass = c.img ? 'foto' : 'foto sin-foto';
+    return `
+      <div class="card">
+        <div class="${fotoClass}">${fotoInner}</div>
+        <div class="body">
+          <div class="nombre">${c.n}</div>
+          <div class="precio">$${c.p.toFixed(2)}</div>
+          <div class="frituras">${fBadges}</div>
+          <div class="nota">${c.nota}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+document.querySelectorAll('.filter').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render(btn.dataset.f);
+  });
+});
+render();
+</script>
+</body>
+</html>
