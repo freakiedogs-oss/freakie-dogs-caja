@@ -11,7 +11,7 @@ import CosteoView from '../admin/CosteoView';
    CONSTANTES
    ═══════════════════════════════════════════════════════════════════════════ */
 const TIPOS = {
-  materia_prima:     { label: 'MP',  full: 'Materia Prima',       icon: '🥩', color: '#60a5fa', bg: '#1e3a5f', badge: 'info',    hint: 'Ingrediente que compras a proveedores' },
+  materia_prima:     { label: 'MP',  full: 'Materia Prima',       icon: '🧾', color: '#60a5fa', bg: '#1e3a5f', badge: 'info',    hint: 'Ingrediente que compras a proveedores' },
   sub_producto:      { label: 'SP',  full: 'Sub Producto',        icon: '🧪', color: '#fb923c', bg: '#7c2d12', badge: 'warning', hint: 'Se prepara en cocina con materias primas' },
   producto_terminado:{ label: 'PT',  full: 'Producto Terminado',  icon: '🍔', color: '#4ade80', bg: '#14532d', badge: 'success', hint: 'Lo que vendes al cliente' },
   insumo:            { label: 'IN',  full: 'Insumo',              icon: '📦', color: '#a1a1aa', bg: '#27272a', badge: 'muted',   hint: 'Material de operación (no alimento)' },
@@ -174,6 +174,7 @@ export default function KardexView({ user, show }) {
      TAB 1: INVENTARIO (Catálogo de ingredientes y productos)
      ══════════════════════════════════════════════════════════════════════ */
   const [catalogo, setCatalogo] = useState([]);
+  const [catTotals, setCatTotals] = useState({ materia_prima: 0, sub_producto: 0, producto_terminado: 0, insumo: 0, total: 0 });
   const [editUnid, setEditUnid] = useState(null); // producto cuyas unidades se editan
   const [catFilter, setCatFilter] = useState('todos');
   const [catSearch, setCatSearch] = useState('');
@@ -201,6 +202,15 @@ export default function KardexView({ user, show }) {
   }, [catFilter, catSearch]);
 
   useEffect(() => { fetchCatalogo(); }, [fetchCatalogo]);
+
+  // Totales por tipo (independiente del filtro activo, para las tarjetas KPI)
+  const fetchTotals = useCallback(async () => {
+    const { data } = await db.from('catalogo_productos').select('tipo').eq('activo', true);
+    const t = { materia_prima: 0, sub_producto: 0, producto_terminado: 0, insumo: 0, total: (data || []).length };
+    (data || []).forEach(c => { const k = c.tipo || 'materia_prima'; if (t[k] !== undefined) t[k]++; });
+    setCatTotals(t);
+  }, []);
+  useEffect(() => { fetchTotals(); }, [fetchTotals, catalogo.length]);
 
   const handleCrearItem = async () => {
     if (!nuevoItem.nombre.trim()) { show?.('Escribe un nombre', 'warning'); return; }
@@ -516,17 +526,17 @@ export default function KardexView({ user, show }) {
         {activeTab === 'inventario' && (<div>
           {/* KPIs */}
           <div className="flex gap-2 mb-4 overflow-x-auto">
-            <KpiCard icon="🥩" label="Materias Primas" value={catCounts.materia_prima} color="#60a5fa" />
-            <KpiCard icon="🧪" label="Sub Productos" value={catCounts.sub_producto} color="#fb923c" />
-            <KpiCard icon="🍔" label="Terminados" value={catCounts.producto_terminado} color="#4ade80" />
-            <KpiCard icon="📦" label="Insumos" value={catCounts.insumo} color="#a1a1aa" />
+            <KpiCard icon="🧾" label="Materias Primas" value={catTotals.materia_prima} color="#60a5fa" />
+            <KpiCard icon="🧪" label="Sub Productos" value={catTotals.sub_producto} color="#fb923c" />
+            <KpiCard icon="🍔" label="Terminados" value={catTotals.producto_terminado} color="#4ade80" />
+            <KpiCard icon="📦" label="Insumos" value={catTotals.insumo} color="#a1a1aa" />
           </div>
 
           {/* Filtros tipo chips */}
           <div className="chips">
             {[
               { key: 'todos', label: 'Todos' },
-              { key: 'materia_prima', label: '🥩 MP' },
+              { key: 'materia_prima', label: '🧾 MP' },
               { key: 'sub_producto', label: '🧪 SP' },
               { key: 'producto_terminado', label: '🍔 PT' },
               { key: 'insumo', label: '📦 IN' },
@@ -1007,10 +1017,16 @@ function ConteoLista({ user }) {
   const [openR, setOpenR] = useState({});
   const [adding, setAdding] = useState(false);
   const [nuevaCat, setNuevaCat] = useState('');
+  const [subrecetas, setSubrecetas] = useState([]);
+  const [edit, setEdit] = useState(null); // id del item en edición
 
   const cargar = async () => {
-    const [d, c] = await Promise.all([db.rpc('conteo_lista'), db.rpc('conteo_categorias')]);
-    setData(d.data || null); setCats(c.data || []);
+    const [d, c, s] = await Promise.all([
+      db.rpc('conteo_lista'),
+      db.rpc('conteo_categorias'),
+      db.from('recetas').select('id,nombre,tipo').in('tipo', ['sub_receta', 'porcionado']).eq('activo', true).order('nombre'),
+    ]);
+    setData(d.data || null); setCats(c.data || []); setSubrecetas(s.data || []);
   };
   useEffect(() => { cargar(); }, []);
 
@@ -1018,6 +1034,9 @@ function ConteoLista({ user }) {
     await db.rpc('set_conteo_item', { p_producto_id: id, p_incluir: patch.incluir ?? null, p_categoria: patch.categoria ?? null, p_orden: patch.orden ?? null });
     cargar();
   };
+  const renombrar = async (id, nombre) => { await db.rpc('set_conteo_item_meta', { p_producto_id: id, p_nombre: nombre }); cargar(); };
+  const cambiarTipo = async (id, tipo) => { await db.rpc('set_conteo_item_meta', { p_producto_id: id, p_tipo: tipo }); cargar(); };
+  const matchSub = async (id, receta_id) => { await db.rpc('match_conteo_subreceta', { p_producto_id: id, p_receta_id: receta_id || null }); cargar(); };
   const quitar = async (id, nombre) => {
     if (!window.confirm(`¿Quitar "${nombre}" de la lista de conteo?`)) return;
     await db.rpc('set_conteo_item', { p_producto_id: id, p_incluir: false }); cargar();
@@ -1070,10 +1089,13 @@ function ConteoLista({ user }) {
                       <TipoPill tipo={it.tipo} />
                       <div style={{ flex: 1, minWidth: 140, fontSize: 13 }}>
                         {it.nombre} <span style={{ color: C.dim, fontSize: 11 }}>· {it.unidad || 'u'}</span>
+                        {it.match_receta_nombre && <span style={{ color: '#fb923c', fontSize: 11, marginLeft: 8 }}>= {it.match_receta_nombre}</span>}
                         {it.receta && <span onClick={() => setOpenR(o => ({ ...o, [it.id]: !o[it.id] }))} style={{ color: C.blue, fontSize: 11, marginLeft: 8, cursor: 'pointer' }}>{openR[it.id] ? '▾ receta' : '▸ receta'}</span>}
                       </div>
                       {puede && (
                         <>
+                          <button onClick={() => setEdit(e => e === it.id ? null : it.id)} title="Editar / clasificar"
+                            style={{ background: edit === it.id ? '#333' : '#222', color: '#ccc', border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✎</button>
                           <select value={it.grupo || g.grupo} onChange={e => setItem(it.id, { categoria: e.target.value })}
                             style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }} title="Mover de grupo">
                             {cats.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1084,6 +1106,41 @@ function ConteoLista({ user }) {
                         </>
                       )}
                     </div>
+
+                    {/* Panel de edición: nombre, tipo, match a sub-receta */}
+                    {puede && edit === it.id && (
+                      <div style={{ marginTop: 8, padding: 10, background: '#101010', borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Nombre del ingrediente</div>
+                          <input defaultValue={it.nombre} onBlur={e => { const v = e.target.value.trim(); if (v && v !== it.nombre) renombrar(it.id, v); }}
+                            style={{ width: '100%', boxSizing: 'border-box', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 13 }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Tipo</div>
+                            <select value={it.tipo || 'materia_prima'} onChange={e => cambiarTipo(it.id, e.target.value)}
+                              style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
+                              <option value="materia_prima">🧾 Materia Prima</option>
+                              <option value="sub_producto">🧪 Sub Producto</option>
+                              <option value="producto_terminado">🍔 Terminado (reventa)</option>
+                              <option value="insumo">📦 Insumo (no alimento)</option>
+                            </select>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 200 }}>
+                            <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Es la sub-receta… (si es un preparado de CM)</div>
+                            <select value={it.match_receta_id || ''} onChange={e => matchSub(it.id, e.target.value)}
+                              style={{ width: '100%', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
+                              <option value="">— ninguna (es materia prima) —</option>
+                              {subrecetas.map(s => <option key={s.id} value={s.id}>{s.nombre}{s.tipo === 'porcionado' ? ' (porcionado)' : ''}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 10, color: C.dim }}>
+                          Al matchear a una sub-receta, la venta descuenta <b>este</b> ítem (lo que la sucursal cuenta), no las materias primas de CM.
+                        </div>
+                      </div>
+                    )}
+
                     {it.receta && openR[it.id] && (
                       <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: `2px solid ${C.blue}` }}>
                         <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>Receta: {it.receta.nombre}</div>
