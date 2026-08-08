@@ -28,17 +28,21 @@ export default function RecepcionDTE({ user, show }) {
   const [lineas, setLineas] = useState([]);      // estado editable por línea
   const [foto, setFoto] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [opciones, setOpciones] = useState({ categorias: [], subcategorias: [] });
+  const [normProv, setNormProv] = useState(null); // proveedor que se está clasificando
 
   const cargar = async () => {
     setLoading(true);
-    const [b, s, cat] = await Promise.all([
+    const [b, s, cat, op] = await Promise.all([
       db.rpc('bandeja_recepcion_dte', { p_dias: 120 }),
       db.rpc('bandeja_recepcion_sin_normalizar', { p_dias: 120 }),
       db.from('catalogo_productos').select('id,nombre,unidad_medida,sku,categoria,incluir_inventario_fisico').eq('activo', true).order('nombre'),
+      db.rpc('catalogo_contable_opciones'),
     ]);
     setDtes(b.data || []);
     setSinNorm(s.data || []);
     setCatalogo(cat.data || []);
+    setOpciones(op.data || { categorias: [], subcategorias: [] });
     setLoading(false);
   };
   useEffect(() => { cargar(); }, []);
@@ -168,14 +172,23 @@ export default function RecepcionDTE({ user, show }) {
 
       {sinNorm.length > 0 && (
         <div style={{ ...box, borderLeft: `3px solid ${C.yellow}`, marginBottom: 12 }}>
-          <div style={{ fontWeight: 700, color: C.yellow, fontSize: 13 }}>
-            ⚠️ {sinNorm.length} proveedor{sinNorm.length !== 1 ? 'es' : ''} sin clasificar
+          <div style={{ fontWeight: 700, color: C.yellow, fontSize: 13, marginBottom: 8 }}>
+            ⚠️ {sinNorm.length} proveedor{sinNorm.length !== 1 ? 'es' : ''} sin clasificar — clasificalos y sus DTE entran a la bandeja
           </div>
-          <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>
-            No se sabe si requieren recepción. Clasificalos en Finanzas → Catálogo (marcá "requiere recepción").{' '}
-            {sinNorm.slice(0, 6).map(p => p.proveedor).join(' · ')}{sinNorm.length > 6 ? '…' : ''}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {sinNorm.map(p => (
+              <div key={p.nit || p.proveedor} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <div style={{ flex: 1 }}>{p.proveedor} <span style={{ color: C.dim, fontSize: 11 }}>· {p.dtes} DTE · {fmt(p.monto)}</span></div>
+                <button onClick={() => setNormProv(p)} style={{ ...btn(C.yellow), color: '#1a1a1a', fontSize: 12 }}>Clasificar</button>
+              </div>
+            ))}
           </div>
         </div>
+      )}
+
+      {normProv && (
+        <NormalizarModal prov={normProv} opciones={opciones} user={user}
+          onClose={() => setNormProv(null)} onSaved={() => { setNormProv(null); cargar(); }} />
       )}
 
       {dtes.length === 0 ? (
@@ -322,6 +335,54 @@ function PagoBadge({ estado }) {
   return <span style={{ fontSize: 11, fontWeight: 700, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: '2px 8px' }}>{txt}</span>;
 }
 
+// ── Clasificar (normalizar) un proveedor sin salir de la página de DTEs ──
+function NormalizarModal({ prov, opciones, user, onClose, onSaved }) {
+  const toast = useToast?.() || {};
+  const REQ_DEFAULT = ['costo_comida', 'insumo_venta']; // categorías que suelen requerir recepción
+  const [form, setForm] = useState({ nombre_normalizado: prov.proveedor || '', categoria: '', subcategoria: '', requiere_recepcion: false });
+  const [saving, setSaving] = useState(false);
+  const setCat = (c) => setForm(f => ({ ...f, categoria: c, requiere_recepcion: REQ_DEFAULT.includes(c) ? true : f.requiere_recepcion }));
+  const guardar = async () => {
+    if (!form.categoria) return;
+    setSaving(true);
+    const { error } = await db.rpc('normalizar_proveedor', {
+      p_nombre_dte: prov.proveedor, p_nombre_normalizado: form.nombre_normalizado,
+      p_categoria: form.categoria, p_subcategoria: form.subcategoria || 'Varios',
+      p_requiere_recepcion: form.requiere_recepcion, p_usuario: user?.nombre || null,
+    });
+    setSaving(false);
+    if (error) { toast.error?.('❌ ' + error.message); return; }
+    onSaved();
+  };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ ...box, width: '100%', maxWidth: 440 }}>
+        <div style={{ fontWeight: 800, fontSize: 16 }}>Clasificar proveedor</div>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>{prov.proveedor}</div>
+        <label style={lbl}>Nombre normalizado</label>
+        <input value={form.nombre_normalizado} onChange={e => setForm(f => ({ ...f, nombre_normalizado: e.target.value }))} style={{ ...inp, width: '100%', marginBottom: 10 }} />
+        <label style={lbl}>Categoría</label>
+        <select value={form.categoria} onChange={e => setCat(e.target.value)} style={{ ...inp, width: '100%', marginBottom: 10 }}>
+          <option value="">— elegí —</option>
+          {(opciones.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <label style={lbl}>Subcategoría</label>
+        <input value={form.subcategoria} onChange={e => setForm(f => ({ ...f, subcategoria: e.target.value }))} list="norm-subcats" placeholder="Varios" style={{ ...inp, width: '100%', marginBottom: 10 }} />
+        <datalist id="norm-subcats">{(opciones.subcategorias || []).map(s => <option key={s} value={s} />)}</datalist>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, margin: '6px 0 14px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={form.requiere_recepcion} onChange={e => setForm(f => ({ ...f, requiere_recepcion: e.target.checked }))} />
+          Requiere recepción física en almacén (insumos / producto tangible)
+        </label>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={btn('#333')}>Cancelar</button>
+          <button onClick={guardar} disabled={!form.categoria || saving} style={{ ...btn(form.categoria ? C.green : '#333'), color: form.categoria ? '#04220f' : C.dim }}>{saving ? 'Guardando…' : 'Guardar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const box = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 };
+const lbl = { fontSize: 11, color: C.dim, display: 'block', marginBottom: 3 };
 const inp = { background: C.input, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 13 };
 const btn = (bg) => ({ background: bg, border: 'none', color: '#fff', borderRadius: 8, padding: '7px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer' });
