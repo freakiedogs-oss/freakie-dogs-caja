@@ -31,6 +31,7 @@ export default function RecepcionDTE({ user, show }) {
   const [opciones, setOpciones] = useState({ categorias: [], subcategorias: [] });
   const [normProv, setNormProv] = useState(null); // proveedor que se está clasificando
   const [manualOpen, setManualOpen] = useState(false);
+  const [tab, setTab] = useState('bandeja'); // 'bandeja' | 'historial'
 
   const cargar = async () => {
     setLoading(true);
@@ -191,11 +192,12 @@ export default function RecepcionDTE({ user, show }) {
   // ── Bandeja (lista) ──
   return (
     <div style={{ padding: 16, color: C.text, maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <div style={{ fontSize: 18, fontWeight: 800 }}>📋 Bandeja de Recepción (DTE)</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button onClick={() => setTab('bandeja')} style={{ ...btn(tab === 'bandeja' ? C.red : '#222'), fontSize: 14 }}>📋 Bandeja</button>
+        <button onClick={() => setTab('historial')} style={{ ...btn(tab === 'historial' ? C.red : '#222'), fontSize: 14 }}>🧾 Historial</button>
         <div style={{ flex: 1 }} />
-        <button onClick={() => setManualOpen(true)} style={{ ...btn(C.blue), color: '#04212b' }}>+ DTE manual</button>
-        <button onClick={cargar} style={btn('#333')}>↻</button>
+        {tab === 'bandeja' && <button onClick={() => setManualOpen(true)} style={{ ...btn(C.blue), color: '#04212b' }}>+ DTE manual</button>}
+        {tab === 'bandeja' && <button onClick={cargar} style={btn('#333')}>↻</button>}
       </div>
 
       {manualOpen && (
@@ -203,7 +205,9 @@ export default function RecepcionDTE({ user, show }) {
           onSaved={() => { setManualOpen(false); cargar(); }} />
       )}
 
-      {sinNorm.length > 0 && (
+      {tab === 'historial' && <HistorialRecepciones user={user} opciones={opciones} />}
+
+      {tab === 'bandeja' && sinNorm.length > 0 && (
         <div style={{ ...box, borderLeft: `3px solid ${C.yellow}`, marginBottom: 12 }}>
           <div style={{ fontWeight: 700, color: C.yellow, fontSize: 13, marginBottom: 8 }}>
             ⚠️ {sinNorm.length} proveedor{sinNorm.length !== 1 ? 'es' : ''} sin clasificar — clasificalos y sus DTE entran a la bandeja
@@ -219,36 +223,38 @@ export default function RecepcionDTE({ user, show }) {
         </div>
       )}
 
-      {normProv && (
+      {tab === 'bandeja' && normProv && (
         <NormalizarModal prov={normProv} opciones={opciones} user={user}
           onClose={() => setNormProv(null)} onSaved={() => { setNormProv(null); cargar(); }} />
       )}
 
-      {dtes.length === 0 ? (
+      {tab === 'bandeja' && (dtes.length === 0 ? (
         <div style={{ ...box, textAlign: 'center', color: C.dim, padding: 30 }}>
           ✅ No hay DTE pendientes de recibir.
         </div>
       ) : (
         <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{dtes.length} DTE por recibir</div>
-      )}
+      ))}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {dtes.map(d => (
-          <div key={d.id} style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
-            onClick={() => abrir(d)}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700 }}>{d.proveedor}</div>
-              <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
-                {d.fecha_emision} · {(d.items || []).length} línea{(d.items || []).length !== 1 ? 's' : ''}
-                {d.categoria ? ` · ${d.categoria}${d.subcategoria ? ' / ' + d.subcategoria : ''}` : ''}
+      {tab === 'bandeja' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {dtes.map(d => (
+            <div key={d.id} style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+              onClick={() => abrir(d)}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700 }}>{d.proveedor}</div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+                  {d.fecha_emision} · {(d.items || []).length} línea{(d.items || []).length !== 1 ? 's' : ''}
+                  {d.categoria ? ` · ${d.categoria}${d.subcategoria ? ' / ' + d.subcategoria : ''}` : ''}
+                </div>
               </div>
+              <PagoBadge estado={d.estado_pago} />
+              <div style={{ fontWeight: 800 }}>{fmt(d.monto_total)}</div>
+              <button style={{ ...btn(C.blue), color: '#04212b' }}>Revisar →</button>
             </div>
-            <PagoBadge estado={d.estado_pago} />
-            <div style={{ fontWeight: 800 }}>{fmt(d.monto_total)}</div>
-            <button style={{ ...btn(C.blue), color: '#04212b' }}>Revisar →</button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -486,6 +492,120 @@ function DteManualModal({ user, onClose, onSaved }) {
             <button onClick={guardar} disabled={!valido || saving} style={{ ...btn(valido ? C.green : '#333'), color: valido ? '#04220f' : C.dim }}>{saving ? 'Guardando…' : 'Ingresar'}</button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Historial de recepciones (corrección auditada, gateada por rol) ──
+function HistorialRecepciones({ user, opciones }) {
+  const toast = useToast?.() || {};
+  const ROLES_EDIT = ['jefe_casa_matriz', 'ejecutivo', 'admin', 'superadmin'];
+  const puedeEditar = ROLES_EDIT.includes(user?.rol);
+  const hoy = new Date().toISOString().slice(0, 10);
+  const hace30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const [desde, setDesde] = useState(hace30);
+  const [hasta, setHasta] = useState(hoy);
+  const [recs, setRecs] = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [edit, setEdit] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const cargar = async () => {
+    setRecs(null);
+    const { data } = await db.rpc('historial_recepciones', { p_desde: desde, p_hasta: hasta });
+    setRecs(data || []);
+  };
+  useEffect(() => { cargar(); }, [desde, hasta]); // eslint-disable-line
+
+  const abrir = (r) => {
+    if (openId === r.id) { setOpenId(null); return; }
+    setOpenId(r.id);
+    const e = {};
+    (r.items || []).forEach(it => { e[it.id] = { cantidad_recibida: it.cantidad_recibida, categoria: it.categoria || '' }; });
+    setEdit(e);
+  };
+
+  const guardar = async (r) => {
+    setSaving(true);
+    const items = (r.items || []).map(it => ({ id: it.id, cantidad_recibida: Number(edit[it.id]?.cantidad_recibida), categoria: edit[it.id]?.categoria || null }));
+    const { data, error } = await db.rpc('corregir_recepcion', { p_recepcion_id: r.id, p_items: items, p_usuario_id: user?.id || null, p_usuario_nombre: user?.nombre || null });
+    setSaving(false);
+    if (error) { toast.error?.('❌ ' + error.message); return; }
+    toast.success?.(`✅ ${data.cambios} cambio(s) guardado(s)`);
+    setOpenId(null); cargar();
+  };
+
+  const anular = async (r) => {
+    if (!window.confirm(`¿Anular la recepción de ${r.proveedor}? Revierte el inventario y el DTE vuelve a la bandeja.`)) return;
+    const motivo = window.prompt('Motivo de la anulación:') || null;
+    setSaving(true);
+    const { error } = await db.rpc('anular_recepcion', { p_recepcion_id: r.id, p_usuario_id: user?.id || null, p_usuario_nombre: user?.nombre || null, p_motivo: motivo });
+    setSaving(false);
+    if (error) { toast.error?.('❌ ' + error.message); return; }
+    toast.success?.('✅ Recepción anulada');
+    cargar();
+  };
+
+  if (recs === null) return <div style={{ color: C.dim, padding: 12 }}>Cargando historial…</div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: C.dim }}>Desde</span>
+        <input type="date" value={desde} onChange={e => setDesde(e.target.value)} style={inp} />
+        <span style={{ fontSize: 12, color: C.dim }}>Hasta</span>
+        <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} style={inp} />
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12, color: C.dim }}>{recs.length} recepciones{!puedeEditar ? ' · solo lectura' : ''}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {recs.map(r => (
+          <div key={r.id} style={{ ...box, borderLeft: `3px solid ${r.estado === 'anulada' ? C.red : C.green}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => abrir(r)}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700 }}>{r.proveedor}{r.estado === 'anulada' ? <span style={{ color: C.red, fontSize: 11, marginLeft: 6 }}>ANULADA</span> : null}</div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+                  {r.fecha} · {fmt(r.monto)}{r.dte_codigo ? ` · ${r.dte_codigo}` : ''} · {(r.items || []).length} ítems
+                  {r.recibido_por ? ` · por ${r.recibido_por}` : ''}{r.n_correcciones > 0 ? ` · ✏️ ${r.n_correcciones}` : ''}
+                </div>
+              </div>
+              <button style={{ ...btn('#333'), fontSize: 12 }}>{openId === r.id ? '▲' : '▼'}</button>
+            </div>
+            {openId === r.id && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {(r.items || []).map(it => (
+                  <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card2, borderRadius: 8, padding: '8px 10px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 160, fontSize: 13 }}>{it.producto || it.descripcion}</div>
+                    {puedeEditar && r.estado !== 'anulada' ? (
+                      <>
+                        <span style={{ fontSize: 10, color: C.dim }}>recibido</span>
+                        <input type="number" step="any" value={edit[it.id]?.cantidad_recibida ?? it.cantidad_recibida}
+                          onChange={e => setEdit(s => ({ ...s, [it.id]: { ...s[it.id], cantidad_recibida: e.target.value } }))}
+                          style={{ ...inp, width: 80, textAlign: 'right' }} />
+                        <select value={edit[it.id]?.categoria || ''} onChange={e => setEdit(s => ({ ...s, [it.id]: { ...s[it.id], categoria: e.target.value } }))}
+                          style={{ ...inp, fontSize: 11, padding: '4px 6px' }}>
+                          <option value="">(clasif.)</option>
+                          {(opciones?.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 12, color: C.dim }}>{it.cantidad_recibida} {it.unidad || ''}{it.categoria ? ` · ${it.categoria}` : ''}</span>
+                    )}
+                  </div>
+                ))}
+                {puedeEditar && r.estado !== 'anulada' && (
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                    <button onClick={() => anular(r)} disabled={saving} style={{ ...btn('#7f1d1d'), fontSize: 12 }}>Anular recepción</button>
+                    <button onClick={() => guardar(r)} disabled={saving} style={{ ...btn(C.green), color: '#04220f' }}>{saving ? 'Guardando…' : 'Guardar correcciones'}</button>
+                  </div>
+                )}
+                {!puedeEditar && <div style={{ fontSize: 11, color: C.dim, textAlign: 'right' }}>Solo jefe de almacén y ejecutivos pueden corregir.</div>}
+              </div>
+            )}
+          </div>
+        ))}
+        {recs.length === 0 && <div style={{ ...box, textAlign: 'center', color: C.dim, padding: 24 }}>Sin recepciones en el rango.</div>}
       </div>
     </div>
   );
