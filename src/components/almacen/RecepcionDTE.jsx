@@ -60,6 +60,8 @@ export default function RecepcionDTE({ user, show }) {
       omitir: false,
       candidatos: [],
       buscando: false,
+      categoria: dte.categoria || '',       // hereda del proveedor; editable por línea
+      subcategoria: dte.subcategoria || '',
     }));
     setLineas(base);
     // resolver en paralelo las no mapeadas
@@ -105,6 +107,8 @@ export default function RecepcionDTE({ user, show }) {
         descripcion: l.descripcion, unidad: null,
         precio_unitario: Number(l.precio_unitario) || 0,
         notas: l.omitir ? 'omitido (no inventariar)' : null,
+        categoria: l.categoria || null,
+        subcategoria: l.subcategoria || null,
       }));
       const { data, error } = await db.rpc('recibir_dte', {
         p_dte_id: sel.id, p_items: items, p_foto_url: fotoUrl,
@@ -134,6 +138,8 @@ export default function RecepcionDTE({ user, show }) {
             </div>
           </div>
           <PagoBadge estado={sel.estado_pago} />
+          <button onClick={() => setNormProv({ proveedor: sel.proveedor, nit: sel.nit, categoria: sel.categoria, subcategoria: sel.subcategoria, requiere_recepcion: true })}
+                  style={{ ...btn('#333'), fontSize: 12 }} title="Corregir la clasificación de este proveedor">✏️ Clasificación</button>
           {(sel.comprobante_urls || []).map((u, i) => (
             <a key={i} href={u} target="_blank" rel="noopener"
                style={{ ...btn('#1e293b'), border: `1px solid ${C.green}`, color: C.green, textDecoration: 'none', fontSize: 12 }}>
@@ -142,10 +148,21 @@ export default function RecepcionDTE({ user, show }) {
           ))}
         </div>
 
+        {normProv && (
+          <NormalizarModal prov={normProv} opciones={opciones} user={user}
+            onClose={() => setNormProv(null)}
+            onSaved={(form) => {
+              setNormProv(null);
+              setSel(s => ({ ...s, categoria: form.categoria, subcategoria: form.subcategoria }));
+              setLineas(ls => ls.map(l => ({ ...l, categoria: form.categoria, subcategoria: form.subcategoria })));
+              cargar();
+            }} />
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
           {lineas.map((l, i) => (
             <LineaCard key={i} l={l} i={i} nit={sel.nit} catalogo={catalogo} catById={catById}
-              onMapear={mapear} onSet={setLinea} user={user} />
+              onMapear={mapear} onSet={setLinea} user={user} opciones={opciones} />
           ))}
         </div>
 
@@ -223,7 +240,7 @@ export default function RecepcionDTE({ user, show }) {
               <div style={{ fontWeight: 700 }}>{d.proveedor}</div>
               <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
                 {d.fecha_emision} · {(d.items || []).length} línea{(d.items || []).length !== 1 ? 's' : ''}
-                {d.categoria ? ` · ${d.categoria}` : ''}
+                {d.categoria ? ` · ${d.categoria}${d.subcategoria ? ' / ' + d.subcategoria : ''}` : ''}
               </div>
             </div>
             <PagoBadge estado={d.estado_pago} />
@@ -237,7 +254,7 @@ export default function RecepcionDTE({ user, show }) {
 }
 
 // ── Tarjeta de una línea del DTE ──
-function LineaCard({ l, i, nit, catalogo, catById, onMapear, onSet, user }) {
+function LineaCard({ l, i, nit, catalogo, catById, onMapear, onSet, user, opciones }) {
   const [q, setQ] = useState('');
   const [creando, setCreando] = useState(false);
   const [nuevo, setNuevo] = useState({ nombre: l.descripcion, unidad: 'unidad', categoria: '' });
@@ -271,6 +288,13 @@ function LineaCard({ l, i, nit, catalogo, catById, onMapear, onSet, user }) {
           <div style={{ fontWeight: 600, fontSize: 14 }}>{l.descripcion}</div>
           <div style={{ fontSize: 11.5, color: C.dim, marginTop: 2 }}>
             {l.codigo ? `cód ${l.codigo} · ` : ''}facturado {l.cantidad} · {fmt(l.precio_unitario)}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+            <span style={{ fontSize: 10, color: C.dim }}>Clasif.:</span>
+            <select value={l.categoria || ''} onChange={e => onSet(i, { categoria: e.target.value })}
+              style={{ ...inp, fontSize: 11, padding: '3px 6px' }} title="Clasificación de esta línea (hereda la del proveedor)">
+              {(opciones?.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
         </div>
         {/* cantidad recibida */}
@@ -355,7 +379,12 @@ function PagoBadge({ estado }) {
 function NormalizarModal({ prov, opciones, user, onClose, onSaved }) {
   const toast = useToast?.() || {};
   const REQ_DEFAULT = ['costo_comida', 'insumo_venta']; // categorías que suelen requerir recepción
-  const [form, setForm] = useState({ nombre_normalizado: prov.proveedor || '', categoria: '', subcategoria: '', requiere_recepcion: false });
+  const [form, setForm] = useState({
+    nombre_normalizado: prov.proveedor || '',
+    categoria: prov.categoria || '',
+    subcategoria: prov.subcategoria || '',
+    requiere_recepcion: prov.requiere_recepcion != null ? prov.requiere_recepcion : false,
+  });
   const [saving, setSaving] = useState(false);
   const setCat = (c) => setForm(f => ({ ...f, categoria: c, requiere_recepcion: REQ_DEFAULT.includes(c) ? true : f.requiere_recepcion }));
   const guardar = async () => {
@@ -368,7 +397,7 @@ function NormalizarModal({ prov, opciones, user, onClose, onSaved }) {
     });
     setSaving(false);
     if (error) { toast.error?.('❌ ' + error.message); return; }
-    onSaved();
+    onSaved(form);
   };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
