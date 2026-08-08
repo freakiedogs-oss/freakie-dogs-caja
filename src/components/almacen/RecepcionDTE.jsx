@@ -18,8 +18,11 @@ const C = {
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
-export default function RecepcionDTE({ user, show }) {
+export default function RecepcionDTE({ user, show, modo = 'cm' }) {
+  const esSuc = modo === 'sucursal'; // recepción de compra en sucursal (con DTE)
   const toast = useToast?.() || { success: show, error: show, warning: show };
+  const [sucId, setSucId] = useState(null);   // sucursal destino (esSuc)
+  const [buscando, setBuscando] = useState(false);
   const [dtes, setDtes] = useState([]);
   const [sinNorm, setSinNorm] = useState([]);
   const [catalogo, setCatalogo] = useState([]);
@@ -38,10 +41,23 @@ export default function RecepcionDTE({ user, show }) {
 
   const cargar = async () => {
     setLoading(true);
+    const catP = db.from('catalogo_productos').select('id,nombre,unidad_medida,sku,categoria,incluir_inventario_fisico').eq('activo', true).order('nombre');
+    if (esSuc) {
+      // sucursal: no hay bandeja; los DTE llegan por búsqueda. Carga sucursal destino.
+      const [cat, op, suc] = await Promise.all([
+        catP, db.rpc('catalogo_contable_opciones'),
+        db.from('sucursales').select('id,store_code').eq('store_code', user?.store_code).maybeSingle(),
+      ]);
+      setCatalogo(cat.data || []);
+      setOpciones(op.data || { categorias: [], subcategorias: [] });
+      setSucId(suc.data?.id || null);
+      setLoading(false);
+      return;
+    }
     const [b, s, cat, op] = await Promise.all([
       db.rpc('bandeja_recepcion_dte', { p_dias: 120 }),
       db.rpc('bandeja_recepcion_sin_normalizar', { p_dias: 120 }),
-      db.from('catalogo_productos').select('id,nombre,unidad_medida,sku,categoria,incluir_inventario_fisico').eq('activo', true).order('nombre'),
+      catP,
       db.rpc('catalogo_contable_opciones'),
     ]);
     setDtes(b.data || []);
@@ -51,6 +67,14 @@ export default function RecepcionDTE({ user, show }) {
     setLoading(false);
   };
   useEffect(() => { cargar(); }, []);
+
+  // Búsqueda de DTE sin recibir (modo sucursal)
+  const buscar = async () => {
+    setBuscando(true);
+    const { data } = await db.rpc('buscar_dtes_sin_recibir', { p_query: fProv || null, p_dias: 90 });
+    setDtes(data || []);
+    setBuscando(false);
+  };
 
   const catById = useMemo(() => Object.fromEntries(catalogo.map(p => [p.id, p])), [catalogo]);
 
@@ -125,6 +149,7 @@ export default function RecepcionDTE({ user, show }) {
       const { data, error } = await db.rpc('recibir_dte', {
         p_dte_id: sel.id, p_items: items, p_foto_url: fotoUrl,
         p_usuario_id: user?.id || null, p_notas: null,
+        p_sucursal_id: esSuc ? sucId : null,
       });
       if (error) throw error;
       toast.success?.(`✅ Recibido · ${data.inventariados} al inventario${data.con_diferencias ? ` · ${data.con_diferencias} con diferencia` : ''}`);
@@ -204,11 +229,17 @@ export default function RecepcionDTE({ user, show }) {
   return (
     <div style={{ padding: 16, color: C.text, maxWidth: 900, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <button onClick={() => setTab('bandeja')} style={{ ...btn(tab === 'bandeja' ? C.red : '#222'), fontSize: 14 }}>📋 Bandeja</button>
-        <button onClick={() => setTab('historial')} style={{ ...btn(tab === 'historial' ? C.red : '#222'), fontSize: 14 }}>🧾 Historial</button>
+        {esSuc ? (
+          <div style={{ fontSize: 18, fontWeight: 800 }}>🧾 Recepción de Compra (Sucursal)</div>
+        ) : (
+          <>
+            <button onClick={() => setTab('bandeja')} style={{ ...btn(tab === 'bandeja' ? C.red : '#222'), fontSize: 14 }}>📋 Bandeja</button>
+            <button onClick={() => setTab('historial')} style={{ ...btn(tab === 'historial' ? C.red : '#222'), fontSize: 14 }}>🧾 Historial</button>
+          </>
+        )}
         <div style={{ flex: 1 }} />
         {tab === 'bandeja' && <button onClick={() => setManualOpen(true)} style={{ ...btn(C.blue), color: '#04212b' }}>+ DTE manual</button>}
-        {tab === 'bandeja' && <button onClick={cargar} style={btn('#333')}>↻</button>}
+        {tab === 'bandeja' && !esSuc && <button onClick={cargar} style={btn('#333')}>↻</button>}
       </div>
 
       {manualOpen && (
@@ -218,7 +249,7 @@ export default function RecepcionDTE({ user, show }) {
 
       {tab === 'historial' && <HistorialRecepciones user={user} opciones={opciones} />}
 
-      {tab === 'bandeja' && sinNorm.length > 0 && (
+      {tab === 'bandeja' && !esSuc && sinNorm.length > 0 && (
         <div style={{ ...box, borderLeft: `3px solid ${C.yellow}`, marginBottom: 12 }}>
           <div style={{ fontWeight: 700, color: C.yellow, fontSize: 13, marginBottom: 8 }}>
             ⚠️ {sinNorm.length} proveedor{sinNorm.length !== 1 ? 'es' : ''} sin clasificar — clasificalos y sus DTE entran a la bandeja
@@ -234,25 +265,33 @@ export default function RecepcionDTE({ user, show }) {
         </div>
       )}
 
-      {tab === 'bandeja' && normProv && (
+      {tab === 'bandeja' && !esSuc && normProv && (
         <NormalizarModal prov={normProv} opciones={opciones} user={user}
           onClose={() => setNormProv(null)} onSaved={() => { setNormProv(null); cargar(); }} />
       )}
 
       {tab === 'bandeja' && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-          <input value={fProv} onChange={e => setFProv(e.target.value)} placeholder="🔎 Proveedor…" style={{ ...inp, flex: 1, minWidth: 160 }} />
-          <span style={{ fontSize: 11, color: C.dim }}>Desde</span>
-          <input type="date" value={fDesde} onChange={e => setFDesde(e.target.value)} style={inp} />
-          <span style={{ fontSize: 11, color: C.dim }}>Hasta</span>
-          <input type="date" value={fHasta} onChange={e => setFHasta(e.target.value)} style={inp} />
-          {(fProv || fDesde || fHasta) && <button onClick={() => { setFProv(''); setFDesde(''); setFHasta(''); }} style={{ ...btn('#333'), fontSize: 12 }}>Limpiar</button>}
+          <input value={fProv} onChange={e => setFProv(e.target.value)}
+            onKeyDown={e => esSuc && e.key === 'Enter' && buscar()}
+            placeholder={esSuc ? '🔎 Proveedor o código del DTE…' : '🔎 Proveedor…'} style={{ ...inp, flex: 1, minWidth: 160 }} />
+          {esSuc ? (
+            <button onClick={buscar} style={{ ...btn(C.blue), color: '#04212b' }}>{buscando ? 'Buscando…' : 'Buscar'}</button>
+          ) : (
+            <>
+              <span style={{ fontSize: 11, color: C.dim }}>Desde</span>
+              <input type="date" value={fDesde} onChange={e => setFDesde(e.target.value)} style={inp} />
+              <span style={{ fontSize: 11, color: C.dim }}>Hasta</span>
+              <input type="date" value={fHasta} onChange={e => setFHasta(e.target.value)} style={inp} />
+              {(fProv || fDesde || fHasta) && <button onClick={() => { setFProv(''); setFDesde(''); setFHasta(''); }} style={{ ...btn('#333'), fontSize: 12 }}>Limpiar</button>}
+            </>
+          )}
         </div>
       )}
 
       {tab === 'bandeja' && (dtes.length === 0 ? (
         <div style={{ ...box, textAlign: 'center', color: C.dim, padding: 30 }}>
-          ✅ No hay DTE pendientes de recibir.
+          {esSuc ? 'Buscá el DTE de tu compra por proveedor o código.' : '✅ No hay DTE pendientes de recibir.'}
         </div>
       ) : (
         <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{dtesFiltrados.length} de {dtes.length} DTE</div>

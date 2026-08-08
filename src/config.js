@@ -113,6 +113,7 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'conteo', label: 'Conteo Nocturno', icon: '🌙', roles: ['cocina', 'gerente', 'admin', 'ejecutivo'] },
       { key: 'inventario-sucursal', label: 'Inventario x Sucursal', icon: '📦', roles: ['cocina', 'gerente', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      { key: 'recepcion-sucursal', label: 'Recepción Compra (Sucursal)', icon: '🧾', roles: ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'mis-pedidos', label: 'Mis Pedidos', icon: '📦', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'jefe_casa_matriz'] },
       { key: 'entregas', label: 'Confirmar Entregas', icon: '✅', roles: ['despachador', 'motorista', 'motorista_interno', 'domicilios', 'gerente', 'cocina', 'admin', 'ejecutivo'] },
     ],

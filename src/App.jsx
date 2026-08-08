@@ -249,6 +249,8 @@ export default function App() {
         return <RecepcionTab user={user} show={show} />
       case 'recepcion-dte':
         return <RecepcionDTE user={user} show={show} />
+      case 'recepcion-sucursal':
+        return <RecepcionDTE user={user} show={show} modo="sucursal" />
       case 'despacho':
         return <DespachoTab user={user} show={show} />
       case 'inventario':
