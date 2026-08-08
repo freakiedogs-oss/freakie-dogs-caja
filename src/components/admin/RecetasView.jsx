@@ -174,6 +174,14 @@ export default function RecetasView({ user }) {
   if (loading) return <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>Cargando recetas...</div>;
 
   // ── Detalle: variables usadas si sel existe ──
+  const eliminar = async () => {
+    if (!sel) return;
+    if (!window.confirm(`¿Eliminar la receta "${sel.nombre}"? Se quita de la lista.`)) return;
+    const { error } = await db.rpc('eliminar_receta', { p_receta_id: sel.id });
+    if (error) { window.alert('❌ ' + error.message); return; }
+    setSel(null); setEditMode(false); cargar();
+  };
+
   const ings = sel ? (ingredientes[sel.id] || []) : [];
   const costo = sel ? calcCosto(sel.id) : 0;
 
@@ -344,6 +352,8 @@ export default function RecetasView({ user }) {
               onClick={() => { setEditReceta({ ...sel }); setShowNewReceta(true); }}>
               ✏️ Editar Receta
             </button>
+            <button style={{ fontSize: 12, padding: '6px 12px', background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
+              onClick={eliminar}>🗑️ Eliminar</button>
           </div>
         )}
       </div>
