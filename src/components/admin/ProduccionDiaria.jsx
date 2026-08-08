@@ -230,54 +230,22 @@ export default function ProduccionDiaria({ user }) {
     setError(null);
     setSuccess(null);
     try {
-      const lote = await getNextLote(fecha);
-
-      const prodRes = await db.from('produccion_diaria').insert({
-        fecha,
-        receta_id: recetaSel.id,
-        cantidad_producida: n(cantidadProducir),
-        cantidad_enviada: 0,
-        turno,
-        lote,
-        responsable_id: productorId,
-        created_by: `${user?.nombre || ''} ${user?.apellido || ''}`.trim(),
-        created_by_id: user?.id || null,
-        notas: notas || null,
-      }).select();
-
-      if (prodRes.error) throw new Error(prodRes.error.message || JSON.stringify(prodRes.error));
-      const produccionId = prodRes.data?.[0]?.id;
-      if (!produccionId) throw new Error('No se creó el registro de producción');
-
-      // Insertar items consumidos
-      const items = ingNecesarios.map(i => ({
-        produccion_id: produccionId,
-        producto_id: i.tipo_ingrediente === 'materia_prima' ? i.producto_id : i.sub_receta_id,
-        cantidad_consumida: i.cantidadNecesaria,
-        unidad_medida: i.unidad_medida || 'unidad',
-        costo_unitario: i.tipo_ingrediente === 'materia_prima' ? n(i.catalogo_productos?.precio_referencia) : 0,
-        costo_linea: i.tipo_ingrediente === 'materia_prima' ? n(i.cantidadNecesaria) * n(i.catalogo_productos?.precio_referencia) : 0,
-        es_subproducto: i.tipo_ingrediente === 'sub_receta',
-      }));
-      if (items.length > 0) {
-        await db.from('produccion_diaria_items').insert(items);
-      }
-
-      // Descontar inventario
-      const updatePromises = ingNecesarios
-        .filter(i => i.tipo_ingrediente === 'materia_prima' && i.producto_id)
-        .map(async (i) => {
-          const currentStock = inventarioCM[i.producto_id] || 0;
-          const newStock = Math.max(0, currentStock - i.cantidadNecesaria);
-          await db.from('inventario')
-            .update({ stock_actual: newStock, ultima_actualizacion: new Date().toISOString() })
-            .eq('producto_id', i.producto_id)
-            .eq('sucursal_id', CM_SUCURSAL_ID);
-        });
-      await Promise.all(updatePromises);
+      // Registro atómico: consume insumos vía kardex (con asiento) y calcula el
+      // costo real en el servidor (reemplaza el descuento directo a inventario).
+      const { data: rp, error: rpErr } = await db.rpc('registrar_produccion', {
+        p_receta_id: recetaSel.id,
+        p_cantidad: n(cantidadProducir),
+        p_turno: turno,
+        p_notas: notas || null,
+        p_responsable_id: productorId,
+        p_usuario_id: user?.id || null,
+        p_usuario_nombre: `${user?.nombre || ''} ${user?.apellido || ''}`.trim() || null,
+        p_fecha: fecha,
+      });
+      if (rpErr) throw new Error(rpErr.message || JSON.stringify(rpErr));
 
       const empNombre = productorSel ? `${productorSel.nombre} ${productorSel.apellido}` : '';
-      setSuccess(`Lote ${lote} registrado — ${n(cantidadProducir)} tandas de ${recetaSel.nombre} por ${empNombre}. Inventario descontado.`);
+      setSuccess(`Lote ${rp.lote} registrado — ${n(cantidadProducir)} tandas de ${recetaSel.nombre} por ${empNombre}. Costo $${Number(rp.costo_total || 0).toFixed(2)}. Insumos descontados (kardex).`);
       setCantidadProducir('');
       setRecetaSelId(null);
       setTurno('mañana');
