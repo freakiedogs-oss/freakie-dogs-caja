@@ -2809,10 +2809,15 @@ function TabCatalogo({ user, data2026, onRefresh }) {
   const sSelect = { ...sInput, cursor: 'pointer' }
   const sBtn = (bg) => ({ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12, background: bg || C.red, color: C.white })
 
-  // Get unique subcategories for a category (for autocomplete suggestions)
+  // Subcategorías para el dropdown. Muestra las de la categoría elegida; si no
+  // hay categoría (o esa categoría aún no tiene subcategorías), ofrece TODAS las
+  // existentes. El input es un combobox (datalist): se elige de la lista o se
+  // escribe una nueva.
   const getSubcats = (cat) => {
-    const subs = [...new Set(entries.filter(e => e.categoria === cat).map(e => e.subcategoria))]
-    return subs.sort()
+    const todas = [...new Set(entries.map(e => e.subcategoria).filter(Boolean))].sort()
+    if (!cat) return todas
+    const propias = [...new Set(entries.filter(e => e.categoria === cat).map(e => e.subcategoria).filter(Boolean))].sort()
+    return propias.length ? propias : todas
   }
 
   return (
