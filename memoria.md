@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 8-Ago-2026 — PR #60 mergeado (correo obligatorio) + hallazgo: envío de DTE por correo en CERO
+
+PR #60 (`feat/cobro-correo-cliente-obligatorio`) hace **obligatorio el correo del cliente** al adjuntarlo a un cobro Factura/CCF, para poder auto-enviarle el DTE. Rebaseado sobre `main` (conflicto en `memoria.md` resuelto por unión; `PaymentModal.jsx` auto-merge limpio) y mergeado con OK de Jose.
+
+**Hallazgo al auditar el pipeline (importante):** el envío por correo **NO está funcionando**.
+- Infra desplegada: edge function `freakie-dte-email` + pg_cron `freakie-dte-email-sweep` (cada minuto) + Apps Script bajo `freakiedogs@gmail.com`. El sweep solo toma DTE de las últimas 2h con `receptor.correo` no nulo.
+- **Agosto: 2,986 DTE sellados, solo 3 con correo de receptor, 0 entregados.** Causa raíz doble: (1) el POS no capturaba el correo (lo arregla #60); (2) aun con correo, la edge function no completa el envío (queda en `pending`, nunca `sent`), y el sweep no reintenta pasadas 2h. **Pendiente: arreglar la entrega** (por qué queda en `pending`).
+
 ## 6-Ago-2026 — Manuales de Torre y Drivers
 
 Cierre del bloque de delivery: dos manuales HTML autocontenidos (mobile-first, tema oscuro) en `public/`:
