@@ -937,6 +937,8 @@ export default function KardexView({ user, show }) {
 }
 
 // ── Editor de unidades y conversión compra→almacén ──
+const UNID_ALMACEN = ['porcion', 'unidad', 'libra', 'onza', 'gramo', 'kilogramo', 'litro', 'mililitro', 'taza', 'cucharada', 'cucharadita', 'bolsa', 'bote', 'caja'];
+const UNID_COMPRA = [...UNID_ALMACEN, 'fardo', 'paquete', 'saco', 'lata', 'galón', 'display'];
 function UnidadesModal({ item, onClose, onSaved }) {
   const [um, setUm] = useState(item.unidad_medida || 'unidad');
   const [uc, setUc] = useState(item.unidad_compra || '');
@@ -958,9 +960,14 @@ function UnidadesModal({ item, onClose, onSaved }) {
         <div style={{ fontWeight: 800, fontSize: 16 }}>Unidades y conversión</div>
         <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 12 }}>{item.nombre}</div>
         <label style={lbl}>Unidad de almacén (cómo se guarda y se usa en recetas)</label>
-        <input value={um} onChange={e => setUm(e.target.value)} placeholder="lb, unidad, galón…" style={{ ...inp, marginBottom: 10 }} />
+        <select value={um} onChange={e => setUm(e.target.value)} style={{ ...inp, marginBottom: 10 }}>
+          {(UNID_ALMACEN.includes(um) ? UNID_ALMACEN : [um, ...UNID_ALMACEN]).map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
         <label style={lbl}>Unidad de compra (cómo viene en el DTE)</label>
-        <input value={uc} onChange={e => setUc(e.target.value)} placeholder="caja, bolsa… (vacío = igual)" style={{ ...inp, marginBottom: 10 }} />
+        <select value={uc} onChange={e => setUc(e.target.value)} style={{ ...inp, marginBottom: 10 }}>
+          <option value="">(igual que almacén)</option>
+          {(uc && !UNID_COMPRA.includes(uc) ? [uc, ...UNID_COMPRA] : UNID_COMPRA).map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
         <label style={lbl}>Factor: 1 {uc || 'compra'} = ? {um || 'almacén'}</label>
         <input type="number" step="any" value={factor} onChange={e => setFactor(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
         <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 14 }}>Ej: comprás caja de 30 lb → compra "caja", almacén "lb", factor 30. Al recibir 5 cajas entran 150 lb.</div>
