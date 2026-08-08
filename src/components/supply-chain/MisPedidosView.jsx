@@ -163,12 +163,14 @@ export default function MisPedidosView({ user, onBack }) {
       }
       setDespachos(desps);
 
-      // Pedido items
+      // Pedido items — en LOTES para no toparse con el límite de 1000 filas de
+      // PostgREST (30 pedidos × ~35 ítems > 1000 → algunos pedidos salían vacíos).
       let pitems = {};
-      if (pedIds.length > 0) {
+      for (let i = 0; i < pedIds.length; i += 15) {
+        const batch = pedIds.slice(i, i + 15);
         const { data: pi, error: ePI } = await db.from('pedido_items')
           .select('id,pedido_id,producto_id,cantidad_solicitada,cantidad_despachada,unidad')
-          .in('pedido_id', pedIds);
+          .in('pedido_id', batch);
         if (ePI) throw ePI;
         (pi || []).forEach(it => {
           if (!pitems[it.pedido_id]) pitems[it.pedido_id] = [];
@@ -181,14 +183,17 @@ export default function MisPedidosView({ user, onBack }) {
       let ditems = {};
       if (desps.length > 0) {
         const despIds = desps.map(d => d.id);
-        const { data: di, error: eDI } = await db.from('despacho_items')
-          .select('id,despacho_id,producto_id,cantidad_despachada,cantidad_recibida,unidad_medida,diferencia,notas')
-          .in('despacho_id', despIds);
-        if (eDI) throw eDI;
-        (di || []).forEach(it => {
-          if (!ditems[it.despacho_id]) ditems[it.despacho_id] = [];
-          ditems[it.despacho_id].push(it);
-        });
+        for (let i = 0; i < despIds.length; i += 15) {
+          const batch = despIds.slice(i, i + 15);
+          const { data: di, error: eDI } = await db.from('despacho_items')
+            .select('id,despacho_id,producto_id,cantidad_despachada,cantidad_recibida,unidad_medida,diferencia,notas')
+            .in('despacho_id', batch);
+          if (eDI) throw eDI;
+          (di || []).forEach(it => {
+            if (!ditems[it.despacho_id]) ditems[it.despacho_id] = [];
+            ditems[it.despacho_id].push(it);
+          });
+        }
       }
       setItemsDespacho(ditems);
 
