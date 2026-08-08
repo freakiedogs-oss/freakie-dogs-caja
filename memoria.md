@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 8-Ago-2026 — Roadmap almacén/logística #4/#11/#12/#7 (PRs #173, #174)
+
+Cerrados los 4 pendientes del roadmap mientras Jose construye recetas/BOM:
+- **#4 Hoja de despacho** (PR #173): RPCs `hoja_despacho(despacho_id)` + `conteo_actual_sucursal(suc, ids[])`. La hoja (imprimir en Preparar y reimprimir en DespachoEnProcesoCard) ahora trae columnas **Conteo actual · Enviado · Stock resultante** (conteo+enviado), agrupada por categoría, landscape. En pantalla cada item muestra conteo suc. + resultante en vivo.
+- **#11 "Queda en pedido"** (PR #173): `pedido_items.sin_stock_cm` + RPC `revisar_stock_cm_pedido(pedido_id)`. Al enviar el pedido del conteo (`ConteoNocturno.enviarPedido`), avisa qué productos NO tiene Casa Matriz (quedan en pedido); en `MisPedidosView` el renglón muestra badge "⏳ queda en pedido".
+- **#12 Pedido de emergencia** (PR #173): RPC `crear_pedido_emergencia(suc, items, usuario, notas)` **aditivo** (no borra el pedido del día, no exige conteo). Botón 🚨 + modal `PedidoEmergenciaModal` en Mis Pedidos (busca productos, cantidades) → 2do pedido a CM marcado 🚨 + chequeo de stock.
+- **#7 GPS motoristas + mandados** (PR #174): nuevo `almacen/DespachoGPS.jsx` (menú *KPI Despacho → 🛵 GPS y Mandados*). Mapa Leaflet en vivo (lee `driver_ubicaciones` + realtime, reutiliza infra GPS del delivery), beacon propio del motorista (`actualizar_ubicacion_driver`/`desconectar_driver`, throttle 4s), y **mandados con bitácora**: tabla `mandados` + RPCs `crear_mandado`/`mandado_estado`/`listar_mandados` (sella GPS inicio/fin, gasto opcional, estados por color). Nota: el mapa muestra TODOS los motoristas online (delivery+despacho comparten `driver_ubicaciones`).
+
 ## 8-Ago-2026 — Ciclo menú→receta→sub-receta→MP→DTE + deducción real al cobrar (PR #167)
 
 **Contexto:** Jose quería verificar que el sistema cumple su lógica (cada item del menú del POS se compone de items del conteo/almacén — MP directa, subproductos o porcionados — que se explotan hasta la MP mapeada al DTE de compra; bebidas BEES = descuento 1:1 al vender) y una UI más amigable para trabajarlo. Jose recalcó: **reutilizar lo ya construido, no dejar vistas redundantes.**
