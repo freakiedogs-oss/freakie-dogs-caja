@@ -30,6 +30,7 @@ export default function RecepcionDTE({ user, show }) {
   const [saving, setSaving] = useState(false);
   const [opciones, setOpciones] = useState({ categorias: [], subcategorias: [] });
   const [normProv, setNormProv] = useState(null); // proveedor que se está clasificando
+  const [manualOpen, setManualOpen] = useState(false);
 
   const cargar = async () => {
     setLoading(true);
@@ -124,12 +125,21 @@ export default function RecepcionDTE({ user, show }) {
     return (
       <div style={{ padding: 16, color: C.text, maxWidth: 900, margin: '0 auto' }}>
         <button onClick={() => setSel(null)} style={btn('#333')}>← Volver a la bandeja</button>
-        <div style={{ ...box, marginTop: 12 }}>
-          <div style={{ fontSize: 17, fontWeight: 800 }}>{sel.proveedor}</div>
-          <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
-            {sel.fecha_emision} · {fmt(sel.monto_total)} · {sel.dte_codigo || sel.numero_control}
-            {sel.categoria ? ` · ${sel.categoria}${sel.subcategoria ? ' / ' + sel.subcategoria : ''}` : ''}
+        <div style={{ ...box, marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 17, fontWeight: 800 }}>{sel.proveedor}{sel.manual ? <span style={{ fontSize: 11, color: C.blue, marginLeft: 8 }}>· manual</span> : null}</div>
+            <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+              {sel.fecha_emision} · {fmt(sel.monto_total)} · {sel.dte_codigo || sel.numero_control}
+              {sel.categoria ? ` · ${sel.categoria}${sel.subcategoria ? ' / ' + sel.subcategoria : ''}` : ''}
+            </div>
           </div>
+          <PagoBadge estado={sel.estado_pago} />
+          {(sel.comprobante_urls || []).map((u, i) => (
+            <a key={i} href={u} target="_blank" rel="noopener"
+               style={{ ...btn('#1e293b'), border: `1px solid ${C.green}`, color: C.green, textDecoration: 'none', fontSize: 12 }}>
+              📎 Comprobante{(sel.comprobante_urls.length > 1) ? ` ${i + 1}` : ''}
+            </a>
+          ))}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
@@ -143,7 +153,7 @@ export default function RecepcionDTE({ user, show }) {
         <div style={{ ...box, marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
           <label style={{ fontSize: 13, color: C.dim }}>
             📷 Foto (opcional):{' '}
-            <input type="file" accept="image/*" onChange={e => setFoto(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
+            <input type="file" accept="image/*" capture="environment" onChange={e => setFoto(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
           </label>
           <div style={{ flex: 1 }} />
           {pendientes > 0 && (
@@ -167,8 +177,14 @@ export default function RecepcionDTE({ user, show }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <div style={{ fontSize: 18, fontWeight: 800 }}>📋 Bandeja de Recepción (DTE)</div>
         <div style={{ flex: 1 }} />
+        <button onClick={() => setManualOpen(true)} style={{ ...btn(C.blue), color: '#04212b' }}>+ DTE manual</button>
         <button onClick={cargar} style={btn('#333')}>↻</button>
       </div>
+
+      {manualOpen && (
+        <DteManualModal user={user} onClose={() => setManualOpen(false)}
+          onSaved={() => { setManualOpen(false); cargar(); }} />
+      )}
 
       {sinNorm.length > 0 && (
         <div style={{ ...box, borderLeft: `3px solid ${C.yellow}`, marginBottom: 12 }}>
@@ -376,6 +392,70 @@ function NormalizarModal({ prov, opciones, user, onClose, onSaved }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={btn('#333')}>Cancelar</button>
           <button onClick={guardar} disabled={!form.categoria || saving} style={{ ...btn(form.categoria ? C.green : '#333'), color: form.categoria ? '#04220f' : C.dim }}>{saving ? 'Guardando…' : 'Guardar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Ingresar un DTE que no llegó por correo (manual) ──
+function DteManualModal({ user, onClose, onSaved }) {
+  const toast = useToast?.() || {};
+  const [f, setF] = useState({ proveedor: '', nit: '', fecha: new Date().toISOString().slice(0, 10), numero_control: '' });
+  const [items, setItems] = useState([{ descripcion: '', cantidad: '', precio_unitario: '' }]);
+  const [saving, setSaving] = useState(false);
+  const setItem = (i, k, v) => setItems(is => is.map((it, j) => j === i ? { ...it, [k]: v } : it));
+  const addItem = () => setItems(is => [...is, { descripcion: '', cantidad: '', precio_unitario: '' }]);
+  const delItem = (i) => setItems(is => is.filter((_, j) => j !== i));
+  const monto = items.reduce((s, it) => s + (Number(it.cantidad) || 0) * (Number(it.precio_unitario) || 0), 0);
+  const valido = f.proveedor.trim() && items.some(it => it.descripcion.trim() && Number(it.cantidad) > 0);
+
+  const guardar = async () => {
+    if (!valido) return;
+    setSaving(true);
+    const { data, error } = await db.rpc('crear_dte_manual', {
+      p_proveedor: f.proveedor, p_nit: f.nit || null, p_fecha: f.fecha,
+      p_monto: monto, p_numero_control: f.numero_control || null,
+      p_items: items.filter(it => it.descripcion.trim()).map(it => ({
+        descripcion: it.descripcion, cantidad: Number(it.cantidad) || 0, precio_unitario: Number(it.precio_unitario) || 0,
+      })),
+      p_usuario: user?.nombre || null,
+    });
+    setSaving(false);
+    if (error) { toast.error?.('❌ ' + error.message); return; }
+    toast.success?.('✅ DTE ingresado — ya está en la bandeja para recibir');
+    onSaved();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ ...box, width: '100%', maxWidth: 560, marginTop: 24 }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 2 }}>Ingresar DTE manual</div>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>Para facturas de proveedor que no llegaron por correo. Aparecerá en la bandeja para recibir.</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div><label style={lbl}>Proveedor *</label><input value={f.proveedor} onChange={e => setF(v => ({ ...v, proveedor: e.target.value }))} style={{ ...inp, width: '100%' }} /></div>
+          <div><label style={lbl}>NIT</label><input value={f.nit} onChange={e => setF(v => ({ ...v, nit: e.target.value }))} style={{ ...inp, width: '100%' }} /></div>
+          <div><label style={lbl}>Fecha</label><input type="date" value={f.fecha} onChange={e => setF(v => ({ ...v, fecha: e.target.value }))} style={{ ...inp, width: '100%' }} /></div>
+          <div><label style={lbl}>Nº control / factura</label><input value={f.numero_control} onChange={e => setF(v => ({ ...v, numero_control: e.target.value }))} style={{ ...inp, width: '100%' }} /></div>
+        </div>
+        <label style={lbl}>Ítems</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+          {items.map((it, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input value={it.descripcion} onChange={e => setItem(i, 'descripcion', e.target.value)} placeholder="Descripción" style={{ ...inp, flex: 1 }} />
+              <input value={it.cantidad} onChange={e => setItem(i, 'cantidad', e.target.value)} placeholder="Cant" type="number" step="any" style={{ ...inp, width: 70 }} />
+              <input value={it.precio_unitario} onChange={e => setItem(i, 'precio_unitario', e.target.value)} placeholder="P.U." type="number" step="any" style={{ ...inp, width: 80 }} />
+              {items.length > 1 && <button onClick={() => delItem(i)} style={{ ...btn('#333'), fontSize: 12 }}>✕</button>}
+            </div>
+          ))}
+        </div>
+        <button onClick={addItem} style={{ ...btn('#333'), fontSize: 12 }}>+ Ítem</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
+          <div style={{ fontWeight: 800 }}>Total: {fmt(monto)}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} style={btn('#333')}>Cancelar</button>
+            <button onClick={guardar} disabled={!valido || saving} style={{ ...btn(valido ? C.green : '#333'), color: valido ? '#04220f' : C.dim }}>{saving ? 'Guardando…' : 'Ingresar'}</button>
+          </div>
         </div>
       </div>
     </div>
