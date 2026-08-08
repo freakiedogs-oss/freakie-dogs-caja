@@ -97,8 +97,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Almacén',
     items: [
-      { key: 'recepcion-dte', label: 'Bandeja DTE', icon: '📋', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
-      { key: 'recepcion', label: 'Recepción', icon: '📥', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
+      { key: 'recepcion-dte', label: 'Recepción (Bandeja DTE)', icon: '📥', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'despacho', label: 'Despacho', icon: '🚚', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'inventario', label: 'Inventario', icon: '📦', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'historial', label: 'Historial', icon: '📋', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
