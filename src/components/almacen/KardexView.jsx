@@ -622,6 +622,13 @@ export default function KardexView({ user, show }) {
                   <button onClick={() => setEditUnid(item)}
                     style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
                     title="Editar unidades y conversión">📐 Unidades</button>
+                  <button onClick={async () => {
+                    if (!window.confirm(`¿Eliminar "${item.nombre}"? Sale del catálogo.`)) return;
+                    const { error } = await db.rpc('eliminar_producto', { p_producto_id: item.id });
+                    if (error) { window.alert('❌ ' + error.message); return; }
+                    fetchCatalogo();
+                  }} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
+                    title="Eliminar producto">🗑️</button>
                 </div>
               ))}
               {editUnid && <UnidadesModal item={editUnid} onClose={() => setEditUnid(null)} onSaved={() => { setEditUnid(null); fetchCatalogo(); }} />}
