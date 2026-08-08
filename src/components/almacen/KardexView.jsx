@@ -4,6 +4,8 @@ import { STORES, today, fmtDate, n } from '../../config';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import RecetasView from '../admin/RecetasView';
+import MapeoMenu from './MapeoMenu';
+import CosteoView from '../admin/CosteoView';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONSTANTES
@@ -480,7 +482,9 @@ export default function KardexView({ user, show }) {
     { id: 'inventario',  label: '📦 Inventario' },
     { id: 'conteo',      label: '🌙 Lista Conteo' },
     { id: 'mapeo',       label: '🔗 Mapeo Compras' },
+    { id: 'menu',        label: '🍔 Menú (BOM)' },
     { id: 'recetas',     label: '📋 Recetas' },
+    { id: 'costeo',      label: '💰 Costeo' },
     { id: 'movimientos', label: '📊 Historial' },
     { id: 'ajustes',     label: '⚙️ Ajustes' },
   ];
@@ -804,7 +808,11 @@ export default function KardexView({ user, show }) {
         ═══════════════════════════════════════════════════════════════ */}
         {activeTab === 'conteo' && <ConteoLista user={user} />}
 
+        {activeTab === 'menu' && <MapeoMenu user={user} />}
+
         {activeTab === 'recetas' && <RecetasView user={user} />}
+
+        {activeTab === 'costeo' && <CosteoView />}
 
         {/* ═══════════════════════════════════════════════════════════════
             TAB 4: HISTORIAL DE MOVIMIENTOS
