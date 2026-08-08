@@ -32,6 +32,9 @@ export default function RecepcionDTE({ user, show }) {
   const [normProv, setNormProv] = useState(null); // proveedor que se está clasificando
   const [manualOpen, setManualOpen] = useState(false);
   const [tab, setTab] = useState('bandeja'); // 'bandeja' | 'historial'
+  const [fProv, setFProv] = useState('');
+  const [fDesde, setFDesde] = useState('');
+  const [fHasta, setFHasta] = useState('');
 
   const cargar = async () => {
     setLoading(true);
@@ -50,6 +53,14 @@ export default function RecepcionDTE({ user, show }) {
   useEffect(() => { cargar(); }, []);
 
   const catById = useMemo(() => Object.fromEntries(catalogo.map(p => [p.id, p])), [catalogo]);
+
+  const dtesFiltrados = useMemo(() => {
+    const q = fProv.trim().toLowerCase();
+    return dtes.filter(d =>
+      (!q || (d.proveedor || '').toLowerCase().includes(q)) &&
+      (!fDesde || (d.fecha_emision || '') >= fDesde) &&
+      (!fHasta || (d.fecha_emision || '') <= fHasta));
+  }, [dtes, fProv, fDesde, fHasta]);
 
   // Abrir un DTE: resolver sugerencias por línea no mapeada
   const abrir = async (dte) => {
@@ -228,17 +239,28 @@ export default function RecepcionDTE({ user, show }) {
           onClose={() => setNormProv(null)} onSaved={() => { setNormProv(null); cargar(); }} />
       )}
 
+      {tab === 'bandeja' && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+          <input value={fProv} onChange={e => setFProv(e.target.value)} placeholder="🔎 Proveedor…" style={{ ...inp, flex: 1, minWidth: 160 }} />
+          <span style={{ fontSize: 11, color: C.dim }}>Desde</span>
+          <input type="date" value={fDesde} onChange={e => setFDesde(e.target.value)} style={inp} />
+          <span style={{ fontSize: 11, color: C.dim }}>Hasta</span>
+          <input type="date" value={fHasta} onChange={e => setFHasta(e.target.value)} style={inp} />
+          {(fProv || fDesde || fHasta) && <button onClick={() => { setFProv(''); setFDesde(''); setFHasta(''); }} style={{ ...btn('#333'), fontSize: 12 }}>Limpiar</button>}
+        </div>
+      )}
+
       {tab === 'bandeja' && (dtes.length === 0 ? (
         <div style={{ ...box, textAlign: 'center', color: C.dim, padding: 30 }}>
           ✅ No hay DTE pendientes de recibir.
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{dtes.length} DTE por recibir</div>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{dtesFiltrados.length} de {dtes.length} DTE</div>
       ))}
 
       {tab === 'bandeja' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {dtes.map(d => (
+          {dtesFiltrados.map(d => (
             <div key={d.id} style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
               onClick={() => abrir(d)}>
               <div style={{ flex: 1 }}>
@@ -510,6 +532,8 @@ function HistorialRecepciones({ user, opciones }) {
   const [openId, setOpenId] = useState(null);
   const [edit, setEdit] = useState({});
   const [saving, setSaving] = useState(false);
+  const [fProv, setFProv] = useState('');
+  const recsFiltradas = (recs || []).filter(r => !fProv.trim() || (r.proveedor || '').toLowerCase().includes(fProv.trim().toLowerCase()));
 
   const cargar = async () => {
     setRecs(null);
@@ -552,15 +576,16 @@ function HistorialRecepciones({ user, opciones }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+        <input value={fProv} onChange={e => setFProv(e.target.value)} placeholder="🔎 Proveedor…" style={{ ...inp, minWidth: 150 }} />
         <span style={{ fontSize: 12, color: C.dim }}>Desde</span>
         <input type="date" value={desde} onChange={e => setDesde(e.target.value)} style={inp} />
         <span style={{ fontSize: 12, color: C.dim }}>Hasta</span>
         <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} style={inp} />
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: C.dim }}>{recs.length} recepciones{!puedeEditar ? ' · solo lectura' : ''}</span>
+        <span style={{ fontSize: 12, color: C.dim }}>{recsFiltradas.length} recepciones{!puedeEditar ? ' · solo lectura' : ''}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {recs.map(r => (
+        {recsFiltradas.map(r => (
           <div key={r.id} style={{ ...box, borderLeft: `3px solid ${r.estado === 'anulada' ? C.red : C.green}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => abrir(r)}>
               <div style={{ flex: 1 }}>
@@ -605,7 +630,7 @@ function HistorialRecepciones({ user, opciones }) {
             )}
           </div>
         ))}
-        {recs.length === 0 && <div style={{ ...box, textAlign: 'center', color: C.dim, padding: 24 }}>Sin recepciones en el rango.</div>}
+        {recsFiltradas.length === 0 && <div style={{ ...box, textAlign: 'center', color: C.dim, padding: 24 }}>Sin recepciones en el rango.</div>}
       </div>
     </div>
   );
