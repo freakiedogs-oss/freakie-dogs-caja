@@ -172,6 +172,7 @@ export default function KardexView({ user, show }) {
      TAB 1: INVENTARIO (Catálogo de ingredientes y productos)
      ══════════════════════════════════════════════════════════════════════ */
   const [catalogo, setCatalogo] = useState([]);
+  const [editUnid, setEditUnid] = useState(null); // producto cuyas unidades se editan
   const [catFilter, setCatFilter] = useState('todos');
   const [catSearch, setCatSearch] = useState('');
   const [loadingCat, setLoadingCat] = useState(false);
@@ -183,7 +184,7 @@ export default function KardexView({ user, show }) {
     setLoadingCat(true);
     try {
       let q = db.from('catalogo_productos')
-        .select('id, nombre, sku, tipo, unidad_medida, categoria, activo, codigo')
+        .select('id, nombre, sku, tipo, unidad_medida, unidad_compra, factor_compra, categoria, activo, codigo')
         .eq('activo', true).order('nombre');
       if (catFilter !== 'todos') {
         if (catFilter === 'materia_prima') q = q.or('tipo.eq.materia_prima,tipo.is.null');
@@ -611,12 +612,19 @@ export default function KardexView({ user, show }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate">{item.nombre}</p>
                     <p className="text-xs text-muted-foreground">
-                      {item.sku || 'sin SKU'} · {item.unidad_medida || 'unidad'}
+                      {item.sku || 'sin SKU'} · almacén: {item.unidad_medida || 'unidad'}
+                      {item.unidad_compra && Number(item.factor_compra) !== 1
+                        ? ` · compra: 1 ${item.unidad_compra} = ${item.factor_compra} ${item.unidad_medida || 'u'}`
+                        : ''}
                       {item.categoria ? ` · ${item.categoria}` : ''}
                     </p>
                   </div>
+                  <button onClick={() => setEditUnid(item)}
+                    style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
+                    title="Editar unidades y conversión">📐 Unidades</button>
                 </div>
               ))}
+              {editUnid && <UnidadesModal item={editUnid} onClose={() => setEditUnid(null)} onSaved={() => { setEditUnid(null); fetchCatalogo(); }} />}
               {catalogo.length >= 1000 && (
                 <p className="text-xs text-center text-muted-foreground mt-2">
                   Mostrando primeros 1,000 resultados. Usa el buscador para filtrar.
@@ -924,6 +932,43 @@ export default function KardexView({ user, show }) {
             </div>
           </div>
         </div>)}
+    </div>
+  );
+}
+
+// ── Editor de unidades y conversión compra→almacén ──
+function UnidadesModal({ item, onClose, onSaved }) {
+  const [um, setUm] = useState(item.unidad_medida || 'unidad');
+  const [uc, setUc] = useState(item.unidad_compra || '');
+  const [factor, setFactor] = useState(item.factor_compra ?? 1);
+  const [saving, setSaving] = useState(false);
+  const guardar = async () => {
+    setSaving(true);
+    const { error } = await db.rpc('set_unidades_producto', {
+      p_producto_id: item.id, p_unidad_medida: um, p_unidad_compra: uc || null, p_factor_compra: Number(factor) || 1,
+    });
+    setSaving(false);
+    if (!error) onSaved();
+  };
+  const inp = { background: '#1e1e1e', border: '1px solid #2a2a2a', color: '#f0f0f0', borderRadius: 8, padding: '7px 10px', fontSize: 13, width: '100%' };
+  const lbl = { fontSize: 11, color: '#8a8a8a', display: 'block', marginBottom: 3 };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 16, width: '100%', maxWidth: 440 }}>
+        <div style={{ fontWeight: 800, fontSize: 16 }}>Unidades y conversión</div>
+        <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 12 }}>{item.nombre}</div>
+        <label style={lbl}>Unidad de almacén (cómo se guarda y se usa en recetas)</label>
+        <input value={um} onChange={e => setUm(e.target.value)} placeholder="lb, unidad, galón…" style={{ ...inp, marginBottom: 10 }} />
+        <label style={lbl}>Unidad de compra (cómo viene en el DTE)</label>
+        <input value={uc} onChange={e => setUc(e.target.value)} placeholder="caja, bolsa… (vacío = igual)" style={{ ...inp, marginBottom: 10 }} />
+        <label style={lbl}>Factor: 1 {uc || 'compra'} = ? {um || 'almacén'}</label>
+        <input type="number" step="any" value={factor} onChange={e => setFactor(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
+        <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 14 }}>Ej: comprás caja de 30 lb → compra "caja", almacén "lb", factor 30. Al recibir 5 cajas entran 150 lb.</div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={guardar} disabled={saving} style={{ background: '#4ade80', color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
+        </div>
+      </div>
     </div>
   );
 }
