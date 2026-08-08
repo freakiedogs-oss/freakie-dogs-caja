@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 8-Ago-2026 — Ciclo menú→receta→sub-receta→MP→DTE + deducción real al cobrar (PR #167)
+
+**Contexto:** Jose quería verificar que el sistema cumple su lógica (cada item del menú del POS se compone de items del conteo/almacén — MP directa, subproductos o porcionados — que se explotan hasta la MP mapeada al DTE de compra; bebidas BEES = descuento 1:1 al vender) y una UI más amigable para trabajarlo. Jose recalcó: **reutilizar lo ya construido, no dejar vistas redundantes.**
+
+**Diagnóstico (verificado en BD):** la lógica era el diseño correcto y el schema lo soportaba al ~80% (`receta_ingredientes.sub_receta_id`, `recetas.tipo` plato_menu/sub_receta/porcionado, `recetas.catalogo_id`, tarjeta PT/Terminados, tabs Recetas/Costeo). El **motor de costo recursivo ya existía y es correcto** (`receta_costo_total` recurre sub_receta→MP→`costo_producto`; `costeo_menu`). PERO el cableado estaba a medias y **una venta NO descontaba inventario**:
+- 3 tuberías de deducción, ninguna completa. La del batch (`descontar_inventario_ventas`) colgaba de Quanto (muerto 1-ago). La "nueva" `pos_deducir_inventario` **ya la llamaba el POS al cobrar** (`POSMain.jsx:956`, best-effort, tragaba el error) pero estaba **rota**: referenciaba columnas/tabla inexistentes (`recetas.producto_id`, `receta_ingredientes.ingrediente_id`, `inventario_conteo`, `sucursales.codigo`) y **no recurría** sub-recetas.
+- Enlace menú↔receta **inexistente**: 0/493 items con `producto_id`, 0/54 recetas con `catalogo_id`. Solo el viejo `quanto_producto_map`.
+- **139 platillos distintos, 0 mapeados.**
+
+**Hecho (PR #167, ancla elegida: plato en catálogo):**
+- **`pos_deducir_inventario` reescrita** (2 migraciones): explota la receta **recursivamente por `sub_receta`** hasta MP (misma lógica que `receta_costo_total`, ÷ rendimiento), descuenta vía **`kardex_mover_lote`** (stock+auditoría), **idempotente** por cuenta (chequea kardex_movimientos ref pos_cuenta+venta), `permitir_negativo` para no bloquear el cobro. BEES/bebidas sin receta = descuento directo 1:1.
+- **Enlace canónico** por columnas existentes: `pos_menu_items.producto_id → catalogo(producto_terminado) ← recetas.catalogo_id`. RPCs: `mapear_menu_item` (crea/reusa el plato PT y enlaza **los 5 canales a la vez** por nombre), `mapear_menu_item_producto` (BEES), `desmapear_menu_item`, `mapear_menu_auto` (bootstrap por nombre exacto, 24 candidatos), `ficha_menu_item`+`bom_arbol` (árbol técnico), `cobertura_menu`, `mapeo_menu_lista`.
+- **UI `MapeoMenu.jsx`**: tab **🍔 Menú (BOM)** en Kardex — lista de platillos con estado/costo/margen/confiabilidad, enlace item-por-item (modal receta o producto BEES), árbol BOM expandible con flag ✔DTE/⚠ por MP, cobertura + auto-enlace. Reusa **CosteoView** en tab 💰 Costeo.
+
+**⚠️ Riesgo operativo (importante):** mapear un platillo **activa la deducción en vivo** de su venta. Varias sub-recetas de lote tienen el **`rendimiento` mal** (ej. "Mezcla de Carne Smash" → un Combo costeaba $486 porque no dividía entre porciones). Si se mapea una receta así, **una venta descuenta lote entero** (11 lb de carne). Por eso **NADA se mapeó automáticamente**; la UI marca la confiabilidad y Jose mapea item por item corrigiendo rendimiento antes. `npm run build` ✅.
+
 ## 8-Ago-2026 — PR #60 mergeado (correo obligatorio) + hallazgo: envío de DTE por correo en CERO
 
 PR #60 (`feat/cobro-correo-cliente-obligatorio`) hace **obligatorio el correo del cliente** al adjuntarlo a un cobro Factura/CCF, para poder auto-enviarle el DTE. Rebaseado sobre `main` (conflicto en `memoria.md` resuelto por unión; `PaymentModal.jsx` auto-merge limpio) y mergeado con OK de Jose.
