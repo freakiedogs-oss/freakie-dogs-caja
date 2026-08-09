@@ -21,6 +21,22 @@ const CANAL_INFO = {
   delivery_app:    { ic: 'phone',    label: 'App Delivery', color: '#f472b6' },
 }
 
+// Semáforo de atención (Frank): nivel de la comanda = el MÁS ALTO de sus ítems.
+//  - especial: algún ítem marcado "atención especial" (alergia, cambio de queso, quitar ingrediente).
+//  - modificado: algún ítem con extras/agregados con costo (tocino extra, agrandado…).
+//  - normal: preparación estándar.
+const NIVEL_INFO = {
+  especial:   { label: 'ESPECIAL',   color: '#ef4444' },
+  modificado: { label: 'MODIFICADO', color: '#fbbf24' },
+  normal:     { label: 'NORMAL',     color: '#22c55e' },
+}
+const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2 }
+const itemNivel = (it) =>
+  it?.atencion_especial ? 'especial'
+    : (Number(it?.precio_modificadores) > 0 ? 'modificado' : 'normal')
+const comandaNivel = (items) =>
+  (items || []).reduce((acc, it) => (NIVEL_RANK[itemNivel(it)] > NIVEL_RANK[acc] ? itemNivel(it) : acc), 'normal')
+
 // Sucursal = mesa + para_llevar (se atienden juntos en cocina)
 const CANAL_FILTER = {
   todos:      null,
@@ -330,9 +346,9 @@ export default function KDSScreen({ user, onBack }) {
       }
       map.get(key).items.push(row)
     })
-    return [...map.values()].sort((a, b) =>
-      new Date(a.recibido_at) - new Date(b.recibido_at)
-    )
+    return [...map.values()]
+      .map(c => ({ ...c, nivel: comandaNivel(c.items) }))
+      .sort((a, b) => new Date(a.recibido_at) - new Date(b.recibido_at))
   }
 
   // ── Filtrar según modo + filtro activo ──
@@ -586,6 +602,26 @@ export default function KDSScreen({ user, onBack }) {
             })}
           </div>
         )}
+        {/* Contadores de atención (semáforo) */}
+        {tab === 'activas' && comandas.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, padding: '0 12px 10px', flexWrap: 'wrap' }}>
+            {['especial', 'modificado', 'normal'].map(k => {
+              const n = comandas.filter(c => c.nivel === k).length
+              const inf = NIVEL_INFO[k]
+              return (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 8, background: '#1c1c22', border: `1px solid ${inf.color}55` }}>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: inf.color, display: 'inline-block' }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#c9c7d1' }}>{inf.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: inf.color }}>{n}</span>
+                </div>
+              )
+            })}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 8, background: '#1c1c22', border: '1px solid #2a2a32' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#8b8997' }}>TOTAL</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: '#e5e7eb' }}>{comandas.length}</span>
+            </div>
+          </div>
+        )}
         {tab === 'activas' ? (
           // ── VISTA ACTIVAS ──
           loading ? (
@@ -625,6 +661,7 @@ export default function KDSScreen({ user, onBack }) {
             <div className="kds-cards-grid">
               {comandas.map(comanda => {
                 const info       = canalInfo(comanda.canal)
+                const nivel      = NIVEL_INFO[comanda.nivel] || NIVEL_INFO.normal
                 const timer      = elapsed(comanda.recibido_at)
                 const todosListos = comanda.items.every(i => i.estado === 'completado')
                 const isBumping   = bumping === comanda.key
@@ -634,11 +671,18 @@ export default function KDSScreen({ user, onBack }) {
                   <div
                     key={comanda.key}
                     className="kds-card"
-                    style={{ borderTopColor: info.color, ...(timer.urgent ? { boxShadow: `0 0 0 1px ${timer.color}33` } : {}) }}
+                    style={{
+                      borderColor: nivel.color, borderTopColor: nivel.color,
+                      ...(comanda.nivel !== 'normal'
+                        ? { boxShadow: `0 0 0 2px ${nivel.color}${comanda.nivel === 'especial' ? '66' : '33'}` }
+                        : (timer.urgent ? { boxShadow: `0 0 0 1px ${timer.color}33` } : {})),
+                    }}
                   >
                     {/* Card header */}
                     <div className="kds-card-header">
                       <div className="kds-card-title">
+                        {/* Etiqueta de nivel (no depender solo del color) */}
+                        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.4px', padding: '2px 8px', borderRadius: 6, background: nivel.color, color: comanda.nivel === 'modificado' ? '#1a1a1a' : '#fff' }}>{nivel.label}</span>
                         <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
                         <span className="kds-card-canal" style={{ color: info.color }}>
                           {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
@@ -694,7 +738,10 @@ export default function KDSScreen({ user, onBack }) {
                                 {done ? <Icon name="check" size={14} color="#2dd4a8" /> : inProg ? <Icon name="rotate" size={14} color="#fbbf24" /> : <Icon name="circle" size={12} color="#6b6878" />}
                               </span>
                               <span className="kds-item-qty">{item.cantidad || 1}×</span>
-                              <span className="kds-item-name">{item.nombre_item}</span>
+                              <span className="kds-item-name" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 800 } : undefined}>{item.nombre_item}</span>
+                              {item.atencion_especial && (
+                                <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#fff', background: '#ef4444', padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px' }}>ESPECIAL</span>
+                              )}
                             </span>
                             {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {
                               const porGrupo = {}
@@ -722,7 +769,7 @@ export default function KDSScreen({ user, onBack }) {
                               )
                             })()}
                             {item.nota && (
-                              <span className="kds-item-notarow">📝 {item.nota}</span>
+                              <span className="kds-item-notarow" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 700 } : undefined}>📝 {item.nota}</span>
                             )}
                           </button>
                         )
@@ -841,7 +888,10 @@ export default function KDSScreen({ user, onBack }) {
                             <span className="kds-item-main">
                               <span className="kds-item-status"><Icon name="check" size={13} color="#2dd4a8" /></span>
                               <span className="kds-item-qty">{item.cantidad || 1}×</span>
-                              <span className="kds-item-name">{item.nombre_item}</span>
+                              <span className="kds-item-name" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 800 } : undefined}>{item.nombre_item}</span>
+                              {item.atencion_especial && (
+                                <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#fff', background: '#ef4444', padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px' }}>ESPECIAL</span>
+                              )}
                             </span>
                             {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {
                               const porGrupo = {}
@@ -869,7 +919,7 @@ export default function KDSScreen({ user, onBack }) {
                               )
                             })()}
                             {item.nota && (
-                              <span className="kds-item-notarow">📝 {item.nota}</span>
+                              <span className="kds-item-notarow" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 700 } : undefined}>📝 {item.nota}</span>
                             )}
                           </div>
                         ))}

@@ -292,7 +292,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       setLoadingCuenta(true)
       const { data: itemsData } = await db
         .from('pos_cuenta_items')
-        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes')
+        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes, atencion_especial')
         .eq('cuenta_id', cuentaCtx.cuentaId)
         .is('cancelado_motivo', null)
         .order('created_at')
@@ -310,6 +310,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           precioExtra:   parseFloat(it.precio_modificadores) || 0,
           componentes:   it.componentes || [],
           esCombo:       Array.isArray(it.componentes) && it.componentes.length > 0,
+          atencionEspecial: !!it.atencion_especial,
         }))
         setItems(loaded)
         setCommandedCount(loaded.length)
@@ -347,10 +348,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const itemsActivaCat = categorias.find(c => c.id === activeCat)?.items || []
 
   // ── Acciones de orden ──
-  const addItemToCart = useCallback((product, modificadores = [], precioExtra = 0, qty = 1, nota = '') => {
+  const addItemToCart = useCallback((product, modificadores = [], precioExtra = 0, qty = 1, nota = '', atencionEspecial = false) => {
     setItems(prev => {
       // Solo fusiona líneas idénticas cuando NO hay modificadores ni nota
-      if (modificadores.length === 0 && !nota && qty === 1) {
+      if (modificadores.length === 0 && !nota && qty === 1 && !atencionEspecial) {
         const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved && (!i.modificadores || i.modificadores.length === 0))
         if (idx >= 0) {
           const next = [...prev]
@@ -368,6 +369,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         estacion: product.estacion || 'general',
         modificadores,
         precioExtra,
+        atencionEspecial,
         modGrupos: product.modGrupos || [],   // se guarda para poder re-editar el ítem desde el resumen
       }]
     })
@@ -421,6 +423,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         prioridad,
         comanda_numero: comandaSeq,
         comanda_uid:    comandaUid,
+        atencion_especial: !!it.atencionEspecial,
       }
       if (it.esCombo && (it.componentes || []).length) {
         return it.componentes.map(c => {
@@ -710,6 +713,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         notas:           it.nota || null,
         modificadores:   it.modificadores?.length ? it.modificadores : null,
         precio_modificadores: it.precioExtra || 0,
+        atencion_especial: !!it.atencionEspecial,
         componentes:     it.componentes?.length ? it.componentes : null,
         comanda_numero:  comandaSeq,
         enviado_cocina_at: new Date().toISOString(),
@@ -1560,6 +1564,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           initial={editIdx != null ? {
             qty: items[editIdx]?.qty || 1,
             nota: items[editIdx]?.nota || '',
+            atencionEspecial: !!items[editIdx]?.atencionEspecial,
             selecciones: (items[editIdx]?.modificadores || []).reduce((acc, m) => {
               if (!acc[m.grupo_id]) acc[m.grupo_id] = []
               acc[m.grupo_id].push(m.opcion_id)
@@ -1567,13 +1572,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             }, {}),
           } : null}
           onClose={() => { setModPicker(null); setEditIdx(null) }}
-          onConfirm={({ qty, nota, modificadores, precioModificadores }) => {
+          onConfirm={({ qty, nota, modificadores, precioModificadores, atencionEspecial }) => {
             if (editIdx != null) {
               setItems(prev => prev.map((it, i) => i === editIdx
-                ? { ...it, qty, nota, modificadores, precioExtra: precioModificadores }
+                ? { ...it, qty, nota, modificadores, precioExtra: precioModificadores, atencionEspecial }
                 : it))
             } else {
-              addItemToCart(modPicker, modificadores, precioModificadores, qty, nota)
+              addItemToCart(modPicker, modificadores, precioModificadores, qty, nota, atencionEspecial)
             }
             setModPicker(null); setEditIdx(null)
           }}
