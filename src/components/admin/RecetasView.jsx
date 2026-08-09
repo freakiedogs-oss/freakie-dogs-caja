@@ -126,12 +126,17 @@ export default function RecetasView({ user }) {
   const guardarReceta = async () => {
     if (!editReceta?.nombre) return;
     if (editReceta.id) {
-      await db.from('recetas').update({
+      const cambios = {
         nombre: editReceta.nombre, tipo: editReceta.tipo, categoria: editReceta.categoria,
         rendimiento: n(editReceta.rendimiento) || 1, unidad_rendimiento: editReceta.unidad_rendimiento || 'porcion',
         precio_venta: editReceta.precio_venta ? n(editReceta.precio_venta) : null,
         notas: editReceta.notas || '',
-      }).eq('id', editReceta.id);
+      };
+      await db.from('recetas').update(cambios).eq('id', editReceta.id);
+      // Refrescar la receta abierta con los mismos valores normalizados que se
+      // guardaron, para que el subtítulo "Rinde X" no quede viejo (cargar() solo
+      // recarga la lista, no `sel`).
+      setSel(s => (s?.id === editReceta.id ? { ...s, ...cambios } : s));
     } else {
       await db.from('recetas').insert({
         nombre: editReceta.nombre, tipo: editReceta.tipo || 'sub_receta',

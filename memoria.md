@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 9-Ago-2026 — Recetas: fix rendimiento que "no sincronizaba" (subtítulo stale)
+
+- **Síntoma (Jose):** en una receta (ej. *Cheddar Porcionado*), el "Rinde 3 bolsa" del subtítulo y el campo *Rendimiento* del modal *Editar Receta* parecían desincronizados; tocaba ajustar ambos a mano.
+- **Causa raíz:** son el **mismo campo** `recetas.rendimiento` (un solo valor en DB), mostrado/editable en dos rutas. `guardarRendimiento` (edición inline del subtítulo) hacía `setSel(...)` y refrescaba, pero `guardarReceta` (el modal) solo llamaba `cargar()` — que recarga la **lista** pero NO la receta abierta (`sel`). Tras guardar por el modal, el subtítulo seguía mostrando el número viejo hasta reabrir → parecía que "no agarró".
+- **Fix (`RecetasView.jsx`, `guardarReceta`):** al editar receta existente, construyo el objeto `cambios` una sola vez (mismos valores normalizados que van a la DB) y hago `setSel(s => s?.id===editReceta.id ? {...s, ...cambios} : s)`. No es un problema de datos: **manda el último guardado** porque es una sola columna.
+- Build OK. Frontend → requiere merge PR + deploy Vercel para verse en tablet.
+
 ## 8-Ago-2026 — Despacho: entrega contingencia + KPI reparto + mandados asignables + fix mapa (PR #180)
 
 - **Entrega del driver = CONTINGENCIA** (corrección de Jose): NO reemplaza el Confirmar Entrega de la sucursal (esa es la que carga inventario). `despacho_entrega_driver` sella hora/foto/GPS en columnas nuevas `*_entrega_driver` de despachos_sucursal, sin tocar inventario ni estado. `mis_despachos_ruta` excluye lo ya marcado por el driver.
