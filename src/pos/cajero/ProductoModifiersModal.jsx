@@ -30,6 +30,7 @@ export default function ProductoModifiersModal({
   const [qty, setQty]                 = useState(initial?.qty || 1)
   const [nota, setNota]               = useState(initial?.nota || '')
   const [selecciones, setSelecciones] = useState(initial?.selecciones || {})
+  const [atencionEspecial, setAtencionEspecial] = useState(initial?.atencionEspecial || false)
 
   const toggleOpcion = (grupo, opcionId) => {
     setSelecciones(prev => {
@@ -106,6 +107,7 @@ export default function ProductoModifiersModal({
       nota: nota.trim(),
       modificadores: modificadoresPlanos,
       precioModificadores: precioModificadoresUnit,
+      atencionEspecial,
     })
   }
 
@@ -221,6 +223,26 @@ export default function ProductoModifiersModal({
               />
             </div>
           </div>
+
+          {/* Atención especial → la comanda llega ROJA a cocina. Manual, para cosas delicadas
+              (quitar ingrediente incluido, cambio de queso, alergias, indicación importante). */}
+          <button
+            onClick={() => setAtencionEspecial(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+              padding: '11px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+              border: '1.5px solid ' + (atencionEspecial ? '#ef4444' : '#2a2a32'),
+              background: atencionEspecial ? 'rgba(239,68,68,0.14)' : '#22222c',
+              color: atencionEspecial ? '#fca5a5' : '#b8b8c4', fontWeight: 700, fontSize: 13.5,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>{atencionEspecial ? '🔴' : '⚪'}</span>
+            <span style={{ flex: 1 }}>Marcar como atención especial
+              <span style={{ display: 'block', fontWeight: 400, fontSize: 11, color: '#8b8997', marginTop: 1 }}>
+                Llega ROJA a cocina (alergia, cambio de queso, quitar ingrediente…)
+              </span>
+            </span>
+          </button>
         </div>
 
         {/* Footer */}
