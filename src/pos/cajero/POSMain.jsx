@@ -161,6 +161,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [pinAuth,           setPinAuth]            = useState(null)
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
+  const [editIdx,           setEditIdx]            = useState(null)  // índice del ítem que se está editando (lápiz)
   const [comboPicker,       setComboPicker]        = useState(null)  // combo con componentes por armar
   const [showTransferModal, setShowTransferModal]  = useState(false)
   const [showSplitModal,    setShowSplitModal]     = useState(false)
@@ -367,6 +368,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         estacion: product.estacion || 'general',
         modificadores,
         precioExtra,
+        modGrupos: product.modGrupos || [],   // se guarda para poder re-editar el ítem desde el resumen
       }]
     })
   }, [])
@@ -1241,9 +1243,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
                       <button
                         className="pos-order-item-del"
                         style={{ color: '#8b8997', fontSize: 13 }}
-                        title="Editar nota"
+                        title={(!item.esCombo && (item.modGrupos || []).length) ? 'Editar producto' : 'Editar nota'}
                         onPointerDown={(e) => e.stopPropagation()}
-                        onClick={() => { setShowNoteModal(idx); setNoteText(item.nota || '') }}
+                        onClick={() => {
+                          // Con modificadores: reabre la config completa para editar sin borrar el ítem.
+                          if (!item.esCombo && (item.modGrupos || []).length) {
+                            setModPicker({ id: item.id, nombre: item.nombre, precio: item.precio, modGrupos: item.modGrupos })
+                            setEditIdx(idx)
+                          } else { setShowNoteModal(idx); setNoteText(item.nota || '') }
+                        }}
                       ><Icon name="pencil" size={14} /></button>
                     )}
                     {item.saved && (
@@ -1543,15 +1551,31 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         />
       )}
 
-      {/* Modal: Modificadores de producto individual (Tab + dropdowns colapsados + cantidad + nota) */}
+      {/* Modal: Modificadores de producto individual (grid en una pantalla + cantidad + nota). Reutilizado para editar. */}
       {modPicker && (
         <ProductoModifiersModal
           producto={modPicker}
           grupos={modPicker.modGrupos || []}
-          onClose={() => setModPicker(null)}
+          editMode={editIdx != null}
+          initial={editIdx != null ? {
+            qty: items[editIdx]?.qty || 1,
+            nota: items[editIdx]?.nota || '',
+            selecciones: (items[editIdx]?.modificadores || []).reduce((acc, m) => {
+              if (!acc[m.grupo_id]) acc[m.grupo_id] = []
+              acc[m.grupo_id].push(m.opcion_id)
+              return acc
+            }, {}),
+          } : null}
+          onClose={() => { setModPicker(null); setEditIdx(null) }}
           onConfirm={({ qty, nota, modificadores, precioModificadores }) => {
-            addItemToCart(modPicker, modificadores, precioModificadores, qty, nota)
-            setModPicker(null)
+            if (editIdx != null) {
+              setItems(prev => prev.map((it, i) => i === editIdx
+                ? { ...it, qty, nota, modificadores, precioExtra: precioModificadores }
+                : it))
+            } else {
+              addItemToCart(modPicker, modificadores, precioModificadores, qty, nota)
+            }
+            setModPicker(null); setEditIdx(null)
           }}
         />
       )}
