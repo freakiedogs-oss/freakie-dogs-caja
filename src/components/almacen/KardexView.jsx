@@ -182,6 +182,22 @@ export default function KardexView({ user, show }) {
   const [showCrear, setShowCrear] = useState(false);
   const [nuevoItem, setNuevoItem] = useState({ nombre: '', tipo: 'materia_prima', unidad: 'kg' });
   const [creando, setCreando] = useState(false);
+  const [verDte, setVerDte] = useState(null);   // producto_id cuyo mapeo DTE se muestra
+  const [dteMap, setDteMap] = useState(null);   // resultado de producto_mapeo_dte
+
+  const renombrarItem = async (item) => {
+    const nombre = window.prompt('Nuevo nombre del ingrediente:', item.nombre);
+    if (!nombre || nombre.trim() === '' || nombre.trim() === item.nombre) return;
+    const { error } = await db.rpc('set_conteo_item_meta', { p_producto_id: item.id, p_nombre: nombre.trim() });
+    if (error) { window.alert('❌ ' + error.message); return; }
+    fetchCatalogo();
+  };
+  const toggleDte = async (id) => {
+    if (verDte === id) { setVerDte(null); setDteMap(null); return; }
+    setVerDte(id); setDteMap(null);
+    const { data } = await db.rpc('producto_mapeo_dte', { p_producto_id: id });
+    setDteMap(data || { n: 0, descripciones: [] });
+  };
 
   const fetchCatalogo = useCallback(async () => {
     setLoadingCat(true);
@@ -622,28 +638,53 @@ export default function KardexView({ user, show }) {
           ) : (
             <div className="space-y-2">
               {catalogo.map(item => (
-                <div key={item.id} className="item-row flex items-center gap-3">
-                  <TipoPill tipo={item.tipo} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate">{item.nombre}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {item.sku || 'sin SKU'} · almacén: {item.unidad_medida || 'unidad'}
-                      {item.unidad_compra && Number(item.factor_compra) !== 1
-                        ? ` · compra: 1 ${item.unidad_compra} = ${item.factor_compra} ${item.unidad_medida || 'u'}`
-                        : ''}
-                      {item.categoria ? ` · ${item.categoria}` : ''}
-                    </p>
+                <div key={item.id}>
+                  <div className="item-row flex items-center gap-2">
+                    <TipoPill tipo={item.tipo} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{item.nombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.sku || 'sin SKU'} · almacén: {item.unidad_medida || 'unidad'}
+                        {item.unidad_compra && Number(item.factor_compra) !== 1
+                          ? ` · compra: 1 ${item.unidad_compra} = ${item.factor_compra} ${item.unidad_medida || 'u'}`
+                          : ''}
+                        {item.categoria ? ` · ${item.categoria}` : ''}
+                      </p>
+                    </div>
+                    <button onClick={() => renombrarItem(item)}
+                      style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
+                      title="Renombrar (limpiar nombre)">✏️</button>
+                    <button onClick={() => toggleDte(item.id)}
+                      style={{ background: verDte === item.id ? '#333' : '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
+                      title="Ver DTEs mapeados a este item">🔗 DTE</button>
+                    <button onClick={() => setEditUnid(item)}
+                      style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
+                      title="Editar unidades y conversión">📐</button>
+                    <button onClick={async () => {
+                      if (!window.confirm(`¿Eliminar "${item.nombre}"? Sale del catálogo.`)) return;
+                      const { error } = await db.rpc('eliminar_producto', { p_producto_id: item.id });
+                      if (error) { window.alert('❌ ' + error.message); return; }
+                      fetchCatalogo();
+                    }} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
+                      title="Eliminar producto">🗑️</button>
                   </div>
-                  <button onClick={() => setEditUnid(item)}
-                    style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
-                    title="Editar unidades y conversión">📐 Unidades</button>
-                  <button onClick={async () => {
-                    if (!window.confirm(`¿Eliminar "${item.nombre}"? Sale del catálogo.`)) return;
-                    const { error } = await db.rpc('eliminar_producto', { p_producto_id: item.id });
-                    if (error) { window.alert('❌ ' + error.message); return; }
-                    fetchCatalogo();
-                  }} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
-                    title="Eliminar producto">🗑️</button>
+                  {verDte === item.id && (
+                    <div style={{ background: '#101010', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 40px', fontSize: 12 }}>
+                      {!dteMap ? <span style={{ color: '#888' }}>Cargando…</span>
+                        : (dteMap.descripciones || []).length === 0
+                          ? <span style={{ color: '#f87171' }}>⚠️ Sin ningún DTE mapeado a este item.</span>
+                          : (
+                            <>
+                              <div style={{ color: '#8a8a8a', marginBottom: 4 }}>{dteMap.descripciones.length} descripción(es) de DTE mapeada(s){dteMap.n_dte_items ? ` · ${dteMap.n_dte_items} líneas históricas` : ''}:</div>
+                              {dteMap.descripciones.map((d, k) => (
+                                <div key={k} style={{ padding: '2px 0', color: '#ddd' }}>
+                                  • {d.descripcion} <span style={{ color: '#666' }}>{d.proveedor ? `· ${d.proveedor}` : d.nit ? `· NIT ${d.nit}` : ''}{d.veces ? ` · ×${d.veces}` : ''}</span>
+                                </div>
+                              ))}
+                            </>
+                          )}
+                    </div>
+                  )}
                 </div>
               ))}
               {editUnid && <UnidadesModal item={editUnid} onClose={() => setEditUnid(null)} onSaved={() => { setEditUnid(null); fetchCatalogo(); }} />}
