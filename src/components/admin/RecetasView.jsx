@@ -38,7 +38,9 @@ export default function RecetasView({ user }) {
       // menú se componen en Menú (BOM), no se listan acá (evita redundancia).
       db.from('recetas').select('id,nombre,tipo,categoria,rendimiento,unidad_rendimiento,precio_venta,notas,activo,costo_calculado').eq('activo', true).in('tipo', ['sub_receta', 'porcionado']).order('tipo').order('nombre'),
       db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,costo_calculado)'),
-      db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).order('nombre'),
+      // Selector de Materia Prima = mismas MP que el tab Inventario (materia_prima o sin tipo).
+      // No trae porcionados/sub-productos/empaque clasificado — esos se eligen como Sub-receta.
+      db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).or('tipo.eq.materia_prima,tipo.is.null').order('nombre'),
     ]);
     setRecetas(rRes.data || []);
     // Group ingredients by receta_id
