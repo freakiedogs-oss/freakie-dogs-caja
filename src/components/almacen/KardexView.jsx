@@ -1134,12 +1134,15 @@ export default function KardexView({ user, show }) {
 
 // ── Editor de unidades y conversión compra→almacén ──
 const UNID_ALMACEN = ['porcion', 'unidad', 'libra', 'onza', 'gramo', 'kilogramo', 'litro', 'mililitro', 'taza', 'cucharada', 'cucharadita', 'bolsa', 'bote', 'caja'];
-const UNID_COMPRA = [...UNID_ALMACEN, 'fardo', 'paquete', 'saco', 'lata', 'galón', 'display'];
+const UNID_COMPRA = [...UNID_ALMACEN, 'fardo', 'paquete', 'saco', 'lata', 'galón', 'display', 'docena', 'media docena', 'cubeta'];
+const OTRA = '__otra__';
 function UnidadesModal({ item, onClose, onSaved }) {
   const [um, setUm] = useState(item.unidad_medida || 'unidad');
   const [uc, setUc] = useState(item.unidad_compra || '');
   const [factor, setFactor] = useState(item.factor_compra ?? 1);
   const [saving, setSaving] = useState(false);
+  // Permite escribir una unidad de compra que no está en la lista (ej: docena, cubeta…)
+  const [customC, setCustomC] = useState(false);
   const guardar = async () => {
     setSaving(true);
     const { error } = await db.rpc('set_unidades_producto', {
@@ -1160,10 +1163,23 @@ function UnidadesModal({ item, onClose, onSaved }) {
           {(UNID_ALMACEN.includes(um) ? UNID_ALMACEN : [um, ...UNID_ALMACEN]).map(u => <option key={u} value={u}>{u}</option>)}
         </select>
         <label style={lbl}>Unidad de compra (cómo viene en el DTE)</label>
-        <select value={uc} onChange={e => setUc(e.target.value)} style={{ ...inp, marginBottom: 10 }}>
+        <select
+          value={customC ? OTRA : uc}
+          onChange={e => {
+            if (e.target.value === OTRA) { setCustomC(true); setUc(''); }
+            else { setCustomC(false); setUc(e.target.value); }
+          }}
+          style={{ ...inp, marginBottom: customC ? 6 : 10 }}>
           <option value="">(igual que almacén)</option>
           {(uc && !UNID_COMPRA.includes(uc) ? [uc, ...UNID_COMPRA] : UNID_COMPRA).map(u => <option key={u} value={u}>{u}</option>)}
+          <option value={OTRA}>➕ otra…</option>
         </select>
+        {customC && (
+          <input
+            type="text" autoFocus placeholder="Escribí la unidad (ej: docena, cubeta, rollo…)"
+            value={uc} onChange={e => setUc(e.target.value)}
+            style={{ ...inp, marginBottom: 10 }} />
+        )}
         <label style={lbl}>Factor: 1 {uc || 'compra'} = ? {um || 'almacén'}</label>
         <input type="number" step="any" value={factor} onChange={e => setFactor(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
         <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 14 }}>Ej: comprás caja de 30 lb → compra "caja", almacén "lb", factor 30. Al recibir 5 cajas entran 150 lb.</div>
