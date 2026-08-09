@@ -257,6 +257,7 @@ export default function KardexView({ user, show }) {
   const [loadingMapeo, setLoadingMapeo] = useState(false);
   const [soloSinMapear, setSoloSinMapear] = useState(true);
   const [soloInventariables, setSoloInventariables] = useState(true);
+  const [solo3Meses, setSolo3Meses] = useState(true);
   const [mapeoSearch, setMapeoSearch] = useState('');
   const [extracting, setExtracting] = useState(false);
   const [activeMapDesc, setActiveMapDesc] = useState(null);
@@ -276,9 +277,13 @@ export default function KardexView({ user, show }) {
         setTotalMapped(allData.filter(d => d.mapeado).length);
       }
       // Luego: datos filtrados
-      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas,inventariable');
+      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas,inventariable,ultima_compra');
       if (soloSinMapear) q = q.eq('mapeado', false);
       if (soloInventariables) q = q.eq('inventariable', true);
+      if (solo3Meses) {
+        const d = new Date(); d.setDate(d.getDate() - 90);
+        q = q.gte('ultima_compra', d.toISOString().slice(0, 10));
+      }
       if (mapeoSearch) q = q.ilike('descripcion', `%${mapeoSearch}%`);
       q = q.limit(100);
       const { data, error } = await q;
@@ -286,7 +291,7 @@ export default function KardexView({ user, show }) {
       setDteDescs(data || []);
     } catch { show?.('Error al cargar mapeo', 'error'); }
     finally { setLoadingMapeo(false); }
-  }, [soloSinMapear, soloInventariables, mapeoSearch]);
+  }, [soloSinMapear, soloInventariables, solo3Meses, mapeoSearch]);
 
   const handleExtract = async () => {
     setExtracting(true);
@@ -739,6 +744,13 @@ export default function KardexView({ user, show }) {
                 onChange={e => setSoloInventariables(e.target.checked)}
                 style={{ accentColor: '#e63946' }} />
               Solo inventariables
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: '#888' }}
+              title="Solo descripciones compradas en los últimos 3 meses (evita mapear cosas muy viejas)">
+              <input type="checkbox" checked={solo3Meses}
+                onChange={e => setSolo3Meses(e.target.checked)}
+                style={{ accentColor: '#e63946' }} />
+              Últimos 3 meses
             </label>
             <Input placeholder="Buscar descripción..." value={mapeoSearch}
               onChange={e => setMapeoSearch(e.target.value)} className="flex-1 max-w-60" />
