@@ -46,6 +46,13 @@
 - **Frontend (`KardexView.jsx`, tab Mapeo):** cada card vinculada muestra el ingrediente (nombre editable ✎ vía `set_conteo_item_meta` → refleja en conteo), badge **🌙 En conteo / ⚠️ No está en el conteo** (+ botón "Agregar al conteo" con `set_conteo_item`), y acciones **↻ Cambiar** (reusa el panel de búsqueda/creación) y **✕ Desvincular**. El panel expandido ahora abre también para items ya mapeados (Cambiar).
 - **NO** cambié ningún mapeo real (ej. el de REDSTONE): eso lo decide Jose desde la nueva UI (afecta inventario/costeo de $239K de historial). Build OK. Frontend → requiere merge PR + deploy Vercel.
 
+## 9-Ago-2026 — Kardex: editor COMPLETO del ítem (reemplaza el prompt de solo-nombre)
+
+- **Pedido (Jose):** el ✏️ del tab Inventario solo abría un `window.prompt` para el nombre. Quería un modal completo para editar cualquier atributo del ítem.
+- **Hecho:** el ✏️ ahora abre `ItemEditorModal` (carga la fila completa de `catalogo_productos`). Edita: nombre, clasificación (MP/SP/PT/Insumo), SKU, código, categoría/subcategoría, unidad de almacén, unidad de compra + factor, contenido neto + unidad, precio referencia (marcado "solo fallback"), descripción, y toggles activo / incluir en conteo / incluir en inventario físico.
+- **RPC:** `actualizar_catalogo_producto(uuid + 16 params con default null)` SECURITY DEFINER; valida `tipo` contra el CHECK y los NOT NULL (nombre/categoría/unidad); `factor_compra` cae a 1; NO toca `conteo_categoria/conteo_nombre/conteo_orden` (eso lo maneja ConteoLista). Grant anon/authenticated. Probado end-to-end.
+- Se eliminó `renombrarItem` (prompt viejo, ya no se usa). El editor inline de tipo (badge clickeable) se mantiene como atajo.
+
 ## 9-Ago-2026 — Kardex: editar clasificación (tipo) inline + fix Cheddar Lata mal clasificada
 
 - **Problema (Jose):** "Cheddar Lata" no salía en el selector de Materia Prima al armar recetas, pese a mostrar badge "MP" en el Kardex. Causa: en la base su `tipo` era **`sub_producto`** (no `materia_prima`); el selector de MP solo lista `tipo=materia_prima` (o null). Los cheddar que sí eran `materia_prima` estaban `activo=false` (duplicados viejos).
