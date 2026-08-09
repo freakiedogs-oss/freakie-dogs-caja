@@ -209,9 +209,9 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
 // grouped: [ [categoria, [{nombre, unidad, conteo, enviado, resultante}]] ]
 function imprimirHojaDespacho({sucursal,fecha,motorista,grouped}){
   const fmt=(v)=>{ const nn=Number(v||0); return Number.isInteger(nn)?String(nn):nn.toFixed(2); };
-  const td='padding:6px 8px;border-bottom:1px solid #ddd';
+  const td='padding:3px 5px;border-bottom:1px solid #ddd';
   const rows=grouped.map(([cat,its])=>
-    `<tr><td colspan="6" style="background:#eee;font-weight:700;padding:6px 8px;font-size:13px">${cat}</td></tr>`+
+    `<tr><td colspan="6" style="background:#eee;font-weight:700;padding:3px 6px;font-size:10.5px">${cat}</td></tr>`+
     its.filter(it=>parseFloat(it.enviado)>0).map(it=>
       `<tr>
         <td style="${td}">${it.nombre||'Producto'}</td>
@@ -224,18 +224,19 @@ function imprimirHojaDespacho({sucursal,fecha,motorista,grouped}){
     ).join('')
   ).join('');
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Despacho ${sucursal}</title>
-    <style>@media print{@page{margin:10mm;size:landscape}body{font-family:Arial,sans-serif;font-size:13px;color:#000}}
-    body{font-family:Arial,sans-serif;font-size:13px}table{width:100%;border-collapse:collapse;margin-top:12px}
-    th{background:#333;color:#fff;padding:8px;text-align:left;font-size:12px}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
-    .logo{font-size:22px;font-weight:900}.firma{margin-top:40px;display:flex;justify-content:space-between;gap:40px}
-    .firma-box{flex:1;text-align:center;border-top:1px solid #000;padding-top:8px;font-size:12px}</style></head>
+    <style>@media print{@page{margin:8mm;size:portrait}body{font-family:Arial,sans-serif;font-size:10.5px;color:#000}}
+    body{font-family:Arial,sans-serif;font-size:10.5px}table{width:100%;border-collapse:collapse;margin-top:10px;table-layout:fixed}
+    th{background:#333;color:#fff;padding:4px 5px;text-align:left;font-size:9.5px}
+    td{word-wrap:break-word;overflow-wrap:break-word}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+    .logo{font-size:18px;font-weight:900}.firma{margin-top:26px;display:flex;justify-content:space-between;gap:22px}
+    .firma-box{flex:1;text-align:center;border-top:1px solid #000;padding-top:6px;font-size:10px}</style></head>
     <body>
     <div class="header"><div><div class="logo">🍔 FREAKIE DOGS</div><div style="font-size:12px;color:#666">Hoja de Despacho</div></div>
     <div style="text-align:right"><div><strong>Destino:</strong> ${sucursal}</div>
     <div><strong>Fecha:</strong> ${fecha}</div>
     <div><strong>Motorista:</strong> ${motorista||'—'}</div></div></div>
-    <table><thead><tr><th>Producto</th><th style="text-align:center">Conteo actual</th><th style="text-align:center">Enviado</th><th style="text-align:center">Stock resultante</th><th style="text-align:center">Recibido</th><th>Observaciones</th></tr></thead>
+    <table><thead><tr><th style="width:31%">Producto</th><th style="text-align:center;width:11%">Conteo</th><th style="text-align:center;width:12%">Enviado</th><th style="text-align:center;width:13%">Stock final</th><th style="text-align:center;width:13%">Recibido</th><th style="width:20%">Observaciones</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div style="margin-top:20px;padding:10px;border:1px dashed #999;border-radius:6px;font-size:12px;color:#666">
     <strong>Notas generales:</strong>_______________________________________________</div>
