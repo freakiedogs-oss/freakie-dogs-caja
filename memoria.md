@@ -2,6 +2,11 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 9-Ago-2026 — Fix UX: botón "Todo Solicitado" (Despacho) ahora baja al fondo
+
+- **Síntoma (Jose):** en *Almacén → Despacho → Preparar Despacho*, el botón **✅ Todo Solicitado** "no hacía nada". En realidad **sí** rellena `qty_despacho` con lo solicitado, pero cuando las cantidades ya coincidían con lo solicitado no había cambio visible y encima dejaba la vista arriba → parecía muerto.
+- **Fix (`components/almacen/DespachoTab.jsx`, comp `PrepararDespacho`):** tras rellenar, `requestAnimationFrame` + `scrollIntoView({behavior:'smooth',block:'end'})` hacia un `bottomRef` anclado en la fila del botón **📦 Crear Despacho**. Ahora te lleva directo al selector de motorista + Crear Despacho sin scrollear. Commit `6c82822` en `main` (push con bypass de PR). Frontend → visible tras deploy Vercel.
+
 ## 9-Ago-2026 — Fix: conteo_lista mostraba "sábana" de TODOS los ingredientes (bug de correlación)
 
 - **Síntoma (Jose):** en *Kardex → Lista Conteo*, al expandir la receta de un ítem (ej. *Papa Sazonada porcionado*) salía una lista enorme de ingredientes ajenos (New York, Asado de Tira, Molida 90/10, panes, quesos…), no la receta real. La receta en DB tiene **1 solo ingrediente** → no era dato malo, era el RPC.
