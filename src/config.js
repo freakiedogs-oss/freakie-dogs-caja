@@ -122,7 +122,8 @@ export const NAV_SECTIONS = [
   {
     label: 'KPI Despacho a Motoristas',
     items: [
-      { key: 'mi-despacho', label: 'Mi Despacho (motorista)', icon: '🚚', roles: ['despachador', 'motorista'] },
+      { key: 'mi-ruta', label: 'Mi Ruta de Despacho', icon: '🚚', roles: ['despachador', 'motorista'] },
+      { key: 'mi-despacho', label: 'Mi Despacho (KPI viejo)', icon: '🕓', roles: ['despachador', 'motorista'] },
       { key: 'despacho-operativo', label: 'Operación Despacho', icon: '📦', roles: ['jefe_casa_matriz', 'produccion'] },
       { key: 'kpi-despacho', label: 'KPI Despacho', icon: '📊', roles: ['superadmin'] },
     ],
