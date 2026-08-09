@@ -256,6 +256,7 @@ export default function KardexView({ user, show }) {
   const [dteDescs, setDteDescs] = useState([]);
   const [loadingMapeo, setLoadingMapeo] = useState(false);
   const [soloSinMapear, setSoloSinMapear] = useState(true);
+  const [soloInventariables, setSoloInventariables] = useState(true);
   const [mapeoSearch, setMapeoSearch] = useState('');
   const [extracting, setExtracting] = useState(false);
   const [activeMapDesc, setActiveMapDesc] = useState(null);
@@ -275,8 +276,9 @@ export default function KardexView({ user, show }) {
         setTotalMapped(allData.filter(d => d.mapeado).length);
       }
       // Luego: datos filtrados
-      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas');
+      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas,inventariable');
       if (soloSinMapear) q = q.eq('mapeado', false);
+      if (soloInventariables) q = q.eq('inventariable', true);
       if (mapeoSearch) q = q.ilike('descripcion', `%${mapeoSearch}%`);
       q = q.limit(100);
       const { data, error } = await q;
@@ -284,7 +286,7 @@ export default function KardexView({ user, show }) {
       setDteDescs(data || []);
     } catch { show?.('Error al cargar mapeo', 'error'); }
     finally { setLoadingMapeo(false); }
-  }, [soloSinMapear, mapeoSearch]);
+  }, [soloSinMapear, soloInventariables, mapeoSearch]);
 
   const handleExtract = async () => {
     setExtracting(true);
@@ -730,6 +732,13 @@ export default function KardexView({ user, show }) {
                 onChange={e => setSoloSinMapear(e.target.checked)}
                 style={{ accentColor: '#e63946' }} />
               Solo pendientes
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: '#888' }}
+              title="Oculta descripciones de proveedores que no se inventarían (gastos, servicios, etc.)">
+              <input type="checkbox" checked={soloInventariables}
+                onChange={e => setSoloInventariables(e.target.checked)}
+                style={{ accentColor: '#e63946' }} />
+              Solo inventariables
             </label>
             <Input placeholder="Buscar descripción..." value={mapeoSearch}
               onChange={e => setMapeoSearch(e.target.value)} className="flex-1 max-w-60" />
