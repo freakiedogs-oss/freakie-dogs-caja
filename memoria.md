@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 8-Ago-2026 — GPS despacho: reubicación + separar delivery/internos + ruta del motorista (PRs #176, #177, #178)
+
+- **Separar delivery vs internos** (PR #176): `driver_ubicaciones.tipo` ('delivery'|'despacho') + param opcional `p_tipo` en `actualizar_ubicacion_driver` (default 'delivery', retrocompatible). Mapa con filtro Todos/🛵 Internos/🛍️ Delivery + markers de color.
+- **Reubicar mapa** (PR #177): GPS y Mandados sale del grupo "KPI Despacho a Motoristas" (drivers ya NO ven la pantalla admin) → ahora en **Almacén** (jefe) + tab **🛵 Despacho GPS** en la **Torre de Control** de Kari (DeliveryView).
+- **Bajas de drivers**: Josue Leonel Hernandez Cruz (M001 Cafetalón, Jose dijo "tecla") y Herbert Adonay Joachin Lara (S003 Lourdes) → `activo=false`, `es_delivery_driver=false` (salen del bono). Angel Armando → renombrado "Angel Armando Ganuza".
+- **Ruta del motorista** (PR #178, decidido con Jose: viaje=varias sucursales · reemplazar carga por reparto · disparador=marcar Despachado): nueva `empleado/MiRutaDespacho.jsx` (menú *🚚 Mi Ruta de Despacho*, key mi-ruta). El reloj arranca con `hora_salida` (cuando bodega marca 'despachado'); `PrepararDespacho` ahora setea `motorista_id`. RPC `mis_despachos_ruta(motorista_id)` lista los despachados asignados; el GPS se comparte solo (tipo='despacho') mientras haya despachos en ruta; por sucursal "Marcar entregado" con **foto de la hoja firmada** → `despacho_confirmar` (recibido + hora_recepcion + foto). El KPI viejo de carga (MiDespacho) queda como "Mi Despacho (KPI viejo)". **PENDIENTE follow-up:** dashboard que agregue el tiempo de reparto (hora_salida→última hora_recepcion) reemplazando `v_despachos_kpi`.
+
 ## 8-Ago-2026 — Roadmap almacén/logística #4/#11/#12/#7 (PRs #173, #174)
 
 Cerrados los 4 pendientes del roadmap mientras Jose construye recetas/BOM:
