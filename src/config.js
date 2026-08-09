@@ -99,7 +99,7 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'recepcion-dte', label: 'Recepción (Bandeja DTE)', icon: '📥', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'despacho', label: 'Despacho', icon: '🚚', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
-      { key: 'despacho-gps', label: 'GPS y Mandados', icon: '🛵', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      { key: 'despacho-gps', label: 'GPS y Mandados', icon: '🛵', roles: ['jefe_casa_matriz', 'despachador', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'inventario', label: 'Inventario', icon: '📦', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'historial', label: 'Historial', icon: '📋', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'compras', label: 'Órdenes de Compra', icon: '🛒', roles: ['compras', 'admin'] },
@@ -123,9 +123,8 @@ export const NAV_SECTIONS = [
     label: 'KPI Despacho a Motoristas',
     items: [
       { key: 'mi-ruta', label: 'Mi Ruta de Despacho', icon: '🚚', roles: ['despachador', 'motorista'] },
-      { key: 'mi-despacho', label: 'Mi Despacho (KPI viejo)', icon: '🕓', roles: ['despachador', 'motorista'] },
+      { key: 'kpi-reparto', label: 'KPI de Reparto', icon: '⏱️', roles: ['jefe_casa_matriz', 'produccion', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'despacho-operativo', label: 'Operación Despacho', icon: '📦', roles: ['jefe_casa_matriz', 'produccion'] },
-      { key: 'kpi-despacho', label: 'KPI Despacho', icon: '📊', roles: ['superadmin'] },
     ],
   },
   {
