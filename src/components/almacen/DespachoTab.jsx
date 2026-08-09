@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
 import { STORES, today, fmtDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
@@ -255,6 +255,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
   const [cmId,setCmId]=useState(null);
   const [motorista,setMotorista]=useState('');
   const [motoristas,setMotoristas]=useState([]);
+  const bottomRef=useRef(null);
 
   useEffect(()=>{
     // Get CM001 sucursal ID
@@ -393,6 +394,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
           <div style={{display:'flex',gap:8,marginBottom:12}}>
             <button className="btn btn-ghost btn-sm" style={{flex:1}} onClick={()=>{
               setPitems(p=>p.map(x=>({...x,qty_despacho:String(x.cantidad_solicitada||0)})));
+              requestAnimationFrame(()=>bottomRef.current?.scrollIntoView({behavior:'smooth',block:'end'}));
             }}>✅ Todo Solicitado</button>
             <button className="btn btn-ghost btn-sm" style={{flex:1}} onClick={()=>{
               setPitems(p=>p.map(x=>({...x,qty_despacho:'0'})));
@@ -446,7 +448,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
               {motoristas.map(m=><option key={m.id} value={m.nombre}>{m.nombre}</option>)}
             </select>
           </div>
-          <div style={{display:'flex',gap:8}}>
+          <div ref={bottomRef} style={{display:'flex',gap:8}}>
             <button className="btn btn-orange" style={{flex:1}} onClick={despachar} disabled={saving||!motorista.trim()}>
               {saving?'Creando despacho...':'📦 Crear Despacho'}
             </button>
