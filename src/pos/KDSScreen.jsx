@@ -23,17 +23,24 @@ const CANAL_INFO = {
 
 // Semáforo de atención (Frank): nivel de la comanda = el MÁS ALTO de sus ítems.
 //  - especial: algún ítem marcado "atención especial" (alergia, cambio de queso, quitar ingrediente).
-//  - modificado: algún ítem con extras/agregados con costo (tocino extra, agrandado…).
-//  - normal: preparación estándar.
+//  - modificado: algún ítem que NO es "Con Todo" — extras con costo (tocino, agrandado) o
+//    complementos específicos (piden ketchup/mayonesa en vez de "Con Todo" → cocina debe OMITIR el resto).
+//  - normal: preparación estándar = sin complementos o solo "Con Todo".
 const NIVEL_INFO = {
   especial:   { label: 'ESPECIAL',   color: '#ef4444' },
   modificado: { label: 'MODIFICADO', color: '#fbbf24' },
   normal:     { label: 'NORMAL',     color: '#22c55e' },
 }
 const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2 }
-const itemNivel = (it) =>
-  it?.atencion_especial ? 'especial'
-    : (Number(it?.precio_modificadores) > 0 ? 'modificado' : 'normal')
+const esConTodo = (nombre) => String(nombre || '').trim().toLowerCase() === 'con todo'
+const itemNivel = (it) => {
+  if (it?.atencion_especial) return 'especial'
+  const mods = Array.isArray(it?.modificadores) ? it.modificadores : []
+  // Amarillo si hay algún costo, o algún complemento elegido que NO sea "Con Todo".
+  const modificado = Number(it?.precio_modificadores) > 0
+    || mods.some(m => Number(m?.precio_extra || 0) > 0 || !esConTodo(m?.nombre))
+  return modificado ? 'modificado' : 'normal'
+}
 const comandaNivel = (items) =>
   (items || []).reduce((acc, it) => (NIVEL_RANK[itemNivel(it)] > NIVEL_RANK[acc] ? itemNivel(it) : acc), 'normal')
 
