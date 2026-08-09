@@ -230,8 +230,10 @@ function EnlazarModal({ fila, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    // Solo BLOQUES (sub-recetas + porcionados). Los platos del menú NO se anidan
+    // dentro de otro plato — acá se compone la receta del item de venta con bloques.
     db.from('recetas').select('id,nombre,tipo,costo_calculado').eq('activo', true)
-      .neq('tipo', 'combo')   // los combos son envoltorios del BOM, no se anidan
+      .in('tipo', ['sub_receta', 'porcionado'])
       .order('nombre').then(({ data }) => setRecetas(data || []));
     db.rpc('menu_item_componentes', { p_menu_item_id: fila.menu_item_id })
       .then(({ data }) => setComps(Array.isArray(data) ? data.map(c => ({ ...c, cantidad: Number(c.cantidad) || 1 })) : []));
