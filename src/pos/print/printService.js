@@ -113,6 +113,8 @@ export function buildComanda(c, cols = 48) {
     t.bold(true).size(1, 2);
     t.ln(`${String(it.qty).padStart(2, ' ')}  ${String(it.nombre).toUpperCase()}`);
     t.normal();
+    // Destino de empaque para cocina (solo mesa / para llevar).
+    if (it.destino) t.bold(true).ln(`     >> ${it.destino === 'aqui' ? 'COMER AQUI' : 'PARA LLEVAR'}`).bold(false);
     for (const m of it.modificadores || []) t.ln(`     + ${m}`);
     if (it.nota) { t.invert(true).wrap(`  ! ${it.nota}  `, 5); t.invert(false); }
   }

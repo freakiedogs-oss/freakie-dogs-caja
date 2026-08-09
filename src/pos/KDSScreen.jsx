@@ -347,7 +347,11 @@ export default function KDSScreen({ user, onBack }) {
       map.get(key).items.push(row)
     })
     return [...map.values()]
-      .map(c => ({ ...c, nivel: comandaNivel(c.items) }))
+      .map(c => ({
+        ...c,
+        nivel: comandaNivel(c.items),
+        mixta: new Set(c.items.map(i => i.destino).filter(Boolean)).size > 1,
+      }))
       .sort((a, b) => new Date(a.recibido_at) - new Date(b.recibido_at))
   }
 
@@ -683,6 +687,9 @@ export default function KDSScreen({ user, onBack }) {
                       <div className="kds-card-title">
                         {/* Etiqueta de nivel (no depender solo del color) */}
                         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.4px', padding: '2px 8px', borderRadius: 6, background: nivel.color, color: comanda.nivel === 'modificado' ? '#1a1a1a' : '#fff' }}>{nivel.label}</span>
+                        {comanda.mixta && (
+                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.4px', padding: '2px 8px', borderRadius: 6, background: '#fbbf24', color: '#1a1a1a' }}>MIXTA</span>
+                        )}
                         <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
                         <span className="kds-card-canal" style={{ color: info.color }}>
                           {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
@@ -741,6 +748,9 @@ export default function KDSScreen({ user, onBack }) {
                               <span className="kds-item-name" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 800 } : undefined}>{item.nombre_item}</span>
                               {item.atencion_especial && (
                                 <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#fff', background: '#ef4444', padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px' }}>ESPECIAL</span>
+                              )}
+                              {item.destino && (
+                                <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px', color: item.destino === 'aqui' ? '#2dd4a8' : '#f4a261', background: (item.destino === 'aqui' ? '#2dd4a8' : '#f4a261') + '22' }}>{item.destino === 'aqui' ? '🍽️ AQUÍ' : '🥡 LLEVAR'}</span>
                               )}
                             </span>
                             {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {
@@ -891,6 +901,9 @@ export default function KDSScreen({ user, onBack }) {
                               <span className="kds-item-name" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 800 } : undefined}>{item.nombre_item}</span>
                               {item.atencion_especial && (
                                 <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#fff', background: '#ef4444', padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px' }}>ESPECIAL</span>
+                              )}
+                              {item.destino && (
+                                <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px', color: item.destino === 'aqui' ? '#2dd4a8' : '#f4a261', background: (item.destino === 'aqui' ? '#2dd4a8' : '#f4a261') + '22' }}>{item.destino === 'aqui' ? '🍽️ AQUÍ' : '🥡 LLEVAR'}</span>
                               )}
                             </span>
                             {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {

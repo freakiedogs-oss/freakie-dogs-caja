@@ -140,6 +140,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const paxFields = paxCtx ? { pax_mujeres: paxCtx.mujeres || 0, pax_hombres: paxCtx.hombres || 0, pax_ninos: paxCtx.ninos || 0 } : {}
   const tipoInfo = TIPO_INFO[tipo] || TIPO_INFO['para_llevar']
 
+  // Destino de empaque (Comer aquí / Llevar) — SOLO informa a cocina si empacar.
+  // Se habilita únicamente en canales con consumo en sitio: mesa y para_llevar (food court).
+  const destinoAplica  = tipo === 'mesa' || tipo === 'para_llevar'
+  const destinoDefault = tipo === 'mesa' ? 'aqui' : 'llevar'
+
   // Menú data
   const [menus,       setMenus]       = useState({})
   const [loadingMenu, setLoadingMenu] = useState(true)
@@ -162,6 +167,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [editIdx,           setEditIdx]            = useState(null)  // índice del ítem que se está editando (lápiz)
+  const [ordenDestino,      setOrdenDestino]       = useState(destinoDefault)  // destino global por default (aqui/llevar)
+  // Ref con el destino a aplicar al agregar un ítem (null si el canal no aplica).
+  const destinoRef = useRef(null)
+  destinoRef.current = destinoAplica ? ordenDestino : null
   const [comboPicker,       setComboPicker]        = useState(null)  // combo con componentes por armar
   const [showTransferModal, setShowTransferModal]  = useState(false)
   const [showSplitModal,    setShowSplitModal]     = useState(false)
@@ -292,7 +301,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       setLoadingCuenta(true)
       const { data: itemsData } = await db
         .from('pos_cuenta_items')
-        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes, atencion_especial')
+        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes, atencion_especial, destino')
         .eq('cuenta_id', cuentaCtx.cuentaId)
         .is('cancelado_motivo', null)
         .order('created_at')
@@ -311,6 +320,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           componentes:   it.componentes || [],
           esCombo:       Array.isArray(it.componentes) && it.componentes.length > 0,
           atencionEspecial: !!it.atencion_especial,
+          destino:       it.destino || null,
         }))
         setItems(loaded)
         setCommandedCount(loaded.length)
@@ -352,7 +362,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     setItems(prev => {
       // Solo fusiona líneas idénticas cuando NO hay modificadores ni nota
       if (modificadores.length === 0 && !nota && qty === 1 && !atencionEspecial) {
-        const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved && (!i.modificadores || i.modificadores.length === 0))
+        const idx = prev.findIndex(i => i.id === product.id && !i.nota && !i.saved && (!i.modificadores || i.modificadores.length === 0) && (i.destino || null) === destinoRef.current)
         if (idx >= 0) {
           const next = [...prev]
           next[idx] = { ...next[idx], qty: next[idx].qty + 1 }
@@ -370,6 +380,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         modificadores,
         precioExtra,
         atencionEspecial,
+        destino: destinoRef.current,
         modGrupos: product.modGrupos || [],   // se guarda para poder re-editar el ítem desde el resumen
       }]
     })
@@ -388,6 +399,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       componentes,                 // [{item_id,nombre,estacion,cantidad,modificadores:[...]}]
       modificadores: generalMods || [],
       precioExtra: precioExtra || 0,
+      destino: destinoRef.current,
     }])
   }, [])
 
@@ -424,6 +436,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         comanda_numero: comandaSeq,
         comanda_uid:    comandaUid,
         atencion_especial: !!it.atencionEspecial,
+        destino:        it.destino || null,
       }
       if (it.esCombo && (it.componentes || []).length) {
         return it.componentes.map(c => {
@@ -561,7 +574,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         modificadores.push(`${c.cantidad > 1 ? c.cantidad + 'x ' : ''}${c.nombre}:`)
         modStr(c.modificadores).forEach(s => modificadores.push('   ' + s))
       })
-      return { nombre: i.nombre, precio: i.precio, qty: i.qty, nota: i.nota || null, modificadores }
+      return { nombre: i.nombre, precio: i.precio, qty: i.qty, nota: i.nota || null, modificadores, destino: i.destino || null }
     }),
     subtotal,
     descuento: descuentoMonto,
@@ -714,6 +727,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         modificadores:   it.modificadores?.length ? it.modificadores : null,
         precio_modificadores: it.precioExtra || 0,
         atencion_especial: !!it.atencionEspecial,
+        destino:         it.destino || null,
         componentes:     it.componentes?.length ? it.componentes : null,
         comanda_numero:  comandaSeq,
         enviado_cocina_at: new Date().toISOString(),
@@ -1156,6 +1170,23 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             }
           </div>
 
+          {/* Destino de empaque (solo mesa / para llevar). Un toque = toda la orden. */}
+          {destinoAplica && (
+            <div style={{ display: 'flex', gap: 6, padding: '8px 10px 0', alignItems: 'center' }}>
+              {[['aqui', '🍽️ Comer aquí', '#2dd4a8'], ['llevar', '🥡 Para llevar', '#f4a261']].map(([val, lbl, col]) => (
+                <button key={val}
+                  onClick={() => { setOrdenDestino(val); setItems(prev => prev.map(it => it.saved ? it : { ...it, destino: val })) }}
+                  style={{ flex: 1, padding: '8px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                    border: '1.5px solid ' + (ordenDestino === val ? col : '#2a2a32'),
+                    background: ordenDestino === val ? col + '26' : '#22222c',
+                    color: ordenDestino === val ? col : '#b8b8c4' }}>{lbl}</button>
+              ))}
+              {new Set(items.map(i => i.destino || destinoDefault)).size > 1 && (
+                <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 800, color: '#fbbf24', background: '#fbbf2422', padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>ORDEN MIXTA</span>
+              )}
+            </div>
+          )}
+
           {/* Lista de ítems */}
           <div className="pos-order-items">
             {items.length === 0 ? (
@@ -1243,6 +1274,19 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
                     <div className="pos-order-item-price">
                       ${((item.precio + (item.precioExtra || 0)) * item.qty).toFixed(2)}
                     </div>
+                    {destinoAplica && (() => {
+                      const d = item.destino || destinoDefault
+                      const col = d === 'aqui' ? '#2dd4a8' : '#f4a261'
+                      return (
+                        <button
+                          disabled={item.saved}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => setItems(prev => prev.map((x, i) => i === idx ? { ...x, destino: (x.destino || destinoDefault) === 'aqui' ? 'llevar' : 'aqui' } : x))}
+                          title={item.saved ? 'Destino (comandado)' : 'Tocar para cambiar destino de este ítem'}
+                          style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 5, cursor: item.saved ? 'default' : 'pointer', border: '1px solid ' + col, background: 'transparent', color: col, letterSpacing: '0.3px' }}
+                        >{d === 'aqui' ? '🍽️ AQUÍ' : '🥡 LLEVAR'}</button>
+                      )
+                    })()}
                     {!item.saved && (
                       <button
                         className="pos-order-item-del"
