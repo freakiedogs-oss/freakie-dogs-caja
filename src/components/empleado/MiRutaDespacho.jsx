@@ -43,7 +43,22 @@ export default function MiRutaDespacho({ user }) {
   useEffect(() => { cargar(); const iv = setInterval(cargar, 30_000); return () => clearInterval(iv); }, [cargar]);
 
   // ── GPS automático mientras haya despachos en ruta ──
+  // ¿corre dentro del APK nativo con GPS en segundo plano?
+  const nativeGps = () => {
+    try { return !!(window.AndroidPrinter && window.AndroidPrinter.hasLocationNative && window.AndroidPrinter.hasLocationNative()); }
+    catch { return false; }
+  };
+  const usingNative = useRef(false);
+
   const startGps = useCallback(() => {
+    // 1) APK nativo → foreground service (transmite con pantalla bloqueada)
+    if (nativeGps()) {
+      try {
+        window.AndroidPrinter.startLocation(String(user.id), user.nombre || 'Motorista');
+        usingNative.current = true; setGpsOn(true); return;
+      } catch { /* cae a web */ }
+    }
+    // 2) Navegador → watchPosition (se pausa en segundo plano)
     if (!navigator.geolocation || watchId.current != null) return;
     watchId.current = navigator.geolocation.watchPosition(async (p) => {
       const now = Date.now(); if (now - lastSent.current < 4000) return; lastSent.current = now;
@@ -55,9 +70,14 @@ export default function MiRutaDespacho({ user }) {
     }, () => {}, { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });
     setGpsOn(true);
   }, [user.id, user.nombre]);
+
   const stopGps = useCallback(async () => {
-    if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current);
-    watchId.current = null; setGpsOn(false);
+    if (usingNative.current) {
+      try { window.AndroidPrinter.stopLocation(); } catch { /* noop */ }
+      usingNative.current = false;
+    }
+    if (watchId.current != null) { navigator.geolocation.clearWatch(watchId.current); watchId.current = null; }
+    setGpsOn(false);
     await db.rpc('desconectar_driver', { p_empleado_id: user.id }).catch(() => {});
   }, [user.id]);
 
