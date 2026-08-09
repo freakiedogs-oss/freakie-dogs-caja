@@ -27,22 +27,33 @@ export default function RecetasView({ user }) {
   const [editReceta, setEditReceta] = useState(null);
   const [showNewReceta, setShowNewReceta] = useState(false);
   const [editRend, setEditRend] = useState(null); // { valor, unidad } for inline rendimiento edit
+  // Costos REALES desde el motor Postgres (promedio ponderado de compras DTE),
+  // el mismo que usan Costeo y Menú/BOM. Ya NO se usa precio_referencia manual.
+  const [costoReceta, setCostoReceta] = useState({}); // { receta_id: costo_total }
+  const [costoProd, setCostoProd] = useState({});     // { producto_id: costo_x_unidad }
 
   const canEdit = ROLES_EDITAN.includes(user?.rol);
 
   // ── Cargar datos ──
   const cargar = useCallback(async () => {
     setLoading(true);
-    const [rRes, iRes, cRes] = await Promise.all([
+    const [rRes, iRes, cRes, crRes, cpRes] = await Promise.all([
       // Solo bloques de CM: sub-recetas + porcionados. Los platos/combos del
       // menú se componen en Menú (BOM), no se listan acá (evita redundancia).
       db.from('recetas').select('id,nombre,tipo,categoria,rendimiento,unidad_rendimiento,precio_venta,notas,activo,costo_calculado').eq('activo', true).in('tipo', ['sub_receta', 'porcionado']).order('tipo').order('nombre'),
-      db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,costo_calculado)'),
+      db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,rendimiento)'),
       // Selector de Materia Prima = mismas MP que el tab Inventario (materia_prima o sin tipo).
       // No trae porcionados/sub-productos/empaque clasificado — esos se eligen como Sub-receta.
-      db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).or('tipo.eq.materia_prima,tipo.is.null').order('nombre'),
+      db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida').eq('activo', true).or('tipo.eq.materia_prima,tipo.is.null').order('nombre'),
+      // Costos reales del motor (1 llamada cada uno; wrappers costos_recetas_bloques / costos_productos_recetas).
+      db.rpc('costos_recetas_bloques'),
+      db.rpc('costos_productos_recetas'),
     ]);
     setRecetas(rRes.data || []);
+    const crMap = {}; (crRes.data || []).forEach(x => { crMap[x.receta_id] = n(x.costo_total); });
+    setCostoReceta(crMap);
+    const cpMap = {}; (cpRes.data || []).forEach(x => { cpMap[x.producto_id] = n(x.costo); });
+    setCostoProd(cpMap);
     // Group ingredients by receta_id
     const grouped = {};
     (iRes.data || []).forEach(i => {
@@ -79,19 +90,8 @@ export default function RecetasView({ user }) {
     );
   };
 
-  // ── Calcular costo de una receta ──
-  const calcCosto = (recetaId) => {
-    const ings = ingredientes[recetaId] || [];
-    let total = 0;
-    ings.forEach(i => {
-      if (i.tipo_ingrediente === 'materia_prima' && i.catalogo_productos) {
-        total += n(i.cantidad) * n(i.catalogo_productos.precio_referencia);
-      } else if (i.tipo_ingrediente === 'sub_receta' && i.sub) {
-        total += n(i.cantidad) * calcCosto(i.sub.id);
-      }
-    });
-    return total;
-  };
+  // ── Costo REAL de una receta (motor Postgres, promedio ponderado de compras DTE) ──
+  const calcCosto = (recetaId) => n(costoReceta[recetaId]);
 
   // ── Guardar ingredientes editados ──
   const guardarIngredientes = async () => {
@@ -111,13 +111,10 @@ export default function RecetasView({ user }) {
       notas: i.notas || '',
     }));
     if (rows.length > 0) await db.from('receta_ingredientes').insert(rows);
-    // Update costo_calculado
-    const costo = rows.reduce((sum, r) => {
-      const prod = catalogo.find(c => c.id === r.producto_id);
-      if (prod) return sum + r.cantidad * n(prod.precio_referencia);
-      return sum;
-    }, 0);
-    await db.from('recetas').update({ costo_calculado: Math.round(costo * 100) / 100 }).eq('id', sel.id);
+    // Cachear costo_calculado desde el motor real (incluye sub-recetas + merma + costo DTE).
+    // Se corre DESPUÉS del insert para que la función vea los ingredientes nuevos.
+    const { data: ct } = await db.rpc('receta_costo_total', { p_receta_id: sel.id, p_depth: 0 });
+    await db.from('recetas').update({ costo_calculado: n(ct) }).eq('id', sel.id);
     setEditMode(false);
     await cargar();
   };
@@ -310,7 +307,9 @@ export default function RecetasView({ user }) {
                     {rCosto > 0 && <span style={{ color: '#888', marginLeft: 4 }}>({Math.round((1 - rCosto / n(r.precio_venta)) * 100)}%)</span>}
                   </div>
                 )}
-                {rCosto > 0 && <div style={{ fontSize: 11, color: '#e9c46a' }}>Costo: ${rCosto.toFixed(2)}</div>}
+                {rCosto > 0
+                  ? <div style={{ fontSize: 11, color: '#e9c46a' }}>Costo: ${rCosto.toFixed(2)}</div>
+                  : rIngs.length > 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>⚠️ Sin costo DTE</div>}
               </div>
             </div>
           </div>
@@ -363,13 +362,15 @@ export default function RecetasView({ user }) {
           </div>
           <div style={{ textAlign: 'right' }}>
             {sel.precio_venta > 0 && <div style={{ fontSize: 16, fontWeight: 700, color: '#4ade80' }}>${n(sel.precio_venta).toFixed(2)}</div>}
-            {costo > 0 && (
+            {costo > 0 ? (
               <>
                 <div style={{ fontSize: 13, color: '#e9c46a' }}>Costo: ${costo.toFixed(2)}</div>
                 {sel.precio_venta > 0 && (
                   <div style={{ fontSize: 12, color: '#888' }}>Margen: {Math.round((1 - costo / n(sel.precio_venta)) * 100)}%</div>
                 )}
               </>
+            ) : ings.length > 0 && (
+              <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ Sin costo DTE — mapeá la compra</div>
             )}
           </div>
         </div>
@@ -412,9 +413,13 @@ export default function RecetasView({ user }) {
               <tbody>
                 {ings.map(i => {
                   const nombre = i.tipo_ingrediente === 'materia_prima' ? i.catalogo_productos?.nombre : i.sub?.nombre;
-                  const costoLine = i.tipo_ingrediente === 'materia_prima'
-                    ? n(i.cantidad) * n(i.catalogo_productos?.precio_referencia)
-                    : n(i.cantidad) * calcCosto(i.sub?.id);
+                  // Misma fórmula que el motor: cantidad × (1+merma) × costo unitario.
+                  // MP → costo_producto; sub-receta → costo_total ÷ su rendimiento.
+                  const mermaMul = 1 + n(i.merma_pct) / 100;
+                  const costoUnit = i.tipo_ingrediente === 'materia_prima'
+                    ? n(costoProd[i.producto_id])
+                    : calcCosto(i.sub?.id) / (n(i.sub?.rendimiento) || 1);
+                  const costoLine = n(i.cantidad) * mermaMul * costoUnit;
                   return (
                     <tr key={i.id} style={{ borderBottom: '1px solid #222' }}>
                       <td style={{ padding: '8px 4px', fontSize: 13, color: '#ddd' }}>
