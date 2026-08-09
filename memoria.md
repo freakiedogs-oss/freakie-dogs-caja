@@ -13,6 +13,16 @@
 - **Frontend (`KardexView.jsx`, tab Mapeo):** cada card vinculada muestra el ingrediente (nombre editable ✎ vía `set_conteo_item_meta` → refleja en conteo), badge **🌙 En conteo / ⚠️ No está en el conteo** (+ botón "Agregar al conteo" con `set_conteo_item`), y acciones **↻ Cambiar** (reusa el panel de búsqueda/creación) y **✕ Desvincular**. El panel expandido ahora abre también para items ya mapeados (Cambiar).
 - **NO** cambié ningún mapeo real (ej. el de REDSTONE): eso lo decide Jose desde la nueva UI (afecta inventario/costeo de $239K de historial). Build OK. Frontend → requiere merge PR + deploy Vercel.
 
+## 9-Ago-2026 — Recetas usa el COSTO REAL del motor DTE (adiós precio_referencia en el costeo) — Fase 1
+
+- **Síntoma (Jose):** el costo en la pestaña Recetas salía **$0** siempre, aunque el DTE estuviera vinculado. Quería que el costo viniera del **costo real de los DTE**, no de un campo manual.
+- **Causa:** `RecetasView` calculaba el costo en JS con `catalogo_productos.precio_referencia` (campo manual, casi siempre null → $0). **Ignoraba el motor de costo que YA existe** y que Costeo/Menú(BOM) ya usan bien: `costo_producto(id)` (promedio ponderado de compras, cascada recepción→factura mapeada→proveedor→ref) y `receta_costo_total(id,depth)` (total de la receta, con merma y dividiendo sub-recetas por su rendimiento). Ver `docs/INTEGRACION-ALMACEN.md`.
+- **Fix (sin motor nuevo, se construyó sobre lo existente):**
+  1. **DB:** 2 wrappers de solo lectura (SECURITY DEFINER STABLE) que mapean las funciones existentes en 1 llamada: `costos_recetas_bloques()` (costo por bloque sub_receta/porcionado) y `costos_productos_recetas()` (costo_producto de las MP usadas en recetas). GRANT execute a anon/authenticated. Aplicados en prod vía migración.
+  2. **Frontend (`RecetasView.jsx`):** `calcCosto` ahora lee el mapa del motor; la línea por ingrediente usa `cantidad×(1+merma)×costo_unit` (MP→costo_producto, sub→costo_total÷rendimiento); `costo_calculado` se cachea desde `receta_costo_total` (arregla bug viejo que lo guardaba **ignorando sub-recetas**). Ya NO se lee `precio_referencia`. Sin datos DTE → **$0 + aviso "Sin costo DTE"** (decisión de Jose: sin fallback manual).
+- **Validado con datos reales:** Cheddar Porcionado pasó de $0 a **$10.39** (motor). ⚠️ **Ojo dato, no código:** `Cheddar Lata` tiene `factor_compra=1`; si 1 lata rinde ~3 bolsas debería ser 3 (eslabón flojo #3 de la doc) → hoy el costo/bolsa sale inflado ~3×. Ajustar el factor en el 📐 del Kardex.
+- **Fase 2 pendiente (visión de Jose):** costeo FIFO / promedio móvil valuando el kardex (`kardex_movimientos` hoy lleva cantidad **sin costo**). Proyecto aparte. `costo_producto` ya da promedio ponderado hoy, así que Fase 1 alcanza para ver costo real.
+
 ## 9-Ago-2026 — Recetas: fix rendimiento que "no sincronizaba" (subtítulo stale)
 
 - **Síntoma (Jose):** en una receta (ej. *Cheddar Porcionado*), el "Rinde 3 bolsa" del subtítulo y el campo *Rendimiento* del modal *Editar Receta* parecían desincronizados; tocaba ajustar ambos a mano.
