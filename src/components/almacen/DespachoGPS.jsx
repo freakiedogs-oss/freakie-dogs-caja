@@ -53,8 +53,9 @@ export default function DespachoGPS({ user }) {
   const cargarOnline = useCallback(async () => {
     const { data } = await db.from('driver_ubicaciones').select('empleado_id,nombre,lat,lng,rumbo,updated_at,en_linea,tipo').eq('en_linea', true);
     const now = Date.now();
-    const frescos = (data || []).filter(d => d.lat && d.lng && (now - new Date(d.updated_at).getTime()) < FRESH_MS);
-    setOnline(frescos);
+    // Muestra última posición conocida hasta 15 min (el cron apaga a los 10).
+    const vivos = (data || []).filter(d => d.lat && d.lng && (now - new Date(d.updated_at).getTime()) < 15 * 60 * 1000);
+    setOnline(vivos);
   }, []);
 
   const cargarMandados = useCallback(async () => {
@@ -81,12 +82,22 @@ export default function DespachoGPS({ user }) {
     const visibles = online.filter(o => filtro === 'todos' || (o.tipo || 'delivery') === filtro);
     const vivos = new Set(visibles.map(o => o.empleado_id));
     Object.keys(markers.current).forEach(id => { if (!vivos.has(id)) { map.removeLayer(markers.current[id]); delete markers.current[id]; } });
+    const now = Date.now();
     visibles.forEach(o => {
       const ll = [o.lat, o.lng];
       const col = colorDe(o);
-      if (markers.current[o.empleado_id]) { markers.current[o.empleado_id].setLatLng(ll).setStyle({ fillColor: col, color: col }); }
-      else markers.current[o.empleado_id] = L.circleMarker(ll, { radius: 9, weight: 2, color: col, fillColor: col, fillOpacity: 0.85 })
-        .addTo(map).bindTooltip(`${esDespacho(o) ? '🛵 ' : '🛍️ '}${o.nombre || 'Motorista'}`, { permanent: false });
+      const ageMs = now - new Date(o.updated_at).getTime();
+      const fresh = ageMs < FRESH_MS;
+      const op = fresh ? 0.9 : 0.4;
+      const mins = Math.floor(ageMs / 60000);
+      const label = `${esDespacho(o) ? '🛵 ' : '🛍️ '}${o.nombre || 'Motorista'} · ${fresh ? 'en vivo' : `hace ${mins}m`}`;
+      if (markers.current[o.empleado_id]) {
+        markers.current[o.empleado_id].setLatLng(ll).setStyle({ fillColor: col, color: col, fillOpacity: op });
+        markers.current[o.empleado_id].setTooltipContent(label);
+      } else {
+        markers.current[o.empleado_id] = L.circleMarker(ll, { radius: 9, weight: 2, color: col, fillColor: col, fillOpacity: op })
+          .addTo(map).bindTooltip(label, { permanent: false });
+      }
     });
     if (visibles.length) { try { map.fitBounds(visibles.map(o => [o.lat, o.lng]), { padding: [40, 40], maxZoom: 15 }); } catch { /* noop */ } }
   }, [online, filtro]);
