@@ -308,6 +308,11 @@ export default function RecepcionDTE({ user, show, modo = 'cm' }) {
                   {d.fecha_emision} · {(d.items || []).length} línea{(d.items || []).length !== 1 ? 's' : ''}
                   {d.categoria ? ` · ${d.categoria}${d.subcategoria ? ' / ' + d.subcategoria : ''}` : ''}
                 </div>
+                {(d.numero_control || d.dte_codigo) && (
+                  <div style={{ fontSize: 11, color: '#7a8aa0', marginTop: 2, fontFamily: 'monospace' }}>
+                    N° control: {d.numero_control || d.dte_codigo}
+                  </div>
+                )}
               </div>
               <PagoBadge estado={d.estado_pago} />
               <div style={{ fontWeight: 800 }}>{fmt(d.monto_total)}</div>
