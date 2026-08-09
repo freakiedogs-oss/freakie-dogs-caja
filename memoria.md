@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 9-Ago-2026 — Unidades de compra: agregar cualquier unidad a la lista (📐 Unidades)
+
+- **Pedido (Jose):** poder **agregar unidades** al dropdown de unidad de compra (ej. faltaba "docena"), sin tener que pedir cambios de código cada vez.
+- **Cambio (`KardexView.jsx`, `UnidadesModal`):** agregadas `docena`, `media docena`, `cubeta` a `UNID_COMPRA`; y nueva opción **"➕ otra…"** en el select de *unidad de compra* que revela un input de texto libre para escribir cualquier unidad. Se guarda igual vía RPC `set_unidades_producto` (la unidad de compra es solo etiqueta; el **factor** hace la conversión, por eso es seguro texto libre).
+- **Solo compra, no almacén:** la *unidad de almacén* se dejó como dropdown fijo a propósito — esa la usan recetas/costeo y no debe ser texto libre.
+- Build verificado OK.
+
 ## 9-Ago-2026 — Órdenes duplicadas de conteo nocturno → "una sola orden viva por sucursal"
 
 - **Síntoma (Jose):** anoche (y otras noches) a las sucursales se les **duplicaron** las órdenes del conteo nocturno; el almacén las veía dobles. Confirmado en DB: 08-08 **Lourdes** (20:52 + 20:53) y **Cafetalón** (21:44 ×2) con órdenes **idénticas** (mismo # ítems y total) → doble-envío. Recurrente: también 07-26, 07-24, 07-19.
@@ -38,6 +45,13 @@
   - Nueva RPC `desmapear_descripcion_dte(p_descripcion)` — pone `producto_id=NULL` en todas las líneas de esa descripción y **olvida** el aprendizaje en `proveedor_item_mapa` (si no, `mapear` lo re-aprendería). SECURITY DEFINER, execute a anon/authenticated.
 - **Frontend (`KardexView.jsx`, tab Mapeo):** cada card vinculada muestra el ingrediente (nombre editable ✎ vía `set_conteo_item_meta` → refleja en conteo), badge **🌙 En conteo / ⚠️ No está en el conteo** (+ botón "Agregar al conteo" con `set_conteo_item`), y acciones **↻ Cambiar** (reusa el panel de búsqueda/creación) y **✕ Desvincular**. El panel expandido ahora abre también para items ya mapeados (Cambiar).
 - **NO** cambié ningún mapeo real (ej. el de REDSTONE): eso lo decide Jose desde la nueva UI (afecta inventario/costeo de $239K de historial). Build OK. Frontend → requiere merge PR + deploy Vercel.
+
+## 9-Ago-2026 — Kardex: editar clasificación (tipo) inline + fix Cheddar Lata mal clasificada
+
+- **Problema (Jose):** "Cheddar Lata" no salía en el selector de Materia Prima al armar recetas, pese a mostrar badge "MP" en el Kardex. Causa: en la base su `tipo` era **`sub_producto`** (no `materia_prima`); el selector de MP solo lista `tipo=materia_prima` (o null). Los cheddar que sí eran `materia_prima` estaban `activo=false` (duplicados viejos).
+- **El badge NO viene de otra tabla:** sale de `TipoPill tipo={item.tipo}` (`KardexView.jsx`), el **mismo campo `catalogo_productos.tipo`** que filtra el selector de recetas. No hay doble fuente; el "MP" que se veía era un valor viejo/otra vista cacheada — algo reclasificó el item a sub_producto después. (Ojo aparte: `fetchTotals` cuenta `tipo NULL` como MP → un item sin tipo sale con badge '?' pero suma en el KPI de MP.)
+- **Fix datos:** `update catalogo_productos set tipo='materia_prima' where id=ecefa37d` (Cheddar Lata). Ya sale en el selector; conserva enlace y costo DTE ($10.39).
+- **Fix producto (para que no recurra):** en Kardex→Inventario el **badge ahora es clickeable** → abre un selector de tipo (MP/SP/PT/Insumo) que reclasifica el item al toque. Nuevo RPC `set_producto_tipo(uuid,text)` (SECURITY DEFINER, valida contra el CHECK, grant anon/authenticated). Refresca lista + KPIs.
 
 ## 9-Ago-2026 — Recetas usa el COSTO REAL del motor DTE (adiós precio_referencia en el costeo) — Fase 1
 
