@@ -6,6 +6,7 @@ import { Input } from '../ui/input';
 import RecetasView from '../admin/RecetasView';
 import MapeoMenu from './MapeoMenu';
 import CosteoView from '../admin/CosteoView';
+import { UnidadSelect } from '../UnidadSelect';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONSTANTES
@@ -28,8 +29,6 @@ const MOV_TIPOS = {
 };
 
 const selectCls = 'w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
-
-const UNIDADES = ['kg', 'lb', 'g', 'unidad', 'litro', 'ml', 'oz', 'porcion', 'caja', 'paquete'];
 
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTES REUTILIZABLES
@@ -662,11 +661,9 @@ export default function KardexView({ user, show }) {
                   onChange={e => setNuevoItem(p => ({ ...p, nombre: e.target.value }))}
                   onKeyDown={e => e.key === 'Enter' && handleCrearItem()}
                   className="flex-1" autoFocus />
-                <select value={nuevoItem.unidad}
-                  onChange={e => setNuevoItem(p => ({ ...p, unidad: e.target.value }))}
-                  className={selectCls} style={{ width: 'auto', minWidth: 80 }}>
-                  {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <UnidadSelect value={nuevoItem.unidad}
+                  onChange={v => setNuevoItem(p => ({ ...p, unidad: v }))}
+                  className={selectCls} selectStyle={{ minWidth: 80 }} />
               </div>
 
               <div className="flex gap-2">
@@ -1166,16 +1163,11 @@ export default function KardexView({ user, show }) {
 }
 
 // ── Editor de unidades y conversión compra→almacén ──
-const UNID_ALMACEN = ['porcion', 'unidad', 'libra', 'onza', 'gramo', 'kilogramo', 'litro', 'mililitro', 'taza', 'cucharada', 'cucharadita', 'bolsa', 'bote', 'caja'];
-const UNID_COMPRA = [...UNID_ALMACEN, 'fardo', 'paquete', 'saco', 'lata', 'galón', 'display', 'docena', 'media docena', 'cubeta'];
-const OTRA = '__otra__';
 function UnidadesModal({ item, onClose, onSaved }) {
   const [um, setUm] = useState(item.unidad_medida || 'unidad');
   const [uc, setUc] = useState(item.unidad_compra || '');
   const [factor, setFactor] = useState(item.factor_compra ?? 1);
   const [saving, setSaving] = useState(false);
-  // Permite escribir una unidad de compra que no está en la lista (ej: docena, cubeta…)
-  const [customC, setCustomC] = useState(false);
   const guardar = async () => {
     setSaving(true);
     const { error } = await db.rpc('set_unidades_producto', {
@@ -1192,27 +1184,9 @@ function UnidadesModal({ item, onClose, onSaved }) {
         <div style={{ fontWeight: 800, fontSize: 16 }}>Unidades y conversión</div>
         <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 12 }}>{item.nombre}</div>
         <label style={lbl}>Unidad de almacén (cómo se guarda y se usa en recetas)</label>
-        <select value={um} onChange={e => setUm(e.target.value)} style={{ ...inp, marginBottom: 10 }}>
-          {(UNID_ALMACEN.includes(um) ? UNID_ALMACEN : [um, ...UNID_ALMACEN]).map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
+        <UnidadSelect value={um} onChange={setUm} selectStyle={inp} style={{ marginBottom: 10 }} />
         <label style={lbl}>Unidad de compra (cómo viene en el DTE)</label>
-        <select
-          value={customC ? OTRA : uc}
-          onChange={e => {
-            if (e.target.value === OTRA) { setCustomC(true); setUc(''); }
-            else { setCustomC(false); setUc(e.target.value); }
-          }}
-          style={{ ...inp, marginBottom: customC ? 6 : 10 }}>
-          <option value="">(igual que almacén)</option>
-          {(uc && !UNID_COMPRA.includes(uc) ? [uc, ...UNID_COMPRA] : UNID_COMPRA).map(u => <option key={u} value={u}>{u}</option>)}
-          <option value={OTRA}>➕ otra…</option>
-        </select>
-        {customC && (
-          <input
-            type="text" autoFocus placeholder="Escribí la unidad (ej: docena, cubeta, rollo…)"
-            value={uc} onChange={e => setUc(e.target.value)}
-            style={{ ...inp, marginBottom: 10 }} />
-        )}
+        <UnidadSelect value={uc} onChange={setUc} allowEmpty emptyLabel="(igual que almacén)" selectStyle={inp} style={{ marginBottom: 10 }} />
         <label style={lbl}>Factor: 1 {uc || 'compra'} = ? {um || 'almacén'}</label>
         <input type="number" step="any" value={factor} onChange={e => setFactor(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
         <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 14 }}>Ej: comprás caja de 30 lb → compra "caja", almacén "lb", factor 30. Al recibir 5 cajas entran 150 lb.</div>
@@ -1259,7 +1233,6 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
   const inp = { background: '#1e1e1e', border: '1px solid #2a2a2a', color: '#f0f0f0', borderRadius: 8, padding: '7px 10px', fontSize: 13, width: '100%' };
   const lbl = { fontSize: 11, color: '#8a8a8a', display: 'block', marginBottom: 3 };
   const row = { display: 'flex', gap: 8 };
-  const sel = (val, list) => (val && !list.includes(val) ? [val, ...list] : list);
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 16, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto' }}>
@@ -1308,17 +1281,12 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
             </div>
 
             <label style={lbl}>Unidad de almacén * (cómo se usa en recetas/inventario)</label>
-            <select value={form.unidad_medida || 'unidad'} onChange={e => set('unidad_medida', e.target.value)} style={{ ...inp, marginBottom: 10 }}>
-              {sel(form.unidad_medida, UNID_ALMACEN).map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
+            <UnidadSelect value={form.unidad_medida || 'unidad'} onChange={v => set('unidad_medida', v)} selectStyle={inp} style={{ marginBottom: 10 }} />
 
             <div style={{ ...row, marginBottom: 10 }}>
               <div style={{ flex: 2 }}>
                 <label style={lbl}>Unidad de compra (DTE)</label>
-                <select value={form.unidad_compra || ''} onChange={e => set('unidad_compra', e.target.value)} style={inp}>
-                  <option value="">(igual que almacén)</option>
-                  {sel(form.unidad_compra, UNID_COMPRA).filter(Boolean).map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <UnidadSelect value={form.unidad_compra || ''} onChange={v => set('unidad_compra', v)} allowEmpty emptyLabel="(igual que almacén)" selectStyle={inp} />
               </div>
               <div style={{ flex: 1 }}>
                 <label style={lbl}>Factor</label>
