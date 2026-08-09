@@ -357,6 +357,8 @@ function useBeacon(yo) {
   const [error, setError] = useState('')
   const watchRef = useRef(null); const hbRef = useRef(null)
   const posRef = useRef(null); const lastSentRef = useRef(0); const wakeRef = useRef(null)
+  const nativeRef = useRef(false)
+  const nativeGps = () => { try { return !!(window.AndroidPrinter && window.AndroidPrinter.hasLocationNative && window.AndroidPrinter.hasLocationNative()) } catch { return false } }
 
   const enviar = useCallback(async () => {
     const p = posRef.current
@@ -373,7 +375,15 @@ function useBeacon(yo) {
   }, [yo])
 
   const iniciar = useCallback((esAuto = true) => {
-    if (watchRef.current != null || !navigator.geolocation) return
+    if (nativeRef.current || watchRef.current != null) return
+    // APK nativo (sabor driver → GPS en segundo plano, tipo 'delivery')
+    if (nativeGps() && yo) {
+      try {
+        window.AndroidPrinter.startLocation(String(yo.id), yo.nombre || 'Motorista', 'delivery')
+        nativeRef.current = true; setError(''); setActivo(true); setAuto(esAuto); return
+      } catch { /* cae a web */ }
+    }
+    if (!navigator.geolocation) return
     setError(''); setActivo(true); setAuto(esAuto)
     try { if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(w => { wakeRef.current = w }).catch(() => {}) } catch { /* noop */ }
     watchRef.current = navigator.geolocation.watchPosition(
@@ -390,6 +400,7 @@ function useBeacon(yo) {
   }, [enviar])
 
   const detener = useCallback(() => {
+    if (nativeRef.current) { try { window.AndroidPrinter.stopLocation() } catch { /* noop */ } nativeRef.current = false }
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
     if (hbRef.current != null) { clearInterval(hbRef.current); hbRef.current = null }
     if (wakeRef.current) { wakeRef.current.release().catch(() => {}); wakeRef.current = null }
