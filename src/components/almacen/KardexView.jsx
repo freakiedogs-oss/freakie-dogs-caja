@@ -177,6 +177,7 @@ export default function KardexView({ user, show }) {
   const [catTotals, setCatTotals] = useState({ materia_prima: 0, sub_producto: 0, producto_terminado: 0, insumo: 0, total: 0 });
   const [editUnid, setEditUnid] = useState(null); // producto cuyas unidades se editan
   const [editTipoId, setEditTipoId] = useState(null); // producto cuyo tipo (clasificación) se edita inline
+  const [editItem, setEditItem] = useState(null); // producto abierto en el editor completo
   const [catFilter, setCatFilter] = useState('todos');
   const [catSearch, setCatSearch] = useState('');
   const [loadingCat, setLoadingCat] = useState(false);
@@ -186,13 +187,6 @@ export default function KardexView({ user, show }) {
   const [verDte, setVerDte] = useState(null);   // producto_id cuyo mapeo DTE se muestra
   const [dteMap, setDteMap] = useState(null);   // resultado de producto_mapeo_dte
 
-  const renombrarItem = async (item) => {
-    const nombre = window.prompt('Nuevo nombre del ingrediente:', item.nombre);
-    if (!nombre || nombre.trim() === '' || nombre.trim() === item.nombre) return;
-    const { error } = await db.rpc('set_conteo_item_meta', { p_producto_id: item.id, p_nombre: nombre.trim() });
-    if (error) { window.alert('❌ ' + error.message); return; }
-    fetchCatalogo();
-  };
   const toggleDte = async (id) => {
     if (verDte === id) { setVerDte(null); setDteMap(null); return; }
     setVerDte(id); setDteMap(null);
@@ -717,9 +711,9 @@ export default function KardexView({ user, show }) {
                         {item.categoria ? ` · ${item.categoria}` : ''}
                       </p>
                     </div>
-                    <button onClick={() => renombrarItem(item)}
+                    <button onClick={() => setEditItem(item)}
                       style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
-                      title="Renombrar (limpiar nombre)">✏️</button>
+                      title="Editar ítem (nombre, tipo, unidades, todos los atributos)">✏️</button>
                     <button onClick={() => toggleDte(item.id)}
                       style={{ background: verDte === item.id ? '#333' : '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
                       title="Ver DTEs mapeados a este item">🔗 DTE</button>
@@ -776,6 +770,7 @@ export default function KardexView({ user, show }) {
                 </div>
               ))}
               {editUnid && <UnidadesModal item={editUnid} onClose={() => setEditUnid(null)} onSaved={() => { setEditUnid(null); fetchCatalogo(); }} />}
+              {editItem && <ItemEditorModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); fetchCatalogo(); fetchTotals(); show?.('Ítem actualizado', 'success'); }} show={show} />}
               {catalogo.length >= 1000 && (
                 <p className="text-xs text-center text-muted-foreground mt-2">
                   Mostrando primeros 1,000 resultados. Usa el buscador para filtrar.
@@ -1225,6 +1220,147 @@ function UnidadesModal({ item, onClose, onSaved }) {
           <button onClick={onClose} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>Cancelar</button>
           <button onClick={guardar} disabled={saving} style={{ background: '#4ade80', color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Editor completo de un ítem del catálogo (todos los atributos de la tabla) ──
+function ItemEditorModal({ item, onClose, onSaved, show }) {
+  const [form, setForm] = useState(null); // se carga la fila completa al abrir
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let alive = true;
+    db.from('catalogo_productos').select('*').eq('id', item.id).single()
+      .then(({ data }) => { if (alive) setForm(data || { ...item }); });
+    return () => { alive = false; };
+  }, [item]);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
+  const guardar = async () => {
+    setSaving(true); setErr('');
+    const { error } = await db.rpc('actualizar_catalogo_producto', {
+      p_id: item.id,
+      p_nombre: form.nombre, p_sku: form.sku, p_codigo: form.codigo,
+      p_tipo: form.tipo || null, p_categoria: form.categoria, p_subcategoria: form.subcategoria,
+      p_unidad_medida: form.unidad_medida, p_unidad_compra: form.unidad_compra || null,
+      p_factor_compra: numOrNull(form.factor_compra),
+      p_contenido_neto: numOrNull(form.contenido_neto), p_unidad_contenido: form.unidad_contenido,
+      p_precio_referencia: numOrNull(form.precio_referencia),
+      p_descripcion: form.descripcion, p_activo: !!form.activo,
+      p_incluir_conteo: form.incluir_conteo == null ? null : !!form.incluir_conteo,
+      p_incluir_inventario_fisico: form.incluir_inventario_fisico == null ? null : !!form.incluir_inventario_fisico,
+    });
+    setSaving(false);
+    if (error) { setErr(error.message); show?.('❌ ' + error.message, 'error'); return; }
+    onSaved();
+  };
+  const inp = { background: '#1e1e1e', border: '1px solid #2a2a2a', color: '#f0f0f0', borderRadius: 8, padding: '7px 10px', fontSize: 13, width: '100%' };
+  const lbl = { fontSize: 11, color: '#8a8a8a', display: 'block', marginBottom: 3 };
+  const row = { display: 'flex', gap: 8 };
+  const sel = (val, list) => (val && !list.includes(val) ? [val, ...list] : list);
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 16, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto' }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>Editar ítem</div>
+        {!form ? (
+          <div style={{ color: '#8a8a8a', padding: 20, textAlign: 'center' }}>Cargando…</div>
+        ) : (
+          <>
+            <label style={lbl}>Nombre *</label>
+            <input value={form.nombre || ''} onChange={e => set('nombre', e.target.value)} style={{ ...inp, marginBottom: 10 }} />
+
+            <label style={lbl}>Clasificación</label>
+            <div className="flex gap-2 mb-3 flex-wrap">
+              {Object.entries(TIPOS).map(([key, t]) => (
+                <button key={key} onClick={() => set('tipo', key)}
+                  className="rounded-lg p-2 text-center border-2" style={{
+                    minWidth: 64, background: form.tipo === key ? t.bg : 'transparent',
+                    borderColor: form.tipo === key ? t.color : '#333', color: form.tipo === key ? t.color : '#888', cursor: 'pointer',
+                  }} title={t.hint}>
+                  <div style={{ fontSize: 18 }}>{t.icon}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2 }}>{t.label}</div>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ ...row, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>SKU</label>
+                <input value={form.sku || ''} onChange={e => set('sku', e.target.value)} style={inp} placeholder="sin SKU" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Código</label>
+                <input value={form.codigo || ''} onChange={e => set('codigo', e.target.value)} style={inp} placeholder="—" />
+              </div>
+            </div>
+
+            <div style={{ ...row, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Categoría *</label>
+                <input value={form.categoria || ''} onChange={e => set('categoria', e.target.value)} style={inp} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Subcategoría</label>
+                <input value={form.subcategoria || ''} onChange={e => set('subcategoria', e.target.value)} style={inp} placeholder="—" />
+              </div>
+            </div>
+
+            <label style={lbl}>Unidad de almacén * (cómo se usa en recetas/inventario)</label>
+            <select value={form.unidad_medida || 'unidad'} onChange={e => set('unidad_medida', e.target.value)} style={{ ...inp, marginBottom: 10 }}>
+              {sel(form.unidad_medida, UNID_ALMACEN).map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+
+            <div style={{ ...row, marginBottom: 10 }}>
+              <div style={{ flex: 2 }}>
+                <label style={lbl}>Unidad de compra (DTE)</label>
+                <select value={form.unidad_compra || ''} onChange={e => set('unidad_compra', e.target.value)} style={inp}>
+                  <option value="">(igual que almacén)</option>
+                  {sel(form.unidad_compra, UNID_COMPRA).filter(Boolean).map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Factor</label>
+                <input type="number" step="any" value={form.factor_compra ?? 1} onChange={e => set('factor_compra', e.target.value)} style={inp} />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 12 }}>1 {form.unidad_compra || 'compra'} = {form.factor_compra ?? 1} {form.unidad_medida || 'almacén'} · afecta el costo por unidad.</div>
+
+            <div style={{ ...row, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Contenido neto</label>
+                <input type="number" step="any" value={form.contenido_neto ?? ''} onChange={e => set('contenido_neto', e.target.value)} style={inp} placeholder="—" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Unidad contenido</label>
+                <input value={form.unidad_contenido || ''} onChange={e => set('unidad_contenido', e.target.value)} style={inp} placeholder="—" />
+              </div>
+            </div>
+
+            <label style={lbl}>Precio referencia (solo fallback si no hay costo DTE)</label>
+            <input type="number" step="any" value={form.precio_referencia ?? ''} onChange={e => set('precio_referencia', e.target.value)} style={{ ...inp, marginBottom: 10 }} placeholder="—" />
+
+            <label style={lbl}>Descripción</label>
+            <textarea value={form.descripcion || ''} onChange={e => set('descripcion', e.target.value)} style={{ ...inp, minHeight: 44, marginBottom: 12 }} placeholder="—" />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f0f0f0', marginBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!form.activo} onChange={e => set('activo', e.target.checked)} /> Activo (visible en catálogo, recetas y selectores)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f0f0f0', marginBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!form.incluir_conteo} onChange={e => set('incluir_conteo', e.target.checked)} /> Incluir en Conteo Nocturno
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f0f0f0', marginBottom: 14, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!form.incluir_inventario_fisico} onChange={e => set('incluir_inventario_fisico', e.target.checked)} /> Incluir en Inventario Físico
+            </label>
+
+            {err && <div style={{ color: '#f87171', fontSize: 12, marginBottom: 10 }}>❌ {err}</div>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={onClose} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={guardar} disabled={saving} style={{ background: '#4ade80', color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
