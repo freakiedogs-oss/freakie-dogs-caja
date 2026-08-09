@@ -101,9 +101,10 @@ export default function RecetasView({ user }) {
     // Insert new
     const rows = editIngredients.filter(i => (i.producto_id || i.sub_receta_id) && n(i.cantidad) > 0).map(i => ({
       receta_id: sel.id,
-      tipo_ingrediente: i.tipo_ingrediente,
+      // En DB solo hay 2 tipos; 'porcionado' es UI y se guarda como sub_receta.
+      tipo_ingrediente: i.tipo_ingrediente === 'materia_prima' ? 'materia_prima' : 'sub_receta',
       producto_id: i.tipo_ingrediente === 'materia_prima' ? i.producto_id : null,
-      sub_receta_id: i.tipo_ingrediente === 'sub_receta' ? i.sub_receta_id : null,
+      sub_receta_id: i.tipo_ingrediente !== 'materia_prima' ? i.sub_receta_id : null,
       cantidad: n(i.cantidad),
       unidad_medida: i.unidad_medida || 'unidad',
       merma_pct: n(i.merma_pct),
@@ -159,7 +160,9 @@ export default function RecetasView({ user }) {
   // ── Iniciar edición de ingredientes ──
   const startEditIngredients = () => {
     const current = (ingredientes[sel.id] || []).map(i => ({
-      tipo_ingrediente: i.tipo_ingrediente,
+      // UI: distingue porcionado de sub-receta según el tipo de la receta enlazada
+      tipo_ingrediente: i.tipo_ingrediente === 'materia_prima' ? 'materia_prima'
+        : (i.sub?.tipo === 'porcionado' ? 'porcionado' : 'sub_receta'),
       producto_id: i.producto_id,
       sub_receta_id: i.sub_receta_id,
       cantidad: i.cantidad,
@@ -445,6 +448,7 @@ export default function RecetasView({ user }) {
                     }}>
                     <option value="materia_prima">Materia Prima</option>
                     <option value="sub_receta">Sub-receta</option>
+                    <option value="porcionado">Porcionado</option>
                   </select>
                   <button style={{ background: '#e63946', color: '#fff', border: 'none', borderRadius: 6, padding: '0 8px', cursor: 'pointer' }}
                     onClick={() => setEditIngredients(editIngredients.filter((_, i) => i !== idx))}>✕</button>
@@ -471,8 +475,8 @@ export default function RecetasView({ user }) {
                       arr[idx] = { ...arr[idx], sub_receta_id: e.target.value, unidad_medida: sr?.unidad_rendimiento || 'porcion', _nombre: sr?.nombre };
                       setEditIngredients(arr);
                     }}>
-                    <option value="">— Seleccionar sub-receta —</option>
-                    {recetas.filter(r => r.tipo === 'sub_receta' || r.tipo === 'porcionado').map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+                    <option value="">— Seleccionar {ing.tipo_ingrediente === 'porcionado' ? 'porcionado' : 'sub-receta'} —</option>
+                    {recetas.filter(r => r.tipo === ing.tipo_ingrediente).map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
                   </select>
                 )}
 
