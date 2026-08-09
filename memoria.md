@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 9-Ago-2026 — Fix: conteo_lista mostraba "sábana" de TODOS los ingredientes (bug de correlación)
+
+- **Síntoma (Jose):** en *Kardex → Lista Conteo*, al expandir la receta de un ítem (ej. *Papa Sazonada porcionado*) salía una lista enorme de ingredientes ajenos (New York, Asado de Tira, Molida 90/10, panes, quesos…), no la receta real. La receta en DB tiene **1 solo ingrediente** → no era dato malo, era el RPC.
+- **Causa raíz (RPC `conteo_lista`):** la subconsulta de ingredientes hacía `where ri.receta_id = receta_id`. Ese `receta_id` sin calificar se resolvía a la **columna del scope interno** `receta_ingredientes.receta_id` (no a la receta de la fila), quedando `ri.receta_id = ri.receta_id` → **siempre true** → agregaba TODOS los ingredientes de TODAS las recetas. El **nombre** de la receta salía bien porque esa otra subconsulta (`from recetas`) no tiene esa colisión.
+- **Fix (migración `fix_conteo_lista_ingredientes_correlacion`):** se alía la CTE como `it` y se califican las referencias externas (`it.receta_id`, `it.match_receta_id`). Verificado: la papa ahora devuelve solo su ingrediente real. Afectaba a **todos** los ítems con receta enlazada. DB puro (RPC) → ya vivo, sin deploy.
+
 ## 9-Ago-2026 — Mapeo Compras: ver/editar el ingrediente vinculado + estado de conteo nocturno
 
 - **Síntoma (Jose):** en *Kardex → Mapeo Compras*, un item de DTE ya "✓ Vinculado" no mostraba **a qué ingrediente** estaba vinculado ni dejaba corregirlo si estaba mal. Caso real "REDSTONE" (papa McCain 3/8): 3 descripciones de la MISMA papa mapeadas a 3 cosas distintas (una a `325026-MCX03621 MC REDSTONE` = Caja, dos a `Papa Sazonadas 30lb` = libra) y una sin vincular. No había forma de verlo ni arreglarlo desde la UI.
