@@ -2,6 +2,21 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 9-Ago-2026 — Órdenes duplicadas de conteo nocturno → "una sola orden viva por sucursal"
+
+- **Síntoma (Jose):** anoche (y otras noches) a las sucursales se les **duplicaron** las órdenes del conteo nocturno; el almacén las veía dobles. Confirmado en DB: 08-08 **Lourdes** (20:52 + 20:53) y **Cafetalón** (21:44 ×2) con órdenes **idénticas** (mismo # ítems y total) → doble-envío. Recurrente: también 07-26, 07-24, 07-19.
+- **Causa raíz (`ConteoNocturno.enviarPedido`):** al enviar, buscaba la orden previa con `.maybeSingle()`, la borraba y creaba una nueva. `.maybeSingle()` **tira error si hay ≥2 órdenes activas** (lo ignoraba) → no borraba y creaba encima. Y hay ≥2 activas justo cuando ya se usó **pedido de emergencia** (`crear_pedido_emergencia` SIEMPRE creaba una 2ª orden aparte). Además el guard anti-doble-click era **solo del cliente**; nada en Postgres lo impedía.
+- **Regla acordada:** **una sola orden VIVA (`estado='enviado'`) por sucursal** hasta que el almacén la marque `preparando`. Conteo rehecho = sobreescribe; emergencia = se suma a la viva; si ya se preparó (pasó a `preparando`/despacho) = genera una nueva.
+- **DB (migración `pedido_vivo_unico_por_sucursal`):**
+  - Candados duros: índice único parcial `pedidos_sucursal(sucursal_id) WHERE estado='enviado'` (imposible tener 2 vivas) + único `pedido_items(pedido_id, producto_id)`.
+  - RPC **`guardar_pedido_vivo(sucursal, usuario, items[{producto_id,cantidad,unidad}], modo)`** — atómica, con `pg_advisory_xact_lock` por sucursal (mata doble-submit/carreras). modo `conteo`=sobreescribe la orden viva (o crea); modo `emergencia`=suma ítems a la viva (o crea si ya se preparó la anterior). Llama `revisar_stock_cm_pedido` y devuelve `sin_stock` para el aviso de Casa Matriz. Probada con ROLLBACK (conteo→99, emergencia→104, siempre 1 viva).
+  - `crear_pedido_emergencia` reescrita para **delegar** en `guardar_pedido_vivo(...,'emergencia')` → ahora SUMA a la orden viva (antes creaba otra). Contrato JS sin cambios.
+- **Frontend:**
+  - `ConteoNocturno.jsx`: `enviarPedido` ya no borra/inserta a mano; llama la RPC `guardar_pedido_vivo` modo `conteo`.
+  - `MisPedidosView.jsx`: nuevo botón **✏️ Editar pedido** en la tarjeta de la orden viva (`enviado` sin despacho) + `EditarPedidoModal` (corrige cantidades / quita / agrega ítems) que sobreescribe vía la misma RPC. Antes NO había forma de editar (era solo lectura).
+- **Limpieza datos:** borrados los 2 duplicados vivos de anoche (copia más nueva de cada par, sin despacho). Post-fix: **1 orden viva por sucursal** verificado.
+- Frontend → requiere merge + deploy Vercel para verse. DB ya vivo.
+
 ## 9-Ago-2026 — Fix UX: botón "Todo Solicitado" (Despacho) ahora baja al fondo
 
 - **Síntoma (Jose):** en *Almacén → Despacho → Preparar Despacho*, el botón **✅ Todo Solicitado** "no hacía nada". En realidad **sí** rellena `qty_despacho` con lo solicitado, pero cuando las cantidades ya coincidían con lo solicitado no había cambio visible y encima dejaba la vista arriba → parecía muerto.

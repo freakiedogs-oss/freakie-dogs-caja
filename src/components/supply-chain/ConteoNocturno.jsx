@@ -288,41 +288,25 @@ export default function ConteoNocturno({user,onBack}){
 
     setGenerandoPedido(true);
     try{
-      // Eliminar pedido activo previo de esta sucursal (solo debe existir 1 por sucursal)
-      const {data:pedidoExistente}=await db.from('pedidos_sucursal')
-        .select('id').eq('sucursal_id', sucursalId).neq('estado','recibido').maybeSingle();
-      if(pedidoExistente){
-        await db.from('pedido_items').delete().eq('pedido_id', pedidoExistente.id);
-        await db.from('pedidos_sucursal').delete().eq('id', pedidoExistente.id);
-      }
-
-      // Crear pedido_sucursal
-      const {data:pedido,error:pedErr}=await db.from('pedidos_sucursal')
-        .insert({
-          fecha_pedido: today(),
-          sucursal_id: sucursalId,
-          estado: 'enviado',
-          solicitado_por: user.id,
-          notas: 'Auto-generado por Conteo Nocturno'
-        }).select().single();
-
-      if(pedErr)throw pedErr;
-
-      // Insertar pedido_items
-      const pedidoItems=items.map(p=>({
-        pedido_id: pedido.id,
+      // Una sola orden VIVA por sucursal: la RPC sobrescribe atómicamente la orden
+      // 'enviado' existente (o crea una nueva si no hay), con candado por sucursal
+      // que mata doble-envíos y carreras. Ya no borramos/insertamos a mano.
+      const payload=items.map(p=>({
         producto_id: p.producto_id,
-        cantidad_solicitada: n(pedidoQtys[p.producto_id]),
-        cantidad_despachada: 0,
+        cantidad: n(pedidoQtys[p.producto_id]),
         unidad: p.unidad
       }));
+      const {data:resp,error:rpcErr}=await db.rpc('guardar_pedido_vivo',{
+        p_sucursal_id: sucursalId,
+        p_usuario_id: user.id,
+        p_items: payload,
+        p_modo: 'conteo'
+      });
+      if(rpcErr)throw rpcErr;
+      if(!resp?.ok)throw new Error(resp?.error||'no se pudo guardar el pedido');
 
-      const {error:itemErr}=await db.from('pedido_items').insert(pedidoItems);
-      if(itemErr)throw itemErr;
-
-      // #11: revisar stock de Casa Matriz → avisar lo que queda en pedido
-      const {data:rev}=await db.rpc('revisar_stock_cm_pedido',{p_pedido_id:pedido.id});
-      const faltan=rev?.sin_stock||[];
+      // #11: Casa Matriz sin stock → avisar lo que queda en pedido (lo devuelve la RPC)
+      const faltan=resp.sin_stock||[];
       setGenerandoPedido(false);
       if(faltan.length>0){
         const lista=faltan.slice(0,8).map(f=>`• ${f.nombre} (CM: ${Number(f.cm||0)})`).join('\n');
