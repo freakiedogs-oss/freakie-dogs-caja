@@ -46,6 +46,13 @@
 - **Frontend (`KardexView.jsx`, tab Mapeo):** cada card vinculada muestra el ingrediente (nombre editable ✎ vía `set_conteo_item_meta` → refleja en conteo), badge **🌙 En conteo / ⚠️ No está en el conteo** (+ botón "Agregar al conteo" con `set_conteo_item`), y acciones **↻ Cambiar** (reusa el panel de búsqueda/creación) y **✕ Desvincular**. El panel expandido ahora abre también para items ya mapeados (Cambiar).
 - **NO** cambié ningún mapeo real (ej. el de REDSTONE): eso lo decide Jose desde la nueva UI (afecta inventario/costeo de $239K de historial). Build OK. Frontend → requiere merge PR + deploy Vercel.
 
+## 9-Ago-2026 — Kardex: editar clasificación (tipo) inline + fix Cheddar Lata mal clasificada
+
+- **Problema (Jose):** "Cheddar Lata" no salía en el selector de Materia Prima al armar recetas, pese a mostrar badge "MP" en el Kardex. Causa: en la base su `tipo` era **`sub_producto`** (no `materia_prima`); el selector de MP solo lista `tipo=materia_prima` (o null). Los cheddar que sí eran `materia_prima` estaban `activo=false` (duplicados viejos).
+- **El badge NO viene de otra tabla:** sale de `TipoPill tipo={item.tipo}` (`KardexView.jsx`), el **mismo campo `catalogo_productos.tipo`** que filtra el selector de recetas. No hay doble fuente; el "MP" que se veía era un valor viejo/otra vista cacheada — algo reclasificó el item a sub_producto después. (Ojo aparte: `fetchTotals` cuenta `tipo NULL` como MP → un item sin tipo sale con badge '?' pero suma en el KPI de MP.)
+- **Fix datos:** `update catalogo_productos set tipo='materia_prima' where id=ecefa37d` (Cheddar Lata). Ya sale en el selector; conserva enlace y costo DTE ($10.39).
+- **Fix producto (para que no recurra):** en Kardex→Inventario el **badge ahora es clickeable** → abre un selector de tipo (MP/SP/PT/Insumo) que reclasifica el item al toque. Nuevo RPC `set_producto_tipo(uuid,text)` (SECURITY DEFINER, valida contra el CHECK, grant anon/authenticated). Refresca lista + KPIs.
+
 ## 9-Ago-2026 — Recetas usa el COSTO REAL del motor DTE (adiós precio_referencia en el costeo) — Fase 1
 
 - **Síntoma (Jose):** el costo en la pestaña Recetas salía **$0** siempre, aunque el DTE estuviera vinculado. Quería que el costo viniera del **costo real de los DTE**, no de un campo manual.

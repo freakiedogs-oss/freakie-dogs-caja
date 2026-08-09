@@ -176,6 +176,7 @@ export default function KardexView({ user, show }) {
   const [catalogo, setCatalogo] = useState([]);
   const [catTotals, setCatTotals] = useState({ materia_prima: 0, sub_producto: 0, producto_terminado: 0, insumo: 0, total: 0 });
   const [editUnid, setEditUnid] = useState(null); // producto cuyas unidades se editan
+  const [editTipoId, setEditTipoId] = useState(null); // producto cuyo tipo (clasificación) se edita inline
   const [catFilter, setCatFilter] = useState('todos');
   const [catSearch, setCatSearch] = useState('');
   const [loadingCat, setLoadingCat] = useState(false);
@@ -244,6 +245,17 @@ export default function KardexView({ user, show }) {
       fetchCatalogo();
     } catch { show?.('Error al crear', 'error'); }
     finally { setCreando(false); }
+  };
+
+  // Reclasificar el tipo (MP/SP/PT/Insumo) de un item desde la lista
+  const cambiarTipo = async (item, nuevoTipo) => {
+    setEditTipoId(null);
+    if (nuevoTipo === item.tipo) return;
+    const { error } = await db.rpc('set_producto_tipo', { p_producto_id: item.id, p_tipo: nuevoTipo });
+    if (error) { show?.('❌ ' + error.message, 'error'); return; }
+    show?.(`"${item.nombre}" → ${TIPOS[nuevoTipo]?.full}`, 'success');
+    fetchCatalogo();
+    fetchTotals();
   };
 
   // Conteos por tipo
@@ -690,7 +702,11 @@ export default function KardexView({ user, show }) {
               {catalogo.map(item => (
                 <div key={item.id}>
                   <div className="item-row flex items-center gap-2">
-                    <TipoPill tipo={item.tipo} />
+                    <button onClick={() => setEditTipoId(editTipoId === item.id ? null : item.id)}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                      title="Cambiar clasificación (MP/SP/PT/Insumo)">
+                      <TipoPill tipo={item.tipo} />
+                    </button>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{item.nombre}</p>
                       <p className="text-xs text-muted-foreground">
@@ -718,6 +734,28 @@ export default function KardexView({ user, show }) {
                     }} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
                       title="Eliminar producto">🗑️</button>
                   </div>
+                  {editTipoId === item.id && (
+                    <div style={{ background: '#101010', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 40px', fontSize: 12 }}>
+                      <div style={{ color: '#8a8a8a', marginBottom: 6 }}>Clasificación de "{item.nombre}":</div>
+                      <div className="flex gap-2 flex-wrap">
+                        {Object.entries(TIPOS).map(([key, t]) => (
+                          <button key={key} onClick={() => cambiarTipo(item, key)}
+                            className="rounded-lg p-2 text-center border-2 transition-all"
+                            style={{
+                              minWidth: 68,
+                              background: item.tipo === key ? t.bg : 'transparent',
+                              borderColor: item.tipo === key ? t.color : '#333',
+                              color: item.tipo === key ? t.color : '#888',
+                              cursor: 'pointer',
+                            }}
+                            title={t.hint}>
+                            <div style={{ fontSize: 18 }}>{t.icon}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2 }}>{t.label}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {verDte === item.id && (
                     <div style={{ background: '#101010', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 40px', fontSize: 12 }}>
                       {!dteMap ? <span style={{ color: '#888' }}>Cargando…</span>
