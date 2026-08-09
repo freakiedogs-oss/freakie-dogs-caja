@@ -264,6 +264,8 @@ export default function KardexView({ user, show }) {
   const [creandoDesdeMapeo, setCreandoDesdeMapeo] = useState(null);
   const [newNameMapeo, setNewNameMapeo] = useState('');
   const [savingMapeo, setSavingMapeo] = useState(false);
+  const [editNombre, setEditNombre] = useState(null);     // descripcion cuyo ingrediente se está renombrando
+  const [editNombreVal, setEditNombreVal] = useState('');
   const [totalDescs, setTotalDescs] = useState(0);
   const [totalMapped, setTotalMapped] = useState(0);
 
@@ -277,7 +279,7 @@ export default function KardexView({ user, show }) {
         setTotalMapped(allData.filter(d => d.mapeado).length);
       }
       // Luego: datos filtrados
-      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas,inventariable,ultima_compra');
+      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas,inventariable,ultima_compra,catalogo_id,catalogo_nombre,catalogo_tipo,catalogo_unidad,catalogo_en_conteo');
       if (soloSinMapear) q = q.eq('mapeado', false);
       if (soloInventariables) q = q.eq('inventariable', true);
       if (solo3Meses) {
@@ -338,6 +340,47 @@ export default function KardexView({ user, show }) {
       fetchMapeo();
       fetchCatalogo();
     } catch { show?.('Error al crear y vincular', 'error'); }
+    finally { setSavingMapeo(false); }
+  };
+
+  const handleDesmapear = async (descripcion) => {
+    if (!window.confirm(`¿Desvincular "${descripcion}" de su ingrediente?\n\nLas líneas de compra quedarán sin vincular (podrás volver a vincularlas a otro ingrediente).`)) return;
+    setSavingMapeo(true);
+    try {
+      const { data, error } = await db.rpc('desmapear_descripcion_dte', { p_descripcion: descripcion });
+      if (error) throw error;
+      show?.(`Desvinculado — ${data} líneas liberadas`, 'success');
+      setActiveMapDesc(null);
+      fetchMapeo();
+    } catch { show?.('Error al desvincular', 'error'); }
+    finally { setSavingMapeo(false); }
+  };
+
+  // Renombra el ingrediente del catálogo (misma fuente que el conteo nocturno → se refleja allá)
+  const handleRenombrarIngrediente = async (catalogoId, nombre) => {
+    const v = (nombre || '').trim();
+    if (!catalogoId || !v) return;
+    setSavingMapeo(true);
+    try {
+      const { error } = await db.rpc('set_conteo_item_meta', { p_producto_id: catalogoId, p_nombre: v });
+      if (error) throw error;
+      show?.('Nombre actualizado (se refleja en el conteo nocturno)', 'success');
+      setEditNombre(null);
+      fetchMapeo();
+      fetchCatalogo();
+    } catch { show?.('Error al renombrar', 'error'); }
+    finally { setSavingMapeo(false); }
+  };
+
+  const handleToggleConteo = async (catalogoId, incluir) => {
+    if (!catalogoId) return;
+    setSavingMapeo(true);
+    try {
+      const { error } = await db.rpc('set_conteo_item', { p_producto_id: catalogoId, p_incluir: incluir });
+      if (error) throw error;
+      show?.(incluir ? 'Agregado al conteo nocturno' : 'Quitado del conteo nocturno', 'success');
+      fetchMapeo();
+    } catch { show?.('Error al actualizar el conteo', 'error'); }
     finally { setSavingMapeo(false); }
   };
 
@@ -803,6 +846,69 @@ export default function KardexView({ user, show }) {
                       )}
                     </div>
 
+                    {/* Ingrediente vinculado: nombre editable + estado de conteo nocturno + acciones */}
+                    {desc.mapeado && !isActive && (
+                      <div className="mt-2 pt-2" style={{ borderTop: '1px solid #222' }}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>🔗 Vinculado a:</span>
+                          {editNombre === desc.descripcion ? (
+                            <div className="flex gap-1 items-center flex-1" style={{ minWidth: 180 }}>
+                              <Input value={editNombreVal} onChange={e => setEditNombreVal(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleRenombrarIngrediente(desc.catalogo_id, editNombreVal)}
+                                autoFocus className="flex-1" />
+                              <button className="btn btn-green btn-sm shrink-0" disabled={savingMapeo}
+                                onClick={() => handleRenombrarIngrediente(desc.catalogo_id, editNombreVal)}>
+                                {savingMapeo ? '...' : '✓'}
+                              </button>
+                              <button className="text-xs underline shrink-0" style={{ color: '#8a8a8a' }}
+                                onClick={() => setEditNombre(null)}>✕</button>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="text-sm font-semibold" style={{ color: '#4ade80', wordBreak: 'break-word' }}>
+                                {desc.catalogo_nombre || '—'}
+                              </span>
+                              {desc.catalogo_unidad && (
+                                <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>· {desc.catalogo_unidad}</span>
+                              )}
+                              <button className="text-xs underline shrink-0" style={{ color: '#60a5fa' }}
+                                title="Renombrar el ingrediente (se refleja en el conteo nocturno)"
+                                onClick={() => { setEditNombre(desc.descripcion); setEditNombreVal(desc.catalogo_nombre || ''); }}>
+                                ✎ nombre
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Estado en el conteo nocturno */}
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          {desc.catalogo_en_conteo ? (
+                            <span className="tag tag-green" style={{ fontSize: 11 }}>🌙 En conteo nocturno</span>
+                          ) : (
+                            <>
+                              <span className="tag tag-orange" style={{ fontSize: 11 }}>🌙 No está en el conteo</span>
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} disabled={savingMapeo}
+                                onClick={() => handleToggleConteo(desc.catalogo_id, true)}>
+                                + Agregar al conteo
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Acciones: cambiar / desvincular */}
+                        <div className="flex gap-2 mt-2">
+                          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}
+                            onClick={() => { setActiveMapDesc(desc.descripcion); setCreandoDesdeMapeo(null); setEditNombre(null); }}>
+                            ↻ Cambiar ingrediente
+                          </button>
+                          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, color: '#f87171' }} disabled={savingMapeo}
+                            onClick={() => handleDesmapear(desc.descripcion)}>
+                            ✕ Desvincular
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Acciones si no está mapeado */}
                     {!desc.mapeado && !isActive && (
                       <button className="btn btn-ghost btn-sm mt-2" style={{ fontSize: 12, width: '100%' }}
@@ -811,12 +917,12 @@ export default function KardexView({ user, show }) {
                       </button>
                     )}
 
-                    {/* Panel de vinculación expandido */}
-                    {isActive && !desc.mapeado && (
+                    {/* Panel de vinculación / cambio expandido */}
+                    {isActive && (
                       <div className="mt-3 space-y-2 pt-3" style={{ borderTop: '1px solid #333' }}>
                         {/* Opción 1: buscar existente */}
                         <p className="text-xs font-bold" style={{ color: '#60a5fa' }}>
-                          Buscar ingrediente existente:
+                          {desc.mapeado ? 'Cambiar a otro ingrediente existente:' : 'Buscar ingrediente existente:'}
                         </p>
                         <CatalogoSearch
                           placeholder="Escribe el nombre del ingrediente..."
