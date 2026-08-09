@@ -522,8 +522,8 @@ async function _imprimir(tipo, cuenta, opts = {}) {
     }
     try {
       const b64 = builders[tipo]().base64();
-      // Esperar el resultado REAL del socket (MainActivity llama window.__printResult(ok, err)).
-      const res = await new Promise((resolve) => {
+      // Un intento = un socket TCP. Esperar el resultado REAL (MainActivity llama window.__printResult(ok, err)).
+      const unIntento = () => new Promise((resolve) => {
         let done = false;
         const fin = (ok, err) => { if (done) return; done = true; try { window.__printResult = null; } catch (_) {} resolve({ ok, err }); };
         try { window.__printResult = (ok, err) => fin(!!ok, err); } catch (_) {}
@@ -531,7 +531,15 @@ async function _imprimir(tipo, cuenta, opts = {}) {
         catch (e) { fin(false, e && e.message); }
         setTimeout(() => fin(false, 'la impresora no respondió (timeout)'), 6000);
       });
-      if (res.ok) return { ok: true, modo: 'app' };
+      // Reintentos: las impresoras WiFi (RPT-006B) se DUERMEN al estar inactivas y
+      // fallan el primer connect (~4s timeout) — típico en el corte Z de cierre, que
+      // se hace tras un rato sin imprimir. El 1er intento la despierta; el 2º imprime.
+      let res = { ok: false, err: null };
+      for (let intento = 1; intento <= 3; intento++) {
+        res = await unIntento();
+        if (res.ok) return { ok: true, modo: 'app' };
+        if (intento < 3) await new Promise(r => setTimeout(r, 1200));
+      }
       return { ok: false, modo: 'app', error: res.err || 'la impresora no respondió' };
     } catch (e) { console.error('[print] app nativa fallo', e); return { ok: false, modo: 'app', error: e && e.message }; }
   }
