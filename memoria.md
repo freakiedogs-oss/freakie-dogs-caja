@@ -2,6 +2,17 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 9-Ago-2026 — Mapeo Compras: ver/editar el ingrediente vinculado + estado de conteo nocturno
+
+- **Síntoma (Jose):** en *Kardex → Mapeo Compras*, un item de DTE ya "✓ Vinculado" no mostraba **a qué ingrediente** estaba vinculado ni dejaba corregirlo si estaba mal. Caso real "REDSTONE" (papa McCain 3/8): 3 descripciones de la MISMA papa mapeadas a 3 cosas distintas (una a `325026-MCX03621 MC REDSTONE` = Caja, dos a `Papa Sazonadas 30lb` = libra) y una sin vincular. No había forma de verlo ni arreglarlo desde la UI.
+- **Además (Jose):** que en la card se vea si ese ingrediente está en el **conteo nocturno** (validar sincronía) y que renombrarlo aquí se refleje en el conteo.
+- **Modelo:** conteo nocturno = `catalogo_productos.incluir_conteo`; el nombre del ingrediente es `catalogo_productos.nombre` (**fuente única** → renombrar se refleja solo en el conteo). Vínculo DTE↔ingrediente vive en `compras_dte_items.producto_id`; la vista `v_dte_descripciones` agrupa por descripción normalizada.
+- **DB (migración `mapeo_view_ingrediente_conteo_y_desmapear`):**
+  - `v_dte_descripciones` ahora expone `catalogo_nombre, catalogo_tipo, catalogo_unidad, catalogo_en_conteo` (join a `catalogo_productos` por el `catalogo_id` ya existente). Re-GRANT SELECT a anon/authenticated.
+  - Nueva RPC `desmapear_descripcion_dte(p_descripcion)` — pone `producto_id=NULL` en todas las líneas de esa descripción y **olvida** el aprendizaje en `proveedor_item_mapa` (si no, `mapear` lo re-aprendería). SECURITY DEFINER, execute a anon/authenticated.
+- **Frontend (`KardexView.jsx`, tab Mapeo):** cada card vinculada muestra el ingrediente (nombre editable ✎ vía `set_conteo_item_meta` → refleja en conteo), badge **🌙 En conteo / ⚠️ No está en el conteo** (+ botón "Agregar al conteo" con `set_conteo_item`), y acciones **↻ Cambiar** (reusa el panel de búsqueda/creación) y **✕ Desvincular**. El panel expandido ahora abre también para items ya mapeados (Cambiar).
+- **NO** cambié ningún mapeo real (ej. el de REDSTONE): eso lo decide Jose desde la nueva UI (afecta inventario/costeo de $239K de historial). Build OK. Frontend → requiere merge PR + deploy Vercel.
+
 ## 9-Ago-2026 — Recetas: fix rendimiento que "no sincronizaba" (subtítulo stale)
 
 - **Síntoma (Jose):** en una receta (ej. *Cheddar Porcionado*), el "Rinde 3 bolsa" del subtítulo y el campo *Rendimiento* del modal *Editar Receta* parecían desincronizados; tocaba ajustar ambos a mano.
