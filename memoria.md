@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 8-Ago-2026 — Despacho: entrega contingencia + KPI reparto + mandados asignables + fix mapa (PR #180)
+
+- **Entrega del driver = CONTINGENCIA** (corrección de Jose): NO reemplaza el Confirmar Entrega de la sucursal (esa es la que carga inventario). `despacho_entrega_driver` sella hora/foto/GPS en columnas nuevas `*_entrega_driver` de despachos_sucursal, sin tocar inventario ni estado. `mis_despachos_ruta` excluye lo ya marcado por el driver.
+- **KPI de Reparto** (`RepartoKpiView` + RPC `kpi_reparto(desde,hasta)`): por motorista/día, de la primera salida (bodega marcó despachado) a la última entrega del driver. Reemplaza el KPI viejo de carga en CM → **quitado del menú el ítem 'Mi Despacho' (self-marking)**; queda 'Mi Ruta de Despacho' + nuevo 'KPI de Reparto'. (El componente MiDespacho/DespachoKpiDashboard sigue en el código pero sin nav.)
+- **Mandados asignables**: `NuevoMandado` con selector de motorista; el motorista los ve en `MiRutaDespacho` como paradas (junto a los despachos) y los marca hechos (GPS + gasto). El **despachador (Kevin/Israel)** puede crear/asignar desde GPS y Mandados (se agregó rol despachador a despacho-gps).
+- **Fix mapa colgado**: el contenedor Leaflet aísla su stacking context (`isolation:isolate` + z-index 0) → ya no flota sobre el menú lateral; + `invalidateSize`.
+
 ## 8-Ago-2026 — GPS despacho: reubicación + separar delivery/internos + ruta del motorista (PRs #176, #177, #178)
 
 - **Separar delivery vs internos** (PR #176): `driver_ubicaciones.tipo` ('delivery'|'despacho') + param opcional `p_tipo` en `actualizar_ubicacion_driver` (default 'delivery', retrocompatible). Mapa con filtro Todos/🛵 Internos/🛍️ Delivery + markers de color.
