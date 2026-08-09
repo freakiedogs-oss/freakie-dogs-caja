@@ -1,17 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { n } from '../../config';
+import { UnidadSelect } from '../UnidadSelect';
 
 // ── Usuarios con acceso de edición ──
 const EDIT_EMAILS = ['joseisart2008@gmail.com'];
 // Quién puede editar recetas. Va por rol, no por una lista de PINs en el código.
 const ROLES_EDITAN = ['ejecutivo', 'jefe_casa_matriz', 'superadmin'];
-
-// ── Unidades fijas ──
-const UNIDADES = [
-  'porcion', 'unidad', 'libra', 'onza', 'gramo', 'kilogramo',
-  'litro', 'mililitro', 'taza', 'cucharada', 'cucharadita', 'bolsa', 'bote', 'caja',
-];
 
 // ── RECETAS / BOM ──────────────────────────────────────────
 export default function RecetasView({ user }) {
@@ -228,9 +223,7 @@ export default function RecetasView({ user }) {
           </div>
           <div style={{ flex: 1 }}>
             <label style={lbl}>Unidad</label>
-            <select style={inp} value={editReceta?.unidad_rendimiento || 'porcion'} onChange={e => setEditReceta({ ...editReceta, unidad_rendimiento: e.target.value })}>
-              {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
+            <UnidadSelect selectStyle={inp} value={editReceta?.unidad_rendimiento || 'porcion'} onChange={v => setEditReceta({ ...editReceta, unidad_rendimiento: v })} />
           </div>
         </div>
         <label style={lbl}>Precio Venta ($)</label>
@@ -341,11 +334,9 @@ export default function RecetasView({ user }) {
                   onChange={e => setEditRend({ ...editRend, valor: e.target.value })}
                   style={{ width: 60, padding: '3px 6px', borderRadius: 4, border: '1px solid #e63946', background: '#16213e', color: '#fff', fontSize: 12 }}
                   autoFocus />
-                <select value={editRend.unidad}
-                  onChange={e => setEditRend({ ...editRend, unidad: e.target.value })}
-                  style={{ width: 90, padding: '3px 6px', borderRadius: 4, border: '1px solid #444', background: '#16213e', color: '#fff', fontSize: 12 }}>
-                  {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <UnidadSelect value={editRend.unidad}
+                  onChange={v => setEditRend({ ...editRend, unidad: v })}
+                  selectStyle={{ width: 90, padding: '3px 6px', borderRadius: 4, border: '1px solid #444', background: '#16213e', color: '#fff', fontSize: 12 }} />
                 <button onClick={guardarRendimiento}
                   style={{ background: '#4ade80', color: '#000', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>✓</button>
                 <button onClick={() => setEditRend(null)}
@@ -493,10 +484,8 @@ export default function RecetasView({ user }) {
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <input style={{ ...inp, flex: 1 }} type="number" step="0.001" placeholder="Cantidad"
                     value={ing.cantidad || ''} onChange={e => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], cantidad: e.target.value }; setEditIngredients(arr); }} />
-                  <select style={{ ...inp, width: 100 }} value={ing.unidad_medida || 'unidad'}
-                    onChange={e => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], unidad_medida: e.target.value }; setEditIngredients(arr); }}>
-                    {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  <UnidadSelect selectStyle={{ ...inp, width: 100 }} value={ing.unidad_medida || 'unidad'}
+                    onChange={v => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], unidad_medida: v }; setEditIngredients(arr); }} />
                 </div>
                 <input style={{ ...inp, marginTop: 4, fontSize: 11 }} placeholder="Notas (opcional)" value={ing.notas || ''}
                   onChange={e => { const arr = [...editIngredients]; arr[idx] = { ...arr[idx], notas: e.target.value }; setEditIngredients(arr); }} />

@@ -2,11 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
-## 9-Ago-2026 — Unidades de compra: agregar cualquier unidad a la lista (📐 Unidades)
+## 9-Ago-2026 — Unidades: catálogo ÚNICO (tabla) + componente compartido en toda la app
 
-- **Pedido (Jose):** poder **agregar unidades** al dropdown de unidad de compra (ej. faltaba "docena"), sin tener que pedir cambios de código cada vez.
-- **Cambio (`KardexView.jsx`, `UnidadesModal`):** agregadas `docena`, `media docena`, `cubeta` a `UNID_COMPRA`; y nueva opción **"➕ otra…"** en el select de *unidad de compra* que revela un input de texto libre para escribir cualquier unidad. Se guarda igual vía RPC `set_unidades_producto` (la unidad de compra es solo etiqueta; el **factor** hace la conversión, por eso es seguro texto libre).
-- **Solo compra, no almacén:** la *unidad de almacén* se dejó como dropdown fijo a propósito — esa la usan recetas/costeo y no debe ser texto libre.
+- **Pedido (Jose):** poder agregar unidades (faltaba "docena") y que **todas** las listas de unidades lean la **misma fuente** con la misma función (antes había 3 listas hardcodeadas distintas y solo una tenía "otra").
+- **DB (migración `catalogo_unidades_unificado`):** tabla `public.unidades(nombre PK, orden, activo)` con RLS `select` público (anon/authenticated) — sembrada con las 23 unidades unión de las listas viejas. RPC **`agregar_unidad(p_nombre)`** SECURITY DEFINER (anon puede insertar sin abrir INSERT directo). Verificado: anon lee tabla + ejecuta RPC.
+- **Frontend — componente único `src/components/UnidadSelect.jsx`:** `<UnidadSelect/>` + hook `useUnidades()` (caché a nivel de módulo, se carga 1 vez y se comparte; fallback a lista fija si la DB falla) + `agregarUnidad()`. La opción **"➕ otra…"** escribe texto libre y lo **persiste** vía RPC → aparece al instante en TODOS los dropdowns montados.
+- **Reemplazados los 8 call sites:** KardexView (crear producto, editor 📐 almacén+compra, form inline almacén+compra) y RecetasView (rendimiento, editar rendimiento, ingredientes). Eliminadas las constantes viejas `UNIDADES`/`UNID_ALMACEN`/`UNID_COMPRA` y el helper `sel`.
 - Build verificado OK.
 
 ## 9-Ago-2026 — Órdenes duplicadas de conteo nocturno → "una sola orden viva por sucursal"
