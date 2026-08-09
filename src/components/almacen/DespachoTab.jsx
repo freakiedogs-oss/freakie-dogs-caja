@@ -297,13 +297,15 @@ function PrepararDespacho({pedido,user,show,onBack}){
       // 1. Marcar pedido como 'preparando' (NO 'despachado' todavía — eso es cuando el motorista sale)
       await db.from('pedidos_sucursal').update({estado:'preparando'}).eq('id',pedido.id);
 
-      // 2. Crear despacho_sucursal
+      // 2. Crear despacho_sucursal (con motorista_id para que el driver vea su ruta)
+      const motoObj=motoristas.find(m=>m.nombre===motorista.trim());
       const {data:des,error:desErr}=await db.from('despachos_sucursal').insert({
         sucursal_id:pedido.sucursal_id,
         pedido_id:pedido.id,
         fecha_despacho:today(),
         estado:'preparando',
         preparado_por:user.id,
+        motorista_id:motoObj?.id||null,
         motorista_nombre:motorista.trim(),
       }).select().single();
       if(desErr) throw desErr;
