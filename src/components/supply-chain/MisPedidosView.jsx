@@ -13,6 +13,9 @@ import { Badge } from '../ui/Badge';
 
 const ROLES_VER_TODAS = ['ejecutivo', 'admin', 'superadmin', 'jefe_casa_matriz'];
 
+// Fecha local de El Salvador (UTC-6). toISOString() da UTC → de noche adelanta 1 día.
+const svDate = (d = new Date()) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
+
 const STEPS = [
   { key: 'enviado',    label: 'Enviado',    icon: '📤' },
   { key: 'preparando', label: 'Preparando', icon: '📦' },
@@ -27,11 +30,10 @@ const estadoIndex = (estado) => {
 
 function RangoFechas({ desde, hasta, setDesde, setHasta }) {
   const setQuick = (dias) => {
-    const h = new Date();
     const d = new Date();
     d.setDate(d.getDate() - dias);
-    setDesde(d.toISOString().slice(0, 10));
-    setHasta(h.toISOString().slice(0, 10));
+    setDesde(svDate(d));
+    setHasta(svDate());
   };
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -171,10 +173,10 @@ export default function MisPedidosView({ user, onBack }) {
   const { show, Toast } = useToast();
 
   // Fechas default: últimos 30 días
-  const [hasta, setHasta] = useState(() => new Date().toISOString().slice(0, 10));
+  const [hasta, setHasta] = useState(() => svDate());
   const [desde, setDesde] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
+    return svDate(d);
   });
 
   const [sucursalId, setSucursalId] = useState(null);
