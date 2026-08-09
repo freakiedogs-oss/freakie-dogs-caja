@@ -46,6 +46,7 @@ export default function DespachoGPS({ user }) {
     const map = L.map(mapEl.current, { zoomControl: true }).setView([13.6929, -89.2182], 12); // SS
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(map);
     mapRef.current = map;
+    setTimeout(() => { try { map.invalidateSize(); } catch { /* noop */ } }, 250);
     return () => { map.remove(); mapRef.current = null; markers.current = {}; };
   }, []);
 
@@ -116,11 +117,12 @@ export default function DespachoGPS({ user }) {
   useEffect(() => () => { if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current); }, []);
 
   // ── mandados ──
-  const crearMandado = async (descripcion, prioridad) => {
+  const crearMandado = async (descripcion, prioridad, motoId, motoNombre) => {
     const pos = await getPos();
     await db.rpc('crear_mandado', {
       p_descripcion: descripcion, p_prioridad: prioridad,
-      p_motorista_id: esMoto ? user.id : null, p_motorista_nombre: esMoto ? (user.nombre || null) : null,
+      p_motorista_id: motoId || (esMoto ? user.id : null),
+      p_motorista_nombre: motoNombre || (esMoto ? (user.nombre || null) : null),
       p_creado_por: user.id, p_lat: pos?.lat || null, p_lng: pos?.lng || null,
     });
     setNuevo(false); cargarMandados();
@@ -172,9 +174,10 @@ export default function DespachoGPS({ user }) {
         );
       })()}
 
-      {/* Mapa en vivo */}
-      <div style={{ position: 'relative', marginBottom: 8 }}>
-        <div ref={mapEl} style={{ height: '42vh', minHeight: 260, borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.border}` }} />
+      {/* Mapa en vivo — isolate: contiene los z-index altos de Leaflet para que
+          NO floten sobre el menú lateral al abrirlo */}
+      <div style={{ position: 'relative', marginBottom: 8, isolation: 'isolate', zIndex: 0 }}>
+        <div ref={mapEl} style={{ height: '42vh', minHeight: 260, borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.border}`, position: 'relative', zIndex: 0 }} />
       </div>
       {online.filter(o => filtro === 'todos' || (o.tipo || 'delivery') === filtro).length === 0 &&
         <div style={{ color: C.dim, fontSize: 12, marginBottom: 8 }}>Ningún motorista {filtro === 'despacho' ? 'interno ' : filtro === 'delivery' ? 'de delivery ' : ''}compartiendo ubicación ahora.</div>}
@@ -224,18 +227,37 @@ export default function DespachoGPS({ user }) {
 function NuevoMandado({ onCancel, onCrear }) {
   const [desc, setDesc] = useState('');
   const [prio, setPrio] = useState('normal');
+  const [moto, setMoto] = useState('');
+  const [motos, setMotos] = useState([]);
   const [busy, setBusy] = useState(false);
-  const crear = async () => { if (!desc.trim()) return; setBusy(true); await onCrear(desc.trim(), prio); setBusy(false); };
+  useEffect(() => {
+    db.from('usuarios_erp').select('id,nombre').in('rol', ['motorista', 'despachador']).eq('activo', true).order('nombre')
+      .then(({ data }) => setMotos(data || []));
+  }, []);
+  const crear = async () => {
+    if (!desc.trim()) return;
+    setBusy(true);
+    const m = motos.find(x => x.id === moto);
+    await onCrear(desc.trim(), prio, moto || null, m?.nombre || null);
+    setBusy(false);
+  };
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
       <input autoFocus value={desc} onChange={e => setDesc(e.target.value)} placeholder="¿Qué hay que hacer? (ej. Comprar hielo en Super Selectos)"
         style={{ width: '100%', boxSizing: 'border-box', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', color: '#fff', fontSize: 13, marginBottom: 8 }} />
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={moto} onChange={e => setMoto(e.target.value)} title="Asignar motorista"
+          style={{ background: C.panel, border: `1px solid ${moto ? C.blue : C.border}`, color: '#fff', borderRadius: 8, padding: '7px 10px', fontSize: 13, flex: '1 1 160px' }}>
+          <option value="">🛵 Asignar motorista…</option>
+          {motos.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+        </select>
         <select value={prio} onChange={e => setPrio(e.target.value)} style={{ background: C.panel, border: `1px solid ${C.border}`, color: '#fff', borderRadius: 8, padding: '7px 10px', fontSize: 13 }}>
           <option value="normal">Normal</option>
           <option value="urgente">🔴 Urgente</option>
         </select>
-        <div style={{ flex: 1 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+        <div style={{ fontSize: 10, color: C.dim, flex: 1 }}>{moto ? 'El motorista lo verá en su ruta.' : 'Sin motorista = queda en la bitácora general.'}</div>
         <button onClick={onCancel} style={btn('#555')}>Cancelar</button>
         <button onClick={crear} disabled={busy || !desc.trim()} style={{ ...btn(C.green), color: '#04220f' }}>{busy ? 'Guardando…' : 'Crear'}</button>
       </div>

@@ -20,10 +20,26 @@ export default function MiRutaDespacho({ user }) {
   const fileRef = useRef();
   const pending = useRef(null);
 
+  const [mandados, setMandados] = useState([]);
   const cargar = useCallback(async () => {
-    const { data } = await db.rpc('mis_despachos_ruta', { p_motorista_id: user.id });
-    setRuta(data || []); setLoading(false);
+    const [{ data: r }, { data: m }] = await Promise.all([
+      db.rpc('mis_despachos_ruta', { p_motorista_id: user.id }),
+      db.rpc('listar_mandados', { p_dias: 3, p_motorista_id: user.id }),
+    ]);
+    setRuta(r || []);
+    setMandados((m || []).filter(x => x.estado === 'pendiente' || x.estado === 'en_curso'));
+    setLoading(false);
   }, [user.id]);
+
+  const marcarMandado = async (m) => {
+    const monto = window.prompt('Gasto del mandado ($) — opcional:', '');
+    const pos = await getPos();
+    await db.rpc('mandado_estado', {
+      p_id: m.id, p_estado: 'hecho', p_lat: pos?.lat || null, p_lng: pos?.lng || null,
+      p_monto: (monto && !isNaN(Number(monto))) ? Number(monto) : null,
+    });
+    cargar();
+  };
   useEffect(() => { cargar(); const iv = setInterval(cargar, 30_000); return () => clearInterval(iv); }, [cargar]);
 
   // ── GPS automático mientras haya despachos en ruta ──
@@ -46,9 +62,9 @@ export default function MiRutaDespacho({ user }) {
   }, [user.id]);
 
   useEffect(() => {
-    if (ruta.length > 0) startGps(); else if (gpsOn) stopGps();
+    if (ruta.length + mandados.length > 0) startGps(); else if (gpsOn) stopGps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ruta.length]);
+  }, [ruta.length, mandados.length]);
   useEffect(() => () => { if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current); }, []);
 
   const getPos = () => new Promise((res) => {
@@ -68,10 +84,14 @@ export default function MiRutaDespacho({ user }) {
       const { error: upErr } = await db.storage.from('despachos-fotos').upload(path, file, { cacheControl: '3600', upsert: false });
       if (upErr) throw new Error(upErr.message);
       const { data: pub } = db.storage.from('despachos-fotos').getPublicUrl(path);
-      const { data: items } = await db.from('despacho_items').select('id,producto_id,cantidad_despachada').eq('despacho_id', id);
-      const p_items = (items || []).map(it => ({ id: it.id, producto_id: it.producto_id, cantidad_recibida: it.cantidad_despachada }));
-      const { error } = await db.rpc('despacho_confirmar', { p_despacho_id: id, p_usuario: user.id, p_foto_url: pub.publicUrl, p_items });
-      if (error) throw error;
+      const pos = await getPos();
+      // Entrega del driver = CONTINGENCIA: sella hora/foto/GPS, NO carga inventario.
+      // La sucursal sigue siendo la que confirma la entrega (carga el inventario).
+      const { data, error } = await db.rpc('despacho_entrega_driver', {
+        p_despacho_id: id, p_lat: pos?.lat || null, p_lng: pos?.lng || null,
+        p_foto_url: pub.publicUrl, p_usuario: user.id,
+      });
+      if (error || !data?.ok) throw new Error(error?.message || 'no se pudo');
       cargar();
     } catch (err) { alert('No se pudo registrar la entrega: ' + (err.message || err)); }
     setBusyId(null);
@@ -90,17 +110,29 @@ export default function MiRutaDespacho({ user }) {
         </span>
       </div>
       <div style={{ fontSize: 12, color: C.dim, marginBottom: 14 }}>
-        Aparecen los despachos que ya salieron de Casa Matriz. Al llegar a cada sucursal, marcá <b>entregado</b> con foto de la hoja firmada. Tu ubicación se comparte sola mientras tengas despachos en ruta.
+        Aparecen los despachos que ya salieron de Casa Matriz y tus mandados. Al llegar a cada sucursal, marcá <b>entregado</b> con foto de la hoja firmada (esto es <b>respaldo de contingencia</b> — el inventario lo carga la sucursal al confirmar). Tu ubicación se comparte sola mientras tengas paradas en ruta.
       </div>
 
       {loading && <div style={{ color: C.dim }}>Cargando…</div>}
-      {!loading && ruta.length === 0 && (
+      {!loading && ruta.length === 0 && mandados.length === 0 && (
         <div style={{ textAlign: 'center', color: C.dim, padding: 30 }}>
           <div style={{ fontSize: 40 }}>✅</div>
-          <div style={{ marginTop: 8 }}>No tenés despachos en ruta.</div>
-          <div style={{ fontSize: 12, marginTop: 4 }}>Cuando bodega marque un despacho como despachado, aparece acá.</div>
+          <div style={{ marginTop: 8 }}>No tenés paradas en ruta.</div>
+          <div style={{ fontSize: 12, marginTop: 4 }}>Cuando bodega despache o te asignen un mandado, aparece acá.</div>
         </div>
       )}
+
+      {/* Mandados asignados (paradas de mandado, como si fueran sucursal) */}
+      {mandados.map(m => (
+        <div key={m.id} style={{ background: C.card, border: `1px solid ${C.blue}`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>🧾 Mandado {m.prioridad === 'urgente' && <span style={{ color: C.red, fontSize: 12 }}>· 🔴 urgente</span>}</div>
+          <div style={{ fontSize: 13, color: C.text, marginTop: 2 }}>{m.descripcion}</div>
+          <button onClick={() => marcarMandado(m)}
+            style={{ width: '100%', marginTop: 12, background: C.blue, color: '#04220f', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>
+            ✓ Marcar mandado hecho
+          </button>
+        </div>
+      ))}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ruta.map(d => (
