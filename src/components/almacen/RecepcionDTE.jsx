@@ -361,12 +361,15 @@ function LineaCard({ l, i, nit, catalogo, catById, onMapear, onSet, user, opcion
           <div style={{ fontSize: 11.5, color: C.dim, marginTop: 2 }}>
             {l.codigo ? `cód ${l.codigo} · ` : ''}facturado {l.cantidad} · {fmt(l.precio_unitario)}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 10, color: C.dim }}>Clasif.:</span>
             <select value={l.categoria || ''} onChange={e => onSet(i, { categoria: e.target.value })}
-              style={{ ...inp, fontSize: 11, padding: '3px 6px' }} title="Clasificación de esta línea (hereda la del proveedor)">
+              style={{ ...inp, fontSize: 11, padding: '3px 6px' }} title="Categoría madre de esta línea">
               {(opciones?.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
             </select>
+            <input list="linea-subcats" value={l.subcategoria || ''} onChange={e => onSet(i, { subcategoria: e.target.value })}
+              placeholder="Subcategoría…" style={{ ...inp, fontSize: 11, padding: '3px 6px', width: 130 }} title="Subcategoría de esta línea (podés elegir o escribir)" />
+            <datalist id="linea-subcats">{(opciones?.subcategorias || []).map(s => <option key={s} value={s} />)}</datalist>
           </div>
         </div>
         {/* cantidad recibida */}
