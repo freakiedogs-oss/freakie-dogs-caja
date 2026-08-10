@@ -414,10 +414,8 @@ function TabWizard({ user, pushNotif }) {
         created_by: user?.nombre || 'wizard',
       })
       // 2. Update bank_transaccion → match_manual
-      await db.from('bank_transacciones').update({
-        estado: 'match_manual',
-        notas: (actual.notas || '') + ` [wizard:${sug.target_tabla}/${sug.target_id}]`,
-      }).eq('id', actual.id)
+      await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'match_manual',
+        p_notas: (actual.notas || '') + ` [wizard:${sug.target_tabla}/${sug.target_id}]` })
       // 3. Aprendizaje
       const { data: aprData } = await db.rpc('bancoview_aprender_match', {
         p_bank_transaccion_id: actual.id,
@@ -440,10 +438,8 @@ function TabWizard({ user, pushNotif }) {
     if (!actual) return
     setSaving(true)
     try {
-      await db.from('bank_transacciones').update({
-        estado,
-        notas: (actual.notas || '') + ` [wizard:${estado}:${user?.rol || 'user'}]`,
-      }).eq('id', actual.id)
+      await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: estado,
+        p_notas: (actual.notas || '') + ` [wizard:${estado}:${user?.rol || 'user'}]` })
       setPendientes(ps => ps.filter(p => p.id !== actual.id))
     } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
   }
@@ -459,7 +455,7 @@ function TabWizard({ user, pushNotif }) {
         target_id: null, monto_aplicado: actual.debito || actual.credito,
         confianza: 1.00, metodo: 'wizard_crear_gasto', created_by: user?.nombre || 'wizard',
       })
-      await db.from('bank_transacciones').update({ estado: 'sin_dte', notas: (actual.notas || '') + ' [wizard:gasto_creado]' }).eq('id', actual.id)
+      await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'sin_dte', p_notas: (actual.notas || '') + ' [wizard:gasto_creado]' })
       setPendientes(ps => ps.filter(p => p.id !== actual.id))
     } catch (e) { console.error(e) }
   }
@@ -1335,7 +1331,7 @@ function TabColaManual({ user }) {
     if (seleccion.size === 0) { toast.warning('Selecciona al menos una'); return }
     if (!confirm(`Marcar ${seleccion.size} como "${bulkEstado}"?`)) return
     try {
-      const { error } = await db.from('bank_transacciones').update({ estado: bulkEstado, notas: `[manual:${user?.rol || 'user'}_${today()}]` }).in('id', Array.from(seleccion))
+      const { error } = await db.rpc('bank_tx_marcar', { p_ids: Array.from(seleccion), p_estado: bulkEstado, p_notas: `[manual:${user?.rol || 'user'}_${today()}]` })
       if (error) throw error; await load()
     } catch (e) { toast.error('Error: ' + e.message) }
   }
@@ -1345,10 +1341,8 @@ function TabColaManual({ user }) {
     try {
       // Eliminar bank_match asociados (si los hay)
       await db.from('bank_match').delete().eq('bank_transaccion_id', id)
-      await db.from('bank_transacciones').update({
-        estado: 'sin_clasificar',
-        notas: `[reverted:${user?.rol || 'user'}_${today()}]`,
-      }).eq('id', id)
+      await db.rpc('bank_tx_marcar', { p_ids: [id], p_estado: 'sin_clasificar',
+        p_notas: `[reverted:${user?.rol || 'user'}_${today()}]` })
       await load()
     } catch (e) { toast.error('Error: ' + e.message) }
   }
@@ -1359,10 +1353,8 @@ function TabColaManual({ user }) {
     try {
       const ids = Array.from(seleccion)
       await db.from('bank_match').delete().in('bank_transaccion_id', ids)
-      await db.from('bank_transacciones').update({
-        estado: 'sin_clasificar',
-        notas: `[reverted_bulk:${user?.rol || 'user'}_${today()}]`,
-      }).in('id', ids)
+      await db.rpc('bank_tx_marcar', { p_ids: ids, p_estado: 'sin_clasificar',
+        p_notas: `[reverted_bulk:${user?.rol || 'user'}_${today()}]` })
       await load()
     } catch (e) { toast.error('Error: ' + e.message) }
   }
