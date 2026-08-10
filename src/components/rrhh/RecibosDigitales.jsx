@@ -247,18 +247,21 @@ export default function RecibosDigitales({ user, onBack }) {
                        + adelanto + otros + prestamo + n(editando.descuento_faltas) + n(editando.descuento_tardanzas);
       const neto = devengado - descuentos;
 
-      const { error } = await db.from('planilla_detalle').update({
-        propina_mensual:     propina,
-        viatico_quincenal:   viatico,
-        bono_delivery:       delivery,
-        bono_extra:          bonoExtra,
-        descuento_adelantos: adelanto,
-        descuento_otros:     otros,
-        descuento_prestamos: prestamo,
-        total_devengado:     devengado,
-        total_descuentos:    descuentos,
-        neto_a_pagar:        neto,
-      }).eq('id', editando.id);
+      const { error } = await db.rpc('planilla_detalle_guardar', {
+        p_id: editando.id,
+        p_data: {
+          propina_mensual:     propina,
+          viatico_quincenal:   viatico,
+          bono_delivery:       delivery,
+          bono_extra:          bonoExtra,
+          descuento_adelantos: adelanto,
+          descuento_otros:     otros,
+          descuento_prestamos: prestamo,
+          total_devengado:     devengado,
+          total_descuentos:    descuentos,
+          neto_a_pagar:        neto,
+        },
+      });
 
       if (error) throw error;
 

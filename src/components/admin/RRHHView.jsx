@@ -216,11 +216,7 @@ function TabEmpleados({ canEdit, sucursales, show }) {
         es_delivery_driver: !!formData.es_delivery_driver,
         activo: !!formData.activo,
       };
-      if (editingId) {
-        await db.from('empleados').update(data).eq('id', editingId);
-      } else {
-        await db.from('empleados').insert(data);
-      }
+      await db.rpc('empleado_guardar', { p_id: editingId || null, p_data: data });
       setShowForm(false); setFormData(null); setEditingId(null);
       show('✓ Empleado guardado');
       await cargar();
@@ -231,7 +227,7 @@ function TabEmpleados({ canEdit, sucursales, show }) {
 
   const toggleActivo = async (id, activo) => {
     try {
-      await db.from('empleados').update({ activo: !activo }).eq('id', id);
+      await db.rpc('empleado_set_activo', { p_id: id, p_activo: !activo });
       await cargar();
     } catch (err) {
       show('Error: ' + err.message, false);
