@@ -404,15 +404,15 @@ function TabWizard({ user, pushNotif }) {
     setSaving(true)
     try {
       // 1. Insertar bank_match
-      await db.from('bank_match').insert({
+      await db.rpc('bank_match_crear', { p_data: {
         bank_transaccion_id: actual.id,
         target_tabla: sug.target_tabla,
-        target_id: null, // target_id es INT en bank_match pero sug.target_id es TEXT (UUID)
+        target_id: null,
         monto_aplicado: actual.debito || actual.credito,
         confianza: 1.00,
         metodo: 'wizard_manual',
         created_by: user?.nombre || 'wizard',
-      })
+      } })
       // 2. Update bank_transaccion → match_manual
       await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'match_manual',
         p_notas: (actual.notas || '') + ` [wizard:${sug.target_tabla}/${sug.target_id}]` })
@@ -450,11 +450,11 @@ function TabWizard({ user, pushNotif }) {
     // Aquí marcamos la transacción.
     if (!actual) return
     try {
-      await db.from('bank_match').insert({
+      await db.rpc('bank_match_crear', { p_data: {
         bank_transaccion_id: actual.id, target_tabla: 'sin_dte_clasificacion',
         target_id: null, monto_aplicado: actual.debito || actual.credito,
         confianza: 1.00, metodo: 'wizard_crear_gasto', created_by: user?.nombre || 'wizard',
-      })
+      } })
       await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'sin_dte', p_notas: (actual.notas || '') + ' [wizard:gasto_creado]' })
       setPendientes(ps => ps.filter(p => p.id !== actual.id))
     } catch (e) { console.error(e) }
@@ -1340,7 +1340,7 @@ function TabColaManual({ user }) {
     if (!confirm('Revertir a sin_clasificar?')) return
     try {
       // Eliminar bank_match asociados (si los hay)
-      await db.from('bank_match').delete().eq('bank_transaccion_id', id)
+      await db.rpc('bank_match_eliminar_por_tx', { p_tx_ids: [id] })
       await db.rpc('bank_tx_marcar', { p_ids: [id], p_estado: 'sin_clasificar',
         p_notas: `[reverted:${user?.rol || 'user'}_${today()}]` })
       await load()
@@ -1352,7 +1352,7 @@ function TabColaManual({ user }) {
     if (!confirm(`Revertir ${seleccion.size} transacciones a sin_clasificar? (también borra sus matches)`)) return
     try {
       const ids = Array.from(seleccion)
-      await db.from('bank_match').delete().in('bank_transaccion_id', ids)
+      await db.rpc('bank_match_eliminar_por_tx', { p_tx_ids: ids })
       await db.rpc('bank_tx_marcar', { p_ids: ids, p_estado: 'sin_clasificar',
         p_notas: `[reverted_bulk:${user?.rol || 'user'}_${today()}]` })
       await load()
@@ -1849,7 +1849,7 @@ function TabAuditoria() {
 
   const undo = async (id) => {
     if (!confirm('Eliminar match? La tx vuelve a sin_clasificar.')) return
-    try { await db.from('bank_match').delete().eq('id', id); await load() }
+    try { await db.rpc('bank_match_eliminar', { p_id: id }); await load() }
     catch (e) { toast.error('Error: ' + e.message) }
   }
 

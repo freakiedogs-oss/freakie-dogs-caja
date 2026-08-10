@@ -298,7 +298,7 @@ function SubirPagos({ user, proveedores, onSaved }) {
               compras_dte_id: m.id,
               monto_aplicado: Number(m.monto_total), // each DTE at its full amount
             }))
-            await db.from('pagos_proveedor_aplicacion').insert(apps)
+            await db.rpc('pago_aplicacion_crear', { p_apps: apps })
           }
         }
       }
@@ -536,11 +536,7 @@ function PendientesConciliar({ pagos, onRefresh }) {
   }
 
   const applyMatch = async (pagoId, dteId, monto) => {
-    const { error } = await db.from('pagos_proveedor_aplicacion').insert({
-      pago_id: pagoId,
-      compras_dte_id: dteId,
-      monto_aplicado: monto,
-    })
+    const { error } = await db.rpc('pago_aplicacion_crear', { p_apps: [{ pago_id: pagoId, compras_dte_id: dteId, monto_aplicado: monto }] })
     if (error) { toast.error(error.message); return }
     await db.rpc('refresh_cxp')
     setMatchResults(prev => prev.filter(r => r.id !== dteId))
@@ -850,7 +846,7 @@ function HistorialPagos({ pagos, onRefresh }) {
 
   const revertApp = async (appId, pagoId) => {
     if (!confirm('¿Revertir esta aplicación? El DTE volverá a pendiente.')) return
-    const { error } = await db.from('pagos_proveedor_aplicacion').delete().eq('id', appId)
+    const { error } = await db.rpc('pago_aplicacion_eliminar', { p_id: appId })
     if (error) { toast.error(error.message); return }
     await db.rpc('refresh_cxp')
     onRefresh()
