@@ -134,11 +134,10 @@ export default function PlanillaView({ user }) {
 
     setSaving(true);
     try {
-      const { error } = await db.from('planillas').insert({
-        periodo, fecha_inicio: inicio, fecha_fin: fin, fecha_pago: fin,
-        estado: 'borrador', total_bruto: 0, total_descuentos: 0, total_neto: 0, total_patronal: 0,
-        calculada_por: user.id,
-      }).select().single();
+      const { error } = await db.rpc('planilla_crear', {
+        p_periodo: periodo, p_fecha_inicio: inicio, p_fecha_fin: fin, p_fecha_pago: fin,
+        p_calculada_por: user.id,
+      });
       if (error) throw error;
       show('✓ Planilla creada');
       setShowNewPlanilla(false);
@@ -285,7 +284,7 @@ export default function PlanillaView({ user }) {
       const updates = pinAction === 'aprobar'
         ? { estado: 'aprobada', aprobada_por: user.id }
         : { estado: 'pagada' };
-      await db.from('planillas').update(updates).eq('id', selected.id);
+      await db.rpc('planilla_set_estado', { p_id: selected.id, p_estado: updates.estado, p_aprobada_por: updates.aprobada_por ?? null });
       show(`✓ Planilla ${pinAction === 'aprobar' ? 'aprobada' : 'pagada'}`);
       setShowPINModal(false); setPinInput('');
       await cargarPlanillas();
