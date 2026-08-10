@@ -1360,6 +1360,13 @@ function ConteoLista({ user }) {
     await db.rpc('set_conteo_item', { p_producto_id: id, p_incluir: patch.incluir ?? null, p_categoria: patch.categoria ?? null, p_orden: patch.orden ?? null });
     cargar();
   };
+  // Poner el item en la posición N dentro de su grupo → el RPC reacomoda el resto (numeración limpia 1..K).
+  const reordenar = async (id, nuevoOrden) => {
+    const n = Number(nuevoOrden);
+    if (nuevoOrden === '' || Number.isNaN(n)) return;
+    await db.rpc('reordenar_conteo_item', { p_producto_id: id, p_nuevo_orden: n });
+    cargar();
+  };
   const renombrar = async (id, nombre) => { await db.rpc('set_conteo_item_meta', { p_producto_id: id, p_nombre: nombre }); cargar(); };
   const cambiarTipo = async (id, tipo) => { await db.rpc('set_conteo_item_meta', { p_producto_id: id, p_tipo: tipo }); cargar(); };
   const matchSub = async (id, receta_id) => { await db.rpc('match_conteo_subreceta', { p_producto_id: id, p_receta_id: receta_id || null }); cargar(); };
@@ -1426,8 +1433,11 @@ function ConteoLista({ user }) {
                             style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }} title="Mover de grupo">
                             {cats.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
-                          <input type="number" defaultValue={it.orden ?? ''} onBlur={e => setItem(it.id, { orden: e.target.value === '' ? null : Number(e.target.value) })}
-                            placeholder="orden" style={{ width: 56, background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }} title="Orden" />
+                          <input key={`ord-${it.id}-${it.orden}`} type="number" defaultValue={it.orden ?? ''}
+                            onBlur={e => reordenar(it.id, e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                            placeholder="orden" style={{ width: 56, background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }}
+                            title="Número de posición en el grupo; al cambiarlo, los demás se reacomodan" />
                           <button onClick={() => quitar(it.id, it.nombre)} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>Quitar</button>
                         </>
                       )}
