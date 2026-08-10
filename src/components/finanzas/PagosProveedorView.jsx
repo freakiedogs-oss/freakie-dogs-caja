@@ -236,17 +236,17 @@ function SubirPagos({ user, proveedores, onSaved }) {
         const url = await uploadFile(entry.file)
 
         // 2) Insert pago
-        const { data: pago, error: pErr } = await db.from('pagos_proveedor').insert({
-          fecha_pago: entry.fecha_pago,
-          proveedor_nombre: entry.proveedor_nombre,
-          monto: parseFloat(entry.monto) || 0,
-          metodo_pago: entry.metodo_pago,
-          referencia_bancaria: entry.referencia_bancaria,
-          banco: 'BAC',
-          foto_urls: [url],
-          notas: entry.notas,
-          created_by: user.id,
-        }).select().single()
+        const { data: pago, error: pErr } = await db.rpc('pago_proveedor_crear', {
+          p_fecha_pago: entry.fecha_pago,
+          p_proveedor_nombre: entry.proveedor_nombre,
+          p_monto: parseFloat(entry.monto) || 0,
+          p_metodo_pago: entry.metodo_pago,
+          p_referencia_bancaria: entry.referencia_bancaria,
+          p_banco: 'BAC',
+          p_foto_urls: [url],
+          p_notas: entry.notas,
+          p_created_by: user.id,
+        })
         if (pErr) throw pErr
 
         // 3) Try auto-matching DTEs by last digits
@@ -834,11 +834,14 @@ function HistorialPagos({ pagos, onRefresh }) {
 
   const saveEdit = async (id) => {
     setSaving(true)
-    const { error } = await db.from('pagos_proveedor').update({
-      ...editFields,
-      monto: parseFloat(editFields.monto) || 0,
-      updated_at: new Date().toISOString(),
-    }).eq('id', id)
+    const { error } = await db.rpc('pago_proveedor_editar', {
+      p_id: id,
+      p_proveedor_nombre: editFields.proveedor_nombre ?? null,
+      p_monto: parseFloat(editFields.monto) || 0,
+      p_fecha_pago: editFields.fecha_pago || null,
+      p_referencia_bancaria: editFields.referencia_bancaria ?? null,
+      p_notas: editFields.notas ?? null,
+    })
     if (error) { toast.error(error.message); setSaving(false); return }
     setEditId(null)
     setSaving(false)
@@ -855,10 +858,8 @@ function HistorialPagos({ pagos, onRefresh }) {
 
   const deletePago = async (id) => {
     if (!confirm('¿Eliminar este pago y todas sus aplicaciones?')) return
-    await db.from('pagos_proveedor_aplicacion').delete().eq('pago_id', id)
-    const { error } = await db.from('pagos_proveedor').delete().eq('id', id)
+    const { error } = await db.rpc('pago_proveedor_eliminar', { p_id: id })
     if (error) { toast.error(error.message); return }
-    await db.rpc('refresh_cxp')
     onRefresh()
   }
 
