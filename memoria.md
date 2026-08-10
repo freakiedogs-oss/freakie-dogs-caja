@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 9-Ago-2026 — Conteo Nocturno: ítem agregado no aparecía + reordenar por número
+
+- **Bug (Jose):** agregó "Cheddar Porcionado" a la lista del conteo nocturno pero al hacer el conteo no aparecía (no lo pudieron pedir). **Causa raíz:** la pantalla de conteo (`ConteoNocturno.jsx`) arma la lista desde `db.from('inventario')` (stock por sucursal) filtrando `catalogo_productos.incluir_conteo=true` — INNER JOIN. Un producto **sin fila en `inventario`** no aparece. Cheddar (sub-producto nuevo) tenía 0 filas; `set_conteo_item` solo marcaba `incluir_conteo` en el catálogo, **nunca creaba la fila de inventario**.
+- **Fix de raíz (migración `conteo_set_item_siembra_inventario` + `..._solo_sucursales_conteo_y_backfill`):** `set_conteo_item` ahora, al incluir un ítem, siembra su fila en `inventario` (stock 0) para las **sucursales de conteo** = activas con `tipo<>'bodega'` (excluye Casa Matriz, bodega central) y `store_code<>'EVT001'` (excluye Eventos). Backfill: se completaron TODAS las 100 filas faltantes en las 7 sucursales reales (arregló también "Ranch bote [unificado]" que estaba en 0). Casa Matriz/Eventos NO se ensucian.
+- **Reordenar (pedido de Jose):** RPC `reordenar_conteo_item(producto, nuevo_orden)` coloca el ítem en la posición N dentro de su grupo (`conteo_categoria`) y renumera el grupo **1..K sin huecos** (los de N en adelante suben +1). Front: en `ConteoLista` (KardexView) el input de orden ahora llama a ese RPC (antes seteaba el número crudo, dejando huecos como 44,45,48,…,100).
+- Data + RPCs ya vivos; el cableado del input necesita merge + deploy.
+
 ## 9-Ago-2026 — Unidades: catálogo ÚNICO (tabla) + componente compartido en toda la app
 
 - **Pedido (Jose):** poder agregar unidades (faltaba "docena") y que **todas** las listas de unidades lean la **misma fuente** con la misma función (antes había 3 listas hardcodeadas distintas y solo una tenía "otra").
