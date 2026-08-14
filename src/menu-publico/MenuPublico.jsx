@@ -6,6 +6,7 @@
 // ────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { db } from '../supabase'
+import { URL_DELIVERY } from '../config'
 import { NEGOCIO, BANNERS } from './catalogoBuho'
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
@@ -103,6 +104,7 @@ export default function MenuPublico() {
   const [productoModal, setProductoModal] = useState(null)
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
+  const [pedidoOk, setPedidoOk] = useState(null)  // respuesta de crear_pedido_delivery + nombre
   const [toast, setToast] = useState(null)
   const [showTop, setShowTop] = useState(false)
   const [horarioBD, setHorarioBD] = useState(null)   // horario en vivo del Panel Delivery
@@ -305,12 +307,17 @@ export default function MenuPublico() {
           items={carrito}
           total={totalCarrito}
           onClose={() => setCheckoutOpen(false)}
-          onEnviado={() => {
+          onEnviado={(datos) => {
             setCarrito([])
             setCheckoutOpen(false)
-            setToast('¡Pedido enviado! Te contactaremos pronto 🌭')
+            setPedidoOk(datos)
           }}
         />
+      )}
+
+      {/* CONFIRMACIÓN POST-PEDIDO */}
+      {pedidoOk && (
+        <PedidoEnviado datos={pedidoOk} onClose={() => setPedidoOk(null)} />
       )}
 
       {/* TOAST */}
@@ -671,6 +678,60 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
   )
 }
 
+// ── Confirmación post-pedido ────────────────────────────────────────
+// El chat de WhatsApp lo inicia EL CLIENTE hacia nuestro número
+// (config_delivery.whatsapp_pedidos): abrir nosotros conversaciones
+// nuevas con el mismo texto + link es lo que WhatsApp castiga con
+// bloqueos. Con el cliente iniciando, la torre solo responde dentro
+// de un chat existente. El link de tracking va acá en pantalla para
+// que el seguimiento no dependa de WhatsApp.
+function PedidoEnviado({ datos, onClose }) {
+  const waNum = String(datos.whatsapp || '').replace(/\D/g, '')
+  const waMsg = `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Confirmo mi pedido ${datos.numero_orden}${datos.total ? ` por ${fmt(datos.total)}` : ''}.`
+  const waHref = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(waMsg)}` : null
+  const trackHref = datos.tracking_token ? `${URL_DELIVERY}/track?t=${datos.tracking_token}` : null
+
+  return (
+    <div className="mp-drawer-overlay" onClick={onClose}>
+      <div className="mp-drawer mp-enviado" onClick={e => e.stopPropagation()}>
+        <div className="mp-drawer-header">
+          <button className="mp-drawer-close" onClick={onClose}>×</button>
+          <h2>¡Pedido enviado! 🌭</h2>
+        </div>
+        <div className="mp-drawer-body">
+          <div className="mp-enviado-num">
+            Tu pedido es el <b>{datos.numero_orden}</b>
+            {datos.total ? <> · <b>{fmt(datos.total)}</b></> : null}
+          </div>
+
+          {waHref ? (
+            <>
+              <a className="mp-enviado-wa" href={waHref} target="_blank" rel="noreferrer">
+                📲 Confirmar mi pedido por WhatsApp
+              </a>
+              <div className="mp-enviado-ayuda">
+                Escribinos vos con este botón: así te contestamos en el mismo chat
+                para coordinar el pago y avisarte de tu pedido. Guardanos como
+                <b> Freakie Dogs</b> 💾
+              </div>
+            </>
+          ) : (
+            <div className="mp-enviado-ayuda">
+              Te contactaremos pronto para coordinar el pago 📞
+            </div>
+          )}
+
+          {trackHref && (
+            <a className="mp-enviado-track" href={trackHref} target="_blank" rel="noreferrer">
+              🛵 Seguir mi pedido en vivo
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Checkout({ items, total, onClose, onEnviado }) {
   const perfil = useMemo(leerPerfil, [])
   const clienteConocido = !!(perfil.nombre || perfil.telefono)
@@ -795,7 +856,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
         zona,
       })
 
-      onEnviado()
+      onEnviado({ ...data, nombre: nombre.trim() })
     } catch (err) {
       console.error('Error enviando pedido:', err)
       setError('No se pudo enviar el pedido. Intentá otra vez o llamanos.')

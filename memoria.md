@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 14-Ago-2026 — Delivery: el CLIENTE inicia el chat de WhatsApp (anti-bloqueo)
+
+- **Contexto (Jose):** WhatsApp bloqueó 24h el número del delivery. Causa probable: la torre **iniciaba** conversaciones con números que nunca habían escrito, siempre con el mismo texto pre-armado + link (patrón que el antispam de WhatsApp castiga; bastan 2-3 "Reportar"). Decisión: invertir la dirección — el cliente escribe primero y la torre solo **responde** dentro de un chat existente. (Fix definitivo sigue siendo Cloud API con verificación Meta, pendiente.)
+- **DB (migraciones `crear_pedido_delivery_tracking_whatsapp` + `crear_pedido_delivery_fix_columna_tipo`):** `crear_pedido_delivery` ahora devuelve también `tracking_token` (columna ya existía con default random) y `whatsapp` (nuevo parámetro `config_delivery.whatsapp_pedidos`, solo dígitos con país p.ej. `50377778888`; vacío = botón oculto). ⚠️ La 1ª migración omitió el valor de la columna `tipo` en el INSERT (hubiera roto todo pedido nuevo); la 2ª lo corrigió al minuto. Probado end-to-end con DO-block + rollback (ok=true, número, token; sin rastro en la torre).
+- **Frontend (`MenuPublico.jsx` + css):** al enviar el pedido ya no sale solo un toast — se abre pantalla **"¡Pedido enviado!"** con: número de orden + total, botón verde **"📲 Confirmar mi pedido por WhatsApp"** (`wa.me/<whatsapp_pedidos>` con texto "Confirmo mi pedido WEB-XXX" — el chat lo abre el cliente, llega con el # de pedido y Kari responde ahí mismo), invitación a guardar el número, y botón **"🛵 Seguir mi pedido en vivo"** (link de tracking directo en pantalla → el seguimiento ya no depende de WhatsApp).
+- **CONFIG PENDIENTE (Jose):** setear el número en `config_delivery`: `update config_delivery set valor='503XXXXXXXX' where parametro='whatsapp_pedidos';` — mientras esté vacío el botón de WhatsApp no aparece (el resto funciona igual).
+
 ## 9-Ago-2026 — Conteo Nocturno: ítem agregado no aparecía + reordenar por número
 
 - **Bug (Jose):** agregó "Cheddar Porcionado" a la lista del conteo nocturno pero al hacer el conteo no aparecía (no lo pudieron pedir). **Causa raíz:** la pantalla de conteo (`ConteoNocturno.jsx`) arma la lista desde `db.from('inventario')` (stock por sucursal) filtrando `catalogo_productos.incluir_conteo=true` — INNER JOIN. Un producto **sin fila en `inventario`** no aparece. Cheddar (sub-producto nuevo) tenía 0 filas; `set_conteo_item` solo marcaba `incluir_conteo` en el catálogo, **nunca creaba la fila de inventario**.
