@@ -1459,7 +1459,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
       {/* Modal: Descuento */}
       {showDiscountModal && (
-        <div className="pos-modal-overlay" onClick={() => setShowDiscountModal(false)}>
+        <div className="pos-modal-overlay" onClick={() => {
+          // Cerrar sin completar (categoría, o nombre si es empleado) = descuento NO aplicado.
+          if (descuentoTipo && (!descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoMotivo.trim()))) {
+            setDescuento(0); setDescuentoTipo(null); setDescuentoMotivo(''); setDescuentoCategoria('')
+          }
+          setShowDiscountModal(false)
+        }}>
           <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 360 }}>
             <div className="pos-modal-title">🏷 Aplicar Descuento</div>
             <div style={{ color: '#8b8997', fontSize: 12, marginBottom: 12 }}>Subtotal: ${subtotal.toFixed(2)}</div>
@@ -1529,7 +1535,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             {/* Categoría: distingue el descuento de EMPLEADO (sale en su apartado del corte) */}
             {descuentoTipo && (
               <div style={{ marginBottom: 12 }}>
-                <label className="pos-payment-label">¿Para quién es?</label>
+                <label className="pos-payment-label">¿Para quién es? (obligatorio)</label>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[
                     { key: 'empleado', label: '👷 Empleado' },
@@ -1580,9 +1586,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               </div>
             )}
 
+            {/* Obligatorio (Jose 14-ago): sin categoría no hay descuento; empleado exige nombre */}
+            {descuentoTipo && !descuentoCategoria && (
+              <div style={{ fontSize: 12, color: '#f4a261', marginBottom: 8, textAlign: 'center' }}>⚠️ Elegí para quién es el descuento</div>
+            )}
+            {descuentoTipo && descuentoCategoria === 'empleado' && !descuentoMotivo.trim() && (
+              <div style={{ fontSize: 12, color: '#f4a261', marginBottom: 8, textAlign: 'center' }}>⚠️ Escribí el nombre del empleado</div>
+            )}
             <button
               className="pos-confirmar-btn"
-              disabled={!descuentoTipo}
+              disabled={!descuentoTipo || !descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoMotivo.trim())}
               onClick={() => setShowDiscountModal(false)}
             >
               ✅ Aplicar descuento
@@ -1595,13 +1608,19 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
                   setDescuento(0)
                   setDescuentoTipo(null)
                   setDescuentoMotivo('')
+                  setDescuentoCategoria('')
                   setShowDiscountModal(false)
                 }}
               >
                 🗑 Quitar descuento
               </button>
             )}
-            <button className="pos-cancelar-btn" onClick={() => setShowDiscountModal(false)}>Cancelar</button>
+            <button className="pos-cancelar-btn" onClick={() => {
+              if (descuentoTipo && (!descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoMotivo.trim()))) {
+                setDescuento(0); setDescuentoTipo(null); setDescuentoMotivo(''); setDescuentoCategoria('')
+              }
+              setShowDiscountModal(false)
+            }}>Cancelar</button>
           </div>
         </div>
       )}
