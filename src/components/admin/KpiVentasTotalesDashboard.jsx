@@ -416,8 +416,11 @@ export default function KpiVentasTotalesDashboard({ user }) {
   )
 
   const { periodo: per, canales, serie_diaria, bep, utilidad } = datos
-  const canalSel = canales[canalActivo]
-  const canalDef = CANALES.find(x => x.key === canalActivo)
+  // Canales en $0 se ocultan (Quanto retirado desde ago-2026; Eventos cuando no hay).
+  const canalVisible = (k) => k === 'todas' || Number(canales[k]?.acumulado_si) > 0 || Number(canales[k]?.acumulado) > 0
+  const canalKey = canalVisible(canalActivo) ? canalActivo : 'todas'  // si el activo quedó en 0 (cambio de mes), cae a Todas
+  const canalSel = canales[canalKey]
+  const canalDef = CANALES.find(x => x.key === canalKey)
   // Valores derivados según toggle IVA. Sufijo '_si' = sin IVA, '_ci' = con IVA matched (COGS/CF inflados con 1.13).
   const acumActivo = sinIva ? Number(canalSel.acumulado_si) : Number(canalSel.acumulado)
   const proyActivo = sinIva ? Number(canalSel.proyeccion_si) : Number(canalSel.proyeccion)
@@ -522,8 +525,8 @@ export default function KpiVentasTotalesDashboard({ user }) {
       {/* Botones de canal */}
       <div style={{ ...cardStyle, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: 12 }}>
         <span style={{ color: c.textDim, fontSize: 12, marginRight: 6 }}>FILTRAR POR CANAL:</span>
-        {CANALES.map(cn => {
-          const activo = canalActivo === cn.key
+        {CANALES.filter(cn => canalVisible(cn.key)).map(cn => {
+          const activo = canalKey === cn.key
           const valor = sinIva ? Number(canales[cn.key].acumulado_si) : Number(canales[cn.key].acumulado)
           return (
             <button
@@ -578,16 +581,16 @@ export default function KpiVentasTotalesDashboard({ user }) {
       {/* Gráfica principal: Proyección + BEP */}
       <div style={cardStyle}>
         <div style={{ fontWeight: 700, marginBottom: 4 }}>
-          {canalDef.icon} Acumulado · Proyección {canalActivo === 'todas' ? '· Punto de Equilibrio' : ''} ({sinIva ? 'Sin IVA' : 'Con IVA'}) — {MESES[periodo.mes-1]} {periodo.anio}
+          {canalDef.icon} Acumulado · Proyección {canalKey === 'todas' ? '· Punto de Equilibrio' : ''} ({sinIva ? 'Sin IVA' : 'Con IVA'}) — {MESES[periodo.mes-1]} {periodo.anio}
         </div>
         <div style={{ fontSize: 12, color: c.textDim, marginBottom: 10 }}>
-          Línea blanca = ventas reales · Línea punteada {canalDef.short.toLowerCase()} = proyección lineal{canalActivo === 'todas' ? ' · Línea amarilla = BEP' : ''}
+          Línea blanca = ventas reales · Línea punteada {canalDef.short.toLowerCase()} = proyección lineal{canalKey === 'todas' ? ' · Línea amarilla = BEP' : ''}
         </div>
-        <GraficaProyeccionBEP data={serie_diaria} periodo={per} canalKey={canalActivo} canalColor={canalDef.color} bep={bep} utilidad={utilidad} sinIva={sinIva} bepActivo={bepActivo} diaBepActivo={diaBepActivo} />
+        <GraficaProyeccionBEP data={serie_diaria} periodo={per} canalKey={canalKey} canalColor={canalDef.color} bep={bep} utilidad={utilidad} sinIva={sinIva} bepActivo={bepActivo} diaBepActivo={diaBepActivo} />
       </div>
 
       {/* Sección Punto de Equilibrio + Utilidad proyectada (solo todas) */}
-      {canalActivo === 'todas' && (
+      {canalKey === 'todas' && (
         <>
           <div style={cardStyle}>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>⚖️ Punto de Equilibrio (BEP) — Metodología clásica</div>
