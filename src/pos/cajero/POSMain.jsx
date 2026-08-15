@@ -195,6 +195,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [descuento, setDescuento]   = useState(0)
   const [descuentoTipo, setDescuentoTipo] = useState(null) // 'porcentaje' | 'monto' | 'cortesia'
   const [descuentoMotivo, setDescuentoMotivo] = useState('')
+  // Categoría estructurada del descuento ('empleado' | 'cliente' | 'promo'). Antes solo
+  // había motivo texto libre (nombres sueltos) y era imposible reportar "descuentos de
+  // empleado" en el corte — el ticket ahora los lista en su propio apartado.
+  const [descuentoCategoria, setDescuentoCategoria] = useState('')
 
   // ── Cargar menú ──
   useEffect(() => {
@@ -833,6 +837,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             descuento:    descuentoMonto,
             descuento_tipo: descuentoTipo,
             descuento_motivo: descuentoMotivo || null,
+            descuento_categoria: descuentoCategoria || null,
             descuento_autorizado_por: descuentoTipo ? user.id : null,
             dte_tipo:    DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id:  paymentData.cliente?.id || null,
@@ -858,6 +863,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             descuento:    descuentoMonto,
             descuento_tipo: descuentoTipo,
             descuento_motivo: descuentoMotivo || null,
+            descuento_categoria: descuentoCategoria || null,
             descuento_autorizado_por: descuentoTipo ? user.id : null,
             dte_tipo:   DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id: paymentData.cliente?.id || null,
@@ -1520,13 +1526,40 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               </div>
             )}
 
+            {/* Categoría: distingue el descuento de EMPLEADO (sale en su apartado del corte) */}
+            {descuentoTipo && (
+              <div style={{ marginBottom: 12 }}>
+                <label className="pos-payment-label">¿Para quién es?</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[
+                    { key: 'empleado', label: '👷 Empleado' },
+                    { key: 'cliente', label: '🤝 Cliente' },
+                    { key: 'promo', label: '🎟 Promo/Cupón' },
+                  ].map(opt => (
+                    <button
+                      key={opt.key}
+                      style={{
+                        flex: 1, padding: '8px 4px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        background: descuentoCategoria === opt.key ? '#f4a26122' : '#1a1a1a',
+                        border: `1px solid ${descuentoCategoria === opt.key ? '#f4a261' : '#2a2a32'}`,
+                        color: descuentoCategoria === opt.key ? '#f4a261' : '#888',
+                      }}
+                      onClick={() => setDescuentoCategoria(descuentoCategoria === opt.key ? '' : opt.key)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Motivo */}
             {descuentoTipo && (
               <div style={{ marginBottom: 12 }}>
-                <label className="pos-payment-label">Motivo (opcional)</label>
+                <label className="pos-payment-label">{descuentoCategoria === 'empleado' ? 'Nombre del empleado' : 'Motivo (opcional)'}</label>
                 <input
                   className="pos-payment-input"
-                  placeholder="Ej: Cliente frecuente, error en pedido..."
+                  placeholder={descuentoCategoria === 'empleado' ? 'Ej: Alejandro, Meli...' : 'Ej: Cliente frecuente, error en pedido...'}
                   value={descuentoMotivo}
                   onChange={e => setDescuentoMotivo(e.target.value)}
                   style={{ fontSize: 13, padding: '8px 12px' }}
