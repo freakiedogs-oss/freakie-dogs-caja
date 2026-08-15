@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 15-Ago-2026 — Mercadeo: Reporte Semanal en el ERP + feedback del equipo + TikTok listo para conectar
+
+- **Pedido (Jose):** reporte de los lunes ampliado (8 cuentas de referencia internacionales, 5 estrategias por red data-driven, estrategia YouTube con ALMS largo 15-20 min), historial en el ERP, feedback del equipo (encuesta + texto) y canal para pedirle cosas al AI.
+- **DB (migración `mkt_reportes_feedback_solicitudes`):** `mkt_reportes` (1/semana, contenido_md), `mkt_feedback` (1 por persona/reporte, upsert vía RPC `mkt_feedback_guardar`), `mkt_solicitudes` (pedidos al AI, estados pendiente/incorporada/respondida/descartada, RPC `mkt_solicitud_crear`). Lectura anon; escritura solo RPC SECDEF (patrón Capa 1).
+- **ERP:** `ReporteSemanal.jsx` = tab **por defecto** de Marketing → historial por semana + lector markdown (mini-renderer propio) + encuesta (4 preguntas opción múltiple + comentario largo) + caja "Pedile algo al próximo reporte" con estados/respuestas del AI.
+- **Routine lunes 07:00 (`trig_01NojEcUdRJgGURMsEMtJAxk`) reescrita:** PASO 0 lee mkt_feedback + mkt_solicitudes pendientes ("el equipo enseñándote los valores de la marca") y al final las marca incorporada/respondida; secciones nuevas 🌍 8 cuentas ref (WebSearch, sin repetir vs mkt_reportes previos), 🚀 5 estrategias por red citando el dato que respalda cada una, 📺 YouTube (ALMS largo, evoluciona semanal), 🗣 "Qué cambió por su feedback"; guarda el reporte en mkt_reportes (markdown) además del HTML por correo.
+- **TikTok (edge fn `tiktok-sync` + cron `tiktok-sync-diario` 01:20 SV):** OAuth v2 (login→callback→tokens en bot_config con refresh) + sync diario de seguidores→metricas_redes_diarias y videos→posts_redes (por url). **Faltan pasos de Jose:** app en developers.tiktok.com (Login Kit + scopes user.info.basic/stats + video.list, redirect URI de la función), secrets TIKTOK_CLIENT_KEY/SECRET + SB_SERVICE_ROLE, verify_jwt OFF en la función, y abrir ?action=login una vez.
+
 ## 15-Ago-2026 — Dashboard Ventas Totales congelado al 1-ago (Quanto murió)
 
 - **Síntoma (Jose):** "KPI Ventas Totales · BEP" mostraba agosto con $13.6K y "data completa hasta 01-ago" — cuando el POS interno lleva $135K+ al 14-ago.
