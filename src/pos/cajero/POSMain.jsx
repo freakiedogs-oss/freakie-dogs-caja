@@ -129,18 +129,6 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   // el gesto del usuario y bloquearia la impresion (pre-cuenta/comanda).
   useEffect(() => { getImpresora(storeCode, caja).catch(() => {}) }, [storeCode, caja])
 
-  // Lista de empleados para el descuento de empleado (lazy: solo al elegir esa categoría).
-  // Nombre desde la ficha real -> se guarda consistente + con empleado_id.
-  useEffect(() => {
-    if (descuentoCategoria !== 'empleado' || empleadosLista !== null) return
-    Promise.all([
-      db.from('sucursales').select('id').eq('store_code', storeCode).maybeSingle(),
-      db.from('empleados').select('id,nombre_completo,sucursal_id').eq('activo', true).order('nombre_completo'),
-    ]).then(([se, e]) => {
-      setSucursalIdLocal(se.data?.id || null)
-      setEmpleadosLista(e.data || [])
-    }).catch(() => setEmpleadosLista([]))
-  }, [descuentoCategoria, empleadosLista, storeCode])
 
   // Permisos del rol activo
   const perms = PERMISOS_POR_ROL[user.rol] || DEFAULT_PERMS
@@ -215,6 +203,20 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [descuentoEmpleadoId, setDescuentoEmpleadoId] = useState('') // ficha real del empleado (consistencia)
   const [empleadosLista, setEmpleadosLista] = useState(null)         // null = aún no cargada
   const [sucursalIdLocal, setSucursalIdLocal] = useState(null)
+
+  // Lista de empleados para el descuento de empleado (lazy: solo al elegir esa categoría).
+  // OJO: este efecto debe ir DESPUÉS de las declaraciones de estado que usa —
+  // arriba provocaba "Cannot access before initialization" y tumbaba el POS (Metro 15-ago).
+  useEffect(() => {
+    if (descuentoCategoria !== 'empleado' || empleadosLista !== null) return
+    Promise.all([
+      db.from('sucursales').select('id').eq('store_code', storeCode).maybeSingle(),
+      db.from('empleados').select('id,nombre_completo,sucursal_id').eq('activo', true).order('nombre_completo'),
+    ]).then(([se, e]) => {
+      setSucursalIdLocal(se.data?.id || null)
+      setEmpleadosLista(e.data || [])
+    }).catch(() => setEmpleadosLista([]))
+  }, [descuentoCategoria, empleadosLista, storeCode])
 
   // ── Cargar menú ──
   useEffect(() => {
