@@ -129,6 +129,19 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   // el gesto del usuario y bloquearia la impresion (pre-cuenta/comanda).
   useEffect(() => { getImpresora(storeCode, caja).catch(() => {}) }, [storeCode, caja])
 
+  // Lista de empleados para el descuento de empleado (lazy: solo al elegir esa categoría).
+  // Nombre desde la ficha real -> se guarda consistente + con empleado_id.
+  useEffect(() => {
+    if (descuentoCategoria !== 'empleado' || empleadosLista !== null) return
+    Promise.all([
+      db.from('sucursales').select('id').eq('store_code', storeCode).maybeSingle(),
+      db.from('empleados').select('id,nombre_completo,sucursal_id').eq('activo', true).order('nombre_completo'),
+    ]).then(([se, e]) => {
+      setSucursalIdLocal(se.data?.id || null)
+      setEmpleadosLista(e.data || [])
+    }).catch(() => setEmpleadosLista([]))
+  }, [descuentoCategoria, empleadosLista, storeCode])
+
   // Permisos del rol activo
   const perms = PERMISOS_POR_ROL[user.rol] || DEFAULT_PERMS
 
@@ -199,6 +212,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   // había motivo texto libre (nombres sueltos) y era imposible reportar "descuentos de
   // empleado" en el corte — el ticket ahora los lista en su propio apartado.
   const [descuentoCategoria, setDescuentoCategoria] = useState('')
+  const [descuentoEmpleadoId, setDescuentoEmpleadoId] = useState('') // ficha real del empleado (consistencia)
+  const [empleadosLista, setEmpleadosLista] = useState(null)         // null = aún no cargada
+  const [sucursalIdLocal, setSucursalIdLocal] = useState(null)
 
   // ── Cargar menú ──
   useEffect(() => {
@@ -838,6 +854,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             descuento_tipo: descuentoTipo,
             descuento_motivo: descuentoMotivo || null,
             descuento_categoria: descuentoCategoria || null,
+            descuento_empleado_id: descuentoCategoria === 'empleado' ? (descuentoEmpleadoId || null) : null,
             descuento_autorizado_por: descuentoTipo ? user.id : null,
             dte_tipo:    DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id:  paymentData.cliente?.id || null,
@@ -864,6 +881,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             descuento_tipo: descuentoTipo,
             descuento_motivo: descuentoMotivo || null,
             descuento_categoria: descuentoCategoria || null,
+            descuento_empleado_id: descuentoCategoria === 'empleado' ? (descuentoEmpleadoId || null) : null,
             descuento_autorizado_por: descuentoTipo ? user.id : null,
             dte_tipo:   DTE_TIPO_MAP[paymentData.tipoDte] || null,
             cliente_id: paymentData.cliente?.id || null,
@@ -1461,8 +1479,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       {showDiscountModal && (
         <div className="pos-modal-overlay" onClick={() => {
           // Cerrar sin completar (categoría, o nombre si es empleado) = descuento NO aplicado.
-          if (descuentoTipo && (!descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoMotivo.trim()))) {
-            setDescuento(0); setDescuentoTipo(null); setDescuentoMotivo(''); setDescuentoCategoria('')
+          if (descuentoTipo && (!descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoEmpleadoId))) {
+            setDescuento(0); setDescuentoTipo(null); setDescuentoMotivo(''); setDescuentoCategoria(''); setDescuentoEmpleadoId('')
           }
           setShowDiscountModal(false)
         }}>
@@ -1562,14 +1580,40 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             {/* Motivo */}
             {descuentoTipo && (
               <div style={{ marginBottom: 12 }}>
-                <label className="pos-payment-label">{descuentoCategoria === 'empleado' ? 'Nombre del empleado' : 'Motivo (opcional)'}</label>
-                <input
-                  className="pos-payment-input"
-                  placeholder={descuentoCategoria === 'empleado' ? 'Ej: Alejandro, Meli...' : 'Ej: Cliente frecuente, error en pedido...'}
-                  value={descuentoMotivo}
-                  onChange={e => setDescuentoMotivo(e.target.value)}
-                  style={{ fontSize: 13, padding: '8px 12px' }}
-                />
+                <label className="pos-payment-label">{descuentoCategoria === 'empleado' ? 'Empleado (de la lista)' : 'Motivo (opcional)'}</label>
+                {descuentoCategoria === 'empleado' ? (
+                  <select
+                    className="pos-payment-input"
+                    value={descuentoEmpleadoId}
+                    onChange={e => {
+                      const id = e.target.value
+                      setDescuentoEmpleadoId(id)
+                      const emp = (empleadosLista || []).find(x => x.id === id)
+                      setDescuentoMotivo(emp?.nombre_completo || '')
+                    }}
+                    style={{ fontSize: 13, padding: '8px 12px', width: '100%' }}
+                  >
+                    <option value="">{empleadosLista === null ? 'Cargando empleados…' : '— Elegí al empleado —'}</option>
+                    <optgroup label="Esta sucursal">
+                      {(empleadosLista || []).filter(x => x.sucursal_id === sucursalIdLocal).map(x => (
+                        <option key={x.id} value={x.id}>{x.nombre_completo}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Otras sucursales">
+                      {(empleadosLista || []).filter(x => x.sucursal_id !== sucursalIdLocal).map(x => (
+                        <option key={x.id} value={x.id}>{x.nombre_completo}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                ) : (
+                  <input
+                    className="pos-payment-input"
+                    placeholder="Ej: Cliente frecuente, error en pedido..."
+                    value={descuentoMotivo}
+                    onChange={e => setDescuentoMotivo(e.target.value)}
+                    style={{ fontSize: 13, padding: '8px 12px' }}
+                  />
+                )}
               </div>
             )}
 
@@ -1590,12 +1634,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             {descuentoTipo && !descuentoCategoria && (
               <div style={{ fontSize: 12, color: '#f4a261', marginBottom: 8, textAlign: 'center' }}>⚠️ Elegí para quién es el descuento</div>
             )}
-            {descuentoTipo && descuentoCategoria === 'empleado' && !descuentoMotivo.trim() && (
-              <div style={{ fontSize: 12, color: '#f4a261', marginBottom: 8, textAlign: 'center' }}>⚠️ Escribí el nombre del empleado</div>
+            {descuentoTipo && descuentoCategoria === 'empleado' && !descuentoEmpleadoId && (
+              <div style={{ fontSize: 12, color: '#f4a261', marginBottom: 8, textAlign: 'center' }}>⚠️ Elegí al empleado de la lista</div>
             )}
             <button
               className="pos-confirmar-btn"
-              disabled={!descuentoTipo || !descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoMotivo.trim())}
+              disabled={!descuentoTipo || !descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoEmpleadoId)}
               onClick={() => setShowDiscountModal(false)}
             >
               ✅ Aplicar descuento
@@ -1609,6 +1653,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
                   setDescuentoTipo(null)
                   setDescuentoMotivo('')
                   setDescuentoCategoria('')
+                  setDescuentoEmpleadoId('')
                   setShowDiscountModal(false)
                 }}
               >
@@ -1616,8 +1661,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               </button>
             )}
             <button className="pos-cancelar-btn" onClick={() => {
-              if (descuentoTipo && (!descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoMotivo.trim()))) {
-                setDescuento(0); setDescuentoTipo(null); setDescuentoMotivo(''); setDescuentoCategoria('')
+              if (descuentoTipo && (!descuentoCategoria || (descuentoCategoria === 'empleado' && !descuentoEmpleadoId))) {
+                setDescuento(0); setDescuentoTipo(null); setDescuentoMotivo(''); setDescuentoCategoria(''); setDescuentoEmpleadoId('')
               }
               setShowDiscountModal(false)
             }}>Cancelar</button>
