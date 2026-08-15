@@ -3,8 +3,9 @@ import { db } from '../../supabase'
 import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n } from '../../config'
 import { useToast } from '../../hooks/useToast'
+import ReporteSemanal from './ReporteSemanal'
 
-const TABS = ['Feed', 'Correlación', 'Horarios', 'Campañas', 'Métricas Diarias']
+const TABS = ['🗞 Reporte Semanal', 'Feed', 'Correlación', 'Horarios', 'Campañas', 'Métricas Diarias']
 const PLATAFORMAS = ['instagram', 'tiktok']
 const TIPOS = ['foto', 'video', 'reel', 'story', 'carrusel', 'tiktok_video', 'tiktok_photo', 'live']
 
@@ -149,8 +150,11 @@ export default function MarketingView({ user }) {
         ))}
       </div>
 
-      {/* =================== TAB 0: FEED =================== */}
-      {tab === 0 && (
+      {/* =================== TAB 0: REPORTE SEMANAL =================== */}
+      {tab === 0 && <ReporteSemanal user={user} />}
+
+      {/* =================== TAB 1: FEED =================== */}
+      {tab === 1 && (
         <div>
           <button onClick={() => setShowNewPost(!showNewPost)} style={{ ...btnStyle(), marginBottom: 12 }}>
             {showNewPost ? '✕ Cerrar' : '+ Registrar Post'}
@@ -249,7 +253,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 1: CORRELACIÓN =================== */}
-      {tab === 1 && (
+      {tab === 2 && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
             <p style={{ color: '#888', fontSize: 13, margin: 0 }}>Impacto de cada post en ventas (día 0, 1, 2 vs baseline 7d)</p>
@@ -304,7 +308,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 2: HORARIOS =================== */}
-      {tab === 2 && (
+      {tab === 3 && (
         <div>
           <p style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>Mejores horarios y días para publicar según engagement promedio</p>
           {/* Rendimiento por tipo */}
@@ -376,7 +380,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 3: CAMPAÑAS =================== */}
-      {tab === 3 && (
+      {tab === 4 && (
         <div>
           <button onClick={() => setShowNewCampana(!showNewCampana)} style={{ ...btnStyle(), marginBottom: 12 }}>
             {showNewCampana ? '✕ Cerrar' : '+ Nueva Campaña'}
@@ -437,7 +441,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 4: MÉTRICAS DIARIAS =================== */}
-      {tab === 4 && (
+      {tab === 5 && (
         <div>
           <p style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>Seguidores, alcance y clicks por día (se llena automáticamente con Make.com)</p>
           {metricas.length === 0 ? (
