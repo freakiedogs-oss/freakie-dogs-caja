@@ -108,6 +108,9 @@ export default function MenuPublico() {
   const [toast, setToast] = useState(null)
   const [showTop, setShowTop] = useState(false)
   const [horarioBD, setHorarioBD] = useState(null)   // horario en vivo del Panel Delivery
+  const [misPedidos, setMisPedidos] = useState(null) // {activos, pasados} del teléfono guardado
+  const [misPedidosOpen, setMisPedidosOpen] = useState(false)
+  const [sugerenciaOculta, setSugerenciaOculta] = useState(false)
   const seccionesRef = useRef({})
   const abierto = abiertoAhora(horarioBD)
 
@@ -196,6 +199,51 @@ export default function MenuPublico() {
     if (el) window.scrollTo({ top: el.offsetTop - 60, behavior: 'smooth' })
   }
 
+  // ── Mis pedidos: el cliente se identifica por el teléfono guardado en el
+  // dispositivo (perfil). Trae pedido activo (→ tracking) + últimos entregados
+  // (→ volver a pedir). Se recarga al completar un pedido nuevo.
+  useEffect(() => {
+    const tel = leerPerfil().telefono
+    if (!tel) return
+    db.rpc('mis_pedidos_delivery', { p_telefono: tel })
+      .then(({ data }) => data && setMisPedidos(data))
+      .catch(() => {})
+  }, [pedidoOk])
+
+  // Reconstruye el carrito desde un pedido viejo, contra el MENÚ ACTUAL:
+  // precios vigentes, modificadores re-matcheados por id, y lo que ya no
+  // existe se omite (avisando cuántos).
+  const volverAPedir = (pedido) => {
+    const porId = {}
+    for (const cat of menu) for (const it of (cat.items || [])) porId[it.id] = it
+    const nuevo = []; let fuera = 0
+    for (const it of (pedido.items || [])) {
+      const prod = porId[it.menu_item_id]
+      if (!prod) { fuera += Number(it.cantidad) || 1; continue }
+      const modsActuales = []
+      for (const m of (it.modificadores || [])) {
+        for (const g of (prod.grupos || [])) {
+          const op = (g.opciones || []).find(o => o.id === m.id)
+          if (op) { modsActuales.push(op); break }
+        }
+      }
+      const precioMods = modsActuales.reduce((s, m) => s + (Number(m.precio_extra) || 0), 0)
+      nuevo.push({
+        lineaId: Date.now() + Math.random(),
+        id: prod.id, nombre: prod.nombre, precio: Number(prod.precio),
+        precioMods, qty: Number(it.cantidad) || 1, nota: it.nota || '', mods: modsActuales,
+      })
+    }
+    if (!nuevo.length) { setToast('Ese pedido ya no está disponible en el menú'); return }
+    setCarrito(nuevo)
+    setMisPedidosOpen(false)
+    setSugerenciaOculta(true)
+    setCarritoAbierto(true)
+    setToast(fuera ? `Cargado — ${fuera} producto(s) ya no disponibles` : '¡Pedido cargado! Revisalo y confirmá')
+  }
+
+  const resumenPedido = (p) => (p.items || []).map(i => `${i.cantidad}x ${i.nombre}`).join(', ')
+
   return (
     <div className="mp-page">
       <div className="mp-container">
@@ -205,6 +253,34 @@ export default function MenuPublico() {
 
         {/* LOGO + INFO NEGOCIO */}
         <HeaderNegocio horarioBD={horarioBD} />
+
+        {/* MIS PEDIDOS: pedido activo → seguir en vivo; si no, sugerencia de repetir */}
+        {misPedidos?.activos?.length > 0 && (
+          <a href={`${URL_DELIVERY}/track?t=${misPedidos.activos[0].tracking_token}`}
+             style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0', padding: '12px 14px', borderRadius: 12, background: '#0d2818', border: '1px solid #2d6a4f', color: '#d8f3dc', textDecoration: 'none', fontSize: 14 }}>
+            <span style={{ fontSize: 22 }}>🛵</span>
+            <span style={{ flex: 1 }}><b>Tenés un pedido en curso</b> ({misPedidos.activos[0].numero_orden})<br />
+              <span style={{ fontSize: 12, opacity: .8 }}>Tocá para seguirlo en vivo</span></span>
+            <span style={{ fontSize: 18 }}>→</span>
+          </a>
+        )}
+        {!misPedidos?.activos?.length && misPedidos?.pasados?.length > 0 && !sugerenciaOculta && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0', padding: '12px 14px', borderRadius: 12, background: '#221a0d', border: '1px solid #6a512d', color: '#f3ead8', fontSize: 14 }}>
+            <span style={{ fontSize: 22 }}>🍔</span>
+            <span style={{ flex: 1, minWidth: 0 }}><b>¿Repetimos?</b><br />
+              <span style={{ fontSize: 12, opacity: .85, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resumenPedido(misPedidos.pasados[0])} · {fmt(misPedidos.pasados[0].total)}</span></span>
+            <button onClick={() => volverAPedir(misPedidos.pasados[0])}
+              style={{ background: '#e63946', color: '#fff', border: 'none', borderRadius: 9, padding: '8px 12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>Volver a pedir</button>
+            <button onClick={() => setSugerenciaOculta(true)} aria-label="Cerrar"
+              style={{ background: 'none', border: 'none', color: '#8a7d66', fontSize: 16, cursor: 'pointer', padding: 4 }}>✕</button>
+          </div>
+        )}
+        {(misPedidos?.activos?.length > 0 || misPedidos?.pasados?.length > 0) && (
+          <button onClick={() => setMisPedidosOpen(true)}
+            style={{ display: 'block', margin: '0 0 6px', background: 'none', border: 'none', color: '#b8b2a7', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
+            🧾 Mis pedidos
+          </button>
+        )}
 
         {/* TABS CATEGORIAS (sticky) */}
         {menu.length > 0 && (
@@ -321,6 +397,14 @@ export default function MenuPublico() {
       )}
 
       {/* TOAST */}
+      {misPedidosOpen && (
+        <MisPedidosModal
+          datos={misPedidos}
+          onClose={() => setMisPedidosOpen(false)}
+          onVolverAPedir={volverAPedir}
+        />
+      )}
+
       {toast && <div className="mp-toast">{toast}</div>}
 
       {/* BANNER CERRADO (si aplica) */}
@@ -347,6 +431,65 @@ export default function MenuPublico() {
 // ═══════════════════════════════════════════════════════════════════
 // SUBCOMPONENTES
 // ═══════════════════════════════════════════════════════════════════
+
+// ── Mis pedidos: activo (→ tracking en vivo) + entregados (→ volver a pedir) ──
+function MisPedidosModal({ datos, onClose, onVolverAPedir }) {
+  const activos = datos?.activos || []
+  const pasados = datos?.pasados || []
+  const fecha = (iso) => {
+    try {
+      return new Date(iso).toLocaleDateString('es-SV', { day: 'numeric', month: 'short', timeZone: 'America/El_Salvador' })
+    } catch { return '' }
+  }
+  const ESTADOS = { recibida: '💰 Por confirmar', preparando: '👨‍🍳 En cocina', lista: '✅ Lista', en_camino: '🛵 En camino' }
+  const resumen = (p) => (p.items || []).map(i => `${i.cantidad}x ${i.nombre}`).join(', ')
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#191512', borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 560, maxHeight: '80vh', overflowY: 'auto', padding: '18px 16px 26px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontWeight: 800, fontSize: 17, color: '#f3ead8', flex: 1 }}>🧾 Mis pedidos</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8a7d66', fontSize: 20, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        {activos.length > 0 && (
+          <>
+            <div style={{ fontSize: 12, color: '#8a7d66', fontWeight: 700, textTransform: 'uppercase', margin: '4px 0 6px' }}>En curso</div>
+            {activos.map(p => (
+              <a key={p.numero_orden} href={`${URL_DELIVERY}/track?t=${p.tracking_token}`}
+                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px', borderRadius: 12, background: '#0d2818', border: '1px solid #2d6a4f', color: '#d8f3dc', textDecoration: 'none', marginBottom: 8, fontSize: 14 }}>
+                <span style={{ flex: 1 }}><b>{p.numero_orden}</b> · {fmt(p.total)}<br />
+                  <span style={{ fontSize: 12, opacity: .85 }}>{ESTADOS[p.estado] || p.estado} — tocá para seguirlo en vivo</span></span>
+                <span style={{ fontSize: 18 }}>🛵→</span>
+              </a>
+            ))}
+          </>
+        )}
+
+        {pasados.length > 0 && (
+          <>
+            <div style={{ fontSize: 12, color: '#8a7d66', fontWeight: 700, textTransform: 'uppercase', margin: '10px 0 6px' }}>Pedí de nuevo</div>
+            {pasados.map((p, i) => (
+              <div key={`${p.numero_orden}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px', borderRadius: 12, background: '#221e19', border: '1px solid #3a332a', marginBottom: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: '#f3ead8', fontWeight: 700 }}>{fecha(p.created_at)} · {fmt(p.total)}</div>
+                  <div style={{ fontSize: 12, color: '#b8b2a7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resumen(p)}</div>
+                </div>
+                <button onClick={() => onVolverAPedir(p)}
+                  style={{ background: '#e63946', color: '#fff', border: 'none', borderRadius: 9, padding: '8px 12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  Volver a pedir
+                </button>
+              </div>
+            ))}
+          </>
+        )}
+
+        {activos.length === 0 && pasados.length === 0 && (
+          <div style={{ color: '#8a7d66', fontSize: 14, textAlign: 'center', padding: '20px 0' }}>Todavía no tenés pedidos con este teléfono.</div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function HeroBanner() {
   const [idx, setIdx] = useState(0)
