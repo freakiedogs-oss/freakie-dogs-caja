@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 14-Ago-2026 — Menú público: "Mis pedidos" + volver a pedir (por teléfono)
+
+- **Pedido (Jose):** el menú ya guarda el teléfono del que ordena → sección **Mis pedidos**: ver el pedido activo (→ página de tracking en vivo) y repetir pedidos viejos, con sugerencia al entrar.
+- **RPC `mis_pedidos_delivery(p_telefono)`** (SECDEF — `delivery_clientes` tiene RLS sin SELECT anon por PII): matchea por últimos 8 dígitos y devuelve SOLO de ese teléfono: `activos` (recibida/preparando/lista/en_camino, <24h, con `tracking_token`) y `pasados` (últimos 10 `entregada` con su jsonb `items`). Sin dirección ni datos de terceros. Probado con data real.
+- **Front (`MenuPublico.jsx`):** (1) al entrar, si hay teléfono en el perfil (localStorage) carga mis pedidos; (2) **banner** bajo el header: pedido activo → "🛵 Tenés un pedido en curso, tocá para seguirlo" (link track); si no, "🍔 ¿Repetimos?" con el último pedido y botón **Volver a pedir**; (3) link "🧾 Mis pedidos" → modal con En curso (→ tracking) y Pedí de nuevo; (4) **volverAPedir** reconstruye el carrito contra el MENÚ ACTUAL: precios vigentes, modificadores re-matcheados por id (grupos→opciones), lo no disponible se omite avisando cuántos. Se recarga tras completar un pedido (dep. `pedidoOk`).
+- Build ERP + build:delivery OK.
+
 ## 14-Ago-2026 — POS-3: alerta de sucursal sin cierre + descuentos de empleado en el ticket
 
 - **POS-3 (caso Usulután):** fn **`alertar_sucursales_sin_cierre()`** — detecta (a) sucursales que **vendieron hoy** (día SV) y no tienen corte Z, (b) turnos **abiertos >14h** (olvidados). Manda Telegram (patrón `bot_config` + pg_net, igual que `enviar_reporte_ordenes_abiertas`); destino `bot_config.telegram_grupo_alertas` si existe, si no el grupo drivers. **Crons 22:30 y 23:45 SV** (`pos-alerta-sin-cierre-2230/2345`). Dry-run probado (detectó S004 sin Z a las ~22:30 — plausible, cierra tarde). Para mover el aviso a un grupo de gerencia: `insert into bot_config (clave,valor) values ('telegram_grupo_alertas','<chat_id>')`.
