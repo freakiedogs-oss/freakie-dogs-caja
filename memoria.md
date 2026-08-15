@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 15-Ago-2026 — Dashboard Ventas Totales congelado al 1-ago (Quanto murió)
+
+- **Síntoma (Jose):** "KPI Ventas Totales · BEP" mostraba agosto con $13.6K y "data completa hasta 01-ago" — cuando el POS interno lleva $135K+ al 14-ago.
+- **Causa raíz:** `v_data_disponible_resumen` definía `data_completa_hasta = LEAST(max Quanto, max PeYa)` y **Quanto murió el 30-jul** (todas las tiendas migraron al POS interno) → el corte del RPC `fn_ventas_totales_dashboard` quedó clavado al inicio de mes.
+- **Fix (migración `data_completa_manda_pos_no_quanto`):** la vista ahora manda por el **POS** (`v_pos_ventas_diario_sin_peya`, al día); el import de `pedidos_peya` puede atrasar el corte **máximo 2 días** (`greatest(least(pos, peya), pos-2)`) — si ese import muere, el dashboard no se congela. `CREATE OR REPLACE` con mismas columnas (conserva GRANTs). Resultado: agosto = $129.7K sin IVA al 13-ago, 10,249 pedidos, proyección $309K.
+- **Quanto queda retirado**: canal en $0 desde agosto (histórico intacto). OPS-7 (tiendas atrasadas subiendo Quanto) marcado obsoleto.
+
 ## 14-Ago-2026 — Menú público: "Mis pedidos" + volver a pedir (por teléfono)
 
 - **Pedido (Jose):** el menú ya guarda el teléfono del que ordena → sección **Mis pedidos**: ver el pedido activo (→ página de tracking en vivo) y repetir pedidos viejos, con sugerencia al entrar.
