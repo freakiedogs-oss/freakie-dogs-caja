@@ -2,6 +2,11 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 14-Ago-2026 — POS-3: alerta de sucursal sin cierre + descuentos de empleado en el ticket
+
+- **POS-3 (caso Usulután):** fn **`alertar_sucursales_sin_cierre()`** — detecta (a) sucursales que **vendieron hoy** (día SV) y no tienen corte Z, (b) turnos **abiertos >14h** (olvidados). Manda Telegram (patrón `bot_config` + pg_net, igual que `enviar_reporte_ordenes_abiertas`); destino `bot_config.telegram_grupo_alertas` si existe, si no el grupo drivers. **Crons 22:30 y 23:45 SV** (`pos-alerta-sin-cierre-2230/2345`). Dry-run probado (detectó S004 sin Z a las ~22:30 — plausible, cierra tarde). Para mover el aviso a un grupo de gerencia: `insert into bot_config (clave,valor) values ('telegram_grupo_alertas','<chat_id>')`.
+- **Descuentos de EMPLEADO en el corte (pedido Jose):** el motivo era texto libre (nombres sueltos: "Alejandro", "Meli"… y 87/100 sin motivo) → imposible reportar. (a) Columna nueva **`pos_cuentas.descuento_categoria`** + chips en el modal de descuento del POS ("¿Para quién es? 👷 Empleado / 🤝 Cliente / 🎟 Promo"; con Empleado el motivo pide el nombre). (b) RPC **`pos_corte_desc_empleado`** (misma selección que `pos_corte`; incluye histórico `motivo ~* 'emplead'`). (c) El ticket del corte (X y Z) imprime apartado **"DESCUENTOS EMPLEADO"**: nombre + −$ + ítems que se llevó + total. Pre-cargado como itemsVendidos (no rompe el gesto rawbt).
+
 ## 14-Ago-2026 — POS-1: el Z ya no se traga errores + backstop + ítems vendidos en el ticket
 
 - **Bug (POS-1, mordió en Venecia 28-jul):** en `cerrarZ` el error del RPC `pos_rebuild_cierre_dia` se capturaba en `_rpcErr` pero **nunca se mostraba** — el flujo caía a `toast.success('Día cerrado')` con el turno ya marcado Z pero **sin fila en `ventas_diarias`** → la sucursal desaparecía del dashboard y no había forma de reintentar (el guard `zExiste` lee `pos_turnos`, decía "día ya cerrado").

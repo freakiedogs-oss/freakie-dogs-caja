@@ -219,6 +219,8 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const [corteDia, setCorteDia] = useState(null)     // corte del DÍA completo (para Z)
   const [itemsTurno, setItemsTurno] = useState([])   // ítems vendidos del turno (para el ticket X)
   const [itemsDia, setItemsDia]     = useState([])   // ítems vendidos del día (para el ticket Z)
+  const [descEmpTurno, setDescEmpTurno] = useState([]) // descuentos de empleado del turno (ticket X)
+  const [descEmpDia, setDescEmpDia]     = useState([]) // descuentos de empleado del día (ticket Z)
   const [diaInfo, setDiaInfo]   = useState({ fondoBase: 0, prevEgr: 0, prevIng: 0, zExiste: false, nTurnos: 0 })
   const [loading, setLoading]   = useState(true)
   // 'x' = cambio de turno · 'z' = cierre del día. Pasadas las HORA_FORZAR_Z arranca en Z
@@ -292,6 +294,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     // Ítems vendidos del turno: se pre-cargan acá para que el ticket los tenga sin
     // meter awaits dentro del gesto de impresión (rawbt pierde la user-activation).
     db.rpc('pos_corte_items', params).then(({ data: it }) => setItemsTurno(Array.isArray(it) ? it : [])).catch(() => {})
+    db.rpc('pos_corte_desc_empleado', params).then(({ data: de }) => setDescEmpTurno(Array.isArray(de) ? de : [])).catch(() => {})
   }, [turno, storeCode])
   useEffect(() => { loadCorte() }, [loadCorte])
 
@@ -303,6 +306,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     const { data: cd } = await db.rpc('pos_corte', paramsDia)
     setCorteDia(cd || null)
     db.rpc('pos_corte_items', paramsDia).then(({ data: it }) => setItemsDia(Array.isArray(it) ? it : [])).catch(() => {})
+    db.rpc('pos_corte_desc_empleado', paramsDia).then(({ data: de }) => setDescEmpDia(Array.isArray(de) ? de : [])).catch(() => {})
     const { data: turnos } = await cajaF(db.from('pos_turnos')
       .select('id,fondo_apertura,egresos,ingresos_extra,tipo_cierre,abierto_at')
       .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero'))
@@ -396,6 +400,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       conteo: {}, efectivoContado: efReal, difEfectivo: tipo === 'Z' ? difDia : difTurno,
       depositar: tipo === 'Z' ? depositoDia : 0, obs, totalEgresos: totalEg, totalIngresos: totalIn,
       itemsVendidos: tipo === 'Z' ? itemsDia : itemsTurno,
+      descEmpleado: tipo === 'Z' ? descEmpDia : descEmpTurno,
     }
   }
 

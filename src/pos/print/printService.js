@@ -429,6 +429,18 @@ export function buildCorte(c, cols = 48) {
     t.bold(true).row('Total unidades', String(unidades)).bold(false);
     t.hr();
   }
+  // Apartado: descuentos de EMPLEADO (quién y qué ítems se llevó). Pedido de Jose 14-ago.
+  if (Array.isArray(c.descEmpleado) && c.descEmpleado.length) {
+    t.bold(true).ln('DESCUENTOS EMPLEADO').bold(false);
+    let totDesc = 0;
+    for (const d of c.descEmpleado) {
+      totDesc += Number(d.descuento) || 0;
+      t.row(String(d.motivo || '(sin nombre)').slice(0, cols - 12), '-' + money(d.descuento));
+      for (const it of (d.items || [])) t.ln(`   ${Number(it.cantidad) || 0} x ${String(it.nombre || '').trim().slice(0, cols - 8)}`);
+    }
+    t.bold(true).row('Total desc. empleado', '-' + money(totDesc)).bold(false);
+    t.hr();
+  }
   if (c.tipo === 'Z') {
     if (c.totalEgresos) t.row('(-) Egresos', money(c.totalEgresos));
     if (c.totalIngresos) t.row('(+) Ingresos', money(c.totalIngresos));
@@ -462,6 +474,13 @@ function corteHTML(c) {
   if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
     L.push({ hr: 1 }, { bold: 1, text: 'ITEMS VENDIDOS' });
     for (const it of c.itemsVendidos) L.push({ row: 1, left: `${Number(it.cantidad) || 0} x ${it.nombre || ''}`, right: money(it.total) });
+  }
+  if (Array.isArray(c.descEmpleado) && c.descEmpleado.length) {
+    L.push({ hr: 1 }, { bold: 1, text: 'DESCUENTOS EMPLEADO' });
+    for (const d of c.descEmpleado) {
+      L.push({ row: 1, left: d.motivo || '(sin nombre)', right: '-' + money(d.descuento) });
+      for (const it of (d.items || [])) L.push({ text: `   ${Number(it.cantidad) || 0} x ${it.nombre || ''}` });
+    }
   }
   if (c.tipo === 'Z') {
     L.push({ row: 1, left: 'Contado', right: money(c.efectivoContado) }, { row: 1, bold: 1, left: 'Diferencia', right: money(c.difEfectivo) }, { row: 1, left: 'A depositar', right: money(c.depositar) });
