@@ -14,10 +14,15 @@ const C = { card: '#1a1a1a', border: '#333', dim: '#888', accent: '#e74c3c', gre
 // Encuesta semanal (opción múltiple + texto largo). Las claves van al jsonb `respuestas`.
 const PREGUNTAS = [
   { key: 'utilidad', q: '¿Qué tan útil fue este reporte?', ops: ['🔥 Excelente', '👍 Útil', '😐 Regular', '👎 Poco útil'] },
-  { key: 'estrategias', q: '¿Las 5 estrategias por red aplican a la marca?', ops: ['Sí, todas', 'La mayoría', 'Solo algunas', 'No aplican'] },
-  { key: 'cuentas_ref', q: '¿Las cuentas de referencia sirvieron de inspiración?', ops: ['Sí', 'Algunas', 'No'] },
   { key: 'youtube', q: '¿La estrategia de YouTube va por buen camino?', ops: ['Sí, dale', 'Ajustar detalles', 'Replantear'] },
 ]
+// Preguntas de bloque (fallback para reportes viejos SIN secciones estructuradas)
+const PREGUNTAS_BLOQUE = [
+  { key: 'estrategias', q: '¿Las 5 estrategias por red aplican a la marca?', ops: ['Sí, todas', 'La mayoría', 'Solo algunas', 'No aplican'] },
+  { key: 'cuentas_ref', q: '¿Las cuentas de referencia sirvieron de inspiración?', ops: ['Sí', 'Algunas', 'No'] },
+]
+const OPS_ESTRATEGIA = ['✅ Aplica', '😐 Regular', '❌ No va con la marca']
+const OPS_CUENTA = ['🔥 Buenísima', '👍 Sirve', '👎 No']
 
 // Mini-renderer de markdown (títulos, negrita, listas, links, hr) — suficiente
 // para los reportes; sin dependencias nuevas.
@@ -139,22 +144,66 @@ export default function ReporteSemanal({ user }) {
         <div>
           <h3 style={{ margin: '0 0 4px', color: '#fff' }}>📝 Tu feedback de esta semana {feedbackListo && <span style={{ fontSize: 12, color: C.green }}>· ya enviaste (podés editarlo)</span>}</h3>
           <p style={{ fontSize: 12, color: C.dim, margin: '0 0 12px' }}>2 minutos — el AI lee esto y ajusta el próximo reporte a los valores de la marca.</p>
-          {PREGUNTAS.map(p => (
-            <div key={p.key} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 13, color: '#ccc', marginBottom: 6 }}>{p.q}</div>
+          {(() => {
+            const chips = (key, ops) => (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {p.ops.map(op => (
-                  <button key={op} onClick={() => setRespuestas(r => ({ ...r, [p.key]: r[p.key] === op ? undefined : op }))}
+                {ops.map(op => (
+                  <button key={op} onClick={() => setRespuestas(r => ({ ...r, [key]: r[key] === op ? undefined : op }))}
                     style={{
-                      padding: '7px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
-                      background: respuestas[p.key] === op ? '#e74c3c22' : '#222',
-                      border: `1px solid ${respuestas[p.key] === op ? C.accent : '#444'}`,
-                      color: respuestas[p.key] === op ? '#ff8a80' : '#bbb', fontWeight: 600,
+                      padding: '6px 11px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                      background: respuestas[key] === op ? '#e74c3c22' : '#222',
+                      border: `1px solid ${respuestas[key] === op ? C.accent : '#444'}`,
+                      color: respuestas[key] === op ? '#ff8a80' : '#bbb', fontWeight: 600,
                     }}>{op}</button>
                 ))}
               </div>
-            </div>
-          ))}
+            )
+            const pregunta = (p) => (
+              <div key={p.key} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: '#ccc', marginBottom: 6 }}>{p.q}</div>
+                {chips(p.key, p.ops)}
+              </div>
+            )
+            const estr = sel?.secciones?.estrategias || []
+            const ctas = sel?.secciones?.cuentas || []
+            const porRed = {}
+            estr.forEach((e, i) => { (porRed[e.red] = porRed[e.red] || []).push({ ...e, i }) })
+            return (
+              <>
+                {pregunta(PREGUNTAS[0])}
+                {/* Estrategias: una por una (o pregunta de bloque si el reporte no trae detalle) */}
+                {estr.length > 0 ? (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, color: '#ccc', marginBottom: 6 }}>Calificá cada estrategia:</div>
+                    {Object.entries(porRed).map(([red, items]) => (
+                      <div key={red} style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, color: C.amber, fontWeight: 700, margin: '6px 0 4px' }}>{red}</div>
+                        {items.map(e => (
+                          <div key={e.i} style={{ padding: '6px 0', borderTop: '1px solid #262626' }}>
+                            <div style={{ fontSize: 12, color: '#bbb', marginBottom: 5 }}>{e.texto}</div>
+                            {chips(`estrategia_${e.i}`, OPS_ESTRATEGIA)}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : pregunta(PREGUNTAS_BLOQUE[0])}
+                {/* Cuentas de referencia: una por una (o bloque) */}
+                {ctas.length > 0 ? (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, color: '#ccc', marginBottom: 6 }}>Calificá cada cuenta de referencia:</div>
+                    {ctas.map((c2, i) => (
+                      <div key={i} style={{ padding: '6px 0', borderTop: '1px solid #262626' }}>
+                        <div style={{ fontSize: 12, color: '#bbb', marginBottom: 5 }}><b style={{ color: '#fff' }}>{c2.handle}</b> {c2.detalle ? `— ${c2.detalle.slice(0, 110)}` : ''}</div>
+                        {chips(`cuenta_${c2.handle}`, OPS_CUENTA)}
+                      </div>
+                    ))}
+                  </div>
+                ) : pregunta(PREGUNTAS_BLOQUE[1])}
+                {pregunta(PREGUNTAS[1])}
+              </>
+            )
+          })()}
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 13, color: '#ccc', marginBottom: 6 }}>Comentarios largos (qué mejorar, qué falta, qué NO va con la marca…)</div>
             <textarea value={comentario} onChange={e => setComentario(e.target.value)} rows={3}
