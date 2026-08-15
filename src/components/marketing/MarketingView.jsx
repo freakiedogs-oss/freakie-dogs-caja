@@ -6,7 +6,7 @@ import { useToast } from '../../hooks/useToast'
 import ReporteSemanal from './ReporteSemanal'
 
 const TABS = ['🗞 Reporte Semanal', 'Feed', 'Correlación', 'Horarios', 'Campañas', 'Métricas Diarias']
-const PLATAFORMAS = ['instagram', 'tiktok']
+const PLATAFORMAS = ['instagram', 'facebook', 'tiktok']
 const TIPOS = ['foto', 'video', 'reel', 'story', 'carrusel', 'tiktok_video', 'tiktok_photo', 'live']
 
 const badge = (txt, bg = '#333', color = '#fff') => (
@@ -113,19 +113,19 @@ export default function MarketingView({ user }) {
   return (
     <div style={{ padding: '16px 12px', maxWidth: 800, margin: '0 auto' }}>
       <h2 style={{ color: '#fff', margin: '0 0 4px' }}>📱 Marketing Analytics <InfoTip text="Métricas de redes sociales y su correlación con las ventas: alcance, interacción y crecimiento." /></h2>
-      <p style={{ color: '#888', fontSize: 13, margin: '0 0 16px' }}>Instagram + TikTok • Engagement vs Ventas</p>
+      <p style={{ color: '#888', fontSize: 13, margin: '0 0 16px' }}>Instagram + Facebook (TikTok pendiente de conexión) • Engagement vs Ventas</p>
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
         {[
-          { label: 'Posts', val: totalPosts, color: '#e74c3c' },
-          { label: 'Eng. Rate', val: avgEng + '%', color: '#f39c12' },
-          { label: 'Likes', val: totalLikes.toLocaleString(), color: '#e91e63' },
-          { label: 'Alcance', val: totalReach.toLocaleString(), color: '#2196f3' },
+          { label: 'Posts', val: totalPosts, color: '#e74c3c', tip: 'Publicaciones registradas (últimas 100 cargadas). Incluye lo que la integración trae automático y lo registrado a mano.' },
+          { label: 'Eng. Rate', val: avgEng + '%', color: '#f39c12', tip: 'Engagement promedio = (likes + comentarios + guardados + compartidos) ÷ alcance. Ojo: el alcance de Facebook es un valor fijo aproximado, así que su engagement sale inflado — compará dentro de la misma red, no entre redes.' },
+          { label: 'Likes', val: totalLikes.toLocaleString(), color: '#e91e63', tip: 'Suma de likes de los posts cargados.' },
+          { label: 'Alcance', val: totalReach.toLocaleString(), color: '#2196f3', tip: 'Cuentas únicas que vieron los posts (suma). No es lo mismo que impresiones (una cuenta puede ver varias veces).' },
         ].map((k, i) => (
           <div key={i} style={{ background: '#1a1a1a', borderRadius: 10, padding: '12px 8px', textAlign: 'center', border: `1px solid ${k.color}33` }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: k.color }}>{k.val}</div>
-            <div style={{ fontSize: 11, color: '#888' }}>{k.label}</div>
+            <div style={{ fontSize: 11, color: '#888' }}>{k.label} <InfoTip text={k.tip} /></div>
           </div>
         ))}
       </div>
@@ -135,7 +135,7 @@ export default function MarketingView({ user }) {
         {['todas', ...PLATAFORMAS].map(p => (
           <button key={p} onClick={() => setFiltroPlataforma(p)}
             style={{ ...btnStyle(filtroPlataforma === p ? '#e74c3c' : '#333'), padding: '6px 14px', fontSize: 12 }}>
-            {p === 'todas' ? 'Todas' : p === 'instagram' ? '📸 Instagram' : '🎵 TikTok'}
+            {p === 'todas' ? 'Todas' : p === 'instagram' ? '📸 Instagram' : p === 'facebook' ? '📘 Facebook' : '🎵 TikTok'}
           </button>
         ))}
       </div>
@@ -256,7 +256,7 @@ export default function MarketingView({ user }) {
       {tab === 2 && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <p style={{ color: '#888', fontSize: 13, margin: 0 }}>Impacto de cada post en ventas (día 0, 1, 2 vs baseline 7d)</p>
+            <p style={{ color: '#888', fontSize: 13, margin: 0 }}>Impacto de cada post en ventas <InfoTip text="Compara las ventas del día que salió el post (Día 0) y los 2 días siguientes contra el promedio de los 7 días previos (baseline). El % de lift = cuánto subieron o bajaron las ventas vs ese promedio. Es una señal direccional, NO prueba causa-efecto (puede influir el clima, promos, día de pago, etc.)." /></p>
             <button onClick={refreshCorrelacion} style={btnStyle('#333')}>🔄 Refrescar</button>
           </div>
           {filteredCorr.length === 0 ? (
@@ -273,7 +273,7 @@ export default function MarketingView({ user }) {
                     <div style={{ fontSize: 18, fontWeight: 700, color: n(c.lift_pct) > 0 ? '#27ae60' : '#e74c3c' }}>
                       {n(c.lift_pct) > 0 ? '+' : ''}{n(c.lift_pct)}%
                     </div>
-                    <div style={{ fontSize: 10, color: '#666' }}>lift vs baseline</div>
+                    <div style={{ fontSize: 10, color: '#666' }}>lift vs baseline (Δ ventas vs promedio 7d previo)</div>
                   </div>
                 </div>
                 {c.caption && <p style={{ fontSize: 12, color: '#999', margin: '0 0 8px' }}>{(c.caption || '').slice(0, 80)}...</p>}
@@ -310,9 +310,9 @@ export default function MarketingView({ user }) {
       {/* =================== TAB 2: HORARIOS =================== */}
       {tab === 3 && (
         <div>
-          <p style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>Mejores horarios y días para publicar según engagement promedio</p>
+          <p style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>Mejores horarios y días para publicar según engagement promedio <InfoTip text="Basado en el histórico de posts: agrupa por día de la semana y hora (hora de El Salvador) y calcula el engagement promedio de cada franja. Más posts en la franja = dato más confiable (mirá la columna Posts)." /></p>
           {/* Rendimiento por tipo */}
-          <h3 style={{ color: '#fff', fontSize: 15, marginBottom: 8 }}>Por tipo de contenido</h3>
+          <h3 style={{ color: '#fff', fontSize: 15, marginBottom: 8 }}>Por tipo de contenido <InfoTip text="Qué formato rinde mejor en cada red (reel, foto, carrusel, video...). Eng % de Facebook está inflado por su alcance aproximado — compará solo dentro de la misma red." /></h3>
           {tipoRendimiento.length === 0 ? (
             card(<p style={{ color: '#888', textAlign: 'center', margin: 0 }}>Sin datos suficientes</p>)
           ) : (
@@ -345,7 +345,7 @@ export default function MarketingView({ user }) {
           )}
 
           {/* Horarios */}
-          <h3 style={{ color: '#fff', fontSize: 15, marginBottom: 8 }}>Por día y hora</h3>
+          <h3 style={{ color: '#fff', fontSize: 15, marginBottom: 8 }}>Por día y hora <InfoTip text="Franja = día de la semana + hora (El Salvador) en que se publicó. Eng % = engagement promedio de los posts publicados en esa franja." /></h3>
           {horarios.length === 0 ? (
             card(<p style={{ color: '#888', textAlign: 'center', margin: 0 }}>Sin datos suficientes. Necesitas más posts para ver patrones.</p>)
           ) : (
@@ -364,7 +364,7 @@ export default function MarketingView({ user }) {
                 <tbody>
                   {horarios.slice(0, 20).map((h, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #222' }}>
-                      <td style={{ padding: 8 }}>{h.plataforma === 'instagram' ? '📸' : '🎵'}</td>
+                      <td style={{ padding: 8 }}>{h.plataforma === 'instagram' ? '📸 IG' : h.plataforma === 'facebook' ? '📘 FB' : h.plataforma === 'tiktok' ? '🎵 TikTok' : h.plataforma}</td>
                       <td style={{ padding: 8 }}>{h.dia_nombre}</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{h.hora}:00</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{h.total_posts}</td>
