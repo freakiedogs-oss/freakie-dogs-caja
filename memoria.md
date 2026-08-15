@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 14-Ago-2026 — POS-1: el Z ya no se traga errores + backstop + ítems vendidos en el ticket
+
+- **Bug (POS-1, mordió en Venecia 28-jul):** en `cerrarZ` el error del RPC `pos_rebuild_cierre_dia` se capturaba en `_rpcErr` pero **nunca se mostraba** — el flujo caía a `toast.success('Día cerrado')` con el turno ya marcado Z pero **sin fila en `ventas_diarias`** → la sucursal desaparecía del dashboard y no había forma de reintentar (el guard `zExiste` lee `pos_turnos`, decía "día ya cerrado").
+- **Fix front (`CierreTurno.jsx`):** rebuild con **3 reintentos** (backoff 1.2s); si falla igual → `toast.error` honesto ("la caja quedó cerrada pero el resumen NO se armó; se reintenta solo en ~30 min"). El bridge de egresos/ingresos quedó como secundario (su fallo no invalida el cierre; el backstop lo re-arma).
+- **Backstop server (raíz, migración `pos1_backstop_cierres_z_y_corte_items`):** fn **`pos_reconciliar_cierres_z(dias)`** — busca (store, fecha, caja) con turno Z cerrado y SIN `ventas_diarias` → llama `pos_rebuild_cierre_dia` (idempotente, upsert) + re-arma `egresos_cierre`/`ingresos_cierre` en SQL (mismo detalle que el front). **Cron `pos-reconciliar-cierres-z` cada 30 min.** Corrido a mano: 0 huecos pendientes (los días sin cierre de Usulután NO tienen turno Z = caso "no cerraron", distinto bug).
+- **Feature (Jose): ítems vendidos en el ticket de corte.** RPC **`pos_corte_items`** (misma selección de cuentas que `pos_corte`; agrega por nombre, excluye `estado_cocina='cancelado'`; cantidad + total $, orden por cantidad desc; probado con S003: 48× Combo Hamburguesa…). El front los **pre-carga** junto al corte (X=turno, Z=día) para no meter awaits en el gesto de impresión (rawbt pierde la user-activation), y `buildCorte` imprime sección "ITEMS VENDIDOS" (`cant x nombre … $total` + total unidades) en ESC/POS y en el fallback HTML.
+
 ## 14-Ago-2026 — Delivery: el CLIENTE inicia el chat de WhatsApp (anti-bloqueo)
 
 - **Contexto (Jose):** WhatsApp bloqueó 24h el número del delivery. Causa probable: la torre **iniciaba** conversaciones con números que nunca habían escrito, siempre con el mismo texto pre-armado + link (patrón que el antispam de WhatsApp castiga; bastan 2-3 "Reportar"). Decisión: invertir la dirección — el cliente escribe primero y la torre solo **responde** dentro de un chat existente. (Fix definitivo sigue siendo Cloud API con verificación Meta, pendiente.)

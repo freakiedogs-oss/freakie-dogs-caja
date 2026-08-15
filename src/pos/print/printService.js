@@ -416,6 +416,19 @@ export function buildCorte(c, cols = 48) {
   t.row('Cancelaciones', String(c.n_cancelaciones || 0));
   t.row('Ticket prom.', money(c.ticket_promedio));
   t.hr();
+  // Ítems vendidos del turno/día (cantidad × nombre + total $), ordenados por cantidad.
+  // Vienen pre-cargados en c.itemsVendidos (RPC pos_corte_items) para no meter awaits
+  // en el gesto de impresión (rawbt pierde la user-activation).
+  if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
+    t.bold(true).ln('ITEMS VENDIDOS').bold(false);
+    let unidades = 0;
+    for (const it of c.itemsVendidos) {
+      const cant = Number(it.cantidad) || 0; unidades += cant;
+      t.row(`${cant} x ${String(it.nombre || '').trim().slice(0, cols - 14)}`, money(it.total));
+    }
+    t.bold(true).row('Total unidades', String(unidades)).bold(false);
+    t.hr();
+  }
   if (c.tipo === 'Z') {
     if (c.totalEgresos) t.row('(-) Egresos', money(c.totalEgresos));
     if (c.totalIngresos) t.row('(+) Ingresos', money(c.totalIngresos));
@@ -446,6 +459,10 @@ function corteHTML(c) {
     { row: 1, left: 'Propinas', right: money(c.propinas) },
     { row: 1, left: 'Efectivo esperado', right: money(c.efectivoEsperado) },
   ];
+  if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
+    L.push({ hr: 1 }, { bold: 1, text: 'ITEMS VENDIDOS' });
+    for (const it of c.itemsVendidos) L.push({ row: 1, left: `${Number(it.cantidad) || 0} x ${it.nombre || ''}`, right: money(it.total) });
+  }
   if (c.tipo === 'Z') {
     L.push({ row: 1, left: 'Contado', right: money(c.efectivoContado) }, { row: 1, bold: 1, left: 'Diferencia', right: money(c.difEfectivo) }, { row: 1, left: 'A depositar', right: money(c.depositar) });
   }

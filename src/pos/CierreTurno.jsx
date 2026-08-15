@@ -217,6 +217,8 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const [duenoNombre, setDuenoNombre] = useState('') // nombre del cajero DUEÑO del turno (no el logueado)
   const [corte, setCorte]       = useState(null)     // corte del TURNO actual (para X)
   const [corteDia, setCorteDia] = useState(null)     // corte del DÍA completo (para Z)
+  const [itemsTurno, setItemsTurno] = useState([])   // ítems vendidos del turno (para el ticket X)
+  const [itemsDia, setItemsDia]     = useState([])   // ítems vendidos del día (para el ticket Z)
   const [diaInfo, setDiaInfo]   = useState({ fondoBase: 0, prevEgr: 0, prevIng: 0, zExiste: false, nTurnos: 0 })
   const [loading, setLoading]   = useState(true)
   // 'x' = cambio de turno · 'z' = cierre del día. Pasadas las HORA_FORZAR_Z arranca en Z
@@ -284,8 +286,12 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   // ── Corte del TURNO actual (para X) ──
   const loadCorte = useCallback(async () => {
     if (!turno) return
-    const { data, error } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: turno.abierto_at, p_hasta: new Date().toISOString(), p_turno_id: turno.id, p_caja: caja })
+    const params = { p_store_code: storeCode, p_desde: turno.abierto_at, p_hasta: new Date().toISOString(), p_turno_id: turno.id, p_caja: caja }
+    const { data, error } = await db.rpc('pos_corte', params)
     if (!error) setCorte(data)
+    // Ítems vendidos del turno: se pre-cargan acá para que el ticket los tenga sin
+    // meter awaits dentro del gesto de impresión (rawbt pierde la user-activation).
+    db.rpc('pos_corte_items', params).then(({ data: it }) => setItemsTurno(Array.isArray(it) ? it : [])).catch(() => {})
   }, [turno, storeCode])
   useEffect(() => { loadCorte() }, [loadCorte])
 
@@ -293,8 +299,10 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const loadDia = useCallback(async () => {
     if (!turno) return
     const desde = `${todayISO()}T00:00:00-06:00`
-    const { data: cd } = await db.rpc('pos_corte', { p_store_code: storeCode, p_desde: desde, p_hasta: new Date().toISOString(), p_turno_id: null, p_caja: caja })
+    const paramsDia = { p_store_code: storeCode, p_desde: desde, p_hasta: new Date().toISOString(), p_turno_id: null, p_caja: caja }
+    const { data: cd } = await db.rpc('pos_corte', paramsDia)
     setCorteDia(cd || null)
+    db.rpc('pos_corte_items', paramsDia).then(({ data: it }) => setItemsDia(Array.isArray(it) ? it : [])).catch(() => {})
     const { data: turnos } = await cajaF(db.from('pos_turnos')
       .select('id,fondo_apertura,egresos,ingresos_extra,tipo_cierre,abierto_at')
       .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero'))
@@ -387,6 +395,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       efectivoEsperado: tipo === 'Z' ? espDia : espTurno,
       conteo: {}, efectivoContado: efReal, difEfectivo: tipo === 'Z' ? difDia : difTurno,
       depositar: tipo === 'Z' ? depositoDia : 0, obs, totalEgresos: totalEg, totalIngresos: totalIn,
+      itemsVendidos: tipo === 'Z' ? itemsDia : itemsTurno,
     }
   }
 
@@ -451,13 +460,25 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       }).eq('id', turno.id)
       if (error) throw error
       // 2. Arma el día completo en ventas_diarias (suma TODOS los turnos cerrados del día).
-      try {
-        const { data: cierreId, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
-          p_store_code: storeCode, p_fecha: turno.fecha || todayISO(),
-          p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null, p_caja: caja,
-        })
-        if (!_rpcErr && cierreId) {
-          // Detalle de egresos/ingresos del DÍA COMPLETO (todos los turnos) para Finanzas.
+      //    OJO (bug Venecia 28-jul / POS-1): antes el error del rebuild se TRAGABA y el
+      //    Z decía "✓ Día cerrado" sin crear el cierre. Ahora: 3 reintentos + aviso real.
+      //    Backstop server-side: cron pos_reconciliar_cierres_z repara solo en ≤30 min.
+      let cierreId = null, rebuildErr = null
+      for (let intento = 1; intento <= 3 && !cierreId; intento++) {
+        try {
+          const { data: cid, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
+            p_store_code: storeCode, p_fecha: turno.fecha || todayISO(),
+            p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null, p_caja: caja,
+          })
+          if (_rpcErr) throw _rpcErr
+          if (!cid) throw new Error('el rebuild no devolvió el cierre')
+          cierreId = cid
+        } catch (e) { rebuildErr = e; if (intento < 3) await new Promise(r => setTimeout(r, 1200)) }
+      }
+      if (cierreId) {
+        // Detalle de egresos/ingresos del DÍA COMPLETO (todos los turnos) para Finanzas.
+        // Secundario: si falla, el cron backstop lo re-arma; no invalida el cierre.
+        try {
           const { data: turnosDia } = await cajaF(db.from('pos_turnos')
             .select('id,egresos,ingresos_extra')
             .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero').eq('estado', 'cerrado'))
@@ -476,9 +497,11 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
           }
           if (egRows.length) await db.from('egresos_cierre').insert(egRows)
           if (inRows.length) await db.from('ingresos_cierre').insert(inRows)
-        }
-      } catch (_bridgeErr) { console.warn('bridge ventas_diarias:', _bridgeErr?.message) }
-      toast.success('Día cerrado (corte Z)')
+        } catch (_bridgeErr) { console.warn('bridge egresos/ingresos:', _bridgeErr?.message) }
+        toast.success('Día cerrado (corte Z)')
+      } else {
+        toast.error(`⚠️ La caja quedó cerrada, pero el resumen del día NO se armó (${rebuildErr?.message || 'error'}). El sistema lo reintenta solo en ~30 min — verificá en el dashboard de cierres; si no aparece, avisá a administración.`)
+      }
       try { const _r = await _print; if (_r && _r.ok === false) toast.error('⚠️ Corte Z no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte Z no impreso: ' + (_pe?.message || 'error')) }
       onBack()
     } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
