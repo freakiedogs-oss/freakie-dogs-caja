@@ -111,7 +111,17 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
     setMesas(mList)
     setHasMesas(mList.length > 0)
     if (mList.length > 0 && !selectedZona) setSelectedZona(mList[0].zona || 'principal')
-    setCuentas(cuentasData || [])
+    let cList = cuentasData || []
+    // Paga con / cambio del delivery para la cajera (pedido Jazz 14-ago). Va por RPC
+    // SECDEF (solo paga_con/total, sin PII): delivery_clientes tiene RLS sin SELECT anon.
+    const idsDeliv = cList.filter(c => c.tipo === 'delivery_propio').map(c => c.id)
+    if (idsDeliv.length) {
+      try {
+        const { data: dinfo } = await db.rpc('pos_cuentas_delivery_info', { p_cuenta_ids: idsDeliv })
+        if (dinfo) cList = cList.map(c => (dinfo[c.id] ? { ...c, delivery_cliente: dinfo[c.id] } : c))
+      } catch { /* sin info de cambio no se bloquea la pantalla */ }
+    }
+    setCuentas(cList)
     setLoading(false)
   }, [storeCode])
 
@@ -419,6 +429,14 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                       {c.tipo === 'delivery_propio' && (
                         <span className="poshome-cuenta-items" style={{ color: c.repartidor_nombre ? '#60a5fa' : '#f59e0b' }}>
                           🛵 {c.repartidor_nombre || 'Sin motorista asignado'}
+                        </span>
+                      )}
+                      {/* Cambio que debe llevar el driver (pedido de Jazz/Soyapango, 14-ago):
+                          la cajera lo VE y verifica — antes solo el driver lo veía y le
+                          decían "llevo cambio para tal" sin ser cierto. */}
+                      {c.tipo === 'delivery_propio' && c.delivery_metodo_pago === 'efectivo' && parseFloat(c.delivery_cliente?.paga_con || 0) > 0 && (
+                        <span className="poshome-cuenta-items" style={{ color: '#fbbf24', fontWeight: 700 }}>
+                          💵 Paga con ${parseFloat(c.delivery_cliente.paga_con).toFixed(2)} → debe llevar cambio ${Math.max(0, parseFloat(c.delivery_cliente.paga_con) - parseFloat(c.delivery_cliente.total ?? c.total ?? 0)).toFixed(2)}
                         </span>
                       )}
                     </div>
