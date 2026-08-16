@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { db } from '../../supabase'
+import { dbFin, abrirSesionFinanzas, esErrorDeSesion } from '../../supabaseFinanzas'
 import { STORES, n } from '../../config'
 import { paletaT as T } from '@/theme'
 import InfoTip from '../ui/InfoTip'
@@ -96,14 +97,26 @@ function classifyGasto(g) {
 }
 
 // ── Paginated fetch (Supabase max 1000) ──
-async function fetchAll(table, select, filter) {
+// OJO (15-ago-2026): antes esto hacía `console.error` + `break`, o sea que un
+// error de permisos devolvía [] y el P&L se armaba con datos faltantes SIN
+// avisar. Así estuvo semanas mostrando cifras falsas. Ahora LANZA: es preferible
+// una pantalla en error que un Estado de Resultados que miente.
+// Conserva el `code` de PostgREST/del gate al relanzar: sin eso, la pantalla no
+// puede distinguir "falta sesión" (pedir PIN) de un error real de datos.
+function errorConCodigo(table, error) {
+  const e = new Error(`${table}: ${error.message}`)
+  e.code = error.code
+  return e
+}
+
+async function fetchAll(client, table, select, filter) {
   const PAGE = 1000
   let all = [], offset = 0
   while (true) {
-    let q = db.from(table).select(select).range(offset, offset + PAGE - 1)
+    let q = client.from(table).select(select).range(offset, offset + PAGE - 1)
     if (filter) q = filter(q)
     const { data, error } = await q
-    if (error) { console.error(`fetchAll ${table}:`, error); break }
+    if (error) throw errorConCodigo(table, error)
     if (!data || data.length === 0) break
     all = all.concat(data)
     if (data.length < PAGE) break
@@ -217,17 +230,29 @@ function buildPnL(ventas, gastos, conIva, planillaBySuc) {
 async function fetchPeriod(year, month, maxDay, conIva) {
   const { desde, hasta } = periodRange(year, month, maxDay)
   const [ventasRes, gastos, planillaRes, eventosRes, eventoEgresosRes, peyaRes] = await Promise.all([
-    db.from('v_ventas_sucursal_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta),
-    fetchAll('v_gastos_consolidados',
+    // Ventas y gastos van por `dbFin`: son objetos cerrados a la anon key, el
+    // proxy los sirve con el rol privado tras validar la sesión de staff.
+    dbFin.from('v_ventas_sucursal_diario').select('store_code, total_ventas, fecha').gte('fecha', desde).lt('fecha', hasta),
+    fetchAll(dbFin, 'v_gastos_consolidados',
       'fecha, proveedor_nombre, monto, monto_sin_iva, categoria_nombre, categoria_grupo, subcategoria_contable, origen, store_code',
       q => q.gte('fecha', desde).lt('fecha', hasta)),
-    db.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta),
+    // ⚠️ `v_planilla_por_sucursal` está siendo renombrada por otra sesión
+    // (existe `v_planilla_pl_canonica` en DB, aún no en el repo). No se toca
+    // acá para no pisar ese trabajo: se tolera el fallo y se AVISA en pantalla
+    // en vez de sumar $0 de planilla en silencio.
+    dbFin.from('v_planilla_por_sucursal').select('store_code, monto, fecha').gte('fecha', desde).lt('fecha', hasta),
     db.from('eventos').select('fecha_evento, total_ventas, estado').gte('fecha_evento', desde).lt('fecha_evento', hasta).in('estado', ['cerrado', 'activo', 'aprobado']),
     db.from('evento_egresos').select('created_at, monto, evento_id').gte('created_at', desde).lt('created_at', hasta),
     // 18-may-2026: integrar ventas PeYa (delivery) por sucursal — antes solo Quanto (POS) → rentabilidad negativa
-    fetchAll('pedidos_peya', 'fecha_pedido, store_code, total_pedido, estado',
+    fetchAll(db, 'pedidos_peya', 'fecha_pedido, store_code, total_pedido, estado',
       q => q.eq('estado', 'Entregado').gte('fecha_pedido', desde).lt('fecha_pedido', hasta))
   ])
+
+  // Las fuentes que NO pueden faltar sin falsear el P&L: si fallan, se corta.
+  if (ventasRes.error) throw errorConCodigo('v_ventas_sucursal_diario', ventasRes.error)
+  if (eventosRes.error) throw errorConCodigo('eventos', eventosRes.error)
+  if (eventoEgresosRes.error) throw errorConCodigo('evento_egresos', eventoEgresosRes.error)
+
   // Unificar ventas con fuente: POS (Quanto) + PEYA (delivery) + EVENTOS — 18-may-2026
   const ventasConEventos = [
     ...((ventasRes.data || []).map(v => ({ store_code: v.store_code, total_ventas: n(v.total_ventas) || 0, fecha: v.fecha, fuente: 'POS' }))),
@@ -249,7 +274,11 @@ async function fetchPeriod(year, month, maxDay, conIva) {
       store_code: 'EVT01'
     })))
   ]
-  return buildPnL(ventasConEventos, gastosConEventos, conIva, planillaRes.data)
+  const pnl = buildPnL(ventasConEventos, gastosConEventos, conIva, planillaRes.data)
+  // Bandera para que la pantalla avise que la planilla NO entró en estos números.
+  pnl.planillaFalta = !!planillaRes.error
+  pnl.planillaError = planillaRes.error?.message || null
+  return pnl
 }
 
 // ═══════════════════════════════════════════
@@ -322,6 +351,10 @@ export default function RentabilidadView({ user }) {
   const [compMode, setCompMode] = useState('1m') // 1m | 3m | 6m
   const [datos, setDatos] = useState(null)
   const [toast, setToast] = useState(null)
+  // Sesión de finanzas (SEG-1 Capa 2): los datos del P&L viven detrás del gate.
+  const [pideSesion, setPideSesion] = useState(false)
+  const [pin, setPin] = useState('')
+  const [errSesion, setErrSesion] = useState('')
 
   const [year, month] = periodo.split('-').map(Number)
   const mesLabel = `${MESES_FULL[month - 1]} ${year}`
@@ -418,12 +451,31 @@ export default function RentabilidadView({ user }) {
       })
     } catch (err) {
       console.error('Error cargando rentabilidad:', err)
-      setToast({ msg: 'Error cargando datos: ' + err.message, tipo: 'error' })
+      if (esErrorDeSesion(err)) {
+        // No es un error de datos: falta abrir la sesión de finanzas.
+        setDatos(null)
+        setPideSesion(true)
+      } else {
+        setToast({ msg: 'Error cargando datos: ' + err.message, tipo: 'error' })
+      }
     }
     setLoading(false)
   }, [year, month, diaActual, diaAyer, conIva])
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
+
+  const entrarSesion = async () => {
+    setErrSesion('')
+    try {
+      await abrirSesionFinanzas(pin)
+      setPin(''); setPideSesion(false)
+      setLoading(true)
+      cargarDatos()
+    } catch (e) {
+      setErrSesion(e.message || 'PIN incorrecto')
+      setPin('')
+    }
+  }
 
   // Comparison ref based on mode
   const comp = useMemo(() => {
@@ -508,10 +560,42 @@ export default function RentabilidadView({ user }) {
           <div style={{ fontSize: 14 }}>Cargando datos de {mesLabel}...</div>
           <div style={{ fontSize: 12, marginTop: 8 }}>Obteniendo 7 períodos para comparación</div>
         </div>
+      ) : pideSesion ? (
+        /* ═══ GATE DE FINANZAS ═══
+           Los datos del P&L ya no se sirven con la llave pública. Se pide el
+           PIN una vez y la sesión (30 min) se comparte con RRHH/SuperAdmin. */
+        <div style={{ maxWidth: 380, margin: '48px auto', textAlign: 'center', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 12, padding: 28 }}>
+          <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 6 }}>Sesión de finanzas</div>
+          <div style={{ fontSize: 12.5, color: T.textSec, lineHeight: 1.5, marginBottom: 18 }}>
+            Los datos financieros no se sirven con la llave pública. Ingresá tu PIN para verlos.
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <input
+              type="password" inputMode="numeric" value={pin} autoFocus placeholder="Tu PIN"
+              onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && pin.length >= 3 && entrarSesion()}
+              style={{ width: 130, padding: '10px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: 15, textAlign: 'center' }}
+            />
+            <button
+              type="button" onClick={entrarSesion} disabled={pin.length < 3}
+              style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: T.green, color: '#04140c', fontSize: 13, fontWeight: 700, cursor: pin.length < 3 ? 'not-allowed' : 'pointer', opacity: pin.length < 3 ? .5 : 1 }}
+            >Entrar</button>
+          </div>
+          {errSesion && <div style={{ fontSize: 12, color: T.red, marginTop: 12 }}>⚠️ {errSesion}</div>}
+        </div>
       ) : !datos ? (
         <div style={{ textAlign: 'center', padding: 60, color: T.textMuted }}>Sin datos</div>
       ) : (
         <>
+          {/* Aviso honesto: si la planilla no cargó, estos números NO la incluyen. */}
+          {datos.curr?.planillaFalta && (
+            <div style={{ background: 'rgba(234,179,8,.08)', border: `1px solid ${T.yellow}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12.5, color: T.yellow }}>
+              ⚠️ <strong>La planilla no entró en estos números.</strong> El costo de personal falta en el P&amp;L, así que la utilidad se ve más alta de lo real.
+              {datos.curr.planillaError && <span style={{ color: T.textMuted }}> ({datos.curr.planillaError})</span>}
+            </div>
+          )}
+
           {/* ═══ KPIs ═══ */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: 14, marginBottom: 24 }}>
             <KpiCard
