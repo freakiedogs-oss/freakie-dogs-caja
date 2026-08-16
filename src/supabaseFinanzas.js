@@ -33,13 +33,34 @@ export const limpiarTorreToken = () => {
   try { localStorage.removeItem(TOKEN_KEY) } catch { /* noop */ }
 }
 
+// Evento global: lo emite cualquier query que choque con el gate, y lo escucha
+// `SesionFinanzasModal` (montado una sola vez en la raíz). Así el PIN se pide
+// desde UN solo lugar en vez de repetir el prompt en cada pantalla.
+export const EVENTO_SESION_REQUERIDA = 'freakie:sesion-finanzas-requerida'
+
 // Adjunta el token a cada request sin fijarlo al crear el cliente: así toma
 // la sesión nueva apenas se abre, sin recargar la página.
-const fetchConSesion = (input, init = {}) => {
+const fetchConSesion = async (input, init = {}) => {
   const headers = new Headers(init.headers || {})
   const token = getTorreToken()
   if (token) headers.set('x-torre-token', token)
-  return fetch(input, { ...init, headers })
+
+  const res = await fetch(input, { ...init, headers })
+
+  // 401 del gate = falta sesión (no es un error de datos). Se limpia el token
+  // vencido y se avisa para que el modal pida el PIN.
+  if (res.status === 401) {
+    try {
+      const cuerpo = await res.clone().text()
+      if (cuerpo.includes('FIN_SIN_SESION')) {
+        limpiarTorreToken()
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(EVENTO_SESION_REQUERIDA))
+        }
+      }
+    } catch { /* si no se puede leer el cuerpo, se deja pasar el error tal cual */ }
+  }
+  return res
 }
 
 export const dbFin = createClient(URL_SB, KEY_SB, {

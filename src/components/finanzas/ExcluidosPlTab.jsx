@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { db as supabase } from '../../supabase'
+import { dbFin } from '../../supabaseFinanzas'
 import InfoTip from '../ui/InfoTip'
 import { fmtDate, n } from '../../config'
 
@@ -52,7 +53,7 @@ export default function ExcluidosPlTab() {
 
   const cargar = useCallback(async () => {
     setLoading(true)
-    let q = supabase
+    let q = dbFin
       .from('v_egresos_excluidos_pl')
       .select('*')
       .gte('fecha', desde)

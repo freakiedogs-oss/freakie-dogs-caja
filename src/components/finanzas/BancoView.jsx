@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db } from '../../supabase'
+import { dbFin } from '../../supabaseFinanzas'
 import { fetchAllRows } from '../../utils/fetchPaginated'
 import { useToast } from '../../hooks/useToast'
 import InfoTip from '../ui/InfoTip'
@@ -1648,7 +1649,7 @@ function TabAutoReconciliar({ user, pushNotif }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      let q = db.from('v_bank_tx_pendientes_match')
+      let q = dbFin.from('v_bank_tx_pendientes_match')
         .select('bank_id,fecha,descripcion,debito,credito,direccion,cuenta_id,nombre_titular,relacion_tipo,categoria_gasto_id_default,subcategoria_default,match_tipo,score')
         .order('fecha', { ascending: false })
         .order('score', { ascending: false })
@@ -2512,7 +2513,7 @@ function SubPrestamos({ user, pushNotif }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('v_prestamos_estado').select('id,institucion,tipo,fecha_origen,monto_original,capital_pagado,capital_pendiente,intereses_pagados_total,movimientos_count,notas').eq('activo', true).order('capital_pendiente', { ascending: false })
+      const { data } = await dbFin.from('v_prestamos_estado').select('id,institucion,tipo,fecha_origen,monto_original,capital_pagado,capital_pendiente,intereses_pagados_total,movimientos_count,notas').eq('activo', true).order('capital_pendiente', { ascending: false })
       setData(data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [])

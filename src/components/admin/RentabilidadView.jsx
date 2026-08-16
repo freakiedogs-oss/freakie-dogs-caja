@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { db } from '../../supabase'
-import { dbFin, abrirSesionFinanzas, esErrorDeSesion } from '../../supabaseFinanzas'
+import { dbFin, esErrorDeSesion } from '../../supabaseFinanzas'
 import { STORES, n } from '../../config'
 import { paletaT as T } from '@/theme'
 import InfoTip from '../ui/InfoTip'
@@ -351,10 +351,10 @@ export default function RentabilidadView({ user }) {
   const [compMode, setCompMode] = useState('1m') // 1m | 3m | 6m
   const [datos, setDatos] = useState(null)
   const [toast, setToast] = useState(null)
-  // Sesión de finanzas (SEG-1 Capa 2): los datos del P&L viven detrás del gate.
+  // Sesión de finanzas (SEG-1 Capa 2): el PIN lo pide `SesionFinanzasModal`,
+  // montado en la raíz. Acá solo se marca que falta sesión para no mostrar
+  // un toast de error encima del modal.
   const [pideSesion, setPideSesion] = useState(false)
-  const [pin, setPin] = useState('')
-  const [errSesion, setErrSesion] = useState('')
 
   const [year, month] = periodo.split('-').map(Number)
   const mesLabel = `${MESES_FULL[month - 1]} ${year}`
@@ -452,7 +452,8 @@ export default function RentabilidadView({ user }) {
     } catch (err) {
       console.error('Error cargando rentabilidad:', err)
       if (esErrorDeSesion(err)) {
-        // No es un error de datos: falta abrir la sesión de finanzas.
+        // No es un error de datos: falta abrir la sesión. El modal global ya
+        // se abrió solo (lo dispara `dbFin` al ver el 401 del gate).
         setDatos(null)
         setPideSesion(true)
       } else {
@@ -463,19 +464,6 @@ export default function RentabilidadView({ user }) {
   }, [year, month, diaActual, diaAyer, conIva])
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
-
-  const entrarSesion = async () => {
-    setErrSesion('')
-    try {
-      await abrirSesionFinanzas(pin)
-      setPin(''); setPideSesion(false)
-      setLoading(true)
-      cargarDatos()
-    } catch (e) {
-      setErrSesion(e.message || 'PIN incorrecto')
-      setPin('')
-    }
-  }
 
   // Comparison ref based on mode
   const comp = useMemo(() => {
@@ -561,28 +549,9 @@ export default function RentabilidadView({ user }) {
           <div style={{ fontSize: 12, marginTop: 8 }}>Obteniendo 7 períodos para comparación</div>
         </div>
       ) : pideSesion ? (
-        /* ═══ GATE DE FINANZAS ═══
-           Los datos del P&L ya no se sirven con la llave pública. Se pide el
-           PIN una vez y la sesión (30 min) se comparte con RRHH/SuperAdmin. */
-        <div style={{ maxWidth: 380, margin: '48px auto', textAlign: 'center', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 12, padding: 28 }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 6 }}>Sesión de finanzas</div>
-          <div style={{ fontSize: 12.5, color: T.textSec, lineHeight: 1.5, marginBottom: 18 }}>
-            Los datos financieros no se sirven con la llave pública. Ingresá tu PIN para verlos.
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <input
-              type="password" inputMode="numeric" value={pin} autoFocus placeholder="Tu PIN"
-              onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={e => e.key === 'Enter' && pin.length >= 3 && entrarSesion()}
-              style={{ width: 130, padding: '10px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: 15, textAlign: 'center' }}
-            />
-            <button
-              type="button" onClick={entrarSesion} disabled={pin.length < 3}
-              style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: T.green, color: '#04140c', fontSize: 13, fontWeight: 700, cursor: pin.length < 3 ? 'not-allowed' : 'pointer', opacity: pin.length < 3 ? .5 : 1 }}
-            >Entrar</button>
-          </div>
-          {errSesion && <div style={{ fontSize: 12, color: T.red, marginTop: 12 }}>⚠️ {errSesion}</div>}
+        /* El modal global ya está pidiendo el PIN encima de esta pantalla. */
+        <div style={{ textAlign: 'center', padding: 60, color: T.textMuted, fontSize: 13 }}>
+          🔒 Esperando la sesión de finanzas…
         </div>
       ) : !datos ? (
         <div style={{ textAlign: 'center', padding: 60, color: T.textMuted }}>Sin datos</div>
