@@ -64,23 +64,24 @@ async function rolDeSesion(token, apikey) {
   const cacheado = cacheSesion.get(token);
   if (cacheado && cacheado.hasta > Date.now()) return cacheado.rol;
 
-  const url =
-    `${SUPA_URL}/rest/v1/staff_sesiones?token=eq.${token}` +
-    `&expira=gt.${encodeURIComponent(new Date().toISOString())}` +
-    `&select=rol&limit=1`;
-
+  // Vía RPC y no leyendo `staff_sesiones` directo: la tabla tiene RLS activa,
+  // así que un GRANT no alcanza (el rol veía 0 filas y se rechazaban hasta las
+  // sesiones válidas). `fin_sesion_rol` es SECURITY DEFINER y devuelve solo el
+  // rol, sin exponer el resto de la fila.
   try {
-    const r = await fetch(url, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/rpc/fin_sesion_rol`, {
+      method: 'POST',
       headers: {
         apikey,
-        // El rol de finanzas SÍ puede leer staff_sesiones; anon NO (verificado).
         authorization: `Bearer ${process.env.SB_FINANZAS_TOKEN}`,
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({ p_token: token }),
     });
     if (!r.ok) return null;
-    const filas = await r.json();
-    const rol = Array.isArray(filas) && filas[0]?.rol ? String(filas[0].rol) : null;
-    if (rol) cacheSesion.set(token, { rol, hasta: Date.now() + CACHE_MS });
+    const rol = await r.json();
+    if (typeof rol !== 'string' || !rol) return null;
+    cacheSesion.set(token, { rol, hasta: Date.now() + CACHE_MS });
     return rol;
   } catch {
     return null;
