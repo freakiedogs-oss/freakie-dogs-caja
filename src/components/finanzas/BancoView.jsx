@@ -3,6 +3,7 @@ import { db } from '../../supabase'
 import { fetchAllRows } from '../../utils/fetchPaginated'
 import { useToast } from '../../hooks/useToast'
 import InfoTip from '../ui/InfoTip'
+import IngestaComprobantes from './IngestaComprobantes'
 
 // ─── Helpers ───────────────────────────────────────────────
 const fmt = (n) => n != null ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
@@ -29,6 +30,7 @@ const TABS = [
   { key: 'revision', label: '✅ Revisión P&L' },
   { key: 'wizard', label: '⚡ Wizard' },
   { key: 'comprobantes', label: '📷 Comprobantes' },
+  { key: 'ingesta', label: '🤖 Ingesta' },
   { key: 'estado-cuenta', label: '🏦 Estado de Cuenta' },
   { key: 'cola', label: '🔍 Cola Manual' },
   { key: 'vincular', label: '📎 Vincular DTE' },
@@ -231,6 +233,7 @@ export default function BancoView({ user }) {
       {tab === 'revision' && <TabRevisionPL user={user} />}
       {tab === 'wizard' && <TabWizard user={user} pushNotif={pushNotif} />}
       {tab === 'comprobantes' && <TabComprobantes user={user} />}
+      {tab === 'ingesta' && <IngestaComprobantes />}
       {tab === 'estado-cuenta' && <TabEstadoCuenta user={user} />}
       {tab === 'cola' && <TabColaManual user={user} />}
       {tab === 'vincular' && <TabVincularDTE user={user} pushNotif={pushNotif} />}
