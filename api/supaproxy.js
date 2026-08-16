@@ -78,33 +78,14 @@ async function rolDeSesion(token, apikey) {
       },
       body: JSON.stringify({ p_token: token }),
     });
-    if (!r.ok) {
-      ultimoDiag = { paso: 'upstream_no_ok', status: r.status, body: (await r.text()).slice(0, 200) };
-      return null;
-    }
+    if (!r.ok) return null;
     const rol = await r.json();
-    if (typeof rol !== 'string' || !rol) {
-      ultimoDiag = { paso: 'rol_vacio', tipo: typeof rol, valor: JSON.stringify(rol).slice(0, 80) };
-      return null;
-    }
+    if (typeof rol !== 'string' || !rol) return null;
     cacheSesion.set(token, { rol, hasta: Date.now() + CACHE_MS });
     return rol;
-  } catch (e) {
-    ultimoDiag = { paso: 'fetch_lanzo', error: String(e?.message || e).slice(0, 200) };
+  } catch {
     return null;
   }
-}
-
-// Diagnóstico temporal del gate. Solo reporta FORMA, nunca el valor del token.
-let ultimoDiag = null;
-function diagGate() {
-  const t = process.env.SB_FINANZAS_TOKEN || '';
-  return {
-    token_presente: !!t,
-    token_largo: t.length,
-    token_partes: t ? t.split('.').length : 0,
-    ultimo: ultimoDiag,
-  };
 }
 
 function noAutorizado(motivo) {
@@ -194,12 +175,6 @@ export default async function handler(req) {
     }
     const rol = await rolDeSesion(tokenTorre, upstreamHeaders.get('apikey'));
     if (!rol) {
-      if (req.headers.get('x-gate-debug') === '1') {
-        return new Response(JSON.stringify({ code: 'FIN_DIAG', diag: diagGate() }), {
-          status: 401,
-          headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
-        });
-      }
       return noAutorizado('Sesión de finanzas ausente o vencida.');
     }
     if (!ROLES_FINANZAS.has(rol)) {
