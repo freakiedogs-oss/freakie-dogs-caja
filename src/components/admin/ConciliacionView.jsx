@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../../supabase';
+import { dbFin } from '../../supabaseFinanzas'
 import { STORES, today, fmtDate, n, shiftDate } from '../../config';
 
 // ── Control de acceso ──
@@ -64,7 +65,7 @@ export default function ConciliacionView({ user, onBack }) {
           .lte('fecha', dteFechaFin)
           .order('fecha', { ascending: false })
           .order('numero_dte'),
-        db.from('v_ajustes_cruce_resumen')
+        dbFin.from('v_ajustes_cruce_resumen')
           .select('fecha,tipo_ajuste,monto,descripcion')
           .gte('fecha', mesResumen + '-01')
           .lt('fecha', shiftDate(mesResumen + '-01', 32).slice(0, 7) + '-01'),

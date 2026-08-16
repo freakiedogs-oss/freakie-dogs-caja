@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { db } from '../../supabase'
+import { dbFin } from '../../supabaseFinanzas'
 import { paletaC as C } from '@/theme'
 import InfoTip from '../ui/InfoTip'
 import IngresoCanalConciliacion from './IngresoCanalConciliacion'
@@ -274,11 +275,13 @@ export default function FinanzasDashboard({ user }) {
 
   // Helper: paginated fetch — Supabase default limit is 1000 rows
   // Mantenido para tablas pequeñas (<1000 filas) que no se materializan
-  async function fetchAll(table, select, filter) {
+  // `client` opcional: las vistas cerradas de finanzas se piden con `dbFin`
+  // (adjunta la sesión de staff y el proxy las sirve con el rol privado).
+  async function fetchAll(table, select, filter, client = db) {
     const PAGE = 1000
     let all = [], offset = 0, done = false
     while (!done) {
-      let q = db.from(table).select(select).range(offset, offset + PAGE - 1)
+      let q = client.from(table).select(select).range(offset, offset + PAGE - 1)
       if (filter) q = filter(q)
       const { data, error } = await q
       if (error) { console.error(`fetchAll ${table}:`, error); break }
@@ -291,8 +294,8 @@ export default function FinanzasDashboard({ user }) {
   }
 
   // Helper: fetch simple sin paginacion (para matviews y tablas pequeñas conocidas)
-  async function fetchSimple(table, select, filter) {
-    let q = db.from(table).select(select)
+  async function fetchSimple(table, select, filter, client = db) {
+    let q = client.from(table).select(select)
     if (filter) q = filter(q)
     const { data, error } = await q
     if (error) { console.error(`fetchSimple ${table}:`, error); return [] }
@@ -339,7 +342,7 @@ export default function FinanzasDashboard({ user }) {
         fetchSimple('mv_finanzas_banco_mensual',
           'mes, cuenta_id, estado, codigo_bac, total_credito, total_debito, num_tx, balance_max, total_peya_credito, total_serfinsa_credito, total_efectivo_deposito, total_pos_bac, total_transfers_credito',
           q => q.gte('mes', '2026-01-01').order('mes')),
-        db.from('v_bank_saldos_consolidados').select('cuenta_id,banco,alias,numero_cuenta,saldo_actual,total_tx,tx_ultimos_30d'),
+        dbFin.from('v_bank_saldos_consolidados').select('cuenta_id,banco,alias,numero_cuenta,saldo_actual,total_tx,tx_ultimos_30d'),
         db.from('catalogo_contable').select('nombre_dte, nombre_normalizado, categoria, subcategoria, sucursal_default').eq('activo', true),
         fetchAll('compras_dte',
           'id, fecha_emision, monto_total, subtotal, iva, numero_control',
@@ -368,7 +371,7 @@ export default function FinanzasDashboard({ user }) {
           q => q.gte('fecha_deposito', '2026-01-01').order('fecha_deposito')),
         fetchAll('v_planilla_gerencial_pl',
           'mes, provisionado, pagado_real, pendiente_pago',
-          q => q.gte('mes', '2026-01-01').order('mes')),
+          q => q.gte('mes', '2026-01-01').order('mes'), dbFin),
         fetchAll('v_obligaciones_provisionadas',
           'mes, codigo, nombre, grupo, categoria_gasto_id, monto_pl, estado',
           q => q.gte('mes', '2026-01-01').order('mes')),
@@ -1167,7 +1170,7 @@ function TabEstadoResultados({ months2026, data2026, conIva }) {
   const [pagadoCat, setPagadoCat] = useState({})   // {categoria: %pagado} total (columna Total)
   const [pagadoMes, setPagadoMes] = useState({})   // {categoria: {ym: %pagado}} por mes
   useEffect(() => {
-    db.from('v_pl_pagado_categoria_mensual').select('mes,categoria,total,pagado').then(({ data }) => {
+    dbFin.from('v_pl_pagado_categoria_mensual').select('mes,categoria,total,pagado').then(({ data }) => {
       const accT = {}, accM = {}
       for (const r of (data || [])) {
         const k = r.categoria, ym = (r.mes || '').substring(0, 7)

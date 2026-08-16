@@ -2,12 +2,15 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import PantallaDeError from './components/ui/PantallaDeError'
+import SesionFinanzasModal from './components/finanzas/SesionFinanzasModal'
 import './styles/global.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <PantallaDeError>
       <App />
+      {/* Pide el PIN cuando una pantalla de finanzas choca con el gate del proxy. */}
+      <SesionFinanzasModal />
     </PantallaDeError>
   </React.StrictMode>
 )

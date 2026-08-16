@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
+import { dbFin } from '../../supabaseFinanzas'
 import { STORES, today } from '../../config';
 
 // ── Estilos ──
@@ -509,7 +510,7 @@ export default function DevOpsTab() {
   // ══════════════════════════════════════════
   async function checkCobertura() {
     try {
-      const { data, error } = await db
+      const { data, error } = await dbFin
         .from('v_cobertura_cruce')
         .select('pct_dtes_con_recepcion,pct_recepciones_con_dte,total_dtes_,total_recepciones_,dtes_huerfanos,recepciones_huerfanas')
         .single();
