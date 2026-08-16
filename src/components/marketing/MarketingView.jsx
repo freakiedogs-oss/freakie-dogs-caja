@@ -4,8 +4,9 @@ import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n } from '../../config'
 import { useToast } from '../../hooks/useToast'
 import ReporteSemanal from './ReporteSemanal'
+import TendenciasRedes from './TendenciasRedes'
 
-const TABS = ['🗞 Reporte Semanal', 'Feed', 'Correlación', 'Horarios', 'Campañas', 'Métricas Diarias']
+const TABS = ['🗞 Reporte Semanal', '📈 Tendencias', 'Feed', 'Correlación', 'Horarios', 'Campañas', 'Métricas Diarias']
 const PLATAFORMAS = ['instagram', 'facebook', 'tiktok']
 const TIPOS = ['foto', 'video', 'reel', 'story', 'carrusel', 'tiktok_video', 'tiktok_photo', 'live']
 
@@ -153,8 +154,11 @@ export default function MarketingView({ user }) {
       {/* =================== TAB 0: REPORTE SEMANAL =================== */}
       {tab === 0 && <ReporteSemanal user={user} />}
 
+      {/* =================== TAB 1: TENDENCIAS =================== */}
+      {tab === 1 && <TendenciasRedes />}
+
       {/* =================== TAB 1: FEED =================== */}
-      {tab === 1 && (
+      {tab === 2 && (
         <div>
           <button onClick={() => setShowNewPost(!showNewPost)} style={{ ...btnStyle(), marginBottom: 12 }}>
             {showNewPost ? '✕ Cerrar' : '+ Registrar Post'}
@@ -253,7 +257,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 1: CORRELACIÓN =================== */}
-      {tab === 2 && (
+      {tab === 3 && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
             <p style={{ color: '#888', fontSize: 13, margin: 0 }}>Impacto de cada post en ventas <InfoTip text="Compara las ventas del día que salió el post (Día 0) y los 2 días siguientes contra el promedio de los 7 días previos (baseline). El % de lift = cuánto subieron o bajaron las ventas vs ese promedio. Es una señal direccional, NO prueba causa-efecto (puede influir el clima, promos, día de pago, etc.)." /></p>
@@ -308,7 +312,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 2: HORARIOS =================== */}
-      {tab === 3 && (
+      {tab === 4 && (
         <div>
           <p style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>Mejores horarios y días para publicar según engagement promedio <InfoTip text="Basado en el histórico de posts: agrupa por día de la semana y hora (hora de El Salvador) y calcula el engagement promedio de cada franja. Más posts en la franja = dato más confiable (mirá la columna Posts)." /></p>
           {/* Rendimiento por tipo */}
@@ -380,7 +384,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 3: CAMPAÑAS =================== */}
-      {tab === 4 && (
+      {tab === 5 && (
         <div>
           <button onClick={() => setShowNewCampana(!showNewCampana)} style={{ ...btnStyle(), marginBottom: 12 }}>
             {showNewCampana ? '✕ Cerrar' : '+ Nueva Campaña'}
@@ -441,7 +445,7 @@ export default function MarketingView({ user }) {
       )}
 
       {/* =================== TAB 4: MÉTRICAS DIARIAS =================== */}
-      {tab === 5 && (
+      {tab === 6 && (
         <div>
           <p style={{ color: '#888', fontSize: 13, marginBottom: 12 }}>Seguidores, alcance y clicks por día (se llena automáticamente con Make.com)</p>
           {metricas.length === 0 ? (
