@@ -118,6 +118,10 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             id,
             nombre,
             precio_unitario,
+            precio_modificadores,
+            precio_extras,
+            modificadores,
+            componentes,
             cantidad,
             notas,
             menu_item_id
@@ -168,13 +172,30 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
   const handleReimprimir = async (cuenta) => {
     setReimprimiendo(cuenta.id)
     try {
-      const items = (cuenta.pos_cuenta_items || []).map(i => ({
-        qty: i.cantidad,          // buildFactura lee it.qty (no it.cantidad)
-        nombre: i.nombre,
-        precio: parseFloat(i.precio_unitario) || 0,
-        modificadores: [],
-        nota: i.notas || null,
-      }))
+      // El precio de la línea es el COBRADO (base + extras): con solo precio_unitario las
+      // líneas del ticket reimpreso no sumaban el total. Los modificadores y componentes se
+      // reconstruyen como texto, igual que en la impresión original (buildCuentaPrint).
+      const items = (cuenta.pos_cuenta_items || []).map(i => {
+        const mods = []
+        ;(i.modificadores || []).forEach(m => {
+          if (m?.nombre) mods.push(m.nombre + (Number(m.precio_extra) > 0 ? ` (+$${Number(m.precio_extra).toFixed(2)})` : ''))
+        })
+        ;(i.componentes || []).forEach(c => {
+          mods.push(`${c.cantidad > 1 ? c.cantidad + 'x ' : ''}${c.nombre}:`)
+          ;(c.modificadores || []).forEach(m => {
+            if (m?.nombre) mods.push('   ' + m.nombre + (Number(m.precio_extra) > 0 ? ` (+$${Number(m.precio_extra).toFixed(2)})` : ''))
+          })
+        })
+        return {
+          qty: i.cantidad,          // buildFactura lee it.qty (no it.cantidad)
+          nombre: i.nombre,
+          precio: (parseFloat(i.precio_unitario) || 0)
+                + (parseFloat(i.precio_modificadores) || 0)
+                + (parseFloat(i.precio_extras) || 0),
+          modificadores: mods,
+          nota: i.notas || null,
+        }
+      })
 
       // Pago(s): método (si hay varios = mixto) y, si hubo efectivo, recibido/cambio
       const pagos = cuenta.pos_cuenta_pagos || []
@@ -434,7 +455,9 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                                     {item.notas && <div className="historial-item-notas">📝 {item.notas}</div>}
                                   </td>
                                   <td className="historial-item-price">
-                                    ${(parseFloat(item.precio_unitario) * item.cantidad).toFixed(2)}
+                                    ${(((parseFloat(item.precio_unitario) || 0)
+                                        + (parseFloat(item.precio_modificadores) || 0)
+                                        + (parseFloat(item.precio_extras) || 0)) * item.cantidad).toFixed(2)}
                                   </td>
                                 </tr>
                               ))}

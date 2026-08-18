@@ -99,6 +99,11 @@ const RAW_MAP = {
   'chili dog':              { chili_dog: 1 },
   'hamburguesa':            { hamburguesa: 1 },
   'papa sazonada':          { papa: 1 },
+  // Ítems componente de los combos: desde la reconciliación de combos (18-ago), la cola de
+  // cocina recibe una fila por componente ("Hamburguesa", "Fries", "Hot Dog", "Super Freak")
+  // en vez del nombre del combo padre. Sin estas entradas el contador quedaba en 0.
+  'fries':                  { papa: 1 },
+  'hot dog':                { freakie_dog: 1 },
   'freaki fries':           { papa: 1 },
   'freakie fries':          { papa: 1 },
   'friki fries':            { papa: 1 },
