@@ -420,13 +420,22 @@ export function buildCorte(c, cols = 48) {
   // Vienen pre-cargados en c.itemsVendidos (RPC pos_corte_items) para no meter awaits
   // en el gesto de impresión (rawbt pierde la user-activation).
   if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
+    // Formato plantilla de conteo (pedido Jose 18-ago): bebidas por sabor/presentación
+    // primero (orden del menú) y TODOS los items con columnas VEND + DEBER (a mano).
     t.bold(true).ln('ITEMS VENDIDOS').bold(false);
-    let unidades = 0;
+    t.row('ITEM', 'VEND DEBER');
+    let unidades = 0, totalItems = 0, grupoBebida = null;
     for (const it of c.itemsVendidos) {
-      const cant = Number(it.cantidad) || 0; unidades += cant;
-      t.row(`${cant} x ${String(it.nombre || '').trim().slice(0, cols - 14)}`, money(it.total));
+      const esBeb = !!it.es_bebida;
+      if (esBeb !== grupoBebida) {
+        t.bold(true).ln(esBeb ? '-- BEBIDAS --' : '-- COCINA / OTROS --').bold(false);
+        grupoBebida = esBeb;
+      }
+      const cant = Number(it.cantidad) || 0; unidades += cant; totalItems += Number(it.total) || 0;
+      t.row(String(it.nombre || '').trim().slice(0, cols - 12), `${String(cant).padStart(3)}  ____`);
     }
     t.bold(true).row('Total unidades', String(unidades)).bold(false);
+    t.row('Total items', money(totalItems));
     t.hr();
   }
   // Apartado: descuentos de EMPLEADO (quién y qué ítems se llevó). Pedido de Jose 14-ago.
@@ -473,7 +482,13 @@ function corteHTML(c) {
   ];
   if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
     L.push({ hr: 1 }, { bold: 1, text: 'ITEMS VENDIDOS' });
-    for (const it of c.itemsVendidos) L.push({ row: 1, left: `${Number(it.cantidad) || 0} x ${it.nombre || ''}`, right: money(it.total) });
+    L.push({ row: 1, left: 'ITEM', right: 'VEND DEBER' });
+    let grupoBebidaH = null;
+    for (const it of c.itemsVendidos) {
+      const esBeb = !!it.es_bebida;
+      if (esBeb !== grupoBebidaH) { L.push({ bold: 1, text: esBeb ? '-- BEBIDAS --' : '-- COCINA / OTROS --' }); grupoBebidaH = esBeb; }
+      L.push({ row: 1, left: it.nombre || '', right: `${Number(it.cantidad) || 0}  ____` });
+    }
   }
   if (Array.isArray(c.descEmpleado) && c.descEmpleado.length) {
     L.push({ hr: 1 }, { bold: 1, text: 'DESCUENTOS EMPLEADO' });

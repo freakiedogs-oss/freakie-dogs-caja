@@ -173,6 +173,7 @@ export default function KDSScreen({ user, onBack }) {
   const [historial,   setHistorial]   = useState([])         // rows de pos_cocina_queue completadas hoy
   const [loading,     setLoading]     = useState(true)
   const [bumping,     setBumping]     = useState(null)       // cuenta_id+comanda en proceso
+  const [confirmar,   setConfirmar]   = useState(null)       // comanda amarilla/roja esperando doble check antes de LISTA
   const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial'
   const [reverting,   setReverting]   = useState(null)       // id de item en revert
   const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
@@ -800,7 +801,7 @@ export default function KDSScreen({ user, onBack }) {
                       </span>
                       <button
                         className={`kds-bump-btn${todosListos ? ' ready' : ''}`}
-                        onClick={() => bumparComanda(comanda)}
+                        onClick={() => (comanda.nivel !== 'normal' ? setConfirmar(comanda) : bumparComanda(comanda))}
                         disabled={isBumping}
                       >
                         {isBumping ? '⏳' : todosListos ? '✓ LISTA' : '▷ LISTA'}
@@ -967,6 +968,49 @@ export default function KDSScreen({ user, onBack }) {
           )
         )}
       </div>
+
+      {/* Doble check obligatorio (pedido Jose 18-ago): antes de despachar una comanda
+          AMARILLA o ROJA, ventanilla repasa SOLO los ítems con extras/modificaciones. */}
+      {confirmar && (() => {
+        const nivel = NIVEL_INFO[confirmar.nivel] || NIVEL_INFO.normal
+        const especiales = confirmar.items.filter(i => itemNivel(i) !== 'normal')
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: '#111827', border: `3px solid ${nivel.color}`, borderRadius: 14, width: '100%', maxWidth: 460, maxHeight: '85vh', overflowY: 'auto', padding: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 6, background: nivel.color, color: confirmar.nivel === 'modificado' ? '#1a1a1a' : '#fff' }}>{nivel.label}</span>
+                <b style={{ fontSize: 16, color: '#fff' }}>Revisión final antes de despachar</b>
+              </div>
+              <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12 }}>
+                Verificá que el empaque lleve EXACTAMENTE esto:
+              </div>
+              {especiales.map(item => (
+                <div key={item.id} style={{ background: '#1f2937', borderLeft: `4px solid ${NIVEL_INFO[itemNivel(item)].color}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 15 }}>
+                    {item.cantidad || 1}× {item.nombre_item}
+                    {item.atencion_especial && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#fff', background: '#ef4444', padding: '2px 7px', borderRadius: 5 }}>ESPECIAL</span>}
+                  </div>
+                  {Array.isArray(item.modificadores) && item.modificadores.filter(m => Number(m?.precio_extra || 0) > 0 || !esConTodo(m?.nombre)).map((m, ix) => (
+                    <div key={ix} style={{ fontSize: 13, color: '#fbbf24', marginTop: 2 }}>• {m.grupo_nombre ? `${m.grupo_nombre}: ` : ''}{m.nombre}{Number(m.precio_extra) > 0 ? ` (+$${Number(m.precio_extra).toFixed(2)})` : ''}</div>
+                  ))}
+                  {item.nota && <div style={{ fontSize: 13, color: '#fca5a5', marginTop: 4, fontWeight: 700 }}>📝 {item.nota}</div>}
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                <button onClick={() => setConfirmar(null)}
+                  style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: '1px solid #4b5563', background: '#1f2937', color: '#d1d5db', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                  ↩ Volver a revisar
+                </button>
+                <button onClick={() => { const c = confirmar; setConfirmar(null); bumparComanda(c) }}
+                  style={{ flex: 1.4, padding: '12px 0', borderRadius: 10, border: 'none', background: '#059669', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
+                  ✅ Revisado · Despachar
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       <toast.Toast />
     </div>
   )
