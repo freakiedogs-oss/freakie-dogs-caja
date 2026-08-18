@@ -4,7 +4,7 @@
 // (RPC menu_publico_delivery → canal delivery_propio, con modificadores),
 // así los precios y opciones son los mismos que cobra la caja.
 // ────────────────────────────────────────────────────────────────────
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { db } from '../supabase'
 import { URL_DELIVERY } from '../config'
 import { NEGOCIO, BANNERS } from './catalogoBuho'
@@ -173,12 +173,16 @@ export default function MenuPublico() {
   )
   const cantidadCarrito = carrito.reduce((s, it) => s + it.qty, 0)
 
-  const agregarAlCarrito = (producto, qty = 1, nota = '', mods = []) => {
+  const agregarAlCarrito = (producto, qty = 1, nota = '', mods = [], comps = []) => {
+    // Los extras de un componente se cobran por cada unidad que lleva el combo.
     const precioMods = mods.reduce((s, m) => s + (Number(m.precio_extra) || 0), 0)
+      + comps.reduce((s, c) => s + (c.mods || []).reduce(
+          (t, m) => t + (Number(m.precio_extra) || 0), 0) * (Number(c.cantidad) || 1), 0)
     setCarrito(prev => {
       // Mismo producto sin nota ni mods → suma qty
-      if (!nota && mods.length === 0) {
-        const idx = prev.findIndex(i => i.id === producto.id && !i.nota && (!i.mods || i.mods.length === 0))
+      if (!nota && mods.length === 0 && comps.length === 0) {
+        const idx = prev.findIndex(i => i.id === producto.id && !i.nota
+          && (!i.mods || i.mods.length === 0) && (!i.comps || i.comps.length === 0))
         if (idx >= 0) {
           const next = [...prev]
           next[idx] = { ...next[idx], qty: next[idx].qty + qty }
@@ -188,7 +192,7 @@ export default function MenuPublico() {
       return [...prev, {
         lineaId: Date.now() + Math.random(),
         id: producto.id, nombre: producto.nombre, precio: Number(producto.precio),
-        precioMods, qty, nota, mods,
+        precioMods, qty, nota, mods, comps,
       }]
     })
     setToast('Producto añadido')
@@ -220,9 +224,14 @@ export default function MenuPublico() {
     for (const it of (pedido.items || [])) {
       const prod = porId[it.menu_item_id]
       if (!prod) { fuera += Number(it.cantidad) || 1; continue }
+      // Las opciones pueden estar en los grupos del ítem o en los de cada componente del combo.
+      const gruposTodos = [
+        ...(prod.grupos || []),
+        ...(prod.componentes || []).flatMap(c => c.grupos || []),
+      ]
       const modsActuales = []
       for (const m of (it.modificadores || [])) {
-        for (const g of (prod.grupos || [])) {
+        for (const g of gruposTodos) {
           const op = (g.opciones || []).find(o => o.id === m.id)
           if (op) { modsActuales.push(op); break }
         }
@@ -357,8 +366,8 @@ export default function MenuPublico() {
         <ProductoModal
           producto={productoModal}
           onClose={() => setProductoModal(null)}
-          onAgregar={(qty, nota, mods) => {
-            agregarAlCarrito(productoModal, qty, nota, mods)
+          onAgregar={(qty, nota, mods, comps) => {
+            agregarAlCarrito(productoModal, qty, nota, mods, comps)
             setProductoModal(null)
           }}
           abierto={abierto}
@@ -551,6 +560,7 @@ function HeaderNegocio({ horarioBD }) {
 
 function ProductoCard({ producto, onClick }) {
   const tieneOpciones = (producto.grupos || []).length > 0
+    || (producto.componentes || []).some(c => (c.grupos || []).length > 0)
   return (
     <button className="mp-card" onClick={onClick}>
       <div className="mp-card-info">
@@ -585,7 +595,29 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   // scroleando sin saber qué le faltaba.
   const [grupoAbierto, setGrupoAbierto] = useState(null)
 
-  const grupos = producto.grupos || []
+  // Un combo puede traer sus opciones en dos formatos y hay que soportar los dos:
+  //  · producto.grupos      → opciones del ítem (formato original)
+  //  · producto.componentes → un bloque de opciones por cada parte del combo (2 hamburguesas,
+  //    2 papas, 2 bebidas), cada una personalizable por separado.
+  // Se aplanan a una sola lista con id compuesto "idx:grupoId" para que el resto de la lógica
+  // (selección, mínimos, faltantes, precio) siga funcionando igual.
+  const grupos = useMemo(() => {
+    const base = (producto.grupos || []).map(g => ({ ...g, _seccion: null }))
+    const comps = producto.componentes || []
+    const repes = {}
+    comps.forEach(c => { repes[c.nombre] = (repes[c.nombre] || 0) + 1 })
+    const vistos = {}
+    const deComponentes = []
+    comps.forEach((c, i) => {
+      vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
+      const titulo = repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre
+      ;(c.grupos || []).forEach(g => {
+        deComponentes.push({ ...g, id: `${i}:${g.id}`, _seccion: titulo })
+      })
+    })
+    return [...base, ...deComponentes]
+  }, [producto])
+
   const esUnico = (g) => (g.max === 1) || g.tipo === 'unico' || g.tipo === 'single'
   const requerido = (g) => g.obligatorio || (Number(g.min) || 0) > 0
   const minDe = (g) => g.obligatorio ? Math.max(1, Number(g.min) || 0) : (Number(g.min) || 0)
@@ -620,9 +652,17 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
     }
   }
 
+  // Los grupos que vienen de un componente tienen id "indice:grupoId"; se recupera el índice
+  // para saber a qué unidad del combo pertenece cada opción elegida.
   const modsPlanos = useMemo(
-    () => Object.entries(sel).flatMap(([grupoId, ops]) =>
-      ops.map(o => ({ id: o.id, nombre: o.nombre, precio_extra: Number(o.precio_extra) || 0, grupoId }))),
+    () => Object.entries(sel).flatMap(([grupoId, ops]) => {
+      const m = /^(\d+):(.+)$/.exec(grupoId)
+      const compIdx = m ? Number(m[1]) : null
+      return ops.map(o => ({
+        id: o.id, nombre: o.nombre, precio_extra: Number(o.precio_extra) || 0,
+        grupoId: m ? m[2] : grupoId, compIdx,
+      }))
+    }),
     [sel]
   )
   const extrasUnidad = modsPlanos.reduce((s, m) => s + m.precio_extra, 0)
@@ -636,7 +676,15 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
       setGrupoAbierto(faltantes[0].id)   // llevarlo a lo que falta, no dejarlo buscando
       return
     }
-    onAgregar(qty, nota, modsPlanos)
+    // Se separan: las opciones del ítem van en `mods`; las de cada unidad del combo viajan
+    // agrupadas por componente. Si se mandaran en los dos lados, el servidor cobraría doble.
+    const comps = (producto.componentes || []).map((c, i) => ({
+      item_id: c.item_id,
+      nombre: c.nombre,
+      cantidad: Number(c.cantidad) || 1,
+      mods: modsPlanos.filter(m => m.compIdx === i),
+    })).filter(c => c.mods.length > 0)
+    onAgregar(qty, nota, modsPlanos.filter(m => m.compIdx == null), comps)
   }
 
   return (
@@ -660,14 +708,19 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
           <div className="mp-modal-precio">{fmt(producto.precio)}</div>
 
           {/* GRUPOS DE MODIFICADORES */}
-          {grupos.map(g => {
+          {grupos.map((g, gi) => {
             const cuenta = sel[g.id]?.length || 0
             const incompleto = intento && cuenta < minDe(g)
             const listo = cuenta >= minDe(g) && cuenta > 0
             const estaAbierto = grupoAbierto === g.id
             const elegidas = (sel[g.id] || []).map(o => o.nombre).join(', ')
+            // Encabezado al empezar cada parte del combo ("Hamburguesa 1", "Bebida 2"), para
+            // que se entienda a cuál de las unidades pertenecen las opciones de abajo.
+            const abreSeccion = g._seccion && (gi === 0 || grupos[gi - 1]._seccion !== g._seccion)
             return (
-              <div key={g.id} className={`mp-grupo ${incompleto ? 'error' : ''} ${estaAbierto ? 'abierto' : ''}`}>
+              <Fragment key={g.id}>
+              {abreSeccion && <div className="mp-comp-seccion">{g._seccion}</div>}
+              <div className={`mp-grupo ${incompleto ? 'error' : ''} ${estaAbierto ? 'abierto' : ''}`}>
                 <button type="button" className="mp-grupo-head"
                         aria-expanded={estaAbierto}
                         onClick={() => setGrupoAbierto(a => (a === g.id ? null : g.id))}>
@@ -708,6 +761,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
                 </div>
                 {incompleto && <div className="mp-grupo-error">Elegí al menos {minDe(g)}</div>}
               </div>
+              </Fragment>
             )
           })}
 
@@ -830,7 +884,15 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
 // que el seguimiento no dependa de WhatsApp.
 function PedidoEnviado({ datos, onClose }) {
   const waNum = String(datos.whatsapp || '').replace(/\D/g, '')
-  const waMsg = `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Confirmo mi pedido ${datos.numero_orden}${datos.total ? ` por ${fmt(datos.total)}` : ''}.`
+  const items = datos.items || []
+  // Resumen del pedido para el mensaje de WhatsApp: el cliente manda qué pidió, no solo el número.
+  const resumen = items
+    .map(it => `• ${it.qty}x ${it.nombre}${(it.mods || []).length ? ` (${it.mods.map(m => m.nombre).join(', ')})` : ''}`)
+    .join('\n')
+  const waMsg = `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Confirmo mi pedido ${datos.numero_orden}`
+    + (resumen ? `:\n${resumen}` : '')
+    + (datos.total ? `\nTotal: ${fmt(datos.total)}` : '')
+    + (datos.direccion ? `\n📍 ${datos.direccion}` : '')
   const waHref = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(waMsg)}` : null
   const trackHref = datos.tracking_token ? `${URL_DELIVERY}/track?t=${datos.tracking_token}` : null
 
@@ -846,6 +908,41 @@ function PedidoEnviado({ datos, onClose }) {
             Tu pedido es el <b>{datos.numero_orden}</b>
             {datos.total ? <> · <b>{fmt(datos.total)}</b></> : null}
           </div>
+
+          {/* Detalle de lo que pidió: antes solo se mostraba el número y el total, y el cliente
+              no tenía forma de verificar que su orden hubiera quedado bien. */}
+          {items.length > 0 && (
+            <div className="mp-enviado-detalle">
+              {items.map((it, i) => (
+                <div key={it.lineaId || i} className="mp-linea">
+                  <div className="mp-linea-info">
+                    <div className="mp-linea-nombre">{it.qty}x {it.nombre}</div>
+                    {it.nota && <div className="mp-linea-nota">📝 {it.nota}</div>}
+                    {(it.mods || []).map((m, j) => (
+                      <div key={j} className="mp-linea-mod">
+                        + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
+                      </div>
+                    ))}
+                    <div className="mp-linea-precio">{fmt((it.precio + (it.precioMods || 0)) * it.qty)}</div>
+                  </div>
+                </div>
+              ))}
+              {datos.subtotal != null && (
+                <div className="mp-enviado-totales">
+                  <div><span>Subtotal</span><span>{fmt(datos.subtotal)}</span></div>
+                  {datos.tipo !== 'recoger' && datos.costoEnvio != null && (
+                    <div><span>Envío</span><span>{fmt(datos.costoEnvio)}</span></div>
+                  )}
+                  {datos.total != null && (
+                    <div className="mp-enviado-total-final"><span>Total</span><span>{fmt(datos.total)}</span></div>
+                  )}
+                </div>
+              )}
+              {datos.direccion && datos.tipo !== 'recoger' && (
+                <div className="mp-enviado-dir">📍 {datos.direccion}</div>
+              )}
+            </div>
+          )}
 
           {waHref ? (
             <>
@@ -983,7 +1080,15 @@ function Checkout({ items, total, onClose, onEnviado }) {
             menu_item_id: i.id,
             cantidad: i.qty,
             nota: i.nota || null,
+            // Solo las opciones del ítem: las de cada unidad del combo van en `componentes`,
+            // porque el servidor las cobra por separado (mandarlas dos veces cobraría doble).
             modificadores: (i.mods || []).map(m => m.id),
+            componentes: (i.comps || []).map(c => ({
+              item_id: c.item_id,
+              nombre: c.nombre,
+              cantidad: c.cantidad,
+              modificadores: (c.mods || []).map(m => m.id),
+            })),
           })),
         },
       })
@@ -999,7 +1104,15 @@ function Checkout({ items, total, onClose, onEnviado }) {
         zona,
       })
 
-      onEnviado({ ...data, nombre: nombre.trim() })
+      // Se pasa el detalle del carrito para que la pantalla de confirmación muestre la orden
+      // completa y no solo el número. El total que manda el servidor sigue siendo el que manda:
+      // el desglose local es informativo.
+      onEnviado({
+        ...data,
+        nombre: nombre.trim(),
+        items, subtotal: total, costoEnvio, tipo,
+        direccion: direccion.trim(), metodoPago,
+      })
     } catch (err) {
       console.error('Error enviando pedido:', err)
       setError('No se pudo enviar el pedido. Intentá otra vez o llamanos.')

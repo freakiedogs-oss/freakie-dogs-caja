@@ -37,8 +37,16 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
   const [result, setResult]         = useState(null)
   const [error, setError]           = useState(null)
 
+  // Precio realmente cobrado por unidad = base + extras (modificadores del ítem y de los
+  // componentes del combo). Usar solo precio_unitario acreditaba de menos: un combo cobrado
+  // a $12.98 con Golden Cheese se devolvía por $9.99.
+  const precioCobrado = (it) =>
+    (Number(it.precio_unitario) || 0)
+    + (Number(it.precio_modificadores) || 0)
+    + (Number(it.precio_extras) || 0)
+
   const itemsSeleccionados = items.filter(it => it.incluir && it.cantidadNC > 0)
-  const totalNC = itemsSeleccionados.reduce((s, it) => s + (it.precio_unitario * it.cantidadNC), 0)
+  const totalNC = itemsSeleccionados.reduce((s, it) => s + (precioCobrado(it) * it.cantidadNC), 0)
 
   const toggleItem = (idx) => {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
@@ -61,7 +69,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
       const ncItems = itemsSeleccionados.map(it => ({
         descripcion: it.nombre,
         cantidad: it.cantidadNC,
-        precioUni: Math.round((it.precio_unitario / 1.13) * 100) / 100,
+        precioUni: Math.round((precioCobrado(it) / 1.13) * 100) / 100,
         codigo: it.menu_item_id || null,
       }))
 
@@ -212,7 +220,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
                 />
                 <span style={{ fontSize: 11, color: '#8b8997', minWidth: 20 }}>/{it.cantidad}</span>
                 <span style={{ fontSize: 12, color: '#2dd4a8', minWidth: 55, textAlign: 'right' }}>
-                  ${(it.precio_unitario * it.cantidadNC).toFixed(2)}
+                  ${(precioCobrado(it) * it.cantidadNC).toFixed(2)}
                 </span>
               </div>
             ))}

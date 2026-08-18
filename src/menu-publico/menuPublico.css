@@ -912,3 +912,11 @@ button { font-family: inherit; }
   color: #b52a37; font-size: 14px; font-weight: 700; text-decoration: none;
 }
 .mp-enviado-track:hover { background: #fdecee; }
+
+/* Encabezado de cada parte de un combo ("Hamburguesa 1", "Bebida 2"): separa visualmente
+   las opciones que pertenecen a cada unidad cuando el combo lleva varias. */
+.mp-comp-seccion {
+  margin: 18px 0 6px; padding: 6px 10px;
+  font-size: 13px; font-weight: 800; color: #1a1a1a;
+  background: #f3f4f6; border-left: 3px solid #e63946; border-radius: 6px;
+}

@@ -83,7 +83,10 @@ const DTE_TIPO_MAP = { factura: '01', ccf: '03', se: '14', ticket: null }
 
 // Aplana el carrito a líneas de DTE: ítem base + una línea por cada extra con precio (>0).
 // Los extras gratis no generan línea. Cada extra hereda la cantidad del ítem padre.
-function buildDteLineItems(cart) {
+// Arma las líneas del DTE. `descuento` es el monto en $ aplicado a la cuenta: se PRORRATEA
+// entre las líneas, porque el DTE debe emitirse por lo que realmente se cobró. Sin esto, una
+// cortesía del 100% emitía un DTE por el monto entero habiendo cobrado $0 (sobre-declaración).
+function buildDteLineItems(cart, descuento = 0) {
   const lines = []
   cart.forEach(it => {
     lines.push({ nombre: it.nombre, precio: it.precio, qty: it.qty })
@@ -97,7 +100,27 @@ function buildDteLineItems(cart) {
       if (px > 0) lines.push({ nombre: `  + ${m.nombre}`, precio: px, qty: it.qty * (c.cantidad || 1) })
     }))
   })
-  return lines
+
+  const desc = Number(descuento) || 0
+  if (desc <= 0) return lines
+
+  const bruto = lines.reduce((s, l) => s + l.precio * l.qty, 0)
+  if (bruto <= 0) return lines
+  const factor = Math.max(0, 1 - desc / bruto)
+
+  // Se prorratea sobre cada línea y el residuo de redondeo se ajusta en la línea más grande,
+  // para que la suma del DTE cuadre al centavo con el total cobrado.
+  const ajustadas = lines.map(l => ({ ...l, precio: Math.round(l.precio * factor * 100) / 100 }))
+  const objetivo = Math.round((bruto - desc) * 100) / 100
+  const suma = Math.round(ajustadas.reduce((s, l) => s + l.precio * l.qty, 0) * 100) / 100
+  const resto = Math.round((objetivo - suma) * 100) / 100
+  if (resto !== 0) {
+    let iMax = 0
+    ajustadas.forEach((l, i) => { if (l.precio * l.qty > ajustadas[iMax].precio * ajustadas[iMax].qty) iMax = i })
+    const l = ajustadas[iMax]
+    l.precio = Math.round((l.precio + resto / l.qty) * 100) / 100
+  }
+  return ajustadas
 }
 
 // Reloj
@@ -372,8 +395,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const categorias = menuActivo?.categorias || []
 
   useEffect(() => {
-    if (categorias.length > 0 && !activeCat) {
-      setActiveCat(categorias[0].id)
+    // Se abre en la primera categoría CON ítems: las que quedan vacías (p.ej. "Componentes",
+    // que solo alimenta combos) no se muestran, así que seleccionarlas dejaría la grilla vacía.
+    const conItems = categorias.filter(c => (c.items || []).length > 0)
+    if (conItems.length > 0 && !activeCat) {
+      setActiveCat(conItems[0].id)
     }
   }, [categorias])
 
@@ -596,7 +622,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         modificadores.push(`${c.cantidad > 1 ? c.cantidad + 'x ' : ''}${c.nombre}:`)
         modStr(c.modificadores).forEach(s => modificadores.push('   ' + s))
       })
-      return { nombre: i.nombre, precio: i.precio, qty: i.qty, nota: i.nota || null, modificadores, destino: i.destino || null }
+      // El precio de la línea incluye los extras: con solo i.precio, las líneas del ticket
+      // no sumaban el subtotal impreso y el cliente que sumaba a mano no le cuadraba.
+      return { nombre: i.nombre, precio: i.precio + (i.precioExtra || 0), qty: i.qty,
+               nota: i.nota || null, modificadores, destino: i.destino || null }
     }),
     subtotal,
     descuento: descuentoMonto,
@@ -966,7 +995,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         try {
           dteResult = await emitDTE({
             tipoDte:  paymentData.tipoDte,
-            items:    buildDteLineItems(items), // ítems + extras con precio como líneas separadas
+            // ítems + extras como líneas separadas, con el descuento de la cuenta prorrateado
+            items:    buildDteLineItems(items, descuentoMonto),
             receptor: paymentData.cliente || null,
             metodo:   paymentData.metodo,
             storeCode: storeCode,
@@ -1140,7 +1170,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           ) : (
             <>
               <div className="pos-categories">
-                {categorias.map(cat => (
+                {/* Sin categorías vacías: los ítems componente de los combos (categoría
+                    "Componentes") no son vendibles sueltos, así que su pestaña queda sin ítems. */}
+                {categorias.filter(cat => (cat.items || []).length > 0).map(cat => (
                   <button
                     key={cat.id}
                     className={`pos-cat-btn${activeCat === cat.id ? ' active' : ''}`}
@@ -1754,8 +1786,16 @@ function ComboModal({ combo, onConfirm, onCancel }) {
   // Secciones con grupos por elegir: nivel combo (general) + cada componente
   const secciones = []
   if ((combo.modGrupos || []).length) secciones.push({ key: 'combo', titulo: 'General', grupos: combo.modGrupos })
+  // Un combo puede llevar el mismo componente varias veces (2 hamburguesas del Burger Duo) y cada
+  // una se personaliza por separado. Se numeran para que el cajero sepa cuál está armando.
+  const repes = {}
+  ;(combo.componentes || []).forEach(c => { repes[c.nombre] = (repes[c.nombre] || 0) + 1 })
+  const vistos = {}
   ;(combo.componentes || []).forEach((c, i) => {
-    if ((c.modGrupos || []).length) secciones.push({ key: 'c' + i, titulo: c.nombre, grupos: c.modGrupos })
+    if (!(c.modGrupos || []).length) return
+    vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
+    const titulo = repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre
+    secciones.push({ key: 'c' + i, titulo, grupos: c.modGrupos })
   })
 
   const toggle = (secKey, g, m) => {
