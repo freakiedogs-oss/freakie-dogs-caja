@@ -271,6 +271,9 @@ export default function KardexView({ user, show }) {
   const [savingMapeo, setSavingMapeo] = useState(false);
   const [editNombre, setEditNombre] = useState(null);     // descripcion cuyo ingrediente se está renombrando
   const [editNombreVal, setEditNombreVal] = useState('');
+  const [factorInput, setFactorInput] = useState('');     // factor a aplicar al vincular
+  const [editFactor, setEditFactor] = useState(null);     // descripcion cuyo factor se está editando
+  const [editFactorVal, setEditFactorVal] = useState('');
   const [totalDescs, setTotalDescs] = useState(0);
   const [totalMapped, setTotalMapped] = useState(0);
 
@@ -284,7 +287,7 @@ export default function KardexView({ user, show }) {
         setTotalMapped(allData.filter(d => d.mapeado).length);
       }
       // Luego: datos filtrados
-      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas,inventariable,ultima_compra,catalogo_id,catalogo_nombre,catalogo_tipo,catalogo_unidad,catalogo_en_conteo');
+      let q = db.from('v_dte_descripciones').select('descripcion,mapeado,monto_total,num_dtes,num_lineas,inventariable,ultima_compra,catalogo_id,catalogo_nombre,catalogo_tipo,catalogo_unidad,catalogo_en_conteo,factor_conversion,catalogo_factor_compra,precio_unitario_prom');
       if (soloSinMapear) q = q.eq('mapeado', false);
       if (soloInventariables) q = q.eq('inventariable', true);
       if (solo3Meses) {
@@ -311,15 +314,27 @@ export default function KardexView({ user, show }) {
     finally { setExtracting(false); }
   };
 
-  const handleMapear = async (descripcion, catalogoId) => {
+  // El factor dice cuántas unidades del catálogo trae cada unidad facturada:
+  // "CAJA 6/4.5LB" vinculada a un producto en lb → factor 27. Sin él, la caja se costea
+  // como si fuera una libra y el margen sale disparatado.
+  const handleMapear = async (descripcion, catalogoId, factor) => {
+    const f = factor === undefined ? factorInput : factor;
+    const factorNum = String(f ?? '').trim() === '' ? null : Number(f);
+    if (factorNum !== null && (!Number.isFinite(factorNum) || factorNum <= 0)) {
+      show?.('El factor debe ser un número mayor que cero', 'error');
+      return;
+    }
     setSavingMapeo(true);
     try {
       const { data, error } = await db.rpc('mapear_descripcion_dte', {
         p_descripcion: descripcion, p_catalogo_id: catalogoId,
+        p_factor_conversion: factorNum,
       });
       if (error) throw error;
       show?.(`Vinculado — ${data} líneas de compra actualizadas`, 'success');
       setActiveMapDesc(null);
+      setFactorInput('');
+      setEditFactor(null);
       fetchMapeo();
     } catch { show?.('Error al vincular', 'error'); }
     finally { setSavingMapeo(false); }
@@ -334,8 +349,10 @@ export default function KardexView({ user, show }) {
         p_descripcion: `Desde compras: ${descripcion}`,
       });
       if (errC) throw errC;
+      const factorNum = String(factorInput ?? '').trim() === '' ? null : Number(factorInput);
       const { data: count, error: errM } = await db.rpc('mapear_descripcion_dte', {
         p_descripcion: descripcion, p_catalogo_id: nuevoId,
+        p_factor_conversion: Number.isFinite(factorNum) && factorNum > 0 ? factorNum : null,
       });
       if (errM) throw errM;
       show?.(`"${nombre}" creado y ${count} líneas vinculadas`, 'success');
@@ -910,6 +927,49 @@ export default function KardexView({ user, show }) {
                           )}
                         </div>
 
+                        {/* Factor de conversión: cuántas unidades del catálogo trae cada unidad facturada */}
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>📐 1 facturada =</span>
+                          {editFactor === desc.descripcion ? (
+                            <div className="flex gap-1 items-center" style={{ minWidth: 160 }}>
+                              <Input type="number" step="any" min="0" value={editFactorVal} autoFocus
+                                style={{ width: 90 }}
+                                onChange={e => setEditFactorVal(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleMapear(desc.descripcion, desc.catalogo_id, editFactorVal)} />
+                              <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>{desc.catalogo_unidad}</span>
+                              <button className="btn btn-green btn-sm shrink-0" disabled={savingMapeo}
+                                onClick={() => handleMapear(desc.descripcion, desc.catalogo_id, editFactorVal)}>
+                                {savingMapeo ? '...' : '✓'}
+                              </button>
+                              <button className="text-xs underline shrink-0" style={{ color: '#8a8a8a' }}
+                                onClick={() => setEditFactor(null)}>✕</button>
+                            </div>
+                          ) : desc.factor_conversion ? (
+                            <>
+                              <span className="text-sm font-semibold" style={{ color: '#4ade80' }}>
+                                {n(desc.factor_conversion)} {desc.catalogo_unidad}
+                              </span>
+                              {n(desc.precio_unitario_prom) > 0 && (
+                                <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>
+                                  · ${(n(desc.precio_unitario_prom) / n(desc.factor_conversion)).toFixed(4)}/{desc.catalogo_unidad}
+                                </span>
+                              )}
+                              <button className="text-xs underline shrink-0" style={{ color: '#60a5fa' }}
+                                onClick={() => { setEditFactor(desc.descripcion); setEditFactorVal(String(desc.factor_conversion)); }}>
+                                ✎ factor
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="tag tag-orange" style={{ fontSize: 11 }}>⚠ sin factor — se costea 1:1</span>
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+                                onClick={() => { setEditFactor(desc.descripcion); setEditFactorVal(''); }}>
+                                Definir
+                              </button>
+                            </>
+                          )}
+                        </div>
+
                         {/* Estado en el conteo nocturno */}
                         <div className="flex items-center gap-2 mt-2 flex-wrap">
                           {desc.catalogo_en_conteo ? (
@@ -928,7 +988,7 @@ export default function KardexView({ user, show }) {
                         {/* Acciones: cambiar / desvincular */}
                         <div className="flex gap-2 mt-2">
                           <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}
-                            onClick={() => { setActiveMapDesc(desc.descripcion); setCreandoDesdeMapeo(null); setEditNombre(null); }}>
+                            onClick={() => { setActiveMapDesc(desc.descripcion); setCreandoDesdeMapeo(null); setEditNombre(null); setFactorInput(desc.factor_conversion ? String(desc.factor_conversion) : ''); }}>
                             ↻ Cambiar ingrediente
                           </button>
                           <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, color: '#f87171' }} disabled={savingMapeo}
@@ -942,7 +1002,7 @@ export default function KardexView({ user, show }) {
                     {/* Acciones si no está mapeado */}
                     {!desc.mapeado && !isActive && (
                       <button className="btn btn-ghost btn-sm mt-2" style={{ fontSize: 12, width: '100%' }}
-                        onClick={() => { setActiveMapDesc(desc.descripcion); setCreandoDesdeMapeo(null); }}>
+                        onClick={() => { setActiveMapDesc(desc.descripcion); setCreandoDesdeMapeo(null); setFactorInput(''); }}>
                         Vincular a ingrediente →
                       </button>
                     )}
@@ -959,6 +1019,24 @@ export default function KardexView({ user, show }) {
                           tipo={['materia_prima', 'sub_producto']}
                           onSelect={mp => handleMapear(desc.descripcion, mp.id)}
                         />
+
+                        {/* Factor: lo que convierte la presentación de compra a la unidad del catálogo.
+                            Sin esto una caja se costea como una libra — el error que rompió el costeo. */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>
+                            📐 Cada unidad facturada trae
+                          </span>
+                          <Input type="number" step="any" min="0" placeholder="opcional"
+                            style={{ width: 110 }} value={factorInput}
+                            onChange={e => setFactorInput(e.target.value)} />
+                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>
+                            del ingrediente que elijas
+                          </span>
+                        </div>
+                        <p className="text-xs" style={{ color: '#8a8a8a', marginTop: -4 }}>
+                          Ej.: <strong>CAJA 6/4.5LB</strong> vinculada a un producto en <strong>lb</strong> → escribí <strong>27</strong>.
+                          Si lo dejás vacío se respeta el factor que ya tuviera.
+                        </p>
 
                         {/* Separador */}
                         <div className="flex items-center gap-3 my-1">
