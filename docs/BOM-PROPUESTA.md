@@ -772,3 +772,196 @@ update compras_dte_items set producto_id=null, factor_conversion=null, confianza
     or descripcion_original ilike '%QUESO PARMESANO BLOCK%'
     or descripcion_original ilike '%QUESO DURO VIEJO ASERRIN%';
 ```
+
+---
+
+# SESIÓN 19-ago — componentes reactivados, cebolla, papa waffle y 3 ítems rescatados
+
+> Todo aplicado y verificado en producción. Cada migración lleva su ROLLBACK en el comentario.
+
+## 1. `pos_combo_componentes` reactivado (migración `reactivar_componentes_pos_post_fix_kds`)
+
+El fix del KDS (PR #236, commit `0a99f1c`) ya está en producción, así que se rehizo la estructura
+que se había revertido por el incidente del 18-ago. Es el ROLLBACK que esa migración dejó escrito.
+
+**133 filas en los 5 canales**, 7 combos, y los grupos de modificadores movidos del padre a cada
+componente (`grupos_padre = 0` en los 34). La regla de mesa se respeta: en `local` no va bebida
+(Burger Duo tiene 4 componentes en mesa y 6 en los demás canales).
+
+Estado previo verificado: 0 componentes y 110 grupos en el padre, que coincidía fila por fila con
+`_bkp_item_mod_reconciliacion` (110 filas / 34 ítems) — o sea la reversión no había perdido nada.
+
+## 2. Sub-receta `Cebolla Blanca` — estaba vacía y en $0
+
+Proceso (Jose): se despunta arriba y abajo, se quita la cáscara, va al procesador y se porciona en
+**bolsas de 2 lb**. Rinde 10 bolsas = **20 lb netas**.
+
+Merma del **12%** por despuntar y descascarar (rendimiento 88%, estándar de cocina). Como
+`receta_costo_total` aplica `merma_pct` de **recargo** (`cantidad * (1 + merma/100)`), la merma va
+en su columna y no escondida en el número: `cantidad = 20`, `merma_pct = 13.6364` → **22.73 cebollas**.
+
+**1 cebolla = 1 lb — confirmado por Jose.** El saco de 50 unidades pesa 50 lb. Ninguna factura trae
+el peso; se sostiene además por precio: $29.07/50 lb = $0.58/lb, coherente con mayoreo.
+
+→ **$13.2134 la tanda · $1.3213 la bolsa · $0.0413 la onza.**
+
+## 3. 🔴 El bug que destapó llenar esa receta (4ª aparición del mismo error)
+
+`Freakie Dog armado` pedía **"1 oz"** de una sub-receta que rinde en **BOLSAS**.
+`receta_costo_total` **no convierte unidades** — hace `cantidad * costo_total / rendimiento` — así
+que leyó *1 oz* como *1 bolsa entera*: **$1.3213 en vez de $0.0413, 32× de más**. Como ese bloque
+está dentro de casi todos los combos de hot dog, arrastró medio menú:
+
+| | Con el bug | Corregido |
+|---|---|---|
+| Freakie Dog | $2.00 · **−0.5%** | $0.72 · 63.8% |
+| Combros | $9.55 · 36.3% | $4.43 · 70.5% |
+| Coca-Cola Combo | $2.44 · 38.8% | $1.16 · 70.9% |
+| Freakie Box | $8.86 · 40.9% | $5.02 · 66.5% |
+
+Corregido a `0.03125 bolsa` (la bolsa es de 2 lb = 32 oz).
+
+**Estuvo escondido detrás del $0**: mientras la sub-receta costaba cero, el error no se veía.
+
+### Barrido de todo el catálogo por el mismo patrón
+
+Se buscaron todos los `sub_receta` cuya `unidad_medida` no coincide con la `unidad_rendimiento` de
+su sub-receta. Quedan **9 ocurrencias**, y **todas están en recetas huérfanas sin uso** (ver §5),
+así que no afectan producción. La peor sería `Sal de Hamburguesa` a **$6.96 por hamburguesa**.
+
+## 4. `Papa Waffle` — 21 facturas compradas y sin conectar
+
+Costaba **$0** y bloqueaba toda la familia Fancy. La descripción de la factura traía la conversión
+adentro: `CAJA 6/4.5LB` = 6 × 4.5 = **27 lb**, que coincide exacto con el `factor_compra` que ya
+tenía el catálogo. Confirmado por dos vías independientes:
+
+| Presentación | Precio | Por libra |
+|---|---|---|
+| Caja 6/4.5 lb (19 DTE: PAP0137 P55, PAP0079 S15) | $44.2478 | **$1.6388** |
+| Bolsa suelta 4.5 lb (2 DTE: PAP0143) | $7.5746 | $1.6832 |
+
+→ **$1.6423/lb** · porción de 0.35 lb = **$0.5748**. `Mini Fancy` $0.3512 → **$0.9261**;
+`Fancy` $1.2449 → **$1.9018**. Estaban costeando la mitad.
+
+⚠️ **Hay TRES productos "Papa Waffle" en catálogo**, los tres con factor 27 y costo ~$1.645:
+`Papa Waffle` (c3a0697a, 0 DTE) · `Papa Waffle 27LB` (45c837d5, **21 DTE**, el bueno) ·
+`PAPA WAFFLE NAT CAJA 6/4.5 LBS` (9f50cf16, **inactivo pero usado por 4 recetas**).
+Como los tres cuestan casi igual no hay distorsión, pero **hay que unificarlos**.
+
+## 5. Tres capas de recetas encimadas — el hallazgo estructural
+
+| Capa | Cuántas | Estado |
+|---|---|---|
+| Vivas y costeadas (enlazadas por `catalogo_id`) | **22** | ✅ las que manda el menú |
+| **Huérfanas** (`catalogo_id` NULL, 0 usos) | 8 | ❌ borradores con composición equivocada |
+| **Cáscaras vacías** (activas, 0 ingredientes, $0) | 25 | ❌ basura, nadie las usa |
+
+Las huérfanas **no son "la versión vieja fiel"**: `Freakie Fries` no tenía papa, y `Royal Truffle
+Combo` tenía mozzarella, tocino y Coca-Cola. Copiarlas habría metido datos falsos creíbles.
+
+**Y el hueco de fondo: 269 de 374 filas de menú disponibles no tienen `producto_id`** — o sea la
+mayoría del menú no está enlazada al costeo. Lo de estos 3 ítems era la punta de eso.
+
+## 6. Tres ítems que se vendían sin costear (migración `bom_rescatar_...`)
+
+Se venden en los 5 menús y no descargaban inventario. Composición dictada por Jose (19-ago);
+**no se copió nada de las huérfanas**, que quedaron desactivadas.
+
+| Ítem | Precio | Composición | Costo | Margen |
+|---|---|---|---|---|
+| **Freakie Fries** | $1.99 | 1 porción de Papa Sazonada. Las salsas van por **modificador**, no en la receta (anti-doble-conteo) | $0.4468 | **77.5%** |
+| **Sweat Freak** | $4.50 | **Es un postre**: 1 porción del pastel de Heling. $25 / 10 porciones. **Sin DTE que lo respalde** | $2.5000 | **44.4%** |
+| **Royal Truffle Combo** | $21.99 | 2 Hamburguesa Sencilla + 1 Mini Fancy + 2 oz trufa + 2 oz aserrín + 2 oz parmesano + 1 oz cilantro | $7.3017 | **66.8%** |
+
+Se reusó el patrón `0.1 pastel` que ya usaban Sweet Burger Duo y Combpleto.
+🟡 El **cilantro** queda en $0 — sin factura mapeada. El ingrediente está cargado para que el costo
+se llene solo cuando aparezca.
+
+## Estado del menú al cierre del 19-ago
+
+**22 ítems costeados, margen entre 44.4% y 78.6%, ninguno negativo.**
+El más bajo es `Sweat Freak` (44.4%) — es reventa de postre, no producción propia.
+
+## 🟡 Pendiente
+
+1. **`pos_modificador_insumos` / el botón SIN**: `receta_ingredientes.removible` **no existe**, y no
+   hay ni un modificador "Sin X". Hoy se pide por nota libre, que es lo que vuelve la comanda
+   amarilla. Decisión de Jose: el SIN **no toca el precio**; y no debe descontar el ingrediente de
+   esa línea (si se reutiliza, lo descuenta el plato donde se usó; si se tira, es merma).
+2. **Matriz de menús por tipo de sucursal** — ver sección aparte.
+3. Unificar los duplicados de catálogo (papa waffle ×3, parmesano ×2, aserrín ×2).
+4. Borrar las 8 huérfanas y las 25 cáscaras vacías.
+5. Mapear los 269 ítems de menú sin `producto_id`.
+
+---
+
+# PROPUESTA — Matriz de menús por tipo de sucursal (19-ago, sin implementar)
+
+## El problema
+
+Los **5 menús son globales** (`pos_menus.sucursal_id` = NULL), así que "Para Llevar" significa lo
+mismo en Venecia que en Metro Centro. Por eso **en restaurante, al marcar "llevar", el POS exige
+bebida** — y no debería.
+
+`sucursales.tipo` **ya existe y está bien poblado**: `restaurante` (Cafetalón, Lourdes, Venecia,
+Eventos) · `food_court` (Soyapango, Usulután, Metro Centro) · `drive_thru` (Lourdes DT) · `bodega`
+(Casa Matriz).
+
+Reglas reales (Jose, 18 y 19-ago):
+- **Restaurante + para llevar** → es el menú de mesa; **no lleva bebida**, la única diferencia es el
+  **empaque**.
+- **Food court** → el cajero elige *comer aquí* o *para llevar*; **ambos llevan bebida**, y solo el
+  segundo suma empaque.
+
+## La causa de fondo
+
+Hoy el menú decide **tres cosas a la vez**: precio, si el combo incluye bebida, y qué empaque. Son
+tres reglas distintas y por eso no se puede expresar "mismo menú, sin bebida, pero con empaque".
+
+## La propuesta: separar dos ejes
+
+- **Eje 1 — lista de precios + bebida** → depende de `(tipo_sucursal, modo_consumo)`
+- **Eje 2 — empaque** → depende de una sola pregunta: **¿el producto sale del local?**
+
+Con eso la matriz completa son **7 filas** y **no se crea ningún menú nuevo**:
+
+| Tipo sucursal | Modo | Menú | Bebida | Empaque |
+|---|---|---|---|---|
+| restaurante | mesa | Local | ❌ | ❌ |
+| **restaurante** | **para llevar** | **Local** | **❌** | **✅** |
+| food_court | comer aquí | Para Llevar | ✅ | ❌ |
+| food_court | para llevar | Para Llevar | ✅ | ✅ |
+| drive_thru | — | Drive Thru | ✅ | ✅ |
+| cualquiera | delivery | Delivery | ✅ | ✅ + bolsa |
+| cualquiera | PedidosYa | PedidosYa | ✅ | ✅ + bolsa |
+
+## Implementación
+
+1. **Tabla `pos_contexto_servicio`** — 7 filas: `(tipo_sucursal, modo_consumo) → menu_id,
+   incluye_bebida, incluye_empaque`. La matriz como **dato editable**, no como `if` en el código.
+2. **El POS resuelve al abrir la cuenta**: ya sabe la sucursal (→ `tipo`) y el cajero elige el modo.
+3. **`receta_ingredientes.contextos text[]`** (NULL = siempre) — calcado de
+   `pos_modificador_insumos.canales`, que **ya existe y ya funciona** (`pos_deducir_inventario` v4
+   resuelve el canal y filtra por él). Aluminio, cajita, polipel y bolsa se marcan "solo si empaque",
+   así el mismo Burger Duo cuesta distinto en mesa que para llevar **sin duplicar la receta**.
+
+Ventaja de fondo: agregar un canal nuevo pasa a ser **una fila**, no un menú clonado de 100 ítems.
+
+## Reportería que habilita
+
+1. **Separar food cost de packaging cost** — hoy van mezclados. El empaque es el que se va sin notarse.
+2. **Margen por contexto, no solo por sucursal** — ver que un Burger Duo deja 61.6% en mesa pero
+   menos para llevar (el empaque se come puntos) cambia decisiones de precio. Hoy se promedia todo.
+3. **Empaque teórico vs comprado = detector de fuga.** Si el sistema sabe cuántos pedidos salieron
+   con empaque, sabe cuánto aluminio y polipel *debió* consumirse; contra las compras reales, la
+   diferencia es merma o fuga. Es el análisis que se intentó con Soyapango y Metro Centro y que se
+   enturbió por los pedidos de PeYa faltantes — ahora con un denominador confiable.
+4. **Mix de contexto por sucursal** — qué % de Venecia es mesa vs llevar. Explica diferencias de
+   margen que hoy se atribuyen a "eficiencia" y en realidad son mix.
+
+## 🟡 Dos definiciones pendientes de Jose
+
+1. En **food court "comer aquí"**, ¿de verdad no lleva ningún empaque? Si sale en bandeja o canasta
+   desechable (no hay loza), el eje 2 tiene **tres** valores: `ninguno` / `sitio` / `llevar`.
+2. En **restaurante mesa**, ¿el combo cuesta los mismos $7.50 sin la bebida? Si es así, el margen en
+   mesa es estructuralmente mayor y conviene medirlo aparte.
