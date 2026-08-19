@@ -166,8 +166,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
   // Destino de empaque (Comer aquí / Llevar) — SOLO informa a cocina si empacar.
   // Se habilita únicamente en canales con consumo en sitio: mesa y para_llevar (food court).
-  const destinoAplica  = tipo === 'mesa' || tipo === 'para_llevar'
-  const destinoDefault = tipo === 'mesa' ? 'aqui' : 'llevar'
+  // El menú a usar no depende solo del tipo de orden, sino tambien del TIPO DE SUCURSAL:
+  // en restaurante "para llevar" es el menu de mesa (sin bebida, solo cambia el empaque);
+  // en food court "para llevar" si lleva bebida. Lo resuelve pos_contexto_servicio en la DB.
+  // Si la consulta falla o no hay fila, se cae al comportamiento anterior.
+  const [ctxServicio, setCtxServicio] = useState(null)
+  const [ctxListo,    setCtxListo]    = useState(false)
+
+  const destinoAplica  = ctxServicio ? ctxServicio.destino_editable
+                                     : (tipo === 'mesa' || tipo === 'para_llevar')
+  const destinoDefault = ctxServicio?.destino_default || (tipo === 'mesa' ? 'aqui' : 'llevar')
 
   // Menú data
   const [menus,       setMenus]       = useState({})
@@ -241,11 +249,33 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     }).catch(() => setEmpleadosLista([]))
   }, [descuentoCategoria, empleadosLista, storeCode])
 
+  // ── Resolver la matriz de servicio (sucursal × tipo de orden) ──
+  // Va antes del menú porque decide QUÉ canal cargar. Ante cualquier fallo marca ctxListo igual,
+  // para que el menú cargue con el comportamiento anterior y el POS nunca se quede en blanco.
+  useEffect(() => {
+    let vivo = true
+    setCtxListo(false)
+    db.rpc('pos_resolver_contexto_store', { p_store_code: storeCode, p_tipo_orden: tipo })
+      .then(({ data, error }) => {
+        if (!vivo) return
+        setCtxServicio(!error && data && data.length ? data[0] : null)
+      })
+      .catch(() => { if (vivo) setCtxServicio(null) })
+      .finally(() => { if (vivo) setCtxListo(true) })
+    return () => { vivo = false }
+  }, [storeCode, tipo])
+
+  // Si la matriz manda otro destino por defecto que el asumido al montar, se sincroniza.
+  useEffect(() => {
+    if (ctxServicio?.destino_default) setOrdenDestino(ctxServicio.destino_default)
+  }, [ctxServicio])
+
   // ── Cargar menú ──
   useEffect(() => {
+    if (!ctxListo) return          // esperar la matriz: define el canal
     const load = async () => {
       setLoadingMenu(true)
-      const canal = tipoInfo.canal
+      const canal = ctxServicio?.canal || tipoInfo.canal
       const { data: menuData } = await db
         .from('pos_menus')
         .select(`
@@ -334,7 +364,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       setLoadingMenu(false)
     }
     load()
-  }, [tipoInfo.canal])
+  }, [tipoInfo.canal, ctxListo, ctxServicio?.canal])
 
   // ── Cargar cuenta existente ──
   useEffect(() => {
@@ -390,7 +420,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   }, [cuentaCtx?.cuentaId])
 
   // ── Menú activo ──
-  const canal      = tipoInfo.canal
+  // El canal lo manda la matriz de servicio (restaurante+llevar -> menú local, sin bebida).
+  const canal      = ctxServicio?.canal || tipoInfo.canal
   const menuActivo = menus[canal] || menus['local'] || null
   const categorias = menuActivo?.categorias || []
 
