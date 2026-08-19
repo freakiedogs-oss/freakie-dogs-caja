@@ -198,6 +198,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [pinAuth,           setPinAuth]            = useState(null)
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
+  const [removibles,        setRemovibles]         = useState([])    // ingredientes que admiten "SIN"
   const [editIdx,           setEditIdx]            = useState(null)  // índice del ítem que se está editando (lápiz)
   const [ordenDestino,      setOrdenDestino]       = useState(destinoDefault)  // destino global por default (aqui/llevar)
   // Ref con el destino a aplicar al agregar un ítem (null si el canal no aplica).
@@ -269,6 +270,21 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   useEffect(() => {
     if (ctxServicio?.destino_default) setOrdenDestino(ctxServicio.destino_default)
   }, [ctxServicio])
+
+  // ── Botón SIN: qué se le puede quitar al producto que se está pidiendo ──
+  // Se resuelve en la DB porque lo removible no está en la receta del ítem sino dentro de sus
+  // bloques (Combo Hamburguesa → Hamburguesa Sencilla armada → pepinillos, queso, cebolla…).
+  // Si falla, la sección simplemente no aparece: nunca bloquea la venta.
+  useEffect(() => {
+    if (!modPicker?.id) { setRemovibles([]); return }
+    let vivo = true
+    db.rpc('pos_ingredientes_removibles', { p_menu_item_id: modPicker.id })
+      .then(({ data, error }) => {
+        if (vivo) setRemovibles(!error && Array.isArray(data) ? data : [])
+      })
+      .catch(() => { if (vivo) setRemovibles([]) })
+    return () => { vivo = false }
+  }, [modPicker?.id])
 
   // ── Cargar menú ──
   useEffect(() => {
@@ -1766,16 +1782,23 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         <ProductoModifiersModal
           producto={modPicker}
           grupos={modPicker.modGrupos || []}
+          removibles={removibles}
           editMode={editIdx != null}
           initial={editIdx != null ? {
             qty: items[editIdx]?.qty || 1,
             nota: items[editIdx]?.nota || '',
             atencionEspecial: !!items[editIdx]?.atencionEspecial,
-            selecciones: (items[editIdx]?.modificadores || []).reduce((acc, m) => {
-              if (!acc[m.grupo_id]) acc[m.grupo_id] = []
-              acc[m.grupo_id].push(m.opcion_id)
-              return acc
-            }, {}),
+            // los "SIN" no son un grupo real: se excluyen de selecciones y se rearman aparte
+            selecciones: (items[editIdx]?.modificadores || [])
+              .filter(m => m.grupo_nombre !== 'SIN' && m.grupo_id)
+              .reduce((acc, m) => {
+                if (!acc[m.grupo_id]) acc[m.grupo_id] = []
+                acc[m.grupo_id].push(m.opcion_id)
+                return acc
+              }, {}),
+            sin: (items[editIdx]?.modificadores || [])
+              .filter(m => m.grupo_nombre === 'SIN')
+              .map(m => m.quitar || String(m.nombre || '').replace(/^SIN\s+/, '')),
           } : null}
           onClose={() => { setModPicker(null); setEditIdx(null) }}
           onConfirm={({ qty, nota, modificadores, precioModificadores, atencionEspecial }) => {
