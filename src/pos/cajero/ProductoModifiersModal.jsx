@@ -6,10 +6,18 @@
 // Respeta tipo (single/multiple) y min/max selecciones.
 // Props:
 //   producto, grupos, onClose, onConfirm({ qty, nota, modificadores, precioModificadores })
-//   initial? { qty, nota, selecciones }  → precarga para EDITAR un ítem existente
+//   initial? { qty, nota, selecciones, sin }  → precarga para EDITAR un ítem existente
 //   editMode? bool  → cambia el label del botón a "Guardar cambios"
+//   removibles? [{ nombre }]  → ingredientes que el cliente puede pedir SIN
+//
+// El "SIN" NO altera el precio (decisión de Jose, 18-ago): quitar el queso no lo abarata.
+// Viaja dentro de `modificadores` con grupo_nombre 'SIN' y precio_extra 0, para reusar toda la
+// tubería que ya existe: se imprime en la comanda, lo pinta el KDS y dispara el doble check
+// de comanda amarilla sin tocar el esquema.
 
 import { useMemo, useState } from 'react'
+
+const GRUPO_SIN = 'SIN'
 
 export default function ProductoModifiersModal({
   producto,
@@ -18,6 +26,7 @@ export default function ProductoModifiersModal({
   onConfirm,
   initial = null,
   editMode = false,
+  removibles = [],
 }) {
   // Defensive normalize: cada grupo debe tener opciones como array.
   const grupos = useMemo(() => {
@@ -31,6 +40,16 @@ export default function ProductoModifiersModal({
   const [nota, setNota]               = useState(initial?.nota || '')
   const [selecciones, setSelecciones] = useState(initial?.selecciones || {})
   const [atencionEspecial, setAtencionEspecial] = useState(initial?.atencionEspecial || false)
+  // Ingredientes que el cliente NO quiere (por nombre; es lo que ve cocina).
+  const [sinLista, setSinLista] = useState(() => new Set(initial?.sin || []))
+
+  const toggleSin = (nombre) => {
+    setSinLista(prev => {
+      const next = new Set(prev)
+      if (next.has(nombre)) next.delete(nombre); else next.add(nombre)
+      return next
+    })
+  }
 
   const toggleOpcion = (grupo, opcionId) => {
     setSelecciones(prev => {
@@ -102,12 +121,24 @@ export default function ProductoModifiersModal({
         }
       }
     }
+    // Los "SIN" viajan como modificadores de precio 0 para reusar comanda, KDS y doble check.
+    for (const nombre of sinLista) {
+      modificadoresPlanos.push({
+        grupo_id: null,
+        grupo_nombre: GRUPO_SIN,
+        opcion_id: null,
+        nombre: 'SIN ' + nombre,
+        quitar: nombre,          // lo que pos_deducir_inventario debe NO descontar
+        precio_extra: 0,
+      })
+    }
     onConfirm({
       qty,
       nota: nota.trim(),
       modificadores: modificadoresPlanos,
       precioModificadores: precioModificadoresUnit,
       atencionEspecial,
+      sin: Array.from(sinLista),
     })
   }
 
@@ -199,6 +230,57 @@ export default function ProductoModifiersModal({
               </div>
             )
           })}
+
+          {/* SIN — quitar ingredientes. No cambia el precio. */}
+          {removibles.length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontWeight: 800, fontSize: 12, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  Sin…
+                </span>
+                <span style={{ fontSize: 10, color: '#8b8997' }}>tocá lo que el cliente no quiere · no cambia el precio</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
+                {removibles.map(r => {
+                  const quitado = sinLista.has(r.nombre)
+                  return (
+                    <button
+                      key={r.nombre}
+                      onClick={() => toggleSin(r.nombre)}
+                      style={{
+                        position: 'relative',
+                        minHeight: 54,
+                        padding: 8,
+                        borderRadius: 10,
+                        border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
+                        background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
+                        color: quitado ? '#fecaca' : '#e5e7eb',
+                        cursor: 'pointer',
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        textAlign: 'center',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        lineHeight: 1.2,
+                        textDecoration: quitado ? 'line-through' : 'none',
+                        transition: 'border-color .1s, background .1s',
+                      }}
+                    >
+                      {quitado && (
+                        <span style={{
+                          position: 'absolute', top: 4, left: 5, fontSize: 10, fontWeight: 900,
+                          color: '#ef4444', letterSpacing: '0.5px',
+                        }}>SIN</span>
+                      )}
+                      <span style={{ padding: '0 4px' }}>{r.nombre}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Cantidad + Notas */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 12, marginTop: 4 }}>
