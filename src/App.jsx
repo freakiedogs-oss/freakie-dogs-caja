@@ -64,6 +64,7 @@ const FinanzasAIView     = lazy(() => import('./components/dashboard/FinanzasAIV
 const QuantoUploadView   = lazy(() => import('./components/admin/QuantoUploadView'))
 const PagosProveedorView = lazy(() => import('./components/finanzas/PagosProveedorView'))
 const DTEsView           = lazy(() => import('./components/finanzas/DTEsView'))
+const LibrosContablesView = lazy(() => import('./components/finanzas/LibrosContablesView'))
 const EventosView        = lazy(() => import('./components/eventos/EventosView'))
 const MiDespacho            = lazy(() => import('./components/empleado/MiDespacho'))
 const DespachoOperativoView = lazy(() => import('./components/admin/DespachoOperativoView'))
@@ -334,6 +335,8 @@ export default function App() {
         return <PagosProveedorView user={user} />
       case 'dtes':
         return <DTEsView user={user} />
+      case 'libros-contables':
+        return <LibrosContablesView user={user} />
       case 'eventos':
         return <EventosView user={user} />
 

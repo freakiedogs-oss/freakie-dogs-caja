@@ -152,6 +152,7 @@ export const NAV_SECTIONS = [
       { key: 'simulador-rentabilidad', label: 'Simulador Rentabilidad', icon: '🎯', roles: ['superadmin', 'ejecutivo'] },
       { key: 'finanzas-dashboard', label: 'Dashboard Financiero', icon: '📊', roles: ['ejecutivo', 'superadmin'] },
       { key: 'dtes', label: 'DTEs', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
+      { key: 'libros-contables', label: 'Libros Contables', icon: '📒', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'banco', label: 'BancoView (Conciliación)', icon: '🏦', roles: ['ejecutivo', 'superadmin'] },
