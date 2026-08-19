@@ -39,6 +39,13 @@ const FINANZAS_OBJETOS = new Set([
   'v_egresos_excluidos_pl',
   'v_prestamos_estado',
   'v_planilla_gerencial_pl',
+  // Agregadas 18-ago-2026. Estaban fuera del gate y con SELECT para `anon`.
+  // Grave porque las 4 vistas de planilla tienen security_invoker=false: corren
+  // como su dueño (postgres) y SALTAN el RLS de planilla_detalle/empleados.
+  // v_planilla_desglose_pl expone nombre_completo + cargo + devengado de los
+  // 139 empleados; era legible con la llave publica del bundle.
+  'v_planilla_desglose_pl',
+  'v_planilla_operativa_pl',
 ]);
 
 // Ojo: `staff_login` (torre de delivery) emite sesiones para roles que NO
