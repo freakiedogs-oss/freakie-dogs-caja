@@ -553,3 +553,222 @@ cubre mar–jul por ítem. Ninguna de las dos se usa hoy para inventario ni cost
 2. **Rendimiento en unidad incompatible:** Mezcla de Carne Smash rinde `1 tarea`, se consume en `lb`.
 3. **0 de 34 empaques con costo DTE.** Solo 51 de 650 productos tienen costo real.
 4. **`unidad_compra` NULL y `factor_compra`=1 en todo el catálogo** — no hay ninguna conversión configurada.
+
+---
+
+# SESIÓN 18-ago (noche) — diagnóstico completo, ✅ APLICADO 19-ago
+
+> ✅ **Aplicado en producción el 19-ago** (sesión SSH, una sola transacción, verificado).
+> Los 4 costos de control dieron exactamente lo proyectado: Chili $32.2781 · Chilli dog
+> individual $1.0841 · Chili Duo $5.4562 · Mermelada de Tocino $35.4738.
+> Ningún ítem del menú queda con margen negativo — el rango es 54.1%–79.3%.
+> El ROLLBACK del final sigue siendo válido si hay que revertir.
+>
+> **Dos correcciones al SQL respecto de lo escrito el 18-ago:**
+>
+> 1. **`confianza_mapeo='alta'` no existe.** El check constraint solo acepta
+>    `auto` / `manual` / `sugerido`. Se usó `manual` (consistente con las 2041 filas ya mapeadas).
+>    Con `'alta'` la transacción abortaba entera.
+> 2. **`Queso Parmesano Block 2.27kg` está duplicado en el catálogo** — `1953e11b…` (`Unidad`,
+>    inactivo) y `a2c65b67…` (`block`, activo). El `select id … where nombre=…` del paso 7
+>    devolvía 2 filas y reventaba con `more than one row returned`. Se reescribió con ids
+>    explícitos. Mismo caso con el aserrín, que existe bajo dos nombres distintos
+>    (`…1.5kgs` id `24e2fdcc…` y `…bolsa 1.5kg` id `acf080da…`), ambos activos y sin usos.
+>    🟡 Queda pendiente unificar esos duplicados de catálogo.
+
+## Correcciones de la sesión anterior que este análisis invalida
+
+| Lo que decía el doc | La realidad verificada |
+|---|---|
+| `Salsa Truffa` da $9.79/oz y bloquea el Royal Truffle | **Ya estaba arreglada**: $1.2689/bolsa = **$0.0397/oz** |
+| El Chili tenía frijol y chipotle duplicados | **No.** Hay **dos recetas activas llamadas `Chili`** y la consulta las mezcló |
+| Papa blanca = bolsa Mydibel de 2.5 kg → $4.01/lb | Es **caja de 4 bolsas × 2.5 kg** = 22.046 lb → **$1.0033/lb** |
+| Cajita/costeo del pastel, etc. | sin cambios |
+
+## Las dos recetas `Chili`
+
+| id | Rinde | Ingr. | Costo | Uso |
+|---|---|---|---|---|
+| `f9e150d6-f0e4-4728-a303-a38891a12555` | 4 bolsas | 22 | $93.11 | ✅ la buena — sub-producto contado, 2 recetas + 6 modificadores |
+| `3d11a897-169f-465d-9f10-5a31116a53f5` | 1 porción | 4 | $5.60 | ❌ huérfana, cero usos → desactivar |
+
+## Datos nuevos de Jose (18-ago noche)
+
+| Insumo | Dato | Conversión |
+|---|---|---|
+| **Saco de cebolla blanca** | **50 cebollas** | 22 facturas / 115 sacos / $3,343 → **$29.07/saco = $0.5814 por cebolla** |
+| **Azúcar Morena 326235** | **bolsa de 7.5 kg** | $7.25 / 7500 g = $0.000967/g |
+| **Ácido Cítrico** | **lata de 1 lb** (453.6 g) | $10.39 → $0.0229/g |
+| **Orégano 30204** | **bote de 141 g** | $5.12 → $0.0363/g |
+| **Chili por chilli dog** | **2 oz** | = 0.0625 bolsa (bolsa = 2 lb = 32 oz) |
+| **Mydibel (papa blanca)** | **caja de 4 bolsas × 2.5 kg** | 22.046 lb → **$1.0033/lb** |
+| **Papa francesa** (Mini Fancys) | = **papa blanca** | — |
+| **Cilantro** | **Badia bote 99.2 g** | 🟡 sin factura mapeada, costo $0 |
+| **Combo GOL-OSO** | era de temporada | **desactivar** |
+
+## Costeo proyectado
+
+**`Chili`** — de $93.11 a **$32.28** la tanda (128 oz) = **$0.2522/oz**
+
+| Ingrediente | Antes | Después |
+|---|---|---|
+| Cebollas Blancas (2 unidades, no 2 sacos) | $48.00 | **$1.163** |
+| Ácido Cítrico 0.5 cdta | $5.195 | $0.031 |
+| Azúcar Morena 0.5 cdta | $3.625 | $0.0013 |
+| Ácido Ascórbico 0.5 cdta | $2.700 | $0.0073 |
+| Orégano 0.5 cdta | $2.560 | $0.049 |
+| resto (carne, tomate, chipotle, frijoles…) | sin cambio | $31.03 |
+
+**`Chilli dog individual`**: $23.86 → **$1.084** (pan $0.142 + salchicha $0.330 + 2 oz chili $0.504 + cheddar $0.108)
+
+**`Chili Duo`**: **$54.80 → $5.46** sobre $14.99 → **63.6% de margen**
+
+**`Mermelada de Tocino`**: $118.43 → **$35.47** (÷4 tandas = $8.87). Topping de 8 oz: $4.93 → **$1.478**
+
+**`Papa Blanca`** a $1.0033/lb baja **$1.054 por porción de 0.35 lb** en 9 recetas:
+Combig $10.33→$9.27 · Fancys XL $3.20→$2.14 · Combo Fancy Duo $3.33→$2.27 · Combros · Freakie Box ·
+Fancy · Mini Fancy · Papa Blanca · Super Freak armado (−$0.301)
+
+**Ítems nuevos listos para cargar**
+
+| Ítem | Composición | Costo | Precio | Margen |
+|---|---|---|---|---|
+| **Mini Fancys** | papa blanca 0.35 lb + waffle 0.35 lb + 2 oz cheddar + 2 oz mil islas + topping (modificador) | $1.614 | $4.99 | 67.7% |
+| **Royal Truffle Combo** | 2 Hamburguesa Sencilla + 1 Mini Fancys + 2 oz trufa + 2 oz queso aserrín + 2 oz parmesano + 1 oz cilantro | ~$7.99 | $21.99 | ~63.7% |
+| **Coca-Cola Combo XL** | 2 Freakie Dog armado + papa sazonada + jalapeños + soda (modificador) | ~$1.89 | $5.99 | ~68% |
+
+## Insumos nuevos identificados y verificados contra factura
+
+| Producto | Factura | Precio | Resultado |
+|---|---|---|---|
+| **Queso Duro Viejo Aserrín** ("queso a serrín") | `QUESO DURO VIEJO ASERRIN 1.5 KG`, 8+ DTE, última 30-jul | $14.02 | **$9.3467/kg** → 2 oz = $0.530 |
+| **Queso Parmesano Block** | `QUESO PARMESANO BLOCK 2.27 KGS`, 15 DTE, última 29-jul | $36.40 | **$16.0352/kg** → 2 oz = $0.909 |
+
+Ninguno de los dos estaba mapeado.
+
+## 🟡 Sigue abierto
+
+1. **Mermelada de Tocino — la mantequilla** pide `0.5 barra` contra un producto en gramos: cobra
+   $0.0065 (o sea 0.5 g). Si son 0.5 lb reales son ~$2.95. Falta el gramaje.
+2. **Mermelada de Tocino — 25 cebollas** por tanda (0.5 saco) es ahora el ingrediente más caro
+   ($14.54 de $35.47). Confirmar que la proporción es real.
+3. **Cilantro Badia** — sin factura mapeada, queda en $0.
+4. **`Combo Chilli Dog`** (701 u · $4,246, el de más volumen sin mapear) — falta composición.
+   La hipótesis es chilli dog + papa + bebida = ~$1.53 → 74%, pero no está confirmada.
+5. **`Cebolla Blanca`** (sub-receta usada por Chili Duo) está **vacía**, rinde 10 bolsas y cuesta $0.
+   Sigue vacía después del fix del 19-ago: el Chili Duo la consume (0.0625 bolsa) y aporta $0,
+   así que su $5.4562 está **subestimado** por ese ingrediente.
+7. **Duplicados en `catalogo_productos`** detectados el 19-ago, todos con 0 usos y 0 DTE:
+   `Queso Parmesano Block 2.27kg` ×2 (`1953e11b…` inactivo · `a2c65b67…` activo) y el aserrín
+   bajo dos nombres (`…1.5kgs` `24e2fdcc…` · `…bolsa 1.5kg` `acf080da…`, ambos activos).
+   Hay que unificarlos antes de que alguien mapee facturas al que no es.
+6. La conversión **1 taza de azúcar morena = 220 g** es estimación mía → marcada `[revisar]`.
+
+## SQL APLICADO 19-ago (proyecto Supabase `btboxlwfqcbrdfrlnwln`, schema `public`)
+
+Todo verificado contra factura o aritmética de unidades. Reversible — el ROLLBACK va abajo.
+Este es el texto **tal como corrió**, ya con las dos correcciones del encabezado.
+
+```sql
+-- 1) CEBOLLA BLANCA — el saco trae 50 cebollas (Jose). 22 facturas / 115 sacos / $3,343
+--    -> $29.07 por saco = $0.5814 por cebolla. Antes cobraba 2 SACOS ($48) en vez de 2 cebollas.
+update catalogo_productos set unidad_medida='unidad', factor_compra=50 where nombre='Cebollas Blancas';
+update compras_dte_items set producto_id=(select id from catalogo_productos where nombre='Cebollas Blancas'),
+       factor_conversion=50, confianza_mapeo='manual', mapeado_at=now()
+ where descripcion_original ilike '%cebolla blanca%' and producto_id is null;
+update receta_ingredientes set cantidad=25, unidad_medida='unidad'
+ where id='2b454d37-08d4-4da5-bda9-547a1950c730';           -- Mermelada: 0.5 saco = 25 cebollas
+
+-- 2) AZUCAR MORENA — bolsa de 7.5 kg (Jose)
+update catalogo_productos set unidad_medida='g', factor_compra=7500 where nombre='326235 Azucar Morena';
+update receta_ingredientes set cantidad=1.35, unidad_medida='g' where id='b58da553-4564-46f0-9024-887c78097b43';
+update receta_ingredientes set cantidad=1430, unidad_medida='g' where id='8a9d5661-1c07-48cb-9cc8-e21d80189cf6';
+
+-- 3) ACIDO CITRICO lata = 1 lb (453.6 g) · OREGANO bote = 141 g (Jose) · ACIDO ASCORBICO ya venia en kg
+update catalogo_productos set unidad_medida='g', factor_compra=453.6 where nombre='Acido Citrico';
+update catalogo_productos set unidad_medida='g', factor_compra=141   where nombre='30204 Oregano';
+update receta_ingredientes set cantidad=1.35,    unidad_medida='g'  where id='c48a51eb-cf00-4553-b542-1160eb9ef50b';
+update receta_ingredientes set cantidad=1.35,    unidad_medida='g'  where id='ef1e81e8-85ea-4e2c-b79d-97b1583d716e';
+update receta_ingredientes set cantidad=0.00135, unidad_medida='kg' where id='c21da89a-3bdf-4440-a292-8a65ef10ddac';
+
+-- 4) PAPA BLANCA — la Mydibel es CAJA de 4 bolsas x 2.5 kg = 22.046 lb (Jose) -> $1.0033/lb
+update catalogo_productos set factor_compra=22.046 where nombre='Papa Blanca 20lb';
+update compras_dte_items set factor_conversion=22.046
+ where producto_id=(select id from catalogo_productos where nombre='Papa Blanca 20lb');
+
+-- 5) MERMELADA DE TOCINO — unidades (1 gal = 16 tazas · 1/4 gal = 4 tazas · 1 lb = 0.45359 kg)
+update receta_ingredientes set cantidad=0.015625, unidad_medida='galón'        where id='be1ea189-92a0-4c5e-96a1-de1bb040f583';
+update receta_ingredientes set cantidad=1.5625,   unidad_medida='cuarto_galón' where id='4caf9064-62ab-4d95-80a1-44ffc73a0eac';
+update receta_ingredientes set cantidad=1.5876,   unidad_medida='kg'           where id='1a06b9fc-eb50-4e14-9555-bf7cafe97629';
+update receta_ingredientes set cantidad=0.029484, unidad_medida='kg'
+ where id in ('c87bd4c9-6001-4e15-af4f-a6901a384dca','ed90b756-4cd2-4359-8b27-b647009bdb91');
+
+-- 6) CHILLI DOG — 2 oz de chili (Jose) = 0.0625 bolsa (la bolsa es de 2 lb = 32 oz)
+update receta_ingredientes ri set cantidad=0.0625, unidad_medida='bolsa' from recetas r
+ where ri.receta_id=r.id and r.nombre='Chilli dog individual'
+   and ri.sub_receta_id='f9e150d6-f0e4-4728-a303-a38891a12555';
+
+-- 7) QUESOS del Royal Truffle — 15 y 8+ facturas recurrentes, nunca mapeadas.
+--    IDS EXPLICITOS: 'Queso Parmesano Block 2.27kg' esta duplicado en catalogo y el
+--    select-por-nombre reventaba con "more than one row returned".
+update catalogo_productos set unidad_medida='kg', factor_compra=2.27 where id='a2c65b67-7b4e-4e56-ac4e-2d1faa569d73';
+update catalogo_productos set unidad_medida='kg', factor_compra=1.5  where id='24e2fdcc-a0d7-417c-b5a2-aafdd74bc62d';
+update compras_dte_items set producto_id='a2c65b67-7b4e-4e56-ac4e-2d1faa569d73',
+       factor_conversion=2.27, confianza_mapeo='manual', mapeado_at=now()
+ where descripcion_original ilike '%QUESO PARMESANO BLOCK%' and producto_id is null;
+update compras_dte_items set producto_id='24e2fdcc-a0d7-417c-b5a2-aafdd74bc62d',
+       factor_conversion=1.5, confianza_mapeo='manual', mapeado_at=now()
+ where descripcion_original ilike '%QUESO DURO VIEJO ASERRIN%' and producto_id is null;
+
+-- 8) LIMPIEZA — receta 'Chili' huerfana (cero usos) y GOL-OSO (era de temporada, Jose)
+update recetas set activo=false where id='3d11a897-169f-465d-9f10-5a31116a53f5';
+update pos_menu_items set disponible=false, visible_publico=false where lower(btrim(nombre))='combo gol-oso';
+```
+
+### Verificación después de aplicar
+
+```sql
+select r.nombre, round(receta_costo_total(r.id)::numeric,4) as costo
+from recetas r where r.nombre in ('Chili','Chilli dog individual','Chili Duo','Mermelada de Tocino') and r.activo;
+-- esperado: Chili $32.28 (4 bolsas) · Chilli dog individual $1.084 · Chili Duo $5.46 · Mermelada $35.47
+```
+
+**Resultado real 19-ago — los 4 dieron exactamente lo proyectado:**
+
+| Receta | Antes | Después |
+|---|---|---|
+| Chili (tanda, 4 bolsas) | $93.1068 | **$32.2781** |
+| Chilli dog individual | $23.8565 | **$1.0841** |
+| Chili Duo | $54.8028 | **$5.4562** |
+| Mermelada de Tocino (4 tandas) | $118.4290 | **$35.4738** |
+
+Y el margen de los 19 ítems de menú con receta activa quedó entre **54.1% y 79.3%**, sin
+ninguno negativo. El `Chili Duo` ($14.99) pasó de **−265.6%** a **63.6%**. El más ajustado
+es `Sweet Burger Duo` ($17.99 · $8.2508 · 54.1%). `Combo GOL-OSO` quedó fuera de los 5 menús.
+
+### ROLLBACK
+
+```sql
+update catalogo_productos set unidad_medida='Saco',   factor_compra=1 where nombre='Cebollas Blancas';
+update catalogo_productos set unidad_medida='bolsa',  factor_compra=1 where nombre='326235 Azucar Morena';
+update catalogo_productos set unidad_medida='lata',   factor_compra=1 where nombre='Acido Citrico';
+update catalogo_productos set unidad_medida='bote',   factor_compra=1 where nombre='30204 Oregano';
+update catalogo_productos set factor_compra=5.5116 where nombre='Papa Blanca 20lb';
+update catalogo_productos set unidad_medida='block',  factor_compra=1 where nombre='Queso Parmesano Block 2.27kg';
+update catalogo_productos set unidad_medida='Unidad', factor_compra=1 where nombre='Queso Duro Viejo Aserrin 1.5kgs';
+update receta_ingredientes set cantidad=0.5,  unidad_medida='saco'        where id='2b454d37-08d4-4da5-bda9-547a1950c730';
+update receta_ingredientes set cantidad=0.5,  unidad_medida='cucharadita' where id in
+  ('b58da553-4564-46f0-9024-887c78097b43','c48a51eb-cf00-4553-b542-1160eb9ef50b',
+   'ef1e81e8-85ea-4e2c-b79d-97b1583d716e','c21da89a-3bdf-4440-a292-8a65ef10ddac');
+update receta_ingredientes set cantidad=6.5,  unidad_medida='taza' where id='8a9d5661-1c07-48cb-9cc8-e21d80189cf6';
+update receta_ingredientes set cantidad=0.25, unidad_medida='taza' where id='be1ea189-92a0-4c5e-96a1-de1bb040f583';
+update receta_ingredientes set cantidad=6.25, unidad_medida='taza' where id='4caf9064-62ab-4d95-80a1-44ffc73a0eac';
+update receta_ingredientes set cantidad=3.5,  unidad_medida='lb'   where id='1a06b9fc-eb50-4e14-9555-bf7cafe97629';
+update receta_ingredientes set cantidad=0.065,unidad_medida='lb'   where id in
+  ('c87bd4c9-6001-4e15-af4f-a6901a384dca','ed90b756-4cd2-4359-8b27-b647009bdb91');
+update recetas set activo=true where id='3d11a897-169f-465d-9f10-5a31116a53f5';
+update compras_dte_items set producto_id=null, factor_conversion=null, confianza_mapeo=null, mapeado_at=null
+ where descripcion_original ilike '%cebolla blanca%'
+    or descripcion_original ilike '%QUESO PARMESANO BLOCK%'
+    or descripcion_original ilike '%QUESO DURO VIEJO ASERRIN%';
+```
