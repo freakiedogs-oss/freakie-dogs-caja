@@ -1153,3 +1153,28 @@ Casi todo son **modificadores que también se venden como ítem suelto**, y nece
 | capuchino · Americano · Café empleado | $330 | receta de café |
 | Costra de Queso · Dip de Queso · Jalapeño · Peperoncinis | $353 | porción (el modificador Costra ya está en 3 oz) |
 | Chile Bombazo · Kinley · Cambio de bebida | $231 | — |
+
+## 7. Últimos sueltos — 99.1% → 99.6%
+
+| Ítem | Origen | Costo | Margen |
+|---|---|---|---|
+| **Stickers** | 175 por pliego (Jose). Garabato $15.0442 el pliego kiss-cut · Quijote $12.3894 el lienzo 1×1m | $0.0812 | 83.8% |
+| **Agrandado Soda y Papa** | una 2ª porción de papas con las mismas salsas de la original; además desbloquea las bebidas de $0.50 extra | $0.4468 | 64.3% |
+| **Costra de Queso** | 3 oz del CM MIX, el mismo del hot dog | $0.5314 | **46.9%** |
+| **Kinley** | BEES, Agua Mineral Kinley Club Soda lata, cajas de 12 | $0.5360 | 69.4% |
+
+### Los "Agrandado de Bebida" y el "Cambio de bebida" NO llevan receta — a propósito
+
+Son **puro diferencial de precio**: desbloquean bebidas más caras ($0.50 extra, o las de $1.75 en el
+caso del Cambio de bebida). No tienen insumo propio — lo que se consume lo registra el modificador
+de la bebida que el cajero elige. Darles una receta vacía sería inventar una cáscara de las que se
+limpiaron en esta misma sesión.
+
+## 🟡 Lo que queda (0.4%, ~$1,450)
+
+| Pendiente | Venta | Qué falta |
+|---|---|---|
+| Cafés (capuchino, americano, empleado) | $378 | **los gramos de polvo por taza**. El proveedor ya está identificado: **Moldeados Salvadoreños** — `NESCAFE CAP ORIGINAL 6X750GRS` $32.14 · `CAP VAINILLA` $24.53 · `ALEGRIA CAPPUCCINO 4X1KG` $40.44 · `VASO BIO 8 OZ 20X25` $2.36 · `TAPAS BIO 20X50` $1.88 |
+| Dip de Queso · Jalapeño · Peperoncinis | $245 | la porción de cada uno |
+| **Chile Bombazo** | $75 | 🔴 **no aparece en ninguna factura**, ni con ese nombre ni parecido, pese a que se compra hecho |
+| Agrandado de Bebida · Cambio de bebida | $498 | nada — no llevan receta por diseño (ver arriba) |
