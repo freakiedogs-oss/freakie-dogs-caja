@@ -1117,3 +1117,39 @@ precio de $3.99.
 
 Merchandising (gorras, stickers, bucket hat, Adivina la Marca, Gomita), los "Agrandado", y algún
 suelto menor. Todos van con **costo de compra directo**, no con receta.
+
+## 6. Merchandising y sueltos — 98.7% → 99.1%
+
+Datos de Jose (19-ago):
+
+| Ítem | Origen del costo | Costo | Margen |
+|---|---|---|---|
+| **Adivina la Marca** | paquete de 20 cartitas $0.90 + **mano de obra de Ailyn $0.75/unidad** | $1.6500 | 58.8% |
+| Gorras / Gorra Premium | se traen de USA, $15 puestas en El Salvador | $15.00 | 50.0% / 57.1% |
+| **Bucket Hat** | $10 puesto en El Salvador | $10.00 | **33.3%** |
+| **Gomita Hamburguesa** | `TROLLI G BURGER XXL` de Distribuidora Santa Elena, 15 facturas | $0.9027 | **39.8%** |
+| Tocino (suelto) | 2 lascas × 16 g de Tocino Chimex | $0.2323 | 69.0% |
+| Fresca · Fanta · Sprite · Modelo | BEES | $0.41 – $1.24 | — |
+| Friki Soda · Soda Empleados | Coca-Cola de vidrio (consumo interno / precio de empleado) | $0.4619 | — |
+
+**Primera mano de obra en el BOM.** Se modeló como un producto de catálogo con `precio_referencia`
+(categoría `Mano de Obra`). Si aparecen más maquilas conviene darle un tratamiento propio.
+
+⚠️ El **Bucket Hat (33.3%)** y la **Gomita (39.8%)** son los márgenes más bajos del menú entero.
+
+**Trampa que costó un intento:** el ítem `Adivina la Marca` ya estaba enlazado **directo al producto
+de cartitas** ($0.045), así que el update filtrado por `producto_id IS NULL` no lo alcanzó y la
+receta nueva quedó sin usar. Al enlazar hay que mirar si el ítem ya apunta a un producto *suelto*
+en vez de a una receta.
+
+## 🟡 Lo que queda (0.9% de la venta, ~$2,750)
+
+Casi todo son **modificadores que también se venden como ítem suelto**, y necesitan un dato de Jose:
+
+| Ítem | Venta | Qué falta saber |
+|---|---|---|
+| Agrandado Soda y Papa · de Bebida · para coca combo | $1,187 | qué incluye cada agrandado |
+| Stickers | $312 | cuántos stickers salen de un pliego (Garabato $15.04 / Quijote $12.39) |
+| capuchino · Americano · Café empleado | $330 | receta de café |
+| Costra de Queso · Dip de Queso · Jalapeño · Peperoncinis | $353 | porción (el modificador Costra ya está en 3 oz) |
+| Chile Bombazo · Kinley · Cambio de bebida | $231 | — |
