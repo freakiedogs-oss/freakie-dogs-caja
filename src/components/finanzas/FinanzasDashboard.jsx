@@ -377,10 +377,15 @@ export default function FinanzasDashboard({ user }) {
           q => q.gte('mes', '2026-01-01').order('mes')),
         fetchAll('v_planilla_operativa_pl',
           'mes, pagado_real, provisionado, monto_pl, estado',
-          q => q.gte('mes', '2026-01-01').order('mes')),
+          q => q.gte('mes', '2026-01-01').order('mes'), dbFin),
+        // dbFin obligatorio: esta vista devuelve nombre_completo + cargo +
+        // devengado de cada empleado. Iba por `db` (anon) y la vista tiene
+        // security_invoker=false, o sea que corre como su dueño y SALTA el RLS
+        // de planilla_detalle/empleados. Resultado: los salarios de los 139
+        // empleados eran legibles con la llave publica. Cerrado el 18-ago-2026.
         fetchAll('v_planilla_desglose_pl',
           'mes, grupo, empleado_id, nombre_completo, cargo, propina, devengado',
-          q => q.gte('mes', '2026-01-01')),
+          q => q.gte('mes', '2026-01-01'), dbFin),
       ])
       const bankSaldos = bankSaldosResp?.data
       const catData = catResp?.data
