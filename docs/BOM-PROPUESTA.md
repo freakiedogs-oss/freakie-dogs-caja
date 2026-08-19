@@ -965,3 +965,68 @@ Ventaja de fondo: agregar un canal nuevo pasa a ser **una fila**, no un menú cl
    desechable (no hay loza), el eje 2 tiene **tres** valores: `ninguno` / `sitio` / `llevar`.
 2. En **restaurante mesa**, ¿el combo cuesta los mismos $7.50 sin la bebida? Si es así, el margen en
    mesa es estructuralmente mayor y conviene medirlo aparte.
+
+---
+
+# SESIÓN 19-ago (cierre) — mapa del ERP, guardarraíl anti-doble-conteo y el factor en la UI
+
+## 1. El mapa front ↔ base: por qué el BOM estaba así
+
+Se inventarió todo `src/` (142 archivos). La app son **5 SPAs** sin react-router (ERP, POS, menú
+público, tracking, driver). El hallazgo de fondo: **el desorden del BOM no es descuido, es que no
+existe la pantalla para hacer ese trabajo.**
+
+| Qué | Estado en la UI | Consecuencia |
+|---|---|---|
+| `compras_dte_items.producto_id` | ❌ sin UI directa | Todo el mapeo de facturas se hacía por SQL |
+| `pos_modificador_insumos` | ❌ **sin UI** | 89 filas cargadas y **69 de 146 modificadores sin insumo**, sin forma de cargarlos |
+| Recetas `plato_menu` / `combo` | ❌ sin UI | `RecetasView` filtra solo `sub_receta`/`porcionado` → **107 ítems sin costear** |
+| `recetas_lineas` | 🔴 **pantalla trampa** | El tab Recetas de Kardex escribe a esa tabla, que está **vacía**; el motor de costeo lee `receta_ingredientes`. Quien la use crea recetas que nunca costean |
+| `MapeoMenu` (único BOM de menú) | ⚠️ escondida | Sin entrada en el sidebar; solo por Kardex → tab "🍔 Menú (BOM)" |
+| `MenuAdminView` (combos, modificadores) | ⚠️ solo desde el POS | No está en el ERP; `jefe_casa_matriz` no puede tocar el menú |
+| `pos_combo_componentes` | ⚠️ parcial | Se agrega y quita, pero no se edita la cantidad |
+
+⚠️ **Corrección a un análisis automático:** se concluyó que "los modificadores no descuentan
+inventario". **Es falso** — se verificó la función: `pos_deducir_inventario` **sí lee**
+`pos_modificador_insumos`. El descuento funciona; lo que falta es la pantalla para administrarlo.
+
+## 2. 🔴 Guardarraíl anti-doble-conteo (migración `guardarrail_anti_doble_conteo_componentes`)
+
+**El riesgo que se creó al reactivar los componentes:** `pos_deducir_inventario` explota (a) la
+receta del padre y (b) los componentes elegidos en `pos_cuenta_items.componentes`. Los combos padre
+conservan su BOM completo (Burger Duo = 2 Hamburguesa Sencilla + 2 Papa Sazonada).
+
+Hoy **no** hay doble descuento porque los 25 ítems componente no tienen `producto_id`. Pero en el
+momento en que alguien les asignara uno, cada combo habría descontado su contenido **dos veces, en
+silencio**.
+
+**Decisión: el BOM vive en el ítem PADRE.** Los ítems 'Componentes' son solo el vehículo para que el
+cajero elija/personalice y para que el KDS agrupe. Es coherente con lo que ya existe: el padre no
+incluye bebida — la bebida entra por el modificador elegido dentro del componente, vía
+`pos_modificador_insumos`, que ya funciona.
+
+Se cerró con:
+- **`trg_componente_sin_receta`** — trigger que impide asignar `producto_id` a un ítem de la
+  categoría 'Componentes', con mensaje y `HINT` explicando qué hacer si algún día se quiere mover
+  el BOM. **Probado: bloquea.**
+- **`v_bom_doble_conteo`** — centinela permanente; debe devolver 0 filas siempre.
+
+## 3. El factor de conversión, por fin en la interfaz (PR #239)
+
+`mapear_descripcion_dte` asignaba el producto pero **no el factor** — que es la mitad que importa
+para el costeo. Se extendió la función existente en vez de crear una cuarta pantalla de mapeo:
+`p_factor_conversion` con DEFAULT (compatible hacia atrás), `desmapear` limpia el factor, y
+`v_dte_descripciones` ahora expone factor, precio unitario promedio y el `factor_compra` del
+catálogo para poder contrastarlos.
+
+En la UI, una descripción vinculada muestra **"1 facturada = N ‹unidad›"** con el costo unitario
+resultante y edición en línea; y si no hay factor, avisa **"⚠ sin factor — se costea 1:1"**.
+
+**Tamaño del trabajo que queda por delante, medido:**
+
+| | |
+|---|---|
+| Descripciones sin mapear | **2,730** |
+| Dinero en compras sin conectar | **$1,498,514** |
+| Mapeadas sin factor | 32 |
+| Con factor inconsistente | 0 |
