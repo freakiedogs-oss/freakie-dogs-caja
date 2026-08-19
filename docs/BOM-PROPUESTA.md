@@ -1030,3 +1030,90 @@ resultante y edición en línea; y si no hay factor, avisa **"⚠ sin factor —
 | Dinero en compras sin conectar | **$1,498,514** |
 | Mapeadas sin factor | 32 |
 | Con factor inconsistente | 0 |
+
+---
+
+# SESIÓN 19-ago (cierre) — botón SIN, matriz de menús y el costeo al 98.7%
+
+## 1. Botón SIN — vivo (PR #241)
+
+Antes "sin cebolla" se pedía por **nota libre**: cocina lo leía como texto y **el inventario
+descontaba la cebolla igual**.
+
+Regla de Jose: **el SIN no toca el precio**, y el ingrediente **no se descuenta** de esa línea. Si
+la cocina reutiliza la porción, el plato donde se use la descuenta por su receta; descontarla en
+ambos restaría dos veces un consumo único. Si se tira, es **merma** y debe verse como merma.
+
+- `receta_ingredientes.removible` + `etiqueta` (el nombre de catálogo es impresentable de cara al
+  cajero: *"SIN MQ LAC Procesado Reb AM C 1.4kg/3lb"*).
+- `pos_ingredientes_removibles(menu_item_id)` — **recursiva**: lo removible no está en la receta del
+  combo sino dentro de sus bloques.
+- **`pos_deducir_inventario` v5** propaga `linea_id` por todo el árbol. El SIN es **por línea**: con
+  dos hamburguesas y una sin queso no se puede excluir el queso globalmente. Los insumos de
+  modificadores entran con `linea_id` NULL a propósito — son agregados, no les aplica el SIN.
+- Los SIN viajan dentro de `modificadores` con `grupo_nombre='SIN'` y precio 0, así que **reusan la
+  tubería existente**: comanda, KDS y doble check de comanda amarilla, sin tocar el esquema.
+
+**Validación antes de reemplazar la función de inventario** (se escribió primero
+`pos_deducir_preview`, que no escribe nada): con el SIN desactivado devuelve el mismo conjunto de
+productos que se descontó en kardex sobre 5 cuentas reales; con un `SIN Queso` sintético sobre un
+Burger Box el queso pasa de 0.097 lb a 0 y **no se mueve ningún otro insumo**.
+
+## 2. Matriz de menús — viva (PR #240)
+
+En restaurante, "Para Llevar" exigía bebida. Ahora `(tipo_sucursal, tipo_orden)` resuelve el canal
+vía `pos_contexto_servicio`: restaurante+llevar → menú **local** (sin bebida); food court mantiene
+bebida. El empaque lo sigue decidiendo el destino *aquí/llevar* que el POS ya manejaba.
+**Confirmado en operación por las cajeras.**
+
+## 3. 🔴 El guardarraíl anti-doble-conteo se probó solo
+
+Al crear la receta de `Super Freak`, el update por nombre alcanzó al ítem **'Super Freak' de la
+categoría Componentes** y `trg_componente_sin_receta` **abortó la migración**. Sin ese trigger se
+habría creado justo el doble descuento que cierra. Desde entonces todos los updates de
+`pos_menu_items` excluyen explícitamente esa categoría.
+
+## 4. 🔴 BEES: un proveedor entero fuera del costeo
+
+**`costo_producto` no leía `compras_bees_items`.** 166 compras / 640 líneas / **$58,704** de
+Industrias La Constancia — de donde salen casi todas las bebidas y cervezas — no alimentaban el
+costeo. Por eso ninguna cerveza costeaba.
+
+Y había un segundo problema encadenado: **la mayoría de esos productos tenía `factor_compra = 1`
+aunque la caja trae 12 o 24 unidades**. Conectar BEES sin corregirlo habría inflado los costos 24×.
+El campo `empaque` de BEES trae el dato en claro (`"24x 354ml"`), así que el factor se derivó de ahí.
+
+`costo_producto` ahora **pondera DTE + BEES juntas**. Efecto inmediato: la Coca-Cola pasó de
+$0.5771 (que reflejaba solo las compras de ajuste en supermercado) a **$0.4619**, que es la mezcla
+real entre el proveedor habitual ($0.4121) y el súper ($0.5774).
+
+## 5. Cobertura del costeo: 81.6% → 98.7% de la venta
+
+Medido por dinero, no por cantidad de ítems.
+
+| Bloque | Detalle |
+|---|---|
+| **Duplicados de nombre** | `COMBO FREAKIE BURGER`→Freakie Burger · `Burger La Clasica`→La Clasica · `Mini Fancys`→Mini Fancy · `Fancys`→Fancys XL |
+| **Combo Duo** | ⚠️ estaba enlazado a Burger Duo (28% de margen). **Son 2 HOT DOGS, no 2 burgers.** Corregido a $2.3234 · 70.9%. Se verificó que no hubo ventas con el enlace malo |
+| **Combos nuevos** | Coca-Cola Combo XL 66.3% · Combo Chilli Dog 72.2% · Mega Promo 76.7% · Chili Mini Fancys 71.3% · Fancy Fries Combo 75.5% · Combo Trio 75.1%/70.9% |
+| **Sueltos** | Queso Frito 68.7% (era **negativo**) · Chili 79.8% · Chilli Dog 63.7% · Super Freak 66.1% · Aros de Cebolla 94.1% |
+| **Bebidas** | Coca-Cola Vidrio 73.6% · Coca Zero 83.5% · Crema Soda 76.6% · Fresa 76.5% · Uva 76.6% · Coca Lata 66.2% · Agua 62.5% · Tés 68.2% · Kolashanpan 85.3% |
+| **Cervezas** | Pilsener 65.7% · Golden 65.7% · Pilsener Mediana 51.9% · Pilsener Chola 55.1% · Regia Chola 53.6% · **Michelob 48.9%** · **Corona y Corona Cero 42.2%** |
+| **Combos Pilsener** | Burger Box 60.8% · Royal Truffle 61.1% · Freakie Burger 58.5% · Freakie Combo 59.5% |
+
+**Datos de Jose:** Queso Frito 0.3 lb · Chili 4 oz · Aros de Cebolla = la porción son los 6-7 aros
+($0.2345) · Super Freak usa el pan brioche · Combo Trio = 3 hot dogs + 3 papas, **el mismo producto
+con dos precios** ($13.99 PeYa / $11.99 delivery, más caro en PeYa a propósito) · las Regias se
+compran a Comercializadora Interamericana, no por BEES.
+
+⚠️ **Corona, Corona Cero y Michelob quedan entre 42% y 49% de margen**, muy por debajo del resto del
+menú. Jose lo confirma como decisión, no como error.
+
+⚠️ **El queso para dorar se compra por LIBRA, no por bolsita** — 198 facturas con cantidades
+decimales lo delatan. Estaba etiquetado 'bolsita' y por eso el Queso Frito costaba $4.16 sobre un
+precio de $3.99.
+
+## 🟡 Lo que queda (1.3% de la venta)
+
+Merchandising (gorras, stickers, bucket hat, Adivina la Marca, Gomita), los "Agrandado", y algún
+suelto menor. Todos van con **costo de compra directo**, no con receta.
