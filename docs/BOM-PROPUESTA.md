@@ -553,3 +553,480 @@ cubre mar–jul por ítem. Ninguna de las dos se usa hoy para inventario ni cost
 2. **Rendimiento en unidad incompatible:** Mezcla de Carne Smash rinde `1 tarea`, se consume en `lb`.
 3. **0 de 34 empaques con costo DTE.** Solo 51 de 650 productos tienen costo real.
 4. **`unidad_compra` NULL y `factor_compra`=1 en todo el catálogo** — no hay ninguna conversión configurada.
+
+---
+
+# SESIÓN 18-ago (noche) — diagnóstico completo, ✅ APLICADO 19-ago
+
+> ✅ **Aplicado en producción el 19-ago** (sesión SSH, una sola transacción, verificado).
+> Los 4 costos de control dieron exactamente lo proyectado: Chili $32.2781 · Chilli dog
+> individual $1.0841 · Chili Duo $5.4562 · Mermelada de Tocino $35.4738.
+> Ningún ítem del menú queda con margen negativo — el rango es 54.1%–79.3%.
+> El ROLLBACK del final sigue siendo válido si hay que revertir.
+>
+> **Dos correcciones al SQL respecto de lo escrito el 18-ago:**
+>
+> 1. **`confianza_mapeo='alta'` no existe.** El check constraint solo acepta
+>    `auto` / `manual` / `sugerido`. Se usó `manual` (consistente con las 2041 filas ya mapeadas).
+>    Con `'alta'` la transacción abortaba entera.
+> 2. **`Queso Parmesano Block 2.27kg` está duplicado en el catálogo** — `1953e11b…` (`Unidad`,
+>    inactivo) y `a2c65b67…` (`block`, activo). El `select id … where nombre=…` del paso 7
+>    devolvía 2 filas y reventaba con `more than one row returned`. Se reescribió con ids
+>    explícitos. Mismo caso con el aserrín, que existe bajo dos nombres distintos
+>    (`…1.5kgs` id `24e2fdcc…` y `…bolsa 1.5kg` id `acf080da…`), ambos activos y sin usos.
+>    🟡 Queda pendiente unificar esos duplicados de catálogo.
+
+## Correcciones de la sesión anterior que este análisis invalida
+
+| Lo que decía el doc | La realidad verificada |
+|---|---|
+| `Salsa Truffa` da $9.79/oz y bloquea el Royal Truffle | **Ya estaba arreglada**: $1.2689/bolsa = **$0.0397/oz** |
+| El Chili tenía frijol y chipotle duplicados | **No.** Hay **dos recetas activas llamadas `Chili`** y la consulta las mezcló |
+| Papa blanca = bolsa Mydibel de 2.5 kg → $4.01/lb | Es **caja de 4 bolsas × 2.5 kg** = 22.046 lb → **$1.0033/lb** |
+| Cajita/costeo del pastel, etc. | sin cambios |
+
+## Las dos recetas `Chili`
+
+| id | Rinde | Ingr. | Costo | Uso |
+|---|---|---|---|---|
+| `f9e150d6-f0e4-4728-a303-a38891a12555` | 4 bolsas | 22 | $93.11 | ✅ la buena — sub-producto contado, 2 recetas + 6 modificadores |
+| `3d11a897-169f-465d-9f10-5a31116a53f5` | 1 porción | 4 | $5.60 | ❌ huérfana, cero usos → desactivar |
+
+## Datos nuevos de Jose (18-ago noche)
+
+| Insumo | Dato | Conversión |
+|---|---|---|
+| **Saco de cebolla blanca** | **50 cebollas** | 22 facturas / 115 sacos / $3,343 → **$29.07/saco = $0.5814 por cebolla** |
+| **Azúcar Morena 326235** | **bolsa de 7.5 kg** | $7.25 / 7500 g = $0.000967/g |
+| **Ácido Cítrico** | **lata de 1 lb** (453.6 g) | $10.39 → $0.0229/g |
+| **Orégano 30204** | **bote de 141 g** | $5.12 → $0.0363/g |
+| **Chili por chilli dog** | **2 oz** | = 0.0625 bolsa (bolsa = 2 lb = 32 oz) |
+| **Mydibel (papa blanca)** | **caja de 4 bolsas × 2.5 kg** | 22.046 lb → **$1.0033/lb** |
+| **Papa francesa** (Mini Fancys) | = **papa blanca** | — |
+| **Cilantro** | **Badia bote 99.2 g** | 🟡 sin factura mapeada, costo $0 |
+| **Combo GOL-OSO** | era de temporada | **desactivar** |
+
+## Costeo proyectado
+
+**`Chili`** — de $93.11 a **$32.28** la tanda (128 oz) = **$0.2522/oz**
+
+| Ingrediente | Antes | Después |
+|---|---|---|
+| Cebollas Blancas (2 unidades, no 2 sacos) | $48.00 | **$1.163** |
+| Ácido Cítrico 0.5 cdta | $5.195 | $0.031 |
+| Azúcar Morena 0.5 cdta | $3.625 | $0.0013 |
+| Ácido Ascórbico 0.5 cdta | $2.700 | $0.0073 |
+| Orégano 0.5 cdta | $2.560 | $0.049 |
+| resto (carne, tomate, chipotle, frijoles…) | sin cambio | $31.03 |
+
+**`Chilli dog individual`**: $23.86 → **$1.084** (pan $0.142 + salchicha $0.330 + 2 oz chili $0.504 + cheddar $0.108)
+
+**`Chili Duo`**: **$54.80 → $5.46** sobre $14.99 → **63.6% de margen**
+
+**`Mermelada de Tocino`**: $118.43 → **$35.47** (÷4 tandas = $8.87). Topping de 8 oz: $4.93 → **$1.478**
+
+**`Papa Blanca`** a $1.0033/lb baja **$1.054 por porción de 0.35 lb** en 9 recetas:
+Combig $10.33→$9.27 · Fancys XL $3.20→$2.14 · Combo Fancy Duo $3.33→$2.27 · Combros · Freakie Box ·
+Fancy · Mini Fancy · Papa Blanca · Super Freak armado (−$0.301)
+
+**Ítems nuevos listos para cargar**
+
+| Ítem | Composición | Costo | Precio | Margen |
+|---|---|---|---|---|
+| **Mini Fancys** | papa blanca 0.35 lb + waffle 0.35 lb + 2 oz cheddar + 2 oz mil islas + topping (modificador) | $1.614 | $4.99 | 67.7% |
+| **Royal Truffle Combo** | 2 Hamburguesa Sencilla + 1 Mini Fancys + 2 oz trufa + 2 oz queso aserrín + 2 oz parmesano + 1 oz cilantro | ~$7.99 | $21.99 | ~63.7% |
+| **Coca-Cola Combo XL** | 2 Freakie Dog armado + papa sazonada + jalapeños + soda (modificador) | ~$1.89 | $5.99 | ~68% |
+
+## Insumos nuevos identificados y verificados contra factura
+
+| Producto | Factura | Precio | Resultado |
+|---|---|---|---|
+| **Queso Duro Viejo Aserrín** ("queso a serrín") | `QUESO DURO VIEJO ASERRIN 1.5 KG`, 8+ DTE, última 30-jul | $14.02 | **$9.3467/kg** → 2 oz = $0.530 |
+| **Queso Parmesano Block** | `QUESO PARMESANO BLOCK 2.27 KGS`, 15 DTE, última 29-jul | $36.40 | **$16.0352/kg** → 2 oz = $0.909 |
+
+Ninguno de los dos estaba mapeado.
+
+## 🟡 Sigue abierto
+
+1. **Mermelada de Tocino — la mantequilla** pide `0.5 barra` contra un producto en gramos: cobra
+   $0.0065 (o sea 0.5 g). Si son 0.5 lb reales son ~$2.95. Falta el gramaje.
+2. **Mermelada de Tocino — 25 cebollas** por tanda (0.5 saco) es ahora el ingrediente más caro
+   ($14.54 de $35.47). Confirmar que la proporción es real.
+3. **Cilantro Badia** — sin factura mapeada, queda en $0.
+4. **`Combo Chilli Dog`** (701 u · $4,246, el de más volumen sin mapear) — falta composición.
+   La hipótesis es chilli dog + papa + bebida = ~$1.53 → 74%, pero no está confirmada.
+5. **`Cebolla Blanca`** (sub-receta usada por Chili Duo) está **vacía**, rinde 10 bolsas y cuesta $0.
+   Sigue vacía después del fix del 19-ago: el Chili Duo la consume (0.0625 bolsa) y aporta $0,
+   así que su $5.4562 está **subestimado** por ese ingrediente.
+7. **Duplicados en `catalogo_productos`** detectados el 19-ago, todos con 0 usos y 0 DTE:
+   `Queso Parmesano Block 2.27kg` ×2 (`1953e11b…` inactivo · `a2c65b67…` activo) y el aserrín
+   bajo dos nombres (`…1.5kgs` `24e2fdcc…` · `…bolsa 1.5kg` `acf080da…`, ambos activos).
+   Hay que unificarlos antes de que alguien mapee facturas al que no es.
+6. La conversión **1 taza de azúcar morena = 220 g** es estimación mía → marcada `[revisar]`.
+
+## SQL APLICADO 19-ago (proyecto Supabase `btboxlwfqcbrdfrlnwln`, schema `public`)
+
+Todo verificado contra factura o aritmética de unidades. Reversible — el ROLLBACK va abajo.
+Este es el texto **tal como corrió**, ya con las dos correcciones del encabezado.
+
+```sql
+-- 1) CEBOLLA BLANCA — el saco trae 50 cebollas (Jose). 22 facturas / 115 sacos / $3,343
+--    -> $29.07 por saco = $0.5814 por cebolla. Antes cobraba 2 SACOS ($48) en vez de 2 cebollas.
+update catalogo_productos set unidad_medida='unidad', factor_compra=50 where nombre='Cebollas Blancas';
+update compras_dte_items set producto_id=(select id from catalogo_productos where nombre='Cebollas Blancas'),
+       factor_conversion=50, confianza_mapeo='manual', mapeado_at=now()
+ where descripcion_original ilike '%cebolla blanca%' and producto_id is null;
+update receta_ingredientes set cantidad=25, unidad_medida='unidad'
+ where id='2b454d37-08d4-4da5-bda9-547a1950c730';           -- Mermelada: 0.5 saco = 25 cebollas
+
+-- 2) AZUCAR MORENA — bolsa de 7.5 kg (Jose)
+update catalogo_productos set unidad_medida='g', factor_compra=7500 where nombre='326235 Azucar Morena';
+update receta_ingredientes set cantidad=1.35, unidad_medida='g' where id='b58da553-4564-46f0-9024-887c78097b43';
+update receta_ingredientes set cantidad=1430, unidad_medida='g' where id='8a9d5661-1c07-48cb-9cc8-e21d80189cf6';
+
+-- 3) ACIDO CITRICO lata = 1 lb (453.6 g) · OREGANO bote = 141 g (Jose) · ACIDO ASCORBICO ya venia en kg
+update catalogo_productos set unidad_medida='g', factor_compra=453.6 where nombre='Acido Citrico';
+update catalogo_productos set unidad_medida='g', factor_compra=141   where nombre='30204 Oregano';
+update receta_ingredientes set cantidad=1.35,    unidad_medida='g'  where id='c48a51eb-cf00-4553-b542-1160eb9ef50b';
+update receta_ingredientes set cantidad=1.35,    unidad_medida='g'  where id='ef1e81e8-85ea-4e2c-b79d-97b1583d716e';
+update receta_ingredientes set cantidad=0.00135, unidad_medida='kg' where id='c21da89a-3bdf-4440-a292-8a65ef10ddac';
+
+-- 4) PAPA BLANCA — la Mydibel es CAJA de 4 bolsas x 2.5 kg = 22.046 lb (Jose) -> $1.0033/lb
+update catalogo_productos set factor_compra=22.046 where nombre='Papa Blanca 20lb';
+update compras_dte_items set factor_conversion=22.046
+ where producto_id=(select id from catalogo_productos where nombre='Papa Blanca 20lb');
+
+-- 5) MERMELADA DE TOCINO — unidades (1 gal = 16 tazas · 1/4 gal = 4 tazas · 1 lb = 0.45359 kg)
+update receta_ingredientes set cantidad=0.015625, unidad_medida='galón'        where id='be1ea189-92a0-4c5e-96a1-de1bb040f583';
+update receta_ingredientes set cantidad=1.5625,   unidad_medida='cuarto_galón' where id='4caf9064-62ab-4d95-80a1-44ffc73a0eac';
+update receta_ingredientes set cantidad=1.5876,   unidad_medida='kg'           where id='1a06b9fc-eb50-4e14-9555-bf7cafe97629';
+update receta_ingredientes set cantidad=0.029484, unidad_medida='kg'
+ where id in ('c87bd4c9-6001-4e15-af4f-a6901a384dca','ed90b756-4cd2-4359-8b27-b647009bdb91');
+
+-- 6) CHILLI DOG — 2 oz de chili (Jose) = 0.0625 bolsa (la bolsa es de 2 lb = 32 oz)
+update receta_ingredientes ri set cantidad=0.0625, unidad_medida='bolsa' from recetas r
+ where ri.receta_id=r.id and r.nombre='Chilli dog individual'
+   and ri.sub_receta_id='f9e150d6-f0e4-4728-a303-a38891a12555';
+
+-- 7) QUESOS del Royal Truffle — 15 y 8+ facturas recurrentes, nunca mapeadas.
+--    IDS EXPLICITOS: 'Queso Parmesano Block 2.27kg' esta duplicado en catalogo y el
+--    select-por-nombre reventaba con "more than one row returned".
+update catalogo_productos set unidad_medida='kg', factor_compra=2.27 where id='a2c65b67-7b4e-4e56-ac4e-2d1faa569d73';
+update catalogo_productos set unidad_medida='kg', factor_compra=1.5  where id='24e2fdcc-a0d7-417c-b5a2-aafdd74bc62d';
+update compras_dte_items set producto_id='a2c65b67-7b4e-4e56-ac4e-2d1faa569d73',
+       factor_conversion=2.27, confianza_mapeo='manual', mapeado_at=now()
+ where descripcion_original ilike '%QUESO PARMESANO BLOCK%' and producto_id is null;
+update compras_dte_items set producto_id='24e2fdcc-a0d7-417c-b5a2-aafdd74bc62d',
+       factor_conversion=1.5, confianza_mapeo='manual', mapeado_at=now()
+ where descripcion_original ilike '%QUESO DURO VIEJO ASERRIN%' and producto_id is null;
+
+-- 8) LIMPIEZA — receta 'Chili' huerfana (cero usos) y GOL-OSO (era de temporada, Jose)
+update recetas set activo=false where id='3d11a897-169f-465d-9f10-5a31116a53f5';
+update pos_menu_items set disponible=false, visible_publico=false where lower(btrim(nombre))='combo gol-oso';
+```
+
+### Verificación después de aplicar
+
+```sql
+select r.nombre, round(receta_costo_total(r.id)::numeric,4) as costo
+from recetas r where r.nombre in ('Chili','Chilli dog individual','Chili Duo','Mermelada de Tocino') and r.activo;
+-- esperado: Chili $32.28 (4 bolsas) · Chilli dog individual $1.084 · Chili Duo $5.46 · Mermelada $35.47
+```
+
+**Resultado real 19-ago — los 4 dieron exactamente lo proyectado:**
+
+| Receta | Antes | Después |
+|---|---|---|
+| Chili (tanda, 4 bolsas) | $93.1068 | **$32.2781** |
+| Chilli dog individual | $23.8565 | **$1.0841** |
+| Chili Duo | $54.8028 | **$5.4562** |
+| Mermelada de Tocino (4 tandas) | $118.4290 | **$35.4738** |
+
+Y el margen de los 19 ítems de menú con receta activa quedó entre **54.1% y 79.3%**, sin
+ninguno negativo. El `Chili Duo` ($14.99) pasó de **−265.6%** a **63.6%**. El más ajustado
+es `Sweet Burger Duo` ($17.99 · $8.2508 · 54.1%). `Combo GOL-OSO` quedó fuera de los 5 menús.
+
+### ROLLBACK
+
+```sql
+update catalogo_productos set unidad_medida='Saco',   factor_compra=1 where nombre='Cebollas Blancas';
+update catalogo_productos set unidad_medida='bolsa',  factor_compra=1 where nombre='326235 Azucar Morena';
+update catalogo_productos set unidad_medida='lata',   factor_compra=1 where nombre='Acido Citrico';
+update catalogo_productos set unidad_medida='bote',   factor_compra=1 where nombre='30204 Oregano';
+update catalogo_productos set factor_compra=5.5116 where nombre='Papa Blanca 20lb';
+update catalogo_productos set unidad_medida='block',  factor_compra=1 where nombre='Queso Parmesano Block 2.27kg';
+update catalogo_productos set unidad_medida='Unidad', factor_compra=1 where nombre='Queso Duro Viejo Aserrin 1.5kgs';
+update receta_ingredientes set cantidad=0.5,  unidad_medida='saco'        where id='2b454d37-08d4-4da5-bda9-547a1950c730';
+update receta_ingredientes set cantidad=0.5,  unidad_medida='cucharadita' where id in
+  ('b58da553-4564-46f0-9024-887c78097b43','c48a51eb-cf00-4553-b542-1160eb9ef50b',
+   'ef1e81e8-85ea-4e2c-b79d-97b1583d716e','c21da89a-3bdf-4440-a292-8a65ef10ddac');
+update receta_ingredientes set cantidad=6.5,  unidad_medida='taza' where id='8a9d5661-1c07-48cb-9cc8-e21d80189cf6';
+update receta_ingredientes set cantidad=0.25, unidad_medida='taza' where id='be1ea189-92a0-4c5e-96a1-de1bb040f583';
+update receta_ingredientes set cantidad=6.25, unidad_medida='taza' where id='4caf9064-62ab-4d95-80a1-44ffc73a0eac';
+update receta_ingredientes set cantidad=3.5,  unidad_medida='lb'   where id='1a06b9fc-eb50-4e14-9555-bf7cafe97629';
+update receta_ingredientes set cantidad=0.065,unidad_medida='lb'   where id in
+  ('c87bd4c9-6001-4e15-af4f-a6901a384dca','ed90b756-4cd2-4359-8b27-b647009bdb91');
+update recetas set activo=true where id='3d11a897-169f-465d-9f10-5a31116a53f5';
+update compras_dte_items set producto_id=null, factor_conversion=null, confianza_mapeo=null, mapeado_at=null
+ where descripcion_original ilike '%cebolla blanca%'
+    or descripcion_original ilike '%QUESO PARMESANO BLOCK%'
+    or descripcion_original ilike '%QUESO DURO VIEJO ASERRIN%';
+```
+
+---
+
+# SESIÓN 19-ago — componentes reactivados, cebolla, papa waffle y 3 ítems rescatados
+
+> Todo aplicado y verificado en producción. Cada migración lleva su ROLLBACK en el comentario.
+
+## 1. `pos_combo_componentes` reactivado (migración `reactivar_componentes_pos_post_fix_kds`)
+
+El fix del KDS (PR #236, commit `0a99f1c`) ya está en producción, así que se rehizo la estructura
+que se había revertido por el incidente del 18-ago. Es el ROLLBACK que esa migración dejó escrito.
+
+**133 filas en los 5 canales**, 7 combos, y los grupos de modificadores movidos del padre a cada
+componente (`grupos_padre = 0` en los 34). La regla de mesa se respeta: en `local` no va bebida
+(Burger Duo tiene 4 componentes en mesa y 6 en los demás canales).
+
+Estado previo verificado: 0 componentes y 110 grupos en el padre, que coincidía fila por fila con
+`_bkp_item_mod_reconciliacion` (110 filas / 34 ítems) — o sea la reversión no había perdido nada.
+
+## 2. Sub-receta `Cebolla Blanca` — estaba vacía y en $0
+
+Proceso (Jose): se despunta arriba y abajo, se quita la cáscara, va al procesador y se porciona en
+**bolsas de 2 lb**. Rinde 10 bolsas = **20 lb netas**.
+
+Merma del **12%** por despuntar y descascarar (rendimiento 88%, estándar de cocina). Como
+`receta_costo_total` aplica `merma_pct` de **recargo** (`cantidad * (1 + merma/100)`), la merma va
+en su columna y no escondida en el número: `cantidad = 20`, `merma_pct = 13.6364` → **22.73 cebollas**.
+
+**1 cebolla = 1 lb — confirmado por Jose.** El saco de 50 unidades pesa 50 lb. Ninguna factura trae
+el peso; se sostiene además por precio: $29.07/50 lb = $0.58/lb, coherente con mayoreo.
+
+→ **$13.2134 la tanda · $1.3213 la bolsa · $0.0413 la onza.**
+
+## 3. 🔴 El bug que destapó llenar esa receta (4ª aparición del mismo error)
+
+`Freakie Dog armado` pedía **"1 oz"** de una sub-receta que rinde en **BOLSAS**.
+`receta_costo_total` **no convierte unidades** — hace `cantidad * costo_total / rendimiento` — así
+que leyó *1 oz* como *1 bolsa entera*: **$1.3213 en vez de $0.0413, 32× de más**. Como ese bloque
+está dentro de casi todos los combos de hot dog, arrastró medio menú:
+
+| | Con el bug | Corregido |
+|---|---|---|
+| Freakie Dog | $2.00 · **−0.5%** | $0.72 · 63.8% |
+| Combros | $9.55 · 36.3% | $4.43 · 70.5% |
+| Coca-Cola Combo | $2.44 · 38.8% | $1.16 · 70.9% |
+| Freakie Box | $8.86 · 40.9% | $5.02 · 66.5% |
+
+Corregido a `0.03125 bolsa` (la bolsa es de 2 lb = 32 oz).
+
+**Estuvo escondido detrás del $0**: mientras la sub-receta costaba cero, el error no se veía.
+
+### Barrido de todo el catálogo por el mismo patrón
+
+Se buscaron todos los `sub_receta` cuya `unidad_medida` no coincide con la `unidad_rendimiento` de
+su sub-receta. Quedan **9 ocurrencias**, y **todas están en recetas huérfanas sin uso** (ver §5),
+así que no afectan producción. La peor sería `Sal de Hamburguesa` a **$6.96 por hamburguesa**.
+
+## 4. `Papa Waffle` — 21 facturas compradas y sin conectar
+
+Costaba **$0** y bloqueaba toda la familia Fancy. La descripción de la factura traía la conversión
+adentro: `CAJA 6/4.5LB` = 6 × 4.5 = **27 lb**, que coincide exacto con el `factor_compra` que ya
+tenía el catálogo. Confirmado por dos vías independientes:
+
+| Presentación | Precio | Por libra |
+|---|---|---|
+| Caja 6/4.5 lb (19 DTE: PAP0137 P55, PAP0079 S15) | $44.2478 | **$1.6388** |
+| Bolsa suelta 4.5 lb (2 DTE: PAP0143) | $7.5746 | $1.6832 |
+
+→ **$1.6423/lb** · porción de 0.35 lb = **$0.5748**. `Mini Fancy` $0.3512 → **$0.9261**;
+`Fancy` $1.2449 → **$1.9018**. Estaban costeando la mitad.
+
+⚠️ **Hay TRES productos "Papa Waffle" en catálogo**, los tres con factor 27 y costo ~$1.645:
+`Papa Waffle` (c3a0697a, 0 DTE) · `Papa Waffle 27LB` (45c837d5, **21 DTE**, el bueno) ·
+`PAPA WAFFLE NAT CAJA 6/4.5 LBS` (9f50cf16, **inactivo pero usado por 4 recetas**).
+Como los tres cuestan casi igual no hay distorsión, pero **hay que unificarlos**.
+
+## 5. Tres capas de recetas encimadas — el hallazgo estructural
+
+| Capa | Cuántas | Estado |
+|---|---|---|
+| Vivas y costeadas (enlazadas por `catalogo_id`) | **22** | ✅ las que manda el menú |
+| **Huérfanas** (`catalogo_id` NULL, 0 usos) | 8 | ❌ borradores con composición equivocada |
+| **Cáscaras vacías** (activas, 0 ingredientes, $0) | 25 | ❌ basura, nadie las usa |
+
+Las huérfanas **no son "la versión vieja fiel"**: `Freakie Fries` no tenía papa, y `Royal Truffle
+Combo` tenía mozzarella, tocino y Coca-Cola. Copiarlas habría metido datos falsos creíbles.
+
+**Y el hueco de fondo: 269 de 374 filas de menú disponibles no tienen `producto_id`** — o sea la
+mayoría del menú no está enlazada al costeo. Lo de estos 3 ítems era la punta de eso.
+
+## 6. Tres ítems que se vendían sin costear (migración `bom_rescatar_...`)
+
+Se venden en los 5 menús y no descargaban inventario. Composición dictada por Jose (19-ago);
+**no se copió nada de las huérfanas**, que quedaron desactivadas.
+
+| Ítem | Precio | Composición | Costo | Margen |
+|---|---|---|---|---|
+| **Freakie Fries** | $1.99 | 1 porción de Papa Sazonada. Las salsas van por **modificador**, no en la receta (anti-doble-conteo) | $0.4468 | **77.5%** |
+| **Sweat Freak** | $4.50 | **Es un postre**: 1 porción del pastel de Heling. $25 / 10 porciones. **Sin DTE que lo respalde** | $2.5000 | **44.4%** |
+| **Royal Truffle Combo** | $21.99 | 2 Hamburguesa Sencilla + 1 Mini Fancy + 2 oz trufa + 2 oz aserrín + 2 oz parmesano + 1 oz cilantro | $7.3017 | **66.8%** |
+
+Se reusó el patrón `0.1 pastel` que ya usaban Sweet Burger Duo y Combpleto.
+🟡 El **cilantro** queda en $0 — sin factura mapeada. El ingrediente está cargado para que el costo
+se llene solo cuando aparezca.
+
+## Estado del menú al cierre del 19-ago
+
+**22 ítems costeados, margen entre 44.4% y 78.6%, ninguno negativo.**
+El más bajo es `Sweat Freak` (44.4%) — es reventa de postre, no producción propia.
+
+## 🟡 Pendiente
+
+1. **`pos_modificador_insumos` / el botón SIN**: `receta_ingredientes.removible` **no existe**, y no
+   hay ni un modificador "Sin X". Hoy se pide por nota libre, que es lo que vuelve la comanda
+   amarilla. Decisión de Jose: el SIN **no toca el precio**; y no debe descontar el ingrediente de
+   esa línea (si se reutiliza, lo descuenta el plato donde se usó; si se tira, es merma).
+2. **Matriz de menús por tipo de sucursal** — ver sección aparte.
+3. Unificar los duplicados de catálogo (papa waffle ×3, parmesano ×2, aserrín ×2).
+4. Borrar las 8 huérfanas y las 25 cáscaras vacías.
+5. Mapear los 269 ítems de menú sin `producto_id`.
+
+---
+
+# PROPUESTA — Matriz de menús por tipo de sucursal (19-ago, sin implementar)
+
+## El problema
+
+Los **5 menús son globales** (`pos_menus.sucursal_id` = NULL), así que "Para Llevar" significa lo
+mismo en Venecia que en Metro Centro. Por eso **en restaurante, al marcar "llevar", el POS exige
+bebida** — y no debería.
+
+`sucursales.tipo` **ya existe y está bien poblado**: `restaurante` (Cafetalón, Lourdes, Venecia,
+Eventos) · `food_court` (Soyapango, Usulután, Metro Centro) · `drive_thru` (Lourdes DT) · `bodega`
+(Casa Matriz).
+
+Reglas reales (Jose, 18 y 19-ago):
+- **Restaurante + para llevar** → es el menú de mesa; **no lleva bebida**, la única diferencia es el
+  **empaque**.
+- **Food court** → el cajero elige *comer aquí* o *para llevar*; **ambos llevan bebida**, y solo el
+  segundo suma empaque.
+
+## La causa de fondo
+
+Hoy el menú decide **tres cosas a la vez**: precio, si el combo incluye bebida, y qué empaque. Son
+tres reglas distintas y por eso no se puede expresar "mismo menú, sin bebida, pero con empaque".
+
+## La propuesta: separar dos ejes
+
+- **Eje 1 — lista de precios + bebida** → depende de `(tipo_sucursal, modo_consumo)`
+- **Eje 2 — empaque** → depende de una sola pregunta: **¿el producto sale del local?**
+
+Con eso la matriz completa son **7 filas** y **no se crea ningún menú nuevo**:
+
+| Tipo sucursal | Modo | Menú | Bebida | Empaque |
+|---|---|---|---|---|
+| restaurante | mesa | Local | ❌ | ❌ |
+| **restaurante** | **para llevar** | **Local** | **❌** | **✅** |
+| food_court | comer aquí | Para Llevar | ✅ | ❌ |
+| food_court | para llevar | Para Llevar | ✅ | ✅ |
+| drive_thru | — | Drive Thru | ✅ | ✅ |
+| cualquiera | delivery | Delivery | ✅ | ✅ + bolsa |
+| cualquiera | PedidosYa | PedidosYa | ✅ | ✅ + bolsa |
+
+## Implementación
+
+1. **Tabla `pos_contexto_servicio`** — 7 filas: `(tipo_sucursal, modo_consumo) → menu_id,
+   incluye_bebida, incluye_empaque`. La matriz como **dato editable**, no como `if` en el código.
+2. **El POS resuelve al abrir la cuenta**: ya sabe la sucursal (→ `tipo`) y el cajero elige el modo.
+3. **`receta_ingredientes.contextos text[]`** (NULL = siempre) — calcado de
+   `pos_modificador_insumos.canales`, que **ya existe y ya funciona** (`pos_deducir_inventario` v4
+   resuelve el canal y filtra por él). Aluminio, cajita, polipel y bolsa se marcan "solo si empaque",
+   así el mismo Burger Duo cuesta distinto en mesa que para llevar **sin duplicar la receta**.
+
+Ventaja de fondo: agregar un canal nuevo pasa a ser **una fila**, no un menú clonado de 100 ítems.
+
+## Reportería que habilita
+
+1. **Separar food cost de packaging cost** — hoy van mezclados. El empaque es el que se va sin notarse.
+2. **Margen por contexto, no solo por sucursal** — ver que un Burger Duo deja 61.6% en mesa pero
+   menos para llevar (el empaque se come puntos) cambia decisiones de precio. Hoy se promedia todo.
+3. **Empaque teórico vs comprado = detector de fuga.** Si el sistema sabe cuántos pedidos salieron
+   con empaque, sabe cuánto aluminio y polipel *debió* consumirse; contra las compras reales, la
+   diferencia es merma o fuga. Es el análisis que se intentó con Soyapango y Metro Centro y que se
+   enturbió por los pedidos de PeYa faltantes — ahora con un denominador confiable.
+4. **Mix de contexto por sucursal** — qué % de Venecia es mesa vs llevar. Explica diferencias de
+   margen que hoy se atribuyen a "eficiencia" y en realidad son mix.
+
+## 🟡 Dos definiciones pendientes de Jose
+
+1. En **food court "comer aquí"**, ¿de verdad no lleva ningún empaque? Si sale en bandeja o canasta
+   desechable (no hay loza), el eje 2 tiene **tres** valores: `ninguno` / `sitio` / `llevar`.
+2. En **restaurante mesa**, ¿el combo cuesta los mismos $7.50 sin la bebida? Si es así, el margen en
+   mesa es estructuralmente mayor y conviene medirlo aparte.
+
+---
+
+# SESIÓN 19-ago (cierre) — mapa del ERP, guardarraíl anti-doble-conteo y el factor en la UI
+
+## 1. El mapa front ↔ base: por qué el BOM estaba así
+
+Se inventarió todo `src/` (142 archivos). La app son **5 SPAs** sin react-router (ERP, POS, menú
+público, tracking, driver). El hallazgo de fondo: **el desorden del BOM no es descuido, es que no
+existe la pantalla para hacer ese trabajo.**
+
+| Qué | Estado en la UI | Consecuencia |
+|---|---|---|
+| `compras_dte_items.producto_id` | ❌ sin UI directa | Todo el mapeo de facturas se hacía por SQL |
+| `pos_modificador_insumos` | ❌ **sin UI** | 89 filas cargadas y **69 de 146 modificadores sin insumo**, sin forma de cargarlos |
+| Recetas `plato_menu` / `combo` | ❌ sin UI | `RecetasView` filtra solo `sub_receta`/`porcionado` → **107 ítems sin costear** |
+| `recetas_lineas` | 🔴 **pantalla trampa** | El tab Recetas de Kardex escribe a esa tabla, que está **vacía**; el motor de costeo lee `receta_ingredientes`. Quien la use crea recetas que nunca costean |
+| `MapeoMenu` (único BOM de menú) | ⚠️ escondida | Sin entrada en el sidebar; solo por Kardex → tab "🍔 Menú (BOM)" |
+| `MenuAdminView` (combos, modificadores) | ⚠️ solo desde el POS | No está en el ERP; `jefe_casa_matriz` no puede tocar el menú |
+| `pos_combo_componentes` | ⚠️ parcial | Se agrega y quita, pero no se edita la cantidad |
+
+⚠️ **Corrección a un análisis automático:** se concluyó que "los modificadores no descuentan
+inventario". **Es falso** — se verificó la función: `pos_deducir_inventario` **sí lee**
+`pos_modificador_insumos`. El descuento funciona; lo que falta es la pantalla para administrarlo.
+
+## 2. 🔴 Guardarraíl anti-doble-conteo (migración `guardarrail_anti_doble_conteo_componentes`)
+
+**El riesgo que se creó al reactivar los componentes:** `pos_deducir_inventario` explota (a) la
+receta del padre y (b) los componentes elegidos en `pos_cuenta_items.componentes`. Los combos padre
+conservan su BOM completo (Burger Duo = 2 Hamburguesa Sencilla + 2 Papa Sazonada).
+
+Hoy **no** hay doble descuento porque los 25 ítems componente no tienen `producto_id`. Pero en el
+momento en que alguien les asignara uno, cada combo habría descontado su contenido **dos veces, en
+silencio**.
+
+**Decisión: el BOM vive en el ítem PADRE.** Los ítems 'Componentes' son solo el vehículo para que el
+cajero elija/personalice y para que el KDS agrupe. Es coherente con lo que ya existe: el padre no
+incluye bebida — la bebida entra por el modificador elegido dentro del componente, vía
+`pos_modificador_insumos`, que ya funciona.
+
+Se cerró con:
+- **`trg_componente_sin_receta`** — trigger que impide asignar `producto_id` a un ítem de la
+  categoría 'Componentes', con mensaje y `HINT` explicando qué hacer si algún día se quiere mover
+  el BOM. **Probado: bloquea.**
+- **`v_bom_doble_conteo`** — centinela permanente; debe devolver 0 filas siempre.
+
+## 3. El factor de conversión, por fin en la interfaz (PR #239)
+
+`mapear_descripcion_dte` asignaba el producto pero **no el factor** — que es la mitad que importa
+para el costeo. Se extendió la función existente en vez de crear una cuarta pantalla de mapeo:
+`p_factor_conversion` con DEFAULT (compatible hacia atrás), `desmapear` limpia el factor, y
+`v_dte_descripciones` ahora expone factor, precio unitario promedio y el `factor_compra` del
+catálogo para poder contrastarlos.
+
+En la UI, una descripción vinculada muestra **"1 facturada = N ‹unidad›"** con el costo unitario
+resultante y edición en línea; y si no hay factor, avisa **"⚠ sin factor — se costea 1:1"**.
+
+**Tamaño del trabajo que queda por delante, medido:**
+
+| | |
+|---|---|
+| Descripciones sin mapear | **2,730** |
+| Dinero en compras sin conectar | **$1,498,514** |
+| Mapeadas sin factor | 32 |
+| Con factor inconsistente | 0 |
