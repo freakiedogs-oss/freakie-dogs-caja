@@ -798,6 +798,52 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   )
 }
 
+// ── Desglose de lo elegido en un combo ──────────────────────────────
+// Cuando el combo se arma por componentes (3 hot dogs, 3 papas, 3 bebidas), lo que el cliente
+// eligió NO está en `mods` sino dentro de cada componente. Si no se pinta, el carrito muestra
+// solo el nombre del combo y el cliente no puede verificar su orden.
+// Numera igual que el modal de armado: "Hot Dog 1", "Hot Dog 2"… solo si el nombre se repite.
+function numerarComponentes(comps = []) {
+  const repes = {}
+  comps.forEach(c => { repes[c.nombre] = (repes[c.nombre] || 0) + 1 })
+  const vistos = {}
+  return comps.map(c => {
+    vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
+    return { ...c, titulo: repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre }
+  })
+}
+
+function DetalleComponentes({ comps }) {
+  const lista = numerarComponentes(comps).filter(c => (c.mods || []).length > 0)
+  if (lista.length === 0) return null
+  return (
+    <>
+      {lista.map((c, i) => (
+        <div key={i} className="mp-linea-comp">
+          <div className="mp-linea-comp-titulo">{c.titulo}</div>
+          {(c.mods || []).map((m, j) => (
+            <div key={j} className="mp-linea-mod">
+              + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
+// Mismo desglose en texto plano, para el mensaje de WhatsApp.
+function lineaPedidoTexto(it) {
+  const partes = [`• ${it.qty}x ${it.nombre}`]
+  if (it.nota) partes.push(`   📝 ${it.nota}`)
+  for (const m of (it.mods || [])) partes.push(`   + ${m.nombre}`)
+  for (const c of numerarComponentes(it.comps || [])) {
+    if (!(c.mods || []).length) continue
+    partes.push(`   ${c.titulo}: ${c.mods.map(m => m.nombre).join(', ')}`)
+  }
+  return partes.join('\n')
+}
+
 function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) {
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
   const faltaGratis = reglas ? Math.max(0, reglas.gratisDesde - total) : 0
@@ -836,6 +882,7 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
                       + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
                     </div>
                   ))}
+                  <DetalleComponentes comps={it.comps} />
                   <div className="mp-linea-precio">{fmt((it.precio + (it.precioMods || 0)) * it.qty)}</div>
                 </div>
                 <div className="mp-linea-controles">
@@ -886,9 +933,9 @@ function PedidoEnviado({ datos, onClose }) {
   const waNum = String(datos.whatsapp || '').replace(/\D/g, '')
   const items = datos.items || []
   // Resumen del pedido para el mensaje de WhatsApp: el cliente manda qué pidió, no solo el número.
-  const resumen = items
-    .map(it => `• ${it.qty}x ${it.nombre}${(it.mods || []).length ? ` (${it.mods.map(m => m.nombre).join(', ')})` : ''}`)
-    .join('\n')
+  // Incluye el desglose por componente: con los combos armados por partes, el detalle de lo que
+  // el cliente eligió vive ahí, no en `mods`. Sin esto el mensaje solo decía "1x Combo Trío".
+  const resumen = items.map(lineaPedidoTexto).join('\n')
   const waMsg = `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Confirmo mi pedido ${datos.numero_orden}`
     + (resumen ? `:\n${resumen}` : '')
     + (datos.total ? `\nTotal: ${fmt(datos.total)}` : '')
@@ -923,6 +970,7 @@ function PedidoEnviado({ datos, onClose }) {
                         + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
                       </div>
                     ))}
+                    <DetalleComponentes comps={it.comps} />
                     <div className="mp-linea-precio">{fmt((it.precio + (it.precioMods || 0)) * it.qty)}</div>
                   </div>
                 </div>

@@ -920,3 +920,16 @@ button { font-family: inherit; }
   font-size: 13px; font-weight: 800; color: #1a1a1a;
   background: #f3f4f6; border-left: 3px solid #e63946; border-radius: 6px;
 }
+
+/* Desglose por componente en el carrito y en la confirmación: cuando un combo se arma por
+   partes (3 hot dogs, 3 papas…), agrupa lo elegido bajo el nombre de cada unidad en vez de
+   listar todos los modificadores planos y sin contexto. */
+.mp-linea-comp { margin-top: 4px; }
+.mp-linea-comp-titulo {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9a9a9a;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.mp-linea-comp .mp-linea-mod { padding-left: 8px; }
