@@ -1722,3 +1722,27 @@
   font-weight: 600;
 }
 .pin-cancel:hover { background: #232329; color: #f3efe9; }
+
+/* ── KDS · bloque de combo ─────────────────────────────────────────────
+   Un combo llega al KDS como una fila por componente. Se agrupan bajo un
+   encabezado para que el cocinero lea "Burger Duo" con sus 6 partes en vez
+   de seis líneas sueltas (incidente 18-ago: "se me multiplican las órdenes"). */
+.kds-combo-bloque {
+  border: 1px solid #3a3a46;
+  border-left: 3px solid #f4a261;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  background: rgba(244,162,97,0.05);
+}
+.kds-combo-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 8px; background: rgba(244,162,97,0.14);
+}
+.kds-combo-nombre {
+  font-size: 12px; font-weight: 800; color: #f4a261;
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.kds-combo-progreso { font-size: 11px; font-weight: 700; color: #b8b4c0; }
+.kds-combo-bloque .kds-item { border-radius: 0; border-left: none; border-right: none; }
+.kds-combo-bloque .kds-item:last-child { border-bottom: none; }

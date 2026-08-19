@@ -1861,21 +1861,37 @@ function ComboModal({ combo, onConfirm, onCancel }) {
               </div>
               {grupos.map(g => (
                 <div key={g.id} style={{ marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: '#b8b4c0' }}>{g.nombre}</span>
-                    <span style={{ fontSize: 11, color: '#8b8997' }}>{reqLabel(g)}</span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontWeight: 800, fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      {g.nombre}{g.obligatorio && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
+                    </span>
+                    <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {/* Mismo grid de botones que ProductoModifiersModal: al pasar los combos a
+                      componentes se perdía esta vista y el cajero veía una lista distinta. */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
                     {g.opciones.map(m => {
                       const on = (sel['c' + i + ':' + g.id] || []).includes(m.id)
                       const px = Number(m.precio_extra) || 0
+                      const enTope = g.max_selecciones > 0 && (sel['c' + i + ':' + g.id] || []).length >= g.max_selecciones
+                      const bloqueada = !on && enTope && g.tipo !== 'unico'
                       return (
-                        <button key={m.id} onClick={() => toggle('c' + i, g, m)} style={comboOptStyle(on)}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 15 }}>{on ? (g.tipo === 'unico' ? '🔘' : '☑️') : (g.tipo === 'unico' ? '⚪' : '⬜')}</span>
-                            {m.nombre}
-                          </span>
-                          <span style={{ color: px > 0 ? '#2dd4a8' : '#8b8997', fontSize: 13, fontWeight: 600 }}>{px > 0 ? `+$${px.toFixed(2)}` : 'gratis'}</span>
+                        <button key={m.id} onClick={() => toggle('c' + i, g, m)} disabled={bloqueada}
+                          style={{
+                            position: 'relative', minHeight: 54, padding: 8, borderRadius: 10,
+                            border: '1.5px solid ' + (on ? '#3b82f6' : '#2a2a32'),
+                            background: on ? 'rgba(59,130,246,0.16)' : '#22222c',
+                            color: bloqueada ? '#5a5a66' : '#e5e7eb',
+                            cursor: bloqueada ? 'not-allowed' : 'pointer',
+                            fontSize: 12.5, fontWeight: 600, textAlign: 'center',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                            justifyContent: 'center', gap: 3, lineHeight: 1.2,
+                            opacity: bloqueada ? 0.5 : 1, transition: 'border-color .1s, background .1s',
+                          }}>
+                          <span style={{ position: 'absolute', top: 4, right: 5, fontSize: 11, fontWeight: 800,
+                                         color: on ? '#3b82f6' : '#6b6878' }}>{on ? '✓' : '+'}</span>
+                          <span style={{ padding: '0 4px' }}>{m.nombre}</span>
+                          {px > 0 && <span style={{ fontSize: 11, color: '#10b981', fontWeight: 800 }}>+${px.toFixed(2)}</span>}
                         </button>
                       )
                     })}
@@ -1892,21 +1908,35 @@ function ComboModal({ combo, onConfirm, onCancel }) {
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>General</div>
             {combo.modGrupos.map(g => (
               <div key={g.id} style={{ marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: '#b8b4c0' }}>{g.nombre}</span>
-                  <span style={{ fontSize: 11, color: '#8b8997' }}>{reqLabel(g)}</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontWeight: 800, fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                    {g.nombre}{g.obligatorio && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
+                  </span>
+                  <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
                   {g.opciones.map(m => {
                     const on = (sel['combo:' + g.id] || []).includes(m.id)
                     const px = Number(m.precio_extra) || 0
+                    const enTope = g.max_selecciones > 0 && (sel['combo:' + g.id] || []).length >= g.max_selecciones
+                    const bloqueada = !on && enTope && g.tipo !== 'unico'
                     return (
-                      <button key={m.id} onClick={() => toggle('combo', g, m)} style={comboOptStyle(on)}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 15 }}>{on ? (g.tipo === 'unico' ? '🔘' : '☑️') : (g.tipo === 'unico' ? '⚪' : '⬜')}</span>
-                          {m.nombre}
-                        </span>
-                        <span style={{ color: px > 0 ? '#2dd4a8' : '#8b8997', fontSize: 13, fontWeight: 600 }}>{px > 0 ? `+$${px.toFixed(2)}` : 'gratis'}</span>
+                      <button key={m.id} onClick={() => toggle('combo', g, m)} disabled={bloqueada}
+                        style={{
+                          position: 'relative', minHeight: 54, padding: 8, borderRadius: 10,
+                          border: '1.5px solid ' + (on ? '#3b82f6' : '#2a2a32'),
+                          background: on ? 'rgba(59,130,246,0.16)' : '#22222c',
+                          color: bloqueada ? '#5a5a66' : '#e5e7eb',
+                          cursor: bloqueada ? 'not-allowed' : 'pointer',
+                          fontSize: 12.5, fontWeight: 600, textAlign: 'center',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center',
+                          justifyContent: 'center', gap: 3, lineHeight: 1.2,
+                          opacity: bloqueada ? 0.5 : 1, transition: 'border-color .1s, background .1s',
+                        }}>
+                        <span style={{ position: 'absolute', top: 4, right: 5, fontSize: 11, fontWeight: 800,
+                                       color: on ? '#3b82f6' : '#6b6878' }}>{on ? '✓' : '+'}</span>
+                        <span style={{ padding: '0 4px' }}>{m.nombre}</span>
+                        {px > 0 && <span style={{ fontSize: 11, color: '#10b981', fontWeight: 800 }}>+${px.toFixed(2)}</span>}
                       </button>
                     )
                   })}
@@ -1938,13 +1968,6 @@ function ComboModal({ combo, onConfirm, onCancel }) {
   )
 }
 
-const comboOptStyle = (on) => ({
-  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  padding: '9px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-  border: `1px solid ${on ? '#2dd4a8' : '#2a2a32'}`,
-  background: on ? 'rgba(45,212,168,0.12)' : '#1c1c22',
-  color: '#e8e6ef', fontSize: 14,
-})
 
 // ──────────────────────────────────────────────
 // ModPickerModal — selección de modificadores al agregar un ítem

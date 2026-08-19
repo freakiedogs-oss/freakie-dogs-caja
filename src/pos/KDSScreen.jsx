@@ -736,9 +736,12 @@ export default function KDSScreen({ user, onBack }) {
                       </div>
                     )}
 
-                    {/* Items */}
+                    {/* Items. Un combo entra como una fila por componente (todas comparten
+                        cuenta_item_id): se agrupan bajo un encabezado para que el cocinero vea
+                        "Burger Duo" con sus partes y no seis líneas sueltas. */}
                     <div className="kds-card-items">
-                      {comanda.items.map(item => {
+                      {(() => {
+                      const renderItem = (item) => {
                         const done = item.estado === 'completado'
                         const inProg = item.estado === 'en_preparacion'
                         return (
@@ -791,7 +794,32 @@ export default function KDSScreen({ user, onBack }) {
                             )}
                           </button>
                         )
-                      })}
+                      }
+                      // Agrupa por cuenta_item_id las filas que vienen de un mismo combo
+                      // (buildQueueRows les pone la nota "Combo: <nombre>").
+                      const bloques = []; const porCombo = {}
+                      comanda.items.forEach(it => {
+                        const m = /^Combo:\s*([^·]+)/.exec(it.nota || '')
+                        const clave = (m && it.cuenta_item_id) ? it.cuenta_item_id : null
+                        if (!clave) { bloques.push({ solo: it }); return }
+                        if (!porCombo[clave]) { porCombo[clave] = { nombre: m[1].trim(), items: [] }; bloques.push(porCombo[clave]) }
+                        porCombo[clave].items.push(it)
+                      })
+                      return bloques.map((b, bi) => {
+                        if (!b.items) return renderItem(b.solo)
+                        if (b.items.length === 1) return renderItem(b.items[0])
+                        const listos = b.items.filter(i => i.estado === 'completado').length
+                        return (
+                          <div key={'combo' + bi} className="kds-combo-bloque">
+                            <div className="kds-combo-head">
+                              <span className="kds-combo-nombre">{b.nombre}</span>
+                              <span className="kds-combo-progreso">{listos}/{b.items.length}</span>
+                            </div>
+                            {b.items.map(it => renderItem(it))}
+                          </div>
+                        )
+                      })
+                      })()}
                     </div>
 
                     {/* Resumen + botón LISTA */}
