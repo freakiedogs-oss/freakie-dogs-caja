@@ -35,16 +35,25 @@ const waHref = (tel) => {
 };
 
 // ── Iconos custom (divIcons) ────────────────────────────────────────
-function iconMotorista({ nombre, pedidos, libre }) {
+function iconMotorista({ nombre, pedidos, libre, secondsStale }) {
   const color = libre ? COLORS.motoristaLibre : COLORS.motoristaOcupado;
+  // Indicador de frescura del GPS: verde <2min, amarillo 2-10min, rojo >10min
+  const freshBorder = secondsStale < 120 ? '#fff'
+                    : secondsStale < 600 ? '#facc15'
+                    : '#dc2626';
+  const opacity = secondsStale < 120 ? 1 : secondsStale < 600 ? 0.75 : 0.5;
+  const staleBadge = secondsStale >= 120
+    ? `<span style="position:absolute;top:-8px;left:-2px;background:${freshBorder};color:#000;font-size:9px;font-weight:800;padding:1px 4px;border-radius:8px;border:1px solid #fff;">${secondsStale < 3600 ? Math.round(secondsStale/60) + 'm' : Math.round(secondsStale/3600) + 'h'}</span>`
+    : '';
   const badge = !libre
     ? `<span style="position:absolute;top:-4px;right:-4px;background:#fff;color:${color};border-radius:50%;width:14px;height:14px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1px solid ${color};">${pedidos}</span>`
     : '';
   return L.divIcon({
     className: 'fk-mot',
-    html: `<div style="position:relative;display:flex;flex-direction:column;align-items:center;">
-      <div style="width:22px;height:22px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.5);"></div>
+    html: `<div style="position:relative;display:flex;flex-direction:column;align-items:center;opacity:${opacity};">
+      <div style="width:22px;height:22px;border-radius:50%;background:${color};border:3px solid ${freshBorder};box-shadow:0 1px 3px rgba(0,0,0,.5);"></div>
       ${badge}
+      ${staleBadge}
       <div style="font-size:10px;font-weight:600;color:${libre ? '#065f46' : '#7f1d1d'};background:rgba(255,255,255,.85);padding:1px 5px;border-radius:4px;margin-top:2px;white-space:nowrap;">${nombre}</div>
     </div>`,
     iconSize: [80, 40],
@@ -195,7 +204,7 @@ export default function TabMapaVivo({ show = () => {} }) {
       const libre = (m.pedidos_activos || 0) === 0;
       const nombreCorto = (m.nombre || '').split(' ')[0];
       const marker = L.marker([m.lat, m.lng], {
-        icon: iconMotorista({ nombre: nombreCorto, pedidos: m.pedidos_activos, libre }),
+        icon: iconMotorista({ nombre: nombreCorto, pedidos: m.pedidos_activos, libre, secondsStale: m.seg_desde_ultima || 0 }),
         zIndexOffset: 500,
       });
       const etaRegreso = !libre && m.eta_regreso_min != null
