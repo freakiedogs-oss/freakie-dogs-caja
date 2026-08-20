@@ -217,6 +217,39 @@ export function libroVentasCSV({ ventas, mes, storeCode }) {
   return { filename: `libro_ventas_freakie_${storeCode || 'consolidado'}_${mes}.csv`, mime: 'text/csv;charset=utf-8', content: '﻿' + toCSV(rows) }
 }
 
+// ── RESUMEN DIARIO DE CÓDIGOS DE GENERACIÓN (Anexo Consumidor Final — formato Ángel) ──
+// Columnas: Fecha | DEL | AL | Cantidad | Venta Gravada. 1 fila por día (Facturas 01).
+// DEL/AL = código de generación (dte_uuid, con guiones) del primer/último doc del día.
+// ⚠️ ivaIncluido: true = venta gravada CON IVA (total facturado); false = neta. CONFIRMAR con Ángel.
+export function resumenCodigosGeneracionCSV({ ventas, mes, storeCode, ivaIncluido = true }) {
+  const sucLabel = storeCode ? (STORES[storeCode] || storeCode) : null
+  const fac = ventas.filter((v) => v.tipo === '01')
+  const porDia = {}
+  for (const v of fac) {
+    const d = (porDia[v.fecha] ||= { docs: [], gravada: 0 })
+    d.docs.push(v)
+    d.gravada += ivaIncluido ? v.gravadaConIva : v.neto
+  }
+  const rows = [
+    ['RESUMEN DIARIO DE CÓDIGOS DE GENERACIÓN'],
+    [`${EMISOR.razon}  ·  NIT ${EMISOR.nitFmt}  ·  NRC ${EMISOR.nrc}`],
+    [`Anexo Consumidor Final  ·  ${mes}${sucLabel ? '  ·  ' + sucLabel : '  ·  Consolidado'}  ·  Venta gravada ${ivaIncluido ? 'CON IVA' : 'NETA (sin IVA)'}`],
+    [],
+    ['Fecha', 'DEL', 'AL', 'Cantidad', 'Venta Gravada'],
+  ]
+  let totCant = 0, totGrav = 0
+  for (const f of Object.keys(porDia).sort()) {
+    const d = porDia[f]
+    const ord = d.docs.slice().sort((a, b) => new Date(a.cobrada_at) - new Date(b.cobrada_at))
+    const [yy, mm, dd] = f.split('-')
+    totCant += d.docs.length; totGrav += d.gravada
+    rows.push([`${dd}/${mm}/${yy}`, ord[0]?.dte_uuid || '', ord[ord.length - 1]?.dte_uuid || '', d.docs.length, money(d.gravada)])
+  }
+  rows.push([])
+  rows.push(['TOTAL', '', '', totCant, money(totGrav)])
+  return { filename: `resumen_codigos_generacion_${storeCode || 'consolidado'}_${mes}.csv`, mime: 'text/csv;charset=utf-8', content: '﻿' + toCSV(rows) }
+}
+
 // ── LIBRO DE COMPRAS (legible, consolidado) ──
 export function libroComprasCSV({ compras, mes }) {
   const rows = [
@@ -406,6 +439,16 @@ export async function excelRespaldoBlob({ ventas, compras, mes, storeCode }) {
     librosRows.push([f, d.docs.length, ctrls[0] || '', ctrls[ctrls.length - 1] || '', d.docs[0]?.dte_sello || '', r2(d.gravada), r2(d.iva), r2(d.total)])
   }
   add('LIBROS', librosRows)
+
+  // RESUMEN CÓDIGOS DE GENERACIÓN (formato Ángel) — Fecha | DEL | AL | Cantidad | Venta Gravada
+  const codRows = [['Fecha', 'DEL', 'AL', 'Cantidad', 'Venta Gravada (con IVA)']]
+  for (const f of Object.keys(porDia).sort()) {
+    const d = porDia[f]
+    const ord = d.docs.slice().sort((a, b) => new Date(a.cobrada_at) - new Date(b.cobrada_at))
+    const [yy, mm, dd] = f.split('-')
+    codRows.push([`${dd}/${mm}/${yy}`, ord[0]?.dte_uuid || '', ord[ord.length - 1]?.dte_uuid || '', d.docs.length, r2(d.gravada)])
+  }
+  add('CODIGOS GENERACION', codRows)
 
   // VENTAS (detalle)
   add('VENTAS', [
