@@ -49,7 +49,12 @@ class LocationService : Service() {
         private const val CHANNEL_NAME = "Freakie GPS activo"
         private const val NOTIF_ID = 42
 
-        // Configuración de Supabase (misma anon key que usa la PWA)
+        // Proxy de Vercel — MISMA ruta que usa la PWA en producción (src/supabase.js).
+        // Varios ISPs de El Salvador filtran *.supabase.co por DNS, así que pegar
+        // directo desde el celular falla con UnknownHostException. El proxy /sb
+        // reenvía a Supabase desde el servidor de Vercel, que no está bloqueado.
+        private const val PROXY_URL = "https://freakie-dogs-caja.vercel.app/sb"
+        // Origen real: se usa como respaldo si el proxy no responde.
         private const val SUPABASE_URL = "https://btboxlwfqcbrdfrlnwln.supabase.co"
         private const val ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjcyMzQsImV4cCI6MjA4OTU0MzIzNH0.NpBQZgxbajgOVvw3FOwIUiOkgmh7rEuPQMRi0ZcFKe4"
 
@@ -64,7 +69,7 @@ class LocationService : Service() {
 
         // Etiqueta visible en la notificación — sirve para confirmar de un vistazo
         // qué build está instalado en el celular. Subir en cada cambio.
-        private const val VERSION_APK = "v4-wakelock"
+        private const val VERSION_APK = "v5-proxy"
     }
 
     // Contadores de diagnóstico que se muestran en la notificación
@@ -282,38 +287,45 @@ class LocationService : Service() {
     private fun reportar(lat: Double, lng: Double, rumbo: Float, precision: Float) {
         if (empleadoId.isBlank()) return
         thread(name = "gps-post") {
-            try {
-                val url = URL("$SUPABASE_URL/rest/v1/rpc/actualizar_ubicacion_driver")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("apikey", ANON_KEY)
-                conn.setRequestProperty("Authorization", "Bearer $ANON_KEY")
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
-                val nombreEsc = nombre.replace("\\", "\\\\").replace("\"", "\\\"")
-                val body = """
-                    {"p_empleado_id":"$empleadoId","p_nombre":"$nombreEsc",
-                     "p_lat":$lat,"p_lng":$lng,
-                     "p_rumbo":${if (rumbo.isNaN()) "null" else rumbo},
-                     "p_exactitud":${if (precision.isNaN()) "null" else precision}}
-                """.trimIndent()
-                conn.outputStream.use { it.write(body.toByteArray()) }
-                val code = conn.responseCode
-                if (code in 200..299) {
-                    ultimoOkMs = System.currentTimeMillis()
-                } else {
-                    fallos++
-                    Log.w(TAG, "HTTP $code al reportar GPS")
-                }
-                conn.disconnect()
-            } catch (e: Exception) {
-                fallos++
-                Log.w(TAG, "Falló POST GPS: ${e.message}")
-            }
+            val nombreEsc = nombre.replace("\\", "\\\\").replace("\"", "\\\"")
+            val body = """{"p_empleado_id":"$empleadoId","p_nombre":"$nombreEsc",""" +
+                """"p_lat":$lat,"p_lng":$lng,""" +
+                """"p_rumbo":${if (rumbo.isNaN()) "null" else rumbo},""" +
+                """"p_exactitud":${if (precision.isNaN()) "null" else precision}}"""
+
+            // Primero por el proxy (el camino que funciona en producción); si el
+            // proxy está caído probamos el origen directo antes de darlo por perdido.
+            var ok = postRpc("$PROXY_URL/rest/v1/rpc/actualizar_ubicacion_driver", body)
+            if (!ok) ok = postRpc("$SUPABASE_URL/rest/v1/rpc/actualizar_ubicacion_driver", body)
+
+            if (ok) ultimoOkMs = System.currentTimeMillis() else fallos++
             // Reflejar el resultado en la notificación (desde el hilo principal)
             handler.post { refrescarNotif() }
+        }
+    }
+
+    /** Un POST al RPC. Devuelve true si el servidor respondió 2xx. */
+    private fun postRpc(endpoint: String, body: String): Boolean {
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("apikey", ANON_KEY)
+                setRequestProperty("Authorization", "Bearer $ANON_KEY")
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val code = conn.responseCode
+            if (code !in 200..299) Log.w(TAG, "HTTP $code en $endpoint")
+            code in 200..299
+        } catch (e: Exception) {
+            Log.w(TAG, "Falló POST a $endpoint: ${e.message}")
+            false
+        } finally {
+            try { conn?.disconnect() } catch (_: Exception) { }
         }
     }
 
