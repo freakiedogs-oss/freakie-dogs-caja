@@ -404,10 +404,21 @@ function useBeacon(yo) {
         const { latitude: lat, longitude: lng, heading, accuracy } = pos.coords
         posRef.current = { lat, lng, heading: (heading != null && !Number.isNaN(heading)) ? heading : null, accuracy: accuracy ?? null }
         setUltima({ lat, lng, at: new Date() })
+        setError('') // limpia error previo cuando llega lectura buena
         enviar()
       },
-      (err) => setError(err.code === 1 ? 'Permiso de ubicación denegado.' : 'No se pudo leer el GPS.'),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+      (err) => {
+        // Mensajes específicos por código de error W3C Geolocation.
+        // Si ya hay una lectura previa (posRef.current) es glitch pasajero — no molestar.
+        if (posRef.current) return
+        let msg
+        if (err.code === 1) msg = 'Permiso de ubicación denegado. Andá a Configuración → Apps → Chrome → Permisos → Ubicación → Permitir siempre.'
+        else if (err.code === 2) msg = 'GPS no disponible. Activá la ubicación del celular (Configuración → Ubicación) o salí al aire libre.'
+        else if (err.code === 3) msg = 'GPS tardó demasiado. Salí al aire libre y volvé a tocar el botón verde.'
+        else msg = 'No se pudo leer el GPS. Verificá que la ubicación del celular esté activada.'
+        setError(msg)
+      },
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 30000 }
     )
     hbRef.current = setInterval(enviar, HEARTBEAT_MS)
   }, [enviar])
