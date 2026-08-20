@@ -69,13 +69,16 @@ class LocationService : Service() {
 
         // Etiqueta visible en la notificación — sirve para confirmar de un vistazo
         // qué build está instalado en el celular. Subir en cada cambio.
-        private const val VERSION_APK = "v5-proxy"
+        private const val VERSION_APK = "v6-diag"
     }
 
     // Contadores de diagnóstico que se muestran en la notificación
     private var ciclos = 0
     private var fallos = 0
     private var ultimoOkMs = 0L
+    // Último motivo de fallo (código HTTP o excepción) — se muestra en la notif
+    // para poder diagnosticar sin cable ni logcat.
+    private var ultimoError = ""
 
     private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var empleadoId: String = ""
@@ -213,10 +216,13 @@ class LocationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val texto = estadoTexto()
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("🛵 Freakie GPS activo · $VERSION_APK")
-            .setContentText(estadoTexto())
+            .setContentTitle("🛵 Freakie GPS · $VERSION_APK")
+            .setContentText(texto)
+            // BigTextStyle: el motivo del fallo suele ser largo y se cortaría
+            .setStyle(NotificationCompat.BigTextStyle().bigText(texto))
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -230,10 +236,11 @@ class LocationService : Service() {
      * envíos llegan bien: cuántos ciclos van, cuántos OK, cuántos fallaron.
      */
     private fun estadoTexto(): String {
-        if (ciclos == 0) return "Iniciando…"
+        if (ciclos == 0 && ultimoError.isEmpty()) return "Iniciando…"
         val hace = (System.currentTimeMillis() - ultimoOkMs) / 1000
-        val cuando = if (ultimoOkMs == 0L) "sin envíos OK" else "OK hace ${hace}s"
-        return "Ciclos: $ciclos · $cuando · fallos: $fallos"
+        val cuando = if (ultimoOkMs == 0L) "sin OK" else "OK hace ${hace}s"
+        val err = if (ultimoError.isNotEmpty()) " · $ultimoError" else ""
+        return "C:$ciclos · $cuando · F:$fallos$err"
     }
 
     /** Refresca la notificación con el estado actual (sin recrear el canal). */
@@ -295,8 +302,8 @@ class LocationService : Service() {
 
             // Primero por el proxy (el camino que funciona en producción); si el
             // proxy está caído probamos el origen directo antes de darlo por perdido.
-            var ok = postRpc("$PROXY_URL/rest/v1/rpc/actualizar_ubicacion_driver", body)
-            if (!ok) ok = postRpc("$SUPABASE_URL/rest/v1/rpc/actualizar_ubicacion_driver", body)
+            var ok = postRpc("$PROXY_URL/rest/v1/rpc/actualizar_ubicacion_driver", body, "prx")
+            if (!ok) ok = postRpc("$SUPABASE_URL/rest/v1/rpc/actualizar_ubicacion_driver", body, "dir")
 
             if (ok) ultimoOkMs = System.currentTimeMillis() else fallos++
             // Reflejar el resultado en la notificación (desde el hilo principal)
@@ -305,23 +312,40 @@ class LocationService : Service() {
     }
 
     /** Un POST al RPC. Devuelve true si el servidor respondió 2xx. */
-    private fun postRpc(endpoint: String, body: String): Boolean {
+    private fun postRpc(endpoint: String, body: String, etiqueta: String): Boolean {
         var conn: HttpURLConnection? = null
         return try {
+            val bytes = body.toByteArray(Charsets.UTF_8)
             conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("apikey", ANON_KEY)
                 setRequestProperty("Authorization", "Bearer $ANON_KEY")
                 setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+                // Sin esto PostgREST devuelve la fila y gasta datos de más
+                setRequestProperty("Prefer", "return=minimal")
+                instanceFollowRedirects = true
                 doOutput = true
-                connectTimeout = 8000
-                readTimeout = 8000
+                connectTimeout = 10000
+                readTimeout = 10000
+                setFixedLengthStreamingMode(bytes.size)
             }
-            conn.outputStream.use { it.write(body.toByteArray()) }
+            conn.outputStream.use { it.write(bytes) }
             val code = conn.responseCode
-            if (code !in 200..299) Log.w(TAG, "HTTP $code en $endpoint")
-            code in 200..299
+            if (code in 200..299) {
+                ultimoError = ""
+                true
+            } else {
+                // Leer el cuerpo del error: PostgREST explica el motivo ahí
+                val detalle = try {
+                    conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(60) ?: ""
+                } catch (_: Exception) { "" }
+                ultimoError = "$etiqueta $code ${detalle.replace("\n", " ")}".trim()
+                Log.w(TAG, "HTTP $code en $endpoint · $detalle")
+                false
+            }
         } catch (e: Exception) {
+            ultimoError = "$etiqueta ${e.javaClass.simpleName}: ${(e.message ?: "").take(50)}"
             Log.w(TAG, "Falló POST a $endpoint: ${e.message}")
             false
         } finally {
