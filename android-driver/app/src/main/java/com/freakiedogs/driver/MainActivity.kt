@@ -2,11 +2,14 @@ package com.freakiedogs.driver
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
@@ -104,6 +107,11 @@ class MainActivity : Activity() {
          */
         @JavascriptInterface
         fun startLocation(empleadoId: String, nombre: String, tipo: String) {
+            // Antes de arrancar el service, pedir excepción de Doze mode. Sin esto
+            // Android duerme el service después de ~5min con el celular quieto,
+            // aunque el usuario haya desactivado "Optimización de batería" manual.
+            pedirExcepcionDoze()
+
             val intent = Intent(this@MainActivity, LocationService::class.java).apply {
                 action = LocationService.ACTION_START
                 putExtra(LocationService.EXTRA_EMPLEADO_ID, empleadoId)
@@ -114,6 +122,26 @@ class MainActivity : Activity() {
                 startForegroundService(intent)
             } else {
                 startService(intent)
+            }
+        }
+
+        /**
+         * Si Android no nos considera "unrestricted" en batería, abrir la pantalla
+         * del sistema donde el usuario acepta con un solo tap. Solo pide una vez —
+         * si ya está concedido, no molesta.
+         */
+        private fun pedirExcepcionDoze() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (pm.isIgnoringBatteryOptimizations(packageName)) return
+            try {
+                val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(i)
+            } catch (_: Exception) {
+                // Algunos OEMs bloquean este intent — fallback silencioso.
             }
         }
 
