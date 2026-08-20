@@ -55,12 +55,13 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       input: soloDelivery ? ENTRADAS_PUBLICAS : {
-        main:   resolve(__dirname, 'index.html'),
-        pos:    resolve(__dirname, 'pos.html'),
-        foto:   resolve(__dirname, 'foto.html'),
-        menu:   resolve(__dirname, 'menu.html'),
-        driver: resolve(__dirname, 'driver.html'),
-        track:  resolve(__dirname, 'track.html'),
+        main:        resolve(__dirname, 'index.html'),
+        pos:         resolve(__dirname, 'pos.html'),
+        foto:        resolve(__dirname, 'foto.html'),
+        menu:        resolve(__dirname, 'menu.html'),
+        driver:      resolve(__dirname, 'driver.html'),
+        track:       resolve(__dirname, 'track.html'),
+        porcionador: resolve(__dirname, 'porcionador.html'),
       },
       output: {
         manualChunks(id) {
