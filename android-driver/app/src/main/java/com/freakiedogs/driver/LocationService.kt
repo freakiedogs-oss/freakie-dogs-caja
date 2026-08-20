@@ -61,7 +61,16 @@ class LocationService : Service() {
         // AlarmManager — Android limita setExactAndAllowWhileIdle a 1 disparo
         // cada 9 minutos en Doze mode, lo que hacía inútil el heartbeat anterior.
         private const val HEARTBEAT_MS = 20_000L
+
+        // Etiqueta visible en la notificación — sirve para confirmar de un vistazo
+        // qué build está instalado en el celular. Subir en cada cambio.
+        private const val VERSION_APK = "v4-wakelock"
     }
+
+    // Contadores de diagnóstico que se muestran en la notificación
+    private var ciclos = 0
+    private var fallos = 0
+    private var ultimoOkMs = 0L
 
     private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var empleadoId: String = ""
@@ -78,6 +87,8 @@ class LocationService : Service() {
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
             if (!loopActivo) return
+            ciclos++
+            refrescarNotif()
             forzarLecturaGps()
             handler.postDelayed(this, HEARTBEAT_MS)
         }
@@ -199,13 +210,33 @@ class LocationService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("🛵 Freakie GPS activo")
-            .setContentText(if (driverNombre.isNotBlank()) "$driverNombre — reportando ubicación" else "Reportando ubicación")
+            .setContentTitle("🛵 Freakie GPS activo · $VERSION_APK")
+            .setContentText(estadoTexto())
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pi)
             .build()
+    }
+
+    /**
+     * Línea de diagnóstico que se ve en la notificación. Permite saber, sin
+     * conectarse a la base ni al logcat, si el loop está corriendo y si los
+     * envíos llegan bien: cuántos ciclos van, cuántos OK, cuántos fallaron.
+     */
+    private fun estadoTexto(): String {
+        if (ciclos == 0) return "Iniciando…"
+        val hace = (System.currentTimeMillis() - ultimoOkMs) / 1000
+        val cuando = if (ultimoOkMs == 0L) "sin envíos OK" else "OK hace ${hace}s"
+        return "Ciclos: $ciclos · $cuando · fallos: $fallos"
+    }
+
+    /** Refresca la notificación con el estado actual (sin recrear el canal). */
+    private fun refrescarNotif() {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIF_ID, buildNotif(nombre))
+        } catch (_: Exception) { /* no es crítico */ }
     }
 
     /**
@@ -270,11 +301,19 @@ class LocationService : Service() {
                 """.trimIndent()
                 conn.outputStream.use { it.write(body.toByteArray()) }
                 val code = conn.responseCode
-                if (code !in 200..299) Log.w(TAG, "HTTP $code al reportar GPS")
+                if (code in 200..299) {
+                    ultimoOkMs = System.currentTimeMillis()
+                } else {
+                    fallos++
+                    Log.w(TAG, "HTTP $code al reportar GPS")
+                }
                 conn.disconnect()
             } catch (e: Exception) {
+                fallos++
                 Log.w(TAG, "Falló POST GPS: ${e.message}")
             }
+            // Reflejar el resultado en la notificación (desde el hilo principal)
+            handler.post { refrescarNotif() }
         }
     }
 
