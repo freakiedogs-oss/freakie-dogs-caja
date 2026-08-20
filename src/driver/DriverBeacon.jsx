@@ -14,7 +14,26 @@ import { db } from '../supabase'
 import UpdateGate from '../components/layout/UpdateGate'
 
 const KEY = 'freakie_driver_v1'
+const TOKEN_KEY = 'freakie_driver_token'
+const COOKIE_NAME = 'fd_driver_token'
 const HEARTBEAT_MS = 15000
+
+// Helpers de cookie con expiración 12h — respaldo si Chrome limpia localStorage.
+function setCookie(name, value) {
+  try {
+    const exp = new Date(Date.now() + 12 * 60 * 60 * 1000).toUTCString()
+    document.cookie = `${name}=${value}; expires=${exp}; path=/; SameSite=Lax; Secure`
+  } catch { /* noop */ }
+}
+function getCookie(name) {
+  try {
+    const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'))
+    return m ? m[1] : null
+  } catch { return null }
+}
+function delCookie(name) {
+  try { document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/` } catch { /* noop */ }
+}
 
 // Notificación persistente del GPS — al tocarla enfoca la app driver.
 // Mientras la notif esté visible, Android le da más prioridad al proceso Chrome
@@ -161,25 +180,64 @@ export default function DriverBeacon() {
     if (pin.length < 4 || entrando) return
     setEntrando(true); setErrPin('')
     try {
-      const { data, error } = await db.rpc('driver_login', { p_pin: pin })
+      const { data, error } = await db.rpc('driver_login', { p_pin: pin, p_user_agent: navigator.userAgent })
       if (error) throw error
       if (!data) { setErrPin('PIN incorrecto'); setPin(''); return }
       setPin('')          // que no quede escrito para el próximo que abra la app
       setYo(data)
       // Desbloquear el audio ahora que hay un gesto (para que el beep suene luego)
       try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) { audioCtxRef.current = audioCtxRef.current || new AC(); audioCtxRef.current.resume?.() } } catch { /* noop */ }
+      // Sesión persistida en 3 lugares (fallback redundante):
+      // 1) localStorage con datos completos (rápido)
+      // 2) cookie con token (sobrevive limpieza de storage por Chrome)
+      // 3) BD (source of truth, dura 12h)
       try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
+      if (data.session_token) {
+        try { localStorage.setItem(TOKEN_KEY, data.session_token) } catch { /* noop */ }
+        setCookie(COOKIE_NAME, data.session_token)
+      }
     } catch (e) {
       setErrPin(e.message || 'No se pudo entrar'); setPin('')
     } finally { setEntrando(false) }
   }
-  // Salir: se apaga el GPS, se da de baja de la central y se limpia todo,
-  // incluido el PIN escrito — si no, la pantalla vuelve con los puntitos
-  // llenos y al tocar Entrar reingresa el mismo motorista.
-  // Aviso al servidor de que termina el turno. Es sólo eso: la salida de la
-  // sesión la hace el enlace de abajo, que navega aunque este código no corra.
+
+  // Auto-restaurar sesión al abrir la app: si no hay `yo` pero sí hay token
+  // (en localStorage o cookie), validamos contra BD y restauramos sin pedir PIN.
+  // Resuelve el problema de motoristas re-logueando en la calle tras perder storage.
+  useEffect(() => {
+    if (yo) return
+    const token = (() => {
+      try { return localStorage.getItem(TOKEN_KEY) || getCookie(COOKIE_NAME) } catch { return getCookie(COOKIE_NAME) }
+    })()
+    if (!token) return
+    let vivo = true
+    db.rpc('driver_validar_sesion', { p_token: token }).then(({ data }) => {
+      if (!vivo || !data) return
+      setYo(data)
+      try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
+      try { localStorage.setItem(TOKEN_KEY, data.session_token) } catch { /* noop */ }
+      setCookie(COOKIE_NAME, data.session_token)
+    })
+    return () => { vivo = false }
+  }, [yo])
+
+  // Salir: confirmar antes (Fix B) — evita cierres accidentales que dejaban al
+  // motorista en la calle sin poder re-marcar turno.
+  const confirmarSalida = (e) => {
+    if (!window.confirm('¿Seguro que querés cerrar sesión?\n\nVas a tener que meter tu PIN de nuevo para volver a entrar.')) {
+      e.preventDefault()
+      return
+    }
+    avisarSalida()
+  }
+
   const avisarSalida = () => {
+    // Limpieza total al salir voluntariamente: local + cookie + BD
+    const token = (() => { try { return localStorage.getItem(TOKEN_KEY) } catch { return null } })() || getCookie(COOKIE_NAME)
     try { localStorage.removeItem(KEY) } catch { /* noop */ }
+    try { localStorage.removeItem(TOKEN_KEY) } catch { /* noop */ }
+    delCookie(COOKIE_NAME)
+    if (token) db.rpc('driver_cerrar_sesion', { p_token: token }).catch(() => {})
     beacon.detener()
     if (yo) db.rpc('driver_disponible', { p_empleado_id: yo.id, p_activo: false }).catch(() => {})
   }
@@ -244,7 +302,7 @@ export default function DriverBeacon() {
             {beacon.activo ? '📡 En línea' : '○ Sin compartir'}
           </span>
           <a href="/manual-driver.html" target="_blank" rel="noopener" style={S.salirBtn}>📘 Manual</a>
-          <a href="/driver?salir=1" onClick={avisarSalida} style={S.salirBtn}>Salir</a>
+          <a href="/driver?salir=1" onClick={confirmarSalida} style={S.salirBtn}>Salir</a>
         </span>
       </header>
 
