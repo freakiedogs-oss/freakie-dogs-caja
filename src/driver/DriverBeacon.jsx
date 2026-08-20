@@ -386,6 +386,9 @@ function useBeacon(yo) {
 
   const iniciar = useCallback((esAuto = true) => {
     if (nativeRef.current || watchRef.current != null) return
+    // Persistir intención "quiero compartir GPS" para reanudar tras refresh de la app
+    // (los motoristas refrescan seguido para ver nuevos pedidos y perdían el estado).
+    try { if (!esAuto) localStorage.setItem('freakie_gps_manual', '1') } catch { /* noop */ }
     // APK nativo (sabor driver → GPS en segundo plano, tipo 'delivery')
     if (nativeGps() && yo) {
       try {
@@ -410,6 +413,8 @@ function useBeacon(yo) {
   }, [enviar])
 
   const detener = useCallback(() => {
+    // Limpia la intención persistida: al refrescar ya no auto-reanuda.
+    try { localStorage.removeItem('freakie_gps_manual') } catch { /* noop */ }
     if (nativeRef.current) { try { window.AndroidPrinter.stopLocation() } catch { /* noop */ } nativeRef.current = false }
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
     if (hbRef.current != null) { clearInterval(hbRef.current); hbRef.current = null }
@@ -417,6 +422,18 @@ function useBeacon(yo) {
     setActivo(false); setAuto(false)
     if (yo) db.rpc('desconectar_driver', { p_empleado_id: yo.id }).catch(() => {})
   }, [yo])
+
+  // Al montar (o cambiar de usuario), si el motorista había pedido compartir GPS
+  // manualmente antes del refresh, reanudamos automáticamente. El permiso GPS del
+  // navegador ya quedó otorgado para el origen, así que no vuelve a preguntar.
+  useEffect(() => {
+    if (!yo) return
+    try {
+      if (localStorage.getItem('freakie_gps_manual') === '1' && !activo) {
+        iniciar(false)
+      }
+    } catch { /* noop */ }
+  }, [yo, activo, iniciar])
 
   useEffect(() => () => {
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
