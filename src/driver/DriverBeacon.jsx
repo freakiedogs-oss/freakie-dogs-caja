@@ -1,8 +1,11 @@
 // ────────────────────────────────────────────────────────────────────
 // Freakie Motorista — PWA del driver (Fase 5).
 // Tabs: 📦 Pedidos (recoger/entregar) · 🧾 Historial · 📊 Métricas.
-// El GPS se comparte SOLO mientras hay una entrega en curso (ahorro de
-// batería) — se prende al recoger y se apaga al entregar el último.
+// GPS: hay un botón grande "🟢 Compartir mi GPS" que el driver enciende
+// al inicio del turno y apaga al final. Comparte ubicación constante
+// (haya o no pedidos), sin notificaciones molestas mientras maneja.
+// Se auto-enciende al recoger un pedido por si olvidan activarlo, pero
+// NUNCA se auto-apaga (Cesar 20-ago-2026: modo turno completo).
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react'
 import L from 'leaflet'
@@ -107,12 +110,19 @@ export default function DriverBeacon() {
     return () => clearInterval(t)
   }, [yo, cargarPedidos])
 
-  // GPS automático: encendido mientras haya una entrega en curso
+  // GPS: se auto-enciende cuando sale con un pedido (por si se les olvidó
+  // activarlo al inicio del turno). NUNCA se auto-apaga: sigue encendido
+  // hasta que el driver toque "Dejar de compartir" o cierre el turno.
   const enRuta = pedidos.some(p => p.estado === 'en_camino')
   useEffect(() => {
     if (enRuta && !beacon.activo) beacon.iniciar()
-    if (!enRuta && beacon.activo && beacon.auto) beacon.detener()
   }, [enRuta]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Al terminar el turno se apaga el GPS solo (evita que quede compartiendo
+  // ubicación cuando el driver ya no está trabajando).
+  useEffect(() => {
+    if (!dispo.disponible && beacon.activo) beacon.detener()
+  }, [dispo.disponible]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const entrar = async () => {
     if (pin.length < 4 || entrando) return
@@ -435,8 +445,8 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       for (const x of listos) {
         await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: x.id })
       }
-      beacon.iniciar()
-      setMsg(`🚀 Saliste con ${listos.length} pedidos. Estamos compartiendo tu ubicación.`)
+      if (!beacon.activo) beacon.iniciar()
+      setMsg(`🚀 Saliste con ${listos.length} pedidos.${beacon.activo ? '' : ' Encendimos tu GPS automáticamente.'}`)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -446,8 +456,8 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
     setOcupado(p.id)
     try {
       await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: p.id })
-      beacon.iniciar()   // empieza a compartir ubicación al salir
-      setMsg('🚀 ¡En camino! Estamos compartiendo tu ubicación.')
+      if (!beacon.activo) beacon.iniciar()   // por si olvidaron activar el GPS al inicio del turno
+      setMsg(`🚀 ¡En camino!${beacon.activo ? '' : ' Encendimos tu GPS automáticamente.'}`)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -543,10 +553,31 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
         </div>
       )}
 
+      {/* Botón grande de GPS constante: se enciende al inicio del turno y
+          se apaga al final. Mientras esté activo, comparte ubicación cada
+          15s haya o no pedidos, aunque la pestaña esté atrás (con Wake Lock
+          Android suele mantenerla viva 30-60 min sin problemas). */}
+      {dispo.disponible && (
+        <button
+          onClick={() => beacon.activo ? beacon.detener() : beacon.iniciar(false)}
+          style={{ ...S.dispoBtn, marginTop: 10,
+                   background: beacon.activo ? '#16a34a' : 'none',
+                   border: beacon.activo ? 'none' : '1px solid #16a34a',
+                   color: beacon.activo ? '#fff' : '#4ade80',
+                   fontSize: 15, padding: '15px 0' }}>
+          {beacon.activo ? '🔴 Dejar de compartir mi GPS' : '🟢 Compartir mi GPS'}
+        </button>
+      )}
+      {beacon.error && dispo.disponible && (
+        <div style={S.dispoErr}>⚠️ {beacon.error}</div>
+      )}
+
       <div style={S.dispoPie}>
         {beacon.activo
-          ? '📡 Compartiendo tu ubicación porque vas en camino con un pedido.'
-          : 'Usamos tu ubicación una sola vez, para confirmar que estás en la sucursal. Después no se comparte hasta que salgas con un pedido.'}
+          ? '📡 Compartiendo tu ubicación. Podés usar Waze/Maps normalmente — dejá esta pestaña abierta atrás y seguirá enviando GPS todo el turno.'
+          : dispo.disponible
+            ? 'Tocá "Compartir mi GPS" al inicio del turno. Se queda encendido hasta que lo apagues, aunque estés en otras apps.'
+            : 'Usamos tu ubicación una sola vez, para confirmar que estás en la sucursal.'}
       </div>
     </div>
   )
