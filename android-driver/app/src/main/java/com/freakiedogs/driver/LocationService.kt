@@ -69,7 +69,7 @@ class LocationService : Service() {
 
         // Etiqueta visible en la notificación — sirve para confirmar de un vistazo
         // qué build está instalado en el celular. Subir en cada cambio.
-        private const val VERSION_APK = "v6-diag"
+        private const val VERSION_APK = "v7-tipo"
     }
 
     // Contadores de diagnóstico que se muestran en la notificación
@@ -83,6 +83,10 @@ class LocationService : Service() {
     private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var empleadoId: String = ""
     private var nombre: String = ""
+    // 'delivery' o 'despacho'. Va SIEMPRE en el POST: en la base hay dos
+    // versiones de actualizar_ubicacion_driver (6 y 7 parámetros) y sin este
+    // campo el servidor no sabe cuál elegir y responde 300 Multiple Choices.
+    private var tipo: String = "delivery"
     private var callback: LocationCallback? = null
 
     // WakeLock sostenido: mientras el motorista comparta GPS, la CPU no duerme.
@@ -114,6 +118,7 @@ class LocationService : Service() {
             ACTION_START, null -> {
                 empleadoId = intent?.getStringExtra(EXTRA_EMPLEADO_ID) ?: empleadoId
                 nombre = intent?.getStringExtra(EXTRA_NOMBRE) ?: nombre
+                tipo = intent?.getStringExtra(EXTRA_TIPO)?.takeIf { it.isNotBlank() } ?: tipo
                 startForeground(NOTIF_ID, buildNotif(nombre))
                 tomarWakeLock()
                 arrancarLocationUpdates()
@@ -295,10 +300,12 @@ class LocationService : Service() {
         if (empleadoId.isBlank()) return
         thread(name = "gps-post") {
             val nombreEsc = nombre.replace("\\", "\\\\").replace("\"", "\\\"")
+            val tipoEsc = tipo.replace("\\", "\\\\").replace("\"", "\\\"")
             val body = """{"p_empleado_id":"$empleadoId","p_nombre":"$nombreEsc",""" +
                 """"p_lat":$lat,"p_lng":$lng,""" +
                 """"p_rumbo":${if (rumbo.isNaN()) "null" else rumbo},""" +
-                """"p_exactitud":${if (precision.isNaN()) "null" else precision}}"""
+                """"p_exactitud":${if (precision.isNaN()) "null" else precision},""" +
+                """"p_tipo":"$tipoEsc"}"""
 
             // Primero por el proxy (el camino que funciona en producción); si el
             // proxy está caído probamos el origen directo antes de darlo por perdido.
