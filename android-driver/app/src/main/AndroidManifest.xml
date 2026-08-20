@@ -31,6 +31,12 @@
          el service después de unos minutos con el celular quieto. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Alarmas exactas: necesarias para el heartbeat que despierta el service
+         cada 60s aunque el celular esté en Doze mode. USE_EXACT_ALARM (Android 14+)
+         se concede automáticamente para apps cuya función central lo requiere. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
     <application
         android:allowBackup="true"
         android:label="Freakie Drivers"
