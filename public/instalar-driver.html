@@ -1,0 +1,151 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Instalar la app de motorista — Freakie Dogs</title>
+<style>
+  :root{--bg:#141418;--card:#1c1c22;--line:#2a2a33;--ink:#f0f0f3;--soft:#9a9aa5;
+        --red:#e63946;--green:#4ade80;--yellow:#fbbf24;--blue:#60a5fa;
+        --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+  header{text-align:center;padding:22px 0 10px}
+  header .logo{font-size:44px}
+  h1{font-size:24px;margin:6px 0 2px}
+  header p{color:var(--soft);margin:0}
+  h2{font-size:18px;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:10px 0}
+  ol{margin:6px 0;padding-left:20px}li{margin:7px 0}
+  .tip{border-left:3px solid var(--green);background:#12281c;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:14.5px}
+  .warn{border-left:3px solid var(--yellow);background:#2a2410;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:14.5px}
+  .stop{border-left:3px solid var(--red);background:#2e1311;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:14.5px}
+  .descarga{display:block;text-align:center;background:var(--red);color:#fff;text-decoration:none;
+            font-size:19px;font-weight:700;padding:18px;border-radius:14px;margin:18px 0 8px}
+  .descarga small{display:block;font-weight:400;font-size:13px;opacity:.85;margin-top:3px}
+  .paso{display:flex;gap:12px;align-items:flex-start;margin:14px 0}
+  .num{flex:0 0 30px;height:30px;border-radius:50%;background:var(--red);color:#fff;
+       display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+  .paso div{flex:1}
+  .paso b{display:block;margin-bottom:2px}
+  .btn{display:inline-block;padding:3px 9px;border-radius:7px;font-weight:700;font-size:13px}
+  .b-green{background:#14351f;color:var(--green)}
+  .b-red{background:#2e1311;color:#f2594a}
+  .marca{background:#26262e;border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin:8px 0}
+  .marca b{color:var(--blue)}
+  .notif{background:#0f0f13;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+         margin:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;color:var(--green)}
+  footer{color:var(--soft);text-align:center;font-size:12px;margin-top:36px}
+</style></head><body>
+<div class="wrap">
+
+<header>
+  <div class="logo">🛵</div>
+  <h1>Instalar la app de motorista</h1>
+  <p>Freakie Delivery · toma 3 minutos</p>
+</header>
+
+<div class="card">
+  <b>¿Por qué cambiamos de app?</b>
+  <p style="margin:6px 0 0">Con la app anterior el GPS se apagaba solo cuando abrías Waze o bloqueabas el teléfono, y en la central te perdíamos del mapa. Esta app nueva mantiene el GPS prendido todo el turno, aunque estés usando otra cosa.</p>
+</div>
+
+<a class="descarga" href="/apk/freakie-drivers.apk" download>
+  ⬇️ Descargar la app
+  <small>Tocá acá desde tu celular Android</small>
+</a>
+
+<h2>Instalación</h2>
+
+<div class="card">
+  <div class="paso"><div class="num">1</div><div>
+    <b>Tocá el botón de arriba</b>
+    Se descarga un archivo. Cuando termine, tocá <b>Abrir</b> o buscalo en tus notificaciones.
+  </div></div>
+
+  <div class="paso"><div class="num">2</div><div>
+    <b>Android te va a avisar que no puede instalar</b>
+    Es normal. Tocá <b>Configuración</b> → activá <b>“Permitir de esta fuente”</b> → volvé atrás.
+  </div></div>
+
+  <div class="paso"><div class="num">3</div><div>
+    <b>Tocá Instalar</b>
+    En unos segundos aparece el ícono 🛵 rojo en tu pantalla.
+  </div></div>
+
+  <div class="paso"><div class="num">4</div><div>
+    <b>Abrí la app y poné tu PIN</b>
+    Es el mismo PIN de siempre. Nada cambia ahí.
+  </div></div>
+</div>
+
+<div class="warn">📱 Si ya tenías instalada una versión anterior de esta app, <b>desinstalala primero</b> (mantené presionado el ícono → Desinstalar).</div>
+
+<h2>Permisos — esto es lo importante</h2>
+
+<div class="card">
+  <p style="margin:0 0 8px">La primera vez que toques <span class="btn b-green">🟢 Compartir mi GPS</span> el celular te va a preguntar dos cosas:</p>
+  <ol>
+    <li><b>Ubicación</b> → elegí <b>“Permitir siempre”</b>. Si elegís “Solo mientras uso la app”, el GPS se apaga cuando salís y la central te pierde.</li>
+    <li><b>Notificaciones</b> → <b>Permitir</b>.</li>
+  </ol>
+  <div class="tip">✅ Vas a ver una notificación fija que dice <b>“Freakie GPS activo”</b>. <b>No la borres</b> — mientras esté ahí, el GPS está trabajando.</div>
+</div>
+
+<h2>Un ajuste más: la batería</h2>
+
+<div class="card">
+  <p style="margin:0 0 8px">El celular apaga apps que corren mucho rato para ahorrar batería. Hay que decirle que a esta la deje trabajar.</p>
+
+  <div class="marca">
+    <b>En casi todos los Android</b><br>
+    Mantené presionado el ícono 🛵 → <b>Información de la app</b> → <b>Batería</b> → elegí <b>Sin restricciones</b>.
+  </div>
+
+  <div class="marca">
+    <b>Samsung</b><br>
+    Ajustes → <b>Cuidado del dispositivo</b> → Batería → <b>Límites de uso en segundo plano</b> → <b>Apps que nunca entran en reposo</b> → agregá <b>Freakie Drivers</b>.
+  </div>
+
+  <div class="marca">
+    <b>Xiaomi / Redmi / Poco</b><br>
+    Ajustes → Aplicaciones → Freakie Drivers → <b>Ahorro de batería</b> → <b>Sin restricciones</b>.<br>
+    Además: <b>Inicio automático</b> → activalo.
+  </div>
+
+  <div class="stop">⚠️ Si te salta un aviso que dice “Freakie Drivers está consumiendo batería”, tocá <b>Permitir</b> o <b>Mantener</b>. Si tocás “Detener”, se apaga el GPS.</div>
+</div>
+
+<h2>¿Cómo sé que quedó bien?</h2>
+
+<div class="card">
+  <p style="margin:0 0 8px">Bajá la barra de notificaciones. Tenés que ver algo así:</p>
+  <div class="notif">🛵 Freakie GPS · v7-tipo<br>C:18 · OK hace 3s · F:0</div>
+  <ul style="margin:8px 0 0;padding-left:20px">
+    <li>El número después de <b>C:</b> tiene que ir subiendo</li>
+    <li><b>OK hace</b> tiene que marcar pocos segundos</li>
+    <li><b>F:</b> tiene que quedarse en <b>0</b></li>
+  </ul>
+  <div class="tip">✅ Si ves eso, ya está listo. Podés cerrar la app y seguir con tu día — el GPS sigue trabajando solo.</div>
+</div>
+
+<h2>Problemas comunes</h2>
+
+<div class="card">
+  <p style="margin:0"><b>No me deja instalar</b><br>
+  <span style="color:var(--soft)">Revisá el paso 2: hay que activar “Permitir de esta fuente”.</span></p>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+  <p style="margin:0"><b>Dice que la app ya está instalada</b><br>
+  <span style="color:var(--soft)">Desinstalá la versión vieja primero y volvé a intentar.</span></p>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+  <p style="margin:0"><b>El número de F: va subiendo</b><br>
+  <span style="color:var(--soft)">Es problema de señal. Revisá que tengas datos o WiFi.</span></p>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+  <p style="margin:0"><b>Se me borró la notificación</b><br>
+  <span style="color:var(--soft)">Abrí la app y tocá <span class="btn b-red">🔴 Detener GPS</span> y después <span class="btn b-green">🟢 Compartir mi GPS</span> otra vez.</span></p>
+</div>
+
+<div class="tip" style="margin-top:18px">📖 ¿Dudas de cómo usar la app día a día? Mirá el <a href="/manual-driver.html" style="color:var(--green)">Manual del Motorista</a>.</div>
+
+<footer>Freakie Dogs · Si algo no funciona, escribile a la central</footer>
+
+</div></body></html>
