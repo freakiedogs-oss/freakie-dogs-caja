@@ -435,6 +435,39 @@ function useBeacon(yo) {
     } catch { /* noop */ }
   }, [yo, activo, iniciar])
 
+  // Al volver a la app desde Waze/Maps (visibilitychange → visible):
+  // (a) re-adquirir Wake Lock (Android lo suelta al perder foco);
+  // (b) forzar lectura fresca de GPS + heartbeat inmediato para reconectar.
+  // Sin esto: al salir a Waze, el JS se congela → 15 min sin señal → Karina
+  // ve al motorista como desconectado en el mapa aunque siga trabajando.
+  useEffect(() => {
+    if (!yo) return
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!activo) return
+      try {
+        if ('wakeLock' in navigator && !wakeRef.current) {
+          navigator.wakeLock.request('screen').then(w => { wakeRef.current = w }).catch(() => {})
+        }
+      } catch { /* noop */ }
+      if (navigator.geolocation && !nativeRef.current) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude: lat, longitude: lng, heading, accuracy } = pos.coords
+            posRef.current = { lat, lng, heading: (heading != null && !Number.isNaN(heading)) ? heading : null, accuracy: accuracy ?? null }
+            setUltima({ lat, lng, at: new Date() })
+            lastSentRef.current = 0 // fuerza envío inmediato saltando el debounce 4s
+            enviar()
+          },
+          () => { /* silencioso, el próximo heartbeat lo reintenta */ },
+          { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
+        )
+      }
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => document.removeEventListener('visibilitychange', alVolver)
+  }, [yo, activo, enviar])
+
   useEffect(() => () => {
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
     if (hbRef.current != null) clearInterval(hbRef.current)
