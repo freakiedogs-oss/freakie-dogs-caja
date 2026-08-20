@@ -475,8 +475,34 @@ function useBeacon(yo) {
         )
       }
     }
+    // Al salir de la app (visibilitychange → hidden), mandar heartbeat inmediato
+    // con la última posición conocida — así el servidor tiene la posición más
+    // reciente posible antes de que Android congele el JS en background.
+    const alSalir = () => {
+      if (document.visibilityState !== 'hidden') return
+      if (!activo || !posRef.current || !yo) return
+      const p = posRef.current
+      // navigator.sendBeacon funciona incluso cuando la página está siendo pausada.
+      try {
+        const url = 'https://btboxlwfqcbrdfrlnwln.supabase.co/rest/v1/rpc/actualizar_ubicacion_driver'
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjcyMzQsImV4cCI6MjA4OTU0MzIzNH0.NpBQZgxbajgOVvw3FOwIUiOkgmh7rEuPQMRi0ZcFKe4'
+        const blob = new Blob([JSON.stringify({
+          p_empleado_id: yo.id, p_nombre: yo.nombre,
+          p_lat: p.lat, p_lng: p.lng, p_rumbo: p.heading, p_exactitud: p.accuracy,
+        })], { type: 'application/json' })
+        // sendBeacon no permite headers custom, así que caemos a fetch keepalive.
+        fetch(url, {
+          method: 'POST', body: blob, keepalive: true,
+          headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
+        }).catch(() => {})
+      } catch { /* noop */ }
+    }
     document.addEventListener('visibilitychange', alVolver)
-    return () => document.removeEventListener('visibilitychange', alVolver)
+    document.addEventListener('visibilitychange', alSalir)
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver)
+      document.removeEventListener('visibilitychange', alSalir)
+    }
   }, [yo, activo, enviar])
 
   useEffect(() => () => {
