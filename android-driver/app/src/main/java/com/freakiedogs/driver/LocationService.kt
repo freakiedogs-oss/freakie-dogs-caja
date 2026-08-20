@@ -118,9 +118,14 @@ class LocationService : Service() {
     @SuppressWarnings("MissingPermission")
     private fun arrancarLocationUpdates() {
         detenerLocationUpdates()
+        // setMinUpdateDistanceMeters(0f) fuerza updates cada intervalo aunque el
+        // motorista no se mueva (importante para heartbeat: sin esto, si está
+        // parado en un semáforo o esperando pedido, FusedLocation deja de mandar).
+        // setMaxUpdateDelayMillis(0) desactiva el batching — cada update va directo.
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, INTERVALO_MS)
-            .setMinUpdateIntervalMillis(INTERVALO_MS / 2)      // mínimo 7.5s entre updates
-            .setMaxUpdateDelayMillis(INTERVALO_MS * 2)         // máximo batch de 30s
+            .setMinUpdateIntervalMillis(INTERVALO_MS / 3)      // mínimo 5s entre updates
+            .setMaxUpdateDelayMillis(0)                        // sin batching, tiempo real
+            .setMinUpdateDistanceMeters(0f)                    // no filtrar por distancia
             .setWaitForAccurateLocation(false)
             .build()
 
@@ -178,23 +183,20 @@ class LocationService : Service() {
 
     override fun onDestroy() {
         detenerLocationUpdates()
-        // Marcar al motorista como desconectado en Supabase (best-effort)
-        if (empleadoId.isNotBlank()) {
-            thread(name = "gps-desc") {
-                try {
-                    val url = URL("$SUPABASE_URL/rest/v1/rpc/desconectar_driver")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("apikey", ANON_KEY)
-                    conn.setRequestProperty("Authorization", "Bearer $ANON_KEY")
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    conn.doOutput = true
-                    conn.outputStream.use { it.write("""{"p_empleado_id":"$empleadoId"}""".toByteArray()) }
-                    conn.responseCode
-                    conn.disconnect()
-                } catch (_: Exception) { /* silencio */ }
-            }
-        }
+        // OJO: no llamamos desconectar_driver acá. Si Android nos mata por batería,
+        // no queremos que el motorista aparezca como offline — preferimos que en
+        // el mapa figure con GPS "hace X min" (marker amarillo/rojo) para que
+        // el despachador sepa que hay que llamarlo. La desconexión real solo
+        // ocurre cuando el motorista toca "Detener GPS" en la app (stopLocation).
         super.onDestroy()
+    }
+
+    /**
+     * Si Android desliza la task fuera del multitasking, este método se llama.
+     * NO llamamos super — así el service sobrevive al swipe-out del usuario.
+     * Combinado con android:stopWithTask="false" en el Manifest, el GPS sigue.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Intencionalmente vacío: el service continúa aunque el usuario cierre la app.
     }
 }

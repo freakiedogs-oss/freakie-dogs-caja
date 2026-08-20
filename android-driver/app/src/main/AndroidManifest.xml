@@ -26,6 +26,11 @@
     <!-- Al reiniciar el celular, re-arrancar el servicio si estaba activo -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Pedir excepción de Doze mode explícitamente. Sin esto, aunque el usuario
+         desactive "Optimización de batería" en Ajustes, Android sigue durmiendo
+         el service después de unos minutos con el celular quieto. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:allowBackup="true"
         android:label="Freakie Drivers"
@@ -44,11 +49,15 @@
             </intent-filter>
         </activity>
 
+        <!-- stopWithTask=false: si el usuario desliza la app fuera del multitasking
+             el service SIGUE corriendo. Sin esto, Android mata el service junto
+             con la task y el GPS se apaga solo. -->
         <service
             android:name=".LocationService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="location" />
+            android:foregroundServiceType="location"
+            android:stopWithTask="false" />
 
     </application>
 </manifest>
