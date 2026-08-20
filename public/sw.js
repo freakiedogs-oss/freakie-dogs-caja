@@ -1,4 +1,4 @@
-// Freakie Dogs ERP — Service Worker v10
+// Freakie Dogs ERP — Service Worker v11 (+ notificación persistente driver)
 //
 // Por qué cambió: la versión anterior cacheaba TODO, incluido el index.html.
 // Al desplegar, los archivos de la app cambian de nombre; si el teléfono se
@@ -12,7 +12,7 @@
 //   · Los archivos de /assets/ llevan hash en el nombre — cambian en cada
 //     build — así que cachearlos no puede dejar nada viejo.
 //   · Las llamadas a la base nunca pasan por acá.
-const CACHE = 'fd-erp-v10';
+const CACHE = 'fd-erp-v11';
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -73,4 +73,19 @@ self.addEventListener('message', e => {
       .then(() => self.registration.unregister())
       .then(() => e.source && e.source.postMessage('cache-limpia'));
   }
+});
+
+// Motorista GPS: al tocar la notificación persistente, enfocar la app del driver
+// (o abrirla si no hay pestaña). Mientras la notif esté visible, Android tarda
+// más en matar el proceso Chrome → GPS sigue reportando más tiempo en background.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      for (const c of clients) {
+        if (c.url.includes('/driver') && 'focus' in c) return c.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('/driver');
+    })
+  );
 });

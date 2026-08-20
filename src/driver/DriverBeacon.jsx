@@ -15,6 +15,39 @@ import UpdateGate from '../components/layout/UpdateGate'
 
 const KEY = 'freakie_driver_v1'
 const HEARTBEAT_MS = 15000
+
+// Notificación persistente del GPS — al tocarla enfoca la app driver.
+// Mientras la notif esté visible, Android le da más prioridad al proceso Chrome
+// y demora más en congelar el JS → el heartbeat GPS dura más en background.
+async function mostrarNotifGPS(nombreDriver) {
+  try {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return
+    if (Notification.permission === 'default') {
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') return
+    }
+    if (Notification.permission !== 'granted') return
+    const reg = await navigator.serviceWorker.ready
+    await reg.showNotification('🛵 Freakie GPS activo', {
+      body: `${nombreDriver || 'Motorista'} · Tu ubicación se está compartiendo. Tocá para volver a la app.`,
+      tag: 'freakie-gps',       // reemplaza notif previa, evita duplicados
+      silent: true,             // sin sonido/vibración (no distrae al manejar)
+      requireInteraction: true, // no se auto-cierra
+      renotify: false,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+    })
+  } catch { /* noop — notif es opcional */ }
+}
+
+async function cerrarNotifGPS() {
+  try {
+    if (!('serviceWorker' in navigator)) return
+    const reg = await navigator.serviceWorker.ready
+    const notifs = await reg.getNotifications({ tag: 'freakie-gps' })
+    notifs.forEach(n => n.close())
+  } catch { /* noop */ }
+}
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 // En El Salvador las llamadas del delivery se hacen por WhatsApp. Normalizamos
 // el número a formato internacional (503 + 8 dígitos) para abrir el chat.
@@ -389,6 +422,9 @@ function useBeacon(yo) {
     // Persistir intención "quiero compartir GPS" para reanudar tras refresh de la app
     // (los motoristas refrescan seguido para ver nuevos pedidos y perdían el estado).
     try { if (!esAuto) localStorage.setItem('freakie_gps_manual', '1') } catch { /* noop */ }
+    // Notificación persistente: ayuda a Android a mantener el proceso vivo más tiempo
+    // cuando el motorista se va a Waze/Maps. Silenciosa, sin vibración.
+    if (yo) mostrarNotifGPS(yo.nombre)
     // APK nativo (sabor driver → GPS en segundo plano, tipo 'delivery')
     if (nativeGps() && yo) {
       try {
@@ -426,6 +462,7 @@ function useBeacon(yo) {
   const detener = useCallback(() => {
     // Limpia la intención persistida: al refrescar ya no auto-reanuda.
     try { localStorage.removeItem('freakie_gps_manual') } catch { /* noop */ }
+    cerrarNotifGPS()
     if (nativeRef.current) { try { window.AndroidPrinter.stopLocation() } catch { /* noop */ } nativeRef.current = false }
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
     if (hbRef.current != null) { clearInterval(hbRef.current); hbRef.current = null }
