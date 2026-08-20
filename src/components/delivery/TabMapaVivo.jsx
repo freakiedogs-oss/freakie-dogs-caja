@@ -161,7 +161,9 @@ export default function TabMapaVivo({ show = () => {} }) {
 
       const wa = waHref(p.cliente_telefono);
       const trackUrl = p.tracking_token ? `/track?t=${p.tracking_token}` : null;
-      const etaTxt = p.eta_min != null ? `<div style="color:#e63946;font-weight:700;">🕐 ETA ${p.eta_min} min · ${p.distancia_km} km</div>` : '';
+      const etaTxt = p.eta_min != null
+        ? `<div style="color:#e63946;font-weight:700;">🕐 ETA ${p.eta_min} min · ${p.distancia_km} km${p.eta_origen === 'sucursal' ? ' <span style="font-size:10px;opacity:.75;">(desde sucursal — motorista aún no salió)</span>' : ''}</div>`
+        : '';
       const motTxt = p.motorista_nombre ? `<div>🛵 ${p.motorista_nombre}</div>` : '<div style="color:#666;">Sin motorista asignado</div>';
       marker.bindPopup(`
         <div style="min-width:200px;font-size:12px;">
@@ -220,7 +222,9 @@ export default function TabMapaVivo({ show = () => {} }) {
     porCobrar: (data.pedidos || []).filter(p => p.estado === 'recibida').length,
     enCocina: (data.pedidos || []).filter(p => p.estado === 'preparando').length,
     porAsignar: (data.pedidos || []).filter(p => p.estado === 'lista' && !p.motorista_id).length,
+    asignados: (data.pedidos || []).filter(p => p.estado === 'lista' && p.motorista_id).length,
     enCamino: (data.pedidos || []).filter(p => p.estado === 'en_camino').length,
+    sinUbicacion: data.pedidos_sin_ubicacion || 0,
     motTot: (data.motoristas || []).length,
     motLibres: (data.motoristas || []).filter(m => (m.pedidos_activos || 0) === 0).length,
     motOcupados: (data.motoristas || []).filter(m => (m.pedidos_activos || 0) > 0).length,
@@ -262,10 +266,16 @@ export default function TabMapaVivo({ show = () => {} }) {
                 <div style={S.kpi}><span style={S.dot(COLORS.pedidoSinCobrar)} /> Sin cobrar <span style={{ ...S.num, marginLeft: 'auto' }}>{stats.porCobrar}</span></div>
                 <div style={S.kpi}><span style={S.dot(COLORS.pedidoEnCocina)} /> En cocina <span style={{ ...S.num, marginLeft: 'auto' }}>{stats.enCocina}</span></div>
                 <div style={S.kpi}><span style={S.dot(COLORS.pedidoPorAsignar)} /> Por asignar <span style={{ ...S.num, marginLeft: 'auto' }}>{stats.porAsignar}</span></div>
+                <div style={S.kpi}><span style={S.dot(COLORS.pedidoEnCamino)} /> Asignado (por salir) <span style={{ ...S.num, marginLeft: 'auto' }}>{stats.asignados}</span></div>
                 <div style={S.kpi}><span style={S.dot(COLORS.pedidoEnCamino)} /> En camino <span style={{ ...S.num, marginLeft: 'auto' }}>{stats.enCamino}</span></div>
                 <div style={{ borderTop: '1px solid #2a2a2a', paddingTop: 6, marginTop: 2, fontSize: 12, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Total</span><span style={{ color: '#f0f0f0', fontWeight: 800 }}>{stats.pedidosTot}</span>
+                  <span>En mapa</span><span style={{ color: '#f0f0f0', fontWeight: 800 }}>{stats.pedidosTot}</span>
                 </div>
+                {stats.sinUbicacion > 0 && (
+                  <div style={{ marginTop: 8, padding: '8px 10px', background: '#2a2210', border: '1px solid #4a3820', borderRadius: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.45 }}>
+                    ⚠️ {stats.sinUbicacion} pedido{stats.sinUbicacion > 1 ? 's' : ''} sin ubicación GPS del cliente — visible{stats.sinUbicacion > 1 ? 's' : ''} en la Torre pero no en el mapa. Pedile al cliente que active GPS al pedir.
+                  </div>
+                )}
               </div>
             </div>
 
