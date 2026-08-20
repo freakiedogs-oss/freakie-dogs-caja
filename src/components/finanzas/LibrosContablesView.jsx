@@ -40,7 +40,6 @@ const SUCURSALES_VENTA = ['M001', 'S001', 'S002', 'S003', 'S004', 'S006']
 export default function LibrosContablesView({ user }) {
   const [mes, setMes] = useState(mesActual())
   const [storeCode, setStoreCode] = useState('') // '' = consolidado
-  const [ivaIncl, setIvaIncl] = useState(true)   // venta gravada con IVA (formato Ángel)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null) // { ventas, compras }
@@ -134,13 +133,9 @@ export default function LibrosContablesView({ user }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
             <div style={{ ...cardStyle, gridColumn: '1 / -1', borderColor: c.green }}>
               <div style={{ fontWeight: 700, marginBottom: 4, color: c.green }}>⭐ Anexo Consumidor Final — Resumen Diario de Códigos de Generación <span style={{ fontSize: 11, color: c.textDim, fontWeight: 400 }}>(formato Ángel)</span></div>
-              <div style={{ fontSize: 12, color: c.textDim, marginBottom: 8 }}>Fecha · DEL · AL · Cantidad · Venta Gravada — 1 fila por día · {sucLabel}</div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: c.text, marginBottom: 8, cursor: 'pointer' }}>
-                <input type="checkbox" checked={ivaIncl} onChange={(e) => setIvaIncl(e.target.checked)} />
-                Venta gravada <b>{ivaIncl ? 'CON IVA' : 'NETA (sin IVA)'}</b> <span style={{ color: c.yellow }}>← confirmar con Ángel</span>
-              </label>
+              <div style={{ fontSize: 12, color: c.textDim, marginBottom: 8 }}>Fecha · DEL · AL · Cantidad · Venta Gravada (con IVA) · Venta Gravada Neta (sin IVA) — 1 fila por día · {sucLabel}</div>
               <button style={{ ...btnDesc, borderColor: c.green, color: c.green, fontWeight: 700 }}
-                onClick={dl(() => resumenCodigosGeneracionCSV({ ventas: data.ventas, mes, storeCode: storeCode || null, ivaIncluido: ivaIncl }))}>
+                onClick={dl(() => resumenCodigosGeneracionCSV({ ventas: data.ventas, mes, storeCode: storeCode || null }))}>
                 ⬇️ Descargar Resumen de Códigos de Generación (CSV)
               </button>
             </div>

@@ -218,35 +218,34 @@ export function libroVentasCSV({ ventas, mes, storeCode }) {
 }
 
 // ── RESUMEN DIARIO DE CÓDIGOS DE GENERACIÓN (Anexo Consumidor Final — formato Ángel) ──
-// Columnas: Fecha | DEL | AL | Cantidad | Venta Gravada. 1 fila por día (Facturas 01).
-// DEL/AL = código de generación (dte_uuid, con guiones) del primer/último doc del día.
-// ⚠️ ivaIncluido: true = venta gravada CON IVA (total facturado); false = neta. CONFIRMAR con Ángel.
-export function resumenCodigosGeneracionCSV({ ventas, mes, storeCode, ivaIncluido = true }) {
+// Columnas: Fecha | DEL | AL | Cantidad | Venta Gravada (con IVA) | Venta Gravada Neta (sin IVA).
+// 1 fila por día (Facturas 01). DEL/AL = código de generación (dte_uuid, con guiones) del
+// primer/último doc del día por hora de emisión. Se muestran ambas columnas de venta gravada.
+export function resumenCodigosGeneracionCSV({ ventas, mes, storeCode }) {
   const sucLabel = storeCode ? (STORES[storeCode] || storeCode) : null
   const fac = ventas.filter((v) => v.tipo === '01')
   const porDia = {}
   for (const v of fac) {
-    const d = (porDia[v.fecha] ||= { docs: [], gravada: 0 })
-    d.docs.push(v)
-    d.gravada += ivaIncluido ? v.gravadaConIva : v.neto
+    const d = (porDia[v.fecha] ||= { docs: [], conIva: 0, neta: 0 })
+    d.docs.push(v); d.conIva += v.gravadaConIva; d.neta += v.neto
   }
   const rows = [
     ['RESUMEN DIARIO DE CÓDIGOS DE GENERACIÓN'],
     [`${EMISOR.razon}  ·  NIT ${EMISOR.nitFmt}  ·  NRC ${EMISOR.nrc}`],
-    [`Anexo Consumidor Final  ·  ${mes}${sucLabel ? '  ·  ' + sucLabel : '  ·  Consolidado'}  ·  Venta gravada ${ivaIncluido ? 'CON IVA' : 'NETA (sin IVA)'}`],
+    [`Anexo Consumidor Final  ·  ${mes}${sucLabel ? '  ·  ' + sucLabel : '  ·  Consolidado'}`],
     [],
-    ['Fecha', 'DEL', 'AL', 'Cantidad', 'Venta Gravada'],
+    ['Fecha', 'DEL', 'AL', 'Cantidad', 'Venta Gravada (con IVA)', 'Venta Gravada Neta (sin IVA)'],
   ]
-  let totCant = 0, totGrav = 0
+  let totCant = 0, totCon = 0, totNet = 0
   for (const f of Object.keys(porDia).sort()) {
     const d = porDia[f]
     const ord = d.docs.slice().sort((a, b) => new Date(a.cobrada_at) - new Date(b.cobrada_at))
     const [yy, mm, dd] = f.split('-')
-    totCant += d.docs.length; totGrav += d.gravada
-    rows.push([`${dd}/${mm}/${yy}`, ord[0]?.dte_uuid || '', ord[ord.length - 1]?.dte_uuid || '', d.docs.length, money(d.gravada)])
+    totCant += d.docs.length; totCon += d.conIva; totNet += d.neta
+    rows.push([`${dd}/${mm}/${yy}`, ord[0]?.dte_uuid || '', ord[ord.length - 1]?.dte_uuid || '', d.docs.length, money(d.conIva), money(d.neta)])
   }
   rows.push([])
-  rows.push(['TOTAL', '', '', totCant, money(totGrav)])
+  rows.push(['TOTAL', '', '', totCant, money(totCon), money(totNet)])
   return { filename: `resumen_codigos_generacion_${storeCode || 'consolidado'}_${mes}.csv`, mime: 'text/csv;charset=utf-8', content: '﻿' + toCSV(rows) }
 }
 
@@ -440,13 +439,13 @@ export async function excelRespaldoBlob({ ventas, compras, mes, storeCode }) {
   }
   add('LIBROS', librosRows)
 
-  // RESUMEN CÓDIGOS DE GENERACIÓN (formato Ángel) — Fecha | DEL | AL | Cantidad | Venta Gravada
-  const codRows = [['Fecha', 'DEL', 'AL', 'Cantidad', 'Venta Gravada (con IVA)']]
+  // RESUMEN CÓDIGOS DE GENERACIÓN (formato Ángel) — ambas columnas de venta gravada
+  const codRows = [['Fecha', 'DEL', 'AL', 'Cantidad', 'Venta Gravada (con IVA)', 'Venta Gravada Neta (sin IVA)']]
   for (const f of Object.keys(porDia).sort()) {
     const d = porDia[f]
     const ord = d.docs.slice().sort((a, b) => new Date(a.cobrada_at) - new Date(b.cobrada_at))
     const [yy, mm, dd] = f.split('-')
-    codRows.push([`${dd}/${mm}/${yy}`, ord[0]?.dte_uuid || '', ord[ord.length - 1]?.dte_uuid || '', d.docs.length, r2(d.gravada)])
+    codRows.push([`${dd}/${mm}/${yy}`, ord[0]?.dte_uuid || '', ord[ord.length - 1]?.dte_uuid || '', d.docs.length, r2(d.gravada), r2(d.gravada / (1 + IVA_RATE))])
   }
   add('CODIGOS GENERACION', codRows)
 
