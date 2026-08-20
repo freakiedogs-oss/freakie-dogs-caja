@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Silueta simple de moto delivery en blanco sobre fondo rojo Freakie -->
+    <group android:translateX="14" android:translateY="14">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M60,50 L60,30 L70,30 L70,25 L55,25 L55,50 L20,50 A15,15 0 1,0 24,63 L52,63 A15,15 0 1,0 60,50 Z M20,68 A5,5 0 1,1 20,58 A5,5 0 0,1 20,68 Z M60,68 A5,5 0 1,1 60,58 A5,5 0 0,1 60,68 Z" />
+    </group>
+</vector>
