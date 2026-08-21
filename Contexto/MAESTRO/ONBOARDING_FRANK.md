@@ -3,7 +3,7 @@
 **Versión:** 1.0
 **Fecha:** 20 de Agosto, 2026
 **Autor:** Cesar Rodriguez (con Claude)
-**Para:** Frank — tercer desarrollador del ERP via Claude
+**Para:** Frank (Francisco Siguenza) — tercer desarrollador del ERP via Claude
 **Nivel de acceso otorgado:** Full (mismo que Jose y Cesar)
 **Equipo:** Mac
 
@@ -36,8 +36,9 @@ Antes de empezar, Cesar te tiene que dar:
 
 - [ ] Invitación a Supabase, proyecto `btboxlwfqcbrdfrlnwln` (Freakie Dogs)
 - [ ] Invitación al workspace de Notion (Freakie Dogs)
-- [ ] Rol `collaborator` en el repo GitHub `freakiedogs-oss/freakie-dogs-caja`
-- [ ] Tu usuario en el ERP con rol `ejecutivo` y tu PIN propio (te lo pasa Cesar por privado, **nunca por el grupo**)
+- [ ] Rol `collaborator` en el repo GitHub `freakiedogs-oss/freakie-dogs-caja` (lo otorga Jose, es dueño de la cuenta)
+
+Tu usuario del ERP **ya existe** (Francisco Siguenza, rol `ejecutivo`) — usás el mismo PIN de siempre.
 
 Y vos tenés que tener:
 
@@ -68,6 +69,8 @@ git config user.name "Frank"
 git config user.email "tu-email@ejemplo.com"
 git config core.autocrlf false
 ```
+
+> **Si ya venías usando Claude en la Mac mini** (el setup aislado de ingesta de pagos): eso sigue como está, no lo toques. Este onboarding es una sesión aparte, apuntada al repo del ERP. Son dos cosas distintas conviviendo.
 
 ### 2.2 Abrir Cowork y seleccionar la carpeta
 
@@ -430,8 +433,7 @@ Los PINs están en el MAESTRO. **No los copies a otros documentos.**
 
 - **Jose Isart** — Dueño, arquitecto principal del ERP
 - **Cesar Rodriguez** — Segundo desarrollador, quien te está onboardeando
-- **Frank** — Vos, tercer desarrollador
-- **Francisco Siguenza** — Operaciones financieras
+- **Francisco Siguenza (Frank)** — Vos. Operaciones financieras + tercer desarrollador
 - **Maria Jose** — RRHH, módulo RRHHView
 - **Merari Avalos** — Eventos, módulo EventosView
 - **Karina** — Torre de delivery / despacho
