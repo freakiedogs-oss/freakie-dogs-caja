@@ -890,6 +890,47 @@ button { font-family: inherit; }
 .mp-geo-pasos li { font-size: 12.5px; line-height: 1.45; }
 .mp-geo-nota { font-size: 12px; margin-top: 9px; opacity: .85; line-height: 1.45; }
 
+/* ── Mapa manual: la salida cuando el GPS del navegador no funciona ── */
+.mp-geo-botones { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.mp-geo-botones .mp-geo-reintentar { margin-top: 0; }
+.mp-geo-mapa {
+  padding: 7px 12px; border: none; border-radius: 8px;
+  background: #2563eb; color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.mp-geo-mapa:hover { background: #1d4ed8; }
+
+.mp-mapa-wrap {
+  margin-top: 10px; border: 1px solid #e6e0e3; border-radius: 12px;
+  padding: 12px; background: #fff;
+}
+.mp-mapa-titulo { font-size: 14px; font-weight: 800; color: #2b2429; }
+.mp-mapa-ayuda { font-size: 12.5px; color: #8a8288; margin: 3px 0 10px; line-height: 1.45; }
+.mp-mapa {
+  height: 280px; width: 100%; border-radius: 10px; overflow: hidden;
+  border: 1px solid #e6e0e3; background: #f3f1f2;
+}
+.mp-mapa-cargando { font-size: 12.5px; color: #8a8288; padding: 10px 0; text-align: center; }
+.mp-mapa-aviso {
+  margin-top: 10px; background: #fff8e6; border: 1px solid #f4b942; color: #8a6114;
+  border-radius: 10px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45;
+}
+.mp-mapa-ok {
+  margin-top: 10px; background: #eafaf0; border: 1px solid #58c07f; color: #1c6b3c;
+  border-radius: 10px; padding: 9px 12px; font-size: 13px; font-weight: 700;
+}
+.mp-mapa-botones { display: flex; gap: 8px; margin-top: 12px; }
+.mp-mapa-confirmar {
+  flex: 1; padding: 12px; border: none; border-radius: 10px;
+  background: #E63946; color: #fff; font-size: 14px; font-weight: 800; cursor: pointer;
+}
+.mp-mapa-confirmar:disabled { background: #d8d3d5; color: #8a8288; cursor: default; }
+.mp-mapa-cancelar {
+  padding: 12px 16px; border: 1px solid #e6e0e3; border-radius: 10px;
+  background: #fff; color: #6b6469; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+/* Leaflet pone sus controles muy arriba en el z-index y tapan el drawer */
+.mp-mapa .leaflet-top, .mp-mapa .leaflet-bottom { z-index: 400; }
+
 /* ── Confirmación post-pedido (el cliente inicia el chat de WhatsApp) ── */
 .mp-enviado .mp-drawer-body { text-align: center; padding-bottom: 28px; }
 .mp-enviado-num {
