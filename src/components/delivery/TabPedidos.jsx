@@ -25,15 +25,51 @@ const COLS = [
   { k: 'en_camino',  t: 'En ruta',     ic: '🚗', col: c.orange, ayuda: 'Ya salieron' },
 ];
 
-// Cuánto lleva esperando el pedido, con semáforo
-function useReloj(desde) {
+// Reloj que se actualiza solo. `ahora` se comparte por todas las tarjetas.
+function useAhora() {
   const [ahora, setAhora] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setAhora(Date.now()), 30000); return () => clearInterval(t); }, []);
-  const min = Math.max(0, Math.floor((ahora - new Date(desde).getTime()) / 60000));
+  return ahora;
+}
+
+const textoMin = (min) =>
+  min < 1 ? 'recién' : min < 60 ? `${min} min` : `${Math.floor(min / 60)}h ${min % 60}m`;
+
+// Umbrales por etapa: no es lo mismo esperar 15 min por cobrar que en cocina.
+// Se calibran acá para que el color signifique lo mismo en toda la Torre.
+const LIMITES = {
+  recibida:   { amarillo: 5,  rojo: 10 },   // por cobrar: debería ser inmediato
+  preparando: { amarillo: 15, rojo: 25 },   // en cocina
+  lista:      { amarillo: 5,  rojo: 12 },   // por asignar: el pedido se enfría
+  en_camino:  { amarillo: 20, rojo: 35 },   // en ruta
+};
+
+function colorPorEtapa(estado, min) {
+  const l = LIMITES[estado] || { amarillo: 12, rojo: 25 };
+  return min >= l.rojo ? c.red : min >= l.amarillo ? c.yellow : c.dim;
+}
+
+// Dos relojes: el total desde que entró el pedido, y el de la etapa actual.
+// El total dice si el cliente lleva mucho esperando; el de etapa dice dónde
+// se está atorando.
+function useRelojes(p, ahora) {
+  const minsDesde = (t) => Math.max(0, Math.floor((ahora - new Date(t).getTime()) / 60000));
+  const total = minsDesde(p.created_at);
+  const etapa = minsDesde(p.etapa_desde || p.created_at);
   return {
-    color: min >= 25 ? c.red : min >= 12 ? c.yellow : c.dim,
-    txt: min < 1 ? 'recién' : min < 60 ? `${min} min` : `${Math.floor(min / 60)}h ${min % 60}m`,
+    total: { min: total, txt: textoMin(total), color: total >= 40 ? c.red : total >= 25 ? c.yellow : c.dim },
+    etapa: { min: etapa, txt: textoMin(etapa), color: colorPorEtapa(p.estado, etapa) },
   };
+}
+
+// Historial compacto de las etapas ya cerradas: "cobro 3m · cocina 12m"
+const NOMBRE_ETAPA = { recibida: 'cobro', preparando: 'cocina', lista: 'espera', en_camino: 'ruta' };
+function resumenEtapas(etapas) {
+  if (!etapas) return null;
+  const partes = ['recibida', 'preparando', 'lista', 'en_camino']
+    .filter((k) => etapas[k] != null)
+    .map((k) => `${NOMBRE_ETAPA[k]} ${etapas[k]}m`);
+  return partes.length ? partes.join(' · ') : null;
 }
 
 function useEsCompu() {
@@ -469,7 +505,9 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado, marcarParaLlevar }) {
   const paraLlevar = p.tipo === 'para_llevar';
-  const reloj = useReloj(p.created_at);
+  const ahora = useAhora();
+  const reloj = useRelojes(p, ahora);
+  const previas = resumenEtapas(p.etapas);
   const sugerida = sucursalSugerida(p);
   const cambiada = !!sucSel[p.id] && sucSel[p.id] !== sugerida;
   const nItems = Array.isArray(p.items) ? p.items.reduce((s, i) => s + (i.cantidad || 1), 0) : 0;
@@ -479,8 +517,17 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
     <div style={{ ...tarjeta, borderLeft: `3px solid ${col.col}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontWeight: 800, fontSize: compacta ? 12.5 : 14 }}>{p.numero_orden}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: reloj.color }}>{reloj.txt}</span>
+        {/* Reloj grande = tiempo en esta columna. Al lado, en gris y más chico,
+            el total desde que entró el pedido. Lo que importa de un vistazo es
+            dónde se está atorando, no cuánto lleva en total. */}
+        <span style={{ fontSize: 11, fontWeight: 700, color: reloj.etapa.color, whiteSpace: 'nowrap' }}>
+          {reloj.etapa.txt}
+          <span style={{ fontWeight: 500, color: c.dim, fontSize: 10 }}> · total {reloj.total.txt}</span>
+        </span>
       </div>
+      {previas && (
+        <div style={{ fontSize: 10, color: c.dim, marginTop: 2 }}>{previas}</div>
+      )}
       {paraLlevar && (
         <div style={{ display: 'inline-block', marginTop: 5, fontSize: 11, fontWeight: 800,
                       color: '#111', background: c.yellow, borderRadius: 6, padding: '2px 8px' }}>
