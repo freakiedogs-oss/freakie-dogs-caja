@@ -44,6 +44,7 @@ const ProduccionDiaria   = lazy(() => import('./components/admin/ProduccionDiari
 const ConciliacionView   = lazy(() => import('./components/admin/ConciliacionView'))
 const DeliveryView       = lazy(() => import('./components/delivery/DeliveryView'))
 const MarketingView      = lazy(() => import('./components/marketing/MarketingView'))
+const MediaView          = lazy(() => import('./components/marketing/MediaView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
 const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
@@ -71,7 +72,6 @@ const DespachoOperativoView = lazy(() => import('./components/admin/DespachoOper
 const DespachoKpiDashboard  = lazy(() => import('./components/admin/DespachoKpiDashboard'))
 const DeliveryKpiDashboard  = lazy(() => import('./components/admin/DeliveryKpiDashboard'))
 const KpiVentasTotalesDashboard = lazy(() => import('./components/admin/KpiVentasTotalesDashboard'))
-const SimuladorRentabilidad = lazy(() => import('./components/admin/SimuladorRentabilidad'))
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
@@ -357,14 +357,14 @@ export default function App() {
         return <DeliveryKpiDashboard user={user} />
       case 'kpi-ventas-totales':
         return <KpiVentasTotalesDashboard user={user} />
-      case 'simulador-rentabilidad':
-        return <SimuladorRentabilidad user={user} />
       case 'delivery':
         return <DeliveryView user={user} show={show} />
       case 'inventario-dash':
         return <InventarioDashboard user={user} onBack={() => setScreen('home')} />
       case 'marketing':
         return <MarketingView user={user} />
+      case 'media':
+        return <MediaView user={user} />
       case 'superadmin-panel':
         return <SuperAdminView user={user} />
       case 'plan-maestro':
