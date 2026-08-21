@@ -61,7 +61,7 @@ function iconMotorista({ nombre, pedidos, libre, secondsStale }) {
   });
 }
 
-function iconPedido({ estado, tieneMotorista }) {
+function iconPedido({ estado, tieneMotorista, origen }) {
   let color = COLORS.pedidoSinCobrar;
   let label = '';
   if (estado === 'recibida') { color = COLORS.pedidoSinCobrar; label = 'Sin cobrar'; }
@@ -69,9 +69,18 @@ function iconPedido({ estado, tieneMotorista }) {
   else if (estado === 'lista' && !tieneMotorista) { color = COLORS.pedidoPorAsignar; label = 'Por asignar'; }
   else if (estado === 'lista' && tieneMotorista) { color = COLORS.pedidoEnCamino; label = 'Asignado'; }
   else if (estado === 'en_camino') { color = COLORS.pedidoEnCamino; label = 'En camino'; }
+
+  // El punto marcado a mano puede estar a media cuadra de la casa real, así que
+  // se dibuja como rombo con borde punteado: se distingue de un vistazo sin
+  // perder el color del estado.
+  const aMano = origen === 'mapa';
+  const forma = aMano
+    ? `width:15px;height:15px;background:${color};border:2px dashed #fff;transform:rotate(45deg);border-radius:3px;`
+    : `width:16px;height:16px;background:${color};border:2px solid #fff;border-radius:50%;`;
+
   return L.divIcon({
     className: 'fk-ped',
-    html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,.4);" title="${label}"></div>`,
+    html: `<div style="${forma}box-shadow:0 1px 2px rgba(0,0,0,.4);" title="${label}${aMano ? ' · ubicación marcada a mano' : ''}"></div>`,
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   });
@@ -165,7 +174,7 @@ export default function TabMapaVivo({ show = () => {} }) {
       if (p.cliente_lat == null || p.cliente_lng == null) continue;
       const tieneMot = !!p.motorista_id;
       const marker = L.marker([p.cliente_lat, p.cliente_lng], {
-        icon: iconPedido({ estado: p.estado, tieneMotorista: tieneMot }),
+        icon: iconPedido({ estado: p.estado, tieneMotorista: tieneMot, origen: p.ubicacion_origen }),
       });
 
       const wa = waHref(p.cliente_telefono);
@@ -179,6 +188,11 @@ export default function TabMapaVivo({ show = () => {} }) {
           <div style="font-weight:700;font-size:13px;">${p.numero_orden}</div>
           <div>${p.cliente_nombre || 'Cliente'} · ${fmt(p.total)}</div>
           <div style="color:#555;">${p.cliente_direccion || ''}</div>
+          ${p.ubicacion_origen === 'mapa'
+            ? '<div style="color:#b8860b;font-weight:600;">📌 Punto marcado a mano por el cliente</div>'
+            : p.ubicacion_origen === 'gps'
+              ? '<div style="color:#1c6b3c;font-weight:600;">📍 Ubicación exacta del GPS</div>'
+              : ''}
           ${motTxt}
           ${etaTxt}
           <div style="margin-top:6px;display:flex;gap:6px;">
@@ -234,6 +248,7 @@ export default function TabMapaVivo({ show = () => {} }) {
     asignados: (data.pedidos || []).filter(p => p.estado === 'lista' && p.motorista_id).length,
     enCamino: (data.pedidos || []).filter(p => p.estado === 'en_camino').length,
     sinUbicacion: data.pedidos_sin_ubicacion || 0,
+    marcadosAMano: (data.pedidos || []).filter(p => p.ubicacion_origen === 'mapa').length,
     motTot: (data.motoristas || []).length,
     motLibres: (data.motoristas || []).filter(m => (m.pedidos_activos || 0) === 0).length,
     motOcupados: (data.motoristas || []).filter(m => (m.pedidos_activos || 0) > 0).length,
@@ -280,6 +295,13 @@ export default function TabMapaVivo({ show = () => {} }) {
                 <div style={{ borderTop: '1px solid #2a2a2a', paddingTop: 6, marginTop: 2, fontSize: 12, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
                   <span>En mapa</span><span style={{ color: '#f0f0f0', fontWeight: 800 }}>{stats.pedidosTot}</span>
                 </div>
+                {stats.marcadosAMano > 0 && (
+                  <div style={{ fontSize: 11, color: '#888', display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.4 }}>
+                    <span style={{ display: 'inline-block', width: 10, height: 10, background: '#888',
+                                   border: '1.5px dashed #fff', transform: 'rotate(45deg)', borderRadius: 2, flexShrink: 0 }} />
+                    {stats.marcadosAMano} con punto marcado a mano (rombo)
+                  </div>
+                )}
                 {stats.sinUbicacion > 0 && (
                   <div style={{ marginTop: 8, padding: '8px 10px', background: '#2a2210', border: '1px solid #4a3820', borderRadius: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.45 }}>
                     ⚠️ {stats.sinUbicacion} pedido{stats.sinUbicacion > 1 ? 's' : ''} sin ubicación GPS del cliente — visible{stats.sinUbicacion > 1 ? 's' : ''} en la Torre pero no en el mapa. Pedile al cliente que active GPS al pedir.
