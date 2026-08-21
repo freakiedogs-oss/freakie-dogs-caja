@@ -162,24 +162,33 @@ class MainActivity : Activity() {
 
         // Waze: abierto como https suele arrancar la app en su pantalla inicial,
         // sin tomar el destino. Con su propio esquema sí arranca la navegación.
+        //
+        // CLEAR_TOP es lo que hace que funcione en el segundo pedido: si Waze ya
+        // quedó abierto de la entrega anterior, sin este flag Android solo lo trae
+        // al frente y el destino nuevo se pierde — el motorista veía Waze abierto
+        // pero sin ruta.
         if (url.contains("waze.com/ul", ignoreCase = true)) {
             val query = url.substringAfter('?', "")
             if (query.isNotEmpty()) {
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("waze://?$query")).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                 Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     })
                     return true
                 } catch (_: ActivityNotFoundException) {
                     // Sin Waze instalado: que el sistema abra la web o la Play Store
                 }
             }
-            return abrirExterno(url)
+            return abrirExterno(url, reenviar = true)
         }
 
         // Direcciones web que en realidad son puentes a una app instalada.
         // Mandarlas al sistema evita el redirect interno que rompe el WebView.
-        if (forzarExterno || esPuenteDeApp(url)) return abrirExterno(url)
+        // Los mapas se reenvían con CLEAR_TOP por el mismo motivo que Waze:
+        // si la app quedó abierta del pedido anterior, hay que forzar el destino nuevo.
+        if (forzarExterno || esPuenteDeApp(url)) return abrirExterno(url, reenviar = esMapa(url))
 
         // El resto (la propia PWA) lo sigue cargando el WebView
         return false
@@ -198,10 +207,21 @@ class MainActivity : Activity() {
                u.contains("goo.gl/maps")
     }
 
-    private fun abrirExterno(url: String): Boolean {
+    /** Apps de navegación: hay que reenviarles el destino aunque ya estén abiertas. */
+    private fun esMapa(url: String): Boolean {
+        val u = url.lowercase()
+        return u.contains("waze.com/") || u.contains("google.com/maps") ||
+               u.contains("maps.google.") || u.contains("maps.app.goo.gl") ||
+               u.contains("goo.gl/maps")
+    }
+
+    private fun abrirExterno(url: String, reenviar: Boolean = false): Boolean {
         return try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (reenviar) {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
             })
             true
         } catch (_: ActivityNotFoundException) {
