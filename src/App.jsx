@@ -71,7 +71,6 @@ const DespachoOperativoView = lazy(() => import('./components/admin/DespachoOper
 const DespachoKpiDashboard  = lazy(() => import('./components/admin/DespachoKpiDashboard'))
 const DeliveryKpiDashboard  = lazy(() => import('./components/admin/DeliveryKpiDashboard'))
 const KpiVentasTotalesDashboard = lazy(() => import('./components/admin/KpiVentasTotalesDashboard'))
-const SimuladorRentabilidad = lazy(() => import('./components/admin/SimuladorRentabilidad'))
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
@@ -357,8 +356,6 @@ export default function App() {
         return <DeliveryKpiDashboard user={user} />
       case 'kpi-ventas-totales':
         return <KpiVentasTotalesDashboard user={user} />
-      case 'simulador-rentabilidad':
-        return <SimuladorRentabilidad user={user} />
       case 'delivery':
         return <DeliveryView user={user} show={show} />
       case 'inventario-dash':
