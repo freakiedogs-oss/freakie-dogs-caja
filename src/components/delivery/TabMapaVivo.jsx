@@ -106,6 +106,24 @@ export default function TabMapaVivo({ show = () => {} }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [ultimaAct, setUltimaAct] = useState(null);
+  // El encuadre automático corre una sola vez. Después el mapa respeta el
+  // zoom que dejó el usuario — si se reencuadrara en cada refresco (20 s) le
+  // movería la vista mientras está mirando un pedido.
+  const yaEncuadro = useRef(false);
+
+  // Ajusta la vista para que entren todos los puntos. Antes el mapa arrancaba
+  // fijo sobre San Salvador y los pedidos lejanos (Lourdes, El Tránsito,
+  // Usulután) quedaban fuera de pantalla y parecía que no existían.
+  const encuadrarTodo = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const puntos = [];
+    for (const g of [layerPedidos, layerMotoristas, layerSucursales]) {
+      g.current?.eachLayer(l => { if (l.getLatLng) puntos.push(l.getLatLng()); });
+    }
+    if (puntos.length === 0) return;
+    map.fitBounds(L.latLngBounds(puntos), { padding: [40, 40], maxZoom: 14 });
+  }, []);
 
   // ── Init del mapa (una vez) ───────────────────────────────────────
   useEffect(() => {
@@ -237,7 +255,14 @@ export default function TabMapaVivo({ show = () => {} }) {
       `);
       marker.addTo(layerMotoristas.current);
     }
-  }, [data]);
+
+    // Primer dibujado: encuadrar para que se vea todo, incluidos los pedidos
+    // lejos del centro de San Salvador.
+    if (!yaEncuadro.current) {
+      yaEncuadro.current = true;
+      encuadrarTodo();
+    }
+  }, [data, encuadrarTodo]);
 
   // ── Contadores para el panel ─────────────────────────────────────
   const stats = data ? {
@@ -272,6 +297,14 @@ export default function TabMapaVivo({ show = () => {} }) {
             ● en vivo · actualizado {ultimaAct.toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </div>
         )}
+        {/* Vuelve a encuadrar todo. Útil después de acercarse a un pedido, o
+            cuando entra uno lejos del centro y quedó fuera de la vista. */}
+        <button onClick={encuadrarTodo} title="Encuadrar todos los puntos"
+          style={{ position: 'absolute', bottom: 14, right: 10, zIndex: 500,
+                   background: 'rgba(0,0,0,.78)', color: '#f0f0f0', border: '1px solid #3a3a3a',
+                   borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          🔍 Ver todo
+        </button>
         {error && (
           <div style={{ position: 'absolute', top: 10, left: 10, background: '#7f1d1d', color: '#fff',
                         fontSize: 12, padding: '6px 10px', borderRadius: 6, zIndex: 500 }}>
