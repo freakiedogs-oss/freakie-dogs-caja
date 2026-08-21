@@ -24,21 +24,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Grant execute for gradlew (si existe)
-        working-directory: android-driver
-        run: |
-          if [ ! -f gradlew ]; then
-            # Genera el wrapper si no existe (primera vez)
-            gradle wrapper --gradle-version 8.6
-          fi
-          chmod +x gradlew
+      # Fijamos la versión de Gradle en vez de generar el wrapper en cada corrida.
+      # El runner de GitHub trae Gradle 9.x, incompatible con Android Gradle Plugin
+      # 8.4; generar el wrapper con esa versión rompía el build sin aviso claro.
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: Build APK debug
         working-directory: android-driver
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Publicar APK como artifact
         uses: actions/upload-artifact@v4
@@ -47,8 +43,12 @@ jobs:
           path: android-driver/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+      # Opcional: si el repo no tiene permisos de escritura para Actions esto
+      # falla con 403. No debe marcar la corrida como fallida — el APK ya quedó
+      # publicado como artifact en el paso anterior.
       - name: Publicar como Release (solo en main)
         if: github.ref == 'refs/heads/main'
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: driver-v${{ github.run_number }}
