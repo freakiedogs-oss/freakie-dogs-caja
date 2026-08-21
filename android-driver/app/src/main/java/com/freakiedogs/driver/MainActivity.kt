@@ -160,6 +160,23 @@ class MainActivity : Activity() {
         // Cualquier esquema que no sea web (whatsapp:, tel:, geo:, waze:, mailto:, sms:)
         if (!esHttp) return abrirExterno(url)
 
+        // Waze: abierto como https suele arrancar la app en su pantalla inicial,
+        // sin tomar el destino. Con su propio esquema sí arranca la navegación.
+        if (url.contains("waze.com/ul", ignoreCase = true)) {
+            val query = url.substringAfter('?', "")
+            if (query.isNotEmpty()) {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("waze://?$query")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                    return true
+                } catch (_: ActivityNotFoundException) {
+                    // Sin Waze instalado: que el sistema abra la web o la Play Store
+                }
+            }
+            return abrirExterno(url)
+        }
+
         // Direcciones web que en realidad son puentes a una app instalada.
         // Mandarlas al sistema evita el redirect interno que rompe el WebView.
         if (forzarExterno || esPuenteDeApp(url)) return abrirExterno(url)
