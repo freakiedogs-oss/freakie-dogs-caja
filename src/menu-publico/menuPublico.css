@@ -899,6 +899,13 @@ button { font-family: inherit; }
 }
 .mp-geo-mapa:hover { background: #1d4ed8; }
 
+.mp-geo-mapa-alt {
+  display: block; width: 100%; margin-top: 7px; padding: 9px 12px;
+  border: 1px solid #e6e0e3; border-radius: 10px; background: #fff;
+  color: #6b6469; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.mp-geo-mapa-alt:hover { background: #faf8f9; }
+
 .mp-mapa-wrap {
   margin-top: 10px; border: 1px solid #e6e0e3; border-radius: 12px;
   padding: 12px; background: #fff;

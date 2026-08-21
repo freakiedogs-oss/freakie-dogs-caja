@@ -1121,6 +1121,20 @@ function Checkout({ items, total, onClose, onEnviado }) {
     if (tipo === 'delivery') {
       if (!direccion.trim()) return setError('Dirección requerida para delivery')
       if (!zona) return setError('Elegí tu zona')
+      // Sin punto en el mapa el motorista sale a buscar la dirección a ciegas.
+      // Antes se podía enviar el pedido sin tocar el botón de ubicación y ~1 de
+      // cada 3 llegaba sin coordenadas; ahora se abre el mapa y no se sigue
+      // hasta marcar la casa.
+      if (!ubic) {
+        setVerMapa(true)
+        // El botón de enviar está al final del formulario y el mapa aparece
+        // arriba: sin este scroll el cliente ve el error pero no el mapa.
+        setTimeout(() => {
+          document.getElementById('mp-campo-ubicacion')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 80)
+        return setError('Necesitamos tu ubicación para llevarte el pedido. Marcá tu casa en el mapa.')
+      }
       if (!cumpleMinimo) return setError(`Pedido mínimo ${fmt(envio?.minimo ?? NEGOCIO.consumoMinimo)} para delivery`)
     }
     setEnviando(true)
@@ -1251,7 +1265,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
           {/* SI DELIVERY: UBICACIÓN + DIRECCIÓN + ZONA */}
           {tipo === 'delivery' && (
             <>
-              <div className="mp-field">
+              <div className="mp-field" id="mp-campo-ubicacion">
                 <label>Tu ubicación *</label>
                 <div className="mp-geo-ayuda">
                   Te agradecemos compartir tu ubicación en tiempo real: con ella tu pedido
@@ -1262,6 +1276,14 @@ function Checkout({ items, total, onClose, onEnviado }) {
                     : geoEstado === 'ok' ? '📍 Cambiar mi ubicación'
                     : '📍 Usar mi ubicación'}
                 </button>
+
+                {/* Salida a mano siempre visible: hay clientes que no quieren dar
+                    permiso de GPS y antes enviaban el pedido sin ubicación. */}
+                {geoEstado !== 'ok' && !verMapa && (
+                  <button type="button" className="mp-geo-mapa-alt" onClick={() => setVerMapa(true)}>
+                    🗺️ o marcá tu casa en el mapa
+                  </button>
+                )}
 
                 {/* Mapa manual: aparece solo cuando el GPS del navegador no
                     sirvió. Es la red que evita que el pedido salga sin punto. */}
