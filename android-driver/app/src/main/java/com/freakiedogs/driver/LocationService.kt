@@ -69,7 +69,7 @@ class LocationService : Service() {
 
         // Etiqueta visible en la notificación — sirve para confirmar de un vistazo
         // qué build está instalado en el celular. Subir en cada cambio.
-        private const val VERSION_APK = "v8-links"
+        private const val VERSION_APK = "v9-waze"
     }
 
     // Contadores de diagnóstico que se muestran en la notificación
