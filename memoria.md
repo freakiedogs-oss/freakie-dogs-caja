@@ -2,6 +2,11 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 20-Ago-2026 — Fix seguidores_nuevos en metricas_redes_diarias
+- **Bug:** `seguidores_nuevos` siempre en 0 pese a que `seguidores` sí subia dia a dia (Instagram y Facebook). No hay trigger, funcion ni cron en la BD que lo calculara; se inserta en 0 desde la fuente externa que carga las metricas (fuera de este repo).
+- **Fix:** backfill del historico completo con `LAG(seguidores)` por plataforma + trigger `trg_calc_seguidores_nuevos` (funcion `fn_calc_seguidores_nuevos`) que recalcula `seguidores_nuevos` en cada insert/update de `seguidores`, ignorando lo que mande la fuente externa. Verificado: Instagram +17/+6/+22, Facebook +104/+70/+55 (17-19 ago).
+- **Pendiente:** no se identifico que pipeline externo inserta las filas diarias (no esta en cron.job ni en src/); si se quiere corregir en origen, hay que ubicarlo (sospecha: Make.com o proceso manual, pese a que Make.com esta marcado DEPRECADO desde 20-abr-2026).
+
 ## 19-Ago-2026 — Modelo de Ángel recibido: "Resumen Diario de Códigos de Generación" (Anexo Consumidor Final)
 - **Ángel mandó el formato exacto que necesita** (solo Consumidor Final): tabla **Fecha | DEL | AL | Cantidad | Venta Gravada**, 1 fila por día, donde DEL/AL = **código de generación** (UUID con guiones) del primer/último documento del día. Se agregó `resumenCodigosGeneracionCSV()` al módulo + hoja "CODIGOS GENERACION" en el Excel + botón destacado en la UI con toggle IVA.
 - **Mapeo confirmado contra la DB:** el código de generación de ventas = **`pos_cuentas.dte_uuid`** (verificado: `9710F1B5-1C1E-4347-8578-A33D96162D7B`, con guiones). DEL/AL por `cobrada_at` (orden de emisión). Cantidad = # facturas 01 del día. **La emisión DTE del POS de Freakie arrancó el 2026-07-10** — los días 1–9 de julio del reporte de Ángel vienen del **facturador anterior** (no reconcilian con el POS, pero desde ago-2026 el POS cubre el mes completo).
