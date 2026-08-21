@@ -189,6 +189,7 @@ export const NAV_SECTIONS = [
     label: 'Marketing',
     items: [
       { key: 'marketing', label: 'Analytics Redes', icon: '📱', roles: ['ejecutivo', 'marketing', 'admin'] },
+      { key: 'media', label: 'Media', icon: '🖼️', roles: ['ejecutivo', 'marketing', 'admin'] },
     ],
   },
   {

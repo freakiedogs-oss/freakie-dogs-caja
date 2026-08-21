@@ -44,6 +44,7 @@ const ProduccionDiaria   = lazy(() => import('./components/admin/ProduccionDiari
 const ConciliacionView   = lazy(() => import('./components/admin/ConciliacionView'))
 const DeliveryView       = lazy(() => import('./components/delivery/DeliveryView'))
 const MarketingView      = lazy(() => import('./components/marketing/MarketingView'))
+const MediaView          = lazy(() => import('./components/marketing/MediaView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
 const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
@@ -365,6 +366,8 @@ export default function App() {
         return <InventarioDashboard user={user} onBack={() => setScreen('home')} />
       case 'marketing':
         return <MarketingView user={user} />
+      case 'media':
+        return <MediaView user={user} />
       case 'superadmin-panel':
         return <SuperAdminView user={user} />
       case 'plan-maestro':
