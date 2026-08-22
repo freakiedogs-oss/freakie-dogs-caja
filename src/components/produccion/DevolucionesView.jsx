@@ -153,42 +153,50 @@ export default function DevolucionesView({ user }) {
         fecha_recepcion: new Date().toISOString(),
       }).eq('id', detalleSel.id);
 
-      // Si se recibió, incrementar inventario CM001
+      // Si se recibió, mover el stock POR KARDEX: sale de la sucursal, entra a Casa Matriz.
+      // Antes se hacía con read-then-write directo sobre inventario, y arrastraba tres problemas:
+      //   · no dejaba rastro en kardex_movimientos → la devolución era invisible en el Historial;
+      //   · si el producto no tenía fila de inventario en CM, el `if (inv.length > 0)` la
+      //     descartaba en silencio y la devolución se perdía;
+      //   · el `Math.max(0, ...)` de la sucursal ocultaba el faltante en vez de dejarlo en
+      //     negativo, que es justo la señal que sirve para detectarlo.
       if (nuevoEstado === 'recibida') {
         const CM_ID = '584aee3c-a842-496f-9f2b-1e3bac6e6b23';
-        const promises = detalleItems.map(async (item) => {
-          // Intentar incrementar stock en CM
-          const { data: inv } = await db.from('inventario')
-            .select('id, stock_actual')
-            .eq('producto_id', item.producto_id)
-            .eq('sucursal_id', CM_ID)
-            .limit(1);
+        const items = (detalleItems || [])
+          .filter(it => it.producto_id && n(it.cantidad) > 0)
+          .map(it => ({ producto_id: it.producto_id, cantidad: n(it.cantidad) }));
 
-          if (inv && inv.length > 0) {
-            await db.from('inventario').update({
-              stock_actual: n(inv[0].stock_actual) + n(item.cantidad),
-              ultima_actualizacion: new Date().toISOString(),
-            }).eq('id', inv[0].id);
-          }
+        if (items.length > 0) {
+          // entra a Casa Matriz
+          const { error: eCM } = await db.rpc('kardex_mover_lote', {
+            p_items: items,
+            p_tipo: 'devolucion',
+            p_referencia_tipo: 'devolucion_sucursal',
+            p_referencia_id: detalleSel.id,
+            p_notas: `Devolución recibida de ${detalleSel.store_code || 'sucursal'}`,
+            p_usuario_id: user?.id || null,
+            p_sucursal_id: CM_ID,
+            p_permitir_negativo: true,
+          });
+          if (eCM) throw eCM;
 
-          // Decrementar stock en sucursal origen
+          // sale de la sucursal de origen
           const { data: sucData } = await db.from('sucursales')
             .select('id').eq('store_code', detalleSel.store_code).limit(1);
           if (sucData && sucData.length > 0) {
-            const { data: invSuc } = await db.from('inventario')
-              .select('id, stock_actual')
-              .eq('producto_id', item.producto_id)
-              .eq('sucursal_id', sucData[0].id)
-              .limit(1);
-            if (invSuc && invSuc.length > 0) {
-              await db.from('inventario').update({
-                stock_actual: Math.max(0, n(invSuc[0].stock_actual) - n(item.cantidad)),
-                ultima_actualizacion: new Date().toISOString(),
-              }).eq('id', invSuc[0].id);
-            }
+            const { error: eSuc } = await db.rpc('kardex_mover_lote', {
+              p_items: items.map(it => ({ ...it, cantidad: -it.cantidad })),
+              p_tipo: 'devolucion',
+              p_referencia_tipo: 'devolucion_sucursal',
+              p_referencia_id: detalleSel.id,
+              p_notas: 'Salida por devolución a Casa Matriz',
+              p_usuario_id: user?.id || null,
+              p_sucursal_id: sucData[0].id,
+              p_permitir_negativo: true,
+            });
+            if (eSuc) throw eSuc;
           }
-        });
-        await Promise.all(promises);
+        }
       }
 
       setDetalleSel(null);

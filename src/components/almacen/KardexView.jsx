@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import RecetasView from '../admin/RecetasView';
 import MapeoMenu from './MapeoMenu';
+import DiferenciasTab from './DiferenciasTab';
 import CosteoView from '../admin/CosteoView';
 import { UnidadSelect } from '../UnidadSelect';
 
@@ -550,17 +551,23 @@ export default function KardexView({ user, show }) {
     if (!adjNotas || adjNotas.trim().length < 5) { show?.('Escribe el motivo (mín. 5 caracteres)', 'warning'); return; }
     setSavingAdj(true);
     try {
+      // Antes esto insertaba el movimiento a mano y DESPUÉS actualizaba
+      // inventario: si lo segundo fallaba, el kardex decía una cosa y el stock
+      // otra. Además `adjStock` se leyó al elegir el producto, así que el
+      // stock_anterior podía llegar viejo. kardex_mover hace las dos escrituras
+      // en una transacción y lee el stock con la fila lockeada.
       const cantidad = parseFloat(adjQty);
-      const stockPost = adjStock + cantidad;
-      const { error } = await db.from('kardex_movimientos').insert({
-        producto_id: adjProd.id, sucursal_id: sucursal,
-        tipo: 'ajuste_manual', cantidad, stock_anterior: adjStock,
-        stock_posterior: stockPost, notas: adjNotas.trim(),
-        usuario_id: user.id, referencia_tipo: 'manual',
+      const { error } = await db.rpc('kardex_mover_lote', {
+        p_items: [{ producto_id: adjProd.id, cantidad }],
+        p_tipo: 'ajuste_manual',
+        p_referencia_tipo: 'manual',
+        p_referencia_id: null,
+        p_notas: adjNotas.trim(),
+        p_usuario_id: user?.id || null,
+        p_sucursal_id: sucursal,
+        p_permitir_negativo: true,
       });
       if (error) throw error;
-      await db.from('inventario').update({ stock_actual: stockPost })
-        .eq('producto_id', adjProd.id).eq('sucursal_id', sucursal);
       show?.('Ajuste registrado', 'success');
       setAdjProd(null); setAdjQty(''); setAdjNotas(''); setAdjStock(null);
     } catch { show?.('Error al registrar ajuste', 'error'); }
@@ -578,6 +585,7 @@ export default function KardexView({ user, show }) {
      ══════════════════════════════════════════════════════════════════════ */
   const TABS_K = [
     { id: 'inventario',  label: '📦 Inventario' },
+    { id: 'diferencias', label: '🔍 Fugas' },
     { id: 'conteo',      label: '🌙 Lista Conteo' },
     { id: 'mapeo',       label: '🔗 Mapeo Compras' },
     { id: 'menu',        label: '🍔 Menú (BOM)' },
@@ -1092,6 +1100,8 @@ export default function KardexView({ user, show }) {
         {/* ═══════════════════════════════════════════════════════════════
             TAB 3: RECETAS
         ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'diferencias' && <DiferenciasTab />}
+
         {activeTab === 'conteo' && <ConteoLista user={user} />}
 
         {activeTab === 'menu' && <MapeoMenu user={user} />}

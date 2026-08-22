@@ -1,0 +1,63 @@
+name: Build Freakie Drivers APK
+
+# Se dispara cuando cambia algo del proyecto Android driver o manualmente
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-driver/**'
+      - '.github/workflows/build-driver-apk.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Fijamos la versión de Gradle en vez de generar el wrapper en cada corrida.
+      # El runner de GitHub trae Gradle 9.x, incompatible con Android Gradle Plugin
+      # 8.4; generar el wrapper con esa versión rompía el build sin aviso claro.
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build APK debug
+        working-directory: android-driver
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Publicar APK como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freakie-drivers-apk-debug
+          path: android-driver/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # Opcional: si el repo no tiene permisos de escritura para Actions esto
+      # falla con 403. No debe marcar la corrida como fallida — el APK ya quedó
+      # publicado como artifact en el paso anterior.
+      - name: Publicar como Release (solo en main)
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: driver-v${{ github.run_number }}
+          name: Freakie Drivers v${{ github.run_number }}
+          body: |
+            APK debug generado automáticamente desde commit ${{ github.sha }}.
+            Descargá `app-debug.apk` y sideloadeá en Android.
+          files: android-driver/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

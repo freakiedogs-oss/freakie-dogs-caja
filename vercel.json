@@ -14,6 +14,16 @@
     { "source": "/driver", "destination": "/driver.html" },
     { "source": "/track/(.*)", "destination": "/track.html" },
     { "source": "/track", "destination": "/track.html" },
+    { "source": "/instalar-driver", "destination": "/instalar-driver.html" },
     { "source": "/((?!api/|sb/|sb$).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/apk/(.*)",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Cache-Control", "value": "public, max-age=300" }
+      ]
+    }
   ]
 }

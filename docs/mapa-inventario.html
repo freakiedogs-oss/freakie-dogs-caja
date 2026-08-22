@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freakie Dogs · Mapa del Inventario</title>
+<style>
+  :root{
+    --bg:#0e0e13; --card:#16161d; --card2:#1c1c25; --line:#282833;
+    --tx:#e8e8ee; --tx2:#9a9aa8; --tx3:#6b6b7a;
+    --rojo:#e63946; --verde:#2dd4a8; --ambar:#f4a261; --azul:#4a9eff; --morado:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       padding:20px 16px 60px;-webkit-text-size-adjust:100%}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.5px}
+  h2{font-size:19px;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--tx)}
+  .sub{color:var(--tx2);font-size:13.5px;margin:0 0 6px}
+  .meta{color:var(--tx3);font-size:12px;margin-bottom:26px}
+  p{margin:0 0 10px}
+  code{background:#222;padding:1.5px 6px;border-radius:4px;font-size:12.5px;
+       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9d1d9;
+       white-space:nowrap}
+  .lead{background:var(--card);border-left:3px solid var(--azul);padding:13px 15px;
+        border-radius:0 8px 8px 0;margin:0 0 22px;color:var(--tx2);font-size:14px}
+
+  /* KPIs */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:18px 0 8px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kpi .n{font-size:23px;font-weight:800;letter-spacing:-.5px}
+  .kpi .l{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+  .kpi .d{font-size:11.5px;color:var(--tx2);margin-top:2px}
+
+  /* Diagrama */
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:18px 14px;margin:16px 0;overflow-x:auto}
+  .etapa{display:flex;align-items:flex-start;gap:12px;margin-bottom:6px}
+  .bolita{flex:0 0 34px;height:34px;border-radius:50%;display:flex;align-items:center;
+          justify-content:center;font-weight:800;font-size:14px;color:#0e0e13}
+  .etapa-cuerpo{flex:1;min-width:0;padding-bottom:14px}
+  .etapa-t{font-weight:800;font-size:15px;margin-bottom:2px}
+  .etapa-d{color:var(--tx2);font-size:13px}
+  .conector{margin-left:16px;border-left:2px dashed var(--line);height:14px}
+  .chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;
+        border-radius:20px;margin:4px 4px 0 0;white-space:nowrap}
+  .c-ok{background:rgba(45,212,168,.14);color:var(--verde)}
+  .c-mal{background:rgba(230,57,70,.16);color:var(--rojo)}
+  .c-med{background:rgba(244,162,97,.14);color:var(--ambar)}
+  .c-inf{background:rgba(74,158,255,.14);color:var(--azul)}
+  .c-neu{background:#24242e;color:var(--tx2)}
+
+  /* Tarjetas de ruta */
+  details{background:var(--card);border:1px solid var(--line);border-radius:10px;
+          margin-bottom:10px;overflow:hidden}
+  details[open]{border-color:#33333f}
+  summary{padding:13px 15px;cursor:pointer;font-weight:700;font-size:14.5px;
+          list-style:none;display:flex;align-items:center;gap:9px}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸";color:var(--tx3);font-size:12px;flex:0 0 auto}
+  details[open] summary::before{content:"▾"}
+  summary .badge{margin-left:auto;font-size:10.5px;font-weight:800;padding:2px 8px;
+                 border-radius:20px;white-space:nowrap}
+  .cuerpo{padding:0 15px 15px;border-top:1px solid var(--line);margin-top:2px}
+  .fila{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #1f1f28;font-size:13.5px}
+  .fila:last-child{border-bottom:0}
+  .fila .k{flex:0 0 108px;color:var(--tx3);font-size:11.5px;text-transform:uppercase;
+           letter-spacing:.3px;font-weight:700;padding-top:2px}
+  .fila .v{flex:1;min-width:0}
+  .v ul{margin:2px 0 0;padding-left:17px}
+  .v li{margin-bottom:3px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+  th{text-align:left;color:var(--tx3);font-size:11px;text-transform:uppercase;
+     letter-spacing:.3px;padding:7px 9px;font-weight:700;border-bottom:1px solid var(--line)}
+  td{padding:8px 9px;border-bottom:1px solid #1f1f28;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+
+  .alerta{border-radius:10px;padding:13px 15px;margin:10px 0;font-size:13.5px}
+  .a-rojo{background:rgba(230,57,70,.09);border:1px solid rgba(230,57,70,.3)}
+  .a-ambar{background:rgba(244,162,97,.08);border:1px solid rgba(244,162,97,.28)}
+  .a-verde{background:rgba(45,212,168,.08);border:1px solid rgba(45,212,168,.28)}
+  .alerta .t{font-weight:800;margin-bottom:4px}
+  .pie{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);
+       color:var(--tx3);font-size:12px}
+  @media(max-width:560px){
+    .fila{flex-direction:column;gap:2px}
+    .fila .k{flex:none}
+    body{padding:14px 12px 50px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Mapa del Inventario</h1>
+<p class="sub">Freakie Dogs · cómo se mueve el stock desde que se compra hasta que se vende</p>
+<p class="meta">Generado 22-ago-2026 · datos reales de producción · 6 sucursales + Casa Matriz</p>
+
+<div class="lead">
+  <b>La regla del sistema.</b> Existe un solo lugar donde el stock puede cambiar:
+  la función <code>kardex_mover</code>. Esa función hace dos escrituras juntas y en la misma
+  transacción — actualiza <code>inventario</code> (cuánto hay) y agrega una línea a
+  <code>kardex_movimientos</code> (por qué cambió). Si una falla, no pasa ninguna.
+  <br><br>
+  Cualquier pantalla que cambie stock por fuera de esa función crea una <b>fuga</b>:
+  el stock se mueve pero el libro no se entera, y a fin de mes nadie sabe explicar la diferencia.
+</div>
+
+<h2>El estado hoy</h2>
+<div class="kpis">
+  <div class="kpi"><div class="l">Movimientos</div><div class="n">33,623</div><div class="d">desde 21-may</div></div>
+  <div class="kpi"><div class="l">Productos</div><div class="n">363</div><div class="d">con stock en 7 sucursales</div></div>
+  <div class="kpi"><div class="l">Catálogo</div><div class="n">706</div><div class="d">productos definidos</div></div>
+  <div class="kpi"><div class="l">Recetas</div><div class="n">74</div><div class="d">activas</div></div>
+  <div class="kpi"><div class="l" style="color:var(--rojo)">Stock negativo</div><div class="n" style="color:var(--rojo)">395</div><div class="d">filas · −24,250 unidades</div></div>
+  <div class="kpi"><div class="l" style="color:var(--ambar)">Sin autor</div><div class="n" style="color:var(--ambar)">97.8%</div><div class="d">de los movimientos</div></div>
+</div>
+
+<table>
+  <thead><tr><th>Tipo de movimiento</th><th class="num">Cantidad</th><th>Desde</th><th>Qué significa</th></tr></thead>
+  <tbody>
+    <tr><td><b>venta</b></td><td class="num">30,549</td><td>9-ago</td><td>El POS descuenta los insumos de lo que se vendió</td></tr>
+    <tr><td><b>traslado</b></td><td class="num">2,205</td><td>9-ago</td><td>Casa Matriz despacha a una sucursal</td></tr>
+    <tr><td><b>recepcion</b></td><td class="num">829</td><td>21-may</td><td>Entra mercadería de un proveedor</td></tr>
+    <tr><td><b>conteo_fisico</b></td><td class="num">40</td><td>22-ago</td><td>Diferencia encontrada al contar — <b>arrancó hoy</b></td></tr>
+    <tr><td style="color:var(--tx3)">produccion</td><td class="num" style="color:var(--tx3)">0</td><td>—</td><td>Se produce en Casa Matriz — <b>arranca mañana</b></td></tr>
+    <tr><td style="color:var(--tx3)">consumo</td><td class="num" style="color:var(--tx3)">0</td><td>—</td><td>Insumos que se gastan al producir</td></tr>
+    <tr><td style="color:var(--rojo)">merma</td><td class="num" style="color:var(--rojo)">0</td><td>—</td><td>Producto que se botó — <b>nunca se ha registrado</b></td></tr>
+    <tr><td style="color:var(--tx3)">devolucion</td><td class="num" style="color:var(--tx3)">0</td><td>—</td><td>La sucursal regresa mercadería a Casa Matriz</td></tr>
+    <tr><td style="color:var(--tx3)">ajuste_manual</td><td class="num" style="color:var(--tx3)">0</td><td>—</td><td>Corrección a mano, con motivo obligatorio</td></tr>
+    <tr><td style="color:var(--tx3)">despacho</td><td class="num" style="color:var(--tx3)">0</td><td>—</td><td>Sin uso: los despachos se registran como traslado</td></tr>
+  </tbody>
+</table>
+
+<h2>El ciclo completo</h2>
+<div class="flow">
+
+  <div class="etapa">
+    <div class="bolita" style="background:var(--verde)">1</div>
+    <div class="etapa-cuerpo">
+      <div class="etapa-t">Compra · entra mercadería</div>
+      <div class="etapa-d">El proveedor entrega en Casa Matriz. Alguien captura la recepción, o la factura
+        electrónica genera una automáticamente.</div>
+      <span class="chip c-ok">+ suma stock en Casa Matriz</span>
+      <span class="chip c-inf">tipo: recepcion</span>
+      <span class="chip c-mal">las automáticas no mueven stock</span>
+    </div>
+  </div>
+  <div class="conector"></div>
+
+  <div class="etapa">
+    <div class="bolita" style="background:var(--morado)">2</div>
+    <div class="etapa-cuerpo">
+      <div class="etapa-t">Producción · se transforma</div>
+      <div class="etapa-d">Casa Matriz convierte insumos en producto terminado: 20 cebollas se vuelven
+        10 bolsas de cebolla picada. Gasta unas cosas y crea otras.</div>
+      <span class="chip c-ok">− consume insumos</span>
+      <span class="chip c-ok">+ da de alta lo producido</span>
+      <span class="chip c-med">arranca mañana</span>
+    </div>
+  </div>
+  <div class="conector"></div>
+
+  <div class="etapa">
+    <div class="bolita" style="background:var(--azul)">3</div>
+    <div class="etapa-cuerpo">
+      <div class="etapa-t">Despacho · viaja a la sucursal</div>
+      <div class="etapa-d">Casa Matriz manda mercadería a una tienda. Debe ser suma cero: lo que sale
+        de aquí entra allá.</div>
+      <span class="chip c-ok">− Casa Matriz</span>
+      <span class="chip c-ok">+ sucursal</span>
+      <span class="chip c-mal">92% sin quien firme el recibido</span>
+    </div>
+  </div>
+  <div class="conector"></div>
+
+  <div class="etapa">
+    <div class="bolita" style="background:var(--rojo)">4</div>
+    <div class="etapa-cuerpo">
+      <div class="etapa-t">Venta · sale al cliente</div>
+      <div class="etapa-d">Se cobra una orden. El sistema abre la receta de cada producto, la de sus
+        componentes si es combo, y descuenta cada insumo de la sucursal que vendió.</div>
+      <span class="chip c-ok">− insumos de la sucursal</span>
+      <span class="chip c-inf">tipo: venta</span>
+      <span class="chip c-ok">98–99% de cobertura</span>
+    </div>
+  </div>
+  <div class="conector"></div>
+
+  <div class="etapa">
+    <div class="bolita" style="background:var(--ambar)">5</div>
+    <div class="etapa-cuerpo">
+      <div class="etapa-t">Conteo · se verifica contra la realidad</div>
+      <div class="etapa-d">Al cierre se cuenta lo que hay físicamente. La diferencia contra lo que el
+        sistema creía es <b>la merma real</b>: lo que se botó, se desperdició o se perdió.</div>
+      <span class="chip c-ok">± ajusta a lo contado</span>
+      <span class="chip c-inf">tipo: conteo_fisico</span>
+      <span class="chip c-ok">arrancó hoy</span>
+    </div>
+  </div>
+
+</div>
+
+<h2>Pantalla por pantalla</h2>
+<p class="sub">Qué hace cada una, qué toca y qué queda registrado.</p>
+
+<details open>
+<summary>📥 Recepción de proveedor <span class="badge c-ok">SANO</span></summary>
+<div class="cuerpo">
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Almacén → Recepciones → Nueva<br><code>RecepcionTab.jsx</code></div></div>
+  <div class="fila"><div class="k">Quién</div><div class="v">Bodeguero de Casa Matriz, cuando llega el camión del proveedor</div></div>
+  <div class="fila"><div class="k">Acción</div><div class="v">Captura qué llegó, cuánto y a qué precio. Puede adjuntar la foto del DTE.</div></div>
+  <div class="fila"><div class="k">Llama a</div><div class="v"><code>kardex_mover_lote</code> · tipo <code>recepcion</code></div></div>
+  <div class="fila"><div class="k">Lee</div><div class="v"><code>catalogo_productos</code>, <code>proveedores</code></div></div>
+  <div class="fila"><div class="k">Escribe</div><div class="v">
+    <ul>
+      <li><code>recepciones</code> — la cabecera del documento</li>
+      <li><code>recepcion_items</code> — el detalle línea por línea</li>
+      <li><code>inventario</code> — <b>suma</b> el stock en Casa Matriz</li>
+      <li><code>kardex_movimientos</code> — una línea por producto</li>
+      <li><code>proveedor_productos</code> — guarda el último precio pagado</li>
+    </ul></div></div>
+  <div class="fila"><div class="k">Se arregló</div><div class="v">Antes leía el stock y lo reescribía a mano. Dos recepciones al mismo tiempo se pisaban y el movimiento nunca quedaba registrado.</div></div>
+</div>
+</details>
+
+<details>
+<summary>🧾 Confirmación de recepción automática (DTE) <span class="badge c-mal">ROTO</span></summary>
+<div class="cuerpo">
+  <div class="alerta a-rojo">
+    <div class="t">No mueve una sola unidad de stock</div>
+    Las recepciones que se generan solas desde la factura electrónica tienen
+    <b>1,867 líneas y ninguna con producto asignado</b>. Sin producto no hay qué descontar,
+    así que confirmar una muestra “✅ Recepción confirmada” y el inventario no cambia.
+  </div>
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Almacén → Recepciones → pendiente por confirmar<br><code>RecepcionTab.jsx</code> → <code>RecepcionDetalle</code></div></div>
+  <div class="fila"><div class="k">Causa</div><div class="v">La descripción que trae la factura del proveedor nunca se asoció a un producto del catálogo. El mismo problema que hace que muchos productos aparezcan sin precio.</div></div>
+  <div class="fila"><div class="k">Se arregla</div><div class="v">Mapeando las descripciones en <b>Kardex → Mapeo Compras</b>. Hay 103 casos donde el nombre coincide exacto y podrían resolverse de una vez.</div></div>
+</div>
+</details>
+
+<details>
+<summary>🏭 Producción <span class="badge c-med">ARRANCA MAÑANA</span></summary>
+<div class="cuerpo">
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Producción → Registrar producción</div></div>
+  <div class="fila"><div class="k">Acción</div><div class="v">Se elige una receta y cuántas <b>tandas</b> se hicieron. Genera un número de lote.</div></div>
+  <div class="fila"><div class="k">Llama a</div><div class="v"><code>registrar_produccion</code></div></div>
+  <div class="fila"><div class="k">Escribe</div><div class="v">
+    <ul>
+      <li><code>produccion_diaria</code> — la tanda, con lote y costo</li>
+      <li><code>produccion_diaria_items</code> — cada insumo gastado</li>
+      <li><code>inventario</code> + <code>kardex_movimientos</code> — <b>resta</b> insumos (<code>consumo</code>) y <b>suma</b> lo producido (<code>produccion</code>)</li>
+    </ul></div></div>
+  <div class="fila"><div class="k">Ejemplo real</div><div class="v">Chili, 2 tandas → gasta 22 insumos, da de alta 8 bolsas, costo $64.56</div></div>
+  <div class="fila"><div class="k">Estaba roto</div><div class="v">Tres fallas: reventaba al guardar, nunca daba de alta lo producido, y las sub-recetas violaban una restricción de la base. Por eso no había producción desde el 20-mayo.</div></div>
+  <div class="fila"><div class="k">Ojo</div><div class="v"><b>Cheddar Porcionado</b> y <b>Papa Sazonada</b> no tienen producto asignado: gastarían insumos sin dar de alta nada.</div></div>
+</div>
+</details>
+
+<details>
+<summary>🚚 Despacho a sucursal <span class="badge c-med">CON HUECO</span></summary>
+<div class="cuerpo">
+  <div class="alerta a-ambar">
+    <div class="t">92.4% de los despachos no tienen quién los recibió</div>
+    De 236 despachos recibidos en 60 días, <b>218 no registran a nadie</b>. Si falta mercadería
+    en el camino, hoy no hay a quién preguntarle.
+  </div>
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Almacén → Despacho<br><code>DespachoTab.jsx</code> · recepción en <code>ConfirmarEntrega.jsx</code></div></div>
+  <div class="fila"><div class="k">Llama a</div><div class="v"><code>kardex_mover_lote</code> · tipo <code>traslado</code></div></div>
+  <div class="fila"><div class="k">Escribe</div><div class="v">
+    <ul>
+      <li><code>despachos_sucursal</code> y <code>despacho_items</code></li>
+      <li><code>inventario</code> — <b>resta</b> en Casa Matriz, <b>suma</b> en la sucursal</li>
+      <li><code>kardex_movimientos</code> — un movimiento de cada lado</li>
+    </ul></div></div>
+</div>
+</details>
+
+<details open>
+<summary>🍔 Venta en el POS <span class="badge c-ok">SANO</span></summary>
+<div class="cuerpo">
+  <div class="fila"><div class="k">Pantalla</div><div class="v">POS → Cobrar<br><code>POSMain.jsx</code></div></div>
+  <div class="fila"><div class="k">Llama a</div><div class="v"><code>pos_deducir_inventario</code> → <code>pos_deducir_preview</code></div></div>
+  <div class="fila"><div class="k">Cómo calcula</div><div class="v">
+    Abre el producto vendido, baja a sus componentes si es combo, y de cada uno abre su receta
+    y las sub-recetas hasta 8 niveles. Suma la merma de cada ingrediente y descuenta el total.
+    <br><br>
+    Si el cliente pidió <b>SIN</b> algo, ese insumo no se descuenta. Verificado: un
+    <code>SIN Queso</code> baja el consumo de queso de 0.2425 a 0.1940.
+  </div></div>
+  <div class="fila"><div class="k">Escribe</div><div class="v">
+    <ul>
+      <li><code>pos_cuentas</code> y <code>pos_cuenta_items</code> — la orden</li>
+      <li><code>pos_cocina_queue</code> — lo que ve la cocina</li>
+      <li><code>inventario</code> + <code>kardex_movimientos</code> — <b>resta</b> los insumos (<code>venta</code>)</li>
+    </ul></div></div>
+  <div class="fila"><div class="k">Cobertura</div><div class="v">98–99% de las ventas descuentan. Arrancó el 18-19 de agosto; antes casi ninguna lo hacía.</div></div>
+  <div class="fila"><div class="k">El 1% que falta</div><div class="v">Productos sin receta: cafés, agrandados, dips y consumo de empleados. ≈$550 en 14 días.</div></div>
+</div>
+</details>
+
+<details>
+<summary>↩️ Devolución de sucursal <span class="badge c-med">CON HUECO</span></summary>
+<div class="cuerpo">
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Producción → Devoluciones<br><code>DevolucionesView.jsx</code></div></div>
+  <div class="fila"><div class="k">Llama a</div><div class="v"><code>kardex_mover_lote</code> · tipo <code>devolucion</code></div></div>
+  <div class="fila"><div class="k">Escribe</div><div class="v"><code>inventario</code> + <code>kardex_movimientos</code>: resta en la sucursal, suma en Casa Matriz</div></div>
+  <div class="fila"><div class="k">Hueco</div><div class="v">Lo que vuelve por vencido o en mal estado entra como <b>stock bueno</b>. Debería registrarse como merma, no como devolución.</div></div>
+</div>
+</details>
+
+<details open>
+<summary>🌙 Conteo nocturno <span class="badge c-ok">NUEVO</span></summary>
+<div class="cuerpo">
+  <div class="alerta a-verde">
+    <div class="t">Acá es donde se mide la merma</div>
+    Antes, si el sistema decía 40 y se contaban 35, el stock se corregía a 35 y
+    <b>los 5 desaparecían sin dejar rastro</b>. Ahora queda un movimiento de −5:
+    eso es exactamente la merma que antes no se podía ver.
+  </div>
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Supply Chain → Conteo Nocturno<br><code>ConteoNocturno.jsx</code></div></div>
+  <div class="fila"><div class="k">Llama a</div><div class="v"><code>kardex_ajustar_absoluto</code> · tipo <code>conteo_fisico</code></div></div>
+  <div class="fila"><div class="k">Detalle fino</div><div class="v">
+    El conteo dice “hay 35”, no “quita 5”. La diferencia la calcula el servidor con la fila
+    bloqueada, no la pantalla — porque mientras el empleado cuenta, <b>el POS sigue vendiendo</b>.
+    Si se restara contra lo que se leyó al abrir la pantalla, el ajuste se comería las ventas del turno.
+  </div></div>
+  <div class="fila"><div class="k">Escribe</div><div class="v">
+    <ul>
+      <li><code>inventario_conteo_nocturno</code> — lo contado, con quién contó</li>
+      <li><code>inventario</code> + <code>kardex_movimientos</code> — el ajuste por diferencia</li>
+    </ul></div></div>
+  <div class="fila"><div class="k">Devuelve</div><div class="v">Le dice al empleado <i>“faltan 5, sobran 3”</i> en vez de un “guardado” mudo.</div></div>
+</div>
+</details>
+
+<details>
+<summary>⚙️ Ajuste manual <span class="badge c-med">SIN CONTROL</span></summary>
+<div class="cuerpo">
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Kardex → Ajustes</div></div>
+  <div class="fila"><div class="k">Llama a</div><div class="v"><code>kardex_mover_lote</code> · tipo <code>ajuste_manual</code></div></div>
+  <div class="fila"><div class="k">Hueco</div><div class="v">La pantalla exige motivo, pero <b>el servidor no</b>: quien llame directo puede ajustar sin explicar y sin firmar.</div></div>
+</div>
+</details>
+
+<details>
+<summary>🔍 Dashboard de Fugas <span class="badge c-ok">NUEVO</span></summary>
+<div class="cuerpo">
+  <div class="fila"><div class="k">Pantalla</div><div class="v">Kardex → Fugas<br><code>DiferenciasTab.jsx</code></div></div>
+  <div class="fila"><div class="k">Para qué</div><div class="v">Separar lo que hoy se ve todo igual: conteos (donde vive la merma y el robo),
+    merma declarada, y ajustes a mano (que pueden tapar las otras dos, por eso van aparte y con su autor).</div></div>
+  <div class="fila"><div class="k">Muestra</div><div class="v">Faltante y sobrante en $ y unidades · ranking de sucursales · evolución por fecha · detalle producto por producto</div></div>
+  <div class="fila"><div class="k">Valorización</div><div class="v">Cubre 72.7% de los productos. Los demás salen marcados <b>“sin precio”</b> y el panel avisa que el monto real es mayor — en vez de mostrar $0.00 como si no hubiera pasado nada.</div></div>
+</div>
+</details>
+
+<h2>Las tablas</h2>
+<table>
+  <thead><tr><th>Tabla</th><th>Qué guarda</th><th>Quién escribe</th></tr></thead>
+  <tbody>
+    <tr><td><code>inventario</code></td><td>Cuánto hay de cada producto en cada sucursal. <b>El presente.</b></td><td>Solo <code>kardex_mover</code></td></tr>
+    <tr><td><code>kardex_movimientos</code></td><td>Cada cambio y su porqué. <b>La historia.</b> Debe ser inmutable.</td><td>Solo <code>kardex_mover</code></td></tr>
+    <tr><td><code>catalogo_productos</code></td><td>Qué existe: nombre, unidad, precio de referencia</td><td>Admin</td></tr>
+    <tr><td><code>recetas</code> · <code>receta_ingredientes</code></td><td>De qué está hecho cada plato, con su merma</td><td>Admin</td></tr>
+    <tr><td><code>pos_combo_componentes</code></td><td>Qué trae cada combo</td><td>Admin</td></tr>
+    <tr><td><code>recepciones</code> · <code>recepcion_items</code></td><td>Lo que entró de proveedores</td><td>Recepción</td></tr>
+    <tr><td><code>despachos_sucursal</code> · <code>despacho_items</code></td><td>Lo que Casa Matriz mandó a cada tienda</td><td>Despacho</td></tr>
+    <tr><td><code>produccion_diaria</code> · <code>_items</code></td><td>Lo que se produjo y qué gastó</td><td>Producción</td></tr>
+    <tr><td><code>inventario_conteo_nocturno</code></td><td>Lo contado cada noche, con quién contó</td><td>Conteo</td></tr>
+    <tr><td><code>compras_dte_items</code></td><td>Líneas de factura electrónica y su mapeo a producto</td><td>Automático + mapeo manual</td></tr>
+  </tbody>
+</table>
+
+<h2>Lo que hoy no se puede ver</h2>
+
+<div class="alerta a-rojo">
+  <div class="t">1 · La merma nunca se ha registrado</div>
+  <b>335 ítems anulados</b> y <b>cero</b> movimientos de merma en toda la historia. Cuando se anula
+  algo ya preparado, el producto se botó de verdad — pero no queda registrado en ningún lado.
+  El tipo <code>merma</code> existe en la base y ninguna pantalla lo usa.
+</div>
+
+<div class="alerta a-rojo">
+  <div class="t">2 · Casi nada tiene autor</div>
+  <b>97.8%</b> de los movimientos no tienen usuario. Las ventas es lógico (las hace el sistema),
+  pero los ajustes y las recepciones sí deberían decir quién. Sin autor no hay a quién preguntarle,
+  y sin eso el robo es indistinguible de un error.
+</div>
+
+<div class="alerta a-rojo">
+  <div class="t">3 · Cualquiera con la llave pública puede reescribir el inventario</div>
+  La política <code>inventario_all</code> permite escribir a <code>anon</code> sin restricción,
+  y esa llave viaja dentro del menú público. <b>Ya se puede cerrar</b>: desde los cambios de hoy
+  ninguna pantalla escribe el inventario directo. Requiere hacerse fuera de hora pico.
+</div>
+
+<div class="alerta a-ambar">
+  <div class="t">4 · Stock negativo: 395 filas, −24,250 unidades</div>
+  Producto que el sistema cree que debe pero no tiene. Viene de años de descontar ventas sin
+  registrar todas las entradas. Se corrige solo conforme cada sucursal haga su primer conteo.
+</div>
+
+<div class="alerta a-ambar">
+  <div class="t">5 · No se distingue la merma real del error del sistema</div>
+  Un faltante puede ser producto botado o un bug que descuadró el stock. Hoy ambos se ven igual
+  en el kardex. Separarlos es lo que permite atacar cada uno por su lado.
+</div>
+
+<h2>En orden de importancia</h2>
+<table>
+  <thead><tr><th>Qué</th><th>Por qué importa</th><th>Estado</th></tr></thead>
+  <tbody>
+    <tr><td>Mapear las facturas al producto</td><td>Destraba las recepciones automáticas <b>y</b> los precios del dashboard</td><td><span class="chip c-med">103 listas para automatizar</span></td></tr>
+    <tr><td>Poder registrar merma</td><td>Sin esto no se puede medir lo que se bota</td><td><span class="chip c-mal">no existe</span></td></tr>
+    <tr><td>Cerrar el permiso de escritura pública</td><td>Riesgo de seguridad real</td><td><span class="chip c-mal">abierto</span></td></tr>
+    <tr><td>Exigir firma al recibir un despacho</td><td>92% llega sin responsable</td><td><span class="chip c-mal">abierto</span></td></tr>
+    <tr><td>Que los ajustes lleven autor y motivo</td><td>Un ajuste anónimo puede tapar un robo</td><td><span class="chip c-mal">solo lo pide la pantalla</span></td></tr>
+    <tr><td>Costear los 121 productos sin precio</td><td>Sus faltantes valen $0 y parecen inofensivos</td><td><span class="chip c-med">72.7% cubierto</span></td></tr>
+    <tr><td>Primer conteo en cada sucursal</td><td>Es la línea base de todo lo demás</td><td><span class="chip c-ok">1 de 7 hecha</span></td></tr>
+  </tbody>
+</table>
+
+<div class="pie">
+  Los números salen de consultas directas a producción el 22-ago-2026.<br>
+  Los puntos ciegos 1 a 4 fueron verificados uno por uno contra la base de datos.
+</div>
+
+</div>
+</body>
+</html>

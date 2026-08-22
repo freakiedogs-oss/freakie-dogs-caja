@@ -4,10 +4,14 @@
 // (RPC menu_publico_delivery → canal delivery_propio, con modificadores),
 // así los precios y opciones son los mismos que cobra la caja.
 // ────────────────────────────────────────────────────────────────────
-import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment, Suspense, lazy } from 'react'
 import { db } from '../supabase'
 import { URL_DELIVERY } from '../config'
 import { NEGOCIO, BANNERS } from './catalogoBuho'
+
+// Leaflet pesa ~150 KB y solo lo necesita el ~30% de clientes cuyo GPS falla.
+// Cargarlo aparte mantiene liviano el menú, que es lo primero que ve la gente.
+const MapaUbicacion = lazy(() => import('./MapaUbicacion'))
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
 
@@ -798,6 +802,52 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   )
 }
 
+// ── Desglose de lo elegido en un combo ──────────────────────────────
+// Cuando el combo se arma por componentes (3 hot dogs, 3 papas, 3 bebidas), lo que el cliente
+// eligió NO está en `mods` sino dentro de cada componente. Si no se pinta, el carrito muestra
+// solo el nombre del combo y el cliente no puede verificar su orden.
+// Numera igual que el modal de armado: "Hot Dog 1", "Hot Dog 2"… solo si el nombre se repite.
+function numerarComponentes(comps = []) {
+  const repes = {}
+  comps.forEach(c => { repes[c.nombre] = (repes[c.nombre] || 0) + 1 })
+  const vistos = {}
+  return comps.map(c => {
+    vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
+    return { ...c, titulo: repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre }
+  })
+}
+
+function DetalleComponentes({ comps }) {
+  const lista = numerarComponentes(comps).filter(c => (c.mods || []).length > 0)
+  if (lista.length === 0) return null
+  return (
+    <>
+      {lista.map((c, i) => (
+        <div key={i} className="mp-linea-comp">
+          <div className="mp-linea-comp-titulo">{c.titulo}</div>
+          {(c.mods || []).map((m, j) => (
+            <div key={j} className="mp-linea-mod">
+              + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
+// Mismo desglose en texto plano, para el mensaje de WhatsApp.
+function lineaPedidoTexto(it) {
+  const partes = [`• ${it.qty}x ${it.nombre}`]
+  if (it.nota) partes.push(`   📝 ${it.nota}`)
+  for (const m of (it.mods || [])) partes.push(`   + ${m.nombre}`)
+  for (const c of numerarComponentes(it.comps || [])) {
+    if (!(c.mods || []).length) continue
+    partes.push(`   ${c.titulo}: ${c.mods.map(m => m.nombre).join(', ')}`)
+  }
+  return partes.join('\n')
+}
+
 function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) {
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
   const faltaGratis = reglas ? Math.max(0, reglas.gratisDesde - total) : 0
@@ -836,6 +886,7 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
                       + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
                     </div>
                   ))}
+                  <DetalleComponentes comps={it.comps} />
                   <div className="mp-linea-precio">{fmt((it.precio + (it.precioMods || 0)) * it.qty)}</div>
                 </div>
                 <div className="mp-linea-controles">
@@ -886,9 +937,9 @@ function PedidoEnviado({ datos, onClose }) {
   const waNum = String(datos.whatsapp || '').replace(/\D/g, '')
   const items = datos.items || []
   // Resumen del pedido para el mensaje de WhatsApp: el cliente manda qué pidió, no solo el número.
-  const resumen = items
-    .map(it => `• ${it.qty}x ${it.nombre}${(it.mods || []).length ? ` (${it.mods.map(m => m.nombre).join(', ')})` : ''}`)
-    .join('\n')
+  // Incluye el desglose por componente: con los combos armados por partes, el detalle de lo que
+  // el cliente eligió vive ahí, no en `mods`. Sin esto el mensaje solo decía "1x Combo Trío".
+  const resumen = items.map(lineaPedidoTexto).join('\n')
   const waMsg = `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Confirmo mi pedido ${datos.numero_orden}`
     + (resumen ? `:\n${resumen}` : '')
     + (datos.total ? `\nTotal: ${fmt(datos.total)}` : '')
@@ -923,6 +974,7 @@ function PedidoEnviado({ datos, onClose }) {
                         + {m.nombre}{Number(m.precio_extra) > 0 ? ` (${fmt(m.precio_extra)})` : ''}
                       </div>
                     ))}
+                    <DetalleComponentes comps={it.comps} />
                     <div className="mp-linea-precio">{fmt((it.precio + (it.precioMods || 0)) * it.qty)}</div>
                   </div>
                 </div>
@@ -989,23 +1041,36 @@ function Checkout({ items, total, onClose, onEnviado }) {
   const [geoEstado, setGeoEstado] = useState('idle') // idle|buscando|ok|denegado|error
   const [ubic, setUbic] = useState(null)             // {lat,lng}
   const [ruteo, setRuteo] = useState(null)           // resultado de sucursal_mas_cercana
+  // De dónde salió la ubicación: 'gps' (el dispositivo la entregó) o 'mapa'
+  // (el cliente arrastró el pin). Viaja al pedido para que despacho sepa
+  // cuánto confiar en el punto.
+  const [origenUbic, setOrigenUbic] = useState(null)
+  const [verMapa, setVerMapa] = useState(false)
 
   // Ubicación en dos intentos: primero por red/wifi (rápido y funciona
   // dentro de centros comerciales), y si falla se reintenta con el GPS
   // fino. Con un solo intento de alta precisión el navegador cortaba a
   // los 10 s en interiores y el cliente veía "no pudimos leer tu ubicación".
+  // Guarda el punto y rutea la sucursal más cercana. Lo usan tanto el GPS
+  // del navegador como el pin del mapa manual.
+  const fijarUbicacion = async ({ lat, lng }, origen) => {
+    setUbic({ lat, lng })
+    setOrigenUbic(origen)
+    try {
+      const { data } = await db.rpc('sucursal_mas_cercana', { p_lat: lat, p_lng: lng })
+      setRuteo(data || null)
+    } catch { setRuteo(null) }
+    setGeoEstado('ok')
+    setVerMapa(false)
+  }
+
   const usarMiUbicacion = () => {
     if (!navigator.geolocation) { setGeoEstado('sin_soporte'); return }
     setGeoEstado('buscando')
 
     const ok = async (pos) => {
       const lat = pos.coords.latitude, lng = pos.coords.longitude
-      setUbic({ lat, lng })
-      try {
-        const { data } = await db.rpc('sucursal_mas_cercana', { p_lat: lat, p_lng: lng })
-        setRuteo(data || null)
-      } catch { setRuteo(null) }
-      setGeoEstado('ok')
+      await fijarUbicacion({ lat, lng }, 'gps')
     }
 
     const falla = (err) => {
@@ -1056,6 +1121,20 @@ function Checkout({ items, total, onClose, onEnviado }) {
     if (tipo === 'delivery') {
       if (!direccion.trim()) return setError('Dirección requerida para delivery')
       if (!zona) return setError('Elegí tu zona')
+      // Sin punto en el mapa el motorista sale a buscar la dirección a ciegas.
+      // Antes se podía enviar el pedido sin tocar el botón de ubicación y ~1 de
+      // cada 3 llegaba sin coordenadas; ahora se abre el mapa y no se sigue
+      // hasta marcar la casa.
+      if (!ubic) {
+        setVerMapa(true)
+        // El botón de enviar está al final del formulario y el mapa aparece
+        // arriba: sin este scroll el cliente ve el error pero no el mapa.
+        setTimeout(() => {
+          document.getElementById('mp-campo-ubicacion')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 80)
+        return setError('Necesitamos tu ubicación para llevarte el pedido. Marcá tu casa en el mapa.')
+      }
       if (!cumpleMinimo) return setError(`Pedido mínimo ${fmt(envio?.minimo ?? NEGOCIO.consumoMinimo)} para delivery`)
     }
     setEnviando(true)
@@ -1073,6 +1152,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
           sucursal_id: tipo === 'pickup' ? tiendaSel : null,
           cliente_lat: tipo === 'delivery' ? (ubic?.lat ?? null) : null,
           cliente_lng: tipo === 'delivery' ? (ubic?.lng ?? null) : null,
+          ubicacion_origen: tipo === 'delivery' ? (origenUbic ?? null) : null,
           metodo_pago: metodoPago,
           paga_con: metodoPago === 'efectivo' ? (parseFloat(pagaCon) || null) : null,
           notas_cliente: notas.trim() || null,
@@ -1185,19 +1265,41 @@ function Checkout({ items, total, onClose, onEnviado }) {
           {/* SI DELIVERY: UBICACIÓN + DIRECCIÓN + ZONA */}
           {tipo === 'delivery' && (
             <>
-              <div className="mp-field">
+              <div className="mp-field" id="mp-campo-ubicacion">
                 <label>Tu ubicación *</label>
                 <div className="mp-geo-ayuda">
-                  Con tu ubicación asignamos la tienda más cercana y calculamos el envío exacto. Sin ella, te lo confirmamos por WhatsApp.
+                  Te agradecemos compartir tu ubicación en tiempo real: con ella tu pedido
+                  llega lo más rápido posible y te cobramos el envío exacto.
                 </div>
                 <button type="button" className="mp-geo-btn" onClick={usarMiUbicacion} disabled={geoEstado === 'buscando'}>
                   {geoEstado === 'buscando' ? '📍 Buscando tu ubicación…'
                     : geoEstado === 'ok' ? '📍 Cambiar mi ubicación'
                     : '📍 Usar mi ubicación'}
                 </button>
+
+                {/* Salida a mano siempre visible: hay clientes que no quieren dar
+                    permiso de GPS y antes enviaban el pedido sin ubicación. */}
+                {geoEstado !== 'ok' && !verMapa && (
+                  <button type="button" className="mp-geo-mapa-alt" onClick={() => setVerMapa(true)}>
+                    🗺️ o marcá tu casa en el mapa
+                  </button>
+                )}
+
+                {/* Mapa manual: aparece solo cuando el GPS del navegador no
+                    sirvió. Es la red que evita que el pedido salga sin punto. */}
+                {verMapa && (
+                  <Suspense fallback={<div className="mp-mapa-cargando">Cargando el mapa…</div>}>
+                    <MapaUbicacion
+                      onConfirmar={(punto) => fijarUbicacion(punto, 'mapa')}
+                      onCancelar={() => setVerMapa(false)}
+                    />
+                  </Suspense>
+                )}
+
                 {geoEstado === 'ok' && ruteo?.en_cobertura && (
                   <div className="mp-geo-ok">
                     ✅ Te atiende <b>{ruteo.nombre}</b> · a {ruteo.distancia_km} km
+                    {origenUbic === 'mapa' && <div className="mp-geo-nota">Punto marcado por vos en el mapa</div>}
                   </div>
                 )}
                 {geoEstado === 'ok' && ruteo && !ruteo.en_cobertura && (
@@ -1205,33 +1307,44 @@ function Checkout({ items, total, onClose, onEnviado }) {
                     ⚠️ Estás fuera de nuestra cobertura de reparto. Podés seguir con el pedido y te confirmamos por WhatsApp.
                   </div>
                 )}
-                {geoEstado === 'denegado' && (() => {
+                {geoEstado === 'denegado' && !verMapa && (() => {
                   const g = comoPermitirUbicacion()
                   return (
                     <div className="mp-geo-warn">
                       <b>{g.titulo}</b>
                       <ol className="mp-geo-pasos">{g.pasos.map((paso, i) => <li key={i}>{paso}</li>)}</ol>
-                      <div className="mp-geo-nota">
-                        Si preferís no hacerlo ahora, seguí igual y escribí bien tu dirección — te confirmamos el envío por WhatsApp.
+                      <div className="mp-geo-botones">
+                        <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                        <button type="button" className="mp-geo-mapa" onClick={() => setVerMapa(true)}>🗺️ Marcar en el mapa</button>
                       </div>
-                      <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
                     </div>
                   )
                 })()}
-                {geoEstado === 'sin_senal' && (
+                {geoEstado === 'sin_senal' && !verMapa && (
                   <div className="mp-geo-warn">
                     No encontramos señal de ubicación. Probá cerca de una ventana o con los datos móviles encendidos.
-                    <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                    <div className="mp-geo-botones">
+                      <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                      <button type="button" className="mp-geo-mapa" onClick={() => setVerMapa(true)}>🗺️ Marcar en el mapa</button>
+                    </div>
                   </div>
                 )}
-                {geoEstado === 'lento' && (
+                {geoEstado === 'lento' && !verMapa && (
                   <div className="mp-geo-warn">
-                    Tardó demasiado en ubicarte. Podés reintentar, o seguir y escribir bien tu dirección — te confirmamos el envío por WhatsApp.
-                    <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                    Tardó demasiado en ubicarte. Podés reintentar, o marcar tu casa en el mapa.
+                    <div className="mp-geo-botones">
+                      <button type="button" className="mp-geo-reintentar" onClick={usarMiUbicacion}>Reintentar</button>
+                      <button type="button" className="mp-geo-mapa" onClick={() => setVerMapa(true)}>🗺️ Marcar en el mapa</button>
+                    </div>
                   </div>
                 )}
-                {geoEstado === 'sin_soporte' && (
-                  <div className="mp-geo-warn">Tu navegador no permite compartir ubicación. Escribí bien tu dirección y te confirmamos el envío por WhatsApp.</div>
+                {geoEstado === 'sin_soporte' && !verMapa && (
+                  <div className="mp-geo-warn">
+                    Tu navegador no permite compartir ubicación.
+                    <div className="mp-geo-botones">
+                      <button type="button" className="mp-geo-mapa" onClick={() => setVerMapa(true)}>🗺️ Marcar en el mapa</button>
+                    </div>
+                  </div>
                 )}
               </div>
               <div className="mp-field">

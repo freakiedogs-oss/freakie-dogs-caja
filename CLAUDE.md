@@ -8,6 +8,8 @@
 3. Contexto ampliado en **Notion**: https://www.notion.so/33324fa10edc81f7ade9f52985e6e27e (🍔 Freakie Dogs ERP).
    Consultalo con el Notion MCP (`notion-search` / `notion-fetch`) cuando la task toque algo que no esté en el repo (Roadmap, Pendientes, CHANGELOG, specs de módulos). El tablero **EN_PROGRESO — Coordinación Jose/Cesar** (`36324fa10edc81ecb9a2cd5a265aacd3`) es una subpágina para evitar colisiones al trabajar en paralelo.
 
+> **Equipo:** Jose, Cesar y Frank trabajan el ERP en paralelo, cada uno con su propio Claude. Antes de tocar `MAESTRO.md`, `CHANGELOG.md`, schemas de Supabase o archivos críticos (`App.jsx`, `config.js`, FinanzasDashboard, BancoView, `dte-service`), revisá el tablero EN_PROGRESO y marcá lo que vas a tocar. El onboarding de cada uno está en `Contexto/MAESTRO/ONBOARDING_*.md`.
+
 ## Qué es y dónde corre
 - **Stack:** PWA React + Vite + Tailwind v4 + shadcn/ui (Vercel, mobile-first, instalable) · Supabase (Postgres, Auth, Storage, Edge Functions Deno, Realtime, RLS) · pg_cron · Make.com · Telegram Bot · **DTEaaS** — facturación electrónica DTE Hacienda (Edge Function `dte-service`, firma digital con certs MH, multi-tenant por API key).
 - **Supabase ref:** `btboxlwfqcbrdfrlnwln` (us-east-2, proyecto `freakie-dogs-erp`) — https://supabase.com/dashboard/project/btboxlwfqcbrdfrlnwln

@@ -5,8 +5,9 @@ import TabParametros from './TabParametros';
 import TabSucursales from './TabSucursales';
 import TabJuego from './TabJuego';
 import TabBonos from './TabBonos';
-// Cobertura usa Leaflet (mapa): lazy para no cargarlo hasta abrir ese tab
+// Cobertura + Mapa en vivo usan Leaflet: lazy para no cargarlo hasta abrir el tab
 const TabCobertura = lazy(() => import('./TabCobertura'));
+const TabMapaVivo = lazy(() => import('./TabMapaVivo'));
 const DespachoGPS = lazy(() => import('../almacen/DespachoGPS'));
 
 // ── Paleta ──────────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ export default function DeliveryView({ user, show = () => {} }) {
     <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh' }}>
       {/* TABS */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {[['pedidos','📥 Pedidos'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura'],['despacho-gps','🛵 Despacho GPS'],['sucursales','🏪 Sucursales'],['juego','🏆 Juego'],['parametros','⚙️ Parámetros']].map(([k, etq]) => (
+        {[['pedidos','📥 Pedidos'],['mapa','🗺️ Mapa'],['bonos','💰 Bonos'],['cobertura','🗺️ Cobertura'],['despacho-gps','🛵 Despacho GPS'],['sucursales','🏪 Sucursales'],['juego','🏆 Juego'],['parametros','⚙️ Parámetros']].map(([k, etq]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
@@ -41,6 +42,11 @@ export default function DeliveryView({ user, show = () => {} }) {
       {tab === 'juego' && <TabJuego show={show} />}
       {tab === 'parametros' && <TabParametros show={show} />}
       {tab === 'bonos'     && <TabBonos    user={user} show={show} puedeAprobar={puedeAprobar} />}
+      {tab === 'mapa' && (
+        <Suspense fallback={<div style={{ color: c.dim, padding: 20 }}>Cargando mapa en vivo…</div>}>
+          <TabMapaVivo show={show} />
+        </Suspense>
+      )}
       {tab === 'cobertura' && (
         <Suspense fallback={<div style={{ color: c.dim, padding: 20 }}>Cargando mapa…</div>}>
           <TabCobertura show={show} />
