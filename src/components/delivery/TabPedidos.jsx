@@ -6,9 +6,12 @@
 // Abajo, una franja plegable con los entregados del día y cuánto duró cada
 // etapa — es donde se ve si el atraso fue de cocina, de despacho o de la calle.
 // ────────────────────────────────────────────────────────────────────
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
 import { db } from '../../supabase';
 import { URL_DELIVERY } from '../../config';
+
+// Leaflet pesa ~150 KB: se descarga solo si Karina abre el mapa de asignación.
+const MapaAsignacion = lazy(() => import('./MapaAsignacion'));
 
 const TOKEN_KEY = 'freakie_torre_token';
 const c = {
@@ -17,6 +20,94 @@ const c = {
   blue: '#60a5fa', text: '#f0f0f0', dim: '#8a8a8a',
 };
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
+
+// ── Detalle de lo que pidió el cliente ───────────────────────────────
+// Karina necesita verlo sin salir de la Torre: para responder dudas por
+// WhatsApp, para avisarle a cocina de una nota, o para revisar un reclamo.
+// Va plegado porque en una columna angosta ocuparía demasiado.
+function DetallePedido({ items }) {
+  const [abierto, setAbierto] = useState(false);
+  const lista = Array.isArray(items) ? items : [];
+  if (lista.length === 0) return null;
+
+  const nItems = lista.reduce((s, i) => s + (Number(i.cantidad) || 1), 0);
+
+  return (
+    <div style={{ marginTop: 7 }}>
+      <button onClick={() => setAbierto(v => !v)}
+        style={{ background: 'none', border: 'none', color: c.blue, cursor: 'pointer',
+                 fontSize: 11.5, fontWeight: 700, padding: 0 }}>
+        🧾 {abierto ? 'Ocultar pedido' : `Ver pedido (${nItems} ít.)`}
+      </button>
+
+      {abierto && (
+        <div style={{ marginTop: 6, background: '#141414', borderRadius: 7, padding: '8px 9px',
+                      display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {lista.map((it, idx) => {
+            const mods = Array.isArray(it.modificadores) ? it.modificadores : [];
+            const comps = Array.isArray(it.componentes) ? it.componentes : [];
+            return (
+              <div key={idx}>
+                <div style={{ display: 'flex', gap: 6, fontSize: 12, color: c.text }}>
+                  <span style={{ fontWeight: 800, color: c.yellow, minWidth: 18 }}>{it.cantidad || 1}×</span>
+                  <span style={{ flex: 1 }}>{it.nombre || 'Producto'}</span>
+                  {it.subtotal != null && (
+                    <span style={{ color: c.dim, fontSize: 11 }}>{fmt(it.subtotal)}</span>
+                  )}
+                </div>
+
+                {/* Los componentes de un combo: qué eligió adentro */}
+                {comps.map((cp, j) => (
+                  <div key={j} style={{ fontSize: 11, color: c.dim, marginLeft: 24, marginTop: 2 }}>
+                    · {cp.cantidad > 1 ? `${cp.cantidad}× ` : ''}{cp.nombre}
+                    {Array.isArray(cp.modificadores) && cp.modificadores.length > 0 && (
+                      <span style={{ color: '#6f6f6f' }}> ({cp.modificadores.map(m => m.nombre).join(', ')})</span>
+                    )}
+                  </div>
+                ))}
+
+                {mods.length > 0 && (
+                  <div style={{ fontSize: 11, color: c.dim, marginLeft: 24, marginTop: 2 }}>
+                    {mods.map(m => m.nombre).join(' · ')}
+                  </div>
+                )}
+
+                {/* La nota del ítem es lo que más se pasa por alto en cocina */}
+                {it.nota && (
+                  <div style={{ fontSize: 11, color: c.yellow, marginLeft: 24, marginTop: 3 }}>
+                    ✏️ {it.nota}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Copiar al portapapeles con respaldo: en algunos navegadores la API moderna
+// solo funciona sobre HTTPS y sin ella Karina se quedaba sin poder copiar.
+async function copiar(texto, mensaje, show) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(texto);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = texto;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    show(mensaje);
+  } catch {
+    show('No se pudo copiar. Copialo a mano: ' + texto);
+  }
+}
 
 // Las 4 etapas que Karina opera
 const COLS = [
@@ -49,6 +140,26 @@ function colorPorEtapa(estado, min) {
   const l = LIMITES[estado] || { amarillo: 12, rojo: 25 };
   return min >= l.rojo ? c.red : min >= l.amarillo ? c.yellow : c.dim;
 }
+
+// Un pedido "colgado" es el que lleva horas parado en la misma etapa: casi
+// siempre ya se resolvió en la vida real (el cliente retiró, se entregó, se
+// canceló por teléfono) y nadie lo cerró en el sistema. Ensucia el tablero,
+// los relojes y los promedios del día.
+const CONGELADO_MIN = 120;
+const MOTIVO_COLGADO = 'Pedido colgado (nunca se cerró)';
+
+// Secuencia de etapas para los botones de mover. 'entregada' es el final:
+// desde ahí solo se puede volver atrás.
+const ETAPA_SIGUIENTE = {
+  recibida: 'preparando', preparando: 'lista', lista: 'en_camino', en_camino: 'entregada',
+};
+const ETAPA_ANTERIOR = {
+  preparando: 'recibida', lista: 'preparando', en_camino: 'lista', entregada: 'en_camino',
+};
+const NOMBRE_COL = {
+  recibida: 'Por cobrar', preparando: 'En cocina', lista: 'Por asignar',
+  en_camino: 'En ruta', entregada: 'Entregado',
+};
 
 // Dos relojes: el total desde que entró el pedido, y el de la etapa actual.
 // El total dice si el cliente lleva mucho esperando; el de etapa dice dónde
@@ -307,6 +418,9 @@ export default function TabPedidos({ show = () => {} }) {
     'El cliente se arrepintió',
     'No llegamos a esa dirección',
     'Producto agotado',
+    // Separado a propósito: un pedido colgado no es una venta perdida, es una
+    // que nadie cerró. Mezclarlo con los otros motivos ensucia las métricas.
+    MOTIVO_COLGADO,
     'Otro',
   ];
 
@@ -324,6 +438,34 @@ export default function TabPedidos({ show = () => {} }) {
       setCancelando(null);
       await cargar();
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
+  // Atajo para mover el pedido de columna en cualquier dirección. Los botones
+  // propios de cada etapa (confirmar pago, asignar, entregado) siguen siendo el
+  // camino normal; esto es para corregir cuando la realidad y el sistema se
+  // desfasan.
+  const moverEtapa = async (p, direccion) => {
+    const destino = direccion === 'adelante' ? ETAPA_SIGUIENTE[p.estado] : ETAPA_ANTERIOR[p.estado];
+    const aviso = direccion === 'atras'
+      ? (p.estado === 'entregada'
+          ? `¿Devolver ${p.numero_orden} a "${NOMBRE_COL[destino]}"?\n\nSe le borra el viaje que le sumaba al bono del motorista.`
+          : p.estado === 'en_camino'
+            ? `¿Devolver ${p.numero_orden} a "${NOMBRE_COL[destino]}"?\n\nSe le quita el motorista para que puedas reasignarlo.`
+            : `¿Devolver ${p.numero_orden} a "${NOMBRE_COL[destino]}"?`)
+      : null;
+    if (aviso && !window.confirm(aviso)) return;
+
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_mover_etapa', {
+        p_token: token, p_delivery_id: p.id, p_direccion: direccion });
+      if (error) throw error;
+      const extra = data?.solto_motorista ? ' · motorista liberado'
+                  : data?.borro_viaje ? ' · viaje del bono eliminado' : '';
+      show(`↔ ${p.numero_orden} → ${NOMBRE_COL[destino] || destino}${extra}`);
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo mover')); }
     finally { setOcupado(null); }
   };
 
@@ -430,7 +572,7 @@ export default function TabPedidos({ show = () => {} }) {
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar };
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa };
 
   return (
     <div>
@@ -572,6 +714,16 @@ export default function TabPedidos({ show = () => {} }) {
         </div>
       )}
 
+      {/* Mapa para asignar viendo dónde está cada cosa. Carga Leaflet solo
+          cuando Karina lo abre, para no pesar el tablero. */}
+      <Suspense fallback={null}>
+        <MapaAsignacion
+          onAsignar={(p, motoristaId) => asignar(p, motoristaId)}
+          ocupado={ocupado}
+          recargarPadre={() => cargar(token)}
+        />
+      </Suspense>
+
       <FranjaEntregados
         entregados={entregados}
         abierto={entregadosAbierto}
@@ -619,7 +771,7 @@ function Historial({ historial }) {
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar }) {
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa }) {
   const paraLlevar = p.tipo === 'para_llevar';
   const ahora = useAhora();
   const reloj = useRelojes(p, ahora);
@@ -644,6 +796,26 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       {previas && (
         <div style={{ fontSize: 10, color: c.dim, marginTop: 2 }}>{previas}</div>
       )}
+
+      {reloj.etapa.min >= CONGELADO_MIN && (
+        <div style={{ marginTop: 6, background: '#2a1414', border: `1px solid ${c.red}`,
+                      borderRadius: 7, padding: '7px 9px' }}>
+          <div style={{ fontSize: 11, color: '#f2b8b8', lineHeight: 1.4 }}>
+            ❄️ Lleva <b>{reloj.etapa.txt}</b> sin moverse. ¿Ya se resolvió y quedó abierto?
+          </div>
+          <button
+            disabled={ocupado === p.id}
+            onClick={() => {
+              if (window.confirm(`¿Archivar ${p.numero_orden}?\n\nSe saca del tablero y queda registrado como pedido colgado. Usalo solo si ya se resolvió fuera del sistema.`)) {
+                cancelar(p, MOTIVO_COLGADO);
+              }
+            }}
+            style={{ ...btn('#3a1f1f'), color: '#f2b8b8', fontSize: 11, padding: '5px 9px',
+                     marginTop: 6, width: '100%' }}>
+            🗄️ Archivar pedido colgado
+          </button>
+        </div>
+      )}
       {paraLlevar && (
         <div style={{ display: 'inline-block', marginTop: 5, fontSize: 11, fontWeight: 800,
                       color: '#111', background: c.yellow, borderRadius: 6, padding: '2px 8px' }}>
@@ -657,6 +829,41 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       </div>
       {p.motorista_nombre && <div style={{ fontSize: 11.5, color: c.green, marginTop: 3 }}>🛵 {p.motorista_nombre}</div>}
 
+      {/* Mover de columna en cualquier dirección. Va arriba de todo lo demás
+          porque es lo que Karina busca cuando el tablero no refleja la calle. */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 9, alignItems: 'center' }}>
+        {ETAPA_ANTERIOR[p.estado] && (
+          <button
+            disabled={ocupado === p.id}
+            onClick={() => moverEtapa(p, 'atras')}
+            title={`Devolver a ${NOMBRE_COL[ETAPA_ANTERIOR[p.estado]]}`}
+            style={{ ...btn('#242424'), color: c.dim, fontSize: 11.5, padding: '6px 9px',
+                     border: `1px solid #333` }}>
+            ◀ {NOMBRE_COL[ETAPA_ANTERIOR[p.estado]]}
+          </button>
+        )}
+        {ETAPA_SIGUIENTE[p.estado] && (
+          <button
+            disabled={ocupado === p.id}
+            onClick={() => moverEtapa(p, 'adelante')}
+            title={`Pasar a ${NOMBRE_COL[ETAPA_SIGUIENTE[p.estado]]}`}
+            style={{ ...btn(col.col), fontSize: 11.5, padding: '6px 10px',
+                     fontWeight: 800, marginLeft: 'auto' }}>
+            {NOMBRE_COL[ETAPA_SIGUIENTE[p.estado]]} ▶
+          </button>
+        )}
+      </div>
+
+      <DetallePedido items={p.items} />
+
+      {/* Nota general que escribió el cliente al hacer el pedido */}
+      {p.notas_cliente && (
+        <div style={{ marginTop: 6, background: '#2a2410', borderLeft: `2px solid ${c.yellow}`,
+                      borderRadius: 6, padding: '6px 8px', fontSize: 11, color: '#f3e2b8', lineHeight: 1.4 }}>
+          💬 {p.notas_cliente}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
         <a href={waLink(p.cliente_telefono, p)} target="_blank" rel="noopener" title="Escribirle al cliente"
            style={{ ...btn('#25D366'), textDecoration: 'none', fontSize: 11.5, padding: '6px 10px' }}>💬</a>
@@ -664,6 +871,21 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
           <button title="Copiar link de seguimiento"
             onClick={() => { navigator.clipboard?.writeText(trackUrl(p)); show('🔗 Link de seguimiento copiado'); }}
             style={{ ...btn('#333'), fontSize: 11.5, padding: '6px 10px' }}>🔗</button>
+        )}
+        {/* Ubicación para mandarle al motorista por WhatsApp cuando el GPS de
+            la app le falla o quiere abrirla en su navegador de siempre.
+            Disponible en las cuatro columnas, no solo cuando ya salió. */}
+        {p.cliente_lat != null && p.cliente_lng != null && (
+          <>
+            <button title="Copiar link de Google Maps"
+              onClick={() => copiar(`https://www.google.com/maps/search/?api=1&query=${p.cliente_lat},${p.cliente_lng}`,
+                                    '📍 Link de Maps copiado', show)}
+              style={{ ...btn('#2563eb'), fontSize: 11.5, padding: '6px 10px' }}>📍 Maps</button>
+            <button title="Copiar link de Waze"
+              onClick={() => copiar(`https://waze.com/ul?ll=${p.cliente_lat},${p.cliente_lng}&navigate=yes`,
+                                    '🧭 Link de Waze copiado', show)}
+              style={{ ...btn('#33ccff'), fontSize: 11.5, padding: '6px 10px', color: '#04212b' }}>🧭 Waze</button>
+          </>
         )}
       </div>
 

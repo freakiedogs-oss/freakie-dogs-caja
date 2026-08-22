@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react'
 import { db } from '../supabase'
 import Icon from './Icon'
+
+// Leaflet pesa ~150 KB: solo se descarga si cocina abre la pestaña de delivery.
+const PanelDeliverySucursal = lazy(() => import('./PanelDeliverySucursal'))
 import { STORES } from '../config'
 import { useToast } from '../hooks/useToast'
 import {
@@ -222,7 +225,7 @@ export default function KDSScreen({ user, onBack }) {
   const [loading,     setLoading]     = useState(true)
   const [bumping,     setBumping]     = useState(null)       // cuenta_id+comanda en proceso
   const [confirmar,   setConfirmar]   = useState(null)       // comanda amarilla/roja esperando doble check antes de LISTA
-  const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial'
+  const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial' | 'delivery'
   const [reverting,   setReverting]   = useState(null)       // id de item en revert
   const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
   const [soundReady, setSoundReady] = useState(false)   // audio desbloqueado por gesto
@@ -550,6 +553,16 @@ export default function KDSScreen({ user, onBack }) {
   // ── Render ──
   const canalInfo = (canal) => CANAL_INFO[canal] || { ic: 'box', label: canal, color: '#8b8997' }
 
+  // Panel de delivery: pantalla aparte, con su propio mapa y refresco.
+  // Se carga solo al abrirla para no meterle Leaflet al KDS de arranque.
+  if (tab === 'delivery') {
+    return (
+      <Suspense fallback={<div className="kds-root" style={{ padding: 24, color: '#8a8a95' }}>Cargando…</div>}>
+        <PanelDeliverySucursal user={user} onBack={() => setTab('activas')} />
+      </Suspense>
+    )
+  }
+
   return (
     <div className="kds-root">
 
@@ -569,6 +582,12 @@ export default function KDSScreen({ user, onBack }) {
             className={`kds-mode-btn${tab === 'historial' ? ' active' : ''}`}
             onClick={() => setTab('historial')}
           ><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="list" size={15} /> Historial</span></button>
+          {/* Vistazo al delivery de la sucursal: en cuánto vuelven los motoristas
+              y qué conviene cocinar primero. */}
+          <button
+            className={`kds-mode-btn${tab === 'delivery' ? ' active' : ''}`}
+            onClick={() => setTab('delivery')}
+          ><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="bike" size={15} /> Delivery</span></button>
         </div>
 
         {tab === 'activas' && (

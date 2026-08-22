@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { db } from '../../supabase';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { ordenarRuta, pedidosPorMotorista as agruparPorMotorista } from './rutaOrden';
 
 const CENTRO_SV = [13.72, -89.20];
 const TOKEN_KEY = 'freakie_torre_token';
@@ -33,6 +34,9 @@ const waHref = (tel) => {
   if (d.length < 8) return null;
   return `https://wa.me/${d.length === 8 ? '503' + d : d}`;
 };
+
+// El orden de entrega vive en rutaOrden.js, compartido con el mapa de
+// asignación: los dos tienen que mostrar la misma secuencia.
 
 // ── Iconos custom (divIcons) ────────────────────────────────────────
 function iconMotorista({ nombre, pedidos, libre, secondsStale }) {
@@ -220,13 +224,51 @@ export default function TabMapaVivo({ show = () => {} }) {
         </div>
       `);
       marker.addTo(layerPedidos.current);
+    }
 
-      // Trazar ruta motorista → pedido si en_camino y tenemos GPS del driver
-      if (p.estado === 'en_camino' && p.driver_lat != null && p.driver_lng != null) {
-        L.polyline(
-          [[p.driver_lat, p.driver_lng], [p.cliente_lat, p.cliente_lng]],
-          { color: COLORS.ruta, weight: 2.5, opacity: 0.85, dashArray: '6,4' }
-        ).addTo(layerRutas.current);
+    // ── Rutas encadenadas por motorista ──────────────────────────────
+    // Desde que el pedido tiene motorista (aunque siga en cocina) se dibuja
+    // la ruta. Si lleva varios, se unen en una sola línea con el orden
+    // sugerido, para que se lea como el recorrido real y no como rayas sueltas.
+    const porMotorista = new Map();
+    for (const p of data.pedidos || []) {
+      if (!p.motorista_id) continue;
+      if (p.cliente_lat == null || p.cliente_lng == null) continue;
+      if (!['preparando', 'lista', 'en_camino'].includes(p.estado)) continue;
+      if (!porMotorista.has(p.motorista_id)) porMotorista.set(p.motorista_id, []);
+      porMotorista.get(p.motorista_id).push(p);
+    }
+
+    for (const [motoristaId, lista] of porMotorista) {
+      const m = motMap.get(motoristaId);
+      // Sin GPS del motorista no dibujamos: una línea desde una posición
+      // inventada confunde más de lo que ayuda.
+      if (!m || m.lat == null || m.lng == null) continue;
+
+      const ruta = ordenarRuta({ lat: m.lat, lng: m.lng }, lista);
+      const puntos = [[m.lat, m.lng], ...ruta.map(p => [p.cliente_lat, p.cliente_lng])];
+
+      L.polyline(puntos, {
+        color: COLORS.ruta, weight: 2.5, opacity: 0.85, dashArray: '6,4',
+      }).addTo(layerRutas.current);
+
+      // Orden de entrega sobre cada parada. Se muestra siempre, aunque lleve
+      // uno solo: así el motorista y Karina leen lo mismo en los dos mapas.
+      {
+        ruta.forEach((p, i) => {
+          L.marker([p.cliente_lat, p.cliente_lng], {
+            icon: L.divIcon({
+              className: 'fk-orden',
+              html: `<div style="min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#111;
+                                 color:#fff;font-size:9.5px;font-weight:700;display:flex;align-items:center;
+                                 justify-content:center;border:1.5px solid ${COLORS.ruta};white-space:nowrap">${i + 1}º</div>`,
+              iconSize: [16, 16],
+              iconAnchor: [-7, 15],
+            }),
+            interactive: false,
+            zIndexOffset: 400,
+          }).addTo(layerRutas.current);
+        });
       }
     }
 
