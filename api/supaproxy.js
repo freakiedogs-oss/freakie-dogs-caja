@@ -59,7 +59,12 @@ const ROLES_FINANZAS = new Set(['admin', 'superadmin', 'ejecutivo']);
 // `v_empleados_expediente`, cerrada a la llave pública. La sirve solo a quien
 // tenga sesión de staff con rol de RRHH. `contador` NO entra: no administra
 // expedientes y su sesión daría de rebote poder de edición de usuarios.
-const RRHH_OBJETOS = new Set(['v_empleados_expediente']);
+//
+// `v_planilla_validacion` (nombre + DUI + salario + ISSS/AFP/renta + cuenta
+// bancaria de cada empleado) tiene security_invoker=false → salta el RLS; se
+// revocó de anon el 19-ago y eso dejó caída la pantalla de validación de
+// planilla, que usan Jose (ejecutivo), Majo (rrhh) y superadmin.
+const RRHH_OBJETOS = new Set(['v_empleados_expediente', 'v_planilla_validacion']);
 const ROLES_RRHH = new Set(['admin', 'superadmin', 'ejecutivo', 'rrhh']);
 
 // Devuelve el set de roles con acceso a un objeto gateado, o null si es abierto.
