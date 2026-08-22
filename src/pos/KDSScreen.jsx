@@ -332,10 +332,20 @@ export default function KDSScreen({ user, onBack }) {
 
   // ── Grouping ──
   // Agrupar queue por (cuenta_id + comanda_numero) → una "comanda"
+  // Clave de agrupación de una tarjeta: cuenta + comanda.
+  const comandaKey = (row) => `${row.cuenta_id}__${row.comanda_numero ?? 0}`
+
+  // Cuenta ÓRDENES (tarjetas), no filas de cocina. Desde que un combo emite una
+  // fila por componente (migración `comanda_delivery_propaga_componentes`),
+  // contar filas infla los badges: 1 Burger Duo = 6 filas → decía "6 pendientes"
+  // con una sola orden en pantalla. Los contadores POR ESTACIÓN sí siguen
+  // contando productos: la plancha necesita saber cuántas hamburguesas van.
+  const contarComandas = (rows) => new Set(rows.map(comandaKey)).size
+
   const buildComandas = (rows) => {
     const map = new Map()
     rows.forEach(row => {
-      const key = `${row.cuenta_id}__${row.comanda_numero ?? 0}`
+      const key = comandaKey(row)
       if (!map.has(key)) {
         map.set(key, {
           key,
@@ -384,7 +394,7 @@ export default function KDSScreen({ user, onBack }) {
   const canalesOcultosPend = hayFiltro
     ? FILTROS
         .filter(f => !canalesSel.includes(f.key))
-        .map(f => ({ label: f.label, n: queue.filter(r => (CANAL_FILTER[f.key] || []).includes(r.canal)).length }))
+        .map(f => ({ label: f.label, n: contarComandas(queue.filter(r => (CANAL_FILTER[f.key] || []).includes(r.canal))) }))
         .filter(c => c.n > 0)
     : []
   const nOcultosPend = canalesOcultosPend.reduce((s, c) => s + c.n, 0)
@@ -397,12 +407,14 @@ export default function KDSScreen({ user, onBack }) {
     ? queue.filter(r => canalesSel.flatMap(k => CANAL_FILTER[k] || []).includes(r.canal))
     : queue
   const contadoresS006 = calcularContadoresS006(colaVisible)
+  // Órdenes pendientes visibles (tarjetas), para el "● N pendientes" del header.
+  const nPendVisible = contarComandas(colaVisible)
 
   // Conteos para badges
   const conteos = {}
   FILTROS.forEach(f => {
     const c = CANAL_FILTER[f.key]
-    conteos[f.key] = c ? queue.filter(r => c.includes(r.canal)).length : queue.length
+    conteos[f.key] = contarComandas(c ? queue.filter(r => c.includes(r.canal)) : queue)
   })
   const contEst = {}
   ESTACIONES.forEach(e => {
@@ -527,8 +539,8 @@ export default function KDSScreen({ user, onBack }) {
 
             <span className="pos-header-sep" />
             <span style={{ fontSize: 12, color: queue.length > 0 ? '#fbbf24' : '#2dd4a8', fontWeight: 700 }}>
-              {colaVisible.length > 0
-                ? `● ${colaVisible.length} pendiente${colaVisible.length !== 1 ? 's' : ''}${canalesSel.length ? ' (filtrado)' : ''}`
+              {nPendVisible > 0
+                ? `● ${nPendVisible} pendiente${nPendVisible !== 1 ? 's' : ''}${canalesSel.length ? ' (filtrado)' : ''}`
                 : '● Sin órdenes'}
             </span>
           </>
