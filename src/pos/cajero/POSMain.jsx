@@ -481,12 +481,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     })
   }, [])
 
-  const addComboToCart = useCallback((combo, componentes, generalMods, precioExtra) => {
+  // `qty` = cuántos combos IGUALES se agregan de una vez. Es una sola línea con
+  // cantidad N (no N líneas): así el ticket, la cocina y el descuento de
+  // inventario la tratan como el POS ya trata cualquier ítem con cantidad.
+  const addComboToCart = useCallback((combo, componentes, generalMods, precioExtra, qty = 1) => {
     setItems(prev => [...prev, {
       id:     combo.id,
       nombre: combo.nombre,
       precio: parseFloat(combo.precio),
-      qty:    1,
+      qty:    Math.max(1, parseInt(qty, 10) || 1),
       nota:   '',
       saved:  false,
       estacion: combo.estacion || 'general',
@@ -1524,14 +1527,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         />
       )}
 
-      {/* Modal: Armar combo (modificadores por componente) */}
-      {comboPicker && (
-        <ComboModal
-          combo={comboPicker}
-          onConfirm={(componentes, generalMods, extra) => { addComboToCart(comboPicker, componentes, generalMods, extra); setComboPicker(null) }}
-          onCancel={() => setComboPicker(null)}
-        />
-      )}
+      {/* El ComboModal se renderiza UNA sola vez, más abajo. Acá había un
+          segundo render del mismo modal con el mismo `comboPicker`: montaba dos
+          instancias a la vez, cada una con su propio estado de selección. */}
 
       {/* Modal: Pago + DTE */}
       {pinAuth && (
@@ -1819,8 +1817,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         <ComboModal
           combo={comboPicker}
           onCancel={() => setComboPicker(null)}
-          onConfirm={(componentesOut, generalMods, extra) => {
-            addComboToCart(comboPicker, componentesOut, generalMods, extra)
+          onConfirm={(componentesOut, generalMods, extra, qty) => {
+            addComboToCart(comboPicker, componentesOut, generalMods, extra, qty)
             setComboPicker(null)
           }}
         />
@@ -1834,8 +1832,23 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 // ──────────────────────────────────────────────
 // ComboModal — arma un combo: modificadores por cada componente
 // ──────────────────────────────────────────────
+// Botón −/+ de cantidad. Alto generoso porque se toca en pantalla táctil, con
+// prisa y a veces con guantes.
+const qtyBtn = (off) => ({
+  width: 42, height: 42, borderRadius: 10,
+  border: '1.5px solid ' + (off ? '#2a2a32' : '#3b82f6'),
+  background: off ? '#1a1a22' : 'rgba(59,130,246,0.16)',
+  color: off ? '#5a5a66' : '#e5e7eb',
+  fontSize: 22, fontWeight: 900, lineHeight: 1,
+  cursor: off ? 'not-allowed' : 'pointer',
+})
+
 function ComboModal({ combo, onConfirm, onCancel }) {
   const [sel, setSel] = useState({})   // "secKey:grupoId" -> [modId,...]
+  // Varios combos iguales de un solo golpe: si el cliente pide 3 Freakie Burger
+  // con la misma personalización, la cajera arma uno y pone 3, en vez de repetir
+  // toda la selección tres veces. Si uno tiene que ir distinto, se agrega aparte.
+  const [qty, setQty] = useState(1)
 
   // Secciones con grupos por elegir: nivel combo (general) + cada componente
   const secciones = []
@@ -2000,11 +2013,35 @@ function ComboModal({ combo, onConfirm, onCancel }) {
           </div>
         )}
 
+        {/* Cantidad — todos llevan la misma selección de arriba */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      margin: '4px 0 12px', padding: '10px 12px', background: '#1a1a22',
+                      borderRadius: 10, border: '1px solid #2a2a32' }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Cantidad</div>
+            <div style={{ fontSize: 11, color: '#8b8997' }}>
+              {qty > 1 ? 'Todos con la misma selección' : 'Si uno va distinto, agrégalo aparte'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => setQty(q => Math.max(1, q - 1))} disabled={qty <= 1}
+              style={qtyBtn(qty <= 1)} aria-label="Quitar uno">−</button>
+            <span style={{ minWidth: 30, textAlign: 'center', fontSize: 20, fontWeight: 900 }}>{qty}</span>
+            <button onClick={() => setQty(q => Math.min(50, q + 1))} disabled={qty >= 50}
+              style={qtyBtn(qty >= 50)} aria-label="Agregar uno">+</button>
+          </div>
+        </div>
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 14px', fontSize: 14 }}>
           <span style={{ color: '#8b8997' }}>Precio</span>
           <span style={{ fontWeight: 700 }}>
-            ${(parseFloat(combo.precio) + extra).toFixed(2)}
-            {extra > 0 && <span style={{ color: '#8b8997', fontWeight: 400, fontSize: 12 }}> (base ${parseFloat(combo.precio).toFixed(2)} + ${extra.toFixed(2)})</span>}
+            ${((parseFloat(combo.precio) + extra) * qty).toFixed(2)}
+            {(extra > 0 || qty > 1) && (
+              <span style={{ color: '#8b8997', fontWeight: 400, fontSize: 12 }}>
+                {' '}({qty > 1 ? `${qty} × ` : ''}${(parseFloat(combo.precio) + extra).toFixed(2)}
+                {extra > 0 ? ` — base $${parseFloat(combo.precio).toFixed(2)} + $${extra.toFixed(2)}` : ''})
+              </span>
+            )}
           </span>
         </div>
 
@@ -2012,9 +2049,9 @@ function ComboModal({ combo, onConfirm, onCancel }) {
           className="pos-confirmar-btn"
           disabled={!!falta}
           style={falta ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-          onClick={() => onConfirm(componentesOut, generalMods, extra)}
+          onClick={() => onConfirm(componentesOut, generalMods, extra, qty)}
         >
-          {falta ? `Falta elegir en: ${falta.titulo}` : 'Agregar combo'}
+          {falta ? `Falta elegir en: ${falta.titulo}` : (qty > 1 ? `Agregar ${qty} combos` : 'Agregar combo')}
         </button>
         <button className="pos-cancelar-btn" onClick={onCancel}>Cancelar</button>
       </div>
