@@ -34,6 +34,58 @@ const waHref = (tel) => {
   return `https://wa.me/${d.length === 8 ? '503' + d : d}`;
 };
 
+// ── Orden de entrega sugerido ────────────────────────────────────────
+// Cuando un motorista lleva varios pedidos, el mapa traza una sola ruta
+// encadenada en vez de líneas sueltas. El orden no es fijo: se decide
+// pesando dos cosas que están en la misma unidad (minutos).
+//
+//   · Lo que el cliente ya esperó  → empuja el pedido hacia adelante
+//   · Lo que cuesta llegar hasta él → lo empuja hacia atrás
+//
+// En cada paso se elige el pedido con mejor balance: espera − viaje. Así un
+// pedido viejo se entrega antes aunque quede algo más lejos, pero no se hace
+// un desvío absurdo por ganar dos minutos de antigüedad.
+const MIN_POR_KM = 2.4;        // mismo factor que usa el ETA del servidor
+const ESPERA_CRITICA_MIN = 40; // pasado esto, el pedido va primero sí o sí
+const PESO_ESPERA = 1.0;       // 1 minuto esperando = 1 minuto de viaje
+
+function km(aLat, aLng, bLat, bLng) {
+  const R = 6371, rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(bLat - aLat), dLng = rad(bLng - aLng);
+  const h = Math.sin(dLat / 2) ** 2 +
+            Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(h));
+}
+
+function ordenarRuta(desde, pedidos, ahora = Date.now()) {
+  const pend = [...pedidos];
+  const ruta = [];
+  let pos = desde;
+
+  while (pend.length) {
+    const espera = (p) => Math.max(0, (ahora - new Date(p.created_at).getTime()) / 60000);
+    const viaje  = (p) => km(pos.lat, pos.lng, p.cliente_lat, p.cliente_lng) * MIN_POR_KM;
+
+    // Los que ya pasaron el límite de espera no compiten por cercanía:
+    // entre ellos gana el más viejo. Evita que un pedido lejano quede
+    // postergado indefinidamente mientras entran otros más cerca.
+    const criticos = pend.filter((p) => espera(p) >= ESPERA_CRITICA_MIN);
+    const candidatos = criticos.length ? criticos : pend;
+
+    let mejor = candidatos[0];
+    let mejorPuntaje = espera(mejor) * PESO_ESPERA - viaje(mejor);
+    for (const p of candidatos.slice(1)) {
+      const puntaje = espera(p) * PESO_ESPERA - viaje(p);
+      if (puntaje > mejorPuntaje) { mejor = p; mejorPuntaje = puntaje; }
+    }
+
+    ruta.push(mejor);
+    pos = { lat: mejor.cliente_lat, lng: mejor.cliente_lng };
+    pend.splice(pend.indexOf(mejor), 1);
+  }
+  return ruta;
+}
+
 // ── Iconos custom (divIcons) ────────────────────────────────────────
 function iconMotorista({ nombre, pedidos, libre, secondsStale }) {
   const color = libre ? COLORS.motoristaLibre : COLORS.motoristaOcupado;
@@ -220,13 +272,50 @@ export default function TabMapaVivo({ show = () => {} }) {
         </div>
       `);
       marker.addTo(layerPedidos.current);
+    }
 
-      // Trazar ruta motorista → pedido si en_camino y tenemos GPS del driver
-      if (p.estado === 'en_camino' && p.driver_lat != null && p.driver_lng != null) {
-        L.polyline(
-          [[p.driver_lat, p.driver_lng], [p.cliente_lat, p.cliente_lng]],
-          { color: COLORS.ruta, weight: 2.5, opacity: 0.85, dashArray: '6,4' }
-        ).addTo(layerRutas.current);
+    // ── Rutas encadenadas por motorista ──────────────────────────────
+    // Desde que el pedido tiene motorista (aunque siga en cocina) se dibuja
+    // la ruta. Si lleva varios, se unen en una sola línea con el orden
+    // sugerido, para que se lea como el recorrido real y no como rayas sueltas.
+    const porMotorista = new Map();
+    for (const p of data.pedidos || []) {
+      if (!p.motorista_id) continue;
+      if (p.cliente_lat == null || p.cliente_lng == null) continue;
+      if (!['preparando', 'lista', 'en_camino'].includes(p.estado)) continue;
+      if (!porMotorista.has(p.motorista_id)) porMotorista.set(p.motorista_id, []);
+      porMotorista.get(p.motorista_id).push(p);
+    }
+
+    for (const [motoristaId, lista] of porMotorista) {
+      const m = motMap.get(motoristaId);
+      // Sin GPS del motorista no dibujamos: una línea desde una posición
+      // inventada confunde más de lo que ayuda.
+      if (!m || m.lat == null || m.lng == null) continue;
+
+      const ruta = ordenarRuta({ lat: m.lat, lng: m.lng }, lista);
+      const puntos = [[m.lat, m.lng], ...ruta.map(p => [p.cliente_lat, p.cliente_lng])];
+
+      L.polyline(puntos, {
+        color: COLORS.ruta, weight: 2.5, opacity: 0.85, dashArray: '6,4',
+      }).addTo(layerRutas.current);
+
+      // Numerito de orden sobre cada parada, solo si lleva más de una.
+      if (ruta.length > 1) {
+        ruta.forEach((p, i) => {
+          L.marker([p.cliente_lat, p.cliente_lng], {
+            icon: L.divIcon({
+              className: 'fk-orden',
+              html: `<div style="width:15px;height:15px;border-radius:50%;background:#111;color:#fff;
+                                 font-size:9.5px;font-weight:700;display:flex;align-items:center;
+                                 justify-content:center;border:1.5px solid ${COLORS.ruta};">${i + 1}</div>`,
+              iconSize: [15, 15],
+              iconAnchor: [-6, 14],
+            }),
+            interactive: false,
+            zIndexOffset: 400,
+          }).addTo(layerRutas.current);
+        });
       }
     }
 
