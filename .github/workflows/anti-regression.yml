@@ -89,8 +89,13 @@ jobs:
             echo "pedí a un admin que haga override manual."
             echo ""
 
-            # Permitir override vía commit message tag
-            COMMIT_MSG=$(git log -1 --pretty=%B)
+            # Permitir override vía commit message tag.
+            # Se buscan TODOS los commits del PR ($BASE..HEAD), no solo el
+            # último: en un pull_request, actions/checkout deja el HEAD en el
+            # merge commit sintético ("Merge <sha> into <sha>"), así que
+            # `git log -1` nunca veía la etiqueta y el override documentado
+            # no funcionaba desde un PR — solo en pushes directos.
+            COMMIT_MSG=$(git log "$BASE"..HEAD --pretty=%B)
             if echo "$COMMIT_MSG" | grep -qF "[skip-antiregression]"; then
               echo "✅ Override detectado en commit message: [skip-antiregression]. Continuando."
               exit 0
