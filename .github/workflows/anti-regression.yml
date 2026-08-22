@@ -30,7 +30,15 @@ jobs:
           fi
 
           echo "Comparing $BASE..HEAD"
-          STATS=$(git diff --shortstat "$BASE"..HEAD || echo "")
+          # --ignore-cr-at-eol: un archivo editado en Windows se guardaba con otro
+          # fin de línea y git lo veía reescrito ENTERO. Eso inflaba el diff
+          # (+1064/-1045 cuando el cambio real era +21/-2) y, peor, el neto
+          # quedaba en ~0 — así que este check pasaba en silencio justo en el caso
+          # que debería atrapar: la reescritura completa de un archivo, que al
+          # mergear obliga a elegir una versión u otra y puede tirar el trabajo
+          # de otro. Con .gitattributes ya no debería volver a pasar; esto es el
+          # cinturón de seguridad por si alguien clona sin él.
+          STATS=$(git diff --ignore-cr-at-eol --shortstat "$BASE"..HEAD || echo "")
           echo "Stats: $STATS"
 
           INSERTIONS=$(echo "$STATS" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
@@ -57,8 +65,8 @@ jobs:
 
           # Check 3: Archivos críticos con net deletion masiva (>50 líneas por archivo)
           for FILE in "${CRITICAL_FILES[@]}"; do
-            if git diff --numstat "$BASE"..HEAD -- "$FILE" 2>/dev/null | grep -q .; then
-              STATS_FILE=$(git diff --numstat "$BASE"..HEAD -- "$FILE")
+            if git diff --ignore-cr-at-eol --numstat "$BASE"..HEAD -- "$FILE" 2>/dev/null | grep -q .; then
+              STATS_FILE=$(git diff --ignore-cr-at-eol --numstat "$BASE"..HEAD -- "$FILE")
               ADDED=$(echo "$STATS_FILE" | awk '{print $1}')
               REMOVED=$(echo "$STATS_FILE" | awk '{print $2}')
               if [ "$REMOVED" != "-" ] && [ "$ADDED" != "-" ]; then
