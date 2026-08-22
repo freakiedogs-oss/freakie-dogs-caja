@@ -199,7 +199,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [removibles,        setRemovibles]         = useState([])    // ingredientes que admiten "SIN"
-  const [removiblesCombo,   setRemoviblesCombo]    = useState({})    // idem, por índice de componente del combo
+  const [removiblesCombo,   setRemoviblesCombo]    = useState([])    // idem, para el combo (se resuelve desde el ítem padre)
   const [editIdx,           setEditIdx]            = useState(null)  // índice del ítem que se está editando (lápiz)
   const [ordenDestino,      setOrdenDestino]       = useState(destinoDefault)  // destino global por default (aqui/llevar)
   // Ref con el destino a aplicar al agregar un ítem (null si el canal no aplica).
@@ -287,25 +287,22 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     return () => { vivo = false }
   }, [modPicker?.id])
 
-  // Lo mismo para los combos, pero por COMPONENTE: el cliente pide "sin cebolla"
-  // en la hamburguesa del combo, no en el combo entero. Casi todo se vende en
-  // combo, así que sin esto el botón SIN casi no servía.
+  // Lo mismo para el combo. Se pregunta por el ítem PADRE, no por cada
+  // componente: la RPC ya explota los bloques hacia adentro
+  // (Freakie Burger → Hamburguesa Sencilla armada → cebolla, pepinillos, queso…)
+  // y devuelve el `bloque` de cada ingrediente. Preguntar por el componente
+  // devuelve vacío, porque el componente no tiene receta propia.
+  // El backend aplica el SIN por LÍNEA (pos_deducir_preview lo lee tanto de los
+  // modificadores del padre como de los del componente), así que dejarlo a
+  // nivel de combo descuenta igual.
   useEffect(() => {
-    const comps = comboPicker?.componentes || []
-    if (!comps.length) { setRemoviblesCombo({}); return }
+    if (!comboPicker?.id) { setRemoviblesCombo([]); return }
     let vivo = true
-    Promise.all(comps.map(c =>
-      c.item_id
-        ? db.rpc('pos_ingredientes_removibles', { p_menu_item_id: c.item_id })
-            .then(({ data, error }) => (!error && Array.isArray(data) ? data : []))
-            .catch(() => [])
-        : Promise.resolve([])
-    )).then(listas => {
-      if (!vivo) return
-      // se indexa por posición: un combo puede traer el mismo componente dos
-      // veces (las 2 hamburguesas del Burger Duo) y cada una se quita aparte
-      setRemoviblesCombo(Object.fromEntries(listas.map((l, i) => [i, l])))
-    })
+    db.rpc('pos_ingredientes_removibles', { p_menu_item_id: comboPicker.id })
+      .then(({ data, error }) => {
+        if (vivo) setRemoviblesCombo(!error && Array.isArray(data) ? data : [])
+      })
+      .catch(() => { if (vivo) setRemoviblesCombo([]) })
     return () => { vivo = false }
   }, [comboPicker?.id])
 
@@ -1866,7 +1863,7 @@ const qtyBtn = (off) => ({
 
 function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   const [sel, setSel] = useState({})   // "secKey:grupoId" -> [modId,...]
-  const [sin, setSin] = useState({})   // índice de componente -> [nombre a quitar,...]
+  const [sin, setSin] = useState([])   // nombres de ingredientes a quitar del combo
   // Varios combos iguales de un solo golpe: si el cliente pide 3 Freakie Burger
   // con la misma personalización, la cajera arma uno y pone 3, en vez de repetir
   // toda la selección tres veces. Si uno tiene que ir distinto, se agrega aparte.
@@ -1907,20 +1904,22 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
     return out
   }
 
-  // Los "SIN" viajan DENTRO de los modificadores del componente, con
-  // grupo_nombre 'SIN' y precio 0 — es el formato que ya lee pos_deducir_preview
-  // para no descontar el insumo que el cliente pidió quitar.
   const componentesOut = (combo.componentes || []).map((c, i) => ({
     item_id: c.item_id, nombre: c.nombre, estacion: c.estacion, cantidad: c.cantidad,
-    modificadores: [
-      ...modsDe('c' + i, c.modGrupos),
-      ...(sin[i] || []).map(nombre => ({
-        grupo_id: null, grupo_nombre: 'SIN', opcion_id: null,
-        nombre: 'SIN ' + nombre, quitar: nombre, precio_extra: 0,
-      })),
-    ],
+    modificadores: modsDe('c' + i, c.modGrupos),
   }))
-  const generalMods = modsDe('combo', combo.modGrupos)
+
+  // Los "SIN" viajan con los modificadores del combo, con grupo_nombre 'SIN' y
+  // precio 0: es el formato que pos_deducir_preview ya lee para NO descontar el
+  // insumo que el cliente pidió quitar. Van a nivel de combo porque el backend
+  // aplica el SIN por línea, no por componente.
+  const generalMods = [
+    ...modsDe('combo', combo.modGrupos),
+    ...sin.map(nombre => ({
+      grupo_id: null, grupo_nombre: 'SIN', opcion_id: null,
+      nombre: 'SIN ' + nombre, quitar: nombre, precio_extra: 0,
+    })),
+  ]
 
   let extra = 0
   componentesOut.forEach((c) => c.modificadores.forEach(m => { extra += (m.precio_extra || 0) * (c.cantidad || 1) }))
@@ -1951,51 +1950,12 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
         {/* Lista de componentes del combo (informativa) + sus grupos */}
         {(combo.componentes || []).map((c, i) => {
           const grupos = c.modGrupos || []
-          const quitables = removiblesCombo[i] || []
           return (
             <div key={i} style={{ marginBottom: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: (grupos.length || quitables.length) ? 6 : 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: grupos.length ? 6 : 0 }}>
                 {c.cantidad > 1 ? `${c.cantidad}× ` : ''}{c.nombre}
-                {grupos.length === 0 && quitables.length === 0 && <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · incluido</span>}
+                {grupos.length === 0 && <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · incluido</span>}
               </div>
-
-              {/* SIN — quitarle ingredientes a ESTE componente del combo */}
-              {quitables.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontWeight: 800, fontSize: 12, color: '#ef4444',
-                                textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 6 }}>
-                    Sin…
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
-                    {quitables.map(r => {
-                      const nombre = r.nombre || r
-                      const quitado = (sin[i] || []).includes(nombre)
-                      return (
-                        <button key={nombre}
-                          onClick={() => setSin(prev => {
-                            const cur = prev[i] || []
-                            return { ...prev, [i]: cur.includes(nombre) ? cur.filter(x => x !== nombre) : [...cur, nombre] }
-                          })}
-                          style={{
-                            position: 'relative', minHeight: 54, padding: 8, borderRadius: 10,
-                            border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
-                            background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
-                            color: '#e5e7eb', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
-                            textAlign: 'center', display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center', gap: 3, lineHeight: 1.2,
-                            textDecoration: quitado ? 'line-through' : 'none',
-                          }}>
-                          {quitado && (
-                            <span style={{ position: 'absolute', top: 4, right: 5, fontSize: 9, fontWeight: 800,
-                                           color: '#fff', background: '#ef4444', padding: '1px 4px', borderRadius: 4 }}>SIN</span>
-                          )}
-                          <span style={{ padding: '0 4px' }}>{nombre}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
               {grupos.map(g => (
                 <div key={g.id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
@@ -2082,6 +2042,61 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
             ))}
           </div>
         )}
+
+        {/* SIN — qué se le puede quitar al combo. La lista sale del ítem padre,
+            que es quien conoce sus bloques; se agrupa por bloque para que el
+            cajero sepa de dónde sale cada cosa ("Cebolla" es de la hamburguesa). */}
+        {removiblesCombo.length > 0 && (() => {
+          const porBloque = {}
+          removiblesCombo.forEach(r => {
+            const b = r.bloque || 'General'
+            if (!porBloque[b]) porBloque[b] = []
+            porBloque[b].push(r)
+          })
+          return (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, color: '#ef4444',
+                            textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 8 }}>
+                Sin… <span style={{ color: '#6b6878', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                  · tocá lo que el cliente NO quiere
+                </span>
+              </div>
+              {Object.entries(porBloque).map(([bloque, lista]) => (
+                <div key={bloque} style={{ marginBottom: 8 }}>
+                  {Object.keys(porBloque).length > 1 && (
+                    <div style={{ fontSize: 11, color: '#8b8997', marginBottom: 5 }}>{bloque}</div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
+                    {lista.map(r => {
+                      const quitado = sin.includes(r.nombre)
+                      return (
+                        <button key={bloque + r.nombre}
+                          onClick={() => setSin(prev => prev.includes(r.nombre)
+                            ? prev.filter(x => x !== r.nombre)
+                            : [...prev, r.nombre])}
+                          style={{
+                            position: 'relative', minHeight: 54, padding: 8, borderRadius: 10,
+                            border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
+                            background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
+                            color: '#e5e7eb', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                            textAlign: 'center', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', lineHeight: 1.2,
+                            textDecoration: quitado ? 'line-through' : 'none',
+                          }}>
+                          {quitado && (
+                            <span style={{ position: 'absolute', top: 4, right: 5, fontSize: 9, fontWeight: 800,
+                                           color: '#fff', background: '#ef4444', padding: '1px 4px', borderRadius: 4 }}>SIN</span>
+                          )}
+                          <span style={{ padding: '0 4px' }}>{r.nombre}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
 
         {/* Cantidad — todos llevan la misma selección de arriba */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
