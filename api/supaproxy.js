@@ -53,6 +53,22 @@ const FINANZAS_OBJETOS = new Set([
 // ROL, no solo que la sesión exista.
 const ROLES_FINANZAS = new Set(['admin', 'superadmin', 'ejecutivo']);
 
+// ── Gate de RRHH (SEG-1) ──
+// El expediente de empleados (DUI, NIT, cuenta bancaria, salario, teléfono,
+// contacto de emergencia, ISSS, AFP, nacimiento) vive en la vista
+// `v_empleados_expediente`, cerrada a la llave pública. La sirve solo a quien
+// tenga sesión de staff con rol de RRHH. `contador` NO entra: no administra
+// expedientes y su sesión daría de rebote poder de edición de usuarios.
+const RRHH_OBJETOS = new Set(['v_empleados_expediente']);
+const ROLES_RRHH = new Set(['admin', 'superadmin', 'ejecutivo', 'rrhh']);
+
+// Devuelve el set de roles con acceso a un objeto gateado, o null si es abierto.
+function rolesRequeridos(objeto) {
+  if (FINANZAS_OBJETOS.has(objeto)) return ROLES_FINANZAS;
+  if (RRHH_OBJETOS.has(objeto)) return ROLES_RRHH;
+  return null;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Cache corta de tokens ya validados: evita un viaje extra a la DB por request.
@@ -176,16 +192,17 @@ export default async function handler(req) {
   const tokenTorre = upstreamHeaders.get('x-torre-token');
   upstreamHeaders.delete('x-torre-token');
 
-  if (FINANZAS_OBJETOS.has(objetoDe(path))) {
+  const rolesPermitidos = rolesRequeridos(objetoDe(path));
+  if (rolesPermitidos) {
     if (!process.env.SB_FINANZAS_TOKEN) {
-      return noAutorizado('El gate de finanzas no está configurado en el servidor.');
+      return noAutorizado('El gate no está configurado en el servidor.');
     }
     const rol = await rolDeSesion(tokenTorre, upstreamHeaders.get('apikey'));
     if (!rol) {
-      return noAutorizado('Sesión de finanzas ausente o vencida.');
+      return noAutorizado('Sesión ausente o vencida.');
     }
-    if (!ROLES_FINANZAS.has(rol)) {
-      return noAutorizado(`Tu rol (${rol}) no tiene acceso a finanzas.`);
+    if (!rolesPermitidos.has(rol)) {
+      return noAutorizado(`Tu rol (${rol}) no tiene acceso a este dato.`);
     }
     // Cambiar la llave pública por el rol privado de solo lectura.
     upstreamHeaders.set('authorization', `Bearer ${process.env.SB_FINANZAS_TOKEN}`);
