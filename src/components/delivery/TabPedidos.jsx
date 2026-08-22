@@ -6,9 +6,12 @@
 // Abajo, una franja plegable con los entregados del día y cuánto duró cada
 // etapa — es donde se ve si el atraso fue de cocina, de despacho o de la calle.
 // ────────────────────────────────────────────────────────────────────
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
 import { db } from '../../supabase';
 import { URL_DELIVERY } from '../../config';
+
+// Leaflet pesa ~150 KB: se descarga solo si Karina abre el mapa de asignación.
+const MapaAsignacion = lazy(() => import('./MapaAsignacion'));
 
 const TOKEN_KEY = 'freakie_torre_token';
 const c = {
@@ -710,6 +713,16 @@ export default function TabPedidos({ show = () => {} }) {
           </div>
         </div>
       )}
+
+      {/* Mapa para asignar viendo dónde está cada cosa. Carga Leaflet solo
+          cuando Karina lo abre, para no pesar el tablero. */}
+      <Suspense fallback={null}>
+        <MapaAsignacion
+          onAsignar={(p, motoristaId) => asignar(p, motoristaId)}
+          ocupado={ocupado}
+          recargarPadre={() => cargar(token)}
+        />
+      </Suspense>
 
       <FranjaEntregados
         entregados={entregados}
