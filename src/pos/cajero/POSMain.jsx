@@ -199,6 +199,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [removibles,        setRemovibles]         = useState([])    // ingredientes que admiten "SIN"
+  const [removiblesCombo,   setRemoviblesCombo]    = useState([])    // idem, para el combo (se resuelve desde el ítem padre)
   const [editIdx,           setEditIdx]            = useState(null)  // índice del ítem que se está editando (lápiz)
   const [ordenDestino,      setOrdenDestino]       = useState(destinoDefault)  // destino global por default (aqui/llevar)
   // Ref con el destino a aplicar al agregar un ítem (null si el canal no aplica).
@@ -285,6 +286,25 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       .catch(() => { if (vivo) setRemovibles([]) })
     return () => { vivo = false }
   }, [modPicker?.id])
+
+  // Lo mismo para el combo. Se pregunta por el ítem PADRE, no por cada
+  // componente: la RPC ya explota los bloques hacia adentro
+  // (Freakie Burger → Hamburguesa Sencilla armada → cebolla, pepinillos, queso…)
+  // y devuelve el `bloque` de cada ingrediente. Preguntar por el componente
+  // devuelve vacío, porque el componente no tiene receta propia.
+  // El backend aplica el SIN por LÍNEA (pos_deducir_preview lo lee tanto de los
+  // modificadores del padre como de los del componente), así que dejarlo a
+  // nivel de combo descuenta igual.
+  useEffect(() => {
+    if (!comboPicker?.id) { setRemoviblesCombo([]); return }
+    let vivo = true
+    db.rpc('pos_ingredientes_removibles', { p_menu_item_id: comboPicker.id })
+      .then(({ data, error }) => {
+        if (vivo) setRemoviblesCombo(!error && Array.isArray(data) ? data : [])
+      })
+      .catch(() => { if (vivo) setRemoviblesCombo([]) })
+    return () => { vivo = false }
+  }, [comboPicker?.id])
 
   // ── Cargar menú ──
   useEffect(() => {
@@ -481,12 +501,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     })
   }, [])
 
-  const addComboToCart = useCallback((combo, componentes, generalMods, precioExtra) => {
+  // `qty` = cuántos combos IGUALES se agregan de una vez. Es una sola línea con
+  // cantidad N (no N líneas): así el ticket, la cocina y el descuento de
+  // inventario la tratan como el POS ya trata cualquier ítem con cantidad.
+  const addComboToCart = useCallback((combo, componentes, generalMods, precioExtra, qty = 1) => {
     setItems(prev => [...prev, {
       id:     combo.id,
       nombre: combo.nombre,
       precio: parseFloat(combo.precio),
-      qty:    1,
+      qty:    Math.max(1, parseInt(qty, 10) || 1),
       nota:   '',
       saved:  false,
       estacion: combo.estacion || 'general',
@@ -1515,23 +1538,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         </div>
       )}
 
-      {/* Modal: Selección de modificadores */}
-      {modPicker && (
-        <ModPickerModal
-          product={modPicker}
-          onConfirm={(mods, extra) => { addItemToCart(modPicker, mods, extra); setModPicker(null) }}
-          onCancel={() => setModPicker(null)}
-        />
-      )}
+      {/* El modal de modificadores se renderiza UNA sola vez, más abajo
+          (<ProductoModifiersModal>). Acá vivía un <ModPickerModal> viejo
+          disparado por el MISMO estado `modPicker`: se montaban los dos a la
+          vez y el viejo tapaba al nuevo, así que el POS perdió el botón SIN,
+          la edición de líneas, la cantidad y la nota. */}
 
-      {/* Modal: Armar combo (modificadores por componente) */}
-      {comboPicker && (
-        <ComboModal
-          combo={comboPicker}
-          onConfirm={(componentes, generalMods, extra) => { addComboToCart(comboPicker, componentes, generalMods, extra); setComboPicker(null) }}
-          onCancel={() => setComboPicker(null)}
-        />
-      )}
+      {/* El ComboModal se renderiza UNA sola vez, más abajo. Acá había un
+          segundo render del mismo modal con el mismo `comboPicker`: montaba dos
+          instancias a la vez, cada una con su propio estado de selección. */}
 
       {/* Modal: Pago + DTE */}
       {pinAuth && (
@@ -1818,9 +1833,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       {comboPicker && (
         <ComboModal
           combo={comboPicker}
+          removiblesCombo={removiblesCombo}
           onCancel={() => setComboPicker(null)}
-          onConfirm={(componentesOut, generalMods, extra) => {
-            addComboToCart(comboPicker, componentesOut, generalMods, extra)
+          onConfirm={(componentesOut, generalMods, extra, qty) => {
+            addComboToCart(comboPicker, componentesOut, generalMods, extra, qty)
             setComboPicker(null)
           }}
         />
@@ -1834,8 +1850,24 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 // ──────────────────────────────────────────────
 // ComboModal — arma un combo: modificadores por cada componente
 // ──────────────────────────────────────────────
-function ComboModal({ combo, onConfirm, onCancel }) {
+// Botón −/+ de cantidad. Alto generoso porque se toca en pantalla táctil, con
+// prisa y a veces con guantes.
+const qtyBtn = (off) => ({
+  width: 42, height: 42, borderRadius: 10,
+  border: '1.5px solid ' + (off ? '#2a2a32' : '#3b82f6'),
+  background: off ? '#1a1a22' : 'rgba(59,130,246,0.16)',
+  color: off ? '#5a5a66' : '#e5e7eb',
+  fontSize: 22, fontWeight: 900, lineHeight: 1,
+  cursor: off ? 'not-allowed' : 'pointer',
+})
+
+function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   const [sel, setSel] = useState({})   // "secKey:grupoId" -> [modId,...]
+  const [sin, setSin] = useState([])   // nombres de ingredientes a quitar del combo
+  // Varios combos iguales de un solo golpe: si el cliente pide 3 Freakie Burger
+  // con la misma personalización, la cajera arma uno y pone 3, en vez de repetir
+  // toda la selección tres veces. Si uno tiene que ir distinto, se agrega aparte.
+  const [qty, setQty] = useState(1)
 
   // Secciones con grupos por elegir: nivel combo (general) + cada componente
   const secciones = []
@@ -1876,7 +1908,18 @@ function ComboModal({ combo, onConfirm, onCancel }) {
     item_id: c.item_id, nombre: c.nombre, estacion: c.estacion, cantidad: c.cantidad,
     modificadores: modsDe('c' + i, c.modGrupos),
   }))
-  const generalMods = modsDe('combo', combo.modGrupos)
+
+  // Los "SIN" viajan con los modificadores del combo, con grupo_nombre 'SIN' y
+  // precio 0: es el formato que pos_deducir_preview ya lee para NO descontar el
+  // insumo que el cliente pidió quitar. Van a nivel de combo porque el backend
+  // aplica el SIN por línea, no por componente.
+  const generalMods = [
+    ...modsDe('combo', combo.modGrupos),
+    ...sin.map(nombre => ({
+      grupo_id: null, grupo_nombre: 'SIN', opcion_id: null,
+      nombre: 'SIN ' + nombre, quitar: nombre, precio_extra: 0,
+    })),
+  ]
 
   let extra = 0
   componentesOut.forEach((c) => c.modificadores.forEach(m => { extra += (m.precio_extra || 0) * (c.cantidad || 1) }))
@@ -2000,121 +2043,90 @@ function ComboModal({ combo, onConfirm, onCancel }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 14px', fontSize: 14 }}>
-          <span style={{ color: '#8b8997' }}>Precio</span>
-          <span style={{ fontWeight: 700 }}>
-            ${(parseFloat(combo.precio) + extra).toFixed(2)}
-            {extra > 0 && <span style={{ color: '#8b8997', fontWeight: 400, fontSize: 12 }}> (base ${parseFloat(combo.precio).toFixed(2)} + ${extra.toFixed(2)})</span>}
-          </span>
-        </div>
-
-        <button
-          className="pos-confirmar-btn"
-          disabled={!!falta}
-          style={falta ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-          onClick={() => onConfirm(componentesOut, generalMods, extra)}
-        >
-          {falta ? `Falta elegir en: ${falta.titulo}` : 'Agregar combo'}
-        </button>
-        <button className="pos-cancelar-btn" onClick={onCancel}>Cancelar</button>
-      </div>
-    </div>
-  )
-}
-
-
-// ──────────────────────────────────────────────
-// ModPickerModal — selección de modificadores al agregar un ítem
-// ──────────────────────────────────────────────
-function ModPickerModal({ product, onConfirm, onCancel }) {
-  const grupos = product.modGrupos || []
-  const [sel, setSel] = useState({})   // grupoId -> [modId, ...]
-
-  const toggle = (g, m) => {
-    setSel(prev => {
-      const cur = prev[g.id] || []
-      if (g.tipo === 'unico') return { ...prev, [g.id]: [m.id] }
-      if (cur.includes(m.id)) return { ...prev, [g.id]: cur.filter(x => x !== m.id) }
-      if (g.max_selecciones > 0 && cur.length >= g.max_selecciones) return prev  // tope alcanzado
-      return { ...prev, [g.id]: [...cur, m.id] }
-    })
-  }
-
-  // Modificadores elegidos + precio extra total
-  const elegidos = []
-  grupos.forEach(g => (sel[g.id] || []).forEach(mid => {
-    const m = g.opciones.find(o => o.id === mid)
-    if (m) elegidos.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
-  }))
-  const extra = elegidos.reduce((s, m) => s + m.precio_extra, 0)
-
-  // Validación de grupos obligatorios / mínimos
-  const falta = grupos.find(g => {
-    const n = (sel[g.id] || []).length
-    if (g.obligatorio && n < 1) return true
-    if (g.min_selecciones > 0 && n < g.min_selecciones) return true
-    return false
-  })
-
-  const reqLabel = (g) => {
-    if (g.obligatorio || g.min_selecciones > 0) {
-      const min = Math.max(g.min_selecciones || 0, g.obligatorio ? 1 : 0)
-      return `Elige ${min}${g.max_selecciones > 0 && g.max_selecciones !== min ? `–${g.max_selecciones}` : ''}`
-    }
-    if (g.tipo === 'unico') return 'Elige 1 (opcional)'
-    return g.max_selecciones > 0 ? `Hasta ${g.max_selecciones} (opcional)` : 'Opcional'
-  }
-
-  return (
-    <div className="pos-modal-overlay" onClick={onCancel}>
-      <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: '85vh', overflowY: 'auto' }}>
-        <div className="pos-modal-title">{product.nombre}</div>
-        <div className="pos-modal-sub" style={{ marginBottom: 8 }}>Personaliza tu pedido</div>
-
-        {grupos.map(g => {
-          const cur = sel[g.id] || []
+        {/* SIN — qué se le puede quitar al combo. La lista sale del ítem padre,
+            que es quien conoce sus bloques; se agrupa por bloque para que el
+            cajero sepa de dónde sale cada cosa ("Cebolla" es de la hamburguesa). */}
+        {removiblesCombo.length > 0 && (() => {
+          const porBloque = {}
+          removiblesCombo.forEach(r => {
+            const b = r.bloque || 'General'
+            if (!porBloque[b]) porBloque[b] = []
+            porBloque[b].push(r)
+          })
           return (
-            <div key={g.id} style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{g.nombre}</span>
-                <span style={{ fontSize: 11, color: '#8b8997' }}>{reqLabel(g)}</span>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, color: '#ef4444',
+                            textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 8 }}>
+                Sin… <span style={{ color: '#6b6878', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                  · tocá lo que el cliente NO quiere
+                </span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {g.opciones.map(m => {
-                  const on = cur.includes(m.id)
-                  const px = Number(m.precio_extra) || 0
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => toggle(g, m)}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '10px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-                        border: `1px solid ${on ? '#2dd4a8' : '#2a2a32'}`,
-                        background: on ? 'rgba(45,212,168,0.12)' : '#1c1c22',
-                        color: '#e8e6ef', fontSize: 14,
-                      }}
-                    >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 15 }}>{on ? (g.tipo === 'unico' ? '🔘' : '☑️') : (g.tipo === 'unico' ? '⚪' : '⬜')}</span>
-                        {m.nombre}
-                      </span>
-                      <span style={{ color: px > 0 ? '#2dd4a8' : '#8b8997', fontSize: 13, fontWeight: 600 }}>
-                        {px > 0 ? `+$${px.toFixed(2)}` : 'gratis'}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
+              {Object.entries(porBloque).map(([bloque, lista]) => (
+                <div key={bloque} style={{ marginBottom: 8 }}>
+                  {Object.keys(porBloque).length > 1 && (
+                    <div style={{ fontSize: 11, color: '#8b8997', marginBottom: 5 }}>{bloque}</div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
+                    {lista.map(r => {
+                      const quitado = sin.includes(r.nombre)
+                      return (
+                        <button key={bloque + r.nombre}
+                          onClick={() => setSin(prev => prev.includes(r.nombre)
+                            ? prev.filter(x => x !== r.nombre)
+                            : [...prev, r.nombre])}
+                          style={{
+                            position: 'relative', minHeight: 54, padding: 8, borderRadius: 10,
+                            border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
+                            background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
+                            color: '#e5e7eb', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                            textAlign: 'center', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', lineHeight: 1.2,
+                            textDecoration: quitado ? 'line-through' : 'none',
+                          }}>
+                          {quitado && (
+                            <span style={{ position: 'absolute', top: 4, right: 5, fontSize: 9, fontWeight: 800,
+                                           color: '#fff', background: '#ef4444', padding: '1px 4px', borderRadius: 4 }}>SIN</span>
+                          )}
+                          <span style={{ padding: '0 4px' }}>{r.nombre}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )
-        })}
+        })()}
+
+        {/* Cantidad — todos llevan la misma selección de arriba */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      margin: '4px 0 12px', padding: '10px 12px', background: '#1a1a22',
+                      borderRadius: 10, border: '1px solid #2a2a32' }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Cantidad</div>
+            <div style={{ fontSize: 11, color: '#8b8997' }}>
+              {qty > 1 ? 'Todos con la misma selección' : 'Si uno va distinto, agrégalo aparte'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => setQty(q => Math.max(1, q - 1))} disabled={qty <= 1}
+              style={qtyBtn(qty <= 1)} aria-label="Quitar uno">−</button>
+            <span style={{ minWidth: 30, textAlign: 'center', fontSize: 20, fontWeight: 900 }}>{qty}</span>
+            <button onClick={() => setQty(q => Math.min(50, q + 1))} disabled={qty >= 50}
+              style={qtyBtn(qty >= 50)} aria-label="Agregar uno">+</button>
+          </div>
+        </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 14px', fontSize: 14 }}>
           <span style={{ color: '#8b8997' }}>Precio</span>
           <span style={{ fontWeight: 700 }}>
-            ${(parseFloat(product.precio) + extra).toFixed(2)}
-            {extra > 0 && <span style={{ color: '#8b8997', fontWeight: 400, fontSize: 12 }}> (base ${parseFloat(product.precio).toFixed(2)} + ${extra.toFixed(2)})</span>}
+            ${((parseFloat(combo.precio) + extra) * qty).toFixed(2)}
+            {(extra > 0 || qty > 1) && (
+              <span style={{ color: '#8b8997', fontWeight: 400, fontSize: 12 }}>
+                {' '}({qty > 1 ? `${qty} × ` : ''}${(parseFloat(combo.precio) + extra).toFixed(2)}
+                {extra > 0 ? ` — base $${parseFloat(combo.precio).toFixed(2)} + $${extra.toFixed(2)}` : ''})
+              </span>
+            )}
           </span>
         </div>
 
@@ -2122,12 +2134,14 @@ function ModPickerModal({ product, onConfirm, onCancel }) {
           className="pos-confirmar-btn"
           disabled={!!falta}
           style={falta ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-          onClick={() => onConfirm(elegidos, extra)}
+          onClick={() => onConfirm(componentesOut, generalMods, extra, qty)}
         >
-          {falta ? `Falta elegir: ${falta.nombre}` : 'Agregar al pedido'}
+          {falta ? `Falta elegir en: ${falta.titulo}` : (qty > 1 ? `Agregar ${qty} combos` : 'Agregar combo')}
         </button>
         <button className="pos-cancelar-btn" onClick={onCancel}>Cancelar</button>
       </div>
     </div>
   )
 }
+
+

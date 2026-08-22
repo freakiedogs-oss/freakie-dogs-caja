@@ -1,0 +1,39 @@
+# Todo archivo de texto se guarda en el repo con fin de línea LF, sin importar
+# desde qué sistema operativo se edite.
+#
+# POR QUÉ EXISTE ESTE ARCHIVO
+# Sin esto, editar desde Windows guarda los archivos con CRLF y git cree que se
+# reescribió el archivo ENTERO aunque el cambio real sean 20 líneas. Eso trae
+# tres problemas, en orden de gravedad:
+#
+#   1. Al juntar ramas, git no puede fusionar pieza por pieza: hay que elegir un
+#      archivo completo u otro. Si se elige mal, se pierde todo lo que el otro
+#      desarrollador hizo ese día en ese archivo. Ya pasó con el KDS el 22-ago
+#      (commit 7e0cac9: git reportó +1064/-1045, el cambio real era +21/-2) y se
+#      resolvió bien por suerte, no por proceso.
+#   2. Nadie puede revisar el cambio: hay que leer 1064 líneas para hallar las 21
+#      que importan.
+#   3. La alarma anti-regresión del CI no lo detecta, porque borra e inserta la
+#      misma cantidad de líneas y el neto queda en ~0.
+#
+# `text=auto` deja que git decida qué es texto y qué es binario; `eol=lf` fija
+# el fin de línea dentro del repo. Cada quien sigue editando como quiera en su
+# máquina: la conversión es automática.
+* text=auto eol=lf
+
+# Binarios: que git no los toque nunca.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.zip  binary
+*.jks  binary
+*.keystore binary
+*.p12  binary
+*.crt  binary
