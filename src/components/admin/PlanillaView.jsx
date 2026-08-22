@@ -93,7 +93,9 @@ export default function PlanillaView({ user }) {
   }, []);
 
   const cargarEmpleados = useCallback(async () => {
-    const res = await db.from('empleados').select('id, nombre_completo, cargo, sucursal_id, salario_mensual, activo')
+    // salario_mensual NO se pide acá: no se usa (el salario mostrado sale de
+    // planilla_detalle.salario_base_quincenal) y la llave pública ya no lo lee.
+    const res = await db.from('empleados').select('id, nombre_completo, cargo, sucursal_id, activo')
       .eq('activo', true).order('nombre_completo');
     setEmpleados(res.data || []);
   }, []);
