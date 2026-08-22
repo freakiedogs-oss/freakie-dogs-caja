@@ -1,5 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { db } from '../../supabase'
+// Lecturas con PII (v_planilla_validacion, expediente con DUI) van por el
+// cliente gateado: no se sirven con la llave pública, solo tras sesión de staff
+// rol RRHH. Las escrituras (reasignar/confirmar) siguen por RPC con `db`.
+import { dbFin } from '../../supabaseFinanzas'
 import InfoTip from '../ui/InfoTip'
 
 const ALLOWED = ['c67b81a8-d9d3-4be7-9e7b-daf7114f4331', '2ed69499-4ad4-4cee-b827-aac250e25125']
@@ -47,7 +51,7 @@ export default function ValidacionPlanillaView({ user }) {
   const fetchAll = useCallback(async (table, select, order) => {
     let all = [], from = 0; const size = 1000
     while (true) {
-      let query = db.from(table).select(select).range(from, from + size - 1)
+      let query = dbFin.from(table).select(select).range(from, from + size - 1)
       if (order) query = query.order(order)
       const { data, error } = await query
       if (error) { console.error(table, error); break }
@@ -59,7 +63,8 @@ export default function ValidacionPlanillaView({ user }) {
     setLoading(true)
     const [v, e] = await Promise.all([
       fetchAll('v_planilla_validacion', '*', 'periodo'),
-      fetchAll('empleados', 'id,codigo_empleado,nombre_completo,dui,activo,cargo', 'codigo_empleado'),
+      // Expediente gateado: `empleados` por anon ya no expone `dui` (revoke SEG-1).
+      fetchAll('v_empleados_expediente', 'id,codigo_empleado,nombre_completo,dui,activo,cargo', 'codigo_empleado'),
     ])
     setRows(v); setEmps(e); setLoading(false)
   }, [fetchAll])

@@ -24,7 +24,7 @@ export default function MiBoleta({ user }) {
       try {
         // Try to find empleado linked to this user
         const { data: emp } = await db.from('empleados')
-          .select('id, nombre_completo, cargo, salario_mensual')
+          .select('id, nombre_completo, cargo')
           .or(`codigo_empleado.eq.${user.id},nombre_completo.ilike.%${user.nombre}%`)
           .limit(1)
           .maybeSingle();

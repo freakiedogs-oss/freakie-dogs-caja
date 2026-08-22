@@ -224,28 +224,35 @@ export default function InventarioFisico({user, onBack}){
         if(error)throw error;
       }
 
-      // Actualizar stock_actual en inventario de CM001
-      for(let i=0;i<productos.length;i+=batchSize){
-        const batch=productos.slice(i,i+batchSize);
-        await Promise.all(batch.map(p=>
-          db.from('inventario').upsert({
-            sucursal_id: sucursalId,
-            producto_id: p.producto_id,
-            stock_actual: p.cantidad_contada
-          },{onConflict:'producto_id,sucursal_id'})
-        ));
-      }
+      // Ajustar el stock de CM001 POR KARDEX, no pisando stock_actual.
+      // El delta lo calcula el servidor con la fila lockeada, para no arrastrar
+      // los despachos que hayan salido mientras se contaba.
+      const {data:ajuste,error:ajErr}=await db.rpc('kardex_ajustar_absoluto',{
+        p_items: productos.map(p=>({producto_id:p.producto_id, cantidad:Number(p.cantidad_contada)||0})),
+        p_tipo: 'conteo_fisico',
+        p_referencia_tipo: 'inventario_fisico',
+        p_referencia_id: invFisicoId,
+        p_notas: 'Inventario físico Casa Matriz',
+        p_usuario_id: user?.id||null,
+        p_sucursal_id: sucursalId,
+      });
+      if(ajErr) throw ajErr;
 
-      // Marcar como completado
-      const conDiff=productos.filter(p=>p.cantidad_contada!==p.stock_sistema).length;
+      // Marcar como completado. El conteo de diferencias sale del ajuste real
+      // del servidor, no de comparar contra el stock_sistema que se leyó al
+      // abrir la pantalla (que para entonces ya puede estar viejo).
       await db.from('inventario_fisico').update({
         estado:'completado',
         productos_contados: productos.length,
-        productos_con_diferencia: conDiff,
+        productos_con_diferencia: Number(ajuste?.ajustados)||0,
         completado_at: new Date().toISOString()
       }).eq('id',invFisicoId);
 
-      show('✅ Inventario completado — stock actualizado');
+      const falt=Number(ajuste?.faltante)||0, sobr=Number(ajuste?.sobrante)||0;
+      show(falt>0||sobr>0
+        ? `✅ Inventario completado — ${Number(ajuste?.ajustados)||0} con diferencia`
+          +(falt>0?`, faltan ${falt}`:'')+(sobr>0?`, sobran ${sobr}`:'')
+        : '✅ Inventario completado — todo cuadra');
       setScreen('review');
     }catch(e){
       show('❌ '+e.message);

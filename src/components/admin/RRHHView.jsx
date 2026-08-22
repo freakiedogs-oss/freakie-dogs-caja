@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
+// Expediente (DUI, NIT, cuenta bancaria, salario…) va por el cliente gateado:
+// la vista v_empleados_expediente NO se le sirve a la llave pública, solo tras
+// sesión de staff con rol RRHH. Las escrituras siguen por RPC con `db`.
+import { dbFin } from '../../supabaseFinanzas';
 import { fmtDate, n, STORES } from '../../config';
 import AsistenciaDigital from './AsistenciaDigital';
 import { paletaRRHH as C } from '@/theme';
@@ -156,9 +160,9 @@ function TabEmpleados({ canEdit, sucursales, show }) {
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await db
-        .from('empleados')
-        .select('*, sucursales(nombre)')
+      const { data } = await dbFin
+        .from('v_empleados_expediente')
+        .select('*')
         .order('nombre_completo');
       setEmpleados(data || []);
       const cargos = [...new Set((data || []).map(e => e.cargo).filter(Boolean))].sort();
@@ -281,7 +285,7 @@ function TabEmpleados({ canEdit, sucursales, show }) {
                 <td style={tdS}>{emp.codigo_empleado || '—'}</td>
                 <td style={{ ...tdS, fontWeight: 600 }}>{emp.nombre_completo}</td>
                 <td style={tdS}>{emp.cargo || '—'}</td>
-                <td style={tdS}>{emp.sucursales?.nombre || '—'}</td>
+                <td style={tdS}>{emp.sucursal_nombre || '—'}</td>
                 <td style={{ ...tdS, textAlign: 'right' }}>${n(emp.salario_mensual).toFixed(2)}</td>
                 <td style={tdS}>
                   <span style={{

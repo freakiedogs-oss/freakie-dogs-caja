@@ -47,6 +47,54 @@ const itemNivel = (it) => {
 const comandaNivel = (items) =>
   (items || []).reduce((acc, it) => (NIVEL_RANK[itemNivel(it)] > NIVEL_RANK[acc] ? itemNivel(it) : acc), 'normal')
 
+// "Modificadores" es el nombre de relleno que se pone cuando el grupo real no
+// se pudo resolver. No le dice nada al cocinero y le roba una línea a cada
+// ítem, así que se omite; los nombres con información (SALSAS PAPAS, BEBIDA
+// DELIVERY, COMPLEMENTO DE HOT DOG) sí se muestran.
+const grupoGenerico = (g) => /^modificadores?$/i.test(String(g || '').trim())
+
+// Las filas de un mismo combo traen "Combo: <nombre> · <nota del cliente>" para
+// que el KDS pueda agruparlas. Acá se parte en las dos piezas: el nombre va al
+// encabezado del bloque y la nota se muestra UNA sola vez, no repetida bajo
+// cada componente.
+const RX_COMBO = /^Combo:\s*([^·]+)(?:·\s*(.*))?$/s
+const parseNotaCombo = (nota) => {
+  const m = RX_COMBO.exec(String(nota || '').trim())
+  if (!m) return null
+  return { nombre: (m[1] || '').trim(), nota: (m[2] || '').trim() || null }
+}
+
+// Chips de modificadores. Se renderiza inline, a la par del nombre del ítem,
+// para que la tarjeta ocupe menos alto: en una pantalla de cocina el espacio
+// vertical es lo que decide cuántas órdenes se ven de un vistazo.
+function ItemMods({ item }) {
+  const mods = Array.isArray(item.modificadores) ? item.modificadores : []
+  if (mods.length === 0) return null
+  const porGrupo = {}
+  mods.forEach(m => {
+    const k = m.grupo_nombre || 'Modificadores'
+    if (!porGrupo[k]) porGrupo[k] = []
+    porGrupo[k].push(m)
+  })
+  return (
+    <span className="kds-item-mods-grouped">
+      {Object.entries(porGrupo).map(([grupo, lista]) => (
+        <span key={grupo} className="kds-mod-grupo-block">
+          {!grupoGenerico(grupo) && <span className="kds-mod-grupo-label">{grupo}:</span>}
+          {lista.map((m, mi) => (
+            <span key={mi} className="kds-mod-chip">
+              + {m.nombre}
+              {Number(m.precio_extra) > 0 && (
+                <span className="kds-mod-price"> +${Number(m.precio_extra).toFixed(2)}</span>
+              )}
+            </span>
+          ))}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 // Sucursal = mesa + para_llevar (se atienden juntos en cocina)
 const CANAL_FILTER = {
   todos:      null,
@@ -335,10 +383,20 @@ export default function KDSScreen({ user, onBack }) {
 
   // ── Grouping ──
   // Agrupar queue por (cuenta_id + comanda_numero) → una "comanda"
+  // Clave de agrupación de una tarjeta: cuenta + comanda.
+  const comandaKey = (row) => `${row.cuenta_id}__${row.comanda_numero ?? 0}`
+
+  // Cuenta ÓRDENES (tarjetas), no filas de cocina. Desde que un combo emite una
+  // fila por componente (migración `comanda_delivery_propaga_componentes`),
+  // contar filas infla los badges: 1 Burger Duo = 6 filas → decía "6 pendientes"
+  // con una sola orden en pantalla. Los contadores POR ESTACIÓN sí siguen
+  // contando productos: la plancha necesita saber cuántas hamburguesas van.
+  const contarComandas = (rows) => new Set(rows.map(comandaKey)).size
+
   const buildComandas = (rows) => {
     const map = new Map()
     rows.forEach(row => {
-      const key = `${row.cuenta_id}__${row.comanda_numero ?? 0}`
+      const key = comandaKey(row)
       if (!map.has(key)) {
         map.set(key, {
           key,
@@ -387,7 +445,7 @@ export default function KDSScreen({ user, onBack }) {
   const canalesOcultosPend = hayFiltro
     ? FILTROS
         .filter(f => !canalesSel.includes(f.key))
-        .map(f => ({ label: f.label, n: queue.filter(r => (CANAL_FILTER[f.key] || []).includes(r.canal)).length }))
+        .map(f => ({ label: f.label, n: contarComandas(queue.filter(r => (CANAL_FILTER[f.key] || []).includes(r.canal))) }))
         .filter(c => c.n > 0)
     : []
   const nOcultosPend = canalesOcultosPend.reduce((s, c) => s + c.n, 0)
@@ -400,12 +458,14 @@ export default function KDSScreen({ user, onBack }) {
     ? queue.filter(r => canalesSel.flatMap(k => CANAL_FILTER[k] || []).includes(r.canal))
     : queue
   const contadoresS006 = calcularContadoresS006(colaVisible)
+  // Órdenes pendientes visibles (tarjetas), para el "● N pendientes" del header.
+  const nPendVisible = contarComandas(colaVisible)
 
   // Conteos para badges
   const conteos = {}
   FILTROS.forEach(f => {
     const c = CANAL_FILTER[f.key]
-    conteos[f.key] = c ? queue.filter(r => c.includes(r.canal)).length : queue.length
+    conteos[f.key] = contarComandas(c ? queue.filter(r => c.includes(r.canal)) : queue)
   })
   const contEst = {}
   ESTACIONES.forEach(e => {
@@ -546,8 +606,8 @@ export default function KDSScreen({ user, onBack }) {
 
             <span className="pos-header-sep" />
             <span style={{ fontSize: 12, color: queue.length > 0 ? '#fbbf24' : '#2dd4a8', fontWeight: 700 }}>
-              {colaVisible.length > 0
-                ? `● ${colaVisible.length} pendiente${colaVisible.length !== 1 ? 's' : ''}${canalesSel.length ? ' (filtrado)' : ''}`
+              {nPendVisible > 0
+                ? `● ${nPendVisible} pendiente${nPendVisible !== 1 ? 's' : ''}${canalesSel.length ? ' (filtrado)' : ''}`
                 : '● Sin órdenes'}
             </span>
           </>
@@ -760,9 +820,12 @@ export default function KDSScreen({ user, onBack }) {
                         "Burger Duo" con sus partes y no seis líneas sueltas. */}
                     <div className="kds-card-items">
                       {(() => {
-                      const renderItem = (item) => {
+                      // `nota`: undefined = usar la del ítem; null = ocultarla
+                      // (la muestra el encabezado del combo, una sola vez).
+                      const renderItem = (item, { nota } = {}) => {
                         const done = item.estado === 'completado'
                         const inProg = item.estado === 'en_preparacion'
+                        const notaVisible = nota === undefined ? item.nota : nota
                         return (
                           <button
                             key={item.id}
@@ -782,34 +845,10 @@ export default function KDSScreen({ user, onBack }) {
                               {item.destino && (
                                 <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px', color: item.destino === 'aqui' ? '#2dd4a8' : '#f4a261', background: (item.destino === 'aqui' ? '#2dd4a8' : '#f4a261') + '22' }}>{item.destino === 'aqui' ? '🍽️ AQUÍ' : '🥡 LLEVAR'}</span>
                               )}
+                              <ItemMods item={item} />
                             </span>
-                            {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {
-                              const porGrupo = {}
-                              item.modificadores.forEach(m => {
-                                const k = m.grupo_nombre || 'Modificadores'
-                                if (!porGrupo[k]) porGrupo[k] = []
-                                porGrupo[k].push(m)
-                              })
-                              return (
-                                <span className="kds-item-mods-grouped">
-                                  {Object.entries(porGrupo).map(([grupo, opts]) => (
-                                    <span key={grupo} className="kds-mod-grupo-block">
-                                      <span className="kds-mod-grupo-label">{grupo}:</span>
-                                      {opts.map((m, mi) => (
-                                        <span key={mi} className="kds-mod-chip">
-                                          + {m.nombre}
-                                          {Number(m.precio_extra) > 0 && (
-                                            <span className="kds-mod-price"> +${Number(m.precio_extra).toFixed(2)}</span>
-                                          )}
-                                        </span>
-                                      ))}
-                                    </span>
-                                  ))}
-                                </span>
-                              )
-                            })()}
-                            {item.nota && (
-                              <span className="kds-item-notarow" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 700 } : undefined}>📝 {item.nota}</span>
+                            {notaVisible && (
+                              <span className="kds-item-notarow" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 700 } : undefined}>📝 {notaVisible}</span>
                             )}
                           </button>
                         )
@@ -818,15 +857,20 @@ export default function KDSScreen({ user, onBack }) {
                       // (buildQueueRows les pone la nota "Combo: <nombre>").
                       const bloques = []; const porCombo = {}
                       comanda.items.forEach(it => {
-                        const m = /^Combo:\s*([^·]+)/.exec(it.nota || '')
-                        const clave = (m && it.cuenta_item_id) ? it.cuenta_item_id : null
+                        const info = parseNotaCombo(it.nota)
+                        const clave = (info && it.cuenta_item_id) ? it.cuenta_item_id : null
                         if (!clave) { bloques.push({ solo: it }); return }
-                        if (!porCombo[clave]) { porCombo[clave] = { nombre: m[1].trim(), items: [] }; bloques.push(porCombo[clave]) }
+                        if (!porCombo[clave]) { porCombo[clave] = { nombre: info.nombre, nota: null, items: [] }; bloques.push(porCombo[clave]) }
+                        // La nota del cliente viene idéntica en todas las filas
+                        // del combo: basta con quedarse con la primera.
+                        if (!porCombo[clave].nota && info.nota) porCombo[clave].nota = info.nota
                         porCombo[clave].items.push(it)
                       })
                       return bloques.map((b, bi) => {
                         if (!b.items) return renderItem(b.solo)
-                        if (b.items.length === 1) return renderItem(b.items[0])
+                        // Combo de un solo componente: no se arma bloque, pero
+                        // igual hay que limpiarle el prefijo "Combo: <nombre>".
+                        if (b.items.length === 1) return renderItem(b.items[0], { nota: b.nota })
                         const listos = b.items.filter(i => i.estado === 'completado').length
                         return (
                           <div key={'combo' + bi} className="kds-combo-bloque">
@@ -834,7 +878,8 @@ export default function KDSScreen({ user, onBack }) {
                               <span className="kds-combo-nombre">{b.nombre}</span>
                               <span className="kds-combo-progreso">{listos}/{b.items.length}</span>
                             </div>
-                            {b.items.map(it => renderItem(it))}
+                            {b.nota && <div className="kds-combo-nota">📝 {b.nota}</div>}
+                            {b.items.map(it => renderItem(it, { nota: null }))}
                           </div>
                         )
                       })
@@ -960,32 +1005,8 @@ export default function KDSScreen({ user, onBack }) {
                               {item.destino && (
                                 <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 5, letterSpacing: '0.3px', color: item.destino === 'aqui' ? '#2dd4a8' : '#f4a261', background: (item.destino === 'aqui' ? '#2dd4a8' : '#f4a261') + '22' }}>{item.destino === 'aqui' ? '🍽️ AQUÍ' : '🥡 LLEVAR'}</span>
                               )}
+                              <ItemMods item={item} />
                             </span>
-                            {Array.isArray(item.modificadores) && item.modificadores.length > 0 && (() => {
-                              const porGrupo = {}
-                              item.modificadores.forEach(m => {
-                                const k = m.grupo_nombre || 'Modificadores'
-                                if (!porGrupo[k]) porGrupo[k] = []
-                                porGrupo[k].push(m)
-                              })
-                              return (
-                                <span className="kds-item-mods-grouped">
-                                  {Object.entries(porGrupo).map(([grupo, opts]) => (
-                                    <span key={grupo} className="kds-mod-grupo-block">
-                                      <span className="kds-mod-grupo-label">{grupo}:</span>
-                                      {opts.map((m, mi) => (
-                                        <span key={mi} className="kds-mod-chip">
-                                          + {m.nombre}
-                                          {Number(m.precio_extra) > 0 && (
-                                            <span className="kds-mod-price"> +${Number(m.precio_extra).toFixed(2)}</span>
-                                          )}
-                                        </span>
-                                      ))}
-                                    </span>
-                                  ))}
-                                </span>
-                              )
-                            })()}
                             {item.nota && (
                               <span className="kds-item-notarow" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 700 } : undefined}>📝 {item.nota}</span>
                             )}

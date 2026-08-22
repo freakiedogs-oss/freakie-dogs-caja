@@ -145,17 +145,29 @@ export default function HistorialTab({user,show}){
     try{
       // 1. Obtener items para revertir inventario
       const {data:recItems}=await db.from('recepcion_items').select('id,recepcion_id,producto_id,cantidad_recibida').eq('recepcion_id',rec.id);
-      // 2. Revertir inventario
-      for(const it of (recItems||[])){
-        if(!it.producto_id||!cmId) continue;
-        const {data:inv}=await db.from('inventario').select('id,stock_actual')
-          .eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
-        if(inv){
-          await db.from('inventario').update({
-            stock_actual:Math.max(0,parseFloat(inv.stock_actual)-parseFloat(it.cantidad_recibida)),
-            ultima_actualizacion:new Date().toISOString()
-          }).eq('id',inv.id);
-        }
+      // 2. Revertir inventario POR KARDEX.
+      // El Math.max(0,...) que había acá escondía faltantes: si el stock ya
+      // estaba por debajo de lo recibido, la resta se truncaba en 0 y la
+      // diferencia desaparecía. Con permitir_negativo el descuadre se ve.
+      // La recepción se borra en el paso 4, así que su número va en la nota:
+      // el referencia_id quedaría apuntando a una fila inexistente.
+      const itemsKardex=(recItems||[])
+        .filter(it=>it.producto_id&&cmId&&n(it.cantidad_recibida)>0)
+        .map(it=>({producto_id:it.producto_id, cantidad:-n(it.cantidad_recibida)}));
+      if(itemsKardex.length>0){
+        const {error:kErr}=await db.rpc('kardex_mover_lote',{
+          p_items:itemsKardex,
+          p_tipo:'devolucion',
+          p_referencia_tipo:'recepcion_eliminada',
+          p_referencia_id:null,
+          p_notas:'Reversión por eliminación de recepción'
+            +(rec.dte_codigo?' DTE '+rec.dte_codigo:'')
+            +(rec.proveedor?' — '+rec.proveedor:''),
+          p_usuario_id:user?.id||null,
+          p_sucursal_id:cmId,
+          p_permitir_negativo:true,
+        });
+        if(kErr) throw kErr;
       }
       // 3. Borrar items
       await db.from('recepcion_items').delete().eq('recepcion_id',rec.id);
@@ -175,7 +187,7 @@ export default function HistorialTab({user,show}){
   },[pendientes]);
 
   // Si estamos editando, mostrar EditarRecepcion (DESPUÉS de todos los hooks)
-  if(editRec) return <EditarRecepcion rec={editRec} cmId={cmId} show={show} onBack={()=>{setEditRec(null);setExpandedId(null);cargar();}}/>;
+  if(editRec) return <EditarRecepcion rec={editRec} cmId={cmId} user={user} show={show} onBack={()=>{setEditRec(null);setExpandedId(null);cargar();}}/>;
 
   return(
     <div style={{padding:'16px 16px 100px'}}>
@@ -390,7 +402,7 @@ export default function HistorialTab({user,show}){
 }
 
 // ── EDITAR RECEPCIÓN COMPLETA ─────────────────────────────────
-function EditarRecepcion({rec,cmId,show,onBack}){
+function EditarRecepcion({rec,cmId,user,show,onBack}){
   const [proveedorId,setProveedorId]=useState(null);
   const [proveedorNombre,setProveedorNombre]=useState(rec.proveedor||'');
   const [proveedorSearch,setProveedorSearch]=useState(rec.proveedor||'');
@@ -482,15 +494,6 @@ function EditarRecepcion({rec,cmId,show,onBack}){
         const {error:upErr}=await db.storage.from(BUCKET).upload(path,foto,{cacheControl:'3600',upsert:false});
         if(!upErr){const {data:pu}=db.storage.from(BUCKET).getPublicUrl(path);fotoDbUrl=pu?.publicUrl;}
       }
-      // 2. Revertir inventario de items originales
-      for(const oi of origItems){
-        if(!oi.producto_id||!cmId) continue;
-        const {data:inv}=await db.from('inventario').select('id,stock_actual')
-          .eq('producto_id',oi.producto_id).eq('sucursal_id',cmId).maybeSingle();
-        if(inv){
-          await db.from('inventario').update({stock_actual:Math.max(0,n(inv.stock_actual)-n(oi.cantidad_recibida)),ultima_actualizacion:new Date().toISOString()}).eq('id',inv.id);
-        }
-      }
       // 3. Borrar items viejos
       await db.from('recepcion_items').delete().eq('recepcion_id',rec.id);
       // 4. Actualizar recepción
@@ -512,16 +515,37 @@ function EditarRecepcion({rec,cmId,show,onBack}){
         precio_unitario:n(it.precio)||null,
       }));
       await db.from('recepcion_items').insert(rows);
-      // 6. Sumar inventario nuevo
-      for(const it of validItems){
-        if(!it.prodId||!cmId) continue;
-        const qty=n(it.qty);
-        const {data:existing}=await db.from('inventario').select('id,stock_actual')
-          .eq('producto_id',it.prodId).eq('sucursal_id',cmId).maybeSingle();
-        if(existing){
-          await db.from('inventario').update({stock_actual:n(existing.stock_actual)+qty,ultima_actualizacion:new Date().toISOString()}).eq('id',existing.id);
-        }else{
-          await db.from('inventario').insert({producto_id:it.prodId,sucursal_id:cmId,stock_actual:qty,stock_minimo:0,stock_maximo:999,ultima_actualizacion:new Date().toISOString()});
+      // 6. Ajustar inventario POR KARDEX con el DELTA NETO de la edición.
+      // Antes eran dos pasos: restar todo lo viejo y sumar todo lo nuevo. Eso
+      // dejaba el stock momentáneamente en cero y, con el Math.max(0,...),
+      // podía perder unidades por el camino. Acá se calcula producto por
+      // producto cuánto cambió de verdad, así una corrección de 10 → 12 genera
+      // un solo movimiento de +2 en vez de un −10 y un +12.
+      if(cmId){
+        const delta=new Map();
+        for(const oi of origItems){
+          if(!oi.producto_id) continue;
+          delta.set(oi.producto_id,(delta.get(oi.producto_id)||0)-n(oi.cantidad_recibida));
+        }
+        for(const it of validItems){
+          if(!it.prodId) continue;
+          delta.set(it.prodId,(delta.get(it.prodId)||0)+n(it.qty));
+        }
+        const itemsKardex=[...delta.entries()]
+          .filter(([,cant])=>cant!==0)
+          .map(([producto_id,cantidad])=>({producto_id,cantidad}));
+        if(itemsKardex.length>0){
+          const {error:kErr}=await db.rpc('kardex_mover_lote',{
+            p_items:itemsKardex,
+            p_tipo:'ajuste_manual',
+            p_referencia_tipo:'recepcion',
+            p_referencia_id:rec.id,
+            p_notas:'Corrección de recepción'+(rec.dte_codigo?' DTE '+rec.dte_codigo:''),
+            p_usuario_id:user?.id||null,
+            p_sucursal_id:cmId,
+            p_permitir_negativo:true,
+          });
+          if(kErr) throw kErr;
         }
       }
       // Actualizar precio en proveedor_productos con el último precio ingresado

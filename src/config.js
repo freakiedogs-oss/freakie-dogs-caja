@@ -88,7 +88,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Dashboards',
     items: [
-      { key: 'ventas-freakies', label: 'Ventas Freakies', icon: '💲', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
+      { key: 'ventas-freakies', label: 'Ventas Freakies', icon: '💶', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'kpis-venta', label: 'KPIs de Venta', icon: '📊', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'inventario-dash', label: 'Inventario Global', icon: '📦', roles: ['ejecutivo', 'admin'] },
       { key: 'kpi-delivery', label: 'KPI Delivery Propio', icon: '🛵', roles: ['superadmin'] },
@@ -149,7 +149,6 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'finanzas-ai', label: 'Finanzas AI', icon: '💰', roles: ['ejecutivo', 'superadmin'] },
       { key: 'kpi-ventas-totales', label: 'KPI Ventas Totales · BEP', icon: '💰', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
-      { key: 'simulador-rentabilidad', label: 'Simulador Rentabilidad', icon: '🎯', roles: ['superadmin', 'ejecutivo'] },
       { key: 'finanzas-dashboard', label: 'Dashboard Financiero', icon: '📊', roles: ['ejecutivo', 'superadmin'] },
       { key: 'dtes', label: 'DTEs', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'libros-contables', label: 'Libros Contables', icon: '📒', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
@@ -189,6 +188,7 @@ export const NAV_SECTIONS = [
     label: 'Marketing',
     items: [
       { key: 'marketing', label: 'Analytics Redes', icon: '📱', roles: ['ejecutivo', 'marketing', 'admin'] },
+      { key: 'media', label: 'Media', icon: '🖼️', roles: ['ejecutivo', 'marketing', 'admin'] },
     ],
   },
   {
