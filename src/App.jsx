@@ -44,6 +44,7 @@ const ProduccionDiaria   = lazy(() => import('./components/admin/ProduccionDiari
 const ConciliacionView   = lazy(() => import('./components/admin/ConciliacionView'))
 const DeliveryView       = lazy(() => import('./components/delivery/DeliveryView'))
 const MarketingView      = lazy(() => import('./components/marketing/MarketingView'))
+const MediaView          = lazy(() => import('./components/marketing/MediaView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
 const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
@@ -64,13 +65,13 @@ const FinanzasAIView     = lazy(() => import('./components/dashboard/FinanzasAIV
 const QuantoUploadView   = lazy(() => import('./components/admin/QuantoUploadView'))
 const PagosProveedorView = lazy(() => import('./components/finanzas/PagosProveedorView'))
 const DTEsView           = lazy(() => import('./components/finanzas/DTEsView'))
+const LibrosContablesView = lazy(() => import('./components/finanzas/LibrosContablesView'))
 const EventosView        = lazy(() => import('./components/eventos/EventosView'))
 const MiDespacho            = lazy(() => import('./components/empleado/MiDespacho'))
 const DespachoOperativoView = lazy(() => import('./components/admin/DespachoOperativoView'))
 const DespachoKpiDashboard  = lazy(() => import('./components/admin/DespachoKpiDashboard'))
 const DeliveryKpiDashboard  = lazy(() => import('./components/admin/DeliveryKpiDashboard'))
 const KpiVentasTotalesDashboard = lazy(() => import('./components/admin/KpiVentasTotalesDashboard'))
-const SimuladorRentabilidad = lazy(() => import('./components/admin/SimuladorRentabilidad'))
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
@@ -334,6 +335,8 @@ export default function App() {
         return <PagosProveedorView user={user} />
       case 'dtes':
         return <DTEsView user={user} />
+      case 'libros-contables':
+        return <LibrosContablesView user={user} />
       case 'eventos':
         return <EventosView user={user} />
 
@@ -354,14 +357,14 @@ export default function App() {
         return <DeliveryKpiDashboard user={user} />
       case 'kpi-ventas-totales':
         return <KpiVentasTotalesDashboard user={user} />
-      case 'simulador-rentabilidad':
-        return <SimuladorRentabilidad user={user} />
       case 'delivery':
         return <DeliveryView user={user} show={show} />
       case 'inventario-dash':
         return <InventarioDashboard user={user} onBack={() => setScreen('home')} />
       case 'marketing':
         return <MarketingView user={user} />
+      case 'media':
+        return <MediaView user={user} />
       case 'superadmin-panel':
         return <SuperAdminView user={user} />
       case 'plan-maestro':

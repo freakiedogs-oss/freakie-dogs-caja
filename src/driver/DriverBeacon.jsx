@@ -1,8 +1,11 @@
 // ────────────────────────────────────────────────────────────────────
 // Freakie Motorista — PWA del driver (Fase 5).
 // Tabs: 📦 Pedidos (recoger/entregar) · 🧾 Historial · 📊 Métricas.
-// El GPS se comparte SOLO mientras hay una entrega en curso (ahorro de
-// batería) — se prende al recoger y se apaga al entregar el último.
+// GPS: hay un botón grande "🟢 Compartir mi GPS" que el driver enciende
+// al inicio del turno y apaga al final. Comparte ubicación constante
+// (haya o no pedidos), sin notificaciones molestas mientras maneja.
+// Se auto-enciende al recoger un pedido por si olvidan activarlo, pero
+// NUNCA se auto-apaga (Cesar 20-ago-2026: modo turno completo).
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react'
 import L from 'leaflet'
@@ -11,7 +14,59 @@ import { db } from '../supabase'
 import UpdateGate from '../components/layout/UpdateGate'
 
 const KEY = 'freakie_driver_v1'
+const TOKEN_KEY = 'freakie_driver_token'
+const COOKIE_NAME = 'fd_driver_token'
 const HEARTBEAT_MS = 15000
+
+// Helpers de cookie con expiración 12h — respaldo si Chrome limpia localStorage.
+function setCookie(name, value) {
+  try {
+    const exp = new Date(Date.now() + 12 * 60 * 60 * 1000).toUTCString()
+    document.cookie = `${name}=${value}; expires=${exp}; path=/; SameSite=Lax; Secure`
+  } catch { /* noop */ }
+}
+function getCookie(name) {
+  try {
+    const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'))
+    return m ? m[1] : null
+  } catch { return null }
+}
+function delCookie(name) {
+  try { document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/` } catch { /* noop */ }
+}
+
+// Notificación persistente del GPS — al tocarla enfoca la app driver.
+// Mientras la notif esté visible, Android le da más prioridad al proceso Chrome
+// y demora más en congelar el JS → el heartbeat GPS dura más en background.
+async function mostrarNotifGPS(nombreDriver) {
+  try {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return
+    if (Notification.permission === 'default') {
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') return
+    }
+    if (Notification.permission !== 'granted') return
+    const reg = await navigator.serviceWorker.ready
+    await reg.showNotification('🛵 Freakie GPS activo', {
+      body: `${nombreDriver || 'Motorista'} · Tu ubicación se está compartiendo. Tocá para volver a la app.`,
+      tag: 'freakie-gps',       // reemplaza notif previa, evita duplicados
+      silent: true,             // sin sonido/vibración (no distrae al manejar)
+      requireInteraction: true, // no se auto-cierra
+      renotify: false,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+    })
+  } catch { /* noop — notif es opcional */ }
+}
+
+async function cerrarNotifGPS() {
+  try {
+    if (!('serviceWorker' in navigator)) return
+    const reg = await navigator.serviceWorker.ready
+    const notifs = await reg.getNotifications({ tag: 'freakie-gps' })
+    notifs.forEach(n => n.close())
+  } catch { /* noop */ }
+}
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 // En El Salvador las llamadas del delivery se hacen por WhatsApp. Normalizamos
 // el número a formato internacional (503 + 8 dígitos) para abrir el chat.
@@ -107,36 +162,82 @@ export default function DriverBeacon() {
     return () => clearInterval(t)
   }, [yo, cargarPedidos])
 
-  // GPS automático: encendido mientras haya una entrega en curso
+  // GPS: se auto-enciende cuando sale con un pedido (por si se les olvidó
+  // activarlo al inicio del turno). NUNCA se auto-apaga: sigue encendido
+  // hasta que el driver toque "Dejar de compartir" o cierre el turno.
   const enRuta = pedidos.some(p => p.estado === 'en_camino')
   useEffect(() => {
     if (enRuta && !beacon.activo) beacon.iniciar()
-    if (!enRuta && beacon.activo && beacon.auto) beacon.detener()
   }, [enRuta]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Al terminar el turno se apaga el GPS solo (evita que quede compartiendo
+  // ubicación cuando el driver ya no está trabajando).
+  useEffect(() => {
+    if (!dispo.disponible && beacon.activo) beacon.detener()
+  }, [dispo.disponible]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const entrar = async () => {
     if (pin.length < 4 || entrando) return
     setEntrando(true); setErrPin('')
     try {
-      const { data, error } = await db.rpc('driver_login', { p_pin: pin })
+      const { data, error } = await db.rpc('driver_login', { p_pin: pin, p_user_agent: navigator.userAgent })
       if (error) throw error
       if (!data) { setErrPin('PIN incorrecto'); setPin(''); return }
       setPin('')          // que no quede escrito para el próximo que abra la app
       setYo(data)
       // Desbloquear el audio ahora que hay un gesto (para que el beep suene luego)
       try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) { audioCtxRef.current = audioCtxRef.current || new AC(); audioCtxRef.current.resume?.() } } catch { /* noop */ }
+      // Sesión persistida en 3 lugares (fallback redundante):
+      // 1) localStorage con datos completos (rápido)
+      // 2) cookie con token (sobrevive limpieza de storage por Chrome)
+      // 3) BD (source of truth, dura 12h)
       try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
+      if (data.session_token) {
+        try { localStorage.setItem(TOKEN_KEY, data.session_token) } catch { /* noop */ }
+        setCookie(COOKIE_NAME, data.session_token)
+      }
     } catch (e) {
       setErrPin(e.message || 'No se pudo entrar'); setPin('')
     } finally { setEntrando(false) }
   }
-  // Salir: se apaga el GPS, se da de baja de la central y se limpia todo,
-  // incluido el PIN escrito — si no, la pantalla vuelve con los puntitos
-  // llenos y al tocar Entrar reingresa el mismo motorista.
-  // Aviso al servidor de que termina el turno. Es sólo eso: la salida de la
-  // sesión la hace el enlace de abajo, que navega aunque este código no corra.
+
+  // Auto-restaurar sesión al abrir la app: si no hay `yo` pero sí hay token
+  // (en localStorage o cookie), validamos contra BD y restauramos sin pedir PIN.
+  // Resuelve el problema de motoristas re-logueando en la calle tras perder storage.
+  useEffect(() => {
+    if (yo) return
+    const token = (() => {
+      try { return localStorage.getItem(TOKEN_KEY) || getCookie(COOKIE_NAME) } catch { return getCookie(COOKIE_NAME) }
+    })()
+    if (!token) return
+    let vivo = true
+    db.rpc('driver_validar_sesion', { p_token: token }).then(({ data }) => {
+      if (!vivo || !data) return
+      setYo(data)
+      try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* noop */ }
+      try { localStorage.setItem(TOKEN_KEY, data.session_token) } catch { /* noop */ }
+      setCookie(COOKIE_NAME, data.session_token)
+    })
+    return () => { vivo = false }
+  }, [yo])
+
+  // Salir: confirmar antes (Fix B) — evita cierres accidentales que dejaban al
+  // motorista en la calle sin poder re-marcar turno.
+  const confirmarSalida = (e) => {
+    if (!window.confirm('¿Seguro que querés cerrar sesión?\n\nVas a tener que meter tu PIN de nuevo para volver a entrar.')) {
+      e.preventDefault()
+      return
+    }
+    avisarSalida()
+  }
+
   const avisarSalida = () => {
+    // Limpieza total al salir voluntariamente: local + cookie + BD
+    const token = (() => { try { return localStorage.getItem(TOKEN_KEY) } catch { return null } })() || getCookie(COOKIE_NAME)
     try { localStorage.removeItem(KEY) } catch { /* noop */ }
+    try { localStorage.removeItem(TOKEN_KEY) } catch { /* noop */ }
+    delCookie(COOKIE_NAME)
+    if (token) db.rpc('driver_cerrar_sesion', { p_token: token }).catch(() => {})
     beacon.detener()
     if (yo) db.rpc('driver_disponible', { p_empleado_id: yo.id, p_activo: false }).catch(() => {})
   }
@@ -201,7 +302,7 @@ export default function DriverBeacon() {
             {beacon.activo ? '📡 En línea' : '○ Sin compartir'}
           </span>
           <a href="/manual-driver.html" target="_blank" rel="noopener" style={S.salirBtn}>📘 Manual</a>
-          <a href="/driver?salir=1" onClick={avisarSalida} style={S.salirBtn}>Salir</a>
+          <a href="/driver?salir=1" onClick={confirmarSalida} style={S.salirBtn}>Salir</a>
         </span>
       </header>
 
@@ -376,6 +477,12 @@ function useBeacon(yo) {
 
   const iniciar = useCallback((esAuto = true) => {
     if (nativeRef.current || watchRef.current != null) return
+    // Persistir intención "quiero compartir GPS" para reanudar tras refresh de la app
+    // (los motoristas refrescan seguido para ver nuevos pedidos y perdían el estado).
+    try { if (!esAuto) localStorage.setItem('freakie_gps_manual', '1') } catch { /* noop */ }
+    // Notificación persistente: ayuda a Android a mantener el proceso vivo más tiempo
+    // cuando el motorista se va a Waze/Maps. Silenciosa, sin vibración.
+    if (yo) mostrarNotifGPS(yo.nombre)
     // APK nativo (sabor driver → GPS en segundo plano, tipo 'delivery')
     if (nativeGps() && yo) {
       try {
@@ -391,15 +498,29 @@ function useBeacon(yo) {
         const { latitude: lat, longitude: lng, heading, accuracy } = pos.coords
         posRef.current = { lat, lng, heading: (heading != null && !Number.isNaN(heading)) ? heading : null, accuracy: accuracy ?? null }
         setUltima({ lat, lng, at: new Date() })
+        setError('') // limpia error previo cuando llega lectura buena
         enviar()
       },
-      (err) => setError(err.code === 1 ? 'Permiso de ubicación denegado.' : 'No se pudo leer el GPS.'),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+      (err) => {
+        // Mensajes específicos por código de error W3C Geolocation.
+        // Si ya hay una lectura previa (posRef.current) es glitch pasajero — no molestar.
+        if (posRef.current) return
+        let msg
+        if (err.code === 1) msg = 'Permiso de ubicación denegado. Andá a Configuración → Apps → Chrome → Permisos → Ubicación → Permitir siempre.'
+        else if (err.code === 2) msg = 'GPS no disponible. Activá la ubicación del celular (Configuración → Ubicación) o salí al aire libre.'
+        else if (err.code === 3) msg = 'GPS tardó demasiado. Salí al aire libre y volvé a tocar el botón verde.'
+        else msg = 'No se pudo leer el GPS. Verificá que la ubicación del celular esté activada.'
+        setError(msg)
+      },
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 30000 }
     )
     hbRef.current = setInterval(enviar, HEARTBEAT_MS)
   }, [enviar])
 
   const detener = useCallback(() => {
+    // Limpia la intención persistida: al refrescar ya no auto-reanuda.
+    try { localStorage.removeItem('freakie_gps_manual') } catch { /* noop */ }
+    cerrarNotifGPS()
     if (nativeRef.current) { try { window.AndroidPrinter.stopLocation() } catch { /* noop */ } nativeRef.current = false }
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
     if (hbRef.current != null) { clearInterval(hbRef.current); hbRef.current = null }
@@ -407,6 +528,77 @@ function useBeacon(yo) {
     setActivo(false); setAuto(false)
     if (yo) db.rpc('desconectar_driver', { p_empleado_id: yo.id }).catch(() => {})
   }, [yo])
+
+  // Al montar (o cambiar de usuario), si el motorista había pedido compartir GPS
+  // manualmente antes del refresh, reanudamos automáticamente. El permiso GPS del
+  // navegador ya quedó otorgado para el origen, así que no vuelve a preguntar.
+  useEffect(() => {
+    if (!yo) return
+    try {
+      if (localStorage.getItem('freakie_gps_manual') === '1' && !activo) {
+        iniciar(false)
+      }
+    } catch { /* noop */ }
+  }, [yo, activo, iniciar])
+
+  // Al volver a la app desde Waze/Maps (visibilitychange → visible):
+  // (a) re-adquirir Wake Lock (Android lo suelta al perder foco);
+  // (b) forzar lectura fresca de GPS + heartbeat inmediato para reconectar.
+  // Sin esto: al salir a Waze, el JS se congela → 15 min sin señal → Karina
+  // ve al motorista como desconectado en el mapa aunque siga trabajando.
+  useEffect(() => {
+    if (!yo) return
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!activo) return
+      try {
+        if ('wakeLock' in navigator && !wakeRef.current) {
+          navigator.wakeLock.request('screen').then(w => { wakeRef.current = w }).catch(() => {})
+        }
+      } catch { /* noop */ }
+      if (navigator.geolocation && !nativeRef.current) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude: lat, longitude: lng, heading, accuracy } = pos.coords
+            posRef.current = { lat, lng, heading: (heading != null && !Number.isNaN(heading)) ? heading : null, accuracy: accuracy ?? null }
+            setUltima({ lat, lng, at: new Date() })
+            lastSentRef.current = 0 // fuerza envío inmediato saltando el debounce 4s
+            enviar()
+          },
+          () => { /* silencioso, el próximo heartbeat lo reintenta */ },
+          { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
+        )
+      }
+    }
+    // Al salir de la app (visibilitychange → hidden), mandar heartbeat inmediato
+    // con la última posición conocida — así el servidor tiene la posición más
+    // reciente posible antes de que Android congele el JS en background.
+    const alSalir = () => {
+      if (document.visibilityState !== 'hidden') return
+      if (!activo || !posRef.current || !yo) return
+      const p = posRef.current
+      // navigator.sendBeacon funciona incluso cuando la página está siendo pausada.
+      try {
+        const url = 'https://btboxlwfqcbrdfrlnwln.supabase.co/rest/v1/rpc/actualizar_ubicacion_driver'
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjcyMzQsImV4cCI6MjA4OTU0MzIzNH0.NpBQZgxbajgOVvw3FOwIUiOkgmh7rEuPQMRi0ZcFKe4'
+        const blob = new Blob([JSON.stringify({
+          p_empleado_id: yo.id, p_nombre: yo.nombre,
+          p_lat: p.lat, p_lng: p.lng, p_rumbo: p.heading, p_exactitud: p.accuracy,
+        })], { type: 'application/json' })
+        // sendBeacon no permite headers custom, así que caemos a fetch keepalive.
+        fetch(url, {
+          method: 'POST', body: blob, keepalive: true,
+          headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
+        }).catch(() => {})
+      } catch { /* noop */ }
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    document.addEventListener('visibilitychange', alSalir)
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver)
+      document.removeEventListener('visibilitychange', alSalir)
+    }
+  }, [yo, activo, enviar])
 
   useEffect(() => () => {
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
@@ -435,8 +627,8 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       for (const x of listos) {
         await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: x.id })
       }
-      beacon.iniciar()
-      setMsg(`🚀 Saliste con ${listos.length} pedidos. Estamos compartiendo tu ubicación.`)
+      if (!beacon.activo) beacon.iniciar()
+      setMsg(`🚀 Saliste con ${listos.length} pedidos.${beacon.activo ? '' : ' Encendimos tu GPS automáticamente.'}`)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -446,8 +638,8 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
     setOcupado(p.id)
     try {
       await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: p.id })
-      beacon.iniciar()   // empieza a compartir ubicación al salir
-      setMsg('🚀 ¡En camino! Estamos compartiendo tu ubicación.')
+      if (!beacon.activo) beacon.iniciar()   // por si olvidaron activar el GPS al inicio del turno
+      setMsg(`🚀 ¡En camino!${beacon.activo ? '' : ' Encendimos tu GPS automáticamente.'}`)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -543,10 +735,31 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
         </div>
       )}
 
+      {/* Botón grande de GPS constante: se enciende al inicio del turno y
+          se apaga al final. Mientras esté activo, comparte ubicación cada
+          15s haya o no pedidos, aunque la pestaña esté atrás (con Wake Lock
+          Android suele mantenerla viva 30-60 min sin problemas). */}
+      {dispo.disponible && (
+        <button
+          onClick={() => beacon.activo ? beacon.detener() : beacon.iniciar(false)}
+          style={{ ...S.dispoBtn, marginTop: 10,
+                   background: beacon.activo ? '#16a34a' : 'none',
+                   border: beacon.activo ? 'none' : '1px solid #16a34a',
+                   color: beacon.activo ? '#fff' : '#4ade80',
+                   fontSize: 15, padding: '15px 0' }}>
+          {beacon.activo ? '🔴 Dejar de compartir mi GPS' : '🟢 Compartir mi GPS'}
+        </button>
+      )}
+      {beacon.error && dispo.disponible && (
+        <div style={S.dispoErr}>⚠️ {beacon.error}</div>
+      )}
+
       <div style={S.dispoPie}>
         {beacon.activo
-          ? '📡 Compartiendo tu ubicación porque vas en camino con un pedido.'
-          : 'Usamos tu ubicación una sola vez, para confirmar que estás en la sucursal. Después no se comparte hasta que salgas con un pedido.'}
+          ? '📡 Compartiendo tu ubicación. Podés usar Waze/Maps normalmente — dejá esta pestaña abierta atrás y seguirá enviando GPS todo el turno.'
+          : dispo.disponible
+            ? 'Tocá "Compartir mi GPS" al inicio del turno. Se queda encendido hasta que lo apagues, aunque estés en otras apps.'
+            : 'Usamos tu ubicación una sola vez, para confirmar que estás en la sucursal.'}
       </div>
     </div>
   )

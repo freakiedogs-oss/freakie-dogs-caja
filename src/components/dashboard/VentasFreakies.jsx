@@ -439,7 +439,7 @@ export default function VentasFreakies({ user, onBack }) {
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: C.red, fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 6 }}>← Volver</button>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 20 }}>🐕 Ventas Freakies</div>
+            <div style={{ fontWeight: 800, fontSize: 20 }}>💶 Ventas Freakies</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Venta en vivo del POS propio + Quanto legacy · por sucursal</div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

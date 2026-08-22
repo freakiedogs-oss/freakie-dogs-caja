@@ -3,7 +3,8 @@
 // En computadora: 4 columnas (por cobrar → en cocina → por asignar → en
 // ruta), que es donde se opera todo el día. En teléfono: las mismas 4 como
 // pestañas con contador, para que siga siendo usable en pantalla chica.
-// Las entregadas salen del tablero y quedan en el historial.
+// Abajo, una franja plegable con los entregados del día y cuánto duró cada
+// etapa — es donde se ve si el atraso fue de cocina, de despacho o de la calle.
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { db } from '../../supabase';
@@ -25,15 +26,51 @@ const COLS = [
   { k: 'en_camino',  t: 'En ruta',     ic: '🚗', col: c.orange, ayuda: 'Ya salieron' },
 ];
 
-// Cuánto lleva esperando el pedido, con semáforo
-function useReloj(desde) {
+// Reloj que se actualiza solo. `ahora` se comparte por todas las tarjetas.
+function useAhora() {
   const [ahora, setAhora] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setAhora(Date.now()), 30000); return () => clearInterval(t); }, []);
-  const min = Math.max(0, Math.floor((ahora - new Date(desde).getTime()) / 60000));
+  return ahora;
+}
+
+const textoMin = (min) =>
+  min < 1 ? 'recién' : min < 60 ? `${min} min` : `${Math.floor(min / 60)}h ${min % 60}m`;
+
+// Umbrales por etapa: no es lo mismo esperar 15 min por cobrar que en cocina.
+// Se calibran acá para que el color signifique lo mismo en toda la Torre.
+const LIMITES = {
+  recibida:   { amarillo: 5,  rojo: 10 },   // por cobrar: debería ser inmediato
+  preparando: { amarillo: 15, rojo: 25 },   // en cocina
+  lista:      { amarillo: 5,  rojo: 12 },   // por asignar: el pedido se enfría
+  en_camino:  { amarillo: 20, rojo: 35 },   // en ruta
+};
+
+function colorPorEtapa(estado, min) {
+  const l = LIMITES[estado] || { amarillo: 12, rojo: 25 };
+  return min >= l.rojo ? c.red : min >= l.amarillo ? c.yellow : c.dim;
+}
+
+// Dos relojes: el total desde que entró el pedido, y el de la etapa actual.
+// El total dice si el cliente lleva mucho esperando; el de etapa dice dónde
+// se está atorando.
+function useRelojes(p, ahora) {
+  const minsDesde = (t) => Math.max(0, Math.floor((ahora - new Date(t).getTime()) / 60000));
+  const total = minsDesde(p.created_at);
+  const etapa = minsDesde(p.etapa_desde || p.created_at);
   return {
-    color: min >= 25 ? c.red : min >= 12 ? c.yellow : c.dim,
-    txt: min < 1 ? 'recién' : min < 60 ? `${min} min` : `${Math.floor(min / 60)}h ${min % 60}m`,
+    total: { min: total, txt: textoMin(total), color: total >= 40 ? c.red : total >= 25 ? c.yellow : c.dim },
+    etapa: { min: etapa, txt: textoMin(etapa), color: colorPorEtapa(p.estado, etapa) },
   };
+}
+
+// Historial compacto de las etapas ya cerradas: "cobro 3m · cocina 12m"
+const NOMBRE_ETAPA = { recibida: 'cobro', preparando: 'cocina', lista: 'espera', en_camino: 'ruta' };
+function resumenEtapas(etapas) {
+  if (!etapas) return null;
+  const partes = ['recibida', 'preparando', 'lista', 'en_camino']
+    .filter((k) => etapas[k] != null)
+    .map((k) => `${NOMBRE_ETAPA[k]} ${etapas[k]}m`);
+  return partes.length ? partes.join(' · ') : null;
 }
 
 function useEsCompu() {
@@ -46,12 +83,116 @@ function useEsCompu() {
   return ancho >= 900;
 }
 
+// ── ENTREGADOS DE HOY ─────────────────────────────────────────────────
+// Cierra el ciclo: una vez entregado el pedido, muestra dónde se fue el tiempo.
+// Es la única vista que permite comparar cocina contra despacho contra calle.
+function FranjaEntregados({ entregados, abierto, onToggle }) {
+  const prom = (k) => {
+    const vals = entregados.map(e => e.etapas?.[k]).filter(v => v != null);
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  };
+  const promTotal = entregados.length
+    ? Math.round(entregados.reduce((a, e) => a + (e.total_min || 0), 0) / entregados.length)
+    : null;
+
+  const ETAPAS = [
+    { k: 'recibida',   t: 'Por cobrar', col: c.yellow },
+    { k: 'preparando', t: 'En cocina',  col: '#60a5fa' },
+    { k: 'lista',      t: 'Por asignar', col: '#f59e0b' },
+    { k: 'en_camino',  t: 'En ruta',    col: c.green },
+  ];
+
+  const hora = (t) => t ? new Date(t).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' }) : '';
+
+  return (
+    <div style={{ marginTop: 14, background: c.card, border: `1px solid ${c.border}`, borderRadius: 12 }}>
+      <div onClick={onToggle}
+           style={{ padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+        <span style={{ fontSize: 14 }}>✅</span>
+        <span style={{ fontWeight: 800, fontSize: 13.5 }}>Entregados hoy</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: c.green }}>{entregados.length}</span>
+        {promTotal != null && (
+          <span style={{ fontSize: 11.5, color: c.dim }}>· promedio {promTotal} min puerta a puerta</span>
+        )}
+        <span style={{ marginLeft: 'auto', color: c.dim, fontSize: 13 }}>{abierto ? '▾' : '▸'}</span>
+      </div>
+
+      {abierto && (
+        <div style={{ padding: '0 12px 12px' }}>
+          {entregados.length === 0 ? (
+            <div style={{ color: '#555', fontSize: 12, textAlign: 'center', padding: '14px 6px' }}>
+              Todavía no hay entregas hoy.
+            </div>
+          ) : (
+            <>
+              {/* Promedios: dónde se va el tiempo en promedio */}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                {ETAPAS.map(e => {
+                  const p = prom(e.k);
+                  return (
+                    <div key={e.k} style={{ flex: '1 1 110px', background: '#1a1a1a', borderRadius: 8,
+                                            padding: '8px 10px', borderLeft: `3px solid ${e.col}` }}>
+                      <div style={{ fontSize: 10.5, color: c.dim }}>{e.t}</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: p == null ? '#555' : c.text }}>
+                        {p == null ? '—' : `${p} min`}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ maxHeight: '40vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {entregados.map(e => (
+                  <div key={e.id} style={{ background: '#1a1a1a', borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 12 }}>{e.numero_orden}</span>
+                      <span style={{ fontSize: 12, color: c.dim }}>{e.cliente_nombre}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 800,
+                                     color: (e.total_min ?? 0) >= 45 ? c.red : (e.total_min ?? 0) >= 30 ? c.yellow : c.green }}>
+                        {e.total_min != null ? `${e.total_min} min` : '—'}
+                      </span>
+                      <span style={{ fontSize: 10.5, color: c.dim }}>entregado {hora(e.entregado_at)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 5 }}>
+                      {ETAPAS.map(et => {
+                        const v = e.etapas?.[et.k];
+                        if (v == null) return null;
+                        return (
+                          <span key={et.k} style={{ fontSize: 11, color: c.dim }}>
+                            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+                                           background: et.col, marginRight: 4 }} />
+                            {et.t} <b style={{ color: c.text }}>{v}m</b>
+                          </span>
+                        );
+                      })}
+                      {!e.etapas && (
+                        <span style={{ fontSize: 11, color: '#555' }}>sin desglose (pedido anterior al registro)</span>
+                      )}
+                      {e.motorista_nombre && (
+                        <span style={{ fontSize: 11, color: c.green, marginLeft: 'auto' }}>🛵 {e.motorista_nombre}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TabPedidos({ show = () => {} }) {
   const esCompu = useEsCompu();
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [sesion, setSesion] = useState(null);
   const [pin, setPin] = useState('');
   const [pedidos, setPedidos] = useState([]);
+  const [entregados, setEntregados] = useState([]);
+  // La franja de entregados arranca plegada: es para revisar, no para operar.
+  const [entregadosAbierto, setEntregadosAbierto] = useState(
+    () => localStorage.getItem('torre_entregados_abierto') === '1');
   const [historial, setHistorial] = useState([]);
   const [verHistorial, setVerHistorial] = useState(false);
   const [drivers, setDrivers] = useState([]);
@@ -83,13 +224,15 @@ export default function TabPedidos({ show = () => {} }) {
     if (!t) return;
     setCargando(true);
     try {
-      const [{ data, error }, dr] = await Promise.all([
+      const [{ data, error }, dr, ent] = await Promise.all([
         db.rpc('torre_listar_pedidos', { p_token: t }),
         db.rpc('drivers_en_linea'),
+        db.rpc('torre_entregados_hoy', { p_token: t }),
       ]);
       if (error) throw error;
       setPedidos(data || []);
       setDrivers(dr?.data || []);
+      setEntregados(ent?.data || []);
       setUltima(new Date());
       setErr('');
     } catch (e) {
@@ -428,6 +571,15 @@ export default function TabPedidos({ show = () => {} }) {
           </div>
         </div>
       )}
+
+      <FranjaEntregados
+        entregados={entregados}
+        abierto={entregadosAbierto}
+        onToggle={() => setEntregadosAbierto(v => {
+          localStorage.setItem('torre_entregados_abierto', v ? '0' : '1');
+          return !v;
+        })}
+      />
     </div>
   );
 }
@@ -469,7 +621,9 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado, marcarParaLlevar }) {
   const paraLlevar = p.tipo === 'para_llevar';
-  const reloj = useReloj(p.created_at);
+  const ahora = useAhora();
+  const reloj = useRelojes(p, ahora);
+  const previas = resumenEtapas(p.etapas);
   const sugerida = sucursalSugerida(p);
   const cambiada = !!sucSel[p.id] && sucSel[p.id] !== sugerida;
   const nItems = Array.isArray(p.items) ? p.items.reduce((s, i) => s + (i.cantidad || 1), 0) : 0;
@@ -479,8 +633,17 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
     <div style={{ ...tarjeta, borderLeft: `3px solid ${col.col}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontWeight: 800, fontSize: compacta ? 12.5 : 14 }}>{p.numero_orden}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: reloj.color }}>{reloj.txt}</span>
+        {/* Reloj grande = tiempo en esta columna. Al lado, en gris y más chico,
+            el total desde que entró el pedido. Lo que importa de un vistazo es
+            dónde se está atorando, no cuánto lleva en total. */}
+        <span style={{ fontSize: 11, fontWeight: 700, color: reloj.etapa.color, whiteSpace: 'nowrap' }}>
+          {reloj.etapa.txt}
+          <span style={{ fontWeight: 500, color: c.dim, fontSize: 10 }}> · total {reloj.total.txt}</span>
+        </span>
       </div>
+      {previas && (
+        <div style={{ fontSize: 10, color: c.dim, marginTop: 2 }}>{previas}</div>
+      )}
       {paraLlevar && (
         <div style={{ display: 'inline-block', marginTop: 5, fontSize: 11, fontWeight: 800,
                       color: '#111', background: c.yellow, borderRadius: 6, padding: '2px 8px' }}>
