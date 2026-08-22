@@ -145,6 +145,19 @@ function colorPorEtapa(estado, min) {
 const CONGELADO_MIN = 120;
 const MOTIVO_COLGADO = 'Pedido colgado (nunca se cerró)';
 
+// Secuencia de etapas para los botones de mover. 'entregada' es el final:
+// desde ahí solo se puede volver atrás.
+const ETAPA_SIGUIENTE = {
+  recibida: 'preparando', preparando: 'lista', lista: 'en_camino', en_camino: 'entregada',
+};
+const ETAPA_ANTERIOR = {
+  preparando: 'recibida', lista: 'preparando', en_camino: 'lista', entregada: 'en_camino',
+};
+const NOMBRE_COL = {
+  recibida: 'Por cobrar', preparando: 'En cocina', lista: 'Por asignar',
+  en_camino: 'En ruta', entregada: 'Entregado',
+};
+
 // Dos relojes: el total desde que entró el pedido, y el de la etapa actual.
 // El total dice si el cliente lleva mucho esperando; el de etapa dice dónde
 // se está atorando.
@@ -425,6 +438,34 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
 
+  // Atajo para mover el pedido de columna en cualquier dirección. Los botones
+  // propios de cada etapa (confirmar pago, asignar, entregado) siguen siendo el
+  // camino normal; esto es para corregir cuando la realidad y el sistema se
+  // desfasan.
+  const moverEtapa = async (p, direccion) => {
+    const destino = direccion === 'adelante' ? ETAPA_SIGUIENTE[p.estado] : ETAPA_ANTERIOR[p.estado];
+    const aviso = direccion === 'atras'
+      ? (p.estado === 'entregada'
+          ? `¿Devolver ${p.numero_orden} a "${NOMBRE_COL[destino]}"?\n\nSe le borra el viaje que le sumaba al bono del motorista.`
+          : p.estado === 'en_camino'
+            ? `¿Devolver ${p.numero_orden} a "${NOMBRE_COL[destino]}"?\n\nSe le quita el motorista para que puedas reasignarlo.`
+            : `¿Devolver ${p.numero_orden} a "${NOMBRE_COL[destino]}"?`)
+      : null;
+    if (aviso && !window.confirm(aviso)) return;
+
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_mover_etapa', {
+        p_token: token, p_delivery_id: p.id, p_direccion: direccion });
+      if (error) throw error;
+      const extra = data?.solto_motorista ? ' · motorista liberado'
+                  : data?.borro_viaje ? ' · viaje del bono eliminado' : '';
+      show(`↔ ${p.numero_orden} → ${NOMBRE_COL[destino] || destino}${extra}`);
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo mover')); }
+    finally { setOcupado(null); }
+  };
+
   const marcarEnCamino = async (p) => {
     setOcupado(p.id);
     try {
@@ -528,7 +569,7 @@ export default function TabPedidos({ show = () => {} }) {
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar };
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa };
 
   return (
     <div>
@@ -717,7 +758,7 @@ function Historial({ historial }) {
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar }) {
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa }) {
   const paraLlevar = p.tipo === 'para_llevar';
   const ahora = useAhora();
   const reloj = useRelojes(p, ahora);
@@ -774,6 +815,31 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         <b style={{ color: c.text }}>{fmt(p.total)}</b> · {p.metodo_pago} · {nItems} ít.{suc ? ` · 🏪 ${suc}` : ''}
       </div>
       {p.motorista_nombre && <div style={{ fontSize: 11.5, color: c.green, marginTop: 3 }}>🛵 {p.motorista_nombre}</div>}
+
+      {/* Mover de columna en cualquier dirección. Va arriba de todo lo demás
+          porque es lo que Karina busca cuando el tablero no refleja la calle. */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 9, alignItems: 'center' }}>
+        {ETAPA_ANTERIOR[p.estado] && (
+          <button
+            disabled={ocupado === p.id}
+            onClick={() => moverEtapa(p, 'atras')}
+            title={`Devolver a ${NOMBRE_COL[ETAPA_ANTERIOR[p.estado]]}`}
+            style={{ ...btn('#242424'), color: c.dim, fontSize: 11.5, padding: '6px 9px',
+                     border: `1px solid #333` }}>
+            ◀ {NOMBRE_COL[ETAPA_ANTERIOR[p.estado]]}
+          </button>
+        )}
+        {ETAPA_SIGUIENTE[p.estado] && (
+          <button
+            disabled={ocupado === p.id}
+            onClick={() => moverEtapa(p, 'adelante')}
+            title={`Pasar a ${NOMBRE_COL[ETAPA_SIGUIENTE[p.estado]]}`}
+            style={{ ...btn(col.col), fontSize: 11.5, padding: '6px 10px',
+                     fontWeight: 800, marginLeft: 'auto' }}>
+            {NOMBRE_COL[ETAPA_SIGUIENTE[p.estado]]} ▶
+          </button>
+        )}
+      </div>
 
       <DetallePedido items={p.items} />
 
