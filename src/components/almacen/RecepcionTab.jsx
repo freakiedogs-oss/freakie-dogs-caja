@@ -261,29 +261,25 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
       const {error:itmErr}=await db.from('recepcion_items').insert(rows);
       if(itmErr) throw itmErr;
 
-      // Auto-actualizar inventario para cada producto con ID
-      for(const it of validItems){
-        if(!it.prodId) continue;
-        const qty=n(it.qty);
-        // Intentar obtener registro existente
-        const {data:existing}=await db.from('inventario')
-          .select('id,stock_actual')
-          .eq('producto_id',it.prodId).eq('sucursal_id',cmId).maybeSingle();
-        if(existing){
-          await db.from('inventario').update({
-            stock_actual:n(existing.stock_actual)+qty,
-            ultima_actualizacion:new Date().toISOString()
-          }).eq('id',existing.id);
-        }else{
-          await db.from('inventario').insert({
-            producto_id:it.prodId,
-            sucursal_id:cmId,
-            stock_actual:qty,
-            stock_minimo:0,
-            stock_maximo:999,
-            ultima_actualizacion:new Date().toISOString()
-          });
-        }
+      // Entrada de mercadería POR KARDEX. Antes esto leía el stock y lo
+      // reescribía a mano (read-then-write): dos recepciones simultáneas se
+      // pisaban entre sí y el movimiento nunca quedaba registrado.
+      // kardex_mover crea la fila de inventario si no existe, así que ya no
+      // hace falta el insert/update manual.
+      const itemsKardex=validItems.filter(it=>it.prodId&&n(it.qty)>0)
+        .map(it=>({producto_id:it.prodId, cantidad:n(it.qty)}));
+      if(itemsKardex.length>0){
+        const {error:kErr}=await db.rpc('kardex_mover_lote',{
+          p_items:itemsKardex,
+          p_tipo:'recepcion',
+          p_referencia_tipo:'recepcion',
+          p_referencia_id:rec.id,
+          p_notas:'Recepción de proveedor'+(proveedorNombre.trim()?': '+proveedorNombre.trim():''),
+          p_usuario_id:user?.id||null,
+          p_sucursal_id:cmId,
+          p_permitir_negativo:true,
+        });
+        if(kErr) throw kErr;
       }
       // Actualizar precio en proveedor_productos con el último precio ingresado
       for(const it of validItems){
@@ -515,27 +511,24 @@ function RecepcionDetalle({rec,user,show,onBack}){
         }).eq('id',rec.compras_dte_id);
       }
 
-      // Actualizar inventario (sumar stock Casa Matriz)
+      // Entrada de mercadería POR KARDEX (ver nota en NuevaRecepcion).
+      // Esta es la otra vía de entrada: confirmación de una recepción pendiente,
+      // incluidas las que genera el cruce automático de DTE.
       const cmId=rec.sucursal_destino_id;
-      for(const it of items){
-        if(it.producto_id){
-          const qty=n(it.qty_input);
-          const {data:existing}=await db.from('inventario')
-            .select('id,stock_actual')
-            .eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle();
-          if(existing){
-            await db.from('inventario').update({
-              stock_actual:n(existing.stock_actual)+qty,
-              ultima_actualizacion:new Date().toISOString()
-            }).eq('id',existing.id);
-          }else{
-            await db.from('inventario').insert({
-              producto_id:it.producto_id, sucursal_id:cmId,
-              stock_actual:qty, stock_minimo:0, stock_maximo:999,
-              ultima_actualizacion:new Date().toISOString()
-            });
-          }
-        }
+      const itemsKardex=items.filter(it=>it.producto_id&&n(it.qty_input)>0)
+        .map(it=>({producto_id:it.producto_id, cantidad:n(it.qty_input)}));
+      if(itemsKardex.length>0){
+        const {error:kErr}=await db.rpc('kardex_mover_lote',{
+          p_items:itemsKardex,
+          p_tipo:'recepcion',
+          p_referencia_tipo:'recepcion',
+          p_referencia_id:rec.id,
+          p_notas:'Confirmación de recepción'+(rec.compras_dte_id?' (cruce DTE)':''),
+          p_usuario_id:user?.id||null,
+          p_sucursal_id:cmId,
+          p_permitir_negativo:true,
+        });
+        if(kErr) throw kErr;
       }
       show(hasDiff?'⚠️ Recepción confirmada con diferencias':'✅ Recepción confirmada');
       onBack();

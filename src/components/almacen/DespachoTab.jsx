@@ -334,18 +334,29 @@ function PrepararDespacho({pedido,user,show,onBack}){
         const {error:itmErr}=await db.from('despacho_items').insert(rows);
         if(itmErr) throw itmErr;
 
-        // 4. Batch decrement inventario.stock_actual for CM001
+        // 4. Descontar de Casa Matriz POR KARDEX.
+        // Antes esto hacía read-then-write directo sobre inventario.stock_actual, en lotes de 10:
+        //   · no dejaba rastro en kardex_movimientos → el Historial del Kardex nunca mostraba
+        //     los despachos, y el kardex dejó de cuadrar con el inventario (+138,193 unidades
+        //     de diferencia en CM al momento de este cambio);
+        //   · el leer-y-escribir no era atómico: dos despachos simultáneos del mismo producto
+        //     se pisaban y uno de los dos descuentos se perdía.
+        // kardex_mover_lote hace ambas cosas del lado del servidor y en una sola llamada.
         const validItems=pitems.filter(it=>it.producto_id&&n(it.qty_despacho)>0);
-        const batchSize=10;
-        for(let i=0;i<validItems.length;i+=batchSize){
-          const batch=validItems.slice(i,i+batchSize);
-          const stocks=await Promise.all(batch.map(it=>
-            db.from('inventario').select('stock_actual').eq('producto_id',it.producto_id).eq('sucursal_id',cmId).maybeSingle()
-          ));
-          await Promise.all(batch.map((it,j)=>{
-            const newStock=n(stocks[j]?.data?.stock_actual||0)-n(it.qty_despacho);
-            return db.from('inventario').update({stock_actual:newStock}).eq('producto_id',it.producto_id).eq('sucursal_id',cmId);
-          }));
+        if(validItems.length>0){
+          const {error:kErr}=await db.rpc('kardex_mover_lote',{
+            p_items:validItems.map(it=>({producto_id:it.producto_id,cantidad:-n(it.qty_despacho)})),
+            p_tipo:'traslado',
+            p_referencia_tipo:'despacho',
+            p_referencia_id:des.id,
+            p_notas:'Salida de Casa Matriz por despacho a sucursal',
+            p_usuario_id:user?.id||null,
+            p_sucursal_id:cmId,
+            // el stock de CM todavía no es confiable; el negativo delata el faltante en vez de
+            // frenar el despacho, igual que hace registrar_produccion
+            p_permitir_negativo:true,
+          });
+          if(kErr) throw kErr;
         }
       }
 

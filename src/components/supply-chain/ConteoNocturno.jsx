@@ -236,18 +236,35 @@ export default function ConteoNocturno({user,onBack}){
         .insert(conteos);
       if(conteoErr)throw conteoErr;
 
-      // 3. Actualizar stock_actual en inventario (en lotes de 20 para velocidad)
-      const batchSize=20;
-      for(let i=0;i<productos.length;i+=batchSize){
-        const batch=productos.slice(i,i+batchSize);
-        await Promise.all(batch.map(p=>
-          db.from('inventario').update({stock_actual:p.cantidad_real})
-            .eq('producto_id',p.producto_id).eq('sucursal_id',sucursalId)
-        ));
-      }
+      // 3. Ajustar el stock POR KARDEX, no a mano.
+      // Antes esto hacía `update inventario set stock_actual = cantidad_real`:
+      // el stock quedaba bien, pero la diferencia contra el teórico se perdía
+      // sin dejar rastro — y esa diferencia es justamente la merma.
+      // El delta lo calcula el servidor con la fila lockeada: mientras el
+      // empleado cuenta, el POS sigue descontando ventas, así que restar contra
+      // el `stock_teorico` que se leyó al abrir la pantalla se comería el turno.
+      const {data:ajuste,error:ajErr}=await db.rpc('kardex_ajustar_absoluto',{
+        p_items: productos.map(p=>({producto_id:p.producto_id, cantidad:n(p.cantidad_real)})),
+        p_tipo: 'conteo_fisico',
+        p_referencia_tipo: 'conteo_nocturno',
+        p_referencia_id: null,
+        p_notas: (isEdit?'Conteo nocturno (editado) ':'Conteo nocturno ')+hoy,
+        p_usuario_id: user?.id||null,
+        p_sucursal_id: sucursalId,
+      });
+      if(ajErr) throw ajErr;
 
       setConteoHoy({});
-      show(isEdit?'✅ Conteo actualizado':'✅ Conteo guardado');
+      // Se le dice al empleado lo que el conteo encontró, en vez de un "guardado"
+      // mudo: si hay faltante, es lo que hay que revisar antes de irse.
+      const falt=n(ajuste?.faltante), sobr=n(ajuste?.sobrante);
+      if(falt>0||sobr>0){
+        show((isEdit?'✅ Conteo actualizado':'✅ Conteo guardado')
+          +' — '+(falt>0?`faltan ${falt}`:'')+(falt>0&&sobr>0?', ':'')
+          +(sobr>0?`sobran ${sobr}`:'')+` (${n(ajuste?.ajustados)} productos con diferencia)`);
+      }else{
+        show((isEdit?'✅ Conteo actualizado':'✅ Conteo guardado')+' — todo cuadra');
+      }
 
       // 4. Preparar pedido sugerido — mostrar TODOS los productos
       // Los que están bajo mínimo tienen cantidad sugerida, el resto qty=0
