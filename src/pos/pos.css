@@ -1284,7 +1284,9 @@
 
 .kds-item-status { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 .kds-item-qty    { font-size: 13px; font-weight: 900; color: #fbbf24; flex-shrink: 0; }
-.kds-item-name   { font-size: 14px; font-weight: 700; flex: 1; line-height: 1.25; }
+/* `flex: 1` empujaba los chips al extremo derecho; con `0 1 auto` el nombre
+   ocupa lo suyo y los modificadores arrancan justo a la par. */
+.kds-item-name   { font-size: 14px; font-weight: 700; flex: 0 1 auto; line-height: 1.25; }
 .kds-item-nota   {
   font-size: 11px;
   color: #a78bfa;
@@ -1292,7 +1294,10 @@
   margin-top: 2px;
   font-style: italic;
 }
-.kds-item-main { display: flex; align-items: baseline; gap: 7px; }
+/* Los chips de modificadores viven DENTRO de esta fila y envuelven a la par del
+   nombre, en vez de bajar a su propio renglón. En una pantalla de cocina el
+   alto es lo que decide cuántas órdenes se ven sin hacer scroll. */
+.kds-item-main { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
 .kds-item-mods { display: flex; flex-wrap: wrap; gap: 5px; margin-left: 26px; }
 .kds-mod-chip {
   background: rgba(45,212,168,0.12);
@@ -1317,10 +1322,10 @@
 /* Bloques agrupados por grupo_nombre */
 .kds-item-mods-grouped {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-left: 26px;
-  margin-top: 3px;
+  flex-flow: row wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  min-width: 0;
 }
 .kds-mod-grupo-block {
   display: flex;
@@ -1744,5 +1749,15 @@
   text-transform: uppercase; letter-spacing: .3px;
 }
 .kds-combo-progreso { font-size: 11px; font-weight: 700; color: #b8b4c0; }
+/* Nota del cliente del combo: una sola vez bajo el encabezado, no repetida
+   debajo de cada componente (en un Burger Duo salía 6 veces). */
+.kds-combo-nota {
+  padding: 3px 8px 4px;
+  background: rgba(244,162,97,0.07);
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
 .kds-combo-bloque .kds-item { border-radius: 0; border-left: none; border-right: none; }
 .kds-combo-bloque .kds-item:last-child { border-bottom: none; }
