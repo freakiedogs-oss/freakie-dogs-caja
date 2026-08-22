@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import RecetasView from '../admin/RecetasView';
 import MapeoMenu from './MapeoMenu';
+import DiferenciasTab from './DiferenciasTab';
 import CosteoView from '../admin/CosteoView';
 import { UnidadSelect } from '../UnidadSelect';
 
@@ -584,6 +585,7 @@ export default function KardexView({ user, show }) {
      ══════════════════════════════════════════════════════════════════════ */
   const TABS_K = [
     { id: 'inventario',  label: '📦 Inventario' },
+    { id: 'diferencias', label: '🔍 Fugas' },
     { id: 'conteo',      label: '🌙 Lista Conteo' },
     { id: 'mapeo',       label: '🔗 Mapeo Compras' },
     { id: 'menu',        label: '🍔 Menú (BOM)' },
@@ -1098,6 +1100,8 @@ export default function KardexView({ user, show }) {
         {/* ═══════════════════════════════════════════════════════════════
             TAB 3: RECETAS
         ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'diferencias' && <DiferenciasTab />}
+
         {activeTab === 'conteo' && <ConteoLista user={user} />}
 
         {activeTab === 'menu' && <MapeoMenu user={user} />}
