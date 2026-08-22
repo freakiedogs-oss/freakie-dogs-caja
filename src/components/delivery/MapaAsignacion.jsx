@@ -12,24 +12,16 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { db } from '../../supabase';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { km, ordenarRuta, pedidosPorMotorista as agruparPorMotorista, MIN_POR_KM } from './rutaOrden';
 
 const TOKEN_KEY = 'freakie_torre_token';
 const REFRESH_MS = 20000;
-const MIN_POR_KM = 2.4;      // mismo factor que el resto de la Torre
 const PENAL_POR_PEDIDO = 8;  // minutos que "cuesta" cada pedido que ya lleva encima
 
 const C = {
   card: '#1a1a1a', border: '#2a2a2a', text: '#f0f0f0', dim: '#8a8a8a',
   amarillo: '#f59e0b', rojo: '#e63946', verde: '#16a34a', azul: '#2563eb',
 };
-
-function km(aLat, aLng, bLat, bLng) {
-  const R = 6371, rad = (x) => (x * Math.PI) / 180;
-  const dLat = rad(bLat - aLat), dLng = rad(bLng - aLng);
-  const h = Math.sin(dLat / 2) ** 2 +
-            Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(h));
-}
 
 // Qué tan conveniente es cada motorista para un pedido. Todo en minutos para
 // que las tres cosas se puedan sumar y comparar:
@@ -171,12 +163,32 @@ export default function MapaAsignacion({ onAsignar, ocupado, recargarPadre }) {
       m.bindTooltip(`${p.numero_orden} · ${p.cliente_nombre || ''}`, { direction: 'top' });
       m.addTo(capas.current);
       puntos.push([p.cliente_lat, p.cliente_lng]);
+    }
 
-      // Línea recta a su motorista, para ver de un vistazo quién atiende qué
-      if (p.motorista_id && p.driver_lat != null) {
-        L.polyline([[p.driver_lat, p.driver_lng], [p.cliente_lat, p.cliente_lng]],
-          { color: C.rojo, weight: 2, opacity: .7, dashArray: '5,4' }).addTo(capas.current);
-      }
+    // Ruta de cada motorista, numerada en el orden sugerido de entrega.
+    // Sin los números, dos pedidos cercanos no dicen cuál va primero — que es
+    // justo lo que necesita saber el motorista al salir.
+    const agrupados = agruparPorMotorista(data.pedidos || []);
+    for (const [motoristaId, suyos] of agrupados) {
+      const mot = (data.motoristas || []).find(x => x.empleado_id === motoristaId);
+      if (!mot || mot.lat == null) continue;
+
+      const ruta = ordenarRuta({ lat: mot.lat, lng: mot.lng }, suyos);
+      L.polyline([[mot.lat, mot.lng], ...ruta.map(p => [p.cliente_lat, p.cliente_lng])],
+        { color: C.rojo, weight: 2, opacity: .7, dashArray: '5,4' }).addTo(capas.current);
+
+      ruta.forEach((p, i) => {
+        L.marker([p.cliente_lat, p.cliente_lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#111;
+                               color:#fff;font-size:9.5px;font-weight:700;display:flex;align-items:center;
+                               justify-content:center;border:1.5px solid ${C.rojo};white-space:nowrap">${i + 1}º</div>`,
+            iconSize: [16, 16], iconAnchor: [-7, 15],
+          }),
+          interactive: false, zIndexOffset: 450,
+        }).addTo(capas.current);
+      });
     }
 
     for (const m of data.motoristas || []) {
