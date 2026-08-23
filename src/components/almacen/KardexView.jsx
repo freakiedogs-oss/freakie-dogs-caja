@@ -21,12 +21,13 @@ const TIPOS = {
 
 const MOV_TIPOS = {
   recepcion:      { label: 'Recepción',  icon: '📥', badge: 'success' },
-  despacho:       { label: 'Despacho',   icon: '🚚', badge: 'info' },
+  venta:          { label: 'Venta',      icon: '💵', badge: 'info' },
+  traslado:       { label: 'Traslado',   icon: '🚚', badge: 'info' },
+  consumo:        { label: 'Consumo',    icon: '🍳', badge: 'muted' },
   ajuste_manual:  { label: 'Ajuste',     icon: '✏️', badge: 'warning' },
   conteo_fisico:  { label: 'Conteo',     icon: '📋', badge: 'muted' },
   produccion:     { label: 'Producción', icon: '🏭', badge: 'info' },
   merma:          { label: 'Merma',      icon: '🗑️', badge: 'destructive' },
-  devolucion:     { label: 'Devolución', icon: '🔄', badge: 'warning' },
 };
 
 const selectCls = 'w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -1234,7 +1235,7 @@ export default function KardexView({ user, show }) {
               <div className="field">
                 <label>Motivo del ajuste</label>
                 <textarea
-                  placeholder="Ej: Conteo físico, Merma por rotura, Devolución..."
+                  placeholder="Ej: Corrección de conteo, error de digitación... (para merma usá la sección de abajo)"
                   value={adjNotas} onChange={e => setAdjNotas(e.target.value)}
                   className="inp" style={{ minHeight: 72, resize: 'vertical' }} />
               </div>
@@ -1245,7 +1246,168 @@ export default function KardexView({ user, show }) {
               </button>
             </div>
           </div>
+
+          <MermaForm user={user} show={show} sucursales={sucursales} defaultSucursal={sucursal} />
         </div>)}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   🗑️ REGISTRAR MERMA — producto que se botó, venció o se quemó.
+   Usa la RPC registrar_merma (valida motivo y usuario en el servidor);
+   NO es un ajuste manual: así la merma queda con su propio tipo en el
+   kardex y el dashboard de Fugas puede mostrarla.
+   ══════════════════════════════════════════════════════════════════════ */
+function MermaForm({ user, show, sucursales, defaultSucursal }) {
+  const [mSucursal, setMSucursal] = useState(defaultSucursal || '');
+  const [items, setItems] = useState([]); // [{ producto, cantidad, stock }]
+  const [motivo, setMotivo] = useState('');
+  const [notas, setNotas] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
+
+  // Si el usuario elige sucursal en el ajuste de arriba, seguirla mientras acá no haya elegido nada
+  useEffect(() => {
+    if (defaultSucursal && !mSucursal) setMSucursal(defaultSucursal);
+  }, [defaultSucursal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addItem = async (prod) => {
+    if (items.some(it => it.producto.id === prod.id)) {
+      show?.('Ese producto ya está en la lista', 'warning');
+      return;
+    }
+    let stock = null;
+    if (mSucursal) {
+      const { data } = await db.from('inventario').select('stock_actual')
+        .eq('producto_id', prod.id).eq('sucursal_id', mSucursal).single();
+      stock = data?.stock_actual ?? 0;
+    }
+    setItems(prev => [...prev, { producto: prod, cantidad: '', stock }]);
+  };
+
+  const setCantidad = (id, val) => {
+    // iOS: el teclado numérico no trae punto → aceptamos coma también
+    if (val && !/^\d*[.,]?\d*$/.test(val)) return;
+    setItems(prev => prev.map(it => it.producto.id === id ? { ...it, cantidad: val } : it));
+  };
+
+  const removeItem = (id) => setItems(prev => prev.filter(it => it.producto.id !== id));
+
+  const parseQty = (v) => parseFloat(String(v).replace(',', '.'));
+
+  const handleMerma = async () => {
+    setErrMsg('');
+    if (!mSucursal) { show?.('Selecciona una sucursal', 'warning'); return; }
+    if (items.length === 0) { show?.('Agrega al menos un producto', 'warning'); return; }
+    const malos = items.filter(it => !(parseQty(it.cantidad) > 0));
+    if (malos.length > 0) {
+      show?.(`Cantidad inválida en: ${malos.map(it => it.producto.nombre).join(', ')}`, 'warning');
+      return;
+    }
+    if (!motivo || motivo.trim().length < 5) {
+      show?.('Escribe el motivo (mín. 5 caracteres)', 'warning');
+      return;
+    }
+    if (!user?.id) { show?.('No se pudo identificar al usuario — vuelve a iniciar sesión', 'error'); return; }
+    setSaving(true);
+    try {
+      const { data, error } = await db.rpc('registrar_merma', {
+        p_items: items.map(it => ({ producto_id: it.producto.id, cantidad: parseQty(it.cantidad) })),
+        p_sucursal_id: mSucursal,
+        p_motivo: motivo.trim(),
+        p_usuario_id: user.id,
+        p_notas: notas.trim() || null,
+      });
+      if (error) throw error;
+      const r = data || {};
+      show?.(`Merma registrada: ${r.productos ?? items.length} producto(s), ${n(r.unidades ?? 0)} unidades, $${n(r.valor ?? 0)}`, 'success');
+      setItems([]); setMotivo(''); setNotas(''); setErrMsg('');
+    } catch (e) {
+      // El servidor valida motivo y usuario — mostramos SU mensaje, no uno genérico
+      const msg = e?.message || 'Error al registrar la merma';
+      setErrMsg(msg);
+      show?.(msg, 'error');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="card" style={{ maxWidth: 480, marginTop: 16 }}>
+      <div className="sec-title" style={{ marginBottom: 4 }}>🗑️ Registrar merma</div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Producto que se botó, se venció o se quemó. Queda como merma en el kardex (no como ajuste).
+      </p>
+
+      <div className="space-y-3">
+        <div className="field">
+          <label>Sucursal</label>
+          <select value={mSucursal} onChange={e => setMSucursal(e.target.value)} className={selectCls}>
+            <option value="">Selecciona...</option>
+            {sucursales.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.store_code} — {s.nombre || STORES[s.store_code] || s.store_code}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label>Agregar producto</label>
+          <CatalogoSearch placeholder="Buscar producto..." onSelect={addItem} />
+        </div>
+
+        {items.length > 0 && (
+          <div className="space-y-2">
+            {items.map(it => (
+              <div key={it.producto.id} className="flex items-center gap-2 rounded-md border border-border px-2 py-2" style={{ background: '#1e1e1e' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{it.producto.nombre}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {TIPOS[it.producto.tipo]?.full || it.producto.tipo}
+                    {it.stock !== null ? ` · Stock: ${n(it.stock)}` : ''}
+                  </p>
+                </div>
+                <Input
+                  type="text" inputMode="decimal" placeholder="Cant."
+                  value={it.cantidad}
+                  onChange={e => setCantidad(it.producto.id, e.target.value)}
+                  style={{ width: 80, textAlign: 'right' }}
+                />
+                <button onClick={() => removeItem(it.producto.id)}
+                  className="text-lg px-1" style={{ color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}
+                  aria-label={`Quitar ${it.producto.nombre}`}>
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="field">
+          <label>Motivo (obligatorio, mín. 5 caracteres)</label>
+          <textarea
+            placeholder="Ej: Se venció el queso, se quemó la carne en plancha..."
+            value={motivo} onChange={e => setMotivo(e.target.value)}
+            className="inp" style={{ minHeight: 72, resize: 'vertical' }} />
+        </div>
+
+        <div className="field">
+          <label>Notas (opcional)</label>
+          <Input placeholder="Detalle adicional..." value={notas} onChange={e => setNotas(e.target.value)} />
+        </div>
+
+        {errMsg && (
+          <div className="rounded-md border px-3 py-2 text-xs font-semibold"
+            style={{ background: '#7f1d1d', borderColor: '#991b1b', color: '#fca5a5' }}>
+            {errMsg}
+          </div>
+        )}
+
+        <button className="btn btn-red" onClick={handleMerma}
+          disabled={saving || items.length === 0}>
+          {saving ? 'Registrando...' : '🗑️ Registrar merma'}
+        </button>
+      </div>
     </div>
   );
 }
