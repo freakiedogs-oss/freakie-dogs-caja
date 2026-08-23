@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { today, fmtDate, n, STORES } from '../../config';
+import OrdenesProduccionTab from './OrdenesProduccionTab';
 
 // ── Roles con acceso de edición ──
 const ROLES_EDIT = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'superadmin'];
@@ -325,8 +326,9 @@ export default function ProduccionDiaria({ user }) {
       </div>
       <div style={{ display: 'flex', gap: 6, background: C.card, borderRadius: 10, padding: 4 }}>
         {[
+          { key: 'ordenes', label: 'Órdenes', icon: '📋' },
           { key: 'registrar', label: 'Registrar', icon: '📝' },
-          { key: 'historial', label: 'Historial', icon: '📋' },
+          { key: 'historial', label: 'Historial', icon: '🕓' },
         ].map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); setError(null); setSuccess(null); }}
             style={{
@@ -379,12 +381,24 @@ export default function ProduccionDiaria({ user }) {
     </div>
   );
 
-  // ── Loading ──
-  if (loading && tab === 'registrar') {
+  // ── Loading ── (el tab de órdenes también necesita empleadosCM cargados)
+  if (loading && (tab === 'registrar' || tab === 'ordenes')) {
     return (
       <div style={{ padding: 20, textAlign: 'center', color: C.textMuted }}>
         <div style={{ fontSize: 28, marginBottom: 10 }}>🏭</div>
         Cargando recetas y empleados...
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // TAB: ÓRDENES — aprobación de órdenes de producción sugeridas
+  // ══════════════════════════════════════════════════════════════
+  if (tab === 'ordenes') {
+    return (
+      <div style={{ padding: '16px', maxWidth: 480, margin: '0 auto' }}>
+        <TabBar />
+        <OrdenesProduccionTab user={user} canEdit={canEdit} empleadosCM={empleadosCM} />
       </div>
     );
   }
