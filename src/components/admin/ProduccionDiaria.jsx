@@ -245,7 +245,24 @@ export default function ProduccionDiaria({ user }) {
       if (rpErr) throw new Error(rpErr.message || JSON.stringify(rpErr));
 
       const empNombre = productorSel ? `${productorSel.nombre} ${productorSel.apellido}` : '';
-      setSuccess(`Lote ${rp.lote} registrado — ${n(cantidadProducir)} tandas de ${recetaSel.nombre} por ${empNombre}. Costo $${Number(rp.costo_total || 0).toFixed(2)}. Insumos descontados (kardex).`);
+
+      // El servidor avisa cuando la receta no tiene producto de catálogo: en ese
+      // caso CONSUME los insumos y NO da de alta nada. Antes ese aviso se
+      // ignoraba y salía la palomita verde igual, así que el inventario quedaba
+      // cojo sin que nadie se enterara. Ahora se muestra como error.
+      if (rp?.aviso) {
+        setError(`⚠️ Lote ${rp.lote}: se descontaron los insumos pero NO se dio de alta el producto. ${rp.aviso}`);
+        setSuccess('');
+      } else {
+        setSuccess(
+          `Lote ${rp.lote} registrado — ${n(cantidadProducir)} tanda(s) de ${recetaSel.nombre}` +
+          (rp?.unidades_producidas ? ` = ${rp.unidades_producidas} ${recetaSel.unidad_rendimiento || 'unidades'}` : '') +
+          ` por ${empNombre}. Costo $${Number(rp.costo_total || 0).toFixed(2)}. Insumos descontados (kardex).`
+        );
+      }
+      // El botón está al final del formulario y el mensaje se dibuja arriba: sin
+      // esto el resultado queda fuera de vista y se registra la tanda dos veces.
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       setCantidadProducir('');
       setRecetaSelId(null);
       setTurno('mañana');

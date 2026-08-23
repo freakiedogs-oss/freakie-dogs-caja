@@ -50,10 +50,14 @@ export default function InventarioFisico({user, onBack}){
           .limit(20);
         setHistorial(hist||[]);
 
-        // ¿Hay uno en progreso?
+        // Antes acá se entraba SOLO al conteo en progreso, sin avisar. Había uno
+        // abandonado del 2-abril con 364 productos ya "contados": bodega abría la
+        // pantalla, veía "95% completado" con cifras de 4 meses atrás y, al
+        // finalizar, el stock de hoy se ajustaba a los números de abril.
+        // Ahora se muestra el historial y la persona elige: continuar ese conteo
+        // o empezar uno nuevo. Solo se reanuda solo si es de HOY.
         const enProgreso=(hist||[]).find(h=>h.estado==='en_progreso');
-        if(enProgreso){
-          // Ir directo a continuar ese
+        if(enProgreso && enProgreso.fecha===today()){
           await cargarInventario(enProgreso.id, suc.id);
         }
 
@@ -74,6 +78,10 @@ export default function InventarioFisico({user, onBack}){
       const {data:catProds}=await db.from('catalogo_productos')
         .select('id, nombre, unidad_medida, categoria')
         .eq('incluir_inventario_fisico',true)
+        // Sin este filtro entraban 188 productos descontinuados. Como el botón
+        // Finalizar exige que TODOS tengan cantidad, obligaba a teclear 0 en
+        // cada producto muerto — ahí se perdía el día de conteo.
+        .eq('activo',true)
         .order('categoria').order('nombre');
 
       // Cargar stock actual de CM001
@@ -95,6 +103,8 @@ export default function InventarioFisico({user, onBack}){
         categoria: p.categoria||'Otros',
         stock_sistema: stockMap[p.id]||0,
         cantidad_contada: detalleMap[p.id]?.cantidad_contada ?? null,
+        cantidad_texto: detalleMap[p.id]?.cantidad_contada != null
+          ? String(detalleMap[p.id].cantidad_contada) : '',
         notas_item: detalleMap[p.id]?.notas||'',
         dirty: false // cambió desde último guardado?
       }));
@@ -117,7 +127,11 @@ export default function InventarioFisico({user, onBack}){
       // Contar productos inventariables
       const {count}=await db.from('catalogo_productos')
         .select('id',{count:'exact',head:true})
-        .eq('incluir_inventario_fisico',true);
+        .eq('incluir_inventario_fisico',true)
+        // Sin este filtro entraban 188 productos descontinuados. Como el botón
+        // Finalizar exige que TODOS tengan cantidad, obligaba a teclear 0 en
+        // cada producto muerto — ahí se perdía el día de conteo.
+        .eq('activo',true);
 
       const {data:nuevo,error}=await db.from('inventario_fisico')
         .insert({
@@ -140,21 +154,50 @@ export default function InventarioFisico({user, onBack}){
   };
 
   /* ── Actualizar cantidad ── */
+  // Se guarda el TEXTO tal como se escribe y aparte el número. Antes el input
+  // mostraba el número ya convertido, así que al teclear "2." el punto
+  // desaparecía y era imposible escribir "2.5" — con ~48 insumos que se miden
+  // en lb, kg, oz o galón, eso dejaba fuera el peso de la carne.
   const setCantidad=(prodId,val)=>{
+    // se acepta vacío, dígitos y un solo punto decimal
+    if(val!=='' && !/^\d*\.?\d*$/.test(val)) return;
     setProductos(prev=>prev.map(p=>
-      p.producto_id===prodId?{...p, cantidad_contada:val===''?null:n(val), dirty:true}:p
+      p.producto_id===prodId
+        ? {...p, cantidad_texto:val, cantidad_contada:val===''?null:n(val), dirty:true}
+        : p
     ));
   };
   const stepCantidad=(prodId,delta)=>{
     setProductos(prev=>prev.map(p=>{
       if(p.producto_id!==prodId)return p;
-      const cur=p.cantidad_contada===null?p.stock_sistema:p.cantidad_contada;
-      return {...p, cantidad_contada:Math.max(0,cur+delta), dirty:true};
+      // Antes arrancaba desde el stock del sistema: tocar "+" en un producto sin
+      // contar saltaba a "sistema + 1", que es justo lo que no se quiere en un
+      // conteo. Ahora arranca en 0.
+      const cur=p.cantidad_contada===null?0:p.cantidad_contada;
+      const nuevo=Math.max(0,cur+delta);
+      return {...p, cantidad_contada:nuevo, cantidad_texto:String(nuevo), dirty:true};
     }));
   };
   const setIgual=(prodId)=>{
     setProductos(prev=>prev.map(p=>
-      p.producto_id===prodId?{...p, cantidad_contada:p.stock_sistema, dirty:true}:p
+      p.producto_id===prodId
+        ? {...p, cantidad_contada:p.stock_sistema, cantidad_texto:String(p.stock_sistema), dirty:true}
+        : p
+    ));
+  };
+
+  // Cerrar el conteo obligaba a teclear 0 producto por producto en todo lo que
+  // no apareció en bodega. Con 293 productos eso es lo que se come el día.
+  const marcarRestoEnCero=(categoria)=>{
+    const cuantos=productos.filter(p=>p.cantidad_contada===null
+      && (!categoria || (p.categoria||'Otros')===categoria)).length;
+    if(cuantos===0){ show('No queda nada pendiente'+(categoria?' en '+categoria:'')); return; }
+    if(!confirm(`Marcar en 0 los ${cuantos} productos que faltan${categoria?' de '+categoria:''}?\n\n`
+      +'Usá esto solo cuando ya revisaste que NO hay existencia de esos productos en bodega.')) return;
+    setProductos(prev=>prev.map(p=>
+      (p.cantidad_contada===null && (!categoria || (p.categoria||'Otros')===categoria))
+        ? {...p, cantidad_contada:0, cantidad_texto:'0', dirty:true}
+        : p
     ));
   };
 
@@ -205,6 +248,18 @@ export default function InventarioFisico({user, onBack}){
       show(`⚠️ Faltan ${sinContar.length} productos sin contar`);
       return;
     }
+
+    // Un solo toque ajustaba el stock de toda Casa Matriz, sin vuelta atrás y
+    // sin preguntar. En un teléfono, contando con prisa, es muy fácil de rozar.
+    const conDif=productos.filter(p=>p.cantidad_contada!==p.stock_sistema);
+    const falt=conDif.filter(p=>p.cantidad_contada<p.stock_sistema).length;
+    const sobr=conDif.filter(p=>p.cantidad_contada>p.stock_sistema).length;
+    if(!confirm(
+      `¿Finalizar el inventario y ajustar el stock?\n\n`
+      +`• ${productos.length} productos contados\n`
+      +`• ${conDif.length} con diferencia (${falt} faltan, ${sobr} sobran)\n\n`
+      +`El stock de Casa Matriz va a quedar EXACTAMENTE como se contó.\n`
+      +`Esto no se puede deshacer: queda registrado en el kardex.`)) return;
 
     setGuardando(true);
     try{
@@ -586,8 +641,10 @@ export default function InventarioFisico({user, onBack}){
 
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
                     <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,-1)}>−</button>
-                    <input type="number" inputMode="numeric" min="0" step="1"
-                      value={p.cantidad_contada??''} onChange={e=>setCantidad(p.producto_id,e.target.value)}
+                    {/* inputMode decimal: el teclado numérico de iOS no trae punto,
+                        y sin punto no se puede pesar carne en libras. */}
+                    <input type="text" inputMode="decimal"
+                      value={p.cantidad_texto??''} onChange={e=>setCantidad(p.producto_id,e.target.value)}
                       style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}
                       placeholder="—"/>
                     <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,1)}>+</button>
@@ -616,6 +673,16 @@ export default function InventarioFisico({user, onBack}){
 
       {/* ── Botones sticky ── */}
       <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
+        {/* Sin esto hay que teclear 0 uno por uno en todo lo que no apareció en
+            bodega. Con 293 productos, es lo que se come el día de conteo. */}
+        {contados<totalProds&&(
+          <button onClick={()=>marcarRestoEnCero(null)}
+            style={{width:'100%',marginBottom:8,padding:'10px',borderRadius:10,
+              border:'1px solid #3a3a44',background:'#1a1a22',color:'#b9b9c6',
+              fontSize:12.5,fontWeight:600,cursor:'pointer'}}>
+            Marcar en 0 los {totalProds-contados} que faltan
+          </button>
+        )}
         <div style={{display:'flex',gap:10}}>
           <button className="btn btn-ghost" onClick={guardarProgreso} disabled={guardando||dirtyCount===0}
             style={{flex:1,padding:14,opacity:dirtyCount===0?0.5:1}}>
