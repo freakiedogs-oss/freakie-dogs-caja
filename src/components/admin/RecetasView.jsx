@@ -104,6 +104,14 @@ export default function RecetasView({ user }) {
       unidad_medida: i.unidad_medida || 'unidad',
       merma_pct: n(i.merma_pct),
       notas: i.notas || '',
+      // El guardado es delete + insert: TODO campo que no viaje acá se pierde.
+      // factor_a_stock es el puente oz→bolsa que usan los 4 motores (costeo,
+      // deducción ×2 y producción): si se cae a NULL, el POS vuelve a descontar
+      // 32× de más. removible/etiqueta alimentan el botón SIN del POS.
+      factor_a_stock: i.factor_a_stock ?? null,
+      removible: i.removible ?? false,
+      etiqueta: i.etiqueta || null,
+      cantidad_catalogo: i.cantidad_catalogo ?? null,
     }));
     if (rows.length > 0) await db.from('receta_ingredientes').insert(rows);
     // Cachear costo_calculado desde el motor real (incluye sub-recetas + merma + costo DTE).
