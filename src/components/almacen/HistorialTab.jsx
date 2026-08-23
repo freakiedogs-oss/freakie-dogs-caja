@@ -482,6 +482,9 @@ function EditarRecepcion({rec,cmId,user,show,onBack}){
 
   const guardar=async()=>{
     if(!proveedorNombre.trim()){show('⚠️ Selecciona un proveedor');return;}
+    // Firma obligatoria: el ajuste de kardex del paso 6 exige usuario (auditoría 22-ago).
+    // Se corta ANTES de tocar los items para no dejar la recepción a medio editar.
+    if(!user?.id){show('⚠️ Tu sesión no tiene usuario. Cierra y vuelve a iniciar sesión para editar recepciones.');return;}
     const validItems=items.filter(i=>(i.prodId||i.desc.trim()||i.prodNombre.trim())&&n(i.qty)>0);
     if(validItems.length===0){show('⚠️ Agrega al menos un ítem con cantidad');return;}
     setSaving(true);
@@ -541,7 +544,7 @@ function EditarRecepcion({rec,cmId,user,show,onBack}){
             p_referencia_tipo:'recepcion',
             p_referencia_id:rec.id,
             p_notas:'Corrección de recepción'+(rec.dte_codigo?' DTE '+rec.dte_codigo:''),
-            p_usuario_id:user?.id||null,
+            p_usuario_id:user.id,
             p_sucursal_id:cmId,
             p_permitir_negativo:true,
           });

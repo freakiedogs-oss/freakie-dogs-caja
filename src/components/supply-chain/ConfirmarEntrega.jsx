@@ -127,6 +127,8 @@ export default function ConfirmarEntrega({user,onBack}){
 
   const confirmarEntrega=async()=>{
     if(!selectedDespacho)return;
+    // Firma obligatoria: el RPC rechaza recepciones sin usuario (auditoría 22-ago)
+    if(!user?.id){show('❌ Tu sesión no tiene usuario. Cerrá y volvé a iniciar sesión para firmar la recepción.');return;}
     try{
       setActualizando(true);
       // Foto OPCIONAL (antes era obligatoria y frenaba: 78% no se confirmaba)
