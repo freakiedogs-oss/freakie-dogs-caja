@@ -16,8 +16,8 @@
 
 ## DEUDA VERIFICADA (auditorías 22-ago)
 8. **RLS `inventario_all`**: anon puede escribir inventario (llave pública en el bundle). Cerrar fuera de hora pico + prueba de venta real.
-9. **92% de despachos sin firma de recibido** — exigir recibido_por.
-10. Ajuste manual server-side sin motivo/usuario obligatorios (la pantalla sí lo pide; registrar_merma es el modelo).
+9. ✅ **92% de despachos sin firma de recibido** — HECHO 23-ago (PR #305, migración `despacho_confirmar_exige_firma_humana`): vía humana exige `p_usuario`; el cron auto-confirmador sigue vivo pero honesto (`recibido_por=NULL` + nota "AUTO-CONFIRMADO por cron (sin firma humana)"). Pendiente de negocio: decidir si el cron se apaga.
+10. ✅ Ajuste manual server-side — HECHO 23-ago (PR #305, migración `kardex_ajuste_manual_exige_motivo_y_usuario`): `kardex_mover` exige usuario + motivo ≥5 chars SOLO para `ajuste_manual`; los otros 7 tipos byte-idénticos (huella md5 + pruebas con rollback).
 11. 6 inactivos con incluir_conteo y stock vivo · Bolsa de hielo -64 · negativos (jalapeños, sal, pepinillo triturado) · unidad de conteo ≠ unidad stock (Kolashampan 2,705 "fardos") · conteo semanal para limpieza/papelería.
 12. Verificar los ~53 hallazgos restantes de la auditoría de 30 agentes (journal wf_56432c95-ce9). Costeo: 99 productos sin precio (mapeo DTE grupo b/c: 177+2,334 descripciones).
 

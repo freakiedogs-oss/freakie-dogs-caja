@@ -550,6 +550,8 @@ export default function KardexView({ user, show }) {
     if (!adjProd) { show?.('Selecciona un producto', 'warning'); return; }
     if (!adjQty || isNaN(adjQty)) { show?.('Escribe una cantidad válida', 'warning'); return; }
     if (!adjNotas || adjNotas.trim().length < 5) { show?.('Escribe el motivo (mín. 5 caracteres)', 'warning'); return; }
+    // Firma obligatoria: el servidor rechaza ajustes manuales sin usuario (auditoría 22-ago)
+    if (!user?.id) { show?.('Tu sesión no tiene usuario. Cierra y vuelve a iniciar sesión para firmar el ajuste.', 'warning'); return; }
     setSavingAdj(true);
     try {
       // Antes esto insertaba el movimiento a mano y DESPUÉS actualizaba
@@ -564,14 +566,14 @@ export default function KardexView({ user, show }) {
         p_referencia_tipo: 'manual',
         p_referencia_id: null,
         p_notas: adjNotas.trim(),
-        p_usuario_id: user?.id || null,
+        p_usuario_id: user.id,
         p_sucursal_id: sucursal,
         p_permitir_negativo: true,
       });
       if (error) throw error;
       show?.('Ajuste registrado', 'success');
       setAdjProd(null); setAdjQty(''); setAdjNotas(''); setAdjStock(null);
-    } catch { show?.('Error al registrar ajuste', 'error'); }
+    } catch (e) { show?.('Error al registrar ajuste: ' + (e?.message || e), 'error'); }
     finally { setSavingAdj(false); }
   };
 
