@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 22-Ago-2026 — PLAN (Jose): órdenes de producción generadas desde el conteo nocturno
+- **La idea, dictada por Jose:** el conteo nocturno de cada sucursal debe **generar órdenes de producción** que el **jefe de almacén aprueba y asigna**. El sistema analiza los pedidos de cada sucursal, la venta, y cualquier otra señal relevante para **determinar mínimos y máximos por producto** — y esos min/max alimentan la generación correcta de las órdenes.
+- **Por qué ya es viable:** este ciclo depende de piezas que quedaron sanas esta semana — conteo nocturno con kardex (`kardex_ajustar_absoluto`), producción funcionando (`registrar_produccion` da de alta con rendimiento por tanda), ventas descargando insumos al 98-99%, y merma registrable (PR #301). Los datos para calcular min/max ya existen: `kardex_movimientos` tipo `venta` por sucursal, `pedidos vivos` (`guardar_pedido_vivo`), conteos históricos (`inventario_conteo_nocturno`, 61k filas) y `stock_minimo/stock_maximo` en `inventario` (hoy manuales, editables en StockLevelsView).
+- **Boceto del ciclo:** conteo nocturno → diferencia vs min/max calculados → borrador de orden de producción (tandas sugeridas por receta, redondeadas al rendimiento) → jefe de almacén aprueba/ajusta/asigna responsable → `registrar_produccion` al completarse → despacho a sucursales.
+- **Pendiente de diseñar:** fórmula de min/max (venta promedio por día × cobertura ± estacionalidad), dónde vive la orden (tabla nueva `ordenes_produccion`), y la pantalla de aprobación del jefe de almacén.
+
 ## 22-Ago-2026 — Arquitectura de unidades: "cada quien habla su idioma" (factor_a_stock en los 4 motores)
 - **Decisión de Jose:** cocina escribe recetas en su unidad (oz, taza, lata); el inventario vive en UNA unidad por producto — la que se cuenta con las manos (bolsa, lata, lb). El puente es **`receta_ingredientes.factor_a_stock`**: cuántas unidades de stock es 1 unidad de la receta (oz→bolsa de 32 oz = 0.03125). NULL = 1 = comportamiento idéntico al anterior.
 - **Por qué factor explícito y NO conversión automática por `contenido_neto`:** verificado contra datos que ese campo no es semánticamente uniforme — `Vinagre en Galon` tiene stock en litros pero contenido "3785 ml" POR GALÓN comprado; convertir a ciegas erraría 3.785×. El factor por línea es auditable y no adivina.
