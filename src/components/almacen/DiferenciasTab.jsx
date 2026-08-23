@@ -13,6 +13,21 @@ import { useToast } from '../../hooks/useToast';
 //   · merma         → lo que alguien declaró a propósito que se botó.
 //   · ajuste_manual → lo que alguien corrigió a mano. Puede tapar cualquiera
 //                     de las dos, por eso se mira con lupa y con su autor.
+//
+// Y ADEMÁS por CLASE de producto (catalogo_productos.conteo_clase), porque
+// mezclarlas escondía las fugas de verdad entre los guantes y las servilletas:
+//   · venta           → insumos de comida enlazados a la venta. Un faltante
+//                       acá ES una fuga: merma, robo o error. 26 productos.
+//   · consumo_interno → limpieza, empaques, papelería. Se GASTAN operando:
+//                       un faltante acá es uso normal, no robo. Lo que se
+//                       vigila es si una sucursal gasta más de lo que su
+//                       volumen de venta justifica (índice de eficiencia).
+//                       70 de los 96 productos del conteo son de esta clase.
+
+const CLASES = [
+  { id: 'venta',           label: 'Fugas reales',    color: '#e63946' },
+  { id: 'consumo_interno', label: 'Consumo interno', color: '#f4a261' },
+];
 
 const TIPOS = [
   { id: null,             label: 'Todo',          color: '#8b8794' },
@@ -40,9 +55,11 @@ export default function DiferenciasTab() {
   const [dias, setDias]           = useState(30);
   const [sucursales, setSucs]     = useState([]);
   const [sucursal, setSucursal]   = useState(null);
+  const [clase, setClase]         = useState('venta');
   const [tipo, setTipo]           = useState(null);
   const [resumen, setResumen]     = useState([]);
   const [detalle, setDetalle]     = useState([]);
+  const [eficiencia, setEfic]     = useState([]);
   const [cargando, setCargando]   = useState(false);
   const [verDetalle, setVerDet]   = useState(false);
 
@@ -61,20 +78,25 @@ export default function DiferenciasTab() {
       const iso = (d) => d.toISOString().slice(0, 10);
       const params = { p_desde: iso(desde), p_hasta: iso(hasta), p_sucursal_id: sucursal };
 
-      const [{ data: res, error: e1 }, { data: det, error: e2 }] = await Promise.all([
+      const [{ data: res, error: e1 }, { data: det, error: e2 }, { data: efi, error: e3 }] = await Promise.all([
         db.rpc('kardex_diferencias_resumen', params),
         db.rpc('kardex_diferencias_detalle', { ...params, p_tipo: tipo }),
+        db.rpc('kardex_consumo_eficiencia', { p_desde: params.p_desde, p_hasta: params.p_hasta }),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
-      setResumen((res || []).filter(r => !tipo || r.tipo === tipo));
-      setDetalle(det || []);
+      if (e3) throw e3;
+      // El backend manda `clase` por fila ('venta' si el producto no está
+      // clasificado, para no esconder una fuga por omisión); acá solo se filtra.
+      setResumen((res || []).filter(r => r.clase === clase && (!tipo || r.tipo === tipo)));
+      setDetalle((det || []).filter(d => d.clase === clase));
+      setEfic(efi || []);
     } catch (e) {
       show?.('No se pudo cargar el dashboard: ' + e.message, 'error');
     } finally {
       setCargando(false);
     }
-  }, [dias, sucursal, tipo, show]);
+  }, [dias, sucursal, clase, tipo, show]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -103,11 +125,28 @@ export default function DiferenciasTab() {
   ).sort((a, b) => (b.faltanteUsd - a.faltanteUsd) || (b.faltante - a.faltante));
 
   const vacio = !cargando && resumen.length === 0;
+  const esConsumo = clase === 'consumo_interno';
+
+  // Índice de eficiencia (solo consumo interno): compara el % del consumo
+  // interno de cada sucursal contra el % de su venta. El volumen de venta se
+  // aproxima con las libras de carne de hamburguesa que descontó el kardex
+  // (método de la auditoría 22-ago). Se mide en UNIDADES y no en dólares
+  // porque la mayoría de estos productos aún no tiene precio cargado.
+  //   índice 1.00 = gasta exactamente lo que su venta justifica
+  //   índice 2.00 = gasta el doble de lo que le toca por volumen
+  const efiOrdenada = [...eficiencia].sort((a, b) => n(b.indice) - n(a.indice));
 
   return (
     <div>
       {/* ── Filtros ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {CLASES.map(c => (
+            <button key={c.id} onClick={() => setClase(c.id)}
+              style={pill(clase === c.id, c.color)}>{c.label}</button>
+          ))}
+        </div>
+
         <div style={{ display: 'flex', gap: 4 }}>
           {RANGOS.map(r => (
             <button key={r.d} onClick={() => setDias(r.d)}
@@ -130,10 +169,14 @@ export default function DiferenciasTab() {
         </div>
 
         <InfoTip text={
-          'Faltante = el sistema decía más de lo que había. Ahí vive la merma, el desperdicio y el robo. ' +
+          'Fugas reales = insumos de comida enlazados a la venta: un faltante ahí es merma, robo o error. ' +
+          'Consumo interno = limpieza, empaques y papelería que se GASTAN operando: su faltante es uso normal ' +
+          'y lo que se vigila es si una sucursal gasta más de lo que su venta justifica. ' +
+          'Faltante = el sistema decía más de lo que había. ' +
           'Sobrante = había más de lo que el sistema decía, casi siempre una entrada que no se registró. ' +
           'Los conteos son lo que aparece al contar; los ajustes manuales son correcciones a mano y ' +
-          'conviene revisarlos porque pueden tapar cualquiera de las dos cosas.'
+          'conviene revisarlos porque pueden tapar cualquiera de las dos cosas. ' +
+          'La clase de cada producto se puede cambiar desde el editor del catálogo (tab Inventario).'
         } />
 
         <button onClick={cargar} disabled={cargando}
@@ -146,7 +189,7 @@ export default function DiferenciasTab() {
       {/* ── Tarjetas de totales ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))',
                     gap: 10, marginBottom: 16 }}>
-        <Tarjeta titulo="Faltante" color="#e63946"
+        <Tarjeta titulo={esConsumo ? 'Consumido' : 'Faltante'} color="#e63946"
           valor={usd(tot.faltanteUsd)} sub={`${n(tot.faltante).toFixed(0)} unidades`} />
         <Tarjeta titulo="Sobrante" color="#2dd4a8"
           valor={usd(tot.sobranteUsd)} sub={`${n(tot.sobrante).toFixed(0)} unidades`} />
@@ -175,8 +218,54 @@ export default function DiferenciasTab() {
         </div>
       )}
 
-      {/* ── Ranking por sucursal ── */}
-      {porSucursal.length > 0 && (
+      {/* ── Índice de eficiencia por sucursal (solo consumo interno) ──
+          El ranking por $ engañaría acá: 60 de los 70 productos de consumo
+          interno todavía no tienen precio, así que se compara el reparto del
+          consumo (en unidades) contra el reparto de la venta. */}
+      {esConsumo && efiOrdenada.length > 0 && (
+        <>
+          <h3 style={tituloSec}>
+            Eficiencia por sucursal
+            <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · % del consumo vs % de la venta</span>
+            <InfoTip text={
+              'Cada sucursal debería gastar consumo interno en proporción a lo que vende. ' +
+              'Índice = su % del consumo interno (en unidades) dividido entre su % de la venta ' +
+              '(volumen aproximado con las libras de carne de hamburguesa descontadas por el kardex). ' +
+              '1.00 = gasta justo lo que su venta justifica; 2.00 = gasta el doble de lo que le toca. ' +
+              'Se mide en unidades porque la mayoría de estos productos aún no tiene precio cargado.'
+            } />
+          </h3>
+          <div style={{ marginBottom: 18 }}>
+            {efiOrdenada.map(s => {
+              const idx = n(s.indice);
+              const max = Math.max(n(efiOrdenada[0]?.indice), 1) || 1;
+              const color = idx > 1.15 ? '#e63946' : idx < 0.85 ? '#2dd4a8' : '#f4a261';
+              return (
+                <div key={s.sucursal_id} style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
+                    <span style={{ color: '#ddd', fontWeight: 600 }}>{s.sucursal}</span>
+                    <span style={{ color, fontWeight: 700 }}>
+                      {idx > 0 ? idx.toFixed(2) + '×' : 'sin datos'}
+                      <span style={{ color: '#6b6878', fontWeight: 400, marginLeft: 6 }}>
+                        {n(s.pct_consumo).toFixed(1)}% del consumo · {n(s.pct_venta).toFixed(1)}% de la venta
+                      </span>
+                    </span>
+                  </div>
+                  <div style={{ height: 6, background: '#1a1a22', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+                    <div style={{ width: Math.min(100, (idx / max) * 100) + '%', height: '100%', background: color }} />
+                    {/* marca del 1.00 = gasto proporcional a la venta */}
+                    <div style={{ position: 'absolute', left: Math.min(100, (1 / max) * 100) + '%', top: 0,
+                                  width: 1, height: '100%', background: '#6b6878' }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* ── Ranking por sucursal (fugas reales: dónde ir a mirar primero) ── */}
+      {!esConsumo && porSucursal.length > 0 && (
         <>
           <h3 style={tituloSec}>Por sucursal <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}>· dónde ir a mirar primero</span></h3>
           <div style={{ marginBottom: 18 }}>

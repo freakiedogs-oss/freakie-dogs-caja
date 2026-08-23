@@ -1475,6 +1475,9 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
       p_descripcion: form.descripcion, p_activo: !!form.activo,
       p_incluir_conteo: form.incluir_conteo == null ? null : !!form.incluir_conteo,
       p_incluir_inventario_fisico: form.incluir_inventario_fisico == null ? null : !!form.incluir_inventario_fisico,
+      // '' = limpiar (el backend lo vuelve null); null = no tocar. Como este
+      // editor manda el form completo, siempre se manda el valor visible.
+      p_conteo_clase: form.conteo_clase || '',
     });
     setSaving(false);
     if (error) { setErr(error.message); show?.('❌ ' + error.message, 'error'); return; }
@@ -1568,6 +1571,16 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f0f0f0', marginBottom: 8, cursor: 'pointer' }}>
               <input type="checkbox" checked={!!form.incluir_conteo} onChange={e => set('incluir_conteo', e.target.checked)} /> Incluir en Conteo Nocturno
             </label>
+            {!!form.incluir_conteo && (
+              <div style={{ marginLeft: 24, marginBottom: 8 }}>
+                <label style={lbl}>Clase en el dashboard de Fugas</label>
+                <select value={form.conteo_clase || ''} onChange={e => set('conteo_clase', e.target.value || null)} style={inp}>
+                  <option value="">(sin clasificar — se trata como fuga real)</option>
+                  <option value="venta">Fuga real · insumo de venta (faltante = merma/robo)</option>
+                  <option value="consumo_interno">Consumo interno · se gasta operando (limpieza/empaques/papelería)</option>
+                </select>
+              </div>
+            )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f0f0f0', marginBottom: 14, cursor: 'pointer' }}>
               <input type="checkbox" checked={!!form.incluir_inventario_fisico} onChange={e => set('incluir_inventario_fisico', e.target.checked)} /> Incluir en Inventario Físico
             </label>
