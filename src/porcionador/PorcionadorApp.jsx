@@ -3,10 +3,16 @@
 // Autor: integración ERP Freakie Dogs (v1, agosto 2026)
 import { useEffect, useRef, useState } from 'react'
 import { db, URL_SB_DIRECT, KEY_SB } from '../supabase'
+import { requestCh340Port } from './ch340-webusb'
 
 const STATION_ID = 'papas-s006'
 const STORE_CODE = 'S006'
-const APP_VERSION = 'erp-1'
+const APP_VERSION = 'erp-2-webusb'
+
+// Android casi nunca expone el CH340 por Web Serial, aunque la propiedad
+// navigator.serial exista. Por eso se decide por el sistema operativo ANTES
+// de mirar qué APIs hay: en Android siempre WebUSB, en escritorio Web Serial.
+const ES_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
 const TOKEN_KEY = 'porcionador_token'
 const NOMBRE_KEY = 'porcionador_nombre'
 const QUEUE_KEY = 'porcionador_cola_pendiente'
@@ -270,15 +276,35 @@ export default function PorcionadorApp() {
   }
 
   async function connect() {
-    if (!('serial' in navigator)) {
-      setConnection('error'); setConnMsg('Abrí esta página en Chrome o Edge de Windows'); return
+    const hayUsb = typeof navigator !== 'undefined' && 'usb' in navigator
+    const haySerial = typeof navigator !== 'undefined' && 'serial' in navigator
+    if (ES_ANDROID ? !hayUsb : !haySerial) {
+      setConnection('error')
+      setConnMsg(ES_ANDROID
+        ? 'Esta versión de Chrome no soporta USB. Actualizá Chrome desde Play Store'
+        : 'Abrí esta página en Chrome o Edge de escritorio')
+      return
     }
     try {
       const AC = window.AudioContext || window.webkitAudioContext
       if (AC && !audioRef.current) audioRef.current = new AC()
       await audioRef.current?.resume()
-      setConnection('connecting'); setConnMsg('Seleccioná USB-SERIAL CH340')
-      const port = await navigator.serial.requestPort()
+      setConnection('connecting')
+
+      let port
+      let via
+      if (ES_ANDROID) {
+        // OJO: en Android no se llama navigator.serial.requestPort() ni aunque
+        // navigator.serial exista — es justo lo que devolvía "sin dispositivos".
+        setConnMsg('Elegí el USB de la báscula: CH340, QinHeng o USB2.0-Serial')
+        port = await requestCh340Port(navigator.usb)
+        via = 'usb'
+      } else {
+        setConnMsg('Seleccioná USB-SERIAL CH340')
+        port = await navigator.serial.requestPort()
+        via = 'serial'
+      }
+
       await port.open(SERIAL_CONFIG)
       if (!port.writable) throw new Error('El puerto no permite escribir')
       portRef.current = port
@@ -286,14 +312,27 @@ export default function PorcionadorApp() {
       bufferRef.current = ''; readingsRef.current = []; responseCountRef.current = 0
       setGrams(0); setStable(false)
       setConnection('connected'); setConnMsg('Rhino BAR-6X conectada')
-      setDiag('Puerto abierto · esperando primera lectura')
+      setDiag(via === 'usb'
+        ? 'USB directo Android · esperando primera lectura'
+        : 'Puerto serie abierto · esperando primera lectura')
       runRef.current = true
       void readLoop(port)
       await requestWeight()
       pollRef.current = setInterval(() => void requestWeight(), CFG.poll_interval_ms)
     } catch (e) {
       setConnection('error')
-      setConnMsg(e.message || 'No se pudo abrir la báscula')
+      // Mensajes concretos: un "no se pudo abrir" genérico esconde la causa y
+      // hace perder media hora adivinando si es el cable, el permiso o el chip.
+      const nombre = e instanceof DOMException ? e.name : ''
+      if (nombre === 'NotFoundError') {
+        setConnMsg(ES_ANDROID
+          ? 'Android no ve ningún USB: revisá el cable o el adaptador OTG'
+          : 'No se seleccionó ningún puerto')
+      } else if (nombre === 'SecurityError' || nombre === 'NotAllowedError') {
+        setConnMsg('No se concedió el permiso USB. Reconectá el cable y aceptá')
+      } else {
+        setConnMsg(e.message || 'No se pudo abrir la báscula')
+      }
     }
   }
 
@@ -389,6 +428,9 @@ export default function PorcionadorApp() {
       </div>
 
       <div style={sDiag}>{connMsg} · {diag}</div>
+      <div style={{ ...sDiag, opacity: 0.6, marginTop: 2 }}>
+        {ES_ANDROID ? 'ANDROID WEBUSB CH340' : 'ESCRITORIO WEB SERIAL'} · {APP_VERSION}
+      </div>
     </div>
   )
 }
