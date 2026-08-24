@@ -3,6 +3,7 @@ import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip';
 import { n } from '../../config';
 import { useToast } from '../../hooks/useToast';
+import { K, pill, tituloSec, th, td, Tarjeta } from './kardexUi';
 
 // Dashboard de fugas del inventario.
 //
@@ -24,16 +25,18 @@ import { useToast } from '../../hooks/useToast';
 //                       volumen de venta justifica (índice de eficiencia).
 //                       70 de los 96 productos del conteo son de esta clase.
 
+// Colores de la paleta compartida del Kardex (kardexUi). Los tipos usan los
+// MISMOS colores que el Historial: conteo naranja, merma rojo, ajuste azul.
 const CLASES = [
-  { id: 'venta',           label: 'Fugas reales',    color: '#e63946' },
-  { id: 'consumo_interno', label: 'Consumo interno', color: '#f4a261' },
+  { id: 'venta',           label: 'Fugas reales',    color: K.red },
+  { id: 'consumo_interno', label: 'Consumo interno', color: K.orange },
 ];
 
 const TIPOS = [
-  { id: null,             label: 'Todo',          color: '#8b8794' },
-  { id: 'conteo_fisico',  label: 'Conteos',       color: '#f4a261' },
-  { id: 'merma',          label: 'Merma',         color: '#e63946' },
-  { id: 'ajuste_manual',  label: 'Ajustes',       color: '#4a9eff' },
+  { id: null,             label: 'Todo',          color: K.dim },
+  { id: 'conteo_fisico',  label: '📋 Conteos',    color: K.orange },
+  { id: 'merma',          label: '🗑️ Merma',      color: K.red },
+  { id: 'ajuste_manual',  label: '✏️ Ajustes',    color: K.blue },
 ];
 
 const RANGOS = [
@@ -150,12 +153,12 @@ export default function DiferenciasTab() {
         <div style={{ display: 'flex', gap: 4 }}>
           {RANGOS.map(r => (
             <button key={r.d} onClick={() => setDias(r.d)}
-              style={pill(dias === r.d, '#e63946')}>{r.label}</button>
+              style={pill(dias === r.d, K.red)}>{r.label}</button>
           ))}
         </div>
 
         <select value={sucursal || ''} onChange={e => setSucursal(e.target.value || null)}
-          style={{ background: '#1a1a22', color: '#ddd', border: '1px solid #333',
+          style={{ background: K.card2, color: '#ddd', border: '1px solid #333',
                    borderRadius: 8, padding: '6px 10px', fontSize: 13 }}>
           <option value="">Todas las sucursales</option>
           {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
@@ -189,11 +192,11 @@ export default function DiferenciasTab() {
       {/* ── Tarjetas de totales ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))',
                     gap: 10, marginBottom: 16 }}>
-        <Tarjeta titulo={esConsumo ? 'Consumido' : 'Faltante'} color="#e63946"
+        <Tarjeta titulo={esConsumo ? 'Consumido' : 'Faltante'} color={K.red}
           valor={usd(tot.faltanteUsd)} sub={`${n(tot.faltante).toFixed(0)} unidades`} />
-        <Tarjeta titulo="Sobrante" color="#2dd4a8"
+        <Tarjeta titulo="Sobrante" color={K.green}
           valor={usd(tot.sobranteUsd)} sub={`${n(tot.sobrante).toFixed(0)} unidades`} />
-        <Tarjeta titulo="Neto" color={netoUsd < 0 ? '#e63946' : '#2dd4a8'}
+        <Tarjeta titulo="Neto" color={netoUsd < 0 ? K.red : K.green}
           valor={usd(Math.abs(netoUsd))}
           sub={netoUsd < 0 ? 'en contra' : 'a favor'} />
       </div>
@@ -203,14 +206,14 @@ export default function DiferenciasTab() {
       {tot.sinCosto > 0 && (
         <div style={{ background: 'rgba(244,162,97,0.10)', border: '1px solid rgba(244,162,97,0.3)',
                       borderRadius: 8, padding: '8px 12px', marginBottom: 16,
-                      fontSize: 12, color: '#f4a261' }}>
+                      fontSize: 12, color: K.orange }}>
           ⚠️ Hay productos sin precio registrado: sus diferencias cuentan en unidades
           pero valen <b>$0.00</b> en los montos de arriba. El monto real es mayor.
         </div>
       )}
 
       {vacio && (
-        <div style={{ textAlign: 'center', padding: '30px 16px', color: '#6b6878', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: '30px 16px', color: K.faint, fontSize: 13 }}>
           Todavía no hay diferencias registradas en este período.<br />
           <span style={{ fontSize: 12 }}>
             Se llenan solas conforme se hagan conteos nocturnos e inventarios físicos.
@@ -226,7 +229,7 @@ export default function DiferenciasTab() {
         <>
           <h3 style={tituloSec}>
             Eficiencia por sucursal
-            <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · % del consumo vs % de la venta</span>
+            <span style={{ color: K.faint, fontWeight: 400, fontSize: 12 }}> · % del consumo vs % de la venta</span>
             <InfoTip text={
               'Cada sucursal debería gastar consumo interno en proporción a lo que vende. ' +
               'Índice = su % del consumo interno (en unidades) dividido entre su % de la venta ' +
@@ -239,23 +242,23 @@ export default function DiferenciasTab() {
             {efiOrdenada.map(s => {
               const idx = n(s.indice);
               const max = Math.max(n(efiOrdenada[0]?.indice), 1) || 1;
-              const color = idx > 1.15 ? '#e63946' : idx < 0.85 ? '#2dd4a8' : '#f4a261';
+              const color = idx > 1.15 ? K.red : idx < 0.85 ? K.green : K.orange;
               return (
                 <div key={s.sucursal_id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
                     <span style={{ color: '#ddd', fontWeight: 600 }}>{s.sucursal}</span>
                     <span style={{ color, fontWeight: 700 }}>
                       {idx > 0 ? idx.toFixed(2) + '×' : 'sin datos'}
-                      <span style={{ color: '#6b6878', fontWeight: 400, marginLeft: 6 }}>
+                      <span style={{ color: K.faint, fontWeight: 400, marginLeft: 6 }}>
                         {n(s.pct_consumo).toFixed(1)}% del consumo · {n(s.pct_venta).toFixed(1)}% de la venta
                       </span>
                     </span>
                   </div>
-                  <div style={{ height: 6, background: '#1a1a22', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+                  <div style={{ height: 6, background: K.card2, borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
                     <div style={{ width: Math.min(100, (idx / max) * 100) + '%', height: '100%', background: color }} />
                     {/* marca del 1.00 = gasto proporcional a la venta */}
                     <div style={{ position: 'absolute', left: Math.min(100, (1 / max) * 100) + '%', top: 0,
-                                  width: 1, height: '100%', background: '#6b6878' }} />
+                                  width: 1, height: '100%', background: K.faint }} />
                   </div>
                 </div>
               );
@@ -267,7 +270,7 @@ export default function DiferenciasTab() {
       {/* ── Ranking por sucursal (fugas reales: dónde ir a mirar primero) ── */}
       {!esConsumo && porSucursal.length > 0 && (
         <>
-          <h3 style={tituloSec}>Por sucursal <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}>· dónde ir a mirar primero</span></h3>
+          <h3 style={tituloSec}>Por sucursal <span style={{ color: K.faint, fontWeight: 400, fontSize: 12 }}>· dónde ir a mirar primero</span></h3>
           <div style={{ marginBottom: 18 }}>
             {porSucursal.map(s => {
               const max = porSucursal[0].faltanteUsd || porSucursal[0].faltante || 1;
@@ -276,15 +279,15 @@ export default function DiferenciasTab() {
                 <div key={s.sucursal} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
                     <span style={{ color: '#ddd', fontWeight: 600 }}>{s.sucursal}</span>
-                    <span style={{ color: '#e63946', fontWeight: 700 }}>
+                    <span style={{ color: K.red, fontWeight: 700 }}>
                       {usd(s.faltanteUsd)}
-                      <span style={{ color: '#6b6878', fontWeight: 400, marginLeft: 6 }}>
+                      <span style={{ color: K.faint, fontWeight: 400, marginLeft: 6 }}>
                         {s.faltante.toFixed(0)} u · {s.dias.size} día{s.dias.size !== 1 ? 's' : ''}
                       </span>
                     </span>
                   </div>
-                  <div style={{ height: 6, background: '#1a1a22', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ width: pct + '%', height: '100%', background: '#e63946' }} />
+                  <div style={{ height: 6, background: K.card2, borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: pct + '%', height: '100%', background: K.red }} />
                   </div>
                 </div>
               );
@@ -300,7 +303,7 @@ export default function DiferenciasTab() {
           <div style={{ overflowX: 'auto', marginBottom: 18 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
-                <tr style={{ color: '#6b6878', textAlign: 'left' }}>
+                <tr style={{ color: K.faint, textAlign: 'left' }}>
                   <th style={th}>Fecha</th><th style={th}>Sucursal</th><th style={th}>Tipo</th>
                   <th style={{ ...th, textAlign: 'right' }}>Faltante</th>
                   <th style={{ ...th, textAlign: 'right' }}>Sobrante</th>
@@ -319,14 +322,14 @@ export default function DiferenciasTab() {
                         {TIPOS.find(t => t.id === r.tipo)?.label || r.tipo}
                       </span>
                     </td>
-                    <td style={{ ...td, textAlign: 'right', color: '#e63946' }}>
+                    <td style={{ ...td, textAlign: 'right', color: K.red }}>
                       {n(r.faltante) > 0 ? `${usd(r.faltante_usd)} · ${n(r.faltante).toFixed(0)}u` : '—'}
                     </td>
-                    <td style={{ ...td, textAlign: 'right', color: '#2dd4a8' }}>
+                    <td style={{ ...td, textAlign: 'right', color: K.green }}>
                       {n(r.sobrante) > 0 ? `${usd(r.sobrante_usd)} · ${n(r.sobrante).toFixed(0)}u` : '—'}
                     </td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700,
-                                 color: n(r.neto_usd) < 0 ? '#e63946' : '#2dd4a8' }}>
+                                 color: n(r.neto_usd) < 0 ? K.red : K.green }}>
                       {usd(r.neto_usd)}
                     </td>
                   </tr>
@@ -342,13 +345,13 @@ export default function DiferenciasTab() {
         <>
           <h3 style={{ ...tituloSec, cursor: 'pointer' }} onClick={() => setVerDet(v => !v)}>
             {verDetalle ? '▾' : '▸'} Producto por producto
-            <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · {detalle.length} movimientos, del más caro al más barato</span>
+            <span style={{ color: K.faint, fontWeight: 400, fontSize: 12 }}> · {detalle.length} movimientos, del más caro al más barato</span>
           </h3>
           {verDetalle && (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
-                  <tr style={{ color: '#6b6878', textAlign: 'left' }}>
+                  <tr style={{ color: K.faint, textAlign: 'left' }}>
                     <th style={th}>Fecha</th><th style={th}>Producto</th><th style={th}>Sucursal</th>
                     <th style={{ ...th, textAlign: 'right' }}>Cant.</th>
                     <th style={{ ...th, textAlign: 'right' }}>Valor</th>
@@ -363,19 +366,19 @@ export default function DiferenciasTab() {
                         {d.producto}
                         {d.sin_costo && (
                           <span title="Este producto no tiene precio registrado, así que su valor sale en $0"
-                                style={{ marginLeft: 5, fontSize: 10, color: '#f4a261' }}>sin precio</span>
+                                style={{ marginLeft: 5, fontSize: 10, color: K.orange }}>sin precio</span>
                         )}
                       </td>
                       <td style={{ ...td, color: '#999' }}>{d.sucursal}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 700,
-                                   color: n(d.cantidad) < 0 ? '#e63946' : '#2dd4a8' }}>
+                                   color: n(d.cantidad) < 0 ? K.red : K.green }}>
                         {n(d.cantidad) > 0 ? '+' : ''}{n(d.cantidad).toFixed(2)} {d.unidad || ''}
                       </td>
                       <td style={{ ...td, textAlign: 'right',
-                                   color: n(d.valor_usd) < 0 ? '#e63946' : '#2dd4a8' }}>
+                                   color: n(d.valor_usd) < 0 ? K.red : K.green }}>
                         {usd(d.valor_usd)}
                       </td>
-                      <td style={{ ...td, color: d.usuario === '(sin usuario)' ? '#f4a261' : '#999' }}>
+                      <td style={{ ...td, color: d.usuario === '(sin usuario)' ? K.orange : '#999' }}>
                         {d.usuario}
                       </td>
                     </tr>
@@ -390,26 +393,4 @@ export default function DiferenciasTab() {
   );
 }
 
-// ── estilos ──
-const pill = (activo, color) => ({
-  background: activo ? color : '#1a1a22',
-  color: activo ? '#fff' : '#8b8794',
-  border: '1px solid ' + (activo ? color : '#333'),
-  borderRadius: 8, padding: '6px 11px', fontSize: 12.5,
-  fontWeight: activo ? 700 : 500, cursor: 'pointer', whiteSpace: 'nowrap',
-});
-const tituloSec = { fontSize: 13, fontWeight: 800, color: '#ddd', margin: '0 0 10px' };
-const th = { padding: '6px 8px', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.3px' };
-const td = { padding: '7px 8px', color: '#aaa' };
-
-function Tarjeta({ titulo, valor, sub, color }) {
-  return (
-    <div style={{ background: '#14141b', border: '1px solid #262630',
-                  borderLeft: '3px solid ' + color, borderRadius: 10, padding: '11px 13px' }}>
-      <div style={{ fontSize: 10.5, color: '#6b6878', fontWeight: 700,
-                    textTransform: 'uppercase', letterSpacing: '0.4px' }}>{titulo}</div>
-      <div style={{ fontSize: 21, fontWeight: 900, color, marginTop: 3 }}>{valor}</div>
-      <div style={{ fontSize: 11.5, color: '#6b6878', marginTop: 1 }}>{sub}</div>
-    </div>
-  );
-}
+// Estilos y Tarjeta viven en ./kardexUi (compartidos con KardexView).

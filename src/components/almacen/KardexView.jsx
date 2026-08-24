@@ -3,31 +3,36 @@ import { db } from '../../supabase';
 import { STORES, today, fmtDate, n } from '../../config';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import InfoTip from '../ui/InfoTip';
 import RecetasView from '../admin/RecetasView';
 import MapeoMenu from './MapeoMenu';
 import DiferenciasTab from './DiferenciasTab';
 import CosteoView from '../admin/CosteoView';
 import { UnidadSelect } from '../UnidadSelect';
+import { K, tint, pill } from './kardexUi';
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   CONSTANTES
+   CONSTANTES — un solo ícono y un solo color por concepto, en todo el Kardex
    ═══════════════════════════════════════════════════════════════════════════ */
 const TIPOS = {
-  materia_prima:     { label: 'MP',  full: 'Materia Prima',       icon: '🧾', color: '#60a5fa', bg: '#1e3a5f', badge: 'info',    hint: 'Ingrediente que compras a proveedores' },
-  sub_producto:      { label: 'SP',  full: 'Sub Producto',        icon: '🧪', color: '#fb923c', bg: '#7c2d12', badge: 'warning', hint: 'Se prepara en cocina con materias primas' },
-  producto_terminado:{ label: 'PT',  full: 'Producto Terminado',  icon: '🍔', color: '#4ade80', bg: '#14532d', badge: 'success', hint: 'Lo que vendes al cliente' },
-  insumo:            { label: 'IN',  full: 'Insumo',              icon: '📦', color: '#a1a1aa', bg: '#27272a', badge: 'muted',   hint: 'Material de operación (no alimento)' },
+  materia_prima:     { label: 'MP',  full: 'Materia Prima',       icon: '🥩', color: K.blue,   hint: 'Ingrediente que compras a proveedores' },
+  sub_producto:      { label: 'SP',  full: 'Sub Producto',        icon: '🧪', color: K.orange, hint: 'Se prepara en cocina con materias primas' },
+  producto_terminado:{ label: 'PT',  full: 'Producto Terminado',  icon: '🍔', color: K.green,  hint: 'Lo que vendes al cliente' },
+  insumo:            { label: 'IN',  full: 'Insumo',              icon: '🧰', color: K.dim,    hint: 'Material de operación (no alimento)' },
 };
 
+// Colores de movimientos: entradas en verde, salidas operativas en gris,
+// venta en morado, y conteo/merma/ajuste con los MISMOS colores que usa
+// el tab Fugas (naranja/rojo/azul) para que se lean igual en todos lados.
 const MOV_TIPOS = {
-  recepcion:      { label: 'Recepción',  icon: '📥', badge: 'success' },
-  venta:          { label: 'Venta',      icon: '💵', badge: 'info' },
-  traslado:       { label: 'Traslado',   icon: '🚚', badge: 'info' },
-  consumo:        { label: 'Consumo',    icon: '🍳', badge: 'muted' },
-  ajuste_manual:  { label: 'Ajuste',     icon: '✏️', badge: 'warning' },
-  conteo_fisico:  { label: 'Conteo',     icon: '📋', badge: 'muted' },
-  produccion:     { label: 'Producción', icon: '🏭', badge: 'info' },
-  merma:          { label: 'Merma',      icon: '🗑️', badge: 'destructive' },
+  recepcion:      { label: 'Recepción',  icon: '📥', color: K.green },
+  produccion:     { label: 'Producción', icon: '🏭', color: K.green },
+  venta:          { label: 'Venta',      icon: '💵', color: K.purple },
+  traslado:       { label: 'Traslado',   icon: '🚚', color: K.dim },
+  consumo:        { label: 'Consumo',    icon: '🍳', color: K.dim },
+  conteo_fisico:  { label: 'Conteo',     icon: '📋', color: K.orange },
+  merma:          { label: 'Merma',      icon: '🗑️', color: K.red },
+  ajuste_manual:  { label: 'Ajuste',     icon: '✏️', color: K.blue },
 };
 
 const selectCls = 'w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -43,9 +48,22 @@ function TipoPill({ tipo, size = 'sm' }) {
   const cls = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';
   return (
     <span className={`inline-flex items-center gap-1 rounded-full font-bold ${cls}`}
-      style={{ background: t.bg, color: t.color }}>
+      style={{ background: tint(t.color), color: t.color, border: `1px solid ${tint(t.color, '44')}` }}>
       {t.icon} {t.label}
     </span>
+  );
+}
+
+// Encabezado de cada tab: ícono + título + InfoTip que explica qué muestra,
+// de dónde sale el dato y qué significa (para el dueño, no para el programador).
+function TabHeader({ icon, titulo, sub, tip }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 12px', flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 17 }}>{icon}</span>
+      <h2 style={{ fontSize: 15, fontWeight: 800, color: K.text, margin: 0 }}>{titulo}</h2>
+      {sub && <span style={{ fontSize: 12, color: K.faint }}>{sub}</span>}
+      <InfoTip text={tip} width={300} />
+    </div>
   );
 }
 
@@ -56,24 +74,26 @@ function ProgressBar({ value, max, label }) {
     <div className="space-y-1">
       {label && <div className="flex justify-between text-xs text-muted-foreground">
         <span>{label}</span>
-        <span className="font-bold" style={{ color: pct === 100 ? '#4ade80' : '#fb923c' }}>{pct}%</span>
+        <span className="font-bold" style={{ color: pct === 100 ? K.green : K.orange }}>{pct}%</span>
       </div>}
-      <div className="h-2 bg-muted rounded-full overflow-hidden">
+      <div className="h-2 rounded-full overflow-hidden" style={{ background: K.card2 }}>
         <div className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, background: pct === 100 ? '#4ade80' : pct > 50 ? '#fbbf24' : '#e63946' }} />
+          style={{ width: `${pct}%`, background: pct === 100 ? K.green : pct > 50 ? K.orange : K.red }} />
       </div>
     </div>
   );
 }
 
-// KPI card compacta
-function KpiCard({ icon, label, value, sub, color }) {
+// KPI card compacta — mismo lenguaje visual que las tarjetas de Fugas
+function KpiCard({ icon, label, value, color }) {
   return (
-    <div className="stat-card">
-      <div style={{ fontSize: 22, marginBottom: 2 }}>{icon}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: color || '#f0f0f0' }}>{value}</div>
-      <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>{label}</div>
-      {sub && <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>{sub}</div>}
+    <div style={{ flex: 1, minWidth: 92, background: K.card, border: `1px solid ${K.border}`,
+                  borderLeft: '3px solid ' + color, borderRadius: 10, padding: '9px 11px' }}>
+      <div style={{ fontSize: 10, color: K.faint, fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {icon} {label}
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 900, color, marginTop: 3 }}>{value}</div>
     </div>
   );
 }
@@ -109,7 +129,7 @@ function CatalogoSearch({ placeholder = 'Buscar...', tipo, onSelect, onCreate, c
         onBlur={() => setTimeout(() => setOpen(false), 200)}
       />
       {open && (q.length >= 2) && (
-        <div className="absolute top-full left-0 right-0 z-30 border border-border rounded-b-lg shadow-xl max-h-52 overflow-y-auto" style={{ background: '#1e1e1e' }}>
+        <div className="absolute top-full left-0 right-0 z-30 rounded-b-lg shadow-xl max-h-52 overflow-y-auto" style={{ background: K.card2, border: `1px solid ${K.border}` }}>
           {opts.length === 0 ? (
             <div className="px-3 py-4 text-center text-sm text-muted-foreground">
               No se encontró "{q}"
@@ -117,7 +137,7 @@ function CatalogoSearch({ placeholder = 'Buscar...', tipo, onSelect, onCreate, c
                 <button
                   onMouseDown={() => { onCreate(q); setQ(''); setOpen(false); }}
                   className="block mx-auto mt-2 text-xs font-bold px-3 py-1.5 rounded-full"
-                  style={{ background: '#14532d', color: '#4ade80' }}
+                  style={{ background: tint(K.green), color: K.green }}
                 >
                   + Crear "{q}" como nuevo
                 </button>
@@ -140,7 +160,7 @@ function CatalogoSearch({ placeholder = 'Buscar...', tipo, onSelect, onCreate, c
                 <div
                   onMouseDown={() => { onCreate(q); setQ(''); setOpen(false); }}
                   className="px-3 py-2.5 cursor-pointer text-sm text-center font-semibold border-t border-border"
-                  style={{ color: '#4ade80' }}
+                  style={{ color: K.green }}
                 >
                   + Crear "{q}" como nuevo
                 </div>
@@ -193,6 +213,20 @@ export default function KardexView({ user, show }) {
     setVerDte(id); setDteMap(null);
     const { data } = await db.rpc('producto_mapeo_dte', { p_producto_id: id });
     setDteMap(data || { n: 0, descripciones: [] });
+  };
+
+  // Existencias por sucursal (solo lectura): se cargan al expandir el
+  // producto para no pedir el inventario completo de un solo en el iPhone.
+  const [verStock, setVerStock] = useState(null);   // producto_id expandido
+  const [stockRows, setStockRows] = useState(null); // filas de `inventario` de ese producto
+  const toggleStock = async (id) => {
+    if (verStock === id) { setVerStock(null); setStockRows(null); return; }
+    setVerStock(id); setStockRows(null);
+    const { data } = await db.from('inventario')
+      .select('stock_actual, ultima_actualizacion, sucursales(store_code, nombre)')
+      .eq('producto_id', id);
+    setStockRows((data || []).sort((a, b) =>
+      (a.sucursales?.store_code || '').localeCompare(b.sucursales?.store_code || '')));
   };
 
   const fetchCatalogo = useCallback(async () => {
@@ -408,101 +442,16 @@ export default function KardexView({ user, show }) {
     finally { setSavingMapeo(false); }
   };
 
-  /* ══════════════════════════════════════════════════════════════════════
-     TAB 3: RECETAS
-     ══════════════════════════════════════════════════════════════════════ */
-  const [recetas, setRecetas] = useState([]);
-  const [loadingRecetas, setLoadingRecetas] = useState(false);
-  const [recetaOpen, setRecetaOpen] = useState(null);
-  const [recetaLineas, setRecetaLineas] = useState({});
-  const [showNuevaReceta, setShowNuevaReceta] = useState(false);
-  const [nrData, setNrData] = useState({ nombre: '', rendimiento: 1, unidad: 'porcion' });
-  const [nrPT, setNrPT] = useState(null);
-  const [savingReceta, setSavingReceta] = useState(false);
-  const [addLinea, setAddLinea] = useState({ comp: null, cantidad: '', unidad: 'kg' });
-
-  const fetchRecetas = useCallback(async () => {
-    setLoadingRecetas(true);
-    try {
-      const { data } = await db.from('recetas')
-        .select('id, nombre, rendimiento, unidad_rendimiento, activo, catalogo_id, catalogo_productos(nombre, sku, tipo)')
-        .eq('activo', true).order('nombre');
-      setRecetas(data || []);
-    } catch { show?.('Error al cargar recetas', 'error'); }
-    finally { setLoadingRecetas(false); }
-  }, []);
-
-  const fetchLineas = async (rid) => {
-    if (recetaLineas[rid]) return;
-    const { data } = await db.from('recetas_lineas')
-      .select('id, cantidad, unidad, tipo_componente, catalogo_productos(id, nombre, sku, tipo)')
-      .eq('receta_id', rid).order('created_at');
-    setRecetaLineas(prev => ({ ...prev, [rid]: data || [] }));
-  };
-
-  const toggleReceta = (rid) => {
-    if (recetaOpen === rid) { setRecetaOpen(null); return; }
-    setRecetaOpen(rid);
-    fetchLineas(rid);
-  };
-
-  const handleCrearReceta = async () => {
-    if (!nrData.nombre.trim()) { show?.('Escribe un nombre', 'warning'); return; }
-    setSavingReceta(true);
-    try {
-      const { error } = await db.from('recetas').insert({
-        nombre: nrData.nombre.trim(),
-        rendimiento: parseFloat(nrData.rendimiento) || 1,
-        unidad_rendimiento: nrData.unidad,
-        catalogo_id: nrPT?.id || null,
-        activo: true,
-      });
-      if (error) throw error;
-      show?.('Receta creada — ahora agrega los ingredientes', 'success');
-      setShowNuevaReceta(false);
-      setNrData({ nombre: '', rendimiento: 1, unidad: 'porcion' });
-      setNrPT(null);
-      fetchRecetas();
-    } catch { show?.('Error al crear receta', 'error'); }
-    finally { setSavingReceta(false); }
-  };
-
-  const handleAddIngrediente = async (recetaId) => {
-    if (!addLinea.comp) { show?.('Selecciona un ingrediente', 'warning'); return; }
-    if (!addLinea.cantidad || isNaN(addLinea.cantidad)) { show?.('Escribe la cantidad', 'warning'); return; }
-    try {
-      const { error } = await db.from('recetas_lineas').insert({
-        receta_id: recetaId,
-        materia_prima_id: addLinea.comp.id,
-        tipo_componente: addLinea.comp.tipo || 'materia_prima',
-        cantidad: parseFloat(addLinea.cantidad),
-        unidad: addLinea.unidad,
-      });
-      if (error) throw error;
-      show?.('Ingrediente agregado', 'success');
-      setAddLinea({ comp: null, cantidad: '', unidad: 'kg' });
-      // Refresh lines
-      const { data } = await db.from('recetas_lineas')
-        .select('id, cantidad, unidad, tipo_componente, catalogo_productos(id, nombre, sku, tipo)')
-        .eq('receta_id', recetaId).order('created_at');
-      setRecetaLineas(prev => ({ ...prev, [recetaId]: data || [] }));
-    } catch { show?.('Error al agregar', 'error'); }
-  };
-
-  const handleDeleteLinea = async (lineaId, recetaId) => {
-    const { error } = await db.from('recetas_lineas').delete().eq('id', lineaId);
-    if (error) { show?.('Error al eliminar', 'error'); return; }
-    setRecetaLineas(prev => ({
-      ...prev,
-      [recetaId]: (prev[recetaId] || []).filter(l => l.id !== lineaId),
-    }));
-  };
+  /* El viejo editor de recetas que vivía acá (estados + escrituras a la
+     tabla obsoleta `recetas_lineas`) se eliminó: nunca se renderizaba —
+     el tab Recetas muestra RecetasView, que carga y edita lo suyo. */
 
   /* ══════════════════════════════════════════════════════════════════════
      TAB 4: MOVIMIENTOS
      ══════════════════════════════════════════════════════════════════════ */
   const [movimientos, setMovimientos] = useState([]);
   const [searchMov, setSearchMov] = useState('');
+  const [movTipo, setMovTipo] = useState(null); // filtro por tipo de movimiento
   const [dateStart, setDateStart] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 7);
     return d.toISOString().split('T')[0];
@@ -514,18 +463,21 @@ export default function KardexView({ user, show }) {
     if (!sucursal) return;
     setLoadingMov(true);
     try {
-      const { data } = await db.from('kardex_movimientos')
-        .select('id, tipo, cantidad, stock_anterior, stock_posterior, notas, created_at, catalogo_productos(nombre)')
+      // usuarios_erp = quién firmó el movimiento (usuario del ERP, no empleado)
+      let q = db.from('kardex_movimientos')
+        .select('id, tipo, cantidad, stock_anterior, stock_posterior, notas, created_at, catalogo_productos(nombre), usuarios_erp(nombre)')
         .eq('sucursal_id', sucursal)
         .gte('created_at', dateStart + 'T00:00:00Z')
         .lte('created_at', dateEnd + 'T23:59:59Z')
         .order('created_at', { ascending: false });
+      if (movTipo) q = q.eq('tipo', movTipo);
+      const { data } = await q;
       let f = data || [];
       if (searchMov) f = f.filter(m => m.catalogo_productos?.nombre?.toLowerCase().includes(searchMov.toLowerCase()));
       setMovimientos(f);
     } catch { show?.('Error al cargar movimientos', 'error'); }
     finally { setLoadingMov(false); }
-  }, [sucursal, dateStart, dateEnd, searchMov]);
+  }, [sucursal, dateStart, dateEnd, searchMov, movTipo]);
 
   useEffect(() => { fetchMov(); }, [fetchMov]);
 
@@ -579,42 +531,42 @@ export default function KardexView({ user, show }) {
 
   const handleTab = (v) => {
     setActiveTab(v);
-    if (v === 'mapeo')   fetchMapeo();
-    if (v === 'recetas') fetchRecetas();
+    if (v === 'mapeo') fetchMapeo();
   };
 
   /* ══════════════════════════════════════════════════════════════════════
      RENDER
      ══════════════════════════════════════════════════════════════════════ */
   const TABS_K = [
-    { id: 'inventario',  label: '📦 Inventario' },
-    { id: 'diferencias', label: '🔍 Fugas' },
-    { id: 'conteo',      label: '🌙 Lista Conteo' },
-    { id: 'mapeo',       label: '🔗 Mapeo Compras' },
-    { id: 'menu',        label: '🍔 Menú (BOM)' },
-    { id: 'recetas',     label: '📋 Recetas' },
-    { id: 'costeo',      label: '💰 Costeo' },
-    { id: 'movimientos', label: '📊 Historial' },
-    { id: 'ajustes',     label: '⚙️ Ajustes' },
+    { id: 'inventario',  icon: '📦', label: 'Inventario' },
+    { id: 'diferencias', icon: '🔍', label: 'Fugas' },
+    { id: 'conteo',      icon: '🌙', label: 'Lista Conteo' },
+    { id: 'mapeo',       icon: '🔗', label: 'Mapeo Compras' },
+    { id: 'menu',        icon: '🍽️', label: 'Menú (BOM)' },
+    { id: 'recetas',     icon: '📖', label: 'Recetas' },
+    { id: 'costeo',      icon: '💰', label: 'Costeo' },
+    { id: 'movimientos', icon: '📜', label: 'Historial' },
+    { id: 'ajustes',     icon: '✏️', label: 'Ajustes' },
   ];
 
   return (
     <div className="p-3 min-h-screen bg-background text-foreground">
       {/* Tab nav — pills */}
-      <div style={{ display: 'flex', overflowX: 'auto', gap: 6, marginBottom: 16, paddingBottom: 2 }}>
+      <div style={{ display: 'flex', overflowX: 'auto', gap: 6, marginBottom: 14, paddingBottom: 2 }}>
         {TABS_K.map(t => (
           <button
             key={t.id}
             onClick={() => handleTab(t.id)}
             style={{
-              padding: '6px 12px', borderRadius: 20, border: 'none',
+              padding: '6px 12px', borderRadius: 20,
+              border: '1px solid ' + (activeTab === t.id ? K.red : K.border),
               cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600,
-              background: activeTab === t.id ? '#e63946' : '#222',
-              color:      activeTab === t.id ? '#fff'     : '#666',
+              background: activeTab === t.id ? K.red : K.card2,
+              color:      activeTab === t.id ? '#fff' : K.dim,
               transition: 'all 0.15s', fontFamily: 'inherit',
             }}
           >
-            {t.label}
+            {t.icon} {t.label}
           </button>
         ))}
       </div>
@@ -623,22 +575,28 @@ export default function KardexView({ user, show }) {
             TAB 1: INVENTARIO
         ═══════════════════════════════════════════════════════════════ */}
         {activeTab === 'inventario' && (<div>
+          <TabHeader icon="📦" titulo="Inventario" sub="catálogo y existencias"
+            tip={'El catálogo maestro: todo lo que se compra (MP), se prepara (SP), se vende (PT) o se gasta operando (IN). ' +
+              'Sale de la tabla catalogo_productos. Tocá un producto para ver sus existencias por sucursal: ' +
+              'ese stock lo mueve el kardex solo, con cada venta, recepción, conteo y producción. ' +
+              'Desde acá también se crea, se edita y se reclasifica cada ítem.'} />
+
           {/* KPIs */}
           <div className="flex gap-2 mb-4 overflow-x-auto">
-            <KpiCard icon="🧾" label="Materias Primas" value={catTotals.materia_prima} color="#60a5fa" />
-            <KpiCard icon="🧪" label="Sub Productos" value={catTotals.sub_producto} color="#fb923c" />
-            <KpiCard icon="🍔" label="Terminados" value={catTotals.producto_terminado} color="#4ade80" />
-            <KpiCard icon="📦" label="Insumos" value={catTotals.insumo} color="#a1a1aa" />
+            <KpiCard icon="🥩" label="Materias Primas" value={catTotals.materia_prima} color={K.blue} />
+            <KpiCard icon="🧪" label="Sub Productos" value={catTotals.sub_producto} color={K.orange} />
+            <KpiCard icon="🍔" label="Terminados" value={catTotals.producto_terminado} color={K.green} />
+            <KpiCard icon="🧰" label="Insumos" value={catTotals.insumo} color={K.dim} />
           </div>
 
           {/* Filtros tipo chips */}
           <div className="chips">
             {[
               { key: 'todos', label: 'Todos' },
-              { key: 'materia_prima', label: '🧾 MP' },
+              { key: 'materia_prima', label: '🥩 MP' },
               { key: 'sub_producto', label: '🧪 SP' },
               { key: 'producto_terminado', label: '🍔 PT' },
-              { key: 'insumo', label: '📦 IN' },
+              { key: 'insumo', label: '🧰 IN' },
             ].map(f => (
               <button key={f.key} className={`chip ${catFilter === f.key ? 'on' : ''}`}
                 onClick={() => setCatFilter(f.key)}>
@@ -659,7 +617,7 @@ export default function KardexView({ user, show }) {
 
           {/* Panel crear nuevo */}
           {showCrear && (
-            <div className="card" style={{ borderColor: '#2d6a4f' }}>
+            <div className="card" style={{ borderColor: tint(K.green, '55') }}>
               <div className="sec-title" style={{ marginBottom: 12 }}>Nuevo producto o ingrediente</div>
 
               {/* Selector de tipo: visual con iconos grandes */}
@@ -668,9 +626,9 @@ export default function KardexView({ user, show }) {
                   <button key={key}
                     className="flex-1 min-w-[70px] rounded-lg p-2 text-center border-2 transition-all"
                     style={{
-                      background: nuevoItem.tipo === key ? t.bg : 'transparent',
-                      borderColor: nuevoItem.tipo === key ? t.color : '#333',
-                      color: nuevoItem.tipo === key ? t.color : '#888',
+                      background: nuevoItem.tipo === key ? tint(t.color) : 'transparent',
+                      borderColor: nuevoItem.tipo === key ? t.color : K.border,
+                      color: nuevoItem.tipo === key ? t.color : K.dim,
                     }}
                     onClick={() => setNuevoItem(p => ({ ...p, tipo: key }))}
                   >
@@ -726,8 +684,12 @@ export default function KardexView({ user, show }) {
                       title="Cambiar clasificación (MP/SP/PT/Insumo)">
                       <TipoPill tipo={item.tipo} />
                     </button>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{item.nombre}</p>
+                    <div className="flex-1 min-w-0" onClick={() => toggleStock(item.id)}
+                      style={{ cursor: 'pointer' }} title="Ver existencias por sucursal">
+                      <p className="text-sm font-semibold truncate">
+                        <span style={{ color: K.faint, fontSize: 10, marginRight: 4 }}>{verStock === item.id ? '▾' : '▸'}</span>
+                        {item.nombre}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {item.sku || 'sin SKU'} · almacén: {item.unidad_medida || 'unidad'}
                         {item.unidad_compra && Number(item.factor_compra) !== 1
@@ -737,34 +699,67 @@ export default function KardexView({ user, show }) {
                       </p>
                     </div>
                     <button onClick={() => setEditItem(item)}
-                      style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
+                      style={{ background: K.card2, color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
                       title="Editar ítem (nombre, tipo, unidades, todos los atributos)">✏️</button>
                     <button onClick={() => toggleDte(item.id)}
-                      style={{ background: verDte === item.id ? '#333' : '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
+                      style={{ background: verDte === item.id ? K.border : K.card2, color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
                       title="Ver DTEs mapeados a este item">🔗 DTE</button>
                     <button onClick={() => setEditUnid(item)}
-                      style={{ background: '#222', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
+                      style={{ background: K.card2, color: '#fff', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
                       title="Editar unidades y conversión">📐</button>
                     <button onClick={async () => {
                       if (!window.confirm(`¿Eliminar "${item.nombre}"? Sale del catálogo.`)) return;
                       const { error } = await db.rpc('eliminar_producto', { p_producto_id: item.id });
                       if (error) { window.alert('❌ ' + error.message); return; }
                       fetchCatalogo();
-                    }} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
+                    }} style={{ background: tint(K.red, '26'), color: K.red, border: 'none', borderRadius: 8, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}
                       title="Eliminar producto">🗑️</button>
                   </div>
+                  {/* Existencias por sucursal (solo lectura, del kardex) */}
+                  {verStock === item.id && (
+                    <div style={{ background: K.panel, border: `1px solid ${K.border}`, borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 16px', fontSize: 12 }}>
+                      {!stockRows ? <span style={{ color: K.dim }}>Cargando existencias…</span>
+                        : stockRows.length === 0
+                          ? <span style={{ color: K.dim }}>Sin registro de inventario todavía — aparece con la primera recepción o conteo.</span>
+                          : (
+                            <>
+                              {stockRows.map((r, i) => {
+                                const s = n(r.stock_actual);
+                                const color = s < 0 ? K.red : s === 0 ? K.dim : K.green;
+                                return (
+                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: i < stockRows.length - 1 ? `1px solid ${K.border}` : 'none' }}>
+                                    <span style={{ color: '#bbb' }}>{r.sucursales?.nombre || r.sucursales?.store_code || '—'}</span>
+                                    <span style={{ color, fontWeight: 700 }}>{n(r.stock_actual)} {item.unidad_medida || 'u'}</span>
+                                  </div>
+                                );
+                              })}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 5, marginTop: 2, borderTop: `1px solid ${K.border}` }}>
+                                <span style={{ color: K.dim, fontWeight: 700 }}>Total</span>
+                                <span style={{ color: K.text, fontWeight: 800 }}>
+                                  {n(stockRows.reduce((a, r) => a + n(r.stock_actual), 0))} {item.unidad_medida || 'u'}
+                                </span>
+                              </div>
+                              {stockRows.some(r => n(r.stock_actual) < 0) && (
+                                <div style={{ color: K.orange, fontSize: 11, marginTop: 5 }}>
+                                  ⚠️ Stock negativo = se descontó más de lo que el sistema tenía registrado. Se corrige con el conteo físico.
+                                </div>
+                              )}
+                            </>
+                          )}
+                    </div>
+                  )}
                   {editTipoId === item.id && (
-                    <div style={{ background: '#101010', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 40px', fontSize: 12 }}>
-                      <div style={{ color: '#8a8a8a', marginBottom: 6 }}>Clasificación de "{item.nombre}":</div>
+                    <div style={{ background: K.panel, border: `1px solid ${K.border}`, borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 40px', fontSize: 12 }}>
+                      <div style={{ color: K.dim, marginBottom: 6 }}>Clasificación de "{item.nombre}":</div>
                       <div className="flex gap-2 flex-wrap">
                         {Object.entries(TIPOS).map(([key, t]) => (
                           <button key={key} onClick={() => cambiarTipo(item, key)}
                             className="rounded-lg p-2 text-center border-2 transition-all"
                             style={{
                               minWidth: 68,
-                              background: item.tipo === key ? t.bg : 'transparent',
-                              borderColor: item.tipo === key ? t.color : '#333',
-                              color: item.tipo === key ? t.color : '#888',
+                              background: item.tipo === key ? tint(t.color) : 'transparent',
+                              borderColor: item.tipo === key ? t.color : K.border,
+                              color: item.tipo === key ? t.color : K.dim,
                               cursor: 'pointer',
                             }}
                             title={t.hint}>
@@ -776,13 +771,13 @@ export default function KardexView({ user, show }) {
                     </div>
                   )}
                   {verDte === item.id && (
-                    <div style={{ background: '#101010', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 40px', fontSize: 12 }}>
-                      {!dteMap ? <span style={{ color: '#888' }}>Cargando…</span>
+                    <div style={{ background: K.panel, border: `1px solid ${K.border}`, borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 40px', fontSize: 12 }}>
+                      {!dteMap ? <span style={{ color: K.dim }}>Cargando…</span>
                         : (dteMap.descripciones || []).length === 0
-                          ? <span style={{ color: '#f87171' }}>⚠️ Sin ningún DTE mapeado a este item.</span>
+                          ? <span style={{ color: K.red }}>⚠️ Sin ningún DTE mapeado a este item.</span>
                           : (
                             <>
-                              <div style={{ color: '#8a8a8a', marginBottom: 4 }}>{dteMap.descripciones.length} descripción(es) de DTE mapeada(s){dteMap.n_dte_items ? ` · ${dteMap.n_dte_items} líneas históricas` : ''}:</div>
+                              <div style={{ color: K.dim, marginBottom: 4 }}>{dteMap.descripciones.length} descripción(es) de DTE mapeada(s){dteMap.n_dte_items ? ` · ${dteMap.n_dte_items} líneas históricas` : ''}:</div>
                               {dteMap.descripciones.map((d, k) => (
                                 <div key={k} style={{ padding: '2px 0', color: '#ddd' }}>
                                   • {d.descripcion} <span style={{ color: '#666' }}>{d.proveedor ? `· ${d.proveedor}` : d.nit ? `· NIT ${d.nit}` : ''}{d.veces ? ` · ×${d.veces}` : ''}</span>
@@ -810,6 +805,12 @@ export default function KardexView({ user, show }) {
             Vincula los items de tus facturas a ingredientes del catálogo
         ═══════════════════════════════════════════════════════════════ */}
         {activeTab === 'mapeo' && (<div>
+          <TabHeader icon="🔗" titulo="Mapeo de compras" sub="factura → ingrediente"
+            tip={'Cada línea de tus facturas electrónicas (DTE de Hacienda) trae una descripción escrita por el proveedor. ' +
+              'Acá se vincula cada descripción a un ingrediente del catálogo, con su factor de conversión ' +
+              '(cuántas unidades de almacén trae cada unidad facturada). ' +
+              'Sin este vínculo la compra no entra al inventario ni al costeo: si una CAJA de 27 lb se costea como 1 lb, el margen sale disparatado.'} />
+
           {/* Barra de progreso global */}
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -833,24 +834,24 @@ export default function KardexView({ user, show }) {
 
           {/* Filtro */}
           <div className="flex gap-2 items-center mb-4 flex-wrap">
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: '#888' }}>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: K.dim }}>
               <input type="checkbox" checked={soloSinMapear}
                 onChange={e => setSoloSinMapear(e.target.checked)}
-                style={{ accentColor: '#e63946' }} />
+                style={{ accentColor: K.red }} />
               Solo pendientes
             </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: '#888' }}
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: K.dim }}
               title="Oculta descripciones de proveedores que no se inventarían (gastos, servicios, etc.)">
               <input type="checkbox" checked={soloInventariables}
                 onChange={e => setSoloInventariables(e.target.checked)}
-                style={{ accentColor: '#e63946' }} />
+                style={{ accentColor: K.red }} />
               Solo inventariables
             </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: '#888' }}
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none" style={{ color: K.dim }}
               title="Solo descripciones compradas en los últimos 3 meses (evita mapear cosas muy viejas)">
               <input type="checkbox" checked={solo3Meses}
                 onChange={e => setSolo3Meses(e.target.checked)}
-                style={{ accentColor: '#e63946' }} />
+                style={{ accentColor: K.red }} />
               Últimos 3 meses
             </label>
             <Input placeholder="Buscar descripción..." value={mapeoSearch}
@@ -869,7 +870,7 @@ export default function KardexView({ user, show }) {
                 {soloSinMapear ? '¡Todo vinculado!' : 'No hay descripciones'}
               </div>
               {soloSinMapear && totalDescs > 0 && (
-                <p className="text-xs mt-2" style={{ color: '#4ade80' }}>
+                <p className="text-xs mt-2" style={{ color: K.green }}>
                   Todas tus descripciones de compra están vinculadas a ingredientes del catálogo.
                 </p>
               )}
@@ -882,7 +883,7 @@ export default function KardexView({ user, show }) {
 
                 return (
                   <div key={desc.descripcion} className="card" style={{
-                    borderColor: desc.mapeado ? '#14532d' : isActive ? '#e63946' : '#2a2a2a',
+                    borderColor: desc.mapeado ? tint(K.green, '2e') : isActive ? K.red : K.border,
                     padding: 12,
                   }}>
                     {/* Encabezado: descripción + monto */}
@@ -906,9 +907,9 @@ export default function KardexView({ user, show }) {
 
                     {/* Ingrediente vinculado: nombre editable + estado de conteo nocturno + acciones */}
                     {desc.mapeado && !isActive && (
-                      <div className="mt-2 pt-2" style={{ borderTop: '1px solid #222' }}>
+                      <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${K.border}` }}>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>🔗 Vinculado a:</span>
+                          <span className="text-xs shrink-0" style={{ color: K.dim }}>🔗 Vinculado a:</span>
                           {editNombre === desc.descripcion ? (
                             <div className="flex gap-1 items-center flex-1" style={{ minWidth: 180 }}>
                               <Input value={editNombreVal} onChange={e => setEditNombreVal(e.target.value)}
@@ -918,18 +919,18 @@ export default function KardexView({ user, show }) {
                                 onClick={() => handleRenombrarIngrediente(desc.catalogo_id, editNombreVal)}>
                                 {savingMapeo ? '...' : '✓'}
                               </button>
-                              <button className="text-xs underline shrink-0" style={{ color: '#8a8a8a' }}
+                              <button className="text-xs underline shrink-0" style={{ color: K.dim }}
                                 onClick={() => setEditNombre(null)}>✕</button>
                             </div>
                           ) : (
                             <>
-                              <span className="text-sm font-semibold" style={{ color: '#4ade80', wordBreak: 'break-word' }}>
+                              <span className="text-sm font-semibold" style={{ color: K.green, wordBreak: 'break-word' }}>
                                 {desc.catalogo_nombre || '—'}
                               </span>
                               {desc.catalogo_unidad && (
-                                <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>· {desc.catalogo_unidad}</span>
+                                <span className="text-xs shrink-0" style={{ color: K.dim }}>· {desc.catalogo_unidad}</span>
                               )}
-                              <button className="text-xs underline shrink-0" style={{ color: '#60a5fa' }}
+                              <button className="text-xs underline shrink-0" style={{ color: K.blue }}
                                 title="Renombrar el ingrediente (se refleja en el conteo nocturno)"
                                 onClick={() => { setEditNombre(desc.descripcion); setEditNombreVal(desc.catalogo_nombre || ''); }}>
                                 ✎ nombre
@@ -940,32 +941,32 @@ export default function KardexView({ user, show }) {
 
                         {/* Factor de conversión: cuántas unidades del catálogo trae cada unidad facturada */}
                         <div className="flex items-center gap-2 mt-2 flex-wrap">
-                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>📐 1 facturada =</span>
+                          <span className="text-xs shrink-0" style={{ color: K.dim }}>📐 1 facturada =</span>
                           {editFactor === desc.descripcion ? (
                             <div className="flex gap-1 items-center" style={{ minWidth: 160 }}>
                               <Input type="number" step="any" min="0" value={editFactorVal} autoFocus
                                 style={{ width: 90 }}
                                 onChange={e => setEditFactorVal(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleMapear(desc.descripcion, desc.catalogo_id, editFactorVal)} />
-                              <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>{desc.catalogo_unidad}</span>
+                              <span className="text-xs shrink-0" style={{ color: K.dim }}>{desc.catalogo_unidad}</span>
                               <button className="btn btn-green btn-sm shrink-0" disabled={savingMapeo}
                                 onClick={() => handleMapear(desc.descripcion, desc.catalogo_id, editFactorVal)}>
                                 {savingMapeo ? '...' : '✓'}
                               </button>
-                              <button className="text-xs underline shrink-0" style={{ color: '#8a8a8a' }}
+                              <button className="text-xs underline shrink-0" style={{ color: K.dim }}
                                 onClick={() => setEditFactor(null)}>✕</button>
                             </div>
                           ) : desc.factor_conversion ? (
                             <>
-                              <span className="text-sm font-semibold" style={{ color: '#4ade80' }}>
+                              <span className="text-sm font-semibold" style={{ color: K.green }}>
                                 {n(desc.factor_conversion)} {desc.catalogo_unidad}
                               </span>
                               {n(desc.precio_unitario_prom) > 0 && (
-                                <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>
+                                <span className="text-xs shrink-0" style={{ color: K.dim }}>
                                   · ${(n(desc.precio_unitario_prom) / n(desc.factor_conversion)).toFixed(4)}/{desc.catalogo_unidad}
                                 </span>
                               )}
-                              <button className="text-xs underline shrink-0" style={{ color: '#60a5fa' }}
+                              <button className="text-xs underline shrink-0" style={{ color: K.blue }}
                                 onClick={() => { setEditFactor(desc.descripcion); setEditFactorVal(String(desc.factor_conversion)); }}>
                                 ✎ factor
                               </button>
@@ -1002,7 +1003,7 @@ export default function KardexView({ user, show }) {
                             onClick={() => { setActiveMapDesc(desc.descripcion); setCreandoDesdeMapeo(null); setEditNombre(null); setFactorInput(desc.factor_conversion ? String(desc.factor_conversion) : ''); }}>
                             ↻ Cambiar ingrediente
                           </button>
-                          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, color: '#f87171' }} disabled={savingMapeo}
+                          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, color: K.red }} disabled={savingMapeo}
                             onClick={() => handleDesmapear(desc.descripcion)}>
                             ✕ Desvincular
                           </button>
@@ -1020,9 +1021,9 @@ export default function KardexView({ user, show }) {
 
                     {/* Panel de vinculación / cambio expandido */}
                     {isActive && (
-                      <div className="mt-3 space-y-2 pt-3" style={{ borderTop: '1px solid #333' }}>
+                      <div className="mt-3 space-y-2 pt-3" style={{ borderTop: `1px solid ${K.border}` }}>
                         {/* Opción 1: buscar existente */}
-                        <p className="text-xs font-bold" style={{ color: '#60a5fa' }}>
+                        <p className="text-xs font-bold" style={{ color: K.blue }}>
                           {desc.mapeado ? 'Cambiar a otro ingrediente existente:' : 'Buscar ingrediente existente:'}
                         </p>
                         <CatalogoSearch
@@ -1034,26 +1035,26 @@ export default function KardexView({ user, show }) {
                         {/* Factor: lo que convierte la presentación de compra a la unidad del catálogo.
                             Sin esto una caja se costea como una libra — el error que rompió el costeo. */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>
+                          <span className="text-xs shrink-0" style={{ color: K.dim }}>
                             📐 Cada unidad facturada trae
                           </span>
                           <Input type="number" step="any" min="0" placeholder="opcional"
                             style={{ width: 110 }} value={factorInput}
                             onChange={e => setFactorInput(e.target.value)} />
-                          <span className="text-xs shrink-0" style={{ color: '#8a8a8a' }}>
+                          <span className="text-xs shrink-0" style={{ color: K.dim }}>
                             del ingrediente que elijas
                           </span>
                         </div>
-                        <p className="text-xs" style={{ color: '#8a8a8a', marginTop: -4 }}>
+                        <p className="text-xs" style={{ color: K.dim, marginTop: -4 }}>
                           Ej.: <strong>CAJA 6/4.5LB</strong> vinculada a un producto en <strong>lb</strong> → escribí <strong>27</strong>.
                           Si lo dejás vacío se respeta el factor que ya tuviera.
                         </p>
 
                         {/* Separador */}
                         <div className="flex items-center gap-3 my-1">
-                          <div className="flex-1 h-px" style={{ background: '#333' }} />
+                          <div className="flex-1 h-px" style={{ background: K.border }} />
                           <span className="text-xs text-muted-foreground">ó</span>
-                          <div className="flex-1 h-px" style={{ background: '#333' }} />
+                          <div className="flex-1 h-px" style={{ background: K.border }} />
                         </div>
 
                         {/* Opción 2: crear nuevo */}
@@ -1064,7 +1065,7 @@ export default function KardexView({ user, show }) {
                           </button>
                         ) : (
                           <div className="space-y-2">
-                            <p className="text-xs font-bold" style={{ color: '#4ade80' }}>
+                            <p className="text-xs font-bold" style={{ color: K.green }}>
                               Nombre para la nueva Materia Prima:
                             </p>
                             <div className="flex gap-2">
@@ -1101,22 +1102,62 @@ export default function KardexView({ user, show }) {
         </div>)}
 
         {/* ═══════════════════════════════════════════════════════════════
-            TAB 3: RECETAS
+            TABS QUE VIVEN EN SUS PROPIOS COMPONENTES
+            (el encabezado con su InfoTip se pone acá para que TODOS los
+            tabs expliquen qué muestran, sin tocar cada componente hijo)
         ═══════════════════════════════════════════════════════════════ */}
-        {activeTab === 'diferencias' && <DiferenciasTab />}
+        {activeTab === 'diferencias' && (<div>
+          <TabHeader icon="🔍" titulo="Fugas" sub="diferencias del inventario"
+            tip={'Lo que el kardex registró de más o de menos: conteos nocturnos, mermas declaradas y ajustes manuales, ' +
+              'valorizados con el costo de compra. Separa las fugas reales (insumos de venta: un faltante ahí es merma, robo o error) ' +
+              'del consumo interno (limpieza, empaques: gastarlo es normal, lo que se vigila es cuánto). ' +
+              'El ⓘ de los filtros explica cada número en detalle.'} />
+          <DiferenciasTab />
+        </div>)}
 
-        {activeTab === 'conteo' && <ConteoLista user={user} />}
+        {activeTab === 'conteo' && (<div>
+          <TabHeader icon="🌙" titulo="Lista del conteo nocturno" sub="qué se cuenta cada noche"
+            tip={'Los productos que cada sucursal cuenta al cierre, agrupados y en el orden en que se cuentan físicamente. ' +
+              'Sale del catálogo (los ítems marcados "incluir en conteo"). ' +
+              'Lo que se cuenta acá alimenta el tab Fugas: si un producto no está en la lista, sus faltantes no se detectan nunca.'} />
+          <ConteoLista user={user} />
+        </div>)}
 
-        {activeTab === 'menu' && <MapeoMenu user={user} />}
+        {activeTab === 'menu' && (<div>
+          <TabHeader icon="🍽️" titulo="Menú (BOM)" sub="platillo → receta → ingredientes"
+            tip={'Cada platillo del POS enlazado a su receta y de ahí a sus ingredientes (la ficha técnica o BOM). ' +
+              'Con este mapeo, cada venta descuenta inventario sola. ' +
+              'La confiabilidad de cada fila avisa si la receta está vacía o sin costo: una receta mala descuenta mal el inventario de TODAS las sucursales.'} />
+          <MapeoMenu user={user} />
+        </div>)}
 
-        {activeTab === 'recetas' && <RecetasView user={user} />}
+        {activeTab === 'recetas' && (<div>
+          <TabHeader icon="📖" titulo="Recetas" sub="ingredientes y rendimiento"
+            tip={'Las recetas de cocina: qué ingredientes lleva cada preparado, en qué cantidad y cuánto rinde cada tanda. ' +
+              'De acá salen el costo de cada platillo y el descuento automático de inventario al vender o producir. ' +
+              'Ojo con las unidades: si la receta dice "taza" y el almacén guarda "kg", hace falta el factor de conversión.'} />
+          <RecetasView user={user} />
+        </div>)}
 
-        {activeTab === 'costeo' && <CosteoView />}
+        {activeTab === 'costeo' && (<div>
+          <TabHeader icon="💰" titulo="Costeo" sub="cuánto cuesta cada platillo"
+            tip={'El costo real de cada producto del menú, calculado con los precios de tus compras (DTE) y las recetas. ' +
+              'Compara costo contra precio de venta para ver el margen. ' +
+              'Si un ingrediente no tiene compras mapeadas, su costo sale en $0 y el margen se ve mejor de lo que es.'} />
+          <CosteoView />
+        </div>)}
 
         {/* ═══════════════════════════════════════════════════════════════
             TAB 4: HISTORIAL DE MOVIMIENTOS
         ═══════════════════════════════════════════════════════════════ */}
         {activeTab === 'movimientos' && (<div>
+          <TabHeader icon="📜" titulo="Historial" sub="todo movimiento del kardex"
+            tip={'Cada entrada y salida de inventario de la sucursal, en orden del más reciente al más viejo: ' +
+              'recepciones, ventas, traslados, consumos, producciones, conteos, mermas y ajustes. ' +
+              'Sale de la tabla kardex_movimientos, que es la bitácora que nadie edita a mano. ' +
+              'Cada fila muestra el stock antes → después y QUIÉN firmó el movimiento (usuario del ERP); ' +
+              'los automáticos, como la venta del POS, salen sin usuario.'} />
+
           <div className="card" style={{ padding: 12 }}>
             <div className="grid grid-cols-2 gap-2 mb-2">
               <div className="field">
@@ -1144,37 +1185,53 @@ export default function KardexView({ user, show }) {
             </div>
           </div>
 
+          {/* Filtro por tipo de movimiento — pills al estilo Fugas */}
+          <div style={{ display: 'flex', gap: 4, overflowX: 'auto', margin: '2px 0 12px', paddingBottom: 2 }}>
+            <button onClick={() => setMovTipo(null)} style={pill(!movTipo, K.dim)}>Todo</button>
+            {Object.entries(MOV_TIPOS).map(([id, t]) => (
+              <button key={id} onClick={() => setMovTipo(movTipo === id ? null : id)}
+                style={pill(movTipo === id, t.color)}>
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+
           {loadingMov ? (
             <div className="spin" style={{ width: 28, height: 28, margin: '40px auto' }} />
           ) : movimientos.length === 0 ? (
             <div className="empty">
-              <div className="empty-icon">📊</div>
-              <div className="empty-text">Sin movimientos en este período</div>
+              <div className="empty-icon">📜</div>
+              <div className="empty-text">Sin movimientos {movTipo ? `de tipo ${MOV_TIPOS[movTipo]?.label?.toLowerCase()} ` : ''}en este período</div>
             </div>
           ) : (
             <div className="space-y-1">
               {movimientos.map(mov => {
-                const mt = MOV_TIPOS[mov.tipo] || { label: mov.tipo, icon: '?', badge: 'muted' };
+                const mt = MOV_TIPOS[mov.tipo] || { label: mov.tipo, icon: '❓', color: K.dim };
                 const isPositive = mov.cantidad > 0;
+                const quien = mov.usuarios_erp?.nombre;
                 return (
-                  <div key={mov.id} className="item-row">
-                    <div className="flex items-center gap-3 w-full">
-                      <div style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{mt.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">{mov.catalogo_productos?.nombre || '—'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {mt.label} · {fmtDate(mov.created_at)}
-                          {mov.notas ? ` · ${mov.notas}` : ''}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold" style={{ color: isPositive ? '#4ade80' : '#f87171' }}>
-                          {isPositive ? '+' : ''}{n(mov.cantidad)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {n(mov.stock_anterior)} → {n(mov.stock_posterior)}
-                        </p>
-                      </div>
+                  <div key={mov.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: K.card,
+                    border: `1px solid ${K.border}`, borderLeft: '3px solid ' + mt.color, borderRadius: 10, padding: '9px 12px' }}>
+                    <div style={{ fontSize: 18, width: 26, textAlign: 'center', flexShrink: 0 }}>{mt.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: K.text }}>{mov.catalogo_productos?.nombre || '—'}</p>
+                      <p className="text-xs" style={{ color: K.dim }}>
+                        <span style={{ color: mt.color, fontWeight: 700 }}>{mt.label}</span>
+                        {' · '}{fmtDate(mov.created_at)}
+                        {' · '}
+                        <span style={{ color: quien ? K.dim : K.orange }}>
+                          👤 {quien || 'sin usuario'}
+                        </span>
+                        {mov.notas ? ` · ${mov.notas}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold" style={{ color: isPositive ? K.green : K.red }}>
+                        {isPositive ? '+' : ''}{n(mov.cantidad)}
+                      </p>
+                      <p className="text-xs" style={{ color: K.faint }}>
+                        {n(mov.stock_anterior)} → {n(mov.stock_posterior)}
+                      </p>
                     </div>
                   </div>
                 );
@@ -1187,8 +1244,14 @@ export default function KardexView({ user, show }) {
             TAB 5: AJUSTES MANUALES
         ═══════════════════════════════════════════════════════════════ */}
         {activeTab === 'ajustes' && (<div>
+          <TabHeader icon="✏️" titulo="Ajustes y merma" sub="correcciones firmadas"
+            tip={'Dos cosas distintas: el AJUSTE corrige el stock cuando el sistema no coincide con la realidad ' +
+              '(error de digitación, conteo mal hecho). La MERMA registra producto que se botó, se venció o se quemó. ' +
+              'Las dos exigen motivo y usuario — quedan firmadas en el Historial y se ven en el tab Fugas. ' +
+              'No uses el ajuste para esconder una merma: para eso está su propio botón.'} />
+
           <div className="card" style={{ maxWidth: 480 }}>
-            <div className="sec-title" style={{ marginBottom: 4 }}>Ajuste manual de inventario</div>
+            <div className="sec-title" style={{ marginBottom: 4 }}>✏️ Ajuste manual de inventario</div>
             <p className="text-xs text-muted-foreground mb-4">
               Registra una corrección cuando el stock real no coincide con el sistema.
             </p>
@@ -1213,10 +1276,11 @@ export default function KardexView({ user, show }) {
                   onSelect={selectAdjProd}
                 />
                 {adjProd && adjStock !== null && (
-                  <div className="diff-bar diff-ok mt-2">
+                  <div className="mt-2" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: tint(K.green, '15'), border: `1px solid ${tint(K.green, '44')}`, borderRadius: 10, padding: '10px 12px' }}>
                     <div>
                       <p className="text-sm font-bold">{adjProd.nombre}</p>
-                      <p className="text-xs" style={{ color: '#4ade80' }}>Stock actual: {n(adjStock)}</p>
+                      <p className="text-xs" style={{ color: K.green }}>Stock actual: {n(adjStock)}</p>
                     </div>
                     <TipoPill tipo={adjProd.tipo} />
                   </div>
@@ -1228,7 +1292,7 @@ export default function KardexView({ user, show }) {
                 <Input type="number" step="0.01" placeholder="Ej: 5 o -3"
                   value={adjQty} onChange={e => setAdjQty(e.target.value)} />
                 {adjQty && adjStock !== null && (
-                  <p className="text-xs mt-1" style={{ color: parseFloat(adjQty) >= 0 ? '#4ade80' : '#f87171' }}>
+                  <p className="text-xs mt-1" style={{ color: parseFloat(adjQty) >= 0 ? K.green : K.red }}>
                     Nuevo stock: {n(adjStock + (parseFloat(adjQty) || 0))}
                   </p>
                 )}
@@ -1361,7 +1425,7 @@ function MermaForm({ user, show, sucursales, defaultSucursal }) {
         {items.length > 0 && (
           <div className="space-y-2">
             {items.map(it => (
-              <div key={it.producto.id} className="flex items-center gap-2 rounded-md border border-border px-2 py-2" style={{ background: '#1e1e1e' }}>
+              <div key={it.producto.id} className="flex items-center gap-2 rounded-md border border-border px-2 py-2" style={{ background: K.card2 }}>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate">{it.producto.nombre}</p>
                   <p className="text-xs text-muted-foreground">
@@ -1376,7 +1440,7 @@ function MermaForm({ user, show, sucursales, defaultSucursal }) {
                   style={{ width: 80, textAlign: 'right' }}
                 />
                 <button onClick={() => removeItem(it.producto.id)}
-                  className="text-lg px-1" style={{ color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}
+                  className="text-lg px-1" style={{ color: K.red, background: 'none', border: 'none', cursor: 'pointer' }}
                   aria-label={`Quitar ${it.producto.nombre}`}>
                   ✕
                 </button>
@@ -1400,7 +1464,7 @@ function MermaForm({ user, show, sucursales, defaultSucursal }) {
 
         {errMsg && (
           <div className="rounded-md border px-3 py-2 text-xs font-semibold"
-            style={{ background: '#7f1d1d', borderColor: '#991b1b', color: '#fca5a5' }}>
+            style={{ background: tint(K.red, '1c'), borderColor: tint(K.red, '55'), color: K.red }}>
             {errMsg}
           </div>
         )}
@@ -1428,23 +1492,23 @@ function UnidadesModal({ item, onClose, onSaved }) {
     setSaving(false);
     if (!error) onSaved();
   };
-  const inp = { background: '#1e1e1e', border: '1px solid #2a2a2a', color: '#f0f0f0', borderRadius: 8, padding: '7px 10px', fontSize: 13, width: '100%' };
-  const lbl = { fontSize: 11, color: '#8a8a8a', display: 'block', marginBottom: 3 };
+  const inp = { background: K.card2, border: `1px solid ${K.border}`, color: '#f0f0f0', borderRadius: 8, padding: '7px 10px', fontSize: 13, width: '100%' };
+  const lbl = { fontSize: 11, color: K.dim, display: 'block', marginBottom: 3 };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 16, width: '100%', maxWidth: 440 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: K.card, border: `1px solid ${K.border}`, borderRadius: 12, padding: 16, width: '100%', maxWidth: 440 }}>
         <div style={{ fontWeight: 800, fontSize: 16 }}>Unidades y conversión</div>
-        <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 12 }}>{item.nombre}</div>
+        <div style={{ fontSize: 12, color: K.dim, marginBottom: 12 }}>{item.nombre}</div>
         <label style={lbl}>Unidad de almacén (cómo se guarda y se usa en recetas)</label>
         <UnidadSelect value={um} onChange={setUm} selectStyle={inp} style={{ marginBottom: 10 }} />
         <label style={lbl}>Unidad de compra (cómo viene en el DTE)</label>
         <UnidadSelect value={uc} onChange={setUc} allowEmpty emptyLabel="(igual que almacén)" selectStyle={inp} style={{ marginBottom: 10 }} />
         <label style={lbl}>Factor: 1 {uc || 'compra'} = ? {um || 'almacén'}</label>
         <input type="number" step="any" value={factor} onChange={e => setFactor(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
-        <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 14 }}>Ej: comprás caja de 30 lb → compra "caja", almacén "lb", factor 30. Al recibir 5 cajas entran 150 lb.</div>
+        <div style={{ fontSize: 11, color: K.dim, marginBottom: 14 }}>Ej: comprás caja de 30 lb → compra "caja", almacén "lb", factor 30. Al recibir 5 cajas entran 150 lb.</div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>Cancelar</button>
-          <button onClick={guardar} disabled={saving} style={{ background: '#4ade80', color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
+          <button onClick={onClose} style={{ background: K.border, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={guardar} disabled={saving} style={{ background: K.green, color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
         </div>
       </div>
     </div>
@@ -1485,15 +1549,15 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
     if (error) { setErr(error.message); show?.('❌ ' + error.message, 'error'); return; }
     onSaved();
   };
-  const inp = { background: '#1e1e1e', border: '1px solid #2a2a2a', color: '#f0f0f0', borderRadius: 8, padding: '7px 10px', fontSize: 13, width: '100%' };
-  const lbl = { fontSize: 11, color: '#8a8a8a', display: 'block', marginBottom: 3 };
+  const inp = { background: K.card2, border: `1px solid ${K.border}`, color: '#f0f0f0', borderRadius: 8, padding: '7px 10px', fontSize: 13, width: '100%' };
+  const lbl = { fontSize: 11, color: K.dim, display: 'block', marginBottom: 3 };
   const row = { display: 'flex', gap: 8 };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 16, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: K.card, border: `1px solid ${K.border}`, borderRadius: 12, padding: 16, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto' }}>
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>Editar ítem</div>
         {!form ? (
-          <div style={{ color: '#8a8a8a', padding: 20, textAlign: 'center' }}>Cargando…</div>
+          <div style={{ color: K.dim, padding: 20, textAlign: 'center' }}>Cargando…</div>
         ) : (
           <>
             <label style={lbl}>Nombre *</label>
@@ -1504,8 +1568,8 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
               {Object.entries(TIPOS).map(([key, t]) => (
                 <button key={key} onClick={() => set('tipo', key)}
                   className="rounded-lg p-2 text-center border-2" style={{
-                    minWidth: 64, background: form.tipo === key ? t.bg : 'transparent',
-                    borderColor: form.tipo === key ? t.color : '#333', color: form.tipo === key ? t.color : '#888', cursor: 'pointer',
+                    minWidth: 64, background: form.tipo === key ? tint(t.color) : 'transparent',
+                    borderColor: form.tipo === key ? t.color : K.border, color: form.tipo === key ? t.color : K.dim, cursor: 'pointer',
                   }} title={t.hint}>
                   <div style={{ fontSize: 18 }}>{t.icon}</div>
                   <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2 }}>{t.label}</div>
@@ -1548,7 +1612,7 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
                 <input type="number" step="any" value={form.factor_compra ?? 1} onChange={e => set('factor_compra', e.target.value)} style={inp} />
               </div>
             </div>
-            <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 12 }}>1 {form.unidad_compra || 'compra'} = {form.factor_compra ?? 1} {form.unidad_medida || 'almacén'} · afecta el costo por unidad.</div>
+            <div style={{ fontSize: 11, color: K.dim, marginBottom: 12 }}>1 {form.unidad_compra || 'compra'} = {form.factor_compra ?? 1} {form.unidad_medida || 'almacén'} · afecta el costo por unidad.</div>
 
             <div style={{ ...row, marginBottom: 10 }}>
               <div style={{ flex: 1 }}>
@@ -1587,10 +1651,10 @@ function ItemEditorModal({ item, onClose, onSaved, show }) {
               <input type="checkbox" checked={!!form.incluir_inventario_fisico} onChange={e => set('incluir_inventario_fisico', e.target.checked)} /> Incluir en Inventario Físico
             </label>
 
-            {err && <div style={{ color: '#f87171', fontSize: 12, marginBottom: 10 }}>❌ {err}</div>}
+            {err && <div style={{ color: K.red, fontSize: 12, marginBottom: 10 }}>❌ {err}</div>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={onClose} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={guardar} disabled={saving} style={{ background: '#4ade80', color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
+              <button onClick={onClose} style={{ background: K.border, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={guardar} disabled={saving} style={{ background: K.green, color: '#04220f', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{saving ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </>
         )}
@@ -1644,7 +1708,8 @@ function ConteoLista({ user }) {
     setAdding(false); setNuevaCat(''); cargar();
   };
 
-  const C = { card: '#1a1a1a', card2: '#151515', border: '#2a2a2a', dim: '#8a8a8a', green: '#4ade80', blue: '#60a5fa' };
+  // Alias local a la paleta compartida (el componente ya usaba "C")
+  const C = { card: K.card, card2: K.panel, border: K.border, dim: K.dim, green: K.green, blue: K.blue };
   if (!data) return <div style={{ color: C.dim, padding: 12 }}>Cargando…</div>;
 
   return (
@@ -1659,14 +1724,14 @@ function ConteoLista({ user }) {
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: C.dim, marginBottom: 6 }}>Buscá un producto del catálogo y elegí su grupo:</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select value={nuevaCat} onChange={e => setNuevaCat(e.target.value)} style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 8, padding: '7px 10px', fontSize: 13 }}>
+            <select value={nuevaCat} onChange={e => setNuevaCat(e.target.value)} style={{ background: K.card2, border: `1px solid ${C.border}`, color: '#fff', borderRadius: 8, padding: '7px 10px', fontSize: 13 }}>
               <option value="">Grupo…</option>
               {cats.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <div style={{ flex: 1, minWidth: 200 }}>
               <CatalogoSearch placeholder="Buscar producto…" onSelect={agregar} />
             </div>
-            <button onClick={() => setAdding(false)} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 12px', cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={() => setAdding(false)} style={{ background: K.border, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 12px', cursor: 'pointer' }}>Cancelar</button>
           </div>
         </div>
       )}
@@ -1687,50 +1752,50 @@ function ConteoLista({ user }) {
                       <TipoPill tipo={it.tipo} />
                       <div style={{ flex: 1, minWidth: 140, fontSize: 13 }}>
                         {it.nombre} <span style={{ color: C.dim, fontSize: 11 }}>· {it.unidad || 'u'}</span>
-                        {it.match_receta_nombre && <span style={{ color: '#fb923c', fontSize: 11, marginLeft: 8 }}>= {it.match_receta_nombre}</span>}
+                        {it.match_receta_nombre && <span style={{ color: K.orange, fontSize: 11, marginLeft: 8 }}>= {it.match_receta_nombre}</span>}
                         {it.receta && <span onClick={() => setOpenR(o => ({ ...o, [it.id]: !o[it.id] }))} style={{ color: C.blue, fontSize: 11, marginLeft: 8, cursor: 'pointer' }}>{openR[it.id] ? '▾ receta' : '▸ receta'}</span>}
                       </div>
                       {puede && (
                         <>
                           <button onClick={() => setEdit(e => e === it.id ? null : it.id)} title="Editar / clasificar"
-                            style={{ background: edit === it.id ? '#333' : '#222', color: '#ccc', border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✎</button>
+                            style={{ background: edit === it.id ? K.border : K.card2, color: '#ccc', border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>✎</button>
                           <select value={it.grupo || g.grupo} onChange={e => setItem(it.id, { categoria: e.target.value })}
-                            style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }} title="Mover de grupo">
+                            style={{ background: K.card2, border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }} title="Mover de grupo">
                             {cats.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                           <input key={`ord-${it.id}-${it.orden}`} type="number" defaultValue={it.orden ?? ''}
                             onBlur={e => reordenar(it.id, e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                            placeholder="orden" style={{ width: 56, background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }}
+                            placeholder="orden" style={{ width: 56, background: K.card2, border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '3px 6px', fontSize: 11 }}
                             title="Número de posición en el grupo; al cambiarlo, los demás se reacomodan" />
-                          <button onClick={() => quitar(it.id, it.nombre)} style={{ background: '#7f1d1d', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>Quitar</button>
+                          <button onClick={() => quitar(it.id, it.nombre)} style={{ background: tint(K.red, '26'), color: K.red, border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>Quitar</button>
                         </>
                       )}
                     </div>
 
                     {/* Panel de edición: nombre, tipo, match a sub-receta */}
                     {puede && edit === it.id && (
-                      <div style={{ marginTop: 8, padding: 10, background: '#101010', borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ marginTop: 8, padding: 10, background: K.panel, borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div>
                           <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Nombre del ingrediente</div>
                           <input defaultValue={it.nombre} onBlur={e => { const v = e.target.value.trim(); if (v && v !== it.nombre) renombrar(it.id, v); }}
-                            style={{ width: '100%', boxSizing: 'border-box', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 13 }} />
+                            style={{ width: '100%', boxSizing: 'border-box', background: K.card2, border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 13 }} />
                         </div>
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                           <div>
                             <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Tipo</div>
                             <select value={it.tipo || 'materia_prima'} onChange={e => cambiarTipo(it.id, e.target.value)}
-                              style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
-                              <option value="materia_prima">🧾 Materia Prima</option>
+                              style={{ background: K.card2, border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
+                              <option value="materia_prima">🥩 Materia Prima</option>
                               <option value="sub_producto">🧪 Sub Producto</option>
                               <option value="producto_terminado">🍔 Terminado (reventa)</option>
-                              <option value="insumo">📦 Insumo (no alimento)</option>
+                              <option value="insumo">🧰 Insumo (no alimento)</option>
                             </select>
                           </div>
                           <div style={{ flex: 1, minWidth: 200 }}>
                             <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Es la sub-receta… (si es un preparado de CM)</div>
                             <select value={it.match_receta_id || ''} onChange={e => matchSub(it.id, e.target.value)}
-                              style={{ width: '100%', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
+                              style={{ width: '100%', background: K.card2, border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
                               <option value="">— ninguna (es materia prima) —</option>
                               {subrecetas.map(s => <option key={s.id} value={s.id}>{s.nombre}{s.tipo === 'porcionado' ? ' (porcionado)' : ''}</option>)}
                             </select>
