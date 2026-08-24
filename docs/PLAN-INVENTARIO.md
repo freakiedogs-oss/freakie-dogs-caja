@@ -12,7 +12,7 @@
 6. Cheddar Porcionado: rendimiento OK (3 bolsas/tanda). Recetas desactivadas sin ingredientes (Salchicha, Pepinillos, Jalapeño, Queso frito, Aros): reactivar cuando produzcan.
 
 ## DISEÑO (plan 18-ago, datos ya sanos)
-7. **Rediseño Kardex**: unificar sobre tokens shadcn de global.css (hoy casi sin adoptar), iconografía única, InfoTips por tab, existencias por sucursal en tab Inventario, tipos+autor en Historial, borrar editor muerto de recetas (KardexView:413-498 → tabla obsoleta recetas_lineas).
+7. ✅ **Rediseño Kardex** — HECHO 24-ago (PR feat/kardex-redesign): paleta única `kardexUi.jsx` (referencia: tab Fugas) usada por KardexView + DiferenciasTab, iconografía única (MP 🥩 SP 🧪 PT 🍔 IN 🧰; movimientos con colores de Fugas), InfoTips en los 9 tabs, existencias por sucursal expandibles en Inventario (solo lectura), Historial con `usuarios_erp.nombre` + filtro por tipo, y borrado el editor muerto de recetas (escribía a la tabla obsoleta `recetas_lineas`, nunca se renderizaba). (original: unificar sobre tokens shadcn de global.css, iconografía única, InfoTips por tab, existencias por sucursal en tab Inventario, tipos+autor en Historial, borrar editor muerto KardexView:413-498.)
 
 ## DEUDA VERIFICADA (auditorías 22-ago)
 8. **RLS `inventario_all`**: anon puede escribir inventario (llave pública en el bundle). Cerrar fuera de hora pico + prueba de venta real.
