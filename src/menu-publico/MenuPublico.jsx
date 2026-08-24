@@ -15,6 +15,12 @@ const MapaUbicacion = lazy(() => import('./MapaUbicacion'))
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
 
+// Los celulares y fijos de El Salvador son 8 dígitos y empiezan con 2, 6 o 7.
+// Antes solo se validaba el largo, y entró un pedido con "50372699" — el
+// cliente escribió el código de país, se cortó a 8 dígitos y quedó un número
+// inexistente. El pedido llegó igual porque traía GPS, pero no había cómo llamar.
+const TEL_VALIDO = /^[267]\d{7}$/
+
 // Emoji decorativo por categoría (el POS no guarda emoji)
 const EMOJI_CAT = {
   combos: '🌭🍟🥤', 'freakie burger': '🍔', individuales: '🌭',
@@ -1116,7 +1122,12 @@ function Checkout({ items, total, onClose, onEnviado }) {
   const enviar = async () => {
     setError('')
     if (!nombre.trim()) return setError('Ingresá tu nombre')
-    if (!telefono.trim() || telefono.trim().length < 8) return setError('Teléfono inválido')
+    const tel = telefono.trim()
+    if (!TEL_VALIDO.test(tel)) {
+      return setError(tel.length !== 8
+        ? 'El teléfono debe tener 8 dígitos'
+        : 'Revisá el teléfono: en El Salvador empieza con 2, 6 o 7')
+    }
     if (tipo === 'pickup' && !tiendaSel) return setError('Elegí en qué tienda vas a recoger')
     if (tipo === 'delivery') {
       if (!direccion.trim()) return setError('Dirección requerida para delivery')
@@ -1238,9 +1249,23 @@ function Checkout({ items, total, onClose, onEnviado }) {
             <input
               type="tel"
               value={telefono}
-              onChange={e => setTelefono(e.target.value.replace(/[^\d]/g, '').slice(0, 8))}
+              onChange={e => {
+                let v = e.target.value.replace(/[^\d]/g, '')
+                // Si escriben el código de país se descarta solo. Pasó de verdad:
+                // un pedido entró con "50372699" (503 + los primeros 5 dígitos)
+                // y quedó sin forma de llamar al cliente.
+                if (v.startsWith('503') && v.length >= 4) v = v.slice(3)
+                setTelefono(v.slice(0, 8))
+              }}
               placeholder="7777-7777"
             />
+            {telefono.length > 0 && !TEL_VALIDO.test(telefono) && (
+              <div className="mp-tel-aviso">
+                {telefono.length < 8
+                  ? `Faltan ${8 - telefono.length} dígito${8 - telefono.length === 1 ? '' : 's'}`
+                  : 'Los números de El Salvador empiezan con 2, 6 o 7'}
+              </div>
+            )}
           </div>
 
           {/* SI PICKUP: en qué tienda retira */}

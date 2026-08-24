@@ -638,6 +638,15 @@ button { font-family: inherit; }
   margin-top: 10px;
 }
 
+/* Aviso bajo el campo de teléfono mientras se escribe: corrige antes de
+   enviar, en vez de rebotar el pedido al final del formulario. */
+.mp-tel-aviso {
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
 /* ── Toast ── */
 .mp-toast {
   position: fixed;
