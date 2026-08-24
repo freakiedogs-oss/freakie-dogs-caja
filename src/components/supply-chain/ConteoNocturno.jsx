@@ -178,7 +178,7 @@ export default function ConteoNocturno({user,onBack}){
   };
 
   const setIgualTeorico=(prodId)=>{
-    setProductos(prev=>prev.map(p=>p.producto_id===prodId?{...p,cantidad_real:p.stock_teorico}:p));
+    setProductos(prev=>prev.map(p=>p.producto_id===prodId?{...p,cantidad_real:Math.max(0,n(p.stock_teorico))}:p));
   };
 
   // Progreso del conteo
@@ -226,7 +226,7 @@ export default function ConteoNocturno({user,onBack}){
         sucursal_id: sucursalId,
         producto_id: p.producto_id,
         fecha: hoy,
-        cantidad_real: p.cantidad_real,
+        cantidad_real: Math.max(0,n(p.cantidad_real)),
         cantidad_teorica: p.stock_teorico,
         contado_por: user.id,
         notas: isEdit?'Editado':'Conteo inicial'
@@ -275,7 +275,7 @@ export default function ConteoNocturno({user,onBack}){
           nombre: p.nombre,
           unidad: p.unidad,
           categoria: p.categoria,
-          cantidad_real: p.cantidad_real,
+          cantidad_real: Math.max(0,n(p.cantidad_real)),
           stock_minimo: p.stock_minimo,
           stock_maximo: p.stock_maximo,
           cantidad_sugerida: bajominimo ? Math.max(0, p.stock_maximo-p.cantidad_real) : 0,
