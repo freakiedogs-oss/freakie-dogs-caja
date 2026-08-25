@@ -363,15 +363,15 @@ export default function ConteoNocturno({user,onBack}){
   // Orden fijo de grupos según hoja de control de inventario
   const ORDEN_GRUPOS=[
     'Carnes y Complementos',
-    'Vegetales y Verduras',
-    'Quesos y Lácteos',
     'Panes y Harinas',
-    'Papas y Congelados',
+    'Quesos y Lácteos',
+    'Vegetales y Verduras',
     'Salsas y Aderezos',
-    'Empaques y Desechables',
+    'Papas y Congelados',
     'Bebidas',
-    'Extras',
+    'Empaques y Desechables',
     'Utensilios de Limpieza',
+    'Extras',
   ];
   const ordenIdx=(cat)=>{ const i=ORDEN_GRUPOS.findIndex(g=>g.toLowerCase()===cat.toLowerCase()); return i===-1?999:i; };
 
@@ -397,30 +397,7 @@ export default function ConteoNocturno({user,onBack}){
     );
   }
 
-  // ── SCREEN 0: SELECTOR DE SUCURSAL (ejecutivo/admin) ──
-  if(screen===0){
-    return(
-      <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
-        <Toast/>
-        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
-          <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
-          <div>
-            <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
-            <div style={{color:'#555',fontSize:12}}>Seleccionar sucursal</div>
-          </div>
-        </div>
-        {sucursales.map(s=>(
-          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);cargarInventario(s.id, s.store_code);}}
-            style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
-            <div style={{fontWeight:600,fontSize:15,color:'#fff'}}>{s.nombre}</div>
-            <div style={{color:'#888',fontSize:12}}>{s.store_code}</div>
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  // ── GATE: caja no cerrada ──
+  // ── GATE: caja no cerrada (antes del picker para que el admin lo vea) ──
   if(cajaPendiente){
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
@@ -440,6 +417,29 @@ export default function ConteoNocturno({user,onBack}){
             Primero hacé el <b>corte Z</b> (cierre del día) antes de iniciar el conteo nocturno.
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // ── SCREEN 0: SELECTOR DE SUCURSAL (ejecutivo/admin) ──
+  if(screen===0){
+    return(
+      <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
+        <Toast/>
+        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <div>
+            <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
+            <div style={{color:'#555',fontSize:12}}>Seleccionar sucursal</div>
+          </div>
+        </div>
+        {sucursales.map(s=>(
+          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);cargarInventario(s.id, s.store_code);}}
+            style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
+            <div style={{fontWeight:600,fontSize:15,color:'#fff'}}>{s.nombre}</div>
+            <div style={{color:'#888',fontSize:12}}>{s.store_code}</div>
+          </button>
+        ))}
       </div>
     );
   }
