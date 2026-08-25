@@ -465,16 +465,25 @@ export default function ConteoNocturno({user,onBack}){
 
         {/* ── Barra de progreso sticky ── */}
         <div style={{position:'sticky',top:0,zIndex:20,background:'#0d0d0d',padding:'10px 0 12px'}}>
-          {/* Banner modo edición */}
+          {/* Banner según estado */}
           {isEdit&&(
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#facc1520',border:'1px solid #facc15'}}>
-              <span style={{fontSize:12,color:'#facc15',fontWeight:600}}>✏️ Editando conteo</span>
-              <span style={{fontSize:11,color:'#facc15'}}>{tiempoRestante}</span>
+            <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#facc1520',border:'1px solid #facc15'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:12,color:'#facc15',fontWeight:600}}>✏️ Editando conteo</span>
+                <span style={{fontSize:11,color:'#facc15'}}>{tiempoRestante}</span>
+              </div>
+              <div style={{fontSize:11,color:'#d4a017',marginTop:4}}>Estás viendo el conteo que ya se guardó hoy. El teórico es el stock antes de contar (post cierre Z). Podés corregir cantidades.</div>
             </div>
           )}
           {conteoCerrado&&!isEdit&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80'}}>
               <span style={{fontSize:12,color:'#4ade80',fontWeight:600}}>📋 Nuevo conteo — reemplaza el anterior (+6h)</span>
+              <div style={{fontSize:11,color:'#3bbd6b',marginTop:4}}>Conteo nuevo del turno. El teórico refleja el stock actual del sistema. Contá físicamente cada producto.</div>
+            </div>
+          )}
+          {!isEdit&&!conteoCerrado&&(
+            <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Primer conteo del día. El teórico es el stock del sistema después del cierre Z. Contá físicamente cada producto.</div>
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
@@ -578,6 +587,14 @@ export default function ConteoNocturno({user,onBack}){
         <div>
           <div style={{fontWeight:800,fontSize:18}}>{isEdit?'📦 Pedido Actual':'📦 Pedido Sugerido'} <InfoTip text={isEdit?"Pedido generado a partir del conteo editado. Las cantidades reflejan lo contado.":"Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo."} /></div>
           <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo mínimo</span></div>
+        </div>
+      </div>
+
+      <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:isEdit?'#facc1520':'#60a5fa20',border:`1px solid ${isEdit?'#facc15':'#60a5fa'}`}}>
+        <div style={{fontSize:11,color:isEdit?'#d4a017':'#60a5fa'}}>
+          {isEdit
+            ?'Pedido basado en el conteo que editaste. "Real" es lo que contaste. Los productos bajo mínimo ya tienen cantidad sugerida (máximo − real). Podés ajustar antes de enviar.'
+            :'Pedido sugerido a partir de tu conteo. "Real" es lo que contaste físicamente. Los productos bajo mínimo ya tienen cantidad sugerida. Ajustá y enviá.'}
         </div>
       </div>
 
