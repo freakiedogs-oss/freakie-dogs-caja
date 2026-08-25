@@ -4,6 +4,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { db, URL_SB_DIRECT, KEY_SB } from '../supabase'
 import { requestCh340Port } from './ch340-webusb'
+import { calcularContadoresS006, KDS_CONTADOR_ESTACIONES, KDS_CONTADOR_LABELS } from '../pos/kdsCounterMapS006'
+
+// La estacion de papas solo necesita ver lo suyo: papa, mini fancy, fancy,
+// aros, queso frito, papa blanca y papa waffle. El resto del KDS es ruido
+// para quien esta en la freidora.
+const MI_ESTACION = KDS_CONTADOR_ESTACIONES.find(e => e.id === 'fritos')
 
 const STATION_ID = 'papas-s006'
 const STORE_CODE = 'S006'
@@ -72,15 +78,25 @@ async function enviarEvento(token, event) {
   return d
 }
 
-// ── Contar porciones de papa pendientes en el KDS de la sucursal ──
-async function contarPendientesKDS(storeCode) {
-  const { count, error } = await db
-    .from('pos_cuenta_items')
-    .select('id, pos_cuentas!inner(store_code, estado)', { count: 'exact', head: true })
-    .eq('pos_cuentas.store_code', storeCode)
-    .in('pos_cuentas.estado', ['enviada_cocina', 'preparando'])
-  if (error) return 0
-  return count || 0
+// ── Lo que la estacion de fritos tiene pendiente, en vivo ──
+// Antes esto contaba TODOS los items de las cuentas abiertas de la sucursal,
+// asi que el numero no significaba nada para quien esta en la freidora.
+// Ahora lee la misma cola que el KDS de cocina y aplica el mismo mapeo, pero
+// se queda solo con los contadores de la estacion de fritos.
+async function leerColaFritos(storeCode) {
+  const { data, error } = await db
+    .from('pos_cocina_queue')
+    .select('*')
+    .eq('store_code', storeCode)
+    .neq('estado', 'completado')
+    .order('recibido_at', { ascending: true })
+  if (error) return {}
+  const todos = calcularContadoresS006(data || [])
+  const mios = {}
+  for (const k of MI_ESTACION?.items || []) {
+    if (todos[k]) mios[k] = todos[k]
+  }
+  return mios
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -99,7 +115,7 @@ export default function PorcionadorApp() {
   const [lastPortion, setLastPortion] = useState(null)
   const [diag, setDiag] = useState('Sin datos aún')
   const [pendientesCount, setPendientesCount] = useState(pendientes().length)
-  const [kdsPendientes, setKdsPendientes] = useState(0)
+  const [cola, setCola] = useState({})
 
   const portRef = useRef(null)
   const readerRef = useRef(null)
@@ -125,13 +141,49 @@ export default function PorcionadorApp() {
       .catch(() => {})
   }, [token])
 
-  // ── Poll del KDS cada 5s ─────────────────────────────────────
+  // ── Cola de fritos: tiempo real + respaldo por polling ───────
+  // Mismo patron que el KDS: si el realtime se cae, el polling evita que la
+  // pantalla se quede congelada mostrando pedidos que ya salieron.
   useEffect(() => {
     if (!token) return
-    const upd = () => contarPendientesKDS(STORE_CODE).then(setKdsPendientes)
-    upd()
-    const id = setInterval(upd, 5000)
-    return () => clearInterval(id)
+    let sub = null, retry = null, vivo = true
+    const refrescar = () => leerColaFritos(STORE_CODE).then(c => { if (vivo) setCola(c) })
+    refrescar()
+
+    const suscribir = () => {
+      if (!vivo) return
+      const canal = 'porcion_rt_' + STORE_CODE + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+      sub = db.channel(canal)
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'pos_cocina_queue',
+          filter: `store_code=eq.${STORE_CODE}`,
+        }, refrescar)
+        .subscribe(status => {
+          if (!vivo) return
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            clearTimeout(retry)
+            retry = setTimeout(() => {
+              try { db.removeChannel(sub) } catch { /* ya estaba cerrado */ }
+              sub = null; suscribir()
+            }, 3000)
+          }
+        })
+    }
+    suscribir()
+
+    const poll = setInterval(refrescar, 8000)
+    const alVolver = () => { if (document.visibilityState === 'visible') refrescar() }
+    window.addEventListener('online', refrescar)
+    window.addEventListener('focus', refrescar)
+    document.addEventListener('visibilitychange', alVolver)
+    return () => {
+      vivo = false
+      clearTimeout(retry); clearInterval(poll)
+      window.removeEventListener('online', refrescar)
+      window.removeEventListener('focus', refrescar)
+      document.removeEventListener('visibilitychange', alVolver)
+      if (sub) { try { db.removeChannel(sub) } catch { /* ya estaba cerrado */ } }
+    }
   }, [token])
 
   // ── Sincronizar cola pendiente cada 10s ─────────────────────
@@ -211,6 +263,12 @@ export default function PorcionadorApp() {
     if (isStable && inRange && !acceptedRef.current) {
       acceptedRef.current = true
       setLastPortion(nextG)
+      // El contador sube AQUI, cuando la porcion se acepta y se registra.
+      // Antes subia solo al vaciar la bascula por debajo de 4 g tres veces
+      // seguidas: si el operario dejaba el recipiente encima o metia la
+      // siguiente papa sin dejarla bajar a cero, el numero no se movia nunca
+      // aunque la porcion si estuviera guardada en la base.
+      setCompleted(c => c + 1)
       beepOk(audioRef.current)
       // Registrar porción
       const event = {
@@ -236,11 +294,11 @@ export default function PorcionadorApp() {
         .catch(() => { /* queda en cola, reintenta el sync loop */ })
     }
 
+    // Vaciar la bascula solo rearma para la siguiente porcion; ya no cuenta.
     if (nextG <= CFG.empty_max_g) {
       zeroReadingsRef.current += 1
       if (acceptedRef.current && zeroReadingsRef.current >= 3) {
         acceptedRef.current = false; zeroReadingsRef.current = 0
-        setCompleted(c => c + 1)
       }
     } else {
       zeroReadingsRef.current = 0
@@ -392,12 +450,6 @@ export default function PorcionadorApp() {
         </div>
       </div>
 
-      {/* KDS pendientes */}
-      <div style={sKdsBar}>
-        <span style={{ fontSize: 14, color: '#888' }}>Órdenes en cocina S006:</span>
-        <b style={{ fontSize: 22, color: kdsPendientes > 8 ? '#dc2626' : '#111' }}>{kdsPendientes}</b>
-        <span style={{ fontSize: 12, color: '#888', marginLeft: 4 }}>(items pendientes)</span>
-      </div>
 
       {/* Peso grande */}
       <div style={{ ...sPeso, background: color + '22', color: color }}>
@@ -408,10 +460,27 @@ export default function PorcionadorApp() {
         </div>
       </div>
 
+      {/* Lo que debe la estación de fritos, en vivo desde el KDS */}
+      <div style={sColaBox}>
+        <div style={sColaTitulo}>Pendiente en cocina · tu área</div>
+        {Object.keys(cola).length === 0
+          ? <div style={sColaVacia}>Nada pendiente</div>
+          : (
+            <div style={sColaGrid}>
+              {(MI_ESTACION?.items || []).filter(k => cola[k]).map(k => (
+                <div key={k} style={sColaChip}>
+                  <div style={sColaCant}>{cola[k]}</div>
+                  <div style={sColaNombre}>{KDS_CONTADOR_LABELS[k] || k}</div>
+                </div>
+              ))}
+            </div>
+          )}
+      </div>
+
       {/* KPIs turno */}
       <div style={sKpiRow}>
         <div style={sKpiCard}>
-          <div style={sKpiLabel}>Porciones turno</div>
+          <div style={sKpiLabel}>Papas pesadas</div>
           <div style={sKpiValue}>{completed}</div>
         </div>
         <div style={sKpiCard}>
@@ -443,8 +512,14 @@ const sBtnPrimary = { width: '100%', padding: '14px', fontSize: 16, background: 
 const sBtnGhost = { padding: '8px 14px', fontSize: 13, background: 'transparent', color: '#666', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer' }
 const sMain = { minHeight: '100vh', background: '#f8f8f8', fontFamily: 'system-ui,sans-serif' }
 const sTopBar = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: '#fff', borderBottom: '1px solid #eee' }
-const sKdsBar = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', background: '#fff8dc', borderBottom: '1px solid #f5e9a8' }
 const sPeso = { margin: '16px', borderRadius: 20, padding: '40px 20px', textAlign: 'center', transition: 'all 0.2s' }
+const sColaBox = { margin: '0 16px 12px', background: '#fff', borderRadius: 12, padding: '12px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }
+const sColaTitulo = { fontSize: 12, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.4 }
+const sColaVacia = { fontSize: 16, color: '#22c55e', fontWeight: 600, padding: '6px 0' }
+const sColaGrid = { display: 'flex', flexWrap: 'wrap', gap: 8 }
+const sColaChip = { flex: '1 1 88px', minWidth: 88, background: '#fff7ed', border: '2px solid #f59e0b', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }
+const sColaCant = { fontSize: 30, fontWeight: 800, color: '#b45309', lineHeight: 1 }
+const sColaNombre = { fontSize: 11, color: '#92400e', marginTop: 3, fontWeight: 600 }
 const sKpiRow = { display: 'flex', gap: 12, padding: '0 16px' }
 const sKpiCard = { flex: 1, background: '#fff', borderRadius: 12, padding: '14px', textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }
 const sKpiLabel = { fontSize: 12, color: '#888' }
