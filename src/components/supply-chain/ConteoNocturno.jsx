@@ -114,12 +114,17 @@ export default function ConteoNocturno({user,onBack}){
         const expira = new Date(createdAt.getTime() + EDIT_WINDOW_MS);
         const dentroDeVentana = Date.now() < expira.getTime();
 
-        // Mapa de cantidades guardadas
+        // Mapas de cantidades guardadas
         const conteoMap = Object.fromEntries(conteoRows.map(r=>[r.producto_id, r.cantidad_real]));
+        const teoricoMap = Object.fromEntries(conteoRows.map(r=>[r.producto_id, r.cantidad_teorica]));
 
         if (dentroDeVentana) {
-          // Dentro de 6h → permitir edición, pre-llenar cantidades
-          const prodsConDatos = prods.map(p=>({...p, cantidad_real: conteoMap[p.producto_id] ?? null}));
+          // Dentro de ventana → edición con el teórico ORIGINAL (pre-conteo, post-cierre Z)
+          const prodsConDatos = prods.map(p=>({
+            ...p,
+            stock_teorico: teoricoMap[p.producto_id] ?? p.stock_teorico,
+            cantidad_real: conteoMap[p.producto_id] ?? null,
+          }));
           setProductos(prodsConDatos);
           setIsEdit(true);
           setEditExpira(expira);
@@ -571,7 +576,7 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
         <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div>
-          <div style={{fontWeight:800,fontSize:18}}>📦 Pedido Sugerido <InfoTip text="Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo." /></div>
+          <div style={{fontWeight:800,fontSize:18}}>{isEdit?'📦 Pedido Actual':'📦 Pedido Sugerido'} <InfoTip text={isEdit?"Pedido generado a partir del conteo editado. Las cantidades reflejan lo contado.":"Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo."} /></div>
           <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo mínimo</span></div>
         </div>
       </div>
