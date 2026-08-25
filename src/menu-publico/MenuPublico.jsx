@@ -1397,13 +1397,13 @@ function Checkout({ items, total, onClose, onEnviado }) {
           <div className="mp-field">
             <label>Método de pago</label>
             <div className="mp-pago-opts">
-              {['efectivo', 'tarjeta', 'transferencia'].map(m => (
+              {['efectivo', 'tarjeta'].map(m => (
                 <button
                   key={m}
                   className={`mp-pago-btn ${metodoPago === m ? 'active' : ''}`}
                   onClick={() => setMetodoPago(m)}
                 >
-                  {m === 'efectivo' ? '💵 Efectivo' : m === 'tarjeta' ? '💳 Tarjeta' : '🏦 Transferencia'}
+                  {m === 'efectivo' ? '💵 Efectivo' : '💳 Tarjeta'}
                 </button>
               ))}
             </div>
