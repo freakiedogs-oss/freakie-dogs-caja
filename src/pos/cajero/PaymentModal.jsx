@@ -11,7 +11,6 @@ const STORES_PAGER_LOOKUP = ['S006']
 
 const DTE_TYPES = [
   { key: 'factura', ic: 'receipt', label: 'Consumidor Final', desc: 'Factura — se envía a Hacienda' },
-  { key: 'ccf',     ic: 'store',   label: 'CCF',              desc: 'Crédito Fiscal' },
   { key: 'se',      ic: 'user',    label: 'Suj.Excl.',        desc: 'Sujeto Excluido (DUI)' },
 ]
 
