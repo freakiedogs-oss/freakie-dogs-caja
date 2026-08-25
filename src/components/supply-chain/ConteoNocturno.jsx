@@ -562,7 +562,7 @@ export default function ConteoNocturno({user,onBack}){
 
   // ── SCREEN 2: PEDIDO SUGERIDO ──
   return(
-    <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
+    <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
       <Toast/>
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
         <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
@@ -670,12 +670,16 @@ export default function ConteoNocturno({user,onBack}){
         </>
       )}
 
-      <div style={{display:'flex',gap:10,marginTop:20}}>
-        <button className="btn btn-ghost" onClick={omitirPedido} style={{flex:1}}>
-          Omitir Pedido
-        </button>
-        <button className="btn btn-red" onClick={enviarPedido} disabled={generandoPedido||pedidoItems.length===0} style={{flex:1,padding:14}}>
-          {generandoPedido?<span className="spin"/>:'📤 Enviar'}
+      <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 20px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
+        {(()=>{const itemsConQty=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])>0).length; return(
+          <button className="btn btn-red" onClick={enviarPedido} disabled={generandoPedido||itemsConQty===0}
+            style={{fontSize:17,padding:18,width:'100%',opacity:itemsConQty===0?0.5:1,marginBottom:8}}>
+            {generandoPedido?<span className="spin"/>:itemsConQty>0?`📤 Enviar Pedido (${itemsConQty} productos)`:'📤 Enviar Pedido'}
+          </button>
+        );})()}
+        <button onClick={omitirPedido}
+          style={{background:'none',border:'none',color:'#555',fontSize:12,cursor:'pointer',width:'100%',padding:6}}>
+          Omitir pedido esta noche
         </button>
       </div>
     </div>

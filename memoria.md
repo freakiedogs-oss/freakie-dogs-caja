@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 25-Ago-2026 — Conteo nocturno: UX anti-trampa + panes recableados a bolsa
+- **UX conteo nocturno (anti "= Teórico"):** quitados teórico, botón "= Teórico" y barra de diferencia. Items que no cuadran aparecen en rojo (nombre, input, borde) sin revelar el número correcto. Banners contextuales según estado (edición/nuevo/primer conteo). Pedido Sugerido→Pedido Actual en modo edición.
+- **Botón Enviar Pedido más prominente:** era del mismo tamaño que "Omitir Pedido" y Bryan (Venecia) guardaba conteo sin enviar pedido. Ahora: botón rojo grande sticky con conteo de productos, "Omitir" es texto gris pequeño.
+- **Gate caja:** fix para que admins multi-sucursal vean el mensaje "caja sin cerrar" (el `if(screen===0)` se evaluaba antes que `if(cajaPendiente)`).
+- **Timezone pedidos:** `guardar_pedido_vivo` usaba `current_date` (UTC) → después de 6PM SV el pedido salía con fecha del día siguiente. Fix: `(now() AT TIME ZONE 'America/El_Salvador')::date`.
+- **3 panes recableados a bolsa con `factor_a_stock`** (migración `recablear_panes_bolsa_factor_a_stock`): Hot Dog Brioche (3 recetas, factor 1/12), Hot Dog Berna (4 recetas, factor 1/10), Hamburguesa Brioche (4 recetas, factor 1/12). 11 líneas de receta total. El motor POS (`pos_deducir_inventario`) ya aplica el factor. "Pan de Hot Dog Superfreak bolsa 12" renombrado a "Pan de Hot Dog Brioche bolsa 12" y activado. Unitarios sacados del conteo. Stock negativo de unitarios (-471 a -1484) queda congelado; el próximo conteo reconcilia las bolsas.
+- **Pendiente:** `descontar_inventario_ventas` (batch Quanto) no usa `factor_a_stock` — es un 5to motor fuera de la arquitectura del 22-ago. ~17 duplicados y ~28 líneas sin factor siguen en PLAN-INVENTARIO.
+
 ## 24-Ago-2026 — PR #311: BEES inventario, conteo nocturno, hoja de requisición
 - **BEES inventario (bug crítico):** `RecepcionBeesView.recepcionar()` era el único flujo de recepción sin `kardex_mover_lote`. La cadena de triggers BEFORE UPDATE no disparaba el segundo trigger (limitación de PostgreSQL con column-specific triggers). Fix: kardex explícito + migración para quitar los triggers rotos.
 - **Gate cierre de caja:** conteo nocturno no puede iniciar sin cierre Z del día. Excepción Lourdes S003: solo necesita caja "general" cerrada.
