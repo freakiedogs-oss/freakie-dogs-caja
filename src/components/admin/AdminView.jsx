@@ -139,7 +139,18 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     ]);
     setAllEgresos(egRes.data||[]);
     setAllIngresos(inRes.data||[]);
-    setDepDetalle((depRes.data||[])[0]||null);
+
+    const dep=(depRes.data||[])[0]||null;
+    if(dep&&dep.dias_cubiertos?.length){
+      const {data:cierresAct}=await db.from('ventas_diarias')
+        .select('efectivo_real_depositar')
+        .eq('store_code',consolidado.store_code)
+        .in('fecha',dep.dias_cubiertos);
+      const espActual=(cierresAct||[]).reduce((s,c)=>s+n(c.efectivo_real_depositar),0);
+      dep.monto_esperado=parseFloat(espActual.toFixed(2));
+      dep.diferencia_deposito=parseFloat((n(dep.monto)-espActual).toFixed(2));
+    }
+    setDepDetalle(dep);
   };
 
   // Filtrar egresos/ingresos por turno activo
