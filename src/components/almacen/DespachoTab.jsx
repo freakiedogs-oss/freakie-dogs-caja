@@ -147,18 +147,23 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
   };
 
   const reimprimir=async()=>{
-    // RPC hoja_despacho: trae conteo nocturno + enviado + resultante por item
     const {data}=await db.rpc('hoja_despacho',{p_despacho_id:despacho.id});
     const its=(data?.items)||[];
     const groups={};
-    its.forEach(it=>{const cat=it.grupo||'General';if(!groups[cat])groups[cat]=[];groups[cat].push(it);});
-    const grouped=Object.entries(groups).map(([cat,arr])=>[cat,arr.map(it=>({
-      nombre:it.nombre,unidad:it.unidad,conteo:it.conteo,enviado:it.enviado,resultante:it.resultante
+    its.forEach(it=>{const cat=it.grupo||'Sin grupo';if(!groups[cat])groups[cat]=[];groups[cat].push(it);});
+    const ORDEN=['Carnes y Complementos','Vegetales y Verduras','Quesos y Lácteos','Panes y Harinas','Papas y Congelados','Salsas y Aderezos','Empaques y Desechables','Bebidas','Extras','Utensilios de Limpieza'];
+    const grouped=Object.entries(groups).sort((a,b)=>{
+      const ia=ORDEN.findIndex(o=>o.toLowerCase()===a[0].toLowerCase());
+      const ib=ORDEN.findIndex(o=>o.toLowerCase()===b[0].toLowerCase());
+      return (ia===-1?999:ia)-(ib===-1?999:ib);
+    }).map(([cat,arr])=>[cat,arr.map(it=>({
+      nombre:it.nombre,presentacion:it.presentacion,unidad:it.unidad,
+      solicitado:it.enviado,costo_unitario:it.costo_unitario
     }))]);
     imprimirHojaDespacho({
       sucursal:despacho.sucursales?.nombre||data?.sucursal||'',
       fecha:fmtDate(despacho.fecha_despacho),
-      motorista:despacho.motorista_nombre||'—',
+      motorista:despacho.motorista_nombre||'',
       grouped
     });
   };
@@ -205,43 +210,50 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
   );
 }
 
-// ── IMPRIMIR HOJA DE DESPACHO ─────────────────────────────────
-// grouped: [ [categoria, [{nombre, unidad, conteo, enviado, resultante}]] ]
+// ── IMPRIMIR HOJA DE REQUISICIÓN ──────────────────────────────
+// grouped: [ [categoria, [{nombre, presentacion, unidad, solicitado, costo_unitario}]] ]
 function imprimirHojaDespacho({sucursal,fecha,motorista,grouped}){
   const fmt=(v)=>{ const nn=Number(v||0); return Number.isInteger(nn)?String(nn):nn.toFixed(2); };
-  const td='padding:3px 5px;border-bottom:1px solid #ddd';
-  const rows=grouped.map(([cat,its])=>
-    `<tr><td colspan="6" style="background:#eee;font-weight:700;padding:3px 6px;font-size:10.5px">${cat}</td></tr>`+
-    its.filter(it=>parseFloat(it.enviado)>0).map(it=>
-      `<tr>
+  const fmtM=(v)=>v==null?'—':'$'+Number(v).toFixed(2);
+  const td='padding:3px 5px;border-bottom:1px solid #ddd;font-size:10px';
+  let grandTotal=0;
+  const rows=grouped.map(([cat,its])=>{
+    let sub=0;
+    const r=its.map(it=>{
+      const ct=(it.costo_unitario!=null&&it.solicitado>0)?it.costo_unitario*it.solicitado:null;
+      if(ct!=null)sub+=ct;
+      return `<tr>
         <td style="${td}">${it.nombre||'Producto'}</td>
-        <td style="${td};text-align:center;color:#555">${fmt(it.conteo)}</td>
-        <td style="${td};text-align:center;font-weight:700">${fmt(it.enviado)} ${it.unidad||''}</td>
-        <td style="${td};text-align:center;font-weight:700;background:#f4f4f4">${fmt(it.resultante)}</td>
-        <td style="${td};text-align:center;width:70px"></td>
-        <td style="${td};width:110px"></td>
-      </tr>`
-    ).join('')
-  ).join('');
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Despacho ${sucursal}</title>
-    <style>@media print{@page{margin:8mm;size:portrait}body{font-family:Arial,sans-serif;font-size:10.5px;color:#000}}
+        <td style="${td};text-align:center;font-size:9px;color:#555">${it.presentacion||it.unidad||'—'}</td>
+        <td style="${td};text-align:center;font-weight:700">${it.solicitado>0?fmt(it.solicitado):''}</td>
+        <td style="${td};text-align:center;width:60px"></td>
+        <td style="${td};text-align:right">${fmtM(it.costo_unitario)}</td>
+        <td style="${td};text-align:right;font-weight:700">${ct!=null?fmtM(ct):'—'}</td>
+      </tr>`;
+    }).join('');
+    grandTotal+=sub;
+    return `<tr><td colspan="6" style="background:#eee;font-weight:700;padding:3px 6px;font-size:10.5px">${cat}</td></tr>`+r+
+      `<tr><td colspan="4" style="border-bottom:1px solid #ccc"></td><td style="border-bottom:1px solid #ccc;text-align:right;font-size:9px;color:#666;padding:2px 5px">Subtotal</td><td style="border-bottom:1px solid #ccc;text-align:right;font-weight:700;padding:2px 5px;font-size:10px">${fmtM(sub)}</td></tr>`;
+  }).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Requisición ${sucursal}</title>
+    <style>@media print{@page{margin:8mm;size:letter portrait}body{font-family:Arial,sans-serif;font-size:10.5px;color:#000}}
     body{font-family:Arial,sans-serif;font-size:10.5px}table{width:100%;border-collapse:collapse;margin-top:10px;table-layout:fixed}
-    th{background:#333;color:#fff;padding:4px 5px;text-align:left;font-size:9.5px}
+    th{background:#333;color:#fff;padding:4px 5px;text-align:left;font-size:9px}
     td{word-wrap:break-word;overflow-wrap:break-word}
     .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
     .logo{font-size:18px;font-weight:900}.firma{margin-top:26px;display:flex;justify-content:space-between;gap:22px}
     .firma-box{flex:1;text-align:center;border-top:1px solid #000;padding-top:6px;font-size:10px}</style></head>
     <body>
-    <div class="header"><div><div class="logo">🍔 FREAKIE DOGS</div><div style="font-size:12px;color:#666">Hoja de Despacho</div></div>
+    <div class="header"><div><div class="logo">🍔 FREAKIE DOGS</div><div style="font-size:12px;color:#666">Hoja de Requisición</div></div>
     <div style="text-align:right"><div><strong>Destino:</strong> ${sucursal}</div>
     <div><strong>Fecha:</strong> ${fecha}</div>
-    <div><strong>Motorista:</strong> ${motorista||'—'}</div></div></div>
-    <table><thead><tr><th style="width:31%">Producto</th><th style="text-align:center;width:11%">Conteo</th><th style="text-align:center;width:12%">Enviado</th><th style="text-align:center;width:13%">Stock final</th><th style="text-align:center;width:13%">Recibido</th><th style="width:20%">Observaciones</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <div style="margin-top:20px;padding:10px;border:1px dashed #999;border-radius:6px;font-size:12px;color:#666">
-    <strong>Notas generales:</strong>_______________________________________________</div>
-    <div class="firma"><div class="firma-box">Preparado por (Bodega)</div><div class="firma-box">Motorista</div><div class="firma-box">Recibido por (Sucursal)</div></div>
-    <div style="text-align:center;margin-top:20px;font-size:10px;color:#999">Documento generado por Freakie Dogs ERP — ${new Date().toLocaleString('es-SV')}</div>
+    ${motorista?`<div><strong>Motorista:</strong> ${motorista}</div>`:''}</div></div>
+    <table><thead><tr><th style="width:28%">Producto</th><th style="text-align:center;width:16%">Presentación</th><th style="text-align:center;width:10%">Solicitado</th><th style="text-align:center;width:10%">Recibido</th><th style="text-align:right;width:13%">Costo Unit.</th><th style="text-align:right;width:13%">Costo Total</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td colspan="4"></td><td style="text-align:right;font-weight:900;padding:6px 5px;border-top:2px solid #333;font-size:11px">TOTAL</td><td style="text-align:right;font-weight:900;padding:6px 5px;border-top:2px solid #333;font-size:11px">${fmtM(grandTotal)}</td></tr></tfoot>
+    </table>
+    <div class="firma"><div class="firma-box">Solicitante</div><div class="firma-box">Despachador</div><div class="firma-box">Recibido por</div></div>
+    <div style="text-align:center;margin-top:20px;font-size:10px;color:#999">Freakie Dogs ERP — ${new Date().toLocaleString('es-SV')}</div>
     </body></html>`;
   const w=window.open('','_blank','width=800,height=600');
   if(w){w.document.write(html);w.document.close();setTimeout(()=>w.print(),400);}
@@ -267,13 +279,19 @@ function PrepararDespacho({pedido,user,show,onBack}){
     db.from('usuarios_erp').select('id,nombre').in('rol',['despachador','motorista']).order('nombre')
       .then(({data})=>setMotoristas(data||[]));
     // Load pedido items + conteo nocturno actual de la sucursal (para la hoja)
-    db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,precio_referencia)').eq('pedido_id',pedido.id)
+    db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,conteo_categoria,presentacion_pedido,precio_referencia)').eq('pedido_id',pedido.id)
       .then(async({data})=>{
-        const its=(data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0),conteo:0}));
+        const its=(data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0),conteo:0,costo_erp:null}));
         const ids=its.map(it=>it.producto_id).filter(Boolean);
         if(ids.length){
-          const {data:cmap}=await db.rpc('conteo_actual_sucursal',{p_sucursal_id:pedido.sucursal_id,p_producto_ids:ids});
+          const [{data:cmap},{data:costData}]=await Promise.all([
+            db.rpc('conteo_actual_sucursal',{p_sucursal_id:pedido.sucursal_id,p_producto_ids:ids}),
+            db.from('compras_dte_items').select('producto_id,precio_unitario').in('producto_id',ids).order('created_at',{ascending:false}),
+          ]);
           if(cmap) its.forEach(it=>{ it.conteo=Number(cmap[it.producto_id]||0); });
+          const costoMap={};
+          (costData||[]).forEach(c=>{ if(!costoMap[c.producto_id]) costoMap[c.producto_id]=Number(c.precio_unitario); });
+          its.forEach(it=>{ it.costo_erp=costoMap[it.producto_id]??(it.catalogo_productos?.precio_referencia?Number(it.catalogo_productos.precio_referencia):null); });
         }
         setPitems(its);
         setLoading(false);
@@ -376,7 +394,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
   const grouped=useMemo(()=>{
     const groups={};
     pitems.forEach(it=>{
-      const cat=it.catalogo_productos?.categoria||'Otros';
+      const cat=it.catalogo_productos?.conteo_categoria||it.catalogo_productos?.categoria||'Otros';
       if(!groups[cat]) groups[cat]=[];
       groups[cat].push(it);
     });
@@ -464,10 +482,14 @@ function PrepararDespacho({pedido,user,show,onBack}){
               {saving?'Creando despacho...':'📦 Crear Despacho'}
             </button>
             <button className="btn btn-ghost" style={{flex:'0 0 auto',padding:'14px 18px'}} onClick={()=>{
-              const g=grouped.map(([cat,items])=>[cat,items.map(it=>{
-                const conteo=n(it.conteo||0), enviado=n(it.qty_despacho||0);
-                return {nombre:it.catalogo_productos?.nombre||'Producto',unidad:it.catalogo_productos?.unidad_medida||it.unidad||'',conteo,enviado,resultante:conteo+enviado};
-              })]);
+              const ORDEN=['Carnes y Complementos','Vegetales y Verduras','Quesos y Lácteos','Panes y Harinas','Papas y Congelados','Salsas y Aderezos','Empaques y Desechables','Bebidas','Extras','Utensilios de Limpieza'];
+              const gs={};
+              pitems.forEach(it=>{
+                const cat=it.catalogo_productos?.conteo_categoria||it.catalogo_productos?.categoria||'Otros';
+                if(!gs[cat])gs[cat]=[];
+                gs[cat].push({nombre:it.catalogo_productos?.nombre||'Producto',presentacion:it.catalogo_productos?.presentacion_pedido||'',unidad:it.catalogo_productos?.unidad_medida||it.unidad||'',solicitado:n(it.cantidad_solicitada||0),costo_unitario:it.costo_erp});
+              });
+              const g=Object.entries(gs).sort((a,b)=>{const ia=ORDEN.findIndex(o=>o.toLowerCase()===a[0].toLowerCase());const ib=ORDEN.findIndex(o=>o.toLowerCase()===b[0].toLowerCase());return(ia===-1?999:ia)-(ib===-1?999:ib);});
               imprimirHojaDespacho({
                 sucursal:pedido.sucursales?.nombre||pedido.sucursal_id,
                 fecha:new Date().toLocaleDateString('es-SV',{day:'2-digit',month:'short',year:'numeric'}),
