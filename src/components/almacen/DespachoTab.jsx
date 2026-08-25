@@ -51,7 +51,7 @@ export default function DespachoTab({user,show}){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
               <div>
                 <div style={{fontWeight:700,fontSize:15}}>{p.sucursales?.nombre||p.sucursal_id}</div>
-                <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}</div>
+                <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}{p.created_at&&` · ${new Date(p.created_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'America/El_Salvador'})}`}</div>
                 {p.fecha_entrega_estimada&&<div style={{color:'#fbbf24',fontSize:12}}>Entrega: {fmtDate(p.fecha_entrega_estimada)}</div>}
               </div>
               <Badge estado={p.estado}/>
@@ -68,7 +68,7 @@ export default function DespachoTab({user,show}){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
               <div>
                 <div style={{fontWeight:700,fontSize:15}}>{p.sucursales?.nombre||p.sucursal_id}</div>
-                <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}</div>
+                <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}{p.created_at&&` · ${new Date(p.created_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'America/El_Salvador'})}`}</div>
               </div>
               <span style={{fontSize:11,padding:'4px 10px',borderRadius:6,background:'#facc1520',color:'#facc15',fontWeight:600}}>⚙️ Preparando</span>
             </div>
@@ -412,7 +412,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
       </div>
       <div style={{padding:'16px 16px 100px'}}>
         <div style={{marginBottom:12,padding:'10px',background:'#1e3a5f',borderRadius:8,borderLeft:'3px solid #60a5fa'}}>
-          <div style={{fontSize:12,color:'#60a5fa',fontWeight:600}}>Pedido: {fmtDate(pedido.fecha_pedido)}</div>
+          <div style={{fontSize:12,color:'#60a5fa',fontWeight:600}}>Pedido: {fmtDate(pedido.fecha_pedido)}{pedido.created_at&&` · ${new Date(pedido.created_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'America/El_Salvador'})}`}</div>
           {pedido.fecha_entrega_estimada&&<div style={{fontSize:11,color:'#888',marginTop:2}}>Entrega estimada: {fmtDate(pedido.fecha_entrega_estimada)}</div>}
         </div>
 
