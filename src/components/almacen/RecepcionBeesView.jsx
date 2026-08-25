@@ -147,7 +147,7 @@ export default function RecepcionBeesView({ user, show }) {
         .order('fecha', { ascending: false })
         .limit(60);
       if (!esAdmin && user?.sucursal_id) q = q.eq('sucursal_id', user.sucursal_id);
-      if (tab === 'pendientes') q = q.in('estado_recepcion', ['pendiente', 'en_transito']);
+      if (tab === 'pendientes') q = q.or('estado_recepcion.in.(pendiente,en_transito),and(estado_recepcion.eq.recepcionado,inventariado.eq.false)');
       else q = q.eq('inventariado', true);  // historial
       const { data } = await q;
       setCompras(data || []);
@@ -367,14 +367,33 @@ function BeesDetalle({ compra, user, show, onBack }) {
       }
       let fotoUrl = compra.foto_recepcion_url;
       if (fotoRecep) fotoUrl = await uploadFoto() || fotoUrl;
-      // El trigger fn_bees_al_recepcionar auto-marca inventariado=true
-      // y fn_bees_inventariar suma stock + crea kardex en un solo UPDATE
+
+      const itemsKardex = items
+        .filter(it => it.producto_id && n(it.cantidad_recibida) > 0)
+        .map(it => ({ producto_id: it.producto_id, cantidad: n(it.cantidad_recibida) }));
+      if (itemsKardex.length > 0) {
+        const { error: kErr } = await db.rpc('kardex_mover_lote', {
+          p_items: itemsKardex,
+          p_tipo: 'recepcion',
+          p_referencia_tipo: 'compras_bees',
+          p_referencia_id: compra.id,
+          p_notas: 'Recepción BEES — La Constancia' + (compra.id_factura ? ' · Fact ' + compra.id_factura : ''),
+          p_usuario_id: user?.id || null,
+          p_sucursal_id: compra.sucursal_id,
+          p_permitir_negativo: true,
+        });
+        if (kErr) throw kErr;
+      }
+
       await db.from('compras_bees').update({
         estado_recepcion: 'recepcionado', fecha_recepcion_real: today(),
         recepcionado_por: user.id, foto_recepcion_url: fotoUrl,
         notas_recepcion: notas.trim() || null,
+        inventariado: itemsKardex.length > 0,
       }).eq('id', compra.id);
-      show('✅ Recepción confirmada — inventario y kardex actualizados');
+      show(itemsKardex.length > 0
+        ? `✅ Recepción confirmada — ${itemsKardex.length} productos al inventario`
+        : '✅ Recepción confirmada — sin productos mapeados para inventario');
       onBack();
     } catch (e) { show('⚠️ Error: ' + e.message); }
     finally { setSaving(false); }

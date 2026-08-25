@@ -36,6 +36,7 @@ export default function ConteoNocturno({user,onBack}){
   const toggleGrupo=(cat)=>setGruposAbiertos(prev=>({...prev,[cat]:!prev[cat]}));
   const [tiempoRestante,setTiempoRestante]=useState('');
   const [conteoCerrado,setConteoCerrado]=useState(false); // true cuando hay conteo >6h
+  const [cajaPendiente,setCajaPendiente]=useState(false); // true si falta cierre Z
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
@@ -56,11 +57,28 @@ export default function ConteoNocturno({user,onBack}){
   },[editExpira]);
 
   // Cargar inventario para una sucursal específica
-  const cargarInventario = async (sucId) => {
+  const cargarInventario = async (sucId, storeCode) => {
     setSucursalId(sucId);
+    setCajaPendiente(false);
     setLoading(true);
     try {
       const hoy = today();
+
+      // 0. Gate: no se puede contar sin cierre Z del día
+      const sc = storeCode || user.store_code;
+      if (sc) {
+        const cierreFiltro = sc === 'S003'
+          ? { store_code: sc, fecha: hoy, tipo_cierre: 'Z', caja: 'general' }
+          : { store_code: sc, fecha: hoy, tipo_cierre: 'Z' };
+        let q = db.from('pos_turnos').select('id').match(cierreFiltro);
+        if (sc !== 'S003') q = q.is('caja', null);
+        const { data: cierre } = await q.limit(1);
+        if (!cierre || cierre.length === 0) {
+          setCajaPendiente(true);
+          setLoading(false);
+          return;
+        }
+      }
 
       // 1. Verificar si ya existe conteo hoy (múltiples filas, una por producto)
       const {data:conteoRows} = await db.from('inventario_conteo_nocturno')
@@ -156,7 +174,7 @@ export default function ConteoNocturno({user,onBack}){
           .select('id, nombre').eq('store_code',user.store_code).maybeSingle();
         if(!suc){show('❌ No se encontró sucursal');setLoading(false);return;}
         setSucursalNombre(suc.nombre);
-        await cargarInventario(suc.id);
+        await cargarInventario(suc.id, user.store_code);
       }catch(e){
         show('❌ Error cargando datos: '+e.message);
         setLoading(false);
@@ -344,17 +362,18 @@ export default function ConteoNocturno({user,onBack}){
 
   // Orden fijo de grupos según hoja de control de inventario
   const ORDEN_GRUPOS=[
-    'CARNES Y COMPLEMENTOS',
-    'VEGETALES - VERDURAS',
-    'QUESOS - LACTEOS',
-    'PANES',
-    'PAPAS - CONGELADOS',
-    'SALSAS Y ADEREZOS',
-    'EMPAQUES Y DESECHABLES',
-    'BEBIDAS',
-    'EXTRAS',
-    'UTENSILIOS DE LIMPIEZA',
+    'Carnes y Complementos',
+    'Vegetales y Verduras',
+    'Quesos y Lácteos',
+    'Panes y Harinas',
+    'Papas y Congelados',
+    'Salsas y Aderezos',
+    'Empaques y Desechables',
+    'Bebidas',
+    'Extras',
+    'Utensilios de Limpieza',
   ];
+  const ordenIdx=(cat)=>{ const i=ORDEN_GRUPOS.findIndex(g=>g.toLowerCase()===cat.toLowerCase()); return i===-1?999:i; };
 
   // Agrupar productos por categoría
   const porCategoria={};
@@ -364,9 +383,9 @@ export default function ConteoNocturno({user,onBack}){
   });
   // Ordenar grupos por lista fija; desconocidos al final
   const categorias=Object.keys(porCategoria).sort((a,b)=>{
-    const ia=ORDEN_GRUPOS.indexOf(a);
-    const ib=ORDEN_GRUPOS.indexOf(b);
-    return (ia===-1?999:ia)-(ib===-1?999:ib);
+    const ia=ordenIdx(a);
+    const ib=ordenIdx(b);
+    return ia-ib;
   });
 
   if(loading){
@@ -391,12 +410,36 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         </div>
         {sucursales.map(s=>(
-          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);cargarInventario(s.id);}}
+          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);cargarInventario(s.id, s.store_code);}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
             <div style={{fontWeight:600,fontSize:15,color:'#fff'}}>{s.nombre}</div>
             <div style={{color:'#888',fontSize:12}}>{s.store_code}</div>
           </button>
         ))}
+      </div>
+    );
+  }
+
+  // ── GATE: caja no cerrada ──
+  if(cajaPendiente){
+    return(
+      <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
+        <Toast/>
+        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={needsSucursalPicker?()=>{setCajaPendiente(false);setScreen(0);}:onBack}
+            style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <div>
+            <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre}</div>
+          </div>
+        </div>
+        <div className="card" style={{textAlign:'center',padding:24,border:'1px solid #e63946'}}>
+          <div style={{fontSize:40,marginBottom:12}}>🔒</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#e63946',marginBottom:8}}>Caja sin cerrar</div>
+          <div style={{color:'#aaa',fontSize:14,lineHeight:1.5}}>
+            Primero hacé el <b>corte Z</b> (cierre del día) antes de iniciar el conteo nocturno.
+          </div>
+        </div>
       </div>
     );
   }
@@ -559,11 +602,7 @@ export default function ConteoNocturno({user,onBack}){
               if(!porCatPedido[cat])porCatPedido[cat]=[];
               porCatPedido[cat].push(p);
             });
-            const catsPedido=Object.keys(porCatPedido).sort((a,b)=>{
-              const ia=ORDEN_GRUPOS.indexOf(a);
-              const ib=ORDEN_GRUPOS.indexOf(b);
-              return (ia===-1?999:ia)-(ib===-1?999:ib);
-            });
+            const catsPedido=Object.keys(porCatPedido).sort((a,b)=>ordenIdx(a)-ordenIdx(b));
             return catsPedido.map(cat=>{
               const items=porCatPedido[cat];
               const tieneUrgentes=items.some(p=>p.bajominimo&&n(pedidoQtys[p.producto_id]||0)>0);
