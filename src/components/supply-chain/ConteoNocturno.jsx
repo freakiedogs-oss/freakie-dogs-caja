@@ -472,18 +472,18 @@ export default function ConteoNocturno({user,onBack}){
                 <span style={{fontSize:12,color:'#facc15',fontWeight:600}}>✏️ Editando conteo</span>
                 <span style={{fontSize:11,color:'#facc15'}}>{tiempoRestante}</span>
               </div>
-              <div style={{fontSize:11,color:'#d4a017',marginTop:4}}>Estás viendo el conteo que ya se guardó hoy. El teórico es el stock antes de contar (post cierre Z). Podés corregir cantidades.</div>
+              <div style={{fontSize:11,color:'#d4a017',marginTop:4}}>Estás editando el conteo que ya se guardó hoy. Si un producto aparece en rojo, la cantidad no cuadra con el sistema. Podés corregir.</div>
             </div>
           )}
           {conteoCerrado&&!isEdit&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80'}}>
               <span style={{fontSize:12,color:'#4ade80',fontWeight:600}}>📋 Nuevo conteo — reemplaza el anterior (+6h)</span>
-              <div style={{fontSize:11,color:'#3bbd6b',marginTop:4}}>Conteo nuevo del turno. El teórico refleja el stock actual del sistema. Contá físicamente cada producto.</div>
+              <div style={{fontSize:11,color:'#3bbd6b',marginTop:4}}>Conteo nuevo del turno. Contá físicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
             </div>
           )}
           {!isEdit&&!conteoCerrado&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
-              <div style={{fontSize:11,color:'#60a5fa'}}>Primer conteo del día. El teórico es el stock del sistema después del cierre Z. Contá físicamente cada producto.</div>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Primer conteo del día. Contá físicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
@@ -529,37 +529,19 @@ export default function ConteoNocturno({user,onBack}){
             {abierto && porCategoria[cat].map(p=>{
               const contado=p.cantidad_real!==null;
               const diff=getDiferencia(p);
+              const noCuadra=contado&&diff!==null&&diff!==0;
               return(
-              <div key={p.producto_id} className="card" style={{borderLeft:contado?'3px solid #4ade80':'3px solid #333',transition:'border 0.2s'}}>
-                {/* Nombre + stock teórico */}
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                  <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
-                  <div style={{fontSize:12,color:'#888',flexShrink:0,marginLeft:8}}>teórico: <b style={{color:'#ccc'}}>{p.stock_teorico}</b> {p.unidad}</div>
-                </div>
+              <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${noCuadra?'#e63946':contado?'#4ade80':'#333'}`,transition:'border 0.2s'}}>
+                <div style={{fontWeight:600,fontSize:14,marginBottom:10,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
 
                 {/* ── Stepper: [-] input [+] ── */}
                 <div style={{display:'flex',alignItems:'center',gap:10}}>
                   <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,-1)}>−</button>
                   <input type="number" inputMode="numeric" min="0" step="1" value={p.cantidad_real??''}
                     onChange={e=>updateCantidadReal(p.producto_id, e.target.value)}
-                    style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}
+                    style={{flex:1,padding:'12px 8px',background:noCuadra?'#1a0a0a':'#0a0a0a',border:`1px solid ${noCuadra?'#e63946':'#333'}`,borderRadius:10,color:noCuadra?'#e63946':'#fff',fontSize:18,textAlign:'center',fontWeight:700}}
                     placeholder="—"/>
                   <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,1)}>+</button>
-                </div>
-
-                {/* ── Botón "= Teórico" + diferencia ── */}
-                <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
-                  {!contado&&(
-                    <button onClick={()=>setIgualTeorico(p.producto_id)}
-                      style={{padding:'8px 14px',borderRadius:8,border:'1px solid #333',background:'#1a1a1a',color:'#aaa',fontSize:12,cursor:'pointer',whiteSpace:'nowrap'}}>
-                      = Teórico ({p.stock_teorico})
-                    </button>
-                  )}
-                  {contado&&(
-                    <div style={{flex:1,textAlign:'center',padding:'6px 10px',borderRadius:8,background:getDifColor(p)+'20',border:'1px solid '+getDifColor(p),color:getDifColor(p),fontWeight:600,fontSize:13}}>
-                      {diff>0?'+':''}{diff} <span style={{fontSize:10,fontWeight:400}}>diferencia</span>
-                    </div>
-                  )}
                 </div>
               </div>
             );})
