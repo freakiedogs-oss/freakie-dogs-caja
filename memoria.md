@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 24-Ago-2026 — PR #311: BEES inventario, conteo nocturno, hoja de requisición
+- **BEES inventario (bug crítico):** `RecepcionBeesView.recepcionar()` era el único flujo de recepción sin `kardex_mover_lote`. La cadena de triggers BEFORE UPDATE no disparaba el segundo trigger (limitación de PostgreSQL con column-specific triggers). Fix: kardex explícito + migración para quitar los triggers rotos.
+- **Gate cierre de caja:** conteo nocturno no puede iniciar sin cierre Z del día. Excepción Lourdes S003: solo necesita caja "general" cerrada.
+- **ORDEN_GRUPOS sincronizado:** categorías del conteo en Title Case + case-insensitive match + tilde "Quesos y Lácteos". RPCs `conteo_lista` y `conteo_categorias` ahora ordenan operacionalmente (no alfabéticamente), sincronizado con KardexView Lista Conteo.
+- **Bebida empleado:** grupo de modificadores "Sabor Empleado" agregado solo a "Soda Empleados" (NO a "Friki Soda" que es shot de Coffee Mate).
+- **Hoja de requisición (reemplaza hoja de despacho vieja):** nuevo formato con columnas Producto/Presentación/Solicitado/Recibido/Costo Unit./Costo Total. Costos del ERP (último precio compra → precio_referencia → proveedor). Subtotales por categoría + total general. `presentacion_pedido` cargada en 89 productos (de Cesar). RPC `hoja_despacho` actualizado.
+- **8 productos agregados al conteo:** Pan Hamburguesa Brioche (reactivado), Pan Hot Dog Brioche, Queso frito, Lechuga, Tomate, Ranch 1 Galón, Papa Waffle, Chili con vaso (nuevo). Cobertura de costos ERP: 19/104 (~18%).
+
 ## 23-Ago-2026 — Firma obligatoria en despachos y ajustes manuales (ítems 9-10 del plan, auditoría 22-ago)
 - **Problema:** 218/236 despachos recibidos (92%) sin `recibido_por`, y `kardex_mover` aceptaba `ajuste_manual` sin motivo ni usuario (la pantalla los pedía; el servidor no).
 - **Migración `despacho_confirmar_exige_firma_humana`:** `despacho_confirmar` ahora tiene 5º parámetro `p_auto boolean default false`. Vía humana: `p_usuario` NULL → excepción clara ("Falta la firma de recepción"). Vía cron (`reconciliar_despachos_colgados` → `p_auto=true`): estampa `recibido_por=NULL` **a propósito** + nota visible `AUTO-CONFIRMADO por cron (sin firma humana)` en `notas_recepcion` y en el asiento de kardex — el cron **NO se apagó** (decisión de negocio pendiente), solo se hizo honesto. Guard anti-abuso: `p_auto` se rechaza si hay `request.jwt.claims` (solo el cron por SQL directo puede usarlo). Se dropeó la firma vieja de 4 args (evita ambigüedad) y se re-otorgó EXECUTE a anon/authenticated/service_role.
