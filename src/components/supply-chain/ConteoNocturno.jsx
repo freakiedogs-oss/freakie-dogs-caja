@@ -37,6 +37,7 @@ export default function ConteoNocturno({user,onBack}){
   const [tiempoRestante,setTiempoRestante]=useState('');
   const [conteoCerrado,setConteoCerrado]=useState(false); // true cuando hay conteo >6h
   const [cajaPendiente,setCajaPendiente]=useState(false); // true si falta cierre Z
+  const [despachosPendientes,setDespachosPendientes]=useState(null); // despachos sin recepción
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
@@ -60,11 +61,12 @@ export default function ConteoNocturno({user,onBack}){
   const cargarInventario = async (sucId, storeCode) => {
     setSucursalId(sucId);
     setCajaPendiente(false);
+    setDespachosPendientes(null);
     setLoading(true);
     try {
       const hoy = today();
 
-      // 0. Gate: no se puede contar sin cierre Z del día
+      // 0a. Gate: no se puede contar sin cierre Z del día
       const sc = storeCode || user.store_code;
       if (sc) {
         const cierreFiltro = sc === 'S003'
@@ -78,6 +80,19 @@ export default function ConteoNocturno({user,onBack}){
           setLoading(false);
           return;
         }
+      }
+
+      // 0b. Gate: no se puede hacer pedido si hay despachos sin recepción humana
+      const { data: despPend } = await db.from('despachos_sucursal')
+        .select('id, fecha_despacho, estado')
+        .eq('sucursal_id', sucId)
+        .neq('estado', 'recibido')
+        .order('fecha_despacho', { ascending: false })
+        .limit(5);
+      if (despPend && despPend.length > 0) {
+        setDespachosPendientes(despPend);
+        setLoading(false);
+        return;
       }
 
       // 1. Verificar si ya existe conteo hoy (múltiples filas, una por producto)
@@ -421,6 +436,36 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{color:'#aaa',fontSize:14,lineHeight:1.5}}>
             Primero hacé el <b>corte Z</b> (cierre del día) antes de iniciar el conteo nocturno.
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── GATE: despachos pendientes de recepción ──
+  if(despachosPendientes && despachosPendientes.length>0){
+    return(
+      <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
+        <Toast/>
+        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={needsSucursalPicker?()=>{setDespachosPendientes(null);setScreen(0);}:onBack}
+            style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <div>
+            <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre}</div>
+          </div>
+        </div>
+        <div className="card" style={{textAlign:'center',padding:24,border:'1px solid #e63946'}}>
+          <div style={{fontSize:40,marginBottom:12}}>📦</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#e63946',marginBottom:8}}>Despachos sin recibir</div>
+          <div style={{color:'#aaa',fontSize:14,lineHeight:1.5,marginBottom:16}}>
+            Tenés <b>{despachosPendientes.length} despacho{despachosPendientes.length>1?'s':''}</b> pendiente{despachosPendientes.length>1?'s':''} de recepción.
+            Confirmá la recepción antes de hacer conteo y pedido.
+          </div>
+          {despachosPendientes.map(d=>(
+            <div key={d.id} style={{background:'#1a1a1a',borderRadius:8,padding:'8px 12px',marginBottom:6,fontSize:13,color:'#ccc',textAlign:'left'}}>
+              📦 Despacho del <b>{d.fecha_despacho}</b> — <span style={{color:'#e6a817'}}>{d.estado}</span>
+            </div>
+          ))}
         </div>
       </div>
     );

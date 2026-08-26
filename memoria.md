@@ -2,6 +2,24 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 26-Ago-2026 — Fix costos recetas (vinagre, merma) + Excel v3
+
+- **Bug Cebolla Morada: costo $131 → $22.** Dos causas raíz:
+  1. **Vinagre en unidad equivocada:** `cantidad=200` con `unidad_medida=ml` pero `costo_producto` devuelve costo por litro → multiplicaba 200×$0.54=$107 en vez de 0.2×$0.54=$0.11. Fix: `cantidad=0.2, unidad_medida='litro'`.
+  2. **Merma 12% duplicaba el rendimiento:** rendimiento 998 ya descuenta 12% de pelado, pero `merma_pct=12` volvía a inflarlo. Fix: `merma_pct=0`.
+  - Diferencia restante ($22 vs Cesar's $13.63) = hielo $8.41/bolsa incluido en la receta (Cesar no lo costea).
+- **Análisis de unit mismatches en todas las recetas:** encontrados 20 mismatches unidad_ingrediente ≠ unidad_producto. La mayoría compensados por `factor_a_stock` (panes bolsa→unidad). Bugs reales: Salsa Inglesa en Mil Islas (5 botellas en vez de 175 ml, bug de V2 documentado por Cesar), Cheesecake Ailyn ($25/porción inflado).
+- **Excel Universo Inventario v3 generado:** `docs/cowork/Universo_Inventario_Freakie_v3.xlsx` — 4 pestañas: Materia Prima (332 items), Sub-Productos (20 recetas, 105 ingredientes), BOM Menú (54 items), Resumen Costeo (comparación ERP vs Cesar + issues pendientes). HTTP: `http://100.81.141.5:8765/Universo_Inventario_Freakie_v3.xlsx`.
+- **Issues documentados en Resumen Costeo:** Mil Islas V4 no aplicada, Salchicha paquete $0 (DTEs en producto unitario), Pepinillo triturado $0 (sin DTEs), Nuca unidad vs lb, ~$25K carne sin mapear.
+
+## 26-Ago-2026 — Ingesta automática de pedidos BEES desde correo
+- **Edge Function `ingest-bees-email` desplegada:** recibe el texto plano del email de BEES (desde Make.com), parsea número de pedido (#B2B...), items, montos, fecha, e info de facturación. Resuelve sucursal por keyword en billing name (SOYAPANGO→S001, LOURDES→S003, etc.) o por numero_cuenta BEES. Dedup por numero_pedido. Auto-mapea items a `catalogo_productos` por nombre exacto. Inserta en `compras_bees` + `compras_bees_items` con `origen='auto_email'`, `estado_recepcion='en_transito'`.
+- **Migración `add_origen_to_compras_bees`:** nueva columna `origen text NOT NULL DEFAULT 'manual'`. Valores: `manual` (foto/OCR), `auto_email` (importado del correo).
+- **Migración `grant_service_role_compras_bees`:** permisos INSERT/UPDATE/SELECT para `service_role` en `compras_bees`, `compras_bees_items`, `catalogo_productos` (la edge function usa service_role key).
+- **UI actualizada:** badge "📧 Auto" en pedidos importados, botón "Subir foto" bajado a secundario ("+ Manual"), tab renombrada "📧 En tránsito".
+- **Pendiente:** configurar escenario Make.com para watchear Gmail (from: `test@mail.mybees.sv` y/o `noreply@bees.com`) y POST al edge function. URL: `https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/ingest-bees-email`. Body: `{ "text": "{{email plain text}}" }`. Opcionalmente pasar `"numero_cuenta": "14430065"` para override de sucursal.
+- **Mapping cuentas BEES → sucursales hardcodeado:** 14363380→M001, 14397615→S001, 14430065→S003, 14445332→S004. Si se agregan sucursales, actualizar la Edge Function.
+
 ## 25-Ago-2026 — Transferencia eliminada del menú público + Monitor de Canales con puente de 3 vías
 - **Transferencia como método de pago: eliminada.** Jose la quitó operativamente (los últimos pedidos con transferencia fueron el 24-ago). Se removió la opción del checkout del menú público (`MenuPublico.jsx:1400`). El canal sigue en el monitor para datos históricos, marcado como eliminado.
 - **Análisis de delivery+transferencia agosto previo a la eliminación:** 186 órdenes cobradas ($2,943), 151 matchearon exacto con BAC, 7 matchearon ±1 día, 5 eran del día sin dato BAC, **23 sin match ($518)**. El 53% del monto sin match ($273) era una sola persona ("Vero", 9 órdenes, Plaza Cafetalón, 2 teléfonos 61754040/69765010, cero depósitos en BAC incluso ±1 día). Hallazgo entregado a Jose.

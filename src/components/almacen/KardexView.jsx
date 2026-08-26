@@ -7,6 +7,7 @@ import RecetasView from '../admin/RecetasView';
 import MapeoMenu from './MapeoMenu';
 import DiferenciasTab from './DiferenciasTab';
 import CosteoView from '../admin/CosteoView';
+import BOMTreeView from './BOMTreeView';
 import { UnidadSelect } from '../UnidadSelect';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -592,6 +593,7 @@ export default function KardexView({ user, show }) {
     { id: 'conteo',      label: '🌙 Lista Conteo' },
     { id: 'mapeo',       label: '🔗 Mapeo Compras' },
     { id: 'menu',        label: '🍔 Menú (BOM)' },
+    { id: 'bomtree',     label: '🌳 Árbol BOM' },
     { id: 'recetas',     label: '📋 Recetas' },
     { id: 'costeo',      label: '💰 Costeo' },
     { id: 'movimientos', label: '📊 Historial' },
@@ -1108,6 +1110,8 @@ export default function KardexView({ user, show }) {
         {activeTab === 'conteo' && <ConteoLista user={user} />}
 
         {activeTab === 'menu' && <MapeoMenu user={user} />}
+
+        {activeTab === 'bomtree' && <BOMTreeView />}
 
         {activeTab === 'recetas' && <RecetasView user={user} />}
 

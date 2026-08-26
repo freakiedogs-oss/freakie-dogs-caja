@@ -143,7 +143,7 @@ export default function RecepcionBeesView({ user, show }) {
       setCompras([]);
     } else {
       let q = db.from('compras_bees')
-        .select('id,id_factura,numero_pedido,fecha,sucursal_id,store_code,sucursal_header,monto_total,items_count,foto_pedido_url,foto_recepcion_url,estado_recepcion,fecha_recepcion_real,inventariado,notas_recepcion')
+        .select('id,id_factura,numero_pedido,fecha,sucursal_id,store_code,sucursal_header,monto_total,items_count,foto_pedido_url,foto_recepcion_url,estado_recepcion,fecha_recepcion_real,inventariado,notas_recepcion,origen')
         .order('fecha', { ascending: false })
         .limit(60);
       if (!esAdmin && user?.sucursal_id) q = q.eq('sucursal_id', user.sucursal_id);
@@ -171,18 +171,18 @@ export default function RecepcionBeesView({ user, show }) {
     <div style={{ padding: '16px 16px 100px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20 }}>🥤 Recepción BEES <InfoTip text="Recepción de bebidas del proveedor BEES: confirma lo que llegó a cada sucursal y actualiza el stock de bebidas automáticamente." /></h2>
+          <h2 style={{ margin: 0, fontSize: 20 }}>🥤 Recepción BEES <InfoTip text="Pedidos de bebidas BEES se importan automáticamente desde el correo. Solo confirmá la recepción cuando llegue la mercadería." /></h2>
           <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
             La Constancia · {sucursal ? sucursal.nombre : esAdmin ? 'Todas las sucursales' : '—'}
           </div>
         </div>
-        <button className="btn btn-red" onClick={() => setView('nueva')}>
-          📷 Subir foto
+        <button className="btn" onClick={() => setView('nueva')} style={{ background: '#2a2a32', fontSize: 12 }}>
+          + Manual
         </button>
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, borderBottom: '1px solid #2a2a32' }}>
-        {[['pendientes', '📷 En tránsito'], ['stock', '🥤 Stock Bebidas'], ['historial', '✅ Inventariados']].map(([key, label]) => (
+        {[['pendientes', '📧 En tránsito'], ['stock', '🥤 Stock Bebidas'], ['historial', '✅ Inventariados']].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{
               padding: '10px 14px', background: 'transparent',
@@ -286,26 +286,30 @@ function CompraCard({ compra, tab, onClick }) {
     compra.estado_recepcion === 'pendiente' ? 'PENDIENTE' :
     compra.estado_recepcion === 'en_transito' ? 'EN TRÁNSITO' :
     compra.inventariado ? 'INVENTARIADO' : 'POR INVENTARIAR';
+  const isAuto = compra.origen === 'auto_email';
 
   return (
     <div className="card" style={{ cursor: 'pointer', borderLeft: `3px solid ${badgeColor}` }} onClick={onClick}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{compra.sucursal_header || 'BEES ' + compra.store_code}</div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>
+            {compra.sucursal_header || 'BEES ' + compra.store_code}
+            {isAuto && <span style={{ marginLeft: 6, fontSize: 10, color: '#3b82f6', background: '#3b82f622', padding: '1px 5px', borderRadius: 4, fontWeight: 600 }}>📧 Auto</span>}
+          </div>
           <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
             {fmtDate(compra.fecha)} · ${Number(compra.monto_total).toFixed(2)} · {compra.items_count} items
           </div>
           <div style={{ color: '#666', fontSize: 11, marginTop: 2 }}>
-            Factura #{compra.id_factura} · Pedido #{compra.numero_pedido}
+            Pedido #{compra.numero_pedido}{compra.id_factura !== compra.numero_pedido ? ` · Factura #${compra.id_factura}` : ''}
           </div>
         </div>
         <span style={{ background: badgeColor + '22', color: badgeColor, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{badgeLabel}</span>
       </div>
-      {tab === 'pendientes' && compra.foto_pedido_url && (
+      {tab === 'pendientes' && !isAuto && compra.foto_pedido_url && (
         <div style={{ marginTop: 10, fontSize: 12, color: '#3b82f6' }}>📷 Foto del pedido adjunta →</div>
       )}
-      {tab === 'por_inventariar' && (
-        <div style={{ marginTop: 10, fontSize: 13, color: '#a855f7', fontWeight: 600 }}>Tap para revisar e inventariar →</div>
+      {tab === 'pendientes' && isAuto && (
+        <div style={{ marginTop: 10, fontSize: 12, color: '#3b82f6' }}>📧 Importado desde correo — tap para ver detalle →</div>
       )}
     </div>
   );
@@ -656,6 +660,7 @@ function NuevaCompraBees({ user, sucursal, esAdmin, show, onBack }) {
         categoria: 'costo_comida',
         subcategoria: 'bebidas',
         estado_recepcion: 'en_transito',
+        origen: 'manual',
         creado_por: user.id,
       }).select().single();
       if (insErr) throw insErr;
