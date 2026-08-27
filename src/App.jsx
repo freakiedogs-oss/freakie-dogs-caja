@@ -46,6 +46,7 @@ const DeliveryView       = lazy(() => import('./components/delivery/DeliveryView
 const MarketingView      = lazy(() => import('./components/marketing/MarketingView'))
 const MediaView          = lazy(() => import('./components/marketing/MediaView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
+const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
 const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
 const MiAsistencia       = lazy(() => import('./components/empleado/MiAsistencia'))
@@ -90,12 +91,12 @@ const ROLE_DEFAULTS = {
   motorista: ['mi-despacho', 'entregas', 'delivery'],
   domicilios: ['entregas', 'delivery'],
   marketing: ['marketing'],
-  produccion: ['despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
+  produccion: ['bpm-chili', 'despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
   eventos: ['eventos', 'mi-asistencia', 'mi-boleta'],
   // Ingeniero en alimentos: recetas y costeo son su herramienta principal.
   // NO lleva 'kardex' a proposito: las pestanas del Kardex no filtran por rol
   // y quien entra puede ejecutar kardex_mover_lote y registrar_merma.
-  ing_alimentos: ['recetas', 'costeo', 'produccion', 'inventario-fisico'],
+  ing_alimentos: ['bpm-chili', 'recetas', 'costeo', 'produccion', 'inventario-fisico'],
 }
 
 function getNavCounts() {
@@ -317,6 +318,8 @@ export default function App() {
         return <PropinasView user={user} />
       case 'produccion':
         return <ProduccionDiaria user={user} />
+      case 'bpm-chili':
+        return <BPMChiliView user={user} />
       case 'incidentes-cm':
         return <IncidentesProduccion user={user} />
       case 'devoluciones':
