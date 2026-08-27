@@ -6,7 +6,7 @@ import { UnidadSelect } from '../UnidadSelect';
 // ── Usuarios con acceso de edición ──
 const EDIT_EMAILS = ['joseisart2008@gmail.com'];
 // Quién puede editar recetas. Va por rol, no por una lista de PINs en el código.
-const ROLES_EDITAN = ['ejecutivo', 'jefe_casa_matriz', 'superadmin'];
+const ROLES_EDITAN = ['ejecutivo', 'jefe_casa_matriz', 'superadmin', 'ing_alimentos'];
 
 // ── RECETAS / BOM ──────────────────────────────────────────
 export default function RecetasView({ user }) {

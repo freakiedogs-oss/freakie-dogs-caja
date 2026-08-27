@@ -103,8 +103,8 @@ export const NAV_SECTIONS = [
       { key: 'inventario', label: 'Inventario', icon: '📦', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'historial', label: 'Historial', icon: '📋', roles: ['bodeguero', 'jefe_casa_matriz', 'admin'] },
       { key: 'compras', label: 'Órdenes de Compra', icon: '🛒', roles: ['compras', 'admin'] },
-      { key: 'stock-levels', label: 'Stock Mín/Máx', icon: '📊', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
-      { key: 'inventario-fisico', label: 'Inventario Físico', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
+      { key: 'stock-levels', label: 'Stock Mín/Máx', icon: '📊', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'ing_alimentos'] },
+      { key: 'inventario-fisico', label: 'Inventario Físico', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'ing_alimentos'] },
       { key: 'kardex', label: 'Kardex', icon: '📒', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
       { key: 'recepcion-bees', label: 'Recepción BEES', icon: '🥤', roles: ['gerente', 'cajero', 'cajera', 'cocina', 'jefe_casa_matriz', 'admin', 'ejecutivo'] },
     ],
@@ -113,7 +113,7 @@ export const NAV_SECTIONS = [
     label: 'Supply Chain',
     items: [
       { key: 'conteo', label: 'Conteo Nocturno', icon: '🌙', roles: ['cocina', 'gerente', 'admin', 'ejecutivo'] },
-      { key: 'inventario-sucursal', label: 'Inventario x Sucursal', icon: '📦', roles: ['cocina', 'gerente', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      { key: 'inventario-sucursal', label: 'Inventario x Sucursal', icon: '📦', roles: ['cocina', 'gerente', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin', 'ing_alimentos'] },
       { key: 'recepcion-sucursal', label: 'Recepción Compra (Sucursal)', icon: '🧾', roles: ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'mis-pedidos', label: 'Mis Pedidos', icon: '📦', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'jefe_casa_matriz'] },
       { key: 'entregas', label: 'Confirmar Entregas', icon: '✅', roles: ['despachador', 'motorista', 'motorista_interno', 'domicilios', 'gerente', 'cocina', 'admin', 'ejecutivo'] },
@@ -137,11 +137,11 @@ export const NAV_SECTIONS = [
   {
     label: 'Producción',
     items: [
-      { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz'] },
-      { key: 'costeo', label: 'Costeo / Márgenes', icon: '💰', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz'] },
-      { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'] },
-      { key: 'incidentes-cm', label: 'Incidentes CM', icon: '🚨', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin'] },
-      { key: 'devoluciones', label: 'Devoluciones', icon: '🔄', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'gerente', 'cocina', 'admin'] },
+      { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz', 'ing_alimentos'] },
+      { key: 'costeo', label: 'Costeo / Márgenes', icon: '💰', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz', 'ing_alimentos'] },
+      { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'ing_alimentos'] },
+      { key: 'incidentes-cm', label: 'Incidentes CM', icon: '🚨', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'ing_alimentos'] },
+      { key: 'devoluciones', label: 'Devoluciones', icon: '🔄', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'gerente', 'cocina', 'admin', 'ing_alimentos'] },
     ],
   },
   {

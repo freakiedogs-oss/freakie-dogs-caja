@@ -4,7 +4,7 @@ import { today, fmtDate, n, STORES } from '../../config';
 import OrdenesProduccionTab from './OrdenesProduccionTab';
 
 // ── Roles con acceso de edición ──
-const ROLES_EDIT = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'superadmin'];
+const ROLES_EDIT = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'superadmin', 'ing_alimentos'];
 const ROLES_PRODUCCION = ['produccion', 'jefe_casa_matriz', 'despachador'];
 
 // ── Generar número de lote ──
