@@ -142,6 +142,7 @@ export const NAV_SECTIONS = [
       { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'ing_alimentos'] },
       { key: 'incidentes-cm', label: 'Incidentes CM', icon: '🚨', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'ing_alimentos'] },
       { key: 'devoluciones', label: 'Devoluciones', icon: '🔄', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'gerente', 'cocina', 'admin', 'ing_alimentos'] },
+      { key: 'bpm-chili', label: 'Control BPM · Chili', icon: '🌶️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
     ],
   },
   {
