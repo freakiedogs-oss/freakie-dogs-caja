@@ -79,7 +79,13 @@ async function enviarEvento(token, event) {
     body: JSON.stringify({ token, event })
   })
   const d = await r.json().catch(() => ({}))
-  if (!r.ok || (!d.ok && !d.duplicate)) throw new Error(d.error || `HTTP ${r.status}`)
+  if (!r.ok || (!d.ok && !d.duplicate)) {
+    // El status viaja con el error: un 401 (sesion vencida) no se puede
+    // reintentar, y hay que distinguirlo de una caida de red que si.
+    const err = new Error(d.error || `HTTP ${r.status}`)
+    err.status = r.status
+    throw err
+  }
   return d
 }
 
@@ -120,6 +126,7 @@ export default function PorcionadorApp() {
   const [lastPortion, setLastPortion] = useState(null)
   const [diag, setDiag] = useState('Sin datos aún')
   const [pendientesCount, setPendientesCount] = useState(pendientes().length)
+  const [sesionVencida, setSesionVencida] = useState(false)
   const [cola, setCola] = useState({})
 
   const portRef = useRef(null)
@@ -191,23 +198,62 @@ export default function PorcionadorApp() {
     }
   }, [token])
 
-  // ── Sincronizar cola pendiente cada 10s ─────────────────────
+  // ── Sincronizar cola pendiente ──────────────────────────────
+  // Historia (27-ago-2026): la sesion de la estacion vencio de madrugada y
+  // este bucle siguio reintentando la cola entera cada 10 s contra un 401.
+  // Como cada corrida no esperaba a la anterior, se solaparon: 1.15 millones
+  // de llamadas rechazadas en 24 h. Ahora hay tres frenos:
+  //   1. un 401 corta la sincronizacion y pide el PIN de nuevo,
+  //   2. las fallas de red van con espera creciente (10 s -> 5 min),
+  //   3. un candado evita que dos corridas se pisen.
   useEffect(() => {
     if (!token) return
+    let vivo = true
+    let corriendo = false
+    let vencida = false      // vive en el closure: no reinicia el efecto
+    let fallasSeguidas = 0
+    let timer = null
+
     const sync = async () => {
-      const cola = pendientes()
-      if (cola.length === 0) { setPendientesCount(0); return }
-      for (const item of cola) {
-        try {
-          await enviarEvento(token, item.payload.event)
-          quitarPendiente(item.payload.event.event_id)
-        } catch { /* reintenta después */ }
+      if (!vivo || corriendo || vencida) return
+      corriendo = true
+      try {
+        const cola = pendientes()
+        if (cola.length === 0) { setPendientesCount(0); fallasSeguidas = 0; return }
+
+        for (const item of cola) {
+          if (!vivo) return
+          try {
+            await enviarEvento(token, item.payload.event)
+            quitarPendiente(item.payload.event.event_id)
+            fallasSeguidas = 0
+            setSesionVencida(false)
+          } catch (e) {
+            if (e.status === 401) {
+              // Sesion vencida: reintentar es inutil y solo quema llamadas.
+              // Las porciones quedan en la cola hasta que alguien meta el PIN.
+              vencida = true
+              setSesionVencida(true)
+              return
+            }
+            fallasSeguidas++
+            return   // se corta la pasada; el resto espera al proximo ciclo
+          }
+        }
+      } finally {
+        corriendo = false
+        setPendientesCount(pendientes().length)
+        // Si la sesion vencio no se reprograma nada: el ciclo arranca de cero
+        // cuando el operario vuelve a entrar con el PIN y cambia el token.
+        if (vivo && !vencida) {
+          const espera = Math.min(10000 * Math.pow(2, fallasSeguidas), 300000)
+          timer = setTimeout(sync, espera)
+        }
       }
-      setPendientesCount(pendientes().length)
     }
+
     sync()
-    const id = setInterval(sync, 10000)
-    return () => clearInterval(id)
+    return () => { vivo = false; clearTimeout(timer) }
   }, [token])
 
   // ── Cleanup al desmontar ────────────────────────────────────
@@ -459,7 +505,34 @@ export default function PorcionadorApp() {
           El 26-ago Metrocentro peso un turno entero sin guardar nada y nadie
           se dio cuenta: el unico indicador era "Pendientes: N" en letra chica
           en la barra de arriba. Si la cola pasa de 5, esto no se puede ignorar. */}
-      {pendientesCount > 5 && (
+      {/* Sesion vencida: es el caso del 27-ago. Tiene su propio aviso porque
+          la accion es distinta — no es el wifi, hay que meter el PIN. */}
+      {sesionVencida && (
+        <div style={{
+          background: '#7c2d12', border: '2px solid #ea580c', color: '#fed7aa',
+          padding: '12px 16px', borderRadius: 10, margin: '10px 0',
+          fontSize: 15, lineHeight: 1.45,
+        }}>
+          <b style={{ fontSize: 17 }}>🔑 Se venció la sesión de la estación</b>
+          <div style={{ marginTop: 5 }}>
+            {pendientesCount > 0
+              ? <>Las {pendientesCount} porciones pesadas están guardadas en esta tablet
+                  y <b>no se van a perder</b>. </>
+              : null}
+            Tocá <b>Salir</b> y volvé a entrar con el PIN de la estación; al
+            hacerlo se envían solas. <b>No borres ni reinstales la app.</b>
+          </div>
+          <button onClick={logout} style={{ ...sBtnGhost, marginTop: 9, fontSize: 15, padding: '7px 16px' }}>
+            Ingresar el PIN de nuevo
+          </button>
+        </div>
+      )}
+
+      {/* Aviso grande cuando la cola se acumula por otra razon (red caida).
+          El 26-ago Metrocentro peso un turno entero sin guardar nada y nadie
+          se dio cuenta: el unico indicador era "Pendientes: N" en letra chica
+          en la barra de arriba. Si la cola pasa de 5, esto no se puede ignorar. */}
+      {!sesionVencida && pendientesCount > 5 && (
         <div style={{
           background: '#7f1d1d', border: '2px solid #dc2626', color: '#fecaca',
           padding: '12px 16px', borderRadius: 10, margin: '10px 0',
