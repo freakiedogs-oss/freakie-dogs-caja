@@ -2,7 +2,7 @@
 // Estación fija Metrocentro S006 · PIN 3006
 // Autor: integración ERP Freakie Dogs (v1, agosto 2026)
 import { useEffect, useRef, useState } from 'react'
-import { db, URL_SB_DIRECT, KEY_SB } from '../supabase'
+import { db, URL_SB, KEY_SB } from '../supabase'
 import { requestCh340Port } from './ch340-webusb'
 import { calcularContadoresS006, KDS_CONTADOR_ESTACIONES, KDS_CONTADOR_LABELS } from '../pos/kdsCounterMapS006'
 
@@ -67,8 +67,13 @@ function quitarPendiente(eventId) {
 }
 
 // ── POST a la edge function ───────────────────────────────────
+// Ojo: va por URL_SB (el proxy /sb de Vercel), NO por *.supabase.co directo.
+// El 26-ago-2026 Metrocentro peso todo un turno y no se guardo ni una porcion:
+// esta funcion era la unica del porcionador que pegaba al dominio directo, y
+// varios ISP salvadorenos filtran la resolucion DNS de *.supabase.co. El resto
+// de la PWA ya pasaba por el proxy justamente por eso.
 async function enviarEvento(token, event) {
-  const r = await fetch(`${URL_SB_DIRECT}/functions/v1/porcion-papa`, {
+  const r = await fetch(`${URL_SB}/functions/v1/porcion-papa`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, event })
@@ -135,7 +140,7 @@ export default function PorcionadorApp() {
   // ── Cargar config de la estación al montar ─────────────────
   useEffect(() => {
     if (!token) return
-    fetch(`${URL_SB_DIRECT}/functions/v1/porcion-papa?station_id=${STATION_ID}`)
+    fetch(`${URL_SB}/functions/v1/porcion-papa?station_id=${STATION_ID}`)
       .then(r => r.json())
       .then(d => { if (d.ok) setConfig(d.config) })
       .catch(() => {})
@@ -449,6 +454,25 @@ export default function PorcionadorApp() {
           <button onClick={logout} style={sBtnGhost}>Salir</button>
         </div>
       </div>
+
+      {/* Aviso grande cuando la cola se acumula.
+          El 26-ago Metrocentro peso un turno entero sin guardar nada y nadie
+          se dio cuenta: el unico indicador era "Pendientes: N" en letra chica
+          en la barra de arriba. Si la cola pasa de 5, esto no se puede ignorar. */}
+      {pendientesCount > 5 && (
+        <div style={{
+          background: '#7f1d1d', border: '2px solid #dc2626', color: '#fecaca',
+          padding: '12px 16px', borderRadius: 10, margin: '10px 0',
+          fontSize: 15, lineHeight: 1.45,
+        }}>
+          <b style={{ fontSize: 17 }}>⚠ {pendientesCount} porciones sin guardar</b>
+          <div style={{ marginTop: 5 }}>
+            Se están pesando bien y quedan guardadas en esta tablet, pero no
+            llegan al sistema. <b>No cierres ni recargues la app.</b> Revisá el
+            wifi y avisá a Casa Matriz.
+          </div>
+        </div>
+      )}
 
 
       {/* Peso grande */}
