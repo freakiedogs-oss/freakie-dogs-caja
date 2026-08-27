@@ -120,7 +120,11 @@ export default function BPMChiliView({ user }) {
         .eq('plantilla_id', pl.id).order('fecha', { ascending: false }).limit(20)
       setHistorial(hist || [])
     } catch (e) {
-      setError(e.message || 'No se pudo cargar')
+      // Un 42501 es falta de GRANT en la tabla, no de politica RLS. Se traduce
+      // porque el mensaje crudo de Postgres no le dice nada a produccion.
+      setError(e.code === '42501' || /permission denied/i.test(e.message || '')
+        ? 'El sistema no tiene permiso de leer la configuración del chili. Avisá a Casa Matriz.'
+        : (e.message || 'No se pudo cargar'))
     }
     setCargando(false)
   }
@@ -301,8 +305,16 @@ export default function BPMChiliView({ user }) {
         {!corrida && (
           <div style={card}>
             <div style={{ marginBottom: 14, fontSize: 15 }}>Todavía no se ha iniciado la tanda de hoy.</div>
+            {/* El boton queda inhabilitado si la plantilla no cargo. Antes se podia
+                hacer clic y el mensaje de iniciarTanda() pisaba el error real de
+                la carga, que era lo unico que decia por que habia fallado. */}
             {puedeRegistrar
-              ? <button style={btn(C.ok, guardando)} disabled={guardando} onClick={iniciarTanda}>
+              ? <button
+                  style={btn(C.ok, guardando || !plantilla)}
+                  disabled={guardando || !plantilla}
+                  onClick={iniciarTanda}
+                  title={!plantilla ? 'No cargó la configuración del chili' : undefined}
+                >
                   Iniciar tanda de hoy
                 </button>
               : <div style={{ color: C.dim, fontSize: 13 }}>Tu rol no registra producción.</div>}
