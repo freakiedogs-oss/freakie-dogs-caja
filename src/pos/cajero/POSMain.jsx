@@ -557,14 +557,16 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         destino:        it.destino || null,
       }
       if (it.esCombo && (it.componentes || []).length) {
+        const comboSinMods = (it.modificadores || []).filter(m => m.grupo_nombre === 'SIN')
         return it.componentes.map(c => {
-          const extraComp = (c.modificadores || []).reduce((s, m) => s + (parseFloat(m.precio_extra) || 0), 0)
+          const merged = [...(c.modificadores || []), ...comboSinMods]
+          const extraComp = merged.reduce((s, m) => s + (parseFloat(m.precio_extra) || 0), 0)
           return {
             ...base,
             nombre_item:          c.nombre,
             cantidad:             (c.cantidad || 1) * it.qty,
             nota:                 [`Combo: ${it.nombre}`, it.nota].filter(Boolean).join(' · ') || null,
-            modificadores:        c.modificadores?.length ? c.modificadores : null,
+            modificadores:        merged.length ? merged : null,
             precio_modificadores: extraComp,
             estacion:             c.estacion || 'general',
             linea:                linea++,
