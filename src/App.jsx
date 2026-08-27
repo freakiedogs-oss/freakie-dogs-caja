@@ -92,6 +92,10 @@ const ROLE_DEFAULTS = {
   marketing: ['marketing'],
   produccion: ['despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
   eventos: ['eventos', 'mi-asistencia', 'mi-boleta'],
+  // Ingeniero en alimentos: recetas y costeo son su herramienta principal.
+  // NO lleva 'kardex' a proposito: las pestanas del Kardex no filtran por rol
+  // y quien entra puede ejecutar kardex_mover_lote y registrar_merma.
+  ing_alimentos: ['recetas', 'costeo', 'produccion', 'inventario-fisico'],
 }
 
 function getNavCounts() {

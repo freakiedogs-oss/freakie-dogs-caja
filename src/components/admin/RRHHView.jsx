@@ -33,6 +33,7 @@ const ROLES_EDITABLES = [
   'motorista', 'motorista_interno', 'despachador', 'domicilios',
   'bodeguero', 'jefe_casa_matriz', 'compras', 'produccion',
   'contador', 'marketing', 'rrhh', 'tablet', 'telefono', 'empleado',
+  'ing_alimentos',
 ];
 
 // ── Helpers de estilo reutilizables ──
