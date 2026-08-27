@@ -23,7 +23,12 @@ import { db } from '../../supabase'
    ═══════════════════════════════════════════════════════════════════════ */
 
 const BUCKET = 'bpm-fotos'
-const CLAVE_PLANTILLA = 'Chili con carne — control BPM'
+
+// Se busca la plantilla por el id de la receta del chili, no por nombre.
+// Buscar por nombre fallaba: el titulo lleva guion largo (U+2014) y basta
+// una diferencia de codificacion entre el archivo y la base para que no
+// haga match, dejando `plantilla` en null.
+const RECETA_CHILI = 'f9e150d6-f0e4-4728-a303-a38891a12555'
 
 const ROLES_REGISTRAN = ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin']
 const ROLES_LIBERAN   = ['ing_alimentos', 'admin', 'ejecutivo', 'superadmin']
@@ -84,10 +89,14 @@ export default function BPMChiliView({ user }) {
       const off = srv ? new Date(srv).getTime() - Date.now() : 0
       setOffsetMs(off)
 
-      const { data: pl, error: e1 } = await db
-        .from('bpm_plantillas').select('*').eq('nombre', CLAVE_PLANTILLA).eq('activo', true).maybeSingle()
+      const { data: pls, error: e1 } = await db
+        .from('bpm_plantillas').select('*').eq('receta_id', RECETA_CHILI).eq('activo', true).limit(1)
       if (e1) throw e1
-      if (!pl) { setError('No está configurada la plantilla del chili.'); setCargando(false); return }
+      const pl = pls?.[0]
+      if (!pl) {
+        setError('No está configurada la plantilla del chili. Avisá a Casa Matriz.')
+        setPlantilla(null); setCargando(false); return
+      }
       setPlantilla(pl)
 
       const { data: ps } = await db.from('bpm_pasos').select('*').eq('plantilla_id', pl.id).order('orden')
@@ -131,6 +140,7 @@ export default function BPMChiliView({ user }) {
   }
 
   async function iniciarTanda() {
+    if (!plantilla) { setError('Todavía no cargó la plantilla. Recargá la página.'); return }
     setGuardando(true); setError('')
     try {
       const { data, error } = await db.from('bpm_corridas').insert({
