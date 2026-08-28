@@ -230,34 +230,62 @@ La imagen original se incluye arriba y prevalece sobre la transcripción en caso
       {puedeSubir && (
         <div style={card}>
           <b style={{ fontSize: 15 }}>Subir la hoja del día</b>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 11 }}>
-            <label style={{ fontSize: 13, color: C.dim }}>
-              Fecha de la hoja<br />
-              <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
-                style={{ background: '#101012', color: C.txt, border: `1px solid ${C.line}`,
-                         borderRadius: 8, padding: '9px 11px', fontSize: 15, marginTop: 4 }} />
-            </label>
-            <label style={{ fontSize: 13, color: C.dim }}>
-              Foto de la hoja<br />
-              {/* capture fuerza la camara en el telefono, pero en la tablet de
-                  Casa Matriz tambien deja elegir un archivo ya tomado. */}
+
+          {/* Dos pasos numerados. La version anterior mostraba el input de
+              archivo crudo del navegador y un boton gris deshabilitado: se
+              leia como si estuviera roto en vez de "todavia falta la foto". */}
+          <div style={{ marginTop: 13 }}>
+            <div style={{ fontSize: 13, color: C.dim, marginBottom: 5 }}>1 · Fecha de la hoja</div>
+            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+              style={{ background: '#101012', color: C.txt, border: `1px solid ${C.line}`,
+                       borderRadius: 8, padding: '10px 12px', fontSize: 16 }} />
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13, color: C.dim, marginBottom: 5 }}>2 · Foto de la hoja</div>
+            {/* El input real va oculto y el label hace de boton: el control
+                nativo no se puede estilar y en la tablet casi no se ve. */}
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 9,
+              background: foto ? '#1d3a24' : C.acc, color: '#fff',
+              border: foto ? `1px solid ${C.ok}` : 'none',
+              borderRadius: 9, padding: '13px 22px', fontSize: 16, fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+              {foto ? '✓ Foto lista — tocá para cambiarla' : '📷 Tomar foto de la hoja'}
+              {/* capture fuerza la camara en el telefono; en la tablet de Casa
+                  Matriz tambien deja elegir un archivo ya tomado. */}
               <input type="file" accept="image/*" capture="environment" onChange={onFoto}
-                style={{ marginTop: 8, fontSize: 13, color: C.txt }} />
+                style={{ display: 'none' }} />
             </label>
+            {foto && (
+              <div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>
+                {foto.name} · {(foto.size / 1024 / 1024).toFixed(1)} MB
+              </div>
+            )}
           </div>
 
           {preview && (
             <img src={preview} alt="Vista previa"
-              style={{ maxWidth: 300, marginTop: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+              style={{ maxWidth: 300, marginTop: 12, borderRadius: 8, border: `1px solid ${C.line}`, display: 'block' }} />
           )}
 
-          <div style={{ marginTop: 13 }}>
-            <button onClick={subir} disabled={!!subiendo || !foto} style={btn(C.ok, !!subiendo || !foto)}>
-              {subiendo || 'Subir y analizar'}
+          <div style={{ marginTop: 18, borderTop: `1px solid ${C.line}`, paddingTop: 15 }}>
+            <button onClick={subir} disabled={!!subiendo || !foto}
+              style={{
+                ...btn(C.ok, !!subiendo || !foto),
+                fontSize: 17, padding: '14px 30px', width: '100%', maxWidth: 340,
+              }}>
+              {subiendo || (foto ? 'Subir y analizar' : 'Primero tomá la foto')}
             </button>
-            {subiendo && <span style={{ color: C.dim, fontSize: 13, marginLeft: 11 }}>No cierres la página.</span>}
+            {subiendo && (
+              <div style={{ color: C.warn, fontSize: 14, marginTop: 9 }}>
+                No cierres la página mientras se analiza.
+              </div>
+            )}
           </div>
-          <div style={{ color: C.dim, fontSize: 12, marginTop: 9, lineHeight: 1.5 }}>
+
+          <div style={{ color: C.dim, fontSize: 12, marginTop: 12, lineHeight: 1.5 }}>
             Tomá la foto de frente, con toda la hoja adentro y buena luz. Si sale
             torcida o borrosa, el sistema va a leer mal los números.
           </div>
