@@ -174,6 +174,12 @@ export default function RecetasView({ user }) {
       unidad_medida: i.unidad_medida,
       merma_pct: i.merma_pct || 0,
       notas: i.notas || '',
+      // Sin estos 4, guardar desde esta vista los caía a NULL/false y el POS
+      // volvía a descontar bolsas enteras por porción (el guardado es delete+insert).
+      factor_a_stock: i.factor_a_stock ?? null,
+      removible: i.removible ?? false,
+      etiqueta: i.etiqueta || null,
+      cantidad_catalogo: i.cantidad_catalogo ?? null,
       _nombre: i.tipo_ingrediente === 'materia_prima' ? i.catalogo_productos?.nombre : i.sub?.nombre,
     }));
     setEditIngredients(current.length ? current : [emptyRow()]);
