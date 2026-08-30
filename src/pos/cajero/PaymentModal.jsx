@@ -28,7 +28,10 @@ const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 
 // Tipo de documento (texto en pos_clientes) → código MH para el receptor
 const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residente': '02', 'Otro': '37' }
 
-const validEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim())
+// Mismo validador estricto que CustomerSearch: MH solo acepta correos ASCII
+// (una tilde en el correo = DTE rechazado completo, sin sello).
+const validEmail = s => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(
+  (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''))
 
 export default function PaymentModal({ items, total, storeCode, tipo, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
   const toast = useToast()

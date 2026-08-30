@@ -27,7 +27,12 @@ const onlyDigits = s => (s || '').replace(/\D/g, '')
 const validDUI = s => /^\d{9}$/.test(onlyDigits(s))
 const validNIT = s => { const d = onlyDigits(s); return d.length === 14 || d.length === 9 }
 const validNRC = s => /^\d{1,8}$/.test(onlyDigits(s))
-const validEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim())
+// MH rechaza el DTE COMPLETO si el correo trae caracteres fuera de ASCII
+// (29-ago: "facelectrónica@…" con tilde tumbó 3 facturas — salieron tickets
+// impresos sin sello). Se normalizan acentos al guardar y el validador solo
+// acepta ASCII, igual que Hacienda.
+const normalizeEmail = s => (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+const validEmail = s => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(normalizeEmail(s))
 
 export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) {
   const toast = useToast()
@@ -52,7 +57,7 @@ export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) 
   }, [selected?.id])
   // Guarda el correo en la ficha del cliente (para completar sus datos a futuro)
   const persistEmail = async () => {
-    const v = (emailEdit || '').trim()
+    const v = normalizeEmail(emailEdit)
     if (!selected?.id || !validEmail(v) || v === origEmailRef.current) return
     const { error } = await db.from('pos_clientes').update({ email: v }).eq('id', selected.id)
     if (!error) { origEmailRef.current = v; setEmailSaved(true) }
@@ -90,7 +95,7 @@ export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) 
 
     let row = {
       nombre: form.nombre.trim(),
-      email: form.email || null,
+      email: normalizeEmail(form.email) || null,
       telefono: form.telefono || null,
       tipo_persona: persona === 'natural' ? 'natural' : 'juridica',
       tipo_cliente: 'regular',   // clasificación CRM; NO el tipo de DTE (tipoDte)

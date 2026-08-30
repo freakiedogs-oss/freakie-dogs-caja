@@ -62,6 +62,18 @@ async function callProxy(op, body) {
 }
 
 /**
+ * Último guardarraíl antes de Hacienda: MH rechaza el DTE COMPLETO si
+ * receptor.correo no cumple su formato ASCII (29-ago: la tilde de
+ * "facelectrónica@…" tumbó 3 facturas y los tickets salieron sin sello).
+ * Normaliza acentos; si aun así no valida, devuelve null — para factura el
+ * correo es opcional y un DTE sellado sin correo vale más que un rechazo.
+ */
+function sanitizeCorreo(s) {
+  const v = String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(v) ? v : null
+}
+
+/**
  * Mapea método de pago POS → código MH
  * 01=Billetes y monedas, 02=Tarjeta débito, 03=Tarjeta crédito,
  * 04=Cheque, 05=Transferencia, 99=Otros
@@ -112,11 +124,12 @@ export async function emitFactura({ items, receptor, metodo, storeCode, propina 
 
   // Receptor opcional para factura
   if (receptor && receptor.nombre) {
+    const correoOk = sanitizeCorreo(receptor.correo)
     body.receptor = {
       nombre: receptor.nombre,
       ...(receptor.numDocumento && { numDocumento: receptor.numDocumento }),
       ...(receptor.tipoDocumento && { tipoDocumento: receptor.tipoDocumento }),
-      ...(receptor.correo && { correo: receptor.correo }),
+      ...(correoOk && { correo: correoOk }),
       ...(receptor.telefono && { telefono: receptor.telefono }),
     }
   }
@@ -152,7 +165,7 @@ export async function emitCCF({ items, receptor, metodo, propina }) {
         complemento: receptor.direccionTexto || 'San Salvador, El Salvador',
       },
       telefono: receptor.telefono || '00000000',
-      correo: receptor.correo || 'sin-correo@freakiedogs.com',
+      correo: sanitizeCorreo(receptor.correo) || 'sin-correo@freakiedogs.com',
     },
   }
 
@@ -194,7 +207,7 @@ export async function emitSujetoExcluido({ items, receptor, metodo }) {
       descActividad: receptor.descActividad || null,
       direccion: receptor.direccion || null,
       telefono: receptor.telefono || null,
-      correo: receptor.correo || null,
+      correo: sanitizeCorreo(receptor.correo),
     },
   }
 
