@@ -62,6 +62,7 @@ export default defineConfig({
         driver:      resolve(__dirname, 'driver.html'),
         track:       resolve(__dirname, 'track.html'),
         porcionador: resolve(__dirname, 'porcionador.html'),
+        carne:       resolve(__dirname, 'carne.html'),
       },
       output: {
         manualChunks(id) {
