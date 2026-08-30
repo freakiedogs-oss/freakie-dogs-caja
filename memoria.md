@@ -1,6 +1,16 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
-> Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
+> Log de decisiones y cambios, lo más nuevo arriba.
+
+## 30-Ago-2026 — Auditoría "¿todo tiene costo real?" + rescate de $147K de trazabilidad DTE
+- **Informe previo (solo lectura):** 87.8% del costo mensual del menú venía de compras reales (75.8% recepciones + 12.0% DTE/BEES), 11.4% de precios manuales (de esos, ~$12.4K/mes son "derivados de DTE": salchicha paquete, panes bolsa, ketchup caja, tocino paquete — número real congelado a mano), 10 ingredientes a $0. Lado facturas (90d, $464K de Costo Comida): 57% amarrado, 12% líneas sueltas, **23% ($107K) en 180 DTEs SIN líneas parseadas** de los proveedores core (Corte Argentino $26K, BELCA $19K, FLAMO $9K, PINELI $7K).
+- **Luz verde de Jose → 4 migraciones:**
+  1. `backfill_lineas_dte_2026`: re-parseo de **353 DTEs de 2026 sin líneas** desde su `json_original` (cuerpoDocumento) + aplicación de reglas exactas. Sin-líneas: $107,381 → **$115**. (31 DTEs sin JSON guardado: irrecuperables por SQL.)
+  2. `mapeo_lineas_comida_sueltas_30ago`: BIFE DE CHORIZO→New York ($10.2K), NEW YORK PORCIONADO, ASADO→Asado de Tira, PUYAZO MOLIDO→Puyazo CA, GRASA DE RES→Grasa de Res CA, nuca multilínea→ec9c1495, BREW CITY ORINGS→Aros (f=42/caja), Mayo Hellmanns, aceites (2 productos nuevos: La Palma cilindro, Soya Santa Clara), repollo, sobres ketchup/mayo (1 producto nuevo), poppers Anchor (nuevo), Bionis (f=20000). **Especias que costeaban $0 y SÍ tenían factura:** Sriracha (f=55 cda/botella 28oz → $0.136/cda), Cocoa (f=680 VERIFICAR), Hongo (f=300 VERIFICAR). Reglas nuevas en `dte_item_catalogo_map`.
+  3. `mapeo_variantes_reparseadas_30ago`: variantes de descripción del re-parseo — Redstone CANYON, panes FLAMO/Berna (Berna f=1 para costo por bolsa), Molida 80/20, PECHO BLACK→Brisket, MQ LAC paquete 3lb (f=3), CM Mix, chipotle, Ketchup GL→caja (f=0.25), Mydibel→Papa Blanca (f=5.51), Trolli (f=24), Lipton, saco cebolla blanca, tocino Chimex.
+  4. `reclasificacion_gas_y_tv_30ago`: gas propano (Tropigas/Unigas, catalogo_contable 49/51/124) → gastos_operativos; TV Samsung 50" (2 DTEs de Operadora del Sur) → activo_fijo vía `gasto_categoria_override`. Inflaban Costo Comida ~$3.2K/90d.
+- **Resultado 90d:** líneas amarradas $264K → **$388,879**; sueltas $56K → **$16,333** (96% amarrado; el resto es papel/bolsas/insumos de DTEs mixtos PriceSmart). Sanity post-mapeo: Pan Berna $1.42/bolsa, MQ LAC $2.44/lb, Ketchup $23.04/caja, New York $5.85/lb — sin distorsiones.
+- **NO hecho a propósito:** repuntar facturas unitarias→productos bolsa (la recepción DTE usa cantidad facturada SIN factor → habría corrompido recepciones; los 6 "manuales derivados" quedan como deuda documentada). Kolashampan/Té fardo con semántica por-lata = ítem 11 del PLAN-INVENTARIO (pre-existente). Pendiente de Jose: proveedor/maquilador del Chile Bombazo, precio real del pepinillo triturado, bote de cocoa y hongo (factores asumidos). El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
 ## 30-Ago-2026 — Incidente "los dos Erick" (Cafetalón): pedido web cobrado en la cuenta equivocada + guardarraíles
 
