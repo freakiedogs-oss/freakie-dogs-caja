@@ -49,6 +49,7 @@ const IncidentesProduccion = lazy(() => import('./components/produccion/Incident
 const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView'))
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
 const BPMTemperaturaView = lazy(() => import('./components/produccion/BPMTemperaturaView'))
+const CarneBoleadoView   = lazy(() => import('./components/produccion/CarneBoleadoView'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
 const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
 const MiAsistencia       = lazy(() => import('./components/empleado/MiAsistencia'))
@@ -93,7 +94,7 @@ const ROLE_DEFAULTS = {
   motorista: ['mi-despacho', 'entregas', 'delivery'],
   domicilios: ['entregas', 'delivery'],
   marketing: ['marketing'],
-  produccion: ['bpm-chili', 'bpm-temperatura', 'despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
+  produccion: ['carne-boleado', 'bpm-chili', 'bpm-temperatura', 'despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
   eventos: ['eventos', 'mi-asistencia', 'mi-boleta'],
   // Ingeniero en alimentos: recetas y costeo son su herramienta principal.
   // NO lleva 'kardex' a proposito: las pestanas del Kardex no filtran por rol
@@ -324,6 +325,8 @@ export default function App() {
         return <AgrandadosView user={user} />
       case 'bpm-chili':
         return <BPMChiliView user={user} />
+      case 'carne-boleado':
+        return <CarneBoleadoView user={user} />
       case 'bpm-temperatura':
         return <BPMTemperaturaView user={user} />
       case 'incidentes-cm':
