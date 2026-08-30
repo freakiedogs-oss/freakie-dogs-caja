@@ -46,6 +46,7 @@ const DeliveryView       = lazy(() => import('./components/delivery/DeliveryView
 const MarketingView      = lazy(() => import('./components/marketing/MarketingView'))
 const MediaView          = lazy(() => import('./components/marketing/MediaView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
+const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView'))
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
 const BPMTemperaturaView = lazy(() => import('./components/produccion/BPMTemperaturaView'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
@@ -77,9 +78,9 @@ const KpiVentasTotalesDashboard = lazy(() => import('./components/admin/KpiVenta
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
-  cajero: ['cierre', 'reporte', 'deposito', 'conteo'],
-  cajera: ['cierre', 'reporte', 'deposito', 'conteo'],
-  gerente: ['cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta'],
+  cajero: ['agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
+  cajera: ['agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
+  gerente: ['agrandados', 'cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta'],
   admin: ['admin', 'kpis-venta', 'recepcion-dte', 'recepcion', 'despacho'],
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
   superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
@@ -319,6 +320,8 @@ export default function App() {
         return <PropinasView user={user} />
       case 'produccion':
         return <ProduccionDiaria user={user} />
+      case 'agrandados':
+        return <AgrandadosView user={user} />
       case 'bpm-chili':
         return <BPMChiliView user={user} />
       case 'bpm-temperatura':

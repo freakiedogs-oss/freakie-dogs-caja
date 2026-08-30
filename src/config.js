@@ -80,6 +80,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Caja',
     items: [
+      { key: 'agrandados', label: 'Agrandados', icon: '💵', roles: ['cajera', 'cajero', 'gerente', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'cierre', label: 'Cierre de Caja', icon: '💰', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
       { key: 'reporte', label: 'Reporte de Turno', icon: '📝', roles: ['cajero', 'cajera', 'cocina', 'gerente', 'admin'] },
       { key: 'deposito', label: 'Depósitos', icon: '🏦', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
