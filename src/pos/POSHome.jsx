@@ -425,11 +425,20 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                             : null;
                         })()}
                       </span>
-                      {/* Motorista responsable: para saber a quién reclamarle y cerrar la cuenta */}
+                      {/* Motorista responsable: para saber a quién reclamarle y cerrar la cuenta.
+                          Un pedido web de RETIRO EN LOCAL nunca va a tener motorista — decirlo
+                          evita que la caja lo confunda con un delivery trabado (incidente 29-ago:
+                          se cobró re-tecleado en otra cuenta creyendo que este estaba mal). */}
                       {c.tipo === 'delivery_propio' && (
-                        <span className="poshome-cuenta-items" style={{ color: c.repartidor_nombre ? '#60a5fa' : '#f59e0b' }}>
-                          🛵 {c.repartidor_nombre || 'Sin motorista asignado'}
-                        </span>
+                        c.delivery_cliente?.tipo === 'para_llevar' ? (
+                          <span className="poshome-cuenta-items" style={{ color: '#fbbf24', fontWeight: 700 }}>
+                            🥡 Retiro en local — el cliente pasa a caja
+                          </span>
+                        ) : (
+                          <span className="poshome-cuenta-items" style={{ color: c.repartidor_nombre ? '#60a5fa' : '#f59e0b' }}>
+                            🛵 {c.repartidor_nombre || 'Sin motorista asignado'}
+                          </span>
+                        )
                       )}
                       {/* Cambio que debe llevar el driver (pedido de Jazz/Soyapango, 14-ago):
                           la cajera lo VE y verifica — antes solo el driver lo veía y le

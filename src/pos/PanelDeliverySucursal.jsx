@@ -393,7 +393,12 @@ export default function PanelDeliverySucursal({ user, onBack }) {
                             {!urgente && p.motorista_nombre && (
                               <span style={{ fontSize: 11, color: C.verde }}>🛵 {p.motorista_nombre}</span>
                             )}
-                            {enCocina && !p.motorista_nombre && (
+                            {/* Retiro en local: nunca va a tener motorista — decir "sin motorista"
+                                hacía creer que el pedido estaba trabado (incidente 29-ago) */}
+                            {p.tipo === 'para_llevar' && !p.motorista_nombre && (
+                              <span style={{ fontSize: 11, color: C.amarillo, fontWeight: 700 }}>🥡 Retiro en local — se cierra al cobrar en caja</span>
+                            )}
+                            {enCocina && !p.motorista_nombre && p.tipo !== 'para_llevar' && (
                               <span style={{ fontSize: 11, color: C.dim }}>Sin motorista asignado todavía</span>
                             )}
                             {p.eta_min != null && p.estado === 'en_camino' && (

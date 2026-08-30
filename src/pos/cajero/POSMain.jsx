@@ -223,6 +223,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   // descarta un ítem que cambió por reusar su `linea`).
   useEffect(() => { comandaUidRef.current = null }, [items])
   const [loadingCuenta,     setLoadingCuenta]      = useState(!!cuentaCtx?.cuentaId)
+  // Pedido web original (menú público) detrás de esta cuenta: {referencia, cliente, total, tipo}.
+  // Se usa como guardarraíl al cobrar — la cuenta se puede editar (el cliente corrige por
+  // WhatsApp), pero un total distinto al del pedido pide confirmación viendo cliente+referencia.
+  const [pedidoWeb,         setPedidoWeb]          = useState(null)
 
   // Descuento
   const [showDiscountModal, setShowDiscountModal] = useState(false)
@@ -410,6 +414,32 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     }
     const loadCuenta = async () => {
       setLoadingCuenta(true)
+      setPedidoWeb(null)
+
+      // Si la cuenta viene de un pedido web, traer cliente/total del pedido ORIGINAL
+      // (delivery_clientes vía RPC SECDEF; RLS no deja leerla directo). Incidente 29-ago
+      // ("los dos Erick"): se cobró un pedido re-tecleado dentro de la cuenta de otro
+      // cliente — con esta info el cobro puede avisar cuando el total no coincide.
+      try {
+        const { data: cab } = await db
+          .from('pos_cuentas')
+          .select('delivery_referencia, cliente_nombre, delivery_cliente_id')
+          .eq('id', cuentaCtx.cuentaId)
+          .maybeSingle()
+        if (cab?.delivery_cliente_id) {
+          const { data: dinfo } = await db.rpc('pos_cuentas_delivery_info', { p_cuenta_ids: [cuentaCtx.cuentaId] })
+          const d = dinfo?.[cuentaCtx.cuentaId]
+          if (d?.total != null) {
+            setPedidoWeb({
+              referencia: cab.delivery_referencia || d.numero_orden || null,
+              cliente:    cab.cliente_nombre || null,
+              total:      parseFloat(d.total),
+              tipo:       d.tipo || null,
+            })
+          }
+        }
+      } catch { /* sin info del pedido web el cobro sigue, solo sin guardarraíl */ }
+
       const { data: itemsData } = await db
         .from('pos_cuenta_items')
         .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes, atencion_especial, destino')
@@ -907,6 +937,19 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
   // ── COBRAR (con integración DTEaaS) ──
   const saveCuenta = async (paymentData) => {
+    // Guardarraíl pedido web: editar SÍ se vale (correcciones por WhatsApp), pero si el
+    // total a cobrar no es el del pedido original, la cajera confirma viendo CLIENTE y
+    // REFERENCIA — así se atrapa el cobro hecho en la cuenta equivocada (29-ago: se
+    // cobraron $13.98 de un retiro dentro del delivery de otro cliente de $23.97).
+    if (pedidoWeb && Math.abs(total - pedidoWeb.total) > 0.009) {
+      const ok = await confirmAsync(
+        `Esta cuenta es el pedido web #${pedidoWeb.referencia || '?'} de ${pedidoWeb.cliente || 'cliente sin nombre'} ` +
+        `por $${pedidoWeb.total.toFixed(2)}, y vas a cobrar $${total.toFixed(2)}.\n\n` +
+        `Si el cliente corrigió el pedido, continuá. Si no, verificá que NO estés en la orden de otro cliente.`,
+        { title: '⚠️ El total no coincide con el pedido web', confirmText: `Cobrar $${total.toFixed(2)}`, danger: true }
+      )
+      if (!ok) return
+    }
     setSaving(true)
     let dteResult = null
     let dteError  = null

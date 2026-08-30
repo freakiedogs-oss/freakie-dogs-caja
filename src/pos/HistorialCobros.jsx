@@ -124,7 +124,8 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             componentes,
             cantidad,
             notas,
-            menu_item_id
+            menu_item_id,
+            cancelado_motivo
           ),
           pos_cuenta_pagos (
             metodo,
@@ -175,7 +176,10 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
       // El precio de la línea es el COBRADO (base + extras): con solo precio_unitario las
       // líneas del ticket reimpreso no sumaban el total. Los modificadores y componentes se
       // reconstruyen como texto, igual que en la impresión original (buildCuentaPrint).
-      const items = (cuenta.pos_cuenta_items || []).map(i => {
+      // Los ítems ANULADOS no van al ticket: imprimirlos hacía parecer que se cobraron
+      // dos órdenes (incidente Cafetalón 29-ago: ticket con líneas anuladas de $23.97
+      // sobre un cobro real de $13.98).
+      const items = (cuenta.pos_cuenta_items || []).filter(i => !i.cancelado_motivo).map(i => {
         const mods = []
         ;(i.modificadores || []).forEach(m => {
           if (m?.nombre) mods.push(m.nombre + (Number(m.precio_extra) > 0 ? ` (+$${Number(m.precio_extra).toFixed(2)})` : ''))
@@ -447,20 +451,26 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                         ) : (
                           <table className="historial-items-table">
                             <tbody>
-                              {items.map((item) => (
+                              {items.map((item) => {
+                                // Anulados: visibles pero tachados — no forman parte del total cobrado
+                                const anulado = !!item.cancelado_motivo
+                                const strike = anulado ? { textDecoration: 'line-through', color: '#8b8997' } : undefined
+                                return (
                                 <tr key={item.id} className="historial-item-row">
-                                  <td className="historial-item-qty">{item.cantidad}x</td>
-                                  <td className="historial-item-name">
+                                  <td className="historial-item-qty" style={strike}>{item.cantidad}x</td>
+                                  <td className="historial-item-name" style={strike}>
                                     {item.nombre}
+                                    {anulado && <span style={{ color: '#f87171', fontSize: 10, fontWeight: 700, marginLeft: 6, textDecoration: 'none' }}>ANULADO</span>}
                                     {item.notas && <div className="historial-item-notas">📝 {item.notas}</div>}
                                   </td>
-                                  <td className="historial-item-price">
+                                  <td className="historial-item-price" style={strike}>
                                     ${(((parseFloat(item.precio_unitario) || 0)
                                         + (parseFloat(item.precio_modificadores) || 0)
                                         + (parseFloat(item.precio_extras) || 0)) * item.cantidad).toFixed(2)}
                                   </td>
                                 </tr>
-                              ))}
+                                )
+                              })}
                             </tbody>
                           </table>
                         )}
