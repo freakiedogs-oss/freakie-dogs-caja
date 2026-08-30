@@ -1,8 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════════════
    Proceso de mezclado y boleado de carne — tablet de Casa Matriz
 
-   Ciclo: sacar 100 lb -> mezclar 10 min -> guardar 67 lb -> bolear 33 lb
-   en 15 min -> la bandeja se va directo al freezer.
+   Ciclo: sacar 100 lb -> mezclar 10 min -> guardar 67 lb en el freezer ->
+   bolear 33 lb en 15 min -> la bandeja va al freezer -> sacar las siguientes
+   33 lb y repetir. TRES rondas por tanda.
+
+   Cada ronda lleva SU PROPIA bolita testigo. Las tres arrancan de temperaturas
+   distintas: la ronda 1 sale de carne que ya estuvo 10 min afuera durante el
+   mezclado, mientras que la 2 y la 3 vuelven al freezer y recuperan frio
+   mientras se bolea la anterior. Comparar las tres es lo que dice si el
+   freezer alcanza a recuperar entre rondas.
 
    ── Que se mide y por que ──
    Durante el MEZCLADO no hay sonda: la carne se manipula y se sazona a mano,
@@ -14,12 +21,22 @@
    de 33 lb no sirve — se calienta mucho mas despacio y daria un numero
    tranquilizador y falso.
 
-   SESGO CONOCIDO: la testigo (~250 g) se calienta mas lento que una bolita
-   real (~68 g), asi que SUBESTIMA. Se corrige midiendo unas pocas bolitas
-   reales con termometro de puncion y guardando la diferencia como offset.
+   La testigo pesa 0.30 lb y una bolita real 0.15 lb, asi que la testigo se
+   calienta mas lento y SUBESTIMA. Por eso al operario NO se le muestra la
+   lectura cruda sino la estimada para una bolita real (lectura + offset):
+   es el numero con el que decide si apurarse o guardar la bandeja.
 
-   FASE 1 (sep-2026): NO alerta por temperatura, solo registra. Primero hay
-   que medir cuanto se sale del rango en la practica; con esos datos se
+   La lectura cruda se sigue guardando en temp_carne. Si el offset resulta
+   mal calibrado, se recalcula todo el historico sin haber perdido nada.
+
+   PROFUNDIDAD DE LA SONDA: a media profundidad de la testigo, NO hasta el
+   centro. El centro de una bolita casi no se mueve en 15 min (3 -> 4 C)
+   mientras la superficie llega a 10; el riesgo esta en la capa exterior,
+   que es donde estuvieron las manos. Clavada hasta el fondo, la pantalla
+   marcaria "todo bien" siempre.
+
+   FASE 1 (sep-2026): NO bloquea ni corta el proceso, solo avisa y registra.
+   Primero hay que medir cuanto se sale en la practica; con esos datos se
    decide el limite real en vez de imponer uno a ciegas.
 
    ── Sobre la sonda ──
@@ -45,7 +62,17 @@ const MIN_MEZCLADO = 10 * 60
 const MIN_BOLEADO  = 15 * 60
 const LIBRAS_LOTE = 100
 const LIBRAS_BOLEAR = 33
-const BOLITA_TESTIGO_G = 250   // ~4 bolitas reales: lo minimo para cubrir la punta
+const RONDAS = 3
+const BOLITA_TESTIGO_G = 136   // 0.30 lb: el doble de una bolita real
+
+// La sonda mide la testigo (0.30 lb) pero al operario se le muestra lo que
+// tendria una bolita REAL (0.15 lb), que es la que se va al producto. La
+// diferencia sale de la solucion analitica de conduccion en esfera con
+// propiedades de carne molida de literatura, a 15 min, de 3 a 24 grados:
+//   aire quieto +1.0 · moderado +1.9 · con gente pasando +2.7
+// Se usa el escenario moderado. ES UNA ESTIMACION — se reemplaza en cuanto
+// Mauricio mida bolitas reales con termometro de puncion.
+const OFFSET_ESTIMADO_C = 1.9
 const GUARDA_CADA_MS = 5000           // no hace falta una fila por segundo
 
 const C = {
@@ -84,6 +111,21 @@ export function decodificarCQ60(dataView) {
   }
 }
 
+function AvisoTestigo({ numero }) {
+  return (
+    <div style={{ background: '#101827', border: `1px solid ${C.acc}`, borderRadius: 11, padding: 14, margin: '12px 0' }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: C.acc }}>
+        Bolita testigo de la ronda {numero}
+      </div>
+      <div style={{ fontSize: 14.5, color: '#bfdbfe', marginTop: 6, lineHeight: 1.55 }}>
+        Junto con la primera bolita de esta ronda, hacé una del doble de tamaño
+        (0.30 lb) y clavá la sonda <b>hasta la mitad, no hasta el fondo</b>.
+        Al final se descarta — <b>no se usa</b>.
+      </div>
+    </div>
+  )
+}
+
 export default function CarneBoleadoView({ user }) {
   const [soportado, setSop] = useState(true)
   const [escaneando, setEsc] = useState(false)
@@ -94,13 +136,17 @@ export default function CarneBoleadoView({ user }) {
   const [error, setError]    = useState('')
   const [diag, setDiag]      = useState(false)
   const [guardadas, setGuard] = useState(0)
+  const [ronda, setRonda]     = useState(null)
+  const [rondas, setRondas]   = useState([])
 
   const scanRef = useRef(null)
   const ultimoGuardado = useRef(0)
   const tandaRef = useRef(null)
+  const rondaRef = useRef(null)
   const lecturaRef = useRef(null)
 
   useEffect(() => { tandaRef.current = tanda }, [tanda])
+  useEffect(() => { rondaRef.current = ronda }, [ronda])
   useEffect(() => { lecturaRef.current = lectura }, [lectura])
 
   useEffect(() => {
@@ -110,13 +156,13 @@ export default function CarneBoleadoView({ user }) {
   // Cronometro
   useEffect(() => {
     if (!tanda || tanda.estado === 'terminada') return
-    const base = tanda.estado === 'mezclando' ? tanda.mezclado_inicio : tanda.boleado_inicio
+    const base = tanda.estado === 'mezclando' ? tanda.mezclado_inicio : ronda?.inicio
     if (!base) return
     const tick = () => setSeg(Math.floor((Date.now() - new Date(base).getTime()) / 1000))
     tick()
     const id = setInterval(tick, 500)
     return () => clearInterval(id)
-  }, [tanda?.estado, tanda?.mezclado_inicio, tanda?.boleado_inicio])
+  }, [tanda?.estado, tanda?.mezclado_inicio, ronda?.inicio])
 
   async function conectarSonda() {
     setError('')
@@ -156,8 +202,12 @@ export default function CarneBoleadoView({ user }) {
     try {
       await db.from('carne_temp_lecturas').insert({
         tanda_id: t.id,
+        ronda_id: rondaRef.current?.id || null,
+        ronda: rondaRef.current?.numero || null,
         fase: t.estado === 'mezclando' ? 'mezclado' : 'boleado',
         temp_carne: d.carne, temp_ambiente: d.ambiente,
+        temp_estimada: Number((d.carne + OFFSET_ESTIMADO_C).toFixed(2)),
+        offset_aplicado: OFFSET_ESTIMADO_C,
         todas: d.todas, raw_hex: d.hex,
       })
       setGuard(n => n + 1)
@@ -172,51 +222,76 @@ export default function CarneBoleadoView({ user }) {
         operario_id: user?.id || null,
         libras_lote: LIBRAS_LOTE, libras_bolear: LIBRAS_BOLEAR,
         bolita_testigo_g: BOLITA_TESTIGO_G,
+        offset_usado_c: OFFSET_ESTIMADO_C, offset_origen: 'estimado_fisica',
         mezclado_inicio: new Date().toISOString(),
         sonda_mac: lectura?.mac || null,
         estado: 'mezclando',
       }).select().single()
       if (error) throw error
-      setTanda(data); setGuard(0)
+      setTanda(data); setGuard(0); setRonda(null); setRondas([])
     } catch (e) { setError(e.message || 'No se pudo iniciar') }
   }
 
-  async function pasarABoleado() {
+  // Arranca una ronda de boleado. La 1 cierra el mezclado; la 2 y la 3 salen
+  // del freezer, por eso cada una necesita su propia bolita testigo.
+  async function iniciarRonda(numero) {
     try {
-      const { data, error } = await db.from('carne_tandas').update({
-        mezclado_fin: new Date().toISOString(),
-        boleado_inicio: new Date().toISOString(),
-        estado: 'boleando',
-      }).eq('id', tanda.id).select().single()
+      if (numero === 1) {
+        await db.from('carne_tandas').update({
+          mezclado_fin: new Date().toISOString(),
+          boleado_inicio: new Date().toISOString(),
+          estado: 'boleando',
+        }).eq('id', tanda.id)
+      }
+      const { data, error } = await db.from('carne_rondas').insert({
+        tanda_id: tanda.id, numero,
+        inicio: new Date().toISOString(),
+        temp_inicial: lectura ? Number((lectura.carne + OFFSET_ESTIMADO_C).toFixed(2)) : null,
+      }).select().single()
       if (error) throw error
-      setTanda(data)
+      await db.from('carne_tandas').update({ ronda_actual: numero, estado: 'boleando' }).eq('id', tanda.id)
+      setTanda(t => ({ ...t, estado: 'boleando', ronda_actual: numero }))
+      setRonda(data); setSeg(0); setGuard(0)
     } catch (e) { setError(e.message) }
   }
 
-  async function terminar() {
+  async function cerrarRonda() {
     try {
       const { data: ls } = await db.from('carne_temp_lecturas')
-        .select('temp_carne').eq('tanda_id', tanda.id).not('temp_carne', 'is', null)
-      const temps = (ls || []).map(x => Number(x.temp_carne))
-      const resumen = temps.length ? {
-        temp_min: Math.min(...temps),
-        temp_max: Math.max(...temps),
-        temp_prom: Number((temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(2)),
-        // Cada lectura representa ~5 s; sirve para dimensionar cuanto tiempo
-        // estuvo fuera de rango sin tener que reprocesar la serie completa.
-        minutos_sobre_6: Number((temps.filter(t => t > 6).length * GUARDA_CADA_MS / 60000).toFixed(1)),
-      } : {}
-      const { data, error } = await db.from('carne_tandas').update({
-        boleado_fin: new Date().toISOString(), estado: 'terminada', ...resumen,
-      }).eq('id', tanda.id).select().single()
-      if (error) throw error
-      setTanda(data)
+        .select('temp_estimada').eq('ronda_id', ronda.id).not('temp_estimada', 'is', null)
+      const t = (ls || []).map(x => Number(x.temp_estimada))
+      const resumen = t.length ? {
+        temp_min: Math.min(...t), temp_max: Math.max(...t),
+        temp_prom: Number((t.reduce((a, b) => a + b, 0) / t.length).toFixed(2)),
+        minutos_sobre_6: Number((t.filter(x => x > 6).length * GUARDA_CADA_MS / 60000).toFixed(1)),
+        lecturas: t.length,
+      } : { lecturas: 0 }
+      const { data } = await db.from('carne_rondas')
+        .update({ fin: new Date().toISOString(), ...resumen }).eq('id', ronda.id).select().single()
+      const nuevas = [...rondas.filter(r => r.numero !== ronda.numero), data || ronda].sort((a, b) => a.numero - b.numero)
+      setRondas(nuevas)
+      setRonda(null)
+
+      if (ronda.numero >= RONDAS) {
+        // Resumen de la tanda: se toma el peor caso de las tres rondas, que es
+        // lo que define si el proceso completo se salio de rango.
+        const maxs = nuevas.map(r => Number(r.temp_max)).filter(Number.isFinite)
+        const mins = nuevas.map(r => Number(r.temp_min)).filter(Number.isFinite)
+        const { data: fin } = await db.from('carne_tandas').update({
+          boleado_fin: new Date().toISOString(), estado: 'terminada',
+          temp_max: maxs.length ? Math.max(...maxs) : null,
+          temp_min: mins.length ? Math.min(...mins) : null,
+          minutos_sobre_6: Number(nuevas.reduce((a, r) => a + Number(r.minutos_sobre_6 || 0), 0).toFixed(1)),
+        }).eq('id', tanda.id).select().single()
+        setTanda(fin)
+      }
     } catch (e) { setError(e.message) }
   }
 
   const vivo = ultimaAt && Date.now() - ultimaAt < 15000
+  const estimada = lectura ? lectura.carne + OFFSET_ESTIMADO_C : 0
   const restante = tanda?.estado === 'mezclando' ? MIN_MEZCLADO - seg
-                 : tanda?.estado === 'boleando'  ? MIN_BOLEADO - seg : 0
+                 : ronda ? MIN_BOLEADO - seg : 0
   const vencido = restante <= 0
 
   return (
@@ -263,15 +338,25 @@ export default function CarneBoleadoView({ user }) {
           </div>
         ) : (
           <>
-            <div style={{ color: C.dim, fontSize: 14 }}>Temperatura de la carne</div>
+            <div style={{ color: C.dim, fontSize: 14 }}>Temperatura de la bolita</div>
             <div style={{
               fontSize: 78, fontWeight: 700, lineHeight: 1.05, margin: '4px 0',
-              color: lectura.carne > 6 ? C.warn : C.ok,
+              color: estimada > 8 ? C.bad : estimada > 6 ? C.warn : C.ok,
             }}>
-              {lectura.carne.toFixed(1)} °C
+              {estimada.toFixed(1)} °C
             </div>
-            <div style={{ color: C.dim, fontSize: 14 }}>
-              ambiente {lectura.ambiente.toFixed(1)} °C
+            {/* El mensaje empuja a actuar. Ese es el punto de la pantalla:
+                que vean el numero subir y se apuren, no que lo analicen. */}
+            <div style={{
+              fontSize: 17, fontWeight: 700, marginTop: 2,
+              color: estimada > 8 ? C.bad : estimada > 6 ? C.warn : C.ok,
+            }}>
+              {estimada > 8 ? 'Guardá la bandeja ya'
+               : estimada > 6 ? 'Se está calentando — apurate'
+               : 'En rango'}
+            </div>
+            <div style={{ color: C.dim, fontSize: 13, marginTop: 7 }}>
+              estimada para bolita de 0.15 lb · ambiente {lectura.ambiente.toFixed(1)} °C
               {lectura.bateria ? ` · batería ${lectura.bateria}%` : ''}
               {' · '}
               <span style={{ color: vivo ? C.ok : C.bad }}>{vivo ? 'en vivo' : 'sin señal'}</span>
@@ -294,57 +379,91 @@ export default function CarneBoleadoView({ user }) {
       {tanda && tanda.estado !== 'terminada' && (
         <div style={{ ...card, borderColor: vencido ? C.warn : C.line, borderWidth: 2 }}>
           <div style={{ color: C.dim, fontSize: 14 }}>
-            {tanda.estado === 'mezclando' ? 'Paso 1 · Mezclando' : `Paso 2 · Boleando ${LIBRAS_BOLEAR} lb`}
-          </div>
-          <div style={{
-            fontSize: 74, fontWeight: 700, lineHeight: 1.05, margin: '4px 0',
-            color: vencido ? C.warn : C.txt, textAlign: 'center',
-          }}>
-            {vencido ? '¡Tiempo!' : mmss(restante)}
+            {tanda.estado === 'mezclando'
+              ? 'Paso 1 · Mezclando las 100 lb'
+              : ronda
+                ? `Ronda ${ronda.numero} de ${RONDAS} · boleando ${LIBRAS_BOLEAR} lb`
+                : `Ronda ${(tanda.ronda_actual || 0) + 1} de ${RONDAS} · lista para empezar`}
           </div>
 
-          {tanda.estado === 'mezclando' ? (
+          {(tanda.estado === 'mezclando' || ronda) && (
+            <div style={{
+              fontSize: 72, fontWeight: 700, lineHeight: 1.05, margin: '4px 0',
+              color: vencido ? C.warn : C.txt, textAlign: 'center',
+            }}>
+              {vencido ? '¡Tiempo!' : mmss(restante)}
+            </div>
+          )}
+
+          {/* ── Mezclado ── */}
+          {tanda.estado === 'mezclando' && (
             <>
               {vencido && (
-                <div style={{
-                  background: '#2a2410', border: `2px solid ${C.warn}`, borderRadius: 11,
-                  padding: 16, margin: '12px 0', textAlign: 'center',
-                }}>
+                <div style={{ background: '#2a2410', border: `2px solid ${C.warn}`, borderRadius: 11, padding: 16, margin: '12px 0', textAlign: 'center' }}>
                   <div style={{ fontSize: 21, fontWeight: 700, color: C.warn }}>
-                    Guardá {LIBRAS_LOTE - LIBRAS_BOLEAR} libras
+                    Guardá {LIBRAS_LOTE - LIBRAS_BOLEAR} libras en el freezer
                   </div>
                   <div style={{ fontSize: 16, color: '#fde68a', marginTop: 5 }}>
-                    Quedate con {LIBRAS_BOLEAR} lb y empezá a bolear
+                    Quedate con {LIBRAS_BOLEAR} lb para la primera ronda
                   </div>
                 </div>
               )}
-              {/* La testigo se arma junto con la primera bolita real, no despues:
-                  si se arma tarde, no vive el peor caso y la medicion no sirve. */}
-              <div style={{
-                background: '#101827', border: `1px solid ${C.acc}`, borderRadius: 11,
-                padding: 14, margin: '12px 0',
-              }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: C.acc }}>
-                  Antes de arrancar: armá la bolita testigo
-                </div>
-                <div style={{ fontSize: 14.5, color: '#bfdbfe', marginTop: 6, lineHeight: 1.55 }}>
-                  Junto con la primera bolita, hacé una de {BOLITA_TESTIGO_G} g con
-                  la sonda clavada adentro. Dejala en la misma bandeja. Al final
-                  se descarta — <b>no se usa</b>.
-                </div>
-              </div>
-              <button onClick={pasarABoleado} disabled={!lectura}
+              <AvisoTestigo numero={1} />
+              <button onClick={() => iniciarRonda(1)} disabled={!lectura}
                 style={btn(vencido ? C.warn : '#3f3f46', !lectura)}>
-                {lectura ? 'Ya guardé · empiezo a bolear' : 'Conectá la sonda primero'}
+                {lectura ? 'Ya guardé · empiezo la ronda 1' : 'Conectá la sonda primero'}
               </button>
             </>
-          ) : (
-            <button onClick={terminar} style={btn(C.ok)}>Terminé de bolear</button>
           )}
 
-          <div style={{ color: C.dim, fontSize: 12.5, marginTop: 11, textAlign: 'center' }}>
-            {guardadas} lecturas guardadas · dejá esta pantalla abierta
-          </div>
+          {/* ── Boleando una ronda ── */}
+          {ronda && (
+            <button onClick={cerrarRonda} style={btn(C.ok)}>
+              Terminé la ronda {ronda.numero}
+            </button>
+          )}
+
+          {/* ── Entre rondas: la carne siguiente sale del freezer ── */}
+          {tanda.estado === 'boleando' && !ronda && (tanda.ronda_actual || 0) < RONDAS && (
+            <>
+              <div style={{ background: '#101827', border: `1px solid ${C.acc}`, borderRadius: 11, padding: 16, margin: '12px 0', textAlign: 'center' }}>
+                <div style={{ fontSize: 19, fontWeight: 700, color: C.acc }}>
+                  Llevá la bandeja al freezer
+                </div>
+                <div style={{ fontSize: 15, color: '#bfdbfe', marginTop: 5 }}>
+                  y sacá las siguientes {LIBRAS_BOLEAR} lb
+                </div>
+              </div>
+              <AvisoTestigo numero={(tanda.ronda_actual || 0) + 1} />
+              <button onClick={() => iniciarRonda((tanda.ronda_actual || 0) + 1)} disabled={!lectura}
+                style={btn(C.ok, !lectura)}>
+                Empiezo la ronda {(tanda.ronda_actual || 0) + 1}
+              </button>
+            </>
+          )}
+
+          {/* ── Rondas ya cerradas ── */}
+          {rondas.length > 0 && (
+            <div style={{ marginTop: 14, borderTop: `1px solid ${C.line}`, paddingTop: 12 }}>
+              {rondas.map(r => (
+                <div key={r.numero} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0' }}>
+                  <span style={{ color: C.dim }}>Ronda {r.numero}</span>
+                  <span>
+                    arrancó en <b>{r.temp_inicial ?? '—'}</b> · máx{' '}
+                    <b style={{ color: Number(r.temp_max) > 8 ? C.bad : Number(r.temp_max) > 6 ? C.warn : C.ok }}>
+                      {r.temp_max ?? '—'} °C
+                    </b>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(tanda.estado === 'mezclando' || ronda) && (
+            <div style={{ color: C.dim, fontSize: 12.5, marginTop: 11, textAlign: 'center' }}>
+              {guardadas} lecturas guardadas · dejá esta pantalla abierta
+            </div>
+          )}
         </div>
       )}
 
@@ -358,8 +477,8 @@ export default function CarneBoleadoView({ user }) {
             <div><span style={{ color: C.dim }}>sobre 6 °C</span><br /><b>{tanda.minutos_sobre_6 ?? 0} min</b></div>
           </div>
           <div style={{ color: C.dim, fontSize: 12.5, marginTop: 10, lineHeight: 1.5 }}>
-            Medido en la bolita testigo de {BOLITA_TESTIGO_G} g. Una bolita real pesa
-            menos y se calienta más rápido, así que la temperatura real fue algo mayor.
+            Estimado para una bolita de 0.15 lb, a partir de la sonda en la testigo de
+            0.30 lb más {OFFSET_ESTIMADO_C} °C. La lectura cruda queda guardada aparte.
           </div>
           <button onClick={() => { setTanda(null); setSeg(0) }} style={{ ...btn(C.acc), marginTop: 14 }}>
             Empezar otra tanda
@@ -378,7 +497,12 @@ export default function CarneBoleadoView({ user }) {
           </button>
           {diag && (
             <div style={{ marginTop: 11, fontSize: 13, lineHeight: 1.7 }}>
-              <div style={{ color: C.dim }}>Las 6 temperaturas del paquete:</div>
+              <div style={{ color: C.dim }}>
+                Sonda en la testigo: <b style={{ color: C.txt }}>{lectura.carne.toFixed(1)} °C</b>
+                {'  ·  '}en pantalla: <b style={{ color: C.txt }}>{estimada.toFixed(1)} °C</b>
+                {'  ·  '}offset +{OFFSET_ESTIMADO_C}
+              </div>
+              <div style={{ color: C.dim, marginTop: 8 }}>Las 6 temperaturas del paquete:</div>
               <div style={{ fontFamily: 'monospace', fontSize: 15, margin: '4px 0 10px' }}>
                 {lectura.todas.map(v => v.toFixed(1)).join('  ·  ')}
               </div>
