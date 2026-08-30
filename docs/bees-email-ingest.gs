@@ -6,10 +6,11 @@
  * recepciones automáticas en compras_bees.
  *
  * Setup:
- *  1. Crear proyecto en script.google.com con la cuenta que recibe los correos BEES
- *     (⚠️ 30-ago-2026: HOY los correos de las 4 cuentas BEES de Freakie no llegan
- *     a ningún buzón del ERP — hay que poner el email en la app BEES por cuenta,
- *     o crear un reenvío desde el buzón que los recibe. Ver memoria.md.)
+ *  1. Crear proyecto en script.google.com con la cuenta freakiedogs@gmail.com
+ *     (ahí llegan los correos BEES reales, remitente test@mail.mybees.sv).
+ *     ⚠️ 30-ago-2026: este GAS es OPCIONAL — ya corre una Routine de claude.ai
+ *     2×/día que hace lo mismo (misma etiqueta bees-procesado + dedup B2B en la
+ *     edge function, así que instalar ambos no duplica nada). Ver memoria.md.
  *  2. Pegar este script
  *  3. Ejecutar setupBeesTrigger() una vez → crea trigger cada 5 min
  *  4. Autorizar permisos de Gmail + UrlFetch
