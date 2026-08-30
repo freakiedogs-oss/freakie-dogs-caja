@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
+import AgrandadoChip from './AgrandadoChip'
 import Icon from './Icon'
 import PlanoEditor from './cajero/PlanoEditor'
 import { confirmAsync } from './confirmDialog'
@@ -266,6 +267,10 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </span>
         )}
         <span className="pos-header-sep" />
+        {/* El contador de agrandados va aca y no en una pestana aparte del ERP:
+            la cajera lo tiene delante todo el turno mientras cobra. Si no
+            aplica para ella, el componente no pinta nada. */}
+        <AgrandadoChip user={user} />
         <span className="pos-header-user">{user.nombre?.split(' ')[0]}</span>
         <Clock />
         {onReport && <button className="pos-header-btn" onClick={onReport} title="Reportar un problema" aria-label="Reportar un problema">🛟</button>}
