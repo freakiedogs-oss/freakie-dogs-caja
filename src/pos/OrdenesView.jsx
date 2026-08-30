@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES } from '../config'
 import Icon from './Icon'
@@ -31,9 +31,10 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
   const [activas, setActivas] = useState([])
   const [loading, setLoading] = useState(true)
   const [pinAuth, setPinAuth] = useState(null)
+  const firstLoadRef = useRef(true)   // spinner solo en la 1ª carga; los refrescos son silenciosos
 
   const loadActivas = useCallback(async () => {
-    setLoading(true)
+    if (firstLoadRef.current) setLoading(true)
     const { data } = await db
       .from('pos_cuentas')
       .select('id, tipo, mesa_ref, estado, subtotal, total, created_at, cliente_nombre, delivery_referencia, delivery_metodo_pago, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
@@ -41,6 +42,7 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
       .in('estado', ESTADO_ACTIVO)
       .order('created_at')
     setActivas(data || [])
+    firstLoadRef.current = false
     setLoading(false)
   }, [storeCode])
 
@@ -80,6 +82,23 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
       .subscribe()
     return () => db.removeChannel(sub)
   }, [storeCode, tab, loadActivas])
+
+  // Respaldo (patrón del KDS — incidente 29-ago: realtime caído = lista congelada,
+  // los pedidos web nuevos no aparecían): polling + recarga al reconectar / volver.
+  useEffect(() => {
+    const refrescar = () => { if (tab === 'activas') loadActivas() }
+    const poll = setInterval(refrescar, 30000)
+    const onVis = () => { if (document.visibilityState === 'visible') refrescar() }
+    window.addEventListener('online', refrescar)
+    window.addEventListener('focus', refrescar)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      clearInterval(poll)
+      window.removeEventListener('online', refrescar)
+      window.removeEventListener('focus', refrescar)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [tab, loadActivas])
 
   const segBtn = (key, label, count) => (
     <button

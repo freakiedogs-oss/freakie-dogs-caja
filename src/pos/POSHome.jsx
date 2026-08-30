@@ -91,10 +91,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const [aperturaMesa, setAperturaMesa] = useState(null)      // mesa libre que se está abriendo (modal demografía)
   const [pax,          setPax]          = useState({ m: 1, h: 1, k: 0 })
   const longPressRef   = useRef(null)
+  const firstLoadRef   = useRef(true)   // el spinner solo en la 1ª carga; los refrescos son silenciosos
 
   // ── Carga ──
   const load = useCallback(async () => {
-    setLoading(true)
+    if (firstLoadRef.current) setLoading(true)
     const [{ data: mesasData }, { data: cuentasData }] = await Promise.all([
       db.from('pos_mesas')
         .select('*')
@@ -122,6 +123,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
       } catch { /* sin info de cambio no se bloquea la pantalla */ }
     }
     setCuentas(cList)
+    firstLoadRef.current = false
     setLoading(false)
   }, [storeCode])
 
@@ -137,6 +139,25 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
       .subscribe()
     return () => db.removeChannel(sub)
   }, [storeCode])
+
+  // Respaldo (patrón del KDS — incidente 29-ago: el realtime se cayó y a la cajera
+  // "solo le salía el de Erick Gálvez"; el pedido web nuevo nunca apareció en esta
+  // lista y terminó cobrado re-tecleado en otra cuenta): polling + recarga al
+  // reconectar wifi / volver a la pestaña. Silencioso: sin spinner tras la 1ª carga.
+  useEffect(() => {
+    const refrescar = () => setRefreshKey(k => k + 1)
+    const poll = setInterval(refrescar, 30000)
+    const onVis = () => { if (document.visibilityState === 'visible') refrescar() }
+    window.addEventListener('online', refrescar)
+    window.addEventListener('focus', refrescar)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      clearInterval(poll)
+      window.removeEventListener('online', refrescar)
+      window.removeEventListener('focus', refrescar)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
 
   // ── Derivados ──
   const cuentaPorMesa = {}
