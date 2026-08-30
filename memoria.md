@@ -2,6 +2,12 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba. El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 29-Ago-2026 (noche) — Mapeo menú: 70 → 39 sin mapear (migración `mapeo_menu_faltantes_29ago`)
+- **Mapeados ~25 grupos**: 4 cervezas nuevas por unidad (Heineken $1.29, Blue Moon $0.94, Amstel $1.27, XX $1.18 — costos de sus cajas BEES inactivas), Salutari Limón/Toronja (sin precio, BEES pendiente), Agua empleados→Agua Cristal, Coca-Cola Zero, promos de papas (Papa Chili→Chili Mini Fancys, Papa Fancy→Mini Fancy, Papa Trufa→receta nueva VERIFICAR), Hot Dog Promo Águila→Freakie Dog, Agrandado→Agrandado Soda y Papa, Birthday Burgers→Combo Hamburguesa, Pastel Sweet Freak completo (10 porciones), Hamburguesa (sola)→Hamburguesa Sencilla, y 8 extras vendidos como ítem con receta nueva (Costra CM Mix 1 oz, Jalapeños 2 oz, Peperoncinis 2 oz, Salsa Trufa 1 oz, Chili 5 oz, Mermelada 4 oz, Carne y Queso = 1 bolita + 1 lasca, Dip = cheddar 4 oz + envase — porciones VERIFICAR con Jose).
+- **Fix colado**: una fila del ítem "Agua" apuntaba a Gaseosa Coca-Cola (descontaba Coca por agua) → Agua Cristal.
+- **RPC `mapeo_menu_lista`**: los ítems de categoría Componentes (Bebida, Fries, Hot Dog, Papa…) ahora tienen estado `componente` — se dejan SIN producto a propósito porque la receta del combo ya descuenta su contenido (mapearlos = doble descuento, guardarraíl 19-ago).
+- **Quedan 39 sin mapear**: 26 cafés/chocolates (falta composición por taza — pregunta a Jose pendiente desde el BOM), Chile Bombazo, Combo GOL-OSO, 4 jicaritas, Agrandado/Cambio de bebida ×3, Cajita San Valentín, Golden Chesse, Coca Cola Balón.
+
 ## 29-Ago-2026 — Traspaso Cesar 26-ago absorbido completo + Editor de Recetas en el ERP + fixes masivos de deducción
 
 - **Verificado el principio "receta al momento de la venta":** `pos_deducir_inventario` resuelve la receta vía `recetas.catalogo_id = pos_menu_items.producto_id` EN el momento de la venta, explota y escribe kardex de inmediato (guard `ya_procesada` por cuenta). El kardex es inmutable → las recetas pueden evolucionar sin cambiar deducciones pasadas. La recursión SE DETIENE en sub-recetas con `catalogo_id` (descuenta la bolsa de Chili/porción producida, no la materia prima — esa se consume en producción CM).
