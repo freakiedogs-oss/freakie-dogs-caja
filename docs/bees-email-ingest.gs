@@ -7,9 +7,18 @@
  *
  * Setup:
  *  1. Crear proyecto en script.google.com con la cuenta que recibe los correos BEES
+ *     (⚠️ 30-ago-2026: HOY los correos de las 4 cuentas BEES de Freakie no llegan
+ *     a ningún buzón del ERP — hay que poner el email en la app BEES por cuenta,
+ *     o crear un reenvío desde el buzón que los recibe. Ver memoria.md.)
  *  2. Pegar este script
  *  3. Ejecutar setupBeesTrigger() una vez → crea trigger cada 5 min
  *  4. Autorizar permisos de Gmail + UrlFetch
+ *
+ * El edge function resuelve la sucursal por el nombre de la cuenta en el saludo
+ * ("Freakie Dogs Soyapango, Tu pedido a través de BEES...") o por la Información
+ * de facturación; si el nombre no trae keyword de sucursal, responde
+ * "Cannot resolve sucursal" y NO inserta (así los correos de otros negocios,
+ * p.ej. Restaurante Pasquale, se descartan solos).
  */
 
 var BEES = {
@@ -33,6 +42,7 @@ function beesIngest() {
       var text = msgs[j].getPlainBody();
       if (!text || text.length < 50) continue;
       if (!/Producto/i.test(text)) continue;
+      if (/ha sido cancelado/i.test(text)) continue; // cancelaciones: no ingestar
 
       try {
         var resp = UrlFetchApp.fetch(BEES.EDGE_URL, {
