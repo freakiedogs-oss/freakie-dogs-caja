@@ -448,6 +448,20 @@ export function buildCorte(c, cols = 48) {
     t.row('Total items', money(totalItems));
     t.hr();
   }
+  // Apartado: CORTESÍAS del turno. Lo regalado igual sale del inventario, así que
+  // el gerente tiene que verlo acá con su motivo y quién lo autorizó.
+  if (Array.isArray(c.cortesias) && c.cortesias.length) {
+    t.bold(true).ln('CORTESIAS (regalado)').bold(false);
+    let totCort = 0;
+    for (const k of c.cortesias) {
+      totCort += Number(k.valor) || 0;
+      t.row(`${Number(k.cantidad) || 0} x ${String(k.nombre || '').trim()}`.slice(0, cols - 12), money(k.valor));
+      const det = [k.autorizo && k.autorizo !== '—' ? `aut. ${k.autorizo}` : '', k.motivo || ''].filter(Boolean).join(' · ');
+      if (det) t.wrap('   ' + det);
+    }
+    t.bold(true).row('Valor regalado', money(totCort)).bold(false);
+    t.hr();
+  }
   // Apartado: consumo de EMPLEADO (Jose 14-ago; con nombre real y detalle 30-ago).
   // Una línea por PERSONA (no por cuenta): cuántas compras hizo, cuánto pagó,
   // cuánto se le descontó y qué se llevó — así el gerente lo revisa de un vistazo.
@@ -514,6 +528,14 @@ function corteHTML(c) {
       L.push({ row: 1, left: it.nombre || '', right: s === 'BEBIDAS' ? `${cant}  ____` : String(cant) });
     }
     cerrarSecH();
+  }
+  if (Array.isArray(c.cortesias) && c.cortesias.length) {
+    L.push({ hr: 1 }, { bold: 1, text: 'CORTESÍAS (regalado)' });
+    for (const k of c.cortesias) {
+      L.push({ row: 1, left: `${Number(k.cantidad) || 0} x ${k.nombre || ''}`, right: money(k.valor) });
+      const det = [k.autorizo && k.autorizo !== '—' ? `aut. ${k.autorizo}` : '', k.motivo || ''].filter(Boolean).join(' · ');
+      if (det) L.push({ text: '   ' + det });
+    }
   }
   if (Array.isArray(c.descEmpleado) && c.descEmpleado.length) {
     L.push({ hr: 1 }, { bold: 1, text: 'CONSUMO DE EMPLEADOS (con descuento)' });

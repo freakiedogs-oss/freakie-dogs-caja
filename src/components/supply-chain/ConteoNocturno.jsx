@@ -6,6 +6,13 @@ import { useToast } from '../../hooks/useToast';
 
 const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
 
+// ⚠️ TEMPORAL (Jose 30-ago): en Cafetalón/"Tecla" (M001) se desactivan los gates de
+// cierre Z y despachos pendientes para poder revisar las pantallas nuevas (merma,
+// bebidas, conteo) con la caja abierta. QUITAR de esta lista cuando terminemos los
+// cambios — sin los gates se puede contar sobre un día sin cerrar y el teórico
+// queda contra ventas a medio turno.
+const SIN_GATES_TEMPORAL = ['M001'];
+
 /* ── Stepper button style (48px touch target) ── */
 const stepBtn={
   width:48,height:48,borderRadius:12,border:'1px solid #333',
@@ -49,6 +56,18 @@ export default function ConteoNocturno({user,onBack}){
   const [storeCodeSel,setStoreCodeSel]=useState(user.store_code||null);
   const [descargandoPdf,setDescargandoPdf]=useState(false);
 
+  // ── Reporte de MERMA, obligatorio antes de contar (pedido Jose 30-ago) ──
+  // Primero se declara la merma del día (puede ser "no hubo") y hasta entonces se
+  // habilitan los conteos. Si no se pide antes, la merma se "esconde" dentro de la
+  // diferencia del conteo y el tab de Fugas la lee como faltante sin explicación.
+  const [mermaLista,setMermaLista]=useState(false);      // ya declarada en esta sesión
+  const [mermaItems,setMermaItems]=useState([]);         // [{producto_id,nombre,unidad,cantidad}]
+  const [mermaMotivo,setMermaMotivo]=useState('');
+  const [mermaBusca,setMermaBusca]=useState('');
+  const [mermaCatalogo,setMermaCatalogo]=useState([]);   // productos de la sucursal
+  const [guardandoMerma,setGuardandoMerma]=useState(false);
+  const [mermaHoy,setMermaHoy]=useState(null);           // merma ya registrada hoy (informativa)
+
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
 
@@ -78,7 +97,8 @@ export default function ConteoNocturno({user,onBack}){
 
       // 0a. Gate: no se puede contar sin cierre Z del día
       const sc = storeCode || user.store_code;
-      if (sc) {
+      const sinGates = SIN_GATES_TEMPORAL.includes(sc);   // ⚠️ temporal, ver arriba
+      if (sc && !sinGates) {
         const cierreFiltro = sc === 'S003'
           ? { store_code: sc, fecha: hoy, tipo_cierre: 'Z', caja: 'general' }
           : { store_code: sc, fecha: hoy, tipo_cierre: 'Z' };
@@ -93,7 +113,7 @@ export default function ConteoNocturno({user,onBack}){
       }
 
       // 0b. Gate: no se puede hacer pedido si hay despachos sin recepción humana
-      const { data: despPend } = await db.from('despachos_sucursal')
+      const { data: despPend } = sinGates ? { data: [] } : await db.from('despachos_sucursal')
         .select('id, fecha_despacho, estado')
         .eq('sucursal_id', sucId)
         .neq('estado', 'recibido')
@@ -181,6 +201,56 @@ export default function ConteoNocturno({user,onBack}){
       show('❌ Error cargando datos: ' + e.message);
       setLoading(false);
     }
+  };
+
+  // Carga el catálogo de la sucursal para el buscador de merma y avisa si ya se
+  // registró merma hoy (para no pedirla dos veces si vuelven a entrar).
+  const abrirMerma=async(sucId)=>{
+    setSucursalId(sucId);
+    setLoading(true);
+    try{
+      const {data:invData}=await db.from('inventario')
+        .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo)')
+        .eq('sucursal_id', sucId);
+      const cat=(invData||[])
+        .filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false)
+        .map(r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
+                  unidad:r.catalogo_productos.unidad_medida||'unidad'}))
+        .sort((a,b)=>a.nombre.localeCompare(b.nombre));
+      setMermaCatalogo(cat);
+      try{
+        const desde=today()+'T00:00:00-06:00';
+        const {data:km}=await db.from('kardex_movimientos')
+          .select('cantidad, notas')
+          .eq('sucursal_id', sucId).eq('tipo','merma').gte('created_at', desde);
+        setMermaHoy(km && km.length ? km.length : null);
+      }catch{ setMermaHoy(null); }
+      setScreen('merma');
+      setLoading(false);
+    }catch(e){ show('❌ Error cargando productos: '+e.message); setLoading(false); }
+  };
+
+  const guardarMerma=async()=>{
+    const items=mermaItems.filter(m=>n(m.cantidad)>0);
+    if(items.length===0){ show('⚠️ Agregá al menos un producto con cantidad, o marcá "No hubo merma"'); return; }
+    if(mermaMotivo.trim().length<5){ show('⚠️ Escribí el motivo (mínimo 5 caracteres)'); return; }
+    setGuardandoMerma(true);
+    try{
+      const {data:resp,error}=await db.rpc('registrar_merma',{
+        p_items: items.map(m=>({producto_id:m.producto_id, cantidad:n(m.cantidad)})),
+        p_sucursal_id: sucursalId,
+        p_motivo: mermaMotivo.trim(),
+        p_usuario_id: user.id,
+        p_notas: null,
+      });
+      if(error) throw error;
+      show(`✅ Merma registrada: ${resp?.productos||items.length} producto(s)`
+           + (resp?.valor ? ` · $${Number(resp.valor).toFixed(2)}` : ''));
+      setMermaLista(true);
+      setMermaItems([]); setMermaMotivo('');
+      setScreen('elegir');
+    }catch(e){ show('❌ No se pudo registrar la merma: '+e.message); }
+    finally{ setGuardandoMerma(false); }
   };
 
   // Conteo de BEBIDAS: solo productos de bebida/cerveza/soda de la sucursal.
@@ -294,8 +364,7 @@ export default function ConteoNocturno({user,onBack}){
         setSucursalNombre(suc.nombre);
         setSucursalId(suc.id);
         setStoreCodeSel(user.store_code);
-        setScreen('elegir');
-        setLoading(false);
+        await abrirMerma(suc.id);
       }catch(e){
         show('❌ Error cargando datos: '+e.message);
         setLoading(false);
@@ -585,12 +654,115 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         </div>
         {sucursales.map(s=>(
-          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);setSucursalId(s.id);setStoreCodeSel(s.store_code);setScreen('elegir');}}
+          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);setStoreCodeSel(s.store_code);abrirMerma(s.id);}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
             <div style={{fontWeight:600,fontSize:15,color:'#fff'}}>{s.nombre}</div>
             <div style={{color:'#888',fontSize:12}}>{s.store_code}</div>
           </button>
         ))}
+      </div>
+    );
+  }
+
+  // ── PANTALLA MERMA: obligatoria antes de cualquier conteo ──
+  if(screen==='merma'){
+    const filtrados=mermaBusca.trim().length<2 ? [] : mermaCatalogo
+      .filter(p=>p.nombre.toLowerCase().includes(mermaBusca.trim().toLowerCase())
+                 && !mermaItems.some(m=>m.producto_id===p.producto_id))
+      .slice(0,8);
+    const totalUnidades=mermaItems.reduce((s,m)=>s+n(m.cantidad),0);
+    return(
+      <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
+        <Toast/>
+        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={needsSucursalPicker?()=>setScreen(0):onBack}
+            style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <div>
+            <div style={{fontWeight:800,fontSize:18}}>🗑️ Reporte de merma</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · paso 1 de 2</div>
+          </div>
+        </div>
+
+        <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#e6394620',border:'1px solid #e63946'}}>
+          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Primero la merma, después el conteo</div>
+          <div style={{fontSize:11,color:'#d98a8f',lineHeight:1.5}}>
+            Reportá lo que se botó, se quemó o se dañó hoy. Si no hubo nada, tocá "No hubo merma".
+            Lo que no se reporte acá aparece como faltante sin explicación en el tab de Fugas.
+          </div>
+        </div>
+
+        {mermaHoy>0&&(
+          <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:'#facc1520',border:'1px solid #facc15',fontSize:11,color:'#d4a017'}}>
+            Ojo: hoy ya se registraron <b>{mermaHoy}</b> movimiento(s) de merma en esta sucursal. Si ya la reportaste, seguí sin agregar nada.
+          </div>
+        )}
+
+        {/* Buscador */}
+        <input value={mermaBusca} onChange={e=>setMermaBusca(e.target.value)}
+          placeholder="Buscar producto… (ej: pan, carne, coca)"
+          style={{width:'100%',padding:'13px 14px',background:'#0a0a0a',border:'1px solid #333',
+                  borderRadius:10,color:'#fff',fontSize:15,marginBottom:8}}/>
+        {filtrados.map(p=>(
+          <button key={p.producto_id} className="card"
+            onClick={()=>{setMermaItems(prev=>[...prev,{...p,cantidad:1}]);setMermaBusca('');}}
+            style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:6,padding:12}}>
+            <div style={{fontSize:14,color:'#fff'}}>{p.nombre}</div>
+            <div style={{fontSize:11,color:'#888'}}>{p.unidad}</div>
+          </button>
+        ))}
+        {mermaBusca.trim().length>=2&&filtrados.length===0&&(
+          <div style={{color:'#666',fontSize:12,padding:'6px 2px',marginBottom:8}}>Sin resultados</div>
+        )}
+
+        {/* Items agregados */}
+        {mermaItems.map((m,i)=>(
+          <div key={m.producto_id} className="card" style={{borderLeft:'3px solid #e63946'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <div>
+                <div style={{fontWeight:600,fontSize:14}}>{m.nombre}</div>
+                <div style={{fontSize:11,color:'#888'}}>unidades de {m.unidad}</div>
+              </div>
+              <button onClick={()=>setMermaItems(prev=>prev.filter((_,j)=>j!==i))}
+                style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>✕</button>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <button style={stepBtn} onClick={()=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,cantidad:Math.max(0,n(x.cantidad)-1)}:x))}>−</button>
+              <input type="number" inputMode="decimal" min="0" step="any" value={m.cantidad}
+                onChange={e=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,cantidad:e.target.value}:x))}
+                style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}/>
+              <button style={stepBtn} onClick={()=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,cantidad:n(x.cantidad)+1}:x))}>+</button>
+            </div>
+          </div>
+        ))}
+
+        {mermaItems.length>0&&(
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:12,color:'#aaa',marginBottom:6}}>¿Qué pasó? (obligatorio)</div>
+            <textarea rows={2} value={mermaMotivo} onChange={e=>setMermaMotivo(e.target.value)}
+              placeholder="Ej: se quemaron 3 hamburguesas, se cayó una bolsa de papas…"
+              style={{width:'100%',padding:12,background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:14,resize:'vertical'}}/>
+          </div>
+        )}
+
+        <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 20px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
+          {mermaItems.length>0?(
+            <button className="btn btn-red" onClick={guardarMerma} disabled={guardandoMerma}
+              style={{fontSize:17,padding:18,width:'100%',marginBottom:8}}>
+              {guardandoMerma?<span className="spin"/>:`🗑️ Reportar merma (${totalUnidades} u) y continuar`}
+            </button>
+          ):(
+            <button className="btn btn-red" onClick={()=>{setMermaLista(true);setScreen('elegir');}}
+              style={{fontSize:17,padding:18,width:'100%',marginBottom:8,background:'#16a34a'}}>
+              ✓ No hubo merma — continuar
+            </button>
+          )}
+          {mermaItems.length>0&&(
+            <button onClick={()=>{setMermaItems([]);setMermaMotivo('');}}
+              style={{background:'none',border:'none',color:'#555',fontSize:12,cursor:'pointer',width:'100%',padding:6}}>
+              Limpiar lista
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -601,12 +773,15 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
         <Toast/>
         <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
-          <button onClick={needsSucursalPicker?()=>setScreen(0):onBack}
+          <button onClick={()=>setScreen('merma')}
             style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
             <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
             <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ¿qué vas a contar?</div>
           </div>
+        </div>
+        <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80',fontSize:11,color:'#4ade80'}}>
+          ✓ Merma reportada. Ya podés contar. <span style={{color:'#3bbd6b'}}>(¿Faltó algo? Volvé con la flecha.)</span>
         </div>
         <button className="card" onClick={()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
           style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:10,padding:18}}>

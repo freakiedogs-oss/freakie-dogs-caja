@@ -27,11 +27,12 @@ const TIPO_INFO = {
 // ── Permisos por rol ──
 // Fila deslizable: arrastra a la izquierda para revelar el boton rojo "Eliminar".
 // Funciona con mouse (drag) y tactil (swipe). No bloquea el scroll vertical (touch-action: pan-y en CSS).
-function SwipeRow({ children, onDelete }) {
+function SwipeRow({ children, onDelete, onCortesia }) {
   const [dx, setDx] = useState(0)
   const [open, setOpen] = useState(false)
   const start = useRef(null)
-  const REVEAL = 96
+  // Con cortesía se revelan DOS botones, así que el recorrido es el doble.
+  const REVEAL = onCortesia ? 192 : 96
 
   const down = (e) => { start.current = e.clientX; try { e.currentTarget.setPointerCapture(e.pointerId) } catch (_) {} }
   const move = (e) => {
@@ -47,11 +48,22 @@ function SwipeRow({ children, onDelete }) {
     setOpen(abierto); setDx(abierto ? -REVEAL : 0)
   }
 
+  const cerrar = () => { setOpen(false); setDx(0) }
+
   return (
     <div className="swipe-wrap">
-      <button className="swipe-del" style={{ width: REVEAL }} onClick={() => { setOpen(false); setDx(0); onDelete() }}>
-        <Icon name="trash" size={20} /><span>Eliminar</span>
-      </button>
+      <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, display: 'flex' }}>
+        {onCortesia && (
+          <button className="swipe-del" style={{ width: 96, position: 'relative', background: '#7c3aed' }}
+            onClick={() => { cerrar(); onCortesia() }}>
+            <Icon name="gift" size={20} /><span>Cortesía</span>
+          </button>
+        )}
+        <button className="swipe-del" style={{ width: 96, position: 'relative' }}
+          onClick={() => { cerrar(); onDelete() }}>
+          <Icon name="trash" size={20} /><span>Eliminar</span>
+        </button>
+      </div>
       <div
         className="swipe-fg"
         style={{ transform: `translateX(${dx}px)`, transition: start.current == null ? 'transform .18s ease' : 'none' }}
@@ -81,6 +93,15 @@ const DEFAULT_PERMS = { comandar: false, moverMesa: false, preCuenta: false, anu
 // Mapeo tipoDte UI → código MH para CHECK constraint en BD
 const DTE_TIPO_MAP = { factura: '01', ccf: '03', se: '14', ticket: null }
 
+// Roles que pueden autorizar una CORTESÍA (regalar un ítem). Más estricto que
+// anular: acá se regala producto, así que no basta con la cajera.
+const ROLES_CORTESIA = ['gerente', 'admin', 'ejecutivo', 'superadmin']
+
+// Precio cobrado de una línea. Una cortesía se cobra $0 pero el ítem sigue
+// existiendo (y descontando inventario), así que el único lugar donde cambia
+// es el dinero: por eso todo el POS suma por acá.
+const precioLinea = (i) => (i?.cortesia ? 0 : (i.precio + (i.precioExtra || 0)) * i.qty)
+
 // Aplana el carrito a líneas de DTE: ítem base + una línea por cada extra con precio (>0).
 // Los extras gratis no generan línea. Cada extra hereda la cantidad del ítem padre.
 // Arma las líneas del DTE. `descuento` es el monto en $ aplicado a la cuenta: se PRORRATEA
@@ -88,7 +109,10 @@ const DTE_TIPO_MAP = { factura: '01', ccf: '03', se: '14', ticket: null }
 // cortesía del 100% emitía un DTE por el monto entero habiendo cobrado $0 (sobre-declaración).
 function buildDteLineItems(cart, descuento = 0) {
   const lines = []
-  cart.forEach(it => {
+  // Las cortesías NO van al DTE: no se cobraron. Incluirlas con precio 0 mete
+  // líneas de venta gravada 0 que Hacienda puede rechazar, y declararlas a
+  // precio lleno sería declarar de más algo que el cliente no pagó.
+  cart.filter(it => !it.cortesia).forEach(it => {
     lines.push({ nombre: it.nombre, precio: it.precio, qty: it.qty })
     ;(it.modificadores || []).forEach(m => {
       const px = Number(m.precio_extra) || 0
@@ -196,6 +220,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [showPayModal,      setShowPayModal]       = useState(false)
   const [showNoteModal,     setShowNoteModal]      = useState(null)
   const [pinAuth,           setPinAuth]            = useState(null)
+  const [cortesiaModal,     setCortesiaModal]      = useState(null)  // {idx, auth, motivo}
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [removibles,        setRemovibles]         = useState([])    // ingredientes que admiten "SIN"
@@ -442,7 +467,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
       const { data: itemsData } = await db
         .from('pos_cuenta_items')
-        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes, atencion_especial, destino')
+        .select('id, menu_item_id, nombre, precio_unitario, cantidad, notas, modificadores, precio_modificadores, componentes, atencion_especial, destino, cortesia, cortesia_motivo, cortesia_por, cortesia_valor')
         .eq('cuenta_id', cuentaCtx.cuentaId)
         .is('cancelado_motivo', null)
         .order('created_at')
@@ -462,6 +487,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           esCombo:       Array.isArray(it.componentes) && it.componentes.length > 0,
           atencionEspecial: !!it.atencion_especial,
           destino:       it.destino || null,
+          // La cortesía ya está guardada en 0; el precio original vive en cortesia_valor
+          cortesia:      !!it.cortesia,
+          cortesiaMotivo: it.cortesia_motivo || '',
+          cortesiaPor:   it.cortesia_por || null,
+          cortesiaValor: it.cortesia_valor != null ? parseFloat(it.cortesia_valor) : null,
         }))
         setItems(loaded)
         setCommandedCount(loaded.length)
@@ -645,6 +675,56 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     }
   }
 
+  // ── CORTESÍA POR ÍTEM (pedido Jose 30-ago) ──
+  // Deslizar el ítem → "Cortesía": PIN de gerente + nota obligatoria. El ítem
+  // queda en $0 pero SIGUE descontando inventario (la deducción va por
+  // menu_item/componentes, no por precio) y queda firmado quién lo autorizó.
+  const handleCortesia = (idx) => {
+    const item = items[idx]
+    if (!item) return
+    if (item.cortesia) { toast.info('Este ítem ya está marcado como cortesía'); return }
+    setPinAuth({
+      titulo: 'Autorizar cortesía',
+      subtitulo: `"${item.nombre}" pasa a $0 · requiere gerente`,
+      roles: ROLES_CORTESIA,
+      onOk: (auth) => { setPinAuth(null); setCortesiaModal({ idx, auth, motivo: '' }) },
+    })
+  }
+
+  const aplicarCortesia = async (idx, auth, motivo) => {
+    const item = items[idx]
+    if (!item) return
+    const valor = (item.precio + (item.precioExtra || 0)) * item.qty
+    const marcado = {
+      cortesia: true,
+      cortesiaMotivo: motivo,
+      cortesiaPor: auth?.id || null,
+      cortesiaValor: valor,
+    }
+    try {
+      // Si ya está comandado, el ítem vive en BD: se pone en 0 ahí mismo. El
+      // precio original NO se pierde, queda en cortesia_valor para poder medir
+      // cuánto se regala.
+      if (item.saved && item.dbId) {
+        const { error } = await db.from('pos_cuenta_items').update({
+          precio_unitario: 0, precio_modificadores: 0,
+          cortesia: true, cortesia_motivo: motivo,
+          cortesia_por: auth?.id || null, cortesia_valor: valor,
+        }).eq('id', item.dbId)
+        if (error) throw error
+      }
+      const next = items.map((x, i) => (i === idx ? { ...x, ...marcado } : x))
+      setItems(next)
+      if (cuentaId) {
+        const s = next.reduce((a, i) => a + precioLinea(i), 0)
+        await db.from('pos_cuentas').update({ subtotal: s, total: s, updated_at: new Date().toISOString() }).eq('id', cuentaId)
+      }
+      toast.success(`Cortesía aplicada — ${item.nombre} a $0 (autorizó ${auth?.nombre || '—'})`)
+    } catch (e) {
+      toast.error('No se pudo marcar la cortesía: ' + e.message)
+    }
+  }
+
   const doDeleteItem = async (idx, auth) => {
     const item = items[idx]
     if (!item) return
@@ -658,7 +738,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         const next = items.filter((_, i) => i !== idx)
         setItems(next)
         if (cuentaId) {
-          const s = next.reduce((a, i) => a + (i.precio + (i.precioExtra || 0)) * i.qty, 0)
+          const s = next.reduce((a, i) => a + precioLinea(i), 0)
           await db.from('pos_cuentas').update({ subtotal: s, total: s, updated_at: new Date().toISOString() }).eq('id', cuentaId)
         }
         toast.success('Item anulado')
@@ -690,7 +770,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   }
 
   // Totales
-  const subtotal = items.reduce((s, i) => s + (i.precio + (i.precioExtra || 0)) * i.qty, 0)
+  const subtotal = items.reduce((s, i) => s + precioLinea(i), 0)
   const descuentoMonto = descuentoTipo === 'porcentaje'
     ? Math.round(subtotal * descuento / 100 * 100) / 100
     : descuentoTipo === 'cortesia'
@@ -726,7 +806,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       })
       // El precio de la línea incluye los extras: con solo i.precio, las líneas del ticket
       // no sumaban el subtotal impreso y el cliente que sumaba a mano no le cuadraba.
-      return { nombre: i.nombre, precio: i.precio + (i.precioExtra || 0), qty: i.qty,
+      // La cortesía se imprime en $0 y con la marca, para que el cliente vea qué se le regaló
+      if (i.cortesia) modificadores.push('*** CORTESIA ***')
+      return { nombre: i.nombre, precio: i.cortesia ? 0 : (i.precio + (i.precioExtra || 0)), qty: i.qty,
                nota: i.nota || null, modificadores, destino: i.destino || null }
     }),
     subtotal,
@@ -874,11 +956,17 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         cuenta_id:       currentCuentaId,
         menu_item_id:    it.id,
         nombre:          it.nombre,
-        precio_unitario: it.precio,
+        // Cortesía: se guarda en 0 porque `subtotal` es columna generada y no
+        // resta descuentos; el precio real queda en cortesia_valor.
+        precio_unitario: it.cortesia ? 0 : it.precio,
         cantidad:        it.qty,
         notas:           it.nota || null,
         modificadores:   it.modificadores?.length ? it.modificadores : null,
-        precio_modificadores: it.precioExtra || 0,
+        precio_modificadores: it.cortesia ? 0 : (it.precioExtra || 0),
+        cortesia:        !!it.cortesia,
+        cortesia_motivo: it.cortesiaMotivo || null,
+        cortesia_por:    it.cortesiaPor || null,
+        cortesia_valor:  it.cortesia ? (it.cortesiaValor ?? null) : null,
         atencion_especial: !!it.atencionEspecial,
         destino:         it.destino || null,
         componentes:     it.componentes?.length ? it.componentes : null,
@@ -1045,11 +1133,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           cuenta_id:       currentCuentaId,
           menu_item_id:    it.id,
           nombre:          it.nombre,
-          precio_unitario: it.precio,
+          precio_unitario: it.cortesia ? 0 : it.precio,
           cantidad:        it.qty,
           notas:           it.nota || null,
           modificadores:   it.modificadores?.length ? it.modificadores : null,
-          precio_modificadores: it.precioExtra || 0,
+          precio_modificadores: it.cortesia ? 0 : (it.precioExtra || 0),
+          cortesia:        !!it.cortesia,
+          cortesia_motivo: it.cortesiaMotivo || null,
+          cortesia_por:    it.cortesiaPor || null,
+          cortesia_valor:  it.cortesia ? (it.cortesiaValor ?? null) : null,
           componentes:     it.componentes?.length ? it.componentes : null,
           comanda_numero:  comandaSeq,
           enviado_cocina_at: new Date().toISOString(),
@@ -1106,7 +1198,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       }
 
       // 4. Emitir DTE (factura o CCF) — si falla, la venta YA se cobró
-      if (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf' || paymentData.tipoDte === 'se') {
+      // Si TODO fue cortesía no hay nada que declarar: un DTE de $0 lo rechaza
+      // Hacienda y además no hubo venta. Se avisa y se sigue (la venta ya quedó).
+      const hayCobrable = items.some(i => !i.cortesia)
+      if (!hayCobrable && (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf' || paymentData.tipoDte === 'se')) {
+        toast.info('Cuenta 100% cortesía: no se emite DTE (no hay monto que declarar)')
+      }
+      if (hayCobrable && (paymentData.tipoDte === 'factura' || paymentData.tipoDte === 'ccf' || paymentData.tipoDte === 'se')) {
         try {
           dteResult = await emitDTE({
             tipoDte:  paymentData.tipoDte,
@@ -1370,7 +1468,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               </div>
             ) : (
               items.map((item, idx) => (
-                <SwipeRow key={idx} onDelete={() => handleDeleteItem(idx)}>
+                <SwipeRow key={idx} onDelete={() => handleDeleteItem(idx)}
+                  onCortesia={item.cortesia ? null : () => handleCortesia(idx)}>
                 <div
                   className={`pos-order-item${item.saved ? ' saved' : ' new'}`}
                 >
@@ -1445,7 +1544,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                     <div className="pos-order-item-price">
-                      ${((item.precio + (item.precioExtra || 0)) * item.qty).toFixed(2)}
+                      {item.cortesia ? (
+                        <span style={{ color: '#a78bfa' }}>
+                          $0.00 <span style={{ fontSize: 9, fontWeight: 800 }}>CORTESÍA</span>
+                        </span>
+                      ) : `$${((item.precio + (item.precioExtra || 0)) * item.qty).toFixed(2)}`}
                     </div>
                     {destinoAplica && (() => {
                       const d = item.destino || destinoDefault
@@ -1598,9 +1701,46 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         <PinAuthModal
           titulo={pinAuth.titulo}
           subtitulo={pinAuth.subtitulo}
+          {...(pinAuth.roles ? { roles: pinAuth.roles } : {})}
           onSuccess={pinAuth.onOk}
           onCancel={() => setPinAuth(null)}
         />
+      )}
+      {/* Nota de la cortesía: obligatoria y explicativa — es lo que después
+          permite revisar en el corte por qué se regaló cada cosa. */}
+      {cortesiaModal && (
+        <div className="pos-modal-overlay" onClick={() => setCortesiaModal(null)}>
+          <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div className="pos-modal-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Icon name="gift" size={18} color="#7c3aed" /> Cortesía
+            </div>
+            <div className="pos-modal-sub" style={{ marginBottom: 10 }}>
+              {items[cortesiaModal.idx]?.nombre} · autoriza {cortesiaModal.auth?.nombre || '—'}
+            </div>
+            <textarea
+              autoFocus rows={3}
+              value={cortesiaModal.motivo}
+              onChange={e => setCortesiaModal(m => ({ ...m, motivo: e.target.value }))}
+              placeholder="¿Por qué se regala? (ej: se cayó el pedido, error de cocina, cliente molesto)"
+              style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #2a2a32',
+                       background: '#141419', color: '#e5e7eb', fontSize: 14, resize: 'vertical' }}
+            />
+            <div style={{ fontSize: 11, color: '#8b8997', margin: '6px 0 12px' }}>
+              El ítem queda en $0 pero SÍ descuenta inventario.
+            </div>
+            <button className="pos-confirmar-btn"
+              disabled={cortesiaModal.motivo.trim().length < 5}
+              style={cortesiaModal.motivo.trim().length < 5 ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+              onClick={() => {
+                const { idx, auth, motivo } = cortesiaModal
+                setCortesiaModal(null)
+                aplicarCortesia(idx, auth, motivo.trim())
+              }}>
+              {cortesiaModal.motivo.trim().length < 5 ? 'Escribí el motivo' : 'Marcar como cortesía'}
+            </button>
+            <button className="pos-cancelar-btn" onClick={() => setCortesiaModal(null)}>Cancelar</button>
+          </div>
+        </div>
       )}
       {showPayModal && (
         <PaymentModal

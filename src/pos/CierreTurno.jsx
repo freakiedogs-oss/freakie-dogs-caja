@@ -220,6 +220,8 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const [itemsTurno, setItemsTurno] = useState([])   // ítems vendidos del turno (para el ticket X)
   const [itemsDia, setItemsDia]     = useState([])   // ítems vendidos del día (para el ticket Z)
   const [descEmpTurno, setDescEmpTurno] = useState([]) // descuentos de empleado del turno (ticket X)
+  const [cortesiasTurno, setCortesiasTurno] = useState([])
+  const [cortesiasDia, setCortesiasDia] = useState([])
   const [descEmpDia, setDescEmpDia]     = useState([]) // descuentos de empleado del día (ticket Z)
   const [diaInfo, setDiaInfo]   = useState({ fondoBase: 0, prevEgr: 0, prevIng: 0, zExiste: false, nTurnos: 0 })
   const [loading, setLoading]   = useState(true)
@@ -295,6 +297,8 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     // meter awaits dentro del gesto de impresión (rawbt pierde la user-activation).
     db.rpc('pos_corte_items', params).then(({ data: it }) => setItemsTurno(Array.isArray(it) ? it : [])).catch(() => {})
     db.rpc('pos_corte_desc_empleado', params).then(({ data: de }) => setDescEmpTurno(Array.isArray(de) ? de : [])).catch(() => {})
+    // Cortesías del turno: lo regalado sale del inventario, así que tiene que verse en el corte.
+    db.rpc('pos_corte_cortesias', params).then(({ data: co }) => setCortesiasTurno(Array.isArray(co) ? co : [])).catch(() => {})
   }, [turno, storeCode])
   useEffect(() => { loadCorte() }, [loadCorte])
 
@@ -307,6 +311,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     setCorteDia(cd || null)
     db.rpc('pos_corte_items', paramsDia).then(({ data: it }) => setItemsDia(Array.isArray(it) ? it : [])).catch(() => {})
     db.rpc('pos_corte_desc_empleado', paramsDia).then(({ data: de }) => setDescEmpDia(Array.isArray(de) ? de : [])).catch(() => {})
+    db.rpc('pos_corte_cortesias', paramsDia).then(({ data: co }) => setCortesiasDia(Array.isArray(co) ? co : [])).catch(() => {})
     const { data: turnos } = await cajaF(db.from('pos_turnos')
       .select('id,fondo_apertura,egresos,ingresos_extra,tipo_cierre,abierto_at')
       .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero'))
@@ -401,6 +406,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       depositar: tipo === 'Z' ? depositoDia : 0, obs, totalEgresos: totalEg, totalIngresos: totalIn,
       itemsVendidos: tipo === 'Z' ? itemsDia : itemsTurno,
       descEmpleado: tipo === 'Z' ? descEmpDia : descEmpTurno,
+      cortesias:    tipo === 'Z' ? cortesiasDia : cortesiasTurno,
     }
   }
 
