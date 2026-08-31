@@ -1942,20 +1942,23 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
 
   // ── Bebida agrandada (incidente inventario 30-ago) ── El grupo "Bebida Agrandado"
   // contiene el sabor de $1.75 que REEMPLAZA a la bebida base cuando el cliente
-  // agranda: oculto si no hay "Agrandado" marcado en la misma sección, y OBLIGATORIO
-  // si lo hay — así el sabor real queda capturado y su insumo se descuenta del kardex
-  // (el modificador Agrandado en sí no descuenta nada; es solo el cobro del upgrade).
+  // agranda: oculto si no hay "Agrandado" marcado, y OBLIGATORIO si lo hay — así el
+  // sabor real queda capturado y su insumo se descuenta del kardex (el modificador
+  // Agrandado solo descuenta la papa extra; la bebida viaja en el sabor marcado).
   // Detección por nombre para no cablear ids de BD en el cliente.
   const esGrupoAgrandado = (g) => /agrandado/i.test(g?.nombre || '')
-  const hayAgrandado = (secKey, grupos) => (grupos || []).some(g =>
-    !esGrupoAgrandado(g) && (sel[secKey + ':' + g.id] || []).some(mid =>
-      /agrandado/i.test(g.opciones.find(o => o.id === mid)?.nombre || '')))
+  // El agrandado se busca en TODO el combo, no solo en su sección: hay dos vías
+  // vivas y ambas valen igual (decisión Jose 30-ago) — "Agrandado Papa y Bebida"
+  // (sección Bebida) y "Agrandado Combo" (sección Fries, 773 usos/30d). Marcar
+  // cualquiera pide el sabor, así nadie tiene que cambiar cómo lo hace hoy.
+  const hayAgrandado = secciones.some(sec => (sec.grupos || []).some(g =>
+    !esGrupoAgrandado(g) && (sel[sec.key + ':' + g.id] || []).some(mid =>
+      /agrandado/i.test(g.opciones.find(o => o.id === mid)?.nombre || ''))))
 
   const modsDe = (secKey, grupos) => {
     const out = []
-    const agr = hayAgrandado(secKey, grupos)
     ;(grupos || []).forEach(g => {
-      if (esGrupoAgrandado(g) && !agr) return   // selección huérfana (des-agrandó): se ignora
+      if (esGrupoAgrandado(g) && !hayAgrandado) return   // selección huérfana (des-agrandó): se ignora
       ;(sel[secKey + ':' + g.id] || []).forEach(mid => {
         const m = g.opciones.find(o => o.id === mid)
         if (m) out.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
@@ -1988,7 +1991,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   const falta = secciones.find(sec => sec.grupos.some(g => {
     const n = (sel[sec.key + ':' + g.id] || []).length
     // El grupo del agrandado solo es obligatorio cuando hay Agrandado marcado
-    if (esGrupoAgrandado(g)) return hayAgrandado(sec.key, sec.grupos) && n < 1
+    if (esGrupoAgrandado(g)) return hayAgrandado && n < 1
     if (g.obligatorio && n < 1) return true
     if (g.min_selecciones > 0 && n < g.min_selecciones) return true
     return false
@@ -2021,7 +2024,8 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
               </div>
               {grupos.map(g => {
                 // "Bebida Agrandado" solo aparece cuando el Agrandado está marcado
-                if (esGrupoAgrandado(g) && !hayAgrandado('c' + i, grupos)) return null
+                // (en esta sección o en otra: papas o bebida, ambas vías valen)
+                if (esGrupoAgrandado(g) && !hayAgrandado) return null
                 return (
                 <div key={g.id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
@@ -2071,7 +2075,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>General</div>
             {combo.modGrupos.map(g => {
-              if (esGrupoAgrandado(g) && !hayAgrandado('combo', combo.modGrupos)) return null
+              if (esGrupoAgrandado(g) && !hayAgrandado) return null
               return (
               <div key={g.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
