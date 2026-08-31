@@ -39,6 +39,16 @@ export default function ConteoNocturno({user,onBack}){
   const [cajaPendiente,setCajaPendiente]=useState(false); // true si falta cierre Z
   const [despachosPendientes,setDespachosPendientes]=useState(null); // despachos sin recepción
 
+  // ── Modo de conteo (pedido de Jose 30-ago): al entrar se elige entre el conteo
+  // normal y el de BEBIDAS. El de bebidas NO toca kardex ni inventario_conteo_nocturno
+  // (si escribiera ahí, el conteo normal de la noche entraría en "edición" con solo
+  // bebidas): cuenta lo físico y genera el pedido BEES sugerido en PDF descargable,
+  // porque el pedido real se digita en la app de BEES (la ingesta por correo ya
+  // registra la compra cuando BEES confirma el pedido).
+  const [modo,setModo]=useState(null);           // 'normal' | 'bebidas'
+  const [storeCodeSel,setStoreCodeSel]=useState(user.store_code||null);
+  const [descargandoPdf,setDescargandoPdf]=useState(false);
+
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
 
@@ -173,6 +183,94 @@ export default function ConteoNocturno({user,onBack}){
     }
   };
 
+  // Conteo de BEBIDAS: solo productos de bebida/cerveza/soda de la sucursal.
+  // Sin gates de cierre/despachos (no ajusta stock ni pide a CM) y SIN filtrar por
+  // incluir_conteo: la Coca de food court vive como "Insumo Soda" fuera del conteo
+  // normal y es justo lo que más se pide a BEES.
+  const cargarBebidas=async(sucId)=>{
+    setSucursalId(sucId);
+    setLoading(true);
+    try{
+      const {data:invData}=await db.from('inventario')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo)')
+        .eq('sucursal_id', sucId);
+      const esBebida=(c)=>/bebida|cerveza|soda/i.test(c||'');
+      const prods=(invData||[])
+        .filter(inv=>inv.catalogo_productos?.activo!==false
+          && (esBebida(inv.catalogo_productos?.conteo_categoria)||esBebida(inv.catalogo_productos?.categoria)))
+        .map(inv=>({
+          inventario_id: inv.id,
+          producto_id: inv.producto_id,
+          nombre: inv.catalogo_productos?.nombre||'Sin nombre',
+          unidad: inv.catalogo_productos?.unidad_medida||'unidad',
+          categoria: inv.catalogo_productos?.conteo_categoria||inv.catalogo_productos?.categoria||'Bebidas',
+          conteo_orden: inv.catalogo_productos?.conteo_orden||999,
+          stock_teorico: inv.stock_actual,
+          stock_minimo: inv.stock_minimo,
+          stock_maximo: inv.stock_maximo,
+          cantidad_real: null,
+        }))
+        .sort((a,b)=>(a.conteo_orden-b.conteo_orden)||a.nombre.localeCompare(b.nombre));
+      if(prods.length===0){show('⚠️ Esta sucursal no tiene bebidas registradas en inventario');setLoading(false);return;}
+      setProductos(prods);
+      setIsEdit(false);setEditExpira(null);setConteoCerrado(false);
+      setScreen(1);
+      setLoading(false);
+    }catch(e){show('❌ Error cargando bebidas: '+e.message);setLoading(false);}
+  };
+
+  // Bebidas: no escribe NADA en BD — arma el pedido sugerido y pasa a la pantalla del PDF
+  const prepararPedidoBebidas=()=>{
+    const sinCantidad=productos.filter(p=>p.cantidad_real===null);
+    if(sinCantidad.length>0){show('⚠️ Faltan '+sinCantidad.length+' bebidas sin contar');return;}
+    const items=productos.map(p=>{
+      const bajominimo=p.stock_minimo>0&&p.cantidad_real<p.stock_minimo;
+      return {
+        producto_id:p.producto_id, nombre:p.nombre, unidad:p.unidad, categoria:p.categoria,
+        cantidad_real:Math.max(0,n(p.cantidad_real)),
+        stock_minimo:p.stock_minimo, stock_maximo:p.stock_maximo,
+        cantidad_sugerida:bajominimo?Math.max(0,p.stock_maximo-p.cantidad_real):0,
+        bajominimo,
+      };
+    });
+    items.sort((a,b)=>(b.bajominimo?1:0)-(a.bajominimo?1:0));
+    setPedidoItems(items);
+    setPedidoQtys(Object.fromEntries(items.map(s=>[s.producto_id, s.cantidad_sugerida])));
+    setScreen(2);
+  };
+
+  const descargarPdfBebidas=async()=>{
+    const items=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])>0);
+    if(items.length===0){show('⚠️ No hay bebidas con cantidad > 0');return;}
+    setDescargandoPdf(true);
+    try{
+      // jsPDF se carga bajo demanda (import dinámico): no pesa en el bundle del POS
+      const {jsPDF}=await import('jspdf');
+      const {default:autoTable}=await import('jspdf-autotable');
+      const doc=new jsPDF();
+      const fecha=today();
+      doc.setFontSize(15);doc.setFont(undefined,'bold');doc.setTextColor(20);
+      doc.text('Pedido BEES sugerido',14,18);
+      doc.setFontSize(10);doc.setFont(undefined,'normal');doc.setTextColor(90);
+      doc.text(`${sucursalNombre} (${storeCodeSel||''}) · ${fecha} · generado del conteo de bebidas`,14,25);
+      autoTable(doc,{
+        startY:31,
+        head:[['Producto','Unidad','Contado','Mín','Máx','PEDIR']],
+        body:items.map(p=>[p.nombre,p.unidad,String(p.cantidad_real),String(n(p.stock_minimo)),String(n(p.stock_maximo)),String(n(pedidoQtys[p.producto_id]))]),
+        styles:{fontSize:9},
+        headStyles:{fillColor:[230,35,41]},
+        columnStyles:{2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{fontStyle:'bold',halign:'right'}},
+      });
+      const noPedidas=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])===0);
+      const y=(doc.lastAutoTable?.finalY||31)+8;
+      doc.setFontSize(8);doc.setTextColor(120);
+      doc.text(`Digitá este pedido en la app de BEES tal cual.${noPedidas.length>0?' '+noPedidas.length+' bebida(s) quedaron sin pedir (stock suficiente).':''}`,14,y);
+      doc.save(`Pedido_BEES_${storeCodeSel||'suc'}_${fecha}.pdf`);
+      show('⬇️ PDF descargado — digitalo en la app de BEES');
+    }catch(e){show('❌ No se pudo generar el PDF: '+e.message);}
+    finally{setDescargandoPdf(false);}
+  };
+
   // Obtener sucursal_id y cargar inventario
   useEffect(()=>{
     const init=async()=>{
@@ -194,7 +292,10 @@ export default function ConteoNocturno({user,onBack}){
           .select('id, nombre').eq('store_code',user.store_code).maybeSingle();
         if(!suc){show('❌ No se encontró sucursal');setLoading(false);return;}
         setSucursalNombre(suc.nombre);
-        await cargarInventario(suc.id, user.store_code);
+        setSucursalId(suc.id);
+        setStoreCodeSel(user.store_code);
+        setScreen('elegir');
+        setLoading(false);
       }catch(e){
         show('❌ Error cargando datos: '+e.message);
         setLoading(false);
@@ -484,12 +585,41 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         </div>
         {sucursales.map(s=>(
-          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);cargarInventario(s.id, s.store_code);}}
+          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);setSucursalId(s.id);setStoreCodeSel(s.store_code);setScreen('elegir');}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
             <div style={{fontWeight:600,fontSize:15,color:'#fff'}}>{s.nombre}</div>
             <div style={{color:'#888',fontSize:12}}>{s.store_code}</div>
           </button>
         ))}
+      </div>
+    );
+  }
+
+  // ── PANTALLA ELEGIR MODO: conteo normal vs bebidas ──
+  if(screen==='elegir'){
+    return(
+      <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
+        <Toast/>
+        <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={needsSucursalPicker?()=>setScreen(0):onBack}
+            style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <div>
+            <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ¿qué vas a contar?</div>
+          </div>
+        </div>
+        <button className="card" onClick={()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
+          style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:10,padding:18}}>
+          <div style={{fontSize:26,marginBottom:6}}>📋</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#fff'}}>Conteo normal</div>
+          <div style={{color:'#888',fontSize:12,marginTop:4}}>Inventario completo de la noche. Ajusta el stock y genera el pedido a Casa Matriz.</div>
+        </button>
+        <button className="card" onClick={()=>{setModo('bebidas');cargarBebidas(sucursalId);}}
+          style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #60a5fa50',background:'#0a1520',padding:18}}>
+          <div style={{fontSize:26,marginBottom:6}}>🥤</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>Conteo de bebidas</div>
+          <div style={{color:'#888',fontSize:12,marginTop:4}}>Contás solo sodas, tés y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</div>
+        </button>
       </div>
     );
   }
@@ -501,9 +631,9 @@ export default function ConteoNocturno({user,onBack}){
         <Toast/>
         {/* Header */}
         <div style={{padding:'20px 0 8px',display:'flex',alignItems:'center',gap:12}}>
-          <button onClick={needsSucursalPicker?()=>setScreen(0):onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <button onClick={()=>setScreen('elegir')} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div style={{flex:1}}>
-            <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
+            <div style={{fontWeight:800,fontSize:18}}>{modo==='bebidas'?'🥤 Conteo de Bebidas':'📋 Conteo Nocturno'}</div>
             <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · {new Date(Date.now()-6*3600*1000).toLocaleDateString('es-SV',{weekday:'short',month:'short',day:'numeric'})}</div>
           </div>
         </div>
@@ -526,9 +656,14 @@ export default function ConteoNocturno({user,onBack}){
               <div style={{fontSize:11,color:'#3bbd6b',marginTop:4}}>Conteo nuevo del turno. Contá físicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
             </div>
           )}
-          {!isEdit&&!conteoCerrado&&(
+          {!isEdit&&!conteoCerrado&&modo!=='bebidas'&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
               <div style={{fontSize:11,color:'#60a5fa'}}>Primer conteo del día. Contá físicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
+            </div>
+          )}
+          {modo==='bebidas'&&(
+            <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…). Al final se genera el <b>pedido BEES sugerido en PDF</b>. Este conteo NO ajusta el inventario del sistema.</div>
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
@@ -574,7 +709,9 @@ export default function ConteoNocturno({user,onBack}){
             {abierto && porCategoria[cat].map(p=>{
               const contado=p.cantidad_real!==null;
               const diff=getDiferencia(p);
-              const noCuadra=contado&&diff!==null&&diff!==0;
+              // En bebidas no se pinta rojo contra el teórico: ese teórico puede estar
+              // roto por mapeos (ej. Insumo Soda en negativo) y el conteo no lo ajusta.
+              const noCuadra=modo!=='bebidas'&&contado&&diff!==null&&diff!==0;
               return(
               <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${noCuadra?'#e63946':contado?'#4ade80':'#333'}`,transition:'border 0.2s'}}>
                 <div style={{fontWeight:600,fontSize:14,marginBottom:10,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
@@ -596,9 +733,9 @@ export default function ConteoNocturno({user,onBack}){
 
         {/* ── Botón Guardar sticky ── */}
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
-          <button className="btn btn-red" onClick={guardarConteo} disabled={guardando||contados<totalProds}
+          <button className="btn btn-red" onClick={modo==='bebidas'?prepararPedidoBebidas:guardarConteo} disabled={guardando||contados<totalProds}
             style={{fontSize:17,padding:18,width:'100%',opacity:contados<totalProds?0.5:1}}>
-            {guardando?<span className="spin"/>:contados<totalProds?`Faltan ${totalProds-contados} productos`:isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
+            {guardando?<span className="spin"/>:contados<totalProds?`Faltan ${totalProds-contados} productos`:modo==='bebidas'?'🛒 Generar pedido BEES':isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
           </button>
         </div>
       </div>
@@ -612,14 +749,16 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
         <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div>
-          <div style={{fontWeight:800,fontSize:18}}>{isEdit?'📦 Pedido Actual':'📦 Pedido Sugerido'} <InfoTip text={isEdit?"Pedido generado a partir del conteo editado. Las cantidades reflejan lo contado.":"Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo."} /></div>
+          <div style={{fontWeight:800,fontSize:18}}>{modo==='bebidas'?'🛒 Pedido BEES sugerido':isEdit?'📦 Pedido Actual':'📦 Pedido Sugerido'} <InfoTip text={modo==='bebidas'?"Pedido de bebidas calculado del conteo: para cada bebida bajo mínimo se sugiere rellenar al máximo. Descargá el PDF y digitá el pedido en la app de BEES.":isEdit?"Pedido generado a partir del conteo editado. Las cantidades reflejan lo contado.":"Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo."} /></div>
           <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo mínimo</span></div>
         </div>
       </div>
 
       <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:isEdit?'#facc1520':'#60a5fa20',border:`1px solid ${isEdit?'#facc15':'#60a5fa'}`}}>
         <div style={{fontSize:11,color:isEdit?'#d4a017':'#60a5fa'}}>
-          {isEdit
+          {modo==='bebidas'
+            ?'Ajustá las cantidades si hace falta y descargá el PDF: ese es el pedido que se digita en la app de BEES. Cuando BEES confirme, el pedido entra solo al ERP por la ingesta de correo.'
+            :isEdit
             ?'Pedido basado en el conteo que editaste. "Real" es lo que contaste. Los productos bajo mínimo ya tienen cantidad sugerida (máximo − real). Podés ajustar antes de enviar.'
             :'Pedido sugerido a partir de tu conteo. "Real" es lo que contaste físicamente. Los productos bajo mínimo ya tienen cantidad sugerida. Ajustá y enviá.'}
         </div>
@@ -716,7 +855,12 @@ export default function ConteoNocturno({user,onBack}){
       )}
 
       <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 20px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
-        {(()=>{const itemsConQty=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])>0).length; return(
+        {(()=>{const itemsConQty=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])>0).length; return modo==='bebidas'?(
+          <button className="btn btn-red" onClick={descargarPdfBebidas} disabled={descargandoPdf||itemsConQty===0}
+            style={{fontSize:17,padding:18,width:'100%',opacity:itemsConQty===0?0.5:1,marginBottom:8}}>
+            {descargandoPdf?<span className="spin"/>:itemsConQty>0?`⬇️ Descargar PDF del pedido (${itemsConQty} bebidas)`:'⬇️ Descargar PDF del pedido'}
+          </button>
+        ):(
           <button className="btn btn-red" onClick={enviarPedido} disabled={generandoPedido||itemsConQty===0}
             style={{fontSize:17,padding:18,width:'100%',opacity:itemsConQty===0?0.5:1,marginBottom:8}}>
             {generandoPedido?<span className="spin"/>:itemsConQty>0?`📤 Enviar Pedido (${itemsConQty} productos)`:'📤 Enviar Pedido'}
@@ -724,7 +868,7 @@ export default function ConteoNocturno({user,onBack}){
         );})()}
         <button onClick={omitirPedido}
           style={{background:'none',border:'none',color:'#555',fontSize:12,cursor:'pointer',width:'100%',padding:6}}>
-          Omitir pedido esta noche
+          {modo==='bebidas'?'Listo — salir sin descargar':'Omitir pedido esta noche'}
         </button>
       </div>
     </div>
