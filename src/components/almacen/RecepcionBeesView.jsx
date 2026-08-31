@@ -366,49 +366,37 @@ function BeesDetalle({ compra, user, show, onBack }) {
     if (!confirm(confirmMsg)) return;
     setSaving(true);
     try {
-      for (const it of items) {
-        await db.from('compras_bees_items').update({ cantidad_recibida: n(it.cantidad_recibida) }).eq('id', it.id);
-      }
-      let fotoUrl = compra.foto_recepcion_url;
-      if (fotoRecep) fotoUrl = await uploadFoto() || fotoUrl;
+      let fotoUrl = null;
+      if (fotoRecep) fotoUrl = await uploadFoto();
 
-      const itemsKardex = items
-        .filter(it => it.producto_id && n(it.cantidad_recibida) > 0)
-        .map(it => ({ producto_id: it.producto_id, cantidad: n(it.cantidad_recibida) }));
-      if (itemsKardex.length > 0) {
-        const { error: kErr } = await db.rpc('kardex_mover_lote', {
-          p_items: itemsKardex,
-          p_tipo: 'recepcion',
-          p_referencia_tipo: 'compras_bees',
-          p_referencia_id: compra.id,
-          p_notas: 'Recepción BEES — La Constancia' + (compra.id_factura ? ' · Fact ' + compra.id_factura : ''),
-          p_usuario_id: user?.id || null,
-          p_sucursal_id: compra.sucursal_id,
-          p_permitir_negativo: true,
-        });
-        if (kErr) throw kErr;
+      // Todo en un RPC atómico e idempotente (bees_recepcionar): la PWA pega
+      // como anon y el UPDATE directo a compras_bees lo bloquea RLS EN
+      // SILENCIO — así se triplicó un kardex el 31-ago al reintentar. El RPC
+      // lockea la compra y si ya está inventariada NO vuelve a mover stock.
+      const { data, error } = await db.rpc('bees_recepcionar', {
+        p_compra_id: compra.id,
+        p_items: items.map(it => ({ id: it.id, cantidad_recibida: n(it.cantidad_recibida) })),
+        p_usuario_id: user?.id || null,
+        p_foto_url: fotoUrl,
+        p_notas: notas.trim() || null,
+      });
+      if (error) throw error;
+      if (data?.ya_recepcionado) {
+        show('ℹ️ Este pedido ya estaba recepcionado — no se movió inventario de nuevo');
+      } else {
+        show(data?.items_kardex > 0
+          ? `✅ Recepción confirmada — ${data.items_kardex} productos al inventario`
+          : '✅ Recepción confirmada — sin productos mapeados para inventario');
       }
-
-      await db.from('compras_bees').update({
-        estado_recepcion: 'recepcionado', fecha_recepcion_real: today(),
-        recepcionado_por: user.id, foto_recepcion_url: fotoUrl,
-        notas_recepcion: notas.trim() || null,
-        inventariado: itemsKardex.length > 0,
-      }).eq('id', compra.id);
-      show(itemsKardex.length > 0
-        ? `✅ Recepción confirmada — ${itemsKardex.length} productos al inventario`
-        : '✅ Recepción confirmada — sin productos mapeados para inventario');
       onBack();
     } catch (e) { show('⚠️ Error: ' + e.message); }
     finally { setSaving(false); }
   };
 
   const reabrir = async () => {
-    if (!confirm('⚠️ Reabrir descontará el stock recibido. ¿Continuar?')) return;
-    // Nota: el trigger NO revierte automáticamente. Si se necesita, hacer en BD.
-    await db.from('compras_bees').update({
-      estado_recepcion: 'en_transito', inventariado: false,
-    }).eq('id', compra.id);
+    if (!confirm('⚠️ Reabrir NO descuenta el stock ya recibido (revisar manual). ¿Continuar?')) return;
+    const { error } = await db.rpc('bees_reabrir', { p_compra_id: compra.id });
+    if (error) { show('⚠️ Error: ' + error.message); return; }
     show('↩️ Recepción reabierta (stock NO descontado automáticamente — revisar manual)');
     onBack();
   };
