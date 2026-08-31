@@ -108,6 +108,7 @@ export const NAV_SECTIONS = [
       { key: 'inventario-fisico', label: 'Inventario Físico', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'ing_alimentos'] },
       { key: 'kardex', label: 'Kardex', icon: '📒', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
       { key: 'recepcion-bees', label: 'Recepción BEES', icon: '🥤', roles: ['gerente', 'cajero', 'cajera', 'cocina', 'jefe_casa_matriz', 'admin', 'ejecutivo'] },
+      { key: 'transferencias', label: 'Transferencias', icon: '🔁', roles: ['admin', 'ejecutivo', 'superadmin'] },
     ],
   },
   {

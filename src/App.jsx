@@ -33,6 +33,7 @@ const InventarioFisico   = lazy(() => import('./components/almacen/InventarioFis
 const ComprasTab         = lazy(() => import('./components/almacen/ComprasTab'))
 const KardexView         = lazy(() => import('./components/almacen/KardexView'))
 const RecepcionBeesView  = lazy(() => import('./components/almacen/RecepcionBeesView'))
+const TransferenciasView = lazy(() => import('./components/almacen/TransferenciasView'))
 const RecepcionDTE       = lazy(() => import('./components/almacen/RecepcionDTE'))
 const RecetasView        = lazy(() => import('./components/admin/RecetasView'))
 const CosteoView         = lazy(() => import('./components/admin/CosteoView'))
@@ -279,6 +280,8 @@ export default function App() {
         return <KardexView user={user} show={show} />
       case 'recepcion-bees':
         return <RecepcionBeesView user={user} show={show} />
+      case 'transferencias':
+        return <TransferenciasView user={user} show={show} />
 
       // Supply Chain
       case 'conteo':
