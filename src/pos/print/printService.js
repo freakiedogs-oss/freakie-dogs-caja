@@ -420,34 +420,48 @@ export function buildCorte(c, cols = 48) {
   // Vienen pre-cargados en c.itemsVendidos (RPC pos_corte_items) para no meter awaits
   // en el gesto de impresión (rawbt pierde la user-activation).
   if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
-    // Formato plantilla de conteo (pedido Jose 18-ago): bebidas por sabor/presentación
-    // primero (orden del menú) y TODOS los items con columnas VEND + DEBER (a mano).
+    // Plantilla de conteo (Jose 18-ago, reordenada 30-ago): el RPC ya devuelve los
+    // ítems en secciones útiles — BEBIDAS primero (una línea por bebida, incluidas
+    // las que van dentro de combos), luego combos/individuales/fries, agrandados,
+    // y el consumo de empleados. La columna DEBER (para escribir el conteo físico)
+    // solo se imprime en BEBIDAS, que es lo que se cuenta en la refri.
     t.bold(true).ln('ITEMS VENDIDOS').bold(false);
-    t.row('ITEM', 'VEND DEBER');
-    let unidades = 0, totalItems = 0, grupoBebida = null;
+    let totalItems = 0, sec = null, subUnid = 0;
+    const cerrarSeccion = () => {
+      if (sec === 'BEBIDAS') t.bold(true).row('Total bebidas', `${String(subUnid).padStart(3)}  ____`).bold(false);
+    };
     for (const it of c.itemsVendidos) {
-      const esBeb = !!it.es_bebida;
-      if (esBeb !== grupoBebida) {
-        t.bold(true).ln(esBeb ? '-- BEBIDAS --' : '-- COCINA / OTROS --').bold(false);
-        grupoBebida = esBeb;
+      const s = String(it.seccion || (it.es_bebida ? 'BEBIDAS' : 'COCINA / OTROS'));
+      if (s !== sec) {
+        cerrarSeccion();
+        t.bold(true).ln(`-- ${s} --`).bold(false);
+        if (s === 'BEBIDAS') t.row('ITEM', 'VEND DEBER');
+        if (s === 'CONSUMO EMPLEADOS') t.ln('(ya contado arriba en bebidas)');
+        sec = s; subUnid = 0;
       }
-      const cant = Number(it.cantidad) || 0; unidades += cant; totalItems += Number(it.total) || 0;
-      t.row(String(it.nombre || '').trim().slice(0, cols - 12), `${String(cant).padStart(3)}  ____`);
+      const cant = Number(it.cantidad) || 0;
+      subUnid += cant; totalItems += Number(it.total) || 0;
+      t.row(String(it.nombre || '').trim().slice(0, cols - 12),
+            s === 'BEBIDAS' ? `${String(cant).padStart(3)}  ____` : String(cant).padStart(3));
     }
-    t.bold(true).row('Total unidades', String(unidades)).bold(false);
+    cerrarSeccion();
     t.row('Total items', money(totalItems));
     t.hr();
   }
-  // Apartado: descuentos de EMPLEADO (quién y qué ítems se llevó). Pedido de Jose 14-ago.
+  // Apartado: consumo de EMPLEADO (Jose 14-ago; con nombre real y detalle 30-ago).
+  // Una línea por PERSONA (no por cuenta): cuántas compras hizo, cuánto pagó,
+  // cuánto se le descontó y qué se llevó — así el gerente lo revisa de un vistazo.
   if (Array.isArray(c.descEmpleado) && c.descEmpleado.length) {
-    t.bold(true).ln('DESCUENTOS EMPLEADO').bold(false);
-    let totDesc = 0;
+    t.bold(true).ln('CONSUMO DE EMPLEADOS (con descuento)').bold(false);
+    let totDesc = 0, totPag = 0;
     for (const d of c.descEmpleado) {
-      totDesc += Number(d.descuento) || 0;
-      t.row(String(d.motivo || '(sin nombre)').slice(0, cols - 12), '-' + money(d.descuento));
+      totDesc += Number(d.descuento) || 0; totPag += Number(d.pagado) || 0;
+      t.row(String(d.empleado || d.motivo || '(sin nombre)').slice(0, cols - 12), '-' + money(d.descuento));
+      if (d.cuentas) t.ln(`   ${d.cuentas} compra${Number(d.cuentas) > 1 ? 's' : ''} · pago ${money(d.pagado)}`);
       for (const it of (d.items || [])) t.ln(`   ${Number(it.cantidad) || 0} x ${String(it.nombre || '').trim().slice(0, cols - 8)}`);
     }
-    t.bold(true).row('Total desc. empleado', '-' + money(totDesc)).bold(false);
+    t.bold(true).row('Total descontado', '-' + money(totDesc)).bold(false);
+    if (totPag) t.row('Total pagado por empleados', money(totPag));
     t.hr();
   }
   if (c.tipo === 'Z') {
@@ -482,18 +496,30 @@ function corteHTML(c) {
   ];
   if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
     L.push({ hr: 1 }, { bold: 1, text: 'ITEMS VENDIDOS' });
-    L.push({ row: 1, left: 'ITEM', right: 'VEND DEBER' });
-    let grupoBebidaH = null;
+    let secH = null, subUnidH = 0;
+    const cerrarSecH = () => {
+      if (secH === 'BEBIDAS') L.push({ row: 1, bold: 1, left: 'Total bebidas', right: `${subUnidH}  ____` });
+    };
     for (const it of c.itemsVendidos) {
-      const esBeb = !!it.es_bebida;
-      if (esBeb !== grupoBebidaH) { L.push({ bold: 1, text: esBeb ? '-- BEBIDAS --' : '-- COCINA / OTROS --' }); grupoBebidaH = esBeb; }
-      L.push({ row: 1, left: it.nombre || '', right: `${Number(it.cantidad) || 0}  ____` });
+      const s = String(it.seccion || (it.es_bebida ? 'BEBIDAS' : 'COCINA / OTROS'));
+      if (s !== secH) {
+        cerrarSecH();
+        L.push({ bold: 1, text: `-- ${s} --` });
+        if (s === 'BEBIDAS') L.push({ row: 1, left: 'ITEM', right: 'VEND DEBER' });
+        if (s === 'CONSUMO EMPLEADOS') L.push({ text: '(ya contado arriba en bebidas)' });
+        secH = s; subUnidH = 0;
+      }
+      const cant = Number(it.cantidad) || 0;
+      subUnidH += cant;
+      L.push({ row: 1, left: it.nombre || '', right: s === 'BEBIDAS' ? `${cant}  ____` : String(cant) });
     }
+    cerrarSecH();
   }
   if (Array.isArray(c.descEmpleado) && c.descEmpleado.length) {
-    L.push({ hr: 1 }, { bold: 1, text: 'DESCUENTOS EMPLEADO' });
+    L.push({ hr: 1 }, { bold: 1, text: 'CONSUMO DE EMPLEADOS (con descuento)' });
     for (const d of c.descEmpleado) {
-      L.push({ row: 1, left: d.motivo || '(sin nombre)', right: '-' + money(d.descuento) });
+      L.push({ row: 1, left: d.empleado || d.motivo || '(sin nombre)', right: '-' + money(d.descuento) });
+      if (d.cuentas) L.push({ text: `   ${d.cuentas} compra${Number(d.cuentas) > 1 ? 's' : ''} · pagó ${money(d.pagado)}` });
       for (const it of (d.items || [])) L.push({ text: `   ${Number(it.cantidad) || 0} x ${it.nombre || ''}` });
     }
   }
