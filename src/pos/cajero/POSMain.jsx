@@ -1940,12 +1940,27 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
     })
   }
 
+  // ── Bebida agrandada (incidente inventario 30-ago) ── El grupo "Bebida Agrandado"
+  // contiene el sabor de $1.75 que REEMPLAZA a la bebida base cuando el cliente
+  // agranda: oculto si no hay "Agrandado" marcado en la misma sección, y OBLIGATORIO
+  // si lo hay — así el sabor real queda capturado y su insumo se descuenta del kardex
+  // (el modificador Agrandado en sí no descuenta nada; es solo el cobro del upgrade).
+  // Detección por nombre para no cablear ids de BD en el cliente.
+  const esGrupoAgrandado = (g) => /agrandado/i.test(g?.nombre || '')
+  const hayAgrandado = (secKey, grupos) => (grupos || []).some(g =>
+    !esGrupoAgrandado(g) && (sel[secKey + ':' + g.id] || []).some(mid =>
+      /agrandado/i.test(g.opciones.find(o => o.id === mid)?.nombre || '')))
+
   const modsDe = (secKey, grupos) => {
     const out = []
-    ;(grupos || []).forEach(g => (sel[secKey + ':' + g.id] || []).forEach(mid => {
-      const m = g.opciones.find(o => o.id === mid)
-      if (m) out.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
-    }))
+    const agr = hayAgrandado(secKey, grupos)
+    ;(grupos || []).forEach(g => {
+      if (esGrupoAgrandado(g) && !agr) return   // selección huérfana (des-agrandó): se ignora
+      ;(sel[secKey + ':' + g.id] || []).forEach(mid => {
+        const m = g.opciones.find(o => o.id === mid)
+        if (m) out.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
+      })
+    })
     return out
   }
 
@@ -1972,12 +1987,15 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
 
   const falta = secciones.find(sec => sec.grupos.some(g => {
     const n = (sel[sec.key + ':' + g.id] || []).length
+    // El grupo del agrandado solo es obligatorio cuando hay Agrandado marcado
+    if (esGrupoAgrandado(g)) return hayAgrandado(sec.key, sec.grupos) && n < 1
     if (g.obligatorio && n < 1) return true
     if (g.min_selecciones > 0 && n < g.min_selecciones) return true
     return false
   }))
 
   const reqLabel = (g) => {
+    if (esGrupoAgrandado(g)) return 'Elige el sabor del agrandado'
     if (g.obligatorio || g.min_selecciones > 0) {
       const min = Math.max(g.min_selecciones || 0, g.obligatorio ? 1 : 0)
       return `Elige ${min}${g.max_selecciones > 0 && g.max_selecciones !== min ? `–${g.max_selecciones}` : ''}`
@@ -2001,11 +2019,14 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                 {c.cantidad > 1 ? `${c.cantidad}× ` : ''}{c.nombre}
                 {grupos.length === 0 && <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · incluido</span>}
               </div>
-              {grupos.map(g => (
+              {grupos.map(g => {
+                // "Bebida Agrandado" solo aparece cuando el Agrandado está marcado
+                if (esGrupoAgrandado(g) && !hayAgrandado('c' + i, grupos)) return null
+                return (
                 <div key={g.id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontWeight: 800, fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                      {g.nombre}{g.obligatorio && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
+                      {g.nombre}{(g.obligatorio || esGrupoAgrandado(g)) && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
                     </span>
                     <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                   </div>
@@ -2039,7 +2060,8 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                     })}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )
         })}
@@ -2048,11 +2070,13 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
         {(combo.modGrupos || []).length > 0 && (
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>General</div>
-            {combo.modGrupos.map(g => (
+            {combo.modGrupos.map(g => {
+              if (esGrupoAgrandado(g) && !hayAgrandado('combo', combo.modGrupos)) return null
+              return (
               <div key={g.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
                   <span style={{ fontWeight: 800, fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                    {g.nombre}{g.obligatorio && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
+                    {g.nombre}{(g.obligatorio || esGrupoAgrandado(g)) && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
                   </span>
                   <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                 </div>
@@ -2084,7 +2108,8 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                   })}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
