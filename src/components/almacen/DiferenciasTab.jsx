@@ -62,6 +62,11 @@ export default function DiferenciasTab() {
   const [eficiencia, setEfic]     = useState([]);
   const [cargando, setCargando]   = useState(false);
   const [verDetalle, setVerDet]   = useState(false);
+  // Faltantes de conteo justificados (PIN de gerente + nota) que se acumulan por
+  // sucursal para descontarse de su pago. Van aparte de las diferencias de kardex:
+  // acá lo que importa es el DINERO firmado, no el movimiento.
+  const [justificados, setJustificados] = useState([]);
+  const [justAbierta, setJustAbierta]   = useState(null);
 
   useEffect(() => {
     db.from('sucursales').select('id,nombre,store_code').eq('activa', true)
@@ -83,6 +88,9 @@ export default function DiferenciasTab() {
         db.rpc('kardex_diferencias_detalle', { ...params, p_tipo: tipo }),
         db.rpc('kardex_consumo_eficiencia', { p_desde: params.p_desde, p_hasta: params.p_hasta }),
       ]);
+      db.rpc('faltantes_acumulados', params)
+        .then(({ data }) => setJustificados(Array.isArray(data) ? data : []))
+        .catch(() => setJustificados([]));
       if (e1) throw e1;
       if (e2) throw e2;
       if (e3) throw e3;
@@ -197,6 +205,79 @@ export default function DiferenciasTab() {
           valor={usd(Math.abs(netoUsd))}
           sub={netoUsd < 0 ? 'en contra' : 'a favor'} />
       </div>
+
+      {/* ── Faltantes justificados: lo firmado por gerencia que se le descuenta
+             a cada sucursal. Es dinero acordado, no una diferencia por explicar,
+             así que va aparte del resto del dashboard. ── */}
+      {justificados.length > 0 && (() => {
+        const totalDesc = justificados.reduce((a, j) => a + n(j.valor_descontable), 0);
+        const totalTodo = justificados.reduce((a, j) => a + n(j.valor_total), 0);
+        const toggle = async (id, valor) => {
+          try {
+            const { error } = await db.rpc('faltante_marcar_descontable', { p_id: id, p_descontable: valor });
+            if (error) throw error;
+            cargar();
+          } catch (e) { show?.('No se pudo cambiar: ' + e.message, 'error'); }
+        };
+        return (
+          <div style={{ background: 'rgba(230,57,70,0.07)', border: '1px solid rgba(230,57,70,0.35)',
+                        borderRadius: 10, padding: 14, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+              <span style={{ fontWeight: 800, fontSize: 15, color: '#e63946' }}>
+                📌 Faltantes justificados — a descontar
+              </span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: '#e63946' }}>{usd(totalDesc)}</span>
+              {totalTodo !== totalDesc && (
+                <span style={{ fontSize: 12, color: '#8b8997' }}>
+                  (de {usd(totalTodo)} reportado; el resto marcado como no descontable)
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: '#a08a8c', marginBottom: 10, lineHeight: 1.5 }}>
+              Faltantes del conteo nocturno autorizados con PIN de gerente y su explicación.
+              Destildá "descontar" para dejarlo registrado sin cobrárselo a la sucursal
+              (ej.: la noche de reconciliación de inventario).
+            </div>
+            {justificados.map(j => (
+              <div key={j.sucursal_id} style={{ borderTop: '1px solid #2a2a32', paddingTop: 8, marginTop: 8 }}>
+                <button onClick={() => setJustAbierta(justAbierta === j.sucursal_id ? null : j.sucursal_id)}
+                  style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                           background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#ddd' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>
+                    {j.sucursal} <span style={{ color: '#8b8997', fontWeight: 400 }}>
+                      · {j.productos} producto(s) en {j.eventos} conteo(s)
+                    </span>
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <b style={{ color: '#e63946', fontSize: 14 }}>{usd(j.valor_descontable)}</b>
+                    <span style={{ color: '#555', fontSize: 12 }}>{justAbierta === j.sucursal_id ? '▲' : '▼'}</span>
+                  </span>
+                </button>
+                {justAbierta === j.sucursal_id && (j.detalle || []).map(d => (
+                  <div key={d.id} style={{ background: '#131318', borderRadius: 8, padding: '8px 10px', marginTop: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12 }}>
+                      <span style={{ color: '#ddd' }}>
+                        <b>{fechaCorta(d.fecha)}</b> · {d.producto}
+                        <span style={{ color: '#8b8997' }}> — {n(d.cantidad)} {d.unidad}</span>
+                      </span>
+                      <b style={{ color: d.descontable ? '#e63946' : '#555' }}>{usd(d.valor)}</b>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9a9088', marginTop: 3, lineHeight: 1.45 }}>
+                      “{d.nota}” — <b>autorizó {d.autorizo}</b>
+                    </div>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6,
+                                    fontSize: 11, color: d.descontable ? '#e63946' : '#666', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!d.descontable}
+                        onChange={e => toggle(d.id, e.target.checked)} />
+                      {d.descontable ? 'Se descuenta a la sucursal' : 'No se descuenta (solo queda el registro)'}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Honestidad sobre la valorización: sin esto, un producto caro sin
           precio se vería como $0 y parecería que no pasó nada. */}

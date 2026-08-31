@@ -13,6 +13,10 @@ const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
 // queda contra ventas a medio turno.
 const SIN_GATES_TEMPORAL = ['M001'];
 
+// Quién puede autorizar un faltante de conteo (lo que se le descuenta a la
+// sucursal): gerencia hacia arriba. La cajera que cuenta no puede firmarse sola.
+const ROLES_AUTORIZA_FALTANTE = ['gerente', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'];
+
 /* ── Stepper button style (48px touch target) ── */
 const stepBtn={
   width:48,height:48,borderRadius:12,border:'1px solid #333',
@@ -67,6 +71,11 @@ export default function ConteoNocturno({user,onBack}){
   const [mermaCatalogo,setMermaCatalogo]=useState([]);   // productos de la sucursal
   const [guardandoMerma,setGuardandoMerma]=useState(false);
   const [mermaHoy,setMermaHoy]=useState(null);           // merma ya registrada hoy (informativa)
+
+  // ── Faltante del conteo: pasa con PIN de gerente + nota (pedido Jose 30-ago) ──
+  // El faltante no se bloquea (el conteo debe poder cerrarse), pero no pasa mudo:
+  // queda firmado, valorizado y acumulado por sucursal en Fugas para descontarlo.
+  const [faltanteGate,setFaltanteGate]=useState(null);   // {faltantes:[], valor, pin, nota, auth, validando, err}
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
@@ -407,7 +416,15 @@ export default function ConteoNocturno({user,onBack}){
     return '#facc15'; // amarillo
   };
 
-  const guardarConteo=async()=>{
+  // Faltantes = contado por debajo del teórico. Es lo que la sucursal tiene que
+  // explicar (y lo que se le descuenta), así que se calcula sobre lo mismo que ve
+  // en pantalla.
+  const calcFaltantes=()=>productos
+    .filter(p=>p.cantidad_real!==null && n(p.cantidad_real) < n(p.stock_teorico))
+    .map(p=>({producto_id:p.producto_id, nombre:p.nombre, unidad:p.unidad,
+              cantidad:Math.round((n(p.stock_teorico)-n(p.cantidad_real))*10000)/10000}));
+
+  const guardarConteo=async(gate=null)=>{
     // Validar que todos tengan cantidad_real
     const sinCantidad=productos.filter(p=>p.cantidad_real===null);
     if(sinCantidad.length>0){
@@ -419,6 +436,17 @@ export default function ConteoNocturno({user,onBack}){
     if(isEdit && editExpira && Date.now()>=editExpira.getTime()){
       show('🔒 La ventana de edición (6h) ha expirado');
       return;
+    }
+
+    // Gate de faltante: NO bloquea el conteo (tiene que poder cerrarse), pero
+    // exige firma de gerente + nota antes de guardar. Si ya viene autorizado
+    // (gate), se sigue de largo.
+    if(!gate){
+      const faltantes=calcFaltantes();
+      if(faltantes.length>0){
+        setFaltanteGate({faltantes, pin:'', nota:'', auth:null, validando:false, err:''});
+        return;
+      }
     }
 
     setGuardando(true);
@@ -461,6 +489,27 @@ export default function ConteoNocturno({user,onBack}){
         p_sucursal_id: sucursalId,
       });
       if(ajErr) throw ajErr;
+
+      // 3b. Faltantes justificados: quedan valorizados y acumulados por sucursal
+      // (tab de Fugas) para descontarlos del pago de esa sucursal. Va DESPUÉS del
+      // ajuste: si el kardex falla, no se registra un descuento de algo que no pasó.
+      if(gate?.faltantes?.length){
+        try{
+          const {data:rf,error:rfErr}=await db.rpc('registrar_faltantes_conteo',{
+            p_items: gate.faltantes.map(f=>({producto_id:f.producto_id, cantidad:f.cantidad})),
+            p_sucursal_id: sucursalId,
+            p_nota: gate.nota,
+            p_autorizado_por: gate.auth?.id || null,
+            p_contado_por: user.id,
+            p_modo: modo||'normal',
+          });
+          if(rfErr) throw rfErr;
+          if(rf?.valor>0) show(`📌 Faltante registrado: $${Number(rf.valor).toFixed(2)} — queda en Fugas de ${sucursalNombre}`);
+        }catch(e){
+          // El conteo YA se guardó: no se revierte, pero hay que decirlo fuerte
+          show('⚠️ El conteo se guardó pero el faltante NO se registró en Fugas: '+e.message);
+        }
+      }
 
       setConteoHoy({});
       // Se le dice al empleado lo que el conteo encontró, en vez de un "guardado"
@@ -746,9 +795,15 @@ export default function ConteoNocturno({user,onBack}){
 
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 20px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
           {mermaItems.length>0?(
-            <button className="btn btn-red" onClick={guardarMerma} disabled={guardandoMerma}
-              style={{fontSize:17,padding:18,width:'100%',marginBottom:8}}>
-              {guardandoMerma?<span className="spin"/>:`🗑️ Reportar merma (${totalUnidades} u) y continuar`}
+            // Con merma reportada la nota es OBLIGATORIA: sin el porqué, el dato no
+            // sirve para nada después (queda "faltó" sin causa).
+            <button className="btn btn-red" onClick={guardarMerma}
+              disabled={guardandoMerma||mermaMotivo.trim().length<5}
+              style={{fontSize:17,padding:18,width:'100%',marginBottom:8,
+                      opacity:mermaMotivo.trim().length<5?0.5:1}}>
+              {guardandoMerma?<span className="spin"/>
+                : mermaMotivo.trim().length<5 ? '✍️ Escribí el motivo de la merma'
+                : `🗑️ Reportar merma (${totalUnidades} u) y continuar`}
             </button>
           ):(
             <button className="btn btn-red" onClick={()=>{setMermaLista(true);setScreen('elegir');}}
@@ -799,11 +854,94 @@ export default function ConteoNocturno({user,onBack}){
     );
   }
 
+  // ── MODAL: faltante en el conteo (PIN de gerente + nota) ──
+  // Se renderiza como overlay sobre la pantalla de conteo, no como pantalla aparte:
+  // la cajera tiene que seguir viendo lo que contó mientras el gerente autoriza.
+  const modalFaltante = faltanteGate && (()=>{
+    const g=faltanteGate;
+    const validar=async()=>{
+      if(g.pin.length<4) return;
+      setFaltanteGate(x=>({...x,validando:true,err:''}));
+      try{
+        const {data,error}=await db.rpc('erp_login',{p_pin:g.pin});
+        if(error) throw error;
+        if(!data){ setFaltanteGate(x=>({...x,validando:false,pin:'',err:'PIN incorrecto'})); return; }
+        if(!ROLES_AUTORIZA_FALTANTE.includes(data.rol)){
+          setFaltanteGate(x=>({...x,validando:false,pin:'',err:`${data.nombre}: ese rol no puede autorizar un faltante`}));
+          return;
+        }
+        setFaltanteGate(x=>({...x,validando:false,auth:data,err:''}));
+      }catch(e){ setFaltanteGate(x=>({...x,validando:false,pin:'',err:e.message||'No se pudo validar'})); }
+    };
+    return(
+      <div onClick={()=>setFaltanteGate(null)}
+        style={{position:'fixed',inset:0,zIndex:60,background:'rgba(0,0,0,0.72)',display:'flex',
+                alignItems:'center',justifyContent:'center',padding:16}}>
+        <div onClick={e=>e.stopPropagation()}
+          style={{width:'100%',maxWidth:420,maxHeight:'88vh',overflowY:'auto',background:'#141419',
+                  border:'1px solid #e6394660',borderRadius:14,padding:18}}>
+          <div style={{fontWeight:800,fontSize:17,color:'#e63946',marginBottom:4}}>⚠️ Hay faltante</div>
+          <div style={{fontSize:12,color:'#aaa',lineHeight:1.5,marginBottom:12}}>
+            {g.faltantes.length} producto{g.faltantes.length>1?'s':''} por debajo del sistema. Se puede cerrar el
+            conteo, pero necesita <b>autorización de gerente</b> y una nota: queda acumulado en las
+            <b> Fugas de {sucursalNombre}</b> para descontarlo.
+          </div>
+
+          <div style={{maxHeight:150,overflowY:'auto',background:'#0d0d10',borderRadius:10,padding:10,marginBottom:12}}>
+            {g.faltantes.map(f=>(
+              <div key={f.producto_id} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',color:'#ccc'}}>
+                <span style={{flex:1,paddingRight:8}}>{f.nombre}</span>
+                <b style={{color:'#e63946'}}>−{f.cantidad} {f.unidad}</b>
+              </div>
+            ))}
+          </div>
+
+          {!g.auth?(
+            <>
+              <div style={{fontSize:12,color:'#aaa',marginBottom:6}}>PIN del gerente</div>
+              <input type="password" inputMode="numeric" autoFocus value={g.pin}
+                onChange={e=>setFaltanteGate(x=>({...x,pin:e.target.value.replace(/\D/g,'').slice(0,6),err:''}))}
+                onKeyDown={e=>e.key==='Enter'&&validar()}
+                style={{width:'100%',padding:'13px 14px',background:'#0a0a0a',border:'1px solid #333',
+                        borderRadius:10,color:'#fff',fontSize:20,textAlign:'center',letterSpacing:6}}/>
+              {g.err&&<div style={{color:'#f87171',fontSize:12,marginTop:8}}>{g.err}</div>}
+              <button className="btn btn-red" onClick={validar} disabled={g.pin.length<4||g.validando}
+                style={{width:'100%',padding:14,marginTop:12,opacity:g.pin.length<4?0.5:1}}>
+                {g.validando?<span className="spin"/>:'Validar PIN'}
+              </button>
+            </>
+          ):(
+            <>
+              <div style={{fontSize:12,color:'#4ade80',marginBottom:8}}>✓ Autoriza {g.auth.nombre} ({g.auth.rol})</div>
+              <div style={{fontSize:12,color:'#aaa',marginBottom:6}}>¿Por qué falta? (obligatorio)</div>
+              <textarea rows={3} autoFocus value={g.nota}
+                onChange={e=>setFaltanteGate(x=>({...x,nota:e.target.value}))}
+                placeholder="Ej: se usó para pruebas de receta, se dañó el congelador, error en el despacho de ayer…"
+                style={{width:'100%',padding:12,background:'#0a0a0a',border:'1px solid #333',borderRadius:10,
+                        color:'#fff',fontSize:14,resize:'vertical'}}/>
+              <div style={{fontSize:11,color:'#666',margin:'6px 0 12px'}}>Mínimo 10 caracteres. Esta nota la ve Casa Matriz en Fugas.</div>
+              <button className="btn btn-red" disabled={g.nota.trim().length<10||guardando}
+                onClick={()=>{ const gate={...g,nota:g.nota.trim()}; setFaltanteGate(null); guardarConteo(gate); }}
+                style={{width:'100%',padding:14,opacity:g.nota.trim().length<10?0.5:1}}>
+                {g.nota.trim().length<10?'Escribí la explicación':'Autorizar y guardar conteo'}
+              </button>
+            </>
+          )}
+          <button onClick={()=>setFaltanteGate(null)}
+            style={{background:'none',border:'none',color:'#666',fontSize:12,cursor:'pointer',width:'100%',padding:10}}>
+            Cancelar — volver a contar
+          </button>
+        </div>
+      </div>
+    );
+  })();
+
   // ── SCREEN 1: CONTEO ──
   if(screen===1){
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 100px'}}>
         <Toast/>
+        {modalFaltante}
         {/* Header */}
         <div style={{padding:'20px 0 8px',display:'flex',alignItems:'center',gap:12}}>
           <button onClick={()=>setScreen('elegir')} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
@@ -908,7 +1046,7 @@ export default function ConteoNocturno({user,onBack}){
 
         {/* ── Botón Guardar sticky ── */}
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
-          <button className="btn btn-red" onClick={modo==='bebidas'?prepararPedidoBebidas:guardarConteo} disabled={guardando||contados<totalProds}
+          <button className="btn btn-red" onClick={()=>modo==='bebidas'?prepararPedidoBebidas():guardarConteo()} disabled={guardando||contados<totalProds}
             style={{fontSize:17,padding:18,width:'100%',opacity:contados<totalProds?0.5:1}}>
             {guardando?<span className="spin"/>:contados<totalProds?`Faltan ${totalProds-contados} productos`:modo==='bebidas'?'🛒 Generar pedido BEES':isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
           </button>
