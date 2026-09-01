@@ -27,10 +27,13 @@ export default function ConfirmarEntrega({user,onBack}){
   const [notas,setNotas]=useState('');
   const [itemsNotas,setItemsNotas]=useState({});
   const [actualizando,setActualizando]=useState(false);
+  const [errorCarga,setErrorCarga]=useState('');
   const fotoRef=useRef();
   const bottomRef=useRef();
 
-  const isMotorist=user.rol==='despachador'||user.rol==='motorista';
+  // El menú (config.js) ofrece esta pantalla también a motorista_interno y
+  // domicilios; sin ellos acá quedaban con "Acceso no permitido".
+  const isMotorist=['despachador','motorista','motorista_interno','domicilios'].includes(user.rol);
   // jefe_casa_matriz prepara los despachos y superadmin hace conteos: sin ellos acá,
   // el gate del conteo los bloqueaba sin darles dónde confirmar la recepción
   // (caso Lourdes 31-ago: despacho preparado por Kevin, jefe_casa_matriz).
@@ -39,7 +42,10 @@ export default function ConfirmarEntrega({user,onBack}){
   const canAccess=isMotorist||isAdmin||isReceiver;
 
   useEffect(()=>{
-    if(!canAccess){show('⚠️ Acceso no permitido');onBack();return;}
+    // Sin acceso el componente dejaba loading en true (spinner eterno) o caía al
+    // vacío: el usuario leía "No hay entregas pendientes" y creía que el despacho
+    // no existía. Ahora el motivo se ve en pantalla.
+    if(!canAccess){setErrorCarga(`Tu rol (${user.rol||'sin rol'}) no puede confirmar entregas. Pedile a la gerente o a cocina de la sucursal que la reciba.`);setLoading(false);return;}
     loadDespachos();
   },[]);
 
@@ -70,6 +76,9 @@ export default function ConfirmarEntrega({user,onBack}){
       if(error)throw error;
       setDespachos(data||[]);
     }catch(e){
+      // Antes solo salía un toast que se iba solo: quedaba el vacío en pantalla y
+      // parecía que no había despachos cuando en realidad la carga falló.
+      setErrorCarga('No se pudieron cargar las entregas: '+e.message);
       show('❌ Error al cargar entregas: '+e.message);
     }finally{
       setLoading(false);
@@ -185,10 +194,20 @@ export default function ConfirmarEntrega({user,onBack}){
         <button onClick={onBack} style={{background:'none',border:'none',fontSize:18,cursor:'pointer'}}>✕</button>
       </div>
 
-      {despachos.length===0?(
+      {errorCarga?(
+        <div style={{textAlign:'center',padding:'32px 20px',color:'#e63946',border:'1px solid #e63946',borderRadius:12}}>
+          <div style={{fontSize:44,marginBottom:10}}>⚠️</div>
+          <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>No se pudo mostrar la lista</div>
+          <div style={{fontSize:13,color:'#ccc',lineHeight:1.5}}>{errorCarga}</div>
+        </div>
+      ):despachos.length===0?(
         <div style={{textAlign:'center',padding:'40px 20px',color:'#666'}}>
           <div style={{fontSize:48,marginBottom:10}}>📦</div>
           <div style={{fontSize:15,fontWeight:600}}>No hay entregas pendientes</div>
+          <div style={{fontSize:12,color:'#888',marginTop:8,lineHeight:1.5}}>
+            Si el conteo te dice que tenés un despacho por recibir y acá no aparece,
+            avisá a Casa Matriz: puede que aún no lo hayan marcado como despachado.
+          </div>
         </div>
       ):(
         <>
