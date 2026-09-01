@@ -413,12 +413,82 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const totalVentas = n(A.corte?.efectivo) + n(A.corte?.tarjeta) + n(A.corte?.transferencia) + n(A.corte?.link_pago)
   const difColor = efReal === 0 ? '#9a9088' : Math.abs(A.dif) < 1 ? '#2dd4a8' : Math.abs(A.dif) <= 5 ? '#facc15' : '#f87171'
 
+  // Subida de fotos de egreso CON TIMEOUT. La subida va ANTES del update del turno,
+  // así que una foto de 2 MB que se cuelga en el wifi de la sucursal deja el cierre
+  // sin guardar (Usulután 31-ago: el ticket Z salió impreso y el turno quedó abierto).
+  // Perder una foto es recuperable; perder el cierre del día no. Si la foto no sube,
+  // el egreso se guarda igual sin foto y se avisa.
+  const FOTO_TIMEOUT_MS = 25000
   const subirFotos = async (list) => Promise.all(list.map(async (e) => {
     let foto_url = e.foto_url || null
-    if (e.foto_file) { try { foto_url = await uploadFoto(e.foto_file, `egresos/${storeCode}`) } catch (err) { console.warn('foto egreso no subida:', err.message) } }
+    if (e.foto_file) {
+      try {
+        foto_url = await Promise.race([
+          uploadFoto(e.foto_file, `egresos/${storeCode}`),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('la foto tardó demasiado')), FOTO_TIMEOUT_MS)),
+        ])
+      } catch (err) {
+        console.warn('foto egreso no subida:', err.message)
+        toast.warning(`El egreso "${e.motivo_nombre || ''}" se guarda SIN foto (${err.message}).`)
+      }
+    }
     const { foto_file, ...rest } = e
     return { ...rest, foto_url }
   }))
+
+  // ── Cierre pendiente de guardar ──────────────────────────────────────────────
+  // El corte se IMPRIME antes de guardar (el deep-link de rawbt necesita el gesto
+  // del botón, ver comentario en cerrarX). Consecuencia: un ticket Z impreso NO
+  // prueba que el día se cerró. El 31-ago en Usulután el ticket salió, el guardado
+  // nunca corrió, el aviso de error se lo llevó el toast y la caja amaneció abierta.
+  // Ahora el payload se guarda en el equipo ANTES de mandarlo: si el guardado falla
+  // (o la app se cierra en medio), al volver a entrar aparece un banner rojo con
+  // "Reintentar guardar" y los datos intactos — nadie tiene que recontar la gaveta.
+  const pendKey = (turnoId) => `fd_cierre_pendiente_${storeCode}_${caja || '-'}_${turnoId}`
+  const [pendiente, setPendiente] = useState(null)
+  const guardarPendiente = (p) => { try { localStorage.setItem(pendKey(p.turnoId), JSON.stringify(p)) } catch { /* modo privado: seguimos igual */ } }
+  const limpiarPendiente = (turnoId) => { try { localStorage.removeItem(pendKey(turnoId)) } catch { /* idem */ } setPendiente(null) }
+  useEffect(() => {
+    if (!turno?.id) { setPendiente(null); return }
+    try { const raw = localStorage.getItem(pendKey(turno.id)); setPendiente(raw ? JSON.parse(raw) : null) } catch { setPendiente(null) }
+  }, [turno?.id, storeCode, caja])
+
+  // Manda a la BD un cierre ya armado. La usan el cierre normal y el reintento, para
+  // que un cierre recuperado se guarde exactamente igual que uno hecho de una sentada.
+  const aplicarCierre = async (p) => {
+    const { error } = await db.from('pos_turnos').update(p.update).eq('id', p.turnoId)
+    if (error) throw error
+    if (p.tipo !== 'Z') return null
+    let cierreId = null, rebuildErr = null
+    for (let intento = 1; intento <= 3 && !cierreId; intento++) {
+      try {
+        const { data: cid, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
+          p_store_code: storeCode, p_fecha: p.fecha,
+          p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null, p_caja: caja,
+        })
+        if (_rpcErr) throw _rpcErr
+        if (!cid) throw new Error('el rebuild no devolvió el cierre')
+        cierreId = cid
+      } catch (e) { rebuildErr = e; if (intento < 3) await new Promise(r => setTimeout(r, 1200)) }
+    }
+    if (!cierreId) throw Object.assign(new Error(rebuildErr?.message || 'el resumen del día no se armó'), { soloRebuild: true })
+    return cierreId
+  }
+
+  const reintentarPendiente = async () => {
+    if (!pendiente) return
+    setSaving(true)
+    try {
+      await aplicarCierre(pendiente)
+      limpiarPendiente(pendiente.turnoId)
+      toast.success(pendiente.tipo === 'Z' ? 'Día cerrado (corte Z). Ya se puede abrir la caja de hoy.' : 'Caja cerrada (X).')
+      onBack()
+    } catch (e) {
+      // El turno pudo quedar cerrado y fallar solo el resumen: el cron backstop lo re-arma.
+      if (e.soloRebuild) { limpiarPendiente(pendiente.turnoId); toast.error('La caja quedó cerrada, pero el resumen del día no se armó. El sistema lo reintenta solo en ~30 min.'); onBack(); return }
+      toast.error('Sigue sin guardarse: ' + e.message + '. Revisá la señal y volvé a intentar.')
+    } finally { setSaving(false) }
+  }
 
   // snapshot del sistema para el turno actual (se guarda igual en X y en Z)
   const snapshotSistema = () => ({
@@ -470,19 +540,28 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     const _print = printCorte('x', buildCorteData('X'))
     try {
       const egresosFinal = await subirFotos(egresos)
-      const { error } = await db.from('pos_turnos').update({
-        cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'X',
-        ...snapshotSistema(),
-        // conteo_efectivo = efectivo de VENTAS contado (gaveta − fondo); la columna generada
-        // diferencia_efectivo = conteo − sistema_efectivo da el sobrante/faltante. NO deposita.
-        conteo_efectivo: r2(efReal - fondoRecibido), deposito_monto: 0,
-        egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
-      }).eq('id', turno.id)
-      if (error) throw error
+      const p = {
+        tipo: 'X', turnoId: turno.id, fecha: diaISO,
+        update: {
+          cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'X',
+          ...snapshotSistema(),
+          // conteo_efectivo = efectivo de VENTAS contado (gaveta − fondo); la columna generada
+          // diferencia_efectivo = conteo − sistema_efectivo da el sobrante/faltante. NO deposita.
+          conteo_efectivo: r2(efReal - fondoRecibido), deposito_monto: 0,
+          egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
+        },
+      }
+      guardarPendiente(p)          // primero al equipo, después a la BD
+      await aplicarCierre(p)
+      limpiarPendiente(turno.id)
       toast.success('Caja cerrada (X). El siguiente cajero ya puede abrir.')
       try { const _r = await _print; if (_r && _r.ok === false) toast.error('⚠️ Corte X no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte X no impreso: ' + (_pe?.message || 'error')) }
       onBack()
-    } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
+    } catch (e) {
+      // El payload queda guardado en el equipo: el banner de arriba ofrece reintentar.
+      setPendiente(p => p || (() => { try { return JSON.parse(localStorage.getItem(pendKey(turno.id))) } catch { return null } })())
+      toast.error('Error al cerrar: ' + e.message + '. El corte quedó guardado en la tablet — usá "Reintentar guardar".')
+    } finally { setSaving(false) }
   }
 
   // ── Corte Z: cierre del DÍA (1 por día). Deposita y arma ventas_diarias con TODOS los turnos. ──
@@ -500,31 +579,32 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     try {
       const egresosFinal = await subirFotos(egresos)
       // 1. Cierra ESTE turno con su propio snapshot (para que el rebuild sume bien por turno);
-      //    el depósito y el conteo son del DÍA completo.
-      const { error } = await db.from('pos_turnos').update({
-        cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'Z',
-        ...snapshotSistema(),
-        // conteo_efectivo = efectivo del día a depositar (gaveta − fondo base). El depósito
-        // del día es lo mismo. diferencia_efectivo (generada) = conteo − sistema_efectivo.
-        conteo_efectivo: depositoDia, deposito_monto: depositoDia,
-        egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
-      }).eq('id', turno.id)
-      if (error) throw error
-      // 2. Arma el día completo en ventas_diarias (suma TODOS los turnos cerrados del día).
-      //    OJO (bug Venecia 28-jul / POS-1): antes el error del rebuild se TRAGABA y el
-      //    Z decía "✓ Día cerrado" sin crear el cierre. Ahora: 3 reintentos + aviso real.
-      //    Backstop server-side: cron pos_reconciliar_cierres_z repara solo en ≤30 min.
-      let cierreId = null, rebuildErr = null
-      for (let intento = 1; intento <= 3 && !cierreId; intento++) {
-        try {
-          const { data: cid, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
-            p_store_code: storeCode, p_fecha: diaISO,
-            p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null, p_caja: caja,
-          })
-          if (_rpcErr) throw _rpcErr
-          if (!cid) throw new Error('el rebuild no devolvió el cierre')
-          cierreId = cid
-        } catch (e) { rebuildErr = e; if (intento < 3) await new Promise(r => setTimeout(r, 1200)) }
+      //    el depósito y el conteo son del DÍA completo. El payload se guarda primero en
+      //    el equipo: si el envío falla, el cierre se recupera en vez de perderse.
+      // 2. aplicarCierre arma además el día en ventas_diarias (3 reintentos; el error del
+      //    rebuild NO se traga — bug Venecia 28-jul / POS-1). Backstop server-side: cron
+      //    pos_reconciliar_cierres_z repara solo en ≤30 min.
+      const p = {
+        tipo: 'Z', turnoId: turno.id, fecha: diaISO,
+        update: {
+          cerrado_at: new Date().toISOString(), estado: 'cerrado', tipo_cierre: 'Z',
+          ...snapshotSistema(),
+          // conteo_efectivo = efectivo del día a depositar (gaveta − fondo base). El depósito
+          // del día es lo mismo. diferencia_efectivo (generada) = conteo − sistema_efectivo.
+          conteo_efectivo: depositoDia, deposito_monto: depositoDia,
+          egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
+        },
+      }
+      guardarPendiente(p)
+      let cierreId = null
+      try {
+        cierreId = await aplicarCierre(p)
+        limpiarPendiente(turno.id)
+      } catch (e) {
+        if (!e.soloRebuild) throw e
+        // La caja SÍ quedó cerrada; solo faltó el resumen, que el cron re-arma.
+        limpiarPendiente(turno.id)
+        toast.error(`⚠️ La caja quedó cerrada, pero el resumen del día NO se armó (${e.message}). El sistema lo reintenta solo en ~30 min — verificá en el dashboard de cierres; si no aparece, avisá a administración.`)
       }
       if (cierreId) {
         // Detalle de egresos/ingresos del DÍA COMPLETO (todos los turnos) para Finanzas.
@@ -550,12 +630,14 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
           if (inRows.length) await db.from('ingresos_cierre').insert(inRows)
         } catch (_bridgeErr) { console.warn('bridge egresos/ingresos:', _bridgeErr?.message) }
         toast.success('Día cerrado (corte Z)')
-      } else {
-        toast.error(`⚠️ La caja quedó cerrada, pero el resumen del día NO se armó (${rebuildErr?.message || 'error'}). El sistema lo reintenta solo en ~30 min — verificá en el dashboard de cierres; si no aparece, avisá a administración.`)
       }
       try { const _r = await _print; if (_r && _r.ok === false) toast.error('⚠️ Corte Z no impreso: ' + (_r.error || 'revisá la impresora')) } catch (_pe) { toast.error('⚠️ Corte Z no impreso: ' + (_pe?.message || 'error')) }
       onBack()
-    } catch (e) { toast.error('Error al cerrar: ' + e.message) } finally { setSaving(false) }
+    } catch (e) {
+      // El payload queda guardado en el equipo: el banner de arriba ofrece reintentar.
+      setPendiente(prev => prev || (() => { try { return JSON.parse(localStorage.getItem(pendKey(turno.id))) } catch { return null } })())
+      toast.error('Error al cerrar: ' + e.message + '. El corte quedó guardado en la tablet — usá "Reintentar guardar".')
+    } finally { setSaving(false) }
   }
 
   if (loading) return <div className="poshome-root"><div className="poshome-empty"><div className="spin" /></div></div>
@@ -615,6 +697,17 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
 
         {esZ && diaInfo.zExiste && (
           <div style={{ ...card, border: '1px solid #dc3545', color: '#f8d7da', background: '#2a1416' }}>⚠ El día ya fue cerrado con corte Z. No se puede volver a cerrar.</div>
+        )}
+        {pendiente && (
+          <div style={{ ...card, border: '1px solid #dc3545', color: '#f8d7da', background: '#2a1416' }}>
+            💾 Ya se hizo el <b>corte {pendiente.tipo}</b> de esta caja y <b>se imprimió</b>, pero <b>no llegó al sistema</b>
+            (se cayó la señal). Los datos están guardados acá — no hay que recontar nada.
+            <button onClick={reintentarPendiente} disabled={saving}
+              style={{ display: 'block', width: '100%', marginTop: 10, background: '#dc3545', border: 'none', color: '#fff',
+                       fontWeight: 700, fontSize: 14, padding: '11px 0', borderRadius: 9, cursor: saving ? 'wait' : 'pointer' }}>
+              {saving ? 'Guardando…' : 'Reintentar guardar el cierre'}
+            </button>
+          </div>
         )}
         {turnoAtrasado && !diaInfo.zExiste && (
           <div style={{ ...card, border: '1px solid #dc3545', color: '#f8d7da', background: '#2a1416' }}>

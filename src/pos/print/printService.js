@@ -506,6 +506,12 @@ function corteHTML(c) {
     { row: 1, left: 'Transferencia', right: money(c.transferencia) },
     { row: 1, bold: 1, left: 'TOTAL', right: money(c.total) },
     { row: 1, left: 'Propinas', right: money(c.propinas) },
+    // Egresos/ingresos ANTES del esperado, igual que en el ticket ESC/POS: sin ellos
+    // el "Efectivo esperado" no cuadra contra las ventas y el ticket impreso deja de
+    // ser prueba de nada (Usulután 31-ago: el Z se imprimió sin el detalle de egresos
+    // y ese fue el único registro que sobrevivió, porque el guardado nunca corrió).
+    ...(c.tipo === 'Z' && c.totalEgresos ? [{ row: 1, left: '(-) Egresos', right: money(c.totalEgresos) }] : []),
+    ...(c.tipo === 'Z' && c.totalIngresos ? [{ row: 1, left: '(+) Ingresos', right: money(c.totalIngresos) }] : []),
     { row: 1, left: 'Efectivo esperado', right: money(c.efectivoEsperado) },
   ];
   if (Array.isArray(c.itemsVendidos) && c.itemsVendidos.length) {
