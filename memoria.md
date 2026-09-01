@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 01-Sep-2026 — Cafetalón: la caja que amanece abierta bloquea la apertura del día siguiente
+
+- **Reporte (Jazz):** Miliana no podía hacer apertura en Cafetalón (M001). **No es la usuaria ni el PIN**: el turno `eb3a45e5` quedó **`estado='abierto'` con `fecha=2026-08-31`** (lo abrió ella misma a las 16:27 tras un corte X, y la tienda cerró a las 21:13 **sin hacer el corte Z**). El guardrail de `abrirTurno` ("1 caja abierta por sucursal") **no filtra por fecha**, así que el turno de ayer bloquea el de hoy — y el mensaje solo decía "ya tiene un turno ABIERTO", sin decir de qué día.
+- **Alcance:** el 31-ago de Cafetalón quedó **sin corte Z y sin fila en `ventas_diarias`** (127 ventas / $1,795.78 del día; $974.91 con $296.72 en efectivo en el turno huérfano). El backstop `pos_reconciliar_cierres_z` **no lo repara** porque exige `tipo_cierre='Z'`. Las alertas `pos-alerta-sin-cierre` **sí dispararon** (22:30 y 23:45 a Telegram) y nadie actuó.
+- **Mismo caso en Usulután (S002), peor:** turno del 31-ago abierto desde las 10:41 y **nunca cerrado (ni X ni Z)**; el 1-sep **siguieron cobrando sobre ese turno de ayer** ($29.47 en 2 ventas). Su 31-ago tampoco tiene `ventas_diarias`.
+- **Trampa que había al cerrarlo:** aunque la cajera llegara a la pantalla de cierre, `loadDia()` y el ticket anclaban el día en `todayISO()` mientras `pos_rebuild_cierre_dia` usaba `turno.fecha` → el Z se habría armado con **los números del día equivocado** (arqueo y depósito de hoy contra ventas de ayer).
+- **Fix (`CierreTurno.jsx`):** `diaISO = turno.fecha` (no `todayISO()`) para corte del día, fondo base, egresos/ingresos previos, `zExiste`, ticket y bridge de egresos; la ventana va hasta **ahora** para no perder lo que se siguió cobrando sobre esa caja. `turnoAtrasado` fuerza la pestaña **Z**, **bloquea el X** (un X dejaría ese día sin Z, sin depósito y sin `ventas_diarias` — el bug de Venecia de julio otra vez) y pinta banner rojo. El error de apertura ahora **nombra la fecha y el cajero** del turno pendiente.
+- **Pendiente operativo:** cerrar los dos turnos huérfanos (M001 y S002) con el **efectivo real de la gaveta** y correr `pos_rebuild_cierre_dia` para el 31-ago de ambas. Sin ese dato no se cierra: el arqueo es dinero, no se inventa.
+
 ## 31-Ago-2026 — Banco de clientes de factura dentro del POS (botón "Clientes")
 
 - **El problema:** el cliente de factura SOLO se podía crear en medio del cobro (`CustomerSearch`), con la persona esperando en la caja → se teclea a la carrera y quedan fichas a medias que **tumban el DTE después de haber cobrado** (es exactamente lo que pasó con Vijosa: correo con tilde → 2 facturas rechazadas). Banco actual: **94 clientes** (46 con documento, 10 con NRC, 94 con correo — 0 correos inválidos desde el fix de ayer).
