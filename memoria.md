@@ -2,6 +2,20 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 01-Sep-2026 — "El sistema está lento": era una estampida de crons cada 30 min, no el plan de Supabase
+
+- **Reporte (Jose):** lentitud en **Kaeru y Kako**, y trabones al abrir desde el celular.
+- **Causa real:** en la instancia compartida (`btboxlwfqcbrdfrlnwln` = Freakie `public` + `kaeru` + `kako`) **14-15 jobs de pg_cron disparaban en el minuto `:00` y `:30`**, seis de ellos `REFRESH MATERIALIZED VIEW`. Medido en 24h: el minuto **21:00 UTC (15:00 SV, en pleno servicio) acumuló 406.9 s de trabajo**; 21:30 → 217.8 s; 20:30 → 176.1 s. La instancia es **Micro** (2 vCPU burstable, ~1 GB RAM, `shared_buffers` 256 MB) y **`max_worker_processes` = 6**: 14 jobs contra 6 slots hacen cola y todo lo demás espera.
+- **Por qué se sentía en Kaeru y Kako y no era culpa de ellos:** `kaeru` pesa **25 MB** y `kako` **19 MB** contra **1,192 MB** del schema `public`. Eran vecinos de un inquilino ruidoso. *Lección: en multi-tenant por schema, la lentitud de un tenant chico casi nunca es del tenant chico.*
+- **Fix aplicado:** se escalonaron 8 refresh + 3 reconciliadores a minutos únicos (`7,37` / `9,39` / `11,41` / `13,43` / `15,45` / `19,49` / `23,53` / `27,57` y `3,33` / `5,35` / `25,55`). En `:00`/`:30` quedan solo jobs livianos. **`kako-dte-sweep` NO se tocó** (regla: DTE no se toca sin confirmación explícita). Snapshot reversible en `docs/cron-snapshot-2026-09-01.sql`.
+- **Queda pendiente:**
+  - `freakie-dte-email-sweep` corre **cada minuto**, promedia 2.4 s pero llega a **131.6 s** → se solapa consigo mismo (15 fallos en 48h). Necesita un lock o bajar frecuencia. *Es DTE: requiere confirmación de Jose.*
+  - `refresh_mv_vista_labor_cost_ratio` usa `REFRESH` **sin `CONCURRENTLY`** → toma AccessExclusiveLock y bloquea lecturas hasta 35 s. Para arreglarlo hace falta un índice único en la MV.
+  - Basura: `cron.job_run_details` **157k filas / 53 MB** sin purgar desde marzo; `net._http_response` **152 filas vivas ocupando 31 MB** (bloat, necesita `VACUUM FULL`). 84 MB de grasa en una máquina de 1 GB.
+- **Eatalia** (`wzkqaxgsqgbokkmxarbd`, otra instancia) tiene un problema **distinto**: la query del KDS sobre `pos_comandas` promedia **900 ms** en 215,927 llamadas (54 h de CPU); `recetas` (702 filas, 408 kB) acumula **58.9M escaneos** a 354 ms. Es RLS re-evaluando `auth.*` por fila (39 avisos `auth_rls_initplan`) + embeds N+1 de PostgREST. Sin tocar todavía. — *Jose + Claude, 01-sep-2026*
+
+---
+
 ## 01-Sep-2026 — Cafetalón: la caja que amanece abierta bloquea la apertura del día siguiente
 
 - **Reporte (Jazz):** Miliana no podía hacer apertura en Cafetalón (M001). **No es la usuaria ni el PIN**: el turno `eb3a45e5` quedó **`estado='abierto'` con `fecha=2026-08-31`** (lo abrió ella misma a las 16:27 tras un corte X, y la tienda cerró a las 21:13 **sin hacer el corte Z**). El guardrail de `abrirTurno` ("1 caja abierta por sucursal") **no filtra por fecha**, así que el turno de ayer bloquea el de hoy — y el mensaje solo decía "ya tiene un turno ABIERTO", sin decir de qué día.
