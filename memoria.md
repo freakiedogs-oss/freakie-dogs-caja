@@ -2,6 +2,20 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 01-Sep-2026 — Reporte de ventas mensual/anual (ene-2025 → ago-2026)
+
+- **Qué:** PDF de 5 páginas con la venta mensual y anual de las 6 sucursales, en `docs/reportes/ventas/`
+  (dataset congelado + script generador + HTML, para poder regenerarlo).
+- **Fuentes y por qué:** tienda = `ventas_diarias.total_ventas_quanto` (única serie continua ene-2025 → ago-2026:
+  QUANTO hasta jul-2026 y POS propio después); PedidosYa = `pedidos_peya` (Entregado/Retirado).
+  Se verificó que `total_ventas_quanto` = efectivo+tarjeta+transferencia+link y **no** incluye
+  `ventas_pedidos_ya`, así que sumar PeYa aparte no duplica. Cruce contra `quanto_ordenes` (DTE):
+  diferencia ≤3% en ene–jun 2026, los meses en que ambas fuentes se traslapan.
+- **Números:** 2025 $1,484,634.12 · 2026 ene–ago $2,634,692.85 (tienda $2,118,884.75 + PeYa $515,808.10) ·
+  acumulado $4,119,326.97. Ene–ago 26 vs 25 +304.7%, pero a tiendas comparables (M001+S001) +72.0%.
+- **Salvedades anotadas en el PDF:** PeYa solo desde ene-2026 (los CSV cargados arrancan ahí), y ago-2026
+  queda subestimado ~$1.8K por el 31-ago sin cierre Z en Cafetalón y Usulután.
+
 ## 01-Sep-2026 — Cafetalón: la caja que amanece abierta bloquea la apertura del día siguiente
 
 - **Reporte (Jazz):** Miliana no podía hacer apertura en Cafetalón (M001). **No es la usuaria ni el PIN**: el turno `eb3a45e5` quedó **`estado='abierto'` con `fecha=2026-08-31`** (lo abrió ella misma a las 16:27 tras un corte X, y la tienda cerró a las 21:13 **sin hacer el corte Z**). El guardrail de `abrirTurno` ("1 caja abierta por sucursal") **no filtra por fecha**, así que el turno de ayer bloquea el de hoy — y el mensaje solo decía "ya tiene un turno ABIERTO", sin decir de qué día.
