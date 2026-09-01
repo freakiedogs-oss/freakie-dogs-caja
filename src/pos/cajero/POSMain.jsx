@@ -2095,10 +2095,23 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
     !esGrupoAgrandado(g) && (sel[sec.key + ':' + g.id] || []).some(mid =>
       /agrandado/i.test(g.opciones.find(o => o.id === mid)?.nombre || ''))))
 
+  // Al agrandar salían DOS menús de bebida (el normal y el del agrandado) y se
+  // comandaban DOS bebidas, que además se descontaban las dos del inventario
+  // (reporte Jose 31-ago). Con el agrandado marcado el sabor se elige en el grupo
+  // del agrandado —el $1.25 ya cubre el cambio de presentación—, así que el menú
+  // de bebida normal se oculta. Solo aplica si este combo TIENE grupo de agrandado:
+  // el Royal ofrece "Agrandado Combo" en las papas pero su bebida no tiene grupo
+  // agrandado, y sin este guard quedaría sin dónde elegirla.
+  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g)
+  const hayGrupoAgrandado = secciones.some(sec => (sec.grupos || []).some(esGrupoAgrandado))
+  const grupoOculto = (g) =>
+    (esGrupoAgrandado(g) && !hayAgrandado) ||
+    (hayAgrandado && hayGrupoAgrandado && esGrupoBebida(g))
+
   const modsDe = (secKey, grupos) => {
     const out = []
     ;(grupos || []).forEach(g => {
-      if (esGrupoAgrandado(g) && !hayAgrandado) return   // selección huérfana (des-agrandó): se ignora
+      if (grupoOculto(g)) return   // selección huérfana (des-agrandó o agrandó): se ignora
       ;(sel[secKey + ':' + g.id] || []).forEach(mid => {
         const m = g.opciones.find(o => o.id === mid)
         if (m) out.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
@@ -2130,6 +2143,8 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
 
   const falta = secciones.find(sec => sec.grupos.some(g => {
     const n = (sel[sec.key + ':' + g.id] || []).length
+    // Un grupo oculto no se exige (el de bebida normal cuando se agrandó)
+    if (grupoOculto(g)) return false
     // El grupo del agrandado solo es obligatorio cuando hay Agrandado marcado
     if (esGrupoAgrandado(g)) return hayAgrandado && n < 1
     if (g.obligatorio && n < 1) return true
@@ -2164,8 +2179,9 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
               </div>
               {grupos.map(g => {
                 // "Bebida Agrandado" solo aparece cuando el Agrandado está marcado
-                // (en esta sección o en otra: papas o bebida, ambas vías valen)
-                if (esGrupoAgrandado(g) && !hayAgrandado) return null
+                // (en esta sección o en otra: papas o bebida, ambas vías valen).
+                // Y al agrandar se esconde el menú de bebida normal: un solo menú.
+                if (grupoOculto(g)) return null
                 return (
                 <div key={g.id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
@@ -2215,7 +2231,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>General</div>
             {combo.modGrupos.map(g => {
-              if (esGrupoAgrandado(g) && !hayAgrandado) return null
+              if (grupoOculto(g)) return null
               return (
               <div key={g.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>

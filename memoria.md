@@ -55,6 +55,13 @@
 - **Re-emisión (autorizada por Jose, solo las 2 de Vijosa):** vía `pg_net` → `dte-service/emit-factura` con API key temporal (creada en `dte_service.api_keys` con hash sha256, desactivada al terminar; la red de la sesión bloqueaba curl directo a supabase.co). Ambas **ACEPTADAS con sello**: $23.64 → codGen `07705F8D…` control `…120813841` sello `…C7OOJE`; $25.54 → codGen `4E3C0170…` control `…120888331` sello `…FACE4C` (fecha emisión 30-ago — el servicio no permite fecha retroactiva). `pos_cuentas` actualizadas con el DTE nuevo + nota del rechazado. Representaciones gráficas PDF (con QR a consulta pública MH) generadas y entregadas a Jose para el cliente.
 - **Aprendizajes:** el flujo de cobro NO avisa cuando el DTE sale rechazado (queda `dte_sello` null y el ticket se imprime igual); los DTE tipo 05/14 rechazados de la lista tienen errores de schema distintos (backfill-nc / sujeto excluido — revisar aparte). **Decisión de Jose (30-ago): NO re-emitir la de BOLDCRAFT $1,000 y NO construir la alerta de DTE rechazado** — si algo cambia, es decisión nueva.
 
+## 31-Ago-2026 (5) — Agrandado mostraba 2 menús de bebida y comandaba 2 bebidas
+- **Reportado por Jose (food court, Soyapango):** al marcar "Agrandado Combo" (+$1.25) aparecían **dos** menús — "BEBIDA" (con +$0.50) y "BEBIDA AGRANDADO" (sin precio) — y la comanda salía con **2 bebidas** (Botella Agua + Fanta Lata en su captura). Las dos se descontaban del inventario.
+- **Decisión de Jose:** al agrandar se oculta el menú de bebida normal y queda solo el del agrandado (sin precio, porque el $1.25 ya cubre el cambio de presentación). El +$0.50 se mantiene cuando NO se agranda.
+- **Fix en `ComboModal` (POSMain.jsx):** nuevo `grupoOculto(g)` que reemplaza la condición suelta `esGrupoAgrandado(g) && !hayAgrandado` en las 4 partes del modal (modsDe, falta, render de componentes, render de grupos del combo). Oculta el grupo de bebida normal cuando hay agrandado, y su selección queda huérfana → no viaja a la comanda ni al kardex.
+- **Guard importante:** solo se oculta si el combo TIENE grupo de agrandado (`hayGrupoAgrandado`). El Royal ofrece "Agrandado Combo" en las papas pero su bebida usa grupos propios sin variante agrandada — sin el guard, agrandar un Royal habría dejado sus 2 bebidas sin dónde elegirse.
+- **Nota de entorno:** el build fallaba por `jspdf`/`jspdf-autotable` declarados en `package.json` (los usa `ConteoNocturno.jsx` desde el commit `23118e5` de otra sesión) pero ausentes en node_modules local. Se resolvió con `npm install`.
+
 ## 31-Ago-2026 (4) — Royal con 2 bebidas a elección + fusión de duplicados de lata (error #5 de Cesar)
 
 ### Royal Truffle Combo: 2 bebidas seleccionables (migración `royal_dos_bebidas_31ago`)
