@@ -231,6 +231,17 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const [fondoInput, setFondoInput] = useState('200')
   const [saving, setSaving]     = useState(false)
 
+  // ── Día al que pertenece el turno abierto ──
+  // NO es siempre "hoy": si la caja se quedó abierta y pasó la medianoche, el turno
+  // sigue siendo del día anterior (Cafetalón 31-ago: cerraron la tienda sin corte Z,
+  // el turno amaneció abierto y el 1-sep la cajera ya no podía hacer apertura —
+  // el guardrail "1 caja abierta por sucursal" no filtra por fecha). Todo el cálculo
+  // del Z (ventas del día, fondo base, egresos previos, ¿ya hubo Z?) tiene que
+  // colgar de ESTA fecha, no de todayISO(), o el Z sale con los números del día
+  // equivocado.
+  const diaISO       = turno?.fecha || todayISO()
+  const turnoAtrasado = !!turno?.fecha && turno.fecha < todayISO()
+
   const [motEg, setMotEg]       = useState([])
   const [motIn, setMotIn]       = useState([])
   const [egresos, setEgresos]   = useState([])
@@ -305,8 +316,14 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   // ── Datos del DÍA (para Z): corte acumulado + fondo base + egresos/ingresos de otros turnos + ¿ya hubo Z? ──
   const loadDia = useCallback(async () => {
     if (!turno) return
-    const desde = `${todayISO()}T00:00:00-06:00`
-    const paramsDia = { p_store_code: storeCode, p_desde: desde, p_hasta: new Date().toISOString(), p_turno_id: null, p_caja: caja }
+    const desde = `${diaISO}T00:00:00-06:00`
+    // Turno atrasado (quedó abierto de un día anterior): el día se corta a las 06:00
+    // SV del día siguiente — cubre las ventas que cruzan la medianoche sin arrastrar
+    // las de HOY (ninguna sucursal abre antes de las 11:00).
+    const hasta = turnoAtrasado
+      ? new Date(Date.parse(`${diaISO}T00:00:00-06:00`) + 30 * 3600 * 1000).toISOString()
+      : new Date().toISOString()
+    const paramsDia = { p_store_code: storeCode, p_desde: desde, p_hasta: hasta, p_turno_id: null, p_caja: caja }
     const { data: cd } = await db.rpc('pos_corte', paramsDia)
     setCorteDia(cd || null)
     db.rpc('pos_corte_items', paramsDia).then(({ data: it }) => setItemsDia(Array.isArray(it) ? it : [])).catch(() => {})
@@ -314,7 +331,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     db.rpc('pos_corte_cortesias', paramsDia).then(({ data: co }) => setCortesiasDia(Array.isArray(co) ? co : [])).catch(() => {})
     const { data: turnos } = await cajaF(db.from('pos_turnos')
       .select('id,fondo_apertura,egresos,ingresos_extra,tipo_cierre,abierto_at')
-      .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero'))
+      .eq('store_code', storeCode).eq('fecha', diaISO).eq('nivel', 'cajero'))
       .order('abierto_at', { ascending: true })
     const arr = turnos || []
     const sumJson = (rows, key) => rows.reduce((s, t) => s + (Array.isArray(t[key]) ? t[key].reduce((a, e) => a + _n(e.monto), 0) : 0), 0)
@@ -326,7 +343,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       zExiste: arr.some(t => t.tipo_cierre === 'Z'),
       nTurnos: arr.length,
     })
-  }, [turno, storeCode])
+  }, [turno, storeCode, diaISO, turnoAtrasado])
   useEffect(() => { loadDia() }, [loadDia])
 
   // ── Abrir caja ──
@@ -334,8 +351,21 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     setSaving(true)
     try {
       // Guardrail 1: no abrir si la caja ya tiene un turno abierto (1 caja por sucursal).
-      const { data: yaAbierto } = await cajaF(db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')).limit(1).maybeSingle()
-      if (yaAbierto) { toast.error('Esta caja ya tiene un turno ABIERTO. Ciérralo (X o Z) antes de abrir otro.'); setSaving(false); return }
+      // El mensaje dice DE QUÉ DÍA y DE QUIÉN es el turno pendiente: si es de un día
+      // anterior, la cajera no tiene cómo adivinar por qué "no le deja hacer apertura"
+      // (Cafetalón 1-sep: turno del 31-ago sin corte Z, media mañana perdida).
+      const { data: yaAbierto } = await cajaF(db.from('pos_turnos').select('id,fecha,cajero_id').eq('store_code', storeCode).eq('nivel', 'cajero').eq('estado', 'abierto')).limit(1).maybeSingle()
+      if (yaAbierto) {
+        let quien = ''
+        if (yaAbierto.cajero_id && yaAbierto.cajero_id !== user.id) {
+          const { data: d } = await db.from('usuarios_erp').select('nombre').eq('id', yaAbierto.cajero_id).maybeSingle()
+          if (d?.nombre) quien = ` (lo abrió ${d.nombre.split(' ')[0]})`
+        }
+        toast.error(yaAbierto.fecha && yaAbierto.fecha < todayISO()
+          ? `La caja quedó ABIERTA desde el ${yaAbierto.fecha}${quien}: ese día nunca se cerró con corte Z. Hacé el corte Z de ese día y después abrís la de hoy.`
+          : `Esta caja ya tiene un turno ABIERTO${quien}. Ciérralo (X o Z) antes de abrir otro.`)
+        setSaving(false); return
+      }
       // Guardrail 2: no abrir si el día ya se cerró con Z.
       const { data: yaZ } = await cajaF(db.from('pos_turnos').select('id').eq('store_code', storeCode).eq('fecha', todayISO()).eq('tipo_cierre', 'Z')).limit(1).maybeSingle()
       if (yaZ) { toast.error('El día ya fue cerrado con corte Z. No se pueden abrir más turnos hoy.'); setSaving(false); return }
@@ -371,7 +401,13 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const depositoDia = r2(efReal - diaInfo.fondoBase)        // se deposita; queda el fondo base
 
   const esZ = tab === 'z'
-  const forzarZ = horaSV() >= HORA_FORZAR_Z   // pasada la hora de cierre, X queda bloqueado
+  // X bloqueado: pasada la hora de cierre, o si el turno viene de un día anterior
+  // (un X ahí dejaría ese día sin Z, sin depósito y sin fila en ventas_diarias —
+  // exactamente lo que pasó en Cafetalón el 31-ago).
+  const forzarZ = horaSV() >= HORA_FORZAR_Z || turnoAtrasado
+  // El turno atrasado arranca directo en la pestaña Z (el estado inicial se calcula
+  // antes de que cargue el turno, así que hay que corregirlo cuando llega).
+  useEffect(() => { if (turnoAtrasado) setTab('z') }, [turnoAtrasado])
   const A = esZ
     ? { corte: corteDia, esp: espDia, dif: difDia, ventasLabel: 'Ventas del día (acumulado)' }
     : { corte, esp: espTurno, dif: difTurno, ventasLabel: 'Ventas del turno (sistema)' }
@@ -396,7 +432,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const buildCorteData = (tipo) => {
     const c = tipo === 'Z' ? corteDia : corte
     return {
-      tipo, storeCode, caja, storeName, cajero: user.nombre || '', fecha: todayISO(), abierto_at: turno?.abierto_at,
+      tipo, storeCode, caja, storeName, cajero: user.nombre || '', fecha: diaISO, abierto_at: turno?.abierto_at,
       fondo: tipo === 'Z' ? diaInfo.fondoBase : fondoRecibido,
       efectivo: n(c?.efectivo), tarjeta: n(c?.tarjeta), transferencia: n(c?.transferencia), link_pago: n(c?.link_pago),
       otros: n(c?.otros), total: n(c?.total), propinas: n(c?.propinas), n_cuentas: c?.n_cuentas || 0,
@@ -414,6 +450,11 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const cerrarX = async () => {
     // Guardrail: pasada la hora de cierre, el día debe cerrarse con Z (nunca con X).
     // Se evalúa acá (y no solo en el render) para que valga aunque la pantalla lleve rato abierta.
+    if (turnoAtrasado) {
+      toast.error(`Esta caja quedó abierta desde el ${diaISO}. Ese día se cierra con corte Z, no con X.`)
+      setTab('z')
+      return
+    }
     if (horaSV() >= HORA_FORZAR_Z) {
       toast.error(`Después de las ${HORA_FORZAR_Z}:00 el día se cierra con corte Z, no con X. Te cambié a la pestaña "Cierre del día (Z)".`)
       setTab('z')
@@ -478,7 +519,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       for (let intento = 1; intento <= 3 && !cierreId; intento++) {
         try {
           const { data: cid, error: _rpcErr } = await db.rpc('pos_rebuild_cierre_dia', {
-            p_store_code: storeCode, p_fecha: turno.fecha || todayISO(),
+            p_store_code: storeCode, p_fecha: diaISO,
             p_creado_por: user.nombre || 'POS', p_creado_por_id: user.id || null, p_caja: caja,
           })
           if (_rpcErr) throw _rpcErr
@@ -492,7 +533,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
         try {
           const { data: turnosDia } = await cajaF(db.from('pos_turnos')
             .select('id,egresos,ingresos_extra')
-            .eq('store_code', storeCode).eq('fecha', todayISO()).eq('nivel', 'cajero').eq('estado', 'cerrado'))
+            .eq('store_code', storeCode).eq('fecha', diaISO).eq('nivel', 'cajero').eq('estado', 'cerrado'))
           await db.from('egresos_cierre').delete().eq('cierre_id', cierreId)
           await db.from('ingresos_cierre').delete().eq('cierre_id', cierreId)
           const egRows = [], inRows = []
@@ -576,7 +617,14 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
         {esZ && diaInfo.zExiste && (
           <div style={{ ...card, border: '1px solid #dc3545', color: '#f8d7da', background: '#2a1416' }}>⚠ El día ya fue cerrado con corte Z. No se puede volver a cerrar.</div>
         )}
-        {forzarZ && !diaInfo.zExiste && (
+        {turnoAtrasado && !diaInfo.zExiste && (
+          <div style={{ ...card, border: '1px solid #dc3545', color: '#f8d7da', background: '#2a1416' }}>
+            ⚠️ Esta caja <b>quedó abierta desde el {diaISO}</b> — anoche no se hizo el corte Z.
+            Los números de abajo son los de <b>ese día</b> (no los de hoy). Contá la gaveta y cerralo
+            con <b>corte Z</b>: hasta que lo hagas <b>no se puede abrir la caja de hoy</b>.
+          </div>
+        )}
+        {forzarZ && !turnoAtrasado && !diaInfo.zExiste && (
           <div style={{ ...card, border: '1px solid #FFD900', color: '#FFD900', background: '#2a2410' }}>
             🌙 Ya pasaron las {HORA_FORZAR_Z}:00 — este es el <b>cierre del día (Z)</b>. El cambio de turno (X) quedó bloqueado
             para que el día no quede sin cerrar ni depositar.
