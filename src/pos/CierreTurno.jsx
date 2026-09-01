@@ -317,13 +317,12 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const loadDia = useCallback(async () => {
     if (!turno) return
     const desde = `${diaISO}T00:00:00-06:00`
-    // Turno atrasado (quedó abierto de un día anterior): el día se corta a las 06:00
-    // SV del día siguiente — cubre las ventas que cruzan la medianoche sin arrastrar
-    // las de HOY (ninguna sucursal abre antes de las 11:00).
-    const hasta = turnoAtrasado
-      ? new Date(Date.parse(`${diaISO}T00:00:00-06:00`) + 30 * 3600 * 1000).toISOString()
-      : new Date().toISOString()
-    const paramsDia = { p_store_code: storeCode, p_desde: desde, p_hasta: hasta, p_turno_id: null, p_caja: caja }
+    // Hasta AHORA aunque el turno venga de ayer: lo que se siguió cobrando sobre esa
+    // caja abierta quedó registrado en ese turno (Usulután el 1-sep siguió vendiendo
+    // sobre el turno del 31-ago), así que tiene que entrar en el Z o se pierde — y es
+    // lo mismo que suma pos_rebuild_cierre_dia. No se puede colar otro día porque el
+    // guardrail de apertura impide abrir un turno nuevo mientras este siga abierto.
+    const paramsDia = { p_store_code: storeCode, p_desde: desde, p_hasta: new Date().toISOString(), p_turno_id: null, p_caja: caja }
     const { data: cd } = await db.rpc('pos_corte', paramsDia)
     setCorteDia(cd || null)
     db.rpc('pos_corte_items', paramsDia).then(({ data: it }) => setItemsDia(Array.isArray(it) ? it : [])).catch(() => {})
