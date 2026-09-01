@@ -12,27 +12,12 @@ import { useToast } from '../../hooks/useToast'
  * Anti-duplicado: por numero_documento y por nrc → "Cliente ya creado" (reutiliza).
  */
 
-// Departamentos El Salvador (código MH)
-const DEPTOS = [
-  ['06', 'San Salvador'], ['05', 'La Libertad'], ['02', 'Santa Ana'], ['10', 'Sonsonate'],
-  ['03', 'Ahuachapán'], ['04', 'Chalatenango'], ['07', 'La Paz'], ['08', 'Cabañas'],
-  ['09', 'San Vicente'], ['11', 'Usulután'], ['12', 'San Miguel'], ['13', 'Morazán'],
-  ['14', 'La Unión'], ['01', 'Ahuachapán Norte'],
-]
-const TIPO_DOC = [
-  ['13', 'DUI'], ['36', 'NIT'], ['03', 'Pasaporte'], ['02', 'Carnet de residente'], ['37', 'Otro'],
-]
-
-const onlyDigits = s => (s || '').replace(/\D/g, '')
-const validDUI = s => /^\d{9}$/.test(onlyDigits(s))
-const validNIT = s => { const d = onlyDigits(s); return d.length === 14 || d.length === 9 }
-const validNRC = s => /^\d{1,8}$/.test(onlyDigits(s))
-// MH rechaza el DTE COMPLETO si el correo trae caracteres fuera de ASCII
-// (29-ago: "facelectrónica@…" con tilde tumbó 3 facturas — salieron tickets
-// impresos sin sello). Se normalizan acentos al guardar y el validador solo
-// acepta ASCII, igual que Hacienda.
-const normalizeEmail = s => (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-const validEmail = s => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(normalizeEmail(s))
+// Las reglas viven en clienteValidacion.js: las comparte con el banco de clientes
+// (ClientesView). Si cada pantalla tuviera su copia, corregir una regla dejaría a
+// la otra mandando datos malos a Hacienda.
+import {
+  DEPTOS, TIPO_DOC, onlyDigits, validDUI, validNIT, validNRC, normalizeEmail, validEmail,
+} from './clienteValidacion'
 
 export default function CustomerSearch({ onSelect, selected, tipoDte = 'ccf' }) {
   const toast = useToast()

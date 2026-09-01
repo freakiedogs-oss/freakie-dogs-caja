@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 31-Ago-2026 — Banco de clientes de factura dentro del POS (botón "Clientes")
+
+- **El problema:** el cliente de factura SOLO se podía crear en medio del cobro (`CustomerSearch`), con la persona esperando en la caja → se teclea a la carrera y quedan fichas a medias que **tumban el DTE después de haber cobrado** (es exactamente lo que pasó con Vijosa: correo con tilde → 2 facturas rechazadas). Banco actual: **94 clientes** (46 con documento, 10 con NRC, 94 con correo — 0 correos inválidos desde el fix de ayer).
+- **`ClientesView.jsx`** (botón azul **Clientes** en la barra del POS, oculto para meseros; ruta `clientes` en `POSApp`): buscador por nombre / NIT / NRC / correo / teléfono, lista con el dato clave de cada uno, ficha completa para editar o dar de alta con calma, y anti-duplicado por documento/NRC igual que en el cobro.
+- **Semáforo CCF:** cada cliente muestra si está **listo para CCF** o solo para factura, y qué le falta (NIT, NRC, giro, dirección, correo) — tanto en la lista como arriba de la ficha. Así se corrige **antes** de que el cliente esté esperando, no cuando MH rechaza. Hay un filtro "Incompletos para CCF" para depurar el banco de una sentada.
+- **`clienteValidacion.js` (módulo nuevo compartido):** las reglas (DUI 9 / NIT 14 o 9 / NRC 1-8 / correo ASCII normalizado / `faltantesParaCCF`) salieron de `CustomerSearch` a un módulo que ahora **usan las dos pantallas**. Si vivieran duplicadas, corregir una regla dejaría a la otra mandando datos malos a Hacienda — que es justo el tipo de bug que nos costó las facturas de Vijosa. El correo se guarda **normalizado** (sin tildes, minúsculas) desde ambos lados.
+
 ## 30-Ago-2026 — Faltante de conteo: pasa con firma, se valoriza y se acumula por sucursal (para descontar)
 
 - **Regla (Jose):** el faltante **no bloquea** el conteo (tiene que poder cerrarse), pero **no pasa mudo**: exige **PIN de gerente + nota explicativa**, y queda **valorizado y acumulado por sucursal** en el tab de Fugas para descontarlo del pago de esa sucursal. En la merma, si se reporta algo, la nota es **obligatoria** (el botón queda bloqueado hasta escribirla, ya no era solo un toast).

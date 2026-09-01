@@ -76,7 +76,7 @@ const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 const MESERO_ROLES = ['mesero', 'mesera']
 const EDIT_PLANO_ROLES = ['gerente', 'admin', 'ejecutivo', 'superadmin']
 
-export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToCierre, onGoToMenuAdmin, onChangeStore, onReport }) {
+export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToCierre, onGoToMenuAdmin, onGoToClientes, onChangeStore, onReport }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
@@ -565,6 +565,13 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         {!MESERO_ROLES.includes(user.rol) && onGoToCierre && (
           <button className="poshome-quick-btn" style={{ '--qt-color': '#FFD900' }} onClick={onGoToCierre}>
             <span className="poshome-quick-icon"><Icon name="cash" size={22} /></span><span className="poshome-quick-label">Cierre</span>
+          </button>
+        )}
+        {/* Banco de clientes de factura: se puede corregir/dar de alta SIN el
+            cliente esperando en la caja (antes solo se podía en medio del cobro). */}
+        {!MESERO_ROLES.includes(user.rol) && onGoToClientes && (
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#60a5fa' }} onClick={onGoToClientes}>
+            <span className="poshome-quick-icon"><Icon name="users" size={22} /></span><span className="poshome-quick-label">Clientes</span>
           </button>
         )}
         {onGoToMenuAdmin && (

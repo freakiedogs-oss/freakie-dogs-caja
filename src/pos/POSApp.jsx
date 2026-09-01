@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { db } from '../supabase'
 import POSLogin from './POSLogin'
 import POSHome from './POSHome'
+import ClientesView from './ClientesView'
 import POSMain from './cajero/POSMain'
 import ReportarProblema from '../components/soporte/ReportarProblema'
 import KDSScreen from './KDSScreen'
@@ -284,6 +285,7 @@ export default function POSApp() {
   const handleGoToMenuAdmin = () => setScreen('menu-admin')
 
   const handleGoToCierre = () => setScreen('cierre')
+  const handleGoToClientes = () => setScreen('clientes')
 
   // ── Login ──
   if (!user) return <UpdateGate><POSLogin onLogin={handleLogin} /></UpdateGate>
@@ -318,6 +320,9 @@ export default function POSApp() {
   }
 
   // ── Cierre de caja (X/Z) ──
+  if (screen === 'clientes') {
+    return <ClientesView user={user} onBack={() => setScreen('home')} />
+  }
   if (screen === 'cierre') {
     return <CierreTurno user={posUser} onBack={handleBack} />
   }
@@ -334,6 +339,7 @@ export default function POSApp() {
           onGoToHistorial={handleGoToHistorial}
           onGoToCierre={handleGoToCierre}
           onGoToMenuAdmin={canChangeStore ? handleGoToMenuAdmin : null}
+          onGoToClientes={handleGoToClientes}
           onChangeStore={canChangeStore ? handleChangeStore : null}
           onReport={() => setSoporteOpen(true)}
         />
