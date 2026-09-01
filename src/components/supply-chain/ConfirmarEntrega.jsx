@@ -31,8 +31,11 @@ export default function ConfirmarEntrega({user,onBack}){
   const bottomRef=useRef();
 
   const isMotorist=user.rol==='despachador'||user.rol==='motorista';
-  const isAdmin=user.rol==='admin'||user.rol==='ejecutivo';
-  const isReceiver=user.rol==='gerente'||user.rol==='cocina';
+  // jefe_casa_matriz prepara los despachos y superadmin hace conteos: sin ellos acá,
+  // el gate del conteo los bloqueaba sin darles dónde confirmar la recepción
+  // (caso Lourdes 31-ago: despacho preparado por Kevin, jefe_casa_matriz).
+  const isAdmin=['admin','ejecutivo','superadmin','jefe_casa_matriz'].includes(user.rol);
+  const isReceiver=['gerente','cocina','encargado'].includes(user.rol);
   const canAccess=isMotorist||isAdmin||isReceiver;
 
   useEffect(()=>{
@@ -55,8 +58,11 @@ export default function ConfirmarEntrega({user,onBack}){
         // Gerente/cocina: solo ve entregas destinadas a su sucursal
         const {data:suc}=await db.from('sucursales').select('id').eq('store_code',user.store_code).maybeSingle();
         if(suc) query.eq('sucursal_id',suc.id);
-      } else if(!isAdmin&&user.id){
-        // Motorista/despachador: solo ve sus propias entregas
+      } else if(isMotorist&&user.id){
+        // Motorista/despachador: solo ve sus propias entregas.
+        // OJO: este filtro era `!isAdmin`, así que un gerente/cocina SIN store_code
+        // en la sesión caía acá y veía "No hay entregas pendientes" aunque su
+        // sucursal tuviera despachos por recibir.
         query.eq('motorista_id',user.id);
       }
       query.order('fecha_despacho',{ascending:true});

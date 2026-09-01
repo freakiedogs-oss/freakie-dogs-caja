@@ -125,7 +125,11 @@ export default function ConteoNocturno({user,onBack}){
       const { data: despPend } = sinGates ? { data: [] } : await db.from('despachos_sucursal')
         .select('id, fecha_despacho, estado')
         .eq('sucursal_id', sucId)
-        .neq('estado', 'recibido')
+        // Solo bloquean los despachos que la sucursal YA PUEDE recibir. Con
+        // `neq('recibido')` también bloqueaban los que seguían en preparación en
+        // casa matriz: no aparecían en Confirmar Entrega (que lista despachado/
+        // en_ruta) y dejaban el conteo trabado sin salida posible.
+        .in('estado', ['despachado', 'en_ruta'])
         .order('fecha_despacho', { ascending: false })
         .limit(5);
       if (despPend && despPend.length > 0) {
@@ -679,6 +683,10 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{color:'#aaa',fontSize:14,lineHeight:1.5,marginBottom:16}}>
             Tenés <b>{despachosPendientes.length} despacho{despachosPendientes.length>1?'s':''}</b> pendiente{despachosPendientes.length>1?'s':''} de recepción.
             Confirmá la recepción antes de hacer conteo y pedido.
+          </div>
+          <div style={{color:'#e6a817',fontSize:13,lineHeight:1.5,marginBottom:16,background:'#1a1a1a',borderRadius:8,padding:'8px 12px'}}>
+            Se recibe en <b>Supply Chain → Confirmar Entrega</b>. Si ahí no aparece, avisá a Casa Matriz:
+            puede que el despacho todavía no salga de bodega.
           </div>
           {despachosPendientes.map(d=>(
             <div key={d.id} style={{background:'#1a1a1a',borderRadius:8,padding:'8px 12px',marginBottom:6,fontSize:13,color:'#ccc',textAlign:'left'}}>
