@@ -76,14 +76,30 @@
 - **Re-emisión (autorizada por Jose, solo las 2 de Vijosa):** vía `pg_net` → `dte-service/emit-factura` con API key temporal (creada en `dte_service.api_keys` con hash sha256, desactivada al terminar; la red de la sesión bloqueaba curl directo a supabase.co). Ambas **ACEPTADAS con sello**: $23.64 → codGen `07705F8D…` control `…120813841` sello `…C7OOJE`; $25.54 → codGen `4E3C0170…` control `…120888331` sello `…FACE4C` (fecha emisión 30-ago — el servicio no permite fecha retroactiva). `pos_cuentas` actualizadas con el DTE nuevo + nota del rechazado. Representaciones gráficas PDF (con QR a consulta pública MH) generadas y entregadas a Jose para el cliente.
 - **Aprendizajes:** el flujo de cobro NO avisa cuando el DTE sale rechazado (queda `dte_sello` null y el ticket se imprime igual); los DTE tipo 05/14 rechazados de la lista tienen errores de schema distintos (backfill-nc / sujeto excluido — revisar aparte). **Decisión de Jose (30-ago): NO re-emitir la de BOLDCRAFT $1,000 y NO construir la alerta de DTE rechazado** — si algo cambia, es decisión nueva.
 
-## 1-Sep-2026 — Los combos del menú LOCAL no dejaban escoger bebida (reporte Jazz)
-- **Reporte:** "en el Coca-Cola Combo no me aparece lo de las sodas, solo en el Royal" + "en agrandado no me desglosa qué bebidas".
-- **Causa:** en el menú `local` **ningún combo tenía el componente "Bebida"** — los otros 4 canales sí. Sin ese componente no hay dónde elegir el sabor, y al marcar "Agrandado Combo" tampoco aparecía el grupo "Bebida Agrandado" (vive en ese componente). El Royal era la excepción porque el 31-ago le pusimos grupos propios en el ítem.
-- **Consecuencia silenciosa:** ninguna bebida de combo vendida en el restaurante se descontaba del inventario. El stock de bebidas en local viene inflado; el conteo nocturno lo reconciliará.
-- **Fix (migración `combos_local_componente_bebida_1sep`):** se agregó el componente "Bebida" a los **17 combos de local**, replicando la cantidad que cada uno ya tiene en los demás canales (referencia unánime entre ellos): Coca-Cola Combo/Combo Hamburguesa/La Clásica/Freakie Burger/Combo Super Freak/Combo Chilli Dog/Coca-Cola Combo XL = 1 · Burger Duo/Burger Box/Chili Duo/Combros/Freakie Box/Sweet Burger Duo/Duo Picossini/Combo Fancy Duo = 2 · Combpleto = 3 · Fancy Fries Combo = 4. Cada componente trae los grupos "Bebida" (+$0.50 fuera de las 3 gratis) y "Bebida Agrandado" ($0, aparece solo al agrandar).
-- **Regla que quedó clara:** `local` era el único canal desalineado. Al configurar un combo nuevo hay que replicarlo en los 5 menús — la matriz por canal es donde se esconden estos huecos.
-- **Pendiente reportado:** los 3 combos Pilsener de delivery (Pilsener Burger Box $20.99, Pilsener Freakie Burger $8.99, Pilsener Freakie Combo $4.99) siguen sin forma de elegir bebida. Traen cerveza incluida como el Royal, así que necesitan el mismo tratamiento (grupos propios a $0) — falta que Jose confirme cuántas bebidas trae cada uno.
-- **Ojo con el precio:** el Combo Hamburguesa y el Freakie Burger cuestan **$7.50 en local** contra $8.00/$7.99 en los otros canales; el resto de combos cuesta igual en todos. Si esa diferencia era porque local no llevaba bebida, ahora habría que revisarla.
+## 1-Sep-2026 — Bebida del combo: solo las 3 gratis, el resto por agrandado (+ reversión de un error mío)
+
+### ⚠️ Error cometido y revertido: agregué bebida a los combos del menú local
+Ante el reporte de Jazz ("en el Coca-Cola Combo no me aparece lo de las sodas") agregué el componente "Bebida" a los 17 combos de `local`. **Estaba mal.** Jose lo detectó: *"en mesa y llevar de restaurante los combos no llevan bebida"*. La regla ya vivía en **`pos_contexto_servicio`** (matriz del PR #240, 19-ago) y yo no la consulté antes de tocar:
+
+| tipo_sucursal | tipo_orden | canal usado | ¿incluye bebida? |
+|---|---|---|---|
+| restaurante | mesa | `local` | **NO** — la bebida se pide aparte |
+| restaurante | para_llevar | `local` | **NO** — mismo menú de mesa, solo cambia el empaque |
+| food_court | mesa / para_llevar | `para_llevar` | SÍ |
+| drive_thru | — | `drive_through` | SÍ |
+| — | delivery_propio / pedidos_ya | (su canal) | SÍ |
+
+O sea: **`local` es el menú de restaurante SIN bebida y `para_llevar` es el de food court CON bebida**. Los 0 componentes de bebida en local eran correctos. Revertido con `revertir_bebida_combos_local_1sep`.
+**Lección:** antes de cambiar la composición de un combo por canal, leer `pos_contexto_servicio` — la diferencia entre canales casi nunca es un hueco, es la matriz.
+
+### El fix que sí se pidió (migración `bebida_combo_solo_gratis_y_agrandado_1sep`)
+Regla de Jose: **en el combo se escogen solo las 3 gratis** (Coca-Cola 300ml, Kolashampan, Botella Agua). Cualquier bebida de $1.75 entra por un agrandado — *Agrandado de bebida* ($0.50) o *Agrandado Papa y Bebida* / *Agrandado Combo* ($1.25) — y ahí **no se vuelve a cobrar la bebida**, porque el agrandado ya la pagó.
+- Los grupos `Bebida`, `Bebida Delivery 2` y `Bebida Delivery 3` quedaron con **4 opciones**: las 3 gratis a $0 + el agrandado. Esto **reemplaza el esquema del 31-ago** (22 bebidas con +$0.50 en el grupo), que era el que hacía aparecer dos menús de bebida.
+- `Bebida Agrandado` mantiene las **22 bebidas a $0** y sigue apareciendo solo cuando hay agrandado marcado.
+- **"cambio de bebida" ($0.50) renombrado a "Agrandado de bebida"**: su nombre no contenía "agrandado", así que no disparaba el grupo del sabor — se cobraba y el cajero no tenía dónde decir qué bebida era.
+
+### Ajuste en `ComboModal` (POSMain.jsx)
+El fix del 31-ago ocultaba el grupo de bebida completo al agrandar, pero eso también escondía la opción *Agrandado Papa y Bebida* que vive dentro de ese grupo: quien la marcaba ahí no podía desmarcarla. Ahora se filtran **las opciones**, no el grupo: con agrandado marcado el grupo de bebida solo muestra su opción de agrandado y deja de ser obligatorio (si el agrandado se marcó en Salsas Papas, exigirlo acá obligaría a cobrarlo dos veces). Las bebidas elegidas antes de agrandar quedan huérfanas y no viajan a la comanda ni al kardex.
 
 ## 31-Ago-2026 (6) — Lourdes trabada: el gate pedía recibir un despacho que la pantalla no mostraba
 - **Reporte (Kev / Lourdes):** el conteo mostraba "Despachos sin recibir — Despacho del 2026-08-31, despachado", pero al ir a Confirmar Entrega salía **"No hay entregas pendientes"**. Deadlock: ni recibir ni contar.

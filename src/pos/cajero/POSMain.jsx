@@ -2103,17 +2103,27 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   // el Royal ofrece "Agrandado Combo" en las papas pero su bebida no tiene grupo
   // agrandado, y sin este guard quedaría sin dónde elegirla.
   const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g)
+  const esOpcionAgrandado = (m) => /agrandado/i.test(m?.nombre || '')
   const hayGrupoAgrandado = secciones.some(sec => (sec.grupos || []).some(esGrupoAgrandado))
+  // El combo solo incluye las 3 bebidas gratis; cualquier otra entra por un
+  // agrandado. Por eso, al agrandar, el grupo de bebida normal deja de ofrecer
+  // bebidas — pero SÍ sigue mostrando su opción de agrandado, o el cajero que la
+  // marcó ahí ("Agrandado Papa y Bebida") se quedaría sin poder desmarcarla.
+  const filtraBebidas = (g) => hayAgrandado && hayGrupoAgrandado && esGrupoBebida(g)
+  const opcionesVisibles = (g) =>
+    filtraBebidas(g) ? (g.opciones || []).filter(esOpcionAgrandado) : (g.opciones || [])
   const grupoOculto = (g) =>
-    (esGrupoAgrandado(g) && !hayAgrandado) ||
-    (hayAgrandado && hayGrupoAgrandado && esGrupoBebida(g))
+    (esGrupoAgrandado(g) && !hayAgrandado) || opcionesVisibles(g).length === 0
 
   const modsDe = (secKey, grupos) => {
     const out = []
     ;(grupos || []).forEach(g => {
       if (grupoOculto(g)) return   // selección huérfana (des-agrandó o agrandó): se ignora
+      const visibles = opcionesVisibles(g)
       ;(sel[secKey + ':' + g.id] || []).forEach(mid => {
-        const m = g.opciones.find(o => o.id === mid)
+        // Solo cuentan las opciones visibles: la bebida elegida antes de agrandar
+        // no debe viajar a la comanda ni descontarse dos veces del inventario.
+        const m = visibles.find(o => o.id === mid)
         if (m) out.push({ id: m.id, nombre: m.nombre, nombre_corto: m.nombre_corto || '', precio_extra: Number(m.precio_extra) || 0 })
       })
     })
@@ -2145,6 +2155,10 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
     const n = (sel[sec.key + ':' + g.id] || []).length
     // Un grupo oculto no se exige (el de bebida normal cuando se agrandó)
     if (grupoOculto(g)) return false
+    // Con el agrandado marcado la bebida se elige en "Bebida Agrandado", así que
+    // el grupo normal ya no se exige: si el agrandado se marcó en otra sección
+    // (Salsas Papas), pedirlo acá obligaría a cobrarlo dos veces.
+    if (filtraBebidas(g)) return false
     // El grupo del agrandado solo es obligatorio cuando hay Agrandado marcado
     if (esGrupoAgrandado(g)) return hayAgrandado && n < 1
     if (g.obligatorio && n < 1) return true
@@ -2193,7 +2207,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                   {/* Mismo grid de botones que ProductoModifiersModal: al pasar los combos a
                       componentes se perdía esta vista y el cajero veía una lista distinta. */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
-                    {g.opciones.map(m => {
+                    {opcionesVisibles(g).map(m => {
                       const on = (sel['c' + i + ':' + g.id] || []).includes(m.id)
                       const px = Number(m.precio_extra) || 0
                       const enTope = g.max_selecciones > 0 && (sel['c' + i + ':' + g.id] || []).length >= g.max_selecciones
@@ -2241,7 +2255,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                   <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
-                  {g.opciones.map(m => {
+                  {opcionesVisibles(g).map(m => {
                     const on = (sel['combo:' + g.id] || []).includes(m.id)
                     const px = Number(m.precio_extra) || 0
                     const enTope = g.max_selecciones > 0 && (sel['combo:' + g.id] || []).length >= g.max_selecciones
