@@ -71,6 +71,7 @@ const PagosProveedorView = lazy(() => import('./components/finanzas/PagosProveed
 const DTEsView           = lazy(() => import('./components/finanzas/DTEsView'))
 const LibrosContablesView = lazy(() => import('./components/finanzas/LibrosContablesView'))
 const EventosView        = lazy(() => import('./components/eventos/EventosView'))
+const EventosMapaView    = lazy(() => import('./components/eventos/EventosMapaView'))
 const MiDespacho            = lazy(() => import('./components/empleado/MiDespacho'))
 const DespachoOperativoView = lazy(() => import('./components/admin/DespachoOperativoView'))
 const DespachoKpiDashboard  = lazy(() => import('./components/admin/DespachoKpiDashboard'))
@@ -95,7 +96,7 @@ const ROLE_DEFAULTS = {
   domicilios: ['entregas', 'delivery'],
   marketing: ['marketing'],
   produccion: ['carne-boleado', 'bpm-chili', 'bpm-temperatura', 'despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
-  eventos: ['eventos', 'mi-asistencia', 'mi-boleta'],
+  eventos: ['eventos-mapa', 'eventos', 'mi-asistencia', 'mi-boleta'],
   // Ingeniero en alimentos: recetas y costeo son su herramienta principal.
   // NO lleva 'kardex' a proposito: las pestanas del Kardex no filtran por rol
   // y quien entra puede ejecutar kardex_mover_lote y registrar_merma.
@@ -353,6 +354,8 @@ export default function App() {
         return <DTEsView user={user} />
       case 'libros-contables':
         return <LibrosContablesView user={user} />
+      case 'eventos-mapa':
+        return <EventosMapaView user={user} />
       case 'eventos':
         return <EventosView user={user} />
 
