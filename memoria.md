@@ -2,6 +2,27 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 01-Sep-2026 — Gates del conteo devueltos a Cafetalón + lecciones del día
+
+- **Gates restaurados (Jose confirmó):** `SIN_GATES_TEMPORAL` vuelve a **`[]`**. M001 estuvo en esa lista del 30-ago al 1-sep para revisar merma / bebidas / cortesías con la caja abierta; las pantallas quedaron listas, así que Cafetalón vuelve a exigir **corte Z del día** y **cero despachos pendientes** antes de contar, igual que el resto. La escotilla se deja en el código (vacía y documentada) porque sirve para la próxima revisión — pero **vacía es el estado normal**: sin gates se cuenta sobre un día sin cerrar y el teórico se compara contra ventas a medio turno, así que el conteo sale mal y nadie se entera.
+
+### Lo que dejó el día — cuatro patrones que se repiten
+
+1. **Un guardarraíl sin fecha se vuelve una trampa.** El "1 caja abierta por sucursal" no filtraba por día, así que una caja que amanece abierta bloquea la apertura de hoy, y el mensaje no decía de qué día era. Todo guardarraíl que compare estado tiene que **decir contra qué está comparando** y nombrar la fecha y la persona.
+2. **Imprimir antes de guardar hace que el papel mienta.** El corte se imprime primero a propósito (rawbt necesita el gesto del botón), pero entonces **un ticket impreso no prueba que se guardó**. Cualquier flujo así necesita una **red de seguridad que sobreviva al toast**: guardar el payload en el equipo y ofrecer reintento. Un aviso que se va solo no es un aviso cuando la persona ya tiene el comprobante en la mano.
+3. **Agregar un FK a una tabla ya embebida es un cambio incompatible.** PostgREST no elige entre dos caminos: tumba la consulta entera. `transferencias_entre_sucursales` agregó `origen_sucursal_id` y dejó a las 6 sucursales sin poder recibir despachos esa misma tarde. Al agregar una segunda relación hacia la misma tabla, **revisar todos los `select()` que la embeben** y embeber siempre por nombre de FK.
+4. **Los gates se encadenan.** El conteo no se podía hacer por "despachos pendientes", pero la causa real estaba dos pantallas más atrás. Cuando un gate bloquea, **hay que ir a ver si lo que desbloquea el gate funciona** — si no, la sucursal queda sin salida y termina reportando el síntoma equivocado.
+
+### Regla que se ganó sola: lo que sobrevive es lo que se escribe
+
+Tres incidentes del día (los egresos de Usulután, el corte que no se guardó, los despachos sin recibir) tuvieron el mismo remate: **la única evidencia que quedó fue la que se había persistido**. El `pos_impresion_log` salvó el diagnóstico del Z; el ticket en papel salvó los $416.43 de egresos. Cuando se agregue un flujo con dinero de por medio, **dejar traza antes de necesitarla**.
+
+### Pendientes abiertos
+
+- **Fondo de Usulután:** se abrió hoy en $250 pero la gaveta traía $235.90 (los salarios se comieron parte del fondo). O Casa Matriz repone los $14.10 o el fondo de hoy baja a $235.90; si no, el Z de esta noche marca un faltante fantasma.
+- **Planilla 2Q-agosto:** pendiente de que llegue el archivo (no sincronizó del MacBook al Mac mini). Ojo: la última planilla en BD es **2026-06-2Q** — faltan julio 1Q, julio 2Q y agosto 1Q.
+- **Mariela Fernanda Bonilla Ramos y Alvaro Antonio Velasquez** (ingresos del 23 y 24-ago) siguen sin estar en `empleados`; su pago de salario del 31-ago quedó con `persona_recibe` y sin `empleado_id`.
+
 ## 01-Sep-2026 — Un FK nuevo tumbó "Mis Entregas" y dejó a las 6 sucursales sin poder contar
 
 - **Reporte (Jazz):** Metro Centro y Venecia no dejaban hacer conteo "porque hay despachos pendientes de recepción". La foto de la tablet mostraba el error real en **Mis Entregas**: `Could not embed because more than one relationship was found for 'despachos_sucursal' and 'sucursales'`.

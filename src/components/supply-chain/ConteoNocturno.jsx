@@ -6,12 +6,13 @@ import { useToast } from '../../hooks/useToast';
 
 const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
 
-// ⚠️ TEMPORAL (Jose 30-ago): en Cafetalón/"Tecla" (M001) se desactivan los gates de
-// cierre Z y despachos pendientes para poder revisar las pantallas nuevas (merma,
-// bebidas, conteo) con la caja abierta. QUITAR de esta lista cuando terminemos los
-// cambios — sin los gates se puede contar sobre un día sin cerrar y el teórico
-// queda contra ventas a medio turno.
-const SIN_GATES_TEMPORAL = ['M001'];
+// Escotilla para revisar las pantallas de conteo con la caja abierta, saltándose los
+// gates de cierre Z y de despachos pendientes. VA VACÍA salvo mientras se revisa algo:
+// sin gates se puede contar sobre un día sin cerrar y el teórico queda comparado
+// contra ventas a medio turno, así que el conteo sale mal y nadie se entera.
+// Historial: M001 estuvo acá del 30-ago al 1-sep para revisar merma/bebidas/cortesías
+// (Jose), y se devolvió al confirmar que las pantallas quedaron listas.
+const SIN_GATES_TEMPORAL = [];
 
 // Quién puede autorizar un faltante de conteo (lo que se le descuenta a la
 // sucursal): gerencia hacia arriba. La cajera que cuenta no puede firmarse sola.
@@ -106,7 +107,7 @@ export default function ConteoNocturno({user,onBack}){
 
       // 0a. Gate: no se puede contar sin cierre Z del día
       const sc = storeCode || user.store_code;
-      const sinGates = SIN_GATES_TEMPORAL.includes(sc);   // ⚠️ temporal, ver arriba
+      const sinGates = SIN_GATES_TEMPORAL.includes(sc);   // normalmente false, ver arriba
       if (sc && !sinGates) {
         const cierreFiltro = sc === 'S003'
           ? { store_code: sc, fecha: hoy, tipo_cierre: 'Z', caja: 'general' }
