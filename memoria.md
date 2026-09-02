@@ -2,6 +2,14 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 02-Sep-2026 — Gates del conteo nocturno abiertos otra vez en Cafetalón (pruebas)
+
+- **Pedido (Cesar):** poder hacer **pruebas de conteo nocturno en Cafetalón (M001)** sin los dos bloqueos que lo trababan: el de **caja cerrada** (exige corte Z del día) y el de **cero recepciones pendientes** (exige que no haya despachos en `despachado`/`en_ruta`).
+- **Qué se hizo:** `SIN_GATES_TEMPORAL` en `src/components/supply-chain/ConteoNocturno.jsx` vuelve a **`['M001']`**. Esa lista es la escotilla que ya existía y saltea **los dos gates a la vez** (0a cierre Z y 0b despachos sin recibir), así que no hizo falta tocar la lógica: un solo store_code alcanza y ninguna otra sucursal cambia de comportamiento.
+- **Por qué así y no borrando los gates:** los gates siguen siendo correctos para las otras 5 sucursales; sacarlos del código dejaría a todas contando contra un teórico a medio turno. La escotilla es reversible en una línea.
+- **Ojo — es temporal:** mientras M001 esté en la lista, el conteo de Cafetalón se compara contra un teórico que el POS sigue moviendo (ventas del turno abierto) y contra stock que puede no haber entrado (despachos sin recibir), así que **las diferencias de esas pruebas no son merma real** y no deberían leerse como faltante en Fugas. Al terminar las pruebas, devolver `SIN_GATES_TEMPORAL = []`.
+- Build verificado (`npm run build` ✓).
+
 ## 01-Sep-2026 — Gates del conteo devueltos a Cafetalón + lecciones del día
 
 - **Gates restaurados (Jose confirmó):** `SIN_GATES_TEMPORAL` vuelve a **`[]`**. M001 estuvo en esa lista del 30-ago al 1-sep para revisar merma / bebidas / cortesías con la caja abierta; las pantallas quedaron listas, así que Cafetalón vuelve a exigir **corte Z del día** y **cero despachos pendientes** antes de contar, igual que el resto. La escotilla se deja en el código (vacía y documentada) porque sirve para la próxima revisión — pero **vacía es el estado normal**: sin gates se cuenta sobre un día sin cerrar y el teórico se compara contra ventas a medio turno, así que el conteo sale mal y nadie se entera.
