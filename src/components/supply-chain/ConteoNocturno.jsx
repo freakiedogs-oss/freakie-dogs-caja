@@ -1040,7 +1040,11 @@ export default function ConteoNocturno({user,onBack}){
                 {/* ── Stepper: [-] input [+] ── */}
                 <div style={{display:'flex',alignItems:'center',gap:10}}>
                   <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,-1)}>−</button>
-                  <input type="number" inputMode="numeric" min="0" step="1" value={p.cantidad_real??''}
+                  {/* inputMode="decimal" y step="any": con "numeric" y step="1" el
+                      teclado del celular sale sin punto y el navegador rechaza
+                      cualquier fraccion, asi que una caja empezada no se podia
+                      contar. El parseo de abajo ya usa parseFloat. */}
+                  <input type="number" inputMode="decimal" min="0" step="any" value={p.cantidad_real??''}
                     onChange={e=>updateCantidadReal(p.producto_id, e.target.value)}
                     style={{flex:1,padding:'12px 8px',background:noCuadra?'#1a0a0a':'#0a0a0a',border:`1px solid ${noCuadra?'#e63946':'#333'}`,borderRadius:10,color:noCuadra?'#e63946':'#fff',fontSize:18,textAlign:'center',fontWeight:700}}
                     placeholder="—"/>
