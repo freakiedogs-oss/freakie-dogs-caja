@@ -19,7 +19,10 @@ export default function DespachoTab({user,show}){
       const [{data:ped},{data:des}]=await Promise.all([
         // Pedidos 'enviado' (pendientes) o 'preparando' (ya tienen despacho preparándose)
         db.from('pedidos_sucursal').select('*,sucursales(nombre)').in('estado',['enviado','preparando']).order('created_at',{ascending:false}),
-        db.from('despachos_sucursal').select('*,sucursales(nombre)').in('estado',['preparando','despachado','en_ruta','recibido']).order('created_at',{ascending:false}).limit(50),
+        // Embed por nombre de FK: despachos_sucursal apunta dos veces a sucursales
+        // (sucursal_id = destino, origen_sucursal_id = origen de transferencia), y
+        // `sucursales(nombre)` a secas es ambiguo -> PostgREST tumba la consulta.
+        db.from('despachos_sucursal').select('*,sucursales!despachos_sucursal_sucursal_id_fkey(nombre)').in('estado',['preparando','despachado','en_ruta','recibido']).order('created_at',{ascending:false}).limit(50),
       ]);
       setPedidos(ped||[]);
       setDespachos(des||[]);

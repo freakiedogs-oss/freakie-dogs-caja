@@ -52,12 +52,21 @@ export default function ConfirmarEntrega({user,onBack}){
   const loadDespachos=async()=>{
     setLoading(true);
     try{
+      // El embed va con el NOMBRE del FK a propósito. despachos_sucursal apunta dos
+      // veces a sucursales (sucursal_id = destino, origen_sucursal_id = origen, este
+      // último agregado por la migración transferencias_entre_sucursales el 31-ago
+      // 17:28). Con dos caminos, `sucursales(...)` a secas es ambiguo y PostgREST
+      // tumba la consulta entera ("more than one relationship was found"): esa tarde
+      // las 6 sucursales se quedaron sin poder recibir sus despachos, y como el
+      // conteo nocturno se bloquea si hay despachos pendientes, tampoco pudieron
+      // contar. Si mañana se agrega otro FK a sucursales, esto sigue funcionando.
       const query=db.from('despachos_sucursal').select(`
         id,sucursal_id,pedido_id,fecha_despacho,estado,preparado_por,
         recibido_por,fecha_recepcion,notas_despacho,notas_recepcion,
         costo_total,hora_salida,hora_recepcion,foto_recepcion_url,
         motorista_id,motorista_nombre,created_at,updated_at,
-        sucursales(id,nombre,store_code)
+        sucursales!despachos_sucursal_sucursal_id_fkey(id,nombre,store_code),
+        despacho_items(count)
       `);
       query.in('estado',['despachado','en_ruta']);
       if(isReceiver&&user.store_code){
@@ -225,7 +234,11 @@ export default function ConfirmarEntrega({user,onBack}){
                 </div>
               </div>
               <div style={{fontSize:12,color:'#888',marginBottom:8}}>{d.fecha_despacho}</div>
-              <div style={{fontSize:13,color:'#aaa'}}>📦 {(d.despacho_items||[]).length} artículos</div>
+              {/* El conteo viene del embed despacho_items(count); antes se leía
+                  d.despacho_items.length de un campo que el select NO traía (los
+                  ítems se cargan aparte al abrir el despacho), así que la lista
+                  siempre decía "0 artículos" y parecía un despacho vacío. */}
+              <div style={{fontSize:13,color:'#aaa'}}>📦 {d.despacho_items?.[0]?.count ?? 0} artículos</div>
             </div>
           ))}
         </>
