@@ -168,6 +168,7 @@ export const NAV_SECTIONS = [
   {
     label: 'Eventos',
     items: [
+      { key: 'eventos-mapa', label: 'Eventos · Mapa', icon: '🎪', roles: ['eventos', 'ejecutivo', 'jefe_casa_matriz', 'admin', 'superadmin'] },
       { key: 'eventos', label: 'Eventos', icon: '🎪', roles: ['eventos', 'ejecutivo', 'admin', 'superadmin', 'jefe_casa_matriz'] },
     ],
   },
