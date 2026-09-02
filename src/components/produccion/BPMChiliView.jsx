@@ -402,7 +402,24 @@ export default function BPMChiliView({ user }) {
               PASO {pasoActual.orden} DE {pasos.length}
             </div>
             <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>{pasoActual.titulo}</div>
-            <div style={{ fontSize: 14, color: C.dim, lineHeight: 1.5, marginBottom: 14 }}>{pasoActual.instruccion}</div>
+            {/* El video de apoyo va ANTES de la instruccion: se mira primero y
+                despues se lee. Antes vivia en un grupo de WhatsApp y se perdia. */}
+            {pasoActual.video_url && (
+              <video
+                src={pasoActual.video_url}
+                controls playsInline preload="metadata"
+                style={{
+                  width: '100%', maxWidth: 380, borderRadius: 10,
+                  border: `1px solid ${C.line}`, marginBottom: 12, display: 'block',
+                }}
+              />
+            )}
+            {/* whiteSpace pre-line: la instruccion trae saltos de linea y los
+                pasos numerados se leen mal si se colapsan en un parrafo. */}
+            <div style={{
+              fontSize: 14, color: C.dim, lineHeight: 1.6,
+              marginBottom: 14, whiteSpace: 'pre-line',
+            }}>{pasoActual.instruccion}</div>
 
             {/* Cronómetro de espera */}
             {pasoActual.espera_min_seg != null && regPrevio && (
