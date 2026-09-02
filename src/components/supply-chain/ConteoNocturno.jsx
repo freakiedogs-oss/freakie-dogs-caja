@@ -12,7 +12,11 @@ const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
 // contra ventas a medio turno, así que el conteo sale mal y nadie se entera.
 // Historial: M001 estuvo acá del 30-ago al 1-sep para revisar merma/bebidas/cortesías
 // (Jose), y se devolvió al confirmar que las pantallas quedaron listas.
-const SIN_GATES_TEMPORAL = [];
+// 2-sep (Cesar): M001 (Cafetalón) vuelve a entrar para las pruebas de conteo
+// nocturno — se saltan el gate de cierre Z y el de despachos sin recibir.
+// SACAR M001 DE ACÁ AL TERMINAR LAS PRUEBAS: mientras esté, el conteo de
+// Cafetalón se compara contra un teórico a medio turno y la diferencia no sirve.
+const SIN_GATES_TEMPORAL = ['M001'];
 
 // Quién puede autorizar un faltante de conteo (lo que se le descuenta a la
 // sucursal): gerencia hacia arriba. La cajera que cuenta no puede firmarse sola.
