@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 01-Sep-2026 — Un FK nuevo tumbó "Mis Entregas" y dejó a las 6 sucursales sin poder contar
+
+- **Reporte (Jazz):** Metro Centro y Venecia no dejaban hacer conteo "porque hay despachos pendientes de recepción". La foto de la tablet mostraba el error real en **Mis Entregas**: `Could not embed because more than one relationship was found for 'despachos_sucursal' and 'sucursales'`.
+- **Un solo problema encadenado:** la pantalla de recepción estaba caída → nadie podía recibir el despacho → el **gate 0b del Conteo Nocturno** (que bloquea si hay despachos en `despachado`/`en_ruta`) dejaba el conteo trabado. **No eran 2 sucursales: eran las 6**, cada una con 1 despacho del 31-ago sin recepcionar (28 a 38 ítems cada uno).
+- **Causa:** la migración **`transferencias_entre_sucursales` (31-ago 23:28 UTC = 17:28 SV)** agregó `despachos_sucursal.origen_sucursal_id → sucursales`. Con **dos FKs a la misma tabla**, el embed `sucursales(...)` deja de ser resoluble y PostgREST **tumba la consulta entera**, no solo el join. Los despachos se habían creado entre 14:34 y 15:45 — o sea se despacharon bien y se rompieron recién al ir a recibirlos esa noche.
+- **Fix:** `ConfirmarEntrega` y `DespachoTab` embeben **por nombre de FK** (`sucursales!despachos_sucursal_sucursal_id_fkey`), que sigue siendo correcto aunque mañana se agregue un tercer FK. Se revisaron todos los embeds a `sucursales` del repo: solo `despachos_sucursal` tiene el doble camino, los demás (`pedidos_sucursal`, `kardex_movimientos`, propinas, menú) son de un solo FK y no estaban afectados.
+- **Bug secundario en la misma pantalla:** la lista decía siempre **"📦 0 artículos"** porque leía `d.despacho_items.length` de un campo que el select **no traía** (los ítems se cargan aparte al abrir el despacho). Un despacho de 38 ítems se veía vacío. Ahora usa el embed `despacho_items(count)`.
+- **Lección:** agregar un FK a una tabla ya embebida es un **cambio incompatible** para PostgREST. Cuando se agregue una segunda relación hacia la misma tabla, hay que revisar los `select()` que la embeben — el error no aparece hasta que alguien abre la pantalla.
+
 ## 01-Sep-2026 — "El sistema está lento": era una estampida de crons cada 30 min, no el plan de Supabase
 
 - **Reporte (Jose):** lentitud en **Kaeru y Kako**, y trabones al abrir desde el celular.
