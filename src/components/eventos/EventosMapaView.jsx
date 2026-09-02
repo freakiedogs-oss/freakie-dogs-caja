@@ -52,7 +52,7 @@ const VACIO = {
   nombre: '', tipo_evento: 'ambos', fecha_evento: '',
   contacto_nombre: '', contacto_telefono: '', direccion_texto: '',
   hora_llegada_cm: '', hora_salida_cm: '', hora_llegada_evento: '',
-  hora_inicio: '', hora_fin: '', lat: null, lng: null,
+  hora_inicio: '', hora_fin: '', lat: null, lng: null, es_prueba: false,
 }
 
 export default function EventosMapaView({ user }) {
@@ -137,13 +137,14 @@ export default function EventosMapaView({ user }) {
       .filter(e => e.lat && e.lng)
       .map(e => {
         const pasado = e.fecha_evento && e.fecha_evento < new Date().toISOString().slice(0, 10)
+        const prueba = e.es_prueba
         const m = L.marker([e.lat, e.lng], {
           icon: L.divIcon({
             className: '', iconSize: [26, 26], iconAnchor: [13, 13],
-            html: `<div style="background:${pasado ? '#6b6a62' : '#fbbf24'};color:#1a1a1c;width:26px;
+            html: `<div style="background:${prueba ? '#60a5fa' : pasado ? '#6b6a62' : '#fbbf24'};color:#1a1a1c;width:26px;
                    height:26px;border-radius:50%;display:flex;align-items:center;
                    justify-content:center;font-size:12px;font-weight:700;border:2px solid #fff">
-                   ${e.tipo_evento === 'hotdog' ? '🌭' : e.tipo_evento === 'burger' ? '🍔' : '🎪'}</div>`,
+                   ${prueba ? '🧪' : e.tipo_evento === 'hotdog' ? '🌭' : e.tipo_evento === 'burger' ? '🍔' : '🎪'}</div>`,
           }),
         }).addTo(map)
         m.bindPopup(`<b>${e.nombre || 'Evento'}</b><br>${e.fecha_evento || ''}<br>${e.direccion_texto || ''}`)
@@ -177,6 +178,16 @@ export default function EventosMapaView({ user }) {
     if (nuevoRef.current && mapRef.current) { mapRef.current.removeLayer(nuevoRef.current); nuevoRef.current = null }
   }
 
+  async function borrar() {
+    if (!sel) return
+    if (!window.confirm(`¿Borrar "${sel.nombre}"? No se puede deshacer.`)) return
+    try {
+      await db.from('eventos').delete().eq('id', sel.id)
+      setSel(null); setCreando(false); setMsg('✓ Evento borrado')
+      await cargar()
+    } catch (e) { setMsg(e.message) }
+  }
+
   async function guardar() {
     if (!form.lat || !form.lng) { setMsg('Marcá la ubicación en el mapa.'); setTab('datos'); return }
     if (!form.nombre.trim())    { setMsg('Poné el nombre del evento.'); return }
@@ -197,6 +208,7 @@ export default function EventosMapaView({ user }) {
         hora_llegada_evento: form.hora_llegada_evento || null,
         hora_inicio: form.hora_inicio || null,
         hora_fin: form.hora_fin || null,
+        es_prueba: !!form.es_prueba,
       }
       let id = sel?.id
       if (id) {
@@ -226,7 +238,7 @@ export default function EventosMapaView({ user }) {
         .filter(([, c]) => Number(c) > 0)
         .map(([iid, c]) => ({ item: items.find(i => i.id === iid), cant: Number(c) }))
         .filter(x => x.item?.producto_id)
-      if (pedidos.length) {
+      if (pedidos.length && !form.es_prueba) {
         const { data: ped, error: ePed } = await db.from('evento_pedidos')
           .insert({ evento_id: id, estado: 'solicitado', solicitado_por: user?.id || null,
                     notas: 'Requisición desde el mapa de eventos' })
@@ -238,7 +250,9 @@ export default function EventosMapaView({ user }) {
         )
       }
 
-      setMsg('✓ Guardado' + (pedidos.length ? ` · pedido de ${pedidos.length} productos enviado a Casa Matriz` : ''))
+      setMsg(form.es_prueba
+        ? `✓ Evento de PRUEBA guardado. No se envió pedido a Casa Matriz${pedidos.length ? ` (se habrían pedido ${pedidos.length} productos)` : ''}. Borralo cuando termines.`
+        : '✓ Guardado' + (pedidos.length ? ` · pedido de ${pedidos.length} productos enviado a Casa Matriz` : ''))
       setCreando(false)
       await cargar()
     } catch (e) { setMsg(e.message || 'No se pudo guardar') }
@@ -298,6 +312,7 @@ export default function EventosMapaView({ user }) {
                 padding: '11px 13px', textAlign: 'left', cursor: 'pointer', color: C.txt,
                 fontFamily: 'inherit', fontSize: 14,
               }}>
+                {e.es_prueba && <span style={{ color: C.acc, marginRight: 6 }}>🧪</span>}
                 <b>{e.nombre}</b>
                 <span style={{ color: C.dim, marginLeft: 8 }}>{e.fecha_evento}</span>
                 {!e.lat && <span style={{ color: C.warn, marginLeft: 8, fontSize: 12 }}>· sin ubicación</span>}
@@ -321,6 +336,26 @@ export default function EventosMapaView({ user }) {
 
           {tab === 'datos' && (
             <div style={card}>
+              {puedeEditar && (
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 11, cursor: 'pointer',
+                  background: form.es_prueba ? '#101827' : '#101012',
+                  border: `1px solid ${form.es_prueba ? C.acc : C.line}`,
+                  borderRadius: 10, padding: '12px 14px', marginBottom: 16,
+                }}>
+                  <input type="checkbox" checked={!!form.es_prueba} style={{ width: 20, height: 20 }}
+                    onChange={e => setForm(f => ({ ...f, es_prueba: e.target.checked }))} />
+                  <span>
+                    <b style={{ fontSize: 15, color: form.es_prueba ? C.acc : C.txt }}>
+                      🧪 Esto es una prueba
+                    </b>
+                    <div style={{ fontSize: 13, color: form.es_prueba ? '#bfdbfe' : C.dim, marginTop: 2, lineHeight: 1.5 }}>
+                      Podés recorrer todo el flujo igual que un evento real, pero
+                      <b> no se manda pedido a Casa Matriz</b>. Borralo cuando termines.
+                    </div>
+                  </span>
+                </label>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
                 <div><label style={lbl}>Nombre del evento</label>
                   <input style={inp} value={form.nombre} disabled={!puedeEditar}
@@ -444,6 +479,11 @@ export default function EventosMapaView({ user }) {
               <button onClick={() => { setSel(null); setCreando(false); setMsg('') }} style={btn('#3f3f46')}>
                 Cancelar
               </button>
+              {sel && (
+                <button onClick={borrar} style={{ ...btn('#3f3f46'), color: C.bad }}>
+                  {sel.es_prueba ? 'Borrar prueba' : 'Borrar evento'}
+                </button>
+              )}
             </div>
           )}
         </>

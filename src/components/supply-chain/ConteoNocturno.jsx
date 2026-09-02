@@ -238,11 +238,22 @@ export default function ConteoNocturno({user,onBack}){
   };
 
   const guardarConteo=async()=>{
-    // Validar que todos tengan cantidad_real
+    // Se permite guardar parcial. Exigir los 109 productos dejaba a la sucursal
+    // trabada por un solo item sin contar, y sin conteo no puede pasar pedido.
+    // Lo que no se conto simplemente no se guarda: no se inventa un cero, que
+    // ademas mandaria el stock a cero por el ajuste de kardex.
+    const contadosAhora=productos.filter(p=>p.cantidad_real!==null);
+    if(contadosAhora.length===0){
+      show('⚠️ Contá al menos un producto antes de guardar');
+      return;
+    }
     const sinCantidad=productos.filter(p=>p.cantidad_real===null);
     if(sinCantidad.length>0){
-      show('⚠️ Faltan '+sinCantidad.length+' productos sin contar');
-      return;
+      const ok=window.confirm(
+        `Faltan ${sinCantidad.length} productos sin contar.\n\n`+
+        `Se va a guardar solo lo que contaste (${contadosAhora.length} productos). `+
+        `Los que quedaron vacíos no se tocan.\n\n¿Guardar así?`);
+      if(!ok) return;
     }
 
     // Si es edición, verificar que aún estemos dentro de la ventana
@@ -257,10 +268,11 @@ export default function ConteoNocturno({user,onBack}){
 
       // 1. Siempre borrar registros previos de hoy (por si quedaron parciales)
       await db.from('inventario_conteo_nocturno')
-        .delete().eq('sucursal_id',sucursalId).eq('fecha',hoy);
+        .delete().eq('sucursal_id',sucursalId).eq('fecha',hoy)
+        .in('producto_id', contadosAhora.map(p=>p.producto_id));
 
       // 2. Insertar conteo (sin "diferencia" — es columna generada en DB)
-      const conteos=productos.map(p=>({
+      const conteos=contadosAhora.map(p=>({
         sucursal_id: sucursalId,
         producto_id: p.producto_id,
         fecha: hoy,
@@ -282,7 +294,7 @@ export default function ConteoNocturno({user,onBack}){
       // empleado cuenta, el POS sigue descontando ventas, así que restar contra
       // el `stock_teorico` que se leyó al abrir la pantalla se comería el turno.
       const {data:ajuste,error:ajErr}=await db.rpc('kardex_ajustar_absoluto',{
-        p_items: productos.map(p=>({producto_id:p.producto_id, cantidad:n(p.cantidad_real)})),
+        p_items: contadosAhora.map(p=>({producto_id:p.producto_id, cantidad:n(p.cantidad_real)})),
         p_tipo: 'conteo_fisico',
         p_referencia_tipo: 'conteo_nocturno',
         p_referencia_id: null,
@@ -600,9 +612,9 @@ export default function ConteoNocturno({user,onBack}){
 
         {/* ── Botón Guardar sticky ── */}
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
-          <button className="btn btn-red" onClick={guardarConteo} disabled={guardando||contados<totalProds}
-            style={{fontSize:17,padding:18,width:'100%',opacity:contados<totalProds?0.5:1}}>
-            {guardando?<span className="spin"/>:contados<totalProds?`Faltan ${totalProds-contados} productos`:isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
+          <button className="btn btn-red" onClick={guardarConteo} disabled={guardando||contados===0}
+            style={{fontSize:17,padding:18,width:'100%',opacity:contados===0?0.5:1}}>
+            {guardando?<span className="spin"/>:contados===0?'Contá al menos un producto':contados<totalProds?`Guardar ${contados} de ${totalProds}`:isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
           </button>
         </div>
       </div>
