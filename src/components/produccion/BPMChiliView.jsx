@@ -195,39 +195,6 @@ export default function BPMChiliView({ user }) {
     } catch {}
   }
 
-  // Un solo intervalo para todo el temporizador.
-  //
-  // Al terminar una fase hay dos comportamientos, y la diferencia importa:
-  //  · Carne: NO encadena. Entre tanda y tanda hay que recalentar la olla a
-  //    190 °C, que no tiene duracion fija. Si arrancara sola, la tanda 2
-  //    entraria a una olla fria y se herviria.
-  //  · Vegetales: SI encadena (fase con `auto`). Es una sola coccion continua
-  //    con agregados escalonados; si hay que tocar un boton entre fase y fase,
-  //    la cebolla se pasa mientras el operario deja la cuchara y busca la tablet.
-  useEffect(() => {
-    if (fase == null) return
-    const fases = pasoActual?.temporizador || []
-    const t = setInterval(() => {
-      setRestan(s => {
-        if (s <= 1) {
-          clearInterval(t)
-          alarma()
-          setHechas(h => (h.includes(fase) ? h : [...h, fase]))
-          const sig = fases[fase + 1]
-          if (sig?.auto) { setFase(fase + 1); return sig.s }
-          setFase(null)
-          return 0
-        }
-        return s - 1
-      })
-    }, 1000)
-    return () => clearInterval(t)
-  }, [fase, pasoActual?.id])
-
-  // Al cambiar de paso el temporizador se limpia; si no, el operario ve fases
-  // completadas de un paso que ya paso.
-  useEffect(() => { setFase(null); setRestan(0); setHechas([]) }, [pasos.length, corrida?.paso_actual])
-
   function onFoto(e) {
     const f = e.target.files?.[0]
     if (!f) return
@@ -260,6 +227,43 @@ export default function BPMChiliView({ user }) {
 
   const pasoActual = pasos.find(p => p.orden === corrida?.paso_actual) || null
   const regPrevio  = registros.length ? registros[registros.length - 1] : null
+
+  // ── Temporizador ──────────────────────────────────────────────
+  // OJO: estos dos efectos van DESPUES de `pasoActual`. El arreglo de
+  // dependencias se evalua durante el render, asi que si el efecto queda
+  // arriba de la declaracion revienta con "Cannot access before
+  // initialization" — la pantalla en blanco del 2-sep.
+  //
+  // Al terminar una fase hay dos comportamientos, y la diferencia importa:
+  //  · Carne: NO encadena. Entre tanda y tanda hay que recalentar la olla a
+  //    190 °C, que no tiene duracion fija. Si arrancara sola, la tanda 2
+  //    entraria a una olla fria y se herviria.
+  //  · Vegetales: SI encadena (fase con `auto`). Es una sola coccion continua
+  //    con agregados escalonados; si hay que tocar un boton entre fase y fase,
+  //    la cebolla se pasa mientras el operario deja la cuchara y busca la tablet.
+  useEffect(() => {
+    if (fase == null) return
+    const fases = pasoActual?.temporizador || []
+    const t = setInterval(() => {
+      setRestan(s => {
+        if (s <= 1) {
+          clearInterval(t)
+          alarma()
+          setHechas(h => (h.includes(fase) ? h : [...h, fase]))
+          const sig = fases[fase + 1]
+          if (sig?.auto) { setFase(fase + 1); return sig.s }
+          setFase(null)
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(t)
+  }, [fase, pasoActual?.id])
+
+  // Al cambiar de paso el temporizador se limpia; si no, el operario ve fases
+  // completadas de un paso que ya paso.
+  useEffect(() => { setFase(null); setRestan(0); setHechas([]) }, [pasoActual?.id])
 
   // El catalogo de pesaje se trae solo cuando el paso lo pide, no en la carga
   // general: son 24 filas que el resto de los pasos no usa.
