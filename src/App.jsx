@@ -40,6 +40,7 @@ const CosteoView         = lazy(() => import('./components/admin/CosteoView'))
 const PlanillaView       = lazy(() => import('./components/admin/PlanillaView'))
 const RRHHView           = lazy(() => import('./components/admin/RRHHView'))
 const ValidacionPlanillaView = lazy(() => import('./components/rrhh/ValidacionPlanillaView'))
+const PlanillaSucursalView   = lazy(() => import('./components/rrhh/PlanillaSucursalView'))
 const RecibosDigitales   = lazy(() => import('./components/rrhh/RecibosDigitales'))
 const ProduccionDiaria   = lazy(() => import('./components/admin/ProduccionDiaria'))
 const ConciliacionView   = lazy(() => import('./components/admin/ConciliacionView'))
@@ -83,7 +84,7 @@ const KpiVentasTotalesDashboard = lazy(() => import('./components/admin/KpiVenta
 const ROLE_DEFAULTS = {
   cajero: ['agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
   cajera: ['agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
-  gerente: ['agrandados', 'cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta'],
+  gerente: ['agrandados', 'cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta', 'planilla-sucursal'],
   admin: ['admin', 'kpis-venta', 'recepcion-dte', 'recepcion', 'despacho'],
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
   superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
@@ -317,6 +318,8 @@ export default function App() {
         return <RRHHView user={user} />
       case 'validacion-planilla':
         return <ValidacionPlanillaView user={user} />
+      case 'planilla-sucursal':
+        return <PlanillaSucursalView user={user} />
       case 'horarios':
         return <HorariosView user={user} />
       case 'amonestaciones':
