@@ -33,6 +33,11 @@ const RECETA_CHILI = 'f9e150d6-f0e4-4728-a303-a38891a12555'
 const ROLES_REGISTRAN = ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin']
 const ROLES_LIBERAN   = ['ing_alimentos', 'admin', 'ejecutivo', 'superadmin']
 
+// Quien puede abrir una corrida de REVISION (recorrer los pasos sin subir fotos
+// ni pesar). Deliberadamente NO incluye a 'produccion': si el operario pudiera
+// elegirlo, en dos semanas nadie sube evidencia nunca mas.
+const ROLES_REVISAN   = ['jefe_casa_matriz', 'ing_alimentos', 'admin', 'ejecutivo', 'superadmin']
+
 const C = {
   bg: '#0f0f10', card: '#1a1a1c', line: '#2a2a2e', txt: '#f0f0f2',
   dim: '#8a8a92', ok: '#22c55e', warn: '#f59e0b', bad: '#ef4444', acc: '#3b82f6',
@@ -71,8 +76,24 @@ export default function BPMChiliView({ user }) {
   const [guardando, setGuardando] = useState(false)
   const fileRef = useRef(null)
 
+  // Pesaje: catalogo del paso y lo que va tecleando el operario.
+  // `pesajes` es { [itemId]: { g: '2265', lote: 'L2409', foto: File } }
+  const [pesajeItems, setPesajeItems] = useState([])
+  const [pesajes, setPesajes]         = useState({})
+
+  // Temporizador por fases. `fase` es el indice de la fase corriendo, o null
+  // si esta detenido. `restan` son los segundos que faltan.
+  const [fase, setFase]     = useState(null)
+  const [restan, setRestan] = useState(0)
+  const [hechas, setHechas] = useState([])   // indices de fases ya completadas
+
   const puedeRegistrar = ROLES_REGISTRAN.includes(user?.rol)
   const puedeLiberar   = ROLES_LIBERAN.includes(user?.rol)
+  const puedeRevisar   = ROLES_REVISAN.includes(user?.rol)
+
+  // En revisión no se exige nada: el supervisor está validando que el texto y
+  // los parámetros estén bien, no produciendo chili.
+  const enRevision = !!corrida?.es_revision
 
   // ── Reloj ──
   useEffect(() => {
@@ -132,9 +153,80 @@ export default function BPMChiliView({ user }) {
   useEffect(() => { cargar() }, [])
 
   const limpiarForm = () => {
-    setFoto(null); setPreview(''); setTemp(''); setDur(''); setNota('')
+    setFoto(null); setPreview(''); setTemp(''); setDur(''); setNota(''); setPesajes({})
     if (fileRef.current) fileRef.current.value = ''
   }
+
+  // ── Tolerancia: la banda es la MAYOR entre el % y el piso en gramos.
+  // Sin el piso, el 2 % del acido citrico (2.5 g) daria ±0.05 g y la balanza
+  // de cocina no distingue eso: todo saldria en rojo sin razon.
+  const banda = (it) =>
+    Math.max(Number(it.gramos_objetivo) * Number(it.tolerancia_pct) / 100, Number(it.tolerancia_g))
+
+  const pesajeEstado = (it) => {
+    const v = pesajes[it.id]?.g
+    if (v === undefined || v === '') return 'vacio'
+    const n = Number(v)
+    if (Number.isNaN(n)) return 'malo'
+    return Math.abs(n - Number(it.gramos_objetivo)) <= banda(it) ? 'ok' : 'malo'
+  }
+
+  const setPesaje = (id, campo, valor) =>
+    setPesajes(p => ({ ...p, [id]: { ...(p[id] || {}), [campo]: valor } }))
+
+  // ── Temporizador ──────────────────────────────────────────────
+  // Suena fuerte al terminar: la olla hace ruido y el operario no esta
+  // mirando la tablet, esta cocinando.
+  function alarma() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const master = ctx.createGain(); master.gain.value = 1.4
+      master.connect(ctx.destination)
+      ;[0, 0.28, 0.56].forEach(off => {
+        const o = ctx.createOscillator(), g = ctx.createGain()
+        const t0 = ctx.currentTime + off
+        o.type = 'square'; o.frequency.value = 880
+        g.gain.setValueAtTime(0.0001, t0)
+        g.gain.exponentialRampToValueAtTime(0.8, t0 + 0.01)
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22)
+        o.connect(g).connect(master); o.start(t0); o.stop(t0 + 0.24)
+      })
+      if (navigator.vibrate) navigator.vibrate([300, 120, 300, 120, 300])
+    } catch {}
+  }
+
+  // Un solo intervalo para todo el temporizador.
+  //
+  // Al terminar una fase hay dos comportamientos, y la diferencia importa:
+  //  · Carne: NO encadena. Entre tanda y tanda hay que recalentar la olla a
+  //    190 °C, que no tiene duracion fija. Si arrancara sola, la tanda 2
+  //    entraria a una olla fria y se herviria.
+  //  · Vegetales: SI encadena (fase con `auto`). Es una sola coccion continua
+  //    con agregados escalonados; si hay que tocar un boton entre fase y fase,
+  //    la cebolla se pasa mientras el operario deja la cuchara y busca la tablet.
+  useEffect(() => {
+    if (fase == null) return
+    const fases = pasoActual?.temporizador || []
+    const t = setInterval(() => {
+      setRestan(s => {
+        if (s <= 1) {
+          clearInterval(t)
+          alarma()
+          setHechas(h => (h.includes(fase) ? h : [...h, fase]))
+          const sig = fases[fase + 1]
+          if (sig?.auto) { setFase(fase + 1); return sig.s }
+          setFase(null)
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(t)
+  }, [fase, pasoActual?.id])
+
+  // Al cambiar de paso el temporizador se limpia; si no, el operario ve fases
+  // completadas de un paso que ya paso.
+  useEffect(() => { setFase(null); setRestan(0); setHechas([]) }, [pasos.length, corrida?.paso_actual])
 
   function onFoto(e) {
     const f = e.target.files?.[0]
@@ -143,7 +235,7 @@ export default function BPMChiliView({ user }) {
     setPreview(URL.createObjectURL(f))
   }
 
-  async function iniciarTanda() {
+  async function iniciarTanda(revision = false) {
     if (!plantilla) { setError('Todavía no cargó la plantilla. Recargá la página.'); return }
     setGuardando(true); setError('')
     try {
@@ -153,6 +245,8 @@ export default function BPMChiliView({ user }) {
         iniciada_por: user?.id || null,
         store_code: 'CM001',
         paso_actual: 1,
+        es_revision: revision,
+        notas: revision ? 'Corrida de REVISION del procedimiento. No es produccion.' : null,
       }).select().single()
       if (error) throw error
       setCorrida(data); setRegistros([]); setDesv([])
@@ -167,6 +261,17 @@ export default function BPMChiliView({ user }) {
   const pasoActual = pasos.find(p => p.orden === corrida?.paso_actual) || null
   const regPrevio  = registros.length ? registros[registros.length - 1] : null
 
+  // El catalogo de pesaje se trae solo cuando el paso lo pide, no en la carga
+  // general: son 24 filas que el resto de los pasos no usa.
+  useEffect(() => {
+    let vivo = true
+    if (!pasoActual?.requiere_pesaje) { setPesajeItems([]); return }
+    db.from('bpm_pesaje_items').select('*')
+      .eq('paso_id', pasoActual.id).eq('activo', true).order('orden')
+      .then(({ data }) => { if (vivo) setPesajeItems(data || []) })
+    return () => { vivo = false }
+  }, [pasoActual?.id, pasoActual?.requiere_pesaje])
+
   // Segundos transcurridos desde el paso anterior, con el reloj del servidor
   const segDesdePrevio = regPrevio
     ? (horaServidor().getTime() - new Date(regPrevio.registrado_at).getTime()) / 1000
@@ -180,9 +285,38 @@ export default function BPMChiliView({ user }) {
     setError(''); setGuardando(true)
     try {
       // ── Validaciones antes de tocar la base ──
-      if (pasoActual.requiere_foto && !foto) throw new Error('Falta la foto.')
-      if (pasoActual.requiere_temp && temp === '') throw new Error('Falta la temperatura.')
-      if (pasoActual.requiere_duracion && dur === '') throw new Error('Faltan los segundos.')
+      // En una corrida de revisión no se exige nada: el supervisor recorre los
+      // pasos leyendo las instrucciones, no produciendo.
+      if (!enRevision) {
+        if (pasoActual.requiere_foto && !foto) throw new Error('Falta la foto.')
+        if (pasoActual.requiere_temp && temp === '') throw new Error('Falta la temperatura.')
+        if (pasoActual.requiere_duracion && dur === '') throw new Error('Faltan los segundos.')
+      }
+
+      // ── Pesaje: se exige TODO pesado y el lote de lo empacado. No se deja
+      // avanzar con campos vacios: un peso en blanco no es "cero", es "nadie lo
+      // peso", y despues no hay forma de reconstruir la tanda.
+      if (pasoActual.requiere_pesaje && !enRevision) {
+        if (!pesajeItems.length) throw new Error('No cargó la lista de ingredientes. Recargá la página.')
+        const sinPeso = pesajeItems.filter(it => {
+          const v = pesajes[it.id]?.g
+          return v === undefined || v === '' || Number.isNaN(Number(v))
+        })
+        if (sinPeso.length) {
+          throw new Error(`Faltan ${sinPeso.length} sin pesar. El primero: ${sinPeso[0].ingrediente}.`)
+        }
+        const sinLote = pesajeItems.filter(it => it.requiere_lote && !(pesajes[it.id]?.lote || '').trim())
+        if (sinLote.length) {
+          throw new Error(`Falta el lote de ${sinLote.length} insumo(s). El primero: ${sinLote[0].ingrediente}. Si el empaque no lo trae, escribí SIN LOTE.`)
+        }
+        // La foto solo se exige en lo que se pesa en la balanza de precision:
+        // ese numero lo teclea una persona y no hay instrumento enlazado que lo
+        // respalde. Lo que sale de la Rhino no la necesita.
+        const sinFoto = pesajeItems.filter(it => it.requiere_foto && !pesajes[it.id]?.foto)
+        if (sinFoto.length) {
+          throw new Error(`Falta la foto de la balanza en ${sinFoto.length} ingrediente(s). El primero: ${sinFoto[0].ingrediente}.`)
+        }
+      }
 
       const tempN = temp === '' ? null : Number(temp)
       const durN  = dur === ''  ? null : Number(dur)
@@ -209,6 +343,22 @@ export default function BPMChiliView({ user }) {
                       valor_esperado: `≤ ${Math.round(pasoActual.espera_max_seg / 60)} min`,
                       valor_real: `${Math.round((segDesdePrevio ?? 0) / 60)} min` })
 
+      // Cada peso fuera de banda es su propia desviación, con nombre y número:
+      // "el pesaje falló" no sirve para nada al revisarlo tres semanas después.
+      const filasPesaje = (pasoActual.requiere_pesaje && !enRevision) ? pesajeItems.map(it => {
+        const g  = Number(pesajes[it.id].g)
+        const ok = Math.abs(g - Number(it.gramos_objetivo)) <= banda(it)
+        if (!ok) {
+          const b = banda(it)
+          fallas.push({
+            tipo: 'pesaje', detalle: `${it.ingrediente} fuera de tolerancia`,
+            valor_esperado: `${it.gramos_objetivo} ${it.unidad} ± ${b.toFixed(b < 1 ? 2 : 1)}`,
+            valor_real: `${g} ${it.unidad}`,
+          })
+        }
+        return { pesaje_item_id: it.id, gramos_real: g, lote: (pesajes[it.id]?.lote || '').trim() || null, cumple: ok }
+      }) : []
+
       const cumple = fallas.length === 0
       const bloquea = !cumple && pasoActual.es_critico
 
@@ -223,12 +373,30 @@ export default function BPMChiliView({ user }) {
       }
 
       // ── Registro. Ojo: NO se manda registrado_at, lo pone el servidor. ──
-      const { error: rErr } = await db.from('bpm_registros').insert({
+      const { data: reg, error: rErr } = await db.from('bpm_registros').insert({
         corrida_id: corrida.id, paso_id: pasoActual.id, orden: pasoActual.orden,
         foto_url: fotoUrl, temperatura_c: tempN, duracion_seg: durN,
         nota: nota || null, registrado_por: user?.id || null, cumple,
-      })
+      }).select().single()
       if (rErr) throw rErr
+
+      // Los 24 pesos van despues del registro y colgados de el: si esto falla,
+      // el paso queda guardado pero SIN trazabilidad, y eso hay que gritarlo.
+      if (filasPesaje.length) {
+        // Fotos de la balanza de precision, una por ingrediente que la pida.
+        const conFoto = await Promise.all(filasPesaje.map(async f => {
+          const file = pesajes[f.pesaje_item_id]?.foto
+          if (!file) return f
+          const ext  = (file.name?.split('.').pop() || 'jpg').toLowerCase()
+          const path = `${corrida.id}/pesaje-${f.pesaje_item_id}-${Date.now()}.${ext}`
+          const { error: upErr } = await db.storage.from(BUCKET).upload(path, file, { cacheControl: '3600', upsert: false })
+          if (upErr) throw new Error('No se pudo subir la foto de la balanza: ' + upErr.message)
+          return { ...f, foto_url: db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl || null }
+        }))
+        const { error: pErr } = await db.from('bpm_registro_pesajes')
+          .insert(conFoto.map(f => ({ ...f, registro_id: reg.id })))
+        if (pErr) throw new Error('El paso se guardó pero los pesos NO quedaron registrados: ' + pErr.message)
+      }
 
       if (fallas.length) {
         await db.from('bpm_desviaciones').insert(
@@ -290,6 +458,19 @@ export default function BPMChiliView({ user }) {
     <div style={{ padding: 14, background: C.bg, color: C.txt, minHeight: '100vh' }}>
       <div style={{ maxWidth: 720, margin: '0 auto' }}>
 
+        {/* Banda fija mientras dure la revisión: sin esto, alguien que llega a
+            media mañana ve una corrida en curso y cree que se está produciendo. */}
+        {enRevision && (
+          <div style={{
+            background: '#3a2f0f', border: `1px solid ${C.warn}`, borderRadius: 10,
+            padding: '11px 14px', marginBottom: 14, color: '#fcd34d', fontSize: 13.5, lineHeight: 1.5,
+          }}>
+            <b>🔍 CORRIDA DE REVISIÓN — no es producción.</b><br />
+            No se piden fotos, temperaturas ni pesaje. No uses este modo para una tanda real:
+            no queda evidencia de nada.
+          </div>
+        )}
+
         <h2 style={{ fontSize: 19, fontWeight: 600, margin: '0 0 4px' }}>🌶️ Control BPM · Chili</h2>
         <div style={{ color: C.dim, fontSize: 13, marginBottom: 18 }}>
           Una tanda por día. La hora la registra el sistema, no el teléfono.
@@ -309,14 +490,37 @@ export default function BPMChiliView({ user }) {
                 hacer clic y el mensaje de iniciarTanda() pisaba el error real de
                 la carga, que era lo unico que decia por que habia fallado. */}
             {puedeRegistrar
-              ? <button
-                  style={btn(C.ok, guardando || !plantilla)}
-                  disabled={guardando || !plantilla}
-                  onClick={iniciarTanda}
-                  title={!plantilla ? 'No cargó la configuración del chili' : undefined}
-                >
-                  Iniciar tanda de hoy
-                </button>
+              ? <>
+                  <button
+                    style={btn(C.ok, guardando || !plantilla)}
+                    disabled={guardando || !plantilla}
+                    onClick={() => iniciarTanda(false)}
+                    title={!plantilla ? 'No cargó la configuración del chili' : undefined}
+                  >
+                    Iniciar tanda de hoy
+                  </button>
+
+                  {/* Recorrido de validacion. Solo supervisores: si el operario
+                      pudiera elegirlo, dejaria de subir evidencia. */}
+                  {puedeRevisar && (
+                    <div style={{
+                      marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.line}`,
+                    }}>
+                      <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.55, marginBottom: 10 }}>
+                        ¿Vas a revisar el procedimiento? Podés recorrer los {pasos.length} pasos
+                        sin subir fotos ni pesar, para leer las instrucciones y ver si algo
+                        está mal escrito. <b style={{ color: C.warn }}>No cuenta como producción.</b>
+                      </div>
+                      <button
+                        style={{ ...btn('#3f3f46', guardando || !plantilla), fontSize: 14 }}
+                        disabled={guardando || !plantilla}
+                        onClick={() => iniciarTanda(true)}
+                      >
+                        🔍 Abrir corrida de revisión
+                      </button>
+                    </div>
+                  )}
+                </>
               : <div style={{ color: C.dim, fontSize: 13 }}>Tu rol no registra producción.</div>}
           </div>
         )}
@@ -421,6 +625,66 @@ export default function BPMChiliView({ user }) {
               marginBottom: 14, whiteSpace: 'pre-line',
             }}>{pasoActual.instruccion}</div>
 
+            {/* ── Temporizador por fases ──────────────────────────────────
+                Botones grandes: se usan con las manos ocupadas y la olla al
+                fuego, no mirando la pantalla de cerca. */}
+            {Array.isArray(pasoActual.temporizador) && pasoActual.temporizador.length > 0 && (
+              <div style={{
+                background: '#101012', border: `1px solid ${fase != null ? C.acc : C.line}`,
+                borderRadius: 11, padding: 13, marginBottom: 14,
+              }}>
+                {fase != null ? (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 13.5, color: C.acc, marginBottom: 4 }}>
+                      {pasoActual.temporizador[fase].t}
+                    </div>
+                    <div style={{
+                      fontSize: 52, fontWeight: 700, letterSpacing: 1,
+                      color: restan <= 10 ? C.warn : C.txt, lineHeight: 1.1,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>{mmss(restan)}</div>
+                    <button onClick={() => { setFase(null); setRestan(0) }}
+                            style={{ ...btn('#3f3f46'), marginTop: 9, padding: '9px 18px', fontSize: 13.5 }}>
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12, color: C.dim, marginBottom: 9 }}>
+                      Tocá cada fase cuando la vayas a empezar
+                    </div>
+                    {pasoActual.temporizador.map((f, i) => {
+                      const lista = hechas.includes(i)
+                      return (
+                        <button key={i} onClick={() => { setFase(i); setRestan(f.s) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            width: '100%', gap: 10, marginBottom: 6, cursor: 'pointer',
+                            background: lista ? '#14331f' : '#0a0a0a',
+                            border: `1px solid ${lista ? C.ok : C.line}`,
+                            borderRadius: 9, padding: '12px 13px', color: C.txt,
+                            fontFamily: 'inherit', fontSize: 14, textAlign: 'left',
+                          }}>
+                          <span style={{ color: lista ? '#86efac' : C.txt }}>
+                            {lista ? '✓ ' : ''}{f.t}
+                          </span>
+                          <b style={{ color: C.dim, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            {mmss(f.s)}
+                          </b>
+                        </button>
+                      )
+                    })}
+                    {hechas.length > 0 && (
+                      <button onClick={() => setHechas([])}
+                              style={{ ...btn('#3f3f46'), width: '100%', padding: '8px', fontSize: 12.5, marginTop: 3 }}>
+                        Reiniciar el conteo de fases
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Cronómetro de espera */}
             {pasoActual.espera_min_seg != null && regPrevio && (
               <div style={{
@@ -467,6 +731,103 @@ export default function BPMChiliView({ user }) {
               </div>
             )}
 
+            {/* ── Pesaje ──────────────────────────────────────────────────
+                Cada ingrediente con su objetivo al lado. El borde se pone rojo
+                al salirse de banda, para que lo corrijan ANTES de guardar y no
+                queden bloqueando la tanda por un descuido de tecleo. */}
+            {pasoActual.requiere_pesaje && (
+              <div style={{ marginBottom: 14 }}>
+                {(() => {
+                  const listos = pesajeItems.filter(it => pesajeEstado(it) !== 'vacio').length
+                  const malos  = pesajeItems.filter(it => pesajeEstado(it) === 'malo').length
+                  return (
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      background: malos ? '#3a1414' : '#101012', border: `1px solid ${malos ? C.bad : C.line}`,
+                      borderRadius: 9, padding: '9px 12px', marginBottom: 10,
+                    }}>
+                      <span style={{ fontSize: 13, color: C.dim }}>
+                        {listos} de {pesajeItems.length} pesados
+                      </span>
+                      {malos > 0 && <b style={{ fontSize: 13, color: C.bad }}>{malos} fuera de tolerancia</b>}
+                    </div>
+                  )
+                })()}
+
+                {[
+                  { k: 'balanza_grande',    t: 'Balanza grande (Rhino) — el peso entra solo' },
+                  { k: 'balanza_precision', t: 'Balanza de precisión — se teclea y va con foto' },
+                  { k: 'conteo',            t: 'Se cuenta, no se pesa' },
+                ].map(({ k, t }) => {
+                  const items = pesajeItems.filter(it => (it.fuente || 'balanza_grande') === k)
+                  if (!items.length) return null
+                  return (
+                    <div key={k} style={{ marginBottom: 12 }}>
+                      <div style={{
+                        fontSize: 11.5, letterSpacing: .6, textTransform: 'uppercase',
+                        color: C.dim, margin: '4px 0 8px',
+                      }}>{t}</div>
+                      {items.map(it => {
+                        const est = pesajeEstado(it)
+                        const b   = banda(it)
+                        return (
+                          <div key={it.id} style={{
+                            background: '#101012',
+                            border: `1px solid ${est === 'malo' ? C.bad : est === 'ok' ? C.ok : C.line}`,
+                            borderRadius: 9, padding: '9px 11px', marginBottom: 7,
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{it.ingrediente}</span>
+                              <span style={{ fontSize: 12.5, color: C.dim, whiteSpace: 'nowrap' }}>
+                                {it.gramos_objetivo} {it.unidad}
+                                {b > 0 && ` ± ${b.toFixed(b < 1 ? 2 : 1)}`}
+                              </span>
+                            </div>
+                            {it.referencia && (
+                              <div style={{ fontSize: 11.5, color: '#6b6a72', marginBottom: 6 }}>{it.referencia}</div>
+                            )}
+                            <div style={{ display: 'flex', gap: 7 }}>
+                              <input
+                                type="number" inputMode="decimal" step="0.1"
+                                value={pesajes[it.id]?.g ?? ''}
+                                onChange={e => setPesaje(it.id, 'g', e.target.value)}
+                                placeholder={`${it.unidad} reales`}
+                                style={{ ...inp, flex: 1, borderColor: est === 'malo' ? C.bad : C.line }}
+                              />
+                              {it.requiere_lote && (
+                                <input
+                                  value={pesajes[it.id]?.lote ?? ''}
+                                  onChange={e => setPesaje(it.id, 'lote', e.target.value)}
+                                  placeholder="Lote del empaque"
+                                  style={{ ...inp, flex: 1 }}
+                                />
+                              )}
+                            </div>
+                            {it.requiere_foto && (
+                              <label style={{
+                                display: 'flex', alignItems: 'center', gap: 8, marginTop: 7,
+                                background: pesajes[it.id]?.foto ? '#14331f' : '#0a0a0a',
+                                border: `1px dashed ${pesajes[it.id]?.foto ? C.ok : C.line}`,
+                                borderRadius: 8, padding: '8px 11px', cursor: 'pointer',
+                                fontSize: 12.5, color: pesajes[it.id]?.foto ? '#86efac' : C.dim,
+                              }}>
+                                <input type="file" accept="image/*" capture="environment"
+                                       style={{ display: 'none' }}
+                                       onChange={e => setPesaje(it.id, 'foto', e.target.files?.[0] || null)} />
+                                {pesajes[it.id]?.foto
+                                  ? '✓ Foto de la balanza lista'
+                                  : '📷 Foto de la pantalla de la balanza'}
+                              </label>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             {/* Duración */}
             {pasoActual.requiere_duracion && (
               <div style={{ marginBottom: 14 }}>
@@ -505,7 +866,10 @@ export default function BPMChiliView({ user }) {
               <tbody>
                 {historial.map(h => (
                   <tr key={h.id} style={{ borderBottom: `1px solid #212125` }}>
-                    <td style={{ padding: '6px 0' }}>{h.fecha}</td>
+                    <td style={{ padding: '6px 0' }}>
+                      {h.es_revision && <span style={{ color: C.warn, marginRight: 5 }} title="Corrida de revisión, no producción">🔍</span>}
+                      {h.fecha}
+                    </td>
                     <td style={{ padding: '6px 0', textAlign: 'right', color: C.dim }}>{fmtHora(h.iniciada_at)}</td>
                     <td style={{ padding: '6px 0', textAlign: 'right' }}>
                       <span style={{
