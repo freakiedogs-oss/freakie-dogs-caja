@@ -155,7 +155,13 @@ export const NAV_SECTIONS = [
       { key: 'finanzas-ai', label: 'Finanzas AI', icon: '💰', roles: ['ejecutivo', 'superadmin'] },
       { key: 'kpi-ventas-totales', label: 'KPI Ventas Totales · BEP', icon: '💰', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'finanzas-dashboard', label: 'Dashboard Financiero', icon: '📊', roles: ['ejecutivo', 'superadmin'] },
-      { key: 'dtes', label: 'DTEs', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
+      // "DTEs" a secas se confundía con los emitidos. Estos son los de COMPRA.
+      { key: 'dtes', label: 'DTEs de Compra', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
+      // Los que Freakie le emite a Hacienda. Sin `contador`: la vista pasa por
+      // el gate de finanzas, que solo deja entrar a admin/ejecutivo/superadmin,
+      // así que ofrecérsela sería mandarlo a un error de sesión.
+      { key: 'dtes-emitidos', label: 'DTEs Emitidos · Facturar', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin'] },
+      { key: 'clientes-facturacion', label: 'Clientes de Facturación', icon: '👤', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'libros-contables', label: 'Libros Contables', icon: '📒', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },

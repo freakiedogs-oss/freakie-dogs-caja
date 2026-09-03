@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../supabase'
+// Esta pantalla también se monta en el back-office (Finanzas → Clientes de
+// Facturación), y ahí `pos.css` no está cargado: el ERP entra por otro entry
+// point. Se importa acá para que viaje con el chunk. Es seguro: pos.css no
+// tiene selectores de elemento, todo va prefijado (.pos-*, .floorplan-*), así
+// que no puede pisar estilos del ERP.
+import './pos.css'
 import Icon from './Icon'
 import { useToast } from '../hooks/useToast'
 import {

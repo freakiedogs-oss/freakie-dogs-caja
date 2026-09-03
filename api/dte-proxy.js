@@ -43,6 +43,12 @@ const POS_ROLES_OK = new Set([
   'cajero', 'cajera', 'gerente', 'admin', 'ejecutivo', 'superadmin', 'super',
 ]);
 
+// Emisión desde el back-office (header X-DTE-Origen: erp). Más estricta que el
+// POS a propósito: en la caja emite quien cobra, pero facturar a mano desde el
+// ERP es una operación de gerencia. Sin este corte la restricción del front
+// sería cosmética — bastaba el PIN de una cajera para emitir desde el ERP.
+const ERP_ROLES_OK = new Set(['admin', 'ejecutivo', 'superadmin', 'super']);
+
 // Timeout upstream
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
@@ -50,7 +56,7 @@ const UPSTREAM_TIMEOUT_MS = 30_000;
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, content-type, x-pos-pin, x-pos-user-id',
+  'Access-Control-Allow-Headers': 'authorization, content-type, x-pos-pin, x-pos-user-id, x-dte-origen',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -157,8 +163,10 @@ export default async function handler(req) {
     await logOperation({ op, status: 'auth_fail', error: 'pin_invalid' });
     return jsonResponse(401, { success: false, error: 'invalid_pin' });
   }
-  if (!POS_ROLES_OK.has((user.rol || '').toLowerCase())) {
-    await logOperation({ op, user_id: user.id, store_code: user.store_code, status: 'auth_fail', error: `role_not_allowed:${user.rol}` });
+  const origen = (req.headers.get('x-dte-origen') || 'pos').toLowerCase();
+  const rolesOk = origen === 'erp' ? ERP_ROLES_OK : POS_ROLES_OK;
+  if (!rolesOk.has((user.rol || '').toLowerCase())) {
+    await logOperation({ op, user_id: user.id, store_code: user.store_code, status: 'auth_fail', error: `role_not_allowed:${user.rol}:${origen}` });
     return jsonResponse(403, { success: false, error: 'role_not_allowed', rol: user.rol });
   }
 

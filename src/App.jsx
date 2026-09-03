@@ -71,6 +71,8 @@ const FinanzasAIView     = lazy(() => import('./components/dashboard/FinanzasAIV
 const QuantoUploadView   = lazy(() => import('./components/admin/QuantoUploadView'))
 const PagosProveedorView = lazy(() => import('./components/finanzas/PagosProveedorView'))
 const DTEsView           = lazy(() => import('./components/finanzas/DTEsView'))
+const DTEsEmitidosView   = lazy(() => import('./components/finanzas/DTEsEmitidosView'))
+const ClientesView       = lazy(() => import('./pos/ClientesView'))
 const LibrosContablesView = lazy(() => import('./components/finanzas/LibrosContablesView'))
 const EventosView        = lazy(() => import('./components/eventos/EventosView'))
 const EventosMapaView    = lazy(() => import('./components/eventos/EventosMapaView'))
@@ -358,6 +360,13 @@ export default function App() {
         return <PagosProveedorView user={user} />
       case 'dtes':
         return <DTEsView user={user} />
+      case 'dtes-emitidos':
+        return <DTEsEmitidosView user={user} />
+      // Misma pantalla que usa la caja: las reglas de validación de NIT/NRC/correo
+      // que tumban un DTE viven en un solo lugar (clienteValidacion.js) y no se
+      // duplican por tener el banco de clientes también en el back-office.
+      case 'clientes-facturacion':
+        return <ClientesView user={user} onBack={() => setScreen('home')} />
       case 'libros-contables':
         return <LibrosContablesView user={user} />
       case 'eventos-mapa':

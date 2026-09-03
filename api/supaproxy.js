@@ -46,6 +46,12 @@ const FINANZAS_OBJETOS = new Set([
   // 139 empleados; era legible con la llave publica del bundle.
   'v_planilla_desglose_pl',
   'v_planilla_operativa_pl',
+  // Agregadas 3-sep-2026 con la sección de DTEs emitidos. Son los 28.8k
+  // documentos fiscales que Freakie le emitió a Hacienda: traen nombre, NIT y
+  // NRC de cada cliente y el monto de cada venta. Nunca se le abrieron a anon
+  // (se crearon ya cerradas), así que acá el gate es la única puerta.
+  'v_dtes_emitidos',
+  'dte_emitido_detalle',
 ]);
 
 // Ojo: `staff_login` (torre de delivery) emite sesiones para roles que NO

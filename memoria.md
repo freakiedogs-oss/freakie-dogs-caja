@@ -2,6 +2,34 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 03-Sep-2026 — DTEs Emitidos y Clientes de Facturación en el ERP
+
+Jose pidió ver todos los DTE que Freakie **emite** y poder emitir desde ahí, más una sección para editar/añadir clientes. Alcance confirmado con él: Factura, CCF, Sujeto Excluido, Nota de Crédito e invalidación; emisión solo para admin / ejecutivo / superadmin.
+
+### De dónde salen los datos
+
+El registro maestro de lo emitido es **`dte_service.documents`** (schema del DTEaaS dentro del mismo proyecto Supabase): 28.834 documentos de Freakie desde abril-2026, $418.8K aceptados. Es **multi-tenant** — ahí también viven los 1.454 de Kaeru y los 2.586 de Kako —, así que la vista `v_dtes_emitidos` deja el `business_id` de Freakie **fijo en SQL**: el aislamiento entre tenants no puede depender de que el front recuerde filtrar.
+
+No confundir con la pantalla `DTEs`, que son las **compras** a proveedores. Se le cambió la etiqueta a "DTEs de Compra" justamente por eso.
+
+### Seguridad
+
+La vista y el RPC de detalle **nunca se le abrieron a `anon`**: se crearon cerrados y se sirven por `dbFin` a través del gate del proxy `/sb`, que exige sesión de staff con rol de finanzas. Verificado como atacante: con rol `anon`, `v_dtes_emitidos`, `dte_emitido_detalle`, `dte_service.documents` y `dte_service.certificates` dan todos permission denied. Quedan fuera de la vista el `signed_payload` (XML firmado) y el `dte_json` completo.
+
+**El corte de roles se reforzó en el servidor.** El proxy `/api/dte-proxy` acepta cajeros, que es correcto para el POS pero no para el back-office. Ahora el ERP manda `X-DTE-Origen: erp` y el proxy exige rol de gerencia para ese origen. Sin eso, la restricción del front era cosmética: bastaba el PIN de una cajera.
+
+### Emisión
+
+El PIN se pide **en el momento de emitir** y no se guarda: es la firma de quien manda el documento. Antes de emitir se muestra el desglose exacto (gravado / IVA / total) y qué le falta al cliente para el tipo elegido; si Hacienda rechaza, se muestra la observación textual de MH en vez de un "error al emitir" que obligue a reintentar a ciegas.
+
+`pos_dte_standalone` existía desde el diseño original para registrar emisiones fuera del POS, pero tenía **RLS activa y cero políticas** — nadie podía insertar, por eso llevaba 0 filas. Se entra por el RPC `registrar_dte_standalone` (SECURITY DEFINER, idempotente por `dte_uuid`) en vez de abrir la tabla a la llave pública.
+
+### Detalles que se decidieron mirando los datos
+
+- **NC solo sobre CCF.** Hacienda no acepta Nota de Crédito sobre Factura de consumidor final, así que para tipo 01 el modal abre directo en invalidación en vez de ofrecer una NC que iba a rebotar.
+- **Precios.** En el `dte_json` los ítems de CCF van sin IVA (un combo de $7.50 aparece como 6.64). Toda la UI trabaja con precio CON IVA y la conversión se hace en un solo lugar (`dteErpService`), que es la misma convención del POS.
+- **Clientes: se reusó `ClientesView` del POS**, no se escribió una nueva. Las reglas que tumban un DTE (NIT/NRC/correo sin tildes) viven en `clienteValidacion.js` y duplicarlas era garantizar que se desincronicen. Se le agregó el import de `pos.css` porque el ERP entra por otro entry point; es seguro, ese CSS no tiene selectores de elemento.
+
 ## 02-Sep-2026 — Homologación de unidades: las pantallas ya hablan en empaques
 
 Segunda mitad del trabajo que empezó con la capa de datos (`conteo_unidad`, `conteo_factor`, `conteo_fraccionado`, `conteo_unidad_suelta`, `conteo_factor_suelta`, `conteo_modo`). La capa estaba aplicada pero **dormida**; ahora la usan las cuatro pantallas de la cadena.
