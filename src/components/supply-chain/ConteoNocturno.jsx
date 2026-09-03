@@ -47,6 +47,12 @@ const esFraccionado=(p)=>!!p?.conteo_fraccionado;
 // Etiqueta de lo que el empleado tiene en la mano
 const labelCerrado=(p)=>p?.conteo_unidad||p?.unidad||'unidad';
 const labelSuelta=(p)=>p?.conteo_unidad_suelta||'sueltas';
+// Cómo nombrar la unidad en la que vive el inventario. `unidad_medida` miente
+// seguido (la Coca Vidrio la tiene como "Caja" pero el stock son botellas), así
+// que cuando la casilla de sueltas ES la unidad de stock (factor 1) se usa ese
+// nombre, que es el que entiende quien cuenta.
+const unidadStock=(p)=>
+  (esFraccionado(p)&&facSuelta(p)===1&&p?.conteo_unidad_suelta) ? p.conteo_unidad_suelta : (p?.unidad||'unidad');
 // presentación → stock
 const aStock=(p,cerrados,sueltas)=>
   n(cerrados)*facCerrado(p) + (esFraccionado(p)?n(sueltas)*facSuelta(p):0);
@@ -1141,11 +1147,15 @@ export default function ConteoNocturno({user,onBack}){
               const noCuadra=modo!=='bebidas'&&contado&&diff!==null&&diff!==0;
               return(
               <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${noCuadra?'#e63946':contado?'#4ade80':'#333'}`,transition:'border 0.2s'}}>
-                <div style={{fontWeight:600,fontSize:14,marginBottom:2,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
-                {/* La presentación es lo que el empleado tiene en la mano: se
-                    cuenta en cajas/bolsas/paquetes, no en la unidad de costeo. */}
-                <div style={{fontSize:11,color:'#777',marginBottom:10}}>
-                  {labelCerrado(p)}{esFraccionado(p)?` + ${labelSuelta(p)} sueltas`:''}
+                <div style={{fontWeight:600,fontSize:14,marginBottom:8,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
+
+                {/* Rótulo de la casilla: dice EXACTAMENTE qué se digita ahí. Va
+                    pegado al input y no como subtítulo — es lo primero que se
+                    lee antes de escribir un número, y confundir la unidad es el
+                    error que descuadra el inventario. */}
+                <div style={{fontSize:13,fontWeight:700,color:'#60a5fa',background:'#60a5fa14',
+                  border:'1px solid #60a5fa33',borderRadius:8,padding:'6px 10px',marginBottom:8}}>
+                  📦 {esFraccionado(p)?'Cerrados: ':'Contá: '}{labelCerrado(p)}
                 </div>
 
                 {/* ── Stepper: [-] input [+] ── */}
@@ -1163,22 +1173,26 @@ export default function ConteoNocturno({user,onBack}){
                 </div>
 
                 {/* ── Segunda casilla: lo que quedó del empaque abierto ── */}
-                {esFraccionado(p)&&(
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginTop:8}}>
-                    <div style={{width:48,textAlign:'center',fontSize:18,color:'#555',flexShrink:0}}>+</div>
+                {esFraccionado(p)&&(<>
+                  <div style={{fontSize:13,fontWeight:700,color:'#facc15',background:'#facc1514',
+                    border:'1px solid #facc1533',borderRadius:8,padding:'6px 10px',margin:'10px 0 8px'}}>
+                    ➕ Sueltas: {labelSuelta(p)} del paquete abierto
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:48,flexShrink:0}}/>
                     <input type="number" inputMode="decimal" min="0" step="any" value={p.sueltas??''}
                       onChange={e=>updateCasilla(p.producto_id,'sueltas', e.target.value)}
                       style={{flex:1,padding:'10px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:16,textAlign:'center',fontWeight:600}}
-                      placeholder={labelSuelta(p)}/>
+                      placeholder="0"/>
                     <div style={{width:48,flexShrink:0}}/>
                   </div>
-                )}
+                </>)}
 
                 {/* Equivalencia: lo que realmente entra al inventario. Solo se
                     muestra cuando la presentación no es 1:1 con el stock. */}
                 {contado&&(esFraccionado(p)||facCerrado(p)!==1)&&(
-                  <div style={{fontSize:11,color:'#666',marginTop:8,textAlign:'center'}}>
-                    = {redondear(p.cantidad_real)} {p.unidad} en inventario
+                  <div style={{fontSize:12,color:'#888',marginTop:10,textAlign:'center'}}>
+                    = <b style={{color:'#ccc'}}>{redondear(p.cantidad_real)}</b> {unidadStock(p)} en inventario
                   </div>
                 )}
               </div>
@@ -1301,10 +1315,14 @@ export default function ConteoNocturno({user,onBack}){
                         <span>Mín: <b style={{color:'#facc15'}}>{p.stock_minimo}</b></span>
                         <span>·</span>
                         <span>Máx: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
-                        <span style={{width:'100%',color:'#666',fontSize:11}}>en {p.unidad}</span>
+                        <span style={{width:'100%',color:'#666',fontSize:11}}>en {unidadStock(p)}</span>
                       </div>
-                      {/* Se pide en empaques; abajo la equivalencia que recibe CM */}
-                      <div style={{fontSize:11,color:'#777',marginBottom:6}}>Pedir en: {labelCerrado(p)}</div>
+                      {/* Mismo criterio que en el conteo: el rótulo dice qué se
+                          digita, pegado a la casilla. Se pide en empaques. */}
+                      <div style={{fontSize:13,fontWeight:700,color:'#60a5fa',background:'#60a5fa14',
+                        border:'1px solid #60a5fa33',borderRadius:8,padding:'6px 10px',marginBottom:8}}>
+                        📦 Pedir: {labelCerrado(p)}
+                      </div>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
                         <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:Math.max(0,qty-1)}))}>−</button>
                         <input type="number" inputMode="numeric" min="0" step="1"
@@ -1314,8 +1332,8 @@ export default function ConteoNocturno({user,onBack}){
                         <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:qty+1}))}>+</button>
                       </div>
                       {qty>0&&facCerrado(p)!==1&&(
-                        <div style={{fontSize:11,color:'#666',marginTop:6,textAlign:'center'}}>
-                          = {redondear(qty*facCerrado(p))} {p.unidad}
+                        <div style={{fontSize:12,color:'#888',marginTop:8,textAlign:'center'}}>
+                          = <b style={{color:'#ccc'}}>{redondear(qty*facCerrado(p))}</b> {unidadStock(p)}
                         </div>
                       )}
                     </div>
