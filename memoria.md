@@ -2,6 +2,30 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 02-Sep-2026 — Homologación de unidades: las pantallas ya hablan en empaques
+
+Segunda mitad del trabajo que empezó con la capa de datos (`conteo_unidad`, `conteo_factor`, `conteo_fraccionado`, `conteo_unidad_suelta`, `conteo_factor_suelta`, `conteo_modo`). La capa estaba aplicada pero **dormida**; ahora la usan las cuatro pantallas de la cadena.
+
+- **Principio que no se movió:** `cantidad_real` sigue viajando al kardex, al faltante y al pedido **en unidad de costeo**. Las presentaciones son solo la forma de capturar y de mostrar. El costeo no se tocó.
+- **Conteo nocturno** (`ConteoNocturno.jsx`): cada ítem muestra su presentación y se cuenta en empaques. Los ítems que se abren en sucursal (`conteo_fraccionado`) tienen **doble casilla**: cerrados + sueltos, cada uno con su factor. Debajo se muestra la equivalencia (`= X lb en inventario`) para que nadie digite a ciegas. Al reabrir un conteo dentro de la ventana de 6 h, lo guardado se **descompone** de vuelta a las dos casillas.
+- **Pedido sugerido:** se digita en empaques enteros (`ceil` del sugerido) y se convierte a unidad de stock **en un solo lugar**, al enviar. A Casa Matriz no se le puede pedir media caja. El PDF de BEES también sale en empaques.
+- **Despacho** (`DespachoTab.jsx`) y **hoja de requisición**: la presentación sale de `conteo_unidad` (el Excel oficial) y no de `presentacion_pedido`, que decía otra cosa en **59 de 92** productos (el chili era "bolsa de 3 libras" en el pedido y de 5 en el conteo). El bodeguero ve cuántos empaques bajar, con la unidad de costeo abajo en chiquito.
+- **Recepción** (`ConfirmarEntrega.jsx`): el ± mueve **un empaque entero**, porque quien recibe reclama "me faltó una caja", no "me faltaron 24 unidades".
+- **Editor de la lista de conteo** (`KardexView.jsx`): la presentación ahora se edita desde la pantalla con el RPC `set_conteo_presentacion` (valida factores > 0). Ya no hace falta una migración para corregir un empaque.
+
+### Dos bugs que aparecieron al cablear y eran anteriores a esto
+
+1. **Doble conteo de bebidas.** Las 11 de La Constancia salían en el conteo normal **y** en el de bebidas (uno filtraba por `incluir_conteo`, el otro por categoría), y los 5 Nescafé no salían en ninguno porque su categoría es "Insumos". Los dos filtros pasan a cortar por **`conteo_modo`**, que es el campo que modela la decisión real.
+2. **Factores que multiplicaban mal.** 9 productos se cuentan por empaque pero su stock vive en pieza suelta y habían quedado en factor 1: contar "2 paquetes de fibra" grababa 2 unidades en vez de 12. Se verificó uno por uno contra el máximo histórico del kardex (las bolsas brandeadas llegan a 1700 → el stock está en bolsas, no en cajas). También la lasca de mozzarella estaba en 0.5556 lb cuando la receta Golden Cheese ya definía 0.034.
+
+### Lo que hay que mirar la primera noche
+
+Los ítems con factor ≠ 1 van a **saltar al valor correcto** en el primer conteo, y eso va a salir como sobrante grande en el kardex (la Coca Vidrio venía en −356). Es la corrección del error histórico, no merma. Lo que sí importa es que la sucursal **lea la presentación en pantalla** y no siga digitando el número viejo.
+
+### Pendiente que necesita respuesta de Jose
+
+- **Tomate:** pidió contarlo en unidades pero el stock vive en libras y no tenemos el peso por tomate. Quedó contándose en **libras** (sin cambio) hasta que se defina ese factor.
+
 ## 02-Sep-2026 — Gates del conteo nocturno abiertos otra vez en Cafetalón (pruebas)
 
 - **Pedido (Cesar):** poder hacer **pruebas de conteo nocturno en Cafetalón (M001)** sin los dos bloqueos que lo trababan: el de **caja cerrada** (exige corte Z del día) y el de **cero recepciones pendientes** (exige que no haya despachos en `despachado`/`en_ruta`).

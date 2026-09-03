@@ -1641,6 +1641,22 @@ function ConteoLista({ user }) {
     cargar();
   };
   const renombrar = async (id, nombre) => { await db.rpc('set_conteo_item_meta', { p_producto_id: id, p_nombre: nombre }); cargar(); };
+  // Capa de conversión: cómo se cuenta el producto (cajas, bolsas) vs cómo vive
+  // en el inventario. El factor multiplica lo que la sucursal digita, así que un
+  // error acá mueve stock — por eso el RPC valida y acá se avisa del resultado.
+  const setPresentacion = async (id, patch) => {
+    const { data: r } = await db.rpc('set_conteo_presentacion', {
+      p_producto_id: id,
+      p_unidad: patch.unidad ?? null,
+      p_factor: patch.factor ?? null,
+      p_fraccionado: patch.fraccionado ?? null,
+      p_unidad_suelta: patch.unidad_suelta ?? null,
+      p_factor_suelta: patch.factor_suelta ?? null,
+      p_modo: patch.modo ?? null,
+    });
+    if (r && r.ok === false) { window.alert('No se guardó: ' + r.error); return; }
+    cargar();
+  };
   const cambiarTipo = async (id, tipo) => { await db.rpc('set_conteo_item_meta', { p_producto_id: id, p_tipo: tipo }); cargar(); };
   const matchSub = async (id, receta_id) => { await db.rpc('match_conteo_subreceta', { p_producto_id: id, p_receta_id: receta_id || null }); cargar(); };
   const quitar = async (id, nombre) => {
@@ -1695,6 +1711,13 @@ function ConteoLista({ user }) {
                       <TipoPill tipo={it.tipo} />
                       <div style={{ flex: 1, minWidth: 140, fontSize: 13 }}>
                         {it.nombre} <span style={{ color: C.dim, fontSize: 11 }}>· {it.unidad || 'u'}</span>
+                        {it.conteo_unidad && (
+                          <span style={{ color: C.blue, fontSize: 11, marginLeft: 8 }} title="Cómo lo cuenta la sucursal">
+                            📦 {it.conteo_unidad}{Number(it.conteo_factor) !== 1 ? ` ×${it.conteo_factor}` : ''}
+                            {it.fraccionado ? ` + ${it.unidad_suelta || 'sueltas'}` : ''}
+                          </span>
+                        )}
+                        {it.modo === 'bebidas' && <span style={{ color: '#fbbf24', fontSize: 11, marginLeft: 8 }} title="Va en el conteo de bebidas (BEES), no en el normal">🥤 BEES</span>}
                         {it.match_receta_nombre && <span style={{ color: '#fb923c', fontSize: 11, marginLeft: 8 }}>= {it.match_receta_nombre}</span>}
                         {it.receta && <span onClick={() => setOpenR(o => ({ ...o, [it.id]: !o[it.id] }))} style={{ color: C.blue, fontSize: 11, marginLeft: 8, cursor: 'pointer' }}>{openR[it.id] ? '▾ receta' : '▸ receta'}</span>}
                       </div>
@@ -1746,6 +1769,57 @@ function ConteoLista({ user }) {
                         </div>
                         <div style={{ fontSize: 10, color: C.dim }}>
                           Al matchear a una sub-receta, la venta descuenta <b>este</b> ítem (lo que la sucursal cuenta), no las materias primas de CM.
+                        </div>
+
+                        {/* ── Cómo se cuenta ── */}
+                        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 2 }}>
+                          <div style={{ fontSize: 11, color: '#fff', fontWeight: 700, marginBottom: 6 }}>📦 Cómo lo cuenta la sucursal</div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                            <div style={{ flex: 2, minWidth: 160 }}>
+                              <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Presentación (lo que tiene en la mano)</div>
+                              <input defaultValue={it.conteo_unidad || ''} placeholder="Ej: Caja de 24 unidades"
+                                onBlur={e => { const v = e.target.value.trim(); if (v && v !== (it.conteo_unidad || '')) setPresentacion(it.id, { unidad: v }); }}
+                                style={{ width: '100%', boxSizing: 'border-box', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 12 }} />
+                            </div>
+                            <div style={{ width: 110 }}>
+                              <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>× {it.unidad || 'u'} c/u</div>
+                              <input type="number" step="any" min="0" defaultValue={it.conteo_factor ?? 1}
+                                onBlur={e => { const v = Number(e.target.value); if (v > 0 && v !== Number(it.conteo_factor)) setPresentacion(it.id, { factor: v }); }}
+                                style={{ width: '100%', boxSizing: 'border-box', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 12 }} />
+                            </div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#ccc', padding: '6px 0' }}>
+                              <input type="checkbox" checked={!!it.fraccionado}
+                                onChange={e => setPresentacion(it.id, { fraccionado: e.target.checked })} />
+                              se abre en sucursal
+                            </label>
+                          </div>
+                          {it.fraccionado && (
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                              <div style={{ flex: 2, minWidth: 160 }}>
+                                <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>Segunda casilla (lo suelto)</div>
+                                <input defaultValue={it.unidad_suelta || ''} placeholder="Ej: latas"
+                                  onBlur={e => { const v = e.target.value.trim(); if (v && v !== (it.unidad_suelta || '')) setPresentacion(it.id, { unidad_suelta: v }); }}
+                                  style={{ width: '100%', boxSizing: 'border-box', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 12 }} />
+                              </div>
+                              <div style={{ width: 110 }}>
+                                <div style={{ fontSize: 10, color: C.dim, marginBottom: 3 }}>× {it.unidad || 'u'} c/u</div>
+                                <input type="number" step="any" min="0" defaultValue={it.factor_suelta ?? 1}
+                                  onBlur={e => { const v = Number(e.target.value); if (v > 0 && v !== Number(it.factor_suelta)) setPresentacion(it.id, { factor_suelta: v }); }}
+                                  style={{ width: '100%', boxSizing: 'border-box', background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 12 }} />
+                              </div>
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: 10, color: C.dim }}>Va en el conteo:</div>
+                            <select value={it.modo || 'normal'} onChange={e => setPresentacion(it.id, { modo: e.target.value })}
+                              style={{ background: '#1e1e1e', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 6, padding: '5px 8px', fontSize: 12 }}>
+                              <option value="normal">Conteo nocturno normal</option>
+                              <option value="bebidas">Conteo de bebidas (BEES)</option>
+                            </select>
+                          </div>
+                          <div style={{ fontSize: 10, color: C.dim, marginTop: 6 }}>
+                            El factor multiplica lo que digita la sucursal: si cuenta <b>2</b> y el factor es <b>{it.conteo_factor ?? 1}</b>, al inventario entran <b>{(2 * Number(it.conteo_factor ?? 1)).toLocaleString()} {it.unidad || 'u'}</b>.
+                          </div>
                         </div>
                       </div>
                     )}

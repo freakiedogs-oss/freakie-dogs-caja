@@ -32,6 +32,44 @@ const stepBtn={
 };
 const stepBtnActive={...stepBtn,background:'#e63946',border:'1px solid #e63946'};
 
+/* ── Capa de conversión presentación ↔ stock ──────────────────────────────
+   La sucursal cuenta en lo que ve (cajas, bolsas, paquetes) pero el inventario
+   vive en la unidad de costeo (unidades, libras, onzas). `conteo_factor` es el
+   puente: cuántas unidades de stock trae un empaque cerrado.
+   Los items que se abren en sucursal (`conteo_fraccionado`) llevan además una
+   segunda casilla para lo suelto, con su propio factor: la carne se cuenta en
+   paquetes de 20 bolitas MÁS las bolitas del paquete abierto.
+   Nada de esto toca el costeo: cantidad_real sigue viajando al kardex y al
+   pedido en unidad de stock, igual que antes. */
+const facCerrado=(p)=>{const f=n(p?.conteo_factor);return f>0?f:1;};
+const facSuelta=(p)=>{const f=n(p?.conteo_factor_suelta);return f>0?f:1;};
+const esFraccionado=(p)=>!!p?.conteo_fraccionado;
+// Etiqueta de lo que el empleado tiene en la mano
+const labelCerrado=(p)=>p?.conteo_unidad||p?.unidad||'unidad';
+const labelSuelta=(p)=>p?.conteo_unidad_suelta||'sueltas';
+// presentación → stock
+const aStock=(p,cerrados,sueltas)=>
+  n(cerrados)*facCerrado(p) + (esFraccionado(p)?n(sueltas)*facSuelta(p):0);
+// stock → presentación (para precargar un conteo guardado o el teórico)
+const aPresentacion=(p,qty)=>{
+  const q=n(qty), fc=facCerrado(p);
+  if(!esFraccionado(p)) return {cerrados:redondear(q/fc), sueltas:0};
+  const cerrados=Math.floor(q/fc+1e-9);
+  const resto=q-cerrados*fc;
+  return {cerrados:Math.max(0,cerrados), sueltas:Math.max(0,redondear(resto/facSuelta(p)))};
+};
+// 4 decimales: evita que 0.1+0.2 pinte "0.30000000000000004" en la casilla
+function redondear(v){return Math.round((Number(v)||0)*10000)/10000;}
+// Campos de la capa, tal como vienen del catálogo
+const camposConteo=(cp)=>({
+  conteo_unidad: cp?.conteo_unidad||null,
+  conteo_factor: cp?.conteo_factor??1,
+  conteo_fraccionado: !!cp?.conteo_fraccionado,
+  conteo_unidad_suelta: cp?.conteo_unidad_suelta||null,
+  conteo_factor_suelta: cp?.conteo_factor_suelta??1,
+  cerrados: null, sueltas: null,
+});
+
 export default function ConteoNocturno({user,onBack}){
   const {show,Toast}=useToast();
   const [screen,setScreen]=useState(1); // 0=seleccionar sucursal, 1=conteo, 2=pedido
@@ -150,12 +188,16 @@ export default function ConteoNocturno({user,onBack}){
 
       // 2. Cargar solo productos marcados para conteo nocturno
       const {data:invData} = await db.from('inventario')
-        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden)')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
         .eq('sucursal_id', sucId)
         .eq('catalogo_productos.incluir_conteo', true);
 
       const prods = (invData||[])
-        .filter(inv => inv.catalogo_productos?.incluir_conteo)
+        // `conteo_modo='bebidas'` = lo que se pide a BEES (La Constancia +
+        // Nescafé): esos van en su propio conteo, no acá. Sin este filtro las 11
+        // de La Constancia salían en los dos conteos y se contaban dos veces.
+        .filter(inv => inv.catalogo_productos?.incluir_conteo
+          && inv.catalogo_productos?.conteo_modo!=='bebidas')
         .map(inv => ({
           inventario_id: inv.id,
           producto_id: inv.producto_id,
@@ -166,7 +208,8 @@ export default function ConteoNocturno({user,onBack}){
           stock_teorico: inv.stock_actual,
           stock_minimo: inv.stock_minimo,
           stock_maximo: inv.stock_maximo,
-          cantidad_real: null
+          cantidad_real: null,
+          ...camposConteo(inv.catalogo_productos)
         }))
         .sort((a,b) => a.conteo_orden - b.conteo_orden);
 
@@ -183,11 +226,18 @@ export default function ConteoNocturno({user,onBack}){
 
         if (dentroDeVentana) {
           // Dentro de ventana → edición con el teórico ORIGINAL (pre-conteo, post-cierre Z)
-          const prodsConDatos = prods.map(p=>({
-            ...p,
-            stock_teorico: teoricoMap[p.producto_id] ?? p.stock_teorico,
-            cantidad_real: conteoMap[p.producto_id] ?? null,
-          }));
+          const prodsConDatos = prods.map(p=>{
+            // Lo guardado está en unidad de stock; hay que devolverlo a la
+            // presentación para que las casillas muestren lo que se digitó.
+            const guardado = conteoMap[p.producto_id];
+            const pres = guardado==null ? {cerrados:null,sueltas:null} : aPresentacion(p,guardado);
+            return {
+              ...p,
+              stock_teorico: teoricoMap[p.producto_id] ?? p.stock_teorico,
+              cantidad_real: guardado ?? null,
+              cerrados: pres.cerrados, sueltas: pres.sueltas,
+            };
+          });
           setProductos(prodsConDatos);
           setIsEdit(true);
           setEditExpira(expira);
@@ -280,12 +330,15 @@ export default function ConteoNocturno({user,onBack}){
     setLoading(true);
     try{
       const {data:invData}=await db.from('inventario')
-        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo)')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
         .eq('sucursal_id', sucId);
-      const esBebida=(c)=>/bebida|cerveza|soda/i.test(c||'');
+      // El corte ya no es por categoría sino por `conteo_modo`: Jose separó el
+      // pedido de La Constancia + Nescafé (BEES) del conteo normal. Filtrar por
+      // categoría metía acá la Kolashampan y los tés — que van en el conteo
+      // normal — y dejaba fuera los Nescafé, que son categoría "Insumos".
       const prods=(invData||[])
         .filter(inv=>inv.catalogo_productos?.activo!==false
-          && (esBebida(inv.catalogo_productos?.conteo_categoria)||esBebida(inv.catalogo_productos?.categoria)))
+          && inv.catalogo_productos?.conteo_modo==='bebidas')
         .map(inv=>({
           inventario_id: inv.id,
           producto_id: inv.producto_id,
@@ -297,6 +350,7 @@ export default function ConteoNocturno({user,onBack}){
           stock_minimo: inv.stock_minimo,
           stock_maximo: inv.stock_maximo,
           cantidad_real: null,
+          ...camposConteo(inv.catalogo_productos)
         }))
         .sort((a,b)=>(a.conteo_orden-b.conteo_orden)||a.nombre.localeCompare(b.nombre));
       if(prods.length===0){show('⚠️ Esta sucursal no tiene bebidas registradas en inventario');setLoading(false);return;}
@@ -313,12 +367,15 @@ export default function ConteoNocturno({user,onBack}){
     if(sinCantidad.length>0){show('⚠️ Faltan '+sinCantidad.length+' bebidas sin contar');return;}
     const items=productos.map(p=>{
       const bajominimo=p.stock_minimo>0&&p.cantidad_real<p.stock_minimo;
+      const sugeridaStock=bajominimo?Math.max(0,p.stock_maximo-p.cantidad_real):0;
       return {
         producto_id:p.producto_id, nombre:p.nombre, unidad:p.unidad, categoria:p.categoria,
         cantidad_real:Math.max(0,n(p.cantidad_real)),
         stock_minimo:p.stock_minimo, stock_maximo:p.stock_maximo,
-        cantidad_sugerida:bajominimo?Math.max(0,p.stock_maximo-p.cantidad_real):0,
+        // BEES se pide por caja/fardo, nunca por lata suelta
+        cantidad_sugerida:Math.ceil(sugeridaStock/facCerrado(p)),
         bajominimo,
+        ...camposConteo(p),
       };
     });
     items.sort((a,b)=>(b.bajominimo?1:0)-(a.bajominimo?1:0));
@@ -343,8 +400,10 @@ export default function ConteoNocturno({user,onBack}){
       doc.text(`${sucursalNombre} (${storeCodeSel||''}) · ${fecha} · generado del conteo de bebidas`,14,25);
       autoTable(doc,{
         startY:31,
-        head:[['Producto','Unidad','Contado','Mín','Máx','PEDIR']],
-        body:items.map(p=>[p.nombre,p.unidad,String(p.cantidad_real),String(n(p.stock_minimo)),String(n(p.stock_maximo)),String(n(pedidoQtys[p.producto_id]))]),
+        // El PDF se digita en la app de BEES, que pide por caja/fardo: la
+        // columna PEDIR va en empaques, no en unidades sueltas.
+        head:[['Producto','Presentación','Contado (un)','Mín','Máx','PEDIR (empaques)']],
+        body:items.map(p=>[p.nombre,labelCerrado(p),String(p.cantidad_real),String(n(p.stock_minimo)),String(n(p.stock_maximo)),String(n(pedidoQtys[p.producto_id]))]),
         styles:{fontSize:9},
         headStyles:{fillColor:[230,35,41]},
         columnStyles:{2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{fontStyle:'bold',halign:'right'}},
@@ -391,20 +450,38 @@ export default function ConteoNocturno({user,onBack}){
     init();
   },[]);
 
-  const updateCantidadReal=(prodId,val)=>{
-    setProductos(prev=>prev.map(p=>p.producto_id===prodId?{...p,cantidad_real:val===''?null:n(val)}:p));
+  // Recalcula cantidad_real (unidad de stock) a partir de las casillas que el
+  // empleado ve. cantidad_real sigue siendo la fuente de verdad para el kardex,
+  // el faltante y el pedido: las casillas solo son la forma de capturarla.
+  const recalc=(p,cerrados,sueltas)=>{
+    const vacio = (cerrados===null||cerrados==='') && (sueltas===null||sueltas==='');
+    return {...p, cerrados, sueltas,
+      cantidad_real: vacio ? null : redondear(aStock(p,cerrados,sueltas))};
   };
 
+  const updateCasilla=(prodId,campo,val)=>{
+    setProductos(prev=>prev.map(p=>{
+      if(p.producto_id!==prodId)return p;
+      const v = val===''?null:n(val);
+      return campo==='sueltas' ? recalc(p,p.cerrados,v) : recalc(p,v,p.sueltas);
+    }));
+  };
+
+  // El ± mueve empaques cerrados, que es lo que se tiene en la mano
   const stepCantidad=(prodId,delta)=>{
     setProductos(prev=>prev.map(p=>{
       if(p.producto_id!==prodId)return p;
-      const cur=p.cantidad_real===null?p.stock_teorico:p.cantidad_real;
-      return {...p,cantidad_real:Math.max(0,cur+delta)};
+      const base = p.cerrados!==null&&p.cerrados!=='' ? n(p.cerrados) : aPresentacion(p,p.stock_teorico).cerrados;
+      return recalc(p,Math.max(0,redondear(base+delta)),p.sueltas);
     }));
   };
 
   const setIgualTeorico=(prodId)=>{
-    setProductos(prev=>prev.map(p=>p.producto_id===prodId?{...p,cantidad_real:Math.max(0,n(p.stock_teorico))}:p));
+    setProductos(prev=>prev.map(p=>{
+      if(p.producto_id!==prodId)return p;
+      const pres=aPresentacion(p,Math.max(0,n(p.stock_teorico)));
+      return recalc(p,pres.cerrados,esFraccionado(p)?pres.sueltas:null);
+    }));
   };
 
   // Progreso del conteo
@@ -550,6 +627,7 @@ export default function ConteoNocturno({user,onBack}){
       // Los que están bajo mínimo tienen cantidad sugerida, el resto qty=0
       const todosParaPedido=productos.map(p=>{
         const bajominimo=p.stock_minimo>0 && p.cantidad_real<p.stock_minimo;
+        const sugeridaStock = bajominimo ? Math.max(0, p.stock_maximo-p.cantidad_real) : 0;
         return {
           producto_id: p.producto_id,
           nombre: p.nombre,
@@ -558,8 +636,11 @@ export default function ConteoNocturno({user,onBack}){
           cantidad_real: Math.max(0,n(p.cantidad_real)),
           stock_minimo: p.stock_minimo,
           stock_maximo: p.stock_maximo,
-          cantidad_sugerida: bajominimo ? Math.max(0, p.stock_maximo-p.cantidad_real) : 0,
-          bajominimo
+          // El pedido se digita en empaques enteros: a Casa Matriz no se le puede
+          // pedir "media caja". Se redondea hacia arriba para no quedarse corto.
+          cantidad_sugerida: Math.ceil(sugeridaStock/facCerrado(p)),
+          bajominimo,
+          ...camposConteo(p)
         };
       });
       // Ordenar: bajo mínimo primero, luego el resto
@@ -588,9 +669,12 @@ export default function ConteoNocturno({user,onBack}){
       // Una sola orden VIVA por sucursal: la RPC sobrescribe atómicamente la orden
       // 'enviado' existente (o crea una nueva si no hay), con candado por sucursal
       // que mata doble-envíos y carreras. Ya no borramos/insertamos a mano.
+      // La sucursal pide en empaques, pero el pedido viaja en unidad de stock:
+      // el despacho, el kardex y el costeo de Casa Matriz siguen hablando esa
+      // unidad. La conversión se hace acá y en ningún otro lado.
       const payload=items.map(p=>({
         producto_id: p.producto_id,
-        cantidad: n(pedidoQtys[p.producto_id]),
+        cantidad: redondear(n(pedidoQtys[p.producto_id])*facCerrado(p)),
         unidad: p.unidad
       }));
       const {data:resp,error:rpcErr}=await db.rpc('guardar_pedido_vivo',{
@@ -1057,7 +1141,12 @@ export default function ConteoNocturno({user,onBack}){
               const noCuadra=modo!=='bebidas'&&contado&&diff!==null&&diff!==0;
               return(
               <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${noCuadra?'#e63946':contado?'#4ade80':'#333'}`,transition:'border 0.2s'}}>
-                <div style={{fontWeight:600,fontSize:14,marginBottom:10,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
+                <div style={{fontWeight:600,fontSize:14,marginBottom:2,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
+                {/* La presentación es lo que el empleado tiene en la mano: se
+                    cuenta en cajas/bolsas/paquetes, no en la unidad de costeo. */}
+                <div style={{fontSize:11,color:'#777',marginBottom:10}}>
+                  {labelCerrado(p)}{esFraccionado(p)?` + ${labelSuelta(p)} sueltas`:''}
+                </div>
 
                 {/* ── Stepper: [-] input [+] ── */}
                 <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -1066,12 +1155,32 @@ export default function ConteoNocturno({user,onBack}){
                       teclado del celular sale sin punto y el navegador rechaza
                       cualquier fraccion, asi que una caja empezada no se podia
                       contar. El parseo de abajo ya usa parseFloat. */}
-                  <input type="number" inputMode="decimal" min="0" step="any" value={p.cantidad_real??''}
-                    onChange={e=>updateCantidadReal(p.producto_id, e.target.value)}
+                  <input type="number" inputMode="decimal" min="0" step="any" value={p.cerrados??''}
+                    onChange={e=>updateCasilla(p.producto_id,'cerrados', e.target.value)}
                     style={{flex:1,padding:'12px 8px',background:noCuadra?'#1a0a0a':'#0a0a0a',border:`1px solid ${noCuadra?'#e63946':'#333'}`,borderRadius:10,color:noCuadra?'#e63946':'#fff',fontSize:18,textAlign:'center',fontWeight:700}}
                     placeholder="—"/>
                   <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,1)}>+</button>
                 </div>
+
+                {/* ── Segunda casilla: lo que quedó del empaque abierto ── */}
+                {esFraccionado(p)&&(
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginTop:8}}>
+                    <div style={{width:48,textAlign:'center',fontSize:18,color:'#555',flexShrink:0}}>+</div>
+                    <input type="number" inputMode="decimal" min="0" step="any" value={p.sueltas??''}
+                      onChange={e=>updateCasilla(p.producto_id,'sueltas', e.target.value)}
+                      style={{flex:1,padding:'10px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:16,textAlign:'center',fontWeight:600}}
+                      placeholder={labelSuelta(p)}/>
+                    <div style={{width:48,flexShrink:0}}/>
+                  </div>
+                )}
+
+                {/* Equivalencia: lo que realmente entra al inventario. Solo se
+                    muestra cuando la presentación no es 1:1 con el stock. */}
+                {contado&&(esFraccionado(p)||facCerrado(p)!==1)&&(
+                  <div style={{fontSize:11,color:'#666',marginTop:8,textAlign:'center'}}>
+                    = {redondear(p.cantidad_real)} {p.unidad} en inventario
+                  </div>
+                )}
               </div>
             );})
             }
@@ -1171,7 +1280,7 @@ export default function ConteoNocturno({user,onBack}){
                       )}
                       {totalPedido>0&&(
                         <span style={{fontSize:12,fontWeight:600,color:'#60a5fa',background:'#60a5fa20',padding:'2px 8px',borderRadius:99,border:'1px solid #60a5fa40'}}>
-                          {totalPedido} uds
+                          {redondear(totalPedido)} empaques
                         </span>
                       )}
                       <span style={{fontSize:16,color:'#555',lineHeight:1}}>{abiertoPed?'▲':'▼'}</span>
@@ -1192,7 +1301,10 @@ export default function ConteoNocturno({user,onBack}){
                         <span>Mín: <b style={{color:'#facc15'}}>{p.stock_minimo}</b></span>
                         <span>·</span>
                         <span>Máx: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
+                        <span style={{width:'100%',color:'#666',fontSize:11}}>en {p.unidad}</span>
                       </div>
+                      {/* Se pide en empaques; abajo la equivalencia que recibe CM */}
+                      <div style={{fontSize:11,color:'#777',marginBottom:6}}>Pedir en: {labelCerrado(p)}</div>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
                         <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:Math.max(0,qty-1)}))}>−</button>
                         <input type="number" inputMode="numeric" min="0" step="1"
@@ -1201,6 +1313,11 @@ export default function ConteoNocturno({user,onBack}){
                           style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}/>
                         <button style={stepBtn} onClick={()=>setPedidoQtys(prev=>({...prev,[p.producto_id]:qty+1}))}>+</button>
                       </div>
+                      {qty>0&&facCerrado(p)!==1&&(
+                        <div style={{fontSize:11,color:'#666',marginTop:6,textAlign:'center'}}>
+                          = {redondear(qty*facCerrado(p))} {p.unidad}
+                        </div>
+                      )}
                     </div>
                   );})}
                 </div>

@@ -119,8 +119,10 @@ export default function ConfirmarEntrega({user,onBack}){
     setNotas(desp.notas_recepcion||'');
     setItemsNotas({});
     try{
+      // Se trae la presentación del catálogo para que quien recibe cuente lo que
+      // tiene enfrente (cajas, bolsas) y no la unidad de costeo.
       const {data,error}=await db.from('despacho_items')
-        .select('id,despacho_id,descripcion,cantidad_despachada,cantidad_recibida,unidad_medida')
+        .select('id,despacho_id,producto_id,descripcion,cantidad_despachada,cantidad_recibida,unidad_medida,catalogo_productos(conteo_unidad,conteo_factor)')
         .eq('despacho_id',desp.id)
         .order('id');
       if(error)throw error;
@@ -269,20 +271,31 @@ export default function ConfirmarEntrega({user,onBack}){
         </button>
         {items.map((it,idx)=>{
           const isDiff=it.cantidad_recibida!==it.cantidad_despachada;
+          // El ± mueve un empaque entero: el que recibe reclama "me faltó una
+          // caja", no "me faltaron 24 unidades".
+          const fac=Number(it.catalogo_productos?.conteo_factor)>0?Number(it.catalogo_productos.conteo_factor):1;
+          const pres=it.catalogo_productos?.conteo_unidad||'';
+          const enEmp=(q)=>Math.round((Number(q||0)/fac)*100)/100;
           return(
             <div key={it.id} style={{marginBottom:12,padding:'12px 14px',background:isDiff?'#4a3a1a':'#1a1a1a',borderRadius:10,border:`1px solid ${isDiff?'#713f12':'#2a2a2a'}`}}>
               <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>{it.descripcion}</div>
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
                 <div style={{flex:1,fontSize:12,color:'#888'}}>
                   <div>Despachado: {it.cantidad_despachada} {it.unidad_medida}</div>
+                  {pres&&(
+                    <div style={{color:'#60a5fa',marginTop:2}}>
+                      📦 {fac!==1?<><b>{enEmp(it.cantidad_despachada)}</b> × {pres}</>:pres}
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <button onClick={()=>updateItemQuantity(idx,Math.max(0,(it.cantidad_recibida||0)-1))} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>−</button>
+                <button onClick={()=>updateItemQuantity(idx,Math.max(0,(it.cantidad_recibida||0)-fac))} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>−</button>
                 <input type="number" value={it.cantidad_recibida||0} onChange={(e)=>updateItemQuantity(idx,parseFloat(e.target.value)||0)} style={{flex:1,padding:'8px 10px',background:'#141414',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',textAlign:'center',fontSize:14}}/>
-                <button onClick={()=>updateItemQuantity(idx,(it.cantidad_recibida||0)+1)} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>+</button>
+                <button onClick={()=>updateItemQuantity(idx,(it.cantidad_recibida||0)+fac)} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>+</button>
               </div>
-              {isDiff&&<div style={{fontSize:11,color:'#f97316',marginTop:6}}>Diferencia: {(it.cantidad_recibida||0)-it.cantidad_despachada} {it.unidad_medida}</div>}
+              {fac!==1&&<div style={{fontSize:11,color:'#666',marginTop:4,textAlign:'center'}}>recibido: {enEmp(it.cantidad_recibida)} × {pres||'empaque'}</div>}
+              {isDiff&&<div style={{fontSize:11,color:'#f97316',marginTop:6}}>Diferencia: {(it.cantidad_recibida||0)-it.cantidad_despachada} {it.unidad_medida}{fac!==1?` (${enEmp((it.cantidad_recibida||0)-it.cantidad_despachada)} ${pres||'empaques'})`:''}</div>}
               <input type="text" placeholder="Notas para este ítem..." value={itemsNotas[idx]||''} onChange={(e)=>updateItemNota(idx,e.target.value)} style={{width:'100%',marginTop:8,padding:'8px 10px',background:'#0a0a0a',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',fontSize:12}}/>
             </div>
           );

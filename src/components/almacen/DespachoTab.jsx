@@ -4,6 +4,19 @@ import { STORES, today, fmtDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 import { Badge } from '../ui/Badge';
 
+/* La sucursal cuenta y pide en empaques (`conteo_unidad`, el Excel oficial) pero
+   el pedido viaja en unidad de costeo. Casa Matriz tiene que ver las dos cosas:
+   arma cajas, no onzas. `presentacion_pedido` es el campo viejo y queda solo de
+   respaldo — donde ambos existen, manda conteo_unidad. */
+const presentacionDe=(cp)=>cp?.conteo_unidad||cp?.presentacion_pedido||'';
+const factorDe=(cp)=>{const f=n(cp?.conteo_factor);return f>0?f:1;};
+// Cuántos empaques representa una cantidad en unidad de stock
+const enEmpaques=(cp,qty)=>{
+  const f=factorDe(cp);
+  if(f===1) return null;
+  return Math.round((n(qty)/f)*100)/100;
+};
+
 // ── DESPACHO A SUCURSALES (Flujo C) ──────────────────────────
 export default function DespachoTab({user,show}){
   const [view,setView]=useState('lista');
@@ -161,7 +174,7 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
       return (ia===-1?999:ia)-(ib===-1?999:ib);
     }).map(([cat,arr])=>[cat,arr.map(it=>({
       nombre:it.nombre,presentacion:it.presentacion,unidad:it.unidad,
-      solicitado:it.enviado,costo_unitario:it.costo_unitario
+      solicitado:it.enviado,empaques:it.empaques??null,costo_unitario:it.costo_unitario
     }))]);
     imprimirHojaDespacho({
       sucursal:despacho.sucursales?.nombre||data?.sucursal||'',
@@ -214,7 +227,9 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
 }
 
 // ── IMPRIMIR HOJA DE REQUISICIÓN ──────────────────────────────
-// grouped: [ [categoria, [{nombre, presentacion, unidad, solicitado, costo_unitario}]] ]
+// grouped: [ [categoria, [{nombre, presentacion, unidad, solicitado, empaques, costo_unitario}]] ]
+// `solicitado` va en unidad de costeo y `empaques` es esa misma cantidad en la
+// presentación del Excel oficial (null cuando la presentación ya es 1:1).
 function imprimirHojaDespacho({sucursal,fecha,motorista,grouped}){
   const fmt=(v)=>{ const nn=Number(v||0); return Number.isInteger(nn)?String(nn):nn.toFixed(2); };
   const fmtM=(v)=>v==null?'—':'$'+Number(v).toFixed(2);
@@ -225,10 +240,17 @@ function imprimirHojaDespacho({sucursal,fecha,motorista,grouped}){
     const r=its.map(it=>{
       const ct=(it.costo_unitario!=null&&it.solicitado>0)?it.costo_unitario*it.solicitado:null;
       if(ct!=null)sub+=ct;
+      // Solicitado se imprime en la presentación que se agarra de bodega, con la
+      // unidad de costeo abajo en chiquito: el que arma la caja cuenta paquetes.
+      const sol=it.solicitado>0
+        ? (it.empaques!=null
+            ? `${fmt(it.empaques)}<div style="font-size:8px;color:#777;font-weight:400">${fmt(it.solicitado)} ${it.unidad||''}</div>`
+            : fmt(it.solicitado))
+        : '';
       return `<tr>
         <td style="${td}">${it.nombre||'Producto'}</td>
         <td style="${td};text-align:center;font-size:9px;color:#555">${it.presentacion||it.unidad||'—'}</td>
-        <td style="${td};text-align:center;font-weight:700">${it.solicitado>0?fmt(it.solicitado):''}</td>
+        <td style="${td};text-align:center;font-weight:700">${sol}</td>
         <td style="${td};text-align:center;width:60px"></td>
         <td style="${td};text-align:right">${fmtM(it.costo_unitario)}</td>
         <td style="${td};text-align:right;font-weight:700">${ct!=null?fmtM(ct):'—'}</td>
@@ -282,7 +304,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
     db.from('usuarios_erp').select('id,nombre').in('rol',['despachador','motorista']).order('nombre')
       .then(({data})=>setMotoristas(data||[]));
     // Load pedido items + conteo nocturno actual de la sucursal (para la hoja)
-    db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,conteo_categoria,presentacion_pedido,precio_referencia)').eq('pedido_id',pedido.id)
+    db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,conteo_categoria,presentacion_pedido,precio_referencia,conteo_unidad,conteo_factor)').eq('pedido_id',pedido.id)
       .then(async({data})=>{
         const its=(data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0),conteo:0,costo_erp:null}));
         const ids=its.map(it=>it.producto_id).filter(Boolean);
@@ -447,8 +469,16 @@ function PrepararDespacho({pedido,user,show,onBack}){
                   <span style={{marginLeft:10,color:'#888'}}>· Conteo suc.: <strong style={{color:'#fbbf24'}}>{n(it.conteo||0)}</strong></span>
                   <span style={{marginLeft:10,color:'#888'}}>· Resultante: <strong style={{color:'#4ade80'}}>{n(it.conteo||0)+n(it.qty_despacho||0)}</strong></span>
                 </div>
+                {/* Lo que hay que bajar de bodega, en la presentación que se toca */}
+                {presentacionDe(it.catalogo_productos)&&(
+                  <div style={{fontSize:12,color:'#60a5fa',marginBottom:10}}>
+                    📦 {enEmpaques(it.catalogo_productos,it.qty_despacho)!==null
+                      ? <><strong>{enEmpaques(it.catalogo_productos,it.qty_despacho)}</strong> × {presentacionDe(it.catalogo_productos)}</>
+                      : <>{presentacionDe(it.catalogo_productos)}</>}
+                  </div>
+                )}
                 <div>
-                  <label>Cantidad a despachar</label>
+                  <label>Cantidad a despachar ({it.catalogo_productos?.unidad_medida||'unidad'})</label>
                   <div className="num-input">
                     <button className="num-btn" onClick={()=>{
                       const idx=pitems.findIndex(x=>x.id===it.id);
@@ -490,7 +520,13 @@ function PrepararDespacho({pedido,user,show,onBack}){
               pitems.forEach(it=>{
                 const cat=it.catalogo_productos?.conteo_categoria||it.catalogo_productos?.categoria||'Otros';
                 if(!gs[cat])gs[cat]=[];
-                gs[cat].push({nombre:it.catalogo_productos?.nombre||'Producto',presentacion:it.catalogo_productos?.presentacion_pedido||'',unidad:it.catalogo_productos?.unidad_medida||it.unidad||'',solicitado:n(it.cantidad_solicitada||0),costo_unitario:it.costo_erp});
+                const emp=enEmpaques(it.catalogo_productos,it.cantidad_solicitada||0);
+                gs[cat].push({nombre:it.catalogo_productos?.nombre||'Producto',
+                  presentacion:presentacionDe(it.catalogo_productos),
+                  unidad:it.catalogo_productos?.unidad_medida||it.unidad||'',
+                  solicitado:n(it.cantidad_solicitada||0),
+                  empaques:emp,
+                  costo_unitario:it.costo_erp});
               });
               const g=Object.entries(gs).sort((a,b)=>{const ia=ORDEN.findIndex(o=>o.toLowerCase()===a[0].toLowerCase());const ib=ORDEN.findIndex(o=>o.toLowerCase()===b[0].toLowerCase());return(ia===-1?999:ia)-(ib===-1?999:ib);});
               imprimirHojaDespacho({
