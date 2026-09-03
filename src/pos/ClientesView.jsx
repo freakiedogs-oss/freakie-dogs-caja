@@ -125,7 +125,7 @@ export default function ClientesView({ user, onBack }) {
                   borderRadius: 9, color: '#e5e7eb', fontSize: 14 }
     const lbl = { fontSize: 11, color: '#8b8997', margin: '10px 0 4px', fontWeight: 600 }
     return (
-      <div className="poshome-root" style={{ paddingBottom: 100 }}>
+      <div className="poshome-root">
         <toast.Toast />
         <header className="pos-header">
           <button className="pos-header-btn" onClick={() => setEdit(null)}>← Volver</button>
@@ -133,7 +133,10 @@ export default function ClientesView({ user, onBack }) {
           <span className="pos-header-sep" />
         </header>
 
-        <div style={{ padding: '0 16px', maxWidth: 620 }}>
+        {/* El scroll va acá y no en `.poshome-root`, que es height:100vh +
+            overflow:hidden — sin este contenedor la ficha se corta abajo y el
+            botón de guardar queda inalcanzable en pantallas chicas. */}
+        <div style={{ padding: '0 16px 100px', maxWidth: 620, flex: 1, overflowY: 'auto', minHeight: 0 }}>
           {/* Qué le falta para poder emitirle CCF — se ve ANTES de que el cliente esté esperando */}
           <div style={{ padding: '9px 12px', borderRadius: 9, marginBottom: 6,
                         background: falta.length ? 'rgba(244,162,97,0.12)' : 'rgba(45,212,168,0.12)',
@@ -227,7 +230,7 @@ export default function ClientesView({ user, onBack }) {
   // ── LISTA ──
   const visibles = soloIncompletos ? lista.filter(c => faltantesParaCCF(c).length > 0) : lista
   return (
-    <div className="poshome-root" style={{ paddingBottom: 90 }}>
+    <div className="poshome-root">
       <toast.Toast />
       <header className="pos-header">
         <button className="pos-header-btn" onClick={onBack}>← Inicio</button>
@@ -236,7 +239,11 @@ export default function ClientesView({ user, onBack }) {
         <span className="pos-header-store">{lista.length} en el banco</span>
       </header>
 
-      <div style={{ padding: '0 16px' }}>
+      {/* `.poshome-root` es height:100vh + overflow:hidden, así que la lista
+          tiene que scrollear en su propio contenedor. Sin `minHeight:0` un hijo
+          flex no se encoge por debajo de su contenido y el overflow no aplica:
+          con 95 clientes la lista se cortaba a la altura de la pantalla. */}
+      <div style={{ padding: '0 16px 90px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
         <input value={query} onChange={e => setQuery(e.target.value)}
           placeholder="Buscar por nombre, NIT, NRC, correo o teléfono…"
           style={{ width: '100%', padding: '13px 14px', background: '#0d0d12', border: '1px solid #2a2a32',
