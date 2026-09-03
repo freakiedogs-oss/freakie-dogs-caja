@@ -2,6 +2,29 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 03-Sep-2026 — Mi planilla: el mes en curso pasa a ser panel de trabajo del encargado
+
+La pestaña dejó de ser la foto de agosto y pasó a ser la herramienta del mes que corre. El encargado ve su % de planilla sobre venta proyectada contra la meta de **12%**, captura los extras día por día y edita su propia planilla.
+
+**Lo que se decidió y por qué:**
+
+- **Los extras NO se extrapolan.** Antes se proyectaban al ritmo del mes, y una hora puntual del miércoles se convertía en "30 horas al cierre". Además de mentir, empujaba al gerente a no autorizar horas aunque las necesitara. Ahora entran tal cual, como eventos. Efecto colateral asumido: la proyección arranca optimista y sube durante el mes.
+- **La venta sí se proyecta**, ponderada por día de semana (`planilla_patron_dia`). Lourdes vende el doble el sábado que el martes; dividir linealmente da alto si ya pasó un fin de semana y bajo si no.
+- **Se quitó nocturnidad** de la captura a pedido de Cesar. Las sumas defensivas de `horas_nocturnas` quedan en 4 lugares por si hay data histórica.
+- **Detalle por fecha** (`detalle` en el RPC): cada persona muestra en qué días se le dieron las horas, para el análisis posterior de dónde se concentran.
+
+**Planilla editable por el encargado** (`fn_planilla_equipo_editar`, `fn_planilla_equipo_alta`): puede corregir el sueldo base, sacar y volver a incluir gente, y agregar personas. Un aumento a media quincena lo sabe él primero.
+
+> **El riesgo se asumió a propósito:** el gerente edita el numerador de su propia métrica y puede bajar un sueldo para verse mejor. No se prohibió; se hizo visible. Todo cambio va a `planilla_revision_log` (quién, cuándo, antes, después), la fila queda marcada **editado** o **agregado**, y al pie se le cuenta "Llevás N cambios este mes". Meses cerrados no se editan (`cerrado = true` en agosto).
+
+**Puesto entre sucursales:** solo la posición, nunca los números de las otras. En mes en curso aparece **del día 10 en adelante** (`fn_planilla_ranking_mes`), cuando la proyección ya tiene dos fines de semana adentro. Antes de eso el ranking se movería por ruido y no por gestión; en su lugar se explica por qué todavía no está.
+
+**Limitación conocida:** si alguien se va el día 15 y se apaga el switch, se le descuenta el mes completo, no la mitad. Se arregla pidiendo fecha de salida y prorrateando; se dejó así hasta ver si pasa seguido.
+
+**Bug propio, para no repetirlo:** declaré `v_rank record` y lo leí sin asignar cuando el mes tenía menos de 10 días → `55000: record is not assigned yet`. En plpgsql un RECORD sin asignar no se puede desreferenciar; con escalares (`v_puesto int`), null es null.
+
+**Pendiente:** la sección para subir la planilla real de cada quincena, que debe pisar la estimación del encargado.
+
 ## 03-Sep-2026 — La merma se reporta en la unidad más chica, no en empaques
 
 Jose: *"en mermas solo puedo registrar mermas de unidades de empaque completo… si quiero reportar que una coca cola se rompió solo puedo poner cajas"*.
