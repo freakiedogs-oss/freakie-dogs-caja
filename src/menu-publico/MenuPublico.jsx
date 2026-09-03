@@ -629,15 +629,86 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   }, [producto])
 
   const esUnico = (g) => (g.max === 1) || g.tipo === 'unico' || g.tipo === 'single'
-  const requerido = (g) => g.obligatorio || (Number(g.min) || 0) > 0
   const minDe = (g) => g.obligatorio ? Math.max(1, Number(g.min) || 0) : (Number(g.min) || 0)
+
+  /* ── Bebida del combo: un solo menú, y nunca vidrio ────────────────────
+     Cada bebida del combo trae DOS grupos: "Bebida" (las 3 gratis) y "Bebida
+     Agrandado" (las de $1.75). Acá se mostraban los dos sueltos, así que el
+     cliente podía elegir en ambos y se comandaban las dos — 26 bebidas de más
+     entre el 31-ago y el 3-sep, y en el Burger Duo el KDS veía 3 donde van 2.
+     La caja ya resolvía esto en ComboModal; esta pantalla nunca tuvo la regla.
+
+     A diferencia del POS, acá el agrandado se resuelve POR COMPONENTE: en un
+     Burger Duo se puede agrandar una bebida y dejar la otra normal.
+
+     El vidrio no se ofrece nunca: esta pantalla es solo domicilio y el vidrio
+     no sale de la sucursal. Las demás de $1.75 (lata) sí se ofrecen. */
+  const claveComp = (g) => { const m = /^(\d+):/.exec(String(g.id)); return m ? m[1] : 'base' }
+  const esGrupoAgrandado = (g) => /agrandado/i.test(g?.nombre || '')
+  const esOpcionAgrandado = (op) => /agrandado/i.test(op?.nombre || '')
+  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g)
+  const esVidrio = (op) => /vidrio/i.test(op?.nombre || '')
+
+  // Qué componentes quedaron agrandados. Hay dos vías vivas y ambas valen: la
+  // opción "Agrandado Papa y Bebida" dentro del propio grupo de bebida, y
+  // "Agrandado Combo" en las papas. Los agrandados marcados fuera de una bebida
+  // se reparten en orden entre las bebidas que no tengan el suyo, para que
+  // marcar uno en las papas no agrande las dos del Duo.
+  const compsAgrandados = useMemo(() => {
+    const bebidas = []
+    grupos.forEach(g => { if (esGrupoBebida(g) && !bebidas.includes(claveComp(g))) bebidas.push(claveComp(g)) })
+    const propios = new Set()
+    let externos = 0
+    grupos.forEach(g => {
+      if (esGrupoAgrandado(g)) return
+      const marcados = (sel[g.id] || []).filter(esOpcionAgrandado).length
+      if (!marcados) return
+      if (esGrupoBebida(g)) propios.add(claveComp(g))
+      else externos += marcados
+    })
+    const restantes = bebidas.filter(c => !propios.has(c)).slice(0, externos)
+    return new Set([...propios, ...restantes])
+  }, [grupos, sel])
+
+  const tieneGrupoAgrandado = (comp) => grupos.some(g => esGrupoAgrandado(g) && claveComp(g) === comp)
+  // Al agrandar, el grupo de bebida normal deja de ofrecer bebidas — pero sigue
+  // mostrando su propia opción de agrandado, o quien la marcó no podría soltarla.
+  const soloAgrandado = (g) =>
+    esGrupoBebida(g) && compsAgrandados.has(claveComp(g)) && tieneGrupoAgrandado(claveComp(g))
+
+  const opcionesVisibles = (g) => {
+    let ops = g.opciones || []
+    if (soloAgrandado(g)) ops = ops.filter(esOpcionAgrandado)
+    return ops.filter(op => !esVidrio(op))
+  }
+  const grupoOculto = (g) =>
+    (esGrupoAgrandado(g) && !compsAgrandados.has(claveComp(g))) || opcionesVisibles(g).length === 0
+
+  // Lo que se ve, se exige y se cobra. Un grupo oculto no bloquea el botón ni
+  // aporta precio, y una selección que dejó de ser visible (se agrandó después
+  // de elegir) no viaja a la comanda.
+  const gruposVisibles = useMemo(() => grupos.filter(g => !grupoOculto(g)), [grupos, sel])
+  const idsVisibles = useMemo(() => {
+    const m = new Map()
+    gruposVisibles.forEach(g => m.set(g.id, new Set(opcionesVisibles(g).map(o => o.id))))
+    return m
+  }, [gruposVisibles, sel])
+  // Cuántas opciones VÁLIDAS tiene elegidas el grupo. Si el cliente eligió una
+  // bebida y después agrandó desde las papas, esa selección dejó de valer y el
+  // grupo tiene que volver a pedirse — con `sel[g.id].length` a secas se daba
+  // por completo y el pedido salía sin bebida.
+  const cuentaDe = (g) => (sel[g.id] || []).filter(o => idsVisibles.get(g.id)?.has(o.id)).length
+  // El grupo del agrandado solo se muestra cuando hay un agrandado marcado, y
+  // en ese caso elegir el sabor es obligatorio: es la bebida que reemplaza a la
+  // incluida, y sin ella no se descuenta ningún insumo.
+  const minEfectivo = (g) => esGrupoAgrandado(g) ? Math.max(1, minDe(g)) : minDe(g)
 
   // El siguiente grupo al que conviene llevar a la persona: el primero que
   // todavía no cumple su mínimo.
   const siguientePendiente = (desdeId) => {
-    const i = grupos.findIndex(g => g.id === desdeId)
-    const resto = [...grupos.slice(i + 1), ...grupos.slice(0, Math.max(0, i))]
-    return resto.find(g => (sel[g.id]?.length || 0) < minDe(g))?.id ?? null
+    const i = gruposVisibles.findIndex(g => g.id === desdeId)
+    const resto = [...gruposVisibles.slice(i + 1), ...gruposVisibles.slice(0, Math.max(0, i))]
+    return resto.find(g => cuentaDe(g) < minEfectivo(g))?.id ?? null
   }
 
   const toggle = (g, op) => {
@@ -666,19 +737,23 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   // para saber a qué unidad del combo pertenece cada opción elegida.
   const modsPlanos = useMemo(
     () => Object.entries(sel).flatMap(([grupoId, ops]) => {
+      // Solo lo que sigue visible: la bebida elegida antes de agrandar no debe
+      // viajar a la comanda ni cobrarse, igual que hace el POS.
+      const visibles = idsVisibles.get(grupoId)
+      if (!visibles) return []
       const m = /^(\d+):(.+)$/.exec(grupoId)
       const compIdx = m ? Number(m[1]) : null
-      return ops.map(o => ({
+      return ops.filter(o => visibles.has(o.id)).map(o => ({
         id: o.id, nombre: o.nombre, precio_extra: Number(o.precio_extra) || 0,
         grupoId: m ? m[2] : grupoId, compIdx,
       }))
     }),
-    [sel]
+    [sel, idsVisibles]
   )
   const extrasUnidad = modsPlanos.reduce((s, m) => s + m.precio_extra, 0)
   const precioTotal = (Number(producto.precio) + extrasUnidad) * qty
 
-  const faltantes = grupos.filter(g => (sel[g.id]?.length || 0) < minDe(g))
+  const faltantes = gruposVisibles.filter(g => cuentaDe(g) < minEfectivo(g))
 
   const confirmar = () => {
     if (faltantes.length > 0) {
@@ -718,15 +793,15 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
           <div className="mp-modal-precio">{fmt(producto.precio)}</div>
 
           {/* GRUPOS DE MODIFICADORES */}
-          {grupos.map((g, gi) => {
-            const cuenta = sel[g.id]?.length || 0
-            const incompleto = intento && cuenta < minDe(g)
-            const listo = cuenta >= minDe(g) && cuenta > 0
+          {gruposVisibles.map((g, gi) => {
+            const cuenta = cuentaDe(g)
+            const incompleto = intento && cuenta < minEfectivo(g)
+            const listo = cuenta >= minEfectivo(g) && cuenta > 0
             const estaAbierto = grupoAbierto === g.id
-            const elegidas = (sel[g.id] || []).map(o => o.nombre).join(', ')
+            const elegidas = (sel[g.id] || []).filter(o => idsVisibles.get(g.id)?.has(o.id)).map(o => o.nombre).join(', ')
             // Encabezado al empezar cada parte del combo ("Hamburguesa 1", "Bebida 2"), para
             // que se entienda a cuál de las unidades pertenecen las opciones de abajo.
-            const abreSeccion = g._seccion && (gi === 0 || grupos[gi - 1]._seccion !== g._seccion)
+            const abreSeccion = g._seccion && (gi === 0 || gruposVisibles[gi - 1]._seccion !== g._seccion)
             return (
               <Fragment key={g.id}>
               {abreSeccion && <div className="mp-comp-seccion">{g._seccion}</div>}
@@ -735,7 +810,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
                         aria-expanded={estaAbierto}
                         onClick={() => setGrupoAbierto(a => (a === g.id ? null : g.id))}>
                   <span className="mp-grupo-check" aria-hidden="true">
-                    {listo ? '✓' : requerido(g) ? '' : '+'}
+                    {listo ? '✓' : minEfectivo(g) > 0 ? '' : '+'}
                   </span>
                   <span className="mp-grupo-textos">
                     <span className="mp-grupo-nombre">{g.nombre}</span>
@@ -744,15 +819,15 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
                     <span className="mp-grupo-resumen">
                       {elegidas
                         ? elegidas
-                        : requerido(g)
-                          ? `Elegí ${minDe(g)}`
+                        : minEfectivo(g) > 0
+                          ? `Elegí ${minEfectivo(g)}`
                           : g.max > 1 ? `Opcional · hasta ${g.max}` : 'Opcional'}
                     </span>
                   </span>
                   <span className="mp-grupo-flecha" aria-hidden="true">{estaAbierto ? '▲' : '▼'}</span>
                 </button>
                 <div className="mp-opciones" hidden={!estaAbierto}>
-                  {(g.opciones || []).map(op => {
+                  {opcionesVisibles(g).map(op => {
                     const activa = (sel[g.id] || []).some(x => x.id === op.id)
                     return (
                       <button
@@ -769,7 +844,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
                     )
                   })}
                 </div>
-                {incompleto && <div className="mp-grupo-error">Elegí al menos {minDe(g)}</div>}
+                {incompleto && <div className="mp-grupo-error">Elegí al menos {minEfectivo(g)}</div>}
               </div>
               </Fragment>
             )

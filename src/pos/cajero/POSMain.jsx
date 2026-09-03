@@ -367,12 +367,22 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           )
         `)
 
+      // El vidrio solo se sirve en restaurante: en food court y en drive el
+      // envase no vuelve, y a domicilio no sale (decisión Jose 3-sep). La matriz
+      // `pos_contexto_servicio` ya modela eso — canal 'local' es exactamente
+      // "restaurante", tanto en mesa como para llevar —, así que alcanza con
+      // mirar el canal. Se filtra acá, que es el único punto donde se arman las
+      // opciones, y por eso vale igual para el modal de combo y el de producto.
+      // El efecto se re-ejecuta al cambiar de canal, así que no queda pegado.
+      const permiteVidrio = canal === 'local'
+
       const modMap = {}  // menu_item_id -> [grupos normalizados]
       ;(asignData || []).forEach(a => {
         const g = a.pos_modificadores_grupo
         if (!g || g.activo === false) return
         const opciones = (g.pos_modificadores || [])
           .filter(o => o.activo !== false)
+          .filter(o => permiteVidrio || !/vidrio/i.test(o.nombre || ''))
           .sort((x, y) => (x.orden || 0) - (y.orden || 0))
         if (opciones.length === 0) return
         if (!modMap[a.menu_item_id]) modMap[a.menu_item_id] = []

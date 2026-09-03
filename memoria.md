@@ -24,6 +24,29 @@ La pestaña dejó de ser la foto de agosto y pasó a ser la herramienta del mes 
 **Bug propio, para no repetirlo:** declaré `v_rank record` y lo leí sin asignar cuando el mes tenía menos de 10 días → `55000: record is not assigned yet`. En plpgsql un RECORD sin asignar no se puede desreferenciar; con escalares (`v_puesto int`), null es null.
 
 **Pendiente:** la sección para subir la planilla real de cada quincena, que debe pisar la estimación del encargado.
+## 03-Sep-2026 — Las bebidas de más venían de la app del cliente, no del POS
+
+Jazz reportó que en el KDS salían 3 bebidas en un combo de 2, y que a domicilio salía vidrio.
+
+### El fix del 1-sep estaba en el lugar correcto… para el POS
+
+Los pedidos con bebida de más tienen todos `delivery_plataforma = 'freakie_app'`: **no los arma la cajera**, los arma el cliente en el menú público. Desde el fix de `ComboModal` (1-sep) el POS no generó un solo caso; la app generó **26 bebidas de más en 19 ítems** entre el 31-ago y hoy.
+
+**Causa:** `MenuPublico.jsx` aplana todos los grupos de cada componente y los muestra sueltos. Cada bebida de un combo trae dos — "Bebida" (las 3 gratis) y "Bebida Agrandado" (las de $1.75) — y nada los excluía entre sí, así que el cliente elegía en ambos y se comandaban las dos. En el Burger Duo, con dos bebidas, eso daba hasta cuatro.
+
+**Fix:** se portó la regla del POS al menú público, pero **por componente** en vez de global: en un Duo ahora se puede agrandar una bebida y dejar la otra normal, cosa que en la caja todavía no se puede. Se respetan las dos vías de agrandar (dentro de la bebida y desde las papas); los agrandados marcados fuera se reparten en orden entre las bebidas que no tengan el suyo.
+
+Tres huecos que aparecieron al hacerlo y se cerraron: el grupo del agrandado no era obligatorio (se podía confirmar sin elegir bebida y el pedido salía sin ninguna), el conteo de "completo" miraba selecciones que ya no eran visibles, y el precio sumaba opciones ocultas.
+
+### Vidrio solo en restaurante
+
+No existía **nada** que filtrara presentaciones por canal: `pos_contexto_servicio` define si el combo *lleva* bebida, no *cuál*. Se cerró en tres capas, porque el vidrio entraba por tres puertas distintas:
+
+1. **Modificadores en el POS** — se filtran al cargar el menú, en el único punto donde se arman las opciones, así vale para el modal de combo y el de producto. La condición es `canal === 'local'`, que según la matriz es exactamente "restaurante" (mesa y para llevar).
+2. **Ítems sueltos** — las 8 bebidas de vidrio existían como producto en los 5 menús. Por ahí se colaban **85 ventas en food court en 30 días** (S006 hasta hoy mismo), 3 en PedidosYa y 1 en drive. Quedaron `disponible = false` fuera del menú local; las 4.105 ventas de mesa no se tocan. Reversible.
+3. **RPC del menú público** — filtra las opciones de vidrio del lado servidor. El front ya lo hacía, pero una regla de canal no puede depender de que el navegador del cliente tenga el bundle nuevo.
+
+Verificado que no se rompe: ningún grupo se queda sin opciones al excluir vidrio, el menú público conserva sus 7 categorías y 44 ítems con **0 vidrio y 266 opciones en lata**, y "volver a pedir" ya descartaba solo lo que no existe.
 
 ## 03-Sep-2026 — La merma se reporta en la unidad más chica, no en empaques
 
