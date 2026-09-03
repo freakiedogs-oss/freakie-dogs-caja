@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 03-Sep-2026 — La merma se reporta en la unidad más chica, no en empaques
+
+Jose: *"en mermas solo puedo registrar mermas de unidades de empaque completo… si quiero reportar que una coca cola se rompió solo puedo poner cajas"*.
+
+- **Qué pasaba:** la pantalla de merma leía solo `unidad_medida`. Para la Coca Vidrio ese campo dice **"Caja"** aunque el stock viva en botellas (la venta descuenta 1 por botella), así que la etiqueta decía "unidades de Caja" y nadie podía saber que escribir 1 daba de baja 1 botella y no 24. En los ítems que sí se cuentan por empaque el problema era real: reportar un pan quemado exigía digitar `0.047619` bolsa.
+- **Qué se hizo:** la merma ahora se captura en la unidad más chica que el producto tenga registrada — la casilla de sueltos (`conteo_unidad_suelta`) si el empaque se abre en sucursal, y si no la unidad de costeo — y se convierte con `conteo_factor_suelta` antes de llamar a `registrar_merma`. El rótulo pasa a ser una pregunta directa (*"¿cuántas latas?"*) y, cuando la conversión no es 1:1, debajo se muestra qué se le baja al inventario (`2 panes = 0.0952 bolsa`).
+- **6 bebidas estaban mal clasificadas.** Fanta, Fresca, Sprite, Tropical Fresa/Uva en lata y Coca Sin Azúcar Vr tenían `unidad_medida='Caja'` pero su stock está en latas — se confirmó con `pos_modificador_insumos.cantidad = 1`. Como no están en el conteo, nunca se les configuró la capa. Ahora piden latas.
+- **Sigue abierto:** ~28 desechables (guantes, cups de chili, sobres de ketchup, cajitas de papas) tienen la **caja como unidad de costeo**, así que la caja *es* su unidad más pequeña registrada y dañar 10 cups de 1000 obliga a poner `0.01`. Bajarlos a pieza significa cambiar su unidad de costeo y recontar el stock: es decisión de Jose, no se tocó.
+
 ## 03-Sep-2026 — DTEs Emitidos y Clientes de Facturación en el ERP
 
 Jose pidió ver todos los DTE que Freakie **emite** y poder emitir desde ahí, más una sección para editar/añadir clientes. Alcance confirmado con él: Factura, CCF, Sujeto Excluido, Nota de Crédito e invalidación; emisión solo para admin / ejecutivo / superadmin.

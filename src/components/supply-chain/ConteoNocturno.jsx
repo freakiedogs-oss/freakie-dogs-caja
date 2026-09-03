@@ -47,6 +47,17 @@ const esFraccionado=(p)=>!!p?.conteo_fraccionado;
 // Etiqueta de lo que el empleado tiene en la mano
 const labelCerrado=(p)=>p?.conteo_unidad||p?.unidad||'unidad';
 const labelSuelta=(p)=>p?.conteo_unidad_suelta||'sueltas';
+/* ── Unidad de merma ────────────────────────────────────────────────────
+   La merma se reporta pieza por pieza: se rompió UNA coca, se quemaron DOS
+   panes. Por eso se captura en la unidad más chica que el producto tenga
+   registrada — la casilla de sueltos si el empaque se abre en sucursal, y si
+   no, la unidad de costeo. Antes se mostraba `unidad_medida` a secas, que para
+   la Coca Vidrio dice "Caja": el número que se digitaba era correcto (el stock
+   son botellas) pero la etiqueta decía otra cosa, así que no había forma de
+   reportar una botella sin creer que se estaban dando de baja 24. */
+const unidadMerma=(p)=>
+  (esFraccionado(p) && p?.conteo_unidad_suelta) ? p.conteo_unidad_suelta : (p?.unidad||'unidad');
+const factorMerma=(p)=> esFraccionado(p) ? facSuelta(p) : 1;
 // Cómo nombrar la unidad en la que vive el inventario. `unidad_medida` miente
 // seguido (la Coca Vidrio la tiene como "Caja" pero el stock son botellas), así
 // que cuando la casilla de sueltas ES la unidad de stock (factor 1) se usa ese
@@ -284,12 +295,13 @@ export default function ConteoNocturno({user,onBack}){
     setLoading(true);
     try{
       const {data:invData}=await db.from('inventario')
-        .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo)')
+        .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
         .eq('sucursal_id', sucId);
       const cat=(invData||[])
         .filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false)
         .map(r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
-                  unidad:r.catalogo_productos.unidad_medida||'unidad'}))
+                  unidad:r.catalogo_productos.unidad_medida||'unidad',
+                  ...camposConteo(r.catalogo_productos)}))
         .sort((a,b)=>a.nombre.localeCompare(b.nombre));
       setMermaCatalogo(cat);
       try{
@@ -311,7 +323,13 @@ export default function ConteoNocturno({user,onBack}){
     setGuardandoMerma(true);
     try{
       const {data:resp,error}=await db.rpc('registrar_merma',{
-        p_items: items.map(m=>({producto_id:m.producto_id, cantidad:n(m.cantidad)})),
+        // Se digita en la unidad más chica (botellas, panes, lascas) pero el
+        // kardex se mueve en unidad de costeo: la conversión pasa acá, igual
+        // que en el conteo y en el pedido.
+        p_items: items.map(m=>({
+          producto_id: m.producto_id,
+          cantidad: redondear(n(m.cantidad) * factorMerma(m)),
+        })),
         p_sucursal_id: sucursalId,
         p_motivo: mermaMotivo.trim(),
         p_usuario_id: user.id,
@@ -876,7 +894,7 @@ export default function ConteoNocturno({user,onBack}){
             onClick={()=>{setMermaItems(prev=>[...prev,{...p,cantidad:1}]);setMermaBusca('');}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:6,padding:12}}>
             <div style={{fontSize:14,color:'#fff'}}>{p.nombre}</div>
-            <div style={{fontSize:11,color:'#888'}}>{p.unidad}</div>
+            <div style={{fontSize:11,color:'#888'}}>se reporta en {unidadMerma(p)}</div>
           </button>
         ))}
         {mermaBusca.trim().length>=2&&filtrados.length===0&&(
@@ -889,7 +907,7 @@ export default function ConteoNocturno({user,onBack}){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
               <div>
                 <div style={{fontWeight:600,fontSize:14}}>{m.nombre}</div>
-                <div style={{fontSize:11,color:'#888'}}>unidades de {m.unidad}</div>
+                <div style={{fontSize:12,fontWeight:700,color:'#e63946'}}>¿cuántas {unidadMerma(m)}?</div>
               </div>
               <button onClick={()=>setMermaItems(prev=>prev.filter((_,j)=>j!==i))}
                 style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>✕</button>
@@ -901,6 +919,13 @@ export default function ConteoNocturno({user,onBack}){
                 style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}/>
               <button style={stepBtn} onClick={()=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,cantidad:n(x.cantidad)+1}:x))}>+</button>
             </div>
+            {/* Lo que realmente se le baja al inventario, cuando la unidad que
+                se reporta no es la de costeo (2 panes = 0.0952 bolsa). */}
+            {factorMerma(m)!==1&&n(m.cantidad)>0&&(
+              <div style={{fontSize:11,color:'#888',marginTop:8,textAlign:'center'}}>
+                = {redondear(n(m.cantidad)*factorMerma(m))} {m.unidad} de inventario
+              </div>
+            )}
           </div>
         ))}
 
