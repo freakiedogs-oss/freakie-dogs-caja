@@ -154,7 +154,7 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
     const its=(data?.items)||[];
     const groups={};
     its.forEach(it=>{const cat=it.grupo||'Sin grupo';if(!groups[cat])groups[cat]=[];groups[cat].push(it);});
-    const ORDEN=['Carnes y Complementos','Panes y Harinas','Quesos y Lácteos','Vegetales y Verduras','Salsas y Aderezos','Papas y Congelados','Bebidas','Empaques y Desechables','Utensilios de Limpieza','Extras'];
+    const ORDEN=['Carnicos','Vegetales','Queso Lacteos','Harina Panes','Congelado Papas','Aderezos y Salsas','Desechables y Empaques','Especies','Utensilios de Limpieza','Extras','Bebidas'];
     const grouped=Object.entries(groups).sort((a,b)=>{
       const ia=ORDEN.findIndex(o=>o.toLowerCase()===a[0].toLowerCase());
       const ib=ORDEN.findIndex(o=>o.toLowerCase()===b[0].toLowerCase());
@@ -485,7 +485,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
               {saving?'Creando despacho...':'📦 Crear Despacho'}
             </button>
             <button className="btn btn-ghost" style={{flex:'0 0 auto',padding:'14px 18px'}} onClick={()=>{
-              const ORDEN=['Carnes y Complementos','Panes y Harinas','Quesos y Lácteos','Vegetales y Verduras','Salsas y Aderezos','Papas y Congelados','Bebidas','Empaques y Desechables','Utensilios de Limpieza','Extras'];
+              const ORDEN=['Carnicos','Vegetales','Queso Lacteos','Harina Panes','Congelado Papas','Aderezos y Salsas','Desechables y Empaques','Especies','Utensilios de Limpieza','Extras','Bebidas'];
               const gs={};
               pitems.forEach(it=>{
                 const cat=it.catalogo_productos?.conteo_categoria||it.catalogo_productos?.categoria||'Otros';

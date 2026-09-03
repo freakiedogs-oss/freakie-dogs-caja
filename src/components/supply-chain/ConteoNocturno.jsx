@@ -622,18 +622,21 @@ export default function ConteoNocturno({user,onBack}){
     onBack();
   };
 
-  // Orden fijo de grupos según hoja de control de inventario
+  // Orden y nombres de la "Requisición Oficial Restaurantes FD" (Jose 2-sep-2026).
+  // Deben coincidir con catalogo_productos.conteo_categoria y con el orden de los
+  // RPCs conteo_lista/conteo_categorias, o los grupos caen al final en desorden.
   const ORDEN_GRUPOS=[
-    'Carnes y Complementos',
-    'Panes y Harinas',
-    'Quesos y Lácteos',
-    'Vegetales y Verduras',
-    'Salsas y Aderezos',
-    'Papas y Congelados',
-    'Bebidas',
-    'Empaques y Desechables',
+    'Carnicos',
+    'Vegetales',
+    'Queso Lacteos',
+    'Harina Panes',
+    'Congelado Papas',
+    'Aderezos y Salsas',
+    'Desechables y Empaques',
+    'Especies',
     'Utensilios de Limpieza',
     'Extras',
+    'Bebidas',
   ];
   const ordenIdx=(cat)=>{ const i=ORDEN_GRUPOS.findIndex(g=>g.toLowerCase()===cat.toLowerCase()); return i===-1?999:i; };
 
