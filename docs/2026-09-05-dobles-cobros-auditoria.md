@@ -11,18 +11,28 @@ con 2 o más filas en `pos_cuenta_pagos` cuya suma supera el total de la cuenta.
 
 | Grupo | Cuentas | Exceso cobrado | Acción |
 |---|---:|---:|---|
-| **B** · Par de DTE identificado, ambos aceptados | **21** | **$335.51** | **Invalidar el 2º DTE** |
+| **B** · Par de DTE identificado, ambos aceptados | **21** | **$335.51** | ✅ **INVALIDADOS el 5-sep** |
 | C · Par ya invalidado antes de esta auditoría | 2 | $19.24 | Resuelto |
 | D/E · Match no 1:1 con los DTE | 9 | $138.08 | Revisar caso por caso |
 | A · PedidosYa (no emite DTE) | 3 | $20.48 | Solo corrección interna |
 | **Total** | **35** | **$513.31** | |
 
-IVA sobredeclarado por el grupo B: **$38.60** (335.51 ÷ 1.13 × 0.13).
+IVA sobredeclarado por el grupo B: **$37.27** (suma de `monto_iva` de los 21 documentos).
 
 Reparto por sucursal del total: S003 Lourdes ~$208 · S006 Metro Centro ~$176 ·
 S002 Usulután ~$85 · resto ~$44.
 
-## Grupo B — invalidar el 2º DTE (21 documentos)
+## Grupo B — invalidados el 5-sep-2026 ✅ (21 documentos)
+
+> **HECHO.** Los 21 se transmitieron a Hacienda el 5-sep-2026 (~11:28–11:40 SV) con
+> `tipoAnulacion: 2` y motivo referenciando la factura buena. **Los 21 respondieron
+> `PROCESADO` / "Invalidación Recibida y Procesada"** — ninguno rechazado por plazo,
+> ni siquiera los de julio. Total invalidado **$335.51**, IVA **$37.27**.
+> `v_dte_duplicados_pendientes` quedó en **0 filas**.
+>
+> Se usó una API key temporal del `dte-service` con permiso `invalidate`
+> (`fdk_tmp_a18d`, mismo patrón que la de reemisión Vijosa del 30-ago),
+> **desactivada al terminar** y borrada del disco. No queda ninguna key de Claude activa.
 
 Todas son **Factura de consumidor final (tipo 01)**. Hacienda **no acepta Nota de
 Crédito** sobre este tipo: la única corrección es la **invalidación**. Tipo de
@@ -56,21 +66,12 @@ facturó en el DTE <numeroControl del 1º>. No hubo segunda venta.`
 | 20 | S006 | 09-01 17:09:38 | $7.98 | DTE-01-S006P001-001788304178508 | 47774B89-7A25-48FC-A920-62468DEBA78D |
 | 21 | S006 | 09-04 13:08:33 | $11.50 | DTE-01-S006P001-001788548913412 | E29E852D-C2DD-4909-9FA6-51294858FAAD |
 
-> **Verificar el plazo de invalidación antes de transmitir.** Los documentos van de
-> julio a septiembre; los más viejos pueden estar fuera del plazo que admite
-> Hacienda. Hacienda rechaza los que no proceden, así que el intento es informativo
-> — pero conviene confirmarlo con el contador antes de correr los 21.
-
-**Cómo se ejecuta:** ERP → Finanzas → **DTEs emitidos** → botón **⚠️ Duplicados**.
-Ese filtro lista exactamente estos 21 (ignora el rango de fechas), cada fila indica
-cuál es la factura buena que se deja viva, y *Corregir → Invalidar* abre con el
-motivo ya redactado y tipo de anulación 2. Requiere PIN y rol ejecutivo /
-superadmin / admin. Es **irreversible** y queda registrada en Hacienda.
-
-La lista sale de la vista `v_dte_duplicados_pendientes`, que la recalcula en vivo:
-a medida que se invaliden van desapareciendo del filtro, y si el problema
-reapareciera en el futuro se vería solo. Va cerrada a la llave pública y detrás del
-gate de finanzas, igual que `v_dtes_emitidos`.
+**Queda la herramienta para la próxima vez:** ERP → Finanzas → **DTEs emitidos** →
+botón **⚠️ Duplicados**. Sale de la vista `v_dte_duplicados_pendientes`, que
+recalcula en vivo, así que hoy muestra 0; si el problema reapareciera se vería solo,
+con la factura buena señalada en cada fila y *Corregir → Invalidar* precargado.
+Requiere PIN y rol ejecutivo / superadmin / admin. Va cerrada a la llave pública y
+detrás del gate de finanzas, igual que `v_dtes_emitidos`.
 
 ## Grupo C — ya invalidados (sin acción)
 
@@ -149,3 +150,82 @@ No se tocaron.
 | S002 | 08-08 13:59 | cancelada | $1.75 |
 | S002 | 08-09 19:47 | cancelada | $7.99 (PedidosYa) |
 | S001 | 08-30 12:47 | cancelada | $14.99 |
+
+
+---
+
+# Segunda parte — investigación de las cuentas en $0.00 (5-sep)
+
+Las 5 cuentas con total $0.00 y un pago vivo resultaron ser la punta de un problema
+**distinto** al doble cobro. Se investigaron a fondo; **no se tocó nada**.
+
+## Causa: se pueden anular ítems de una cuenta YA cobrada y facturada
+
+`doDeleteItem` (`src/pos/cajero/POSMain.jsx:742`) marca el ítem como anulado y
+**recalcula `subtotal`/`total` de la cuenta a la baja**, pero no comprueba si la
+cuenta ya está cobrada ni si ya tiene DTE. Resultado: el pago queda registrado y la
+**factura sigue viva en Hacienda por el monto viejo**, mientras la cuenta baja de
+monto o queda en $0 (y el POS la cierra sola como "Orden vacía al salir").
+
+Los timestamps lo confirman: en los 8 casos la anulación ocurrió entre 5 y 30
+minutos **después** del cobro.
+
+**8 casos, $23.87 declarados de más** (uno es de $0.01 por redondeo, así que el
+problema real son 7 casos y ~$23.86):
+
+| Suc | Fecha | Estado cuenta | DTE | Total ahora | Pagado | Ítem anulado | Autorizó |
+|---|---|---|---:|---:|---:|---|---|
+| S004 | 07-27 12:21 | cobrada | $1.99 | $1.49 | $1.49 | Stickers $0.50 | Katherine |
+| S001 | 07-28 12:04 | cobrada | $1.75 | $0.00 | $1.75 | Coca-Cola | Jazmin |
+| S001 | 07-28 12:04 | cancelada | $1.75 | $0.00 | $1.75 | Coca-Cola | Jazmin |
+| S004 | 08-07 12:29 | cobrada | $9.12 | $7.00 | $7.00 | Freakie Dog $1.99 | Guillermo A. |
+| M001 | 08-07 14:07 | cobrada | $1.99 | $0.99 | $0.99 | Freakie Fries $1.99 | Miliana |
+| S002 | 08-08 13:59 | cancelada | $1.75 | $0.00 | $1.75 | Coca Zero Vidrio | Kimberly M. |
+| M001 | 08-18 16:45 | cobrada | $25.31 | $25.30 | $25.30 | (re-agregados) | Miliana |
+| S001 | 08-30 12:47 | cancelada | $14.99 | $0.00 | $14.99 | Burger Duo | Ramses |
+
+Dos sabores:
+
+- **Anulación parcial (4):** la venta existió pero por menos. El cliente pagó $7.00
+  y su factura dice $9.12. Acá **invalidar a secas sería peor**: dejaría una venta
+  real sin factura. Correspondería invalidar y **re-emitir** por el monto correcto.
+- **Anulación total (4):** la cuenta quedó en $0 con el pago y el DTE vivos. Si
+  hubo devolución de dinero, corresponde invalidar. **El pago sigue registrado**, lo
+  que sugiere que la plata se quedó en caja — hay que preguntar en la sucursal.
+
+> Las dos cuentas gemelas de S001 07-28 (misma Coca-Cola $1.75, creadas el mismo
+> segundo, ambas cobradas y facturadas, ambas anuladas por Jazmin) son **otro doble
+> cobro**, que la cajera intentó arreglar anulando los ítems en vez de invalidar.
+
+**No se invalidó ninguna**: a diferencia de los duplicados exactos, acá hace falta
+saber si hubo devolución real de dinero, y en los parciales hace falta re-emitir.
+Es una decisión de operación, no de datos.
+
+## Hallazgo mayor colateral: 106 DTE emitidos sin aplicar el descuento
+
+Al revisar el vecindario apareció esto, que pesa más que todo lo anterior:
+
+**106 facturas se emitieron por el precio de lista, ignorando el descuento
+aplicado. $291.28 declarados de más.** La diferencia es, en cada caso, exactamente
+el descuento de la cuenta. Ejemplo: M001 14-ago, subtotal $19.24 con $15.00 de
+descuento → el cliente pagó **$4.66** y la factura dice **$19.66**.
+
+**Ya está arreglado en código:** el prorrateo del descuento entró el **18-ago-2026**
+(`fc2bfd3`, PR #235). El último caso es del **17-ago** y no hay ninguno posterior —
+el fix funcionó. Lo que queda es la corrección fiscal de los 106 documentos viejos.
+
+## Propina: sin problema
+
+Se revisó por descarte: solo 4 casos con desajuste (3 antiguos por −$5.99 en total y
+uno de $0.01). No hay nada sistémico.
+
+## Resumen de lo que queda pendiente de decidir
+
+| Tema | Casos | Declarado de más | Estado del código |
+|---|---:|---:|---|
+| DTE sin descuento aplicado | 106 | $291.28 | ✅ arreglado 18-ago |
+| Ítems anulados tras cobrar | 7 | ~$23.86 | ❌ sin arreglar |
+| **Total** | **113** | **~$315.14** | |
+
+Es una magnitud parecida a los $335.51 de duplicados que ya se invalidaron.
+Conviene decidirlo junto con el contador.
