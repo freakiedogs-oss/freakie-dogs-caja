@@ -77,7 +77,10 @@ export default function AgrandadosView({ user }) {
 
   useEffect(() => {
     cargar()
-    const t = setInterval(cargar, 20000)
+    // 05-sep-2026: 20s → 2min. fn_agrandados_panel es un acumulado MENSUAL con
+    // proyección a 7 días: no cambia en 20 segundos. Costaba 732 ms y 1.5 MB de
+    // archivo temporal por llamada. El realtime de abajo da la reacción inmediata.
+    const t = setInterval(cargar, 120000)
     // Realtime sobre la misma cola del KDS: al cobrar, la pantalla reacciona
     // sin esperar los 20 s del respaldo por polling.
     const canal = db.channel('agrandados_' + Math.random().toString(36).slice(2, 8))

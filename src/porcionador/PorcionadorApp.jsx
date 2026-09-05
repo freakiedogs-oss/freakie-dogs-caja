@@ -183,7 +183,9 @@ export default function PorcionadorApp() {
     }
     suscribir()
 
-    const poll = setInterval(refrescar, 8000)
+    // 05-sep-2026: 8s → 20s por la misma razón que el KDS (el realtime de
+    // arriba ya cubre la inmediatez; esto es respaldo).
+    const poll = setInterval(refrescar, 20000)
     const alVolver = () => { if (document.visibilityState === 'visible') refrescar() }
     window.addEventListener('online', refrescar)
     window.addEventListener('focus', refrescar)

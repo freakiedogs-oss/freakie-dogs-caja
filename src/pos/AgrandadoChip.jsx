@@ -54,7 +54,9 @@ export default function AgrandadoChip({ user }) {
   useEffect(() => {
     if (!user?.nombre) return
     cargar()
-    const t = setInterval(cargar, 15000)
+    // 05-sep-2026: 15s → 2min. Mismo motivo que AgrandadosView: es un acumulado
+    // mensual y el realtime de abajo ya reacciona al comandar.
+    const t = setInterval(cargar, 120000)
     // Realtime sobre la cola de cocina: al comandar un agrandado el chip
     // reacciona en el momento, sin esperar el polling.
     const canal = db.channel('agr_chip_' + Math.random().toString(36).slice(2, 8))

@@ -349,7 +349,11 @@ export default function KDSScreen({ user, onBack }) {
   // Si el tiempo real se cae, la cola NUNCA se queda congelada.
   useEffect(() => {
     const refrescar = () => { load(); loadHistorial() }
-    const poll = setInterval(refrescar, 8000)
+    // 05-sep-2026: 8s → 25s. El realtime de arriba es la vía primaria; esto es
+    // solo la red de seguridad por si el websocket se cae. A 8s cada pantalla
+    // disparaba 2 escaneos completos de pos_cocina_queue (97k filas) 15 veces
+    // por minuto — el 24% del CPU de toda la instancia.
+    const poll = setInterval(refrescar, 25000)
     const onVis = () => { if (document.visibilityState === 'visible') refrescar() }
     window.addEventListener('online', refrescar)
     window.addEventListener('focus', refrescar)
