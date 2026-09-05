@@ -2,6 +2,20 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 05-Sep-2026 — El doble cobro: el KDS revivía cuentas ya cobradas (35 cuentas, $541 y DTEs duplicados a Hacienda)
+
+Rigo reportó que en Usulután (S002) el corte del 4-sep no cuadró: $20 de más en tarjeta después de cerrar una cuenta que aparecía abierta. Reconstruido segundo a segundo con los `edge_logs` de Supabase. **No fue error de caja: fue un fail-open del KDS.**
+
+- **Qué pasó exactamente** (cuenta `1041ce8b`, $19.49): `PATCH pos_cuentas → 204` a las **18:19:22** la dejó cobrada, pago con tarjeta y **DTE aceptado a las 18:19:24**. A las **18:28** el KDS bumpeó la comanda: su guard hizo `GET ?select=estado`, recibió **503 cuatro veces** (ese minuto hubo **143 errores 503** en todo el proyecto) y a las **18:28:25 hizo el PATCH igual**, devolviendo la cuenta a `lista`. Reapareció como abierta y Rigo la cobró de nuevo a las **22:34:35** → 2º pago y **2º DTE aceptado**.
+- **La causa:** `bumparComanda` en `KDSScreen.jsx` era check-then-act — `select estado` y luego `if (cuenta?.estado !== 'cobrada')`. Si el SELECT falla, `cuenta` es `undefined` y `undefined !== 'cobrada'` da **true**: ante un error hacía justo lo que el guard existía para impedir. `revertirComanda` tenía el mismo defecto.
+- **El cuadre real del 4-sep en S002:** el voucher N1CO cerró lote a las 22:11 con **18 ventas / $259.55**, y los 18 pagos de tarjeta del sistema anteriores a esa hora suman **$259.55 exacto** — ya cuadraba. El 19º pago (22:34) es el sobrante. En efectivo hubo otro duplicado ese día ($18.99 a las 17:05:41 y 17:05:51, doble tap). Efectivo real 297.20 − 65.60 de egresos = **231.60 esperado**, contó 235.49 → **sobraban $3.89**, no faltaban los $15.10 que se anotaron (esos 15.10 son exactamente 250.59 − 235.49, con el efectivo inflado). Venta real del día **$556.75**, que es lo que ya traía `sistema_total`.
+- **Por qué el descuadre sale sólo por método:** el cierre suma `pos_cuenta_pagos` para efectivo/tarjeta (arrastra los duplicados) pero `sistema_total` suma `pos_cuentas.total` (queda bien).
+- **Alcance medido (desde el 1-jul):** **35 cuentas** con pagos > total, **$541.54** de exceso, las 6 sucursales — S003 Lourdes $208 (Wendy ya lo había reportado), S006 $176, S002 $85. Dos patrones: **doble tap** en Confirmar pago (gap 1–60 s, la mayoría) y **recobro tardío** por este fail-open (gap >15 min, 10 casos). **23 pares de DTE identificados sin ambigüedad; 21 siguen los dos `aceptado` en Hacienda** (2 ya se habían invalidado a mano).
+- **Arreglado:**
+  - `KDSScreen.jsx` — el filtro pasó DENTRO del UPDATE (`.neq('estado','cobrada').neq('estado','cancelada')`), atómico, en `bumparComanda` y `revertirComanda`. Un error de red ya no puede reabrir una cuenta cobrada. Es el patrón que ya usaba `OrdenesView.doCancelar`.
+  - `POSMain.jsx` — dos capas contra el doble cobro: `savingRef` (bloquea la reentrada en el mismo tick, porque `saving` es estado de React y no alcanza a deshabilitar el botón) y un chequeo de idempotencia que aborta si la cuenta ya tiene pagos que cubren su total, con mensaje al cajero. La segunda capa es fail-open ante error de consulta para no bloquear ventas.
+- **Pendiente (NO tocado, requiere PIN de ejecutivo):** invalidar en Hacienda los 21 DTE duplicados y limpiar los pagos duplicados en `pos_cuenta_pagos`. Sobre Factura de consumidor final (01) Hacienda **sólo acepta invalidación**, no NC — el flujo ya existe en Finanzas → DTEs → Corregir. Tipo de anulación que corresponde: **2, rescindir la operación**.
+
 ## 05-Sep-2026 — El crash del 4-sep y el upgrade Micro→Small: no era compute, era un lock
 
 Jose subió el compute de `btboxlwfqcbrdfrlnwln` de **Micro a Small** después de que se cayera todo el 4-sep en pleno servicio. Auditoría completa en **`~/Proyectos/_auditorias/2026-09-05-supabase-compute-micro-a-small.md`**.

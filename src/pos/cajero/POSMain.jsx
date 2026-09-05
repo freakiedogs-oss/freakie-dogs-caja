@@ -239,6 +239,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   // aunque el cajero apriete COMANDAR varias veces (tablet lenta), solo la 1ra pasa.
   // El disabled={commanding} del botón depende de estado async y llega tarde.
   const commandingRef = useRef(false)
+  // Igual que commandingRef, pero para el cobro: `saving` es estado de React y no se
+  // aplica hasta el siguiente render, así que dos taps seguidos en "Confirmar pago"
+  // entran los dos y cobran dos veces. El ref bloquea en el mismo tick.
+  const savingRef = useRef(false)
   // Token de idempotencia por "tap de COMANDAR". Persiste entre reintentos (si el
   // insert llegó al server pero al cliente se le cortó la red) y se limpia al éxito,
   // para que la DB rebote el reenvío en vez de duplicar la orden en el KDS.
@@ -1048,6 +1052,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       )
       if (!ok) return
     }
+    // Anti doble cobro (capa 1): reentrada en el mismo tick, antes de que `saving`
+    // deshabilite el botón. 35 cuentas entre jul y sep-2026 se cobraron dos veces.
+    if (savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     let dteResult = null
     let dteError  = null
@@ -1112,6 +1120,30 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         currentCuentaId = cuenta.id
         setCuentaId(currentCuentaId)
       } else {
+        // Anti doble cobro (capa 2): si la cuenta YA tiene pagos que cubren su total,
+        // esto es un recobro, no una venta nueva. Cubre el caso de la cuenta revivida
+        // por el KDS (Usulután 4-Sep-2026: cobrada 18:19, reabierta por un 503, cobrada
+        // otra vez 22:34 → 2º pago y 2º DTE a Hacienda) y el reintento tras un error de
+        // red donde la escritura sí se aplicó. Fail-open: si la consulta falla no se
+        // bloquea la venta, para eso está la capa 1.
+        try {
+          const { data: _pagosPrev, error: _pagosErr } = await db
+            .from('pos_cuenta_pagos').select('monto').eq('cuenta_id', currentCuentaId)
+          if (!_pagosErr && _pagosPrev?.length) {
+            const _yaPagado = _pagosPrev.reduce((s, p) => s + Number(p.monto || 0), 0)
+            if (_yaPagado >= total + (paymentData.propina || 0) - 0.009) {
+              throw new Error(
+                `Esta cuenta ya está cobrada ($${_yaPagado.toFixed(2)} registrados). ` +
+                `No se cobró de nuevo. Si el cliente no recibió su ticket, reimprimilo ` +
+                `desde Historial de cobros.`
+              )
+            }
+          }
+        } catch (_e) {
+          if (_e?.message?.startsWith('Esta cuenta ya está cobrada')) throw _e
+          /* error de consulta: fail-open, no bloquear la venta */
+        }
+
         const { error: updErr } = await db
           .from('pos_cuentas')
           .update({
@@ -1264,6 +1296,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       return { cuenta: { id: currentCuentaId }, dte: dteResult, dteError }
 
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }

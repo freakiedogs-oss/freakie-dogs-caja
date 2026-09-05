@@ -500,18 +500,18 @@ export default function KDSScreen({ user, onBack }) {
         .update({ estado: 'completado', completado_at: new Date().toISOString() })
         .in('id', ids)
 
-      // Actualizar cuenta a 'lista' SOLO si no está cobrada (evitar race condition)
-      const { data: cuenta } = await db
-        .from('pos_cuentas')
-        .select('estado')
+      // Actualizar cuenta a 'lista' SOLO si no está cobrada/cancelada. El filtro va
+      // DENTRO del UPDATE (atómico). Antes se leía el estado y se decidía en JS: si ese
+      // SELECT fallaba, `cuenta` quedaba undefined, `undefined !== 'cobrada'` daba true
+      // y el KDS revivía una cuenta YA COBRADA — reaparecía como abierta y se cobraba
+      // de nuevo (2º pago + 2º DTE a Hacienda). Incidente Usulután 4-Sep-2026: bache de
+      // 503 de PostgREST a las 18:28, la cuenta de $19.49 volvió a 'lista' y se recobró
+      // a las 22:34. Con el filtro en el UPDATE, un error de red ya no puede reabrirla.
+      await db.from('pos_cuentas')
+        .update({ estado: 'lista', updated_at: new Date().toISOString() })
         .eq('id', comanda.cuenta_id)
-        .single()
-
-      if (cuenta?.estado !== 'cobrada') {
-        await db.from('pos_cuentas')
-          .update({ estado: 'lista', updated_at: new Date().toISOString() })
-          .eq('id', comanda.cuenta_id)
-      }
+        .neq('estado', 'cobrada')
+        .neq('estado', 'cancelada')
 
       load()
       loadHistorial()
@@ -524,15 +524,19 @@ export default function KDSScreen({ user, onBack }) {
   const revertirComanda = async (comanda) => {
     setReverting(comanda.key)
     try {
-      // Verificar que cuenta NO esté cobrada
-      const { data: cuenta } = await db
-        .from('pos_cuentas')
-        .select('estado')
+      // Revertir la cuenta PRIMERO y de forma atómica: el filtro cobrada/cancelada va
+      // dentro del UPDATE, no en un if de JS (mismo fail-open que bumparComanda — si el
+      // SELECT fallaba se revertía igual una cuenta ya cobrada). Si no tocó ninguna fila,
+      // la cuenta ya estaba cerrada y no se toca la cola de cocina.
+      const { data: revertidas } = await db.from('pos_cuentas')
+        .update({ estado: 'en_preparacion', updated_at: new Date().toISOString() })
         .eq('id', comanda.cuenta_id)
-        .single()
+        .neq('estado', 'cobrada')
+        .neq('estado', 'cancelada')
+        .select('id')
 
-      if (cuenta?.estado === 'cobrada') {
-        toast.warning('No se puede revertir una comanda de una cuenta cobrada.')
+      if (!revertidas?.length) {
+        toast.warning('No se puede revertir: la cuenta ya está cobrada o cancelada.')
         return
       }
 
@@ -541,11 +545,6 @@ export default function KDSScreen({ user, onBack }) {
       await db.from('pos_cocina_queue')
         .update({ estado: 'pendiente', completado_at: null })
         .in('id', ids)
-
-      // Actualizar cuenta a en_preparacion
-      await db.from('pos_cuentas')
-        .update({ estado: 'en_preparacion', updated_at: new Date().toISOString() })
-        .eq('id', comanda.cuenta_id)
 
       load()
       loadHistorial()
