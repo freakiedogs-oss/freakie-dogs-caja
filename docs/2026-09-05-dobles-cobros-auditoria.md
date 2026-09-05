@@ -61,9 +61,16 @@ facturó en el DTE <numeroControl del 1º>. No hubo segunda venta.`
 > Hacienda. Hacienda rechaza los que no proceden, así que el intento es informativo
 > — pero conviene confirmarlo con el contador antes de correr los 21.
 
-**Cómo se ejecuta:** ERP → Finanzas → DTEs → buscar el documento → *Corregir
-(NC / invalidar)* → pestaña **Invalidar**. Requiere PIN y rol ejecutivo /
+**Cómo se ejecuta:** ERP → Finanzas → **DTEs emitidos** → botón **⚠️ Duplicados**.
+Ese filtro lista exactamente estos 21 (ignora el rango de fechas), cada fila indica
+cuál es la factura buena que se deja viva, y *Corregir → Invalidar* abre con el
+motivo ya redactado y tipo de anulación 2. Requiere PIN y rol ejecutivo /
 superadmin / admin. Es **irreversible** y queda registrada en Hacienda.
+
+La lista sale de la vista `v_dte_duplicados_pendientes`, que la recalcula en vivo:
+a medida que se invaliden van desapareciendo del filtro, y si el problema
+reapareciera en el futuro se vería solo. Va cerrada a la llave pública y detrás del
+gate de finanzas, igual que `v_dtes_emitidos`.
 
 ## Grupo C — ya invalidados (sin acción)
 
@@ -102,10 +109,43 @@ corrección interna del pago duplicado.
 | M001 | 09-01 15:01:32 | 15:01:55 | $4.99 | $9.98 | 648668b1-f98c-4a7a-b78a-cf1ba08ddb82 |
 | S006 | 09-02 18:49:49 | 18:53:55 | $9.99 | $19.98 | e5e2cb93-2040-4e98-945a-65f1f406ae1c |
 
-## Pendiente aparte: los pagos duplicados en la base
+## Pagos duplicados en la base — hecho (marcados, no borrados)
 
-Las 35 filas sobrantes de `pos_cuenta_pagos` siguen ahí e inflan cualquier reporte
-que sume pagos por método (el cierre de caja, entre otros). Los turnos ya cerrados
-guardan `sistema_efectivo` / `sistema_tarjeta` como snapshot, así que limpiar los
-pagos **no** corrige retroactivamente esos cortes — corrige de aquí en adelante y
-los reportes que recalculan en vivo. No se tocó nada todavía.
+`pos_cuenta_pagos` tiene ahora `anulado` / `anulado_motivo` / `anulado_at` /
+`anulado_por`. Se marcaron **33 filas por $499.76**; la evidencia queda y es
+reversible con un UPDATE.
+
+Dejaron de sumarse en `pos_corte` (la RPC del cierre de caja), `v_pos_ventas_diario`,
+`v_pos_ventas_diario_sin_peya` y `v_canal_ingreso_diario`.
+
+Verificación con el corte del 4-sep en Usulután, recalculado después de marcar:
+
+| | Antes | Ahora | Contraste |
+|---|---:|---:|---|
+| Tarjeta | $279.04 | **$259.55** | = voucher N1CO (18 ventas) |
+| Efectivo | $316.19 | **$297.20** | −65.60 de egresos = $231.60 vs $235.49 contados |
+| Total | $556.75 | $556.75 | ya estaba bien |
+
+> Los turnos ya cerrados guardan `sistema_efectivo` / `sistema_tarjeta` como
+> snapshot en `pos_turnos`: **no cambian**. Esto corrige los reportes que
+> recalculan en vivo y todos los cortes de aquí en adelante.
+
+**No se marcaron 2 de las 35**, a propósito: en ellas el pago que coincide con el
+total de la cuenta es el segundo, no el primero, así que cuál sobra no es obvio y
+adivinar cambiaría el desglose por método. Son las dos que ya estaban en el grupo D:
+`225b6639…` (S002 08-09, total $1.99 con pagos de $7.50 y $1.99) y `369f202e…`
+(M001 08-28, total $7.49 con efectivo $19.23 y tarjeta $7.49).
+
+## Hallazgo aparte: 5 cuentas con total $0.00 y un pago registrado
+
+Salieron al verificar lo anterior. Es un problema **distinto** al doble cobro —
+un solo pago, pero la cuenta quedó en total $0 (4 de ellas además `cancelada`).
+No se tocaron.
+
+| Suc | Fecha | Estado cuenta | Pago registrado |
+|---|---|---|---:|
+| S001 | 07-28 12:04 | cobrada | $1.75 |
+| S001 | 07-28 12:04 | cancelada | $1.75 |
+| S002 | 08-08 13:59 | cancelada | $1.75 |
+| S002 | 08-09 19:47 | cancelada | $7.99 (PedidosYa) |
+| S001 | 08-30 12:47 | cancelada | $14.99 |

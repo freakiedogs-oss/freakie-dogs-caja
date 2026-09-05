@@ -70,11 +70,38 @@ export default function DTEsEmitidosView({ user }) {
   const [emitiendo, setEmitiendo] = useState(false)
   const [corrigiendo, setCorrigiendo] = useState(null)
 
+  // Modo duplicados: lista las facturas que quedaron emitidas dos veces por un
+  // doble cobro del POS y siguen aceptadas en Hacienda (v_dte_duplicados_pendientes).
+  // Ignora el rango de fechas a propósito — son pocos y hay que verlos todos.
+  const [soloDuplicados, setSoloDuplicados] = useState(false)
+  const [dupInfo, setDupInfo] = useState({})   // { codigo_generacion: fila de la vista }
+
   const puedeEmitir = ROLES_EMISION.has(String(user?.rol || '').toLowerCase())
 
   const cargar = useCallback(async () => {
     setLoading(true); setError(null)
     try {
+      if (soloDuplicados) {
+        const { data: dups, error: dupErr } = await dbFin
+          .from('v_dte_duplicados_pendientes')
+          .select('*')
+          .order('fecha_emision', { ascending: false })
+        if (dupErr) throw dupErr
+        const info = {}
+        ;(dups || []).forEach(d => { info[d.codigo_generacion] = d })
+        setDupInfo(info)
+        const codigos = (dups || []).map(d => d.codigo_generacion)
+        if (!codigos.length) { setRows([]); setTotal(0); return }
+        const { data, error: e2 } = await dbFin.from('v_dtes_emitidos')
+          .select('id,codigo_generacion,numero_control,tipo_dte,tipo_nombre,estado,fecha_emision,hora_emision,receptor_nombre,receptor_nit,receptor_nrc,monto_total,monto_iva,monto_gravado,sello_recepcion,descripcion_msg,num_items,pos_cuenta_id,standalone_id')
+          .in('codigo_generacion', codigos)
+          .order('fecha_emision', { ascending: false })
+        if (e2) throw e2
+        setRows(data || [])
+        setTotal((data || []).length)
+        return
+      }
+      setDupInfo({})
       let q = dbFin.from('v_dtes_emitidos')
         .select('id,codigo_generacion,numero_control,tipo_dte,tipo_nombre,estado,fecha_emision,hora_emision,receptor_nombre,receptor_nit,receptor_nrc,monto_total,monto_iva,monto_gravado,sello_recepcion,descripcion_msg,num_items,pos_cuenta_id,standalone_id', { count: 'exact' })
         .gte('fecha_emision', desde)
@@ -101,7 +128,7 @@ export default function DTEsEmitidosView({ user }) {
       setError(e.message || String(e))
       setRows([])
     } finally { setLoading(false) }
-  }, [desde, hasta, tipo, estado, busqueda, pagina])
+  }, [desde, hasta, tipo, estado, busqueda, pagina, soloDuplicados])
 
   useEffect(() => { const t = setTimeout(cargar, 250); return () => clearTimeout(t) }, [cargar])
   // Cambiar un filtro tiene que volver a la primera página: si estabas en la 3
@@ -195,6 +222,16 @@ export default function DTEsEmitidosView({ user }) {
           <input style={{ ...sInput, width: '100%', boxSizing: 'border-box' }} placeholder="Cliente, NIT, Nº control o código…"
             value={busqueda} onChange={e => setBusqueda(e.target.value)} />
         </div>
+        <button onClick={() => setSoloDuplicados(v => !v)}
+          title="Facturas emitidas dos veces por un doble cobro del POS que siguen aceptadas en Hacienda"
+          style={{
+            background: soloDuplicados ? C.gold : 'transparent',
+            color: soloDuplicados ? '#1a1400' : C.gold,
+            border: `1px solid ${C.gold}`, borderRadius: 9, padding: '9px 14px',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>
+          ⚠️ Duplicados{soloDuplicados ? ' ✓' : ''}
+        </button>
         {puedeEmitir && (
           <button onClick={() => setEmitiendo(true)}
             style={{ background: C.red, color: C.white, border: 'none', borderRadius: 9, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
@@ -202,6 +239,22 @@ export default function DTEsEmitidosView({ user }) {
           </button>
         )}
       </div>
+
+      {soloDuplicados && (
+        <div style={{ ...sCard, marginBottom: 12, borderColor: C.gold, background: '#2a1f05' }}>
+          <div style={{ color: C.gold, fontWeight: 800, fontSize: 13, marginBottom: 6 }}>
+            Facturas duplicadas por doble cobro del POS · {rows.length} pendientes
+          </div>
+          <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>
+            Cada una de estas es la <b>segunda</b> factura de una venta que se cobró dos veces: la
+            primera (que se deja viva) va indicada en cada fila. Sobre Factura de consumidor final
+            Hacienda no acepta Nota de Crédito, así que la corrección es <b>Invalidar</b>, con tipo
+            de anulación <b>2 — rescindir la operación</b>. El motivo viene precargado.
+            <br />La invalidación es irreversible. Si alguna es de hace varias semanas puede estar
+            fuera del plazo que admite Hacienda: confirmalo con el contador antes de correrlas todas.
+          </div>
+        </div>
+      )}
 
       {error && (
         <div style={{ ...sCard, borderColor: C.red, marginBottom: 12, color: '#fca5a5', fontSize: 12 }}>
@@ -301,8 +354,17 @@ export default function DTEsEmitidosView({ user }) {
                               {Array.isArray(det.observaciones_mh) && det.observaciones_mh.length > 0 && (
                                 <div style={{ color: C.gold, marginTop: 4 }}>Observaciones: {det.observaciones_mh.join(' · ')}</div>
                               )}
+                              {dupInfo[r.codigo_generacion] && (
+                                <div style={{ marginTop: 8, padding: 8, background: '#2a1f05', border: `1px solid ${C.gold}`, borderRadius: 8, color: C.gold, fontSize: 11, lineHeight: 1.7 }}>
+                                  <b>Duplicado por doble cobro.</b> La factura buena de esta venta es{' '}
+                                  <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{dupInfo[r.codigo_generacion].nc_original}</span>
+                                  {' '}({dupInfo[r.codigo_generacion].store_code} · {dupInfo[r.codigo_generacion].metodos}
+                                  {dupInfo[r.codigo_generacion].gap_min > 0 ? ` · recobrada ${dupInfo[r.codigo_generacion].gap_min} min después` : ' · doble tap'}).
+                                  Esta es la que hay que invalidar.
+                                </div>
+                              )}
                               {puedeEmitir && ['aceptado'].includes(r.estado) && (
-                                <button onClick={(ev) => { ev.stopPropagation(); setCorrigiendo(r) }}
+                                <button onClick={(ev) => { ev.stopPropagation(); setCorrigiendo({ ...r, _dup: dupInfo[r.codigo_generacion] || null }) }}
                                   style={{ marginTop: 10, background: 'transparent', border: `1px solid ${C.red}`, color: '#fca5a5', borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                   Corregir (NC / invalidar)
                                 </button>

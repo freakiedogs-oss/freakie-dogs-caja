@@ -52,6 +52,10 @@ const FINANZAS_OBJETOS = new Set([
   // (se crearon ya cerradas), así que acá el gate es la única puerta.
   'v_dtes_emitidos',
   'dte_emitido_detalle',
+  // Agregada 05-sep-2026: las facturas emitidas dos veces por un doble cobro del
+  // POS que siguen aceptadas en Hacienda. Deriva de v_dtes_emitidos y expone los
+  // mismos datos fiscales, así que va cerrada a anon y detrás del mismo gate.
+  'v_dte_duplicados_pendientes',
 ]);
 
 // Ojo: `staff_login` (torre de delivery) emite sesiones para roles que NO

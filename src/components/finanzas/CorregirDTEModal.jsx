@@ -43,7 +43,13 @@ export default function CorregirDTEModal({ dte, onClose, onListo }) {
   const [cargando, setCargando] = useState(true)
   const [items, setItems] = useState([])
   const [cliente, setCliente] = useState(null)
-  const [motivo, setMotivo] = useState('')
+  // Si viene del filtro "Duplicados", el motivo llega escrito y con la referencia
+  // a la factura buena — la cajera no tiene que redactarlo ni buscarla.
+  const [motivo, setMotivo] = useState(
+    dte._dup
+      ? `Documento duplicado por doble registro del POS. La operación se facturó en el DTE ${dte._dup.nc_original}. No hubo segunda venta.`
+      : ''
+  )
   const [tipoAnulacion, setTipoAnulacion] = useState(2)
   const [pin, setPin] = useState('')
   const [procesando, setProc] = useState(false)
