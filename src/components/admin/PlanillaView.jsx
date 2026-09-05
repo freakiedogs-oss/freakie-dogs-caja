@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '../../supabase';
+// 05-sep-2026: ver la nota en RecibosDigitales. Lecturas de planilla por el
+// gate; escrituras y asistencia siguen por `db`.
+import { dbFin } from '../../supabaseFinanzas';
 import { n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
@@ -87,7 +90,7 @@ export default function PlanillaView({ user }) {
   // ── Cargar datos base ──
   const cargarPlanillas = useCallback(async () => {
     setLoading(true);
-    const res = await db.from('planillas').select('id,periodo,fecha_inicio,fecha_fin,estado,total_neto').order('fecha_inicio', { ascending: false });
+    const res = await dbFin.from('planillas').select('id,periodo,fecha_inicio,fecha_fin,estado,total_neto').order('fecha_inicio', { ascending: false });
     setPlanillas(res.data || []);
     setLoading(false);
   }, []);
@@ -173,7 +176,7 @@ export default function PlanillaView({ user }) {
     setSelected(planilla);
     setTab('nomina');
     setAsistEdits({});
-    const res = await db.from('planilla_detalle')
+    const res = await dbFin.from('planilla_detalle')
       .select('*, empleados(id, nombre_completo, cargo, sucursal_id)')
       .eq('planilla_id', planilla.id)
       .order('empleados(nombre_completo)');

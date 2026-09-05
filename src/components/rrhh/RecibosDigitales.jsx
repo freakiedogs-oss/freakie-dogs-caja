@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '../../supabase';
+// 05-sep-2026: planillas y planilla_detalle salieron de la llave pública.
+// Se leen por `dbFin` (proxy /sb + sesión de staff con rol de RRHH); el PIN
+// lo pide `SesionFinanzasModal`, montado en main.jsx. Las ESCRITURAS siguen
+// por `db` porque van todas por RPC SECURITY DEFINER, que no necesita que la
+// llave pública lea la tabla.
+import { dbFin } from '../../supabaseFinanzas';
 import { n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
@@ -172,7 +178,7 @@ export default function RecibosDigitales({ user, onBack }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data } = await db.from('planillas')
+      const { data } = await dbFin.from('planillas')
         .select('id,periodo,fecha_inicio,fecha_fin,fecha_pago,estado,total_neto')
         .in('estado', ['calculada', 'aprobada', 'pagada'])
         .order('fecha_inicio', { ascending: false });
@@ -189,7 +195,7 @@ export default function RecibosDigitales({ user, onBack }) {
     setFiltroSuc('todas');
 
     const [{ data: dets }, { data: sucs }] = await Promise.all([
-      db.from('planilla_detalle')
+      dbFin.from('planilla_detalle')
         .select('*, empleados(id, nombre_completo, cargo, sucursal_id)')
         .eq('planilla_id', p.id)
         .order('empleados(nombre_completo)'),

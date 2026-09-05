@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
+import { dbFin } from '../../supabaseFinanzas'
+// 05-sep-2026: el archivo usaba `supabase` en 10 lugares pero solo importaba
+// `db`, así que la pantalla entera reventaba con ReferenceError apenas se
+// abría. El build no lo cazaba (no hay TS ni eslint en el pipeline).
+const supabase = db
 import { STORES, fmtDate } from '../../config'
 
 /* ── helpers ────────────────────────────────────────────────── */
@@ -176,9 +181,12 @@ export default function PendientesView({ user, onNavigate }) {
           .then(r => r.data || []),
 
         // 8. Planillas sin aprobar
-        supabase
+        // Por el gate: planillas ya no se lee con la llave pública.
+        // Y las columnas quincena/mes/anio NO EXISTEN en la tabla (es `periodo`),
+        // así que esta tarjeta mostraba "Qundefined — undefined/undefined".
+        dbFin
           .from('planillas')
-          .select('id, quincena, mes, anio, estado, created_at')
+          .select('id, periodo, estado, created_at')
           .in('estado', ['borrador', 'pendiente'])
           .order('created_at', { ascending: false })
           .then(r => r.data || []),
@@ -364,7 +372,7 @@ export default function PendientesView({ user, onNavigate }) {
           <SectionCard icon="💵" title="Planillas por aprobar" count={data.planillas.length} color="#f4a261">
             {data.planillas.map(p => (
               <div key={p.id} onClick={() => nav('planilla')} style={{ cursor: 'pointer' }}>
-                {itemRow(`Q${p.quincena} — ${p.mes}/${p.anio}`, p.estado, fmtDate(p.created_at))}
+                {itemRow(p.periodo, p.estado, fmtDate(p.created_at))}
               </div>
             ))}
           </SectionCard>

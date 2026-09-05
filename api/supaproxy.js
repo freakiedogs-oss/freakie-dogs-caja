@@ -70,7 +70,19 @@ const ROLES_FINANZAS = new Set(['admin', 'superadmin', 'ejecutivo']);
 // bancaria de cada empleado) tiene security_invoker=false → salta el RLS; se
 // revocó de anon el 19-ago y eso dejó caída la pantalla de validación de
 // planilla, que usan Jose (ejecutivo), Majo (rrhh) y superadmin.
-const RRHH_OBJETOS = new Set(['v_empleados_expediente', 'v_planilla_validacion']);
+//
+// Agregadas 05-sep-2026: `planillas` y `planilla_detalle`. Verificado con
+// `set role anon` que la llave pública leía 1,206 filas de salarios
+// individuales saltándose el PIN. Son TABLAS con RLS (no vistas), así que
+// además del GRANT hubo que darle política de SELECT a `erp_finanzas_ro`:
+// sin eso el gate habría devuelto 0 filas EN SILENCIO.
+// Las escrituras NO pasan por acá: van por RPC SECURITY DEFINER sobre `db`.
+const RRHH_OBJETOS = new Set([
+  'v_empleados_expediente',
+  'v_planilla_validacion',
+  'planillas',
+  'planilla_detalle',
+]);
 const ROLES_RRHH = new Set(['admin', 'superadmin', 'ejecutivo', 'rrhh']);
 
 // Devuelve el set de roles con acceso a un objeto gateado, o null si es abierto.
