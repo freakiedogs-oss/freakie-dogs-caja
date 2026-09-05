@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 05-Sep-2026 — PedidosYa aprobó la integración (INT-PEYA): webhook `peya-plugin` listo para alta
+- **PeYa aprobó la solicitud** (correo 4-sep, Cristian Pereira, Soporte): piden llave PGP RSA, webhook con SSL, contactos clave (dev/soporte/emergencias) y datos de un usuario de prueba (nombre, país, Gmail no registrado en PeYa). Con eso mandan credenciales + documentación de la API.
+- **Edge fn `peya-plugin` → v2 con `verify_jwt=false`** (era el pendiente de Jose del 17-ago): el middleware de Delivery Hero no manda JWT de Supabase, así que con Verify JWT ON todo webhook moría en 401 antes de llegar al código. La autenticación queda por whitelist de IPs oficiales DH (prod LatAm + staging) — IP fuera de lista se registra en `peya_ordenes_raw` con `ip_valida=false` y responde 403. Se agregó **GET = health check público** (`{"status":"ok","service":"freakie-dogs-peya-plugin"}`, sin tocar BD) para que PeYa valide SSL/disponibilidad. POST/PUT intactos (grabador crudo → 200 `received`).
+- **URL del webhook para PeYa:** `https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/peya-plugin` (las subrutas del contrato DH `/order/{remoteId}`, `/remoteId/.../posOrderStatus`, etc. caen en la misma función). `peya_ordenes_raw` sigue en 0 filas: nadie ha pegado todavía. No se pudo probar por curl desde el sandbox (proxy bloquea supabase.co); probar desde la mini.
+- **Datos usados en la respuesta a PeYa:** 5 locales activos con ID PeYa (M001 224235 · S001 519400 · S002 567479 · S003 583558 · S004 593019, de `pedidos_peya.local_id`), ~5,000 pedidos/mes, S006 Metro Centro + S007 + S008 como expansión. `peya_vendor_map.vendor_code` sigue `PENDIENTE-*`: reemplazar por los IDs reales cuando confirmen el mapeo. PeYa maneja hoy los pedidos por tablet: solo 1 cuenta `tipo='pedidos_ya'` en `pos_cuentas` (prueba).
+- **Siguiente:** recibir credenciales cifradas → Login API → staging → mapeo pedido→POS/KDS. La llave PGP (RSA-4096, freakiedogs@gmail.com) vive en la mini, NO en el repo.
+
 ## 30-Ago-2026 — Corte X/Z v2: ítems por secciones útiles, bebidas reales y apartado de empleados
 
 - **Bug del corte (real, medido):** `pos_corte_items` excluía anulados con `estado_cocina <> 'cancelado'`, pero la anulación de un ítem marca **`cancelado_motivo`** (mismo patrón del bug de reimpresión). Resultado: **305 ítems anulados en 30 días contados como vendidos**. Corregido en la v2 (se conservan las dos condiciones).
