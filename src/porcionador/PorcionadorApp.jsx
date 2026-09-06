@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { db, URL_SB, KEY_SB } from '../supabase'
 import { requestCh340Port } from './ch340-webusb'
-import { calcularContadoresS006, KDS_CONTADOR_ESTACIONES, KDS_CONTADOR_LABELS } from '../pos/kdsCounterMapS006'
+import { calcularContadoresPorDestino, KDS_CONTADOR_ESTACIONES, KDS_CONTADOR_LABELS } from '../pos/kdsCounterMapS006'
 
 // La estacion de papas solo necesita ver lo suyo: papa, mini fancy, fancy,
 // aros, queso frito, papa blanca y papa waffle. El resto del KDS es ruido
@@ -101,13 +101,14 @@ async function leerColaFritos(storeCode) {
     .eq('store_code', storeCode)
     .neq('estado', 'completado')
     .order('recibido_at', { ascending: true })
-  if (error) return {}
-  const todos = calcularContadoresS006(data || [])
-  const mios = {}
-  for (const k of MI_ESTACION?.items || []) {
-    if (todos[k]) mios[k] = todos[k]
+  if (error) return { aqui: {}, llevar: {} }
+  const porDestino = calcularContadoresPorDestino(data || [])
+  const soloMios = (c) => {
+    const m = {}
+    for (const k of MI_ESTACION?.items || []) if (c[k]) m[k] = c[k]
+    return m
   }
-  return mios
+  return { aqui: soloMios(porDestino.aqui), llevar: soloMios(porDestino.llevar) }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -127,7 +128,7 @@ export default function PorcionadorApp() {
   const [diag, setDiag] = useState('Sin datos aún')
   const [pendientesCount, setPendientesCount] = useState(pendientes().length)
   const [sesionVencida, setSesionVencida] = useState(false)
-  const [cola, setCola] = useState({})
+  const [cola, setCola] = useState({ aqui: {}, llevar: {} })
 
   const portRef = useRef(null)
   const readerRef = useRef(null)
@@ -559,22 +560,47 @@ export default function PorcionadorApp() {
         </div>
       </div>
 
-      {/* Lo que debe la estación de fritos, en vivo desde el KDS */}
-      <div style={sColaBox}>
-        <div style={sColaTitulo}>Pendiente en cocina · tu área</div>
-        {Object.keys(cola).length === 0
-          ? <div style={sColaVacia}>Nada pendiente</div>
-          : (
-            <div style={sColaGrid}>
-              {(MI_ESTACION?.items || []).filter(k => cola[k]).map(k => (
-                <div key={k} style={sColaChip}>
-                  <div style={sColaCant}>{cola[k]}</div>
-                  <div style={sColaNombre}>{KDS_CONTADOR_LABELS[k] || k}</div>
+      {/* Lo que debe la estación de fritos, separado por destino.
+          Antes venía todo junto y quien porciona tenía que preguntarle a la de
+          la tablet si era para acá o para llevar en cada tanda. */}
+      {(() => {
+        const míos = k => (MI_ESTACION?.items || []).filter(x => (cola[k] || {})[x])
+        const total = k => míos(k).reduce((a, x) => a + cola[k][x], 0)
+        const vacío = total('aqui') === 0 && total('llevar') === 0
+        const grupos = [
+          { k: 'aqui',   t: '🍽️ Para comer acá', c: '#22c55e' },
+          { k: 'llevar', t: '🥡 Para llevar',     c: '#f59e0b' },
+        ]
+        return (
+          <div style={sColaBox}>
+            <div style={sColaTitulo}>Pendiente en cocina · tu área</div>
+            {vacío ? <div style={sColaVacia}>Nada pendiente</div> : grupos.map(g => (
+              <div key={g.k} style={{ marginBottom: 10 }}>
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '7px 10px', borderRadius: 8, marginBottom: 7,
+                  background: '#fff', border: `1.5px solid ${g.c}`,
+                }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: g.c }}>{g.t}</span>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: g.c }}>{total(g.k)}</span>
                 </div>
-              ))}
-            </div>
-          )}
-      </div>
+                {total(g.k) === 0
+                  ? <div style={{ ...sColaVacia, padding: '6px 0', fontSize: 12 }}>—</div>
+                  : (
+                    <div style={sColaGrid}>
+                      {míos(g.k).map(x => (
+                        <div key={x} style={sColaChip}>
+                          <div style={sColaCant}>{cola[g.k][x]}</div>
+                          <div style={sColaNombre}>{KDS_CONTADOR_LABELS[x] || x}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* KPIs turno */}
       <div style={sKpiRow}>

@@ -67,6 +67,8 @@ const norm = (s) => (s || '')
 const RAW_MAP = {
   // ─── Combos ───
   'fancy fries combo':      { freakie_dog: 4, fancy: 1 },
+  // Los demás agrandados no van acá: los resuelve agrandadoSumaPapa() por
+  // regla, para que un nombre nuevo no quede sin contar.
   'agrandado soda y papa':  { papa: 1 },
   'la clasica':             { hamburguesa_clasica: 1, papa: 1 },
   'combo hamburguesa':      { hamburguesa: 1, papa: 1 },
@@ -136,30 +138,67 @@ export const KDS_MODIFICADOR_MAP = Object.fromEntries(
   Object.entries(RAW_MOD_MAP).map(([k, v]) => [norm(k), v])
 )
 
+// ── Agrandados ──
+// Todo agrandado suma UNA papa más: un Burger Duo con dos agrandados son
+// 4 papas, no 2. La excepción son los de solo bebida, que no tocan la
+// freidora. Se resuelve por regla y no por lista porque los nombres varían
+// entre menús ("Agrandado Combo", "Agrandado Papa y Bebida", "Agrandado")
+// y uno nuevo sin mapear dejaría a la freidora corta sin que nadie lo note.
+export function agrandadoSumaPapa(nombre) {
+  const n = norm(nombre)
+  if (!/agrandad/.test(n)) return false
+  // "Agrandado de Bebida" no lleva papa. "Agrandado Soda y Papa" sí, porque
+  // nombra la papa explícitamente.
+  if (/(bebida|soda)/.test(n) && !/papa/.test(n)) return false
+  return true
+}
+
 // Calcula los contadores desde las rows crudas de pos_cocina_queue.
 // Solo suma items con estado 'pendiente' o 'en_preparacion'.
 export function calcularContadoresS006(queueRows) {
   const contador = {}
+  const sumar = (k, q) => { contador[k] = (contador[k] || 0) + q }
+
   for (const row of queueRows || []) {
     if (row.estado === 'completado' || row.estado === 'cancelado') continue
     const cantidad = row.cantidad || 1
     const nombreN = norm(row.nombre_item)
     const mapeo = KDS_CONTADOR_MAP[nombreN]
     if (mapeo) {
-      for (const [k, q] of Object.entries(mapeo)) {
-        contador[k] = (contador[k] || 0) + q * cantidad
-      }
+      for (const [k, q] of Object.entries(mapeo)) sumar(k, q * cantidad)
+    } else if (agrandadoSumaPapa(nombreN)) {
+      // Solo si NO está en el mapa: "Agrandado Soda y Papa" ya suma su papa
+      // por mapeo y contarla otra vez acá la duplicaría.
+      sumar('papa', cantidad)
     }
     // Modificadores del row
     for (const mod of row.modificadores || []) {
       const modN = norm(mod?.nombre)
       const modMap = KDS_MODIFICADOR_MAP[modN]
       if (modMap) {
-        for (const [k, q] of Object.entries(modMap)) {
-          contador[k] = (contador[k] || 0) + q * cantidad
-        }
+        for (const [k, q] of Object.entries(modMap)) sumar(k, q * cantidad)
+      } else if (agrandadoSumaPapa(modN)) {
+        sumar('papa', cantidad)
       }
     }
   }
   return contador
+}
+
+// Lo mismo, pero partido en lo que se come acá y lo que se va empacado.
+// El de la freidora necesita saberlo para entregar sin preguntarle a nadie:
+// antes tenía que gritarle a la de la tablet en cada tanda.
+//
+// Delivery (PedidosYa y propio) viene sin `destino` y cae en "llevar": se
+// empaca igual, aunque quien lo recoja sea un motorista.
+export function calcularContadoresPorDestino(queueRows) {
+  const aqui = [], llevar = []
+  for (const row of queueRows || []) {
+    if (norm(row.destino) === 'aqui') aqui.push(row)
+    else llevar.push(row)
+  }
+  return {
+    aqui:   calcularContadoresS006(aqui),
+    llevar: calcularContadoresS006(llevar),
+  }
 }
