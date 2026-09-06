@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { db } from '../../supabase'
+import { useBalanza } from '../../porcionador/useBalanza'
 
 /* ═══════════════════════════════════════════════════════════════════════
    BPM / HACCP — Control de producción del chili
@@ -80,6 +81,12 @@ export default function BPMChiliView({ user }) {
   // `pesajes` es { [itemId]: { g: '2265', lote: 'L2409', foto: File } }
   const [pesajeItems, setPesajeItems] = useState([])
   const [pesajes, setPesajes]         = useState({})
+
+  // Báscula: el ingrediente que se está pesando ahora mismo. Se pesa uno por
+  // uno tarando entre cada uno, así que la lectura en vivo pertenece a UN
+  // ingrediente a la vez y el operario elige cuál antes de poner nada encima.
+  const [activo, setActivo] = useState(null)
+  const balanza = useBalanza()
 
   // Temporizador por fases. `fase` es el indice de la fase corriendo, o null
   // si esta detenido. `restan` son los segundos que faltan.
@@ -457,6 +464,11 @@ export default function BPMChiliView({ user }) {
     borderRadius: 8, padding: '10px 12px', fontSize: 16, width: '100%',
     boxSizing: 'border-box', fontFamily: 'inherit',
   }
+  const btnGhost = {
+    background: '#141416', color: C.txt, border: `1px solid ${C.line}`,
+    borderRadius: 8, padding: '8px 13px', fontSize: 13.5,
+    cursor: 'pointer', fontFamily: 'inherit',
+  }
 
   return (
     <div style={{ padding: 14, background: C.bg, color: C.txt, minHeight: '100vh' }}>
@@ -758,6 +770,68 @@ export default function BPMChiliView({ user }) {
                   )
                 })()}
 
+                {/* ── Báscula Rhino ──
+                    Solo aparece si el paso tiene ingredientes de balanza grande.
+                    En revisión no se conecta nada: no hay nada real que pesar. */}
+                {!enRevision &&
+                 pesajeItems.some(it => (it.fuente || 'balanza_grande') === 'balanza_grande') && (
+                  <div style={{
+                    background: balanza.estado === 'conectada' ? '#101c14'
+                              : balanza.estado === 'error' ? '#3a1414' : '#101012',
+                    border: `1px solid ${balanza.estado === 'conectada' ? C.ok
+                                       : balanza.estado === 'error' ? C.bad : C.line}`,
+                    borderRadius: 9, padding: '10px 12px', marginBottom: 12,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between',
+                                  alignItems: 'center', gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                          ⚖️ Báscula Rhino
+                          {balanza.estado === 'conectada' && (
+                            <span style={{ fontSize: 11.5, color: C.dim, fontWeight: 400, marginLeft: 7 }}>
+                              {balanza.lecturas} lecturas
+                            </span>
+                          )}
+                        </div>
+                        {balanza.mensaje && (
+                          <div style={{ fontSize: 11.5, color: balanza.estado === 'error' ? '#fca5a5' : C.dim,
+                                        marginTop: 2, lineHeight: 1.45 }}>
+                            {balanza.mensaje}
+                          </div>
+                        )}
+                      </div>
+                      {balanza.estado === 'conectada'
+                        ? <button onClick={balanza.desconectar}
+                            style={{ ...btnGhost, flexShrink: 0 }}>Desconectar</button>
+                        : <button onClick={balanza.conectar}
+                            disabled={balanza.estado === 'conectando'}
+                            style={{ ...btnGhost, flexShrink: 0, borderColor: C.acc, color: C.acc }}>
+                            {balanza.estado === 'conectando' ? 'Conectando…' : 'Conectar'}
+                          </button>}
+                    </div>
+
+                    {balanza.estado === 'conectada' && (
+                      <div style={{ marginTop: 10, textAlign: 'center' }}>
+                        <div style={{
+                          fontSize: 38, fontWeight: 800, lineHeight: 1.1,
+                          fontVariantNumeric: 'tabular-nums',
+                          color: balanza.estable ? C.ok : C.txt,
+                        }}>
+                          {balanza.gramos.toLocaleString('es-SV')} g
+                        </div>
+                        <div style={{ fontSize: 12, color: balanza.estable ? '#86efac' : C.dim, marginTop: 2 }}>
+                          {balanza.estable ? '✓ Peso estable' : 'Esperando que se estabilice…'}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>
+                          {activo
+                            ? 'Poné el ingrediente y tocá "Usar este peso" cuando se estabilice.'
+                            : 'Tocá abajo el ingrediente que vas a pesar.'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {[
                   { k: 'balanza_grande',    t: 'Balanza grande (Rhino) — el peso entra solo' },
                   { k: 'balanza_precision', t: 'Balanza de precisión — se teclea y va con foto' },
@@ -774,14 +848,26 @@ export default function BPMChiliView({ user }) {
                       {items.map(it => {
                         const est = pesajeEstado(it)
                         const b   = banda(it)
+                        // Solo los de balanza grande se pueden capturar desde la
+                        // Rhino; los de precisión y el conteo van a mano.
+                        const capturable = k === 'balanza_grande' && !enRevision &&
+                                           balanza.estado === 'conectada'
+                        const esActivo = capturable && activo === it.id
                         return (
                           <div key={it.id} style={{
-                            background: '#101012',
-                            border: `1px solid ${est === 'malo' ? C.bad : est === 'ok' ? C.ok : C.line}`,
+                            background: esActivo ? '#101c2a' : '#101012',
+                            border: `1px solid ${esActivo ? C.acc
+                                               : est === 'malo' ? C.bad
+                                               : est === 'ok' ? C.ok : C.line}`,
                             borderRadius: 9, padding: '9px 11px', marginBottom: 7,
                           }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{it.ingrediente}</span>
+                            <div
+                              onClick={() => { if (capturable) setActivo(esActivo ? null : it.id) }}
+                              style={{ display: 'flex', justifyContent: 'space-between', gap: 8,
+                                       marginBottom: 6, cursor: capturable ? 'pointer' : 'default' }}>
+                              <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+                                {capturable && (esActivo ? '⚖️ ' : '')}{it.ingrediente}
+                              </span>
                               <span style={{ fontSize: 12.5, color: C.dim, whiteSpace: 'nowrap' }}>
                                 {it.gramos_objetivo} {it.unidad}
                                 {b > 0 && ` ± ${b.toFixed(b < 1 ? 2 : 1)}`}
@@ -790,6 +876,36 @@ export default function BPMChiliView({ user }) {
                             {it.referencia && (
                               <div style={{ fontSize: 11.5, color: '#6b6a72', marginBottom: 6 }}>{it.referencia}</div>
                             )}
+
+                            {/* Captura desde la Rhino. El botón solo aparece con el
+                                peso estable: si dejara capturar en movimiento, el
+                                número guardado no sería el que quedó en la olla. */}
+                            {esActivo && (
+                              <button
+                                disabled={!balanza.estable}
+                                onClick={() => {
+                                  setPesaje(it.id, 'g', String(balanza.gramos))
+                                  setActivo(null)
+                                }}
+                                style={{
+                                  width: '100%', marginBottom: 7, padding: '11px',
+                                  fontSize: 14.5, fontWeight: 600, borderRadius: 8,
+                                  fontFamily: 'inherit', border: 'none',
+                                  cursor: balanza.estable ? 'pointer' : 'not-allowed',
+                                  background: balanza.estable ? C.ok : '#2a2a2e',
+                                  color: balanza.estable ? '#0b1f12' : C.dim,
+                                }}>
+                                {balanza.estable
+                                  ? `Usar ${balanza.gramos.toLocaleString('es-SV')} g`
+                                  : 'Esperando peso estable…'}
+                              </button>
+                            )}
+                            {capturable && !esActivo && !pesajes[it.id]?.g && (
+                              <div style={{ fontSize: 11.5, color: C.acc, marginBottom: 6 }}>
+                                Tocá el nombre para pesarlo con la báscula
+                              </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: 7 }}>
                               <input
                                 type="number" inputMode="decimal" step="0.1"
