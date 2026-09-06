@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { db } from '../../supabase'
-import { useBalanza } from '../../porcionador/useBalanza'
 
 /* ═══════════════════════════════════════════════════════════════════════
    BPM / HACCP — Control de producción del chili
@@ -77,16 +76,11 @@ export default function BPMChiliView({ user }) {
   const [guardando, setGuardando] = useState(false)
   const fileRef = useRef(null)
 
-  // Pesaje: catalogo del paso y lo que va tecleando el operario.
-  // `pesajes` es { [itemId]: { g: '2265', lote: 'L2409', foto: File } }
+  // Pesaje: el catalogo del paso y lo que YA se peso en la tablet.
+  // Desde 06-sep-2026 el pesaje no se teclea aca: se hace en la estacion
+  // /pesaje.html, que esta cableada a la balanza. Esta pantalla solo lee.
   const [pesajeItems, setPesajeItems] = useState([])
-  const [pesajes, setPesajes]         = useState({})
-
-  // Báscula: el ingrediente que se está pesando ahora mismo. Se pesa uno por
-  // uno tarando entre cada uno, así que la lectura en vivo pertenece a UN
-  // ingrediente a la vez y el operario elige cuál antes de poner nada encima.
-  const [activo, setActivo] = useState(null)
-  const balanza = useBalanza()
+  const [pesajes, setPesajes]         = useState({})   // { [itemId]: { g, lote, cumple } }
 
   // Temporizador por fases. `fase` es el indice de la fase corriendo, o null
   // si esta detenido. `restan` son los segundos que faltan.
@@ -170,16 +164,28 @@ export default function BPMChiliView({ user }) {
   const banda = (it) =>
     Math.max(Number(it.gramos_objetivo) * Number(it.tolerancia_pct) / 100, Number(it.tolerancia_g))
 
-  const pesajeEstado = (it) => {
-    const v = pesajes[it.id]?.g
-    if (v === undefined || v === '') return 'vacio'
-    const n = Number(v)
-    if (Number.isNaN(n)) return 'malo'
-    return Math.abs(n - Number(it.gramos_objetivo)) <= banda(it) ? 'ok' : 'malo'
-  }
+  // Avance del pesaje que se hizo en la tablet. El celular no lo edita.
+  const pesajeHechos = pesajeItems.filter(it => pesajes[it.id]).length
+  const pesajeMalos  = pesajeItems.filter(it => pesajes[it.id]?.cumple === false).length
+  const pesajeListo  = enRevision ||
+                       (pesajeItems.length > 0 && pesajeHechos === pesajeItems.length)
 
-  const setPesaje = (id, campo, valor) =>
-    setPesajes(p => ({ ...p, [id]: { ...(p[id] || {}), [campo]: valor } }))
+  // Se relee al abrir el paso y cuando el operario toca "Actualizar". No hay
+  // suscripcion en vivo a proposito: son dos aparatos distintos y un pull
+  // explicito se entiende mejor que una pantalla que cambia sola.
+  const cargarPesajes = async () => {
+    if (!corrida?.id) return
+    const { data, error } = await db
+      .from('bpm_registro_pesajes')
+      .select('pesaje_item_id, gramos_real, lote, cumple')
+      .eq('corrida_id', corrida.id)
+    if (error) return
+    const m = {}
+    for (const r of data || []) {
+      m[r.pesaje_item_id] = { g: r.gramos_real, lote: r.lote, cumple: r.cumple }
+    }
+    setPesajes(m)
+  }
 
   // ── Temporizador ──────────────────────────────────────────────
   // Suena fuerte al terminar: la olla hace ruido y el operario no esta
@@ -280,8 +286,11 @@ export default function BPMChiliView({ user }) {
     db.from('bpm_pesaje_items').select('*')
       .eq('paso_id', pasoActual.id).eq('activo', true).order('orden')
       .then(({ data }) => { if (vivo) setPesajeItems(data || []) })
+    // Traer tambien lo que ya se peso en la tablet para esta tanda.
+    cargarPesajes()
     return () => { vivo = false }
-  }, [pasoActual?.id, pasoActual?.requiere_pesaje])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasoActual?.id, pasoActual?.requiere_pesaje, corrida?.id])
 
   // Segundos transcurridos desde el paso anterior, con el reloj del servidor
   const segDesdePrevio = regPrevio
@@ -309,23 +318,22 @@ export default function BPMChiliView({ user }) {
       // peso", y despues no hay forma de reconstruir la tanda.
       if (pasoActual.requiere_pesaje && !enRevision) {
         if (!pesajeItems.length) throw new Error('No cargó la lista de ingredientes. Recargá la página.')
-        const sinPeso = pesajeItems.filter(it => {
-          const v = pesajes[it.id]?.g
-          return v === undefined || v === '' || Number.isNaN(Number(v))
-        })
+        // Se relee de la base justo antes de guardar: entre que el operario
+        // abrio esta pantalla y toca el boton pudo terminar de pesar en la
+        // tablet, y seria absurdo bloquearlo por una lista vieja.
+        await cargarPesajes()
+        const { data: frescos } = await db
+          .from('bpm_registro_pesajes').select('pesaje_item_id, lote')
+          .eq('corrida_id', corrida.id)
+        const hechos = new Set((frescos || []).map(r => r.pesaje_item_id))
+        const sinPeso = pesajeItems.filter(it => !hechos.has(it.id))
         if (sinPeso.length) {
-          throw new Error(`Faltan ${sinPeso.length} sin pesar. El primero: ${sinPeso[0].ingrediente}.`)
+          throw new Error(`Faltan ${sinPeso.length} sin pesar en la tablet. El primero: ${sinPeso[0].ingrediente}.`)
         }
-        const sinLote = pesajeItems.filter(it => it.requiere_lote && !(pesajes[it.id]?.lote || '').trim())
+        const loteDe = Object.fromEntries((frescos || []).map(r => [r.pesaje_item_id, r.lote]))
+        const sinLote = pesajeItems.filter(it => it.requiere_lote && !(loteDe[it.id] || '').trim())
         if (sinLote.length) {
-          throw new Error(`Falta el lote de ${sinLote.length} insumo(s). El primero: ${sinLote[0].ingrediente}. Si el empaque no lo trae, escribí SIN LOTE.`)
-        }
-        // La foto solo se exige en lo que se pesa en la balanza de precision:
-        // ese numero lo teclea una persona y no hay instrumento enlazado que lo
-        // respalde. Lo que sale de la Rhino no la necesita.
-        const sinFoto = pesajeItems.filter(it => it.requiere_foto && !pesajes[it.id]?.foto)
-        if (sinFoto.length) {
-          throw new Error(`Falta la foto de la balanza en ${sinFoto.length} ingrediente(s). El primero: ${sinFoto[0].ingrediente}.`)
+          throw new Error(`Falta el lote de ${sinLote.length} insumo(s). El primero: ${sinLote[0].ingrediente}. Anotalo en la tablet; si el empaque no lo trae, escribí SIN LOTE.`)
         }
       }
 
@@ -356,19 +364,20 @@ export default function BPMChiliView({ user }) {
 
       // Cada peso fuera de banda es su propia desviación, con nombre y número:
       // "el pesaje falló" no sirve para nada al revisarlo tres semanas después.
-      const filasPesaje = (pasoActual.requiere_pesaje && !enRevision) ? pesajeItems.map(it => {
-        const g  = Number(pesajes[it.id].g)
-        const ok = Math.abs(g - Number(it.gramos_objetivo)) <= banda(it)
-        if (!ok) {
+      // Los pesos ya existen en la base (los guardó la tablet, uno por uno);
+      // acá solo se leen para levantar las desviaciones.
+      if (pasoActual.requiere_pesaje && !enRevision) {
+        for (const it of pesajeItems) {
+          const p = pesajes[it.id]
+          if (!p || p.cumple !== false) continue
           const b = banda(it)
           fallas.push({
             tipo: 'pesaje', detalle: `${it.ingrediente} fuera de tolerancia`,
             valor_esperado: `${it.gramos_objetivo} ${it.unidad} ± ${b.toFixed(b < 1 ? 2 : 1)}`,
-            valor_real: `${g} ${it.unidad}`,
+            valor_real: `${p.g} ${it.unidad}`,
           })
         }
-        return { pesaje_item_id: it.id, gramos_real: g, lote: (pesajes[it.id]?.lote || '').trim() || null, cumple: ok }
-      }) : []
+      }
 
       const cumple = fallas.length === 0
       const bloquea = !cumple && pasoActual.es_critico
@@ -391,22 +400,15 @@ export default function BPMChiliView({ user }) {
       }).select().single()
       if (rErr) throw rErr
 
-      // Los 24 pesos van despues del registro y colgados de el: si esto falla,
-      // el paso queda guardado pero SIN trazabilidad, y eso hay que gritarlo.
-      if (filasPesaje.length) {
-        // Fotos de la balanza de precision, una por ingrediente que la pida.
-        const conFoto = await Promise.all(filasPesaje.map(async f => {
-          const file = pesajes[f.pesaje_item_id]?.foto
-          if (!file) return f
-          const ext  = (file.name?.split('.').pop() || 'jpg').toLowerCase()
-          const path = `${corrida.id}/pesaje-${f.pesaje_item_id}-${Date.now()}.${ext}`
-          const { error: upErr } = await db.storage.from(BUCKET).upload(path, file, { cacheControl: '3600', upsert: false })
-          if (upErr) throw new Error('No se pudo subir la foto de la balanza: ' + upErr.message)
-          return { ...f, foto_url: db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl || null }
-        }))
+      // Los pesos ya estaban guardados por la tablet, colgados de la corrida.
+      // Acá solo se les enlaza el registro del paso, para que el reporte pueda
+      // ir del paso a sus pesos. Si esto falla, los pesos NO se pierden — solo
+      // quedan sin enlazar, y por eso no se aborta el guardado del paso.
+      if (pasoActual.requiere_pesaje && !enRevision) {
         const { error: pErr } = await db.from('bpm_registro_pesajes')
-          .insert(conFoto.map(f => ({ ...f, registro_id: reg.id })))
-        if (pErr) throw new Error('El paso se guardó pero los pesos NO quedaron registrados: ' + pErr.message)
+          .update({ registro_id: reg.id })
+          .eq('corrida_id', corrida.id).is('registro_id', null)
+        if (pErr) console.warn('Los pesos quedaron sin enlazar al registro:', pErr.message)
       }
 
       if (fallas.length) {
@@ -463,11 +465,6 @@ export default function BPMChiliView({ user }) {
     background: '#141416', border: `1px solid ${C.line}`, color: C.txt,
     borderRadius: 8, padding: '10px 12px', fontSize: 16, width: '100%',
     boxSizing: 'border-box', fontFamily: 'inherit',
-  }
-  const btnGhost = {
-    background: '#141416', color: C.txt, border: `1px solid ${C.line}`,
-    borderRadius: 8, padding: '8px 13px', fontSize: 13.5,
-    cursor: 'pointer', fontFamily: 'inherit',
   }
 
   return (
@@ -753,198 +750,54 @@ export default function BPMChiliView({ user }) {
                 queden bloqueando la tanda por un descuido de tecleo. */}
             {pasoActual.requiere_pesaje && (
               <div style={{ marginBottom: 14 }}>
-                {(() => {
-                  const listos = pesajeItems.filter(it => pesajeEstado(it) !== 'vacio').length
-                  const malos  = pesajeItems.filter(it => pesajeEstado(it) === 'malo').length
-                  return (
-                    <div style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      background: malos ? '#3a1414' : '#101012', border: `1px solid ${malos ? C.bad : C.line}`,
-                      borderRadius: 9, padding: '9px 12px', marginBottom: 10,
-                    }}>
-                      <span style={{ fontSize: 13, color: C.dim }}>
-                        {listos} de {pesajeItems.length} pesados
-                      </span>
-                      {malos > 0 && <b style={{ fontSize: 13, color: C.bad }}>{malos} fuera de tolerancia</b>}
-                    </div>
-                  )
-                })()}
-
-                {/* ── Báscula Rhino ──
-                    Solo aparece si el paso tiene ingredientes de balanza grande.
-                    En revisión no se conecta nada: no hay nada real que pesar. */}
-                {!enRevision &&
-                 pesajeItems.some(it => (it.fuente || 'balanza_grande') === 'balanza_grande') && (
-                  <div style={{
-                    background: balanza.estado === 'conectada' ? '#101c14'
-                              : balanza.estado === 'error' ? '#3a1414' : '#101012',
-                    border: `1px solid ${balanza.estado === 'conectada' ? C.ok
-                                       : balanza.estado === 'error' ? C.bad : C.line}`,
-                    borderRadius: 9, padding: '10px 12px', marginBottom: 12,
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between',
-                                  alignItems: 'center', gap: 10 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>
-                          ⚖️ Báscula Rhino
-                          {balanza.estado === 'conectada' && (
-                            <span style={{ fontSize: 11.5, color: C.dim, fontWeight: 400, marginLeft: 7 }}>
-                              {balanza.lecturas} lecturas
-                            </span>
-                          )}
-                        </div>
-                        {balanza.mensaje && (
-                          <div style={{ fontSize: 11.5, color: balanza.estado === 'error' ? '#fca5a5' : C.dim,
-                                        marginTop: 2, lineHeight: 1.45 }}>
-                            {balanza.mensaje}
-                          </div>
-                        )}
-                      </div>
-                      {balanza.estado === 'conectada'
-                        ? <button onClick={balanza.desconectar}
-                            style={{ ...btnGhost, flexShrink: 0 }}>Desconectar</button>
-                        : <button onClick={balanza.conectar}
-                            disabled={balanza.estado === 'conectando'}
-                            style={{ ...btnGhost, flexShrink: 0, borderColor: C.acc, color: C.acc }}>
-                            {balanza.estado === 'conectando' ? 'Conectando…' : 'Conectar'}
-                          </button>}
-                    </div>
-
-                    {balanza.estado === 'conectada' && (
-                      <div style={{ marginTop: 10, textAlign: 'center' }}>
-                        <div style={{
-                          fontSize: 38, fontWeight: 800, lineHeight: 1.1,
-                          fontVariantNumeric: 'tabular-nums',
-                          color: balanza.estable ? C.ok : C.txt,
-                        }}>
-                          {balanza.gramos.toLocaleString('es-SV')} g
-                        </div>
-                        <div style={{ fontSize: 12, color: balanza.estable ? '#86efac' : C.dim, marginTop: 2 }}>
-                          {balanza.estable ? '✓ Peso estable' : 'Esperando que se estabilice…'}
-                        </div>
-                        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>
-                          {activo
-                            ? 'Poné el ingrediente y tocá "Usar este peso" cuando se estabilice.'
-                            : 'Tocá abajo el ingrediente que vas a pesar.'}
-                        </div>
-                      </div>
-                    )}
+                {/* El pesaje ya no se hace acá. Son 25 ingredientes y la balanza
+                    está cableada a la tablet que vive junto a la mesa: esta
+                    pantalla solo espera y muestra el avance. Bloquear el botón
+                    hasta que estén todos es lo que impide avanzar sin pesar. */}
+                <div style={{
+                  background: pesajeListo ? '#0e1f14' : '#101c2a',
+                  border: `1px solid ${pesajeListo ? C.ok : C.acc}`,
+                  borderRadius: 10, padding: 14,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between',
+                                alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+                    <span style={{ fontSize: 14.5, fontWeight: 700,
+                                   color: pesajeListo ? '#86efac' : '#bfdbfe' }}>
+                      ⚖️ {pesajeListo ? 'Pesaje completo' : 'El pesaje se hace en la tablet'}
+                    </span>
+                    <span style={{ fontSize: 17, fontWeight: 800, whiteSpace: 'nowrap',
+                                   color: pesajeListo ? C.ok : C.txt }}>
+                      {pesajeHechos} / {pesajeItems.length}
+                    </span>
                   </div>
-                )}
 
-                {[
-                  { k: 'balanza_grande',    t: 'Balanza grande (Rhino) — el peso entra solo' },
-                  { k: 'balanza_precision', t: 'Balanza de precisión — se teclea y va con foto' },
-                  { k: 'conteo',            t: 'Se cuenta, no se pesa' },
-                ].map(({ k, t }) => {
-                  const items = pesajeItems.filter(it => (it.fuente || 'balanza_grande') === k)
-                  if (!items.length) return null
-                  return (
-                    <div key={k} style={{ marginBottom: 12 }}>
-                      <div style={{
-                        fontSize: 11.5, letterSpacing: .6, textTransform: 'uppercase',
-                        color: C.dim, margin: '4px 0 8px',
-                      }}>{t}</div>
-                      {items.map(it => {
-                        const est = pesajeEstado(it)
-                        const b   = banda(it)
-                        // Solo los de balanza grande se pueden capturar desde la
-                        // Rhino; los de precisión y el conteo van a mano.
-                        const capturable = k === 'balanza_grande' && !enRevision &&
-                                           balanza.estado === 'conectada'
-                        const esActivo = capturable && activo === it.id
-                        return (
-                          <div key={it.id} style={{
-                            background: esActivo ? '#101c2a' : '#101012',
-                            border: `1px solid ${esActivo ? C.acc
-                                               : est === 'malo' ? C.bad
-                                               : est === 'ok' ? C.ok : C.line}`,
-                            borderRadius: 9, padding: '9px 11px', marginBottom: 7,
-                          }}>
-                            <div
-                              onClick={() => { if (capturable) setActivo(esActivo ? null : it.id) }}
-                              style={{ display: 'flex', justifyContent: 'space-between', gap: 8,
-                                       marginBottom: 6, cursor: capturable ? 'pointer' : 'default' }}>
-                              <span style={{ fontSize: 13.5, fontWeight: 600 }}>
-                                {capturable && (esActivo ? '⚖️ ' : '')}{it.ingrediente}
-                              </span>
-                              <span style={{ fontSize: 12.5, color: C.dim, whiteSpace: 'nowrap' }}>
-                                {it.gramos_objetivo} {it.unidad}
-                                {b > 0 && ` ± ${b.toFixed(b < 1 ? 2 : 1)}`}
-                              </span>
-                            </div>
-                            {it.referencia && (
-                              <div style={{ fontSize: 11.5, color: '#6b6a72', marginBottom: 6 }}>{it.referencia}</div>
-                            )}
+                  <div style={{ height: 7, background: '#2a2a2e', borderRadius: 5,
+                                overflow: 'hidden', marginBottom: 10 }}>
+                    <div style={{
+                      width: `${pesajeItems.length ? 100 * pesajeHechos / pesajeItems.length : 0}%`,
+                      height: '100%', background: pesajeListo ? C.ok : C.acc, transition: 'width .3s',
+                    }} />
+                  </div>
 
-                            {/* Captura desde la Rhino. El botón solo aparece con el
-                                peso estable: si dejara capturar en movimiento, el
-                                número guardado no sería el que quedó en la olla. */}
-                            {esActivo && (
-                              <button
-                                disabled={!balanza.estable}
-                                onClick={() => {
-                                  setPesaje(it.id, 'g', String(balanza.gramos))
-                                  setActivo(null)
-                                }}
-                                style={{
-                                  width: '100%', marginBottom: 7, padding: '11px',
-                                  fontSize: 14.5, fontWeight: 600, borderRadius: 8,
-                                  fontFamily: 'inherit', border: 'none',
-                                  cursor: balanza.estable ? 'pointer' : 'not-allowed',
-                                  background: balanza.estable ? C.ok : '#2a2a2e',
-                                  color: balanza.estable ? '#0b1f12' : C.dim,
-                                }}>
-                                {balanza.estable
-                                  ? `Usar ${balanza.gramos.toLocaleString('es-SV')} g`
-                                  : 'Esperando peso estable…'}
-                              </button>
-                            )}
-                            {capturable && !esActivo && !pesajes[it.id]?.g && (
-                              <div style={{ fontSize: 11.5, color: C.acc, marginBottom: 6 }}>
-                                Tocá el nombre para pesarlo con la báscula
-                              </div>
-                            )}
+                  <div style={{ fontSize: 12.5, color: pesajeListo ? '#86efac' : '#bfdbfe',
+                                lineHeight: 1.6 }}>
+                    {enRevision
+                      ? 'En revisión no se pesa nada. Seguí al paso siguiente.'
+                      : pesajeListo
+                        ? (pesajeMalos > 0
+                            ? `Quedaron ${pesajeMalos} fuera de banda. Van a salir como desviación.`
+                            : 'Todos dentro de tolerancia. Ya podés continuar.')
+                        : 'Andá a la tablet de la balanza, pesá los ingredientes y volvé acá. Esta pantalla se actualiza sola.'}
+                  </div>
 
-                            <div style={{ display: 'flex', gap: 7 }}>
-                              <input
-                                type="number" inputMode="decimal" step="0.1"
-                                value={pesajes[it.id]?.g ?? ''}
-                                onChange={e => setPesaje(it.id, 'g', e.target.value)}
-                                placeholder={`${it.unidad} reales`}
-                                style={{ ...inp, flex: 1, borderColor: est === 'malo' ? C.bad : C.line }}
-                              />
-                              {it.requiere_lote && (
-                                <input
-                                  value={pesajes[it.id]?.lote ?? ''}
-                                  onChange={e => setPesaje(it.id, 'lote', e.target.value)}
-                                  placeholder="Lote del empaque"
-                                  style={{ ...inp, flex: 1 }}
-                                />
-                              )}
-                            </div>
-                            {it.requiere_foto && (
-                              <label style={{
-                                display: 'flex', alignItems: 'center', gap: 8, marginTop: 7,
-                                background: pesajes[it.id]?.foto ? '#14331f' : '#0a0a0a',
-                                border: `1px dashed ${pesajes[it.id]?.foto ? C.ok : C.line}`,
-                                borderRadius: 8, padding: '8px 11px', cursor: 'pointer',
-                                fontSize: 12.5, color: pesajes[it.id]?.foto ? '#86efac' : C.dim,
-                              }}>
-                                <input type="file" accept="image/*" capture="environment"
-                                       style={{ display: 'none' }}
-                                       onChange={e => setPesaje(it.id, 'foto', e.target.files?.[0] || null)} />
-                                {pesajes[it.id]?.foto
-                                  ? '✓ Foto de la balanza lista'
-                                  : '📷 Foto de la pantalla de la balanza'}
-                              </label>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
+                  {!enRevision && !pesajeListo && (
+                    <button onClick={cargarPesajes} style={{
+                      marginTop: 10, background: '#141416', color: C.acc,
+                      border: `1px solid ${C.acc}`, borderRadius: 8, padding: '9px 14px',
+                      fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>Actualizar</button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -965,10 +818,21 @@ export default function BPMChiliView({ user }) {
                      placeholder="Nota (opcional)" />
             </div>
 
-            <button style={{ ...btn(C.ok, guardando || !esperaOk), width: '100%' }}
-                    disabled={guardando || !esperaOk} onClick={registrarPaso}>
-              {guardando ? 'Guardando…' : `Registrar paso ${pasoActual.orden}`}
-            </button>
+            {/* El pesaje se hace en otra pantalla y en otro aparato, así que el
+                botón se apaga hasta que la tablet termine. Sin esto, avanzar
+                deja la tanda sin trazabilidad de los ingredientes. */}
+            {(() => {
+              const faltaPesar = pasoActual.requiere_pesaje && !enRevision && !pesajeListo
+              const bloqueado  = guardando || !esperaOk || faltaPesar
+              return (
+                <button style={{ ...btn(C.ok, bloqueado), width: '100%' }}
+                        disabled={bloqueado} onClick={registrarPaso}>
+                  {guardando ? 'Guardando…'
+                    : faltaPesar ? `Faltan ${pesajeItems.length - pesajeHechos} por pesar en la tablet`
+                    : `Registrar paso ${pasoActual.orden}`}
+                </button>
+              )
+            })()}
           </div>
         )}
 
