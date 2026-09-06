@@ -429,6 +429,12 @@ El fix del 31-ago ocultaba el grupo de bebida completo al agrandar, pero eso tam
 - **Resultado 90d:** líneas amarradas $264K → **$388,879**; sueltas $56K → **$16,333** (96% amarrado; el resto es papel/bolsas/insumos de DTEs mixtos PriceSmart). Sanity post-mapeo: Pan Berna $1.42/bolsa, MQ LAC $2.44/lb, Ketchup $23.04/caja, New York $5.85/lb — sin distorsiones.
 - **NO hecho a propósito:** repuntar facturas unitarias→productos bolsa (la recepción DTE usa cantidad facturada SIN factor → habría corrompido recepciones; los 6 "manuales derivados" quedan como deuda documentada). Kolashampan/Té fardo con semántica por-lata = ítem 11 del PLAN-INVENTARIO (pre-existente). Pendiente de Jose: proveedor/maquilador del Chile Bombazo, precio real del pepinillo triturado, bote de cocoa y hongo (factores asumidos). El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 06-Sep-2026 — BEES: migración de la ingesta a Google Apps Script (pedido de Jose)
+
+- **Jose pidió que la ingesta BEES sea un Apps Script** en vez de la Routine de claude.ai. `docs/bees-email-ingest.gs` reescrito listo para pegar: query real `(from:mybees.sv OR from:bees.com) -label:bees-procesado`, manda **texto Y html** al edge fn (v9 parsea ambos formatos), salta cancelaciones, un POST por hilo, y solo etiqueta si el POST llegó (errores de red se reintentan al siguiente run de 5 min; errores de formato se etiquetan y quedan en el log). Instrucciones de setup en el header del archivo.
+- **Transición:** la Routine `trig_01E4iPj4ZfPbFMYeYY8qRser` (2×/día) queda ACTIVA hasta que Jose instale el GAS y confirme ("listo el appscript") — comparten etiqueta y dedup B2B, así que conviven sin duplicar. Al confirmar, apagar la Routine con update_trigger enabled=false.
+- **Corrida de la semana (30-ago→6-sep):** 3 pedidos reales ingeridos automáticamente, todos M001: #B2B17267518 $940.32 (12/12, recepcionado 31-ago tras el fix RLS), #B2B17275088 $856.44 (4/4, entrega 2-sep — seguía sin recepcionar al 3-sep), #B2B17330761 $392.24 (9/9, entrega 5-sep). Mapeo automático acumulado: 25/25 items.
+
 ## 31-Ago-2026 — Transferencias entre sucursales (solo admin), montadas sobre el flujo de despacho
 
 - **Pedido de Jose:** apartado para transferir productos (bebida o comida) entre sucursales, solo admin, que la sucursal destino lo reciba por el flujo ya armado de despachos con motorista "como saliendo de Casa Matriz".
