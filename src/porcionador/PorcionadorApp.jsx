@@ -567,9 +567,12 @@ export default function PorcionadorApp() {
         const míos = k => (MI_ESTACION?.items || []).filter(x => (cola[k] || {})[x])
         const total = k => míos(k).reduce((a, x) => a + cola[k][x], 0)
         const vacío = total('aqui') === 0 && total('llevar') === 0
+        // El color es la señal, no la decoración: quien porciona tiene que
+        // distinguir de un vistazo, sin leer, cuál pila va a la barra y cuál
+        // se empaca. Por eso los chips toman el color de su grupo.
         const grupos = [
-          { k: 'aqui',   t: '🍽️ Para comer acá', c: '#22c55e' },
-          { k: 'llevar', t: '🥡 Para llevar',     c: '#f59e0b' },
+          { k: 'aqui',   t: '🍽️ Para comer acá', c: '#22c55e', bg: '#f0fdf4', tx: '#15803d', num: '#166534' },
+          { k: 'llevar', t: '🥡 Para llevar',     c: '#f59e0b', bg: '#fff7ed', tx: '#92400e', num: '#b45309' },
         ]
         return (
           <div style={sColaBox}>
@@ -585,13 +588,13 @@ export default function PorcionadorApp() {
                   <span style={{ fontSize: 20, fontWeight: 800, color: g.c }}>{total(g.k)}</span>
                 </div>
                 {total(g.k) === 0
-                  ? <div style={{ ...sColaVacia, padding: '6px 0', fontSize: 12 }}>—</div>
+                  ? <div style={{ ...sColaVacia, padding: '6px 0', fontSize: 12, color: '#bbb' }}>—</div>
                   : (
                     <div style={sColaGrid}>
                       {míos(g.k).map(x => (
-                        <div key={x} style={sColaChip}>
-                          <div style={sColaCant}>{cola[g.k][x]}</div>
-                          <div style={sColaNombre}>{KDS_CONTADOR_LABELS[x] || x}</div>
+                        <div key={x} style={{ ...sColaChip, background: g.bg, borderColor: g.c }}>
+                          <div style={{ ...sColaCant, color: g.num }}>{cola[g.k][x]}</div>
+                          <div style={{ ...sColaNombre, color: g.tx }}>{KDS_CONTADOR_LABELS[x] || x}</div>
                         </div>
                       ))}
                     </div>
