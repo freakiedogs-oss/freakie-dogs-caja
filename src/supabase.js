@@ -18,3 +18,44 @@ export const URL_SB =
 export const KEY_SB = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0Ym94bHdmcWNicmRmcmxud2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjcyMzQsImV4cCI6MjA4OTU0MzIzNH0.NpBQZgxbajgOVvw3FOwIUiOkgmh7rEuPQMRi0ZcFKe4'
 
 export const db = createClient(URL_SB, KEY_SB)
+
+// ── El WebSocket de Realtime NO pasa por el proxy ──
+// supabase-js arma la URL de realtime desde la misma base que el REST, así que
+// al apuntar el cliente a /sb el websocket también se iba por ahí. El proxy
+// corre en el runtime Edge de Vercel y su fetch() no sabe hacer upgrade a
+// WebSocket: rechaza TODO intento de conexión. Verificado el 5-sep-2026 con el
+// mismo handshake sobre HTTP/1.1:
+//   directo a supabase.co  → 101 Switching Protocols
+//   por /sb (proxy)        → 500
+//
+// Consecuencias que esto arrastraba: Realtime nunca funcionó en producción (los
+// 9 canales de POS/KDS/delivery vivían del polling de respaldo) y, como
+// supabase-js reintenta para siempre, se quemaban ~740 invocaciones fallidas
+// del Edge cada 10 min (~107k/día). El 4-sep esa carga ayudó a saturar el proxy:
+// 1,858 respuestas 504 en 10 minutos, incluido el registro de producción de
+// Casa Matriz y 83 logins.
+//
+// Importa además porque 6730a1c bajó el polling del KDS de 8s a 25s dando por
+// hecho que el realtime era la vía primaria. Sin esto, no lo era.
+//
+// El REST se queda en el proxy: eso es lo que esquiva el bloqueo de DNS a
+// *.supabase.co de algunos ISPs de El Salvador. Si una red también bloquea el
+// websocket, Realtime falla contra Supabase (ya no contra Vercel) y el polling
+// de respaldo sigue cubriendo, igual que hoy.
+if (URL_SB !== URL_SB_DIRECT) {
+  // Cliente aparte solo para quedarnos con su RealtimeClient, que sí queda
+  // apuntado a supabase.co. `db.channel()` delega en `db.realtime`, así que
+  // este swap arregla los 9 canales sin tocar ni un componente. Se hace al
+  // cargar el módulo, antes de que nadie se suscriba: la conexión es perezosa.
+  // storageKey propio + sin sesión persistida para no levantar un segundo
+  // GoTrue que compita con el del cliente principal.
+  const soloRealtime = createClient(URL_SB_DIRECT, KEY_SB, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: 'sb-realtime-directo',
+    },
+  })
+  db.realtime = soloRealtime.realtime
+}

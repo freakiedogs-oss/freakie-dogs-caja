@@ -2,6 +2,37 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 05-Sep-2026 — Realtime nunca funcionó en producción: el WebSocket se iba por el proxy Edge y siempre daba 500
+
+Kevin reportó `FUNCTION_INVOCATION_TIMEOUT` al terminar de registrar una producción. La primera hipótesis (RPC lenta, subir el timeout) era **falsa en los dos puntos**: `receta_costo_total` tarda **12 ms**, `anon` tiene `statement_timeout=3s` — si la RPC tardara, Postgres la mataría con un error SQL y jamás produciría un timeout de Vercel — y en el runtime **Edge** `maxDuration` ni siquiera es configurable.
+
+- **La causa real:** `supabase-js` arma la URL de realtime desde la misma base que el REST (`SupabaseClient.ts:287`), así que al apuntar el cliente a `/sb` **el WebSocket también se iba por el proxy**. El proxy corre en Edge y su `fetch()` no sabe hacer upgrade a WebSocket. Verificado con el mismo handshake sobre HTTP/1.1: **directo a supabase.co → `101 Switching Protocols`; por `/sb` → `500`**. (Con HTTP/2 ambos dan 500 y la prueba es inconclusa: el upgrade por Upgrade-header no es válido en h2.)
+- **Consecuencias:** Realtime **nunca funcionó en prod** — los 9 canales de POS/KDS/delivery vivían del polling de respaldo. Y como supabase-js reintenta para siempre (el KDS además tiene su propio retry a 3 s), se quemaban **~740 invocaciones fallidas del Edge cada 10 min (~107k/día)**.
+- **El timeout de Kevin fue daño colateral de eso.** Logs de Vercel del **4-sep 22:50–23:00 UTC**: **1,858 respuestas 504** contra 219 OK — el 76% del tráfico. Cayó todo, no solo producción: 717 timeouts del KDS, 675 del GPS de motoristas y **83 `erp_login` fallidos**. Ahí están las 2 requests de `rpc/registrar_produccion` con status 504. **No commitearon** (`produccion_diaria` no tenía filas nuevas), pero el hueco estructural sigue: un 504 posterior al commit + reintento = producción duplicada y doble consumo de inventario.
+- **Agravante:** `6730a1c` (de ese mismo día) bajó el polling del KDS de 8 s a 25 s dando por hecho que el realtime era la vía primaria. No lo era: el KDS quedó refrescando solo cada 25 s.
+- **Arreglado en `src/supabase.js`:** se crea un cliente aparte contra `URL_SB_DIRECT` y se le pasa su `RealtimeClient` a `db.realtime`. Como los 9 canales usan `db.channel()`, que delega en `db.realtime`, quedan arreglados **sin tocar un solo componente**. El swap se hace al cargar el módulo, antes de que nadie se suscriba (la conexión es perezosa). El REST **sigue por el proxy**: eso es lo que esquiva el bloqueo de DNS a `*.supabase.co` de algunos ISPs. Si una red también bloquea el WS, Realtime falla contra Supabase (ya no contra Vercel) y el polling cubre, igual que hoy. Riesgo acotado: el callback del KDS solo hace `load()`/`loadHistorial()` — lectura pura, no puede reintroducir el doble cobro.
+- **Pendiente (la solución de raíz):** dominio propio → **Supabase Custom Domain** (`api.freakiedogs.com`), que elimina el proxy Edge por completo — sin techo de 25 s, sin límite de concurrencia y sin romper el WebSocket, manteniendo la razón por la que existe el proxy. Además: idempotencia de `registrar_produccion` y revisar a la baja el polling ahora que el realtime vive.
+
+## 05-Sep-2026 — Producción: quién aparece como productor ahora es administrable (`es_productor`)
+
+El selector de "¿Quién produjo?" listaba a todo usuario de CM001 activo con rol `produccion`/`jefe_casa_matriz`/`despachador`, así que salía gente que no produce (bodega, despacho, jefatura).
+
+- **`usuarios_erp.es_productor`** (boolean, default `true`). Va aparte de `activo` y del rol **a propósito**: sacarlos por `activo` les habría quitado el login y cambiarles el rol, los permisos.
+- **Trampa que casi rompe el fix:** `usuarios_erp` tiene los GRANT **por columna** (para que `pin` no viaje con la llave pública, ver `e1de017`). Una columna nueva **no se hereda** — sin `grant select (es_productor) ... to anon, authenticated` la app la habría visto como *permission denied* y el selector habría quedado vacío. Verificado después con `set role anon`.
+- Marcados `false` (8, todos siguen `activo=true`): Marcos Flores, Johanna Sarmiento, Jessica Mendoza, Gerson Preza, Estephany López, Gustavo Hernández, Daniela Pinto, Samantha Nicole Cortez. Quedan **11 productores**.
+- **Falta la UI** para administrarlo: hoy el flag se cambia por SQL.
+
+## 05-Sep-2026 — Verificado el primer registro de producción vía kardex (Salsa Chipotle)
+
+`LOT-20260905-001` — Kevin registró 4 tandas de Salsa Chipotle, responsable Krissia Hernández. **Cuadra exacto**: receta de 4 bolsas de mayo + 4 latas de chipotle que rinde 14.9 bolsas a $47.3482/tanda → consumo 16 y 16, alta **59.6 bolsas**, costo **$189.39** (4 × 47.3482). Los 3 movimientos quedaron en `kardex_movimientos` con `referencia_tipo='produccion'` y su `stock_anterior`/`stock_posterior`. El flujo producción→kardex→inventario funciona de punta a punta. **Ojo:** Chile Chipotle Adobado quedó en **4 latas**, justo para una tanda más.
+
+## 05-Sep-2026 — Dónde se administra el catálogo de inventario (ya existía, estaba escondido)
+
+Pregunta recurrente ("¿dónde desactivo items y ajusto unidades?"). **No hay que construir nada**: vive como pestaña **"📦 Inventario"** dentro de `KardexView.jsx` (`ItemEditorModal`, RPC `actualizar_catalogo_producto`) y edita `activo`, `unidad_medida`, `unidad_compra`, `factor_compra`, `incluir_inventario_fisico`, `incluir_conteo`, `conteo_clase`. Empaques y presentaciones (`conteo_unidad`, `conteo_factor`, `conteo_modo`) están en la pestaña **"🌙 Lista Conteo"**. **`stock_minimo`/`stock_maximo` NO son del catálogo** — viven en `inventario` por sucursal y tienen su propia pantalla, **Almacén → 📊 Stock Mín/Máx** (`StockLevelsView.jsx`).
+
+- El problema es de **descubribilidad**: no existe ninguna entrada de nav llamada "Catálogo" o "Productos"; está enterrado bajo "Kardex" (`roles: jefe_casa_matriz, admin, ejecutivo`).
+- **Mejora pendiente:** extraer ese tab a su propio nav key. `App.jsx:105-107` documenta que a `ing_alimentos` se le negó Kardex **a propósito**, porque sus pestañas no filtran por rol y quien entra puede correr `kardex_mover_lote` y `registrar_merma`. Separarlo permitiría dar administración de catálogo sin regalar poder de mover stock.
+
 ## 05-Sep-2026 — El doble cobro: el KDS revivía cuentas ya cobradas (35 cuentas, $541 y DTEs duplicados a Hacienda)
 
 Rigo reportó que en Usulután (S002) el corte del 4-sep no cuadró: $20 de más en tarjeta después de cerrar una cuenta que aparecía abierta. Reconstruido segundo a segundo con los `edge_logs` de Supabase. **No fue error de caja: fue un fail-open del KDS.**

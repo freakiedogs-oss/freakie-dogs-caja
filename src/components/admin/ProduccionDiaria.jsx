@@ -99,7 +99,11 @@ export default function ProduccionDiaria({ user }) {
         db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,costo_calculado)'),
         db.from('catalogo_productos').select('id,nombre,categoria,unidad_medida,precio_referencia').eq('activo', true).order('nombre'),
         db.from('inventario').select('producto_id,stock_actual').eq('sucursal_id', CM_SUCURSAL_ID),
-        db.from('usuarios_erp').select('id,nombre,apellido,rol').eq('store_code', 'CM001').eq('activo', true).order('nombre'),
+        // `es_productor` sale de usuarios_erp y es lo que decide quién aparece
+        // en el selector de "¿Quién produjo?". Va aparte de `activo` y del rol
+        // a propósito: bodega, despacho y jefatura siguen entrando a la app con
+        // sus permisos, solo dejan de ofrecerse como productores.
+        db.from('usuarios_erp').select('id,nombre,apellido,rol').eq('store_code', 'CM001').eq('activo', true).eq('es_productor', true).order('nombre'),
       ]);
 
       setRecetas(rRes.data || []);
