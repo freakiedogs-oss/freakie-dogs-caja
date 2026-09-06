@@ -127,11 +127,32 @@ export default function PesajeChiliApp({ quien }) {
     <div style={{ minHeight: '100vh', background: C.bg, color: C.txt,
                   fontFamily: 'system-ui, -apple-system, Segoe UI, sans-serif' }}>
 
+      {/* Banda fija de revisión. Va arriba de todo y no se puede cerrar: si
+          alguien pesa una tanda real creyendo que está probando, o al revés,
+          la tanda entera queda inservible. */}
+      {tanda.es_revision && (
+        <div style={{
+          background: '#3a2f0f', borderBottom: `2px solid ${C.warn}`, color: '#fcd34d',
+          padding: '10px 18px', fontSize: 13.5, lineHeight: 1.5,
+        }}>
+          <b>MODO REVISIÓN — esto no cuenta.</b> Sirve para probar la balanza y
+          para entrenar. Los pesos se guardan marcados como prueba y no entran
+          en los reportes.
+        </div>
+      )}
+
       {/* Cabecera */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: '12px 18px', borderBottom: `1px solid ${C.line}`, gap: 12 }}>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>⚖️ Pesaje del chili</div>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>
+            ⚖️ Pesaje del chili
+            {tanda.es_revision && (
+              <span style={{ fontSize: 11, background: '#3a2f0f', color: '#fcd34d',
+                             padding: '2px 9px', borderRadius: 20, marginLeft: 8,
+                             verticalAlign: 'middle' }}>revisión</span>
+            )}
+          </div>
           <div style={{ fontSize: 12.5, color: C.dim, marginTop: 2 }}>
             Lote {tanda.lote || '—'} · {tanda.fecha} · {quien}
           </div>

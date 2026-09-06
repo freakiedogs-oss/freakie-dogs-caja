@@ -763,12 +763,16 @@ export default function BPMChiliView({ user }) {
                                 alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
                     <span style={{ fontSize: 14.5, fontWeight: 700,
                                    color: pesajeListo ? '#86efac' : '#bfdbfe' }}>
-                      ⚖️ {pesajeListo ? 'Pesaje completo' : 'El pesaje se hace en la tablet'}
+                      ⚖️ {enRevision ? 'Pesaje — en revisión no aplica'
+                          : pesajeListo ? 'Pesaje completo'
+                          : 'El pesaje se hace en la tablet'}
                     </span>
-                    <span style={{ fontSize: 17, fontWeight: 800, whiteSpace: 'nowrap',
-                                   color: pesajeListo ? C.ok : C.txt }}>
-                      {pesajeHechos} / {pesajeItems.length}
-                    </span>
+                    {!enRevision && (
+                      <span style={{ fontSize: 17, fontWeight: 800, whiteSpace: 'nowrap',
+                                     color: pesajeListo ? C.ok : C.txt }}>
+                        {pesajeHechos} / {pesajeItems.length}
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ height: 7, background: '#2a2a2e', borderRadius: 5,
