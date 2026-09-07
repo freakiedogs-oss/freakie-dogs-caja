@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 07-Sep-2026 — Reportes de Turno: revisión y aprobación de Administración (Saúl)
+
+Pedido de Jose: **los reportes de turno tienen que llevar la confirmación de Saúl Alas** y mostrar quién revisó y aprobó, igual que el Dashboard de Cierres.
+
+- **Quién aprueba:** roles `admin` y `superadmin` (Saúl Alas es `admin`, CM001). Se decidió **no hardcodear su usuario**: si se ausenta o cambia de puesto, el flujo no se traba. Los gerentes ven el estado pero no pueden aprobar — ni siquiera su propio reporte.
+- **Tres estados**, espejo de cierres: `pendiente` → `aprobado` / `requiere_correccion`, con comentario de revisión.
+- **DB:** `reportes_turno` gana `estado_revision` (NOT NULL default `pendiente`, con CHECK), `revisado_por`, `revisado_por_id`, `revisado_at`, `comentario_revision`. Los **404 reportes históricos (23-mar → 11-ago-2026) quedaron en `pendiente`** — arrancan como cola por revisar.
+- **La escritura va por RPC, no por la anon key.** `fn_revisar_reporte_turno(p_reporte_id, p_usuario_id, p_estado, p_comentario)` es SECURITY DEFINER y valida el rol contra `usuarios_erp`. Como `anon` tenía `UPDATE` a **nivel de tabla** (heredaba automáticamente toda columna nueva), la aprobación habría sido decorativa: se revocó ese grant y se re-otorgó **columna por columna** sobre las operativas (`fecha`, `store_code`, `estado_turno`, `fotos_urls`, `notas`, `creado_por`, `creado_por_id`, `created_at`). Nada más escribe `reportes_turno` que el INSERT de `ReporteForm`, así que no hay regresión.
+- **UI (`IncidentesDash.jsx`):** KPI "Por revisar", chips de filtro (Todos / Por revisar / Aprobados / Corrección), badge de revisión en cada tarjeta y bloque de revisión en el modal con "✓ Aprobado por X · fecha" + comentario.
+- **UI (`ReporteForm.jsx`):** el gerente ve en su banner de "reporte enviado" si sigue pendiente, si Saúl lo aprobó o si se lo devolvieron, con el comentario.
+- **QA en la BD:** gerente bloqueado por el RPC ✓ · `anon` no puede escribir `estado_revision` (permission denied) ✓ · `anon` conserva el UPDATE operativo ✓ · `anon` sí aprueba llamando el RPC con el id de Saúl ✓. Estado revertido a `pendiente` tras la prueba.
+- **Ojo:** **no entra un reporte de turno desde el 11-ago-2026.** El tablero sale en 0 no por el filtro de fecha sino porque las sucursales dejaron de llenarlo. Hay que reactivar la práctica o la aprobación no tiene qué aprobar.
+
 ## 07-Sep-2026 — Devolución de algo ya facturado: invalidar el DTE y emitir uno nuevo
 
 Regla de negocio fijada por Jose: **cuando el cliente devuelve algo ya facturado hay que invalidar el DTE y generar uno nuevo** por lo que sí se llevó. Cierra el bug que quedó abierto de la auditoría del 5-sep.

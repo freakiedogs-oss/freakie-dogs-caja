@@ -27,6 +27,11 @@ export default function IncidentesDash({user,onBack,defaultTab}){
   const [incDetalle,setIncDetalle]=useState([]);
   const [ausDetalle,setAusDetalle]=useState([]);
   const [filtroSuc,setFiltroSuc]=useState('todas');
+  const [filtroRev,setFiltroRev]=useState('todos'); // todos | pendiente | aprobado | requiere_correccion
+  const [comentario,setComentario]=useState('');
+  const [revisando,setRevisando]=useState(false);
+  // Solo admin/superadmin revisa y aprueba reportes (mismo criterio que el Dashboard de Cierres)
+  const puedeRevisar=['admin','superadmin'].includes(user?.rol);
   // Acciones pendientes
   const [acciones,setAcciones]=useState([]);
   const [accLoading,setAccLoading]=useState(false);
@@ -39,7 +44,8 @@ export default function IncidentesDash({user,onBack,defaultTab}){
 
   const cargar=async()=>{
     setLoading(true);
-    const {data}=await db.from('reportes_turno').select('id,fecha,store_code,estado_turno,notas,creado_por')
+    const {data}=await db.from('reportes_turno')
+      .select('id,fecha,store_code,estado_turno,notas,creado_por,estado_revision,revisado_por,revisado_at,comentario_revision')
       .gte('fecha',fechaDesde).lte('fecha',fechaHasta)
       .order('fecha',{ascending:false}).order('store_code');
     setReportes(data||[]);
@@ -70,8 +76,26 @@ export default function IncidentesDash({user,onBack,defaultTab}){
     cargarAcciones();
   };
 
+  // Revisión del reporte — va por RPC: la función valida el rol contra usuarios_erp,
+  // las columnas de revisión no son escribibles con la anon key.
+  const revisar=async(estado)=>{
+    if(!selected)return;
+    setRevisando(true);
+    const {data,error}=await db.rpc('fn_revisar_reporte_turno',{
+      p_reporte_id:selected.id,p_usuario_id:user.id,p_estado:estado,p_comentario:comentario.trim()||null
+    });
+    setRevisando(false);
+    if(error){show('❌ '+error.message);return;}
+    show(estado==='aprobado'?'✓ Reporte aprobado':'⚠ Marcado para corrección');
+    const patch={estado_revision:data.estado_revision,revisado_por:data.revisado_por,
+      revisado_at:data.revisado_at,comentario_revision:data.comentario_revision};
+    setReportes(rs=>rs.map(r=>r.id===selected.id?{...r,...patch}:r));
+    setSelected(s=>s?{...s,...patch}:s);
+  };
+
   const verDetalle=async(rep)=>{
     setSelected(rep);
+    setComentario(rep.comentario_revision||'');
     const [{data:inc},{data:aus}]=await Promise.all([
       db.from('incidentes_reporte').select('id,tipo_label,severidad,detalle').eq('reporte_id',rep.id),
       db.from('ausencias_reporte').select('id,empleado_nombre,tipo').eq('reporte_id',rep.id),
@@ -80,16 +104,22 @@ export default function IncidentesDash({user,onBack,defaultTab}){
     setAusDetalle(aus||[]);
   };
 
-  const filtrados=useMemo(()=>
+  // Base por sucursal (para los KPI) y lista final (además filtrada por estado de revisión)
+  const porSucursal=useMemo(()=>
     filtroSuc==='todas'?reportes:reportes.filter(r=>r.store_code===filtroSuc)
   ,[reportes,filtroSuc]);
 
+  const filtrados=useMemo(()=>
+    filtroRev==='todos'?porSucursal:porSucursal.filter(r=>(r.estado_revision||'pendiente')===filtroRev)
+  ,[porSucursal,filtroRev]);
+
   const kpi=useMemo(()=>{
-    const total=filtrados.length;
-    const sinNov=filtrados.filter(r=>r.estado_turno==='sin_novedad').length;
-    const graves=filtrados.filter(r=>r.estado_turno==='grave').length;
-    return {total,sinNov,graves,pctOk:total>0?Math.round(sinNov/total*100):0};
-  },[filtrados]);
+    const total=porSucursal.length;
+    const sinNov=porSucursal.filter(r=>r.estado_turno==='sin_novedad').length;
+    const graves=porSucursal.filter(r=>r.estado_turno==='grave').length;
+    const porRevisar=porSucursal.filter(r=>(r.estado_revision||'pendiente')==='pendiente').length;
+    return {total,sinNov,graves,porRevisar,pctOk:total>0?Math.round(sinNov/total*100):0};
+  },[porSucursal]);
 
   const ESTADO_CFG={
     sin_novedad:    {label:'Sin novedad',         color:'#4ade80',bg:'#14532d33'},
@@ -98,6 +128,14 @@ export default function IncidentesDash({user,onBack,defaultTab}){
     grave:          {label:'Incidentes graves',   color:'#f87171',bg:'#7f1d1d33'},
   };
   const SEV_COLOR={leve:'#4ade80',moderado:'#facc15',grave:'#f87171'};
+
+  const REV_CFG={
+    pendiente:          {label:'Por revisar',   short:'👁 Por revisar',   color:'#facc15',bg:'#71400022',border:'#713f12'},
+    aprobado:           {label:'Aprobado',      short:'✓ Aprobado',      color:'#4ade80',bg:'#14532d22',border:'#14532d'},
+    requiere_correccion:{label:'Req. corrección',short:'⚠ Corrección',   color:'#f97316',bg:'#431c0322',border:'#7c2d12'},
+  };
+  const revCfg=r=>REV_CFG[r?.estado_revision||'pendiente']||REV_CFG.pendiente;
+  const fmtFechaHora=iso=>iso?new Date(iso).toLocaleString('es-SV',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
 
   return(
     <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
@@ -151,10 +189,18 @@ export default function IncidentesDash({user,onBack,defaultTab}){
       </div>
 
       {/* KPIs */}
-      <div style={{display:'flex',gap:8,marginBottom:16}}>
+      <div style={{display:'flex',gap:8,marginBottom:10}}>
         <div className="stat-card"><div style={{fontSize:22,fontWeight:800}}>{kpi.total}</div><div style={{fontSize:11,color:'#555',marginTop:2}}>Reportes</div></div>
         <div className="stat-card"><div style={{fontSize:22,fontWeight:800,color:'#4ade80'}}>{kpi.pctOk}%</div><div style={{fontSize:11,color:'#555',marginTop:2}}>Sin novedad</div></div>
         <div className="stat-card"><div style={{fontSize:22,fontWeight:800,color:'#f87171'}}>{kpi.graves}</div><div style={{fontSize:11,color:'#555',marginTop:2}}>Graves</div></div>
+        <div className="stat-card"><div style={{fontSize:22,fontWeight:800,color:kpi.porRevisar>0?'#facc15':'#4ade80'}}>{kpi.porRevisar}</div><div style={{fontSize:11,color:'#555',marginTop:2}}>Por revisar</div></div>
+      </div>
+
+      {/* Filtro por estado de revisión */}
+      <div className="chips" style={{marginBottom:14}}>
+        {[['todos','Todos'],['pendiente','👁 Por revisar'],['aprobado','✓ Aprobados'],['requiere_correccion','⚠ Corrección']].map(([k,l])=>(
+          <div key={k} className={`chip${filtroRev===k?' on':''}`} onClick={()=>setFiltroRev(k)}>{l}</div>
+        ))}
       </div>
 
       {loading&&<div style={{textAlign:'center',padding:30}}><div className="spin" style={{width:28,height:28,margin:'0 auto'}}/></div>}
@@ -165,17 +211,27 @@ export default function IncidentesDash({user,onBack,defaultTab}){
 
       {filtrados.map(rep=>{
         const cfg=ESTADO_CFG[rep.estado_turno]||ESTADO_CFG.sin_novedad;
+        const rev=revCfg(rep);
         return(
           <div key={rep.id} className="card" style={{border:`1px solid ${cfg.color}44`,marginBottom:10,cursor:'pointer'}}
             onClick={()=>verDetalle(rep)}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
               <div>
                 <div style={{fontWeight:700,fontSize:14}}>{STORES[rep.store_code]||rep.store_code}</div>
                 <div style={{fontSize:12,color:'#666',marginTop:2}}>{rep.fecha} · {rep.creado_por}</div>
               </div>
-              <span style={{padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,
-                background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
+              <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end',flexShrink:0}}>
+                <span style={{padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,
+                  background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
+                <span style={{padding:'2px 9px',borderRadius:20,fontSize:10,fontWeight:700,
+                  background:rev.bg,color:rev.color,border:`1px solid ${rev.border}`}}>{rev.short}</span>
+              </div>
             </div>
+            {rep.revisado_por&&(
+              <div style={{marginTop:6,fontSize:11,color:rev.color}}>
+                {rep.estado_revision==='aprobado'?'✓ Aprobado':'⚠ Devuelto'} por {rep.revisado_por} · {fmtFechaHora(rep.revisado_at)}
+              </div>
+            )}
             {rep.notas&&<div style={{marginTop:8,fontSize:12,color:'#888',fontStyle:'italic'}}>"{rep.notas}"</div>}
           </div>
         );
@@ -230,6 +286,47 @@ export default function IncidentesDash({user,onBack,defaultTab}){
                 📝 {selected.notas}
               </div>
             )}
+
+            {/* Revisión / aprobación */}
+            <div style={{marginTop:16,paddingTop:14,borderTop:'1px solid #2a2a2a'}}>
+              <div className="sec-title" style={{marginTop:0}}>✅ Revisión</div>
+
+              {selected.revisado_por?(
+                <div style={{padding:'10px 12px',borderRadius:8,marginBottom:10,
+                  background:revCfg(selected).bg,border:`1px solid ${revCfg(selected).border}`}}>
+                  <div style={{fontWeight:700,fontSize:13,color:revCfg(selected).color}}>
+                    {selected.estado_revision==='aprobado'?'✓ Aprobado':'⚠ Devuelto para corrección'} por {selected.revisado_por}
+                  </div>
+                  <div style={{fontSize:11,color:'#777',marginTop:2}}>{fmtFechaHora(selected.revisado_at)}</div>
+                  {selected.comentario_revision&&(
+                    <div style={{fontSize:12,color:'#aaa',marginTop:6,fontStyle:'italic'}}>"{selected.comentario_revision}"</div>
+                  )}
+                </div>
+              ):(
+                <div style={{padding:'8px 12px',borderRadius:8,marginBottom:10,background:'#71400022',
+                  border:'1px solid #713f12',fontSize:12,color:'#facc15'}}>
+                  👁 Pendiente de revisión
+                </div>
+              )}
+
+              {puedeRevisar?(<>
+                <div style={{fontSize:12,color:'#aaa',marginBottom:5}}>Comentario de revisión</div>
+                <textarea className="inp" rows={2} value={comentario} onChange={e=>setComentario(e.target.value)}
+                  placeholder="Opcional..." style={{resize:'none',fontSize:13,marginBottom:10}}/>
+                <div style={{display:'flex',gap:8}}>
+                  <button className="btn btn-ghost" onClick={()=>revisar('requiere_correccion')} disabled={revisando}
+                    style={{flex:1,fontSize:13,color:'#f97316',borderColor:'#7c2d12'}}>
+                    ⚠ Corrección
+                  </button>
+                  <button className="btn btn-red" onClick={()=>revisar('aprobado')} disabled={revisando} style={{flex:2}}>
+                    {revisando?<span className="spin"/>:(selected.estado_revision==='aprobado'?'✓ Reaprobar':'✓ Aprobar')}
+                  </button>
+                </div>
+              </>):(
+                <div style={{fontSize:11,color:'#555'}}>Solo Administración puede aprobar reportes de turno.</div>
+              )}
+            </div>
+
             <button className="btn btn-ghost" onClick={()=>setSelected(null)} style={{marginTop:16}}>Cerrar</button>
           </div>
         </div>

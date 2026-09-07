@@ -129,7 +129,7 @@ export default function ReporteForm({ user, onBack }) {
         }
       });
     db.from('reportes_turno')
-      .select('id,fecha,store_code,estado_turno,notas,creado_por,fotos_urls')
+      .select('id,fecha,store_code,estado_turno,notas,creado_por,fotos_urls,estado_revision,revisado_por,revisado_at,comentario_revision')
       .eq('fecha', fechaSel)
       .eq('store_code', selectedStore)
       .maybeSingle()
@@ -437,6 +437,29 @@ export default function ReporteForm({ user, onBack }) {
           <div style={{ fontSize: 12, color: '#888' }}>
             Enviado por {yaEnviado.creado_por}. Solo puede haber un reporte por día.
           </div>
+          {/* Resolución de Administración */}
+          {(() => {
+            const est = yaEnviado.estado_revision || 'pendiente';
+            const cfg = {
+              pendiente: { c: '#facc15', t: '👁 Pendiente de revisión por Administración' },
+              aprobado: { c: '#4ade80', t: `✓ Revisado y aprobado por ${yaEnviado.revisado_por}` },
+              requiere_correccion: { c: '#f97316', t: `⚠ Devuelto para corrección por ${yaEnviado.revisado_por}` },
+            }[est];
+            if (!cfg) return null;
+            return (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #14532d' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: cfg.c }}>{cfg.t}</div>
+                {yaEnviado.revisado_at && (
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                    {new Date(yaEnviado.revisado_at).toLocaleString('es-SV', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+                {yaEnviado.comentario_revision && (
+                  <div style={{ fontSize: 12, color: '#aaa', marginTop: 5, fontStyle: 'italic' }}>"{yaEnviado.comentario_revision}"</div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
