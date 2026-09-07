@@ -2,6 +2,17 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 07-Sep-2026 — Bucle de recargas en Safari: la PWA no dejaba ni escribir el PIN
+
+Majo no podía entrar desde su **Mac nueva**: la PWA se recargaba **cada 2-3 segundos** y recién se estabilizaba tras **~30 recargas**. Solo en Safari; en Chrome y en las tablets Fire nunca se vio.
+
+- **Causa:** `main.jsx` recargaba ante **cualquier** `controllerchange` del service worker. En Safari, WebKit arranca la navegación **sin controlador** y el SW la reclama después (`clients.claim()` en `sw.js`), así que el evento **dispara en cada carga**. El freno `refreshing` no servía: es una variable normal que muere con la página y vuelve a `false` en la siguiente. Por eso era la **única** ruta de recarga sin tope — `repararCache` y el candado de versión (`versionGate`) sí cortan a 1 y 2 recargas vía `sessionStorage`, así que ninguna de las dos podía llegar a 30.
+- **Cómo se aisló:** con *Conservar registro* activado en la consola de Safari, la app se recargaba **sin imprimir nada**. De las tres rutas de recarga, dos loguean antes de recargar (`Recargando por caché vieja:`) o muestran el splash "Actualizando app…"; la del SW es la única silenciosa.
+- **Arreglo:** se recarga **solo si un SW nuevo reemplaza a uno que ya controlaba la página** (`const habiaControlador = !!navigator.serviceWorker.controller`). Si arrancó sin controlador, los archivos ya vinieron de la red y no hay nada que refrescar. Queda intacto el caso que esto resuelve: **deploy nuevo sobre una tablet de caja abierta hace horas** (ahí sí había controlador previo → sigue recargando sola).
+- **Se aplicó en las tres entradas** que tenían el mismo código copiado: `main.jsx` (ERP), `driver/driver-main.jsx` y `menu-publico/menu-main.jsx`. El del **menú público pega doble**: lo abren clientes desde iPhone, o sea Safari.
+- **Ojo para el futuro:** el arreglo se auto-entrega — cada recarga del bucle baja el `index.html` nuevo (el SW sirve HTML network-first), así que el bundle arreglado entra solo. Si alguien queda atascado igual, borrar los datos del sitio en Safari (Ajustes → Privacidad → Gestionar datos de sitios web).
+- **Pendiente aparte, sin resolver:** en la consola de su Mac aparece `Fetch API cannot load .../sb/rest/v1/usuarios_erp ... due to access control checks`. Es la **sonda de diagnóstico** del proxy (`LoginScreen.jsx:92`), va dentro de `try/catch` y no dispara recargas — el indicador igual daba **Conectado** en verde. Raro porque es **mismo origen** (no debería haber CORS): sospecha de extensión/bloqueador o de una redirección. Queda por mirar.
+
 ## 07-Sep-2026 — RRHH (Majo) administra los accesos del personal: PIN, rol, alta y baja
 
 Pedido de Jose: **Maria Jose Siguenza (Talento Humano, rol `rrhh`) tiene que poder ver y cambiar PINs, cambiar roles, crear empleados y desactivarlos** — todo lo de recursos humanos, sin depender de un ejecutivo.
