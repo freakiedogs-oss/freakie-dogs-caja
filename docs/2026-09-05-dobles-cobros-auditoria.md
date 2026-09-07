@@ -201,6 +201,13 @@ Dos sabores:
 saber si hubo devolución real de dinero, y en los parciales hace falta re-emitir.
 Es una decisión de operación, no de datos.
 
+> **Arreglado para adelante (07-sep-2026).** Jose fijó la regla: cuando el cliente
+> devuelve algo ya facturado hay que **invalidar el DTE y emitir uno nuevo**.
+> `doDeleteItem` ya no deja anular ítems de una cuenta cobrada, y el botón
+> **Devolución** del Historial de cobros hace el ciclo completo: invalida, re-emite
+> por lo que el cliente sí se lleva, ajusta los pagos al neto y reimprime el ticket.
+> Los 8 casos de arriba son anteriores y siguen pendientes de decisión.
+
 ## Hallazgo mayor colateral: 106 DTE emitidos sin aplicar el descuento
 
 Al revisar el vecindario apareció esto, que pesa más que todo lo anterior:

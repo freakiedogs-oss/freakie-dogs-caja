@@ -3,6 +3,7 @@ import { db } from '../supabase'
 import { STORES } from '../config'
 import { anularDTE } from './cajero/dteService'
 import NotaCreditoModal from './cajero/NotaCreditoModal'
+import DevolucionModal from './cajero/DevolucionModal'
 import { useToast } from '../hooks/useToast'
 import Icon from './Icon'
 import { printFactura } from './print/printService'
@@ -61,6 +62,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
   const [expandedId, setExpandedId] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [ncCuenta, setNcCuenta] = useState(null)
+  const [devolucion, setDevolucion] = useState(null)
   const [filtroFecha, setFiltroFecha] = useState('hoy') // 'hoy' | 'ayer' | 'custom'
   const [fechaCustom, setFechaCustom] = useState('')
 
@@ -114,6 +116,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
           pax_hombres,
           nc_codigo_generacion,
           nc_emitida_at,
+          sucursal_id,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
             id,
             nombre,
@@ -131,7 +134,8 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             metodo,
             monto,
             monto_recibido,
-            cambio
+            cambio,
+            anulado
           )
         `)
         .eq('store_code', storeCode)
@@ -505,6 +509,16 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                         >
                           <Icon name="receipt" size={14} /> {reimprimiendo === cuenta.id ? 'Imprimiendo…' : 'Reimprimir'}
                         </button>
+                        {cuenta.dte_uuid && (cuenta.pos_cuenta_items || []).some(i => !i.cancelado_motivo) && (
+                          <button
+                            className="historial-action-btn"
+                            onClick={() => setDevolucion(cuenta)}
+                            title="El cliente devuelve algo: invalida esta factura y emite una nueva por el resto"
+                            style={{ background: '#3a1a1a', borderColor: '#e5484d', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                          >
+                            <Icon name="rotate" size={13} /> Devolución
+                          </button>
+                        )}
                         {cuenta.dte_uuid && (cuenta.dte_tipo === '01' || cuenta.dte_tipo === '03') && !cuenta.nc_codigo_generacion && (
                           <button
                             className="historial-action-btn"
@@ -548,6 +562,16 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
       </div>
 
       {/* ── Nota de Crédito Modal ── */}
+      {devolucion && (
+        <DevolucionModal
+          cuenta={devolucion}
+          user={user}
+          storeCode={storeCode}
+          storeName={storeName}
+          onClose={() => { setDevolucion(null); setRefreshKey(k => k + 1) }}
+          onListo={() => setRefreshKey(k => k + 1)}
+        />
+      )}
       {ncCuenta && <NotaCreditoModal cuenta={ncCuenta} onClose={() => { setNcCuenta(null); load() }} onSuccess={() => { /* no cerrar — el usuario ve resultado y da click en Cerrar */ }} />}
 
       <toast.Toast />

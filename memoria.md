@@ -2,6 +2,23 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 07-Sep-2026 — Devolución de algo ya facturado: invalidar el DTE y emitir uno nuevo
+
+Regla de negocio fijada por Jose: **cuando el cliente devuelve algo ya facturado hay que invalidar el DTE y generar uno nuevo** por lo que sí se llevó. Cierra el bug que quedó abierto de la auditoría del 5-sep.
+
+- **El agujero que se tapa:** `doDeleteItem` dejaba anular ítems de una cuenta **ya cobrada y facturada**. Bajaba `subtotal`/`total` y no tocaba ni el pago ni el DTE, así que la factura seguía viva en Hacienda por el monto viejo. 8 casos entre jul y sep-2026, **$23.87 declarados de más**.
+- **`doDeleteItem` ahora se niega** si la cuenta está `cobrada` o tiene `dte_uuid`, y manda al flujo correcto. Fail-open si la consulta falla, para no bloquear la anulación normal de una orden abierta.
+- **Nuevo `DevolucionModal`** (`src/pos/cajero/DevolucionModal.jsx`), botón **Devolución** en Historial de cobros. Se marcan los ítems que el cliente devuelve y hace, en este orden:
+  1. **Invalida** el DTE original (`tipoAnulacion` 2, motivo con el detalle).
+  2. **Emite el DTE nuevo** con los ítems que quedan (si queda alguno).
+  3. Marca los ítems devueltos, actualiza `subtotal`/`total`/`dte_*` de la cuenta, y si se devolvió todo la deja `cancelada`.
+  4. **Anula los pagos vigentes e inserta uno nuevo por el neto** — así el corte del turno cuadra solo, sin tocar nada a mano (ya excluye `pos_cuenta_pagos.anulado`).
+  5. Registra en `pos_operaciones_log` (`devolucion_con_reemision`) e imprime el ticket corregido.
+- **El orden es a propósito:** invalidar primero, emitir después. Nunca hay dos documentos vivos a la vez — que es justo lo que se acaba de limpiar de toda la cadena. Si la emisión falla, la cuenta queda marcada `DTE_PENDIENTE_REEMISION` en `notas_internas` y el cajero ve un aviso explícito de que la venta quedó sin factura. Es el fallo menos malo de los dos.
+- **Detalles:** en devolución total se va también la propina; en parcial se respeta. El método de pago del DTE nuevo es el original. Los pagos ya anulados por una devolución previa no se cuentan.
+- **Límite conocido, documentado en el código:** `pos_corte` agrupa los pagos por la fecha de la **cuenta**, así que devolver hoy una venta de ayer deja el corte de ayer correcto pero la gaveta de hoy con menos plata de la que el corte espera. Para ese caso (poco común) hay que registrar la salida como egreso del turno.
+- **No se tocaron los 8 casos históricos ni los 106 del descuento** (~$315.14 en total): siguen esperando la decisión con el contador. Detalle en `docs/2026-09-05-dobles-cobros-auditoria.md`.
+
 ## 07-Sep-2026 — Conteo, costeo de empaques y auditoría de producción (solo BD, sin cambios de código)
 
 Encargo de Jose: meter la cebolla morada al conteo, cambiar mayonesas, desglosar guantes por talla, costear el empaque al vacío y revisar las producciones que corrió Kevin el sábado. **Todo es data: no se tocó un archivo del repo.**

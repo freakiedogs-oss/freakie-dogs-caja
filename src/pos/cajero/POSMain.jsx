@@ -744,6 +744,21 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     if (!item) return
     if (item.saved) {
       if (!item.dbId) { toast.error('Recarga la orden para anular este item'); return }
+      // Una cuenta YA COBRADA no se corrige anulando el ítem: eso bajaba el total
+      // y dejaba el pago y el DTE intactos, así que la factura seguía viva en
+      // Hacienda por el monto viejo (8 casos, $23.87 de más entre jul y sep-2026).
+      // Si el cliente devuelve algo ya facturado hay que invalidar el DTE y emitir
+      // uno nuevo — eso lo hace el botón "Devolución" del Historial de cobros.
+      if (cuentaId) {
+        try {
+          const { data: _c } = await db.from('pos_cuentas')
+            .select('estado, dte_uuid').eq('id', cuentaId).maybeSingle()
+          if (_c && (_c.estado === 'cobrada' || _c.dte_uuid)) {
+            toast.error('Esta cuenta ya se cobró y facturó. Para devolver un producto usá "Devolución" en Historial de cobros: invalida la factura y emite una nueva.')
+            return
+          }
+        } catch (_e) { /* si la consulta falla no se bloquea la operación normal */ }
+      }
       try {
         await db.from('pos_cuenta_items')
           .update({ cancelado_motivo: `Anulado en POS (${auth?.nombre || 'sup'})`, cancelado_por: auth?.id || null })
