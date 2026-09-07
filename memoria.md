@@ -2,6 +2,28 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 07-Sep-2026 — Conteo, costeo de empaques y auditoría de producción (solo BD, sin cambios de código)
+
+Encargo de Jose: meter la cebolla morada al conteo, cambiar mayonesas, desglosar guantes por talla, costear el empaque al vacío y revisar las producciones que corrió Kevin el sábado. **Todo es data: no se tocó un archivo del repo.**
+
+**1. Altas del conteo — la trampa: `incluir_conteo` no basta.** `ConteoNocturno.jsx` arma la lista **partiendo de `inventario`** y recién ahí hace join a `catalogo_productos`. Un producto con `incluir_conteo=true` pero **sin fila en `inventario`** no aparece — y no da error, simplemente no está. Las 3 altas nuevas nacieron así y no salían en ninguna sucursal.
+- **Cebolla Morada bolsa 1 lb (procesada)**, `tipo=sub_producto`, grupo Vegetales. Mín/máx quedan en **0/0** (falta definirlos: hoy aparece para contar pero no sugiere pedido).
+- **Mayonesa**: se decidió **separar marcas, no renombrar**. La fila histórica volvió a `Mayonesa Hellmanns bote` y salió del conteo; **McCormick es fila nueva** (Molsal). Renombrar en sitio habría reetiquetado 676 conteos y 46 movs de kardex que físicamente fueron Hellmanns. Los 19 galones de Hellmanns en calle se bajaron a 0 **por kardex** (`ajuste_manual` / `referencia_tipo='descontinuado'`), no con un UPDATE a mano, para que la salida deje rastro.
+- **Guantes S/M/L** al conteo (la M no existía); el genérico "Guantes caja 100 pares" salió para no duplicar.
+
+**2. Costeo de insumos — dónde se arregla un precio "por caja".** `recetas.costo_calculado` → `receta_costo_total()` → **`costo_producto()`**, que cascadea: recepciones (180 d) → compras DTE/BEES mapeadas → lista de proveedor → `precio_referencia`, y divide por **`catalogo_productos.factor_compra`**. Dos trampas: **`precio_referencia` es el único camino que NO se divide** por el factor (ahí va el precio por unidad), y **`factor_compra` también mueve stock** en `recibir_dte`, así que no se puede falsear para cuadrar un costo.
+- **Bolsas de vacío**: 8x12 (paquete 1000, $0.03988), 12x14 (500, $0.13957), 10x12 (1000, $0.04985 — **no existía en catálogo** pese a comprarse desde junio). Cargadas en Cebolla Morada (30), Escabeche (5), Mermelada de Tocino (12), Chili (4), Mezcla de Carne Smash (33.35) y Salchicha reempacada (1).
+- **El saco de cebolla eran 33 lb, no 50.** El costo **no** salía de `factor_compra` sino de **`factor_conversion=50` grabado en las 28 líneas de DTE**. Corregidas: **$0.5777 → $0.8753/lb**. Ojo: las recepciones pasadas acreditaron 50 lb por saco (≈17 lb fantasma c/u); las futuras ya entran a 33.
+- **Recetas nuevas:** `Cebolla Morada encurtida al vacío (bolsa 1 lb)` — 2 sacos de 33 lb → 30 bolsas, **$75.90 la tanda = $2.53/bolsa**; se dejó **aparte** de la sub_receta vieja `Cebolla Morada` (mermelada/confit), que consumen Hamburguesa Sencilla y Sweat Freak. Y `Salchicha reempacada (paquete 25 un)`, que sí era proceso de CM y no existía: 25 × $0.33 + bolsa = **$8.30**.
+- **Destapado, no tocado:** `Sweat Freak` (inactiva) consume **"1 porción"** de una sub_receta que rinde **"1 tanda"** sin `factor_a_stock` → le carga la tanda entera y queda en $32.48 con precio $4.50. Verificado que **ninguna receta activa** tiene ese desajuste de unidades. Pendientes de precio: la `Bolsa de hielo 5 lbs` cuesta **$8.46** porque lo que se recibe es en realidad un **"[1.08] Fardo Hielo en Cubo"** del DTE — falta saber cuántas bolsas trae el fardo.
+
+**3. Auditoría de las producciones de Kevin (5 y 6-sep).** El módulo **funcionó**: 9 lotes, **9 entradas de kardex + 80 salidas de consumo**, cantidades exactas (`corridas × rendimiento` — ojo, `cantidad_producida` son **corridas**, no unidades) y costos exactos. Tres fallas:
+- **Doble submit sin candado:** `LOT-20260905-004` y `-005` son idénticos, creados con **81 segundos** de diferencia. 667 bolitas fantasma (~$478) y doble consumo de 12 insumos. Es el mismo hueco estructural que anotó la entrada del 5-sep sobre los 504.
+- **No valida stock:** la producción hunde insumos en negativo (Bionis YE 38 −228 g, Paprika −127 g, Gran Onion −107 g). Al 7-sep hay **49 productos en negativo en CM001**, el peor `Carne para hamburguesa` en **−4,062** pese a producir 1,334 ese día.
+- **`produccion_diaria.merma` miente:** es columna GENERADA = `cantidad_producida - cantidad_enviada`, y `cantidad_enviada` tiene default 0 y **nadie la actualiza** (el despacho va por `despachos_sucursal` → kardex `traslado`). Toda producción figura con 100% de merma. `ProduccionDiaria.jsx` no la lee, así que no se ve — pero cualquier reporte que la use da basura.
+
+**4. Porcionados dados de baja** (Jose: ya no se porciona): `Fancy`, `Papa Blanca`, `Papa Waffle` y `Papa Sazonada`. **`Mini Fancy` se dejó activa**: es la única receta que respalda **7 ítems del menú** (`Mini Fancys`, `Papa Fancy (Promo)`) y `pos_deducir_inventario` filtra `activo` **al entrar del ítem de menú a su receta** — desactivarla habría cortado el descuento de inventario al venderlos. En cambio `Papa Sazonada`, consumida por 23 combos, es segura: la recursión a sub-recetas (`LEFT JOIN recetas sr ON sr.id = ri.sub_receta_id`) **no** filtra por `activo`.
+
 ## 07-Sep-2026 — Catálogo de Productos con nav propio + pantalla para administrar productores
 
 Cierra los dos pendientes que quedaron abiertos el 5-sep.
