@@ -467,6 +467,12 @@ El fix del 31-ago ocultaba el grupo de bebida completo al agrandar, pero eso tam
 - **Resultado 90d:** líneas amarradas $264K → **$388,879**; sueltas $56K → **$16,333** (96% amarrado; el resto es papel/bolsas/insumos de DTEs mixtos PriceSmart). Sanity post-mapeo: Pan Berna $1.42/bolsa, MQ LAC $2.44/lb, Ketchup $23.04/caja, New York $5.85/lb — sin distorsiones.
 - **NO hecho a propósito:** repuntar facturas unitarias→productos bolsa (la recepción DTE usa cantidad facturada SIN factor → habría corrompido recepciones; los 6 "manuales derivados" quedan como deuda documentada). Kolashampan/Té fardo con semántica por-lata = ítem 11 del PLAN-INVENTARIO (pre-existente). Pendiente de Jose: proveedor/maquilador del Chile Bombazo, precio real del pepinillo triturado, bote de cocoa y hongo (factores asumidos). El **estado completo** vive en `Contexto/MAESTRO/Freakie_Dogs_Contexto_ERP_MAESTRO.md` (+ `CHANGELOG.md`); esto guarda el **"por qué" reciente**. Actualizar al terminar algo material.
 
+## 07-Sep-2026 — BEES: Apps Script verificado E2E, Routine de Claude APAGADA
+
+- Jose instaló `bees-email-ingest.gs` en script.google.com (freakiedogs@gmail.com): trigger cada 5 min creado y `beesIngest` corrió limpio.
+- **Prueba E2E real:** se le quitó la etiqueta `bees-procesado` a un correo ya ingerido (#B2B17330761, protegido por dedup) — el GAS lo agarró en su ventana de 5 min, hizo el POST al edge fn (skip duplicate) y lo re-etiquetó solo. Pipeline completo verificado.
+- **Routine `trig_01E4iPj4ZfPbFMYeYY8qRser` deshabilitada** (no borrada, por si hay que reactivarla como respaldo). El GAS queda como ÚNICO ingestor BEES: correo → edge fn `ingest-bees-email` (v9) → compras_bees en tránsito → recepción atómica `bees_recepcionar` en la UI.
+
 ## 06-Sep-2026 — BEES: migración de la ingesta a Google Apps Script (pedido de Jose)
 
 - **Jose pidió que la ingesta BEES sea un Apps Script** en vez de la Routine de claude.ai. `docs/bees-email-ingest.gs` reescrito listo para pegar: query real `(from:mybees.sv OR from:bees.com) -label:bees-procesado`, manda **texto Y html** al edge fn (v9 parsea ambos formatos), salta cancelaciones, un POST por hilo, y solo etiqueta si el POST llegó (errores de red se reintentan al siguiente run de 5 min; errores de formato se etiquetan y quedan en el log). Instrucciones de setup en el header del archivo.
