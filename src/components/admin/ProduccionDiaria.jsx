@@ -5,7 +5,12 @@ import OrdenesProduccionTab from './OrdenesProduccionTab';
 
 // ── Roles con acceso de edición ──
 const ROLES_EDIT = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'superadmin', 'ing_alimentos'];
-const ROLES_PRODUCCION = ['produccion', 'jefe_casa_matriz', 'despachador'];
+
+// Quién puede dar de alta/baja productores. Es un subconjunto de ROLES_EDIT:
+// registrar una tanda es trabajo diario, administrar al personal no. Tiene que
+// coincidir con lo que valida la RPC `set_es_productor` — la pantalla solo
+// esconde el botón; quien manda es el servidor.
+const ROLES_PERSONAL = ['jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'];
 
 // ── Generar número de lote ──
 const generarLote = (fecha, seq) =>
@@ -83,10 +88,19 @@ export default function ProduccionDiaria({ user }) {
   // Inventario CM001
   const [inventarioCM, setInventarioCM] = useState({});
 
+  // Personal — TODA la gente activa de CM001, prendidos y apagados.
+  // Va aparte de `empleadosCM` (que son solo los productores) a propósito:
+  // ese array se le pasa a OrdenesProduccionTab para su picker, así que
+  // mezclar acá a los no-productores los devolvería al selector.
+  const [personalCM, setPersonalCM] = useState([]);
+  const [loadingPersonal, setLoadingPersonal] = useState(false);
+  const [guardandoId, setGuardandoId] = useState(null);
+
   // Validation state
   const [touched, setTouched] = useState({});
 
   const canEdit = ROLES_EDIT.includes(user?.rol);
+  const canEditPersonal = ROLES_PERSONAL.includes(user?.rol);
   const CM_SUCURSAL_ID = '584aee3c-a842-496f-9f2b-1e3bac6e6b23';
 
   // ── Cargar datos iniciales ──
@@ -155,17 +169,63 @@ export default function ProduccionDiaria({ user }) {
     }
   }, [filtroFecha, filtroReceta, filtroEmpleado]);
 
+  // ── Cargar personal de CM001 (tab Personal) ──
+  const cargarPersonal = useCallback(async () => {
+    setLoadingPersonal(true);
+    try {
+      const { data, error: err } = await db.from('usuarios_erp')
+        .select('id,nombre,apellido,rol,es_productor')
+        .eq('store_code', 'CM001').eq('activo', true).order('nombre');
+      if (err) throw err;
+      setPersonalCM(data || []);
+    } catch (err) {
+      console.error('Error cargando personal:', err);
+      setError('No se pudo cargar el personal de Casa Matriz');
+    }
+    setLoadingPersonal(false);
+  }, []);
+
+  // ── Prender/apagar a alguien como productor ──
+  const togglePersonal = async (persona) => {
+    const nuevo = !persona.es_productor;
+    setGuardandoId(persona.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { error: err } = await db.rpc('set_es_productor', {
+        p_usuario_id: persona.id,
+        p_es_productor: nuevo,
+        p_actor_id: user?.id || null,
+      });
+      if (err) throw new Error(err.message || JSON.stringify(err));
+      // Se refresca en local y además se recarga `empleadosCM`, para que el
+      // selector de la pestaña Registrar quede al día sin salir de la pantalla.
+      setPersonalCM(prev => prev.map(p => p.id === persona.id ? { ...p, es_productor: nuevo } : p));
+      setSuccess(`${persona.nombre} ${persona.apellido || ''}`.trim() +
+        (nuevo ? ' ya aparece como productor.' : ' ya no aparece en el selector.'));
+      cargar();
+    } catch (err) {
+      console.error('Error cambiando es_productor:', err);
+      setError(err.message || 'No se pudo guardar el cambio');
+    }
+    setGuardandoId(null);
+  };
+
   useEffect(() => { cargar(); }, [cargar]);
   useEffect(() => { if (tab === 'historial') cargarHistorial(); }, [tab, cargarHistorial]);
+  useEffect(() => { if (tab === 'personal') cargarPersonal(); }, [tab, cargarPersonal]);
 
   // ── Receta seleccionada ──
   const recetaSel = recetas.find(r => r.id === recetaSelId);
   const ingsPorReceta = ingredientes[recetaSelId] || [];
   const productorSel = empleadosCM.find(e => e.id === productorId);
 
-  // Empleados filtrados para el picker
+  // Empleados filtrados para el picker.
+  // Ya no se filtra por rol: `empleadosCM` viene con `es_productor=true` desde
+  // la consulta, y ese flag es la única fuente de verdad. Con la doble
+  // condición, prenderle el flag a alguien de otro rol no lo hacía aparecer y
+  // la pantalla de Personal quedaba mintiendo.
   const empleadosFiltrados = empleadosCM
-    .filter(e => ROLES_PRODUCCION.includes(e.rol))
     .filter(e => {
       if (!searchEmp) return true;
       const full = `${e.nombre} ${e.apellido}`.toLowerCase();
@@ -328,19 +388,21 @@ export default function ProduccionDiaria({ user }) {
           <div style={{ fontSize: 12, color: C.textMuted }}>Casa Matriz</div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, background: C.card, borderRadius: 10, padding: 4 }}>
+      <div style={{ display: 'flex', gap: 6, background: C.card, borderRadius: 10, padding: 4, overflowX: 'auto' }}>
         {[
           { key: 'ordenes', label: 'Órdenes', icon: '📋' },
           { key: 'registrar', label: 'Registrar', icon: '📝' },
           { key: 'historial', label: 'Historial', icon: '🕓' },
+          // Solo para quien puede administrar personal — la RPC valida igual.
+          ...(canEditPersonal ? [{ key: 'personal', label: 'Personal', icon: '👥' }] : []),
         ].map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); setError(null); setSuccess(null); }}
             style={{
-              flex: 1, padding: '10px 16px', borderRadius: 8, border: 'none',
+              flex: 1, padding: '10px 12px', borderRadius: 8, border: 'none',
               background: tab === t.key ? C.accent : 'transparent',
               color: tab === t.key ? '#fff' : C.textMuted,
               cursor: 'pointer', fontWeight: 600, fontSize: 13,
-              transition: 'all 0.2s',
+              transition: 'all 0.2s', whiteSpace: 'nowrap',
             }}>
             {t.icon} {t.label}
           </button>
@@ -391,6 +453,94 @@ export default function ProduccionDiaria({ user }) {
       <div style={{ padding: 20, textAlign: 'center', color: C.textMuted }}>
         <div style={{ fontSize: 28, marginBottom: 10 }}>🏭</div>
         Cargando recetas y empleados...
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // TAB: PERSONAL — quién aparece en el selector de "¿Quién produjo?"
+  // ══════════════════════════════════════════════════════════════
+  if (tab === 'personal') {
+    const activos = personalCM.filter(p => p.es_productor);
+    const inactivos = personalCM.filter(p => !p.es_productor);
+
+    const FilaPersona = ({ p }) => (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 12px', borderRadius: 10, marginBottom: 6,
+        background: C.card, border: `1px solid ${C.border}`,
+      }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: empColor(p.id) + '33', color: empColor(p.id),
+          fontSize: 12, fontWeight: 700,
+        }}>{initials(p.nombre, p.apellido)}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {p.nombre} {p.apellido}
+          </div>
+          <div style={{ fontSize: 11, color: C.textDim }}>{p.rol}</div>
+        </div>
+        <button
+          onClick={() => togglePersonal(p)}
+          disabled={guardandoId === p.id}
+          style={{
+            flexShrink: 0, padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+            cursor: guardandoId === p.id ? 'wait' : 'pointer',
+            opacity: guardandoId === p.id ? 0.5 : 1,
+            background: p.es_productor ? C.redSoft : C.greenSoft,
+            color: p.es_productor ? '#fca5a5' : '#86efac',
+            border: `1px solid ${p.es_productor ? '#ef444444' : C.greenBorder}`,
+          }}>
+          {guardandoId === p.id ? '…' : (p.es_productor ? 'Quitar' : 'Agregar')}
+        </button>
+      </div>
+    );
+
+    return (
+      <div style={{ padding: '16px', maxWidth: 480, margin: '0 auto' }}>
+        <TabBar />
+        <Alert type="error" msg={error} onDismiss={() => setError(null)} />
+        <Alert type="success" msg={success} onDismiss={() => setSuccess(null)} />
+
+        <div style={{
+          background: C.blueSoft, border: `1px solid ${C.blueBorder}`,
+          borderRadius: 10, padding: '10px 12px', marginBottom: 16,
+          fontSize: 12, color: C.textMuted, lineHeight: 1.5,
+        }}>
+          Define quién aparece en <strong style={{ color: C.text }}>«¿Quién produjo?»</strong> al
+          registrar una tanda. No afecta el ingreso a la app ni los permisos de nadie:
+          quien quites acá sigue entrando y trabajando igual.
+        </div>
+
+        {loadingPersonal && (
+          <div style={{ textAlign: 'center', color: C.textMuted, padding: 20 }}>Cargando personal…</div>
+        )}
+
+        {!loadingPersonal && (
+          <>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Aparecen en el selector · {activos.length}
+            </div>
+            {activos.length === 0 && (
+              <div style={{ fontSize: 12, color: C.textDim, marginBottom: 14 }}>
+                Nadie. El selector va a salir vacío y no se va a poder registrar producción.
+              </div>
+            )}
+            {activos.map(p => <FilaPersona key={p.id} p={p} />)}
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 1, margin: '20px 0 8px' }}>
+              No aparecen · {inactivos.length}
+            </div>
+            {inactivos.map(p => <FilaPersona key={p.id} p={p} />)}
+
+            <div style={{ fontSize: 11, color: C.textDim, marginTop: 18, lineHeight: 1.5 }}>
+              Se muestra al personal activo de Casa Matriz. Para dar de alta o de baja a
+              alguien de la empresa, eso va en el Panel Super Admin.
+            </div>
+          </>
+        )}
       </div>
     );
   }

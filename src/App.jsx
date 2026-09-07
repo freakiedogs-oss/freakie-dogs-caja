@@ -103,8 +103,10 @@ const ROLE_DEFAULTS = {
   eventos: ['eventos-mapa', 'eventos', 'mi-asistencia', 'mi-boleta'],
   // Ingeniero en alimentos: recetas y costeo son su herramienta principal.
   // NO lleva 'kardex' a proposito: las pestanas del Kardex no filtran por rol
-  // y quien entra puede ejecutar kardex_mover_lote y registrar_merma.
-  ing_alimentos: ['bpm-chili', 'bpm-temperatura', 'recetas', 'costeo', 'produccion', 'inventario-fisico'],
+  // y quien entra puede ejecutar kardex_mover_lote y registrar_merma. Para eso
+  // existe 'catalogo': el mismo componente acotado a las pestanas de catalogo,
+  // asi que puede administrar productos y unidades sin poder mover stock.
+  ing_alimentos: ['bpm-chili', 'bpm-temperatura', 'recetas', 'costeo', 'produccion', 'inventario-fisico', 'catalogo'],
 }
 
 function getNavCounts() {
@@ -280,6 +282,10 @@ export default function App() {
         return <StockLevelsView user={user} onBack={() => setScreen('home')} />
       case 'inventario-fisico':
         return <InventarioFisico user={user} onBack={() => setScreen('home')} />
+      case 'catalogo':
+        // Solo las pestañas de catálogo: administrar productos sin heredar
+        // Historial ni Ajustes, que son las que mueven stock y registran mermas.
+        return <KardexView user={user} show={show} soloTabs={['inventario', 'conteo']} />
       case 'kardex':
         return <KardexView user={user} show={show} />
       case 'recepcion-bees':

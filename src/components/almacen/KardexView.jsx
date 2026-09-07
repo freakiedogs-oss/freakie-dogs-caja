@@ -158,10 +158,15 @@ function CatalogoSearch({ placeholder = 'Buscar...', tipo, onSelect, onCreate, c
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function KardexView({ user, show }) {
+// `soloTabs` limita qué pestañas se muestran. Se usa para servir el mismo
+// componente bajo el nav key `catalogo` sin las pestañas que mueven stock
+// (Historial y Ajustes, que corren kardex_mover_lote y registrar_merma).
+// Es justo el riesgo que App.jsx documenta al negarle Kardex a ing_alimentos:
+// las pestañas no filtran por rol, así que se acota desde la ruta.
+export default function KardexView({ user, show, soloTabs = null }) {
   const [sucursales, setSucursales] = useState([]);
   const [sucursal, setSucursal] = useState('');
-  const [activeTab, setActiveTab] = useState('inventario');
+  const [activeTab, setActiveTab] = useState(() => soloTabs?.[0] || 'inventario');
 
   useEffect(() => {
     db.from('sucursales').select('id, store_code, nombre').eq('activa', true)
@@ -588,7 +593,7 @@ export default function KardexView({ user, show }) {
   /* ══════════════════════════════════════════════════════════════════════
      RENDER
      ══════════════════════════════════════════════════════════════════════ */
-  const TABS_K = [
+  const TABS_TODAS = [
     { id: 'inventario',  label: '📦 Inventario' },
     { id: 'diferencias', label: '🔍 Fugas' },
     { id: 'conteo',      label: '🌙 Lista Conteo' },
@@ -601,6 +606,11 @@ export default function KardexView({ user, show }) {
     { id: 'movimientos', label: '📊 Historial' },
     { id: 'ajustes',     label: '⚙️ Ajustes' },
   ];
+
+  // Se respeta el orden de `soloTabs` para que la primera sea la que abre.
+  const TABS_K = soloTabs
+    ? soloTabs.map(id => TABS_TODAS.find(t => t.id === id)).filter(Boolean)
+    : TABS_TODAS;
 
   return (
     <div className="p-3 min-h-screen bg-background text-foreground">

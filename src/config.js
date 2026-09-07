@@ -106,6 +106,12 @@ export const NAV_SECTIONS = [
       { key: 'compras', label: 'Órdenes de Compra', icon: '🛒', roles: ['compras', 'admin'] },
       { key: 'stock-levels', label: 'Stock Mín/Máx', icon: '📊', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'ing_alimentos'] },
       { key: 'inventario-fisico', label: 'Inventario Físico', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'ing_alimentos'] },
+      // Mismo componente que Kardex pero solo con las pestañas de catálogo
+      // (ver `soloTabs` en KardexView). Existe para que administrar productos
+      // —desactivar, unidades, empaques— no obligue a entrar al Kardex, donde
+      // las pestañas de Historial y Ajustes permiten mover stock y registrar
+      // mermas. Por eso `ing_alimentos` sí entra acá y no a 'kardex'.
+      { key: 'catalogo', label: 'Catálogo de Productos', icon: '🏷️', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'ing_alimentos'] },
       { key: 'kardex', label: 'Kardex', icon: '📒', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo'] },
       { key: 'recepcion-bees', label: 'Recepción BEES', icon: '🥤', roles: ['gerente', 'cajero', 'cajera', 'cocina', 'jefe_casa_matriz', 'admin', 'ejecutivo'] },
       { key: 'transferencias', label: 'Transferencias', icon: '🔁', roles: ['admin', 'ejecutivo', 'superadmin'] },

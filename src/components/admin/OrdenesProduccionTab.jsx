@@ -44,9 +44,6 @@ const initials = (nombre, apellido) => {
 const empColors = ['#e63946', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#06b6d4', '#ef4444'];
 const empColor = (id) => empColors[((id || '').charCodeAt(5) || 0) % empColors.length];
 
-// Solo estos roles aparecen en el picker de responsable (patrón de ProduccionDiaria)
-const ROLES_PRODUCCION = ['produccion', 'jefe_casa_matriz', 'despachador'];
-
 // Estados según el CHECK de ordenes_produccion — no inventar otros
 const ESTADOS = {
   borrador:   { label: 'Borrador',   icon: '📝', color: C.yellow },
@@ -313,8 +310,11 @@ export default function OrdenesProduccionTab({ user, canEdit, empleadosCM }) {
 
   // Picker de responsable — mismo patrón (grid + buscador) que ProduccionDiaria
   const renderPicker = (o) => {
+    // Sin filtro de rol: `empleadosCM` llega desde ProduccionDiaria ya filtrado
+    // por `es_productor`, que es la única fuente de verdad. Filtrar de nuevo acá
+    // dejaría este picker distinto al de Registrar en cuanto alguien de otro rol
+    // se marque como productor desde la pestaña Personal.
     const filtrados = (empleadosCM || [])
-      .filter(e => ROLES_PRODUCCION.includes(e.rol))
       .filter(e => !searchEmp || `${e.nombre} ${e.apellido}`.toLowerCase().includes(searchEmp.toLowerCase()));
     return (
       <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: 12, marginTop: 10, background: C.bg }}>

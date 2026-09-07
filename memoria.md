@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 07-Sep-2026 — Catálogo de Productos con nav propio + pantalla para administrar productores
+
+Cierra los dos pendientes que quedaron abiertos el 5-sep.
+
+**1. `catalogo` — nav key propio, sin poder mover stock.** Administrar productos (desactivar, unidades, empaques) obligaba a entrar al **Kardex**, y por eso `App.jsx` le negaba Kardex a `ing_alimentos`: sus pestañas **no filtran por rol**, así que quien entra puede correr `kardex_mover_lote` y `registrar_merma`.
+- En vez de duplicar un componente de 1,800 líneas, `KardexView` acepta **`soloTabs`**: filtra `TABS_TODAS` y usa la primera como pestaña inicial. La ruta `catalogo` lo monta con `['inventario','conteo']` — fuera **Historial** y **Ajustes**, que son justo las que mueven stock. `setActiveTab` solo se llama desde `handleTab` (botones visibles) y desde el estado inicial, así que a las pestañas ocultas no se llega.
+- Nuevo item en Almacén: **🏷️ Catálogo de Productos**, roles `jefe_casa_matriz, admin, ejecutivo, ing_alimentos`. `ing_alimentos` ya lo lleva en `ROLE_DEFAULTS`.
+- **Trampa:** `Sidebar.jsx:35` — si `permisos_rol` tiene filas, **los `roles` de `config.js` se IGNORAN** y manda la BD. Sin el INSERT nadie salvo `superadmin` habría visto el módulo. Insertadas las 4 filas.
+- **Hallazgo colateral:** `ing_alimentos` figura en `config.js` para `stock-levels` e `inventario-fisico` pero **no está en `permisos_rol`** → hoy **no los ve**. El config quedó desincronizado de la BD; no lo toqué porque no era el encargo, pero conviene decidirlo.
+
+**2. Pestaña 👥 Personal en Producción Diaria.** El flag `es_productor` (creado el 5-sep) solo se podía cambiar por SQL.
+- RPC **`set_es_productor(p_usuario_id, p_es_productor, p_actor_id)`**, `SECURITY DEFINER` — `usuarios_erp` no tiene GRANT de UPDATE para la llave pública. A diferencia de las RPC de catálogo (`set_producto_tipo`, `set_unidades_producto`), que quedaron **abiertas a anon sin validar nada**, ésta **sí valida el rol del actor en el servidor** (`jefe_casa_matriz, admin, ejecutivo, superadmin`): toca personal, no un producto. Verificado que rechaza a un actor con rol `produccion`.
+- **`es_productor` pasó a ser la única fuente de verdad**: se quitó el filtro por rol de los pickers de `ProduccionDiaria` **y** de `OrdenesProduccionTab`. Con la doble condición, prender el flag a alguien de otro rol no lo hacía aparecer y la pantalla habría quedado mintiendo. Para que el cambio fuera **neutro**, se apagó el flag a los únicos 2 activos de CM001 fuera de esos roles (Saul Alas · admin y la cuenta de sistema Super Admin): antes y después, **11 productores**.
+- La pestaña carga `personalCM` **aparte** de `empleadosCM` a propósito: ese segundo array se le pasa a `OrdenesProduccionTab` para su picker, así que mezclar a los no-productores los habría devuelto al selector.
+- Estado hoy: **11 aparecen / 10 no / 21 activos** en CM001.
+
 ## 05-Sep-2026 — Realtime nunca funcionó en producción: el WebSocket se iba por el proxy Edge y siempre daba 500
 
 Kevin reportó `FUNCTION_INVOCATION_TIMEOUT` al terminar de registrar una producción. La primera hipótesis (RPC lenta, subir el timeout) era **falsa en los dos puntos**: `receta_costo_total` tarda **12 ms**, `anon` tiene `statement_timeout=3s` — si la RPC tardara, Postgres la mataría con un error SQL y jamás produciría un timeout de Vercel — y en el runtime **Edge** `maxDuration` ni siquiera es configurable.
