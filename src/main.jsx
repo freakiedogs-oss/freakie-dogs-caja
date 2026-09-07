@@ -75,9 +75,21 @@ window.addEventListener('load', () => {
 })
 
 if ('serviceWorker' in navigator) {
+  // Solo recargamos cuando un SW NUEVO reemplaza a uno que YA controlaba la
+  // página: eso sí es "salió un deploy mientras esto estaba abierto" (el caso de
+  // las tablets de caja). Si la página arrancó SIN controlador, el
+  // 'controllerchange' que viene es la primera toma de control (clients.claim) y
+  // sus archivos ya vinieron de la red: recargar no aporta nada.
+  //
+  // Sin este guardado, en Safari la app entra en BUCLE DE RECARGAS: WebKit
+  // arranca la navegación sin controlador y el SW la reclama después, así que
+  // dispara 'controllerchange' en cada carga. `refreshing` no alcanza porque es
+  // una variable que muere con la página. Le pasó a Majo en su Mac nueva
+  // (7-Sep-2026): recargaba cada 2-3 s y no la dejaba ni escribir el PIN.
+  const habiaControlador = !!navigator.serviceWorker.controller
   let refreshing = false
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing) return
+    if (!habiaControlador || refreshing) return
     refreshing = true
     window.location.reload()
   })
