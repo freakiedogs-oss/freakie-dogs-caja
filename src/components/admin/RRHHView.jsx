@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '../../supabase';
 // Expediente (DUI, NIT, cuenta bancaria, salario…) va por el cliente gateado:
 // la vista v_empleados_expediente NO se le sirve a la llave pública, solo tras
@@ -609,21 +609,25 @@ function TabDescuentos({ canEdit, show }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TAB 5: USUARIOS PIN (usuarios_erp)
+// TAB 5: ACCESOS (usuarios_erp) — rol, sucursal, PIN, alta y baja
 // ═══════════════════════════════════════════════════════════════
 function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroSucursal, setFiltroSucursal] = useState('');
   const [filtroRol, setFiltroRol] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('activos');
   const [editando, setEditando] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // Sesión de administración: se pide el PIN al momento de guardar, no antes.
-  // Consultar la lista no necesita nada especial porque los PINs ya no viajan.
+  // Sesión de administración: el token vive solo en memoria y dura 30 minutos.
+  // El PIN se pide recién cuando hace falta (destapar un PIN, guardar, crear o
+  // dar de baja); consultar la lista no necesita nada porque los PINs no viajan.
   const [tokenAdmin, setTokenAdmin] = useState('');
-  const [pidePin, setPidePin] = useState(null);   // {tipo:'guardar'|'ver', usuario?}
+  const [pidePin, setPidePin] = useState(null);   // { etiqueta }
   const [pinAdmin, setPinAdmin] = useState('');
+  const [pinesVistos, setPinesVistos] = useState({});  // { usuarioId: '1234' }
+  const accionPendiente = useRef(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -641,60 +645,100 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
     if (filtroSucursal === '__sin_sucursal__') { if (u.store_code) return false; }
     else if (filtroSucursal && u.store_code !== filtroSucursal) return false;
     if (filtroRol && u.rol !== filtroRol) return false;
+    if (filtroEstado === 'activos'   && !u.activo) return false;
+    if (filtroEstado === 'inactivos' &&  u.activo) return false;
     return true;
   });
 
   const rolesUnicos = [...new Set(usuarios.map(u => u.rol).filter(Boolean))].sort();
 
-  // Tras poner el PIN se retoma lo que el usuario quiso hacer: guardar o destapar un PIN
+  // El rol que ya tiene la persona se agrega a la lista aunque no sea asignable,
+  // para que el <select> no lo pise sin querer al abrir la edición.
+  const opcionesRol = (actual) =>
+    [...new Set([...ROLES_EDITABLES, ...(actual ? [actual] : [])])];
+
+  // Tras poner el PIN se retoma lo que se quiso hacer (ver, guardar, dar de baja)
+  const pedirSesion = (accion, etiqueta) => {
+    if (tokenAdmin) { accion(tokenAdmin); return; }
+    accionPendiente.current = accion;
+    setPidePin({ etiqueta });
+  };
+
   const abrirSesion = async () => {
     try {
       const { data, error } = await db.rpc('erp_admin_sesion', { p_pin: pinAdmin });
       if (error) throw error;
       setTokenAdmin(data.token); setPidePin(null); setPinAdmin('');
-      guardarCon(data.token);
+      const accion = accionPendiente.current;
+      accionPendiente.current = null;
+      if (accion) accion(data.token);
     } catch (e) { show(e.message || 'PIN incorrecto', false); setPinAdmin(''); }
   };
 
-  const guardar = async () => {
-    if (!editando.store_code || !editando.rol) {
-      show('Sucursal y rol son requeridos', false); return;
-    }
-    if (!tokenAdmin) { setPidePin({ tipo: 'guardar' }); return; }
-    guardarCon(tokenAdmin);
-  };
+  const verPin = (u) => pedirSesion(async (token) => {
+    try {
+      const { data, error } = await db.rpc('erp_pin_revelar', { p_token: token, p_usuario_id: u.id });
+      if (error) throw error;
+      setPinesVistos(p => ({ ...p, [u.id]: data.pin }));
+      // Se vuelve a tapar solo, para que no quede a la vista en el mostrador
+      setTimeout(() => setPinesVistos(p => { const r = { ...p }; delete r[u.id]; return r; }), 20000);
+    } catch (e) { show(e.message, false); }
+  }, `ver el PIN de ${u.nombre}`);
 
-  const guardarCon = async (token) => {
+  const guardarUsuario = (u) => pedirSesion(async (token) => {
     setSaving(true);
     try {
       const { error } = await db.rpc('erp_usuario_guardar', {
-        p_token: token, p_id: editando.id,
-        p_nombre: editando.nombre, p_apellido: editando.apellido,
-        p_rol: editando.rol, p_store_code: editando.store_code,
-        p_activo: editando.activo ?? true, p_pin_nuevo: null,
+        p_token: token, p_id: u.id || null,
+        p_nombre: u.nombre, p_apellido: u.apellido || '',
+        p_rol: u.rol, p_store_code: u.store_code,
+        p_activo: u.activo ?? true,
+        p_pin_nuevo: u.pin || null,
       });
       if (error) { show('Error: ' + error.message, false); setSaving(false); return; }
-      show('✓ Usuario actualizado');
+      show(u.id ? '✓ Acceso actualizado' : '✓ Acceso creado');
       setEditando(null);
       await cargar();
     } catch (e) { show(e.message, false); }
     setSaving(false);
+  }, u.id ? `guardar los cambios de ${u.nombre}` : 'crear el acceso nuevo');
+
+  const guardar = () => {
+    const u = editando;
+    if (!u.nombre?.trim())        { show('El nombre es requerido', false); return; }
+    if (!u.rol || !u.store_code)  { show('Sucursal y rol son requeridos', false); return; }
+    if (!u.id && !u.pin)          { show('Un acceso nuevo necesita PIN', false); return; }
+    if (u.pin && !/^\d{4,6}$/.test(u.pin)) {
+      show('El PIN debe ser de 4 a 6 dígitos', false); return;
+    }
+    guardarUsuario(u);
   };
+
+  const toggleActivo = (u) => {
+    const accion = u.activo ? 'Desactivar' : 'Reactivar';
+    if (!window.confirm(`¿${accion} el acceso de ${u.nombre} ${u.apellido || ''}?`)) return;
+    guardarUsuario({ ...u, activo: !u.activo, pin: '' });
+  };
+
+  const nuevoAcceso = () => setEditando({
+    id: null, nombre: '', apellido: '', rol: '', store_code: '', activo: true, pin: '',
+  });
 
   if (loading) return <div style={{ color: C.textDim, fontSize: 13 }}>Cargando usuarios...</div>;
 
   return (
     <div>
       <div style={{ fontSize: 12, color: C.textDim, marginBottom: 10, lineHeight: 1.5 }}>
-        Acá se asigna el rol y la sucursal de cada persona. Los PINs se ven y se
-        cambian en <b>Super Admin → Usuarios</b>, solo con cuenta de ejecutivo.
+        Acá se administran los accesos del personal: <b>rol, sucursal, PIN</b>, alta de
+        gente nueva y baja de quien ya no trabaja. Cada acción se confirma con tu PIN y
+        queda anotada en la bitácora.
       </div>
-      {/* Confirmación con PIN antes de cambiar el rol o la sucursal de alguien */}
+      {/* Confirmación con PIN antes de tocar el acceso de alguien */}
       {pidePin && (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
                       padding: 14, marginBottom: 12 }}>
           <div style={{ fontSize: 12.5, color: C.text, marginBottom: 8 }}>
-            Confirmá con tu PIN para guardar los cambios de <b>{editando?.nombre}</b>
+            Confirmá con tu PIN para <b>{pidePin.etiqueta}</b>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <input type="password" inputMode="numeric" value={pinAdmin} autoFocus placeholder="Tu PIN"
@@ -724,7 +768,51 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
           <option value="">Todos los roles</option>
           {rolesUnicos.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
+        <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
+          style={{ ...inp, width: 'auto' }}>
+          <option value="activos">Activos</option>
+          <option value="inactivos">Inactivos</option>
+          <option value="todos">Todos</option>
+        </select>
+        {canEdit && !editando && (
+          <button onClick={nuevoAcceso} style={btn('primary')}>+ Nuevo acceso</button>
+        )}
       </div>
+
+      {/* Alta de acceso nuevo */}
+      {editando && !editando.id && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+                      padding: 14, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>
+            ➕ Nuevo acceso
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+            <input value={editando.nombre} placeholder="Nombre"
+              onChange={e => setEditando({ ...editando, nombre: e.target.value })} style={inp} />
+            <input value={editando.apellido} placeholder="Apellido"
+              onChange={e => setEditando({ ...editando, apellido: e.target.value })} style={inp} />
+            <select value={editando.rol}
+              onChange={e => setEditando({ ...editando, rol: e.target.value })} style={inp}>
+              <option value="">— Rol —</option>
+              {ROLES_EDITABLES.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <select value={editando.store_code}
+              onChange={e => setEditando({ ...editando, store_code: e.target.value })} style={inp}>
+              <option value="">— Sucursal —</option>
+              {sucursales.map(s => <option key={s.store_code} value={s.store_code}>{s.nombre}</option>)}
+            </select>
+            <input value={editando.pin} inputMode="numeric" placeholder="PIN (4 a 6 dígitos)"
+              onChange={e => setEditando({ ...editando, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+              style={inp} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button onClick={guardar} disabled={saving} style={btn('success')}>
+              {saving ? '...' : '✓ Crear'}
+            </button>
+            <button onClick={() => setEditando(null)} style={btn('ghost')}>Cancelar</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ fontSize: 11, color: C.textDim, marginBottom: 12,
         padding: '6px 10px', borderRadius: 6,
@@ -733,12 +821,14 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
       </div>
 
       <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${C.border}` }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr style={{ background: C.bgCard }}>
               <th style={thS}>Nombre</th>
               <th style={thS}>Rol</th>
               <th style={thS}>Sucursal</th>
+              <th style={thS}>PIN</th>
+              <th style={thS}>Estado</th>
               {canEdit && <th style={thS}>Acc.</th>}
             </tr>
           </thead>
@@ -767,7 +857,7 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
                       <select value={editando.rol}
                         onChange={e => setEditando({ ...editando, rol: e.target.value })}
                         style={{ ...inp, fontSize: 12 }}>
-                        {ROLES_EDITABLES.map(r => <option key={r} value={r}>{r}</option>)}
+                        {opcionesRol(editando.rol).map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     ) : (
                       <span style={{
@@ -793,6 +883,28 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
                       </span>
                     )}
                   </td>
+                  <td style={tdS}>
+                    {isEditing ? (
+                      <input value={editando.pin || ''} inputMode="numeric" placeholder="Nuevo PIN"
+                        onChange={e => setEditando({ ...editando, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                        style={{ ...inp, fontSize: 12, width: 100 }} />
+                    ) : pinesVistos[u.id] ? (
+                      <span style={{ color: C.green, fontWeight: 700, letterSpacing: 1.5, fontSize: 12 }}>
+                        {pinesVistos[u.id]}
+                      </span>
+                    ) : (
+                      <span style={{ color: C.textDim, letterSpacing: 2, fontSize: 12 }}>••••</span>
+                    )}
+                  </td>
+                  <td style={tdS}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                      background: u.activo ? 'rgba(74,222,128,0.12)' : 'rgba(230,57,70,0.12)',
+                      color: u.activo ? C.green : C.red,
+                    }}>
+                      {u.activo ? '✓ Activo' : '✗ Inactivo'}
+                    </span>
+                  </td>
                   {canEdit && (
                     <td style={tdS}>
                       {esProtegido ? (
@@ -809,7 +921,18 @@ function TabUsuariosPIN({ canEdit, sucursales, show, user }) {
                           </button>
                         </div>
                       ) : (
-                        <button onClick={() => setEditando({ ...u })} style={btn('icon')}>✏️</button>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          <button onClick={() => setEditando({ ...u, pin: '' })}
+                            title="Editar nombre, rol, sucursal o PIN" style={btn('icon')}>✏️</button>
+                          <button onClick={() => verPin(u)}
+                            title="Destapar el PIN por 20 segundos (queda anotado en la bitácora)"
+                            style={btn('icon')}>{pinesVistos[u.id] ? '👁' : '👁‍🗨'}</button>
+                          <button onClick={() => toggleActivo(u)}
+                            title={u.activo ? 'Desactivar el acceso' : 'Reactivar el acceso'}
+                            style={{ ...btn('icon'), color: u.activo ? C.red : C.green }}>
+                            {u.activo ? '🚫' : '✅'}
+                          </button>
+                        </div>
                       )}
                     </td>
                   )}

@@ -2,6 +2,18 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 07-Sep-2026 — RRHH (Majo) administra los accesos del personal: PIN, rol, alta y baja
+
+Pedido de Jose: **Maria Jose Siguenza (Talento Humano, rol `rrhh`) tiene que poder ver y cambiar PINs, cambiar roles, crear empleados y desactivarlos** — todo lo de recursos humanos, sin depender de un ejecutivo.
+
+- **Qué le faltaba:** los empleados (`empleados`) ya los creaba, editaba y desactivaba desde RRHH → Empleados, y el gate del proxy `/sb` ya la dejaba leer `v_empleados_expediente`. Lo que no podía era **tocar PINs ni crear/desactivar accesos** (`usuarios_erp`): el gate `_puede_pines()` era `superadmin`/`ejecutivo` y la pestaña de PINs vivía en Super Admin, cerrada para ella.
+- **El permiso se dio en la BD, no en la pantalla.** `_puede_pines()` ahora incluye `rrhh`. `erp_admin_sesion` y `_admin_sesion` ya aceptaban rol `rrhh`, así que abre sesión de 30 min con su propio PIN como cualquier administrador.
+- **Límite duro contra el auto-ascenso:** nuevo helper `_rol_protegido()` (`superadmin`, `ejecutivo`, `admin`). Con rol `rrhh`, `erp_usuario_guardar` **rechaza asignar** un rol protegido y **rechaza editar** una cuenta que ya lo tenga; `erp_pin_revelar` **rechaza destapar** el PIN de esas cuentas. Sin esto, quien administra PINs podía nombrarse ejecutivo y quedar dentro de finanzas.
+- **La bitácora sigue siendo de mando:** `erp_pin_bitacora` pasó a exigir `superadmin`/`ejecutivo` explícito (antes colgaba de `_puede_pines`, que ahora es más ancho). Es la auditoría de quién administra; RRHH escribe en ella pero no la lee.
+- **UI — pestaña “Accesos” de RRHH (`RRHHView.jsx`)** dejó de ser solo rol+sucursal: ahora tiene **columna PIN con “destapar” 20 s**, **campo de PIN nuevo** al editar, **botón + Nuevo acceso**, **activar/desactivar** con confirmación y filtro por estado. Cada acción pide el PIN una vez y reusa el token en memoria. Las filas con rol protegido siguen sin editarse desde acá (el servidor lo respalda).
+- **Desync config↔BD que se cerró de paso:** `planilla-sucursal` (“Mi planilla”) figuraba en `config.js` para `rrhh` pero no estaba en `permisos_rol`, así que no lo veía. Se insertó. Queda pendiente el caso `ing_alimentos` (`stock-levels`, `inventario-fisico`).
+- **QA en la BD (transacción revertida con `raise`):** ver PIN de empleado ✓ · ver PIN de ejecutivo bloqueado ✓ · cambiar PIN ✓ · cambiar rol + desactivar ✓ · crear usuario ✓ · auto-ascenso a ejecutivo bloqueado ✓ · editar cuenta de ejecutivo bloqueado ✓ · bitácora bloqueada ✓. Build del ERP OK.
+
 ## 07-Sep-2026 — Reportes de Turno: revisión y aprobación de Administración (Saúl)
 
 Pedido de Jose: **los reportes de turno tienen que llevar la confirmación de Saúl Alas** y mostrar quién revisó y aprobó, igual que el Dashboard de Cierres.
