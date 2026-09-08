@@ -155,6 +155,81 @@ abortar la transacción con la plata ya capturada.
 
 ---
 
+## Tarjeta guardada (fricción cero en la segunda compra)
+
+El objetivo de Jose: que el cliente que vuelve **no reingrese la tarjeta**. Se
+resuelve con el token multi-uso de n1co (`card.singleUse: false`): la tarjeta la
+guarda n1co, nosotros guardamos solo el token.
+
+```
+1ª compra   formulario + ☑ "Guardar mi tarjeta"  → tokeniza singleUse:false
+                                                 → cobra → guarda el token
+2ª compra   "Visa ····5556 · Pagar $12.40"       → un toque, cero campos
+```
+
+### Atada al dispositivo, NO al teléfono
+
+Esta es la decisión que sostiene la seguridad de todo el módulo.
+
+El menú público corre con la anon key y ya identifica al cliente por el teléfono
+guardado en su navegador. **Si la tarjeta guardada se buscara por teléfono,
+cualquiera escribiría el número de otro y pediría comida a su casa cobrándosela
+a esa tarjeta.** El teléfono es un identificador público, no una credencial.
+
+Por eso la llave es un `crypto.randomUUID()` (122 bits) que se genera en el
+navegador del cliente, vive en su `localStorage` y no sale de ahí. La Edge
+Function lo convierte en **SHA-256** antes de tocar Postgres, así que:
+
+- Un volcado de `tarjetas_guardadas` **no** permite cobrarle a nadie: haría
+  falta el secreto original, que no está en la base y no es adivinable.
+- `tarjetas_listar` **no devuelve el `card_id`** — al navegador solo van marca,
+  últimos 4 y vencimiento. El token nunca sale del servidor.
+- `tarjeta_para_cobro` exige que la tarjeta pertenezca a **ese** dispositivo:
+  conocer el uuid de una tarjeta ajena no alcanza.
+
+Consecuencias aceptadas (las mismas de cualquier app de delivery):
+
+- Cambia de teléfono o borra los datos del navegador → reingresa la tarjeta una
+  vez.
+- Le roban el teléfono desbloqueado → podrían pedir comida.
+- En modo incógnito no se ofrece guardar, porque no hay dónde atarla.
+
+### ⚠️ El cambio a freakiedogs.com afecta esto directamente
+
+**`localStorage` es por origen.** Si el menú se muda de
+`freakiedelivery.vercel.app` a `freakiedogs.com`, el secreto del dispositivo no
+viaja, y **todas las tarjetas guardadas quedan huérfanas**: el cliente las tiene
+que volver a ingresar. Lo mismo le pasa al perfil `freakie_cliente_v1` (nombre,
+teléfono, dirección), que es un problema preexistente pero del mismo tipo.
+
+Por eso conviene **estrenar la tarjeta guardada ya en el dominio definitivo**.
+Si se lanza antes, la primera camada de clientes que guarde su tarjeta la pierde
+el día de la mudanza — y eso se siente como que el sistema falló.
+
+Lo demás del módulo aguanta el cambio de dominio con dos ajustes, ya hechos:
+
+- `ORIGENES_OK` en `api/n1co.js` y `api/n1co-link.js` ya incluye
+  `freakiedogs.com`, `www.` y `pedidos.`. Cualquier otro subdominio se agrega
+  con la env `N1CO_ORIGENES` (lista separada por comas), sin tocar código.
+- Las URLs de retorno del CheckoutLink salen del `Origin` validado del request,
+  no de una constante, así que siguen al dominio solo.
+
+Queda pendiente para la otra sesión: `URL_DELIVERY` en `src/config.js` sigue
+apuntando a `freakiedelivery.vercel.app` y es de donde salen los links de
+seguimiento que se le mandan al cliente.
+
+### Prueba
+
+```bash
+psql "$DATABASE_URL" -f scripts/test-tarjetas-guardadas.sql
+```
+
+Se revierte sola, igual que la otra. Última corrida: **6/6**. La prueba 4 es la
+que importa — verifica que un dispositivo distinto **no** puede cobrar la
+tarjeta de otro aunque conozca el uuid.
+
+---
+
 ## Pendientes conocidos
 
 - **Webhooks.** `api/n1co.js` confirma el cobro con la respuesta síncrona de
@@ -165,11 +240,13 @@ abortar la transacción con la plata ya capturada.
 - **Reembolsos.** Existe `POST /api/v3/Refunds` y la tabla ya contempla el
   estado `reembolsado`, pero no hay botón ni endpoint todavía. Hoy un reembolso
   se hace desde el portal de n1co y se anota a mano.
-- **Alcance PCI.** Esta API de n1co no tiene hosted checkout ni campos
-  embebidos: el formulario de tarjeta es nuestro y el PAN pasa por nuestro
-  servidor. Funciona, pero deja a Freakie Dogs en un alcance PCI más amplio
-  (SAQ D) que si n1co diera un iframe o SDK de tokenización desde el browser.
-  **Vale la pena preguntarles si tienen "hosted fields" o link de pago por API**
-  antes de ir a producción: reduciría el alcance sin cambiar la experiencia.
+- **Alcance PCI — decisión tomada, con costo.** Esta API no tiene hosted
+  checkout ni campos embebidos: el formulario es nuestro y el PAN pasa por
+  nuestro servidor (SAQ D). Se eligió igual porque **es la única vía que permite
+  guardar la tarjeta**, y bajar la fricción era la prioridad. La alternativa sin
+  alcance PCI es el CheckoutLink (`api/n1co-link.js`, implementado y sin
+  cablear), pero obliga a teclear la tarjeta en cada compra.
+  El punto 6 de `docs/n1co-solicitud-credenciales.md` le pregunta a n1co si
+  tienen *hosted fields*: si aparecen, se gana lo mejor de los dos.
 - **DTE.** Este cobro **no** emite factura electrónica. La emisión sigue por
   donde estaba (`_comanda_delivery` → POS). No se tocó nada de DTE.

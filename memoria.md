@@ -2,6 +2,30 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 08-Sep-2026 — Tarjeta guardada: fricción cero en la 2ª compra, atada al dispositivo
+
+Jose fijó la prioridad: **que el cliente reingrese la menor cantidad de datos posible**, y que la tarjeta quede guardada de forma segura. Eso decide la arquitectura, porque de las dos vías de n1co **solo una permite guardar tarjeta**:
+
+| | CheckoutLink (link de pago) | **EPay API directa** ← elegida |
+|---|---|---|
+| Dónde teclea la tarjeta | página de n1co | nuestra app |
+| ¿Guarda la tarjeta? | **no**, la teclea siempre | **sí** (`singleUse:false`) |
+| Credenciales | self-service desde el portal | las da el equipo de n1co |
+| Alcance PCI nuestro | ninguno | SAQ D |
+
+Se eligió la API directa **aceptando el costo PCI**, porque el CheckoutLink genera un checkout nuevo por compra y no hay tarjeta que reusar. El CheckoutLink quedó implementado igual (`api/n1co-link.js`) **sin cablear a la UI**, como puente por si n1co demora las credenciales. La solicitud a n1co está en `docs/n1co-solicitud-credenciales.md`.
+
+**La tarjeta se ata al DISPOSITIVO, no al teléfono. Es la decisión que sostiene la seguridad del módulo.** El menú corre con la anon key y ya identifica al cliente por el teléfono guardado en su navegador; **si la tarjeta guardada se buscara por teléfono, cualquiera escribiría el número de otro y pediría comida a su casa cobrándosela a esa tarjeta**. El teléfono es un identificador público, no una credencial. La llave es un `crypto.randomUUID()` que vive solo en el `localStorage` del cliente; en Postgres queda **únicamente su SHA-256** (mismo patrón que las api_keys del dte_service), así que un volcado de `tarjetas_guardadas` no permite cobrarle a nadie. Además `tarjetas_listar` **no devuelve el `card_id`**: al navegador solo van marca, últimos 4 y vencimiento.
+
+**Objetos nuevos:** tabla `tarjetas_guardadas` + `tarjetas_listar`, `tarjeta_para_cobro`, `tarjeta_guardar`, `tarjeta_olvidar` — todas solo `service_role`, verificado. Ops nuevas en `api/n1co.js`: `tarjetas`, `cobrar-guardada`, `olvidar`. La tarjeta se guarda **solo si el cobro fue aprobado** (un token que el emisor rechazó no sirve para la próxima compra); si el cobro pasó por 3DS, se guarda al confirmar y no antes.
+
+**Prueba `scripts/test-tarjetas-guardadas.sql`: 6/6**, se revierte sola. La #4 es la que importa: un dispositivo distinto **no** puede cobrar la tarjeta de otro aunque conozca el uuid.
+
+**⚠️ El cambio a freakiedogs.com choca de frente con esto: `localStorage` es POR ORIGEN.** Al mudar el menú de `freakiedelivery.vercel.app` a `freakiedogs.com`, el secreto del dispositivo no viaja y **todas las tarjetas guardadas quedan huérfanas** — el cliente las reingresa. Lo mismo le pasa al perfil `freakie_cliente_v1`. Conclusión operativa: **estrenar la tarjeta guardada ya en el dominio definitivo**; lanzarla antes hace que la primera camada pierda su tarjeta el día de la mudanza. El resto del módulo ya aguanta el cambio: `ORIGENES_OK` incluye `freakiedogs.com`/`www.`/`pedidos.` (y hay env `N1CO_ORIGENES` para más), y las URLs de retorno salen del `Origin` validado, no de una constante. Pendiente de la otra sesión: `URL_DELIVERY` en `src/config.js`.
+
+**Hallazgos de la doc de n1co que no estaban enlazados desde EPay:** la URL de producción es **`https://api.n1co.com`**, y **los webhooks SÍ vienen firmados** (`X-H4B-Hmac-Sha256`, HMAC-SHA256 del cuerpo crudo) — era mi motivo para no implementarlos, así que ya quedó verificación de firma en `api/n1co-link.js`.
+
+
 ## 08-Sep-2026 — Pago con tarjeta en el delivery web (n1co / EPay) — branch `feat/pago-tarjeta-n1co`
 
 Pedido de Jose: que el cliente **pague con tarjeta al hacer el pedido en `/menu`** y el pedido entre solo a la cocina, saltándose el ida y vuelta por WhatsApp para coordinar el cobro. Todo en un branch, sin tocar producción todavía. Doc completa: **`docs/pasarela-n1co.md`**.

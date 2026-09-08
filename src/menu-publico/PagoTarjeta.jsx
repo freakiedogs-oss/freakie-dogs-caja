@@ -10,6 +10,13 @@
 // secreto y decide el monto contra la BD. Acá el número de tarjeta solo vive en
 // el estado de React el tiempo que dura el POST, y se borra al aprobar.
 //
+// ── Tarjeta guardada ──
+// El objetivo es que el cliente que vuelve toque un botón y listo. La tarjeta
+// se guarda en n1co (token multi-uso) y queda atada a ESTE dispositivo por un
+// secreto aleatorio que vive solo en su localStorage. No se busca por teléfono
+// a propósito: el teléfono es un dato público, y con él cualquiera pediría
+// comida a su casa cobrándosela a la tarjeta de otro.
+//
 // El reto 3DS se resuelve en un iframe con postMessage, que es como lo expone
 // n1co. Ojo con el origen del mensaje: sin validarlo, cualquier página embebida
 // podría gritar "authentication.complete / SUCCESS" y saltarse el reto.
@@ -23,6 +30,29 @@ const API = '/api/n1co'
 
 // n1co manda el resultado del reto a veces como objeto y a veces como string.
 const seguroJson = (s) => { try { return JSON.parse(s) } catch { return null } }
+
+// ── Identidad del dispositivo ────────────────────────────────────────
+// Secreto aleatorio que no sale de este navegador; al servidor viaja y allá se
+// convierte en SHA-256 antes de tocar la base.
+//
+// OJO AL CAMBIO DE DOMINIO: localStorage es POR ORIGEN. Si el menú se muda de
+// freakiedelivery.vercel.app a freakiedogs.com, este secreto no viaja y todas
+// las tarjetas guardadas quedan huérfanas — el cliente tiene que reingresarlas.
+// Por eso conviene estrenar la tarjeta guardada ya en el dominio definitivo.
+const DISPOSITIVO_KEY = 'freakie_dispositivo_v1'
+function idDispositivo() {
+  try {
+    let id = localStorage.getItem(DISPOSITIVO_KEY)
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
+      id = crypto.randomUUID()
+      localStorage.setItem(DISPOSITIVO_KEY, id)
+    }
+    return id
+  } catch {
+    // Modo incógnito o storage lleno: se cobra igual, solo que sin guardar.
+    return null
+  }
+}
 
 // ── Helpers de tarjeta ───────────────────────────────────────────────
 const soloDigitos = (s) => String(s || '').replace(/\D/g, '')
@@ -54,24 +84,47 @@ function formatearVencimiento(valor, anterior) {
 }
 
 export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onCerrar }) {
-  const [fase, setFase] = useState('form')   // form | procesando | 3ds | aprobado | rechazado
+  // cargando → guardadas | form | procesando | 3ds | aprobado | rechazado
+  const [fase, setFase] = useState('cargando')
+  const [tarjetas, setTarjetas] = useState([])
   const [numero, setNumero] = useState('')
   const [titular, setTitular] = useState(pedido?.nombre || '')
   const [vence, setVence] = useState('')
   const [cvv, setCvv] = useState('')
   const [email, setEmail] = useState('')
+  const [guardar, setGuardar] = useState(true)
   const [zip, setZip] = useState('')
   const [pideZip, setPideZip] = useState(false)
   const [error, setError] = useState('')
-  const [resultado, setResultado] = useState(null)   // { marca, last4, autorizacion, comandado }
+  const [resultado, setResultado] = useState(null)
   const [url3ds, setUrl3ds] = useState('')
 
   const pagoIdRef = useRef(null)
+  const dispRef = useRef(null)
   // El formulario se conserva entre reintentos (rechazo, o cuando el emisor
   // resulta ser de EE.UU. y hay que volver a mandar con el código postal).
   const datosRef = useRef(null)
 
   const total = Number(pedido?.total || 0)
+
+  // ── Al abrir: ¿hay tarjeta guardada en este dispositivo? ───────────
+  useEffect(() => {
+    let vivo = true
+    dispRef.current = idDispositivo()
+    if (!dispRef.current) { setFase('form'); return }
+
+    postear('tarjetas', { dispositivo: dispRef.current })
+      .then(r => {
+        if (!vivo) return
+        const lista = r?.tarjetas || []
+        setTarjetas(lista)
+        setFase(lista.length ? 'guardadas' : 'form')
+      })
+      // Que falle el listado no puede bloquear el cobro: se cae al formulario.
+      .catch(() => { if (vivo) setFase('form') })
+
+    return () => { vivo = false }
+  }, [])
 
   // ── 3DS: escuchar el resultado del reto del banco ──────────────────
   useEffect(() => {
@@ -102,13 +155,18 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
       setUrl3ds('')
       setFase('procesando')
       try {
-        const r = await postear('confirmar-3ds', {
+        const d = datosRef.current || {}
+        aplicarRespuesta(await postear('confirmar-3ds', {
           pago_id: pagoIdRef.current,
-          email: datosRef.current?.email,
-          billing: datosRef.current?.billing,
-        })
-        aplicarRespuesta(r)
-      } catch (e) {
+          email: d.email,
+          billing: d.billing,
+          dispositivo: dispRef.current,
+          guardar: d.guardar,
+          titular: d.titular,
+          vence_mes: d.mes,
+          vence_anio: d.anio,
+        }))
+      } catch {
         setFase('rechazado')
         setError('No pudimos confirmar el pago. Escribinos por WhatsApp antes de intentar de nuevo.')
       }
@@ -133,8 +191,8 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
       setNumero(''); setCvv(''); setVence('')
       datosRef.current = null
       setResultado({
-        marca: r.marca, last4: r.last4,
-        autorizacion: r.autorizacion, comandado: r.comandado !== false,
+        marca: r.marca, last4: r.last4, autorizacion: r.autorizacion,
+        comandado: r.comandado !== false, guardada: !!r.guardada,
       })
       setFase('aprobado')
       onAprobado?.({ ...r, metodoPago: 'tarjeta' })
@@ -156,6 +214,44 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
     setError(r?.mensaje || 'No pudimos procesar el pago.')
   }
 
+  // ── Cobro con tarjeta guardada: el cliente no teclea nada ──────────
+  const pagarConGuardada = async (tarjeta) => {
+    setError('')
+    setFase('procesando')
+    try {
+      const r = await postear('cobrar-guardada', {
+        tracking_token: pedido.tracking_token,
+        dispositivo: dispRef.current,
+        tarjeta_id: tarjeta.id,
+      })
+      if (r?.error === 'tarjeta_no_disponible') {
+        // La tarjeta se cayó (vencida, borrada del lado de n1co): se saca de la
+        // lista y se manda al formulario en vez de dejarlo en un callejón.
+        setTarjetas(t => t.filter(x => x.id !== tarjeta.id))
+        setFase('form')
+        return setError(r.mensaje)
+      }
+      if (r?.ok === false && !r?.estado) {
+        setFase('guardadas')
+        return setError(r?.mensaje || 'No pudimos cobrar con esa tarjeta.')
+      }
+      // El 3DS de una tarjeta guardada vuelve al mismo iframe; si hay que
+      // reintentar, ya no hay datos de tarjeta que reenviar.
+      datosRef.current = { email: tarjeta.email, guardar: false }
+      aplicarRespuesta(r)
+    } catch {
+      setFase('guardadas')
+      setError('No hay conexión. Revisá tu internet y probá de nuevo.')
+    }
+  }
+
+  const olvidar = async (tarjeta) => {
+    setTarjetas(t => t.filter(x => x.id !== tarjeta.id))
+    try { await postear('olvidar', { dispositivo: dispRef.current, tarjeta_id: tarjeta.id }) }
+    catch { /* si falla, reaparece en la próxima compra: no vale un error en pantalla */ }
+  }
+
+  // ── Cobro con tarjeta nueva ────────────────────────────────────────
   const pagar = async () => {
     setError('')
     const num = soloDigitos(numero)
@@ -170,7 +266,14 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
     if (pideZip && !zip.trim()) return setError('Escribí el código postal de facturación')
 
     const billing = pideZip ? { countryCode: 'USA', zipCode: zip.trim() } : null
-    datosRef.current = { email: email.trim(), billing }
+    // n1co espera el año de 4 dígitos; el formulario pide 2 porque es lo que
+    // está impreso en la tarjeta.
+    const anio = aa.length === 2 ? `20${aa}` : aa
+    const puedeGuardar = guardar && !!dispRef.current
+    datosRef.current = {
+      email: email.trim(), billing, guardar: puedeGuardar,
+      titular: titular.trim(), mes: mm, anio,
+    }
 
     setFase('procesando')
     try {
@@ -178,13 +281,13 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
         tracking_token: pedido.tracking_token,
         email: email.trim(),
         billing,
+        dispositivo: dispRef.current,
+        guardar: puedeGuardar,
         card: {
           number: num,
           cardHolder: titular.trim(),
           expirationMonth: mm,
-          // n1co espera el año de 4 dígitos; el formulario pide 2 porque es lo
-          // que está impreso en la tarjeta.
-          expirationYear: aa.length === 2 ? `20${aa}` : aa,
+          expirationYear: anio,
           cvv: soloDigitos(cvv),
         },
       })
@@ -200,7 +303,16 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
     }
   }
 
-  const reintentar = () => { setFase('form'); setError('') }
+  const reintentar = () => { setFase(tarjetas.length ? 'guardadas' : 'form'); setError('') }
+
+  // ── Cargando ───────────────────────────────────────────────────────
+  if (fase === 'cargando') {
+    return (
+      <Marco titulo="Pagar con tarjeta" onCerrar={onCerrar}>
+        <div className="mp-pago-esperando"><div className="mp-pago-spinner" /></div>
+      </Marco>
+    )
+  }
 
   // ── Aprobado ───────────────────────────────────────────────────────
   if (fase === 'aprobado') {
@@ -218,6 +330,11 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
               ? 'Tu pedido ya entró a la cocina. No hace falta que escribas por WhatsApp.'
               : 'Recibimos tu pago. Te confirmamos por WhatsApp en cuanto asignemos tu pedido a una tienda.'}
           </p>
+          {resultado?.guardada && (
+            <div className="mp-pago-guardada-ok">
+              💾 Guardamos tu tarjeta en este teléfono. La próxima vez pagás de un toque.
+            </div>
+          )}
         </div>
         <button className="mp-btn-checkout" onClick={onCerrar}>Ver mi pedido</button>
       </Marco>
@@ -277,7 +394,43 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
     )
   }
 
-  // ── Formulario ─────────────────────────────────────────────────────
+  // ── Tarjetas guardadas: el camino de un toque ──────────────────────
+  if (fase === 'guardadas') {
+    return (
+      <Marco titulo="Pagar con tarjeta" onCerrar={onCerrar}>
+        <div className="mp-pago-resumen">
+          <span>Pedido {pedido?.numero_orden}</span>
+          <b>{fmt(total)}</b>
+        </div>
+
+        {error && <div className="mp-error">{error}</div>}
+
+        <div className="mp-pago-lista">
+          {tarjetas.map(t => (
+            <div key={t.id} className="mp-pago-guardada">
+              <button className="mp-pago-guardada-btn" onClick={() => pagarConGuardada(t)}>
+                <span className="mp-pago-guardada-marca">{t.marca || 'Tarjeta'}</span>
+                <span className="mp-pago-guardada-num">····{t.last4}</span>
+                <span className="mp-pago-guardada-vence">{t.vence}</span>
+                <span className="mp-pago-guardada-pagar">Pagar {fmt(total)}</span>
+              </button>
+              <button className="mp-pago-guardada-x" onClick={() => olvidar(t)}
+                      title="Olvidar esta tarjeta" aria-label="Olvidar esta tarjeta">×</button>
+            </div>
+          ))}
+        </div>
+
+        <button className="mp-pago-secundario" onClick={() => { setFase('form'); setError('') }}>
+          Usar otra tarjeta
+        </button>
+        <button className="mp-pago-secundario" onClick={onPagarEnEfectivo}>
+          Mejor pago en efectivo
+        </button>
+      </Marco>
+    )
+  }
+
+  // ── Formulario de tarjeta nueva ────────────────────────────────────
   const marca = marcaProbable(numero)
 
   return (
@@ -351,6 +504,21 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
         </div>
       )}
 
+      {/* Sin localStorage (modo incógnito) no hay dónde atar la tarjeta, así que
+          ni se ofrece: prometer que la guardamos y que no aparezca sería peor. */}
+      {dispRef.current && (
+        <label className="mp-pago-guardar">
+          <input type="checkbox" checked={guardar} onChange={e => setGuardar(e.target.checked)} />
+          <span>
+            <b>Guardar mi tarjeta para la próxima</b>
+            <small>
+              Solo en este teléfono. La guarda el banco procesador, no Freakie Dogs —
+              nosotros nunca vemos tu número completo.
+            </small>
+          </span>
+        </label>
+      )}
+
       {error && <div className="mp-error">{error}</div>}
 
       <div className="mp-pago-seguro">
@@ -361,6 +529,11 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
       <button className="mp-btn-checkout" onClick={pagar}>
         Pagar {fmt(total)}
       </button>
+      {tarjetas.length > 0 && (
+        <button className="mp-pago-secundario" onClick={() => { setFase('guardadas'); setError('') }}>
+          Usar una tarjeta guardada
+        </button>
+      )}
       <button className="mp-pago-secundario" onClick={onPagarEnEfectivo}>
         Mejor pago en efectivo
       </button>

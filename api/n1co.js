@@ -42,14 +42,22 @@ const N1CO_BASE = env('N1CO_BASE_URL', 'https://api-sandbox.n1co.shop').replace(
 const AMBIENTE = env('N1CO_AMBIENTE', 'sandbox') === 'produccion' ? 'produccion' : 'sandbox';
 const SUPA_URL = env('SUPABASE_URL', 'https://btboxlwfqcbrdfrlnwln.supabase.co');
 
-const ALLOWED_OPS = new Set(['pagar', 'confirmar-3ds', 'estado']);
+const ALLOWED_OPS = new Set([
+  'pagar', 'confirmar-3ds', 'estado',
+  'tarjetas', 'cobrar-guardada', 'olvidar',
+]);
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
 // Orígenes que pueden llamar a este endpoint. El menú público vive en un
 // dominio distinto al del ERP, así que no alcanza con same-origin.
+// Al mudarse a freakiedogs.com hay que sumar el dominio nuevo acá o vía
+// N1CO_ORIGENES; si no, el navegador bloquea el cobro por CORS.
 const ORIGENES_OK = new Set([
   'https://freakiedelivery.vercel.app',
   'https://freakie-dogs-caja.vercel.app',
+  'https://freakiedogs.com',
+  'https://www.freakiedogs.com',
+  'https://pedidos.freakiedogs.com',
   'http://localhost:5173',
   'http://localhost:4173',
   ...env('N1CO_ORIGENES').split(',').map(s => s.trim()).filter(Boolean),
@@ -203,6 +211,20 @@ function validarTarjeta(card) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+// ── Identidad del dispositivo (para la tarjeta guardada) ─────────────
+// El navegador manda un secreto aleatorio que solo él conoce; a Postgres nunca
+// llega en claro, solo este hash. Así un volcado de `tarjetas_guardadas` no
+// alcanza para cobrarle a nadie: haría falta el secreto original, que no está
+// en la base y no es adivinable (uuid v4, 122 bits).
+async function dispositivoHash(secreto) {
+  const s = String(secreto || '');
+  // Se exige forma de uuid para que no entre un "1" y termine compartiendo
+  // tarjetas entre clientes distintos.
+  if (!/^[0-9a-f-]{36}$/i.test(s)) return null;
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // Mensajes al cliente: cortos, accionables y sin filtrar detalle del emisor
 // (el detalle técnico queda en pagos_online.error_msg para soporte).
 function mensajeRechazo(data) {
@@ -212,6 +234,21 @@ function mensajeRechazo(data) {
   if (/CVV|SECURITY/.test(code)) return 'El código de seguridad no coincide.';
   if (/STOLEN|LOST|FRAUD|RESTRICT/.test(code)) return 'Tu banco rechazó la tarjeta. Probá con otra.';
   return 'Tu banco rechazó el cobro. Probá con otra tarjeta o pagá en efectivo.';
+}
+
+function respuestaNoDisponible(sesion) {
+  const motivos = {
+    no_existe: 'No encontramos ese pedido.',
+    ya_pagado: 'Este pedido ya está pagado.',
+    cancelado: 'Este pedido fue cancelado.',
+    expirado: 'El pedido venció. Hacelo de nuevo, por favor.',
+    demasiados_intentos: 'Demasiados intentos. Escribinos por WhatsApp para ayudarte.',
+    monto_invalido: 'No pudimos calcular el total del pedido.',
+  };
+  return {
+    ok: false, error: sesion?.motivo || 'no_disponible',
+    mensaje: motivos[sesion?.motivo] || 'No pudimos iniciar el cobro.',
+  };
 }
 
 function locationCode(sucursalId) {
@@ -239,10 +276,12 @@ function saneaRespuesta(data) {
 }
 
 // ── Cobro (compartido por `pagar` y `confirmar-3ds`) ─────────────────
-async function cobrar({ pago, sesion, cardId, authenticationId, billing, email }) {
+async function cobrar({ pago, sesion, cardId, authenticationId, billing, email, customerId }) {
   const payload = {
     customer: {
-      id: `SV${sesion.cliente_telefono}`,
+      // Con tarjeta guardada se reusa el customer.id con el que n1co tokenizó
+      // esa tarjeta; si no coincide, el token no resuelve.
+      id: customerId || `SV${sesion.cliente_telefono}`,
       name: sesion.cliente_nombre || 'Cliente',
       email,
       phoneNumber: `+503${sesion.cliente_telefono}`,
@@ -344,6 +383,75 @@ export default async function handler(req) {
       }, origin);
     }
 
+    // ── tarjetas guardadas de este dispositivo ──
+    // Devuelve solo lo cosmético (marca, últimos 4, vence). El token de n1co
+    // NO sale de la BD: si viajara al navegador, cualquiera que lo capturara
+    // podría intentar cobrar con él.
+    if (op === 'tarjetas') {
+      const hash = await dispositivoHash(body?.dispositivo);
+      if (!hash) return json(200, { ok: true, tarjetas: [] }, origin);
+      const tarjetas = await rpc('tarjetas_listar', { p_dispositivo_hash: hash });
+      return json(200, { ok: true, tarjetas: tarjetas || [] }, origin);
+    }
+
+    // ── olvidar una tarjeta guardada ──
+    if (op === 'olvidar') {
+      const hash = await dispositivoHash(body?.dispositivo);
+      if (!hash) return json(400, { ok: false, error: 'dispositivo_invalido' }, origin);
+      const r = await rpc('tarjeta_olvidar', {
+        p_dispositivo_hash: hash,
+        p_tarjeta_id: String(body?.tarjeta_id || ''),
+      });
+      return json(200, { ok: !!r?.ok }, origin);
+    }
+
+    // ── cobrar con una tarjeta ya guardada ──
+    // El camino de fricción cero: el cliente no teclea nada. El token sale de
+    // la BD y solo si esa tarjeta pertenece a ESTE dispositivo.
+    if (op === 'cobrar-guardada') {
+      const trackingToken = String(body?.tracking_token || '');
+      if (!/^[0-9a-f-]{36}$/i.test(trackingToken)) {
+        return json(400, { ok: false, error: 'pedido_invalido' }, origin);
+      }
+      const hash = await dispositivoHash(body?.dispositivo);
+      if (!hash) return json(400, { ok: false, error: 'dispositivo_invalido' }, origin);
+
+      const tarjeta = await rpc('tarjeta_para_cobro', {
+        p_dispositivo_hash: hash,
+        p_tarjeta_id: String(body?.tarjeta_id || ''),
+      });
+      if (!tarjeta?.ok) {
+        return json(404, { ok: false, error: 'tarjeta_no_disponible',
+          mensaje: 'Esa tarjeta ya no está guardada. Ingresá los datos de nuevo.' }, origin);
+      }
+
+      const sesion = await rpc('pago_online_iniciar', {
+        p_tracking_token: trackingToken, p_ambiente: AMBIENTE,
+      });
+      if (!sesion?.ok) return json(409, respuestaNoDisponible(sesion), origin);
+
+      if (!locationCode(sesion.sucursal_id)) {
+        await rpc('pago_online_resolver', {
+          p: { pago_id: sesion.pago_id, estado: 'error', error_code: 'SIN_LOCATION_CODE',
+               error_msg: 'N1CO_LOCATION_CODE no configurado' },
+        });
+        return json(500, { ok: false, error: 'config',
+          mensaje: 'El pago con tarjeta no está disponible ahora. Elegí efectivo.' }, origin);
+      }
+
+      const out = await cobrar({
+        pago: sesion.pago_id, sesion,
+        cardId: tarjeta.card_id,
+        customerId: tarjeta.customer_id,
+        email: tarjeta.email || '',
+        billing: normalizarBilling(body?.billing),
+      });
+      await marcarTarjeta(sesion.pago_id, {
+        marca: tarjeta.marca, last4: tarjeta.last4, emisor: null,
+      });
+      return json(200, { ok: true, ...out, marca: tarjeta.marca, last4: tarjeta.last4 }, origin);
+    }
+
     // ── confirmar-3ds ──
     // El cliente solo avisa "terminé el reto". El authenticationId y el cardId
     // se leen de la BD: si vinieran del body, cualquiera podría inyectar el
@@ -371,7 +479,22 @@ export default async function handler(req) {
         billing: normalizarBilling(body?.billing),
         email: String(body?.email || '').trim(),
       });
-      return json(200, { ok: true, ...out }, origin);
+
+      // La tarjeta que pasó por 3DS se guarda acá, no en `pagar`: allá el cobro
+      // todavía no estaba aprobado.
+      const hash3ds = await dispositivoHash(body?.dispositivo);
+      if (body?.guardar === true && hash3ds && out.estado === 'aprobado') {
+        await guardarTarjeta({
+          hash: hash3ds, cardId: pago.card_id,
+          customerId: `SV${sesion.cliente_telefono}`,
+          email: String(body?.email || '').trim(),
+          telefono: sesion.cliente_telefono,
+          titular: String(body?.titular || '').trim(),
+          marca: pago.marca, last4: pago.last4,
+          mes: String(body?.vence_mes || ''), anio: String(body?.vence_anio || ''),
+        });
+      }
+      return json(200, { ok: true, ...out, guardada: body?.guardar === true && out.estado === 'aprobado' }, origin);
     }
 
     // ── pagar ──
@@ -397,20 +520,7 @@ export default async function handler(req) {
       p_tracking_token: trackingToken,
       p_ambiente: AMBIENTE,
     });
-    if (!sesion?.ok) {
-      const motivos = {
-        no_existe: 'No encontramos ese pedido.',
-        ya_pagado: 'Este pedido ya está pagado.',
-        cancelado: 'Este pedido fue cancelado.',
-        expirado: 'El pedido venció. Hacelo de nuevo, por favor.',
-        demasiados_intentos: 'Demasiados intentos. Escribinos por WhatsApp para ayudarte.',
-        monto_invalido: 'No pudimos calcular el total del pedido.',
-      };
-      return json(409, {
-        ok: false, error: sesion?.motivo || 'no_disponible',
-        mensaje: motivos[sesion?.motivo] || 'No pudimos iniciar el cobro.',
-      }, origin);
-    }
+    if (!sesion?.ok) return json(409, respuestaNoDisponible(sesion), origin);
 
     if (!locationCode(sesion.sucursal_id)) {
       await rpc('pago_online_resolver', {
@@ -421,11 +531,17 @@ export default async function handler(req) {
         mensaje: 'El pago con tarjeta no está disponible ahora. Elegí efectivo.' }, origin);
     }
 
-    // Tokenizar: acá muere el PAN. singleUse porque es un cobro único; no
-    // guardamos tarjetas del cliente.
+    // Guardar la tarjeta exige un token multi-uso: con `singleUse: true` el
+    // token muere en este cobro y no serviría para la próxima compra. Solo se
+    // pide multi-uso si el cliente marcó guardar.
+    const hashDisp = await dispositivoHash(body?.dispositivo);
+    const guardar = body?.guardar === true && !!hashDisp;
+    const customerId = `SV${sesion.cliente_telefono}`;
+
+    // Tokenizar: acá muere el PAN.
     const tok = await n1co('/api/v3/PaymentMethods', {
       customer: {
-        id: `SV${sesion.cliente_telefono}`,
+        id: customerId,
         name: sesion.cliente_nombre || 'Cliente',
         email,
         phoneNumber: `+503${sesion.cliente_telefono}`,
@@ -436,7 +552,7 @@ export default async function handler(req) {
         expirationMonth: card.mes,
         expirationYear: card.anio,
         cvv: card.cvv,
-        singleUse: true,
+        singleUse: !guardar,
       },
     });
 
@@ -474,11 +590,25 @@ export default async function handler(req) {
     // para que soporte sepa con qué tarjeta se intentó.
     const out = await cobrar({
       pago: sesion.pago_id, sesion,
-      cardId: tok.data.id, billing, email,
+      cardId: tok.data.id, customerId, billing, email,
     });
     await marcarTarjeta(sesion.pago_id, { marca: bin.brand, last4, emisor: bin.issuerName });
 
-    return json(200, { ok: true, ...out, marca: bin.brand || null, last4 }, origin);
+    // Se guarda SOLO si el cobro pasó: un token que el emisor rechazó no sirve
+    // para la próxima compra y solo ensuciaría la lista del cliente.
+    // Ojo: si quedó en 3DS, la tarjeta se guarda al confirmar, no acá.
+    if (guardar && out.estado === 'aprobado') {
+      await guardarTarjeta({
+        hash: hashDisp, cardId: tok.data.id, customerId, email,
+        telefono: sesion.cliente_telefono, titular: String(body.card.cardHolder).trim(),
+        marca: bin.brand, last4, emisor: bin.issuerName, mes: card.mes, anio: card.anio,
+      });
+    }
+
+    return json(200, {
+      ok: true, ...out, marca: bin.brand || null, last4,
+      guardada: guardar && out.estado === 'aprobado',
+    }, origin);
   } catch (err) {
     const esConfig = err instanceof ErrorConfig;
     // El mensaje del error puede traer detalle de upstream; al cliente le va
@@ -503,6 +633,25 @@ async function datosPedido(deliveryId) {
   );
   const rows = await leerJson(res);
   return Array.isArray(rows) && rows.length ? rows[0] : {};
+}
+
+// Best-effort a propósito: si falla, el cobro ya está aprobado y lo peor que
+// pasa es que el cliente vuelva a teclear la tarjeta la próxima vez. Nunca
+// romper un pago bueno por no poder guardar una comodidad.
+async function guardarTarjeta({ hash, cardId, customerId, email, telefono, titular,
+                                marca, last4, emisor, mes, anio }) {
+  try {
+    await rpc('tarjeta_guardar', {
+      p: {
+        dispositivo_hash: hash, card_id: cardId, customer_id: customerId,
+        telefono: telefono || '', titular: titular || '', email: email || '',
+        marca: marca || '', last4: last4 || '', emisor: emisor || '',
+        vence_mes: mes || '', vence_anio: anio || '',
+      },
+    });
+  } catch (e) {
+    console.error('[n1co] no se pudo guardar la tarjeta:', String(e?.message || e));
+  }
 }
 
 async function marcarTarjeta(pagoId, { marca, last4, emisor }) {

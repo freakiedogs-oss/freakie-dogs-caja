@@ -42,9 +42,14 @@ const TIMEOUT_MS = 20_000;
 // mucho antes de que el pedido pierda sentido para la cocina.
 const VENCE_MIN = 45;
 
+// Al mudarse a freakiedogs.com hay que sumar el dominio nuevo acá o vía
+// N1CO_ORIGENES; si no, el navegador bloquea el cobro por CORS.
 const ORIGENES_OK = new Set([
   URL_DELIVERY,
   'https://freakie-dogs-caja.vercel.app',
+  'https://freakiedogs.com',
+  'https://www.freakiedogs.com',
+  'https://pedidos.freakiedogs.com',
   'http://localhost:5173',
   'http://localhost:4173',
   ...env('N1CO_ORIGENES').split(',').map(s => s.trim()).filter(Boolean),
