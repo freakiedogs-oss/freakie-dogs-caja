@@ -13,6 +13,10 @@ import { NEGOCIO, BANNERS } from './catalogoBuho'
 // Cargarlo aparte mantiene liviano el menú, que es lo primero que ve la gente.
 const MapaUbicacion = lazy(() => import('./MapaUbicacion'))
 
+// Igual que el mapa: el formulario de tarjeta solo lo necesita quien paga con
+// tarjeta, y no tiene por qué pesar en la primera carga del menú.
+const PagoTarjeta = lazy(() => import('./PagoTarjeta'))
+
 const fmt = (n) => `$${Number(n).toFixed(2)}`
 
 // Los celulares y fijos de El Salvador son 8 dígitos y empiezan con 2, 6 o 7.
@@ -115,6 +119,7 @@ export default function MenuPublico() {
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [pedidoOk, setPedidoOk] = useState(null)  // respuesta de crear_pedido_delivery + nombre
+  const [pagoTarjeta, setPagoTarjeta] = useState(false)  // cobro con tarjeta abierto encima
   const [toast, setToast] = useState(null)
   const [showTop, setShowTop] = useState(false)
   const [horarioBD, setHorarioBD] = useState(null)   // horario en vivo del Panel Delivery
@@ -406,13 +411,35 @@ export default function MenuPublico() {
             setCarrito([])
             setCheckoutOpen(false)
             setPedidoOk(datos)
+            setPagoTarjeta(datos.metodoPago === 'tarjeta')
           }}
         />
       )}
 
+      {/* COBRO CON TARJETA
+          Va encima de la confirmación, no en lugar de ella: el pedido ya está
+          creado y guardado, así que si el cliente abandona el cobro igual queda
+          el pedido y la pantalla de siempre debajo. */}
+      {pedidoOk && pagoTarjeta && (
+        <Suspense fallback={null}>
+          <PagoTarjeta
+            pedido={pedidoOk}
+            onAprobado={(r) => setPedidoOk(p => ({ ...p, pagado: true, pago: r }))}
+            onPagarEnEfectivo={() => {
+              setPagoTarjeta(false)
+              setPedidoOk(p => ({ ...p, metodoPago: 'efectivo' }))
+            }}
+            onCerrar={() => setPagoTarjeta(false)}
+          />
+        </Suspense>
+      )}
+
       {/* CONFIRMACIÓN POST-PEDIDO */}
       {pedidoOk && (
-        <PedidoEnviado datos={pedidoOk} onClose={() => setPedidoOk(null)} />
+        <PedidoEnviado
+          datos={pedidoOk}
+          onClose={() => { setPedidoOk(null); setPagoTarjeta(false) }}
+        />
       )}
 
       {/* TOAST */}
@@ -1017,11 +1044,17 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
 function PedidoEnviado({ datos, onClose }) {
   const waNum = String(datos.whatsapp || '').replace(/\D/g, '')
   const items = datos.items || []
+  // Pagado con tarjeta: el botón de WhatsApp se queda (sirve para consultar),
+  // pero deja de pedir que coordine el pago — ya no hay nada que coordinar.
+  const pagado = !!datos.pagado
   // Resumen del pedido para el mensaje de WhatsApp: el cliente manda qué pidió, no solo el número.
   // Incluye el desglose por componente: con los combos armados por partes, el detalle de lo que
   // el cliente eligió vive ahí, no en `mods`. Sin esto el mensaje solo decía "1x Combo Trío".
   const resumen = items.map(lineaPedidoTexto).join('\n')
-  const waMsg = `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Confirmo mi pedido ${datos.numero_orden}`
+  const waMsg = pagado
+    ? `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Ya pagué con tarjeta mi pedido ${datos.numero_orden}`
+      + (datos.direccion ? `\n📍 ${datos.direccion}` : '')
+    : `¡Hola! Soy ${datos.nombre || 'cliente'} 🌭 Confirmo mi pedido ${datos.numero_orden}`
     + (resumen ? `:\n${resumen}` : '')
     + (datos.total ? `\nTotal: ${fmt(datos.total)}` : '')
     + (datos.direccion ? `\n📍 ${datos.direccion}` : '')
@@ -1033,13 +1066,23 @@ function PedidoEnviado({ datos, onClose }) {
       <div className="mp-drawer mp-enviado" onClick={e => e.stopPropagation()}>
         <div className="mp-drawer-header">
           <button className="mp-drawer-close" onClick={onClose}>×</button>
-          <h2>¡Pedido enviado! 🌭</h2>
+          <h2>{pagado ? '¡Pedido pagado! 🌭' : '¡Pedido enviado! 🌭'}</h2>
         </div>
         <div className="mp-drawer-body">
           <div className="mp-enviado-num">
             Tu pedido es el <b>{datos.numero_orden}</b>
             {datos.total ? <> · <b>{fmt(datos.total)}</b></> : null}
           </div>
+
+          {pagado && (
+            <div className="mp-enviado-pagado">
+              ✅ Pagado con {datos.pago?.marca || 'tarjeta'}
+              {datos.pago?.last4 ? ` ····${datos.pago.last4}` : ''}
+              {datos.pago?.comandado === false
+                ? ' · te asignamos tienda y te avisamos'
+                : ' · ya está en cocina'}
+            </div>
+          )}
 
           {/* Detalle de lo que pidió: antes solo se mostraba el número y el total, y el cliente
               no tenía forma de verificar que su orden hubiera quedado bien. */}
@@ -1080,17 +1123,22 @@ function PedidoEnviado({ datos, onClose }) {
           {waHref ? (
             <>
               <a className="mp-enviado-wa" href={waHref} target="_blank" rel="noreferrer">
-                📲 Confirmar mi pedido por WhatsApp
+                {pagado ? '📲 Escribinos por WhatsApp' : '📲 Confirmar mi pedido por WhatsApp'}
               </a>
               <div className="mp-enviado-ayuda">
-                Escribinos vos con este botón: así te contestamos en el mismo chat
-                para coordinar el pago y avisarte de tu pedido. Guardanos como
-                <b> Freakie Dogs</b> 💾
+                {pagado
+                  ? <>No hace falta que escribas: tu pago ya entró. Usá este botón
+                      solo si querés avisarnos algo. Guardanos como <b>Freakie Dogs</b> 💾</>
+                  : <>Escribinos vos con este botón: así te contestamos en el mismo chat
+                      para coordinar el pago y avisarte de tu pedido. Guardanos como
+                      <b> Freakie Dogs</b> 💾</>}
               </div>
             </>
           ) : (
             <div className="mp-enviado-ayuda">
-              Te contactaremos pronto para coordinar el pago 📞
+              {pagado
+                ? 'Tu pago ya entró. Te avisamos cuando salga tu pedido 🛵'
+                : 'Te contactaremos pronto para coordinar el pago 📞'}
             </div>
           )}
 
@@ -1482,6 +1530,12 @@ function Checkout({ items, total, onClose, onEnviado }) {
                 </button>
               ))}
             </div>
+            {metodoPago === 'tarjeta' && (
+              <div className="mp-pago-hint">
+                Vas a pagar ahora con tarjeta y tu pedido entra directo a la cocina,
+                sin esperar el WhatsApp. 🔒
+              </div>
+            )}
           </div>
 
           {/* Con cuánto paga (efectivo): para que el motorista lleve el cambio */}
@@ -1543,7 +1597,11 @@ function Checkout({ items, total, onClose, onEnviado }) {
             onClick={enviar}
             disabled={enviando}
           >
-            {enviando ? 'Enviando...' : `Confirmar pedido · ${fmt(totalConEnvio)}`}
+            {enviando
+              ? 'Enviando...'
+              : metodoPago === 'tarjeta'
+                ? `Continuar al pago · ${fmt(totalConEnvio)}`
+                : `Confirmar pedido · ${fmt(totalConEnvio)}`}
           </button>
         </div>
       </div>

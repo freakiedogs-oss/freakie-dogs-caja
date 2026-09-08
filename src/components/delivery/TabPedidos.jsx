@@ -542,7 +542,9 @@ export default function TabPedidos({ show = () => {} }) {
   const waLink = (tel, p) => {
     const num = String(tel || '').replace(/\D/g, '');
     const base = `Hola! Soy de Freakie Dogs 🌭 Sobre tu pedido ${p.numero_orden} por ${fmt(p.total)}.`;
-    const msg = p.estado === 'recibida'
+    // Un pedido pagado con tarjeta en el menú web llega acá ya cobrado. Sin
+    // este corte le pediríamos el pago de nuevo a quien ya pagó.
+    const msg = (p.estado === 'recibida' && !p.cobrado)
       ? `${base} ¿Cómo querés pagar (efectivo/transferencia)?`
       : `${base} Seguí tu pedido en vivo acá: ${trackUrl(p)}`;
     return `https://wa.me/503${num}?text=${encodeURIComponent(msg)}`;
@@ -827,6 +829,15 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       <div style={{ fontSize: 11.5, color: c.dim, marginTop: 4 }}>
         <b style={{ color: c.text }}>{fmt(p.total)}</b> · {p.metodo_pago} · {nItems} ít.{suc ? ` · 🏪 ${suc}` : ''}
       </div>
+      {/* Cobrado online: no hay que pedirle plata al cliente ni al motorista.
+          Va bien visible porque el riesgo es justo el contrario — cobrarle dos veces. */}
+      {p.cobrado && (
+        <div style={{ display: 'inline-block', marginTop: 5, padding: '2px 7px', borderRadius: 5,
+                      background: '#0d2b18', border: `1px solid ${c.green}`,
+                      fontSize: 10.5, fontWeight: 800, color: c.green, letterSpacing: .3 }}>
+          💳 PAGADO ONLINE · NO COBRAR
+        </div>
+      )}
       {p.motorista_nombre && <div style={{ fontSize: 11.5, color: c.green, marginTop: 3 }}>🛵 {p.motorista_nombre}</div>}
 
       {/* Mover de columna en cualquier dirección. Va arriba de todo lo demás
@@ -926,8 +937,9 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
             ))}
           </select>
           <button disabled={ocupado === p.id || !sucursalDe(p)} onClick={() => confirmar(p)}
-                  style={{ ...btn(c.red), width: '100%', fontSize: 12 }}>
-            {ocupado === p.id ? '…' : '✅ Confirmar pago'}
+                  style={{ ...btn(p.cobrado ? c.green : c.red), width: '100%', fontSize: 12,
+                           color: p.cobrado ? '#04210f' : undefined }}>
+            {ocupado === p.id ? '…' : p.cobrado ? '🍳 Mandar a cocina' : '✅ Confirmar pago'}
           </button>
         </div>
       )}

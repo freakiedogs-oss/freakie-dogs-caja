@@ -1,0 +1,531 @@
+// api/n1co.js
+//
+// Edge Function de Vercel: cobra con tarjeta los pedidos del delivery web
+// contra la pasarela n1co (EPay). Sustituye el ida y vuelta por WhatsApp
+// para coordinar el pago.
+//
+// Por qué existe un servidor en el medio y no se llama a n1co desde el browser:
+//   · n1co autentica con clientId/clientSecret → Bearer. Ese secreto no puede
+//     vivir en el bundle (misma lección que dejó DTE_API_KEY hardcodeada,
+//     hallazgo P0 de mayo-2026).
+//   · El monto a cobrar sale de la BD, no del navegador. Un cliente que edite
+//     el JS podría, si no, pagar $1 un pedido de $30.
+//   · El PAN entra acá, se reenvía a n1co y muere. No se loguea, no se guarda,
+//     no se devuelve al front. Solo persisten marca, últimos 4 y el token.
+//
+// Operaciones (POST /api/n1co/<op>):
+//   pagar          → { tracking_token, email, card{...}, billing? }
+//                    abre el intento, tokeniza, cobra y comanda si aprueba.
+//   confirmar-3ds  → { pago_id }
+//                    reintenta el cobro con el authenticationId ya guardado,
+//                    después de que el cliente completó el reto del banco.
+//   estado         → { pago_id }  consulta idempotente, para recuperar la UI.
+//
+// Vars de entorno en Vercel:
+//   N1CO_CLIENT_ID              — credencial de la plataforma n1co
+//   N1CO_CLIENT_SECRET          — idem (jamás en el repo)
+//   N1CO_BASE_URL               — default https://api-sandbox.n1co.shop
+//   N1CO_AMBIENTE               — 'sandbox' | 'produccion' (default sandbox)
+//   N1CO_LOCATION_CODE          — código de sucursal del Portal n1co (requerido)
+//   N1CO_LOCATION_CODES         — opcional, JSON {"<sucursal_id>":"<code>"}
+//   N1CO_ORIGENES               — opcional, orígenes extra permitidos (coma)
+//   SUPABASE_URL                — https://btboxlwfqcbrdfrlnwln.supabase.co
+//   SUPABASE_SERVICE_ROLE_KEY   — para las RPC pago_online_* (no anon)
+
+export const config = { runtime: 'edge' };
+
+// ── Config ───────────────────────────────────────────────────────────
+const env = (k, def = '') =>
+  (typeof process !== 'undefined' && process.env?.[k]) || def;
+
+const N1CO_BASE = env('N1CO_BASE_URL', 'https://api-sandbox.n1co.shop').replace(/\/+$/, '');
+const AMBIENTE = env('N1CO_AMBIENTE', 'sandbox') === 'produccion' ? 'produccion' : 'sandbox';
+const SUPA_URL = env('SUPABASE_URL', 'https://btboxlwfqcbrdfrlnwln.supabase.co');
+
+const ALLOWED_OPS = new Set(['pagar', 'confirmar-3ds', 'estado']);
+const UPSTREAM_TIMEOUT_MS = 30_000;
+
+// Orígenes que pueden llamar a este endpoint. El menú público vive en un
+// dominio distinto al del ERP, así que no alcanza con same-origin.
+const ORIGENES_OK = new Set([
+  'https://freakiedelivery.vercel.app',
+  'https://freakie-dogs-caja.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:4173',
+  ...env('N1CO_ORIGENES').split(',').map(s => s.trim()).filter(Boolean),
+]);
+
+function corsHeaders(origin) {
+  const h = {
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  };
+  // Los previews de Vercel son dominios efímeros: se aceptan por patrón para
+  // no tener que registrarlos uno por uno mientras se prueba la integración.
+  if (origin && (ORIGENES_OK.has(origin) || /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin))) {
+    h['Access-Control-Allow-Origin'] = origin;
+  }
+  return h;
+}
+
+function json(status, body, origin) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...corsHeaders(origin) },
+  });
+}
+
+// ── Token de n1co (cacheado por isolate) ─────────────────────────────
+// expiresIn ronda la hora; se renueva 60 s antes para no cobrar con un token
+// que expira en pleno vuelo.
+let tokenCache = { value: '', expiraEn: 0 };
+
+async function n1coToken() {
+  const ahora = Date.now();
+  if (tokenCache.value && ahora < tokenCache.expiraEn) return tokenCache.value;
+
+  const clientId = env('N1CO_CLIENT_ID');
+  const clientSecret = env('N1CO_CLIENT_SECRET');
+  if (!clientId || !clientSecret) throw new ErrorConfig('faltan credenciales n1co');
+
+  const res = await fetchConTimeout(`${N1CO_BASE}/api/v3/Token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId, clientSecret }),
+  });
+  const data = await leerJson(res);
+  if (!res.ok || !data?.accessToken) {
+    throw new ErrorConfig(`n1co no entregó token (HTTP ${res.status})`);
+  }
+  tokenCache = {
+    value: data.accessToken,
+    expiraEn: ahora + Math.max(30, Number(data.expiresIn || 3600) - 60) * 1000,
+  };
+  return tokenCache.value;
+}
+
+class ErrorConfig extends Error {}
+
+async function fetchConTimeout(url, opts) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function leerJson(res) {
+  const txt = await res.text();
+  try { return txt ? JSON.parse(txt) : {}; } catch { return { _raw: txt.slice(0, 500) }; }
+}
+
+async function n1co(path, body) {
+  const token = await n1coToken();
+  const res = await fetchConTimeout(`${N1CO_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, ok: res.ok, data: await leerJson(res) };
+}
+
+// ── Supabase con service_role ────────────────────────────────────────
+async function rpc(fn, args) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  if (!key) throw new ErrorConfig('falta SUPABASE_SERVICE_ROLE_KEY');
+  const res = await fetchConTimeout(`${SUPA_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(args),
+  });
+  const data = await leerJson(res);
+  if (!res.ok) throw new Error(`rpc ${fn}: ${data?.message || res.status}`);
+  return data;
+}
+
+async function leerPago(pagoId) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  const cols = 'id,delivery_id,estado,monto,order_id,card_id,authentication_id,marca,last4,intento';
+  const res = await fetchConTimeout(
+    `${SUPA_URL}/rest/v1/pagos_online?id=eq.${encodeURIComponent(pagoId)}&select=${cols}&limit=1`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}`, accept: 'application/json' } },
+  );
+  const rows = await leerJson(res);
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+// ── Validación de tarjeta (antes de gastar un intento) ───────────────
+function luhn(num) {
+  let suma = 0, alterna = false;
+  for (let i = num.length - 1; i >= 0; i--) {
+    let d = num.charCodeAt(i) - 48;
+    if (d < 0 || d > 9) return false;
+    if (alterna) { d *= 2; if (d > 9) d -= 9; }
+    suma += d;
+    alterna = !alterna;
+  }
+  return suma % 10 === 0;
+}
+
+function validarTarjeta(card) {
+  const numero = String(card?.number || '').replace(/\D/g, '');
+  if (numero.length < 13 || numero.length > 19 || !luhn(numero)) {
+    return { error: 'numero_invalido', mensaje: 'Revisá el número de la tarjeta' };
+  }
+  const mes = String(card?.expirationMonth || '').padStart(2, '0');
+  const anio = String(card?.expirationYear || '');
+  const mesN = Number(mes), anioN = Number(anio.length === 2 ? `20${anio}` : anio);
+  if (!(mesN >= 1 && mesN <= 12) || !(anioN >= 2000 && anioN <= 2100)) {
+    return { error: 'vencimiento_invalido', mensaje: 'Revisá el vencimiento' };
+  }
+  // Vence al cierre de su mes: comparamos contra el primer día del mes siguiente.
+  const hoy = new Date();
+  if (new Date(Date.UTC(anioN, mesN, 1)) <= hoy) {
+    return { error: 'tarjeta_vencida', mensaje: 'La tarjeta está vencida' };
+  }
+  const cvv = String(card?.cvv || '').replace(/\D/g, '');
+  if (cvv.length < 3 || cvv.length > 4) {
+    return { error: 'cvv_invalido', mensaje: 'Revisá el código de seguridad' };
+  }
+  if (!String(card?.cardHolder || '').trim()) {
+    return { error: 'titular_invalido', mensaje: 'Escribí el nombre como aparece en la tarjeta' };
+  }
+  return { numero, mes, anio: String(anioN), cvv };
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// Mensajes al cliente: cortos, accionables y sin filtrar detalle del emisor
+// (el detalle técnico queda en pagos_online.error_msg para soporte).
+function mensajeRechazo(data) {
+  const code = String(data?.error || data?.errorCode || '').toUpperCase();
+  if (/INSUFFICIENT|FONDOS/.test(code)) return 'La tarjeta no tiene fondos suficientes.';
+  if (/EXPIRED|VENCID/.test(code)) return 'La tarjeta está vencida.';
+  if (/CVV|SECURITY/.test(code)) return 'El código de seguridad no coincide.';
+  if (/STOLEN|LOST|FRAUD|RESTRICT/.test(code)) return 'Tu banco rechazó la tarjeta. Probá con otra.';
+  return 'Tu banco rechazó el cobro. Probá con otra tarjeta o pagá en efectivo.';
+}
+
+function locationCode(sucursalId) {
+  try {
+    const mapa = JSON.parse(env('N1CO_LOCATION_CODES', '{}'));
+    if (sucursalId && mapa[sucursalId]) return String(mapa[sucursalId]);
+  } catch { /* mapa mal formado: cae al default */ }
+  return env('N1CO_LOCATION_CODE');
+}
+
+// Guarda lo que sirve para conciliar y para soporte. Nunca el PAN ni el CVV:
+// n1co devuelve el bin (6 primeros) y nosotros ya teníamos los últimos 4.
+function saneaRespuesta(data) {
+  if (!data || typeof data !== 'object') return null;
+  const { status, message, error, order, createdAt, authentication } = data;
+  return {
+    status, message, error, createdAt,
+    order: order ? {
+      id: order.id, amount: order.amount,
+      authorizationCode: order.authorizationCode ?? order.authorization_code,
+    } : undefined,
+    // Del objeto de 3DS solo el id: la url es de un solo uso y no aporta al log.
+    authentication: authentication ? { id: authentication.id } : undefined,
+  };
+}
+
+// ── Cobro (compartido por `pagar` y `confirmar-3ds`) ─────────────────
+async function cobrar({ pago, sesion, cardId, authenticationId, billing, email }) {
+  const payload = {
+    customer: {
+      id: `SV${sesion.cliente_telefono}`,
+      name: sesion.cliente_nombre || 'Cliente',
+      email,
+      phoneNumber: `+503${sesion.cliente_telefono}`,
+    },
+    order: {
+      id: sesion.order_id,
+      // El monto sale de pago_online_iniciar, que lo leyó de delivery_clientes.
+      // Nunca del body del request.
+      amount: Number(sesion.monto),
+      name: `Pedido ${sesion.numero_orden}`,
+      description: `Freakie Dogs · ${sesion.tipo === 'para_llevar' ? 'Retiro en tienda' : 'Delivery'}`,
+    },
+    cardId,
+    locationCode: locationCode(sesion.sucursal_id),
+    ...(authenticationId ? { authenticationId } : {}),
+    ...(billing ? { billingInfo: billing } : {}),
+  };
+
+  const { data } = await n1co('/api/v3/Charges', payload);
+  const status = String(data?.status || '').toUpperCase();
+
+  if (status === 'AUTHENTICATION_REQUIRED' && data?.authentication?.url) {
+    await rpc('pago_online_resolver', {
+      p: {
+        pago_id: pago, estado: 'requiere_3ds',
+        card_id: cardId,
+        authentication_id: data.authentication.id,
+        raw: saneaRespuesta(data),
+      },
+    });
+    return {
+      estado: 'requiere_3ds',
+      pago_id: pago,
+      // La url del reto va al front porque tiene que renderizarse en el iframe.
+      // El authenticationId se queda en la BD: el reintento lo toma de ahí.
+      autenticacion_url: data.authentication.url,
+    };
+  }
+
+  if (status === 'SUCCEEDED') {
+    const res = await rpc('pago_online_resolver', {
+      p: {
+        pago_id: pago, estado: 'aprobado',
+        card_id: cardId,
+        authentication_id: authenticationId || null,
+        authorization_code: data?.order?.authorizationCode ?? data?.order?.authorization_code ?? null,
+        raw: saneaRespuesta(data),
+      },
+    });
+    return {
+      estado: 'aprobado',
+      pago_id: pago,
+      comandado: res?.comandado !== false,
+      autorizacion: data?.order?.authorizationCode ?? null,
+    };
+  }
+
+  await rpc('pago_online_resolver', {
+    p: {
+      pago_id: pago, estado: 'rechazado',
+      card_id: cardId,
+      error_code: String(data?.error || data?.errorCode || status || 'DESCONOCIDO'),
+      error_msg: String(data?.message || ''),
+      raw: saneaRespuesta(data),
+    },
+  });
+  return { estado: 'rechazado', pago_id: pago, mensaje: mensajeRechazo(data) };
+}
+
+// ── Handler ──────────────────────────────────────────────────────────
+export default async function handler(req) {
+  const origin = req.headers.get('origin') || '';
+
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
+  if (req.method !== 'POST') {
+    return json(405, { ok: false, error: 'method_not_allowed' }, origin);
+  }
+
+  const url = new URL(req.url);
+  let op = url.searchParams.get('op') || url.pathname.split('/').filter(Boolean).pop() || '';
+  op = op.trim();
+  if (!ALLOWED_OPS.has(op)) {
+    return json(400, { ok: false, error: 'op_not_allowed', op }, origin);
+  }
+
+  let body;
+  try { body = await req.json(); } catch { return json(400, { ok: false, error: 'json_invalido' }, origin); }
+
+  try {
+    // ── estado ──
+    if (op === 'estado') {
+      const pago = await leerPago(String(body?.pago_id || ''));
+      if (!pago) return json(404, { ok: false, error: 'no_existe' }, origin);
+      return json(200, {
+        ok: true, estado: pago.estado, pago_id: pago.id,
+        marca: pago.marca, last4: pago.last4,
+      }, origin);
+    }
+
+    // ── confirmar-3ds ──
+    // El cliente solo avisa "terminé el reto". El authenticationId y el cardId
+    // se leen de la BD: si vinieran del body, cualquiera podría inyectar el
+    // id de una autenticación ajena.
+    if (op === 'confirmar-3ds') {
+      const pago = await leerPago(String(body?.pago_id || ''));
+      if (!pago) return json(404, { ok: false, error: 'no_existe' }, origin);
+      if (pago.estado === 'aprobado') {
+        return json(200, { ok: true, estado: 'aprobado', pago_id: pago.id }, origin);
+      }
+      if (pago.estado !== 'requiere_3ds' || !pago.card_id || !pago.authentication_id) {
+        return json(409, { ok: false, error: 'estado_invalido', estado: pago.estado }, origin);
+      }
+      // Todo sale de la BD. Nada del body salvo el correo y el billing, que no
+      // afectan el monto ni a qué pedido se imputa el cobro.
+      const sesion = {
+        ...(await datosPedido(pago.delivery_id)),
+        order_id: pago.order_id,
+        monto: pago.monto,
+      };
+      const out = await cobrar({
+        pago: pago.id, sesion,
+        cardId: pago.card_id,
+        authenticationId: pago.authentication_id,
+        billing: normalizarBilling(body?.billing),
+        email: String(body?.email || '').trim(),
+      });
+      return json(200, { ok: true, ...out }, origin);
+    }
+
+    // ── pagar ──
+    const trackingToken = String(body?.tracking_token || '');
+    if (!/^[0-9a-f-]{36}$/i.test(trackingToken)) {
+      return json(400, { ok: false, error: 'pedido_invalido' }, origin);
+    }
+    const email = String(body?.email || '').trim();
+    if (!EMAIL_RE.test(email)) {
+      return json(400, { ok: false, error: 'email_invalido',
+        mensaje: 'Necesitamos un correo válido para enviarte el comprobante' }, origin);
+    }
+
+    const card = validarTarjeta(body?.card);
+    if (card.error) {
+      return json(400, { ok: false, error: card.error, mensaje: card.mensaje }, origin);
+    }
+
+    // Abrir el intento ANTES de tocar n1co: es lo que frena el uso del endpoint
+    // como validador de tarjetas robadas (exige un pedido real, reciente, impago,
+    // y topea los intentos por pedido).
+    const sesion = await rpc('pago_online_iniciar', {
+      p_tracking_token: trackingToken,
+      p_ambiente: AMBIENTE,
+    });
+    if (!sesion?.ok) {
+      const motivos = {
+        no_existe: 'No encontramos ese pedido.',
+        ya_pagado: 'Este pedido ya está pagado.',
+        cancelado: 'Este pedido fue cancelado.',
+        expirado: 'El pedido venció. Hacelo de nuevo, por favor.',
+        demasiados_intentos: 'Demasiados intentos. Escribinos por WhatsApp para ayudarte.',
+        monto_invalido: 'No pudimos calcular el total del pedido.',
+      };
+      return json(409, {
+        ok: false, error: sesion?.motivo || 'no_disponible',
+        mensaje: motivos[sesion?.motivo] || 'No pudimos iniciar el cobro.',
+      }, origin);
+    }
+
+    if (!locationCode(sesion.sucursal_id)) {
+      await rpc('pago_online_resolver', {
+        p: { pago_id: sesion.pago_id, estado: 'error', error_code: 'SIN_LOCATION_CODE',
+             error_msg: 'N1CO_LOCATION_CODE no configurado' },
+      });
+      return json(500, { ok: false, error: 'config',
+        mensaje: 'El pago con tarjeta no está disponible ahora. Elegí efectivo.' }, origin);
+    }
+
+    // Tokenizar: acá muere el PAN. singleUse porque es un cobro único; no
+    // guardamos tarjetas del cliente.
+    const tok = await n1co('/api/v3/PaymentMethods', {
+      customer: {
+        id: `SV${sesion.cliente_telefono}`,
+        name: sesion.cliente_nombre || 'Cliente',
+        email,
+        phoneNumber: `+503${sesion.cliente_telefono}`,
+      },
+      card: {
+        number: card.numero,
+        cardHolder: String(body.card.cardHolder).trim(),
+        expirationMonth: card.mes,
+        expirationYear: card.anio,
+        cvv: card.cvv,
+        singleUse: true,
+      },
+    });
+
+    if (!tok.ok || !tok.data?.id) {
+      await rpc('pago_online_resolver', {
+        p: { pago_id: sesion.pago_id, estado: 'rechazado',
+             error_code: String(tok.data?.error || `HTTP_${tok.status}`),
+             error_msg: String(tok.data?.message || ''), raw: saneaRespuesta(tok.data) },
+      });
+      return json(200, { ok: true, estado: 'rechazado', pago_id: sesion.pago_id,
+        mensaje: 'No pudimos validar la tarjeta. Revisá los datos o probá con otra.' }, origin);
+    }
+
+    const last4 = card.numero.slice(-4);
+    const bin = tok.data.bin || {};
+
+    // billingInfo es obligatorio solo para emisores de EE.UU. y Canadá, y el
+    // país recién se conoce con el bin. Si hace falta y no vino, se le pide al
+    // cliente en vez de gastar el intento en un rechazo seguro.
+    const paisEmisor = String(bin.countryCode || '').toUpperCase();
+    const billing = normalizarBilling(body?.billing);
+    if (['USA', 'US', 'CAN', 'CA'].includes(paisEmisor) && !billing) {
+      await rpc('pago_online_resolver', {
+        p: { pago_id: sesion.pago_id, estado: 'error', card_id: tok.data.id,
+             marca: bin.brand, last4, emisor: bin.issuerName,
+             error_code: 'REQUIERE_BILLING', error_msg: `emisor ${paisEmisor}` },
+      });
+      return json(200, {
+        ok: true, estado: 'requiere_billing', pago_id: sesion.pago_id,
+        mensaje: 'Tu tarjeta es de EE.UU./Canadá: necesitamos el código postal de facturación.',
+      }, origin);
+    }
+
+    // El resolver guarda marca/últimos4 aunque el cobro después falle: sirve
+    // para que soporte sepa con qué tarjeta se intentó.
+    const out = await cobrar({
+      pago: sesion.pago_id, sesion,
+      cardId: tok.data.id, billing, email,
+    });
+    await marcarTarjeta(sesion.pago_id, { marca: bin.brand, last4, emisor: bin.issuerName });
+
+    return json(200, { ok: true, ...out, marca: bin.brand || null, last4 }, origin);
+  } catch (err) {
+    const esConfig = err instanceof ErrorConfig;
+    // El mensaje del error puede traer detalle de upstream; al cliente le va
+    // uno genérico y el detalle se queda en el log del servidor.
+    console.error('[n1co]', op, esConfig ? 'config' : 'error', String(err?.message || err));
+    return json(esConfig ? 500 : 502, {
+      ok: false,
+      error: esConfig ? 'config' : 'upstream',
+      mensaje: 'No pudimos procesar el pago. Probá de nuevo o elegí efectivo.',
+    }, origin);
+  }
+}
+
+// Datos del pedido para el reintento de 3DS (el primer intento los trae de
+// pago_online_iniciar; acá hay que releerlos).
+async function datosPedido(deliveryId) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  const cols = 'numero_orden,cliente_nombre,cliente_telefono,sucursal_id,tipo,total';
+  const res = await fetchConTimeout(
+    `${SUPA_URL}/rest/v1/delivery_clientes?id=eq.${encodeURIComponent(deliveryId)}&select=${cols}&limit=1`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}`, accept: 'application/json' } },
+  );
+  const rows = await leerJson(res);
+  return Array.isArray(rows) && rows.length ? rows[0] : {};
+}
+
+async function marcarTarjeta(pagoId, { marca, last4, emisor }) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  try {
+    await fetchConTimeout(`${SUPA_URL}/rest/v1/pagos_online?id=eq.${encodeURIComponent(pagoId)}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: key, Authorization: `Bearer ${key}`,
+        'content-type': 'application/json', Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ marca: marca || null, last4: last4 || null, emisor: emisor || null }),
+    });
+  } catch { /* best-effort: no romper un cobro aprobado por un dato de log */ }
+}
+
+function normalizarBilling(b) {
+  if (!b) return null;
+  const zip = String(b.zipCode || b.zip || '').trim();
+  if (!zip) return null;
+  return {
+    countryCode: String(b.countryCode || 'USA').trim().toUpperCase(),
+    stateCode: String(b.stateCode || b.state || '').trim().toUpperCase(),
+    zipCode: zip,
+  };
+}

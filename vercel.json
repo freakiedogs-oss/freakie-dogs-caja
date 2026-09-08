@@ -5,6 +5,7 @@
     { "source": "/sb/(.*)", "destination": "/api/supaproxy?_p=$1" },
     { "source": "/sb", "destination": "/api/supaproxy" },
     { "source": "/api/dte-proxy/(.*)", "destination": "/api/dte-proxy?op=$1" },
+    { "source": "/api/n1co/(.*)", "destination": "/api/n1co?op=$1" },
     { "source": "/pos/(.*)", "destination": "/pos.html" },
     { "source": "/pos", "destination": "/pos.html" },
     { "source": "/foto", "destination": "/foto.html" },

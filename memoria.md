@@ -2,6 +2,37 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 08-Sep-2026 — Pago con tarjeta en el delivery web (n1co / EPay) — branch `feat/pago-tarjeta-n1co`
+
+Pedido de Jose: que el cliente **pague con tarjeta al hacer el pedido en `/menu`** y el pedido entre solo a la cocina, saltándose el ida y vuelta por WhatsApp para coordinar el cobro. Todo en un branch, sin tocar producción todavía. Doc completa: **`docs/pasarela-n1co.md`**.
+
+**El pedido se crea ANTES de pedir la tarjeta.** `crear_pedido_delivery` corre igual que siempre y deja el pedido impago; recién después se abre el cobro encima. Si la pasarela falla o el cliente cierra el navegador a la mitad, el pedido ya está guardado y la torre lo rescata. Era la alternativa a crear el pedido después de cobrar, que ante cualquier corte deja plata cobrada sin pedido.
+
+**n1co no tiene hosted checkout en esta API**: es API directa (`/api/v3/Token` → `/api/v3/PaymentMethods` para tokenizar → `/api/v3/Charges` para cobrar). Eso significa que **el formulario de tarjeta es nuestro y el PAN pasa por nuestro servidor**, lo que amplía el alcance PCI a SAQ D. Queda anotado como pregunta para n1co antes de producción: si tienen hosted fields o link de pago por API, se reduce el alcance sin cambiar la experiencia.
+
+**Piezas nuevas:**
+- **`api/n1co.js`** (Vercel Edge, molde de `dte-proxy.js`): ops `pagar`, `confirmar-3ds`, `estado`. Cachea el Bearer por isolate, valida Luhn/vencimiento antes de gastar un intento, y traduce los rechazos a mensajes que el cliente entienda.
+- **`src/menu-publico/PagoTarjeta.jsx`** (lazy, 8.5 kB): formulario, iframe 3DS y las pantallas de procesando / aprobado / rechazado. Siempre con salida a "mejor pago en efectivo" sin rehacer el pedido.
+- **`pagos_online`** + RPC **`pago_online_iniciar`** / **`pago_online_resolver`**. Índice único parcial `where estado='aprobado'` = un solo pago aprobado por pedido.
+
+**Las cuatro reglas que sostienen la seguridad del cobro:**
+1. **El monto lo pone la BD.** `pago_online_iniciar` devuelve el `total` que ya guardó `crear_pedido_delivery`; el servidor cobra ese número y no mira el body. Si no, editando el JS se paga $1 un pedido de $30.
+2. **`anon` no ejecuta nada de pago.** Execute revocado a `public`/`anon`/`authenticated` en las dos RPC — mismo criterio por el que `confirmar_pago_delivery` nunca se le dio a anon. **Ojo con el `REVOKE ... FROM public`: también deja afuera a `service_role`**, que heredaba el permiso por PUBLIC (no lo bypassa como hace con RLS). Hubo que devolvérselo explícito o la Edge Function recibía *permission denied*.
+3. **El endpoint no sirve para probar tarjetas robadas.** Cada intento exige un pedido real, impago y de menos de 3 h, con tope de 5 intentos. Sin esto, un endpoint de tokenización abierto es un validador gratis de tarjetas ajenas.
+4. **El resultado del 3DS solo se acepta si `event.origin === 'https://front-3ds.n1co.com'`.** Sin ese corte el iframe deja de ser barrera: cualquier origen podría postear `SUCCESS`. Y el `authenticationId` del reintento se lee **de la BD**, no del body.
+
+**Lo que había que arreglar aguas abajo, y es el riesgo real de esta función: cobrarle dos veces al mismo cliente.**
+- `torre_listar_pedidos` no devolvía `cobrado` (se agregó, cambio aditivo). Sin eso, un pedido pagado que quedó **fuera de cobertura** (sin sucursal ruteada) se queda en `recibida` y la torre le pedía el pago **otra vez** por WhatsApp.
+- **Torre**: sello `💳 PAGADO ONLINE · NO COBRAR`, botón "Confirmar pago" → "🍳 Mandar a cocina", y el mensaje de WhatsApp deja de preguntar cómo quiere pagar.
+- **Motorista**: donde decía "Cobrar $X en tarjeta" ahora dice **"Ya pagado — no cobrés nada"**. El aviso se decide por **`cobrado`, no por `metodo_pago`** (hubo que exponerlo en `mis_pedidos_driver`): quien elige tarjeta y después abandona el cobro queda etiquetado `'tarjeta'` pero debiendo, y con la etiqueta el motorista habría entregado sin cobrar.
+
+**Fuera de cobertura se cobra igual y se avisa**, en vez de abortar: `pago_online_resolver` marca cobrado, no comanda, y devuelve `sin_sucursal` para que la torre asigne tienda. Reventar la transacción con la plata ya capturada era peor.
+
+**Prueba: `scripts/test-pago-online.sql`, 6/6.** Corre el ciclo completo contra la base real —incluida la comanda a cocina— y lo revierte con un `RAISE EXCEPTION` al final, así que **no deja pedidos fantasma en el KDS**. Verificado: 0 filas residuales.
+
+**Falta para probar en sandbox:** cargar `N1CO_CLIENT_ID`, `N1CO_CLIENT_SECRET` y `N1CO_LOCATION_CODE` en Vercel (en los **dos** proyectos: ERP y `freakiedelivery`). La doc de n1co dice que las credenciales de API las entrega su equipo, así que puede no ser self-service aunque el portal sí lo sea. La **URL de producción no está publicada** en la doc — hay que pedirla. **No se tocó nada de DTE**: este cobro no emite factura, la emisión sigue por `_comanda_delivery` → POS.
+
+
 ## 08-Sep-2026 — Dashboard "Consumo por Venta": qué se consumió por lo que se vendió
 
 Pedido de Jose: que **Saúl (consultor), admin y ejecutivos** puedan ver, en un rango de fechas, cuánto salió **de cada componente** en unidades y en dinero — hamburguesas, coca de lata, hot dogs, extras — agrupado por familia, con una pestaña para cambiar a los **ingredientes de la lista de conteo** y a **bebidas**.
