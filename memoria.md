@@ -2,6 +2,31 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 08-Sep-2026 — Dashboard "Consumo por Venta": qué se consumió por lo que se vendió
+
+Pedido de Jose: que **Saúl (consultor), admin y ejecutivos** puedan ver, en un rango de fechas, cuánto salió **de cada componente** en unidades y en dinero — hamburguesas, coca de lata, hot dogs, extras — agrupado por familia, con una pestaña para cambiar a los **ingredientes de la lista de conteo** y a **bebidas**.
+
+**Nav `consumo-venta` → `ConsumoVentaDashboard.jsx`** (sección Dashboards, roles `admin`/`ejecutivo`/`superadmin`; las 3 filas insertadas en `permisos_rol`, que es lo que manda sobre `config.js`). 4 pestañas: **Componentes** · **Ingredientes (Conteo)** · **Bebidas y Cervezas** · **Ventas por producto**. Filtros de fecha con atajos, multi-sucursal, búsqueda y exportación a CSV.
+
+**La fuente del consumo es el kardex, no `pos_cuenta_items`.** Los componentes de combo del menú (categoría "Componentes": `Hamburguesa`, `Hot Dog`, `Fries`, `Bebida`) tienen **`producto_id` NULL** — son casillas de pantalla, no productos. Lo que resuelve la bebida real es el **modificador** (`pos_modificador_insumos`), y lo que resuelve la hamburguesa es la **receta del combo padre**. `pos_deducir_inventario` ya hace las tres cosas al cobrar, así que su salida (`kardex_movimientos` con `tipo='venta'` / `referencia_tipo='pos_cuenta'`) es la **única fuente completa**. Un "Coca-Cola Combo" aparece ahí como su pan de hot dog, su salchicha, su papa y su gaseosa.
+
+**Dos errores de costeo que se encontraron y se corrigieron en el camino:**
+- **`v_kardex_costo_insumo` sobrevalúa todo lo que se compra por bulto**: toma `precio_unitario` crudo y **no divide por `factor_compra`**, así que valora la Coca lata a ~$14 la caja por cada lata movida. La vista nueva **`v_fd_costo_insumo`** usa `costo_producto()` (que sí divide).
+- **`costo_producto()` devuelve 0 para lo que se fabrica**: `Carne para hamburguesa` (9,753 un/semana) y `Papa Sazonada` (7,693) no se compran, su costo vive en la receta. Con el fallback a `recetas.costo_calculado / rendimiento` el food cost pasó de **15.3% a 37.2%** (1-6 sep: $23,422 de consumo sobre $63,004 de venta). El fallback **no filtra `activo`** a propósito: la receta de Papa Sazonada está inactiva y aun así es el 2º insumo más consumido.
+
+**La familia del plato se decide por RECETA, no por nombre.** `"Coca-Cola Combo"` (597 un/semana, $2,517) es un **combo de hot dog** — Freakie Dog armado + Papa Sazonada. Lo mismo `Combo Duo`, `Combo Super Freak`, `Mega Promo`, `Freakie Family`, `Combros` y `Combo Fancy Duo`. Clasificar por nombre mandaba **$3.7k semanales a Bebidas** y dejaba Hot Dogs en la quinta parte de lo que es. `v_fd_plato_panes` explota la receta y cuenta **piezas de pan** (`ri.cantidad` **sin** `factor_a_stock`: al pan de hot dog se le descuenta en bolsas de 10) — gana el pan mayoritario, empate = "Combos mixtos". Con esto: **Hamburguesas 3,513 un vs Hot Dogs 2,414 un**, que sí cuadra con el consumo de pan (4,876 brioche / ~2,937 de hot dog).
+
+**La unidad que se muestra no es siempre `unidad_medida`.** En varias filas esa columna describe el **empaque de compra**: la Coca lata dice `'Caja'` pero el kardex la mueve **por lata** (su costo unitario es $0.60). Regla aplicada: si `factor_compra > 1` **y** `unidad_medida` es una palabra de empaque **y** ninguna receta declara un `factor_a_stock` que baje a ese empaque → la unidad es la **pieza suelta**. Verificada contra los 4 casos límite (Coca lata ✓ · Kolashampan ✓ · Pan Hot Dog en bolsas ✓ · Aros de cebolla en porciones ✓). Se muestra además el **equivalente en empaques** (`conteo_unidad` / `conteo_factor`), que es lo que sirve para comparar contra el conteo nocturno.
+
+**Los combos NO se desglosan en la pestaña de ventas**, a propósito: no tienen precio por componente y repartir el precio del combo entre sus partes sería inventar. El desglose real vive en la pestaña de consumo. Por eso las dos pestañas **no se suman entre sí**: son la misma venta vista por el lado del insumo y por el lado del precio.
+
+**Objetos nuevos en la BD** (todos `SECURITY DEFINER` + `execute` a `anon`, igual que `costeo_menu` y `agrandados_food_court`; no llevan gate de finanzas porque son datos operativos, no P&L ni expedientes): `_fd_norm`, `_familia_insumo`, `_familia_menu`, `fn_familia_plato`, `v_fd_costo_insumo`, `v_fd_plato_panes`, **`fn_consumo_venta(desde, hasta, stores[])`** y **`fn_ventas_producto(desde, hasta, stores[])`**. Los rangos filtran con `at time zone 'America/El_Salvador'`, como `agrandados_food_court`.
+
+**Huecos que el tablero destapa y quedan pendientes** (no se tocaron):
+- Familia **"⚠️ Platos sin receta"**: `Burger Box` (12 un), `Royal Truffle Combo`, `Freakie Burger`, `Coca-Cola Combo`. Un `producto_terminado` consumiéndose por venta significa que el plato **no tenía receta activa al cobrar** y `pos_deducir_inventario` descontó el plato mismo en vez de sus insumos.
+- `Polvo de Trufa` es el único componente consumido **sin costo cargado** por ninguna vía; sus unidades cuentan, su dinero va en $0. El tablero lo avisa arriba.
+
+
 ## 07-Sep-2026 — Bucle de recargas en Safari: la PWA no dejaba ni escribir el PIN
 
 Majo no podía entrar desde su **Mac nueva**: la PWA se recargaba **cada 2-3 segundos** y recién se estabilizaba tras **~30 recargas**. Solo en Safari; en Chrome y en las tablets Fire nunca se vio.

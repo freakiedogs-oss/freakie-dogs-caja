@@ -17,6 +17,7 @@ const AdminView          = lazy(() => import('./components/admin/AdminView'))
 const IncidentesDash     = lazy(() => import('./components/admin/IncidentesDash'))
 const VentasFreakies     = lazy(() => import('./components/dashboard/VentasFreakies'))
 const KpisVentaDashboard = lazy(() => import('./components/dashboard/KpisVentaDashboard'))
+const ConsumoVentaDashboard = lazy(() => import('./components/dashboard/ConsumoVentaDashboard'))
 const ConteoNocturno     = lazy(() => import('./components/supply-chain/ConteoNocturno'))
 const ConfirmarEntrega   = lazy(() => import('./components/supply-chain/ConfirmarEntrega'))
 const MisPedidosView     = lazy(() => import('./components/supply-chain/MisPedidosView'))
@@ -262,6 +263,8 @@ export default function App() {
         return <VentasFreakies user={user} onBack={() => setScreen('home')} />
       case 'kpis-venta':
         return <KpisVentaDashboard user={user} onBack={() => setScreen('home')} />
+      case 'consumo-venta':
+        return <ConsumoVentaDashboard user={user} onBack={() => setScreen('home')} />
 
       // Almacén
       case 'recepcion':

@@ -91,6 +91,10 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'ventas-freakies', label: 'Ventas Freakies', icon: '💶', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'kpis-venta', label: 'KPIs de Venta', icon: '📊', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
+      // Consumo generado por la venta, por componente y familia. Va acá y no en
+      // Almacén porque la pregunta que responde es de negocio (qué se fue en
+      // insumos por lo que se vendió), no de stock.
+      { key: 'consumo-venta', label: 'Consumo por Venta', icon: '🍔', roles: ['admin', 'superadmin', 'ejecutivo'] },
       { key: 'inventario-dash', label: 'Inventario Global', icon: '📦', roles: ['ejecutivo', 'admin'] },
       { key: 'kpi-delivery', label: 'KPI Delivery Propio', icon: '🛵', roles: ['superadmin'] },
     ],
