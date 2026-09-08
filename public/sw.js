@@ -33,8 +33,15 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // Datos: derecho a la red, sin intermediarios
-  if (url.pathname.startsWith('/sb') || url.hostname.endsWith('supabase.co')) return;
+  // Datos: derecho a la red, sin intermediarios. Además de /sb y supabase.co,
+  // cualquier cosa de otro origen (api.freakiedogs.com cuando entre el dominio
+  // propio) sale directo: acá solo se cachea /assets/ de este mismo host, así
+  // que pasarla por el SW era una búsqueda en cache que nunca podía acertar.
+  if (
+    url.pathname.startsWith('/sb') ||
+    url.hostname.endsWith('supabase.co') ||
+    url.origin !== self.location.origin
+  ) return;
 
   // HTML: red primero; el guardado solo si de plano no hay red
   if (esNavegacion(req)) {

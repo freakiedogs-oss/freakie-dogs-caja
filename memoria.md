@@ -2,6 +2,20 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 08-Sep-2026 — `freakiedogs.com`: código preparado para el switch por variable de entorno
+
+Namecheap mandó una invitación de *domain manager* de **`freakiedogs.com`** (dueño: **Luis Castillo**, socio; registrado el 18-ene-2024, vence el 18-ene-2027). Al revisar el estado real del dominio: **no resuelve a nada** — los NS delegados (`ns410/411.banahosting.com`) responden `SERVFAIL` para la zona. Ni web ni correo en pie. Eso explica el `pos.freakiedogs.com` NXDOMAIN que topamos con el APK del driver.
+
+**Por qué importa más de lo que parece:** `api.freakiedogs.com` como **Supabase Custom Domain** es la salida definitiva del proxy `/sb` — el mismo motivo de existir (un host que los ISPs de El Salvador no filtran) pero sin serverless en medio, así que se va el techo de ~25 s del runtime Edge, su límite de concurrencia (los 1,858 respuestas 504 en 10 min del 4-sep) y su incapacidad de hacer upgrade a WebSocket. Add-on de ~$10/mes; la org de Supabase ya está en Pro.
+
+**Lo que se hizo acá es dejar el switch en una variable, no migrar.** Nada cambió en producción:
+
+- `src/supabase.js` — `VITE_SB_URL` manda sobre todo lo demás. Con la variable seteada el cliente pega al dominio propio **y** se salta el swap del `RealtimeClient` (`PASA_POR_PROXY`), que existía solo porque el proxy rompe el WebSocket. Vacía, todo queda idéntico a hoy.
+- `src/config.js` — `URL_DELIVERY` sale de `VITE_URL_DELIVERY`; `api/n1co-link.js` de `URL_DELIVERY`.
+- `public/sw.js` — el bypass ahora cubre **todo origen ajeno**, no solo `/sb` y `supabase.co`. Sin eso, cada GET a `api.freakiedogs.com` entraría al service worker a buscar en un cache donde solo se guarda `/assets/` de este mismo host: una búsqueda que nunca podía acertar.
+
+**El rollback es borrar la variable y redeployar.** Runbook completo (propiedad del dominio, Cloudflare, Vercel, Supabase, correo, y qué se pierde al cambiar de origen — PWA y tarjeta guardada están atadas al origen) en **`docs/dominio-propio.md`**.
+
 ## 08-Sep-2026 — Tarjeta guardada: fricción cero en la 2ª compra, atada al dispositivo
 
 Jose fijó la prioridad: **que el cliente reingrese la menor cantidad de datos posible**, y que la tarjeta quede guardada de forma segura. Eso decide la arquitectura, porque de las dos vías de n1co **solo una permite guardar tarjeta**:

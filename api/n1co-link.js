@@ -33,7 +33,9 @@ const env = (k, def = '') =>
 const PAY_BASE = env('N1CO_PAY_BASE_URL', 'https://api-pay-sandbox.n1co.shop/api').replace(/\/+$/, '');
 const AMBIENTE = env('N1CO_AMBIENTE', 'sandbox') === 'produccion' ? 'produccion' : 'sandbox';
 const SUPA_URL = env('SUPABASE_URL', 'https://btboxlwfqcbrdfrlnwln.supabase.co');
-const URL_DELIVERY = 'https://freakiedelivery.vercel.app';
+// Fallback del link que se le manda al cliente cuando el origen no es válido.
+// Se setea `URL_DELIVERY` en Vercel para mudarlo a pedidos.freakiedogs.com.
+const URL_DELIVERY = env('URL_DELIVERY', 'https://freakiedelivery.vercel.app').replace(/\/+$/, '');
 
 const ALLOWED_OPS = new Set(['crear', 'estado', 'webhook']);
 const TIMEOUT_MS = 20_000;
