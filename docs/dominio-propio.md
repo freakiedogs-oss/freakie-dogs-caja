@@ -14,8 +14,9 @@
 >
 > El canónico del delivery quedó en **`www`** (el apex redirige con 308).
 >
-> **Fase 4: `api.freakiedogs.com` ACTIVO y verificado (8-sep, 22:50).** Falta
-> solo el paso 18 — el switch de variables en Vercel.
+> **Fase 4 COMPLETADA (8-sep, 23:10, merge `29de71e`).** El switch se hizo: el
+> ERP, el POS y el delivery pasan por `api.freakiedogs.com`. El proxy `/sb`
+> sigue desplegado a propósito como red de seguridad. Faltan las Fases 5 y 6.
 >
 > ```
 > TLS       CN=api.freakiedogs.com · Google Trust Services · vence 8-dic-2026
