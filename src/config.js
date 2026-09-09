@@ -4,7 +4,10 @@ export const APP_VERSION = 'v2.5.0 · 14-Jun-2026 (Finanzas AI: P&L + diagnósti
 // para no darle a los clientes ninguna pista de dónde vive el POS.
 // La torre de control corre en el dominio del ERP, así que los links que se le
 // mandan al cliente NO pueden salir de location.origin: tienen que apuntar acá.
-export const URL_DELIVERY = 'https://freakiedelivery.vercel.app'
+// Se setea `VITE_URL_DELIVERY` en Vercel para mudarlo a pedidos.freakiedogs.com
+// sin tocar código: así el rollback es cambiar la variable y redeployar.
+export const URL_DELIVERY =
+  import.meta.env?.VITE_URL_DELIVERY?.replace(/\/+$/, '') || 'https://freakiedelivery.vercel.app'
 
 export const STORES = {
   M001: 'Cafetalón',
@@ -157,6 +160,12 @@ export const NAV_SECTIONS = [
       { key: 'bpm-chili', label: 'Control BPM · Chili', icon: '🌶️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'carne-boleado', label: 'Mezclado y boleado', icon: '🥩', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'bpm-temperatura', label: 'Temperatura · Carne boleada', icon: '🌡️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      // Protocolo de apertura: en revisión. `users` lo deja visible solo para
+      // Cesar hasta que el contenido esté validado. Para abrirlo a las
+      // sucursales se borra la línea `users` y se vacía la tabla protocolo_beta.
+      // 0a0ad760 = Cesar Rodriguez · 96ea2d18 = Jazmin Fuentes (encargada de Plaza Cafetalón).
+      // Cada uno ve solo su sucursal: eso lo decide protocolo_permisos, no esta lista.
+      { key: 'protocolo-apertura', label: 'Protocolo de apertura', icon: '🌅', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
     ],
   },
   {
