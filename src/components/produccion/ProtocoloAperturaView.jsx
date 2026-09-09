@@ -50,8 +50,10 @@ export default function ProtocoloAperturaView({ user }) {
   const [guardando, setGuard] = useState(null)
   const [abierta, setAbierta] = useState(null)    // área desplegada
   const [puedeBase, setBase]  = useState(false)   // ¿puede cambiar el estándar común?
-  const fileRef = useRef({})
-  const refRef  = useRef({})
+  const [lote, setLote]       = useState(null)    // carga masiva de fotos
+  const fileRef   = useRef({})
+  const refRef    = useRef({})
+  const carpetaRef = useRef(null)
 
   const fecha = hoyLocal()
 
@@ -206,6 +208,55 @@ export default function ProtocoloAperturaView({ user }) {
     } finally { setGuard(null) }
   }
 
+  // ── Carga de una carpeta entera ──
+  // Los archivos vienen nombrados "NN - Área - Título del paso.jpg". Se empareja
+  // por el título normalizado (sin tildes, sin ñ, sin signos) en vez de por un
+  // mapa fijo: así renombrar un paso no rompe la carga, y un archivo que no
+  // calza se reporta en vez de subirse al paso equivocado.
+  const normalizar = (s) => (s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+  async function subirCarpeta(files) {
+    const lista = Array.from(files).filter(f => /^image\//.test(f.type))
+    if (!lista.length) return
+    lista.sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }))
+
+    const porTitulo = new Map()
+    pasos.forEach(p => porTitulo.set(normalizar(p.titulo), p))
+
+    setLote({ total: lista.length, hechas: 0, ok: [], sin: [], fallo: [] })
+    for (const file of lista) {
+      const base = file.name.replace(/\.[^.]+$/, '')
+      // "01 - Arranque - Abrir la valvula de gas" → nos quedamos con lo último
+      const partes = base.split(' - ')
+      const titulo = partes.length >= 3 ? partes.slice(2).join(' - ') : base
+      const paso = porTitulo.get(normalizar(titulo))
+
+      if (!paso) {
+        setLote(l => ({ ...l, hechas: l.hechas + 1, sin: [...l.sin, file.name] }))
+        continue
+      }
+      try {
+        const blob = await comprimir(file)
+        const path = `protocolo/ref/base/${paso.paso_id}-${Date.now()}.jpg`
+        const { error: up } = await db.storage.from(BUCKET)
+          .upload(path, blob, { contentType: 'image/jpeg' })
+        if (up) throw up
+        const url = db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl
+        const { error: e } = await db.rpc('fn_protocolo_guardar_foto', {
+          p_usuario: user?.id, p_paso_id: paso.paso_id, p_url: url,
+          p_caption: titulo.slice(0, 60), p_store_code: null,
+        })
+        if (e) throw e
+        setLote(l => ({ ...l, hechas: l.hechas + 1, ok: [...l.ok, paso.titulo] }))
+      } catch (err) {
+        setLote(l => ({ ...l, hechas: l.hechas + 1, fallo: [...l.fallo, `${file.name}: ${err.message || err}`] }))
+      }
+    }
+    await cargar(suc)
+  }
+
   const hecho = (p) => {
     const m = marcas[p.paso_id]
     if (!m) return false
@@ -271,6 +322,60 @@ export default function ProtocoloAperturaView({ user }) {
           {listos} de {total} · faltan {total - listos}
         </div>
       </div>
+
+      {puedeBase && (
+        <div style={{
+          background: '#12202e', border: '1px solid #1e3a5f', borderRadius: 11,
+          padding: '13px 15px', marginBottom: 13,
+        }}>
+          <div style={{ display: 'flex', gap: 11, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <b style={{ fontSize: 14, color: '#93c5fd' }}>Cargar la carpeta de fotos</b>
+              <div style={{ fontSize: 12.5, color: '#9ca3af', marginTop: 2 }}>
+                Cada archivo se manda al paso que dice su nombre. Quedan como
+                foto de base: las ven las seis sucursales.
+              </div>
+            </div>
+            <button onClick={() => carpetaRef.current?.click()}
+              disabled={!!lote && lote.hechas < lote.total}
+              style={{
+                background: '#1e3a5f', color: '#bfdbfe', border: 0, borderRadius: 8,
+                padding: '9px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              }}>
+              {lote && lote.hechas < lote.total ? `${lote.hechas}/${lote.total}…` : 'Elegir carpeta'}
+            </button>
+            <input ref={carpetaRef} type="file" accept="image/*" multiple hidden
+              webkitdirectory="" directory=""
+              onChange={e => { const f = e.target.files; e.target.value = ''; if (f?.length) subirCarpeta(f) }} />
+          </div>
+
+          {lote && lote.hechas >= lote.total && (
+            <div style={{ marginTop: 11, fontSize: 13 }}>
+              <div style={{ color: '#6ee7b7', fontWeight: 700 }}>
+                {lote.ok.length} foto(s) cargadas
+              </div>
+              {lote.sin.length > 0 && (
+                <div style={{ color: '#fcd34d', marginTop: 5 }}>
+                  {lote.sin.length} no calzó con ningún paso y no se subió:
+                  <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                    {lote.sin.join(' · ')}
+                  </div>
+                </div>
+              )}
+              {lote.fallo.length > 0 && (
+                <div style={{ color: '#fca5a5', marginTop: 5 }}>
+                  {lote.fallo.length} falló al subir:
+                  <div style={{ fontSize: 12, marginTop: 2 }}>{lote.fallo.join(' · ')}</div>
+                </div>
+              )}
+              <button onClick={() => setLote(null)} style={{
+                marginTop: 8, background: 'none', border: 0, color: '#9ca3af',
+                textDecoration: 'underline', cursor: 'pointer', fontSize: 12.5, padding: 0,
+              }}>listo</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div style={{
