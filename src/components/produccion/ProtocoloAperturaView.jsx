@@ -49,9 +49,18 @@ export default function ProtocoloAperturaView({ user }) {
   const [error, setError]     = useState(null)
   const [guardando, setGuard] = useState(null)
   const [abierta, setAbierta] = useState(null)    // área desplegada
+  const [puedeBase, setBase]  = useState(false)   // ¿puede cambiar el estándar común?
   const fileRef = useRef({})
+  const refRef  = useRef({})
 
   const fecha = hoyLocal()
+
+  // ── ¿Puede subir fotos a la base? ──
+  useEffect(() => {
+    if (!user?.id) return
+    db.rpc('fn_protocolo_es_admin', { p_usuario: user.id })
+      .then(({ data }) => setBase(!!data))
+  }, [user?.id])
 
   // ── Sucursales a las que este usuario puede entrar ──
   useEffect(() => {
@@ -153,6 +162,47 @@ export default function ProtocoloAperturaView({ user }) {
       setMarcas(m => { const n = { ...m }; delete n[paso.paso_id]; return n })
     } catch (err) {
       setError(`No se pudo desmarcar: ${err.message || err}`)
+    } finally { setGuard(null) }
+  }
+
+  // ── Foto de referencia (la que explica el paso, no la del día) ──
+  // Se comprime antes de subir: una foto de 4 MB del teléfono no se ve mejor
+  // en la cocina, pero se baja entera cada mañana en las seis sucursales.
+  function comprimir(file, max = 1000, q = 0.72) {
+    return new Promise((res, rej) => {
+      const img = new Image()
+      img.onload = () => {
+        const e = Math.min(1, max / Math.max(img.width, img.height))
+        const c = document.createElement('canvas')
+        c.width = Math.round(img.width * e)
+        c.height = Math.round(img.height * e)
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+        c.toBlob(b => b ? res(b) : rej(new Error('no se pudo comprimir')), 'image/jpeg', q)
+      }
+      img.onerror = () => rej(new Error('no se pudo leer la imagen'))
+      img.src = window.URL.createObjectURL(file)
+    })
+  }
+
+  async function subirReferencia(paso, file, deLaBase) {
+    setGuard(paso.paso_id); setError(null)
+    try {
+      const blob = await comprimir(file)
+      const dest = deLaBase ? 'base' : suc
+      const path = `protocolo/ref/${dest}/${paso.paso_id}-${Date.now()}.jpg`
+      const { error: up } = await db.storage.from(BUCKET)
+        .upload(path, blob, { contentType: 'image/jpeg' })
+      if (up) throw up
+      const url = db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl
+      const { error: e } = await db.rpc('fn_protocolo_guardar_foto', {
+        p_usuario: user?.id, p_paso_id: paso.paso_id, p_url: url,
+        p_caption: file.name.replace(/\.[^.]+$/, '').slice(0, 60),
+        p_store_code: deLaBase ? null : suc,
+      })
+      if (e) throw e
+      await cargar(suc)
+    } catch (err) {
+      setError(`No se subió la foto de «${paso.titulo}»: ${err.message || err}`)
     } finally { setGuard(null) }
   }
 
@@ -347,6 +397,27 @@ export default function ProtocoloAperturaView({ user }) {
                               marginTop: 9, background: '#2a1f06', border: '1px solid #78350f',
                               color: '#fcd34d', padding: '8px 11px', borderRadius: 8, fontSize: 12.5,
                             }}>{p.nota}</div>
+                          )}
+
+                          {puedeBase && (
+                            <div style={{ marginTop: 9 }}>
+                              <button onClick={() => refRef.current[p.paso_id]?.click()}
+                                disabled={trabajando}
+                                style={{
+                                  background: '#1e3a5f', color: '#bfdbfe', border: 0, borderRadius: 7,
+                                  padding: '6px 11px', fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
+                                }}>
+                                {trabajando ? 'subiendo…' : '+ Foto de referencia (todas las sucursales)'}
+                              </button>
+                              <input
+                                ref={el => { refRef.current[p.paso_id] = el }}
+                                type="file" accept="image/*" hidden
+                                onChange={e => {
+                                  const f = e.target.files?.[0]
+                                  e.target.value = ''
+                                  if (f) subirReferencia(p, f, true)
+                                }} />
+                            </div>
                           )}
                         </>
                       )}
