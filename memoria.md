@@ -2,6 +2,108 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — Verificador de despliegue del cobro, y por qué el locationCode va aparte
+
+**`scripts/verificar-despliegue-n1co.mjs`** — caja negra, sin secretos, sin tarjeta y sin cobrar. Se corre **contra producción** apenas termina el deploy y antes de probar con una tarjeta real. El chequeo central pide cobrar un pedido **inexistente** y espera `no_existe`: solo puede contestar eso si el Edge Function fue ruteado por el rewrite, leyó `SUPABASE_SERVICE_ROLE_KEY` y llegó a Postgres. Un **502** ahí delata la falta de esa key, que es el modo de falla en que **n1co cobra la tarjeta y el pedido queda impago**.
+
+**No sirve contra un preview:** los deployments de preview tienen Vercel Authentication y responden 401 a todo. Y ahí apareció un bug propio que vale recordar: corrido contra el preview, el chequeo del piloto anunció *"el cobro está ABIERTO A TODOS LOS CLIENTES"* cuando no había visto nada — infería el "abierto" de la **ausencia** de un `habilitado:false`, así que leía la pantalla de login de Vercel como la peor noticia posible. Arreglado con un chequeo 0 que aborta si detecta protección, y exigiendo `200` + `habilitado` booleano antes de concluir. **Un verificador que adivina es peor que ninguno**, porque es el que decide si se prueba con dinero real.
+
+**El `locationCode` debe ser UNO y del canal web, no el de una tienda física.** Hoy cada sucursal cuadra al centavo contra el **lote de su datáfono N1CO** (4-sep, S002: voucher 18 ventas / $259.55 = los pagos con tarjeta del POS antes de esa hora). Si los cobros del menú web se imputan al `locationCode` de una tienda, su lote incluye ventas que no están en su POS y **ese cuadre se rompe para siempre** — se pierde la herramienta con la que se encontraron $499.76 de pagos duplicados. Lo correcto es que el delivery web sea su propia "sucursal" en n1co, con su lote y su depósito, conciliada contra el canal `delivery_propio`. `N1CO_LOCATION_CODES` (mapa por sucursal) queda para cuando se decida conciliar por tienda a propósito; **no usarlo antes**, porque cobros mezclados no se separan hacia atrás.
+
+**Fuera del piloto, elegir "💳 Tarjeta" sigue funcionando como siempre.** Una versión intermedia deshabilitaba el botón, y eso les quitaba a los clientes una opción que ya tenían (significa "quiero pagar con tarjeta", con la torre coordinando por WhatsApp) y le cortaba a la torre esos pedidos. Ahora la consulta de disponibilidad decide solo si se **abre el cobro en línea**, no si se ofrece la tarjeta: el merge es un no-op para todos menos el piloto y no hay que coordinar nada con Karina para desplegarlo.
+
+**Roles de la llave de n1co:** solo **Pasarela de pagos** y **Autenticación 3DS**. n1co recomendó marcar todos, pero eso era para sandbox; esta llave es de producción y vive en Vercel. "Administrador de tienda" y las de suscripciones no se usan y, si la llave se filtra, amplían el daño.
+
+
+## 08-Sep-2026 — El sandbox de n1co no sirve: se estrena en producción con dos frenos
+
+**El sandbox no se pudo usar.** En `portal.n1co.shop/configuration/sandbox`, al presionar *Ir a sandbox* la plataforma cierra la sesión y al volver a entrar la tienda sigue en producción (nunca aparece la etiqueta "sandbox"). Sin sandbox **no hay tarjetas de prueba**, así que la validación es con dinero real. Reportado a n1co junto con la pregunta de si el sandbox necesita un workspace aparte (texto en `docs/n1co-puesta-en-marcha.md`).
+
+La respuesta no fue probar menos, sino **probar acotado**. Dos frenos nuevos en `api/n1co.js`:
+
+- **`N1CO_TELEFONOS_PRUEBA`** — piloto: con uno o más teléfonos (coma), **solo esos** pueden pagar con tarjeta; al resto la app le dice que use efectivo. **Es lo que reemplaza al sandbox: se cobra de verdad, pero solo Jose.** Vacía = abierto a todos, así que abrir a clientes es borrar la variable y redeployar — y el rollback es volver a ponerla, lo que apaga el pago con tarjeta para todos en un deploy sin tocar código ni bajar el menú.
+- **`N1CO_MONTO_MAX`** — techo por cobro, default **$150**. Un delivery de smash burgers no llega ahí: si lo supera, algo está muy mal (total corrupto, bug de cantidades) y es mejor no cobrar que cobrar de más.
+
+**`scripts/test-frenos-n1co.mjs`: 14/14.** El caso que justifica el test: **`N1CO_MONTO_MAX=abc` NO desactiva el techo**, cae al default. Si cayera en `NaN`, toda comparación con `NaN` da `false` y pasaría cualquier monto — un freno que se apaga solo por una variable mal escrita es peor que no tenerlo. También se verifica que el mensaje al cliente no filtre que existe un piloto interno y que el detalle de soporte enmascare el teléfono. `frenoDeProduccion` se exporta solo para poder probarla: decide si se cobra o no, y eso no se verifica leyéndolo.
+
+**`scripts/smoke-n1co.mjs` ahora distingue producción:** exige el flag explícito `--cobrar-de-verdad` y una tarjeta propia por variables de entorno (nada de números reales en el repo). Avisa que es dinero real, cobra `N1CO_TEST_AMOUNT` (default $1) y lo reversa por `/Refunds`. La doc recomienda un espacio antes del comando para que la línea con la tarjeta y el secret no quede en el historial de zsh.
+
+**El peor modo de falla del módulo, anotado en el runbook:** si `SUPABASE_SERVICE_ROLE_KEY` no está en el proyecto de Vercel del *delivery* (hoy solo está en el del ERP, para `api/dte-proxy.js`), n1co cobra la tarjeta y el pedido queda impago. Verificarlo antes de cobrar nada.
+
+
+## 08-Sep-2026 — n1co respondió: las credenciales SÍ son self-service (la doc miente)
+
+Puesta en marcha completa en **`docs/n1co-puesta-en-marcha.md`**; el registro de lo preguntado y respondido, en `docs/n1co-solicitud-credenciales.md`.
+
+**Lo que cambia respecto de lo que asumimos leyendo la doc:**
+- **Las credenciales de API son self-service.** Portal → engranaje → **Sandbox → Ir a sandbox** (la tienda tiene que mostrar la etiqueta "sandbox" arriba a la derecha, si no la llave sale de producción) → **API → nueva**, marcando todos los permisos. El modal da **dos** valores: `clientId` (uuid) y `clientSecret`. La doc pública dice *"The n1co team will provide the necessary credentials"* — está desactualizada. Para producción, mismos pasos con el modo sandbox **apagado**, y la llave de sandbox **no sirve** en producción.
+- **Los tokens multi-uso ya están activos por defecto.** No hubo que pedir card-on-file: la tarjeta guardada funciona tal como se construyó.
+- **`locationCode`** = primera columna **"ID"** de Configuración → Sucursales.
+- **URL de producción confirmada:** `https://api.n1co.com` + la versión. Ojo: nuestro código concatena `/api/v3`, así que `N1CO_BASE_URL` va **sin** la versión. Se le agregó un `.replace(/\/api\/v\d+$/)` para tolerar que se pegue completa, porque la doc la publica así y pedir `/api/v3/api/v3/Token` da 404 sin explicar por qué.
+- **El webhook manda la firma `X-H4B-Hmac-Sha256` en el 100% de los eventos** — era mi objeción para no implementarlo. Se configura en Configuración → URL de acceso al webhook, que además da la llave secreta y **el historial de envíos** (útil para depurar). Sin `N1CO_WEBHOOK_SECRET` nuestro endpoint rechaza todo, a propósito.
+- **No existen hosted fields ni SDK de navegador.** n1co confirmó que con la API directa el PAN pasa por nuestro servidor (SAQ D) y que la única vía a SAQ A es el checkout hospedado, que no guarda tarjeta. Ofrecieron registrar los campos embebidos como requerimiento de producto — conviene decir que sí: sería SAQ A **sin** perder la tarjeta guardada.
+
+**Herramienta nueva: `scripts/smoke-n1co.mjs`.** Recorre token → tokenizar con `singleUse:false` → cobrar $1 → reversar, con tarjeta de sandbox y sin imprimir el secret. Sirve para separar "¿están bien las credenciales?" de "¿está bien nuestro código?" antes de abrir el menú a probar; si el paso 2 se queja de `singleUse`, card-on-file no está activo pese a lo que dijeron.
+
+**Dominio:** la otra sesión ya puso `freakiedogs.com` en producción (`pedidos.freakiedogs.com` es el menú). `ORIGENES_OK` de los dos edge functions ahora lista `pedidos.`/`www.`/`erp.`/`pos.`/apex además de los `.vercel.app` de transición, y queda la env `N1CO_ORIGENES` para agregar cualquier otro sin tocar código. **Esto calza con el aviso de `localStorage` por origen**: como el dominio nuevo ya está arriba, la tarjeta guardada se estrena directo ahí y ningún cliente pierde la suya en una mudanza posterior.
+
+**Nota de proceso:** las dos sesiones comparten un solo working directory. La branch del dominio (`feat/dominio-env`) estaba checkouteada con cambios sin commitear, así que esta sesión trabajó `feat/pago-tarjeta-n1co` en un **git worktree** aparte (`/tmp/fd-pagos`) en vez de cambiar de branch. Cambiar de branch ahí habría pisado trabajo ajeno sin avisar.
+
+
+## 08-Sep-2026 — Tarjeta guardada: fricción cero en la 2ª compra, atada al dispositivo
+
+Jose fijó la prioridad: **que el cliente reingrese la menor cantidad de datos posible**, y que la tarjeta quede guardada de forma segura. Eso decide la arquitectura, porque de las dos vías de n1co **solo una permite guardar tarjeta**:
+
+| | CheckoutLink (link de pago) | **EPay API directa** ← elegida |
+|---|---|---|
+| Dónde teclea la tarjeta | página de n1co | nuestra app |
+| ¿Guarda la tarjeta? | **no**, la teclea siempre | **sí** (`singleUse:false`) |
+| Credenciales | self-service desde el portal | las da el equipo de n1co |
+| Alcance PCI nuestro | ninguno | SAQ D |
+
+Se eligió la API directa **aceptando el costo PCI**, porque el CheckoutLink genera un checkout nuevo por compra y no hay tarjeta que reusar. El CheckoutLink quedó implementado igual (`api/n1co-link.js`) **sin cablear a la UI**, como puente por si n1co demora las credenciales. La solicitud a n1co está en `docs/n1co-solicitud-credenciales.md`.
+
+**La tarjeta se ata al DISPOSITIVO, no al teléfono. Es la decisión que sostiene la seguridad del módulo.** El menú corre con la anon key y ya identifica al cliente por el teléfono guardado en su navegador; **si la tarjeta guardada se buscara por teléfono, cualquiera escribiría el número de otro y pediría comida a su casa cobrándosela a esa tarjeta**. El teléfono es un identificador público, no una credencial. La llave es un `crypto.randomUUID()` que vive solo en el `localStorage` del cliente; en Postgres queda **únicamente su SHA-256** (mismo patrón que las api_keys del dte_service), así que un volcado de `tarjetas_guardadas` no permite cobrarle a nadie. Además `tarjetas_listar` **no devuelve el `card_id`**: al navegador solo van marca, últimos 4 y vencimiento.
+
+**Objetos nuevos:** tabla `tarjetas_guardadas` + `tarjetas_listar`, `tarjeta_para_cobro`, `tarjeta_guardar`, `tarjeta_olvidar` — todas solo `service_role`, verificado. Ops nuevas en `api/n1co.js`: `tarjetas`, `cobrar-guardada`, `olvidar`. La tarjeta se guarda **solo si el cobro fue aprobado** (un token que el emisor rechazó no sirve para la próxima compra); si el cobro pasó por 3DS, se guarda al confirmar y no antes.
+
+**Prueba `scripts/test-tarjetas-guardadas.sql`: 6/6**, se revierte sola. La #4 es la que importa: un dispositivo distinto **no** puede cobrar la tarjeta de otro aunque conozca el uuid.
+
+**⚠️ El cambio a freakiedogs.com choca de frente con esto: `localStorage` es POR ORIGEN.** Al mudar el menú de `freakiedelivery.vercel.app` a `freakiedogs.com`, el secreto del dispositivo no viaja y **todas las tarjetas guardadas quedan huérfanas** — el cliente las reingresa. Lo mismo le pasa al perfil `freakie_cliente_v1`. Conclusión operativa: **estrenar la tarjeta guardada ya en el dominio definitivo**; lanzarla antes hace que la primera camada pierda su tarjeta el día de la mudanza. El resto del módulo ya aguanta el cambio: `ORIGENES_OK` incluye `freakiedogs.com`/`www.`/`pedidos.` (y hay env `N1CO_ORIGENES` para más), y las URLs de retorno salen del `Origin` validado, no de una constante. Pendiente de la otra sesión: `URL_DELIVERY` en `src/config.js`.
+
+**Hallazgos de la doc de n1co que no estaban enlazados desde EPay:** la URL de producción es **`https://api.n1co.com`**, y **los webhooks SÍ vienen firmados** (`X-H4B-Hmac-Sha256`, HMAC-SHA256 del cuerpo crudo) — era mi motivo para no implementarlos, así que ya quedó verificación de firma en `api/n1co-link.js`.
+
+
+## 08-Sep-2026 — Pago con tarjeta en el delivery web (n1co / EPay) — branch `feat/pago-tarjeta-n1co`
+
+Pedido de Jose: que el cliente **pague con tarjeta al hacer el pedido en `/menu`** y el pedido entre solo a la cocina, saltándose el ida y vuelta por WhatsApp para coordinar el cobro. Todo en un branch, sin tocar producción todavía. Doc completa: **`docs/pasarela-n1co.md`**.
+
+**El pedido se crea ANTES de pedir la tarjeta.** `crear_pedido_delivery` corre igual que siempre y deja el pedido impago; recién después se abre el cobro encima. Si la pasarela falla o el cliente cierra el navegador a la mitad, el pedido ya está guardado y la torre lo rescata. Era la alternativa a crear el pedido después de cobrar, que ante cualquier corte deja plata cobrada sin pedido.
+
+**n1co no tiene hosted checkout en esta API**: es API directa (`/api/v3/Token` → `/api/v3/PaymentMethods` para tokenizar → `/api/v3/Charges` para cobrar). Eso significa que **el formulario de tarjeta es nuestro y el PAN pasa por nuestro servidor**, lo que amplía el alcance PCI a SAQ D. Queda anotado como pregunta para n1co antes de producción: si tienen hosted fields o link de pago por API, se reduce el alcance sin cambiar la experiencia.
+
+**Piezas nuevas:**
+- **`api/n1co.js`** (Vercel Edge, molde de `dte-proxy.js`): ops `pagar`, `confirmar-3ds`, `estado`. Cachea el Bearer por isolate, valida Luhn/vencimiento antes de gastar un intento, y traduce los rechazos a mensajes que el cliente entienda.
+- **`src/menu-publico/PagoTarjeta.jsx`** (lazy, 8.5 kB): formulario, iframe 3DS y las pantallas de procesando / aprobado / rechazado. Siempre con salida a "mejor pago en efectivo" sin rehacer el pedido.
+- **`pagos_online`** + RPC **`pago_online_iniciar`** / **`pago_online_resolver`**. Índice único parcial `where estado='aprobado'` = un solo pago aprobado por pedido.
+
+**Las cuatro reglas que sostienen la seguridad del cobro:**
+1. **El monto lo pone la BD.** `pago_online_iniciar` devuelve el `total` que ya guardó `crear_pedido_delivery`; el servidor cobra ese número y no mira el body. Si no, editando el JS se paga $1 un pedido de $30.
+2. **`anon` no ejecuta nada de pago.** Execute revocado a `public`/`anon`/`authenticated` en las dos RPC — mismo criterio por el que `confirmar_pago_delivery` nunca se le dio a anon. **Ojo con el `REVOKE ... FROM public`: también deja afuera a `service_role`**, que heredaba el permiso por PUBLIC (no lo bypassa como hace con RLS). Hubo que devolvérselo explícito o la Edge Function recibía *permission denied*.
+3. **El endpoint no sirve para probar tarjetas robadas.** Cada intento exige un pedido real, impago y de menos de 3 h, con tope de 5 intentos. Sin esto, un endpoint de tokenización abierto es un validador gratis de tarjetas ajenas.
+4. **El resultado del 3DS solo se acepta si `event.origin === 'https://front-3ds.n1co.com'`.** Sin ese corte el iframe deja de ser barrera: cualquier origen podría postear `SUCCESS`. Y el `authenticationId` del reintento se lee **de la BD**, no del body.
+
+**Lo que había que arreglar aguas abajo, y es el riesgo real de esta función: cobrarle dos veces al mismo cliente.**
+- `torre_listar_pedidos` no devolvía `cobrado` (se agregó, cambio aditivo). Sin eso, un pedido pagado que quedó **fuera de cobertura** (sin sucursal ruteada) se queda en `recibida` y la torre le pedía el pago **otra vez** por WhatsApp.
+- **Torre**: sello `💳 PAGADO ONLINE · NO COBRAR`, botón "Confirmar pago" → "🍳 Mandar a cocina", y el mensaje de WhatsApp deja de preguntar cómo quiere pagar.
+- **Motorista**: donde decía "Cobrar $X en tarjeta" ahora dice **"Ya pagado — no cobrés nada"**. El aviso se decide por **`cobrado`, no por `metodo_pago`** (hubo que exponerlo en `mis_pedidos_driver`): quien elige tarjeta y después abandona el cobro queda etiquetado `'tarjeta'` pero debiendo, y con la etiqueta el motorista habría entregado sin cobrar.
+
+**Fuera de cobertura se cobra igual y se avisa**, en vez de abortar: `pago_online_resolver` marca cobrado, no comanda, y devuelve `sin_sucursal` para que la torre asigne tienda. Reventar la transacción con la plata ya capturada era peor.
+
+**Prueba: `scripts/test-pago-online.sql`, 6/6.** Corre el ciclo completo contra la base real —incluida la comanda a cocina— y lo revierte con un `RAISE EXCEPTION` al final, así que **no deja pedidos fantasma en el KDS**. Verificado: 0 filas residuales.
+
+**Falta para probar en sandbox:** cargar `N1CO_CLIENT_ID`, `N1CO_CLIENT_SECRET` y `N1CO_LOCATION_CODE` en Vercel (en los **dos** proyectos: ERP y `freakiedelivery`). La doc de n1co dice que las credenciales de API las entrega su equipo, así que puede no ser self-service aunque el portal sí lo sea. La **URL de producción no está publicada** en la doc — hay que pedirla. **No se tocó nada de DTE**: este cobro no emite factura, la emisión sigue por `_comanda_delivery` → POS.
+
 ## 08-Sep-2026 — `freakiedogs.com` en producción y `api.freakiedogs.com` listo para matar el proxy `/sb`
 
 Namecheap invitó a Jose como *domain manager* de **`freakiedogs.com`** (dueño: **Luis Castillo**, socio). El dominio existía desde ene-2024 pero **no resolvía a nada**: los NS de BanaHosting daban `SERVFAIL` para la zona — eso explica el `pos.freakiedogs.com` NXDOMAIN que topamos con el APK del driver. No había nada que romper.

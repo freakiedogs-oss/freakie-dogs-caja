@@ -816,7 +816,10 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           </div>
           <div style={{ fontSize: 15, marginTop: 6 }}>{p.cliente_nombre}</div>
           <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{p.cliente_direccion}</div>
-          <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>🏪 {p.sucursal} · {fmt(p.total)} · {p.metodo_pago}</div>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+            🏪 {p.sucursal} · {fmt(p.total)} · {p.metodo_pago}
+            {p.cobrado && <b style={{ color: '#4ade80' }}> · PAGADO</b>}
+          </div>
           {/efectivo/i.test(p.metodo_pago || '') && p.paga_con > 0 && (
             <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginTop: 4 }}>
               💵 Paga con {fmt(p.paga_con)} → llevá cambio <b>{fmt(Math.max(0, p.paga_con - p.total))}</b>
@@ -908,9 +911,20 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 12.5, color: '#aaa', marginBottom: 8 }}>
-                    Cobrar <b style={{ color: '#f0f0f0' }}>{fmt(p.total)}</b> en <b style={{ color: '#f0f0f0' }}>{p.metodo_pago || 'efectivo'}</b>
-                  </div>
+                  {/* Pagado online: acá no se cobra nada. Decir "cobrar $X en
+                      tarjeta" hacía que el motorista le pidiera plata a quien ya
+                      había pagado. Se mira `cobrado`, no `metodo_pago`: quien
+                      eligió tarjeta en el menú y después abandonó el cobro queda
+                      etiquetado 'tarjeta' pero debiendo. */}
+                  {p.cobrado ? (
+                    <div style={{ fontSize: 12.5, color: '#4ade80', fontWeight: 700, marginBottom: 8 }}>
+                      💳 Ya pagado — <b>no cobrés nada</b>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12.5, color: '#aaa', marginBottom: 8 }}>
+                      Cobrar <b style={{ color: '#f0f0f0' }}>{fmt(p.total)}</b> en <b style={{ color: '#f0f0f0' }}>{p.metodo_pago || 'efectivo'}</b>
+                    </div>
+                  )}
                   <button disabled={ocupado === p.id} onClick={() => setConfirmando(p.id)}
                           style={S.accion('#16a34a')}>
                     {ocupado === p.id ? '…' : '✅ Entregado'}
