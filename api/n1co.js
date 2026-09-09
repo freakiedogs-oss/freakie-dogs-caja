@@ -458,17 +458,30 @@ export default async function handler(req) {
         habilitado = false;
         mensaje = 'El pago con tarjeta no está disponible ahora. Elegí efectivo 💵';
       } else {
+        // Dos momentos preguntan lo mismo:
+        //  · el checkout, ANTES de crear el pedido → solo tiene el teléfono que
+        //    el cliente tecleó, y sirve para no ofrecerle una opción que no va
+        //    a poder usar;
+        //  · el drawer de pago, con el pedido ya creado → manda el
+        //    tracking_token, que es autoritativo y además trae el monto.
         const tt = String(body?.tracking_token || '');
+        let sujeto = null;
+
         if (/^[0-9a-f-]{36}$/i.test(tt)) {
           const ped = await pedidoPorToken(tt);
           // Si no se encuentra el pedido no opinamos: `pagar` lo va a rechazar
           // con su propio motivo, más preciso que lo que podamos decir acá.
-          if (ped) {
-            const f = frenoDeProduccion({
-              cliente_telefono: ped.cliente_telefono, monto: ped.total,
-            });
-            if (f) { habilitado = false; mensaje = f.mensaje; }
-          }
+          if (ped) sujeto = { cliente_telefono: ped.cliente_telefono, monto: ped.total };
+        } else {
+          const tel = String(body?.telefono || '').replace(/\D/g, '');
+          // Sin monto todavía: solo se evalúa el piloto. El techo se revisa
+          // después, cuando el total lo puso la BD.
+          if (tel.length === 8) sujeto = { cliente_telefono: tel, monto: 0 };
+        }
+
+        if (sujeto) {
+          const f = frenoDeProduccion(sujeto);
+          if (f) { habilitado = false; mensaje = f.mensaje; }
         }
       }
 

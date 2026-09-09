@@ -83,13 +83,41 @@ sola vez. Si se pierde, se borra la llave y se crea otra.
 **Configuración → Sucursales.** La primera columna, **"ID"**, es el
 `locationCode`. Anotá el de cada tienda.
 
-Con `N1CO_LOCATION_CODE` alcanza para empezar (una sola sucursal cobra todo).
-Para imputar cada pedido a la tienda que despacha, `N1CO_LOCATION_CODES` toma un
-JSON `{"<sucursal_id nuestro>":"<ID de n1co>"}`. Los nuestros:
+### ¿Uno solo, o una sucursal de n1co por tienda?
+
+**Uno solo, y que sea del canal web — no el de una tienda física.**
+
+El motivo es la conciliación que ya hacen. Hoy cada sucursal cuadra contra el
+**lote del datáfono N1CO** de esa tienda: el 4-sep en S002 el voucher cerró con
+18 ventas / $259.55 y los pagos con tarjeta del POS anteriores a esa hora sumaban
+$259.55 exacto (ver `memoria.md`). Ese cuadre al centavo es lo que permite
+detectar un pago duplicado.
+
+Si los cobros del menú web se imputan al `locationCode` de, digamos, Usulután, el
+lote de Usulután va a incluir ventas que **no** están en los pagos con tarjeta de
+su POS, y ese cuadre exacto se rompe para siempre. El daño no es cosmético: es
+perder la herramienta con la que se encontraron $499.76 de pagos duplicados.
+
+Así que lo correcto es que **el delivery web sea su propia "sucursal" en n1co**
+(ej. `Pedidos en línea`), con su propio lote y su propio depósito. Se conciliaría
+contra las ventas de canal `delivery_propio`, no contra el POS de una tienda.
+
+- Si en Configuración → Sucursales ya existen las tiendas físicas (probable: los
+  datáfonos están ahí), **no las toques**. Creá una nueva para el canal web, o
+  usá la de Casa Matriz si crear una no es posible.
+- Con eso, `N1CO_LOCATION_CODE` es una sola variable y `N1CO_LOCATION_CODES` no
+  hace falta.
+
+`N1CO_LOCATION_CODES` existe para el día que quieran imputar por tienda a
+propósito — toma un JSON `{"<sucursal_id nuestro>":"<ID de n1co>"}`, con los
+nuestros de acá:
 
 ```sql
 select id, store_code, nombre from sucursales where activa and tiene_delivery;
 ```
+
+Pero **no lo usen hasta haber decidido cómo van a conciliar**, porque una vez
+que los cobros entran mezclados no se pueden separar hacia atrás.
 
 ---
 
@@ -208,6 +236,32 @@ marque pedidos como pagados sería un agujero para comer gratis.
 **Pendiente conocido:** el handler hoy resuelve órdenes de CheckoutLink.
 Extenderlo a los cobros de EPay es el próximo paso de endurecimiento, y cubre
 justo el hueco de "n1co cobró pero nuestra confirmación falló en el medio".
+
+---
+
+## Paso 5.5 — Verificar el despliegue (sin tarjeta, sin plata)
+
+Apenas termine el deploy del merge, **antes** de probar con una tarjeta real:
+
+```bash
+node scripts/verificar-despliegue-n1co.mjs https://pedidos.freakiedogs.com 70123456
+```
+
+(el segundo argumento es tu teléfono del piloto). Es caja negra: no necesita
+secretos ni tarjeta, y no cobra nada.
+
+Lo que prueba, en orden: que el rewrite quedó, que las credenciales de n1co
+están cargadas, **que el Edge Function llega a Postgres con la service_role**,
+que las validaciones rechazan basura sin gastar intentos, que el piloto bloquea
+un teléfono ajeno y habilita el tuyo, que CORS no habilita un `vercel.app`
+ajeno, y que una op inventada se rechaza.
+
+El chequeo 3 es el que importa: pide cobrar un pedido **inexistente** y espera
+`no_existe`. Solo puede contestar eso si llegó a la base. Si contesta **502**,
+falta `SUPABASE_SERVICE_ROLE_KEY` — el modo de falla en que n1co cobra la tarjeta
+y el pedido queda impago.
+
+Si algo sale mal ahí, no pruebes con tarjeta todavía.
 
 ---
 

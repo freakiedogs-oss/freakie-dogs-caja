@@ -1129,3 +1129,13 @@ button { font-family: inherit; }
   background: #f0f9f2; border: 1px solid #cdebd8;
   font-size: 12.5px; color: #2c6b41; line-height: 1.45;
 }
+
+/* Aviso cuando el pago con tarjeta no está habilitado (piloto en curso, o
+   credenciales sin cargar). Va con el botón deshabilitado: mejor decirlo antes
+   que dejar que el cliente llene la tarjeta y se choque al final. */
+.mp-pago-nota-off {
+  margin-top: 8px; padding: 8px 10px; border-radius: 8px;
+  background: #faf7f8; border-left: 3px solid #c9c2c5;
+  font-size: 12.5px; color: #6b6469; line-height: 1.45;
+}
+.mp-pago-btn:disabled { opacity: .45; cursor: not-allowed; }

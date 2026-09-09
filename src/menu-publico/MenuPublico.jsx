@@ -1238,6 +1238,36 @@ function Checkout({ items, total, onClose, onEnviado }) {
     return () => { vivo = false }
   }, [tipo, total, ruteo?.distancia_km])
 
+  // ── ¿Este cliente puede pagar con tarjeta? ─────────────────────────
+  // Se pregunta apenas el teléfono está completo, ANTES de crear el pedido: si
+  // el cobro no está habilitado (piloto, o credenciales sin cargar) no tiene
+  // sentido ofrecer una opción que termina en un callejón. Si la consulta
+  // falla se asume que sí: el servidor vuelve a frenar en `pagar`, así que lo
+  // peor de equivocarse acá es un aviso de más, no un cobro de menos.
+  const [tarjetaOk, setTarjetaOk] = useState(true)
+  const [tarjetaNota, setTarjetaNota] = useState('')
+  useEffect(() => {
+    const tel = telefono.trim()
+    if (!TEL_VALIDO.test(tel)) return
+    let vivo = true
+    fetch('/api/n1co/tarjetas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telefono: tel }),
+    })
+      .then(r => r.json())
+      .then(r => {
+        if (!vivo) return
+        const ok = r?.habilitado !== false
+        setTarjetaOk(ok)
+        setTarjetaNota(ok ? '' : (r?.mensaje || ''))
+        // Si ya lo había elegido, se vuelve a efectivo con el aviso a la vista.
+        if (!ok) setMetodoPago(m => (m === 'tarjeta' ? 'efectivo' : m))
+      })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [telefono])
+
   const costoEnvio = tipo === 'delivery' ? Number(envio?.costo ?? 0) : 0
   const totalConEnvio = total + costoEnvio
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
@@ -1524,13 +1554,17 @@ function Checkout({ items, total, onClose, onEnviado }) {
                 <button
                   key={m}
                   className={`mp-pago-btn ${metodoPago === m ? 'active' : ''}`}
+                  disabled={m === 'tarjeta' && !tarjetaOk}
                   onClick={() => setMetodoPago(m)}
                 >
                   {m === 'efectivo' ? '💵 Efectivo' : '💳 Tarjeta'}
                 </button>
               ))}
             </div>
-            {metodoPago === 'tarjeta' && (
+            {!tarjetaOk && tarjetaNota && (
+              <div className="mp-pago-nota-off">{tarjetaNota}</div>
+            )}
+            {tarjetaOk && metodoPago === 'tarjeta' && (
               <div className="mp-pago-hint">
                 Vas a pagar ahora con tarjeta y tu pedido entra directo a la cocina,
                 sin esperar el WhatsApp. 🔒
