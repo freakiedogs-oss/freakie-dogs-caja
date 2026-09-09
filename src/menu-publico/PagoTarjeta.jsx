@@ -113,18 +113,30 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
     dispRef.current = idDispositivo()
     if (!dispRef.current) { setFase('form'); return }
 
-    postear('tarjetas', { dispositivo: dispRef.current })
+    // Se pregunta por las tarjetas y, en el mismo viaje, si este pedido puede
+    // pagarse con tarjeta. Así el que está fuera del piloto se entera ANTES de
+    // teclear la tarjeta, no después.
+    postear('tarjetas', {
+      dispositivo: dispRef.current,
+      tracking_token: pedido?.tracking_token,
+    })
       .then(r => {
         if (!vivo) return
+        if (r?.habilitado === false) {
+          setError(r.mensaje || 'El pago con tarjeta no está disponible ahora.')
+          setFase('no_disponible')
+          return
+        }
         const lista = r?.tarjetas || []
         setTarjetas(lista)
         setFase(lista.length ? 'guardadas' : 'form')
       })
-      // Que falle el listado no puede bloquear el cobro: se cae al formulario.
+      // Que falle el listado no puede bloquear el cobro: se cae al formulario y
+      // el freno de `pagar` sigue cubriendo del lado del servidor.
       .catch(() => { if (vivo) setFase('form') })
 
     return () => { vivo = false }
-  }, [])
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 3DS: escuchar el resultado del reto del banco ──────────────────
   useEffect(() => {
@@ -310,6 +322,28 @@ export default function PagoTarjeta({ pedido, onAprobado, onPagarEnEfectivo, onC
     return (
       <Marco titulo="Pagar con tarjeta" onCerrar={onCerrar}>
         <div className="mp-pago-esperando"><div className="mp-pago-spinner" /></div>
+      </Marco>
+    )
+  }
+
+  // ── El cobro con tarjeta no está disponible para este pedido ───────
+  // Pasa durante el piloto (teléfono fuera de la lista), si el pedido supera el
+  // techo, o si todavía no hay credenciales cargadas. El pedido YA existe, así
+  // que no se perdió nada: se sigue en efectivo como siempre.
+  if (fase === 'no_disponible') {
+    return (
+      <Marco titulo="Pago con tarjeta" onCerrar={onCerrar}>
+        <div className="mp-pago-rechazo">
+          <div className="mp-pago-rechazo-icono">💵</div>
+          <p>{error}</p>
+          <p className="mp-pago-nota">
+            Tu pedido <b>{pedido?.numero_orden}</b> ya está guardado. Seguimos
+            con efectivo y te lo llevamos igual.
+          </p>
+        </div>
+        <button className="mp-btn-checkout" onClick={onPagarEnEfectivo}>
+          Continuar con efectivo
+        </button>
       </Marco>
     )
   }

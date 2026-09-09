@@ -437,15 +437,42 @@ export default async function handler(req) {
       }, origin);
     }
 
-    // ── tarjetas guardadas de este dispositivo ──
+    // ── tarjetas guardadas + si el cobro está disponible ──
     // Devuelve solo lo cosmético (marca, últimos 4, vence). El token de n1co
     // NO sale de la BD: si viajara al navegador, cualquiera que lo capturara
     // podría intentar cobrar con él.
+    //
+    // Acá también se responde si ESTE pedido puede pagarse con tarjeta, y por
+    // eso el front lo llama al abrir. Sin este chequeo previo, un cliente fuera
+    // del piloto llenaba todo el formulario —tarjeta, CVV, correo— y solo
+    // entonces le decíamos que no. El freno de `pagar` sigue en su lugar: este
+    // es para la UI, no es la barrera.
     if (op === 'tarjetas') {
       const hash = await dispositivoHash(body?.dispositivo);
-      if (!hash) return json(200, { ok: true, tarjetas: [] }, origin);
-      const tarjetas = await rpc('tarjetas_listar', { p_dispositivo_hash: hash });
-      return json(200, { ok: true, tarjetas: tarjetas || [] }, origin);
+      const tarjetas = hash ? await rpc('tarjetas_listar', { p_dispositivo_hash: hash }) : [];
+
+      let habilitado = true;
+      let mensaje = null;
+
+      if (!env('N1CO_CLIENT_ID') || !env('N1CO_CLIENT_SECRET')) {
+        habilitado = false;
+        mensaje = 'El pago con tarjeta no está disponible ahora. Elegí efectivo 💵';
+      } else {
+        const tt = String(body?.tracking_token || '');
+        if (/^[0-9a-f-]{36}$/i.test(tt)) {
+          const ped = await pedidoPorToken(tt);
+          // Si no se encuentra el pedido no opinamos: `pagar` lo va a rechazar
+          // con su propio motivo, más preciso que lo que podamos decir acá.
+          if (ped) {
+            const f = frenoDeProduccion({
+              cliente_telefono: ped.cliente_telefono, monto: ped.total,
+            });
+            if (f) { habilitado = false; mensaje = f.mensaje; }
+          }
+        }
+      }
+
+      return json(200, { ok: true, tarjetas: tarjetas || [], habilitado, mensaje }, origin);
     }
 
     // ── olvidar una tarjeta guardada ──
@@ -723,6 +750,25 @@ async function guardarTarjeta({ hash, cardId, customerId, email, telefono, titul
     });
   } catch (e) {
     console.error('[n1co] no se pudo guardar la tarjeta:', String(e?.message || e));
+  }
+}
+
+// Lectura liviana para el chequeo previo de disponibilidad. NO abre un intento
+// de cobro: si usara `pago_online_iniciar`, con solo abrir el drawer el cliente
+// quemaría uno de sus 5 intentos.
+async function pedidoPorToken(trackingToken) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  if (!key) return null;
+  try {
+    const res = await fetchConTimeout(
+      `${SUPA_URL}/rest/v1/delivery_clientes?tracking_token=eq.${encodeURIComponent(trackingToken)}`
+      + '&select=cliente_telefono,total&limit=1',
+      { headers: { apikey: key, Authorization: `Bearer ${key}`, accept: 'application/json' } },
+    );
+    const rows = await leerJson(res);
+    return Array.isArray(rows) && rows.length ? rows[0] : null;
+  } catch {
+    return null;
   }
 }
 
