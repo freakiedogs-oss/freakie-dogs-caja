@@ -2,7 +2,7 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
-## 08-Sep-2026 — `freakiedogs.com` en producción y `api.freakiedogs.com` listo para matar el proxy `/sb`
+## 08-Sep-2026 — `freakiedogs.com` en producción: el ERP salió del proxy `/sb` (EN VIVO)
 
 Namecheap invitó a Jose como *domain manager* de **`freakiedogs.com`** (dueño: **Luis Castillo**, socio). El dominio existía desde ene-2024 pero **no resolvía a nada**: los NS de BanaHosting daban `SERVFAIL` para la zona — eso explica el `pos.freakiedogs.com` NXDOMAIN que topamos con el APK del driver. No había nada que romper.
 
@@ -19,7 +19,36 @@ el MISMO handshake por /sb → HTTP/1.1 500 Internal Server Error
 
 **El switch es una variable, no un merge de código.** `VITE_SB_URL` manda sobre todo en `src/supabase.js` y, cuando está seteada, además se salta el swap del `RealtimeClient` (`PASA_POR_PROXY`) que existía solo porque el proxy rompe el WebSocket. Igual `VITE_URL_DELIVERY` en `src/config.js`. En `public/sw.js` el bypass ahora cubre **todo origen ajeno**: sin eso, cada GET a `api.freakiedogs.com` entraría al service worker a buscar en un cache donde solo se guarda `/assets/` de este host. **Rollback = borrar la variable y redeployar.**
 
-⚠️ **Trampa que casi nos come:** las variables se pueden setear en Vercel y no hacer nada, porque producción compila desde `main` y el código que las lee tiene que estar ahí primero. Y `VITE_*` es prefijo público — Vercel las rechaza como `Secret`, van como `Config` (Vite las hornea en el bundle del navegador; llamarlas secretas sería mentira).
+⚠️ **Dos trampas que casi nos comen esa noche:**
+1. Las variables se pueden setear en Vercel y **no hacer nada**, porque producción compila desde `main` y el código que las lee tiene que estar ahí primero. Se seteó, se le dio deploy, y no cambió nada — el bundle en vivo seguía siendo el de `main`.
+2. La branch de trabajo `feat/dominio-propio` había salido de **`feat/pago-tarjeta-n1co`**. Mergearla habría arrastrado la pasarela de tarjeta —sandbox, sin credenciales productivas— directo a la caja. Se rehízo como `feat/dominio-env` **desde `main`** (PR #339, 5 archivos, cero n1co). *No colgar branches nuevas de la de n1co mientras siga sin mergear.*
+
+Y `VITE_*` es prefijo público: Vercel las rechaza como `Secret`, van como **`Config`** (Vite las hornea en el bundle del navegador; llamarlas secretas sería mentira).
+
+### Cómo quedó en producción (merge `29de71e`, 8-sep 23:10)
+
+Verificado desde afuera y en el navegador:
+
+```
+version.json  ERP y delivery → 29de71ea
+bundle        supabase-BECKV9gM.js → contiene api.freakiedogs.com
+              (k82gbVKr es la librería @supabase, hash estable — es la que
+               figura como "initiator" en DevTools, confunde)
+RPC           erp_ping por api.freakiedogs.com → {"ok": true}
+WebSocket     101 Switching Protocols
+```
+
+**La confirmación más limpia son los `preflight` en la pestaña Network**: un `OPTIONS` solo aparece en peticiones cross-origin. Con el proxy `/sb` todo era same-origin y **nunca** había preflights. Que `usuarios_erp`, `erp_login` y `permisos_rol` ahora los tengan (y devuelvan 200) prueba que la app está pegándole al host nuevo.
+
+**El proxy `/sb` sigue desplegado y respondiendo 200**, a propósito, ~2 semanas como red de seguridad. Recién después se evalúa borrar `api/supaproxy.js` y sus rewrites de `vercel.json`.
+
+### Pendientes
+
+- **Probar el KDS con caja abierta** — es la única prueba que faltó (se hizo de noche). Si la comanda aparece sin esperar el polling de 25 s, Realtime funcionó por primera vez en producción.
+- **Vercel → Observability**: confirmar que las invocaciones del Edge se desploman (eran ~107k diarias solo de reintentos fallidos de websocket).
+- `LoginScreen.jsx:93` y `POSLogin.jsx:74` siguen midiendo la salud **del proxy**, no del host que la app usa ahora. No molesta, pero miente.
+- `public/sw.js` línea 63 (rama cache-first de `/assets/`): si ese `fetch` falla, la promesa queda sin `catch` y Chrome tira `Failed to fetch`. **Preexistente** — código idéntico al de antes, solo se corrió de renglón. Falta el `catch`.
+- El warning *"Multiple GoTrueClient instances"* sale de `src/supabaseFinanzas.js:66`: `dbFin` no tiene `storageKey` propio y comparte llave con `db`. Preexistente, y esta noche mejoró (de 3 clientes a 2, porque el swap del realtime ya no se crea).
 
 ## 08-Sep-2026 — Dashboard "Consumo por Venta": qué se consumió por lo que se vendió
 
