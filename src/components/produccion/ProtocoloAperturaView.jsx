@@ -491,7 +491,9 @@ export default function ProtocoloAperturaView({ user }) {
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '9px 0' }}>
                               {p.fotos.map(f => (
                                 <figure key={f.id} style={{ margin: 0, width: 170 }}>
-                                  <img src={f.url} alt={f.caption || ''} style={{
+                                  {/* lazy: son 38 fotos y la cocina abre esto
+                                      cada mañana con el dato del celular. */}
+                                  <img src={f.url} alt={f.caption || ''} loading="lazy" decoding="async" style={{
                                     width: '100%', borderRadius: 7, border: '1px solid #2b313d', display: 'block',
                                   }} />
                                   <figcaption style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>
