@@ -38,7 +38,11 @@ export const config = { runtime: 'edge' };
 const env = (k, def = '') =>
   (typeof process !== 'undefined' && process.env?.[k]) || def;
 
-const N1CO_BASE = env('N1CO_BASE_URL', 'https://api-sandbox.n1co.shop').replace(/\/+$/, '');
+// La doc de n1co publica la base CON la versión (`.../api/v3`) y nosotros la
+// concatenamos en cada llamada, así que se le saca si vino incluida. Sin esto,
+// pegar la URL tal cual de la doc pide `/api/v3/api/v3/Token` y da 404.
+const N1CO_BASE = env('N1CO_BASE_URL', 'https://api-sandbox.n1co.shop')
+  .replace(/\/+$/, '').replace(/\/api\/v\d+$/i, '');
 const AMBIENTE = env('N1CO_AMBIENTE', 'sandbox') === 'produccion' ? 'produccion' : 'sandbox';
 const SUPA_URL = env('SUPABASE_URL', 'https://btboxlwfqcbrdfrlnwln.supabase.co');
 
@@ -50,14 +54,18 @@ const UPSTREAM_TIMEOUT_MS = 30_000;
 
 // Orígenes que pueden llamar a este endpoint. El menú público vive en un
 // dominio distinto al del ERP, así que no alcanza con same-origin.
-// Al mudarse a freakiedogs.com hay que sumar el dominio nuevo acá o vía
-// N1CO_ORIGENES; si no, el navegador bloquea el cobro por CORS.
+// Los de freakiedogs.com son los definitivos (zona en Cloudflare, sirviendo
+// desde Vercel); los .vercel.app quedan mientras se completa la mudanza.
+// Cualquier subdominio nuevo se agrega con la env N1CO_ORIGENES sin tocar
+// código; si falta, el navegador bloquea el cobro por CORS.
 const ORIGENES_OK = new Set([
-  'https://freakiedelivery.vercel.app',
-  'https://freakie-dogs-caja.vercel.app',
+  'https://pedidos.freakiedogs.com',   // el menú público: de acá sale el cobro
   'https://freakiedogs.com',
   'https://www.freakiedogs.com',
-  'https://pedidos.freakiedogs.com',
+  'https://erp.freakiedogs.com',
+  'https://pos.freakiedogs.com',
+  'https://freakiedelivery.vercel.app',
+  'https://freakie-dogs-caja.vercel.app',
   'http://localhost:5173',
   'http://localhost:4173',
   ...env('N1CO_ORIGENES').split(',').map(s => s.trim()).filter(Boolean),

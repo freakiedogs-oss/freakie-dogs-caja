@@ -2,6 +2,25 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 08-Sep-2026 — n1co respondió: las credenciales SÍ son self-service (la doc miente)
+
+Puesta en marcha completa en **`docs/n1co-puesta-en-marcha.md`**; el registro de lo preguntado y respondido, en `docs/n1co-solicitud-credenciales.md`.
+
+**Lo que cambia respecto de lo que asumimos leyendo la doc:**
+- **Las credenciales de API son self-service.** Portal → engranaje → **Sandbox → Ir a sandbox** (la tienda tiene que mostrar la etiqueta "sandbox" arriba a la derecha, si no la llave sale de producción) → **API → nueva**, marcando todos los permisos. El modal da **dos** valores: `clientId` (uuid) y `clientSecret`. La doc pública dice *"The n1co team will provide the necessary credentials"* — está desactualizada. Para producción, mismos pasos con el modo sandbox **apagado**, y la llave de sandbox **no sirve** en producción.
+- **Los tokens multi-uso ya están activos por defecto.** No hubo que pedir card-on-file: la tarjeta guardada funciona tal como se construyó.
+- **`locationCode`** = primera columna **"ID"** de Configuración → Sucursales.
+- **URL de producción confirmada:** `https://api.n1co.com` + la versión. Ojo: nuestro código concatena `/api/v3`, así que `N1CO_BASE_URL` va **sin** la versión. Se le agregó un `.replace(/\/api\/v\d+$/)` para tolerar que se pegue completa, porque la doc la publica así y pedir `/api/v3/api/v3/Token` da 404 sin explicar por qué.
+- **El webhook manda la firma `X-H4B-Hmac-Sha256` en el 100% de los eventos** — era mi objeción para no implementarlo. Se configura en Configuración → URL de acceso al webhook, que además da la llave secreta y **el historial de envíos** (útil para depurar). Sin `N1CO_WEBHOOK_SECRET` nuestro endpoint rechaza todo, a propósito.
+- **No existen hosted fields ni SDK de navegador.** n1co confirmó que con la API directa el PAN pasa por nuestro servidor (SAQ D) y que la única vía a SAQ A es el checkout hospedado, que no guarda tarjeta. Ofrecieron registrar los campos embebidos como requerimiento de producto — conviene decir que sí: sería SAQ A **sin** perder la tarjeta guardada.
+
+**Herramienta nueva: `scripts/smoke-n1co.mjs`.** Recorre token → tokenizar con `singleUse:false` → cobrar $1 → reversar, con tarjeta de sandbox y sin imprimir el secret. Sirve para separar "¿están bien las credenciales?" de "¿está bien nuestro código?" antes de abrir el menú a probar; si el paso 2 se queja de `singleUse`, card-on-file no está activo pese a lo que dijeron.
+
+**Dominio:** la otra sesión ya puso `freakiedogs.com` en producción (`pedidos.freakiedogs.com` es el menú). `ORIGENES_OK` de los dos edge functions ahora lista `pedidos.`/`www.`/`erp.`/`pos.`/apex además de los `.vercel.app` de transición, y queda la env `N1CO_ORIGENES` para agregar cualquier otro sin tocar código. **Esto calza con el aviso de `localStorage` por origen**: como el dominio nuevo ya está arriba, la tarjeta guardada se estrena directo ahí y ningún cliente pierde la suya en una mudanza posterior.
+
+**Nota de proceso:** las dos sesiones comparten un solo working directory. La branch del dominio (`feat/dominio-env`) estaba checkouteada con cambios sin commitear, así que esta sesión trabajó `feat/pago-tarjeta-n1co` en un **git worktree** aparte (`/tmp/fd-pagos`) en vez de cambiar de branch. Cambiar de branch ahí habría pisado trabajo ajeno sin avisar.
+
+
 ## 08-Sep-2026 — Tarjeta guardada: fricción cero en la 2ª compra, atada al dispositivo
 
 Jose fijó la prioridad: **que el cliente reingrese la menor cantidad de datos posible**, y que la tarjeta quede guardada de forma segura. Eso decide la arquitectura, porque de las dos vías de n1co **solo una permite guardar tarjeta**:

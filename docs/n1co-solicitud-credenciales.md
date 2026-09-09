@@ -1,4 +1,26 @@
-# Solicitud de credenciales a n1co — mensaje listo para enviar
+# Solicitud de credenciales a n1co — RESPONDIDA ✅
+
+> **8-sep-2026: n1co contestó y desbloqueó todo.** El paso a paso de qué hacer
+> con la respuesta está en **`docs/n1co-puesta-en-marcha.md`**. Este documento
+> queda como registro de lo que se preguntó y lo que contestaron.
+>
+> | Pregunta | Respuesta |
+> |---|---|
+> | 1. Credenciales | **Sí son self-service**: portal → engranaje → Sandbox → *Ir a sandbox*, y después API → nueva. La doc decía que las entregaba su equipo; estaba desactualizada. |
+> | 2. Tokens multi-uso | **Ya activos por defecto.** La tokenización pasa una sola vez; las ventas siguientes van con el token. Justo lo que necesita la tarjeta guardada. |
+> | 3. `locationCode` | Configuración → Sucursales, primera columna **"ID"**. |
+> | 4. URL de producción | Confirmada: `https://api.n1co.com` + la versión → `https://api.n1co.com/api/v3`. |
+> | 5. Webhook | La firma `X-H4B-Hmac-Sha256` va en **el 100% de los eventos**. Se configura en Configuración → URL de acceso al webhook, y ahí mismo dan la llave secreta y el historial de envíos. |
+> | 6. Hosted fields | **No existen hoy.** Confirmaron que con la API directa el PAN pasa por nuestro servidor (SAQ D). La única vía sin ese alcance es el checkout hospedado — que no permite guardar tarjeta. Ofrecieron registrar los campos embebidos como requerimiento de producto. |
+>
+> Quedó una pregunta suya sin contestar: *¿la integración es servidor a servidor
+> o el checkout corre en el navegador?* La respuesta redactada está en el Paso 0
+> de la puesta en marcha.
+
+---
+
+## Lo que se preguntó (registro)
+
 
 Contexto: la integración (branch `feat/pago-tarjeta-n1co`) está construida contra
 la **Integration API v3 (EPay)**, que es la única vía que soporta **tarjeta
