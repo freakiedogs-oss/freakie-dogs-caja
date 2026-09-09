@@ -1,9 +1,23 @@
 # Migración a `freakiedogs.com` — runbook
 
-> Estado al 8-sep-2026. El dominio existe pero **no resuelve a nada**: los
-> nameservers (`ns410/411.banahosting.com`) responden `SERVFAIL` para la zona.
-> No hay web ni correo en pie, así que no hay nada que romper — pero tampoco
-> hay nada que heredar.
+> **Estado al 8-sep-2026, 22:30 — Fases 0 a 3 COMPLETADAS y verificadas.**
+> El dominio quedó en Cloudflare (`grant` / `hattie.ns.cloudflare.com`) y los
+> cinco hosts sirven 200 desde Vercel, todos en nube gris:
+>
+> ```
+> freakiedogs.com          → 216.150.1.1  (A) → 308 a www
+> www.freakiedogs.com      → 4671ca470fa7ad7a.vercel-dns-017.com
+> pedidos.freakiedogs.com  → 4671ca470fa7ad7a.vercel-dns-017.com
+> erp.freakiedogs.com      → 5bc8ca92ed2037d4.vercel-dns-017.com
+> pos.freakiedogs.com      → 5bc8ca92ed2037d4.vercel-dns-017.com
+> ```
+>
+> El canónico del delivery quedó en **`www`** (el apex redirige con 308).
+> Falta la Fase 4 en adelante.
+>
+> Punto de partida, para contexto: el dominio existía desde ene-2024 pero **no
+> resolvía a nada** — los nameservers de BanaHosting daban `SERVFAIL` para la
+> zona. No había web ni correo en pie, así que no hubo nada que romper.
 
 ```
 Registrar     NameCheap, Inc.
@@ -84,9 +98,36 @@ entra (no hay MX resolvible), pero el archivo viejo vive en ese hosting.
     | CNAME | `www` | el que muestre Vercel | **DNS only (gris)** |
     | A | `@` | la IP que muestre Vercel | **DNS only (gris)** |
 
-    **La nube tiene que quedar gris en todos.** Con el proxy naranja encendido
-    son dos CDN encadenadas: Vercel no puede emitir su certificado y se agrega
-    un salto de red que no aporta nada.
+    **La nube tiene que quedar gris en todos** — ver abajo por qué, porque
+    Cloudflare insiste con un banner en que la enciendas.
+
+### Por qué TODO va en nube gris (DNS only)
+
+Cloudflare avisa que *"proxying is required for most security and performance
+features"*. Es cierto en general y es falso en nuestro caso: **delante de Vercel
+la nube naranja no agrega, duplica.**
+
+- **Vercel ya es una CDN** con caché en el edge, TLS automático, protección DDoS
+  y firewall propio. Encender Cloudflare encima no suma una capa: pone dos
+  cachés en serie.
+- **Dos cachés rompen el candado de versión.** Vercel purga su caché en cada
+  deploy; Cloudflare no se entera. Como el candado compara el `version.json` del
+  servidor contra el id horneado en el bundle, una caché intermedia sirviendo
+  bundles viejos es exactamente el escenario del bucle de recargas.
+- **Se pierde la IP real.** Con la nube naranja, Vercel ve IPs de Cloudflare en
+  todas las peticiones: su Firewall, su rate limiting y sus logs quedan ciegos,
+  y nuestros endpoints de n1co ven a todos los clientes como un solo origen.
+- **El certificado.** Vercel emite y renueva el suyo por dominio; con el proxy
+  encendido Cloudflare termina el TLS con el propio y la validación se traba.
+- **Techos nuevos.** El proxy de Cloudflare Free corta a los 100 s y limita la
+  subida a 100 MB. Toda esta migración existe para *quitar* un techo.
+- Para `api.freakiedogs.com` **no es opcional**: Supabase requiere el CNAME en
+  DNS only o no puede emitir el certificado.
+
+Lo que sí queríamos de Cloudflare —DNS anycast rápido, gratis y confiable, y el
+manejo cómodo de los registros de correo— lo tenemos con la nube gris. Si algún
+día hace falta un WAF, el lugar correcto es el **Firewall de Vercel**, no una
+segunda CDN.
 
 ## Fase 3 — El switch de nameservers
 
