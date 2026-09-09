@@ -13,7 +13,21 @@
 > ```
 >
 > El canónico del delivery quedó en **`www`** (el apex redirige con 308).
-> Falta la Fase 4 en adelante.
+>
+> **Fase 4: `api.freakiedogs.com` ACTIVO y verificado (8-sep, 22:50).** Falta
+> solo el paso 18 — el switch de variables en Vercel.
+>
+> ```
+> TLS       CN=api.freakiedogs.com · Google Trust Services · vence 8-dic-2026
+> RPC       erp_ping → {"ok": true}                              ✅
+> Functions /functions/v1/dte-service → 200                      ✅
+> WebSocket api.freakiedogs.com → 101 Switching Protocols        ✅
+>           el MISMO handshake por /sb → 500 Internal Server Error
+> ```
+>
+> Paridad con `btboxlwfqcbrdfrlnwln.supabase.co` verificada endpoint por
+> endpoint (mismo 401 en la raíz de `/rest/v1/`, mismo 400 en
+> `/storage/v1/bucket`, mismo 200 en el RPC): **Kaeru y Kako no se enteraron**.
 >
 > Punto de partida, para contexto: el dominio existía desde ene-2024 pero **no
 > resolvía a nada** — los nameservers de BanaHosting daban `SERVFAIL` para la
