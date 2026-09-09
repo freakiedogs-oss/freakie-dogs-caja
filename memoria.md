@@ -2,6 +2,21 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — `cobrado` NO significa "pagó online": el sello salía en pedidos en efectivo
+
+**Bug con plata en riesgo**, detectado por Jose: el pedido de Ivonne Suria ($7.99, **efectivo**) mostraba `PAGADO ONLINE · NO COBRAR` y no aparecía en el portal de n1co — porque nunca se pagó ahí.
+
+**La causa:** usé `cobrado` como discriminador de "pagó online". Pero **`cobrado` no significa eso**: lo pone el trigger `fn_pos_cobro_update_delivery` **cada vez que la caja cierra la cuenta, también en efectivo**. La de Ivonne se cerró en el POS como `efectivo $7.99` a las 19:05 y el trigger la marcó `cobrado` a las 19:06, con **cero** intentos en `pagos_online`.
+
+**Consecuencia real:** al motorista le decía *"Ya pagado — no cobrés nada"* en pedidos de **efectivo que sí tiene que cobrar**. En los últimos 3 días, **139 pedidos por ~$2,225** caían en ese caso.
+
+**El discriminador correcto es que exista un cobro APROBADO en `pagos_online`.** Se expone como **`pagado_online`** en `torre_listar_pedidos` y `mis_pedidos_driver` para que la UI no vuelva a inferirlo, y el front lo usa en el sello, el botón de la torre, el mensaje de WhatsApp, la franja de retiros y el aviso del motorista. `cobrado` se sigue exponiendo: es el dato correcto para otras cosas, solo no para esta.
+
+**La ironía que conviene recordar:** unas horas antes usé `cobrado` como discriminador en el trigger del auto-entregado y ahí **sí era correcto** —la pregunta era "¿ya venía cobrado ANTES de cerrarse la cuenta?"—. El mismo campo, leído en otro momento, significa otra cosa. Regla: `cobrado` = "la venta se saldó en el POS", nunca "pagó por la web".
+
+**Además, los mensajes de rechazo.** Caso real (`WEB-E8FCD6BF`, Elias Mendez, $11.73): la tarjeta no tenía fondos y el cliente **la reintentó 3 veces**, porque nunca le dijimos eso; terminó pidiendo el link a mano. n1co devuelve el error como **objeto** (`{code:'51', title:'Insuficiencia de fondos', detail:'No cuentas con el monto requerido…'}`) y `String()` sobre eso daba `"[object Object]"`: basura en `error_code` y mensaje genérico para el cliente. Ahora se extrae `{code,title,detail}` y el mensaje sale del mapa por **código ISO 8583** (51 sin fondos, 54 vencida, 82 CVV, 61 límite…), después del texto en español de n1co, y al final el genérico. Los intentos 2 y 3 fallaron con "Error de validación" (400) en <2s contra los 12s del primero: **hipótesis a confirmar con n1co** — que no deja re-tokenizar la misma tarjeta para el mismo `customer.id` tras un rechazo.
+
+
 ## 09-Sep-2026 — "¿Y quién marca cuándo fue retirado?" — la pregunta que destapó un bug propio
 
 Jose preguntó quién cierra un retiro en local. Al ir a buscarlo apareció que **el cambio de cerrar la cuenta al cobrar (de hace 20 minutos) había roto justo eso**.
