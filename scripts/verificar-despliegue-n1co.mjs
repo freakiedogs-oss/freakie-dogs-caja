@@ -97,9 +97,7 @@ console.log(`  ${C.dim}no cobra nada · no necesita secretos${C.x}\n`);
 // ── 2. Credenciales de n1co cargadas ──
 {
   const r = await llamar('tarjetas', { dispositivo: uuid() });
-  const sinCreds = r.data?.habilitado === false
-    && /no está disponible/i.test(r.data?.mensaje || '');
-  if (sinCreds) {
+  if (r.data?.motivo === 'SIN_CREDENCIALES') {
     aviso('2. n1co responde "no disponible" — faltan N1CO_CLIENT_ID / N1CO_CLIENT_SECRET',
       'Cargalas en Vercel (solo Production) y redeployá.');
   } else {
@@ -158,14 +156,22 @@ console.log(`  ${C.dim}no cobra nada · no necesita secretos${C.x}\n`);
   // Solo se concluye algo si la app contestó de verdad. Antes se infería el
   // "abierto a todos" de la ausencia de un `habilitado:false`, y una respuesta
   // rara (401, 502, HTML) se leía como la peor noticia posible.
+  //
+  // El caso se decide por `motivo`, no por el texto del mensaje: los mensajes
+  // al cliente se parecen entre sí (todos terminan en "elegí efectivo") y
+  // matchearlos hacía que un piloto FUNCIONANDO se reportara como
+  // "faltan credenciales".
   if (r.status !== 200 || typeof r.data?.habilitado !== 'boolean') {
     aviso(`7. no se pudo evaluar el piloto — la app no contestó como se esperaba`,
       `HTTP ${r.status} · ${JSON.stringify(r.data).slice(0, 160)}`);
-  } else if (r.data.habilitado === false && /no está disponible/i.test(r.data?.mensaje || '')) {
+  } else if (r.data.motivo === 'SIN_CREDENCIALES') {
     aviso('7. no se pudo evaluar el piloto (faltan credenciales, ver aviso 2)',
       'Con credenciales cargadas, volvé a correrlo.');
-  } else if (r.data.habilitado === false) {
+  } else if (r.data.motivo === 'FUERA_DE_PILOTO') {
     chequeo(`7. piloto activo: el teléfono ${ajeno} NO puede pagar con tarjeta`, true);
+  } else if (r.data.habilitado === false) {
+    aviso(`7. el teléfono ${ajeno} quedó bloqueado, pero por otro motivo`,
+      `motivo=${r.data.motivo} · ${r.data.mensaje}`);
   } else {
     chequeo(`7. piloto activo: el teléfono ${ajeno} NO puede pagar con tarjeta`, false,
       'habilitado=true → N1CO_TELEFONOS_PRUEBA está vacía: el cobro con tarjeta\n'
