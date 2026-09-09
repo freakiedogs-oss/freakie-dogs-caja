@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
 
   // Se registra SIEMPRE, incluso si la autenticación falla: sin esto, un secreto mal
   // configurado se ve como silencio y no hay con qué diagnosticar.
-  await svc.from("peya_ordenes_raw").insert({
+  const { error: errCrudo } = await svc.from("peya_ordenes_raw").insert({
     metodo: req.method,
     path: url.pathname + url.search,
     headers,
@@ -175,6 +175,11 @@ Deno.serve(async (req) => {
     // El remoteId va segundo tanto en /order/{id} como en /remoteId/{id}/...
     vendor_remote_id: ruta[1] ?? null,
   });
+
+  // El registro crudo es la única red de diagnóstico que queda cuando algo falla.
+  // Si su INSERT se rompe (un GRANT faltante, por ejemplo) y nadie mira el error,
+  // el webhook parece funcionar y en realidad no está guardando nada.
+  if (errCrudo) console.error("peya-plugin: fallo al registrar el crudo:", errCrudo.message);
 
   if (!auth.ok) {
     return json({ error: "unauthorized", reason: auth.motivo }, 401);
