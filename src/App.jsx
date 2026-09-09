@@ -55,6 +55,7 @@ const BPMTemperaturaView = lazy(() => import('./components/produccion/BPMTempera
 const CarneBoleadoView   = lazy(() => import('./components/produccion/CarneBoleadoView'))
 const ProtocoloAperturaView = lazy(() => import('./components/produccion/ProtocoloAperturaView'))
 const ProtocoloEditorView = lazy(() => import('./components/produccion/ProtocoloEditorView'))
+const ProtocoloEquipoView = lazy(() => import('./components/produccion/ProtocoloEquipoView'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
 const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
 const MiAsistencia       = lazy(() => import('./components/empleado/MiAsistencia'))
@@ -351,6 +352,8 @@ export default function App() {
         return <ProtocoloAperturaView user={user} onEditar={() => setScreen('protocolo-editor')} />
       case 'protocolo-editor':
         return <ProtocoloEditorView user={user} onVolver={() => setScreen('protocolo-apertura')} />
+      case 'protocolo-equipo':
+        return <ProtocoloEquipoView user={user} onVolver={() => setScreen('protocolo-apertura')} />
       case 'bpm-temperatura':
         return <BPMTemperaturaView user={user} />
       case 'incidentes-cm':
