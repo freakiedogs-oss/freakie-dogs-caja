@@ -453,9 +453,16 @@ export default async function handler(req) {
 
       let habilitado = true;
       let mensaje = null;
+      // Código legible por máquina, aparte del mensaje para el cliente. Los
+      // textos en español se parecen entre sí a propósito (todos terminan en
+      // "elegí efectivo") y distinguirlos por el texto es frágil: el
+      // verificador de despliegue llegó a reportar "faltan credenciales"
+      // cuando en realidad el piloto estaba funcionando bien.
+      let motivo = null;
 
       if (!env('N1CO_CLIENT_ID') || !env('N1CO_CLIENT_SECRET')) {
         habilitado = false;
+        motivo = 'SIN_CREDENCIALES';
         mensaje = 'El pago con tarjeta no está disponible ahora. Elegí efectivo 💵';
       } else {
         // Dos momentos preguntan lo mismo:
@@ -481,11 +488,11 @@ export default async function handler(req) {
 
         if (sujeto) {
           const f = frenoDeProduccion(sujeto);
-          if (f) { habilitado = false; mensaje = f.mensaje; }
+          if (f) { habilitado = false; motivo = f.code; mensaje = f.mensaje; }
         }
       }
 
-      return json(200, { ok: true, tarjetas: tarjetas || [], habilitado, mensaje }, origin);
+      return json(200, { ok: true, tarjetas: tarjetas || [], habilitado, motivo, mensaje }, origin);
     }
 
     // ── olvidar una tarjeta guardada ──
