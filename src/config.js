@@ -160,16 +160,14 @@ export const NAV_SECTIONS = [
       { key: 'bpm-chili', label: 'Control BPM · Chili', icon: '🌶️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'carne-boleado', label: 'Mezclado y boleado', icon: '🥩', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'bpm-temperatura', label: 'Temperatura · Carne boleada', icon: '🌡️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
-      // Protocolo de apertura: en revisión. `users` lo deja visible solo para
-      // Cesar hasta que el contenido esté validado. Para abrirlo a las
-      // sucursales se borra la línea `users` y se vacía la tabla protocolo_beta.
-      // 0a0ad760 = Cesar Rodriguez · 96ea2d18 = Jazmin Fuentes (encargada de Plaza Cafetalón).
-      // Cada uno ve solo su sucursal: eso lo decide protocolo_permisos, no esta lista.
-      { key: 'protocolo-apertura', label: 'Protocolo de apertura', icon: '🌅', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
-      // El editor decide solo, contra la base, qué puede tocar cada uno (base o su sucursal).
-      { key: 'protocolo-editor', label: 'Editar el protocolo', icon: '✏️', roles: ['gerente', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
+      // Protocolo de apertura — abierto a todas las sucursales (9-sep-2026).
+      // Quién ve cada pantalla lo dice permisos_rol en la base; los `roles` de
+      // acá son el respaldo. Qué sucursal puede tocar cada persona lo decide
+      // protocolo_permisos + su rol, no el menú.
+      { key: 'protocolo-apertura', label: 'Protocolo de apertura', icon: '🌅', roles: ['cocina', 'cajera', 'cajero', 'tablet', 'mesero', 'produccion', 'empleado', 'gerente', 'admin', 'ejecutivo', 'superadmin', 'jefe_casa_matriz'] },
+      { key: 'protocolo-editor', label: 'Editar el protocolo', icon: '✏️', roles: ['gerente', 'admin', 'ejecutivo', 'superadmin'] },
       // PIN de la gente de la propia sucursal. Cada consulta pide el PIN propio y queda en bitácora.
-      { key: 'protocolo-equipo', label: 'Mi equipo · PIN', icon: '🔑', roles: ['gerente', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
+      { key: 'protocolo-equipo', label: 'Mi equipo · PIN', icon: '🔑', roles: ['gerente', 'admin', 'ejecutivo', 'superadmin'] },
     ],
   },
   {

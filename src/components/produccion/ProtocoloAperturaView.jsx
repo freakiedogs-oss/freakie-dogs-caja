@@ -51,7 +51,7 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
   const [abierta, setAbierta] = useState(null)    // área desplegada
   const [puedeBase, setBase]  = useState(false)   // ¿puede cambiar el estándar común?
   const [lote, setLote]       = useState(null)    // carga masiva de fotos
-  const fileRef   = useRef({})
+  const [camara, setCamara] = useState(null)   // paso al que se le está tomando foto
   const carpetaRef = useRef(null)
   const sueltosRef = useRef(null)
   const [puedeSuc, setPuedeSuc] = useState(false)  // ¿puede editar ESTA sucursal?
@@ -145,7 +145,7 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
       if (foto) {
         const path = `protocolo/${suc}/${fecha}/${paso.paso_id}-${Date.now()}.jpg`
         const { error: upErr } = await db.storage.from(BUCKET)
-          .upload(path, foto, { cacheControl: '3600', upsert: false })
+          .upload(path, foto, { cacheControl: '3600', upsert: false, contentType: 'image/jpeg' })
         if (upErr) throw upErr
         fotoUrl = db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl || null
       }
@@ -512,6 +512,17 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
                           {m.foto_url && ' · foto subida'}
                         </div>
                       )}
+                      {/* La foto del día se ve acá mismo: la encargada corrobora
+                          que es real sin tener que abrir nada más. */}
+                      {ok && m?.foto_url && (
+                        <a href={m.foto_url} target="_blank" rel="noopener noreferrer"
+                          style={{ display: 'inline-block', marginTop: 7 }}>
+                          <img src={m.foto_url} alt="Foto del día" loading="lazy" decoding="async" style={{
+                            width: 140, height: 105, objectFit: 'cover', borderRadius: 7,
+                            border: '1px solid #1f3a24', display: 'block',
+                          }} />
+                        </a>
+                      )}
 
                       {!ok && (
                         <>
@@ -576,22 +587,15 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
                     </div>
 
                     {p.requiere_foto && !ok && (
-                      <>
-                        <button onClick={() => fileRef.current[p.paso_id]?.click()}
-                          disabled={trabajando}
-                          style={{
-                            background: '#0b3b2e', color: '#6ee7b7', border: 0, borderRadius: 7,
-                            padding: '7px 11px', fontWeight: 700, fontSize: 12, cursor: 'pointer', flex: 'none',
-                          }}>{trabajando ? '…' : 'Tomar foto'}</button>
-                        <input
-                          ref={el => { fileRef.current[p.paso_id] = el }}
-                          type="file" accept="image/*" capture="environment" hidden
-                          onChange={e => {
-                            const f = e.target.files?.[0]
-                            e.target.value = ''
-                            if (f) marcar(p, f)
-                          }} />
-                      </>
+                      /* Cámara de la app, no <input type=file>: con el input, Android
+                         y iOS ofrecen "Galería" aunque pidas capture, y la foto del día
+                         deja de probar nada. */
+                      <button onClick={() => setCamara(p)}
+                        disabled={trabajando}
+                        style={{
+                          background: '#0b3b2e', color: '#6ee7b7', border: 0, borderRadius: 7,
+                          padding: '7px 11px', fontWeight: 700, fontSize: 12, cursor: 'pointer', flex: 'none',
+                        }}>{trabajando ? '…' : '📷 Tomar foto'}</button>
                     )}
                   </div>
                 </div>
@@ -606,6 +610,93 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
           No hay pasos cargados para esta sucursal.
         </div>
       )}
+
+      {camara && (
+        <Camara titulo={camara.titulo}
+          onCerrar={() => setCamara(null)}
+          onFoto={blob => { const p = camara; setCamara(null); marcar(p, blob) }} />
+      )}
+    </div>
+  )
+}
+
+/* ───────────────────────── cámara en la app ─────────────────────────
+   Abre la cámara trasera con getUserMedia y captura a un canvas. No hay
+   forma de elegir una foto vieja: eso es a propósito. Si el navegador no
+   da la cámara, se dice por qué y no se ofrece la galería como salida. */
+function Camara({ titulo, onCerrar, onFoto }) {
+  const videoRef  = useRef(null)
+  const streamRef = useRef(null)
+  const [estado, setEstado] = useState('abriendo')   // abriendo | lista | error
+  const [motivo, setMotivo] = useState('')
+
+  useEffect(() => {
+    let vivo = true
+    ;(async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Este navegador no da acceso a la cámara.')
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
+          audio: false,
+        })
+        if (!vivo) { stream.getTracks().forEach(t => t.stop()); return }
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+        setEstado('lista')
+      } catch (err) {
+        const m = err?.name === 'NotAllowedError'
+          ? 'El navegador no tiene permiso para usar la cámara. Dáselo en el candado de la barra de dirección y volvé a intentar.'
+          : err?.name === 'NotFoundError'
+            ? 'Este dispositivo no tiene cámara. La foto se toma desde el celular o la tablet.'
+            : (err?.message || 'No se pudo abrir la cámara.')
+        setMotivo(m); setEstado('error')
+      }
+    })()
+    return () => {
+      vivo = false
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    }
+  }, [])
+
+  function capturar() {
+    const v = videoRef.current
+    if (!v || !v.videoWidth) return
+    const max = 1280
+    const e = Math.min(1, max / Math.max(v.videoWidth, v.videoHeight))
+    const c = document.createElement('canvas')
+    c.width = Math.round(v.videoWidth * e)
+    c.height = Math.round(v.videoHeight * e)
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height)
+    c.toBlob(b => { if (b) onFoto(b) }, 'image/jpeg', 0.8)
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: '#000', zIndex: 60,
+      display: 'flex', flexDirection: 'column',
+    }}>
+      <div style={{ padding: '10px 14px', color: '#e8eaed', fontSize: 14, fontWeight: 700, background: '#111827',
+                    display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ flex: 1 }}>{titulo}</span>
+        <button onClick={onCerrar} style={{ background: 'none', border: 0, color: '#9ca3af', fontSize: 20, cursor: 'pointer' }}>✕</button>
+      </div>
+      <div style={{ flex: 1, position: 'relative', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
+        <video ref={videoRef} playsInline muted autoPlay
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: estado === 'lista' ? 'block' : 'none' }} />
+        {estado === 'abriendo' && <div style={{ color: '#9ca3af' }}>Abriendo la cámara…</div>}
+        {estado === 'error' && (
+          <div style={{ color: '#fecaca', padding: 24, textAlign: 'center', maxWidth: 380, fontSize: 14 }}>{motivo}</div>
+        )}
+      </div>
+      <div style={{ padding: 16, background: '#111827', display: 'grid', placeItems: 'center' }}>
+        <button onClick={capturar} disabled={estado !== 'lista'} aria-label="Tomar la foto" style={{
+          width: 72, height: 72, borderRadius: '50%', border: '5px solid #e8eaed',
+          background: estado === 'lista' ? '#22c55e' : '#374151', cursor: 'pointer',
+        }} />
+      </div>
     </div>
   )
 }
