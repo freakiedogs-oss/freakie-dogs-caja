@@ -411,7 +411,7 @@ export default function MenuPublico() {
             setCarrito([])
             setCheckoutOpen(false)
             setPedidoOk(datos)
-            setPagoTarjeta(datos.metodoPago === 'tarjeta')
+            setPagoTarjeta(datos.metodoPago === 'tarjeta' && datos.cobroEnLinea !== false)
           }}
         />
       )}
@@ -1238,14 +1238,18 @@ function Checkout({ items, total, onClose, onEnviado }) {
     return () => { vivo = false }
   }, [tipo, total, ruteo?.distancia_km])
 
-  // ── ¿Este cliente puede pagar con tarjeta? ─────────────────────────
-  // Se pregunta apenas el teléfono está completo, ANTES de crear el pedido: si
-  // el cobro no está habilitado (piloto, o credenciales sin cargar) no tiene
-  // sentido ofrecer una opción que termina en un callejón. Si la consulta
-  // falla se asume que sí: el servidor vuelve a frenar en `pagar`, así que lo
-  // peor de equivocarse acá es un aviso de más, no un cobro de menos.
-  const [tarjetaOk, setTarjetaOk] = useState(true)
-  const [tarjetaNota, setTarjetaNota] = useState('')
+  // ── ¿Este cliente puede pagar la tarjeta EN LÍNEA? ─────────────────
+  // Se pregunta apenas el teléfono está completo, antes de crear el pedido.
+  //
+  // Ojo con lo que decide: NO decide si se ofrece "💳 Tarjeta" —esa opción
+  // existía desde antes y significa "quiero pagar con tarjeta", con la torre
+  // coordinando el cobro por WhatsApp—. Decide si además se le abre el cobro
+  // en línea. Así, para quien está fuera del piloto todo queda exactamente
+  // como hoy, en vez de perder una opción que ya tenía.
+  //
+  // Si la consulta falla se asume que sí: el servidor vuelve a frenar en
+  // `pagar`, así que equivocarse acá cuesta un drawer de más, no un cobro.
+  const [cobroEnLinea, setCobroEnLinea] = useState(true)
   useEffect(() => {
     const tel = telefono.trim()
     if (!TEL_VALIDO.test(tel)) return
@@ -1256,14 +1260,7 @@ function Checkout({ items, total, onClose, onEnviado }) {
       body: JSON.stringify({ telefono: tel }),
     })
       .then(r => r.json())
-      .then(r => {
-        if (!vivo) return
-        const ok = r?.habilitado !== false
-        setTarjetaOk(ok)
-        setTarjetaNota(ok ? '' : (r?.mensaje || ''))
-        // Si ya lo había elegido, se vuelve a efectivo con el aviso a la vista.
-        if (!ok) setMetodoPago(m => (m === 'tarjeta' ? 'efectivo' : m))
-      })
+      .then(r => { if (vivo) setCobroEnLinea(r?.habilitado !== false) })
       .catch(() => {})
     return () => { vivo = false }
   }, [telefono])
@@ -1356,6 +1353,9 @@ function Checkout({ items, total, onClose, onEnviado }) {
         nombre: nombre.trim(),
         items, subtotal: total, costoEnvio, tipo,
         direccion: direccion.trim(), metodoPago,
+        // Sin esto, fuera del piloto se abriría el drawer de cobro para
+        // cerrarse solo. Con esto el pedido termina como termina hoy.
+        cobroEnLinea,
       })
     } catch (err) {
       console.error('Error enviando pedido:', err)
@@ -1554,17 +1554,16 @@ function Checkout({ items, total, onClose, onEnviado }) {
                 <button
                   key={m}
                   className={`mp-pago-btn ${metodoPago === m ? 'active' : ''}`}
-                  disabled={m === 'tarjeta' && !tarjetaOk}
                   onClick={() => setMetodoPago(m)}
                 >
                   {m === 'efectivo' ? '💵 Efectivo' : '💳 Tarjeta'}
                 </button>
               ))}
             </div>
-            {!tarjetaOk && tarjetaNota && (
-              <div className="mp-pago-nota-off">{tarjetaNota}</div>
-            )}
-            {tarjetaOk && metodoPago === 'tarjeta' && (
+            {/* La promesa de "pagás ahora" solo se hace si de verdad se va a
+                poder cobrar en línea. Fuera del piloto, elegir tarjeta sigue
+                significando lo de siempre: la torre coordina por WhatsApp. */}
+            {metodoPago === 'tarjeta' && cobroEnLinea && (
               <div className="mp-pago-hint">
                 Vas a pagar ahora con tarjeta y tu pedido entra directo a la cocina,
                 sin esperar el WhatsApp. 🔒
