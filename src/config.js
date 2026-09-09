@@ -168,6 +168,8 @@ export const NAV_SECTIONS = [
       { key: 'protocolo-apertura', label: 'Protocolo de apertura', icon: '🌅', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
       // El editor decide solo, contra la base, qué puede tocar cada uno (base o su sucursal).
       { key: 'protocolo-editor', label: 'Editar el protocolo', icon: '✏️', roles: ['gerente', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
+      // PIN de la gente de la propia sucursal. Cada consulta pide el PIN propio y queda en bitácora.
+      { key: 'protocolo-equipo', label: 'Mi equipo · PIN', icon: '🔑', roles: ['gerente', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
     ],
   },
   {
