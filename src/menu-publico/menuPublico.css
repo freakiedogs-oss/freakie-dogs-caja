@@ -1129,3 +1129,10 @@ button { font-family: inherit; }
   background: #f0f9f2; border: 1px solid #cdebd8;
   font-size: 12.5px; color: #2c6b41; line-height: 1.45;
 }
+
+/* El cobro va por encima de cualquier otro drawer. Hoy es el único que se
+   monta a la vez, pero el bug del 9-sep fue exactamente esto: dos overlays con
+   el mismo z-index y el orden del DOM decidiendo cuál tapa a cuál — la
+   confirmación quedó encima del formulario y el cliente no podía pagar.
+   Con la plata de por medio, que gane siempre el cobro. */
+.mp-drawer-overlay:has(> .mp-pago) { z-index: 300; }
