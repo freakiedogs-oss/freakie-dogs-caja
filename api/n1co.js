@@ -110,6 +110,12 @@ const ORIGENES_OK = new Set([
   ...env('N1CO_ORIGENES').split(',').map(s => s.trim()).filter(Boolean),
 ]);
 
+// Previews de Vercel de ESTE repo. El patrón exige el nombre del proyecto:
+// `https://<algo>.vercel.app` a secas habilita cualquier proyecto de cualquier
+// cuenta de Vercel, y alcanzaba con desplegar uno propio para quedar dentro.
+const PREVIEW_PROPIO = /^https:\/\/(freakiedelivery|freakie-dogs-caja)[a-z0-9-]*\.vercel\.app$/;
+const esPreviewPropio = (origin) => PREVIEW_PROPIO.test(origin);
+
 function corsHeaders(origin) {
   const h = {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -117,9 +123,10 @@ function corsHeaders(origin) {
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   };
-  // Los previews de Vercel son dominios efímeros: se aceptan por patrón para
-  // no tener que registrarlos uno por uno mientras se prueba la integración.
-  if (origin && (ORIGENES_OK.has(origin) || /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin))) {
+  // Los previews de Vercel son dominios efímeros, así que se aceptan por patrón.
+  // Pero acotado a NUESTROS proyectos: `[a-z0-9-]+\.vercel\.app` a secas deja
+  // entrar cualquier proyecto de cualquier cuenta de Vercel.
+  if (origin && (ORIGENES_OK.has(origin) || esPreviewPropio(origin))) {
     h['Access-Control-Allow-Origin'] = origin;
   }
   return h;

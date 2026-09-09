@@ -39,8 +39,32 @@ node scripts/test-frenos-n1co.mjs
 Portal n1co → **engranaje** → **API → nueva**. Con el modo sandbox apagado (que
 es donde estás igual), la llave sale de producción.
 
-Ponele un nombre reconocible: `ERP delivery web · prod`. El modal da **dos**
-valores:
+### El nombre y los roles
+
+El modal se llama **"Nueva app"** y pide un nombre y unos *roles*.
+
+**El nombre no importa técnicamente** — es solo la etiqueta con la que vas a
+identificar (y revocar) esa llave. Lo que sí conviene es que diga **dónde se
+usa**, para que el día que haya varias sepas cuál apagar sin adivinar. Por
+ejemplo `Freakies · delivery web` en vez de solo `Freakies`.
+
+**Los roles sí importan.** n1co recomendó marcar todos *para sandbox*, pero esta
+es una llave de **producción** que va a vivir en Vercel: si se filtra, alguien
+puede hacer todo lo que la llave permita. Marcá solo:
+
+| Rol | ¿Marcar? | Por qué |
+|---|---|---|
+| **V\*: Pasarela de pagos** | ✅ **sí** | Es el que usa todo: tarjetas, cobros y devoluciones. Sin este no funciona nada. |
+| **V1: Autenticación 3DS** | ✅ **sí** | El reto del banco. Sin este, un cobro que pida 3DS falla. |
+| V2/V3: Administrador de links de pago | ➖ opcional | Solo si algún día prendés el puente de CheckoutLink (`api/n1co-link.js`). Riesgo bajo. |
+| V2/V3: Administrador de tienda | ❌ **no** | Nunca administramos la tienda desde el ERP. Si la llave se filtra, esto deja que se la modifiquen. |
+| V3: Administración de suscripciones | ❌ **no** | No cobramos suscripciones. |
+| V2/V3: Links de pago de suscripción | ❌ **no** | Idem. |
+
+Si más adelante hace falta un rol, se crea otra llave: es más seguro que dejar
+una llave que puede todo.
+
+El modal da **dos** valores:
 
 - `clientId` — un uuid: `c8573b9a-88ea-…`
 - `clientSecret` — cadena larga: `kt68Q-e6FS1FNgve…`
@@ -119,6 +143,34 @@ despliegan por separado:
 | `N1CO_AMBIENTE` | `produccion` |
 | **`N1CO_TELEFONOS_PRUEBA`** | **tu teléfono** — el freno del piloto |
 | `N1CO_MONTO_MAX` | opcional; poné `25` mientras probás |
+
+### Cómo verificar que no falta nada
+
+En Vercel → proyecto → **Settings → Environment Variables**, pestaña
+**Project**. Revisá también la pestaña **Shared**: si la service_role key está
+compartida a nivel de equipo, se agrega con **Link Shared Variable** en vez de
+volver a pegarla (mejor: un solo lugar donde rotarla).
+
+El proyecto **`freakiedelivery`** tiene que terminar con:
+
+```
+VITE_URL_DELIVERY          ← ya está
+VITE_SB_URL                ← ya está
+VITE_TARGET                ← ya está
+SUPABASE_URL               ← FALTA
+SUPABASE_SERVICE_ROLE_KEY  ← FALTA  ⚠️
+N1CO_CLIENT_ID             ← FALTA
+N1CO_CLIENT_SECRET         ← FALTA
+N1CO_LOCATION_CODE         ← FALTA
+N1CO_BASE_URL              ← FALTA
+N1CO_AMBIENTE              ← FALTA
+N1CO_TELEFONOS_PRUEBA      ← FALTA
+```
+
+**Poné las `N1CO_*` solo en el environment `Production`, no en Preview.** Son
+credenciales que cobran de verdad: en Preview, cualquier deploy de una branch
+podría cobrar tarjetas reales. Sin ellas, un preview responde "el pago no está
+disponible", que es exactamente lo que querés.
 
 Dos cosas que se pasan por alto:
 

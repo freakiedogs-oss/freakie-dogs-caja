@@ -57,8 +57,11 @@ const ORIGENES_OK = new Set([
   ...env('N1CO_ORIGENES').split(',').map(s => s.trim()).filter(Boolean),
 ]);
 
-const origenValido = (o) =>
-  !!o && (ORIGENES_OK.has(o) || /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(o));
+// El patrón de preview exige el nombre del proyecto: `<algo>.vercel.app` a
+// secas habilita cualquier proyecto de cualquier cuenta de Vercel.
+const PREVIEW_PROPIO = /^https:\/\/(freakiedelivery|freakie-dogs-caja)[a-z0-9-]*\.vercel\.app$/;
+
+const origenValido = (o) => !!o && (ORIGENES_OK.has(o) || PREVIEW_PROPIO.test(o));
 
 function corsHeaders(origin) {
   const h = {
