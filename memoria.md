@@ -2,6 +2,21 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — El dominio propio se llevó puesto el gate de finanzas (y con él, DTEs Emitidos)
+
+Jose reportó **"permission denied for view v_dtes_emitidos"** en Finanzas → *DTEs Emitidos · Facturar*, en producción.
+
+**No es un permiso caído: es que la pantalla dejó de pasar por el gate.** El gate de finanzas (SEG-1 Capa 2) **es el proxy**: vive dentro de `api/supaproxy.js` y es lo único que cambia la llave pública `anon` por el rol privado `erp_finanzas_ro`. El 8-sep se activó `VITE_SB_URL = https://api.freakiedogs.com` (Supabase Custom Domain) para matar el proxy — y `dbFin` seguía `URL_SB`, así que **se fue al dominio propio junto con todo lo demás**. Contra ese host no hay dónde colgar el gate: el request llega a Postgres como `anon`, y los objetos que están revocados a `anon` **a propósito** contestan `permission denied`. Confirmado en el bundle desplegado (`supabase-BECKV9gM.js` trae `"https://api.freakiedogs.com"` fijo) y en la DB: `has_table_privilege('anon','v_dtes_emitidos','SELECT')` = **false**, `erp_finanzas_ro` = **true**.
+
+**No era solo esta pantalla.** Cayó todo lo revocado a `anon`: `v_dtes_emitidos`, `v_dte_duplicados_pendientes`, el RPC `dte_emitido_detalle`, `v_empleados_expediente`, `v_planilla_validacion`, `planillas`, `planilla_detalle`, `v_planilla_desglose_pl` / `operativa` / `gerencial`, `v_peya_peso_mensual`, `v_cobertura_cruce` → DTEs emitidos, expediente de RRHH, validación de planilla, recibos digitales y las secciones de planilla del P&L. Lo que **sí** siguió funcionando (banco, gastos, ventas, préstamos) es exactamente lo que nunca se le revocó a `anon` — la "segunda tanda" que quedó pendiente. Es decir: **el gate protege solo en combinación con el REVOKE; donde no hay revoke, nunca protegió** (un atacante siempre pudo pegarle directo a `supabase.co` con la llave pública). Mientras esa tanda no se haga, ese dato se lee desde internet con la anon key, con dominio propio o sin él.
+
+**El arreglo: finanzas se queda en `/sb`, el resto se queda en el dominio propio.** `src/supabaseFinanzas.js` ya no usa `URL_SB`; calcula su propia `URL_FIN = ${origin}/sb` (en DEV sigue yendo directo, como estaba documentado). El costo es aceptable: son consultas de back-office, unas pocas por pantalla, no la operación en vivo del POS — que es justo la carga que el proxy sí aguanta y por la que se lo quiso matar. El bundle del cliente principal **no cambió** (mismo hash `supabase-BECKV9gM.js`), así que el POS, el KDS y el Realtime siguen intactos en `api.freakiedogs.com`.
+
+**Verificado:** el proxy y el gate están vivos en prod (`GET /sb/rest/v1/v_dtes_emitidos` sin token → `401 FIN_SIN_SESION`); `erp_finanzas_ro` lee **18,202 documentos** en el rango exacto de la pantalla (10-ago → 9-sep); y el build de producción emite `dbFin` contra `${origin}/sb` mientras `db` sigue en el dominio propio.
+
+**La lección:** el switch de `VITE_SB_URL` se pensó como "una variable, rollback = borrarla", pero **no es transparente para lo que depende de que el proxy esté en el camino**. Todo lo que viva DENTRO de `api/supaproxy.js` (hoy: el gate de finanzas y el de RRHH) muere en silencio al saltearlo. Se dejó nota cruzada en `src/supabase.js`. La solución de raíz es mover el gate a la DB — un RPC `SECURITY DEFINER` que valide el token de sesión y devuelva las filas —; ahí sí `dbFin` puede volver a `URL_SB` y el proxy se muere de verdad.
+
+
 ## 09-Sep-2026 — "¿Y quién marca cuándo fue retirado?" — la pregunta que destapó un bug propio
 
 Jose preguntó quién cierra un retiro en local. Al ir a buscarlo apareció que **el cambio de cerrar la cuenta al cobrar (de hace 20 minutos) había roto justo eso**.
