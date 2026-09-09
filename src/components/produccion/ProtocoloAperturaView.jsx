@@ -54,6 +54,7 @@ export default function ProtocoloAperturaView({ user }) {
   const fileRef   = useRef({})
   const refRef    = useRef({})
   const carpetaRef = useRef(null)
+  const sueltosRef = useRef(null)
 
   const fecha = hoyLocal()
 
@@ -218,8 +219,15 @@ export default function ProtocoloAperturaView({ user }) {
     .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
   async function subirCarpeta(files) {
-    const lista = Array.from(files).filter(f => /^image\//.test(f.type))
-    if (!lista.length) return
+    const todos = Array.from(files)
+    const lista = todos.filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp)$/i.test(f.name))
+    if (!lista.length) {
+      // Antes esto fallaba callado y parecía que el botón no hacía nada.
+      setError(todos.length
+        ? `Se eligieron ${todos.length} archivo(s) pero ninguno es una imagen.`
+        : 'No llegó ningún archivo. Usá el botón "Elegir las fotos": entrá a la carpeta, Ctrl+A y aceptar.')
+      return
+    }
     lista.sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }))
 
     const porTitulo = new Map()
@@ -330,23 +338,37 @@ export default function ProtocoloAperturaView({ user }) {
         }}>
           <div style={{ display: 'flex', gap: 11, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 200 }}>
-              <b style={{ fontSize: 14, color: '#93c5fd' }}>Cargar la carpeta de fotos</b>
+              <b style={{ fontSize: 14, color: '#93c5fd' }}>Cargar las fotos del protocolo</b>
               <div style={{ fontSize: 12.5, color: '#9ca3af', marginTop: 2 }}>
                 Cada archivo se manda al paso que dice su nombre. Quedan como
                 foto de base: las ven las seis sucursales.
               </div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                Abrí la carpeta <b>Fotos_Protocolo</b>, marcá todo con Ctrl+A y aceptá.
+              </div>
             </div>
-            <button onClick={() => carpetaRef.current?.click()}
+            <button onClick={() => sueltosRef.current?.click()}
               disabled={!!lote && lote.hechas < lote.total}
               style={{
                 background: '#1e3a5f', color: '#bfdbfe', border: 0, borderRadius: 8,
                 padding: '9px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer',
               }}>
-              {lote && lote.hechas < lote.total ? `${lote.hechas}/${lote.total}…` : 'Elegir carpeta'}
+              {lote && lote.hechas < lote.total ? `${lote.hechas}/${lote.total}…` : 'Elegir las fotos'}
             </button>
-            <input ref={carpetaRef} type="file" accept="image/*" multiple hidden
-              webkitdirectory="" directory=""
+            <button onClick={() => carpetaRef.current?.click()}
+              disabled={!!lote && lote.hechas < lote.total}
+              style={{
+                background: '#1f2937', color: '#cbd5e1', border: 0, borderRadius: 8,
+                padding: '9px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+              }}>o la carpeta</button>
+
+            {/* Sin accept: junto con webkitdirectory, Chrome filtra todo y no
+                llega ningún archivo. El filtro por tipo se hace en el código. */}
+            <input ref={sueltosRef} type="file" multiple hidden
               onChange={e => { const f = e.target.files; e.target.value = ''; if (f?.length) subirCarpeta(f) }} />
+            <input ref={carpetaRef} type="file" multiple hidden
+              webkitdirectory="" directory=""
+              onChange={e => { const f = e.target.files; e.target.value = ''; subirCarpeta(f || []) }} />
           </div>
 
           {lote && lote.hechas >= lote.total && (
