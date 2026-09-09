@@ -2,6 +2,21 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — "¿Y quién marca cuándo fue retirado?" — la pregunta que destapó un bug propio
+
+Jose preguntó quién cierra un retiro en local. Al ir a buscarlo apareció que **el cambio de cerrar la cuenta al cobrar (de hace 20 minutos) había roto justo eso**.
+
+**El bug:** `fn_pos_cobro_update_delivery` (trigger sobre `pos_cuentas`) da por **ENTREGADO** todo `para_llevar` en cuanto su cuenta pasa a `cobrada`. Para el flujo normal es un buen proxy —al retiro lo cobra el cajero cuando el cliente está parado en el mostrador—, pero con el cobro online el cliente paga **al hacer el pedido**. Resultado: el pedido quedaba `entregada` con `entregado_at` puesto **antes de que la cocina lo empezara**: desaparecía del tablero, el cliente veía "Entregado" en el seguimiento mientras esperaba su comida, y los tiempos de entrega quedaban contaminados.
+
+**El discriminador es `cobrado`:** si el pedido ya venía cobrado ANTES de que se cerrara la cuenta, el pago no ocurrió en el mostrador — fue en línea. `confirmar_pago_delivery` y `torre_confirmar_pago` **no tocan `cobrado`**, así que el flujo de siempre llega con `false` y se comporta igual que antes. En el `SET` del UPDATE, `cobrado` y `estado` se leen con el valor **previo**, que es justo lo que hace falta. Verificado **3/3** con arnés reversible, incluido el caso de control (retiro cobrado en caja → sigue auto-entregando).
+
+**Impacto real: cero.** El único cobro online que existe (`WEB-BB66DCB4`, 15:45) es anterior al deploy que introdujo el bug (16:09). Estuvo vivo 44 minutos sin que pasara ningún pago.
+
+**Y la respuesta a la pregunta: hasta ahora, nadie.** Al retiro cobrado en caja lo cierra el propio cobro; a uno pagado en línea ya lo cobramos nosotros, así que quedaba abierto para siempre. La franja de retiros de la torre gana el botón **"✅ Ya lo retiró"** (`torre_marcar_entregado`, que sin motorista no registra viaje).
+
+**Lección para lo que viene:** cerrar la `pos_cuenta` desde fuera del POS dispara triggers pensados para el cobro en mostrador. Antes de tocar `pos_cuentas.estado` desde cualquier lado nuevo, revisar `trg_pos_cobro_delivery` y `trg_delivery_sync_lista`.
+
+
 ## 09-Sep-2026 — Primer cobro real OK, y el hueco que destapó: el pago no llegaba a la caja
 
 **Funcionó de punta a punta:** Jose pagó $4.00 con tarjeta desde `pedidos.freakiedogs.com/menu`, el cobro apareció en el portal de n1co, el pedido entró a cocina y la torre mostró el sello `PAGADO ONLINE · NO COBRAR`.
