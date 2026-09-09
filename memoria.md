@@ -2,6 +2,26 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — PedidosYa nos dio de alta: credenciales en mano y login contra su API funcionando
+
+**Estamos dentro.** PeYa aprobó la integración y mandó las credenciales cifradas con nuestra llave PGP. Nombre del sistema en su ecosistema: **`SV-FREAKIE-DOGS-1`**. Cadena de pruebas `SV-FREAKIE-DOGS-TEST-1` (`SVFREAKIEDOGSTEST0001`) y una tienda sandbox suya en Argentina (`AR-PRUEBAS-INTEGRACION-0001`, PlatformRestaurantID 478876) para homologar sin tocar las 5 tiendas reales. Usuario de prueba: `freakiedogs+peya@gmail.com` — **no hubo que crear cuenta**, el `+alias` de Gmail cae en la bandeja de siempre y para ellos es una dirección nueva.
+
+**Login verificado: HTTP 200.** `POST /v2/login` con `Content-Type: application/x-www-form-urlencoded` y `username` / `password` / `grant_type=client_credentials`; devuelve `access_token` + `token_type: Bearer` + **`expires_in: 7200`**. Dos horas de vida ⇒ el cliente tiene que cachear el token y renovarlo, no pedir uno por request.
+
+**Hay DOS secretos y confundirlos rompe la mitad del flujo:** el **password** es para que nosotros saquemos token de *su* API (estados de orden, catálogo, disponibilidad); el **pluginSecret** es para que *ellos* se autentiquen cuando llaman a *nuestro* webhook. Guardados como **Edge Function Secrets** en Supabase (`PEYA_USERNAME`, `PEYA_PASSWORD`, `PEYA_PLUGIN_SECRET`), nunca en el repo.
+
+**Dos hosts distintos, ojo con cuál se usa:** las credenciales traen `baseUrl` de **producción** (`integration-middleware.us.restaurant-partners.com` — región "us" cubre LatAm) pero el bloque `middleware` apunta a **staging** (`...stg.restaurant-partners.com`), que es donde vive la doc y donde se homologa. El login que dio 200 fue contra producción; **falta confirmar si las mismas credenciales sirven en staging** o si hay un par aparte.
+
+**Trampa de PGP que casi nos cuesta un ciclo:** PeYa cifra con BouncyCastle y **cifró contra la llave principal (`[SC]`), no contra la subllave de cifrado (`[E]`)**. `gpg --decrypt` avisa *"used key is not marked for encryption use"* y **descifra igual** — no hay que pedirles reenvío. Antes de eso hubo que **generar una llave RSA-2048 nueva** porque la del formulario self-service era 4096 y ellos piden 2048 explícitamente; la 2048 nació `[SC]` sola y hubo que agregarle la subllave `[E]` con `--quick-add-key ... encr` (sin eso no podían cifrar nada hacia nosotros). Huella de la buena: `3D67 89DA E344 F9A1 49A7 EB72 5741 A518 F566 FBA2`, vive en la mini.
+
+**Lección de proceso, cara:** adjuntar la llave tipeando su base64 a mano falló **dos veces** (un carácter cambiado en 5,340 ⇒ llave inválida). La verificación que sirve es `cmp` contra el original y `gpg --show-keys` sobre lo que quedó *dentro del borrador de Gmail*, no sobre lo que uno cree que subió. Además **Gmail reescribe los links** (`google.com/url?q=...`): la URL del webhook hay que pegarla en el editor de Gmail, no dejar la que inserta la API.
+
+**`peya_vendor_map`:** agregada la fila de la tienda sandbox (`AR-PRUEBAS-INTEGRACION-0001` → M001) para que el webhook sepa a qué sucursal mandar los pedidos de prueba. Las 6 filas `PENDIENTE-*` siguen esperando los `vendor_code` reales de las tiendas de El Salvador.
+
+**Dominio propio:** el webhook también responde en `https://api.freakiedogs.com/functions/v1/peya-plugin` (custom domain de Supabase, ya activo). PeYa registró la URL `*.supabase.co`; **no se toca ahora** — cambiarla es un correo de una línea cuando la integración esté estable.
+
+**Siguiente:** leer los specs (`pluginApi.yaml` / `middlewareExternalApi.yaml` — los HTML del visor son solo cáscara Redoc, el contrato vive en los YAML), implementar la autenticación del plugin con `PEYA_PLUGIN_SECRET` (hoy el webhook solo valida IP), y mapear pedido → POS/KDS.
+
 ## 09-Sep-2026 — "¿Y quién marca cuándo fue retirado?" — la pregunta que destapó un bug propio
 
 Jose preguntó quién cierra un retiro en local. Al ir a buscarlo apareció que **el cambio de cerrar la cuenta al cobrar (de hace 20 minutos) había roto justo eso**.
