@@ -31,6 +31,12 @@
 //   N1CO_ORIGENES               — opcional, orígenes extra permitidos (coma)
 //   SUPABASE_URL                — https://btboxlwfqcbrdfrlnwln.supabase.co
 //   SUPABASE_SERVICE_ROLE_KEY   — para las RPC pago_online_* (no anon)
+//   DTE_API_KEY                 — para emitir la factura del cobro (X-API-Key
+//                                 del dte-service). Sin ella el cobro funciona
+//                                 pero la venta queda marcada DTE_PENDIENTE.
+//   DTE_BASE_URL                — opcional, default el dte-service de Supabase
+//   N1CO_TELEFONOS_PRUEBA       — piloto: solo esos teléfonos pueden pagar
+//   N1CO_MONTO_MAX              — techo por cobro (default 150)
 
 export const config = { runtime: 'edge' };
 
@@ -385,11 +391,21 @@ async function cobrar({ pago, sesion, cardId, authenticationId, billing, email, 
         raw: saneaRespuesta(data),
       },
     });
+    // Factura. Va después de que el pago quedó registrado y NUNCA tumba la
+    // respuesta: el dinero ya se capturó, así que un fallo de Hacienda deja el
+    // pedido marcado para emitir después, no rompe el cobro.
+    const cuentaId = res?.pos_cuenta_id || null;
+    const dte = await emitirFacturaDelPedido({
+      deliveryId: sesion.delivery_id, cuentaId, email,
+    });
+    if (!dte.ok) console.error('[n1co] DTE no emitido:', JSON.stringify(dte));
+
     return {
       estado: 'aprobado',
       pago_id: pago,
       comandado: res?.comandado !== false,
       autorizacion: data?.order?.authorizationCode ?? null,
+      facturado: dte.ok === true,
     };
   }
 
@@ -581,6 +597,7 @@ export default async function handler(req) {
         ...(await datosPedido(pago.delivery_id)),
         order_id: pago.order_id,
         monto: pago.monto,
+        delivery_id: pago.delivery_id,   // lo necesita la factura
       };
       const out = await cobrar({
         pago: pago.id, sesion,
@@ -770,6 +787,181 @@ async function guardarTarjeta({ hash, cardId, customerId, email, telefono, titul
     });
   } catch (e) {
     console.error('[n1co] no se pudo guardar la tarjeta:', String(e?.message || e));
+  }
+}
+
+// ── Facturación (DTE 01) del cobro online ────────────────────────────
+//
+// El POS emite el DTE desde el navegador del cajero, autenticándose con su PIN.
+// Acá no hay cajero ni PIN, así que se le pega directo al `dte-service` con la
+// API key — el mismo camino que se usó para re-emitir a mano las facturas de
+// Vijosa en junio.
+//
+// Sin esto, un pedido pagado en línea queda cobrado y SIN factura: el cliente
+// no recibe comprobante y la venta no tiene documento fiscal.
+
+const DTE_BASE = env('DTE_BASE_URL',
+  'https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/dte-service').replace(/\/+$/, '');
+
+// Sucursales con establecimiento registrado ante Hacienda. Espeja
+// STORE_ESTABLECIMIENTO de src/config.js. Las que no están (EVT01, CM001) se
+// emiten sin esos campos, igual que hace el POS.
+const ESTABLECIMIENTOS = new Set(['M001', 'S001', 'S002', 'S003', 'S004', 'S005', 'S006']);
+
+const dosDec = (n) => Math.round(Number(n || 0) * 100) / 100;
+
+// Aplana el pedido a líneas de DTE con la MISMA regla que el POS
+// (`buildDteLineItems`): el ítem base, y una línea por cada extra con precio.
+// Los extras gratis no generan línea. Los extras de los componentes de un combo
+// heredan la cantidad del padre.
+function lineasDte({ items, costoEnvio }) {
+  const lineas = [];
+  for (const it of Array.isArray(items) ? items : []) {
+    const qty = Number(it.cantidad) || 1;
+    lineas.push({ nombre: String(it.nombre || 'Producto'), precio: dosDec(it.precio), qty });
+
+    for (const m of it.modificadores || []) {
+      const px = dosDec(m.precio_extra);
+      if (px > 0) lineas.push({ nombre: `  + ${m.nombre}`, precio: px, qty });
+    }
+    for (const c of it.componentes || []) {
+      const cq = Number(c.cantidad) || 1;
+      for (const m of c.modificadores || []) {
+        const px = dosDec(m.precio_extra);
+        if (px > 0) lineas.push({ nombre: `  + ${m.nombre}`, precio: px, qty: qty * cq });
+      }
+    }
+  }
+  // El envío se cobró, así que se declara. Sin esta línea el DTE saldría por el
+  // subtotal y no por lo que el cliente pagó.
+  const envio = dosDec(costoEnvio);
+  if (envio > 0) lineas.push({ nombre: 'Servicio de entrega', precio: envio, qty: 1 });
+
+  return lineas;
+}
+
+// Los correos con tilde tumbaron 3 facturas en junio. Para una factura el
+// receptor es opcional, así que ante la duda se omite en vez de arriesgar.
+function correoValido(correo) {
+  const c = String(correo || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(c) ? c : null;
+}
+
+async function parchearCuenta(cuentaId, campos) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  await fetchConTimeout(`${SUPA_URL}/rest/v1/pos_cuentas?id=eq.${encodeURIComponent(cuentaId)}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: key, Authorization: `Bearer ${key}`,
+      'content-type': 'application/json', Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({ ...campos, updated_at: new Date().toISOString() }),
+  });
+}
+
+// Deja el pedido marcado para facturar después. El POS, cuando el DTE falla, no
+// escribe nada y el problema se pierde en silencio; acá queda un rastro
+// buscable para emitirla desde el admin.
+async function marcarDtePendiente(cuentaId, motivo) {
+  try {
+    await parchearCuenta(cuentaId, {
+      notas_internas: `DTE_PENDIENTE (cobro online): ${String(motivo).slice(0, 300)}`,
+    });
+  } catch { /* best-effort */ }
+}
+
+/**
+ * Emite la factura del pedido ya cobrado. NUNCA lanza: el dinero ya se capturó
+ * en n1co y tumbar la respuesta al cliente por un fallo de Hacienda sería peor.
+ * Devuelve un resumen para el log.
+ */
+async function emitirFacturaDelPedido({ deliveryId, cuentaId, email }) {
+  if (!cuentaId) return { ok: false, motivo: 'sin_cuenta' };
+
+  const apiKey = env('DTE_API_KEY');
+  if (!apiKey) {
+    await marcarDtePendiente(cuentaId, 'DTE_API_KEY no configurada en este proyecto');
+    return { ok: false, motivo: 'sin_api_key' };
+  }
+
+  try {
+    const key = env('SUPABASE_SERVICE_ROLE_KEY');
+    // Idempotencia: si la cuenta ya tiene número de control, no se re-emite.
+    const resCta = await fetchConTimeout(
+      `${SUPA_URL}/rest/v1/pos_cuentas?id=eq.${encodeURIComponent(cuentaId)}`
+      + '&select=store_code,total,dte_numero_control&limit=1',
+      { headers: { apikey: key, Authorization: `Bearer ${key}`, accept: 'application/json' } });
+    const cta = (await leerJson(resCta))?.[0];
+    if (!cta) return { ok: false, motivo: 'cuenta_no_existe' };
+    if (cta.dte_numero_control) return { ok: true, motivo: 'ya_emitida' };
+
+    const resPed = await fetchConTimeout(
+      `${SUPA_URL}/rest/v1/delivery_clientes?id=eq.${encodeURIComponent(deliveryId)}`
+      + '&select=items,subtotal,costo_envio,total,cliente_nombre,cliente_telefono&limit=1',
+      { headers: { apikey: key, Authorization: `Bearer ${key}`, accept: 'application/json' } });
+    const ped = (await leerJson(resPed))?.[0];
+    if (!ped) return { ok: false, motivo: 'pedido_no_existe' };
+
+    const lineas = lineasDte({ items: ped.items, costoEnvio: ped.costo_envio });
+    const suma = dosDec(lineas.reduce((s, l) => s + l.precio * l.qty, 0));
+    const total = dosDec(ped.total);
+
+    // Un DTE por un monto distinto al cobrado es peor que no emitirlo: queda un
+    // documento fiscal que no cuadra con la venta y hay que invalidarlo.
+    if (lineas.length === 0 || Math.abs(suma - total) > 0.01) {
+      await marcarDtePendiente(cuentaId,
+        `las líneas no cuadran con el total: líneas=$${suma} cobrado=$${total}`);
+      return { ok: false, motivo: 'descuadre', suma, total };
+    }
+
+    const est = ESTABLECIMIENTOS.has(cta.store_code) ? cta.store_code : null;
+    const correo = correoValido(email);
+    const tel = String(ped.cliente_telefono || '').replace(/\D/g, '');
+
+    const body = {
+      items: lineas.map(l => ({
+        descripcion: l.nombre, cantidad: l.qty, precioUni: l.precio, codigo: null,
+      })),
+      condicionOperacion: 1,                       // contado
+      // '03' = tarjeta. El mapa del POS manda a '01' todo lo que no reconoce, y
+      // `link_pago` caería ahí: declararía como efectivo un cobro con tarjeta.
+      pagos: [{ codigo: '03', montoPago: total, referencia: null, plazo: null, periodo: null }],
+      ...(est ? { codEstable: est, codPuntoVenta: 'P001' } : {}),
+      ...(ped.cliente_nombre ? {
+        receptor: {
+          nombre: ped.cliente_nombre,
+          ...(correo ? { correo } : {}),
+          ...(tel.length === 8 ? { telefono: tel } : {}),
+        },
+      } : {}),
+    };
+
+    const res = await fetchConTimeout(`${DTE_BASE}/emit-factura`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+      body: JSON.stringify(body),
+    });
+    const data = await leerJson(res);
+
+    // El POS guarda el número de control aunque Hacienda haya rechazado, y nadie
+    // se entera. Acá se revisa, como hace el camino del ERP.
+    const rechazado = String(data?.estado || '').toLowerCase() === 'rechazado';
+    if (!res.ok || data?.success === false || rechazado || !data?.sello_recepcion) {
+      await marcarDtePendiente(cuentaId,
+        `HTTP ${res.status} ${data?.estado || ''} ${data?.error || data?.message || 'sin sello'}`);
+      return { ok: false, motivo: rechazado ? 'rechazado_hacienda' : 'error_emision' };
+    }
+
+    await parchearCuenta(cuentaId, {
+      dte_tipo: '01',
+      dte_uuid: data.codigo_generacion || null,
+      dte_numero_control: data.numero_control || null,
+      dte_sello: data.sello_recepcion || null,
+    });
+    return { ok: true, numero_control: data.numero_control };
+  } catch (err) {
+    await marcarDtePendiente(cuentaId, String(err?.message || err));
+    return { ok: false, motivo: 'excepcion' };
   }
 }
 
