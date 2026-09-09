@@ -32,15 +32,41 @@ const CLIENT_ID = process.env.N1CO_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.N1CO_CLIENT_SECRET || '';
 const LOCATION = process.env.N1CO_LOCATION_CODE || '';
 
+// ¿Estamos apuntando a producción? Ahí no hay tarjetas de prueba: cada cobro es
+// dinero real. Se exige confirmación explícita y una tarjeta propia por env.
+const ES_PRODUCCION = !/sandbox/i.test(BASE);
+const CONFIRMADO = process.argv.includes('--cobrar-de-verdad');
+const MONTO = Number(process.env.N1CO_TEST_AMOUNT || '1') || 1;
+
 // Visa de sandbox que aprueba sin 3DS. Emisor USA → hay que mandar billingInfo.
-const TARJETA = {
+const TARJETA_SANDBOX = {
   number: '4000056655665556',
   cardHolder: 'PRUEBA FREAKIE',
   expirationMonth: '12',
   expirationYear: '2030',
   cvv: '123',
 };
-const BILLING = { countryCode: 'USA', stateCode: 'FL', zipCode: '33101' };
+
+// En producción la tarjeta sale de variables de entorno: así no queda un número
+// real escrito en el repo ni en el historial de comandos del shell.
+const TARJETA_REAL = {
+  number: (process.env.N1CO_TEST_CARD_NUMBER || '').replace(/\D/g, ''),
+  cardHolder: process.env.N1CO_TEST_CARD_HOLDER || 'PRUEBA',
+  expirationMonth: process.env.N1CO_TEST_CARD_MONTH || '',
+  expirationYear: process.env.N1CO_TEST_CARD_YEAR || '',
+  cvv: process.env.N1CO_TEST_CARD_CVV || '',
+};
+
+const TARJETA = ES_PRODUCCION ? TARJETA_REAL : TARJETA_SANDBOX;
+
+// billingInfo solo es obligatorio para emisores de EE.UU./Canadá. La Visa de
+// sandbox es de USA; una tarjeta salvadoreña no lo necesita.
+const BILLING = ES_PRODUCCION
+  ? (process.env.N1CO_TEST_ZIP
+      ? { countryCode: 'USA', stateCode: process.env.N1CO_TEST_STATE || 'FL',
+          zipCode: process.env.N1CO_TEST_ZIP }
+      : null)
+  : { countryCode: 'USA', stateCode: 'FL', zipCode: '33101' };
 
 const c = {
   ok: (s) => `\x1b[32m${s}\x1b[0m`,
@@ -85,6 +111,25 @@ if (!LOCATION) {
       'Portal n1co → engranaje → Sucursales → primera columna "ID".');
 }
 
+if (ES_PRODUCCION) {
+  console.log(c.no(c.b('\n  ⚠  PRODUCCIÓN — esto cobra DINERO REAL')));
+  console.log(`     monto de prueba: ${c.b('$' + MONTO.toFixed(2))} (se reversa al final)`);
+  if (!CONFIRMADO) {
+    fin('Falta la confirmación explícita para cobrar de verdad.',
+        'Si estás seguro, volvé a correrlo con  --cobrar-de-verdad\n'
+        + 'Usá TU propia tarjeta: el paso 4 la reversa, pero el cargo aparece en tu estado.');
+  }
+  if (!TARJETA.number || !TARJETA.expirationMonth || !TARJETA.expirationYear || !TARJETA.cvv) {
+    fin('En producción no hay tarjetas de prueba: hay que dar una real por variables.',
+        'N1CO_TEST_CARD_NUMBER=4111... N1CO_TEST_CARD_MONTH=12 \\\n'
+        + 'N1CO_TEST_CARD_YEAR=2030 N1CO_TEST_CARD_CVV=123 \\\n'
+        + 'N1CO_TEST_CARD_HOLDER="JOSE ISART" \\\n'
+        + '  node scripts/smoke-n1co.mjs --cobrar-de-verdad\n\n'
+        + 'Poné un espacio antes del comando para que no quede en el historial del shell.');
+  }
+  console.log(`     tarjeta ····${TARJETA.number.slice(-4)}`);
+}
+
 // ── 1. Token ──
 console.log(c.b('\n1. Autenticación  POST /api/v3/Token'));
 const tok = await pedir('/api/v3/Token', { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET });
@@ -119,10 +164,10 @@ console.log(c.b('\n3. Cobro  POST /api/v3/Charges'));
 const orderId = `SMOKE-${Date.now()}`;
 const charge = await pedir('/api/v3/Charges', {
   customer: cliente,
-  order: { id: orderId, amount: 1.0, name: 'Smoke test', description: 'Prueba de integración' },
+  order: { id: orderId, amount: MONTO, name: 'Smoke test', description: 'Prueba de integración' },
   cardId: pm.data.id,
   locationCode: LOCATION,
-  billingInfo: BILLING,
+  ...(BILLING ? { billingInfo: BILLING } : {}),
 }, token);
 
 const estado = String(charge.data?.status || '').toUpperCase();

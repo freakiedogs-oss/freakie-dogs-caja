@@ -1,75 +1,67 @@
-# Puesta en marcha del pago con tarjeta — paso a paso
+# Puesta en marcha del pago con tarjeta — directo a producción
 
-Contexto: n1co ya respondió y **desbloqueó todo**. Las credenciales de API **sí
-son self-service** desde el portal (la doc decía lo contrario). Además confirmó
-que **los tokens multi-uso ya están activos por defecto**, así que la tarjeta
-guardada funciona sin pedir nada extra.
+**El sandbox de n1co no se pudo usar:** al entrar al modo sandbox la plataforma
+cierra la sesión, y al volver a entrar la tienda está de nuevo en producción
+(`portal.n1co.shop/configuration/sandbox` → *Ir a sandbox*). Sin sandbox no hay
+tarjetas de prueba, así que **la validación se hace con dinero real**.
 
-El código está listo en `feat/pago-tarjeta-n1co`. Lo que sigue es configuración.
-
----
-
-## Paso 0 — Contestarle la pregunta a n1co
-
-Preguntaron: *"¿su integración es servidor a servidor, o el checkout corre en el
-navegador del comprador?"*. La respuesta honesta es **las dos cosas**, y conviene
-que la tengan clara porque de ahí depende qué nos ofrezcan:
-
-> Es mixta. El checkout corre en el navegador del comprador (una PWA), pero el
-> navegador **no** habla con la API de n1co: los datos de la tarjeta se envían a
-> nuestro propio backend (una función serverless nuestra) y desde ahí llamamos
-> `/PaymentMethods` y `/Charges` servidor a servidor. El `clientSecret` nunca
-> sale del backend.
->
-> Justamente por eso nos interesan los *hosted fields*: hoy el PAN pasa por
-> nuestra infraestructura solo porque no hay otra forma de tokenizar. Con campos
-> embebidos, la captura ocurriría en su iframe y bajaríamos a SAQ A **sin**
-> perder el control de UX ni la tarjeta guardada, que es lo que el checkout
-> hospedado no nos permite.
->
-> Les confirmamos que **sí** queremos registrar la solicitud de campos
-> embebidos como requerimiento de producto. Mientras tanto seguimos con la API
-> directa, porque es la única vía que soporta card-on-file.
-
-Ese último párrafo importa: el checkout hospedado baja el alcance PCI, pero
-**no permite guardar la tarjeta**, que era el requisito principal. Por eso no se
-eligió.
+Eso cambia el plan: no se prueba menos, se prueba **acotado**. El código trae dos
+frenos nuevos para que un error durante el estreno no le cueste plata a un
+cliente.
 
 ---
 
-## Paso 1 — Crear la llave de sandbox
+## Los dos frenos (leer antes que nada)
 
-En el portal de n1co:
+| Variable | Qué hace |
+|---|---|
+| `N1CO_TELEFONOS_PRUEBA` | **Piloto.** Con uno o más teléfonos (coma), **solo esos** pueden pagar con tarjeta; a todos los demás la app les responde que el pago con tarjeta no está disponible y que usen efectivo. Vacía = abierto a todos. |
+| `N1CO_MONTO_MAX` | **Techo por cobro.** Default **$150**. Un delivery de smash burgers no llega ahí: si lo supera, algo está muy mal (total corrupto, bug de cantidades) y no se cobra. |
 
-1. Barra lateral izquierda → **engranaje** (configuración).
-2. **Sandbox → Ir a sandbox.**
-3. Confirmá que la tienda muestre la etiqueta **"sandbox"** arriba a la derecha.
-   Si no aparece, la llave que generes será de producción.
-4. **API → nueva.** Ponele un nombre (ej. `ERP delivery web · sandbox`) y
-   **marcá todos los permisos** (es lo que recomienda n1co para sandbox).
-5. El modal te da **dos** valores. Guardalos:
-   - `clientId` — parece un uuid: `c8573b9a-88ea-…`
-   - `clientSecret` — una cadena larga: `kt68Q-e6FS1FNgve…`
+El piloto es el interruptor del lanzamiento suave, y es lo que reemplaza al
+sandbox: **cobrás de verdad, pero solo vos**. Cuando esté validado, se borra la
+variable y queda abierto — sin redeploy de código, solo la variable y un
+redeploy de Vercel.
 
-> **El `clientSecret` normalmente se muestra una sola vez.** Copialo antes de
-> cerrar el modal.
+Probados en `scripts/test-frenos-n1co.mjs` (**14/14**), incluido el caso de una
+variable mal escrita: `N1CO_MONTO_MAX=abc` **no** desactiva el techo, cae al
+default. Si cayera en `NaN`, toda comparación daría `false` y pasaría cualquier
+monto.
+
+```bash
+node scripts/test-frenos-n1co.mjs
+```
 
 ---
 
-## Paso 2 — Los `locationCode` de las sucursales
+## Paso 1 — Crear la llave de producción
+
+Portal n1co → **engranaje** → **API → nueva**. Con el modo sandbox apagado (que
+es donde estás igual), la llave sale de producción.
+
+Ponele un nombre reconocible: `ERP delivery web · prod`. El modal da **dos**
+valores:
+
+- `clientId` — un uuid: `c8573b9a-88ea-…`
+- `clientSecret` — cadena larga: `kt68Q-e6FS1FNgve…`
+
+**Copiá el `clientSecret` antes de cerrar el modal**, normalmente se muestra una
+sola vez. Si se pierde, se borra la llave y se crea otra.
+
+> Como no hay sandbox, esta llave cobra de verdad desde el primer request. Por
+> eso el piloto por teléfono se configura en el mismo paso que la llave, no
+> después.
+
+---
+
+## Paso 2 — Los `locationCode`
 
 **Configuración → Sucursales.** La primera columna, **"ID"**, es el
 `locationCode`. Anotá el de cada tienda.
 
-Con una sola sucursal alcanza `N1CO_LOCATION_CODE`. Para cobrar cada pedido
-contra la tienda que lo despacha, usá `N1CO_LOCATION_CODES` con un JSON que mapee
-el `sucursal_id` de nuestra base al ID de n1co:
-
-```json
-{"1382bdc6-4349-43af-86e9-1989b9b529de":"123","04bcc11a-affa-44b4-9fec-b90d00639cf3":"124"}
-```
-
-Los `sucursal_id` nuestros salen de:
+Con `N1CO_LOCATION_CODE` alcanza para empezar (una sola sucursal cobra todo).
+Para imputar cada pedido a la tienda que despacha, `N1CO_LOCATION_CODES` toma un
+JSON `{"<sucursal_id nuestro>":"<ID de n1co>"}`. Los nuestros:
 
 ```sql
 select id, store_code, nombre from sucursales where activa and tiene_delivery;
@@ -77,61 +69,74 @@ select id, store_code, nombre from sucursales where activa and tiene_delivery;
 
 ---
 
-## Paso 3 — Smoke test local (hacelo ANTES de tocar Vercel)
+## Paso 3 — Smoke test con tu propia tarjeta
 
-Esto aísla "¿están bien las credenciales?" de "¿está bien el código?". Si falla
-acá, no tiene sentido abrir el menú a probar.
+Valida credenciales, tokenización multi-uso y `locationCode` **sin pasar por la
+app**, así no depurás dos cosas a la vez. Cobra el monto que le digas y **lo
+reversa al final**.
 
 ```bash
 cd ~/Proyectos/freakie-dogs-caja
 git checkout feat/pago-tarjeta-n1co
 
-N1CO_CLIENT_ID='...' \
-N1CO_CLIENT_SECRET='...' \
-N1CO_LOCATION_CODE='...' \
-  node scripts/smoke-n1co.mjs
+  N1CO_BASE_URL=https://api.n1co.com \
+  N1CO_CLIENT_ID='...' N1CO_CLIENT_SECRET='...' N1CO_LOCATION_CODE='...' \
+  N1CO_TEST_CARD_NUMBER='4111...' N1CO_TEST_CARD_MONTH=12 \
+  N1CO_TEST_CARD_YEAR=2030 N1CO_TEST_CARD_CVV=123 \
+  N1CO_TEST_CARD_HOLDER='JOSE ISART' \
+    node scripts/smoke-n1co.mjs --cobrar-de-verdad
 ```
 
-Recorre los 4 pasos reales: **token → tokenizar con `singleUse:false` → cobrar
-$1.00 → reversar**. Usa una tarjeta de prueba (no mueve dinero) y devuelve el
-cobro para no dejar basura en el portal. No imprime el secret.
+Detalles que importan:
 
-Si el paso 2 se queja de `singleUse` o multi-use, escribiles: significa que
-card-on-file no está activo en la cuenta a pesar de lo que dijeron.
-Si el paso 3 falla mencionando *location*, el `locationCode` está mal.
+- **El espacio antes del comando** no es un typo: en zsh con `HIST_IGNORE_SPACE`
+  evita que la línea con la tarjeta y el secret quede en el historial.
+- Sin `--cobrar-de-verdad` el script **se niega a correr** contra producción.
+  Tampoco arranca si falta la tarjeta.
+- El monto sale de `N1CO_TEST_AMOUNT` (default **$1.00**).
+- El script **no imprime** el secret ni el número completo, solo los últimos 4.
+- El paso 4 hace el reverso por `/Refunds`. Si falla, te da el `orderId` para
+  anularlo a mano en el portal. **El cargo y su reverso igual aparecen en tu
+  estado de cuenta** — son dos movimientos de $1.
+
+Si el paso 2 se queja de `singleUse` o multi-use, card-on-file no está activo
+pese a lo que dijeron y hay que escribirles. Si el paso 3 falla mencionando
+*location*, el `locationCode` está mal.
 
 ---
 
-## Paso 4 — Cargar las variables en Vercel
+## Paso 4 — Variables en Vercel
 
-Van en **los dos** proyectos que salen de este repo, porque el menú público y el
-ERP se despliegan por separado:
+En **los dos** proyectos que salen de este repo (ERP y delivery), porque se
+despliegan por separado:
 
-- el del ERP (`erp.freakiedogs.com`)
-- el del delivery (`pedidos.freakiedogs.com`)
-
-| Variable | Valor para sandbox |
+| Variable | Valor |
 |---|---|
 | `N1CO_CLIENT_ID` | el del paso 1 |
 | `N1CO_CLIENT_SECRET` | el del paso 1 |
 | `N1CO_LOCATION_CODE` | el del paso 2 |
-| `N1CO_BASE_URL` | `https://api-sandbox.n1co.shop` |
-| `N1CO_AMBIENTE` | `sandbox` |
+| `N1CO_BASE_URL` | `https://api.n1co.com` |
+| `N1CO_AMBIENTE` | `produccion` |
+| **`N1CO_TELEFONOS_PRUEBA`** | **tu teléfono** — el freno del piloto |
+| `N1CO_MONTO_MAX` | opcional; poné `25` mientras probás |
 
-`SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` ya existen en el proyecto del ERP
-(las usa `api/dte-proxy.js`). **Verificá que estén también en el del delivery**,
-porque sin la service_role key el cobro no puede confirmar el pedido.
+Dos cosas que se pasan por alto:
 
-> `N1CO_BASE_URL` va **sin** `/api/v3`. La doc de n1co la publica con la versión
-> incluida y el código la concatena, así que si la pegás completa quedaría
-> duplicada. El código igual la limpia, pero mejor cargarla bien.
+- **`SUPABASE_SERVICE_ROLE_KEY` tiene que estar en el proyecto del delivery**,
+  no solo en el del ERP (donde ya está para `api/dte-proxy.js`). Sin ella el
+  cobro no puede confirmar el pedido: la tarjeta se cobra y el pedido queda
+  impago. Es el peor modo de falla del módulo — verificalo antes de cobrar nada.
+- **`N1CO_AMBIENTE=produccion` no es cosmético**: queda grabado en cada fila de
+  `pagos_online`. Si se olvida, los cobros reales figuran como sandbox y la
+  conciliación miente.
+- `N1CO_BASE_URL` va **sin** `/api/v3` (el código la concatena). Si la pegás
+  completa el código la limpia, pero mejor cargarla bien.
 
-Después de cargar variables hay que **redeployar**: en Vercel las env vars se
-hornean en el build.
+Las env vars se hornean en el build: **hay que redeployar** después de cargarlas.
 
 ---
 
-## Paso 5 — Webhook (red de seguridad para el dinero)
+## Paso 5 — Webhook
 
 **Configuración → URL de acceso al webhook.** Registrá:
 
@@ -139,50 +144,51 @@ hornean en el build.
 https://pedidos.freakiedogs.com/api/n1co-link/webhook
 ```
 
-Ahí mismo el portal genera y muestra la **llave secreta** → cargala en Vercel
-como `N1CO_WEBHOOK_SECRET`. Esa pantalla también tiene el historial de webhooks
-enviados, que es oro para depurar.
+Ahí mismo el portal genera la **llave secreta** → cargala en Vercel como
+`N1CO_WEBHOOK_SECRET`. Esa pantalla también guarda el **historial de webhooks
+enviados**, que es lo primero que hay que mirar cuando un cobro no cuadre.
 
-n1co confirmó que el encabezado `X-H4B-Hmac-Sha256` viaja en **el 100% de los
-eventos**, así que la firma siempre se puede verificar — y el endpoint la
-verifica antes de tocar la base. **Sin `N1CO_WEBHOOK_SECRET` el webhook rechaza
-todo**, a propósito: un webhook sin firma que marque pedidos como pagados sería
-un agujero para comer gratis.
+n1co confirmó que el encabezado `X-H4B-Hmac-Sha256` viaja en el **100%** de los
+eventos, y el endpoint verifica la firma antes de tocar la base. **Sin
+`N1CO_WEBHOOK_SECRET` rechaza todo**, a propósito: un webhook sin firma que
+marque pedidos como pagados sería un agujero para comer gratis.
 
-Para qué sirve: si n1co cobra la tarjeta pero nuestra confirmación contra la
-base falla en el medio (timeout, corte), el cliente queda cobrado y el pedido
-sin marcar. El webhook cierra ese hueco. **Pendiente:** hoy el handler resuelve
-órdenes de CheckoutLink; extenderlo a los cobros de EPay es el próximo paso de
-endurecimiento (ver `api/n1co-link.js`).
+**Pendiente conocido:** el handler hoy resuelve órdenes de CheckoutLink.
+Extenderlo a los cobros de EPay es el próximo paso de endurecimiento, y cubre
+justo el hueco de "n1co cobró pero nuestra confirmación falló en el medio".
 
 ---
 
-## Paso 6 — Probar desde el menú
+## Paso 6 — Probar desde la app, con el piloto puesto
 
-Entrá a `pedidos.freakiedogs.com/menu`, armá un pedido y elegí **💳 Tarjeta**.
+Con `N1CO_TELEFONOS_PRUEBA` = tu teléfono, andá a
+`pedidos.freakiedogs.com/menu` y armá un pedido **barato de verdad** (una soda:
+el menú tiene ítems de $0.50–$1.75).
 
-| Escenario | Visa | Mastercard |
-|---|---|---|
-| Aprueba, sin 3DS | `4000056655665556` | `5267260000000001` |
-| Rechaza, sin 3DS | `4242424242424242` | `5555555555554444` |
-| 3DS que aprueba | `4000000000001000` | `5200000000001005` |
-| 3DS que rechaza | `4000000000001013` | `5200000000001018` |
+**Antes de nada, verificá que el freno funciona:** pedí desde otro teléfono (o
+sacá tu número de la lista un momento) y confirmá que la app responde *"el pago
+con tarjeta está en pruebas… elegí efectivo"*. Si ahí cobra, el piloto no está
+activo y no sigas.
 
-CVV cualquiera, vencimiento cualquier fecha futura. Las Visa son de emisor USA,
-así que la app va a pedir el código postal — es el camino `requiere_billing` y es
-correcto que aparezca.
+Después, en orden:
 
-**La prueba que importa de verdad** (es el requisito de Jose):
+1. **Cobro simple.** Pagá con tu tarjeta, **sin** marcar "guardar". Verificá que
+   la pantalla diga "¡Pedido pagado!" y que el pedido entre a cocina.
+2. **La prueba que importa** (el requisito): pagá un segundo pedido **dejando
+   marcado** "Guardar mi tarjeta". Después hacé un **tercero** con el mismo
+   navegador: al elegir tarjeta tiene que aparecer **"Visa ····1234 · Pagar $X"**
+   y cobrarse de un toque, sin escribir nada.
+3. **Rechazo.** Difícil de forzar con una tarjeta buena; se puede con una tarjeta
+   sin fondos o vencida. Si no tenés, salteá: el camino de rechazo no mueve
+   dinero.
+4. **Cancelá y reversá** los pedidos de prueba: en la torre, y el cobro desde el
+   portal de n1co.
 
-1. Pagá con `4000056655665556` **dejando marcado** "Guardar mi tarjeta".
-2. Hacé un **segundo** pedido con el mismo teléfono/navegador.
-3. Al elegir tarjeta tiene que aparecer **"Visa ····5556 · Pagar $X"** y cobrarse
-   de un toque, sin escribir nada.
-
-Qué mirar del lado de la base:
+Qué mirar en la base:
 
 ```sql
-select estado, metodo, monto, marca, last4, authorization_code, error_code, intento
+select estado, metodo, monto, marca, last4, authorization_code,
+       error_code, error_msg, intento, created_at
   from pagos_online order by created_at desc limit 10;
 
 select marca, last4, vence_mes, vence_anio, ultimo_uso
@@ -190,43 +196,56 @@ select marca, last4, vence_mes, vence_anio, ultimo_uso
 ```
 
 Un cobro aprobado deja el pedido con `cobrado=true`, `estado='preparando'` y
-`pos_cuenta_id` (ya entró al KDS). En la torre aparece el sello
+`pos_cuenta_id` (ya está en el KDS), y en la torre aparece el sello
 `💳 PAGADO ONLINE · NO COBRAR`.
 
+Los frenos dejan rastro: `error_code='FUERA_DE_PILOTO'` o `'MONTO_SOBRE_TECHO'`
+en `pagos_online`. Si ves esos códigos con tu propio teléfono, revisá la
+variable.
+
 ---
 
-## Paso 7 — Pasar a producción
+## Paso 7 — Abrir a los clientes
 
-1. En el portal, **desactivá el modo sandbox** de la tienda.
-2. Generá una llave nueva (Configuración → API → nueva). **La de sandbox no
-   sirve en producción.**
-3. Volvé a sacar los `locationCode`: verificá que sean los mismos.
-4. Corré el smoke test contra producción — con `amount: 1.0` y el reverso
-   automático, es ~$1 que vuelve.
-   ```bash
-   N1CO_BASE_URL=https://api.n1co.com N1CO_CLIENT_ID=... N1CO_CLIENT_SECRET=... \
-   N1CO_LOCATION_CODE=... node scripts/smoke-n1co.mjs
+Recién cuando el paso 6 esté limpio:
+
+1. Avisale a **Karina y a los motoristas**: los pedidos pagados llegan con el
+   sello verde y **no se les cobra nada** en la puerta.
+2. Subí `N1CO_MONTO_MAX` a `150` (o al techo que quieras).
+3. **Borrá `N1CO_TELEFONOS_PRUEBA`** y redeploy. Ahí queda abierto.
+4. Los primeros días, revisá a diario:
+   ```sql
+   select error_code, count(*), max(created_at)
+     from pagos_online where estado in ('error','rechazado')
+     group by 1 order by 2 desc;
    ```
-5. En Vercel: `N1CO_BASE_URL=https://api.n1co.com` y
-   `N1CO_AMBIENTE=produccion`. Redeploy.
-6. Registrá el webhook de producción (el del portal en modo producción es otro).
+   Ahí aparecen los problemas de configuración (`SIN_LOCATION_CODE`,
+   `REQUIERE_BILLING`) y la tasa de rechazo real de los emisores.
 
-`N1CO_AMBIENTE` no es cosmético: queda grabado en cada fila de `pagos_online`.
-Si se olvida, los cobros reales quedan registrados como sandbox y la
-conciliación miente.
+Si algo sale mal, el rollback es **volver a poner `N1CO_TELEFONOS_PRUEBA` con un
+número cualquiera** y redeployar: el pago con tarjeta se apaga para todos los
+clientes en un deploy, sin tocar código y sin bajar el menú.
 
 ---
 
-## Antes de abrirlo a clientes reales
+## Para escribirle a n1co
 
-- **Estrenar la tarjeta guardada ya en `pedidos.freakiedogs.com`.**
-  `localStorage` es por origen: si se lanza en `freakiedelivery.vercel.app` y
-  después se muda, todas las tarjetas guardadas quedan huérfanas y cada cliente
-  tiene que reingresarla. Como el dominio ya está en producción, esto se cumple
-  solo — pero hay que confirmar que `VITE_URL_DELIVERY` apunte al dominio nuevo
-  antes de habilitar el pago.
-- Avisarle a **Karina y a los motoristas** qué cambia: los pedidos pagados
-  llegan con el sello verde y **no se les cobra nada** en la puerta.
-- Revisar `pagos_online` los primeros días buscando `estado='error'`: es donde
-  aparecen los problemas de configuración (`SIN_LOCATION_CODE`,
-  `REQUIERE_BILLING`).
+Vale reportar el bug del sandbox y aprovechar para dos preguntas:
+
+> Dos cosas:
+>
+> **1.** No logramos usar el sandbox: en
+> `portal.n1co.shop/configuration/sandbox`, al presionar **Ir a sandbox** la
+> plataforma nos cierra la sesión, y al volver a entrar la tienda sigue en
+> producción (nunca aparece la etiqueta "sandbox"). Probamos varias veces.
+> ¿Es un problema de nuestra cuenta, o el sandbox necesita un *workspace*
+> aparte? Lo preguntamos porque, sin sandbox, la única forma de validar la
+> integración es cobrando con tarjetas reales.
+>
+> **2.** Mientras eso se resuelve vamos a validar en producción con montos
+> chicos y reversándolos. ¿Hay algún límite de reversos por día, o alguna
+> recomendación para no que no se marque como actividad sospechosa?
+>
+> **3.** Confirmamos que **sí** queremos registrar los *hosted fields* como
+> requerimiento de producto: es lo que nos dejaría en SAQ A sin perder la
+> tarjeta guardada, que el checkout hospedado no permite.

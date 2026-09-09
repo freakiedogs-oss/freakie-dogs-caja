@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 08-Sep-2026 — El sandbox de n1co no sirve: se estrena en producción con dos frenos
+
+**El sandbox no se pudo usar.** En `portal.n1co.shop/configuration/sandbox`, al presionar *Ir a sandbox* la plataforma cierra la sesión y al volver a entrar la tienda sigue en producción (nunca aparece la etiqueta "sandbox"). Sin sandbox **no hay tarjetas de prueba**, así que la validación es con dinero real. Reportado a n1co junto con la pregunta de si el sandbox necesita un workspace aparte (texto en `docs/n1co-puesta-en-marcha.md`).
+
+La respuesta no fue probar menos, sino **probar acotado**. Dos frenos nuevos en `api/n1co.js`:
+
+- **`N1CO_TELEFONOS_PRUEBA`** — piloto: con uno o más teléfonos (coma), **solo esos** pueden pagar con tarjeta; al resto la app le dice que use efectivo. **Es lo que reemplaza al sandbox: se cobra de verdad, pero solo Jose.** Vacía = abierto a todos, así que abrir a clientes es borrar la variable y redeployar — y el rollback es volver a ponerla, lo que apaga el pago con tarjeta para todos en un deploy sin tocar código ni bajar el menú.
+- **`N1CO_MONTO_MAX`** — techo por cobro, default **$150**. Un delivery de smash burgers no llega ahí: si lo supera, algo está muy mal (total corrupto, bug de cantidades) y es mejor no cobrar que cobrar de más.
+
+**`scripts/test-frenos-n1co.mjs`: 14/14.** El caso que justifica el test: **`N1CO_MONTO_MAX=abc` NO desactiva el techo**, cae al default. Si cayera en `NaN`, toda comparación con `NaN` da `false` y pasaría cualquier monto — un freno que se apaga solo por una variable mal escrita es peor que no tenerlo. También se verifica que el mensaje al cliente no filtre que existe un piloto interno y que el detalle de soporte enmascare el teléfono. `frenoDeProduccion` se exporta solo para poder probarla: decide si se cobra o no, y eso no se verifica leyéndolo.
+
+**`scripts/smoke-n1co.mjs` ahora distingue producción:** exige el flag explícito `--cobrar-de-verdad` y una tarjeta propia por variables de entorno (nada de números reales en el repo). Avisa que es dinero real, cobra `N1CO_TEST_AMOUNT` (default $1) y lo reversa por `/Refunds`. La doc recomienda un espacio antes del comando para que la línea con la tarjeta y el secret no quede en el historial de zsh.
+
+**El peor modo de falla del módulo, anotado en el runbook:** si `SUPABASE_SERVICE_ROLE_KEY` no está en el proyecto de Vercel del *delivery* (hoy solo está en el del ERP, para `api/dte-proxy.js`), n1co cobra la tarjeta y el pedido queda impago. Verificarlo antes de cobrar nada.
+
+
 ## 08-Sep-2026 — n1co respondió: las credenciales SÍ son self-service (la doc miente)
 
 Puesta en marcha completa en **`docs/n1co-puesta-en-marcha.md`**; el registro de lo preguntado y respondido, en `docs/n1co-solicitud-credenciales.md`.

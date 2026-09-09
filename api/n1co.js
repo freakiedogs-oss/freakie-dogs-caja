@@ -52,6 +52,45 @@ const ALLOWED_OPS = new Set([
 ]);
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
+// ── Frenos para estrenar en producción ───────────────────────────────
+// El sandbox de n1co no se pudo usar (entrar al modo sandbox cierra la sesión y
+// devuelve a producción), así que la validación se hace con dinero real. Estos
+// dos límites acotan el daño de cualquier error mientras se prueba.
+//
+// 1) Piloto por teléfono: con N1CO_TELEFONOS_PRUEBA seteada, SOLO esos números
+//    pueden pagar con tarjeta; el resto ve efectivo como siempre. Es el
+//    interruptor del lanzamiento suave — vacía, el pago queda abierto a todos.
+const TELEFONOS_PILOTO = new Set(
+  env('N1CO_TELEFONOS_PRUEBA').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean),
+);
+
+// 2) Techo por cobro: un pedido de delivery de smash burgers no llega a $150.
+//    Si el monto lo supera, algo está muy mal (un total corrupto, un bug de
+//    cantidades) y es mejor no cobrar que cobrar de más. Ajustable por env.
+const MONTO_MAX = Number(env('N1CO_MONTO_MAX', '150')) || 150;
+
+// Devuelve el motivo por el que NO se puede cobrar este pedido, o null si se
+// puede. Se exporta solo para poder probarlo (scripts/test-frenos-n1co.mjs):
+// decide si se cobra o no, y eso no se verifica leyéndolo.
+export function frenoDeProduccion(sesion) {
+  const tel = String(sesion?.cliente_telefono || '').replace(/\D/g, '');
+  if (TELEFONOS_PILOTO.size > 0 && !TELEFONOS_PILOTO.has(tel)) {
+    return {
+      code: 'FUERA_DE_PILOTO',
+      detalle: `tel ${tel.slice(0, 3)}***** no está en el piloto`,
+      mensaje: 'El pago con tarjeta está en pruebas y todavía no está disponible. Elegí efectivo 💵',
+    };
+  }
+  if (Number(sesion?.monto) > MONTO_MAX) {
+    return {
+      code: 'MONTO_SOBRE_TECHO',
+      detalle: `monto ${sesion?.monto} > techo ${MONTO_MAX}`,
+      mensaje: 'Tu pedido supera el máximo para pagar con tarjeta. Escribinos por WhatsApp y lo coordinamos 📲',
+    };
+  }
+  return null;
+}
+
 // Orígenes que pueden llamar a este endpoint. El menú público vive en un
 // dominio distinto al del ERP, así que no alcanza con same-origin.
 // Los de freakiedogs.com son los definitivos (zona en Cloudflare, sirviendo
@@ -438,6 +477,15 @@ export default async function handler(req) {
       });
       if (!sesion?.ok) return json(409, respuestaNoDisponible(sesion), origin);
 
+      const frenoG = frenoDeProduccion(sesion);
+      if (frenoG) {
+        await rpc('pago_online_resolver', {
+          p: { pago_id: sesion.pago_id, estado: 'error',
+               error_code: frenoG.code, error_msg: frenoG.detalle },
+        });
+        return json(409, { ok: false, error: frenoG.code, mensaje: frenoG.mensaje }, origin);
+      }
+
       if (!locationCode(sesion.sucursal_id)) {
         await rpc('pago_online_resolver', {
           p: { pago_id: sesion.pago_id, estado: 'error', error_code: 'SIN_LOCATION_CODE',
@@ -529,6 +577,15 @@ export default async function handler(req) {
       p_ambiente: AMBIENTE,
     });
     if (!sesion?.ok) return json(409, respuestaNoDisponible(sesion), origin);
+
+    const freno = frenoDeProduccion(sesion);
+    if (freno) {
+      await rpc('pago_online_resolver', {
+        p: { pago_id: sesion.pago_id, estado: 'error',
+             error_code: freno.code, error_msg: freno.detalle },
+      });
+      return json(409, { ok: false, error: freno.code, mensaje: freno.mensaje }, origin);
+    }
 
     if (!locationCode(sesion.sucursal_id)) {
       await rpc('pago_online_resolver', {
