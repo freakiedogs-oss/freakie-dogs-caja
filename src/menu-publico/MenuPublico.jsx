@@ -417,9 +417,13 @@ export default function MenuPublico() {
       )}
 
       {/* COBRO CON TARJETA
-          Va encima de la confirmación, no en lugar de ella: el pedido ya está
-          creado y guardado, así que si el cliente abandona el cobro igual queda
-          el pedido y la pantalla de siempre debajo. */}
+          Mientras está abierto es LO ÚNICO que se ve. La versión anterior
+          montaba también la confirmación "debajo", pero los dos drawers usan
+          el mismo z-index, así que mandaba el orden del DOM y la confirmación
+          terminaba TAPANDO el formulario de tarjeta: el cliente veía "¡Pedido
+          enviado!" y no podía pagar.
+          Al cerrar el cobro, `pagoTarjeta` pasa a false y ahí sí aparece la
+          confirmación — el pedido ya está creado, no se pierde nada. */}
       {pedidoOk && pagoTarjeta && (
         <Suspense fallback={null}>
           <PagoTarjeta
@@ -434,8 +438,8 @@ export default function MenuPublico() {
         </Suspense>
       )}
 
-      {/* CONFIRMACIÓN POST-PEDIDO */}
-      {pedidoOk && (
+      {/* CONFIRMACIÓN POST-PEDIDO — solo cuando no se está cobrando */}
+      {pedidoOk && !pagoTarjeta && (
         <PedidoEnviado
           datos={pedidoOk}
           onClose={() => { setPedidoOk(null); setPagoTarjeta(false) }}
