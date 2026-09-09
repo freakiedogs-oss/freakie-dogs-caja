@@ -52,6 +52,7 @@ const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView')
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
 const BPMTemperaturaView = lazy(() => import('./components/produccion/BPMTemperaturaView'))
 const CarneBoleadoView   = lazy(() => import('./components/produccion/CarneBoleadoView'))
+const ProtocoloAperturaView = lazy(() => import('./components/produccion/ProtocoloAperturaView'))
 const DevolucionesView   = lazy(() => import('./components/produccion/DevolucionesView'))
 const InventarioDashboard = lazy(() => import('./components/dashboard/InventarioDashboard'))
 const MiAsistencia       = lazy(() => import('./components/empleado/MiAsistencia'))
@@ -336,6 +337,8 @@ export default function App() {
         return <BPMChiliView user={user} />
       case 'carne-boleado':
         return <CarneBoleadoView user={user} />
+      case 'protocolo-apertura':
+        return <ProtocoloAperturaView user={user} />
       case 'bpm-temperatura':
         return <BPMTemperaturaView user={user} />
       case 'incidentes-cm':

@@ -147,6 +147,10 @@ export const NAV_SECTIONS = [
       { key: 'bpm-chili', label: 'Control BPM · Chili', icon: '🌶️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'carne-boleado', label: 'Mezclado y boleado', icon: '🥩', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'bpm-temperatura', label: 'Temperatura · Carne boleada', icon: '🌡️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      // Protocolo de apertura: en revisión. `users` lo deja visible solo para
+      // Cesar hasta que el contenido esté validado. Para abrirlo a las
+      // sucursales se borra la línea `users` y se vacía la tabla protocolo_beta.
+      { key: 'protocolo-apertura', label: 'Protocolo de apertura', icon: '🌅', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258'] },
     ],
   },
   {
