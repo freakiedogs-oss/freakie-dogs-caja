@@ -764,6 +764,14 @@ export default function TabPedidos({ show = () => {} }) {
                 <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>
                   {p.cliente_nombre} · {fmt(p.total)} · 🏪 {p.sucursal_nombre || p.store_code || '—'}
                 </div>
+                {/* Alguien tiene que cerrar el pedido cuando el cliente pasa a
+                    recogerlo. Al cobrado en caja lo cierra el propio cobro; a
+                    este ya lo cobramos nosotros en línea, así que sin este
+                    botón se quedaría abierto para siempre. */}
+                <button disabled={ocupado === p.id} onClick={() => marcarEntregado(p)}
+                        style={{ ...btn(c.green, '#04210f'), width: '100%', marginTop: 7, fontSize: 11.5 }}>
+                  {ocupado === p.id ? '…' : '✅ Ya lo retiró'}
+                </button>
               </div>
             ))}
           </div>
