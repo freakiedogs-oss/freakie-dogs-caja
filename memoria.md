@@ -2,6 +2,21 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — Primer cobro real OK, y el hueco que destapó: el pago no llegaba a la caja
+
+**Funcionó de punta a punta:** Jose pagó $4.00 con tarjeta desde `pedidos.freakiedogs.com/menu`, el cobro apareció en el portal de n1co, el pedido entró a cocina y la torre mostró el sello `PAGADO ONLINE · NO COBRAR`.
+
+**El hueco:** `_comanda_delivery` crea la `pos_cuenta` pero **nunca inserta en `pos_cuenta_pagos`**. Los 839 delivery de los últimos 14 días terminaron `cobrada` **con** pago porque los cierra alguien en el POS, uno por uno. Con el cobro online eso dejaba (1) al cajero viendo una **cuenta abierta** por un pedido ya pagado — el cliente llega a retirar y le cobran de nuevo, el mismo riesgo que ya se había cerrado en la torre y en el motorista pero entrando por otra puerta — y (2) la venta fuera de los totales del corte.
+
+**Se registra como `link_pago`, no como un método nuevo.** `link_pago` ya existía en el check de `pos_cuenta_pagos` y **ya sale en línea propia en `pos_corte`**, así que no hubo que tocar reportes ni el cierre. Y significa exactamente esto: plata que entró por n1co en línea y **no** por el datáfono de la sucursal — es como se registra hoy el link que Karina manda a mano. Eso es lo que mantiene el total de `tarjeta` de cada tienda cuadrando al centavo contra su lote del datáfono, la señal con la que se hallaron los $499.76 duplicados. Verificado con arnés reversible **4/4**: pago $4.00 en `link_pago`, cuenta `cobrada`, idempotente ante un segundo resolver, y el corte lo suma en `link_pago` dejando `tarjeta` en $0.
+
+**Efecto secundario asumido:** con la cuenta `cobrada` desde el pago, el KDS **no deja revertir** una comanda de estos pedidos ("la cuenta ya está cobrada"). A cambio tampoco puede reabrirlas y recobrarlas —el incidente de Usulután del 4-sep, con 2º pago y 2º DTE— que es el riesgo más caro de los dos. El KDS no se afecta de otra forma: lee `pos_cocina_queue` filtrando `estado <> 'completado'` y **no mira `pos_cuentas`**, así que cerrar la cuenta no saca el pedido de la pantalla de cocina (se verificó antes de aplicarlo).
+
+**Los retiros en local pagados salen del tablero.** Aparecían en "Por asignar", que es donde Karina busca a quién mandarle un motorista, y no hay nada que asignar: la tienda los cocina y los entrega en el mostrador. Ahora van a una franja informativa, sin relojes de atraso —que un cliente tarde 40 min en pasar a retirar no es un problema suyo—. **El retiro impago se queda en las columnas**: ese sí hay que cobrarlo. Regla de fondo: las 4 columnas son la lista de tareas de Karina, no un inventario de pedidos.
+
+**El delivery (no retiro) no cambió de flujo:** pago → cocina → "Por asignar" (ahí Karina **sí** asigna motorista, no es ruido) → En ruta → Entregado. El motorista ve "Ya pagado — no cobrés nada" y el pedido queda fuera de su liquidación de efectivo (`Cobros` filtra por `!cobrado` y luego por `efectivo`).
+
+
 ## 09-Sep-2026 — En vivo con piloto: la confirmación tapaba el formulario de tarjeta
 
 **Primera prueba real en producción (Jose, pedido `WEB-7B6D89A4`) y salió el bug:** al elegir tarjeta aparecían **dos modales a la vez**, con la confirmación "¡Pedido enviado!" **encima** del formulario de pago. No se podía pagar.
