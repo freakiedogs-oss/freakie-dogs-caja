@@ -285,14 +285,57 @@ async function dispositivoHash(secreto) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Mensajes al cliente: cortos, accionables y sin filtrar detalle del emisor
-// (el detalle técnico queda en pagos_online.error_msg para soporte).
+// n1co devuelve el error como OBJETO:
+//   { code:"51", title:"Insuficiencia de fondos",
+//     detail:"No cuentas con el monto requerido…", message:"Insuficiencia de fondos" }
+// Hacerle String() daba "[object Object]", que es lo que se guardó en
+// error_code y lo que rompía el mensaje al cliente (9-sep: un cliente reintentó
+// 3 veces la misma tarjeta sin fondos porque nunca le dijimos que era eso).
+function detalleError(data) {
+  const e = data?.error;
+  if (e && typeof e === 'object') {
+    return {
+      code: String(e.code ?? e.codigo ?? '').trim() || 'SIN_CODIGO',
+      titulo: String(e.title ?? e.message ?? '').trim(),
+      detalle: String(e.detail ?? '').trim(),
+    };
+  }
+  return {
+    code: String(e ?? data?.errorCode ?? data?.status ?? 'SIN_CODIGO').trim(),
+    titulo: String(data?.message ?? '').trim(),
+    detalle: '',
+  };
+}
+
+// Códigos ISO 8583 que devuelve el emisor. Se traducen a algo accionable: la
+// diferencia entre "no tenés fondos" y "tu banco lo rechazó" decide si el
+// cliente prueba otra tarjeta o insiste con la misma.
+const RECHAZO_POR_CODIGO = {
+  51: 'La tarjeta no tiene fondos suficientes. Probá con otra.',
+  54: 'La tarjeta está vencida.',
+  14: 'El número de tarjeta no es válido. Revisalo.',
+  82: 'El código de seguridad (CVV) no coincide.',
+  61: 'Superaste el límite de tu tarjeta. Probá con otra.',
+  65: 'Tu banco pide que autorices la compra. Llamalos o probá con otra tarjeta.',
+  41: 'Tu banco rechazó la tarjeta. Probá con otra.',
+  43: 'Tu banco rechazó la tarjeta. Probá con otra.',
+  57: 'Tu banco no permite este tipo de compra con esa tarjeta.',
+};
+
+// Mensaje para el cliente: primero el mapa por código, después el texto que
+// manda n1co (viene en español y ya está redactado para el comprador), y recién
+// al final el genérico.
 function mensajeRechazo(data) {
-  const code = String(data?.error || data?.errorCode || '').toUpperCase();
-  if (/INSUFFICIENT|FONDOS/.test(code)) return 'La tarjeta no tiene fondos suficientes.';
-  if (/EXPIRED|VENCID/.test(code)) return 'La tarjeta está vencida.';
-  if (/CVV|SECURITY/.test(code)) return 'El código de seguridad no coincide.';
-  if (/STOLEN|LOST|FRAUD|RESTRICT/.test(code)) return 'Tu banco rechazó la tarjeta. Probá con otra.';
+  const { code, titulo, detalle } = detalleError(data);
+  const porCodigo = RECHAZO_POR_CODIGO[Number(code)];
+  if (porCodigo) return porCodigo;
+  if (detalle) return detalle;
+  // "Error de validación" a secas no le dice nada a nadie: pasa cuando se
+  // reintenta la MISMA tarjeta tras un rechazo, y lo accionable es cambiarla.
+  if (/validaci[óo]n/i.test(titulo)) {
+    return 'No pudimos validar la tarjeta. Si ya la intentaste antes, probá con otra.';
+  }
+  if (titulo) return `${titulo}. Probá con otra tarjeta o pagá en efectivo.`;
   return 'Tu banco rechazó el cobro. Probá con otra tarjeta o pagá en efectivo.';
 }
 
@@ -409,12 +452,15 @@ async function cobrar({ pago, sesion, cardId, authenticationId, billing, email, 
     };
   }
 
+  const det = detalleError(data);
   await rpc('pago_online_resolver', {
     p: {
       pago_id: pago, estado: 'rechazado',
       card_id: cardId,
-      error_code: String(data?.error || data?.errorCode || status || 'DESCONOCIDO'),
-      error_msg: String(data?.message || ''),
+      // El código del emisor (51 = sin fondos, 54 = vencida…) es lo que sirve
+      // para diagnosticar después; antes acá se guardaba "[object Object]".
+      error_code: det.code,
+      error_msg: [det.titulo, det.detalle, data?.message].filter(Boolean).join(' · '),
       raw: saneaRespuesta(data),
     },
   });
