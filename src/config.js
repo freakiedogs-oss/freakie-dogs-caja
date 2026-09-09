@@ -163,7 +163,9 @@ export const NAV_SECTIONS = [
       // Protocolo de apertura: en revisión. `users` lo deja visible solo para
       // Cesar hasta que el contenido esté validado. Para abrirlo a las
       // sucursales se borra la línea `users` y se vacía la tabla protocolo_beta.
-      { key: 'protocolo-apertura', label: 'Protocolo de apertura', icon: '🌅', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258'] },
+      // 0a0ad760 = Cesar Rodriguez · 96ea2d18 = Jazmin Fuentes (encargada de Plaza Cafetalón).
+      // Cada uno ve solo su sucursal: eso lo decide protocolo_permisos, no esta lista.
+      { key: 'protocolo-apertura', label: 'Protocolo de apertura', icon: '🌅', roles: ['gerente', 'cocina', 'admin', 'ejecutivo', 'superadmin'], users: ['0a0ad760-38af-43a3-abc0-add9b4c53258', '96ea2d18-fc64-4ed3-a366-61d19f0c465a'] },
     ],
   },
   {
