@@ -39,7 +39,7 @@ const hora = (iso) => {
   })
 }
 
-export default function ProtocoloAperturaView({ user }) {
+export default function ProtocoloAperturaView({ user, onEditar }) {
   const [suc, setSuc]         = useState(user?.store_code || '')
   const [sucursales, setSucs] = useState([])
   const [pasos, setPasos]     = useState([])
@@ -52,12 +52,9 @@ export default function ProtocoloAperturaView({ user }) {
   const [puedeBase, setBase]  = useState(false)   // ¿puede cambiar el estándar común?
   const [lote, setLote]       = useState(null)    // carga masiva de fotos
   const fileRef   = useRef({})
-  const refRef    = useRef({})
   const carpetaRef = useRef(null)
   const sueltosRef = useRef(null)
   const [puedeSuc, setPuedeSuc] = useState(false)  // ¿puede editar ESTA sucursal?
-  const [editando, setEditando] = useState(null)   // paso_id abierto en el editor
-  const [form, setForm]         = useState({})
 
   const fecha = hoyLocal()
 
@@ -201,28 +198,6 @@ export default function ProtocoloAperturaView({ user }) {
     })
   }
 
-  async function subirReferencia(paso, file, deLaBase) {
-    setGuard(paso.paso_id); setError(null)
-    try {
-      const blob = await comprimir(file)
-      const dest = deLaBase ? 'base' : suc
-      const path = `protocolo/ref/${dest}/${paso.paso_id}-${Date.now()}.jpg`
-      const { error: up } = await db.storage.from(BUCKET)
-        .upload(path, blob, { contentType: 'image/jpeg' })
-      if (up) throw up
-      const url = db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl
-      const { error: e } = await db.rpc('fn_protocolo_guardar_foto', {
-        p_usuario: user?.id, p_paso_id: paso.paso_id, p_url: url,
-        p_caption: file.name.replace(/\.[^.]+$/, '').slice(0, 60),
-        p_store_code: deLaBase ? null : suc,
-      })
-      if (e) throw e
-      await cargar(suc)
-    } catch (err) {
-      setError(`No se subió la foto de «${paso.titulo}»: ${err.message || err}`)
-    } finally { setGuard(null) }
-  }
-
   // ── Carga de una carpeta entera ──
   // Los archivos vienen nombrados "NN - Área - Título del paso.jpg". Se empareja
   // por el título normalizado (sin tildes, sin ñ, sin signos) en vez de por un
@@ -279,55 +254,24 @@ export default function ProtocoloAperturaView({ user }) {
     await cargar(suc)
   }
 
-  // ── Editar un paso para ESTA sucursal ──
-  // No toca la base. Guarda un override en protocolo_paso_local: si mañana
-  // cambia el estándar, los campos que la sucursal no tocó siguen la base.
-  function abrirEditor(p) {
-    setError(null)
-    setEditando(p.paso_id)
-    setForm({ titulo: p.titulo || '', como: p.como || '', bien: p.bien || '', mal: p.mal || '' })
-  }
-
-  async function guardarLocal(p) {
-    if (!form.titulo?.trim()) { setError('El título no puede quedar vacío.'); return }
-    setGuard(p.paso_id); setError(null)
+  // ── Avisar: cualquiera de la sucursal puede decir que un paso está mal o
+  // que falta uno. No edita; el aviso cae en el editor de quien sí edita.
+  async function avisar(p) {
+    const texto = window.prompt(p
+      ? `¿Qué está mal en «${p.titulo}»?`
+      : '¿Qué paso falta en la apertura?')
+    if (texto === null) return
+    if (!texto.trim()) return
+    setGuard(p?.paso_id || 'aviso'); setError(null)
     try {
-      // Un campo igual al de la base va como null: así no se congela una copia
-      // que después no se entera de los cambios del estándar.
-      const igual = (a, b) => (a || '').trim() === (b || '').trim()
-      const { error: e } = await db.rpc('fn_protocolo_guardar_local', {
-        p_usuario: user?.id, p_paso_id: p.paso_id, p_store_code: suc,
-        p_titulo: igual(form.titulo, p.titulo) ? null : form.titulo.trim(),
-        p_como:   igual(form.como,   p.como)   ? null : (form.como || '').trim() || null,
-        p_bien:   igual(form.bien,   p.bien)   ? null : (form.bien || '').trim() || null,
-        p_mal:    igual(form.mal,    p.mal)    ? null : (form.mal  || '').trim() || null,
+      const { error: e } = await db.rpc('fn_protocolo_avisar', {
+        p_usuario: user?.id, p_store_code: suc, p_texto: texto.trim(),
+        p_paso_id: p?.paso_id || null, p_area_id: null,
       })
       if (e) throw e
-      setEditando(null)
-      await cargar(suc)
+      window.alert('Aviso enviado. Le llega a quien edita el protocolo.')
     } catch (err) {
-      setError(`No se guardó «${p.titulo}»: ${err.message || err}`)
-    } finally { setGuard(null) }
-  }
-
-  // Ocultar pide motivo por diseño: un paso que desaparece sin explicación es
-  // exactamente el agujero que este protocolo existe para tapar. La función de
-  // la base deja el aviso sola.
-  async function ocultarPaso(p) {
-    const motivo = window.prompt(
-      `¿Por qué no aplica «${p.titulo}» en esta sucursal?\n\n` +
-      'Queda registrado y te llega el aviso.')
-    if (motivo === null) return
-    if (!motivo.trim()) { setError('Sin motivo no se puede ocultar un paso.'); return }
-    setGuard(p.paso_id); setError(null)
-    try {
-      const { error: e } = await db.rpc('fn_protocolo_ocultar_paso', {
-        p_usuario: user?.id, p_store_code: suc, p_paso_id: p.paso_id, p_motivo: motivo.trim(),
-      })
-      if (e) throw e
-      await cargar(suc)
-    } catch (err) {
-      setError(`No se pudo ocultar «${p.titulo}»: ${err.message || err}`)
+      setError(`No se envió el aviso: ${err.message || err}`)
     } finally { setGuard(null) }
   }
 
@@ -394,6 +338,18 @@ export default function ProtocoloAperturaView({ user }) {
         </div>
         <div style={{ fontSize: 13, marginTop: 6, fontWeight: 700, color: listos === total && total ? '#22c55e' : '#fbbf24' }}>
           {listos} de {total} · faltan {total - listos}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          {(puedeSuc || puedeBase) && onEditar && (
+            <button onClick={onEditar} style={{
+              background: '#1e3a5f', color: '#bfdbfe', border: 0, borderRadius: 8,
+              padding: '8px 13px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
+            }}>✏️ Editar el protocolo</button>
+          )}
+          <button onClick={() => avisar(null)} disabled={guardando === 'aviso'} style={{
+            background: 'none', color: '#9ca3af', border: '1px solid #2b3344', borderRadius: 8,
+            padding: '8px 13px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
+          }}>Avisar que falta un paso</button>
         </div>
       </div>
 
@@ -607,92 +563,14 @@ export default function ProtocoloAperturaView({ user }) {
                             }}>{p.nota}</div>
                           )}
 
-                          {puedeSuc && editando === p.paso_id && (
-                            <div style={{
-                              marginTop: 10, background: '#0f1620', border: '1px solid #1e3a5f',
-                              borderRadius: 9, padding: '11px 12px',
-                            }}>
-                              <div style={{ fontSize: 11, color: '#93c5fd', fontWeight: 700, marginBottom: 8 }}>
-                                Editando solo para {sucursales.find(s => s.store_code === suc)?.nombre || suc}
-                              </div>
-                              {[
-                                ['titulo', 'Título del paso', 1],
-                                ['como', 'Cómo se hace', 3],
-                                ['bien', 'Así se ve bien hecho', 2],
-                                ['mal', 'Lo que sale mal seguido', 2],
-                              ].map(([campo, etiqueta, filas]) => (
-                                <label key={campo} style={{ display: 'block', marginBottom: 8 }}>
-                                  <span style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 3 }}>
-                                    {etiqueta}
-                                  </span>
-                                  <textarea rows={filas} value={form[campo] || ''}
-                                    onChange={e => setForm(f => ({ ...f, [campo]: e.target.value }))}
-                                    style={{
-                                      width: '100%', background: '#0b0e14', color: '#e8eaed',
-                                      border: '1px solid #2b3344', borderRadius: 7, padding: '7px 9px',
-                                      font: 'inherit', fontSize: 13, resize: 'vertical', boxSizing: 'border-box',
-                                    }} />
-                                </label>
-                              ))}
-                              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                                <button onClick={() => guardarLocal(p)} disabled={trabajando} style={{
-                                  background: '#22c55e', color: '#08120a', border: 0, borderRadius: 7,
-                                  padding: '7px 14px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
-                                }}>{trabajando ? 'guardando…' : 'Guardar'}</button>
-                                <button onClick={() => setEditando(null)} style={{
-                                  background: 'none', color: '#9ca3af', border: '1px solid #2b3344',
-                                  borderRadius: 7, padding: '7px 14px', fontSize: 12.5, cursor: 'pointer',
-                                }}>Cancelar</button>
-                              </div>
-                              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 8 }}>
-                                Lo que dejes igual que la base sigue a la base: si mañana cambia el
-                                estándar, ese campo se actualiza solo.
-                              </div>
-                            </div>
-                          )}
-
-                          {(puedeSuc || puedeBase) && editando !== p.paso_id && (
-                            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 9 }}>
-                              {puedeSuc && (
-                                <button onClick={() => abrirEditor(p)} disabled={trabajando} style={{
-                                  background: '#1f2937', color: '#cbd5e1', border: 0, borderRadius: 7,
-                                  padding: '6px 11px', fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                                }}>Editar para esta sucursal</button>
-                              )}
-                              {puedeSuc && (
-                                <button onClick={() => refRef.current[p.paso_id]?.click()}
-                                  disabled={trabajando} style={{
-                                    background: '#1f2937', color: '#cbd5e1', border: 0, borderRadius: 7,
-                                    padding: '6px 11px', fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                                  }}>{trabajando ? 'subiendo…' : 'Foto de esta sucursal'}</button>
-                              )}
-                              {puedeSuc && p.es_base && !p.es_critico && (
-                                <button onClick={() => ocultarPaso(p)} disabled={trabajando} style={{
-                                  background: 'none', color: '#f87171', border: '1px solid #7f1d1d',
-                                  borderRadius: 7, padding: '6px 11px', fontWeight: 700, fontSize: 11.5,
-                                  cursor: 'pointer',
-                                }}>No aplica acá</button>
-                              )}
-                              {puedeBase && (
-                                <button onClick={() => refRef.current[p.paso_id]?.click()}
-                                  disabled={trabajando} style={{
-                                    background: '#1e3a5f', color: '#bfdbfe', border: 0, borderRadius: 7,
-                                    padding: '6px 11px', fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                                  }}>
-                                  {trabajando ? 'subiendo…' : '+ Foto de referencia (todas las sucursales)'}
-                                </button>
-                              )}
-                              <input
-                                ref={el => { refRef.current[p.paso_id] = el }}
-                                type="file" accept="image/*" hidden
-                                onChange={e => {
-                                  const f = e.target.files?.[0]
-                                  e.target.value = ''
-                                  // Quien maneja la base sube a la base; la encargada, a su sucursal.
-                                  if (f) subirReferencia(p, f, puedeBase)
-                                }} />
-                            </div>
-                          )}
+                          {/* Editar vive en su propia pantalla (el editor). Acá solo
+                              se marca. Quien no edita puede avisar que algo falta. */}
+                          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 9 }}>
+                            <button onClick={() => avisar(p)} disabled={trabajando} style={{
+                              background: 'none', color: '#9ca3af', border: '1px solid #2b3344',
+                              borderRadius: 7, padding: '5px 10px', fontWeight: 700, fontSize: 11, cursor: 'pointer',
+                            }}>Avisar que algo está mal</button>
+                          </div>
                         </>
                       )}
                     </div>
