@@ -2,6 +2,25 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 08-Sep-2026 — `freakiedogs.com` en producción y `api.freakiedogs.com` listo para matar el proxy `/sb`
+
+Namecheap invitó a Jose como *domain manager* de **`freakiedogs.com`** (dueño: **Luis Castillo**, socio). El dominio existía desde ene-2024 pero **no resolvía a nada**: los NS de BanaHosting daban `SERVFAIL` para la zona — eso explica el `pos.freakiedogs.com` NXDOMAIN que topamos con el APK del driver. No había nada que romper.
+
+Quedó armado en una noche: zona en **Cloudflare** (`grant`/`hattie.ns.cloudflare.com`), y `erp` · `pos` → proyecto `freakie-dogs-caja`, `pedidos` · `www` · apex → `freakiedelivery`. **Todo en nube gris (DNS only)**, ignorando a propósito el banner de Cloudflare que pide encender el proxy: delante de Vercel la nube naranja duplica en vez de sumar, y sobre todo **dos cachés en serie romperían el candado de versión** (Vercel purga en cada deploy, Cloudflare no se entera). El detalle completo, en `docs/dominio-propio.md`.
+
+**Lo que de verdad importa es `api.freakiedogs.com`** — Supabase Custom Domain, ya activo y verificado. Es la salida del proxy `/sb`, que es un cuello de botella serverless delante de TODO el ERP: el 4-sep devolvió **1,858 respuestas 504 en 10 minutos** (incluidos `registrar_produccion` y 83 `erp_login`), su techo de ~25 s no es configurable en runtime Edge, y su `fetch()` no sabe hacer upgrade a WebSocket. La prueba lado a lado:
+
+```
+api.freakiedogs.com  → HTTP/1.1 101 Switching Protocols
+el MISMO handshake por /sb → HTTP/1.1 500 Internal Server Error
+```
+
+**Kaeru y Kako no se ven afectados**: el doc de Supabase es explícito en que el dominio `*.supabase.co` sigue sirviendo, y lo verifiqué endpoint por endpoint (mismo 401 en la raíz de `/rest/v1/`, mismo 400 en `/storage/v1/bucket`, mismo 200 en el RPC). Ninguno usa OAuth ni SAML —los dos entran con `signInWithPassword`— que es donde el doc advierte roturas reales. **El costo real de la decisión no son los $10/mes sino que solo se permite UN custom domain por proyecto**: si mañana Kaeru quiere el suyo, hay que separarlo de proyecto.
+
+**El switch es una variable, no un merge de código.** `VITE_SB_URL` manda sobre todo en `src/supabase.js` y, cuando está seteada, además se salta el swap del `RealtimeClient` (`PASA_POR_PROXY`) que existía solo porque el proxy rompe el WebSocket. Igual `VITE_URL_DELIVERY` en `src/config.js`. En `public/sw.js` el bypass ahora cubre **todo origen ajeno**: sin eso, cada GET a `api.freakiedogs.com` entraría al service worker a buscar en un cache donde solo se guarda `/assets/` de este host. **Rollback = borrar la variable y redeployar.**
+
+⚠️ **Trampa que casi nos come:** las variables se pueden setear en Vercel y no hacer nada, porque producción compila desde `main` y el código que las lee tiene que estar ahí primero. Y `VITE_*` es prefijo público — Vercel las rechaza como `Secret`, van como `Config` (Vite las hornea en el bundle del navegador; llamarlas secretas sería mentira).
+
 ## 08-Sep-2026 — Dashboard "Consumo por Venta": qué se consumió por lo que se vendió
 
 Pedido de Jose: que **Saúl (consultor), admin y ejecutivos** puedan ver, en un rango de fechas, cuánto salió **de cada componente** en unidades y en dinero — hamburguesas, coca de lata, hot dogs, extras — agrupado por familia, con una pestaña para cambiar a los **ingredientes de la lista de conteo** y a **bebidas**.
