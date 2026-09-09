@@ -2,6 +2,30 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — Protocolo de apertura abierto a las seis sucursales: editor, PIN por sucursal, fotos servidas por la PWA
+
+El protocolo de apertura (70 pasos, 7 áreas, cierre automático 11:30 en verde/rojo) sale de beta. Tres pantallas nuevas en Producción: **Protocolo de apertura** (marcar el día), **Editar el protocolo** (`ProtocoloEditorView.jsx`) y **Mi equipo · PIN** (`ProtocoloEquipoView.jsx`). Quién ve cada una está en `permisos_rol` (que manda sobre `config.js`); `protocolo_beta` quedó vacía.
+
+**Herencia viva, no copias.** Cada sucursal ve la base (`store_code IS NULL`) más lo suyo. Una encargada puede reescribir un paso de la base *solo para su local* (`protocolo_paso_local`: un campo `null` = sigue heredando, así un cambio en el estándar le llega solo), ocultarlo **con motivo obligatorio** (deja aviso), agregar áreas y pasos propios, y poner su foto encima de la de base sin borrarla. Lo que no puede tocar (pide foto, crítico, orden de la base) la pantalla lo muestra **deshabilitado con el porqué**, no lo esconde. `fn_protocolo_editor` es la lista del editor: igual que `fn_protocolo_de_sucursal` pero trae ocultos y los campos crudos de la base.
+
+**Permisos: `protocolo_permisos` anula el rol.** Si un usuario tiene filas ahí, esas filas son su alcance completo (Jazmin es `admin` pero solo edita M001; Cesar es `ejecutivo` pero tiene S006 + `puede_base`). Sin filas, cae al rol: gerente → su `store_code`, admin/superadmin → todo. **Ojo: Saul Alas y Super Admin ven y editan todo por rol, incluidos los 110 PIN** — pendiente que Cesar decida si les pone alcance.
+
+**Se eliminó `fn_protocolo_puede_editar(uuid)` de un argumento**: leía la tabla vieja `usuarios` (todos con `sucursal_id` NULL) y devolvía `false` para cualquiera. `fn_protocolo_guardar_area` y una sobrecarga de `guardar_paso` dependían de ella — reescritas con `store_code`. Si algo llama a la versión de un argumento, ese es el error.
+
+**Las 38 fotos de referencia se sirven desde `public/fotos-protocolo/`, no desde Storage.** La subida desde el navegador no funcionó en la red del local (el ISP filtra `*.supabase.co` y el sandbox de Claude no llega), y para las fotos *de base* está bien que cambien con un commit: son el estándar. Comprimidas a 1000 px / q72 (6.3 → 3.2 MB). Las URLs en `protocolo_paso_fotos` son relativas (`/fotos-protocolo/…`), mismo origen, sin proxy ni RLS. La foto del día y la foto por sucursal sí van a Storage (`bpm-fotos`, política `bpm_fotos_subida` a `anon`).
+
+**Bug de `FileList` que va a volver a morder:** `const f = e.target.files; e.target.value = ''` deja `f.length === 0` — `FileList` es una vista viva del input, no una copia. Hay que `Array.from(e.target.files)` **antes** de limpiar. Con un solo archivo (`files[0]`) no pasa porque `File` sí es un objeto real. Fue la causa de que la carga por carpeta "no hiciera nada" durante media tarde.
+
+**Foto del día = cámara de la app, sin galería.** `<input type=file capture>` es una sugerencia: Android y iOS ofrecen "Galería" igual. Se reemplazó por `getUserMedia` (trasera, 1280 px, JPEG 0.8) a un canvas. Si el navegador no da la cámara, dice por qué y **no** ofrece la galería como salida — a propósito, la foto deja de probar algo si puede ser vieja. La miniatura se ve en el resumen del paso hecho, para que la encargada corrobore.
+
+**Mi equipo · PIN:** solo gente de la propia sucursal (`fn_protocolo_equipo`), ver o cambiar pide el PIN propio y queda en `usuarios_pin_bitacora` con el intento fallido incluido, el PIN se tapa a los 15 s. `fn_protocolo_pin_cambiar` es nueva (4-6 dígitos, no puede repetir el de otra persona). El código de empleado nuevo (`protocolo_codigos`) es para quien no tiene usuario: marca la apertura, no abre caja.
+
+**Avisos:** cualquiera de piso puede "Avisar que algo está mal" en un paso o "que falta un paso" (`fn_protocolo_avisar`); caen en el editor de quien edita esa sucursal (o de Cesar), con Convertir en paso / Descartar (`fn_protocolo_resolver_aviso`).
+
+**Datos que el módulo destapa:** Metrocentro tiene **5 usuarios activos** en `usuarios_erp` (Cafetalón 21, Lourdes 18, Venecia 18); 9 personas sin `store_code` y 15 en CM001 no aparecen en ninguna pantalla de encargada. Ningún paso está marcado `es_critico` todavía — se marca desde el editor, en la base.
+
+**Pendiente:** #55 pantalla del reporte diario / días anteriores con fotos (`fn_protocolo_dia` ya existe); ejecutivos sin fila en `protocolo_permisos` (Jose, Francisco, Luis) ven el menú del editor pero la base los rechaza; `.git/index.lock` aparece si Claude corre `git status` desde el sandbox sobre el mount — no correr git que escriba desde ahí.
+
 ## 08-Sep-2026 — `freakiedogs.com` en producción y `api.freakiedogs.com` listo para matar el proxy `/sb`
 
 Namecheap invitó a Jose como *domain manager* de **`freakiedogs.com`** (dueño: **Luis Castillo**, socio). El dominio existía desde ene-2024 pero **no resolvía a nada**: los NS de BanaHosting daban `SERVFAIL` para la zona — eso explica el `pos.freakiedogs.com` NXDOMAIN que topamos con el APK del driver. No había nada que romper.

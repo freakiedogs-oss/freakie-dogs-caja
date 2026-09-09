@@ -350,6 +350,10 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
             background: 'none', color: '#9ca3af', border: '1px solid #2b3344', borderRadius: 8,
             padding: '8px 13px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
           }}>Avisar que falta un paso</button>
+          <a href="/manual-protocolo.html" target="_blank" rel="noopener noreferrer" style={{
+            color: '#9ca3af', border: '1px solid #2b3344', borderRadius: 8, textDecoration: 'none',
+            padding: '8px 13px', fontWeight: 700, fontSize: 12.5,
+          }}>📖 Manual</a>
         </div>
       </div>
 

@@ -1,0 +1,411 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Protocolo de Apertura — Freakie Dogs</title>
+<style>
+  /* Pensado para imprimir: Ctrl+P → Guardar como PDF. En pantalla también se lee. */
+  @page { size: A4; margin: 14mm 12mm 16mm; }
+  :root{--ink:#111;--soft:#555;--line:#ddd;--green:#15803d;--red:#b91c1c;--amber:#92400e;--amberbg:#fef3c7}
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);font:11pt/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:190mm;margin:0 auto;padding:10mm 6mm}
+  @media print{.wrap{max-width:none;padding:0}.noprint{display:none}}
+  .portada{text-align:center;padding:30mm 0 10mm;page-break-after:always}
+  .portada h1{font-size:30pt;margin:0 0 4pt;letter-spacing:-.5pt}
+  .portada .sub{color:var(--soft);font-size:13pt}
+  .portada .meta{margin-top:18mm;font-size:10.5pt;color:var(--soft)}
+  .portada .reglas{margin:14mm auto 0;max-width:140mm;text-align:left;border:1px solid var(--line);border-radius:6px;padding:10px 14px;font-size:10.5pt}
+  .portada .reglas b{display:block;margin-bottom:4px}
+  .indice{page-break-after:always}
+  .indice h2{font-size:16pt;margin:0 0 8pt}
+  .indice table{width:100%;border-collapse:collapse;font-size:11pt}
+  .indice td{padding:5px 8px;border-bottom:1px solid var(--line)}
+  .indice td:last-child{text-align:right;color:var(--soft)}
+  .area{page-break-before:always}
+  .area:first-of-type{page-break-before:auto}
+  .area h2{font-size:18pt;margin:0 0 2pt;padding-left:10px;border-left:6px solid var(--c)}
+  .area .sub{color:var(--soft);margin:0 0 10pt 16px;font-size:10.5pt}
+  .paso{display:grid;grid-template-columns:1fr 46mm;gap:8px 12px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:8px;page-break-inside:avoid}
+  .paso.sinfoto{grid-template-columns:1fr}
+  .t{font-weight:800;font-size:12pt;margin-bottom:3px}
+  .t .n{display:inline-block;min-width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:var(--c);color:#fff;font-size:10pt;margin-right:6px}
+  .tag{display:inline-block;font-size:8.5pt;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:6px;vertical-align:middle;border:1px solid}
+  .tag.foto{color:var(--green);border-color:var(--green)}
+  .como{font-size:10.5pt}
+  .bm{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;font-size:9.5pt}
+  .bm div{padding-left:8px;border-left:3px solid}
+  .bm .b{border-color:var(--green)} .bm .m{border-color:var(--red)}
+  .bm small{display:block;font-size:8pt;letter-spacing:.4pt;text-transform:uppercase;font-weight:700;margin-bottom:1px}
+  .bm .b small{color:var(--green)} .bm .m small{color:var(--red)}
+  .nota{margin-top:6px;background:var(--amberbg);color:var(--amber);border-radius:4px;padding:5px 8px;font-size:9.5pt}
+  .img{grid-row:1 / span 4;align-self:start}
+  .img img{width:100%;border-radius:4px;border:1px solid var(--line);display:block}
+  .noprint{background:#111827;color:#e5e7eb;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:10.5pt}
+  .noprint b{color:#fbbf24}
+  .pie{color:var(--soft);font-size:9pt;text-align:center;margin-top:12mm}
+</style></head><body>
+<div class="wrap">
+
+<div class="noprint">
+  <b>Para guardarlo en PDF:</b> Ctrl+P (o ⌘P) → Destino: <b>Guardar como PDF</b> → activar <b>Gráficos de fondo</b> → Guardar. Salen ~14 páginas A4.
+</div>
+
+<div class="portada">
+  <div style="font-size:40pt">🌅</div>
+  <h1>Protocolo de Apertura</h1>
+  <div class="sub">Freakie Dogs · versión base para las seis sucursales</div>
+  <div class="meta">61 pasos · 7 áreas · 9 piden foto · cierra a las 11:30</div>
+  <div class="reglas">
+    <b>Tres reglas</b>
+    · La hora la pone el sistema, no la persona.<br>
+    · Los pasos que piden foto no cuentan como hechos sin la foto, tomada en el momento con la cámara de la app.<br>
+    · A las 11:30 el día cierra solo: verde si está todo, rojo si faltó uno. No hay porcentajes.
+  </div>
+</div>
+
+<div class="indice">
+  <h2>Áreas</h2>
+  <table>
+    <tr><td><b>Arranque</b> — Lo primero al entrar. Sin esto no enciende nada.</td><td>2 pasos</td></tr>
+    <tr><td><b>Plancha y mesa fría</b> — El puesto de hamburguesa.</td><td>12 pasos</td></tr>
+    <tr><td><b>Frituras</b> — La freidora y todo el puesto de porcionado.</td><td>12 pasos</td></tr>
+    <tr><td><b>Carrito de hot dogs</b> — Es el puesto con más piezas sueltas.</td><td>19 pasos</td></tr>
+    <tr><td><b>Mesa 1</b> — Chili, vegetales y salsas. Todo lo que se vence a las 3:00 pm.</td><td>6 pasos</td></tr>
+    <tr><td><b>Mesa 2</b> — Empaque y despacho. Cups, papel, salsas y el cheddar.</td><td>7 pasos</td></tr>
+    <tr><td><b>Freezers</b> — El control de PEPS y la temperatura.</td><td>3 pasos</td></tr>
+  </table>
+  <p style="color:var(--soft);font-size:10pt;margin-top:14px">Cada sucursal puede tener su propia versión de un paso, pasos propios y áreas propias. Este documento es la <b>base</b>: lo que ven las seis. Las adaptaciones por sucursal se ven en el ERP.</p>
+</div>
+
+<!-- ═══════════════ ARRANQUE ═══════════════ -->
+<section class="area" style="--c:#f59e0b">
+<h2>Arranque</h2><p class="sub">Lo primero al entrar. Sin esto no enciende nada.</p>
+
+<div class="paso"><div class="t"><span class="n">1</span>Abrir la válvula de gas</div>
+<div class="como">La llave naranja de la pared. El rótulo de Tropigas al lado muestra las dos posiciones: <b>palanca alineada con el tubo = abierta</b>, palanca cruzada = cerrada.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>La palanca queda paralela al tubo naranja.</div><div class="m"><small>Lo que sale mal seguido</small>Dejarla a medias, o abrirla y encender sin revisar antes que no huela a gas.</div></div>
+<div class="img"><img src="fotos-protocolo/01-abrir-la-valvula-de-gas.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">2</span>Encender la campana</div>
+<div class="como">Los dos botones rojos de la caja TECNI INOX: <b>LUZ</b> y <b>MOTOR</b>. Se encienden los dos, no solo la luz.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los dos botones en rojo y se oye el motor jalando.</div><div class="m"><small>Lo que sale mal seguido</small>Encender solo la luz. La cocina se llena de humo y nadie sabe por qué.</div></div>
+<div class="img"><img src="fotos-protocolo/02-encender-la-campana.jpg" alt=""></div></div>
+</section>
+
+<!-- ═══════════════ PLANCHA Y MESA FRÍA ═══════════════ -->
+<section class="area" style="--c:#ef4444">
+<h2>Plancha y mesa fría</h2><p class="sub">El puesto de hamburguesa.</p>
+
+<div class="paso"><div class="t"><span class="n">1</span>Revisar la plancha grande</div>
+<div class="como">La plancha <b>ya quedó limpia desde el cierre de anoche</b>. Acá no se lava: se revisa. Si está limpia, no le eches agua — es agua y tiempo tirados. Solo si encontrás residuo lo levantás en ese momento.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Superficie pareja y sin residuo, tal como quedó del cierre.</div><div class="m"><small>Lo que sale mal seguido</small>Lavar por costumbre una plancha que ya estaba limpia. Y al revés: encontrar residuo y taparlo limpiando en silencio.</div></div>
+<div class="nota">Si la encontrás sucia, eso es una falla del cierre de anoche, no una tarea de la apertura. Avisá — si lo limpiás callado, el cierre nunca se corrige y mañana vuelve a pasar.</div>
+<div class="img"><img src="fotos-protocolo/03-revisar-la-plancha-grande.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">2</span>Pared y perillas sin grasa</div>
+<div class="como">La pared detrás de la plancha no debe tener salpicadura de grasa, y las perillas van limpias, incluido el borde de alrededor — que es donde se junta y nadie limpia. Son los puntos <b>2</b> y <b>3</b> de la referencia.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Azulejo sin salpicaduras y perillas sin grasa en el contorno.</div><div class="m"><small>Lo que sale mal seguido</small>Limpiar la perilla por encima y dejar el anillo de grasa alrededor.</div></div>
+<div class="img"><img src="fotos-protocolo/04-pared-y-perillas-sin-grasa.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">3</span>Repisa forrada con film y aluminio</div>
+<div class="como">La repisa de la plancha se forra igual que la del carrito: <b>aluminio primero, film encima</b>. Es el punto <b>4</b> de la referencia.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los dos puestos, lisos, sin rasgaduras, antes de acomodar nada encima.</div><div class="m"><small>Lo que sale mal seguido</small>Poner solo aluminio: se ensucia y hay que botarlo cada vez.</div></div>
+<div class="img"><img src="fotos-protocolo/05-repisa-forrada-con-film-y-aluminio.jpg" alt=""></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">4</span>Encender la plancha</div>
+<div class="como">Encender y dejar que llegue a temperatura antes de poner nada.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Temperatura estable antes de la primera carne.</div><div class="m"><small>Lo que sale mal seguido</small>Poner carne en una plancha que todavía está subiendo. Se pega y no sella.</div></div></div>
+
+<div class="paso"><div class="t"><span class="n">5</span>Mesa fría — la carne <span class="tag foto">pide foto</span></div>
+<div class="como">1. Contá <b>cuánta carne quedó del día anterior</b>.<br>2. Compará ese número con lo que pide el mise en place del primer turno (11:00 am – 4:00 pm).<br>3. Si falta, colocá carne en bandejas hasta completar.<br>4. Pasá la carne de las bolsas selladas al vacío a la mesa fría, en su orden.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El conteo hecho, las bandejas completas hasta el número del mise en place, y ninguna bolsa al vacío dentro del cajón.</div><div class="m"><small>Lo que sale mal seguido</small>Arrancar con lo que quedó, sin contar. A las dos de la tarde se descubre que faltaba y ya no hay tiempo de bolear.</div></div>
+<div class="img"><img src="fotos-protocolo/06-mesa-fria-la-carne.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">6</span>Mesa fría — revisar contra el mise en place</div>
+<div class="como">Seguí el <b>orden del mise en place</b> que ya está definido y revisá que alcance para el <b>primer turno, de 11:00 am a 4:00 pm</b>: carne, queso amarillo procesado, queso blanco y mezcla tres quesos.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los cuatro presentes y en la cantidad que manda el mise en place para ese día de la semana.</div><div class="m"><small>Lo que sale mal seguido</small>Revisarlo de vista. Si el mise en place da una cantidad, se cuenta contra esa cantidad, no se calcula a ojo.</div></div>
+<div class="nota">Si algo no alcanza hay que resolverlo antes de las 11, no a mediodía. La hoja de mise en place de turno 1 existe para Metro Centro; falta armarla para las demás sucursales.</div>
+<div class="img"><img src="fotos-protocolo/07-mesa-fria-revisar-contra-el-mise-en-place.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">7</span>Mesa fría — el tocino</div>
+<div class="como">Revisá en el <b>mise en place</b> cuánto tocino se va a ocupar en el <b>primer turno (11:00 am – 4:00 pm)</b>. Contá cuánto hay hecho. La resta es cuánto tenés que hacer, y se empieza ahora, no cuando se acabe. Lo que queda crudo se embala con film.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El número del mise en place, el conteo de lo que hay, y el tocino faltante ya en la plancha. El resto tapado, sin puntas al aire.</div><div class="m"><small>Lo que sale mal seguido</small>Empezar a hacer tocino cuando se acaba. Para cuando está listo, ya se perdieron pedidos.</div></div>
+<div class="nota">Falta el dato de cuántas lascas salen por libra del tocino Chimex. Sin eso no se puede convertir el número del mise en place en libras a descongelar.</div>
+<div class="img"><img src="fotos-protocolo/08-mesa-fria-el-tocino.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">8</span>Papeles encerados</div>
+<div class="como">Cortados a la medida y suficientes para todo el día. Se usa <b>1 papel por cada 3 bolitas</b>, y la referencia de la estación los fija en <b>260</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Un montón parejo, cortado, sobre el forro y al alcance de la mano.</div><div class="m"><small>Lo que sale mal seguido</small>Cortarlos a media hora pico. Ahí ya se perdió el turno.</div></div>
+<div class="img"><img src="fotos-protocolo/09-papeles-encerados.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">9</span>Espátula y smasher limpios</div>
+<div class="como">Las espátulas y el smasher van limpios sobre el forro de la repisa, no tirados ni con costra pegada. Son los puntos <b>8</b> y <b>9</b> de la referencia de la estación.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Sin costra en el filo de las espátulas ni en la cara del smasher, y los tres acomodados sobre el forro.</div><div class="m"><small>Lo que sale mal seguido</small>Dejarlos con la costra del día anterior. Esa costra se pasa a la primera carne del turno.</div></div>
+<div class="img"><img src="fotos-protocolo/10-espatula-y-smasher-limpios.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">10</span>Llenar el bote de agua</div>
+<div class="como">La botella transparente que se usa para levantar la costra. Va llena antes de abrir.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Llena y en su lugar.</div><div class="m"><small>Lo que sale mal seguido</small>Empezar con la botella a la mitad. A media mañana no hay con qué limpiar.</div></div>
+<div class="img"><img src="fotos-protocolo/11-llenar-el-bote-de-agua.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">11</span>Sal y pimienta</div>
+<div class="como">La sal se cambia todos los días con orden PEPS:<br>1. Sacá la sal que ya está en el bote y apartala.<br>2. Lavá y desinfectá el bote.<br>3. <b>Secalo por completo.</b> Si queda húmedo, la sal se apelmaza en una hora y no sale por los agujeros.<br>4. Poné sal nueva <b>abajo</b>.<br>5. Poné encima la sal que sacaste, para que esa se acabe primero.<br>La pimienta va llena y en su lugar.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El bote limpio y seco por dentro, la sal vieja arriba y la nueva abajo, y los dos botes sobre el puesto.</div><div class="m"><small>Lo que sale mal seguido</small>Echar sal nueva encima de la vieja: la de abajo nunca se acaba y termina apelmazada. Y rellenar el bote todavía húmedo.</div></div>
+<div class="nota">Falta definir si la pimienta lleva el mismo cambio diario o solo se rellena.</div>
+<div class="img"><img src="fotos-protocolo/12-sal-y-pimienta.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">12</span>El roller del pan <span class="tag foto">pide foto</span></div>
+<div class="como">El roller pasa la noche <b>en la refri</b>, con su margarina.<br>1. Sacalo de la refri.<br>2. Pasá la margarina que trae a una bolsa y apartala.<br>3. Lavá el roller <b>y el inserto</b>, enjuagá bien, desinfectá y dejá secar al aire.<br>4. Poné margarina nueva y agregale la que guardaste en la bolsa, hasta que el inserto quede lleno para el turno.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El roller sin costra entre los agujeros, el borde del inserto sin la orilla café, y el inserto lleno.</div><div class="m"><small>Lo que sale mal seguido</small>Lavar el roller pero no el inserto. Y botar la margarina del día anterior en vez de reintegrarla.</div></div>
+<div class="nota">Falta un tope: ¿cuántos días se puede arrastrar la margarina guardada? También falta cuánta margarina lleva el inserto y cómo se derrite.</div>
+<div class="img"><img src="fotos-protocolo/13-el-roller-del-pan.jpg" alt=""></div></div>
+</section>
+
+<!-- ═══════════════ FRITURAS ═══════════════ -->
+<section class="area" style="--c:#f97316">
+<h2>Frituras</h2><p class="sub">La freidora y todo el puesto de porcionado.</p>
+
+<div class="paso"><div class="t"><span class="n">1</span>Revisar el mise en place del freezer</div>
+<div class="como">Contá lo que hay en el freezer de línea y compará contra la hoja del día: <b>papa sazonada</b> por día, y <b>2 bolsas fijas</b> de blanca, <b>2</b> de waffle, <b>1 bolsa abierta</b> de aros. El <b>queso frito</b> va 10 piezas, 15 los sábados.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El conteo hecho contra la hoja y lo que falte ya bajado de recepción antes de las 11.</div><div class="m"><small>Lo que sale mal seguido</small>Revisarlo de vista. El sábado pide 4 bolsas más de sazonada que el lunes y es el día en que más se falla.</div></div>
+<div class="img"><img src="fotos-protocolo/14-revisar-el-mise-en-place-del-freezer.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">2</span>Lavar la freidora <span class="tag foto">pide foto</span></div>
+<div class="como">1. Vaciá el tanque por completo.<br>2. Lavá con agua caliente y detergente: el fondo, las paredes, <b>las esquinas</b> — que son lo más complicado y donde nadie llega — y <b>toda la parte de enfrente</b>, que es la que el cliente ve.<br>3. Enjuagá.<br>4. <b>Secá el tanque por completo</b> antes de devolver el aceite.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Fondo y esquinas sin residuo pegado, frente limpio, y el tanque seco al tacto.</div><div class="m"><small>Lo que sale mal seguido</small>Devolver el aceite con el tanque húmedo. Una gota de agua en aceite caliente salta y quema — esto no es prolijidad, es seguridad.</div></div>
+<div class="img"><img src="fotos-protocolo/15-lavar-la-freidora.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">3</span>Repisa y canastas limpias</div>
+<div class="como">Va <b>antes</b> de devolver el aceite: si se lavan después, el residuo cae al aceite limpio.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Canastas sin costra entre los alambres y la repisa sin grasa.</div><div class="m"><small>Lo que sale mal seguido</small>Lavarlas después del aceite. Ese fue el orden que corregimos.</div></div>
+<div class="img"><img src="fotos-protocolo/16-repisa-y-canastas-limpias.jpg" alt=""></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">4</span>Colar el aceite y devolverlo <span class="tag foto">pide foto</span></div>
+<div class="como">Colá el aceite del día anterior y regresalo al tanque ya limpio y seco. Al terminar, marcá en la pantalla si <b>seguís con el mismo aceite</b> o si <b>hoy lo cambiaste</b>. El máximo son <b>3 días</b>: al tercero el sistema no deja seguir con el mismo.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Aceite sin partículas flotando, y el día marcado en la pantalla.</div><div class="m"><small>Lo que sale mal seguido</small>Devolverlo sin colar: las migas se queman y amargan la papa. Y no marcar — sin el conteo nadie sabe cuántos días lleva.</div></div></div>
+
+<div class="paso"><div class="t"><span class="n">5</span>Nivel de aceite</div>
+<div class="como">El aceite llega hasta la línea grabada <b>OIL LEVEL</b> en la pared de adentro. Si el aceite del día anterior no alcanza a llegar, completá con <b>aceite nuevo</b> hasta la línea.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El aceite justo en la línea, ni arriba ni abajo.</div><div class="m"><small>Lo que sale mal seguido</small>Arrancar por debajo de la línea: la resistencia se descubre. Pasarse: rebalsa al meter la canasta.</div></div>
+<div class="nota">Este punto se revisa DESPUÉS de que el carrito haya colado su aceite hacia la freidora. Si se hace antes, el nivel siempre va a salir mal y nadie va a entender por qué.</div>
+<div class="img"><img src="fotos-protocolo/17-nivel-de-aceite.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">6</span>Encender y llegar a 350 °F</div>
+<div class="como">Encendé la freidora y esperá a que llegue a <b>350 °F (177 °C)</b> antes de la primera tanda. Es el estándar que está rotulado en la pared del puesto.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>350 °F marcados antes de meter la primera canasta.</div><div class="m"><small>Lo que sale mal seguido</small>Meter papa en aceite que todavía va subiendo: sale aguada y absorbe grasa.</div></div>
+<div class="img"><img src="fotos-protocolo/18-encender-y-llegar-a-350-f.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">7</span>Tapa del congelador despejada</div>
+<div class="como">La tapa del congelador de la estación queda <b>despejada</b>: nada encima. Es el punto <b>12</b> de la referencia.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Tapa libre, sin cajas ni bandejas encima.</div><div class="m"><small>Lo que sale mal seguido</small>Usarla de mesa. Cada vez que hay que abrirla se pierde tiempo y hay que descargar todo al piso.</div></div>
+<div class="img"><img src="fotos-protocolo/19-tapa-del-congelador-despejada.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">8</span>Bandejas de papa limpias</div>
+<div class="como">Las bandejas donde se recibe la papa van limpias y listas. Es el punto <b>8</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Sin grasa ni residuo del día anterior, apiladas en su repisa.</div><div class="m"><small>Lo que sale mal seguido</small>Apilar bandejas todavía grasosas: se pegan entre sí y la de abajo queda sucia.</div></div>
+<div class="img"><img src="fotos-protocolo/20-bandejas-de-papa-limpias.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">9</span>Tablet y báscula del porcionador</div>
+<div class="como">Encendé la <b>tablet con el porcionador</b> y dejá la <b>báscula en cero</b> con el plato limpio. Son los puntos <b>1</b> y <b>2</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Tablet encendida mostrando el porcionador, y báscula marcando cero con el plato puesto.</div><div class="m"><small>Lo que sale mal seguido</small>Arrancar el turno sin la tablet: ese día no queda registro de ninguna porción.</div></div>
+<div class="img"><img src="fotos-protocolo/21-tablet-y-bascula-del-porcionador.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">10</span>Plato de acero y sal</div>
+<div class="como">El <b>plato de acero</b> para secar y salpimentar, y la <b>sal</b>, en su lugar. Puntos <b>3</b> y <b>4</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El plato limpio y la sal llena, los dos al alcance de la mano.</div><div class="m"><small>Lo que sale mal seguido</small>Salpimentar sobre la bandeja de servir. El exceso se va con el producto.</div></div>
+<div class="img"><img src="fotos-protocolo/22-plato-de-acero-y-sal.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">11</span>Papel toalla y trapo limpio</div>
+<div class="como"><b>Papel toalla</b> montado y un <b>trapo limpio, doblado</b>. Puntos <b>5</b> y <b>6</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El rollo montado y el trapo limpio y doblado, no hecho bola.</div><div class="m"><small>Lo que sale mal seguido</small>Empezar el turno con el trapo del día anterior.</div></div>
+<div class="img"><img src="fotos-protocolo/23-papel-toalla-y-trapo-limpio.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">12</span>Papel encerado cortado</div>
+<div class="como">Cortado y listo. La referencia de la estación lo fija en <b>550</b>. Punto <b>7</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Un montón parejo, ya cortado, en su lugar.</div><div class="m"><small>Lo que sale mal seguido</small>Cortarlo en plena venta.</div></div>
+<div class="img"><img src="fotos-protocolo/24-papel-encerado-cortado.jpg" alt=""></div></div>
+</section>
+
+<!-- ═══════════════ CARRITO ═══════════════ -->
+<section class="area" style="--c:#22c55e">
+<h2>Carrito de hot dogs</h2><p class="sub">Es el puesto con más piezas sueltas.</p>
+
+<div class="paso"><div class="t"><span class="n">1</span>Apagar y desarmar el baño maría <span class="tag foto">pide foto</span></div>
+<div class="como">Apagalo y esperá a que el agua baje de temperatura. <b>No lo vacíes hirviendo.</b> Después vaciá el agua, sacá las cuatro piezas y sacá también el tanque — el tanque sale completo del mueble.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El hueco del carrito vacío, y las cuatro piezas más el tanque camino al lavadero.</div><div class="m"><small>Lo que sale mal seguido</small>Vaciarlo con el agua caliente: es quemadura segura. Y sacar solo la pieza de arriba creyendo que ya está.</div></div>
+<div class="img"><img src="fotos-protocolo/25-apagar-y-desarmar-el-bano-maria.jpg" alt=""></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">2</span>Lavarlo en el lavadero</div>
+<div class="como">Todo se lava en el lavadero, no en el carrito.<br>1. Agua caliente y detergente.<br>2. Tallá con el paste hasta quitar toda la costra. Insistí en <b>los agujeros de la bandeja y del inserto</b> y en <b>las esquinas del tanque</b> — ahí es donde se acumula y donde nadie talla.<br>3. Enjuagá hasta que no quede espuma. Si queda detergente, el desinfectante no sirve.<br>4. Desinfectá y dejá secar al aire, las piezas paradas. No se secan con toalla.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Sin sarro en las paredes del tanque, sin costra entre los agujeros, y todo seco antes de volver a armar.</div><div class="m"><small>Lo que sale mal seguido</small>Enjuagar a medias, o secar con toalla: eso borra el desinfectante antes de que actúe.</div></div>
+<div class="nota">Falta la dilución del desinfectante y su tiempo de contacto.</div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">3</span>Montar el tanque de vuelta</div>
+<div class="como">Regresá el tanque a su hueco en el carrito y asegurate de que quede asentado y a nivel.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El tanque calzado en el hueco, sin bailar.</div><div class="m"><small>Lo que sale mal seguido</small>Dejarlo mal asentado: el agua se derrama al moverse el carrito.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">4</span>Llenar el tanque de agua</div>
+<div class="como">El agua va desde que cubre el fondo hasta <b>justo debajo de la bandeja perforada</b>. Nunca la toca.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El fondo cubierto y la bandeja seca por abajo.</div><div class="m"><small>Lo que sale mal seguido</small>Pasarse: el pan se moja. Quedarse corto: se seca y se quema.</div></div></div>
+
+<div class="paso"><div class="t"><span class="n">5</span>Armar las 4 piezas</div>
+<div class="como">De abajo hacia arriba: bandeja perforada, rejilla, rejilla, y hasta arriba el inserto perforado donde va el pan.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Las cuatro capas asentadas y el pan en el inserto de arriba.</div><div class="m"><small>Lo que sale mal seguido</small>Armarlo con una pieza de menos.</div></div>
+<div class="img"><img src="fotos-protocolo/26-armar-las-4-piezas.jpg" alt=""></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">6</span>Encender el mechero</div>
+<div class="como">Encendé el mechero del baño maría apenas queda armado, <b>no al final</b>: el agua tarda en llegar a temperatura y si lo encendés de último, abrís con el pan en agua fría. La válvula general de gas ya tiene que estar abierta — es el paso 1 de Arranque.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Llama encendida y pareja, y el agua ya humeando antes de abrir el local.</div><div class="m"><small>Lo que sale mal seguido</small>Dejarlo para el final. O encenderlo y no volver a mirar si la llama se apagó.</div></div>
+<div class="nota">Falta definir a qué temperatura debe llegar el agua y cuánto tarda — va junto con el límite de tiempo del pan en el baño maría.</div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">7</span>Levantar la plancha y colar el aceite</div>
+<div class="como">Levantá la plancha del carrito. El aceite que tiene se pasa a la freidora <b>a través de un colador</b>, nunca directo. Después quitale todo el aceite que quede.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>La plancha sin nada de aceite encima y el colador con el residuo retenido.</div><div class="m"><small>Lo que sale mal seguido</small>Echar el aceite sin colar: los residuos quemados se van a la freidora y amargan la papa de todo el día.</div></div>
+<div class="nota">Esto sube el nivel de la freidora. Por eso el punto de "Nivel de aceite" en Frituras se revisa DESPUÉS de este paso, no antes.</div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">8</span>Lavar la plancha en el lavadero</div>
+<div class="como">Llevala al lavadero y lavá:<br>• los costados, donde se junta el residuo<br>• <b>la parte de abajo</b>, que es donde está el aceite quemado y donde nadie mira<br>• la parte de arriba, hasta que no quede ningún residuo<br>Después secala bien.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Arriba sin ningún residuo, costados limpios, abajo sin costra negra, y seca antes de volver al carrito.</div><div class="m"><small>Lo que sale mal seguido</small>Lavar solo la cara de arriba. El aceite quemado de abajo es el que humea todo el día.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">9</span>Limpiar el marco <span class="tag foto">pide foto</span></div>
+<div class="como">El marco de la plancha del carrito. Va con la plancha levantada, que es cuando queda a la vista.</div>
+<div class="nota">Este paso está incompleto a propósito: todavía no sabemos cuál es el marco.</div></div>
+
+<div class="paso"><div class="t"><span class="n">10</span>Volver a colocar la plancha y aceitarla</div>
+<div class="como">Colocá la plancha <b>ya seca</b> en su lugar y ponele <b>2 litros de aceite</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los 2 litros medidos y una capa pareja, con brillo igual de borde a borde.</div><div class="m"><small>Lo que sale mal seguido</small>Echarlo a ojo. De más se derrama al mover el carrito, de menos se pega la salchicha.</div></div>
+<div class="img"><img src="fotos-protocolo/27-volver-a-colocar-la-plancha-y-aceitarla.jpg" alt=""></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">11</span>Quitar y lavar el inserto del escabeche</div>
+<div class="como">La cajuela de acero inoxidable <b>sale del carrito</b>. Se lava con agua caliente y detergente, se enjuaga, se desinfecta y se deja secar al aire.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Sin residuo en las esquinas ni en el borde, y seca antes de volver a su lugar.</div><div class="m"><small>Lo que sale mal seguido</small>Lavarla solo por dentro. El borde de afuera es el que toca la tapa.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">12</span>Limpiar el compartimento transparente</div>
+<div class="como">El compartimento transparente ya viene lavado desde el cierre. Acá solo se toma y se limpia, por si le cayó polvo durante la noche.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Transparente, sin polvo ni marcas.</div><div class="m"><small>Lo que sale mal seguido</small>Asumir que porque se lavó anoche ya está listo. Pasó la noche entera ahí parado.</div></div></div>
+
+<div class="paso"><div class="t"><span class="n">13</span>Montar el escabeche del día y fecharlo <span class="tag foto">pide foto</span></div>
+<div class="como">Sacá de la refri una bolsa de escabeche <b>sellada al vacío y fechada</b>. Poné la cantidad que corresponde según el día. Fechá el recipiente con la <b>vida útil: 11:00 am – 3:00 pm</b>. Al final colocá la pinza grande adentro.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El escabeche parejo, la etiqueta con la hora puesta y visible, y la pinza grande adentro con el mango afuera.</div><div class="m"><small>Lo que sale mal seguido</small>Montarlo sin fechar. Sin etiqueta nadie sabe a qué hora vence y se queda hasta la noche.</div></div>
+<div class="nota">Faltan la tabla de cuánto escabeche va por día de la semana, y dónde vive la tarea de cambiarlo a las 3:00 pm. Si algún día sale después de las 11, la etiqueta dice la hora real, no las 11 fijas.</div>
+<div class="img"><img src="fotos-protocolo/28-montar-el-escabeche-del-dia-y-fecharlo.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">14</span>Lavar y embalar el soporte del polipel</div>
+<div class="como">Se lava el soporte y se <b>embala con film</b>. El rollo va parado en el arco.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El soporte limpio, embalado, y el rollo firme sin bambolearse.</div><div class="m"><small>Lo que sale mal seguido</small>Dejar la base con grasa vieja acumulada.</div></div>
+<div class="img"><img src="fotos-protocolo/29-lavar-y-embalar-el-soporte-del-polipel.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">15</span>Aluminio y film en la superficie de armado <span class="tag foto">pide foto</span></div>
+<div class="como">Primero el aluminio pegado a la mesa, y encima el film. Van los dos, nunca uno solo.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los dos puestos, lisos, sin rasgaduras.</div><div class="m"><small>Lo que sale mal seguido</small>Poner solo aluminio: se ensucia y hay que botarlo cada vez.</div></div>
+<div class="img"><img src="fotos-protocolo/30-aluminio-y-film-en-la-superficie-de-armado.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">16</span>Llenar las 2 garrafas de agua</div>
+<div class="como">Son las <b>garrafas azules Alpina</b>, no botellas pequeñas. Las dos se llenan hasta arriba, se tapan y van paradas en la repisa baja del carrito.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Las dos llenas, tapadas y paradas, sin tocar el suelo.</div><div class="m"><small>Lo que sale mal seguido</small>Abrir con una sola garrafa, o con una a medias. Se acaba a media mañana y hay que salir a buscar agua en plena venta.</div></div>
+<div class="img"><img src="fotos-protocolo/31-llenar-las-2-garrafas-de-agua.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">17</span>Colocar las pinzas</div>
+<div class="como">Las <b>dos pequeñas</b> van una a la cebolla y otra a los pepinillos. La grande ya quedó en el escabeche. Cada una se queda <b>dentro</b> de su recipiente y no sale de ahí.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Las tres presentes, cada una en su producto, con el mango afuera.</div><div class="m"><small>Lo que sale mal seguido</small>Cruzar la de cebolla con la de pepinillos. Por eso viven adentro.</div></div>
+<div class="img"><img src="fotos-protocolo/32-colocar-las-pinzas.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">18</span>Encender los 2 temporizadores</div>
+<div class="como">Encenderlos y dejarlos en cero.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los dos prenden y cambian de número.</div><div class="m"><small>Lo que sale mal seguido</small>Uno sin batería. Es un turno cocinando a puro ojo.</div></div>
+<div class="img"><img src="fotos-protocolo/33-encender-los-2-temporizadores.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">19</span>Surtir la repisa baja</div>
+<div class="como">El pan y el bidón de agua en la repisa de abajo, ordenados y sin nada tocando el suelo.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El pan en su bolsa cerrada, el bidón parado.</div><div class="m"><small>Lo que sale mal seguido</small>Bolsas abiertas o producto en el piso.</div></div>
+<div class="img"><img src="fotos-protocolo/34-surtir-la-repisa-baja.jpg" alt=""></div></div>
+</section>
+
+<!-- ═══════════════ MESA 1 ═══════════════ -->
+<section class="area" style="--c:#3b82f6">
+<h2>Mesa 1</h2><p class="sub">Chili, vegetales y salsas. Todo lo que se vence a las 3:00 pm.</p>
+
+<div class="paso"><div class="t"><span class="n">1</span>Enfilmar la mesa</div>
+<div class="como"><b>Va primero.</b> Se enfilma toda la mesa y se verifica que quede limpia, completa y bien instalada antes de colocar nada encima.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>La mesa completa cubierta, el film liso y sin rasgaduras.</div><div class="m"><small>Lo que sale mal seguido</small>Montar primero y enfilmar después. Ahí ya no se enfilma: se le pasa un trapo y se deja así.</div></div>
+<div class="img"><img src="fotos-protocolo/35-enfilmar-la-mesa.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">2</span>Poner el chili a calentar</div>
+<div class="como">1. Colocá una bolsa de chili en un inserto de acero inoxidable.<br>2. Poné el inserto <b>sobre la plancha</b> para que empiece a calentar.<br>3. Encendé el baño maría y agregale <b>una botella y media de agua</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El chili calentando en la plancha y el baño maría ya encendido con su agua.</div><div class="m"><small>Lo que sale mal seguido</small>Meter el chili frío directo al baño maría. El baño maría mantiene, no calienta.</div></div>
+<div class="img"><img src="fotos-protocolo/36-poner-el-chili-a-calentar.jpg" alt=""></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">3</span>Trasladar el chili y etiquetarlo</div>
+<div class="como">Cuando el chili alcance temperatura, pasalo de la plancha al baño maría <b>ya caliente</b>. Pegá la etiqueta por fuera del recipiente con:<br>• Producto: <b>Chili</b><br>• Hora de apertura: <b>11:00 a.m.</b><br>• Hora límite de uso: <b>3:00 p.m.</b></div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El chili en el baño maría y la etiqueta pegada por fuera, legible.</div><div class="m"><small>Lo que sale mal seguido</small>Trasladarlo sin etiquetar. Sin etiqueta nadie sabe a qué hora vence y se queda hasta la noche.</div></div>
+<div class="nota">Falta la foto del termómetro marcando. La temperatura objetivo que veníamos manejando es 70 °C.</div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">4</span>Bandeja de vegetales con hielo y sal</div>
+<div class="como">1. Colocá una <b>bandeja de las grandes</b> en la mesa.<br>2. Agregale <b>hielo y sal</b> para mantener la temperatura.<br>3. Poné adentro los <b>tres insertos, cada uno con su escurridor</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>La bandeja con hielo y sal, y los tres insertos asentados con su escurridor.</div><div class="m"><small>Lo que sale mal seguido</small>Montar los insertos sin hielo. Sin la cama de hielo el producto se calienta y las cuatro horas de vida útil dejan de ser válidas.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">5</span>Llenar y etiquetar los 3 insertos</div>
+<div class="como">Los tres van <b>escurridos</b>: <b>Picosinis</b>, <b>cebolla morada</b> y <b>pepinillos</b>. Etiquetá cada uno por fuera con su nombre y el horario de uso: <b>11:00 a.m. a 3:00 p.m.</b></div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los tres llenos, escurridos, sin líquido en el fondo, y cada uno con su etiqueta.</div><div class="m"><small>Lo que sale mal seguido</small>Servirlos sin escurrir. El líquido moja el pan y el producto se ve aguado. Y etiquetar solo uno de los tres.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">6</span>Salsa Mil Islas y utensilios</div>
+<div class="como">Rellená los botes de <b>Mil Islas</b> y colocá en la mesa lo que ocupa la estación: papel aluminio, la <b>tabla de corte amarilla</b>, el <b>cuchillo de mango rojo</b> y los demás utensilios.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los botes llenos con la punta limpia, y todos los utensilios en su lugar.</div><div class="m"><small>Lo que sale mal seguido</small>Dejar los botes a medias o la boquilla tapada de salsa seca.</div></div>
+<div class="nota">La tabla es amarilla y el cuchillo rojo, y el producto es carne cruda de cerdo. Si en el resto de la cocina el amarillo significa otra cosa, el código de colores deja de funcionar como código.</div></div>
+</section>
+
+<!-- ═══════════════ MESA 2 ═══════════════ -->
+<section class="area" style="--c:#06b6d4">
+<h2>Mesa 2</h2><p class="sub">Empaque y despacho. Cups, papel, salsas y el cheddar.</p>
+
+<div class="paso sinfoto"><div class="t"><span class="n">1</span>Enfilmar y limpiar las canastas</div>
+<div class="como">Colocá y asegurá el enfilmado de la mesa. Después <b>lavá y desinfectá</b> las canastas de los cups y la de los sobres de ketchup y mayonesa.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>La mesa enfilmada y las dos canastas limpias y secas.</div><div class="m"><small>Lo que sale mal seguido</small>Rellenar las canastas sin lavarlas. Ahí quedan migas de la semana pasada abajo.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">2</span>Abastecer las canastas</div>
+<div class="como">Rellená la <b>canasta de cups</b>, abastecé las <b>tapas de tocino y chili</b>, y rellená la <b>canasta de sobres</b> de ketchup y mayonesa.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Las tres llenas y las tapas completas.</div><div class="m"><small>Lo que sale mal seguido</small>Quedarse corto de tapas: el pedido sale sin poder cerrarse y hay que rehacerlo.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">3</span>Organizar la parte inferior</div>
+<div class="como">Colocá y ordená abajo: <b>bolsas brandeadas</b>, <b>bandejas de aluminio</b>, <b>papel kraft cortado</b>, <b>canasta de cups y tapas</b> de chili y tocino, y <b>bandejas negras</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los cinco grupos en su lugar, ordenados y a la vista.</div><div class="m"><small>Lo que sale mal seguido</small>Amontonarlos. Si hay que buscar, el despacho se frena.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">4</span>Cortar el papel kraft</div>
+<div class="como">Cortá y dejá listo el papel kraft que se usa como <b>base de las bandejas de aluminio</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Un montón parejo, ya cortado a la medida de la bandeja.</div><div class="m"><small>Lo que sale mal seguido</small>Cortarlo en plena venta. Ahí ya se perdió el pedido.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">5</span>Organizar la parte superior</div>
+<div class="como">Colocá y abastecé arriba: <b>papel brandeado</b>, <b>tenedores</b>, <b>bandejas cafés</b> y <b>polipel</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los cuatro abastecidos y al alcance de la mano.</div><div class="m"><small>Lo que sale mal seguido</small>Dejarlo para cuando se acabe.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">6</span>Rellenar las 4 salsas</div>
+<div class="como">Rellená los botes de <b>ketchup</b>, <b>mayonesa</b>, <b>chipotle</b> y <b>BBQ</b>.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los cuatro llenos y con la punta limpia.</div><div class="m"><small>Lo que sale mal seguido</small>Rellenar tres y olvidar el cuarto. Siempre es el mismo el que se olvida.</div></div></div>
+
+<div class="paso sinfoto"><div class="t"><span class="n">7</span>El cheddar y su etiqueta</div>
+<div class="como">1. <b>Lavá y sanitizá</b> el bote del cheddar.<br>2. Rellenalo.<br>3. Mantenelo <b>refrigerado hasta las 11:00 a.m.</b>, que es cuando empieza a usarse.<br>4. Pegale la etiqueta: la primera dice <b>11:00 a.m. a 1:00 p.m.</b><br>5. Después se cambia <b>cada 2 horas</b>, y en cada cambio se lava el bote, se vuelve a llenar y se pone etiqueta nueva.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>El bote lavado, lleno, en refrigeración, y con la etiqueta de 11:00 a 1:00 puesta.</div><div class="m"><small>Lo que sale mal seguido</small>Dejar el bote fuera de refrigeración desde temprano, o cambiar la etiqueta sin lavar el bote. Lo segundo es lo que pasa siempre.</div></div>
+<div class="nota">El cambio cada 2 horas cae a la 1:00, 3:00, 5:00 y 7:00 pm. Pertenecen al bloque de tareas por horario, que sigue vacío.</div></div>
+</section>
+
+<!-- ═══════════════ FREEZERS ═══════════════ -->
+<section class="area" style="--c:#8b5cf6">
+<h2>Freezers</h2><p class="sub">El control de PEPS y la temperatura.</p>
+
+<div class="paso sinfoto"><div class="t"><span class="n">1</span>Temperatura de los dos freezers <span class="tag foto">pide foto</span></div>
+<div class="como">Medir con la pistola y <b>anotar el número</b>, uno por uno. Ninguno de los dos tiene termómetro visible, por eso se mide.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Los dos números anotados, no solo mirados.</div><div class="m"><small>Lo que sale mal seguido</small>Medir y no anotar. Sin registro no hay control, y un freezer que sube de a poco no se nota hasta que se pierde el producto.</div></div></div>
+
+<div class="paso"><div class="t"><span class="n">2</span>Freezer LÍNEA</div>
+<div class="como">El que está junto a la freidora. De acá se surte la línea durante el turno.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Rotulado, cerrado y con producto suficiente para el día.</div><div class="m"><small>Lo que sale mal seguido</small>Arrancar el turno con la línea casi vacía.</div></div>
+<div class="img"><img src="fotos-protocolo/37-freezer-linea.jpg" alt=""></div></div>
+
+<div class="paso"><div class="t"><span class="n">3</span>Freezer RECEPCIÓN</div>
+<div class="como">El de la entrada. Acá llega lo nuevo y de acá se pasa a línea, nunca al revés.</div>
+<div class="bm"><div class="b"><small>Así se ve bien hecho</small>Rotulado y con lo más viejo listo para salir primero.</div><div class="m"><small>Lo que sale mal seguido</small>Sacar lo del fondo. Eso rompe el PEPS.</div></div>
+<div class="img"><img src="fotos-protocolo/38-freezer-recepcion.jpg" alt=""></div></div>
+</section>
+
+<div class="pie">Freakie Dogs · Protocolo de apertura · base · septiembre 2026 · La versión viva está en el ERP: Producción → Protocolo de apertura</div>
+</div>
+</body></html>
