@@ -41,49 +41,83 @@ de WhatsApp siguen vivos.
 3. Activar **auto-renew** y **2FA** en esa cuenta. El dominio vence el
    18-ene-2027: si se cae, se cae el ERP entero.
 
-## Fase 1 — DNS (30 min, sin impacto)
+**El orden importa:** primero se crea la zona en Cloudflare y se cargan TODOS
+los registros, y **al final** se cambian los nameservers. Así, en el momento del
+switch, la zona nueva ya está completa y no hay ventana sin resolver.
 
-4. Crear zona en **Cloudflare** (plan Free) → *Add a site* → `freakiedogs.com`.
-   El escaneo no va a encontrar nada (la zona actual está muerta): es lo esperado.
-5. Copiar los 2 nameservers que asigna Cloudflare → Namecheap → *Domain* →
-   *Nameservers* → **Custom DNS** → pegar y guardar.
-6. Esperar la propagación y verificar:
-   ```
-   dig +short freakiedogs.com NS      # debe devolver los de Cloudflare
-   dig +short freakiedogs.com SOA     # ya no debe dar SERVFAIL
-   ```
-   *(Alternativa válida: Namecheap BasicDNS. Cloudflare se elige por el manejo
-   de los registros de correo y por tener analytics/reglas gratis después.)*
+## Fase 1 — Zona en Cloudflare (todavía sin switch)
+
+4. Crear cuenta en dash.cloudflare.com (con 2FA) → **Add a domain** →
+   `freakiedogs.com` → plan **Free**.
+5. Cuando ofrezca *Quick scan for DNS records*, dejalo correr: **no va a
+   encontrar nada** porque la zona de BanaHosting está caída. Es lo esperado.
+6. Cloudflare muestra 2 nameservers tipo `xxxx.ns.cloudflare.com`. **Anotarlos y
+   NO cambiarlos todavía en Namecheap.** Primero se cargan los registros.
+
+*(Alternativa válida: Namecheap BasicDNS. Cloudflare se elige por el manejo de
+los registros de correo y por tener reglas y analytics gratis después.)*
 
 **Antes de cambiar los NS**, confirmar con Luis que en BanaHosting no queda un
 buzón de correo con historial que alguien siga necesitando. El correo hoy no
 entra (no hay MX resolvible), pero el archivo viejo vive en ese hosting.
 
-## Fase 2 — Vercel (sin tocar producción)
+## Fase 2 — Vercel dice qué registros hay que crear
 
-7. Vercel → proyecto **`freakie-dogs-caja`** → *Settings → Domains* → agregar
-   `erp.freakiedogs.com` y `pos.freakiedogs.com`.
-8. Proyecto **`freakiedelivery`** → agregar `pedidos.freakiedogs.com`, `www` y
-   el apex.
-9. Crear en Cloudflare los registros **exactamente como los muestra Vercel**
-   (`CNAME → cname.vercel-dns.com` para los subdominios, `A → 76.76.21.21` para
-   el apex). **Nube gris — proxy de Cloudflare APAGADO**: con el proxy encendido
-   son dos CDN encadenadas y Vercel no puede emitir su certificado.
-10. Abrir `https://erp.freakiedogs.com` y `https://pedidos.freakiedogs.com`.
-    Deben servir lo mismo que los `.vercel.app`. Hasta acá **nada cambió** para
-    la operación: son hosts nuevos que nadie usa todavía.
+7. Vercel → proyecto **`freakie-dogs-caja`** → *Settings → Domains* → *Add* →
+   `erp.freakiedogs.com`. Repetir con `pos.freakiedogs.com`.
+8. Proyecto **`freakiedelivery`** → agregar `pedidos.freakiedogs.com`,
+   `freakiedogs.com` (apex) y `www.freakiedogs.com`. Al agregar el apex y el www
+   Vercel pregunta cuál es el principal: **apex principal, `www` redirige a él**.
+   La raíz de ese proyecto ya sirve una página válida (verificado: `200`), así
+   que el apex no queda en 404.
+9. Cada dominio va a quedar en **"Invalid Configuration"** — correcto, el DNS
+   todavía no existe. Vercel muestra ahí el registro exacto que espera.
+10. Crear esos registros en Cloudflare (*DNS → Records → Add record*),
+    **copiando el valor que muestra Vercel** (el destino de los CNAME cambia
+    según la cuenta; no asumir `cname.vercel-dns.com`):
 
-## Fase 3 — `api.freakiedogs.com` y muerte del proxy `/sb`
+    | Tipo | Nombre | Valor | Proxy |
+    |---|---|---|---|
+    | CNAME | `erp` | el que muestre Vercel | **DNS only (gris)** |
+    | CNAME | `pos` | el que muestre Vercel | **DNS only (gris)** |
+    | CNAME | `pedidos` | el que muestre Vercel | **DNS only (gris)** |
+    | CNAME | `www` | el que muestre Vercel | **DNS only (gris)** |
+    | A | `@` | la IP que muestre Vercel | **DNS only (gris)** |
+
+    **La nube tiene que quedar gris en todos.** Con el proxy naranja encendido
+    son dos CDN encadenadas: Vercel no puede emitir su certificado y se agrega
+    un salto de red que no aporta nada.
+
+## Fase 3 — El switch de nameservers
+
+11. Namecheap → `freakiedogs.com` → pestaña **Domain** → **NAMESERVERS** →
+    dejar **Custom DNS** y reemplazar `ns410` y `ns411.banahosting.com` por los
+    dos de Cloudflare. Nameserver 3 vacío. Guardar con el ✓ verde.
+12. Namecheap avisa que puede tardar hasta 48 h; en la práctica son minutos.
+    Verificar:
+    ```
+    dig +short freakiedogs.com NS     # los de Cloudflare
+    dig +short freakiedogs.com SOA    # ya no debe dar SERVFAIL
+    dig +short erp.freakiedogs.com
+    ```
+13. En Cloudflare, la zona pasa a **Active**. En Vercel, los 5 dominios pasan
+    solos de "Invalid Configuration" a válidos y emiten certificado (minutos).
+14. Abrir `https://erp.freakiedogs.com` y `https://pedidos.freakiedogs.com`:
+    deben servir lo mismo que los `.vercel.app`. Hasta acá **nada cambió** para
+    la operación — son hosts nuevos que nadie usa todavía.
+
+## Fase 4 — `api.freakiedogs.com` y muerte del proxy `/sb`
 
 Esta es la fase que arregla el problema de fondo: los **1,858 errores 504 en
 10 minutos** del 4-sep, el techo duro de ~25 s del runtime Edge y el WebSocket
 roto (ver `src/supabase.js`).
 
-11. Supabase → proyecto `btboxlwfqcbrdfrlnwln` → *Settings → General → Custom
+15. Supabase → proyecto `btboxlwfqcbrdfrlnwln` → *Settings → General → Custom
     Domains* → activar el add-on (**~$10/mes**; la organización ya está en Pro).
-12. Registrar `api.freakiedogs.com`. Supabase entrega un CNAME y un TXT de
-    verificación → crearlos en Cloudflare (**nube gris**) → *Verify* → *Activate*.
-13. Verificar que el WebSocket sí sube por el host nuevo (con HTTP/2 la prueba
+16. Registrar `api.freakiedogs.com`. Supabase pide un **CNAME** (`api` →
+    `btboxlwfqcbrdfrlnwln.supabase.co`) y uno o más **TXT de verificación** →
+    crearlos en Cloudflare **en nube gris** → *Verify* → *Activate*.
+17. Verificar que el WebSocket sí sube por el host nuevo (con HTTP/2 la prueba
     es inconclusa, hay que forzar 1.1):
     ```
     curl -s -i --http1.1 -H "Connection: Upgrade" -H "Upgrade: websocket" \
@@ -91,7 +125,7 @@ roto (ver `src/supabase.js`).
       "https://api.freakiedogs.com/realtime/v1/websocket?apikey=<anon>&vsn=1.0.0"
     ```
     Esperado: `101 Switching Protocols`.
-14. **El switch** — variables de entorno en Vercel (Production) y redeploy:
+18. **El switch** — variables de entorno en Vercel (Production) y redeploy:
 
     | Variable | Proyecto | Valor |
     |---|---|---|
@@ -103,32 +137,32 @@ roto (ver `src/supabase.js`).
     deja de usar el proxy **y** deja de hacer el swap del `RealtimeClient` (ese
     parche existía solo porque el proxy no sabe hacer upgrade a WebSocket).
     **Rollback = borrar la variable y redeployar.** No hay que tocar código.
-15. Hacer el switch un **martes o miércoles por la mañana**, nunca viernes ni en
+19. Hacer el switch un **martes o miércoles por la mañana**, nunca viernes ni en
     hora pico. Vigilar 30 min: login del POS, cobro, KDS en vivo, despacho.
-16. Dejar `api/supaproxy.js` desplegado ~2 semanas como red de seguridad. Recién
+20. Dejar `api/supaproxy.js` desplegado ~2 semanas como red de seguridad. Recién
     después evaluar borrarlo junto con los rewrites `/sb` de `vercel.json`.
 
-## Fase 4 — Correo
+## Fase 5 — Correo
 
-17. Google Workspace (~$7/usuario/mes) o Zoho Mail (plan gratis hasta 5 buzones).
-18. MX + **SPF + DKIM + DMARC** en Cloudflare. Sin los tres, los correos con el
+21. Google Workspace (~$7/usuario/mes) o Zoho Mail (plan gratis hasta 5 buzones).
+22. MX + **SPF + DKIM + DMARC** en Cloudflare. Sin los tres, los correos con el
     DTE le caen en spam al cliente.
-19. Buzones mínimos: `pedidos@`, `facturacion@`, `admin@`.
+23. Buzones mínimos: `pedidos@`, `facturacion@`, `admin@`.
 
-## Fase 5 — Cola (después del switch, sin prisa)
+## Fase 6 — Cola (después del switch, sin prisa)
 
-20. **TikTok**: `public/tiktok-auth.html:106` y la verificación de dominio del
+24. **TikTok**: `public/tiktok-auth.html:106` y la verificación de dominio del
     portal apuntan a `freakie-dogs-caja.vercel.app`. Dar de alta el redirect URI
     nuevo **antes** de cambiar el archivo, o el OAuth se cae.
-21. **Meta / Instagram**: rehacer la verificación de dominio.
-22. **APK del driver**: `android-driver/` carga el `.vercel.app` en el WebView.
+25. **Meta / Instagram**: rehacer la verificación de dominio.
+26. **APK del driver**: `android-driver/` carga el `.vercel.app` en el WebView.
     Repuntarlo a `pos.freakiedogs.com` exige recompilar y reinstalar en cada
     teléfono — hacerlo solo cuando toque otra actualización del APK.
-23. **n1co**: los orígenes ya están permitidos (`api/n1co.js`, `api/n1co-link.js`
+27. **n1co**: los orígenes ya están permitidos (`api/n1co.js`, `api/n1co-link.js`
     traen `freakiedogs.com`, `www.` y `pedidos.` en `ORIGENES_OK`, más la
     variable `N1CO_ORIGENES`). Lo que **sí** hay que hacer es avisarle a n1co el
     dominio de producción del comercio al pedir credenciales productivas.
-24. QR impresos del menú y links del manual: regenerar cuando toque reimprimir.
+28. QR impresos del menú y links del manual: regenerar cuando toque reimprimir.
 
 ---
 
