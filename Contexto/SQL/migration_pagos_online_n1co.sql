@@ -290,3 +290,32 @@ comment on function public.pago_online_resolver(jsonb) is
 -- dejando `tarjeta` en $0. La definición vigente de `pago_online_resolver`
 -- está en la migración `pago_online_referencia_con_autorizacion`.
 -- ══════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════
+-- 9-sep-2026 · Un retiro pagado online NO está entregado
+-- ══════════════════════════════════════════════════════════════════════
+--
+-- Bug introducido por el cambio de arriba y detectado a los 20 minutos, a raíz
+-- de la pregunta correcta: "¿y quién marca cuándo fue retirado?".
+--
+-- `fn_pos_cobro_update_delivery` da por ENTREGADO todo `para_llevar` en cuanto
+-- su cuenta pasa a 'cobrada'. Para el flujo normal es un buen proxy: al retiro
+-- lo cobra el cajero cuando el cliente está parado en el mostrador. Pero con el
+-- cobro online el cliente paga AL HACER EL PEDIDO, así que el pedido quedaba
+-- 'entregada' con `entregado_at` puesto antes de que la cocina lo empezara:
+-- desaparecía del tablero, el cliente veía "Entregado" en el seguimiento
+-- mientras esperaba su comida, y los tiempos de entrega quedaban contaminados.
+--
+-- El discriminador es `cobrado`: si el pedido ya venía cobrado ANTES de que se
+-- cerrara la cuenta, el pago no ocurrió en el mostrador — fue en línea.
+-- `confirmar_pago_delivery` y `torre_confirmar_pago` no tocan `cobrado`, así
+-- que el flujo de siempre llega con false y se comporta igual que antes.
+--
+-- Verificado con arnés reversible (3/3): el retiro pagado online queda en
+-- 'preparando' sin `entregado_at` y con la cuenta igual cobrada; el retiro
+-- cobrado en caja sigue pasando solo a 'entregada'.
+--
+-- Quién lo cierra ahora: la torre, con el botón "✅ Ya lo retiró" de la franja
+-- de retiros (`torre_marcar_entregado`, que sin motorista no registra viaje).
+-- ══════════════════════════════════════════════════════════════════════
