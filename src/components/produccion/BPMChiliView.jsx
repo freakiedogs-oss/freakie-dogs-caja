@@ -452,6 +452,30 @@ export default function BPMChiliView({ user }) {
     cargar()
   }
 
+  async function anular() {
+    const motivo = prompt(
+      `¿Por qué se anula la tanda del ${corrida.fecha}?\n\n` +
+      'Queda en el historial con tu nombre. Después podés iniciar otra.')
+    if (motivo === null) return
+    if (!motivo.trim()) { setError('Sin motivo no se anula.'); return }
+    setGuardando(true); setError('')
+    try {
+      const quien = [user?.nombre, user?.apellido].filter(Boolean).join(' ') || 'usuario'
+      const { error } = await db.from('bpm_corridas').update({
+        estado: 'anulada',
+        cerrada_at: new Date().toISOString(),
+        notas: `${corrida.notas ? corrida.notas + '\n' : ''}Anulada por ${quien}: ${motivo.trim()}`,
+      }).eq('id', corrida.id).neq('estado', 'anulada')
+      if (error) throw error
+      // Sin corrida activa, la pantalla vuelve a "Iniciar tanda".
+      setCorrida(null); setRegistros([]); setDesv([])
+      await cargar()
+    } catch (e) {
+      setError(e.message || 'No se pudo anular')
+    }
+    setGuardando(false)
+  }
+
   // ═══════════════════ RENDER ═══════════════════
   if (cargando) return <div style={{ padding: 20, color: C.dim }}>Cargando…</div>
 
@@ -586,6 +610,23 @@ export default function BPMChiliView({ user }) {
                 </div>
               )
             })}
+
+            {/* Anular y empezar de nuevo. Existe porque las pruebas del
+                procedimiento se bloquean igual que una tanda real, y sin esto
+                cada prueba terminaba en un mensaje a Cesar para que liberara el
+                día. No borra nada: la tanda queda como anulada con el motivo. */}
+            {puedeRevisar && corrida.estado !== 'anulada' && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}`,
+                            display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button style={{ ...btn('#3b1717', guardando), color: '#fca5a5', fontSize: 13, padding: '9px 14px' }}
+                  disabled={guardando} onClick={anular}>
+                  Anular esta tanda y empezar otra
+                </button>
+                <span style={{ fontSize: 12, color: C.dim }}>
+                  Queda en el historial como anulada, con tu nombre y el motivo.
+                </span>
+              </div>
+            )}
           </div>
         )}
 
