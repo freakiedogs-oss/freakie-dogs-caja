@@ -818,7 +818,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           <div style={{ fontSize: 13, color: '#aaa', marginTop: 2 }}>{p.cliente_direccion}</div>
           <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
             🏪 {p.sucursal} · {fmt(p.total)} · {p.metodo_pago}
-            {p.cobrado && <b style={{ color: '#4ade80' }}> · PAGADO</b>}
+            {p.pagado_online && <b style={{ color: '#4ade80' }}> · PAGADO</b>}
           </div>
           {/efectivo/i.test(p.metodo_pago || '') && p.paga_con > 0 && (
             <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginTop: 4 }}>
@@ -916,7 +916,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                       había pagado. Se mira `cobrado`, no `metodo_pago`: quien
                       eligió tarjeta en el menú y después abandonó el cobro queda
                       etiquetado 'tarjeta' pero debiendo. */}
-                  {p.cobrado ? (
+                  {p.pagado_online ? (
                     <div style={{ fontSize: 12.5, color: '#4ade80', fontWeight: 700, marginBottom: 8 }}>
                       💳 Ya pagado — <b>no cobrés nada</b>
                     </div>

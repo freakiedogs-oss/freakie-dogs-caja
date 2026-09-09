@@ -551,7 +551,7 @@ export default function TabPedidos({ show = () => {} }) {
     const base = `Hola! Soy de Freakie Dogs 🌭 Sobre tu pedido ${p.numero_orden} por ${fmt(p.total)}.`;
     // Un pedido pagado con tarjeta en el menú web llega acá ya cobrado. Sin
     // este corte le pediríamos el pago de nuevo a quien ya pagó.
-    const msg = (p.estado === 'recibida' && !p.cobrado)
+    const msg = (p.estado === 'recibida' && !p.pagado_online)
       ? `${base} ¿Cómo querés pagar (efectivo/transferencia)?`
       : `${base} Seguí tu pedido en vivo acá: ${trackUrl(p)}`;
     return `https://wa.me/503${num}?text=${encodeURIComponent(msg)}`;
@@ -583,7 +583,7 @@ export default function TabPedidos({ show = () => {} }) {
   // donde además no dispara las alarmas de atraso: que un cliente tarde 40
   // minutos en pasar a retirar no es un problema que ella tenga que resolver.
   // El retiro IMPAGO sí se queda: ese hay que cobrarlo.
-  const esRetiroPagado = (p) => p.tipo === 'para_llevar' && p.cobrado;
+  const esRetiroPagado = (p) => p.tipo === 'para_llevar' && p.pagado_online;
   const porEstado = (k) => pedidos.filter(p => p.estado === k && !esRetiroPagado(p));
   const retirosPagados = pedidos.filter(esRetiroPagado);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
@@ -882,8 +882,11 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         <b style={{ color: c.text }}>{fmt(p.total)}</b> · {p.metodo_pago} · {nItems} ít.{suc ? ` · 🏪 ${suc}` : ''}
       </div>
       {/* Cobrado online: no hay que pedirle plata al cliente ni al motorista.
-          Va bien visible porque el riesgo es justo el contrario — cobrarle dos veces. */}
-      {p.cobrado && (
+          Va bien visible porque el riesgo es justo el contrario — cobrarle dos veces.
+          Se mira `pagado_online`, NO `cobrado`: `cobrado` lo pone el trigger del
+          POS cada vez que la caja cierra la cuenta, también en efectivo, y con
+          eso el sello salía en pedidos que el motorista sí tiene que cobrar. */}
+      {p.pagado_online && (
         <div style={{ display: 'inline-block', marginTop: 5, padding: '2px 7px', borderRadius: 5,
                       background: '#0d2b18', border: `1px solid ${c.green}`,
                       fontSize: 10.5, fontWeight: 800, color: c.green, letterSpacing: .3 }}>
@@ -989,9 +992,9 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
             ))}
           </select>
           <button disabled={ocupado === p.id || !sucursalDe(p)} onClick={() => confirmar(p)}
-                  style={{ ...btn(p.cobrado ? c.green : c.red), width: '100%', fontSize: 12,
-                           color: p.cobrado ? '#04210f' : undefined }}>
-            {ocupado === p.id ? '…' : p.cobrado ? '🍳 Mandar a cocina' : '✅ Confirmar pago'}
+                  style={{ ...btn(p.pagado_online ? c.green : c.red), width: '100%', fontSize: 12,
+                           color: p.pagado_online ? '#04210f' : undefined }}>
+            {ocupado === p.id ? '…' : p.pagado_online ? '🍳 Mandar a cocina' : '✅ Confirmar pago'}
           </button>
         </div>
       )}
