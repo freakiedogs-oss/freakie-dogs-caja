@@ -2,6 +2,27 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — DTEs Emitidos: reenviar por correo, verificar en Hacienda y descargar el documento
+
+Jose pidió tres cosas sobre un DTE ya emitido: **reenviárselo al cliente** si quedó su correo, **ver el código de generación para buscarlo en Hacienda**, y **descargar la representación gráfica**. Ninguna emite, firma ni invalida nada — el documento ya existe y ya tiene sello.
+
+**Casi todo ya existía y nadie lo estaba usando desde el ERP.** La Edge Function `freakie-dte-email` está activa desde el 30-jul y ya acepta `{codigo_generacion, to?}` —con override de destinatario incluido—; el `pg_cron freakie-dte-email-sweep` la dispara sola cada 3 min y lleva **78 envíos, 78 `sent`, 0 errores**. Lo que faltaba era la puerta: el sweep **solo barre los DTE de las últimas 2 horas** con correo en el receptor. Pasada esa ventana no había forma de reenviar nada, y el caso común no es que falle el envío sino que **el cliente dictó mal el correo**.
+
+**El PDF del correo no es un PDF: es un HTML.** El Apps Script *"Envio Correos DTE"* (Drive de `freakiedogs@gmail.com`) hace `Utilities.newBlob(html,"text/html").getAs("application/pdf")` sobre el HTML de su `buildHtml()` — sin QR, sin nada que no se pueda reproducir. Por eso la representación gráfica se porta a la PWA (`dteRepresentacion.js`) campo por campo y en el mismo orden, alimentada del mismo `dte_json` firmado.
+
+**Por qué NO se le pide el PDF al Apps Script, que sería la fuente única:** su `doPost` ignora los campos que no conoce y **siempre** termina en `GmailApp.sendEmail`. Un flag tipo `soloPdf` no hace nada hasta que alguien edite y **redespliegue** el script a mano en Google; hasta entonces, cada clic en "Descargar" le mandaría un correo a un cliente real. Un botón de descargar no puede tener ese modo de falla.
+
+**`dte_emitido_detalle` v2** (migración): agrega `emisor` e `identificacion` —lo que faltaba para armar el papel y el link de consulta pública— y hace que `receptor` **caiga a `sujetoExcluido`**. En los DTE tipo 14 el receptor vive en esa llave, así que v1 devolvía `null`: no había a quién mostrar ni correo al que reenviar. El emisor se toma del **documento**, no de `businesses`: si mañana cambia el NIT de la empresa, un DTE viejo tiene que seguir mostrando lo que se le firmó a Hacienda ese día. Sigue **fuera** el `signed_payload` y el `dte_json` completo.
+
+**El reenvío pasa por `api/dte-email.js`, no por el browser.** El `x-fn-secret` de la Edge Function no puede viajar en el bundle: la anon key ya es pública, y un segundo secreto en el mismo lugar sería un botón de "mandale correos a los clientes" para cualquiera con DevTools. Mismo patrón que `dte-proxy`: PIN contra `usuarios_erp`, whitelist de gerencia (`admin/ejecutivo/superadmin`) y log en `pos_dte_proxy_log` con `op='reenviar-email'`. Mandar a **otro** correo es sacar un documento fiscal con datos del cliente hacia una dirección que nadie validó, así que queda registrado con el usuario que lo pidió.
+
+**Verificado generando PDFs de verdad, no mirando el código.** Arnés en Node sobre el módulo real (`construirPdfDTE` se separó de `descargarPdfDTE` justo para eso: `doc.save()` solo existe en el browser). Con el DTE real `FD87AEBC` los 30 fragmentos de texto salen completos y en orden; **4/4** en los casos borde: tipo 14 (ítems con `compra`, sin IVA), CCF 03 (IVA que vive en `resumen.tributos[0].valor`, no en `totalIva`), Consumidor Final sin correo ni documento, y detalle vacío. Extrayendo las coordenadas del PDF apareció un solape propio: la razón social de Freakie ocupa dos líneas y la segunda caía encima del NIT — el alto del encabezado ahora se calcula de las líneas reales.
+
+**Defecto heredado que se deja igual a propósito:** en un CCF con propina, el ítem *"Propina (no gravada)"* se imprime en **$0.00** aunque el total sí la incluye. Es el `||` del Apps Script (`ventaGravada || ventaExenta || compra || cant*pu`) y `noGravado` no está en esa cadena. Arreglarlo acá rompería la paridad con el correo del cliente, que es lo único que sostiene que sean el mismo papel. Son 37 CCF; hay que arreglarlo **en los dos lados a la vez** o en ninguno.
+
+**Falta un paso manual:** `FREAKIE_DTE_EMAIL_FN_SECRET` tiene que existir en el env de Vercel (el valor está en los secrets de Supabase). Sin ella el reenvío contesta `no_configurado` con ese texto — a propósito, para que no se confunda con un PIN malo. Se puede chequear sin secretos y sin enviar nada: `POST /api/dte-email` sin PIN devuelve **503 `no_configurado`** si falta y **401 `pin_invalido`** si está.
+
+
 ## 09-Sep-2026 — Protocolo de apertura abierto a las seis sucursales: editor, PIN por sucursal, fotos servidas por la PWA
 
 El protocolo de apertura (70 pasos, 7 áreas, cierre automático 11:30 en verde/rojo) sale de beta. Tres pantallas nuevas en Producción: **Protocolo de apertura** (marcar el día), **Editar el protocolo** (`ProtocoloEditorView.jsx`) y **Mi equipo · PIN** (`ProtocoloEquipoView.jsx`). Quién ve cada una está en `permisos_rol` (que manda sobre `config.js`); `protocolo_beta` quedó vacía.
@@ -25,6 +46,8 @@ El protocolo de apertura (70 pasos, 7 áreas, cierre automático 11:30 en verde/
 **Datos que el módulo destapa:** Metrocentro tiene **5 usuarios activos** en `usuarios_erp` (Cafetalón 21, Lourdes 18, Venecia 18); 9 personas sin `store_code` y 15 en CM001 no aparecen en ninguna pantalla de encargada. Ningún paso está marcado `es_critico` todavía — se marca desde el editor, en la base.
 
 **Pendiente:** #55 pantalla del reporte diario / días anteriores con fotos (`fn_protocolo_dia` ya existe); ejecutivos sin fila en `protocolo_permisos` (Jose, Francisco, Luis) ven el menú del editor pero la base los rechaza; `.git/index.lock` aparece si Claude corre `git status` desde el sandbox sobre el mount — no correr git que escriba desde ahí.
+
+
 
 ## 09-Sep-2026 — El dominio propio se llevó puesto el gate de finanzas (y con él, DTEs Emitidos)
 
