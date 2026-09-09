@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — Verificador de despliegue del cobro, y por qué el locationCode va aparte
+
+**`scripts/verificar-despliegue-n1co.mjs`** — caja negra, sin secretos, sin tarjeta y sin cobrar. Se corre **contra producción** apenas termina el deploy y antes de probar con una tarjeta real. El chequeo central pide cobrar un pedido **inexistente** y espera `no_existe`: solo puede contestar eso si el Edge Function fue ruteado por el rewrite, leyó `SUPABASE_SERVICE_ROLE_KEY` y llegó a Postgres. Un **502** ahí delata la falta de esa key, que es el modo de falla en que **n1co cobra la tarjeta y el pedido queda impago**.
+
+**No sirve contra un preview:** los deployments de preview tienen Vercel Authentication y responden 401 a todo. Y ahí apareció un bug propio que vale recordar: corrido contra el preview, el chequeo del piloto anunció *"el cobro está ABIERTO A TODOS LOS CLIENTES"* cuando no había visto nada — infería el "abierto" de la **ausencia** de un `habilitado:false`, así que leía la pantalla de login de Vercel como la peor noticia posible. Arreglado con un chequeo 0 que aborta si detecta protección, y exigiendo `200` + `habilitado` booleano antes de concluir. **Un verificador que adivina es peor que ninguno**, porque es el que decide si se prueba con dinero real.
+
+**El `locationCode` debe ser UNO y del canal web, no el de una tienda física.** Hoy cada sucursal cuadra al centavo contra el **lote de su datáfono N1CO** (4-sep, S002: voucher 18 ventas / $259.55 = los pagos con tarjeta del POS antes de esa hora). Si los cobros del menú web se imputan al `locationCode` de una tienda, su lote incluye ventas que no están en su POS y **ese cuadre se rompe para siempre** — se pierde la herramienta con la que se encontraron $499.76 de pagos duplicados. Lo correcto es que el delivery web sea su propia "sucursal" en n1co, con su lote y su depósito, conciliada contra el canal `delivery_propio`. `N1CO_LOCATION_CODES` (mapa por sucursal) queda para cuando se decida conciliar por tienda a propósito; **no usarlo antes**, porque cobros mezclados no se separan hacia atrás.
+
+**Fuera del piloto, elegir "💳 Tarjeta" sigue funcionando como siempre.** Una versión intermedia deshabilitaba el botón, y eso les quitaba a los clientes una opción que ya tenían (significa "quiero pagar con tarjeta", con la torre coordinando por WhatsApp) y le cortaba a la torre esos pedidos. Ahora la consulta de disponibilidad decide solo si se **abre el cobro en línea**, no si se ofrece la tarjeta: el merge es un no-op para todos menos el piloto y no hay que coordinar nada con Karina para desplegarlo.
+
+**Roles de la llave de n1co:** solo **Pasarela de pagos** y **Autenticación 3DS**. n1co recomendó marcar todos, pero eso era para sandbox; esta llave es de producción y vive en Vercel. "Administrador de tienda" y las de suscripciones no se usan y, si la llave se filtra, amplían el daño.
+
+
 ## 08-Sep-2026 — El sandbox de n1co no sirve: se estrena en producción con dos frenos
 
 **El sandbox no se pudo usar.** En `portal.n1co.shop/configuration/sandbox`, al presionar *Ir a sandbox* la plataforma cierra la sesión y al volver a entrar la tienda sigue en producción (nunca aparece la etiqueta "sandbox"). Sin sandbox **no hay tarjetas de prueba**, así que la validación es con dinero real. Reportado a n1co junto con la pregunta de si el sandbox necesita un workspace aparte (texto en `docs/n1co-puesta-en-marcha.md`).
