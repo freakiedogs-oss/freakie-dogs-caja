@@ -250,6 +250,10 @@ node scripts/verificar-despliegue-n1co.mjs https://pedidos.freakiedogs.com 70123
 (el segundo argumento es tu teléfono del piloto). Es caja negra: no necesita
 secretos ni tarjeta, y no cobra nada.
 
+**Corré esto contra producción, no contra un preview.** Los deployments de
+preview tienen Vercel Authentication y responden 401 a todo; el verificador lo
+detecta y aborta en vez de sacar conclusiones de una pantalla de login.
+
 Lo que prueba, en orden: que el rewrite quedó, que las credenciales de n1co
 están cargadas, **que el Edge Function llega a Postgres con la service_role**,
 que las validaciones rechazan basura sin gastar intentos, que el piloto bloquea

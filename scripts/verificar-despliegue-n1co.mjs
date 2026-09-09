@@ -63,6 +63,24 @@ console.log(`${C.b}\n═══ Verificación del despliegue ═══${C.x}`);
 console.log(`  ${BASE}`);
 console.log(`  ${C.dim}no cobra nada · no necesita secretos${C.x}\n`);
 
+// ── 0. ¿Estamos viendo la app, o una pantalla de login de Vercel? ──
+// Los deployments de preview tienen Vercel Authentication activada y
+// responden 401 a todo. Sin este corte, los chequeos de abajo leen la
+// pantalla de protección como si fuera la respuesta de la app: el 7 llegó a
+// anunciar "el cobro está ABIERTO A TODOS" cuando en realidad no había visto
+// nada. Una herramienta de seguridad que adivina es peor que ninguna.
+{
+  const r = await llamar('tarjetas', { dispositivo: uuid() });
+  if (r.status === 401 || r.data?.protection) {
+    console.log(`${C.no}✗ El deployment está protegido (Vercel Authentication): 401 en todo.${C.x}`);
+    console.log(`${C.dim}  No se puede verificar desde acá. Dos salidas:`);
+    console.log(`   · correrlo contra PRODUCCIÓN después de mergear, que es lo normal;`);
+    console.log(`   · o desactivar Deployment Protection para este preview`);
+    console.log(`     (Vercel → proyecto → Settings → Deployment Protection).${C.x}\n`);
+    process.exit(2);
+  }
+}
+
 // ── 1. El endpoint existe (el rewrite de vercel.json quedó) ──
 {
   const r = await llamar('tarjetas', { dispositivo: uuid() });
@@ -136,9 +154,17 @@ console.log(`  ${C.dim}no cobra nada · no necesita secretos${C.x}\n`);
 {
   const ajeno = '79999999';
   const r = await llamar('tarjetas', { dispositivo: uuid(), telefono: ajeno });
-  if (r.data?.habilitado === false && /no está disponible/i.test(r.data?.mensaje || '')) {
-    aviso('7. no se pudo evaluar el piloto (faltan credenciales, ver aviso 2)', '');
-  } else if (r.data?.habilitado === false) {
+
+  // Solo se concluye algo si la app contestó de verdad. Antes se infería el
+  // "abierto a todos" de la ausencia de un `habilitado:false`, y una respuesta
+  // rara (401, 502, HTML) se leía como la peor noticia posible.
+  if (r.status !== 200 || typeof r.data?.habilitado !== 'boolean') {
+    aviso(`7. no se pudo evaluar el piloto — la app no contestó como se esperaba`,
+      `HTTP ${r.status} · ${JSON.stringify(r.data).slice(0, 160)}`);
+  } else if (r.data.habilitado === false && /no está disponible/i.test(r.data?.mensaje || '')) {
+    aviso('7. no se pudo evaluar el piloto (faltan credenciales, ver aviso 2)',
+      'Con credenciales cargadas, volvé a correrlo.');
+  } else if (r.data.habilitado === false) {
     chequeo(`7. piloto activo: el teléfono ${ajeno} NO puede pagar con tarjeta`, true);
   } else {
     chequeo(`7. piloto activo: el teléfono ${ajeno} NO puede pagar con tarjeta`, false,
