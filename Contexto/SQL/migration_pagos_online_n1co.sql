@@ -252,3 +252,41 @@ comment on function public.pago_online_iniciar(uuid, text) is
   'Abre un intento de cobro con tarjeta y devuelve el monto autoritativo del pedido. Solo service_role.';
 comment on function public.pago_online_resolver(jsonb) is
   'Cierra un intento de cobro; si aprueba, marca cobrado y comanda a cocina. Idempotente. Solo service_role.';
+
+
+-- ══════════════════════════════════════════════════════════════════════
+-- 9-sep-2026 · El cobro online tiene que llegar a la CAJA
+-- ══════════════════════════════════════════════════════════════════════
+--
+-- Hallazgo tras el primer cobro real: `_comanda_delivery` crea la `pos_cuenta`
+-- pero NUNCA inserta en `pos_cuenta_pagos`. Los 839 delivery de los últimos 14
+-- días los cerró alguien en el POS, uno por uno. Con el cobro online eso deja
+-- dos agujeros:
+--
+--   1. Al cajero le aparece una cuenta ABIERTA por un pedido ya pagado. El
+--      cliente llega a retirar y le cobran de nuevo — el mismo riesgo que ya
+--      se cerró en la torre y en el motorista, entrando por otra puerta.
+--   2. La venta no entra en los totales del corte.
+--
+-- Se registra con **`link_pago`**, que ya existe en el check de
+-- `pos_cuenta_pagos` y ya sale en línea propia en `pos_corte`. No hizo falta
+-- inventar un método nuevo: `link_pago` significa exactamente esto —plata que
+-- entró por n1co en línea y NO por el datáfono de la sucursal— y es como se
+-- registra hoy el link que manda Karina a mano.
+--
+-- Eso es lo que protege la conciliación: el total de `tarjeta` de cada tienda
+-- sigue cuadrando al centavo contra su lote del datáfono, que es la señal con
+-- la que se detectaron $499.76 de pagos duplicados.
+--
+-- Efecto secundario asumido: la cuenta queda `cobrada` desde el momento del
+-- pago, así que el KDS no deja revertir una comanda de estos pedidos ("la
+-- cuenta ya está cobrada"). A cambio, tampoco puede reabrirlas y recobrarlas
+-- —el incidente de Usulután del 4-sep—, que es el riesgo más caro de los dos.
+-- El KDS no se ve afectado de otra forma: lee `pos_cocina_queue` filtrando por
+-- `estado <> 'completado'` y no mira `pos_cuentas`.
+--
+-- Verificado con arnés reversible: pago link_pago $4.00, cuenta `cobrada`,
+-- idempotente ante un segundo resolver, y `pos_corte` lo suma en `link_pago`
+-- dejando `tarjeta` en $0. La definición vigente de `pago_online_resolver`
+-- está en la migración `pago_online_referencia_con_autorizacion`.
+-- ══════════════════════════════════════════════════════════════════════

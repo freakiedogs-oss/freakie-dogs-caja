@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 09-Sep-2026 — En vivo con piloto: la confirmación tapaba el formulario de tarjeta
+
+**Primera prueba real en producción (Jose, pedido `WEB-7B6D89A4`) y salió el bug:** al elegir tarjeta aparecían **dos modales a la vez**, con la confirmación "¡Pedido enviado!" **encima** del formulario de pago. No se podía pagar.
+
+Causa: se montaban los dos drawers y ambos usan `.mp-drawer-overlay` con el mismo `z-index`, así que **decidía el orden del DOM** — la confirmación va después, y ganaba. La intención original ("que la confirmación quede debajo para no perder nada si abandona el cobro") era innecesaria: el pedido ya está creado en la BD desde antes. Ahora la confirmación **no se monta** mientras el cobro está abierto, y aparece al cerrarlo. Además `.mp-pago` sube a `z-index: 300`: con plata de por medio, que gane siempre el cobro. El pedido de prueba se canceló (nunca se comandó ni se cobró).
+
+**Verificación en producción: 10/10** con `scripts/verificar-despliegue-n1co.mjs`. Confirmado en vivo: el rewrite quedó, las credenciales están cargadas, **el Edge Function llega a Postgres con la `service_role`** (el peor modo de falla descartado), y **el piloto bloquea**: `79999999` → `habilitado:false, motivo:FUERA_DE_PILOTO`.
+
+**Segundo bug del verificador, ahora corregido de raíz:** reportaba *"faltan credenciales"* con el piloto funcionando bien, porque distinguía los casos **matcheando el texto en español** y los dos mensajes contienen "no está disponible" (los mensajes al cliente se parecen a propósito, todos terminan en "elegí efectivo"). `/api/n1co/tarjetas` ahora devuelve un **`motivo`** legible por máquina (`SIN_CREDENCIALES` · `FUERA_DE_PILOTO` · `MONTO_SOBRE_TECHO`) y el verificador decide por ahí. Van dos bugs del mismo verificador en una noche, los dos por inferir de señales indirectas — **una herramienta de seguridad que adivina es peor que ninguna**, y esta decide si se prueba con dinero real.
+
+**Lo que sigue sin verificarse y solo se sabe cobrando:** que el `clientId`/`clientSecret` **autentiquen** contra n1co (el chequeo 2 solo confirma que las variables existen, no que sirvan) y que el `locationCode` sea el correcto — se usa recién en `/Charges`. El primer cobro real lo dirá, y `pagos_online.error_code` distingue cuál de los dos falló.
+
+
 ## 09-Sep-2026 — Verificador de despliegue del cobro, y por qué el locationCode va aparte
 
 **`scripts/verificar-despliegue-n1co.mjs`** — caja negra, sin secretos, sin tarjeta y sin cobrar. Se corre **contra producción** apenas termina el deploy y antes de probar con una tarjeta real. El chequeo central pide cobrar un pedido **inexistente** y espera `no_existe`: solo puede contestar eso si el Edge Function fue ruteado por el rewrite, leyó `SUPABASE_SERVICE_ROLE_KEY` y llegó a Postgres. Un **502** ahí delata la falta de esa key, que es el modo de falla en que **n1co cobra la tarjeta y el pedido queda impago**.

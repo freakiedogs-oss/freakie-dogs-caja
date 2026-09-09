@@ -156,6 +156,13 @@ const ETAPA_SIGUIENTE = {
 const ETAPA_ANTERIOR = {
   preparando: 'recibida', lista: 'preparando', en_camino: 'lista', entregada: 'en_camino',
 };
+// Un retiro en local no pasa por las etapas de un delivery: nadie lo asigna ni
+// lo maneja. Los mismos estados de la BD se leen distinto en el mostrador.
+const ETAPA_RETIRO = {
+  recibida: 'recibido', preparando: 'en cocina',
+  lista: 'listo para retirar', en_camino: 'esperando al cliente',
+};
+
 const NOMBRE_COL = {
   recibida: 'Por cobrar', preparando: 'En cocina', lista: 'Por asignar',
   en_camino: 'En ruta', entregada: 'Entregado',
@@ -569,7 +576,16 @@ export default function TabPedidos({ show = () => {} }) {
     );
   }
 
-  const porEstado = (k) => pedidos.filter(p => p.estado === k);
+  // Las 4 columnas son la lista de tareas de Karina, no un inventario de
+  // pedidos. Un retiro en local YA PAGADO no le pide nada: la tienda lo cocina
+  // y lo entrega en el mostrador. Aparecía en "Por asignar" —donde ella busca a
+  // quién mandarle un motorista— y era ruido puro. Se va a la franja de abajo,
+  // donde además no dispara las alarmas de atraso: que un cliente tarde 40
+  // minutos en pasar a retirar no es un problema que ella tenga que resolver.
+  // El retiro IMPAGO sí se queda: ese hay que cobrarlo.
+  const esRetiroPagado = (p) => p.tipo === 'para_llevar' && p.cobrado;
+  const porEstado = (k) => pedidos.filter(p => p.estado === k && !esRetiroPagado(p));
+  const retirosPagados = pedidos.filter(esRetiroPagado);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
@@ -725,6 +741,34 @@ export default function TabPedidos({ show = () => {} }) {
           recargarPadre={() => cargar(token)}
         />
       </Suspense>
+
+      {/* Retiros en local ya pagados: informativos, no son tareas de Karina.
+          Se muestran para que sepa qué hay esperando en cada tienda, pero fuera
+          de las columnas y sin relojes de atraso. */}
+      {retirosPagados.length > 0 && (
+        <div style={{ marginTop: 14, background: c.card, border: `1px solid ${c.border}`,
+                      borderRadius: 12, padding: '11px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 14 }}>🥡</span>
+            <span style={{ fontWeight: 800, fontSize: 13.5 }}>Retiros en local · pagados</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: c.green }}>{retirosPagados.length}</span>
+            <span style={{ fontSize: 11.5, color: c.dim }}>· los entrega la tienda, no hay nada que asignar</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {retirosPagados.map(p => (
+              <div key={p.id} style={{ ...tarjeta, padding: '8px 10px', minWidth: 190 }}>
+                <div style={{ fontSize: 12, fontWeight: 800 }}>
+                  {p.numero_orden}
+                  <span style={{ color: c.green, fontWeight: 700 }}> · {ETAPA_RETIRO[p.estado] || p.estado}</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>
+                  {p.cliente_nombre} · {fmt(p.total)} · 🏪 {p.sucursal_nombre || p.store_code || '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <FranjaEntregados
         entregados={entregados}
