@@ -362,13 +362,17 @@ export default function ProtocoloAperturaView({ user }) {
                 padding: '9px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer',
               }}>o la carpeta</button>
 
-            {/* Sin accept: junto con webkitdirectory, Chrome filtra todo y no
-                llega ningún archivo. El filtro por tipo se hace en el código. */}
+            {/* Dos cuidados acá, los dos costaron un rato:
+                1. Sin `accept`: junto con webkitdirectory, Chrome filtra todo y
+                   no llega ningún archivo.
+                2. `Array.from` ANTES de limpiar el input. FileList es una vista
+                   viva sobre el input: si limpiás primero, la lista que ya
+                   tenías en la mano queda en cero y no sube nada. */}
             <input ref={sueltosRef} type="file" multiple hidden
-              onChange={e => { const f = e.target.files; e.target.value = ''; if (f?.length) subirCarpeta(f) }} />
+              onChange={e => { const f = Array.from(e.target.files || []); e.target.value = ''; subirCarpeta(f) }} />
             <input ref={carpetaRef} type="file" multiple hidden
               webkitdirectory="" directory=""
-              onChange={e => { const f = e.target.files; e.target.value = ''; subirCarpeta(f || []) }} />
+              onChange={e => { const f = Array.from(e.target.files || []); e.target.value = ''; subirCarpeta(f) }} />
           </div>
 
           {lote && lote.hechas >= lote.total && (
