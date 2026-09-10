@@ -166,6 +166,26 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
     }
   }
 
+  // Quitar solo la foto del día, sin desmarcar. Si el paso pide foto, queda
+  // pendiente otra vez (hecho() mira foto_url); si no la pide, sigue hecho.
+  async function quitarFoto(paso) {
+    if (!corrida) return
+    const m = marcas[paso.paso_id]
+    if (!m?.foto_url) return
+    if (!window.confirm(`¿Quitar la foto de «${paso.titulo}»?${paso.requiere_foto ? '\n\nEl paso vuelve a pendiente hasta que se tome otra.' : ''}`)) return
+    setGuard(paso.paso_id); setError(null)
+    try {
+      const { data, error: e } = await db.from('protocolo_marcas')
+        .update({ foto_url: null })
+        .eq('corrida_id', corrida.id).eq('paso_id', paso.paso_id)
+        .select().single()
+      if (e) throw e
+      setMarcas(x => ({ ...x, [paso.paso_id]: data }))
+    } catch (err) {
+      setError(`No se pudo quitar la foto: ${err.message || err}`)
+    } finally { setGuard(null) }
+  }
+
   async function desmarcar(paso) {
     if (!corrida) return
     setGuard(paso.paso_id); setError(null)
@@ -519,13 +539,22 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
                       {/* La foto del día se ve acá mismo: la encargada corrobora
                           que es real sin tener que abrir nada más. */}
                       {ok && m?.foto_url && (
-                        <a href={m.foto_url} target="_blank" rel="noopener noreferrer"
-                          style={{ display: 'inline-block', marginTop: 7 }}>
-                          <img src={m.foto_url} alt="Foto del día" loading="lazy" decoding="async" style={{
-                            width: 140, height: 105, objectFit: 'cover', borderRadius: 7,
-                            border: '1px solid #1f3a24', display: 'block',
-                          }} />
-                        </a>
+                        <div style={{ display: 'inline-block', marginTop: 7 }}>
+                          <a href={m.foto_url} target="_blank" rel="noopener noreferrer">
+                            <img src={m.foto_url} alt="Foto del día" loading="lazy" decoding="async" style={{
+                              width: 140, height: 105, objectFit: 'cover', borderRadius: 7,
+                              border: '1px solid #1f3a24', display: 'block',
+                            }} />
+                          </a>
+                          {/* Quien la tomó, o quien manda en la sucursal, puede
+                              quitarla. Si el paso pide foto, vuelve a pendiente. */}
+                          {(m.marcado_por === user?.id || puedeSuc) && (
+                            <button onClick={() => quitarFoto(p)} disabled={trabajando} style={{
+                              marginTop: 4, background: 'none', border: 0, color: '#9ca3af',
+                              fontSize: 11.5, cursor: 'pointer', padding: 0, textDecoration: 'underline',
+                            }}>quitar foto</button>
+                          )}
+                        </div>
                       )}
 
                       {!ok && (
