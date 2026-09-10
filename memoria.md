@@ -2,7 +2,6 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
-<<<<<<< HEAD
 ## 09-Sep-2026 — Protocolo de apertura abierto a las seis sucursales: editor, PIN por sucursal, fotos servidas por la PWA
 
 El protocolo de apertura (70 pasos, 7 áreas, cierre automático 11:30 en verde/rojo) sale de beta. Tres pantallas nuevas en Producción: **Protocolo de apertura** (marcar el día), **Editar el protocolo** (`ProtocoloEditorView.jsx`) y **Mi equipo · PIN** (`ProtocoloEquipoView.jsx`). Quién ve cada una está en `permisos_rol` (que manda sobre `config.js`); `protocolo_beta` quedó vacía.
@@ -26,7 +25,7 @@ El protocolo de apertura (70 pasos, 7 áreas, cierre automático 11:30 en verde/
 **Datos que el módulo destapa:** Metrocentro tiene **5 usuarios activos** en `usuarios_erp` (Cafetalón 21, Lourdes 18, Venecia 18); 9 personas sin `store_code` y 15 en CM001 no aparecen en ninguna pantalla de encargada. Ningún paso está marcado `es_critico` todavía — se marca desde el editor, en la base.
 
 **Pendiente:** #55 pantalla del reporte diario / días anteriores con fotos (`fn_protocolo_dia` ya existe); ejecutivos sin fila en `protocolo_permisos` (Jose, Francisco, Luis) ven el menú del editor pero la base los rechaza; `.git/index.lock` aparece si Claude corre `git status` desde el sandbox sobre el mount — no correr git que escriba desde ahí.
-=======
+
 ## 09-Sep-2026 — El dominio propio se llevó puesto el gate de finanzas (y con él, DTEs Emitidos)
 
 Jose reportó **"permission denied for view v_dtes_emitidos"** en Finanzas → *DTEs Emitidos · Facturar*, en producción.
@@ -186,7 +185,6 @@ Pedido de Jose: que el cliente **pague con tarjeta al hacer el pedido en `/menu`
 **Prueba: `scripts/test-pago-online.sql`, 6/6.** Corre el ciclo completo contra la base real —incluida la comanda a cocina— y lo revierte con un `RAISE EXCEPTION` al final, así que **no deja pedidos fantasma en el KDS**. Verificado: 0 filas residuales.
 
 **Falta para probar en sandbox:** cargar `N1CO_CLIENT_ID`, `N1CO_CLIENT_SECRET` y `N1CO_LOCATION_CODE` en Vercel (en los **dos** proyectos: ERP y `freakiedelivery`). La doc de n1co dice que las credenciales de API las entrega su equipo, así que puede no ser self-service aunque el portal sí lo sea. La **URL de producción no está publicada** en la doc — hay que pedirla. **No se tocó nada de DTE**: este cobro no emite factura, la emisión sigue por `_comanda_delivery` → POS.
->>>>>>> 5f241f9ea84a41c972c64f325f0f328f128e2ff6
 
 ## 08-Sep-2026 — `freakiedogs.com` en producción y `api.freakiedogs.com` listo para matar el proxy `/sb`
 
