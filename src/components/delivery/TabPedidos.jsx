@@ -156,6 +156,13 @@ const ETAPA_SIGUIENTE = {
 const ETAPA_ANTERIOR = {
   preparando: 'recibida', lista: 'preparando', en_camino: 'lista', entregada: 'en_camino',
 };
+// Un retiro en local no pasa por las etapas de un delivery: nadie lo asigna ni
+// lo maneja. Los mismos estados de la BD se leen distinto en el mostrador.
+const ETAPA_RETIRO = {
+  recibida: 'recibido', preparando: 'en cocina',
+  lista: 'listo para retirar', en_camino: 'esperando al cliente',
+};
+
 const NOMBRE_COL = {
   recibida: 'Por cobrar', preparando: 'En cocina', lista: 'Por asignar',
   en_camino: 'En ruta', entregada: 'Entregado',
@@ -542,7 +549,9 @@ export default function TabPedidos({ show = () => {} }) {
   const waLink = (tel, p) => {
     const num = String(tel || '').replace(/\D/g, '');
     const base = `Hola! Soy de Freakie Dogs 🌭 Sobre tu pedido ${p.numero_orden} por ${fmt(p.total)}.`;
-    const msg = p.estado === 'recibida'
+    // Un pedido pagado con tarjeta en el menú web llega acá ya cobrado. Sin
+    // este corte le pediríamos el pago de nuevo a quien ya pagó.
+    const msg = (p.estado === 'recibida' && !p.pagado_online)
       ? `${base} ¿Cómo querés pagar (efectivo/transferencia)?`
       : `${base} Seguí tu pedido en vivo acá: ${trackUrl(p)}`;
     return `https://wa.me/503${num}?text=${encodeURIComponent(msg)}`;
@@ -567,7 +576,16 @@ export default function TabPedidos({ show = () => {} }) {
     );
   }
 
-  const porEstado = (k) => pedidos.filter(p => p.estado === k);
+  // Las 4 columnas son la lista de tareas de Karina, no un inventario de
+  // pedidos. Un retiro en local YA PAGADO no le pide nada: la tienda lo cocina
+  // y lo entrega en el mostrador. Aparecía en "Por asignar" —donde ella busca a
+  // quién mandarle un motorista— y era ruido puro. Se va a la franja de abajo,
+  // donde además no dispara las alarmas de atraso: que un cliente tarde 40
+  // minutos en pasar a retirar no es un problema que ella tenga que resolver.
+  // El retiro IMPAGO sí se queda: ese hay que cobrarlo.
+  const esRetiroPagado = (p) => p.tipo === 'para_llevar' && p.pagado_online;
+  const porEstado = (k) => pedidos.filter(p => p.estado === k && !esRetiroPagado(p));
+  const retirosPagados = pedidos.filter(esRetiroPagado);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
@@ -724,6 +742,42 @@ export default function TabPedidos({ show = () => {} }) {
         />
       </Suspense>
 
+      {/* Retiros en local ya pagados: informativos, no son tareas de Karina.
+          Se muestran para que sepa qué hay esperando en cada tienda, pero fuera
+          de las columnas y sin relojes de atraso. */}
+      {retirosPagados.length > 0 && (
+        <div style={{ marginTop: 14, background: c.card, border: `1px solid ${c.border}`,
+                      borderRadius: 12, padding: '11px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 14 }}>🥡</span>
+            <span style={{ fontWeight: 800, fontSize: 13.5 }}>Retiros en local · pagados</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: c.green }}>{retirosPagados.length}</span>
+            <span style={{ fontSize: 11.5, color: c.dim }}>· los entrega la tienda, no hay nada que asignar</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {retirosPagados.map(p => (
+              <div key={p.id} style={{ ...tarjeta, padding: '8px 10px', minWidth: 190 }}>
+                <div style={{ fontSize: 12, fontWeight: 800 }}>
+                  {p.numero_orden}
+                  <span style={{ color: c.green, fontWeight: 700 }}> · {ETAPA_RETIRO[p.estado] || p.estado}</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>
+                  {p.cliente_nombre} · {fmt(p.total)} · 🏪 {p.sucursal_nombre || p.store_code || '—'}
+                </div>
+                {/* Alguien tiene que cerrar el pedido cuando el cliente pasa a
+                    recogerlo. Al cobrado en caja lo cierra el propio cobro; a
+                    este ya lo cobramos nosotros en línea, así que sin este
+                    botón se quedaría abierto para siempre. */}
+                <button disabled={ocupado === p.id} onClick={() => marcarEntregado(p)}
+                        style={{ ...btn(c.green, '#04210f'), width: '100%', marginTop: 7, fontSize: 11.5 }}>
+                  {ocupado === p.id ? '…' : '✅ Ya lo retiró'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <FranjaEntregados
         entregados={entregados}
         abierto={entregadosAbierto}
@@ -827,6 +881,18 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       <div style={{ fontSize: 11.5, color: c.dim, marginTop: 4 }}>
         <b style={{ color: c.text }}>{fmt(p.total)}</b> · {p.metodo_pago} · {nItems} ít.{suc ? ` · 🏪 ${suc}` : ''}
       </div>
+      {/* Cobrado online: no hay que pedirle plata al cliente ni al motorista.
+          Va bien visible porque el riesgo es justo el contrario — cobrarle dos veces.
+          Se mira `pagado_online`, NO `cobrado`: `cobrado` lo pone el trigger del
+          POS cada vez que la caja cierra la cuenta, también en efectivo, y con
+          eso el sello salía en pedidos que el motorista sí tiene que cobrar. */}
+      {p.pagado_online && (
+        <div style={{ display: 'inline-block', marginTop: 5, padding: '2px 7px', borderRadius: 5,
+                      background: '#0d2b18', border: `1px solid ${c.green}`,
+                      fontSize: 10.5, fontWeight: 800, color: c.green, letterSpacing: .3 }}>
+          💳 PAGADO ONLINE · NO COBRAR
+        </div>
+      )}
       {p.motorista_nombre && <div style={{ fontSize: 11.5, color: c.green, marginTop: 3 }}>🛵 {p.motorista_nombre}</div>}
 
       {/* Mover de columna en cualquier dirección. Va arriba de todo lo demás
@@ -926,8 +992,9 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
             ))}
           </select>
           <button disabled={ocupado === p.id || !sucursalDe(p)} onClick={() => confirmar(p)}
-                  style={{ ...btn(c.red), width: '100%', fontSize: 12 }}>
-            {ocupado === p.id ? '…' : '✅ Confirmar pago'}
+                  style={{ ...btn(p.pagado_online ? c.green : c.red), width: '100%', fontSize: 12,
+                           color: p.pagado_online ? '#04210f' : undefined }}>
+            {ocupado === p.id ? '…' : p.pagado_online ? '🍳 Mandar a cocina' : '✅ Confirmar pago'}
           </button>
         </div>
       )}
