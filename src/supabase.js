@@ -26,6 +26,13 @@ export const URL_SB =
     ? `${window.location.origin}/sb`
     : URL_SB_DIRECT)
 
+// ⚠️ Finanzas NO sigue esta URL. El gate que cambia la llave pública por el rol
+// `erp_finanzas_ro` vive DENTRO del proxy (`api/supaproxy.js`), así que contra el
+// dominio propio no existe: los objetos cerrados a `anon` (v_dtes_emitidos,
+// v_empleados_expediente, planillas…) responderían `permission denied`. Por eso
+// `src/supabaseFinanzas.js` fuerza `/sb` aparte. Si movés el gate a la DB,
+// arreglá también aquello.
+
 // Solo el proxy rompe el WebSocket. Contra el dominio propio (o directo), el
 // realtime viaja por el mismo host que el REST y no hace falta el swap de abajo.
 const PASA_POR_PROXY = URL_SB.endsWith('/sb')

@@ -264,3 +264,45 @@ export async function invalidarDTE({ codigoGeneracion, motivo, tipoAnulacion = 2
     tipoAnulacion,
   }, pin)
 }
+
+/**
+ * Reenvía por correo un DTE YA EMITIDO Y SELLADO. No emite, no firma y no toca
+ * Hacienda: solo vuelve a entregar el documento que ya existe.
+ *
+ * Por qué hace falta a mano: el envío automático (`freakie-dte-email-sweep`,
+ * pg_cron cada 3 min) solo barre los DTE de las últimas 2 horas con correo en
+ * el receptor. Pasada esa ventana no había forma de reenviar nada — y el caso
+ * más común no es que falle el envío, sino que el cliente dictó mal el correo.
+ *
+ * @param {string} codigoGeneracion  el DTE a reenviar
+ * @param {string} [to]              destinatario alterno; sin él va al correo con el que se facturó
+ * @param {string} pin               PIN de quien lo pide (rol de gerencia)
+ * @returns {Promise<{ok:boolean, sent_to?:string, error?:string}>}
+ */
+export async function reenviarDTEPorCorreo({ codigoGeneracion, to, pin }) {
+  if (!String(pin || '').trim()) throw new Error('Falta tu PIN')
+  if (!codigoGeneracion) throw new Error('Falta el código de generación')
+
+  const res = await fetch('/api/dte-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-POS-PIN': String(pin).trim() },
+    body: JSON.stringify(to ? { codigo_generacion: codigoGeneracion, to } : { codigo_generacion: codigoGeneracion }),
+  })
+  let data
+  try { data = await res.json() } catch { throw new Error(`Respuesta no-JSON del servidor (${res.status})`) }
+
+  if (!data?.ok) {
+    // La Edge Function contesta 200 con ok:false cuando no hay nada que enviar
+    // (receptor sin correo) o cuando el DTE no tiene sello. Son estados
+    // legítimos, no fallas: se traducen a algo que el usuario pueda accionar.
+    const mapa = {
+      no_configurado: 'El reenvío no está configurado en el servidor (falta FREAKIE_DTE_EMAIL_FN_SECRET en Vercel).',
+      pin_invalido: 'PIN incorrecto o usuario inactivo.',
+      rol_no_autorizado: 'Tu rol no puede reenviar documentos fiscales.',
+      correo_invalido: 'Ese correo no tiene un formato válido.',
+      upstream_timeout: 'El servicio de correo no respondió a tiempo. Revisá antes de reintentar: pudo haberse enviado.',
+    }
+    throw new Error(mapa[data?.error] || data?.error || data?.message || `No se pudo reenviar (${res.status})`)
+  }
+  return data
+}

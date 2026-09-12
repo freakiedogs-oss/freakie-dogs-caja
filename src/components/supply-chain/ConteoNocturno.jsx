@@ -22,6 +22,17 @@ const SIN_GATES_TEMPORAL = ['M001'];
 // sucursal): gerencia hacia arriba. La cajera que cuenta no puede firmarse sola.
 const ROLES_AUTORIZA_FALTANTE = ['gerente', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'];
 
+// Escotilla del PIN de faltante, con fecha de vencimiento (YYYY-MM-DD, inclusive).
+// Para la noche en que la encargada no está y nadie puede firmar en la sucursal.
+// El faltante se registra igual en Fugas, firmado por quien autorizó la
+// escotilla (el servidor exige un autorizador; no se inventa uno). Pasada la
+// fecha, la entrada no hace nada aunque siga acá — sacarla igual.
+// 10-sep: Cafetalón, Jazmin ausente. Autoriza Cesar. `hasta` es el 11 porque
+// el conteo nocturno a veces se guarda pasada la medianoche.
+const SIN_PIN_FALTANTE_TEMPORAL = {
+  M001: { hasta: '2026-09-11', autoriza: '0a0ad760-38af-43a3-abc0-add9b4c53258', quien: 'Cesar' },
+};
+
 /* ── Stepper button style (48px touch target) ── */
 const stepBtn={
   width:48,height:48,borderRadius:12,border:'1px solid #333',
@@ -565,6 +576,19 @@ export default function ConteoNocturno({user,onBack}){
     if(!gate){
       const faltantes=calcFaltantes();
       if(faltantes.length>0){
+        // Escotilla con fecha: si la sucursal está en la lista y hoy no pasó la
+        // fecha, el faltante se guarda sin PIN pero con nota de quién lo
+        // autorizó. Al día siguiente vuelve a pedir PIN sola — nadie tiene que
+        // acordarse de sacarla.
+        const esc=SIN_PIN_FALTANTE_TEMPORAL[storeCodeSel||user.store_code];
+        if(esc && today()<=esc.hasta){
+          guardarConteo({
+            faltantes,
+            nota:`Sin PIN en sucursal: encargada ausente. Autorizado por ${esc.quien} (escotilla válida hasta ${esc.hasta}).`,
+            auth:{id:esc.autoriza},
+          });
+          return;
+        }
         setFaltanteGate({faltantes, pin:'', nota:'', auth:null, validando:false, err:''});
         return;
       }
