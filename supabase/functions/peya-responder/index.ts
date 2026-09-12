@@ -324,9 +324,32 @@ Deno.serve(async (req) => {
 
   await svc.from("peya_ordenes").update(cambios).eq("id", orden.id);
 
+  // El retiro es el momento en que la venta se vuelve cuenta por cobrar. Se cierra
+  // DESPUÉS de que DH confirmó: una cuenta cobrada sobre un pedido que ellos no dan
+  // por retirado descuadra la liquidación del viernes.
+  let cierre: unknown = null;
+  if (ok && accion === "retirado") {
+    const { data: c, error: errCierre } = await svc.rpc("peya_cerrar_cuenta", {
+      p_orden_id: orden.id,
+      p_por: actor ? `${actor.nombre} (${actor.rol})` : "sistema",
+    });
+    if (errCierre) {
+      // DH ya sabe que salió, así que no se revierte nada; pero la cuenta quedó
+      // abierta y eso lo tiene que ver alguien antes del cierre de turno.
+      console.error("retiro OK pero la cuenta no cerró", orden.remote_order_id, errCierre.message);
+      cierre = { ok: false, error: errCierre.message };
+      await svc.from("peya_ordenes").update({
+        notas: `retirado en PeYa pero la cuenta no cerró: ${errCierre.message}`,
+      }).eq("id", orden.id);
+    } else {
+      cierre = c;
+    }
+  }
+
   return json({
     ok,
     accion,
+    cierre,
     por: actor ? actor.nombre : "sistema",
     remoteOrderId: orden.remote_order_id,
     esPrueba: orden.es_prueba,
