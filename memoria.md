@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — `peya_crear_cuenta`: un pedido de PeYa ya se vuelve comanda y cuenta
+
+Primera de las tres piezas del flujo automático. Probada de punta a punta en Casa Matriz y limpiada después: cero rastros.
+
+**Se siguió el molde que ya existía.** `fn_delivery_to_pos` lleva tiempo convirtiendo pedidos de la app propia en cuenta + comanda; `peya_crear_cuenta` usa sus mismas tablas, columnas y numeración en vez de inventar un camino paralelo. Por eso **el KDS no necesitó ni un cambio**.
+
+**Lo que ve la cocina, verificado con el vocabulario real de PeYa:** «Combo La Freakie Burger + Papas + Bebida» → **COMBO FREAKIE BURGER**; «Con todo (Ketchup, Mayonesa, Escabeche…)» → **Con Todo**, una etiqueta y no ocho; «Coca Cola» → **Coca-Cola Lata**; «Super Freak» → **Combo Super Freak**; «Kids (Solo Ketchup y Mayonesa)» + «Queso cheddar» → **Ketchup · Mayonesa · Cheddar**; «Plain (Pan y Salchicha)» → sin salsas. La etiqueta de la comanda es `🛵 PeYa #<shortCode>`, que es el número por el que pregunta el driver.
+
+**El bug de dinero que casi se cuela: `grandTotal` NO es la venta.** La primera versión tomaba `grandTotal` y eso incluye el envío, que cobra PedidosYa. El spec de DH define `totalNet` como *«the total net of the order… should be used as a replacement for the subTotal field»* — ése es el subtotal de productos y es lo que corresponde a la cuenta por cobrar. Con `grandTotal` se habría inflado la CxC y el cierre de turno en el monto del envío, en cada pedido. Coincide además con lo que se hace a mano hoy: la cajera teclea los productos, sin envío. Cuando la suma de líneas no cuadra con `totalNet`, queda anotado en `notas_internas` con los tres números.
+
+**Dos guardas que ya probaron funcionar:** sin turno abierto la función se niega a crear la cuenta (saltó sola con Casa Matriz, que no tenía caja abierta), y un segundo llamado sobre el mismo pedido devuelve la cuenta existente en vez de duplicarla — DH reintenta hasta diez veces.
+
+**Detalle menor anotado:** al resolver un modificador que existe en varios grupos se toma el del grupo más grande, así que el `grupo_nombre` puede decir «Salsas Papas» en un hot dog. El nombre visible —que es lo que la cocina lee— siempre es el correcto.
+
+**Falta:** la aceptación automática en el webhook (mirar turno, aceptar o rechazar con `CLOSED`, llamar a esta función) y el retiro con cierre a CxC más la bandeja simplificada.
+
 ## 12-Sep-2026 — El cableado de PeYa salió de 45,987 pedidos reales, no de suposiciones
 
 Cambio de rumbo pedido por Jose: **todo pedido que llegue con la caja abierta se acepta solo** y entra a cocina y caja de una vez; la cajera sólo marca «retirado», y eso cierra la cuenta como CxC PeYa. Sin caja abierta se rechaza solo con `CLOSED` — mejor decir «cerrado» rápido que dejar vencer y comerse un `NO_RESPONSE`.
