@@ -2,6 +2,26 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — PedidosYa: ya podemos contestarle a Delivery Hero (y por qué el reloj manda)
+
+Hasta ahora `peya-plugin` **recibía** pedidos y no había forma de contestarlos. Eso no es "media integración": un pedido sin respuesta lo cancela DH solo con **`NO_RESPONSE`** cuando vence su `expiryDate` (~15 min) y, si pasa seguido, **cierra la tienda** para proteger su tasa de fallas. La mitad de salida no era un extra, era lo que mantiene la tienda abierta.
+
+**`peya-responder` (edge fn nueva, `verify_jwt=false`)** — cuatro acciones: `aceptar`, `rechazar`, `preparado`, `retirado`.
+
+- **Token cacheado.** `expires_in` viene en 7200 s; se renueva con 5 min de margen en vez de pedir uno por request. Un 401 en el primer intento tira el cache y reintenta con token nuevo.
+- **`acceptanceTime` significa cosas distintas según el tipo de orden:** en *pickup* es cuándo lo recoge el cliente (`pickup.pickupTime`), en *vendor delivery* cuándo se entrega (`delivery.expectedDeliveryTime`), en *own delivery* no tiene efecto. Y sobre todo: la doc exige **≥ 2 minutos en el futuro o la aceptación falla**. Se puso **piso duro de 3 min** para absorber latencia. Si fallara, el pedido se pierde por vencimiento — el fallo silencioso más caro de todos.
+- **El 409 sólo se reintenta si es el recuperable.** Si `currentState` es `ASSIGNED_TO_TRANSPORT` o `WAITING_FOR_ACKNOWLEDGEMENT`, el dispatch todavía se está asentando del lado de DH y hay que reintentar; los demás 409 (ya cancelado, integración indirecta) **no** — reintentarlos sería ruido sobre un pedido muerto.
+- **El estado local sólo avanza si DH confirmó** (`if (ok) cambios.estado = estadoNuevo`). Marcarlo aceptado tras una llamada fallida haría que en el tablero el pedido se vea vivo mientras se vence solo. Falle o no, se guardan `respuesta_http`, `respuesta_cuerpo` e `intentos_respuesta`.
+- **Secreto propio (`PEYA_ACCION_SECRET`, header `x-freakie-secreto`).** Esta función hace acciones con consecuencias reales contra PeYa; no puede quedar expuesta con sólo conocer la URL. No reusa `PEYA_PLUGIN_SECRET` a propósito: ése es de ellos, éste es nuestro.
+
+**`peya-plugin` ahora guarda los campos que importan para la seguridad de la operación:** `expiry_date` (el reloj), **`es_prueba`** (`test: true` — la doc dice literal *"make sure that the order won't be prepared in the kitchen"*; es lo que permite homologar sin que salga comida), `code`, `short_code` y `platform_restaurant_id`. Migración `peya_ordenes_campos_del_contrato`, con índice parcial sobre `expiry_date where estado = 'recibido'` para poder vigilar los que están por vencer.
+
+**GRANTs, la trampa de crear tablas por SQL crudo:** `peya_ordenes` nació sin los GRANTs por defecto de Supabase ⇒ `permission denied for table` aunque la RLS estuviera bien. **Una policy sin GRANT no sirve, y un GRANT sin policy tampoco.** Arreglado y verificado asumiendo el rol en un `DO`.
+
+**Staging sigue dando 401** con las mismas credenciales que dan 200 en producción. La lectura: probablemente nunca se aprovisionaron credenciales de staging. **No es bloqueante** — DH nos dio cadena de pruebas (`SV-FREAKIE-DOGS-TEST-1`), una tienda sandbox **en Argentina** (`AR-PRUEBAS-INTEGRACION-0001`, que no es una tienda nuestra, así que un pedido ahí no puede llegar a ninguna cocina real) y el flag `test`. Ése es el mecanismo del propio Delivery Hero para homologar dentro de producción.
+
+**Pendiente:** crear el secreto `PEYA_ACCION_SECRET`, correr `scripts/peya-responder.sh` de punta a punta contra la tienda sandbox, y reemplazar las 6 filas `PENDIENTE-*` de `peya_vendor_map` cuando PeYa confirme los `vendor_code` reales.
+
 ## 09-Sep-2026 — PedidosYa nos dio de alta: credenciales en mano y login contra su API funcionando
 
 **Estamos dentro.** PeYa aprobó la integración y mandó las credenciales cifradas con nuestra llave PGP. Nombre del sistema en su ecosistema: **`SV-FREAKIE-DOGS-1`**. Cadena de pruebas `SV-FREAKIE-DOGS-TEST-1` (`SVFREAKIEDOGSTEST0001`) y una tienda sandbox suya en Argentina (`AR-PRUEBAS-INTEGRACION-0001`, PlatformRestaurantID 478876) para homologar sin tocar las 5 tiendas reales. Usuario de prueba: `freakiedogs+peya@gmail.com` — **no hubo que crear cuenta**, el `+alias` de Gmail cae en la bandeja de siempre y para ellos es una dirección nueva.
