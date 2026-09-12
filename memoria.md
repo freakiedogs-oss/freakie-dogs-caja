@@ -2,6 +2,23 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — La propina que el papel imprimía en $0.00: 6,046 documentos, $13,714.59 invisibles
+
+Al portar la representación gráfica del DTE se heredó del Apps Script una cadena de `||` para el monto de cada línea: `ventaGravada || ventaExenta || compra || cantidad*precioUni`. **`noGravado` nunca estuvo ahí** — y ahí es exactamente donde va la PROPINA (Art. 49 Ley IVA: no causa IVA). Una propina llega con `ventaGravada` 0, `ventaExenta` 0, sin `compra` y `precioUni` 0, así que la cadena caía hasta `1 × 0 = 0`.
+
+**Se midió antes de tocar nada, y el alcance era 160× mayor de lo que se había dicho.** La primera lectura fue "son 37 CCF"; ese era el total de CCF que existen, no los afectados. Contando de verdad: **6,046 documentos desde el 22-jul**, de los cuales **6,031 son facturas 01 aceptadas del POS** con **$13,714.59** en propinas impresas en cero. No es un caso raro de contribuyentes: es la factura de todos los días.
+
+Ejemplo real (`268CDF04`, 11-sep): las líneas sumaban **$22.46**, la propina de **$2.25** salía en $0.00 y el total decía **$24.71**. El papel no cuadraba consigo mismo, y ese papel lo lee un contador.
+
+**El DTE ante Hacienda SIEMPRE estuvo bien.** El POS manda `propina` y el DTEaaS la firma como `noGravado`, que es el campo correcto; los 6,031 salieron aceptados. Esto era solo cómo se dibuja — **no había nada que reemitir**, y por eso el arreglo no toca ni una línea del camino fiscal.
+
+**El arreglo suma en vez de encadenar:** `bruto = ventaGravada + ventaExenta + noGravado`, y si da 0 recién ahí cae a `compra` (que es el único campo de monto de los sujeto excluido) y después a cantidad × precio. Sumar también cubre el **ítem mixto** (gravado y no gravado en la misma línea), que con `||` perdía una de las dos mitades en silencio. Además, una línea con `precioUni` 0 y monto > 0 ahora muestra **"—"** en P. Unit.: escribir "$0.00" ahí sería afirmar un precio unitario que no existe.
+
+**Verificado sobre los 33,596 documentos aceptados, no sobre un ejemplo.** Se recalculó en SQL la suma de líneas con la fórmula vieja y con la nueva contra el total de cada documento (en 01 y 14 el precio ya trae el IVA, así que las líneas deben dar el total; en 03/05/06 son netas y el IVA va aparte). Tipo 01: **de 27,547/33,581 a 33,581/33,581**. Tipo 03: de 7/12 a 12/12. **Cero documentos quedan sin cuadrar, y ninguno que cuadraba antes se rompió.** Más el arnés en Node: la factura real da $24.71 = $24.71, el mixto $13.00, y 4/4 en los casos borde de siempre.
+
+**Queda la otra mitad, que es de Jose:** la misma línea vive en el Apps Script *"Envio Correos DTE"*, que es quien arma el PDF del correo. Hasta que se edite **y se redespliegue como versión nueva** (igual que el redeploy de Vercel: guardar no alcanza), el cliente sigue recibiendo el PDF con la propina en cero mientras el ERP ya la muestra bien. Los correos ya enviados no se pueden cambiar; a quien pida su factura de vuelta, el botón de reenviar se la manda corregida.
+
+
 ## 09-Sep-2026 — DTEs Emitidos: reenviar por correo, verificar en Hacienda y descargar el documento
 
 Jose pidió tres cosas sobre un DTE ya emitido: **reenviárselo al cliente** si quedó su correo, **ver el código de generación para buscarlo en Hacienda**, y **descargar la representación gráfica**. Ninguna emite, firma ni invalida nada — el documento ya existe y ya tiene sello.

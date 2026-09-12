@@ -51,9 +51,27 @@ const money = (n) => '$' + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2)
 
 /**
  * Normaliza un DTE (el detalle del RPC) a lo que necesita el papel.
- * Replica las mismas caídas que hace el Apps Script, incluidas las de `||`:
- * un ítem con ventaGravada 0 cae a ventaExenta y después a cantidad × precio,
- * que es exactamente lo que hoy sale impreso en el PDF del cliente.
+ *
+ * El monto de cada línea SUMA los tres componentes de venta en vez de elegir el
+ * primero que no sea cero, que es lo que hacía la cadena de `||` heredada del
+ * Apps Script (`ventaGravada || ventaExenta || compra || cantidad*precio`).
+ *
+ * Por qué se cambió (12-sep-2026): `noGravado` nunca estuvo en esa cadena, y ahí
+ * es donde va la PROPINA (Art. 49 Ley IVA: no causa IVA). Una propina tiene
+ * ventaGravada 0, ventaExenta 0, sin `compra` y precioUni 0, así que la cadena
+ * caía hasta `cantidad × 0 = 0` y la línea se imprimía en **$0.00** mientras el
+ * total sí la incluía: el papel no cuadraba consigo mismo. Pasó en **6,046
+ * documentos** desde el 22-jul ($13,714.59 en propinas invisibles, casi todos
+ * facturas 01 del POS — no solo CCF).
+ *
+ * Sumar en vez de encadenar `||` cubre además el ítem mixto (gravado + no
+ * gravado a la vez), que con `||` perdía una de las dos partes en silencio.
+ * La caída a `compra` se queda para los sujeto excluido (tipo 14), donde es el
+ * único campo de monto que traen los ítems.
+ *
+ * Ojo: el DTE ante Hacienda SIEMPRE estuvo bien. La propina se firma y transmite
+ * como `noGravado`, que es el campo correcto, y los 6,031 salieron aceptados.
+ * Esto es solo cómo se dibuja el papel — no hay nada que reemitir.
  */
 export function datosRepresentacion(det, fila) {
   const emisor = det?.emisor || {}
@@ -65,7 +83,10 @@ export function datosRepresentacion(det, fila) {
   const items = cuerpo.map((it) => {
     const cant = it.cantidad || 1
     const pu = it.precioUni != null ? it.precioUni : (it.compra || 0)
-    const monto = it.ventaGravada || it.ventaExenta || it.compra || cant * pu
+    const bruto = (Number(it.ventaGravada) || 0)
+      + (Number(it.ventaExenta) || 0)
+      + (Number(it.noGravado) || 0)
+    const monto = bruto > 0 ? bruto : (it.compra != null ? Number(it.compra) : cant * pu)
     return { cantidad: cant, descripcion: it.descripcion || '', precioUni: pu, monto }
   })
 
@@ -178,7 +199,9 @@ export async function construirPdfDTE(det, fila) {
     body: d.items.map((it) => [
       String(it.cantidad),
       it.descripcion,
-      money(it.precioUni),
+      // La propina llega con precioUni 0 y monto > 0. Escribir "$0.00" ahí sería
+      // afirmar un precio unitario que no existe; un guion dice la verdad.
+      it.precioUni === 0 && it.monto > 0 ? '—' : money(it.precioUni),
       money(it.monto),
     ]),
     styles: { fontSize: 8.5, cellPadding: 1.8, textColor: 34 },
