@@ -216,6 +216,15 @@ Deno.serve(async (req) => {
         expedition_type: payload?.expeditionType ?? null,
         tipo_orden: tipoDeOrden(payload),
         callback_urls: payload?.callbackUrls ?? null,
+        // Vence la ventana para aceptar/rechazar ⇒ DH cancela solo y, si pasa seguido,
+        // cierra la tienda. Es el dato que hay que vigilar.
+        expiry_date: payload?.expiryDate || null,
+        // "Plugins should handle test orders carefully and make sure that the order
+        // won't be prepared in the kitchen."
+        es_prueba: payload?.test === true,
+        code: payload?.code ?? null,
+        short_code: payload?.shortCode ?? null,
+        platform_restaurant_id: payload?.platformRestaurant?.id ?? null,
         payload,
         actualizado_at: new Date().toISOString(),
         notas: mapa ? null : `vendor ${remoteId} sin mapear en peya_vendor_map`,
