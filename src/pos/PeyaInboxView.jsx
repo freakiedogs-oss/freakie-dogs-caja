@@ -426,12 +426,13 @@ export default function PeyaInboxView({ user, onBack }) {
   const cerrados = pedidos.filter((p) => ['rechazado', 'retirado', 'cancelado'].includes(p.estado))
 
   return (
-    <div style={{ minHeight: '100vh', background: C.fondo, color: C.texto,
+    <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
+                  background: C.fondo, color: C.texto,
                   fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif' }}>
       <style>{`@keyframes peyaLatido { 0%,100% { opacity: 1 } 50% { opacity: .35 } }`}</style>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
-                    borderBottom: `1px solid ${C.borde}`, position: 'sticky', top: 0,
+                    borderBottom: `1px solid ${C.borde}`, flexShrink: 0,
                     background: C.fondo, zIndex: 10 }}>
         <button onClick={onBack} style={{
           background: '#242430', color: C.texto, border: 'none', borderRadius: 8,
@@ -457,12 +458,14 @@ export default function PeyaInboxView({ user, onBack }) {
       {(error || aviso) && (
         <div style={{
           margin: '12px 14px 0', padding: '12px 14px', borderRadius: 10, fontSize: 14,
+          flexShrink: 0,
           background: error ? '#2a1116' : '#0d2018',
           border: `1px solid ${error ? C.rojo : C.verde}66`,
           color: error ? '#ffc9cf' : '#bff3d4', fontWeight: 600,
         }}>{error ? `⚠️ ${error}` : `✅ ${aviso}`}</div>
       )}
 
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <div style={{ padding: '14px 14px 40px', maxWidth: 620, margin: '0 auto' }}>
         {sinContestar.length > 0 && (
           <>
@@ -541,6 +544,7 @@ export default function PeyaInboxView({ user, onBack }) {
             </button>
           </div>
         )}
+      </div>
       </div>
 
       {rechazando && (

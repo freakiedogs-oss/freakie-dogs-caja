@@ -88,19 +88,54 @@ async function obtenerToken(): Promise<string> {
 //   own delivery    → no tiene efecto, existe por compatibilidad; se usa riderPickupTime
 // Y sobre todo: "needs to be at least 2 minutes later than the sending time of the
 // request, otherwise acceptance request will fail".
-const MINUTOS_PREP_DEFAULT = 20;
+//
+// DE DÓNDE SALE EL NÚMERO
+// Antes era un fijo de 20 minutos para las 6 tiendas. Lourdes tiene mediana real
+// de 7: le prometíamos casi el triple y el motorista llegaba tarde a una bolsa
+// que ya estaba lista. Ahora sale de `peya_minutos_prep`, que es la mediana (p50)
+// de `aceptado_en → lista_para_retiro` de esa tienda A ESA HORA, sobre los últimos
+// 90 días de la liquidación de PedidosYa. Varía con el volumen, que es justo lo
+// que ellos modelaban: Cafetalón p50 12 a mediodía, 8 a las 9pm.
+//
+// A la mediana le toca llegar tarde la mitad de las veces, por definición. Es la
+// elección deliberada: apuntar al p90 sería prometer 22 minutos en Cafetalón para
+// cubrir los peores, y hacer esperar al motorista el resto del día. Se cambia con
+// un `peya_recalcular_tiempo_prep(90, 0.9)` si se decide lo contrario.
+//
+// CUÁNDO MANDA EL NÚMERO DE ELLOS Y CUÁNDO EL NUESTRO
+// El significado de acceptanceTime cambia según el tipo, así que la fuente también:
+//   pickup          → cuándo estará listo. Lo decidimos nosotros: va el p50.
+//   vendor_delivery → cuándo lo recibe el CLIENTE. Eso es nuestra cocina más el
+//                     viaje de ellos; su expectedDeliveryTime lo estima mejor.
+//   own_delivery    → no tiene efecto (existe por compatibilidad); riderPickupTime.
+const MINUTOS_PREP_FALLBACK = 15;
 
-function calcularAcceptanceTime(orden: Record<string, any>): string {
+async function minutosPrep(orden: Record<string, any>): Promise<number> {
+  try {
+    const { data } = await svc.rpc("peya_minutos_prep", {
+      p_sucursal_id: orden.sucursal_id,
+    });
+    const n = Number(data);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch (e) {
+    console.error("peya_minutos_prep falló, va el fallback", String(e));
+  }
+  return MINUTOS_PREP_FALLBACK;
+}
+
+async function calcularAcceptanceTime(orden: Record<string, any>): Promise<string> {
   const p = orden.payload ?? {};
-  const candidato = orden.tipo_orden === "pickup"
-    ? p?.pickup?.pickupTime
-    : orden.tipo_orden === "vendor_delivery"
-    ? p?.delivery?.expectedDeliveryTime
-    : p?.delivery?.riderPickupTime;
+  const prep = await minutosPrep(orden);
+  const nuestro = Date.now() + prep * 60_000;
 
-  const porDefecto = Date.now() + MINUTOS_PREP_DEFAULT * 60_000;
-  let ms = candidato ? Date.parse(candidato) : NaN;
-  if (!Number.isFinite(ms)) ms = porDefecto;
+  const deEllos = orden.tipo_orden === "vendor_delivery"
+    ? p?.delivery?.expectedDeliveryTime
+    : orden.tipo_orden === "own_delivery"
+    ? p?.delivery?.riderPickupTime
+    : null;
+
+  let ms = deEllos ? Date.parse(deEllos) : NaN;
+  if (!Number.isFinite(ms)) ms = nuestro;
 
   // Piso duro de 3 minutos: con menos, DH rechaza la aceptación y el pedido se pierde
   // por vencimiento. El margen sobre el mínimo de 2 absorbe la latencia de red.
@@ -301,7 +336,7 @@ Deno.serve(async (req) => {
     url = cb.orderAcceptedUrl || `${BASE}/v2/order/status/${encodeURIComponent(token)}`;
     payloadDH = {
       status: "order_accepted",
-      acceptanceTime: cuerpo.acceptanceTime || calcularAcceptanceTime(orden),
+      acceptanceTime: cuerpo.acceptanceTime || await calcularAcceptanceTime(orden),
       remoteOrderId: orden.remote_order_id,
     };
     estadoNuevo = "aceptado";

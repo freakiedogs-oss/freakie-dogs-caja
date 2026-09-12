@@ -340,6 +340,28 @@ Deno.serve(async (req) => {
 
       if (error) return json({ error: "persistencia", message: error.message }, 500);
       if (!data?.length) return json({ error: "not_found" }, 404);
+
+      // Una cancelación anotada acá y en ningún lado más es el peor de los casos:
+      // la comanda sigue en el KDS y el cocinero termina una bolsa que nadie va a
+      // recoger, y la cuenta entra al cierre de turno como venta. `peya_cancelar_cuenta`
+      // la propaga: cocina la ve en rojo y la cuenta se anula (o, si ya se cobró
+      // porque el pedido alcanzó a salir, queda marcada para la liquidación).
+      //
+      // Va en segundo plano por lo mismo que la aceptación automática: DH espera el
+      // acuse de este PUT, no que nosotros terminemos de ordenar la casa.
+      if (status === "ORDER_CANCELLED") {
+        const propagar = () =>
+          svc.rpc("peya_cancelar_cuenta", {
+            p_orden_id: data[0].id,
+            p_motivo: String(payload?.message ?? "").slice(0, 300) || null,
+          }).then(({ error: e }) => {
+            if (e) console.error("cancelación NO propagada a cocina", remoteOrderId, e.message);
+          }).catch((e) => console.error("cancelación NO propagada", remoteOrderId, String(e)));
+
+        const er2 = (globalThis as Record<string, any>).EdgeRuntime;
+        if (typeof er2?.waitUntil === "function") er2.waitUntil(propagar()); else await propagar();
+      }
+
       return json({ ok: true }, 200);
     }
 
