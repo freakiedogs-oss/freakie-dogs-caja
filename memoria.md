@@ -2,6 +2,30 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — Las salsas llegaban revueltas: el grupo se elegía por tamaño, no por significado
+
+Probando el lote en Cafetalón, un «Combo Dúo ×2» salió en el KDS con «Con Todo» dos veces y diez salsas sueltas mezcladas en un solo montón. El cocinero no podía saber qué llevaba cada hot dog ni cada papa.
+
+**PedidosYa manda los toppings de un producto en una lista plana**, sin decir dónde termina una unidad y empieza la otra. El pedido real venía así: Coca Cola, «Con todo (…)», «Con todo (…)», y después diez salsas — cinco y cinco. Traducido de a uno y volcado a un solo arreglo, se pierde el corte.
+
+**Y el grupo se elegía mal.** `peya_traducir_modificador` resolvía el grupo con `order by (cantidad de opciones del grupo) desc limit 1` — literalmente «gana el grupo más grande». Por eso el «Con Todo» del hot dog caía en Salsas Papas: Salsas Papas tiene 16 opciones y Complemento de Hot Dog 12. Una coincidencia aritmética decidiendo qué come el cliente.
+
+**La respuesta ya estaba en nuestro menú.** Un Combo Dúo declara sus grupos numerados — Complemento de Hot Dog 1..4, Salsas Papas 1..2 — y eso es exactamente lo que usa el POS cuando se teclea a mano. `peya_traducir_toppings` recibe la lista COMPLETA y la reparte en esos grupos. El corte entre unidades es que se repita una opción: nadie pide «Ketchup y Ketchup» en la misma papa. Un preset ocupa su unidad entera.
+
+**Y un bug de plpgsql que escondía todo:** el mapa de familias se armaba con `jsonb_set(v_fams, array[clave, slot], …)`. `jsonb_set` NO crea niveles intermedios — no falla, devuelve el objeto sin tocar. `v_fams` se quedaba en `{}` para siempre y cada topping caía a la rama de descarte. La clave ahora es plana (`clave#slot`).
+
+Contra el día completo del 11-sep en Cafetalón: 419 chips, **0 sin mapear**, 351 en un grupo real del producto. Los 68 restantes destapan dos huecos del menú de PeYa, que también afectarían a un pedido tecleado: los combos no declaran grupo de bebida, y el Combo Trío declara menos grupos de salsas que unidades manda PedidosYa.
+
+## 12-Sep-2026 — Cancelaciones, cronómetro real y Metrocentro
+
+**Las cancelaciones llegaban y morían en una tabla.** El webhook ya recibía `ORDER_CANCELLED` y lo anotaba en `peya_ordenes` — y ahí terminaba. La comanda seguía en el KDS y el cocinero la seguía armando; la cuenta seguía abierta y entraba al cierre de turno. Los números de 2026 dicen el tamaño: de **784 cancelaciones**, **737 (94%) llegaron después de aceptar** y **652 con la comida ya lista — $7,204**. Casi ninguna llega a tiempo de evitar cocinar; lo que sí se evita es lo de después.
+
+`peya_cancelar_cuenta` la propaga. Cocina la ve en rojo: las filas pasan a `cancelado` y el KDS carga con `estado <> 'completado'`, así que **siguen en pantalla** hasta que alguien las quite — borrarlas sería lo peor, la bolsa se terminaría igual. Y si la cuenta ya estaba cobrada porque el pedido alcanzó a salir, **no se toca la plata**: se marca para revisar contra la liquidación. Esa decisión no la toma una función sola. Verificadas las dos ramas.
+
+**El cronómetro dejó de ser un fijo de 20 minutos.** `acceptanceTime` salía de un número inventado igual para las 6 tiendas. Lourdes tiene mediana real de 7: le prometíamos casi el triple y el motorista llegaba tarde a una bolsa que ya estaba lista. Ahora sale de `peya_minutos_prep` — el p50 de `aceptado_en → lista_para_retiro` de esa tienda **a esa hora**, sobre 90 días del CSV de liquidación, con recálculo semanal por pg_cron. Cafetalón 9, Lourdes 7, Soyapango 13, Metrocentro 13. A la mediana le toca llegar tarde la mitad de las veces: es la elección, y se cambia con un argumento.
+
+**Metrocentro no estaba mapeada.** El importador del CSV traduce `nombre_local → store_code` con un mapa cableado, y «Freakie Dogs - Metrocentro» no estaba: abrió el 31-ago, después de que se escribió el mapa. 337 pedidos y **$4,249.48** sin sucursal, invisibles en todo reporte por tienda. Una línea en `QuantoUploadView` y un backfill.
+
 ## 12-Sep-2026 — Aceptar a mano dejaba el pedido en tierra de nadie (arreglado, `peya-responder` v6)
 
 Probando en vivo en Cafetalón: se simuló el pedido **PeYa #431**, se apretó «Aceptar» en la bandeja, PedidosYa contestó 200… y el pedido no apareció en el KDS ni como cuenta en el POS. En la base: `estado = aceptado`, `pos_cuenta_id = null`.

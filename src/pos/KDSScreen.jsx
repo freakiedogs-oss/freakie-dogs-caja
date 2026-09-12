@@ -30,11 +30,14 @@ const CANAL_INFO = {
 //    complementos específicos (piden ketchup/mayonesa en vez de "Con Todo" → cocina debe OMITIR el resto).
 //  - normal: preparación estándar = sin complementos o solo "Con Todo".
 const NIVEL_INFO = {
+  // El cliente canceló en PedidosYa. Manda sobre cualquier otro nivel: de esa
+  // tarjeta lo único que importa es que nadie la siga armando.
+  cancelado:  { label: '❌ CANCELADO', color: '#f43f5e' },
   especial:   { label: 'ESPECIAL',   color: '#ef4444' },
   modificado: { label: 'MODIFICADO', color: '#fbbf24' },
   normal:     { label: 'NORMAL',     color: '#22c55e' },
 }
-const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2 }
+const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2, cancelado: 3 }
 
 // Con qué número se pide esta comanda en el mostrador.
 //
@@ -56,6 +59,7 @@ const refComanda = (c, info) => {
 }
 const esConTodo = (nombre) => String(nombre || '').trim().toLowerCase() === 'con todo'
 const itemNivel = (it) => {
+  if (it?.estado === 'cancelado') return 'cancelado'
   if (it?.atencion_especial) return 'especial'
   const mods = Array.isArray(it?.modificadores) ? it.modificadores : []
   // Amarillo si hay algún costo, o algún complemento elegido que NO sea "Con Todo".
@@ -247,6 +251,7 @@ export default function KDSScreen({ user, onBack }) {
   const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial' | 'delivery'
   const [reverting,   setReverting]   = useState(null)       // id de item en revert
   const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
+  const prevCancel = useRef(null) // Set de ids ya cancelados (misma regla)
   const [soundReady, setSoundReady] = useState(false)   // audio desbloqueado por gesto
   const [alarmOn,    setAlarmOn]    = useState(false)    // alarma insistente sonando
   const wakeLockRef  = useRef(null)
@@ -300,10 +305,16 @@ export default function KDSScreen({ user, onBack }) {
     // Alarma si aparece alguna fila NUEVA (id no visto antes). La 1ª carga no suena.
     const ids = new Set(rows.map(r => r.id))
     const hayNuevos = prevIds.current && rows.some(r => !prevIds.current.has(r.id))
+    // Una cancelación NO crea una fila: cambia el estado de una que ya estaba, y
+    // la alarma por id nuevo no se enteraba. Es justo la que más urge oír.
+    const cancelados = new Set(rows.filter(r => r.estado === 'cancelado').map(r => r.id))
+    const hayCancelados = prevCancel.current &&
+      [...cancelados].some(id => !prevCancel.current.has(id))
+    prevCancel.current = cancelados
     prevIds.current = ids
     setQueue(rows)
     setLoading(false)
-    if (hayNuevos) setAlarmOn(true)
+    if (hayNuevos || hayCancelados) setAlarmOn(true)
     else if (rows.length === 0) setAlarmOn(false)   // nada pendiente → callar
   }, [storeCode])
 
@@ -841,6 +852,15 @@ export default function KDSScreen({ user, onBack }) {
                       </span>
                     </div>
 
+                    {comanda.nivel === 'cancelado' && (
+                      <div className="kds-card-cancelada">
+                        ❌ CANCELADO EN PEDIDOSYA — NO ENTREGAR
+                        <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 3, opacity: .9 }}>
+                          Pará lo que falte. Lo que ya esté hecho, descartalo.
+                        </div>
+                      </div>
+                    )}
+
                     {comanda.mesero && (
                       <div className="kds-card-mesero">
                         <Icon name="user" size={14} color="#2dd4a8" />
@@ -929,7 +949,9 @@ export default function KDSScreen({ user, onBack }) {
                         onClick={() => (comanda.nivel !== 'normal' ? setConfirmar(comanda) : bumparComanda(comanda))}
                         disabled={isBumping}
                       >
-                        {isBumping ? '⏳' : todosListos ? '✓ LISTA' : '▷ LISTA'}
+                        {isBumping ? '⏳'
+                          : comanda.nivel === 'cancelado' ? '✕ QUITAR'
+                          : todosListos ? '✓ LISTA' : '▷ LISTA'}
                       </button>
                     </div>
                   </div>

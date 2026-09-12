@@ -1193,6 +1193,20 @@
   white-space: nowrap;
 }
 
+/* El pedido se canceló en PedidosYa mientras cocina lo armaba. Ocupa el ancho
+   entero y va arriba de los ítems: no puede competir con nada por atención. */
+.kds-card-cancelada {
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f43f5e;
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 900;
+  letter-spacing: .3px;
+  line-height: 1.25;
+}
+
 /* "PRUEBA — NO COCINAR" y demás avisos que viajan pegados a la referencia.
    Rojo sólido: es lo único que evita que se cocine un pedido que no existe. */
 .kds-card-aviso {
