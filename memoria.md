@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — La cadena completa de PeYa probada de punta a punta: 25/25 (y la autoprueba vive dentro de Supabase)
+
+`peya_ordenes` estaba **vacía**: desde el arreglo de GRANTs, el test del receptor nunca había llegado a correr entero. O sea que hasta hoy no existía evidencia de que un pedido entrara de verdad. Ya existe: **25 de 25 chequeos en verde**.
+
+**Cómo, sin que ningún secreto saliera de Supabase.** El problema era de acceso, no de código: el `pluginSecret` vive como Edge Function Secret y no se puede leer desde la base ni desde una sesión de Claude, así que nadie podía firmar el JWT de Delivery Hero sin tenerlo a mano en una terminal. La salida fue **`peya-selftest`**: una edge function que corre *adentro*, donde los secretos sí están, firma el JWT ella misma, ejercita toda la cadena y devuelve sólo un reporte. Se dispara por SQL con `pg_net`. **Los secretos nunca viajan a un chat, a un log ni al repo.**
+
+**Puerta de la autoprueba: token de un solo uso emitido por SQL** (`peya_selftest_tokens`, vence a los 30 min, se quema *antes* de correr para que una prueba que revienta a la mitad no deje el token vivo). No podía ser un secreto en env ni en código: la función crea pedidos y habla con PeYa, así que no puede quedar abierta con sólo conocer la URL.
+
+**No le manda pedidos falsos a PedidosYa.** El pedido de prueba lleva sus `callbackUrls` apuntando al `/echo` de la propia autoprueba, así que el responder recorre su camino real contra un destino nuestro. Lo único que sí toca a PeYa es el **login**, que es justo lo que conviene verificar que sigue vivo — y funcionó.
+
+**Lo que quedó demostrado, no supuesto:** el JWT rechaza las tres formas de pasar mal (sin header, claim equivocado, firma inválida); el dispatch devuelve el `remoteOrderId` y el reintento **no duplica la fila**; `es_prueba`, `expiry_date`, `tipo_orden` (`own_delivery`) y la sucursal mapeada se guardan bien; el responder saca token contra PeYa y **el `acceptanceTime` sale del `riderPickupTime`** con 25 min de margen; el estado local avanza a `aceptado` sólo tras el 200; y el 404 de orden inexistente y el 202 de menuimport responden como el contrato pide.
+
+**La falla número 25, que valió la pena:** `permission denied for table peya_ordenes` al borrar el pedido de prueba. El GRANT de la vez pasada enumeró `select/insert/update` y **se olvidó de `delete`**. Es exactamente la misma trampa de antes —tabla creada por SQL crudo que no hereda los GRANTs por defecto de Supabase— y reapareció porque enumerar privilegios a mano deja huecos que sólo se ven cuando alguien ejerce el que falta. Arreglado con `grant delete`, y la segunda corrida dio 25/25 limpio.
+
+**Ojo con el diseño del botón del POS:** `PEYA_ACCION_SECRET` sirve para scripts, cron y esta autoprueba, pero **no va a servir para el POS**. El POS es una PWA en el navegador: cualquier secreto fijo que le pongamos al frontend se lee con F12. Cuando se arme el botón "Aceptar" hay que autenticarlo con la sesión de Supabase del cajero, no con un secreto compartido.
+
 ## 12-Sep-2026 — PedidosYa: ya podemos contestarle a Delivery Hero (y por qué el reloj manda)
 
 Hasta ahora `peya-plugin` **recibía** pedidos y no había forma de contestarlos. Eso no es "media integración": un pedido sin respuesta lo cancela DH solo con **`NO_RESPONSE`** cuando vence su `expiryDate` (~15 min) y, si pasa seguido, **cierra la tienda** para proteger su tasa de fallas. La mitad de salida no era un extra, era lo que mantiene la tienda abierta.
