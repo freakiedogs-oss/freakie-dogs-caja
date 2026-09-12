@@ -324,6 +324,35 @@ Deno.serve(async (req) => {
 
   await svc.from("peya_ordenes").update(cambios).eq("id", orden.id);
 
+  // Aceptar a mano tiene que armar la comanda igual que cuando acepta el webhook.
+  // Sin esto el pedido queda aceptado en PedidosYa y en ningún lado más: ni en
+  // cocina, ni en caja. Se descubrió probando en Cafetalón el 12-sep.
+  //
+  // La misma regla que usa el webhook: los pedidos `test: true` de DH se aceptan
+  // pero NO bajan a cocina; los simulados nuestros sí, que para eso son.
+  // `peya_crear_cuenta` es idempotente (si ya hay pos_cuenta_id, devuelve la misma),
+  // así que un doble clic no duplica la comanda.
+  let comanda: unknown = null;
+  if (ok && accion === "aceptar") {
+    const esNuestro = String(orden.vendor_remote_id ?? "").startsWith("SIMULADO-");
+    if (!orden.es_prueba || esNuestro) {
+      const { data: c, error: errComanda } = await svc.rpc("peya_crear_cuenta", {
+        p_orden_id: orden.id,
+      });
+      if (errComanda) {
+        console.error("aceptado SIN comanda", orden.remote_order_id, errComanda.message);
+        comanda = { ok: false, error: errComanda.message };
+        await svc.from("peya_ordenes").update({
+          notas: `aceptado en PeYa pero la comanda falló: ${errComanda.message}`,
+        }).eq("id", orden.id);
+      } else {
+        comanda = c;
+      }
+    } else {
+      comanda = { ok: true, omitida: "pedido de prueba de PedidosYa: no baja a cocina" };
+    }
+  }
+
   // El retiro es el momento en que la venta se vuelve cuenta por cobrar. Se cierra
   // DESPUÉS de que DH confirmó: una cuenta cobrada sobre un pedido que ellos no dan
   // por retirado descuadra la liquidación del viernes.
@@ -349,6 +378,7 @@ Deno.serve(async (req) => {
   return json({
     ok,
     accion,
+    comanda,
     cierre,
     por: actor ? actor.nombre : "sistema",
     remoteOrderId: orden.remote_order_id,

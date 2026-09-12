@@ -2,6 +2,18 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — Aceptar a mano dejaba el pedido en tierra de nadie (arreglado, `peya-responder` v6)
+
+Probando en vivo en Cafetalón: se simuló el pedido **PeYa #431**, se apretó «Aceptar» en la bandeja, PedidosYa contestó 200… y el pedido no apareció en el KDS ni como cuenta en el POS. En la base: `estado = aceptado`, `pos_cuenta_id = null`.
+
+**Por qué.** `peya_crear_cuenta` sólo se llamaba desde el adaptador del webhook (la aceptación automática). El botón de la bandeja pega directo a `peya-responder`, y ese camino nunca armaba la comanda. Mientras el interruptor `auto_aceptar` esté apagado en una tienda — hoy lo está en las 6 — **ése es el único camino que existe**, así que el pedido quedaba aceptado en PedidosYa y en ningún lado más: ni cocina, ni caja. Lo peor posible: PeYa lo da por vivo y manda al motorista a recoger algo que nadie está haciendo.
+
+**El arreglo.** `peya-responder` arma la comanda él mismo cuando la acción es `aceptar` y DH confirmó, con la misma regla que el webhook: los `test: true` de DH se aceptan pero no bajan a cocina; los simulados nuestros sí. `peya_crear_cuenta` ya era idempotente (si hay `pos_cuenta_id`, devuelve la misma), así que un doble clic no duplica nada. Si la comanda falla se deja constancia en `notas` y en la respuesta — el pedido ya está aceptado en PeYa, no se revierte.
+
+**La lección es la de siempre, en otra forma:** dos caminos hacia el mismo estado y sólo uno hacía el trabajo completo. La autoprueba no lo agarró porque prueba el camino del webhook; el que usa la cajera todos los días no estaba cubierto.
+
+**Verificado en vivo, no en teoría.** v6 quedó desplegada a las 15:23:16; a las 15:23:59 el pedido simulado **#297** se aceptó desde la bandeja y la comanda salió sola: cuenta 26, 3 líneas, 3 en la cola de cocina. Y el **#431** completó el ciclo entero: `retirado` → cuenta `cobrada` de $20.45 con pago `pedidos_ya` y referencia «PeYa #431».
+
 ## 12-Sep-2026 — El flujo automático de PeYa completo: entra solo, cocina solo, y la cajera sólo cierra
 
 Piezas 2 y 3. Con esto el ciclo está entero de punta a punta, y probado contra la base.
