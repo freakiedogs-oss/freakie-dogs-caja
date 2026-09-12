@@ -2,6 +2,26 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — El cableado de PeYa salió de 45,987 pedidos reales, no de suposiciones
+
+Cambio de rumbo pedido por Jose: **todo pedido que llegue con la caja abierta se acepta solo** y entra a cocina y caja de una vez; la cajera sólo marca «retirado», y eso cierra la cuenta como CxC PeYa. Sin caja abierta se rechaza solo con `CLOSED` — mejor decir «cerrado» rápido que dejar vencer y comerse un `NO_RESPONSE`.
+
+**La regla que define la arquitectura:** *la cocina no se entera*. El pedido se traduce al vocabulario de nuestro menú —nuestros nombres, nuestros grupos— antes de llegar al KDS. Para cocina es una comanda más; lo único distinto es el tag PEYA y el número.
+
+**Me equivoqué proponiendo el cableado dos veces, y la segunda vez importó.** Primero propuse dejar pasar los modificadores como texto de PeYa: la regla de arriba lo descarta. Después armé el mapeo asumiendo que PeYa publica nuestros mismos nombres — y **eso era falso**. Lo que lo destapó fue encontrar **`pedidos_peya.articulos`**: 45,987 pedidos históricos de enero a septiembre con los nombres tal como los escribe PeYa. Dicen «Combo La Freakie Burger + Papas + Bebida» donde nosotros decimos «COMBO FREAKIE BURGER», y «Queso cheddar» donde decimos «Cheddar». Sin esa tabla el cableado habría fallado en casi todos los productos.
+
+**El histórico también corrigió dos mapeos que por nombre habrían mandado el producto equivocado a cocina.** Reconstruyendo precios desde los pedidos de un solo artículo: «Super Freak» en PeYa vale **$5.99**, que es nuestro *Combo* Super Freak, no el suelto de $2.99 — 3,016 pedidos que habrían salido mal. Y «La Freakie Burger» ($7.99) no es la clásica: es el mismo combo con precio de promo (confirmado por Jose).
+
+**Los presets: 45,987 pedidos y sólo SEIS paréntesis distintos.** PeYa escribe `Preset (lo que incluye)` y la regla es quedarse con el paréntesis, porque hay decenas de prefijos («Kids», «Plain», «Solo Salsas») que dicen lo mismo. Pero aplicarla al pie de la letra rompía la regla de oro: el paréntesis más común —25,327 pedidos— habría puesto **ocho etiquetas en el KDS donde hoy no hay ninguna**, porque cuando la cajera elige «Con Todo» el KDS lo esconde a propósito. Y resulta que esas dos listas completas **son** nuestro «Con Todo» ingrediente por ingrediente (la de 8 = grupo de hot dog, la de 5 = grupo de papas). Traducirlas a «Con Todo» no es una excepción a la regla: es aplicarla bien.
+
+**Cableado en tablas, no en código** (`peya_producto_map`, `peya_modificador_map`, `peya_preset_map`), porque el menú se mueve y corregir un mapeo tiene que ser un `UPDATE`, no un deploy. Más `peya_sin_mapear`, que guarda con texto exacto lo que no calce en vez de perderlo.
+
+**Verificado contra todo el histórico:** 64,534 líneas de producto → **99.97%** resueltas (lo que falta es ruido del parser de texto, no del contrato real). 347,653 líneas de modificador → **100%**, cero sin resolver.
+
+**Interruptor por tienda** (`peya_vendor_map.auto_aceptar`, apagado por defecto): la aceptación automática se prende en una sucursal, se mira funcionando, y recién después se suelta en las seis. Esto toca caja y cocina en vivo; no se estrena en las seis a la vez.
+
+**Pendiente:** las RPC que arman la cuenta y cierran el retiro, y simplificar la bandeja del POS a un botón por pedido con el `shortCode` grande —que es el número por el que pregunta el driver, según el spec de DH.
+
 ## 12-Sep-2026 — La bandeja de PedidosYa ya vive en el POS (y simular destapó una fuga hacia DH)
 
 El pedido entraba solo desde el 9-Sep, pero contestarlo seguía siendo cosa de un script. Ahora está donde trabaja el cajero: **`PeyaInboxView`**, con tres franjas (por contestar / en curso / cerrados) y el botón que corresponde a cada tipo de orden.
