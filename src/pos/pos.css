@@ -1173,6 +1173,37 @@
   gap: 6px;
   flex: 1;
   min-width: 0;
+  /* `cliente` y `nota_pedido` piden fila propia con flex-basis:100%, y sin
+     wrap eso no parte nada: compiten en la misma línea y aplastan al resto.
+     En Cafetalón (12-sep) dejó el canal en "P…" y la nota en una tira vertical
+     de un carácter. Con wrap cada uno cae a su renglón. */
+  flex-wrap: wrap;
+}
+
+/* El número con el que el motorista pide la bolsa. Es lo que se lee de lejos:
+   va en pill, con el color del canal, y más grande que nuestro #comanda. */
+.kds-card-ref {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: .3px;
+  padding: 1px 10px;
+  border-radius: 8px;
+  border: 2px solid currentColor;
+  background: rgba(255, 255, 255, .04);
+  white-space: nowrap;
+}
+
+/* "PRUEBA — NO COCINAR" y demás avisos que viajan pegados a la referencia.
+   Rojo sólido: es lo único que evita que se cocine un pedido que no existe. */
+.kds-card-aviso {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .4px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: #ef4444;
+  color: #fff;
+  white-space: nowrap;
 }
 
 .kds-card-canal {

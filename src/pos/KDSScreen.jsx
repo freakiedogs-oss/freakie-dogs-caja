@@ -35,6 +35,25 @@ const NIVEL_INFO = {
   normal:     { label: 'NORMAL',     color: '#22c55e' },
 }
 const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2 }
+
+// Con qué número se pide esta comanda en el mostrador.
+//
+// En mesa es el número de mesa. En PedidosYa es el `shortCode` que grita el
+// motorista al llegar — y que NO es nuestro #comanda: ese ellos no lo conocen.
+// `peya_crear_cuenta` lo deja en `mesa_ref` ya armado ("🛵 PeYa #431", o
+// "🧪 PRUEBA — NO COCINAR · PeYa #431" si es de prueba). Hasta ahora el KDS sólo
+// leía `mesa_ref` cuando el canal era `mesa`, así que en PedidosYa se perdía y
+// la tarjeta quedaba sin el único dato que sirve para entregar la bolsa.
+const partirRef = (txt) => {
+  const s = String(txt || '').trim()
+  const i = s.indexOf(' · ')
+  return i < 0 ? { aviso: null, ref: s } : { aviso: s.slice(0, i), ref: s.slice(i + 3) }
+}
+const refComanda = (c, info) => {
+  if (c.canal === 'mesa') return { aviso: null, ref: `Mesa #${c.mesa_ref}`, propia: false }
+  if (!c.mesa_ref) return { aviso: null, ref: info.label, propia: false }
+  return { ...partirRef(c.mesa_ref), propia: true }
+}
 const esConTodo = (nombre) => String(nombre || '').trim().toLowerCase() === 'con todo'
 const itemNivel = (it) => {
   if (it?.atencion_especial) return 'especial'
@@ -781,9 +800,20 @@ export default function KDSScreen({ user, onBack }) {
                           <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.4px', padding: '2px 8px', borderRadius: 6, background: '#fbbf24', color: '#1a1a1a' }}>MIXTA</span>
                         )}
                         <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
-                        <span className="kds-card-canal" style={{ color: info.color }}>
-                          {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
-                        </span>
+                        {(() => {
+                          const r = refComanda(comanda, info)
+                          return (
+                            <>
+                              {r.aviso && <span className="kds-card-aviso">{r.aviso}</span>}
+                              <span
+                                className={r.propia ? 'kds-card-ref' : 'kds-card-canal'}
+                                style={r.propia ? { borderColor: info.color, color: info.color } : { color: info.color }}
+                              >
+                                {r.ref}
+                              </span>
+                            </>
+                          )
+                        })()}
                         {comanda.comanda_numero && (
                           <span className="kds-card-num">#{comanda.comanda_numero}</span>
                         )}
@@ -968,9 +998,20 @@ export default function KDSScreen({ user, onBack }) {
                       <div className="kds-card-header">
                         <div className="kds-card-title">
                           <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
-                          <span className="kds-card-canal" style={{ color: info.color }}>
-                            {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
-                          </span>
+                          {(() => {
+                            const r = refComanda(comanda, info)
+                            return (
+                              <>
+                                {r.aviso && <span className="kds-card-aviso">{r.aviso}</span>}
+                                <span
+                                  className={r.propia ? 'kds-card-ref' : 'kds-card-canal'}
+                                  style={r.propia ? { borderColor: info.color, color: info.color } : { color: info.color }}
+                                >
+                                  {r.ref}
+                                </span>
+                              </>
+                            )
+                          })()}
                           {comanda.comanda_numero && (
                             <span className="kds-card-num">#{comanda.comanda_numero}</span>
                           )}

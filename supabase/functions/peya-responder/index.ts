@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
     return json({ error: "json_invalido" }, 400);
   }
 
-  const { pin, remoteOrderId, orderToken, accion, motivo, mensaje } = cuerpo;
+  const { pin, remoteOrderId, orderToken, accion, motivo, mensaje, forzar } = cuerpo;
 
   // Esta función hace cosas con consecuencias reales contra PedidosYa, así que no
   // puede quedar expuesta con sólo conocer la URL. Se entra por PIN (el POS) o por
@@ -251,6 +251,37 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ---------- Candado: no se retira lo que cocina no terminó ----------
+  // `order_picked_up` es irreversible: a partir de ahí DH da el pedido por
+  // entregado y entra a la liquidación. Si esto se aprieta mientras la plancha
+  // todavía arma la bolsa, el motorista se va sin comida y el reclamo llega con
+  // la venta ya cobrada. La verdad de "listo" es la cola de cocina, la misma que
+  // pone la tarjeta en verde en el KDS.
+  //
+  // Se puede forzar, pero sólo gerencia y queda firmado: un KDS caído a las 8pm
+  // no puede dejar la tienda sin manera de entregar. La cajera no tiene esa
+  // llave — para ella el candado es duro, que es lo que se pidió.
+  const ROLES_FUERZAN = new Set(["gerente", "jefe_casa_matriz", "admin", "superadmin", "ejecutivo"]);
+  let notaForzado: string | null = null;
+  if (accion === "retirado") {
+    const { data: cocina } = await svc.rpc("peya_listo_para_retirar", { p_orden_id: orden.id });
+    const listo = (cocina as Record<string, any> | null)?.listo !== false;
+    if (!listo) {
+      const puedeForzar = forzar === true && (porSecreto || (actor && ROLES_FUERZAN.has(actor.rol)));
+      if (!puedeForzar) {
+        return json({
+          error: "cocina_no_termino",
+          message: (cocina as Record<string, any>)?.motivo ?? "Cocina todavía no marcó la comanda lista",
+          cocina,
+          puedeForzarlo: actor ? ROLES_FUERZAN.has(actor.rol) : true,
+        }, 409);
+      }
+      notaForzado = `retiro forzado sin que cocina marcara listo, por ${
+        actor ? `${actor.nombre} (${actor.rol})` : "sistema"
+      }`;
+    }
+  }
+
   const cb = (orden.callback_urls ?? {}) as Record<string, string>;
   const token = orden.order_token;
 
@@ -263,6 +294,7 @@ Deno.serve(async (req) => {
   const cambios: Record<string, unknown> = {
     actualizado_at: ahora,
     respondido_por: actor ? `${actor.nombre} (${actor.rol})` : "sistema",
+    ...(notaForzado ? { notas: notaForzado } : {}),
   };
 
   if (accion === "aceptar") {

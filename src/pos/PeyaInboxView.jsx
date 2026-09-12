@@ -165,6 +165,9 @@ function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
   const enCocina = p.estado === 'aceptado' || p.estado === 'preparado'
   const sinContestar = p.estado === 'recibido'
   const cerrado = ['rechazado', 'retirado', 'cancelado'].includes(p.estado)
+  // `peya_panel` trae el estado de la comanda. Si no lo trae (panel viejo en un
+  // navegador sin recargar), no se traba nada: manda el servidor.
+  const listoCocina = p.cocina?.listo !== false
 
   return (
     <div style={{
@@ -204,6 +207,7 @@ function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
           <div style={{ fontSize: 11.5, color: C.dim, marginTop: 1 }}>
             {productos.length} ítem{productos.length === 1 ? '' : 's'} · {tipo.label}
             {p.store_code ? ` · ${p.store_code}` : ''}
+            {p.comanda_numero ? ` · comanda #${p.comanda_numero}` : ''}
           </div>
         </div>
 
@@ -248,13 +252,29 @@ function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
         </div>
       )}
 
-      {/* Un solo botón, del ancho de la tarjeta: es lo único que hay que hacer. */}
+      {/* Un solo botón, del ancho de la tarjeta: es lo único que hay que hacer.
+          Mientras cocina no marque la comanda lista queda apagado y dice por qué:
+          marcar retirado le manda `order_picked_up` a PedidosYa y eso no se
+          revierte. El candado de verdad está en el servidor; esto es para que la
+          cajera entienda la espera en vez de pelearse con un botón muerto. */}
       {enCocina && (
-        <button disabled={ocupado} onClick={() => onAccion(p, tipo.cierre)} style={{
-          width: '100%', padding: '17px', border: 'none', borderTop: `1px solid ${C.borde}`,
-          background: ocupado ? '#2a3a30' : C.verde, color: '#06210f',
-          fontSize: 16.5, fontWeight: 800, cursor: 'pointer',
-        }}>{ocupado ? 'Cerrando…' : tipo.boton}</button>
+        <>
+          {!listoCocina && (
+            <div style={{
+              padding: '9px 15px', borderTop: `1px solid ${C.borde}`,
+              background: '#2a2207', color: '#ffe9b0', fontSize: 12.5, fontWeight: 600,
+            }}>
+              🍳 {p.cocina?.motivo || 'Cocina todavía no marcó la comanda lista'}
+              {p.comanda_numero ? ` · comanda #${p.comanda_numero} en el KDS` : ''}
+            </div>
+          )}
+          <button disabled={ocupado || !listoCocina} onClick={() => onAccion(p, tipo.cierre)} style={{
+            width: '100%', padding: '17px', border: 'none', borderTop: `1px solid ${C.borde}`,
+            background: !listoCocina ? '#232a26' : ocupado ? '#2a3a30' : C.verde,
+            color: !listoCocina ? C.dim : '#06210f',
+            fontSize: 16.5, fontWeight: 800, cursor: listoCocina ? 'pointer' : 'not-allowed',
+          }}>{!listoCocina ? 'Esperando a cocina' : ocupado ? 'Cerrando…' : tipo.boton}</button>
+        </>
       )}
 
       {sinContestar && (
@@ -323,6 +343,7 @@ export default function PeyaInboxView({ user, onBack }) {
       if (!r.ok || !j.ok) {
         throw new Error(
           j.error === 'pedido_de_otra_sucursal' ? 'Ese pedido es de otra sucursal'
+          : j.error === 'cocina_no_termino' ? `Todavía no: ${j.message}`
           : j.respuesta?.http ? `PedidosYa respondió ${j.respuesta.http}`
           : j.error || j.message || `HTTP ${r.status}`)
       }
@@ -360,6 +381,43 @@ export default function PeyaInboxView({ user, onBack }) {
       setAviso(`Prueba creada en ${r?.sucursal || ''}: PeYa #${r?.shortCode || ''} — la comanda dice NO COCINAR`)
       await cargar()
     } catch (e) { setError(e.message || 'No se pudo simular') }
+  }
+
+  // Un pedido inventado prueba lo que uno se imaginó; uno de ayer prueba lo que
+  // de verdad pide la gente. El lote reconstruye pedidos reales del CSV de
+  // liquidación de PedidosYa y los hace entrar por el flujo completo.
+  const simularLote = async () => {
+    setError(''); setAviso('')
+    if (!window.confirm(
+      'Van a entrar 15 pedidos de PRUEBA reconstruidos de ayer.\n\n' +
+      'Aparecen en esta bandeja sin contestar. Los que aceptes SÍ bajan al KDS ' +
+      'marcados "NO COCINAR".\n\n¿Seguimos?')) return
+    try {
+      const { data: r, error: e } = await db.rpc('peya_simular_lote', {
+        p_pin: String(user.pin), p_store_code: user.store_code || null,
+        p_fecha: null, p_n: 15,
+      })
+      if (e) throw e
+      setAviso(`${r?.creados || 0} pedidos de prueba creados en ${r?.sucursal || ''} ` +
+               `(copiados del ${r?.fecha_origen || 'día anterior'})`)
+      await cargar()
+    } catch (e) { setError(e.message || 'No se pudo crear el lote') }
+  }
+
+  // 15 pedidos falsos en una tienda que está vendiendo tienen que poder borrarse
+  // de un solo botón. Sólo toca lo que nació simulado.
+  const limpiarPruebas = async () => {
+    setError(''); setAviso('')
+    if (!window.confirm('Borra TODOS los pedidos de prueba de esta sucursal, con sus comandas y cuentas. ¿Seguimos?')) return
+    try {
+      const { data: r, error: e } = await db.rpc('peya_limpiar_simulados', {
+        p_pin: String(user.pin), p_store_code: user.store_code || null,
+      })
+      if (e) throw e
+      setAviso(`Limpio: ${r?.pedidos_borrados || 0} pedidos, ${r?.cuentas_borradas || 0} cuentas, ` +
+               `${r?.lineas_cocina_borradas || 0} líneas de cocina`)
+      await cargar()
+    } catch (e) { setError(e.message || 'No se pudo limpiar') }
   }
 
   const pedidos = data?.pedidos || []
@@ -448,16 +506,40 @@ export default function PeyaInboxView({ user, onBack }) {
         )}
 
         {ROLES_SIMULAR.includes(user.rol) && (
-          <button onClick={simular} style={{
-            marginTop: 26, width: '100%', padding: '13px', borderRadius: 10,
-            border: `1px dashed ${C.borde}`, background: 'transparent', color: C.dim,
-            fontSize: 13, cursor: 'pointer',
-          }}>
-            🧪 Simular un pedido de prueba
-            <div style={{ fontSize: 11, marginTop: 3, color: '#5f5f6b' }}>
-              Cae en {user.store_code} · la comanda sale marcada NO COCINAR · no toca PedidosYa
-            </div>
-          </button>
+          <div style={{ marginTop: 26, display: 'grid', gap: 9 }}>
+            <button onClick={simular} style={{
+              width: '100%', padding: '13px', borderRadius: 10,
+              border: `1px dashed ${C.borde}`, background: 'transparent', color: C.dim,
+              fontSize: 13, cursor: 'pointer',
+            }}>
+              🧪 Simular un pedido de prueba
+              <div style={{ fontSize: 11, marginTop: 3, color: '#5f5f6b' }}>
+                Cae en {user.store_code} · la comanda sale marcada NO COCINAR · no toca PedidosYa
+              </div>
+            </button>
+
+            <button onClick={simularLote} style={{
+              width: '100%', padding: '13px', borderRadius: 10,
+              border: `1px dashed ${C.borde}`, background: 'transparent', color: C.dim,
+              fontSize: 13, cursor: 'pointer',
+            }}>
+              📦 Traer 15 pedidos de ayer
+              <div style={{ fontSize: 11, marginTop: 3, color: '#5f5f6b' }}>
+                Reconstruidos de los pedidos reales de {user.store_code} · del más barato al más caro
+              </div>
+            </button>
+
+            <button onClick={limpiarPruebas} style={{
+              width: '100%', padding: '13px', borderRadius: 10,
+              border: `1px dashed ${C.rojo}66`, background: 'transparent', color: C.rojo,
+              fontSize: 13, cursor: 'pointer',
+            }}>
+              🧹 Borrar todas las pruebas de {user.store_code}
+              <div style={{ fontSize: 11, marginTop: 3, color: '#7a4a52' }}>
+                Se lleva sus comandas y sus cuentas · no toca ningún pedido real
+              </div>
+            </button>
+          </div>
         )}
       </div>
 
