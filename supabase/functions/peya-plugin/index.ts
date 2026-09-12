@@ -119,6 +119,70 @@ function tipoDeOrden(payload: Record<string, any> | null): string {
   return "desconocido";
 }
 
+// ---------- Aceptación automática ----------
+// La decisión —aceptar, rechazar o no hacer nada— la toma la base (`peya_auto_decidir`):
+// sabe del interruptor por tienda, del turno abierto y de los pedidos de prueba.
+// Acá sólo se obedece.
+//
+// EL ORDEN IMPORTA. Primero se contesta a Delivery Hero y después se arma la comanda:
+//   · Si se cocinara primero y la aceptación fallara, DH cancelaría el pedido por
+//     vencimiento y la comida ya estaría hecha.
+//   · Al revés, si la aceptación sale bien y la comanda falla, el pedido queda visible
+//     en la bandeja como aceptado sin comanda — alguien lo ve y lo resuelve.
+// El segundo problema se arregla; el primero se tira a la basura.
+const ACCION_SECRET = Deno.env.get("PEYA_ACCION_SECRET") ?? "";
+
+async function autoResponder(ordenId: number): Promise<void> {
+  const { data: d, error } = await svc.rpc("peya_auto_decidir", { p_orden_id: ordenId });
+  if (error) throw new Error(`peya_auto_decidir: ${error.message}`);
+  if (!d || d.accion === "nada") return;
+
+  const base = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
+  const { data: orden } = await svc.from("peya_ordenes")
+    .select("remote_order_id").eq("id", ordenId).single();
+  if (!orden?.remote_order_id) return;
+
+  const llamar = (cuerpo: Record<string, unknown>) =>
+    fetch(`${base}/functions/v1/peya-responder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-freakie-secreto": ACCION_SECRET },
+      body: JSON.stringify({ remoteOrderId: orden.remote_order_id, ...cuerpo }),
+    });
+
+  if (d.accion === "rechazar") {
+    const r = await llamar({ accion: "rechazar", motivo: d.motivo, mensaje: d.mensaje });
+    console.log("auto-rechazo", orden.remote_order_id, d.motivo, r.status);
+    return;
+  }
+
+  const r = await llamar({ accion: "aceptar" });
+  const cuerpo = await r.json().catch(() => ({}));
+  if (!r.ok || !cuerpo?.ok) {
+    console.error("auto-aceptar rechazado por PeYa", orden.remote_order_id, r.status,
+      JSON.stringify(cuerpo).slice(0, 300));
+    return; // sin aceptación no se cocina
+  }
+
+  if (d.crear_comanda === false) {
+    // Pedido de prueba de DH: se acepta —eso es lo que homologan— pero no baja a
+    // cocina. El contrato lo pide explícitamente.
+    console.log("aceptado sin comanda (pedido de prueba)", orden.remote_order_id);
+    return;
+  }
+
+  const { data: cuenta, error: errCuenta } = await svc.rpc("peya_crear_cuenta", { p_orden_id: ordenId });
+  if (errCuenta) {
+    // Aceptado con DH pero sin comanda: queda visible en la bandeja para que
+    // alguien lo arme a mano. Peor sería que nadie se enterara.
+    console.error("aceptado SIN comanda", orden.remote_order_id, errCuenta.message);
+    await svc.from("peya_ordenes").update({
+      notas: `aceptado en PeYa pero la comanda falló: ${errCuenta.message}`,
+    }).eq("id", ordenId);
+    return;
+  }
+  console.log("auto-aceptado", orden.remote_order_id, JSON.stringify(cuenta));
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
@@ -208,7 +272,7 @@ Deno.serve(async (req) => {
 
       // upsert por order_token: los reintentos de DH (hasta 10) no duplican el pedido
       // y devuelven siempre el mismo remoteOrderId.
-      const { error } = await svc.from("peya_ordenes").upsert({
+      const { data: datos, error } = await svc.from("peya_ordenes").upsert({
         order_token: token,
         remote_order_id: remoteOrderId,
         vendor_remote_id: remoteId,
@@ -228,10 +292,23 @@ Deno.serve(async (req) => {
         payload,
         actualizado_at: new Date().toISOString(),
         notas: mapa ? null : `vendor ${remoteId} sin mapear en peya_vendor_map`,
-      }, { onConflict: "order_token", ignoreDuplicates: false });
+      }, { onConflict: "order_token", ignoreDuplicates: false })
+        .select("id")
+        .single();
 
       // Un fallo de BD debe dar 5xx para que DH reintente, nunca 200.
       if (error) return json({ error: "persistencia", message: error.message }, 500);
+
+      // La aceptación automática NO se hace antes de contestar: DH espera el acuse
+      // del dispatch y meterle dos llamadas más de latencia sería pedir un timeout.
+      // Se contesta primero y se decide después, en segundo plano.
+      const decidir = () => autoResponder(datos!.id).catch((e) =>
+        console.error("auto-aceptar falló", remoteOrderId, String(e))
+      );
+      // `EdgeRuntime` existe en el runtime de Supabase pero no está declarado en
+      // TypeScript; se busca en globalThis para no romper el chequeo de tipos.
+      const er = (globalThis as Record<string, any>).EdgeRuntime;
+      if (typeof er?.waitUntil === "function") er.waitUntil(decidir()); else decidir();
 
       // remoteOrderId es obligatorio: sin él no llegan los updates de estado.
       return json({ remoteResponse: { remoteOrderId } }, 200);
