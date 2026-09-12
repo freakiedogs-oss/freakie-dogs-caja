@@ -55,7 +55,16 @@ const SUPA_URL = env('SUPABASE_URL', 'https://btboxlwfqcbrdfrlnwln.supabase.co')
 const ALLOWED_OPS = new Set([
   'pagar', 'confirmar-3ds', 'estado',
   'tarjetas', 'cobrar-guardada', 'olvidar',
+  // El flujo nuevo: el pedido nace y se cobra en un solo request, así el que
+  // abandona el formulario no deja un pedido sin pagar en la torre.
+  'crear-y-pagar', 'efectivo', 'retomar',
 ]);
+
+// Tope de pedidos por teléfono y hora. Con la creación del pedido dentro del
+// mismo request, el anti-prueba-de-tarjetas ya no se apoya en que exista un
+// pedido previo, así que hace falta un freno propio: sin esto se podrían crear
+// pedidos en serie solo para ir probando números de tarjeta.
+const PEDIDOS_MAX_HORA = Number(env('N1CO_PEDIDOS_MAX_HORA', '6')) || 6;
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
 // ── Frenos para estrenar en producción ───────────────────────────────
@@ -496,6 +505,180 @@ export default async function handler(req) {
       return json(200, {
         ok: true, estado: pago.estado, pago_id: pago.id,
         marca: pago.marca, last4: pago.last4,
+      }, origin);
+    }
+
+    // ── retomar: ¿este pedido todavía se puede pagar? ──
+    if (op === 'retomar') {
+      const tt = String(body?.tracking_token || '');
+      if (!/^[0-9a-f-]{36}$/i.test(tt)) return json(400, { ok: false, error: 'pedido_invalido' }, origin);
+      const ped = await pedidoParaRetomar(tt);
+      if (!ped) return json(404, { ok: false, error: 'no_existe' }, origin);
+
+      const vencido = new Date(ped.created_at).getTime() < Date.now() - 3 * 3600_000;
+      const pagable = ped.estado === 'pendiente_pago' && !ped.cobrado && !vencido;
+      return json(200, {
+        ok: true, pagable,
+        estado: ped.estado, vencido,
+        numero_orden: ped.numero_orden, total: Number(ped.total),
+        nombre: ped.cliente_nombre,
+      }, origin);
+    }
+
+    // ── efectivo: el cliente decide pagar al recibir ──
+    // Es la salida del que abandona la tarjeta o al que se la rechazaron. Saca
+    // el pedido de pendiente_pago y lo pone visible para la torre.
+    if (op === 'efectivo') {
+      const tt = String(body?.tracking_token || '');
+      if (!/^[0-9a-f-]{36}$/i.test(tt)) return json(400, { ok: false, error: 'pedido_invalido' }, origin);
+      const r = await rpc('pedido_cambiar_a_efectivo', { p_tracking_token: tt });
+      if (!r?.ok) {
+        return json(409, { ok: false, error: r?.motivo || 'no_disponible',
+          mensaje: r?.motivo === 'ya_pagado'
+            ? 'Este pedido ya está pagado.'
+            : 'No pudimos cambiar el método de pago. Escribinos por WhatsApp.' }, origin);
+      }
+      return json(200, { ok: true, numero_orden: r.numero_orden, total: Number(r.total) }, origin);
+    }
+
+    // ── crear-y-pagar: el pedido nace y se cobra en un solo request ──
+    // El pedido se crea ANTES de cobrar (el monto tiene que salir de la BD),
+    // pero queda en `pendiente_pago`: invisible para la torre hasta que el
+    // cobro se resuelva. Si el cliente abandona el formulario, nunca llega
+    // acá y no se crea nada.
+    if (op === 'crear-y-pagar') {
+      const email = String(body?.email || '').trim();
+      if (!EMAIL_RE.test(email)) {
+        return json(400, { ok: false, error: 'email_invalido',
+          mensaje: 'Necesitamos un correo válido para enviarte el comprobante' }, origin);
+      }
+      const card = validarTarjeta(body?.card);
+      if (card.error) return json(400, { ok: false, error: card.error, mensaje: card.mensaje }, origin);
+
+      const tel = String(body?.pedido?.cliente_telefono || '').replace(/\D/g, '');
+      if (await pedidosUltimaHora(tel) >= PEDIDOS_MAX_HORA) {
+        return json(429, { ok: false, error: 'demasiados_pedidos',
+          mensaje: 'Hiciste varios pedidos seguidos. Escribinos por WhatsApp para ayudarte 📲' }, origin);
+      }
+
+      // 1. Crear el pedido. `crear_pedido_delivery` es la única fuente del
+      //    total: revalida precios contra el menú y calcula el envío.
+      let creado;
+      try {
+        creado = await rpc('crear_pedido_delivery', { p: body?.pedido || {} });
+      } catch (e) {
+        return json(400, { ok: false, error: 'pedido_rechazado',
+          mensaje: String(e?.message || '').includes('mínimo')
+            ? String(e.message)
+            : 'No pudimos crear el pedido. Revisá los datos.' }, origin);
+      }
+      if (!creado?.ok) return json(400, { ok: false, error: 'pedido_rechazado' }, origin);
+
+      const tt = creado.tracking_token;
+
+      // 2. Esconderlo de la torre mientras se cobra. Si esto falla, el pedido
+      //    queda visible e impago = el comportamiento de antes, que Karina
+      //    sabe rescatar. Falla segura a propósito.
+      await rpc('pedido_marcar_pendiente_pago', { p_tracking_token: tt }).catch(() => {});
+
+      // 3. Abrir el intento: de acá sale el monto autoritativo.
+      const sesion = await rpc('pago_online_iniciar', {
+        p_tracking_token: tt, p_ambiente: AMBIENTE,
+      });
+      if (!sesion?.ok) {
+        return json(409, { ...respuestaNoDisponible(sesion), tracking_token: tt }, origin);
+      }
+
+      const freno = frenoDeProduccion(sesion);
+      if (freno) {
+        await rpc('pago_online_resolver', {
+          p: { pago_id: sesion.pago_id, estado: 'error',
+               error_code: freno.code, error_msg: freno.detalle },
+        });
+        return json(409, { ok: false, error: freno.code, mensaje: freno.mensaje,
+                           tracking_token: tt }, origin);
+      }
+
+      if (!locationCode(sesion.sucursal_id)) {
+        await rpc('pago_online_resolver', {
+          p: { pago_id: sesion.pago_id, estado: 'error', error_code: 'SIN_LOCATION_CODE',
+               error_msg: 'N1CO_LOCATION_CODE no configurado' },
+        });
+        return json(500, { ok: false, error: 'config', tracking_token: tt,
+          mensaje: 'El pago con tarjeta no está disponible ahora. Elegí efectivo.' }, origin);
+      }
+
+      // 4. Tokenizar y cobrar, igual que en `pagar`.
+      const hashDisp = await dispositivoHash(body?.dispositivo);
+      const guardar = body?.guardar === true && !!hashDisp;
+      const customerId = `SV${sesion.cliente_telefono}`;
+
+      const tok = await n1co('/api/v3/PaymentMethods', {
+        customer: {
+          id: customerId, name: sesion.cliente_nombre || 'Cliente',
+          email, phoneNumber: `+503${sesion.cliente_telefono}`,
+        },
+        card: {
+          number: card.numero, cardHolder: String(body.card.cardHolder).trim(),
+          expirationMonth: card.mes, expirationYear: card.anio, cvv: card.cvv,
+          singleUse: !guardar,
+        },
+      });
+
+      if (!tok.ok || !tok.data?.id) {
+        const det = detalleError(tok.data);
+        await rpc('pago_online_resolver', {
+          p: { pago_id: sesion.pago_id, estado: 'rechazado',
+               error_code: det.code, error_msg: [det.titulo, det.detalle].filter(Boolean).join(' · '),
+               raw: saneaRespuesta(tok.data) },
+        });
+        return json(200, { ok: true, estado: 'rechazado', pago_id: sesion.pago_id,
+          tracking_token: tt, numero_orden: sesion.numero_orden, total: Number(sesion.monto),
+          intentos_restantes: sesion.intentos_restantes,
+          mensaje: mensajeRechazo(tok.data) }, origin);
+      }
+
+      const last4 = card.numero.slice(-4);
+      const bin = tok.data.bin || {};
+      const paisEmisor = String(bin.countryCode || '').toUpperCase();
+      const billing = normalizarBilling(body?.billing);
+      if (['USA', 'US', 'CAN', 'CA'].includes(paisEmisor) && !billing) {
+        await rpc('pago_online_resolver', {
+          p: { pago_id: sesion.pago_id, estado: 'error', card_id: tok.data.id,
+               marca: bin.brand, last4, emisor: bin.issuerName,
+               error_code: 'REQUIERE_BILLING', error_msg: `emisor ${paisEmisor}` },
+        });
+        return json(200, { ok: true, estado: 'requiere_billing', pago_id: sesion.pago_id,
+          tracking_token: tt,
+          mensaje: 'Tu tarjeta es de EE.UU./Canadá: necesitamos el código postal de facturación.' }, origin);
+      }
+
+      const out = await cobrar({
+        pago: sesion.pago_id, sesion, cardId: tok.data.id, customerId, billing, email,
+      });
+      await marcarTarjeta(sesion.pago_id, { marca: bin.brand, last4, emisor: bin.issuerName });
+
+      if (guardar && out.estado === 'aprobado') {
+        await guardarTarjeta({
+          hash: hashDisp, cardId: tok.data.id, customerId, email,
+          telefono: sesion.cliente_telefono, titular: String(body.card.cardHolder).trim(),
+          marca: bin.brand, last4, emisor: bin.issuerName, mes: card.mes, anio: card.anio,
+        });
+      }
+
+      return json(200, {
+        ok: true, ...out,
+        // El front necesita todo esto para la pantalla de confirmación, que
+        // antes salía de la respuesta de crear_pedido_delivery.
+        tracking_token: tt,
+        numero_orden: creado.numero_orden,
+        total: Number(creado.total),
+        subtotal: Number(creado.subtotal),
+        costo_envio: Number(creado.costo_envio),
+        whatsapp: creado.whatsapp || null,
+        marca: bin.brand || null, last4,
+        intentos_restantes: sesion.intentos_restantes,
+        guardada: guardar && out.estado === 'aprobado',
       }, origin);
     }
 
@@ -1009,6 +1192,40 @@ async function emitirFacturaDelPedido({ deliveryId, cuentaId, email }) {
     await marcarDtePendiente(cuentaId, String(err?.message || err));
     return { ok: false, motivo: 'excepcion' };
   }
+}
+
+// ── Lecturas de apoyo del flujo "crear y pagar" ──────────────────────
+
+// Cuántos pedidos hizo este teléfono en la última hora. Es el freno contra
+// crear pedidos en serie para ir probando tarjetas.
+async function pedidosUltimaHora(telefono) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  const tel = String(telefono || '').replace(/\D/g, '');
+  if (!key || tel.length !== 8) return 0;
+  const desde = new Date(Date.now() - 3600_000).toISOString();
+  try {
+    const res = await fetchConTimeout(
+      `${SUPA_URL}/rest/v1/delivery_clientes?cliente_telefono=eq.${encodeURIComponent(tel)}`
+      + `&created_at=gte.${encodeURIComponent(desde)}&select=id`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}`,
+                   accept: 'application/json', Prefer: 'count=exact' } });
+    const rows = await leerJson(res);
+    return Array.isArray(rows) ? rows.length : 0;
+  } catch { return 0; }
+}
+
+// Estado de un pedido para el camino "retomar el pago".
+async function pedidoParaRetomar(trackingToken) {
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+  if (!key) return null;
+  try {
+    const res = await fetchConTimeout(
+      `${SUPA_URL}/rest/v1/delivery_clientes?tracking_token=eq.${encodeURIComponent(trackingToken)}`
+      + '&select=numero_orden,estado,cobrado,total,created_at,cliente_nombre&limit=1',
+      { headers: { apikey: key, Authorization: `Bearer ${key}`, accept: 'application/json' } });
+    const rows = await leerJson(res);
+    return Array.isArray(rows) && rows.length ? rows[0] : null;
+  } catch { return null; }
 }
 
 // Lectura liviana para el chequeo previo de disponibilidad. NO abre un intento

@@ -1,0 +1,182 @@
+/* ────────────────────────────────────────────────────────────────────
+   Estilos del bloque de pago con tarjeta.
+   Viven acá y no en menuPublico.css porque el bloque se usa en DOS páginas:
+   el menú y el seguimiento. Importar menuPublico.css entero en el tracking no
+   era opción — trae resets globales (*, html, body, background) que le rompen
+   el layout.
+   Por eso se repiten acá .mp-field / .mp-btn-checkout / .mp-error: son las
+   tres reglas base de las que depende el bloque, con los mismos valores.
+   ──────────────────────────────────────────────────────────────────── */
+
+.mp-field { margin-bottom: 14px; }
+.mp-field label {
+  display: block; font-size: 12px; font-weight: 700; color: #666;
+  text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px;
+}
+.mp-field input, .mp-field textarea, .mp-field select {
+  width: 100%; padding: 12px 14px; border: 1.5px solid #e8e2e4;
+  border-radius: 10px; font-size: 15px; font-family: inherit; background: #fff;
+  color: #1a1a1a;
+}
+.mp-field input:focus, .mp-field textarea:focus { outline: none; border-color: #E63946; }
+
+.mp-btn-checkout {
+  width: 100%; background: #E63946; color: white; border: none; padding: 15px;
+  border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s;
+}
+.mp-btn-checkout:hover:not(:disabled) { background: #c1303c; }
+.mp-btn-checkout:disabled { background: #ccc; cursor: not-allowed; }
+
+.mp-error {
+  background: #fee2e2; color: #dc2626; padding: 10px 14px; border-radius: 8px;
+  font-size: 13px; font-weight: 500; margin-top: 10px;
+}
+
+.mp-pago .mp-drawer-body { padding-bottom: 22px; }
+
+.mp-pago-resumen {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 12px 14px; margin-bottom: 16px;
+  background: #faf7f8; border-radius: 12px;
+  font-size: 14px; color: #6b6469;
+}
+
+.mp-pago-resumen b { font-size: 20px; font-weight: 800; color: #1a1a1a; }
+
+.mp-pago-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.mp-pago-input-icono { position: relative; }
+
+.mp-pago-marca {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; font-weight: 700; color: #6b6469; pointer-events: none;
+}
+
+.mp-pago-input-icono input { padding-right: 96px; }
+
+.mp-pago-seguro {
+  margin: 14px 0 16px; font-size: 12px; color: #8a8288; line-height: 1.5;
+}
+
+.mp-pago-secundario {
+  display: block; width: 100%; margin-top: 10px; padding: 12px;
+  border: none; background: none; border-radius: 10px;
+  font-size: 14px; font-weight: 600; color: #8a8288; cursor: pointer;
+}
+
+.mp-pago-secundario:hover { background: #f5f2f3; color: #555; }
+
+.mp-pago-esperando { text-align: center; padding: 32px 12px; }
+
+.mp-pago-esperando p { font-size: 14.5px; color: #6b6469; line-height: 1.6; }
+
+.mp-pago-spinner {
+  width: 42px; height: 42px; margin: 0 auto 20px;
+  border: 3px solid #f0eaec; border-top-color: #E63946; border-radius: 50%;
+  animation: mp-girar .8s linear infinite;
+}
+
+.mp-pago-3ds {
+  width: 100%; height: min(420px, 62vh); margin-top: 12px;
+  border: 1px solid #e8e2e4; border-radius: 12px; background: #fff;
+}
+
+.mp-pago-nota { font-size: 13.5px; color: #6b6469; line-height: 1.55; }
+
+.mp-pago-ok { text-align: center; padding: 12px 0 20px; }
+
+.mp-pago-ok-icono { font-size: 46px; line-height: 1; margin-bottom: 10px; }
+
+.mp-pago-ok-monto { font-size: 30px; font-weight: 800; color: #1a1a1a; }
+
+.mp-pago-ok-tarjeta { margin-top: 4px; font-size: 13px; color: #8a8288; }
+
+.mp-pago-ok-texto {
+  margin-top: 14px; font-size: 14.5px; color: #444; line-height: 1.6;
+}
+
+.mp-pago-rechazo { text-align: center; padding: 8px 0 18px; }
+
+.mp-pago-rechazo-icono { font-size: 40px; margin-bottom: 10px; }
+
+.mp-pago-rechazo p { font-size: 14.5px; color: #444; line-height: 1.6; }
+
+.mp-pago-rechazo .mp-pago-nota { margin-top: 12px; }
+
+.mp-pago-lista { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+
+.mp-pago-guardada { position: relative; display: flex; align-items: stretch; gap: 8px; }
+
+.mp-pago-guardada-btn {
+  flex: 1; display: grid;
+  grid-template-columns: auto 1fr auto; grid-template-rows: auto auto;
+  gap: 2px 8px; align-items: center; text-align: left;
+  padding: 14px 16px; border: 1.5px solid #e8e2e4; border-radius: 14px;
+  background: #fff; cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.mp-pago-guardada-btn:hover { border-color: #E63946; box-shadow: 0 2px 10px rgba(230,57,70,.12); }
+
+.mp-pago-guardada-btn:active { transform: scale(.995); }
+
+.mp-pago-guardada-marca { font-size: 14px; font-weight: 800; color: #1a1a1a; }
+
+.mp-pago-guardada-num   { font-size: 14px; font-weight: 700; color: #444; letter-spacing: .5px; }
+
+.mp-pago-guardada-vence { font-size: 11.5px; color: #9a9a9a; }
+
+.mp-pago-guardada-pagar {
+  grid-column: 1 / -1; margin-top: 6px; padding-top: 8px;
+  border-top: 1px dashed #eee;
+  font-size: 14px; font-weight: 800; color: #E63946;
+}
+
+.mp-pago-guardada-x {
+  width: 34px; border: 1.5px solid #f0eaec; border-radius: 12px;
+  background: #faf7f8; color: #b0a8ac; font-size: 18px; line-height: 1; cursor: pointer;
+}
+
+.mp-pago-guardada-x:hover { background: #fdecee; color: #b52a37; border-color: #f6d5d9; }
+
+.mp-pago-guardar {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 4px 0 12px; padding: 12px; border-radius: 12px;
+  background: #faf7f8; cursor: pointer;
+}
+
+.mp-pago-guardar input { margin-top: 2px; width: 18px; height: 18px; accent-color: #E63946; flex: none; }
+
+.mp-pago-guardar b { display: block; font-size: 13.5px; color: #1a1a1a; }
+
+.mp-pago-guardar small { display: block; margin-top: 3px; font-size: 11.5px; color: #8a8288; line-height: 1.45; }
+
+.mp-pago-guardada-ok {
+  margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+  background: #f0f9f2; border: 1px solid #cdebd8;
+  font-size: 12.5px; color: #2c6b41; line-height: 1.45;
+}
+
+.mp-drawer-overlay:has(> .mp-pago) { z-index: 300; }
+
+.mp-pago-bloque { display: flex; flex-direction: column; }
+
+.mp-pago-bloque .mp-field { margin-bottom: 10px; }
+
+.mp-pago-guardada-op {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 12px; margin-bottom: 8px;
+  border: 1.5px solid #e8e2e4; border-radius: 12px;
+  background: #fff; cursor: pointer;
+}
+
+.mp-pago-guardada-op.sel { border-color: #E63946; background: #fff6f7; }
+
+.mp-pago-guardada-op input { width: 18px; height: 18px; accent-color: #E63946; flex: none; }
+
+.mp-pago-guardada-op b { display: block; font-size: 13.5px; color: #1a1a1a; }
+
+.mp-pago-guardada-op small { display: block; font-size: 11.5px; color: #8a8288; margin-top: 1px; }
+
+.mp-pago-3ds-wrap { padding: 4px 0 2px; }

@@ -15,7 +15,7 @@ const MapaUbicacion = lazy(() => import('./MapaUbicacion'))
 
 // Igual que el mapa: el formulario de tarjeta solo lo necesita quien paga con
 // tarjeta, y no tiene por qué pesar en la primera carga del menú.
-const PagoTarjeta = lazy(() => import('./PagoTarjeta'))
+const BloquePago = lazy(() => import('./PagoTarjeta'))
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
 
@@ -119,7 +119,6 @@ export default function MenuPublico() {
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [pedidoOk, setPedidoOk] = useState(null)  // respuesta de crear_pedido_delivery + nombre
-  const [pagoTarjeta, setPagoTarjeta] = useState(false)  // cobro con tarjeta abierto encima
   const [toast, setToast] = useState(null)
   const [showTop, setShowTop] = useState(false)
   const [horarioBD, setHorarioBD] = useState(null)   // horario en vivo del Panel Delivery
@@ -278,6 +277,20 @@ export default function MenuPublico() {
         {/* LOGO + INFO NEGOCIO */}
         <HeaderNegocio horarioBD={horarioBD} />
 
+        {/* PEDIDO SIN PAGAR: va primero porque es lo único que pide acción del
+            cliente. El pedido existe pero está invisible para la cocina hasta
+            que pague, así que en vez de dejarlo perdido se le ofrece volver.
+            La RPC solo devuelve los que todavía se pueden pagar (menos de 3 h). */}
+        {misPedidos?.pendientes?.length > 0 && (
+          <a href={`${URL_DELIVERY}/track?t=${misPedidos.pendientes[0].tracking_token}`}
+             style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0', padding: '12px 14px', borderRadius: 12, background: '#2a1a0d', border: '1px solid #b45309', color: '#fde8c8', textDecoration: 'none', fontSize: 14 }}>
+            <span style={{ fontSize: 22 }}>💳</span>
+            <span style={{ flex: 1 }}><b>Te falta pagar un pedido</b> ({misPedidos.pendientes[0].numero_orden} · {fmt(misPedidos.pendientes[0].total)})<br />
+              <span style={{ fontSize: 12, opacity: .85 }}>Tocá para terminar de pagarlo</span></span>
+            <span style={{ fontSize: 18 }}>→</span>
+          </a>
+        )}
+
         {/* MIS PEDIDOS: pedido activo → seguir en vivo; si no, sugerencia de repetir */}
         {misPedidos?.activos?.length > 0 && (
           <a href={`${URL_DELIVERY}/track?t=${misPedidos.activos[0].tracking_token}`}
@@ -411,39 +424,17 @@ export default function MenuPublico() {
             setCarrito([])
             setCheckoutOpen(false)
             setPedidoOk(datos)
-            setPagoTarjeta(datos.metodoPago === 'tarjeta' && datos.cobroEnLinea !== false)
           }}
         />
       )}
 
-      {/* COBRO CON TARJETA
-          Mientras está abierto es LO ÚNICO que se ve. La versión anterior
-          montaba también la confirmación "debajo", pero los dos drawers usan
-          el mismo z-index, así que mandaba el orden del DOM y la confirmación
-          terminaba TAPANDO el formulario de tarjeta: el cliente veía "¡Pedido
-          enviado!" y no podía pagar.
-          Al cerrar el cobro, `pagoTarjeta` pasa a false y ahí sí aparece la
-          confirmación — el pedido ya está creado, no se pierde nada. */}
-      {pedidoOk && pagoTarjeta && (
-        <Suspense fallback={null}>
-          <PagoTarjeta
-            pedido={pedidoOk}
-            onAprobado={(r) => setPedidoOk(p => ({ ...p, pagado: true, pago: r }))}
-            onPagarEnEfectivo={() => {
-              setPagoTarjeta(false)
-              setPedidoOk(p => ({ ...p, metodoPago: 'efectivo' }))
-            }}
-            onCerrar={() => setPagoTarjeta(false)}
-          />
-        </Suspense>
-      )}
-
-      {/* CONFIRMACIÓN POST-PEDIDO — solo cuando no se está cobrando */}
-      {pedidoOk && !pagoTarjeta && (
-        <PedidoEnviado
-          datos={pedidoOk}
-          onClose={() => { setPedidoOk(null); setPagoTarjeta(false) }}
-        />
+      {/* CONFIRMACIÓN POST-PEDIDO
+          Solo se monta con el pedido YA VIVO: pagado con tarjeta o confirmado
+          como efectivo. Antes salía también tras abandonar el cobro, y el
+          botón de WhatsApp mandaba al cliente a escribirle a Karina por un
+          pedido que ella no podía ver. */}
+      {pedidoOk && (
+        <PedidoEnviado datos={pedidoOk} onClose={() => setPedidoOk(null)} />
       )}
 
       {/* TOAST */}
@@ -1273,19 +1264,23 @@ function Checkout({ items, total, onClose, onEnviado }) {
   const totalConEnvio = total + costoEnvio
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
-  const enviar = async () => {
+  // Valida el formulario. Lo usan los dos caminos: el de efectivo y el del
+  // bloque de tarjeta, que necesita el pedido armado para mandarlo junto con
+  // los datos de la tarjeta en un solo request.
+  const validar = () => {
     setError('')
-    if (!nombre.trim()) return setError('Ingresá tu nombre')
+    if (!nombre.trim()) { setError('Ingresá tu nombre'); return false }
     const tel = telefono.trim()
     if (!TEL_VALIDO.test(tel)) {
-      return setError(tel.length !== 8
+      setError(tel.length !== 8
         ? 'El teléfono debe tener 8 dígitos'
         : 'Revisá el teléfono: en El Salvador empieza con 2, 6 o 7')
+      return false
     }
-    if (tipo === 'pickup' && !tiendaSel) return setError('Elegí en qué tienda vas a recoger')
+    if (tipo === 'pickup' && !tiendaSel) { setError('Elegí en qué tienda vas a recoger'); return false }
     if (tipo === 'delivery') {
-      if (!direccion.trim()) return setError('Dirección requerida para delivery')
-      if (!zona) return setError('Elegí tu zona')
+      if (!direccion.trim()) { setError('Dirección requerida para delivery'); return false }
+      if (!zona) { setError('Elegí tu zona'); return false }
       // Sin punto en el mapa el motorista sale a buscar la dirección a ciegas.
       // Antes se podía enviar el pedido sin tocar el botón de ubicación y ~1 de
       // cada 3 llegaba sin coordenadas; ahora se abre el mapa y no se sigue
@@ -1298,17 +1293,20 @@ function Checkout({ items, total, onClose, onEnviado }) {
           document.getElementById('mp-campo-ubicacion')
             ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 80)
-        return setError('Necesitamos tu ubicación para llevarte el pedido. Marcá tu casa en el mapa.')
+        setError('Necesitamos tu ubicación para llevarte el pedido. Marcá tu casa en el mapa.')
+        return false
       }
-      if (!cumpleMinimo) return setError(`Pedido mínimo ${fmt(envio?.minimo ?? NEGOCIO.consumoMinimo)} para delivery`)
+      if (!cumpleMinimo) {
+        setError(`Pedido mínimo ${fmt(envio?.minimo ?? NEGOCIO.consumoMinimo)} para delivery`)
+        return false
+      }
     }
-    setEnviando(true)
-    try {
-      // El pedido se crea vía RPC: valida precios contra el menú real,
-      // guarda el shape canónico y entra 'recibida' SIN comandar. La comanda
-      // a cocina la dispara Karina al confirmar el pago (torre de control).
-      const { data, error: rpcErr } = await db.rpc('crear_pedido_delivery', {
-        p: {
+    return true
+  }
+
+  // El payload canónico del pedido. `crear_pedido_delivery` revalida todo
+  // contra el menú real, así que esto es una propuesta, no la verdad.
+  const armarPedido = () => ({
           cliente_nombre: nombre.trim(),
           cliente_telefono: telefono.trim(),
           tipo,
@@ -1335,38 +1333,63 @@ function Checkout({ items, total, onClose, onEnviado }) {
               modificadores: (c.mods || []).map(m => m.id),
             })),
           })),
-        },
-      })
+  })
+
+  const recordarPerfil = () => guardarPerfil({
+    nombre: nombre.trim(), telefono: telefono.trim(),
+    direccion: direccion.trim(), zona,
+  })
+
+  // Lo que ve la pantalla de confirmación. El total que manda el servidor es el
+  // que manda; el desglose local es informativo.
+  const datosConfirmacion = (data, extra = {}) => ({
+    ...data,
+    nombre: nombre.trim(),
+    items, subtotal: total, costoEnvio, tipo,
+    direccion: direccion.trim(),
+    ...extra,
+  })
+
+  // ── Camino EFECTIVO: igual que siempre, el pedido nace visible ──
+  const enviar = async () => {
+    if (!validar()) return
+    setEnviando(true)
+    try {
+      const { data, error: rpcErr } = await db.rpc('crear_pedido_delivery', { p: armarPedido() })
       if (rpcErr) throw rpcErr
       if (!data?.ok) throw new Error('respuesta inesperada')
-
-      // Recordar datos en este dispositivo para el próximo pedido (el CRM
-      // server-side lo actualiza la propia RPC).
-      guardarPerfil({
-        nombre: nombre.trim(),
-        telefono: telefono.trim(),
-        direccion: direccion.trim(),
-        zona,
-      })
-
-      // Se pasa el detalle del carrito para que la pantalla de confirmación muestre la orden
-      // completa y no solo el número. El total que manda el servidor sigue siendo el que manda:
-      // el desglose local es informativo.
-      onEnviado({
-        ...data,
-        nombre: nombre.trim(),
-        items, subtotal: total, costoEnvio, tipo,
-        direccion: direccion.trim(), metodoPago,
-        // Sin esto, fuera del piloto se abriría el drawer de cobro para
-        // cerrarse solo. Con esto el pedido termina como termina hoy.
-        cobroEnLinea,
-      })
+      recordarPerfil()
+      onEnviado(datosConfirmacion(data, { metodoPago: 'efectivo' }))
     } catch (err) {
       console.error('Error enviando pedido:', err)
       setError('No se pudo enviar el pedido. Intentá otra vez o llamanos.')
     } finally {
       setEnviando(false)
     }
+  }
+
+  // ── Camino TARJETA: el bloque de pago crea y cobra en un solo request ──
+  // Devuelve null si el formulario no está completo; el error ya quedó puesto.
+  const construirPedido = () => {
+    if (!validar()) return null
+    return armarPedido()
+  }
+
+  const cobroAprobado = (r) => {
+    recordarPerfil()
+    onEnviado(datosConfirmacion(r, {
+      metodoPago: 'tarjeta', pagado: true,
+      pago: { marca: r.marca, last4: r.last4, comandado: r.comandado },
+      costoEnvio: Number(r.costo_envio ?? costoEnvio),
+    }))
+  }
+
+  // El cliente eligió pagar al recibir. Si ya había un pedido creado (hubo un
+  // intento de cobro), el servidor ya lo pasó a efectivo; si no, se crea acá.
+  const cobroEnEfectivo = async (r) => {
+    setMetodoPago('efectivo')
+    if (r?.ok) { recordarPerfil(); onEnviado(datosConfirmacion(r, { metodoPago: 'efectivo' })); return }
+    await enviar()
   }
 
   return (
@@ -1629,17 +1652,24 @@ function Checkout({ items, total, onClose, onEnviado }) {
         </div>
 
         <div className="mp-drawer-footer">
-          <button
-            className="mp-btn-checkout"
-            onClick={enviar}
-            disabled={enviando}
-          >
-            {enviando
-              ? 'Enviando...'
-              : metodoPago === 'tarjeta'
-                ? `Continuar al pago · ${fmt(totalConEnvio)}`
-                : `Confirmar pedido · ${fmt(totalConEnvio)}`}
-          </button>
+          {/* Con tarjeta, el bloque de pago es dueño del botón: así el pedido
+              se crea y se cobra en un solo acto y el que abandona no deja nada.
+              Con efectivo, el botón de siempre. */}
+          {metodoPago === 'tarjeta' && cobroEnLinea ? (
+            <Suspense fallback={<div className="mp-pago-esperando"><div className="mp-pago-spinner" /></div>}>
+              <BloquePago
+                total={totalConEnvio}
+                construirPedido={construirPedido}
+                onAprobado={cobroAprobado}
+                onEfectivo={cobroEnEfectivo}
+                onNoDisponible={(msg) => { setCobroEnLinea(false); if (msg) setError(msg) }}
+              />
+            </Suspense>
+          ) : (
+            <button className="mp-btn-checkout" onClick={enviar} disabled={enviando}>
+              {enviando ? 'Enviando...' : `Confirmar pedido · ${fmt(totalConEnvio)}`}
+            </button>
+          )}
         </div>
       </div>
     </div>

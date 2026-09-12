@@ -307,6 +307,10 @@ export default function TabPedidos({ show = () => {} }) {
   const [sesion, setSesion] = useState(null);
   const [pin, setPin] = useState('');
   const [pedidos, setPedidos] = useState([]);
+  // Pedidos con tarjeta que el cliente nunca terminó de pagar. No son tareas de
+  // Karina —el cliente puede retomarlos solo, y si no se cancelan a las 3 h—,
+  // pero tiene que poder encontrarlos si alguien llama preguntando.
+  const [sinPagar, setSinPagar] = useState([]);
   const [entregados, setEntregados] = useState([]);
   // La franja de entregados arranca plegada: es para revisar, no para operar.
   const [entregadosAbierto, setEntregadosAbierto] = useState(
@@ -342,13 +346,15 @@ export default function TabPedidos({ show = () => {} }) {
     if (!t) return;
     setCargando(true);
     try {
-      const [{ data, error }, dr, ent] = await Promise.all([
+      const [{ data, error }, dr, ent, sp] = await Promise.all([
         db.rpc('torre_listar_pedidos', { p_token: t }),
         db.rpc('drivers_en_linea'),
         db.rpc('torre_entregados_hoy', { p_token: t }),
+        db.rpc('torre_pedidos_sin_pagar', { p_token: t }),
       ]);
       if (error) throw error;
       setPedidos(data || []);
+      setSinPagar(sp?.data || []);
       setDrivers(dr?.data || []);
       setEntregados(ent?.data || []);
       setUltima(new Date());
@@ -741,6 +747,42 @@ export default function TabPedidos({ show = () => {} }) {
           recargarPadre={() => cargar(token)}
         />
       </Suspense>
+
+      {sinPagar.length > 0 && (
+        <div style={{ marginTop: 14, background: c.card, border: `1px solid ${c.border}`,
+                      borderRadius: 12, padding: '11px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 14 }}>💳</span>
+            <span style={{ fontWeight: 800, fontSize: 13.5 }}>Sin pagar</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: c.yellow }}>{sinPagar.length}</span>
+            <span style={{ fontSize: 11.5, color: c.dim }}>
+              · el cliente no terminó el pago con tarjeta · no están en cocina
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {sinPagar.map(p => (
+              <div key={p.id} style={{ ...tarjeta, padding: '8px 10px', minWidth: 210 }}>
+                <div style={{ fontSize: 12, fontWeight: 800 }}>
+                  {p.numero_orden} <span style={{ color: c.dim, fontWeight: 600 }}>· {fmt(p.total)}</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>
+                  {p.cliente_nombre} · {p.cliente_telefono}
+                </div>
+                {p.ultimo_error && (
+                  <div style={{ fontSize: 11, color: c.yellow, marginTop: 3 }}>
+                    ⚠️ {String(p.ultimo_error).slice(0, 70)}
+                  </div>
+                )}
+                <a href={`${URL_DELIVERY}/track?t=${p.tracking_token}`} target="_blank" rel="noopener"
+                   style={{ ...btn('#333'), display: 'block', textAlign: 'center', marginTop: 7,
+                            fontSize: 11.5, textDecoration: 'none' }}>
+                  🔗 Link para que lo pague
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Retiros en local ya pagados: informativos, no son tareas de Karina.
           Se muestran para que sepa qué hay esperando en cada tienda, pero fuera
