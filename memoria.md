@@ -2,6 +2,26 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — El flujo automático de PeYa completo: entra solo, cocina solo, y la cajera sólo cierra
+
+Piezas 2 y 3. Con esto el ciclo está entero de punta a punta, y probado contra la base.
+
+**El webhook decide solo** (`peya_auto_decidir` + el adaptador en `peya-plugin`). Cuatro escenarios, los cuatro verificados: caja cerrada → rechaza con `CLOSED`; caja abierta → acepta y arma la comanda; pedido `test: true` de DH → acepta pero NO baja a cocina (lo exige el contrato); interruptor apagado → no hace nada, como hoy.
+
+**Dos decisiones de orden que no son intercambiables.** Primero se contesta a Delivery Hero y después se cocina: si fuera al revés y la aceptación fallara, DH cancelaría el pedido por vencimiento con la comida ya hecha. En este orden, si la aceptación sale bien y la comanda falla, el pedido queda visible como «aceptado sin comanda» y alguien lo resuelve — eso se arregla, lo otro se tira. Y la decisión tampoco se toma antes de responder el dispatch: DH espera el acuse y dos llamadas más de latencia serían pedir un timeout, así que va por `EdgeRuntime.waitUntil`.
+
+**`peya_cerrar_cuenta`: el retiro es el momento en que la venta se vuelve cuenta por cobrar.** Reusa el método `pedidos_ya` («CxC PeYa») que ya existía y ya alimenta el cierre de turno por `conteo_pedidos_ya`; no se inventó nada. Sin DTE, porque se factura a PeYa y no al cliente final. Se llama **después** de que DH confirmó el retiro: una cuenta cobrada sobre un pedido que ellos no dan por retirado descuadra la liquidación del viernes.
+
+**Revisado antes de tocar nada:** los dos triggers sobre `pos_cuentas` (`fn_pos_cobro_update_delivery`, `fn_delivery_sync_lista`) se activan sólo si `delivery_cliente_id` no es nulo, y en las cuentas de PeYa es nulo. No se disparan. Importaba mirarlo: uno de esos triggers ya rompió los retiros en septiembre.
+
+**La bandeja se rehizo alrededor del trabajo que de verdad queda.** Con la aceptación automática nadie tiene que aceptar: el driver llega, dice un número, y hay que encontrarlo y cerrarlo. Así que el `shortCode` es lo más grande de la pantalla y el botón es uno solo, del ancho de la tarjeta. La franja «sin contestar» ahora dice explícitamente que si algo aparece ahí, es que algo falló.
+
+**Ciclo completo verificado:** pedido → comanda → aceptar → retirar → cuenta `cobrada` de **$20.45** (totalNet, sin el envío) con su pago `pedidos_ya` y referencia «PeYa #579», y `respondido_por` con la persona. Cerrar dos veces deja **un solo pago**. Build de la PWA limpio. Autoprueba del receptor 25/25.
+
+**Lo que NO pude verificar:** que el adaptador dentro de la edge function realmente ejecute la decisión. La autoprueba borra su propio pedido antes de dejar rastro, y me puse a perseguir el nombre de la tabla de logs de Supabase sin acertar. La lógica está probada 4/4 en SQL y el adaptador es delgado, pero la confirmación queda para la primera prueba supervisada con la UI.
+
+**Todo apagado:** los seis interruptores de `auto_aceptar` quedaron en false. Nada cambió en producción todavía.
+
 ## 12-Sep-2026 — `peya_crear_cuenta`: un pedido de PeYa ya se vuelve comanda y cuenta
 
 Primera de las tres piezas del flujo automático. Probada de punta a punta en Casa Matriz y limpiada después: cero rastros.
