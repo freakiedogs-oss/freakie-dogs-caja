@@ -2,6 +2,29 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — El pedido con tarjeta no existe hasta que el cobro se resuelve
+
+Elegir tarjeta creaba el pedido **antes** de cobrar. Medido del 9 al 12-sep: **87 pedidos con tarjeta, 64 pagados (74%), 17 abandonados sin intentar y 6 con tarjeta rechazada** — ~6 al día que Karina rescataba a mano con un link. Y al cerrar el formulario con la ✕ el cliente veía **"¡Pedido enviado!"** con el botón de WhatsApp: había **7 salidas distintas** del drawer que aterrizaban todas ahí.
+
+**El pago se mudó DENTRO del checkout, con un solo botón "Pagar y confirmar $X".** El que abandona el formulario nunca aprieta el botón, así que **no se crea ningún pedido**. Eso solo elimina el limbo para los 17 abandonos.
+
+**`pendiente_pago`: un estado invisible.** La torre y `mis_pedidos_delivery` filtran por los 4 estados operativos, así que desaparece sin tocarlos. Decisión clave: **NO se tocó `crear_pedido_delivery`** — el pedido nace `recibida` como siempre y el servidor lo marca pendiente en un segundo paso. Si ese paso falla, queda visible e impago = **el comportamiento de hoy, que Karina sabe rescatar**. Reescribir esa función de ~100 líneas era más riesgo del que resuelve.
+
+**El peor escenario del cambio, atajado:** el camino *fuera de cobertura* de `pago_online_resolver` retorna **sin** llamar a `confirmar_pago_delivery`, así que el pedido se habría quedado en `pendiente_pago` —invisible— **con la plata ya cobrada**. Ahora pasa explícito a `recibida`. Es la prueba #5 del arnés.
+
+**Rechazo: se resuelve con el cliente, no con Karina.** Se le dice el motivo real y se le ofrece otra tarjeta o efectivo ahí mismo. Los reintentos van **sobre el mismo pedido**, no se crea uno nuevo por cada tarjeta que prueba.
+
+**Retomar:** banda "Te falta pagar un pedido" en el menú y pantalla propia en el seguimiento. Antes el tracking hacía `Math.max(0, findIndex)` y colapsaba cualquier estado desconocido al paso 0: un pedido impago mostraba **"Pedido recibido — Te vamos a escribir para coordinar el pago"**, una promesa que nadie iba a cumplir porque el pedido ni estaba en la torre. Tampoco habilita ya el juego con premio.
+
+**Torre:** franja **"Sin pagar"** fuera de las 4 columnas, sin relojes ni alarmas, con el último error de la tarjeta y un link directo para que el cliente pague — reemplaza el link de pago que Karina armaba a mano. No le agrega trabajo: le devuelve la capacidad de responder si alguien llama.
+
+**Dos cosas que casi se rompen y conviene recordar:**
+- **`crear_pedido_delivery` NO era ejecutable por `service_role`** (revocada de PUBLIC en algún momento, solo quedaba `anon`). El endpoint nuevo la llama desde la Edge Function: habría dado *permission denied* en producción. Tercera vez que muerde este mismo gotcha — ver [[revoke-public-tumba-service-role]].
+- **Los estilos**: al mover el bloque de pago a su propio CSS (se usa en dos páginas ahora), se fueron también `mp-pago-btn`/`opts`/`hint`, que el checkout usa **aunque el cliente elija efectivo** — y en ese caso el chunk lazy no carga, así que los botones Efectivo/Tarjeta habrían quedado sin estilo. Volvieron a `menuPublico.css`. Importar `menuPublico.css` en el tracking no era opción: trae resets globales (`*`, `html, body`, `background`) que le rompen el layout.
+
+**Verificación:** `scripts/test-pendiente-pago.sql` **9/9**, se revierte solo. Webhook de EPay extendido antes que nada (Fase 1) porque con el pedido invisible, perder una confirmación pasa a significar perder el pedido con la plata cobrada. Cron cada 15 min que cancela los pendientes de +3 h, con guard de no tocar nada cobrado ni comandado. Control permanente: `pagados_invisibles` debe dar siempre 0.
+
+
 ## 09-Sep-2026 — `cobrado` NO significa "pagó online": el sello salía en pedidos en efectivo
 
 **Bug con plata en riesgo**, detectado por Jose: el pedido de Ivonne Suria ($7.99, **efectivo**) mostraba `PAGADO ONLINE · NO COBRAR` y no aparecía en el portal de n1co — porque nunca se pagó ahí.
