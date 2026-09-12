@@ -2,6 +2,24 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 12-Sep-2026 — La bandeja de PedidosYa ya vive en el POS (y simular destapó una fuga hacia DH)
+
+El pedido entraba solo desde el 9-Sep, pero contestarlo seguía siendo cosa de un script. Ahora está donde trabaja el cajero: **`PeyaInboxView`**, con tres franjas (por contestar / en curso / cerrados) y el botón que corresponde a cada tipo de orden.
+
+**La cuenta regresiva es lo más grande de la pantalla, y es a propósito.** Verde arriba de 5 min, ámbar entre 2 y 5, rojo parpadeando abajo de 2. Los umbrales no son estéticos: **abajo de 2 minutos ya no se puede aceptar**, porque DH exige que el `acceptanceTime` esté al menos 2 min en el futuro. Todo lo demás —productos, cliente, dirección— es contexto para decidir; el reloj *es* la decisión. Y el badge de pendientes va en el home, porque el reloj corre aunque nadie tenga la bandeja abierta.
+
+**El botón siguiente depende del tipo de orden:** *vendor delivery* (lo lleva un rider de DH) → "Comida lista" (`preparation-completed`); *own delivery* y *pickup* → "Retirado" (`order_picked_up`). Son los únicos válidos en cada caso según el contrato; ofrecer el otro sería un 4xx garantizado.
+
+**Auth por PIN, no por secreto compartido — y esto era una decisión pendiente, no un detalle.** El POS es una PWA en el navegador: cualquier secreto fijo en el frontend se lee con F12, así que `PEYA_ACCION_SECRET` nunca iba a servir ahí. El PIN ya es la credencial con la que el cajero entra; el servidor lo valida contra `usuarios_erp` en cada llamada, y de yapa ata la acción **a una persona** (`respondido_por`, nueva columna) **y a una sucursal** — un cajero no contesta pedidos de otra tienda. El secreto de servidor sigue vivo para scripts, cron y la autoprueba: son dos puertas para dos mundos distintos, no una redundante.
+
+**RPCs nuevas:** `peya_panel(p_pin)` —mismo patrón que `sucursal_panel_delivery`: el alcance lo decide el servidor— y `peya_simular_pedido(p_pin)`, que inyecta un pedido de prueba para recorrer el flujo sin depender de que PedidosYa dispare uno.
+
+**Lo que destapó probar el flujo completo, que es justo para lo que sirve probarlo:** la acción **"retirado" de un pedido simulado SÍ salía a la API real de PedidosYa**. La simulación definía `orderAcceptedUrl`, `orderRejectedUrl` y `orderPreparedUrl` pero **no `orderPickedUpUrl`**, y el responder cae —correctamente, para pedidos reales— a la URL por defecto de DH cuando falta el callback. O sea: la pantalla decía "no toca PedidosYa" y en ese camino la tocaba. Arreglado por los dos lados: la simulación ahora define los cuatro callbacks, **y** el responder corta de raíz —si el pedido es de un vendor `SIMULADO-` y la URL resuelta no es nuestra, se rechaza con `simulado_no_sale_a_peya` nombrando adónde habría ido. El corte es el **vendor simulado, no el flag `es_prueba`**: los pedidos `test: true` de DH sí deben contestarse contra DH, que es todo el mecanismo de homologación.
+
+**Lección:** una promesa de aislamiento que depende de que N campos estén completos no es aislamiento, es suerte. El corte tiene que estar en la salida, donde se puede verificar una sola vez.
+
+**Verificado de punta a punta:** aceptar / rechazar / retirado devuelven 200 contra nuestro echo, PIN falso 401, rechazo sin motivo 400 (lo frena nuestra función, no DH), el cinturón 400 nombrando la URL, el `acceptanceTime` sale del `riderPickupTime`, y la autoprueba de la cadena sigue **25/25**. Build de la PWA limpio.
+
 ## 12-Sep-2026 — La cadena completa de PeYa probada de punta a punta: 25/25 (y la autoprueba vive dentro de Supabase)
 
 `peya_ordenes` estaba **vacía**: desde el arreglo de GRANTs, el test del receptor nunca había llegado a correr entero. O sea que hasta hoy no existía evidencia de que un pedido entrara de verdad. Ya existe: **25 de 25 chequeos en verde**.
