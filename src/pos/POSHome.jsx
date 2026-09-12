@@ -76,7 +76,7 @@ const KDS_ROLES = ['cocina', 'gerente', 'admin', 'ejecutivo', 'superadmin']
 const MESERO_ROLES = ['mesero', 'mesera']
 const EDIT_PLANO_ROLES = ['gerente', 'admin', 'ejecutivo', 'superadmin']
 
-export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToCierre, onGoToMenuAdmin, onGoToClientes, onChangeStore, onReport }) {
+export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoToHistorial, onGoToCierre, onGoToMenuAdmin, onGoToClientes, onGoToPeya, onChangeStore, onReport }) {
   const storeCode = user.store_code || 'S001'
   const storeName = STORES[storeCode] || storeCode
 
@@ -93,6 +93,23 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const [pax,          setPax]          = useState({ m: 1, h: 1, k: 0 })
   const longPressRef   = useRef(null)
   const firstLoadRef   = useRef(true)   // el spinner solo en la 1ª carga; los refrescos son silenciosos
+
+  // Pedidos de PedidosYa sin contestar. Va en el home porque el reloj corre aunque
+  // nadie tenga la bandeja abierta: si vence, PedidosYa lo cancela solo.
+  const [peyaPendientes, setPeyaPendientes] = useState(0)
+  useEffect(() => {
+    if (!onGoToPeya || !user?.pin) return
+    let vivo = true
+    const contar = async () => {
+      try {
+        const { data: r } = await db.rpc('peya_panel', { p_pin: String(user.pin) })
+        if (vivo) setPeyaPendientes((r?.pedidos || []).filter(p => p.estado === 'recibido').length)
+      } catch { /* el badge es un extra: si falla, el home sigue igual */ }
+    }
+    contar()
+    const t = setInterval(contar, 30000)
+    return () => { vivo = false; clearInterval(t) }
+  }, [onGoToPeya, user?.pin])
 
   // ── Carga ──
   const load = useCallback(async () => {
@@ -557,6 +574,22 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </button>
         )}
         {/* Historial: cajero+ (cajero, cajera, gerente, admin, ejecutivo, superadmin) */}
+        {/* Bandeja de PedidosYa: los pedidos entran solos y hay que contestarlos
+            antes de que venzan. Va junto al KDS porque es la misma urgencia. */}
+        {!MESERO_ROLES.includes(user.rol) && onGoToPeya && (
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#a78bfa', position: 'relative' }} onClick={onGoToPeya}>
+            <span className="poshome-quick-icon"><Icon name="bell" size={22} /></span>
+            <span className="poshome-quick-label">PeYa Bandeja</span>
+            {peyaPendientes > 0 && (
+              <span style={{
+                position: 'absolute', top: 4, right: 8, minWidth: 19, height: 19, padding: '0 5px',
+                borderRadius: 10, background: '#e63946', color: '#fff', fontSize: 11, fontWeight: 800,
+                display: 'grid', placeItems: 'center',
+              }}>{peyaPendientes}</span>
+            )}
+          </button>
+        )}
+
         {!MESERO_ROLES.includes(user.rol) && onGoToHistorial && (
           <button className="poshome-quick-btn" style={{ '--qt-color': '#2dd4a8' }} onClick={onGoToHistorial}>
             <span className="poshome-quick-icon"><Icon name="list" size={22} /></span><span className="poshome-quick-label">Órdenes</span>

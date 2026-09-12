@@ -9,12 +9,20 @@
 // tienda para proteger su tasa de fallas. Aceptar a tiempo no es una cortesía: es lo que
 // mantiene la tienda abierta.
 //
-// LLAMADA (desde el POS o desde scripts/peya-responder.sh):
+// DOS FORMAS DE AUTENTICARSE, y no son intercambiables
+//   a) `pin` en el cuerpo — la del POS. El POS es una PWA en el navegador: un
+//      secreto fijo en el frontend se lee con F12, así que no puede ser la puerta.
+//      El PIN ya es la credencial con la que el cajero entra, se valida contra
+//      usuarios_erp en cada llamada y además ata la acción a una persona y a una
+//      sucursal (nadie contesta pedidos de otra tienda).
+//   b) `x-freakie-secreto: <PEYA_ACCION_SECRET>` — la de los scripts, el cron y
+//      la autoprueba, que corren en servidores y no tienen PIN.
+//
+// LLAMADA:
 //   POST /functions/v1/peya-responder
-//   x-freakie-secreto: <PEYA_ACCION_SECRET>
-//   { "remoteOrderId": "FD-...", "accion": "aceptar" }
-//   { "remoteOrderId": "FD-...", "accion": "rechazar", "motivo": "ITEM_UNAVAILABLE",
-//     "mensaje": "Se acabó el pan brioche" }
+//   { "pin": "1234", "remoteOrderId": "FD-...", "accion": "aceptar" }
+//   { "pin": "1234", "remoteOrderId": "FD-...", "accion": "rechazar",
+//     "motivo": "ITEM_UNAVAILABLE", "mensaje": "Se acabó el pan brioche" }
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const svc = createClient(
@@ -28,10 +36,17 @@ const ACCION_SECRET = Deno.env.get("PEYA_ACCION_SECRET") ?? "";
 const BASE = (Deno.env.get("PEYA_BASE_URL") ??
   "https://integration-middleware.us.restaurant-partners.com").replace(/\/+$/, "");
 
+// Lo llama el navegador del POS, así que necesita CORS y preflight.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "content-type, x-freakie-secreto",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...CORS },
   });
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -152,17 +167,39 @@ async function enviarADH(
   return ultimo;
 }
 
+// ---------- Quién puede contestar un pedido ----------
+// Los mismos roles que pueden marcar comida lista en el panel de delivery: si
+// alguien puede decirle a la cocina que algo salió, puede aceptar un pedido.
+const ROLES_PERMITIDOS = new Set([
+  "cocina", "gerente", "cajero", "cajera", "jefe_casa_matriz",
+  "admin", "superadmin", "ejecutivo", "telefono",
+]);
+// La central de delivery y administración atienden todas las tiendas.
+const ROLES_TODAS_LAS_TIENDAS = new Set(["admin", "superadmin", "ejecutivo", "telefono"]);
+
+type Actor = { nombre: string; rol: string; storeCode: string; todas: boolean };
+
+async function autorizarPorPin(pin: string): Promise<Actor | null> {
+  const { data } = await svc.from("usuarios_erp")
+    .select("nombre, apellido, rol, store_code")
+    .eq("pin", String(pin).trim()).eq("activo", true).limit(1);
+  const u = data?.[0];
+  if (!u || !ROLES_PERMITIDOS.has(u.rol)) return null;
+  return {
+    nombre: [u.nombre, u.apellido].filter(Boolean).join(" ").trim() || "staff",
+    rol: u.rol,
+    storeCode: u.store_code,
+    todas: ROLES_TODAS_LAS_TIENDAS.has(u.rol),
+  };
+}
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+
   if (req.method === "GET") {
     return json({ status: "ok", service: "freakie-dogs-peya-responder" });
   }
   if (req.method !== "POST") return json({ error: "metodo_no_permitido" }, 405);
-
-  // Esta función hace acciones con consecuencias reales contra la API de PedidosYa,
-  // así que va detrás de un secreto propio y no queda expuesta con sólo conocer la URL.
-  if (!ACCION_SECRET || req.headers.get("x-freakie-secreto") !== ACCION_SECRET) {
-    return json({ error: "no_autorizado" }, 401);
-  }
 
   let cuerpo: Record<string, any>;
   try {
@@ -171,7 +208,18 @@ Deno.serve(async (req) => {
     return json({ error: "json_invalido" }, 400);
   }
 
-  const { remoteOrderId, orderToken, accion, motivo, mensaje } = cuerpo;
+  const { pin, remoteOrderId, orderToken, accion, motivo, mensaje } = cuerpo;
+
+  // Esta función hace cosas con consecuencias reales contra PedidosYa, así que no
+  // puede quedar expuesta con sólo conocer la URL. Se entra por PIN (el POS) o por
+  // el secreto de servidor (scripts, cron, autoprueba); nunca sin ninguno.
+  const porSecreto = !!ACCION_SECRET && req.headers.get("x-freakie-secreto") === ACCION_SECRET;
+  let actor: Actor | null = null;
+  if (!porSecreto) {
+    if (!pin) return json({ error: "no_autorizado", motivo: "sin_pin_ni_secreto" }, 401);
+    actor = await autorizarPorPin(pin);
+    if (!actor) return json({ error: "no_autorizado", motivo: "pin_invalido_o_rol_sin_permiso" }, 401);
+  }
   if (!["aceptar", "rechazar", "preparado", "retirado"].includes(accion)) {
     return json({ error: "accion_invalida", validas: ["aceptar", "rechazar", "preparado", "retirado"] }, 400);
   }
@@ -193,6 +241,16 @@ Deno.serve(async (req) => {
   const orden = filas?.[0];
   if (!orden) return json({ error: "orden_no_encontrada" }, 404);
 
+  // Un cajero no contesta pedidos de otra tienda: el alcance lo decide el
+  // servidor a partir del PIN, nunca lo que mande el cliente.
+  if (actor && !actor.todas) {
+    const { data: suc } = await svc.from("sucursales")
+      .select("id").eq("store_code", actor.storeCode).limit(1);
+    if (!suc?.[0]?.id || orden.sucursal_id !== suc[0].id) {
+      return json({ error: "pedido_de_otra_sucursal" }, 403);
+    }
+  }
+
   const cb = (orden.callback_urls ?? {}) as Record<string, string>;
   const token = orden.order_token;
 
@@ -200,7 +258,12 @@ Deno.serve(async (req) => {
   let payloadDH: unknown | null;
   let estadoNuevo: string;
   const ahora = new Date().toISOString();
-  const cambios: Record<string, unknown> = { actualizado_at: ahora };
+  // Cuando un cliente reclama un rechazo, la pregunta siguiente es siempre quién
+  // lo rechazó. Sin esto sólo queda el motivo, sin la persona.
+  const cambios: Record<string, unknown> = {
+    actualizado_at: ahora,
+    respondido_por: actor ? `${actor.nombre} (${actor.rol})` : "sistema",
+  };
 
   if (accion === "aceptar") {
     url = cb.orderAcceptedUrl || `${BASE}/v2/order/status/${encodeURIComponent(token)}`;
@@ -230,6 +293,20 @@ Deno.serve(async (req) => {
     estadoNuevo = "retirado";
   }
 
+  // Cinturón de seguridad para los pedidos simulados desde el POS. Sus callbacks
+  // apuntan a un endpoint nuestro, pero si alguno faltara, la URL por defecto de
+  // arriba es la API REAL de Delivery Hero — y les llegaría un pedido que de su
+  // lado no existe. Ya pasó una vez con `orderPickedUpUrl`. Un pedido de prueba de
+  // DH (test: true) sí debe contestarse contra DH: por eso el corte es el vendor
+  // simulado, no el flag `es_prueba`.
+  const esSimulado = String(orden.vendor_remote_id ?? "").startsWith("SIMULADO-");
+  if (esSimulado && !url.includes("/functions/v1/")) {
+    return json({
+      error: "simulado_no_sale_a_peya",
+      message: `La acción "${accion}" de un pedido simulado habría ido a ${url}. Falta su callback.`,
+    }, 400);
+  }
+
   let r: { status: number; texto: string; intentos: number };
   try {
     r = await enviarADH(url, payloadDH);
@@ -250,6 +327,7 @@ Deno.serve(async (req) => {
   return json({
     ok,
     accion,
+    por: actor ? actor.nombre : "sistema",
     remoteOrderId: orden.remote_order_id,
     esPrueba: orden.es_prueba,
     venceEn: orden.expiry_date,

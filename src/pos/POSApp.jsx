@@ -7,6 +7,7 @@ import POSMain from './cajero/POSMain'
 import ReportarProblema from '../components/soporte/ReportarProblema'
 import KDSScreen from './KDSScreen'
 import OrdenesView from './OrdenesView'
+import PeyaInboxView from './PeyaInboxView'
 import CierreTurno from './CierreTurno'
 import MenuAdminView from './admin/MenuAdminView'
 import { STORES } from '../config'
@@ -192,6 +193,7 @@ function CajaSelector({ user, onSelect, onLogout, onGoKDS }) {
  *   'ordering' → POSMain: menú + orden activa (nueva o existente)
  *   'kds'      → KDSScreen: pantalla de cocina / kitchen display
  *   'historial' → HistorialCobros: historial de tickets cobrados hoy
+ *   'peya'     → PeyaInboxView: pedidos que entran solos desde PedidosYa
  *
  * cuentaCtx: { tipo, mesa_ref, mesa_id, cuentaId }
  *   - cuentaId = null  → nueva orden
@@ -286,6 +288,7 @@ export default function POSApp() {
 
   const handleGoToCierre = () => setScreen('cierre')
   const handleGoToClientes = () => setScreen('clientes')
+  const handleGoToPeya = () => setScreen('peya')
 
   // ── Login ──
   if (!user) return <UpdateGate><POSLogin onLogin={handleLogin} /></UpdateGate>
@@ -307,6 +310,11 @@ export default function POSApp() {
   // ── KDS ──
   if (screen === 'kds') {
     return <KDSScreen user={posUser} onBack={handleBackFromKDS} />
+  }
+
+  // ── Bandeja de PedidosYa ──
+  if (screen === 'peya') {
+    return <PeyaInboxView user={posUser} onBack={handleBack} />
   }
 
   // ── Órdenes (Activas + Historial) ──
@@ -340,6 +348,7 @@ export default function POSApp() {
           onGoToCierre={handleGoToCierre}
           onGoToMenuAdmin={canChangeStore ? handleGoToMenuAdmin : null}
           onGoToClientes={handleGoToClientes}
+          onGoToPeya={handleGoToPeya}
           onChangeStore={canChangeStore ? handleChangeStore : null}
           onReport={() => setSoporteOpen(true)}
         />
