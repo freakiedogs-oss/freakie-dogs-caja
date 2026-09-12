@@ -349,9 +349,15 @@ export default function PeyaInboxView({ user, onBack }) {
   const simular = async () => {
     setError(''); setAviso('')
     try {
-      const { data: r, error: e } = await db.rpc('peya_simular_pedido', { p_pin: String(user.pin) })
+      // Va a la sucursal que el cajero tiene abierta en pantalla, no a la de su
+      // usuario: Casa Matriz está excluida del POS, así que un superadmin no
+      // podría ver nunca lo que simula en su propia sucursal.
+      const { data: r, error: e } = await db.rpc('peya_simular_pedido', {
+        p_pin: String(user.pin),
+        p_store_code: user.store_code || null,
+      })
       if (e) throw e
-      setAviso(`Pedido de prueba creado: PeYa #${r?.shortCode || ''}`)
+      setAviso(`Prueba creada en ${r?.sucursal || ''}: PeYa #${r?.shortCode || ''} — la comanda dice NO COCINAR`)
       await cargar()
     } catch (e) { setError(e.message || 'No se pudo simular') }
   }
@@ -449,7 +455,7 @@ export default function PeyaInboxView({ user, onBack }) {
           }}>
             🧪 Simular un pedido de prueba
             <div style={{ fontSize: 11, marginTop: 3, color: '#5f5f6b' }}>
-              No toca PedidosYa: las respuestas van a nuestro propio endpoint
+              Cae en {user.store_code} · la comanda sale marcada NO COCINAR · no toca PedidosYa
             </div>
           </button>
         )}
