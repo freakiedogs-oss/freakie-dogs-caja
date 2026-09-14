@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 13-Sep-2026 — El bloqueo de los códigos de local no era tal, y el correo salió
+
+Jose señaló que los códigos de local de PedidosYa están en los reportes de pedidos. Tenía razón a medias, y la mitad que faltaba es la que importa.
+
+**Son dos identificadores distintos.** `remoteId` viaja en la URL del dispatch (`POST /order/{remoteId}`) y es el código con el que el middleware de Delivery Hero nombra nuestra integración por local: de los seis de producción no conocemos ninguno, sólo el sandbox `AR-PRUEBAS-INTEGRACION-0001`. `platformRestaurant.id` viaja **dentro** del pedido y es el id del local en PedidosYa — ése sí lo tenemos, es el mismo «ID del local» del reporte de liquidación.
+
+**Revisado antes de afirmar nada:** `peya_ordenes_raw` tiene 44 registros y **ninguno vino de una IP de Delivery Hero**. Son todos nuestros. O sea que PedidosYa nunca nos ha mandado un request real y no tenemos evidencia de qué forma tiene su `remoteId` de producción.
+
+**Lo que se hizo:** `peya_vendor_map` gana `platform_restaurant_id`, sembrado con los cinco del histórico (Cafetalón 224235, Soyapango 519400, Usulután 567479, Lourdes 583558, Paseo Venecia 593019). El webhook lo usa **de respaldo**: si el `remoteId` no mapea, el pedido igual encuentra su tienda. El `remoteId` sigue mandando cuando existe, y cuando entra por el respaldo queda anotado — significa que ya sabemos el código de verdad y hay que cargarlo.
+
+Metrocentro queda fuera: abrió el 31-ago y el reporte dejó de traer esa columna en junio.
+
+Que los dos números sean lo mismo es **deducción, no confirmación**: coinciden en forma (seis dígitos) y el ejemplo de la documentación de DH, 478876, cae en el mismo rango. El primer pedido real lo confirma o lo desmiente.
+
+**Y salió el correo a PedidosYa** (hilo «Integración Freakie Dogs»), con las dos preguntas viejas —homologar en producción contra la tienda sandbox, y si el pluginSecret es el mismo por entorno— más una tercera nueva: el `remoteId` de cada local, con la lista de ids de local adjunta para que el cruce les cueste un minuto. Si resulta que son el mismo número, con que lo confirmen alcanza.
+
 ## 12-Sep-2026 — Las salsas llegaban revueltas: el grupo se elegía por tamaño, no por significado
 
 Probando el lote en Cafetalón, un «Combo Dúo ×2» salió en el KDS con «Con Todo» dos veces y diez salsas sueltas mezcladas en un solo montón. El cocinero no podía saber qué llevaba cada hot dog ni cada papa.
