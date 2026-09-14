@@ -548,11 +548,12 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
                           </a>
                           {/* Quien la tomó, o quien manda en la sucursal, puede
                               quitarla. Si el paso pide foto, vuelve a pendiente. */}
-                          {(m.marcado_por === user?.id || puedeSuc) && (
+                          {(m.marcado_por === user?.id || puedeSuc || puedeBase) && (
                             <button onClick={() => quitarFoto(p)} disabled={trabajando} style={{
-                              marginTop: 4, background: 'none', border: 0, color: '#9ca3af',
-                              fontSize: 11.5, cursor: 'pointer', padding: 0, textDecoration: 'underline',
-                            }}>quitar foto</button>
+                              marginTop: 5, background: '#3b1717', color: '#fca5a5', border: 0,
+                              borderRadius: 6, padding: '5px 10px', fontWeight: 700, fontSize: 11.5,
+                              cursor: 'pointer', display: 'block',
+                            }}>✕ Quitar esta foto</button>
                           )}
                         </div>
                       )}
