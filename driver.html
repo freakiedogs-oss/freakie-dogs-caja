@@ -33,8 +33,35 @@
     });
   </script>
 </head>
-<body>
+<body style="margin:0;background:#0a0a0b;color:#f0f0f2;font-family:sans-serif">
   <div id="driver-root"></div>
+  <script>
+    // Pantalla negra = la app nunca arrancó y nadie sabe por qué. Pasa en
+    // teléfonos con el WebView viejo (no entienden el JS moderno del bundle)
+    // o sin internet al abrir. Si a los 8 s el root sigue vacío, se dice en
+    // pantalla qué hacer, con el dato del WebView para poder diagnosticar.
+    // Es JS viejo a propósito: tiene que correr donde el bundle no corre.
+    setTimeout(function () {
+      var r = document.getElementById('driver-root');
+      if (r && r.childNodes.length > 0) return;
+      var ua = navigator.userAgent || '';
+      var m = ua.match(/Chrome\/(\d+)/);
+      var v = m ? parseInt(m[1], 10) : 0;
+      var viejo = v > 0 && v < 87;
+      r.innerHTML =
+        '<div style="padding:28px 22px;max-width:420px;margin:0 auto;line-height:1.5">' +
+        '<div style="font-size:34px">🛵</div>' +
+        '<h2 style="margin:8px 0 6px;font-size:20px">La app no pudo arrancar</h2>' +
+        (viejo
+          ? '<p style="color:#fca5a5">El navegador interno de este teléfono es viejo (versión ' + v + ', se necesita 87 o más).</p>' +
+            '<p><b>Qué hacer:</b> abrí <b>Play Store</b>, buscá <b>Android System WebView</b> y tocá <b>Actualizar</b>. Después actualizá <b>Google Chrome</b>. Cerrá y abrí Freakie Drivers.</p>'
+          : '<p><b>Probá:</b> revisá que el teléfono tenga internet, cerrá la app del todo y volvé a abrirla. Si sigue igual, abrí <b>Play Store</b> y actualizá <b>Android System WebView</b> y <b>Chrome</b>.</p>') +
+        '<p style="color:#8a8a92;font-size:12px;margin-top:18px">Si no se arregla, mandale esta pantalla a Cesar.<br>' +
+        '<span style="font-family:monospace;font-size:11px;word-break:break-all">' + ua.replace(/</g, '&lt;') + '</span></p>' +
+        '<button onclick="location.reload()" style="margin-top:14px;padding:12px 18px;border:0;border-radius:9px;background:#e63946;color:#fff;font-weight:700;font-size:15px">Reintentar</button>' +
+        '</div>';
+    }, 8000);
+  </script>
   <script type="module" src="/src/driver/driver-main.jsx"></script>
 </body>
 </html>

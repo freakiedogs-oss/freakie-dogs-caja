@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { db } from '../../supabase'
+import { Controles, PanelDesvio, evaluarControles, resumenDatos, desvioValido, useCatalogosBPM } from './BPMControles'
 
 /* ═══════════════════════════════════════════════════════════════════════
    BPM / HACCP — Control de producción del chili
@@ -31,7 +32,9 @@ const BUCKET = 'bpm-fotos'
 const RECETA_CHILI = 'f9e150d6-f0e4-4728-a303-a38891a12555'
 
 const ROLES_REGISTRAN = ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin']
-const ROLES_LIBERAN   = ['ing_alimentos', 'admin', 'ejecutivo', 'superadmin']
+// Calidad libera. Mauricio (jefe_casa_matriz) es quien audita el chili, así
+// que desde la fase 1 de su auditoría (14-sep-2026) también libera.
+const ROLES_LIBERAN   = ['ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin']
 
 // Quien puede abrir una corrida de REVISION (recorrer los pasos sin subir fotos
 // ni pesar). Deliberadamente NO incluye a 'produccion': si el operario pudiera
@@ -88,6 +91,12 @@ export default function BPMChiliView({ user }) {
   const [restan, setRestan] = useState(0)
   const [hechas, setHechas] = useState([])   // indices de fases ya completadas
 
+  // Controles estructurados del paso (bpm_pasos.controles) y el desvío que
+  // se abre cuando algo no cumple. Los catálogos los administra Calidad.
+  const cat = useCatalogosBPM()
+  const [valores, setValores] = useState({})
+  const [desvio, setDesvio]   = useState(null)
+
   const puedeRegistrar = ROLES_REGISTRAN.includes(user?.rol)
   const puedeLiberar   = ROLES_LIBERAN.includes(user?.rol)
   const puedeRevisar   = ROLES_REVISAN.includes(user?.rol)
@@ -126,9 +135,14 @@ export default function BPMChiliView({ user }) {
 
       // Ojo: se usa `off` y no `offsetMs`, que todavia no refresco en este render.
       const hoy = new Date(Date.now() + off).toLocaleDateString('sv-SE', { timeZone: 'America/El_Salvador' })
-      const { data: co } = await db.from('bpm_corridas').select('*')
-        .eq('plantilla_id', pl.id).eq('fecha', hoy).neq('estado', 'anulada').maybeSingle()
-      setCorrida(co || null)
+      // Desde el 14-sep una corrida de REVISIÓN no consume la tanda del día
+      // (índice único solo sobre producción). Si hoy hay producción y además
+      // una revisión, manda la producción.
+      const { data: cos } = await db.from('bpm_corridas').select('*')
+        .eq('plantilla_id', pl.id).eq('fecha', hoy).neq('estado', 'anulada')
+        .order('es_revision', { ascending: true }).order('iniciada_at', { ascending: false }).limit(1)
+      const co = cos?.[0] || null
+      setCorrida(co)
 
       if (co) {
         const [{ data: rg }, { data: dv }] = await Promise.all([
@@ -155,6 +169,7 @@ export default function BPMChiliView({ user }) {
 
   const limpiarForm = () => {
     setFoto(null); setPreview(''); setTemp(''); setDur(''); setNota(''); setPesajes({})
+    setValores({}); setDesvio(null)
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -241,6 +256,29 @@ export default function BPMChiliView({ user }) {
   const pasoActual = pasos.find(p => p.orden === corrida?.paso_actual) || null
   const regPrevio  = registros.length ? registros[registros.length - 1] : null
 
+  // ── Controles estructurados ──
+  const hoy = horaServidor().toLocaleDateString('sv-SE', { timeZone: 'America/El_Salvador' })
+  const ahoraISO = () => horaServidor().toISOString()
+  const quien = user?.nombre || 'operario'
+  const tieneControles = Array.isArray(pasoActual?.controles) && pasoActual.controles.length > 0
+  const evalC = tieneControles && cat.listo
+    ? evaluarControles(pasoActual.controles, valores, cat, hoy)
+    : { fallas: [], pendientes: [], ok: true }
+  // La temperatura tecleada también se evalúa en vivo, para que el desvío
+  // (causa + acción) se pida ANTES de registrar, igual que con los controles.
+  const tempVivo = temp === '' ? null : Number(temp)
+  const tempFalla = !!pasoActual && tempVivo != null && !Number.isNaN(tempVivo) && (
+    (pasoActual.temp_min != null && tempVivo < Number(pasoActual.temp_min)) ||
+    (pasoActual.temp_max != null && tempVivo > Number(pasoActual.temp_max)))
+  const fallasVivas = [
+    ...evalC.fallas,
+    ...(tempFalla ? [{ tipo: 'temperatura', detalle: 'Lectura fuera del rango',
+                       valor_esperado: `${pasoActual.temp_min ?? '…'} a ${pasoActual.temp_max ?? '…'} °C`, valor_real: `${tempVivo} °C` }] : []),
+  ]
+  // Si este mismo paso ya quedó como "no cumple" en esta tanda, esta es la
+  // segunda verificación (Calidad ya liberó y se repite).
+  const intentoPrevio = pasoActual ? [...registros].reverse().find(r => r.paso_id === pasoActual.id && r.cumple === false) : null
+
   // ── Temporizador ──────────────────────────────────────────────
   // OJO: estos dos efectos van DESPUES de `pasoActual`. El arreglo de
   // dependencias se evalua durante el render, asi que si el efecto queda
@@ -276,7 +314,7 @@ export default function BPMChiliView({ user }) {
 
   // Al cambiar de paso el temporizador se limpia; si no, el operario ve fases
   // completadas de un paso que ya paso.
-  useEffect(() => { setFase(null); setRestan(0); setHechas([]) }, [pasoActual?.id])
+  useEffect(() => { setFase(null); setRestan(0); setHechas([]); setValores({}); setDesvio(null) }, [pasoActual?.id])
 
   // El catalogo de pesaje se trae solo cuando el paso lo pide, no en la carga
   // general: son 24 filas que el resto de los pasos no usa.
@@ -346,8 +384,26 @@ export default function BPMChiliView({ user }) {
         throw new Error(`Todavía no. Faltan ${mmss(pasoActual.espera_min_seg - (segDesdePrevio ?? 0))} para poder medir.`)
       }
 
+      // ── Controles estructurados: nada queda a medias y si algo no cumple,
+      // el desvío lleva causa y acción antes de poder registrar. ──
+      if (tieneControles && !enRevision) {
+        if (!cat.listo) throw new Error('Todavía no cargaron los catálogos de Calidad. Esperá un momento.')
+        if (evalC.pendientes.length) throw new Error(`Falta: ${evalC.pendientes[0]}${evalC.pendientes.length > 1 ? ` (y ${evalC.pendientes.length - 1} más)` : ''}.`)
+      }
+      // Cualquier "no cumple" (control o temperatura) lleva causa y acción.
+      if (!enRevision && fallasVivas.length && !desvioValido(desvio)) throw new Error('Elegí la causa y la acción correctiva del desvío.')
+
       // ── Se evalua si cumple ──
       const fallas = []
+      const contexto = pasoActual.contexto_desvio || 'general'
+      const causaTxt  = desvio?.causa === 'Otra' ? `Otra: ${desvio.causa_otra}` : desvio?.causa || null
+      const accionTxt = desvio?.accion === 'Otra' ? `Otra: ${desvio.accion_otra}` : desvio?.accion || null
+      if (tieneControles && !enRevision) {
+        for (const f of evalC.fallas) {
+          fallas.push({ tipo: f.tipo, detalle: f.detalle, valor_esperado: f.valor_esperado, valor_real: f.valor_real,
+                        contexto, causa: causaTxt, accion: accionTxt })
+        }
+      }
       if (pasoActual.temp_min != null && tempN != null && tempN < Number(pasoActual.temp_min))
         fallas.push({ tipo: 'temperatura', detalle: `La temperatura no alcanzó el mínimo`,
                       valor_esperado: `≥ ${pasoActual.temp_min} °C`, valor_real: `${tempN} °C` })
@@ -392,11 +448,21 @@ export default function BPMChiliView({ user }) {
         fotoUrl = db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl || null
       }
 
+      // ── Lo capturado en los controles viaja en `datos`: es el expediente. ──
+      const datos = tieneControles ? {
+        valores,
+        evaluacion: { ok: evalC.ok, fallas: evalC.fallas, pendientes: evalC.pendientes, en_revision: enRevision },
+        resumen: cat.listo ? resumenDatos(pasoActual.controles, valores, cat) : '',
+        desvio: fallasVivas.length ? { causa: causaTxt, accion: accionTxt } : null,
+        segunda_verificacion: !!intentoPrevio,
+        registrado_por_nombre: quien,
+      } : null
+
       // ── Registro. Ojo: NO se manda registrado_at, lo pone el servidor. ──
       const { data: reg, error: rErr } = await db.from('bpm_registros').insert({
         corrida_id: corrida.id, paso_id: pasoActual.id, orden: pasoActual.orden,
         foto_url: fotoUrl, temperatura_c: tempN, duracion_seg: durN,
-        nota: nota || null, registrado_por: user?.id || null, cumple,
+        nota: nota || null, registrado_por: user?.id || null, cumple, datos,
       }).select().single()
       if (rErr) throw rErr
 
@@ -413,7 +479,12 @@ export default function BPMChiliView({ user }) {
 
       if (fallas.length) {
         await db.from('bpm_desviaciones').insert(
-          fallas.map(f => ({ corrida_id: corrida.id, paso_id: pasoActual.id, ...f }))
+          fallas.map(f => ({
+            corrida_id: corrida.id, paso_id: pasoActual.id, registro_id: reg.id,
+            registrada_por: user?.id || null, contexto: f.contexto || contexto,
+            causa: f.causa || causaTxt || null, accion: f.accion || accionTxt || null,
+            tipo: f.tipo, detalle: f.detalle, valor_esperado: f.valor_esperado, valor_real: f.valor_real,
+          }))
         )
       }
 
@@ -439,11 +510,18 @@ export default function BPMChiliView({ user }) {
   async function liberar() {
     const motivo = prompt('¿Por qué se libera esta tanda? Queda registrado con tu nombre.')
     if (!motivo) return
+    // Auditoría de Mauricio: después de corregir se REPITE la verificación,
+    // no se salta el paso. Avanzar sin repetir queda como excepción explícita.
+    const repetir = window.confirm(
+      `¿Repetir el paso ${corrida.paso_actual} con una nueva verificación?\n\n` +
+      'Aceptar = el operario vuelve a hacer el paso (recomendado).\n' +
+      'Cancelar = avanzar al siguiente paso sin repetirlo.')
     setGuardando(true)
     await db.from('bpm_corridas').update({
       estado: 'liberada', liberada_por: user?.id || null,
-      liberada_at: new Date().toISOString(), liberacion_motivo: motivo,
-      paso_actual: Math.min((corrida.paso_actual || 1) + 1, pasos.length),
+      liberada_at: new Date().toISOString(),
+      liberacion_motivo: `${motivo}${repetir ? ' · se repite el paso' : ' · se avanza sin repetir'}`,
+      paso_actual: repetir ? corrida.paso_actual : Math.min((corrida.paso_actual || 1) + 1, pasos.length),
     }).eq('id', corrida.id)
     await db.from('bpm_desviaciones').update({
       resuelta_por: user?.id || null, resuelta_at: new Date().toISOString(), resolucion: motivo,
@@ -581,7 +659,9 @@ export default function BPMChiliView({ user }) {
             </div>
 
             {pasos.map(p => {
-              const r = registros.find(x => x.paso_id === p.id)
+              // El ÚLTIMO registro del paso: si se repitió tras un desvío, manda la repetición.
+              const r = [...registros].reverse().find(x => x.paso_id === p.id)
+              const intentos = registros.filter(x => x.paso_id === p.id).length
               const activo = p.orden === corrida.paso_actual && corrida.estado !== 'completada'
               return (
                 <div key={p.id} style={{
@@ -603,6 +683,8 @@ export default function BPMChiliView({ user }) {
                         {fmtHora(r.registrado_at)}
                         {r.temperatura_c != null && ` · ${r.temperatura_c} °C`}
                         {r.duracion_seg != null && ` · ${r.duracion_seg} s`}
+                        {r.datos?.resumen && ` · ${r.datos.resumen}`}
+                        {intentos > 1 && <span style={{ color: C.warn }}> · {intentos}ª verificación</span>}
                         {r.foto_url && <> · <a href={r.foto_url} target="_blank" rel="noreferrer" style={{ color: C.acc }}>foto</a></>}
                       </div>
                     )}
@@ -637,6 +719,11 @@ export default function BPMChiliView({ user }) {
             {desviaciones.map(d => (
               <div key={d.id} style={{ fontSize: 13, marginTop: 8, color: '#fecaca' }}>
                 • {d.detalle} — esperado {d.valor_esperado}, real <b>{d.valor_real}</b>
+                {(d.causa || d.accion) && (
+                  <div style={{ fontSize: 12, color: '#fca5a5', marginLeft: 12 }}>
+                    {d.causa && <>Causa: {d.causa}</>}{d.causa && d.accion && ' · '}{d.accion && <>Acción: {d.accion}</>}
+                  </div>
+                )}
                 {d.resuelta_at && <span style={{ color: C.dim }}> · liberada: {d.resolucion}</span>}
               </div>
             ))}
@@ -739,6 +826,21 @@ export default function BPMChiliView({ user }) {
               </div>
             )}
 
+            {/* ── Controles estructurados (auditoría Mauricio, fase 1) ──
+                Equipo + calibración, condición del equipo, químicos con lote y
+                concentración, secuencia de limpieza con hora por etapa y
+                cronómetro de contacto. El veredicto lo calcula el sistema. */}
+            {tieneControles && intentoPrevio && (
+              <div style={{ background: '#3a2f0f', border: `1px solid ${C.warn}`, borderRadius: 9, padding: '10px 12px', marginBottom: 12, fontSize: 13, color: '#fcd34d', lineHeight: 1.5 }}>
+                <b>Segunda verificación.</b> La anterior ({fmtHora(intentoPrevio.registrado_at)}) quedó registrada como no conforme y Calidad liberó la tanda. Repetí el paso completo.
+              </div>
+            )}
+            {tieneControles && (
+              <Controles
+                controles={pasoActual.controles} valores={valores} setValores={setValores}
+                cat={cat} hoy={hoy} ahoraISO={ahoraISO} quien={quien} ahora={ahora}
+              />
+            )}
             {/* Cronómetro de espera */}
             {pasoActual.espera_min_seg != null && regPrevio && (
               <div style={{
@@ -863,17 +965,33 @@ export default function BPMChiliView({ user }) {
                      placeholder="Nota (opcional)" />
             </div>
 
+            {/* Desvío: aparece en cuanto algo no cumple (control o temperatura) y
+                pide causa y acción del catálogo antes de dejar registrar. */}
+            {!enRevision && fallasVivas.length > 0 && (
+              <PanelDesvio
+                contexto={pasoActual.contexto_desvio || 'general'} cat={cat} fallas={fallasVivas}
+                desvio={desvio} setDesvio={setDesvio} esCritico={!!pasoActual.es_critico}
+              />
+            )}
+
             {/* El pesaje se hace en otra pantalla y en otro aparato, así que el
                 botón se apaga hasta que la tablet termine. Sin esto, avanzar
                 deja la tanda sin trazabilidad de los ingredientes. */}
             {(() => {
               const faltaPesar = pasoActual.requiere_pesaje && !enRevision && !pesajeListo
-              const bloqueado  = guardando || !esperaOk || faltaPesar
+              const ctrl = tieneControles && !enRevision
+              const faltaCtrl = ctrl && (!cat.listo || evalC.pendientes.length > 0)
+              const hayFalla  = !enRevision && fallasVivas.length > 0
+              const faltaDesvio = hayFalla && !desvioValido(desvio)
+              const bloqueado  = guardando || !esperaOk || faltaPesar || faltaCtrl || faltaDesvio
               return (
-                <button style={{ ...btn(C.ok, bloqueado), width: '100%' }}
+                <button style={{ ...btn(hayFalla ? C.bad : C.ok, bloqueado), width: '100%' }}
                         disabled={bloqueado} onClick={registrarPaso}>
                   {guardando ? 'Guardando…'
                     : faltaPesar ? `Faltan ${pesajeItems.length - pesajeHechos} por pesar en la tablet`
+                    : faltaCtrl ? (cat.listo ? `Falta: ${evalC.pendientes[0]}` : 'Cargando catálogos…')
+                    : faltaDesvio ? 'Elegí causa y acción del desvío'
+                    : hayFalla ? `Registrar desvío y bloquear el paso ${pasoActual.orden}`
                     : `Registrar paso ${pasoActual.orden}`}
                 </button>
               )
