@@ -1649,13 +1649,13 @@ function Checkout({ items, total, onClose, onEnviado }) {
           </div>
 
           {error && <div className="mp-error">{error}</div>}
-        </div>
 
-        <div className="mp-drawer-footer">
-          {/* Con tarjeta, el bloque de pago es dueño del botón: así el pedido
-              se crea y se cobra en un solo acto y el que abandona no deja nada.
-              Con efectivo, el botón de siempre. */}
-          {metodoPago === 'tarjeta' && cobroEnLinea ? (
+          {/* PAGO CON TARJETA — va en el cuerpo, NO en el pie.
+              `.mp-drawer-body` es el único con overflow-y:auto; el pie no
+              scrollea. Con el formulario de tarjeta ahí adentro, el pie crecía
+              y aplastaba al cuerpo: el cliente no podía volver arriba a
+              corregir la dirección antes de pagar. */}
+          {metodoPago === 'tarjeta' && cobroEnLinea && (
             <Suspense fallback={<div className="mp-pago-esperando"><div className="mp-pago-spinner" /></div>}>
               <BloquePago
                 total={totalConEnvio}
@@ -1665,12 +1665,18 @@ function Checkout({ items, total, onClose, onEnviado }) {
                 onNoDisponible={(msg) => { setCobroEnLinea(false); if (msg) setError(msg) }}
               />
             </Suspense>
-          ) : (
+          )}
+        </div>
+
+        {/* El pie solo existe para el camino de efectivo. Con tarjeta el botón
+            va al final del formulario, dentro del cuerpo scrolleable. */}
+        {!(metodoPago === 'tarjeta' && cobroEnLinea) && (
+          <div className="mp-drawer-footer">
             <button className="mp-btn-checkout" onClick={enviar} disabled={enviando}>
               {enviando ? 'Enviando...' : `Confirmar pedido · ${fmt(totalConEnvio)}`}
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
