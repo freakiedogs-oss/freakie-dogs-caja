@@ -261,8 +261,25 @@ Deno.serve(async (req) => {
 
       const remoteOrderId = `FD-${token}`;
 
+      // A qué tienda va este pedido. Hay DOS identificadores y no son el mismo:
+      //
+      //   · `remoteId`, en la URL — el código con el que el middleware de Delivery
+      //     Hero nombra nuestra integración por local. Es el que manda.
+      //   · `platformRestaurant.id`, dentro del pedido — el id del local en
+      //     PedidosYa. Ése lo conocemos: es el mismo «ID del local» que traía su
+      //     reporte de liquidación hasta mayo de 2026.
+      //
+      // El respaldo existe porque el día que nos enciendan no sabemos qué
+      // `remoteId` van a usar, y un pedido que entra sin sucursal no baja a
+      // cocina. Con el id del local llega igual a su tienda. Nunca al revés: si
+      // el remoteId mapea, ése gana.
+      //
       // El vendor sin mapear NO rechaza el pedido: se guarda sin sucursal para que
       // alguien lo resuelva. Rechazar aquí sería perder una venta real por un dato faltante.
+      const platformRestaurantId = payload?.platformRestaurant?.id != null
+        ? String(payload.platformRestaurant.id)
+        : null;
+
       const { data: mapa } = await svc
         .from("peya_vendor_map")
         .select("sucursal_id")
@@ -270,13 +287,32 @@ Deno.serve(async (req) => {
         .eq("activo", true)
         .maybeSingle();
 
+      let mapaFallback: { sucursal_id: string } | null = null;
+      if (!mapa?.sucursal_id && platformRestaurantId) {
+        const { data } = await svc
+          .from("peya_vendor_map")
+          .select("sucursal_id")
+          .eq("platform_restaurant_id", platformRestaurantId)
+          .eq("activo", true)
+          .limit(1)
+          .maybeSingle();
+        mapaFallback = data ?? null;
+        if (mapaFallback?.sucursal_id) {
+          // Que quede dicho: significa que ya sabemos el remoteId de verdad de esa
+          // tienda y hay que cargarlo, en vez de seguir viviendo del respaldo.
+          console.warn("vendor ruteado por platformRestaurant.id, NO por remoteId",
+            remoteId, platformRestaurantId);
+        }
+      }
+      const sucursalId = mapa?.sucursal_id ?? mapaFallback?.sucursal_id ?? null;
+
       // upsert por order_token: los reintentos de DH (hasta 10) no duplican el pedido
       // y devuelven siempre el mismo remoteOrderId.
       const { data: datos, error } = await svc.from("peya_ordenes").upsert({
         order_token: token,
         remote_order_id: remoteOrderId,
         vendor_remote_id: remoteId,
-        sucursal_id: mapa?.sucursal_id ?? null,
+        sucursal_id: sucursalId,
         expedition_type: payload?.expeditionType ?? null,
         tipo_orden: tipoDeOrden(payload),
         callback_urls: payload?.callbackUrls ?? null,
@@ -291,7 +327,13 @@ Deno.serve(async (req) => {
         platform_restaurant_id: payload?.platformRestaurant?.id ?? null,
         payload,
         actualizado_at: new Date().toISOString(),
-        notas: mapa ? null : `vendor ${remoteId} sin mapear en peya_vendor_map`,
+        notas: mapa?.sucursal_id
+          ? null
+          : mapaFallback?.sucursal_id
+          ? `vendor ${remoteId} sin mapear: se ruteó por el id de local ${platformRestaurantId}. ` +
+            `Cargar ese remoteId en peya_vendor_map.`
+          : `vendor ${remoteId} sin mapear en peya_vendor_map` +
+            (platformRestaurantId ? ` (id de local ${platformRestaurantId}, tampoco mapeado)` : ''),
       }, { onConflict: "order_token", ignoreDuplicates: false })
         .select("id")
         .single();
