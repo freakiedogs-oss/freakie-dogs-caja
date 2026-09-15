@@ -180,3 +180,14 @@
 .mp-pago-guardada-op small { display: block; font-size: 11.5px; color: #8a8288; margin-top: 1px; }
 
 .mp-pago-3ds-wrap { padding: 4px 0 2px; }
+
+/* Salida por WhatsApp cuando el cobro no se pudo completar. Va con el verde de
+   WhatsApp para que se lea como lo que es —un canal de ayuda— y no como otro
+   botón de pago más. */
+.mp-pago-wa {
+  display: block; width: 100%; padding: 14px 16px; margin-bottom: 10px;
+  border-radius: 12px; background: #25D366; color: #04220f;
+  font-size: 15px; font-weight: 800; text-align: center; text-decoration: none;
+  box-shadow: 0 2px 8px rgba(37,211,102,.35);
+}
+.mp-pago-wa:hover { background: #1fbd5a; }

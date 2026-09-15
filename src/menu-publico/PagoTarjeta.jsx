@@ -109,6 +109,8 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
   const [error, setError] = useState('')
   const [url3ds, setUrl3ds] = useState('')
   const [intentosRestantes, setIntentos] = useState(null)
+  const [whatsapp, setWhatsapp] = useState('')
+  const [numeroOrden, setNumeroOrden] = useState('')
 
   const dispRef = useRef(null)
   const pagoIdRef = useRef(null)
@@ -180,6 +182,10 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
     if (r?.tracking_token) trackingRef.current = r.tracking_token
     if (r?.pago_id) pagoIdRef.current = r.pago_id
     if (r?.intentos_restantes != null) setIntentos(r.intentos_restantes)
+    // Se guardan para las pantallas de salida: si el cobro no se puede
+    // completar, el cliente necesita el número de su pedido y a quién escribirle.
+    if (r?.whatsapp) setWhatsapp(String(r.whatsapp).replace(/\D/g, ''))
+    if (r?.numero_orden) setNumeroOrden(r.numero_orden)
 
     if (r?.estado === 'aprobado') {
       setNumero(''); setCvv(''); setVence('')
@@ -305,19 +311,38 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
   // No se sabe si aprobó o no: el reto quedó a medias, así que NO se cobró.
   // Lo único honesto es decirlo y dar las dos salidas.
   if (fase === '3ds_sin_respuesta') {
+    // El cliente no tiene por qué cargar con un problema que no es suyo: no es
+    // su tarjeta ni su pedido, es el procesador. Decirlo evita que crea que le
+    // rebotó la tarjeta y que se vaya pensando que no tiene fondos.
+    const waMsg =
+      `¡Hola! 🌭 Hice el pedido ${numeroOrden || ''} pero no pude pagar con tarjeta: `
+      + 'la verificación no respondió. ¿Me ayudan con un link de pago?'
+    const waHref = whatsapp
+      ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMsg)}`
+      : null
+
     return (
       <div className="mp-pago-rechazo">
         <div className="mp-pago-rechazo-icono">⏳</div>
-        <p>La verificación de tu banco no respondió.</p>
+        <p><b>No pudimos completar el cobro</b></p>
         <p className="mp-pago-nota">
-          No se te cobró nada. Suele pasar con señal débil — probá de nuevo o
-          pagá en efectivo al recibir.
+          No es tu tarjeta ni tu pedido: <b>nuestro procesador de pagos (n1co)
+          no respondió</b> la verificación del banco. <b>No se te cobró nada.</b>
+          {numeroOrden ? <> Tu pedido <b>{numeroOrden}</b> quedó guardado.</> : null}
         </p>
-        <button className="mp-btn-checkout" onClick={() => { setFase('fondo'); setError('') }}>
-          Intentar de nuevo
-        </button>
-        <button className="mp-pago-secundario" onClick={pasarAEfectivo}>
+
+        <p className="mp-pago-nota"><b>¿Cómo querés seguir?</b></p>
+
+        {waHref && (
+          <a className="mp-pago-wa" href={waHref} target="_blank" rel="noreferrer">
+            📲 Que me manden un link de pago
+          </a>
+        )}
+        <button className="mp-btn-checkout" onClick={pasarAEfectivo}>
           💵 Pagar en efectivo al recibir
+        </button>
+        <button className="mp-pago-secundario" onClick={() => { setFase('fondo'); setError('') }}>
+          Probar la tarjeta otra vez
         </button>
       </div>
     )
