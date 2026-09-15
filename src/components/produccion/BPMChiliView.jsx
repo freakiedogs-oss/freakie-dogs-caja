@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { db } from '../../supabase'
 import { Controles, PanelDesvio, evaluarControles, resumenDatos, desvioValido, useCatalogosBPM } from './BPMControles'
+import { descargarExpediente } from './bpmExpediente'
 
 /* ═══════════════════════════════════════════════════════════════════════
    BPM / HACCP — Control de producción del chili
@@ -96,6 +97,16 @@ export default function BPMChiliView({ user }) {
   const cat = useCatalogosBPM()
   const [valores, setValores] = useState({})
   const [desvio, setDesvio]   = useState(null)
+  // Expediente PDF de una tanda (fase 3). Guarda el id mientras lo arma:
+  // son dos consultas y ~400 kB de jsPDF, y sin aviso parece que no pasó nada.
+  const [expediente, setExpediente] = useState(null)
+
+  async function bajarExpediente(id) {
+    setExpediente(id); setError('')
+    try { await descargarExpediente(id) }
+    catch (e) { setError('No se pudo armar el expediente: ' + (e.message || e)) }
+    setExpediente(null)
+  }
 
   const puedeRegistrar = ROLES_REGISTRAN.includes(user?.rol)
   const puedeLiberar   = ROLES_LIBERAN.includes(user?.rol)
@@ -714,18 +725,26 @@ export default function BPMChiliView({ user }) {
                 procedimiento se bloquean igual que una tanda real, y sin esto
                 cada prueba terminaba en un mensaje a Cesar para que liberara el
                 día. No borra nada: la tanda queda como anulada con el motivo. */}
-            {puedeRevisar && corrida.estado !== 'anulada' && (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}`,
-                            display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button style={{ ...btn('#3b1717', guardando), color: '#fca5a5', fontSize: 13, padding: '9px 14px' }}
-                  disabled={guardando} onClick={anular}>
-                  Anular esta tanda y empezar otra
-                </button>
-                <span style={{ fontSize: 12, color: C.dim }}>
-                  Queda en el historial como anulada, con tu nombre y el motivo.
-                </span>
-              </div>
-            )}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}`,
+                          display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* El expediente se puede bajar en cualquier momento: a media
+                  tanda sirve para mostrarle a Calidad lo que va pasando. */}
+              <button style={{ ...btn('#1e3a5f', expediente === corrida.id), fontSize: 13, padding: '9px 14px' }}
+                disabled={expediente === corrida.id} onClick={() => bajarExpediente(corrida.id)}>
+                {expediente === corrida.id ? 'Armando el PDF…' : '📄 Expediente de esta tanda'}
+              </button>
+              {puedeRevisar && corrida.estado !== 'anulada' && (
+                <>
+                  <button style={{ ...btn('#3b1717', guardando), color: '#fca5a5', fontSize: 13, padding: '9px 14px' }}
+                    disabled={guardando} onClick={anular}>
+                    Anular esta tanda y empezar otra
+                  </button>
+                  <span style={{ fontSize: 12, color: C.dim }}>
+                    Queda en el historial como anulada, con tu nombre y el motivo.
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -1077,6 +1096,10 @@ export default function BPMChiliView({ user }) {
         {historial.length > 1 && (
           <div style={card}>
             <b style={{ fontSize: 14 }}>Últimas tandas</b>
+            <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>
+              El 📄 baja el expediente completo de esa tanda: pasos con hora y responsable,
+              químicos, pesaje con lotes y desviaciones.
+            </div>
             <table style={{ width: '100%', fontSize: 13, marginTop: 10, borderCollapse: 'collapse' }}>
               <tbody>
                 {historial.map(h => (
@@ -1092,6 +1115,14 @@ export default function BPMChiliView({ user }) {
                         background: h.estado === 'bloqueada' ? '#4a1414' : h.estado === 'completada' ? '#14331f' : '#2a2a2e',
                         color: h.estado === 'bloqueada' ? '#fca5a5' : h.estado === 'completada' ? '#86efac' : C.dim,
                       }}>{h.estado}</span>
+                    </td>
+                    <td style={{ padding: '6px 0', textAlign: 'right', width: 34 }}>
+                      <button onClick={() => bajarExpediente(h.id)} disabled={expediente === h.id}
+                        title="Bajar el expediente de esta tanda en PDF"
+                        style={{ background: 'none', border: 'none', color: expediente === h.id ? C.dim : C.acc,
+                                 cursor: expediente === h.id ? 'wait' : 'pointer', fontSize: 14, padding: '2px 4px' }}>
+                        {expediente === h.id ? '…' : '📄'}
+                      </button>
                     </td>
                   </tr>
                 ))}
