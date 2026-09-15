@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 15-Sep-2026 — BPM Chili fase 4: los pasos 11 al 17, con los dos puntos críticos medidos por el sistema
+
+La auditoría de Mauricio llegaba hasta el paso 10, pero la tanda tiene 17 y **los dos CCP viven en la segunda mitad**. Hasta hoy el paso 12 guardaba una temperatura suelta y el 16 otra: el procedimiento pedía por escrito la retención, los tiempos de enfriado, el peso final, las 7 bolsas y el conteo de laurel, y nada de eso se registraba. Con esto, los 17 pasos tienen el mismo nivel de evidencia.
+
+- **Campo `duracion` en el motor:** dentro de un control `eventos`, un campo puede ser la **diferencia entre dos hitos ya sellados** (`desde`/`hasta`), comparada contra parámetros. No es editable: el operario toca "llegué a 80 °C" y "cerré la retención", y los minutos los pone el reloj del servidor. **Cinco duraciones calculadas** en la tanda: retención del CCP, reducción, reposo antes del desgrase, y los dos tramos del enfriado.
+- **`bpm_fase4_controles_ccp_y_cierre`:** paso 11 (termómetro de la tapa identificado, sonda centrada a media profundidad, tapa sin escape, hora de tapado); **paso 12** (hito de los 80 °C → hito de cierre, retención 15–20 min calculada, olla tapada en hervor); paso 13 (machacado de 2 kg al minuto 20, duración real, **peso final 15,500–16,500 g**, olor a quemado); paso 14 (reposo ≥ 5 min calculado, desgrase sin arrastre, **laurel recuperado = 9**); paso 15 (temperatura al envasar, **tabla de 7 bolsas** con peso 2,268 ± 50 g y sello revisado uno por uno, merma y rendimiento); **paso 16** (hielo inicial, hito de entrada → 30 min → 5 °C, con los dos tiempos calculados contra 30 min y 6 h de la FDA, recirculación y método que no compromete el sello); paso 17 (freezer, temperatura del producto, etiquetado y acomodo). 15 parámetros nuevos, todos editables por Calidad.
+- **Sin temperaturas duplicadas (`bpm_fase4_sin_temperaturas_duplicadas`):** los pasos 12, 15, 16 y 17 ya pedían su temperatura en `bpm_registros.temperatura_c`, que es lo que leen los reportes. Se quitó el campo espejo del control para que no haya dos números que puedan no coincidir; quedan en el control solo las temperaturas de **otros** momentos (inicial y final del enfriado, producto al congelar).
+- Pendiente de validación, tal como lo dice el paso 11: **el estudio de mapeo térmico del punto frío**. Hasta tenerlo, el CCP de los 80 °C es provisional — está escrito en la instrucción y ahora también queda dicho acá.
+
 ## 15-Sep-2026 — BPM Chili fase 3: la cocción deja registro y el expediente sale en un clic
 
 Cierre de la auditoría de Mauricio. Los pasos 8, 9 y 10 tenían cronómetros que guiaban al operario pero no dejaban evidencia; y el requisito 6 —el expediente por tanda— seguía sin existir.
