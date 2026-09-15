@@ -68,6 +68,23 @@ const TABS = [
       { k: 'activo', label: 'Activo', tipo: 'bool', w: 60 },
     ],
     nuevo: () => ({ contexto: 'limpieza', tipo: 'causa', texto: '', orden: 9, activo: true }) },
+  { key: 'ingredientes', label: 'Ingredientes del chili', tabla: 'bpm_pesaje_items', orden: 'orden',
+    ayuda: 'La fórmula que se pesa en la tablet. La tolerancia efectiva es la mayor entre el porcentaje y el piso en gramos. Lo que marques acá es lo que la tablet le va a exigir al operario antes de dejarlo guardar.',
+    cols: [
+      { k: 'orden', label: '#', tipo: 'number', w: 45 },
+      { k: 'ingrediente', label: 'Ingrediente', tipo: 'text' },
+      { k: 'gramos_objetivo', label: 'Objetivo', tipo: 'number', w: 85 },
+      { k: 'unidad', label: 'Unidad', tipo: 'text', w: 70 },
+      { k: 'tolerancia_pct', label: 'Tol. %', tipo: 'number', w: 70 },
+      { k: 'tolerancia_g', label: 'Piso g', tipo: 'number', w: 70 },
+      { k: 'fuente', label: 'Se pesa en', tipo: 'select', opciones: ['balanza_grande', 'balanza_precision', 'conteo'], w: 150 },
+      { k: 'requiere_lote', label: 'Lote', tipo: 'bool', w: 50 },
+      { k: 'requiere_proveedor', label: 'Proveedor', tipo: 'bool', w: 70 },
+      { k: 'requiere_vencimiento', label: 'Vence', tipo: 'bool', w: 55 },
+      { k: 'requiere_foto', label: 'Foto', tipo: 'bool', w: 50 },
+      { k: 'activo', label: 'Activo', tipo: 'bool', w: 55 },
+    ],
+    nuevo: () => ({ orden: 99, grupo: 'base', ingrediente: '', gramos_objetivo: 0, unidad: 'g', tolerancia_pct: 10, tolerancia_g: 2, fuente: 'balanza_grande', requiere_lote: false, requiere_proveedor: false, requiere_vencimiento: false, requiere_foto: false, activo: true }) },
   { key: 'parametros', label: 'Parámetros', tabla: 'bpm_parametros', orden: 'clave', pk: 'clave',
     ayuda: 'Valores sueltos que usan los pasos de cocción (fase 2): temperaturas objetivo, hojas de laurel, corte de vegetales.',
     cols: [
@@ -89,14 +106,25 @@ export default function BPMParametrosView({ user }) {
   const def = TABS.find(t => t.key === tab)
   const pk = def.pk || 'id'
 
+  // La fórmula del chili cuelga del paso 7 de la plantilla activa: se resuelve
+  // una vez para poder filtrar y para poder crear filas nuevas.
+  const [pasoPesaje, setPasoPesaje] = useState(null)
+  useEffect(() => {
+    db.from('bpm_pasos').select('id, plantilla_id, bpm_plantillas!inner(activo)')
+      .eq('clave', 'pesaje_ingredientes').eq('bpm_plantillas.activo', true).limit(1)
+      .then(({ data }) => setPasoPesaje(data?.[0]?.id || null))
+  }, [])
+
   async function cargar() {
     setCargando(true); setMsg('')
-    const { data, error } = await db.from(def.tabla).select('*').order(def.orden)
+    let q = db.from(def.tabla).select('*').order(def.orden)
+    if (def.tabla === 'bpm_pesaje_items' && pasoPesaje) q = q.eq('paso_id', pasoPesaje)
+    const { data, error } = await q
     if (error) setMsg('❌ ' + error.message)
     setFilas((data || []).map(r => ({ ...r, _dirty: false })))
     setCargando(false)
   }
-  useEffect(() => { cargar() }, [tab]) // eslint-disable-line
+  useEffect(() => { cargar() }, [tab, pasoPesaje]) // eslint-disable-line
 
   const edit = (i, k, v) => setFilas(fs => fs.map((f, j) => j === i ? { ...f, [k]: v, _dirty: true } : f))
 
@@ -119,6 +147,7 @@ export default function BPMParametrosView({ user }) {
         if (extra.updated_at !== undefined) row.updated_at = extra.updated_at
       }
       if (def.tabla === 'bpm_equipos' || def.tabla === 'bpm_quimicos') row.actualizado_por = user?.nombre || null
+      if (def.tabla === 'bpm_pesaje_items' && f._nuevo) row.paso_id = pasoPesaje
       if (f._nuevo) {
         if (pk === 'id') delete row.id
         const { error } = await db.from(def.tabla).insert(row)

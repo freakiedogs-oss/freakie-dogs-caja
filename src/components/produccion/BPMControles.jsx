@@ -23,6 +23,10 @@ import { db } from '../../supabase'
      secuencia → etapas en orden; cada "Cumple" sella hora y responsable.
                  Una etapa puede pedir esponja (condición + color) o llevar
                  cronómetro de contacto con veredicto automático.
+     basculas  → fase 2: una fila por báscula (código del catálogo,
+                 calibración automática, USB, cero/tara, uso exclusivo).
+                 Se exige un mínimo de básculas aptas; la alterna aparece
+                 sola cuando alguna de las dos primeras no cumple.
    ═══════════════════════════════════════════════════════════════════════ */
 
 const C = {
@@ -142,6 +146,50 @@ export function evaluarControles(controles, valores, cat, hoy) {
       }
     }
 
+    if (c.tipo === 'basculas') {
+      // Una fila por báscula. "Apta" = equipo elegido, calibración vigente y
+      // todos los criterios en Cumple (USB puede ir en No aplica).
+      const minimo = c.minimo || 2
+      const filas = v.filas || {}
+      const claves = Object.keys(filas)
+      let aptas = 0
+      for (const k of claves) {
+        const f = filas[k] || {}
+        const eq = cat.equipos.find(e => e.id === f.equipo_id)
+        if (!eq) continue
+        const cal = calibracionEstado(eq, hoy)
+        const crit = (c.criterios || []).map(x => f.criterios?.[x.clave])
+        if (crit.some(r => !r)) continue
+        const malo = crit.some(r => r === 'No cumple')
+        if (!cal.ok) {
+          falla({ clave: c.clave, tipo: 'bascula', detalle: `${eq.codigo}: ${cal.texto}`, valor_esperado: 'calibración vigente', valor_real: cal.texto })
+          continue
+        }
+        if (malo) {
+          for (const x of c.criterios || []) {
+            if (f.criterios?.[x.clave] === 'No cumple') {
+              falla({ clave: c.clave, tipo: 'bascula', detalle: `${eq.codigo}: ${x.texto}`, valor_esperado: 'Cumple', valor_real: 'No cumple' })
+            }
+          }
+          continue
+        }
+        aptas++
+      }
+      // Solo se exige completar las dos primeras filas; la alterna es opcional.
+      const base = (v.orden || ['1', '2']).slice(0, 2)
+      for (const k of base) {
+        const f = filas[k] || {}
+        if (!f.equipo_id) { pendientes.push(`${c.titulo}: elegí la báscula de la línea ${k}`); continue }
+        for (const x of c.criterios || []) {
+          if (!f.criterios?.[x.clave]) pendientes.push(`${c.titulo}: ${x.texto} (línea ${k})`)
+        }
+      }
+      if (!pendientes.length && aptas < minimo) {
+        falla({ clave: c.clave, tipo: 'bascula', detalle: `No hay ${minimo} básculas vigentes y aptas para pesar`,
+                valor_esperado: `${minimo} básculas`, valor_real: `${aptas}` })
+      }
+    }
+
     if (c.tipo === 'secuencia') {
       const et = v.etapas || {}
       for (const e of c.etapas || []) {
@@ -196,6 +244,11 @@ export function resumenDatos(controles, valores, cat) {
     }
     if (c.tipo === 'secuencia' && v.cronometro?.fin) partes.push(`contacto ${Math.round(v.cronometro.seg)} s`)
     if (c.tipo === 'matriz' && c.cantidad && v.cantidad) partes.push(`${v.cantidad} cucharones`)
+    if (c.tipo === 'basculas') {
+      const cods = Object.values(v.filas || {})
+        .map(f => cat.equipos.find(e => e.id === f.equipo_id)?.codigo).filter(Boolean)
+      if (cods.length) partes.push(cods.join(' + '))
+    }
   }
   return partes.join(' · ')
 }
@@ -359,6 +412,95 @@ function ControlQuimicos({ c, v, set, cat, hoy }) {
   )
 }
 
+// ── Matriz de básculas (paso 7) ──
+function ControlBasculas({ c, v, set, cat, hoy }) {
+  const minimo = c.minimo || 2
+  const basculas = cat.equipos.filter(e => e.tipo === 'bascula')
+  const filas = v.filas || {}
+  // La alterna aparece sola: mientras las dos primeras cumplan, no estorba.
+  const problema = ['1', '2'].some(k => {
+    const f = filas[k] || {}
+    const eq = cat.equipos.find(e => e.id === f.equipo_id)
+    if (eq && !calibracionEstado(eq, hoy).ok) return true
+    return (c.criterios || []).some(x => f.criterios?.[x.clave] === 'No cumple')
+  })
+  const orden = problema ? ['1', '2', '3'] : ['1', '2']
+  const ordenTxt = orden.join()
+  // `orden` se guarda porque la evaluación necesita saber qué filas exigir.
+  useEffect(() => {
+    if ((v.orden || []).join() !== ordenTxt) set({ ...v, orden })
+  }, [ordenTxt]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const apta = (k) => {
+    const f = filas[k] || {}
+    const eq = cat.equipos.find(e => e.id === f.equipo_id)
+    if (!eq) return null
+    if (!calibracionEstado(eq, hoy).ok) return false
+    const crit = (c.criterios || []).map(x => f.criterios?.[x.clave])
+    if (crit.some(r => !r)) return null
+    return !crit.some(r => r === 'No cumple')
+  }
+  const aptas = orden.filter(k => apta(k) === true).length
+  const upd = (k, patch) => set({ ...v, orden, filas: { ...filas, [k]: { ...(filas[k] || {}), ...patch } } })
+
+  return (
+    <div style={box}>
+      <div style={h}>{c.titulo}</div>
+      {c.ayuda && <div style={ayudaSt}>{c.ayuda}</div>}
+      {orden.map(k => {
+        const f = filas[k] || {}
+        const eq = cat.equipos.find(e => e.id === f.equipo_id)
+        const cal = calibracionEstado(eq, hoy)
+        const est = apta(k)
+        const alterna = k === '3'
+        return (
+          <div key={k} style={{ borderTop: `1px solid ${C.line}`, paddingTop: 10, marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Báscula {k}{alterna ? ' · alterna' : ''}</span>
+              {est != null && (
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: est ? '#86efac' : '#fca5a5' }}>
+                  {est ? '✓ apta' : '✕ no apta'}
+                </span>
+              )}
+            </div>
+            {alterna && <div style={{ fontSize: 11.5, color: C.warn, marginBottom: 6 }}>Se habilitó porque una de las otras no cumple. No hay una cuarta.</div>}
+            <select value={f.equipo_id || ''} onChange={e => upd(k, { equipo_id: e.target.value })} style={{ ...inp, marginBottom: 6 }}>
+              <option value="">Elegí la báscula por su código…</option>
+              {basculas.map(e => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre || ''}</option>)}
+            </select>
+            {eq && (
+              <div style={{ fontSize: 12.5, marginBottom: 4, color: cal.ok ? '#86efac' : '#fca5a5' }}>
+                {cal.ok ? '✓ ' : '✕ '}{cal.texto}
+              </div>
+            )}
+            {(c.criterios || []).map(x => (
+              <div key={x.clave} style={fila}>
+                <span style={{ flex: 1 }}>{x.texto}</span>
+                <select value={f.criterios?.[x.clave] || ''} style={{ ...inp, width: 128, flexShrink: 0 }}
+                  onChange={e => upd(k, { criterios: { ...(f.criterios || {}), [x.clave]: e.target.value } })}>
+                  <option value="">Seleccioná</option>
+                  <option value="Cumple">Cumple</option>
+                  <option value="No cumple">No cumple</option>
+                  {x.no_aplica && <option value="No aplica">No aplica</option>}
+                </select>
+              </div>
+            ))}
+          </div>
+        )
+      })}
+      <div style={{
+        marginTop: 10, padding: '9px 11px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+        background: aptas >= minimo ? '#0e1f14' : '#3a1414',
+        color: aptas >= minimo ? '#86efac' : '#fca5a5',
+      }}>
+        {aptas >= minimo
+          ? `${aptas} básculas vigentes y aptas. Ya se puede pesar.`
+          : `Se necesitan ${minimo} básculas vigentes y aptas para pesar. Van ${aptas}.`}
+      </div>
+    </div>
+  )
+}
+
 // ── Secuencia de etapas ──
 function ControlSecuencia({ c, v, set, cat, controles, valores, ahoraISO, quien, ahora }) {
   const et = v.etapas || {}
@@ -492,6 +634,7 @@ export function Controles({ controles, valores, setValores, cat, hoy, ahoraISO, 
         if (c.tipo === 'equipo') return <ControlEquipo key={c.clave} {...props} />
         if (c.tipo === 'matriz') return <ControlMatriz key={c.clave} {...props} />
         if (c.tipo === 'quimicos') return <ControlQuimicos key={c.clave} {...props} />
+        if (c.tipo === 'basculas') return <ControlBasculas key={c.clave} {...props} />
         if (c.tipo === 'secuencia') return <ControlSecuencia key={c.clave} {...props} controles={controles} valores={valores} ahoraISO={ahoraISO} quien={quien} ahora={ahora} />
         return null
       })}
