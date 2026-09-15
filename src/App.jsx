@@ -13,6 +13,7 @@ const CierreForm         = lazy(() => import('./components/caja/CierreForm'))
 const CorteXZView        = lazy(() => import('./components/caja/CorteXZView'))
 const ReporteForm        = lazy(() => import('./components/caja/ReporteForm'))
 const Deposito           = lazy(() => import('./components/caja/Deposito'))
+const DepositosCalendarioView = lazy(() => import('./components/finanzas/DepositosCalendarioView'))
 const AdminView          = lazy(() => import('./components/admin/AdminView'))
 const IncidentesDash     = lazy(() => import('./components/admin/IncidentesDash'))
 const VentasFreakies     = lazy(() => import('./components/dashboard/VentasFreakies'))
@@ -261,6 +262,8 @@ export default function App() {
         return <ReporteForm user={user} onBack={() => setScreen('home')} />
       case 'deposito':
         return <Deposito user={user} onBack={() => setScreen('home')} />
+      case 'depositos-control':
+        return <DepositosCalendarioView user={user} />
 
       // Dashboards
       case 'ventas-freakies':

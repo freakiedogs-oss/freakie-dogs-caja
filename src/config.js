@@ -87,6 +87,10 @@ export const NAV_SECTIONS = [
       { key: 'cierre', label: 'Cierre de Caja', icon: '💰', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
       { key: 'reporte', label: 'Reporte de Turno', icon: '📝', roles: ['cajero', 'cajera', 'cocina', 'gerente', 'admin'] },
       { key: 'deposito', label: 'Depósitos', icon: '🏦', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
+      // Calendario sucursal × día de venta: de qué días NO llegó el efectivo
+      // al banco. Va acá y no en Finanzas porque quien persigue el depósito
+      // que falta es la gerencia de la sucursal, no contabilidad. Sólo lee.
+      { key: 'depositos-control', label: 'Control de Depósitos', icon: '📅', roles: ['gerente', 'admin', 'ejecutivo', 'contador', 'superadmin'] },
     ],
   },
   {
