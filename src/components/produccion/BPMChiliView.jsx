@@ -192,12 +192,16 @@ export default function BPMChiliView({ user }) {
     if (!corrida?.id) return
     const { data, error } = await db
       .from('bpm_registro_pesajes')
-      .select('pesaje_item_id, gramos_real, lote, cumple')
+      .select('pesaje_item_id, gramos_real, lote, cumple, proveedor, vencimiento, bascula_codigo, metodo_captura, motivo_no_cumple')
       .eq('corrida_id', corrida.id)
     if (error) return
     const m = {}
     for (const r of data || []) {
-      m[r.pesaje_item_id] = { g: r.gramos_real, lote: r.lote, cumple: r.cumple }
+      m[r.pesaje_item_id] = {
+        g: r.gramos_real, lote: r.lote, cumple: r.cumple,
+        proveedor: r.proveedor, vencimiento: r.vencimiento,
+        bascula: r.bascula_codigo, metodo: r.metodo_captura, motivo: r.motivo_no_cumple,
+      }
     }
     setPesajes(m)
   }
@@ -361,17 +365,26 @@ export default function BPMChiliView({ user }) {
         // tablet, y seria absurdo bloquearlo por una lista vieja.
         await cargarPesajes()
         const { data: frescos } = await db
-          .from('bpm_registro_pesajes').select('pesaje_item_id, lote')
+          .from('bpm_registro_pesajes').select('pesaje_item_id, lote, proveedor, vencimiento')
           .eq('corrida_id', corrida.id)
         const hechos = new Set((frescos || []).map(r => r.pesaje_item_id))
         const sinPeso = pesajeItems.filter(it => !hechos.has(it.id))
         if (sinPeso.length) {
           throw new Error(`Faltan ${sinPeso.length} sin pesar en la tablet. El primero: ${sinPeso[0].ingrediente}.`)
         }
-        const loteDe = Object.fromEntries((frescos || []).map(r => [r.pesaje_item_id, r.lote]))
-        const sinLote = pesajeItems.filter(it => it.requiere_lote && !(loteDe[it.id] || '').trim())
-        if (sinLote.length) {
-          throw new Error(`Falta el lote de ${sinLote.length} insumo(s). El primero: ${sinLote[0].ingrediente}. Anotalo en la tablet; si el empaque no lo trae, escribí SIN LOTE.`)
+        // Trazabilidad del empaque (fase 2): lote, proveedor y vencimiento de
+        // los insumos que lo exigen. Sin esto no se puede rastrear una tanda.
+        const dato = Object.fromEntries((frescos || []).map(r => [r.pesaje_item_id, r]))
+        const falta = (campo, pide) => pesajeItems.filter(it => it[pide] && !(dato[it.id]?.[campo] || '').toString().trim())
+        for (const [campo, pide, como] of [
+          ['lote', 'requiere_lote', 'el lote'],
+          ['proveedor', 'requiere_proveedor', 'el proveedor'],
+          ['vencimiento', 'requiere_vencimiento', 'la fecha de vencimiento'],
+        ]) {
+          const f = falta(campo, pide)
+          if (f.length) {
+            throw new Error(`Falta ${como} de ${f.length} insumo(s). El primero: ${f[0].ingrediente}. Anotalo en la tablet${campo === 'lote' ? '; si el empaque no lo trae, escribí SIN LOTE' : ''}.`)
+          }
         }
       }
 
@@ -427,10 +440,14 @@ export default function BPMChiliView({ user }) {
           const p = pesajes[it.id]
           if (!p || p.cumple !== false) continue
           const b = banda(it)
+          // El motivo lo calcula fn_pesaje_guardar: puede ser el peso, un
+          // insumo vencido o una báscula sin calibración vigente.
           fallas.push({
-            tipo: 'pesaje', detalle: `${it.ingrediente} fuera de tolerancia`,
+            tipo: 'pesaje',
+            detalle: `${it.ingrediente}: ${p.motivo || 'fuera de tolerancia'}`,
             valor_esperado: `${it.gramos_objetivo} ${it.unidad} ± ${b.toFixed(b < 1 ? 2 : 1)}`,
-            valor_real: `${p.g} ${it.unidad}`,
+            valor_real: `${p.g} ${it.unidad}${p.vencimiento ? ` · vence ${p.vencimiento}` : ''}${p.bascula ? ` · ${p.bascula}` : ''}`,
+            contexto: 'pesaje',
           })
         }
       }
@@ -945,6 +962,57 @@ export default function BPMChiliView({ user }) {
                     }}>Actualizar</button>
                   )}
                 </div>
+
+                {/* ── Trazabilidad de lo pesado (fase 2) ──────────────────
+                    El detalle se captura en la tablet; acá se revisa antes de
+                    cerrar el paso. Lo que falta sale en rojo con su nombre. */}
+                {!enRevision && pesajeHechos > 0 && (
+                  <div style={{ marginTop: 12, background: '#101012', border: `1px solid ${C.line}`,
+                                borderRadius: 10, padding: 12 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 2 }}>Trazabilidad de la tanda</div>
+                    <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 8, lineHeight: 1.5 }}>
+                      Lote, proveedor y vencimiento de cada insumo, con la báscula que se usó.
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 460 }}>
+                        <thead><tr style={{ color: C.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: .4 }}>
+                          <th style={{ textAlign: 'left', padding: '4px 3px', fontWeight: 600 }}>Ingrediente</th>
+                          <th style={{ textAlign: 'right', padding: '4px 3px', fontWeight: 600 }}>Peso</th>
+                          <th style={{ textAlign: 'left', padding: '4px 3px', fontWeight: 600 }}>Lote</th>
+                          <th style={{ textAlign: 'left', padding: '4px 3px', fontWeight: 600 }}>Proveedor</th>
+                          <th style={{ textAlign: 'left', padding: '4px 3px', fontWeight: 600 }}>Vence</th>
+                          <th style={{ textAlign: 'left', padding: '4px 3px', fontWeight: 600 }}>Báscula</th>
+                        </tr></thead>
+                        <tbody>
+                          {pesajeItems.map(it => {
+                            const p = pesajes[it.id]
+                            const falta = (pide, val) => it[pide] && !val
+                            const cel = (pide, val) => falta(pide, val)
+                              ? <span style={{ color: '#fca5a5' }}>falta</span>
+                              : <span>{val || '—'}</span>
+                            return (
+                              <tr key={it.id} style={{ borderTop: `1px solid #212125`, opacity: p ? 1 : .45 }}>
+                                <td style={{ padding: '5px 3px' }}>
+                                  {it.ingrediente}
+                                  {p?.motivo && <div style={{ fontSize: 11, color: '#fca5a5' }}>{p.motivo}</div>}
+                                </td>
+                                <td style={{ padding: '5px 3px', textAlign: 'right', whiteSpace: 'nowrap',
+                                             color: !p ? C.dim : p.cumple === false ? '#fca5a5' : '#86efac',
+                                             fontVariantNumeric: 'tabular-nums' }}>
+                                  {p ? `${Number(p.g).toLocaleString('es-SV')} ${it.unidad}` : 'sin pesar'}
+                                </td>
+                                <td style={{ padding: '5px 3px' }}>{p ? cel('requiere_lote', p.lote) : '—'}</td>
+                                <td style={{ padding: '5px 3px' }}>{p ? cel('requiere_proveedor', p.proveedor) : '—'}</td>
+                                <td style={{ padding: '5px 3px', whiteSpace: 'nowrap' }}>{p ? cel('requiere_vencimiento', p.vencimiento) : '—'}</td>
+                                <td style={{ padding: '5px 3px', color: C.dim, whiteSpace: 'nowrap' }}>{p?.bascula || '—'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

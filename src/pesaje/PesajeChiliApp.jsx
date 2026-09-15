@@ -42,6 +42,13 @@ const GRUPOS = [
 const banda = (it) =>
   Math.max(Number(it.objetivo) * Number(it.tol_pct) / 100, Number(it.tol_g || 0))
 
+// Campos de trazabilidad del empaque: grandes, que se llenan de pie.
+const campo = (C) => ({
+  width: '100%', marginTop: 8, background: '#0b0b0c', color: C.txt,
+  border: `1px solid ${C.line}`, borderRadius: 9, padding: '12px',
+  fontSize: 15, fontFamily: 'inherit', boxSizing: 'border-box',
+})
+
 export default function PesajeChiliApp({ quien }) {
   const [tanda, setTanda]   = useState(null)
   const [cargando, setCargando] = useState(true)
@@ -49,6 +56,11 @@ export default function PesajeChiliApp({ quien }) {
   const [activo, setActivo] = useState(null)
   const [manual, setManual] = useState('')      // para los de precisión y conteo
   const [lote, setLote]     = useState('')
+  // Fase 2 (auditoría Mauricio, 15-sep-2026): con el empaque en la mano se
+  // capturan también proveedor y vencimiento. Sin eso no se puede reconstruir
+  // de dónde salió un ingrediente si algo sale mal.
+  const [prov, setProv]     = useState('')
+  const [vence, setVence]   = useState('')
   const [guardando, setGuardando] = useState(false)
 
   const balanza = useBalanza()
@@ -82,14 +94,32 @@ export default function PesajeChiliApp({ quien }) {
   // anterior, un toque distraído lo guardaría en el ingrediente equivocado.
   const elegir = (id) => {
     setActivo(id === activo ? null : id)
-    setManual(''); setLote('')
+    setManual(''); setLote(''); setProv(''); setVence('')
+    // Si ya se pesó antes, se traen sus datos: reescribir el lote a mano para
+    // corregir solo el peso es la forma más fácil de equivocarse.
+    const p = tanda?.pesados?.[id]
+    if (p) { setLote(p.lote || ''); setProv(p.proveedor || ''); setVence(p.vencimiento || '') }
   }
 
   const esRhino = it && it.fuente === 'balanza_grande'
   const valor = esRhino ? balanza.gramos : Number(manual)
   const hayValor = esRhino ? balanza.estado === 'conectada' : manual !== '' && Number.isFinite(valor)
   const dentro = it && hayValor && Math.abs(valor - Number(it.objetivo)) <= banda(it)
-  const puedeGuardar = it && hayValor && !guardando && (!esRhino || balanza.estable)
+
+  // La trazabilidad es obligatoria para los insumos empacados. En revisión no,
+  // que ahí se está probando la balanza y no hay empaque real.
+  const hoySV = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/El_Salvador' })
+  const exige = it && !tanda?.es_revision
+  const faltaTraza = !it ? null
+    : exige && it.requiere_lote && !lote.trim() ? 'Falta el lote del empaque'
+    : exige && it.requiere_proveedor && !prov.trim() ? 'Falta el proveedor'
+    : exige && it.requiere_vencimiento && !vence ? 'Falta la fecha de vencimiento'
+    : null
+  const vencido = !!vence && vence < hoySV
+  // La báscula que corresponde a este ingrediente, según su rol en el catálogo.
+  const bascula = it ? (tanda?.basculas || {})[it.fuente] : null
+
+  const puedeGuardar = it && hayValor && !guardando && !faltaTraza && (!esRhino || balanza.estable)
 
   async function guardar() {
     if (!puedeGuardar) return
@@ -102,10 +132,14 @@ export default function PesajeChiliApp({ quien }) {
         p_lote: it.requiere_lote ? (lote.trim() || null) : null,
         p_por: quien,
         p_origen: esRhino ? 'tablet' : 'tablet_manual',
+        p_proveedor: prov.trim() || null,
+        p_vencimiento: vence || null,
+        p_bascula: bascula?.codigo || null,
+        p_metodo: it.fuente === 'conteo' ? 'conteo' : esRhino ? 'usb' : 'manual',
       })
       if (e) throw e
       if (data?.error) throw new Error(data.error)
-      setActivo(null); setManual(''); setLote('')
+      setActivo(null); setManual(''); setLote(''); setProv(''); setVence('')
       await cargar()
     } catch (e) {
       setError(e.message || 'No se pudo guardar el peso')
@@ -260,15 +294,38 @@ export default function PesajeChiliApp({ quien }) {
                     }} />
                 )}
 
-                {it.requiere_lote && (
-                  <input
-                    value={lote} onChange={e => setLote(e.target.value)}
-                    placeholder="Lote del empaque"
-                    style={{
-                      width: '100%', marginTop: 10, background: '#0b0b0c', color: C.txt,
-                      border: `1px solid ${C.line}`, borderRadius: 9, padding: '12px',
-                      fontSize: 15, fontFamily: 'inherit', boxSizing: 'border-box',
-                    }} />
+                {/* Trazabilidad del empaque. Se pide acá y no después porque
+                    acá es donde el envase está en la mano. */}
+                {(it.requiere_lote || it.requiere_proveedor || it.requiere_vencimiento) && (
+                  <div style={{ marginTop: 10, textAlign: 'left' }}>
+                    {it.requiere_lote && (
+                      <input value={lote} onChange={e => setLote(e.target.value)}
+                        placeholder="Lote del empaque" style={campo(C)} />
+                    )}
+                    {it.requiere_proveedor && (
+                      <input value={prov} onChange={e => setProv(e.target.value)}
+                        placeholder="Proveedor" style={campo(C)} />
+                    )}
+                    {it.requiere_vencimiento && (
+                      <>
+                        <div style={{ fontSize: 12, color: C.dim, marginBottom: 4, marginTop: 8 }}>Fecha de vencimiento</div>
+                        <input type="date" value={vence} onChange={e => setVence(e.target.value)}
+                          style={{ ...campo(C), marginTop: 0, borderColor: vencido ? C.bad : C.line }} />
+                      </>
+                    )}
+                    {vencido && (
+                      <div style={{ fontSize: 12.5, color: '#fca5a5', marginTop: 6, lineHeight: 1.5 }}>
+                        Este insumo está vencido. Se puede registrar, pero queda como desviación y
+                        bloquea la tanda: avisá a Casa Matriz antes de usarlo.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {bascula && (
+                  <div style={{ fontSize: 12, color: bascula.vigente ? C.dim : '#fca5a5', marginTop: 10, textAlign: 'left' }}>
+                    Báscula {bascula.codigo}{bascula.vigente ? '' : ' · sin calibración vigente'}
+                  </div>
                 )}
 
                 <button onClick={guardar} disabled={!puedeGuardar} style={{
@@ -281,6 +338,7 @@ export default function PesajeChiliApp({ quien }) {
                   {guardando ? 'Guardando…'
                     : !hayValor ? 'Sin peso todavía'
                     : esRhino && !balanza.estable ? 'Esperando peso estable…'
+                    : faltaTraza ? faltaTraza
                     : dentro ? `Guardar ${Number(valor).toLocaleString('es-SV')} ${it.unidad}`
                     : `Guardar igual (fuera de banda)`}
                 </button>
