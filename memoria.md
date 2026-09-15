@@ -2,6 +2,16 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 15-Sep-2026 — BPM Chili fase 3: la cocción deja registro y el expediente sale en un clic
+
+Cierre de la auditoría de Mauricio. Los pasos 8, 9 y 10 tenían cronómetros que guiaban al operario pero no dejaban evidencia; y el requisito 6 —el expediente por tanda— seguía sin existir.
+
+- **Tres tipos de control nuevos en `BPMControles.jsx`, genéricos y reutilizables:** `tabla` (mismas columnas por fila: tanda, unidad, equipo), `eventos` (hitos que se sellan con la hora del servidor, encadenados, con campos propios y `depende` para exigir otro hito antes) y `campos` (valores sueltos con validación, con equipo opcional). Los límites no se escriben en el control: apuntan a `bpm_parametros` con `min_param`/`max_param`/`exacto_param`, así que **Calidad cambia un número y cambia la validación** sin tocar código.
+- **`bpm_fase3_controles_coccion`:** paso 8 con el infrarrojo identificado y una fila por tanda (fondo de la olla 180–220 °C, hora de carga, sellado sin mover, mezcla, hora de transferencia); paso 9 con la lectura de precalentamiento (rango nuevo `vegetales_temp_min_c/max_c` 135–165, **PROVISIONAL**) y los cuatro hitos por minuto con movimiento continuo y verificación final (zanahoria, cebolla, quemado, corte 5–8 mm); paso 10 con los siete hitos de integración, donde **los ácidos no se habilitan hasta que el agua esté registrada** (`depende: agua`) y el laurel se valida contra `laurel_hojas` = 9. Los tres pasan a exigir foto.
+- **`bpmExpediente.js` (nuevo):** `descargarExpediente(corridaId)` arma el PDF con jsPDF por import dinámico (mismo patrón que `dteRepresentacion.js`, ~390 kB que no viajan en el bundle del operario). Trae corrida, pasos, registros, desviaciones, pesajes, equipos, químicos y nombres, y traduce `bpm_registros.datos` a frases legibles por tipo de control — sin eso el expediente sería un volcado de JSON. Secciones: resumen con liberación, tabla de pasos (marca "N verificaciones" cuando se repitió), detalle por paso, pesaje con lote/proveedor/vencimiento/báscula, desviaciones con causa/acción/liberación, y pie con paginación en cada hoja. Botón en la tanda abierta y 📄 por fila en el historial.
+- **Lo que queda fuera a propósito:** el paralelismo entre equipos del requisito 20 (hoy un paso a la vez; cambiarlo implica reordenar la corrida entera), la foto por ingrediente en la tablet (la columna y `fn_pesaje_guardar` ya la aceptan) y el FEFO con bloqueo de lotes en cuarentena, que necesita una tabla de lotes que no existe.
+- Falta que Calidad cargue los valores reales (Penta Quat, calibraciones, colores de esponja, tolerancia de los 150 °C) — el sistema ya valida contra lo que haya cargado.
+
 ## 15-Sep-2026 — BPM Chili fase 2: el pesaje deja rastro (básculas verificadas y trazabilidad por ingrediente)
 
 Segunda entrega de la auditoría de Mauricio. Antes, el paso 7 solo exigía peso y lote: no quedaba constancia de en qué báscula se pesó, de quién vino el insumo ni cuándo vence. Ahora el pesaje reconstruye la tanda.

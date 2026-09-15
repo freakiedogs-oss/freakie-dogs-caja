@@ -78,6 +78,36 @@ export function calibracionEstado(eq, hoy) {
   return { ok: true, texto: `Calibración vigente hasta ${eq.calibracion_vence}` }
 }
 
+// Un límite puede venir escrito en el control o, mejor, apuntar a un parámetro
+// de Calidad (`min_param`) para que se cambie en un solo lugar.
+function limite(campo, lado, cat) {
+  const p = campo[lado + '_param']
+  if (p != null && cat.parametros[p] != null && cat.parametros[p] !== '') return Number(cat.parametros[p])
+  return campo[lado] != null ? Number(campo[lado]) : null
+}
+function rangoTexto(campo, cat) {
+  const min = limite(campo, 'min', cat), max = limite(campo, 'max', cat)
+  const ex = campo.exacto_param != null ? Number(cat.parametros[campo.exacto_param]) : campo.exacto
+  const u = campo.unidad ? ` ${campo.unidad}` : ''
+  if (ex != null && !Number.isNaN(ex)) return `${ex}${u}`
+  if (min != null && max != null) return `${min} a ${max}${u}`
+  if (min != null) return `≥ ${min}${u}`
+  if (max != null) return `≤ ${max}${u}`
+  return null
+}
+// Evalúa un campo numérico contra su rango o su valor exacto.
+function fueraDeRango(campo, valor, cat) {
+  if (valor === '' || valor == null) return false
+  const n = Number(valor)
+  if (Number.isNaN(n)) return true
+  const ex = campo.exacto_param != null ? Number(cat.parametros[campo.exacto_param]) : campo.exacto
+  if (ex != null && !Number.isNaN(ex)) return n !== ex
+  const min = limite(campo, 'min', cat), max = limite(campo, 'max', cat)
+  if (min != null && n < min) return true
+  if (max != null && n > max) return true
+  return false
+}
+
 // Tiempo de contacto exigido: viene del sanitizante elegido en el control de químicos.
 function tiempoContactoRequerido(controles, valores, cat) {
   const cq = (controles || []).find(c => c.tipo === 'quimicos')
@@ -142,6 +172,68 @@ export function evaluarControles(controles, valores, cat, hoy) {
             falla({ clave: c.clave, tipo: 'concentracion', detalle: `${nombre}: concentración fuera de parámetro`,
                     valor_esperado: `${min ?? '…'}–${max ?? '…'} ${q.unidad_concentracion}`, valor_real: `${l.concentracion} ${q.unidad_concentracion}` })
           }
+        }
+      }
+    }
+
+    // ── Tabla: una fila por tanda/unidad, columnas con su propia validación ──
+    if (c.tipo === 'tabla') {
+      for (const f of c.filas || []) {
+        const r = v[f.clave] || {}
+        for (const col of c.columnas || []) {
+          const val = r[col.clave]
+          const nombre = `${f.nombre}: ${col.label}`
+          if (val === '' || val == null) { pendientes.push(`${c.titulo} · ${nombre}`); continue }
+          if (col.tipo === 'numero' && fueraDeRango(col, val, cat)) {
+            falla({ clave: c.clave, tipo: col.falla_tipo || 'medicion', detalle: `${f.nombre}: ${col.label} fuera de lo permitido`,
+                    valor_esperado: rangoTexto(col, cat) || '—', valor_real: `${val}${col.unidad ? ' ' + col.unidad : ''}` })
+          }
+          if (col.tipo === 'select' && val === 'No cumple') {
+            falla({ clave: c.clave, tipo: col.falla_tipo || 'medicion', detalle: nombre, valor_esperado: 'Cumple', valor_real: 'No cumple' })
+          }
+        }
+      }
+    }
+
+    // ── Eventos: hitos que se sellan con la hora del servidor, en orden ──
+    if (c.tipo === 'eventos') {
+      const ev = v.hitos || {}
+      for (const hito of c.hitos || []) {
+        if (!ev[hito.clave]?.hora) pendientes.push(`${c.titulo}: ${hito.texto}`)
+        for (const col of hito.campos || []) {
+          const val = (v.campos || {})[col.clave]
+          if (val === '' || val == null) { pendientes.push(`${c.titulo}: ${col.label}`); continue }
+          if (col.tipo === 'numero' && fueraDeRango(col, val, cat)) {
+            falla({ clave: c.clave, tipo: col.falla_tipo || 'proceso', detalle: col.label,
+                    valor_esperado: rangoTexto(col, cat) || '—', valor_real: `${val}${col.unidad ? ' ' + col.unidad : ''}` })
+          }
+          if (col.tipo === 'select' && val === 'No cumple') {
+            falla({ clave: c.clave, tipo: col.falla_tipo || 'proceso', detalle: col.label, valor_esperado: 'Cumple', valor_real: 'No cumple' })
+          }
+        }
+      }
+    }
+
+    // ── Campos sueltos con validación (lectura del infrarrojo, laurel, corte) ──
+    if (c.tipo === 'campos') {
+      for (const col of c.campos || []) {
+        const val = (v.campos || {})[col.clave]
+        if (val === '' || val == null) { pendientes.push(`${c.titulo}: ${col.label}`); continue }
+        if (col.tipo === 'numero' && fueraDeRango(col, val, cat)) {
+          falla({ clave: c.clave, tipo: col.falla_tipo || 'proceso', detalle: col.label,
+                  valor_esperado: rangoTexto(col, cat) || '—', valor_real: `${val}${col.unidad ? ' ' + col.unidad : ''}` })
+        }
+        if (col.tipo === 'select' && val === 'No cumple') {
+          falla({ clave: c.clave, tipo: col.falla_tipo || 'proceso', detalle: col.label, valor_esperado: 'Cumple', valor_real: 'No cumple' })
+        }
+      }
+      // Un equipo asociado (el infrarrojo) se valida igual que en `equipo`.
+      if (c.tipo_equipo) {
+        const eq = cat.equipos.find(e => e.id === v.equipo_id)
+        if (!eq) pendientes.push(`${c.titulo}: elegí el equipo por su código`)
+        else {
+          const cal = calibracionEstado(eq, hoy)
+          if (!cal.ok) falla({ clave: c.clave, tipo: 'equipo', detalle: `${eq.codigo}: ${cal.texto}`, valor_esperado: 'calibración vigente', valor_real: cal.texto })
         }
       }
     }
@@ -248,6 +340,14 @@ export function resumenDatos(controles, valores, cat) {
       const cods = Object.values(v.filas || {})
         .map(f => cat.equipos.find(e => e.id === f.equipo_id)?.codigo).filter(Boolean)
       if (cods.length) partes.push(cods.join(' + '))
+    }
+    if (c.tipo === 'tabla' && c.resumen_col) {
+      const vals = (c.filas || []).map(f => v[f.clave]?.[c.resumen_col]).filter(x => x !== '' && x != null)
+      if (vals.length) partes.push(vals.join(' / ') + (c.resumen_unidad ? ` ${c.resumen_unidad}` : ''))
+    }
+    if ((c.tipo === 'campos' || c.tipo === 'eventos') && c.resumen_campo) {
+      const x = (v.campos || {})[c.resumen_campo]
+      if (x !== '' && x != null) partes.push(`${x}${c.resumen_unidad ? ' ' + c.resumen_unidad : ''}`)
     }
   }
   return partes.join(' · ')
@@ -408,6 +508,137 @@ function ControlQuimicos({ c, v, set, cat, hoy }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Un campo con validación en vivo (numero | select | hora | texto) ──
+function Campo({ col, val, onChange, cat }) {
+  const mal = col.tipo === 'numero' ? fueraDeRango(col, val, cat) : val === 'No cumple'
+  const rango = col.tipo === 'numero' ? rangoTexto(col, cat) : null
+  return (
+    <div>
+      <span style={lbl}>
+        {col.label}{rango ? ` · ${rango}` : ''}
+        {col.ayuda && <div style={{ fontSize: 11, color: C.dim, fontWeight: 400 }}>{col.ayuda}</div>}
+      </span>
+      {col.tipo === 'select'
+        ? <SelCumple value={val} ancho={'100%'} onChange={onChange} />
+        : <input
+            type={col.tipo === 'numero' ? 'number' : col.tipo === 'hora' ? 'time' : 'text'}
+            inputMode={col.tipo === 'numero' ? 'decimal' : undefined}
+            step={col.tipo === 'numero' ? (col.paso || 'any') : undefined}
+            value={val ?? ''} onChange={e => onChange(e.target.value)}
+            placeholder={col.placeholder || (col.tipo === 'numero' ? 'Dato real' : '')}
+            style={{ ...inp, border: `1px solid ${val !== '' && val != null && mal ? C.bad : C.line}` }} />}
+    </div>
+  )
+}
+
+// ── Tabla: mismas columnas para cada tanda o unidad ──
+function ControlTabla({ c, v, set, cat }) {
+  return (
+    <div style={box}>
+      <div style={h}>{c.titulo}</div>
+      {c.ayuda && <div style={ayudaSt}>{c.ayuda}</div>}
+      {(c.filas || []).map(f => {
+        const r = v[f.clave] || {}
+        return (
+          <div key={f.clave} style={{ borderTop: `1px solid ${C.line}`, paddingTop: 10, marginTop: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+              {f.nombre}{f.fijo && <span style={{ color: C.dim, fontWeight: 400 }}> · {f.fijo}</span>}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+              {(c.columnas || []).map(col => (
+                <Campo key={col.clave} col={col} cat={cat} val={r[col.clave]}
+                  onChange={val => set({ ...v, [f.clave]: { ...r, [col.clave]: val } })} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Eventos: se toca cuando pasa, y el sistema pone la hora ──
+function ControlEventos({ c, v, set, cat, ahoraISO, quien }) {
+  const ev = v.hitos || {}
+  const campos = v.campos || {}
+  const hitos = c.hitos || []
+  const listo = (i) => i === 0 || !!ev[hitos[i - 1].clave]?.hora
+  // Un hito puede exigir que otro ya esté registrado (el agua antes que los ácidos).
+  const depOk = (hito) => !hito.depende || !!ev[hito.depende]?.hora
+  return (
+    <div style={box}>
+      <div style={h}>{c.titulo}</div>
+      {c.ayuda && <div style={ayudaSt}>{c.ayuda}</div>}
+      {hitos.map((hito, i) => {
+        const r = ev[hito.clave]
+        const habil = listo(i) && depOk(hito)
+        return (
+          <div key={hito.clave} style={{ ...fila, alignItems: 'flex-start', opacity: habil ? 1 : .5 }}>
+            <div style={{
+              width: 22, height: 22, borderRadius: 11, flexShrink: 0, marginTop: 4, fontSize: 11.5, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: r?.hora ? C.ok : '#2a2a2e', color: r?.hora ? '#fff' : C.dim,
+            }}>{r?.hora ? '✓' : (hito.minuto ?? i + 1)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ lineHeight: 1.45 }}>{hito.texto}</div>
+              {hito.detalle && <div style={{ fontSize: 11.5, color: C.dim, marginTop: 2 }}>{hito.detalle}</div>}
+              {r?.hora
+                ? <div style={{ fontSize: 11.5, color: C.dim, marginTop: 3 }}>Registrado {fmtHora(r.hora)}{r.por ? ` · ${r.por}` : ''}</div>
+                : !habil && <div style={{ fontSize: 11.5, color: C.warn, marginTop: 3 }}>{hito.bloqueo || 'Se habilita al registrar lo anterior.'}</div>}
+              {habil && (hito.campos || []).length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>
+                  {hito.campos.map(col => (
+                    <Campo key={col.clave} col={col} cat={cat} val={campos[col.clave]}
+                      onChange={val => set({ ...v, campos: { ...campos, [col.clave]: val } })} />
+                  ))}
+                </div>
+              )}
+            </div>
+            {!r?.hora && (
+              <button disabled={!habil} onClick={() => set({ ...v, hitos: { ...ev, [hito.clave]: { hora: ahoraISO(), por: quien } } })}
+                style={{
+                  flexShrink: 0, background: habil ? C.acc : '#2a2a2e', color: habil ? '#fff' : C.dim,
+                  border: 'none', borderRadius: 7, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
+                  cursor: habil ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                }}>{hito.boton || 'Registrar'}</button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Campos sueltos, con o sin equipo asociado ──
+function ControlCampos({ c, v, set, cat, hoy }) {
+  const campos = v.campos || {}
+  const equipos = c.tipo_equipo ? cat.equipos.filter(e => e.tipo === c.tipo_equipo) : []
+  const eq = cat.equipos.find(e => e.id === v.equipo_id)
+  const cal = calibracionEstado(eq, hoy)
+  return (
+    <div style={box}>
+      <div style={h}>{c.titulo}</div>
+      {c.ayuda && <div style={ayudaSt}>{c.ayuda}</div>}
+      {c.tipo_equipo && (
+        <>
+          <span style={lbl}>{c.label_equipo || 'Equipo'}</span>
+          <select value={v.equipo_id || ''} onChange={e => set({ ...v, equipo_id: e.target.value })} style={{ ...inp, marginBottom: 6 }}>
+            <option value="">Elegí por código…</option>
+            {equipos.map(e => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre || ''}</option>)}
+          </select>
+          {eq && <div style={{ fontSize: 12.5, marginBottom: 8, color: cal.ok ? '#86efac' : '#fca5a5' }}>{cal.ok ? '✓ ' : '✕ '}{cal.texto}</div>}
+        </>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 9 }}>
+        {(c.campos || []).map(col => (
+          <Campo key={col.clave} col={col} cat={cat} val={campos[col.clave]}
+            onChange={val => set({ ...v, campos: { ...campos, [col.clave]: val } })} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -635,6 +866,9 @@ export function Controles({ controles, valores, setValores, cat, hoy, ahoraISO, 
         if (c.tipo === 'matriz') return <ControlMatriz key={c.clave} {...props} />
         if (c.tipo === 'quimicos') return <ControlQuimicos key={c.clave} {...props} />
         if (c.tipo === 'basculas') return <ControlBasculas key={c.clave} {...props} />
+        if (c.tipo === 'tabla') return <ControlTabla key={c.clave} {...props} />
+        if (c.tipo === 'campos') return <ControlCampos key={c.clave} {...props} />
+        if (c.tipo === 'eventos') return <ControlEventos key={c.clave} {...props} ahoraISO={ahoraISO} quien={quien} />
         if (c.tipo === 'secuencia') return <ControlSecuencia key={c.clave} {...props} controles={controles} valores={valores} ahoraISO={ahoraISO} quien={quien} ahora={ahora} />
         return null
       })}
