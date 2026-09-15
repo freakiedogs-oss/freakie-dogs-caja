@@ -109,6 +109,12 @@ function detalleControles(paso, datos, ex) {
         out.push([`${hito.minuto != null ? `Min ${hito.minuto} · ` : ''}${hito.texto}`,
           r?.hora ? `${horaSeg(r.hora)}${r.por ? ` · ${r.por}` : ''}` : '—'])
         for (const col of hito.campos || []) {
+          if (col.tipo === 'duracion') {
+            const a = v.hitos?.[col.desde]?.hora, b = v.hitos?.[col.hasta]?.hora
+            const min = a && b ? Math.round((new Date(b) - new Date(a)) / 600) / 100 : null
+            out.push([`· ${col.label}`, min != null ? `${min} ${col.unidad || 'min'} (calculado)` : '—'])
+            continue
+          }
           const val = v.campos?.[col.clave]
           out.push([`· ${col.label}`, val != null && val !== '' ? `${val}${col.unidad ? ' ' + col.unidad : ''}` : '—'])
         }

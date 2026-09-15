@@ -108,6 +108,13 @@ function fueraDeRango(campo, valor, cat) {
   return false
 }
 
+// Minutos entre dos hitos ya sellados (redondeados a un decimal). null si falta alguno.
+function duracionEntre(col, hitos) {
+  const a = hitos?.[col.desde]?.hora, b = hitos?.[col.hasta]?.hora
+  if (!a || !b) return null
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 600) / 100
+}
+
 // Tiempo de contacto exigido: viene del sanitizante elegido en el control de químicos.
 function tiempoContactoRequerido(controles, valores, cat) {
   const cq = (controles || []).find(c => c.tipo === 'quimicos')
@@ -201,6 +208,17 @@ export function evaluarControles(controles, valores, cat, hoy) {
       for (const hito of c.hitos || []) {
         if (!ev[hito.clave]?.hora) pendientes.push(`${c.titulo}: ${hito.texto}`)
         for (const col of hito.campos || []) {
+          // Duración calculada entre dos hitos: nadie la teclea, así que no
+          // se puede "redondear" un tiempo de retención que no se cumplió.
+          if (col.tipo === 'duracion') {
+            const min = duracionEntre(col, ev)
+            if (min == null) { pendientes.push(`${c.titulo}: ${col.label}`); continue }
+            if (fueraDeRango(col, min, cat)) {
+              falla({ clave: c.clave, tipo: col.falla_tipo || 'tiempo', detalle: col.label,
+                      valor_esperado: rangoTexto(col, cat) || '—', valor_real: `${min} ${col.unidad || 'min'}` })
+            }
+            continue
+          }
           const val = (v.campos || {})[col.clave]
           if (val === '' || val == null) { pendientes.push(`${c.titulo}: ${col.label}`); continue }
           if (col.tipo === 'numero' && fueraDeRango(col, val, cat)) {
@@ -591,10 +609,29 @@ function ControlEventos({ c, v, set, cat, ahoraISO, quien }) {
                 : !habil && <div style={{ fontSize: 11.5, color: C.warn, marginTop: 3 }}>{hito.bloqueo || 'Se habilita al registrar lo anterior.'}</div>}
               {habil && (hito.campos || []).length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>
-                  {hito.campos.map(col => (
-                    <Campo key={col.clave} col={col} cat={cat} val={campos[col.clave]}
-                      onChange={val => set({ ...v, campos: { ...campos, [col.clave]: val } })} />
-                  ))}
+                  {hito.campos.map(col => {
+                    if (col.tipo === 'duracion') {
+                      const min = duracionEntre(col, ev)
+                      const mal = min != null && fueraDeRango(col, min, cat)
+                      return (
+                        <div key={col.clave} style={{ gridColumn: '1/-1' }}>
+                          <span style={lbl}>{col.label}{rangoTexto(col, cat) ? ` · ${rangoTexto(col, cat)}` : ''}</span>
+                          <div style={{
+                            ...inp, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            border: `1px solid ${min == null ? C.line : mal ? C.bad : C.ok}`,
+                            color: min == null ? C.dim : mal ? '#fca5a5' : '#86efac',
+                          }}>
+                            <span>{min == null ? 'Se calcula al registrar los dos hitos' : `${min} ${col.unidad || 'min'}`}</span>
+                            {min != null && <span style={{ fontSize: 11.5 }}>{mal ? 'fuera de lo exigido' : 'cumple'}</span>}
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <Campo key={col.clave} col={col} cat={cat} val={campos[col.clave]}
+                        onChange={val => set({ ...v, campos: { ...campos, [col.clave]: val } })} />
+                    )
+                  })}
                 </div>
               )}
             </div>
