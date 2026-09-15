@@ -20,7 +20,18 @@ import './pagoTarjeta.css'
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
 
+// El reto 3DS puede venir de más de un host de n1co según el emisor, y un
+// origen no contemplado se descartaba en silencio: el cliente quedaba mirando
+// el spinner para siempre. Se acepta cualquier dominio de n1co —que es quien
+// sirve el reto— y nada más.
 const ORIGEN_3DS = 'https://front-3ds.n1co.com'
+const es3dsDeN1co = (origin) =>
+  origin === ORIGEN_3DS || /^https:\/\/[a-z0-9.-]+\.n1co\.(com|shop)$/.test(origin)
+
+// Cuánto esperamos al banco antes de ofrecerle una salida al cliente. El 10% de
+// los retos nunca devuelve nada (red mala, ACS que no carga, popup bloqueado) y
+// sin esto la única opción era cerrar la página y perder el pedido.
+const ESPERA_3DS_MS = 90_000
 const API = '/api/n1co'
 
 const seguroJson = (s) => { try { return JSON.parse(s) } catch { return null } }
@@ -129,7 +140,7 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
     const onMensaje = async (ev) => {
       // Sin este corte el iframe deja de ser barrera: cualquier origen podría
       // postear "SUCCESS" y nos llevaría a dar por bueno el cobro.
-      if (ev.origin !== ORIGEN_3DS) return
+      if (!es3dsDeN1co(ev.origin)) return
       const msg = typeof ev.data === 'string' ? seguroJson(ev.data) : ev.data
       if (!msg || msg.MessageType !== 'authentication.complete') return
       const estado = String(msg.Status || '').toUpperCase()
@@ -155,8 +166,14 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
         setError('No pudimos confirmar el pago. Escribinos por WhatsApp antes de intentar de nuevo.')
       }
     }
+    // Si el banco no contesta, no dejar al cliente colgado.
+    const reloj = setTimeout(() => {
+      setUrl3ds('')
+      setFase('3ds_sin_respuesta')
+    }, ESPERA_3DS_MS)
+
     window.addEventListener('message', onMensaje)
-    return () => window.removeEventListener('message', onMensaje)
+    return () => { clearTimeout(reloj); window.removeEventListener('message', onMensaje) }
   }, [fase])   // eslint-disable-line react-hooks/exhaustive-deps
 
   function aplicar(r) {
@@ -273,12 +290,35 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
       <div className="mp-pago-3ds-wrap">
         <p className="mp-pago-nota">
           Tu banco pide confirmar la compra. Completá la verificación acá abajo
-          — no cierres esta página.
+          — no cierres esta página. Si no carga en un minuto, te damos otra
+          opción.
         </p>
         <iframe
           className="mp-pago-3ds" src={url3ds} title="Verificación 3D Secure"
-          sandbox="allow-scripts allow-forms allow-same-origin"
+          sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         />
+      </div>
+    )
+  }
+
+  // ── El banco no contestó ──
+  // No se sabe si aprobó o no: el reto quedó a medias, así que NO se cobró.
+  // Lo único honesto es decirlo y dar las dos salidas.
+  if (fase === '3ds_sin_respuesta') {
+    return (
+      <div className="mp-pago-rechazo">
+        <div className="mp-pago-rechazo-icono">⏳</div>
+        <p>La verificación de tu banco no respondió.</p>
+        <p className="mp-pago-nota">
+          No se te cobró nada. Suele pasar con señal débil — probá de nuevo o
+          pagá en efectivo al recibir.
+        </p>
+        <button className="mp-btn-checkout" onClick={() => { setFase('fondo'); setError('') }}>
+          Intentar de nuevo
+        </button>
+        <button className="mp-pago-secundario" onClick={pasarAEfectivo}>
+          💵 Pagar en efectivo al recibir
+        </button>
       </div>
     )
   }
