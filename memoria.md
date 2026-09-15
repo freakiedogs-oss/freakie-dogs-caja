@@ -2,6 +2,34 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 15-Sep-2026 — Control de Depósitos: un calendario que dice de qué días NO llegó el efectivo al banco
+
+Jose pidió ver de un vistazo qué sucursal ya cubrió su depósito y cuál no. Los datos ya existían (`depositos_bancarios` desde el 23-mar, 639 registros) pero no había dónde leerlos en conjunto: `Deposito.jsx` sólo REGISTRA, `AdminView` los muestra de a uno al abrir un cierre, y `EfectivoConciliacion` los agrega por mes. Faltaba la pregunta del día: **¿falta alguno?**
+
+**Pantalla nueva `depositos-control`** (`src/components/finanzas/DepositosCalendarioView.jsx`, sección Caja): una fila por día de venta, una columna por sucursal, el color dice si ese día ya quedó cubierto. Tocar un cuadro abre el detalle: cuánto era según el cierre (desglosado por caja/turno), cuánto se depositó, quién lo registró, las notas y **la foto del voucher** con visor a pantalla completa. Abajo, la lista de faltantes en texto para leerla sin clickear celda por celda. **Sólo lee** — confirmar un depósito sigue viviendo en el Dashboard de Cierres, que es donde está esa decisión.
+
+**El eje es el DÍA DE VENTA (`dias_cubiertos`), no `fecha_deposito`.** La fecha del depósito la teclea una persona y se equivoca: hay uno registrado el 2-sep con `fecha_deposito` **30-sep** ($55.43 contra $911.87 esperados). Filtrar por ahí escondería justo el caso que hay que ver. `dias_cubiertos` sale de marcar los cierres, que existen o no existen. Por eso la consulta usa `.overlaps('dias_cubiertos', díasDelMes)` y no un rango sobre `fecha_deposito`. El detalle además **avisa** cuando `fecha_deposito` es posterior al día en que se registró.
+
+**Un depósito multi-día no tiene un culpable, y la pantalla no lo inventa.** 41 de los 639 depósitos cubren más de un día (S004 hace uno cada 3, y hay uno de 6). Comparar un depósito de 3 días contra UN día no significa nada. Así que se agrupan por **componentes conexas** (día ↔ depósito, `armarGrupos`): el veredicto cuadra/no cuadra es del grupo entero —que sí es una afirmación verdadera— y los 3 días muestran el mismo color, aunque cada celda siga mostrando el esperado de SU día. Esto también cubre el caso raro de dos depósitos encadenados por un día en común.
+
+**El esperado se recalcula del cierre vivo**, no del `monto_esperado` congelado al registrar: si el cierre se corrigió después, el número guardado miente. Es lo mismo que ya hacía `AdminView` al abrir un depósito.
+
+**Dos decisiones para que el rojo signifique algo:**
+- **Plazo de 1 día** (`DIAS_GRACIA`): el efectivo de ayer se deposita mañana. Sin esto, cada mañana las 6 sucursales salían en rojo y el rojo se vuelve ruido que se aprende a ignorar.
+- **Un cierre con efectivo a depositar NEGATIVO no es un depósito que falta** (se gastó del cajón más de lo que entró). Pasa de verdad: S002 el 1-sep con −$7.16. La condición es `esperado < 0.01`, no `|esperado| < 0.01`.
+
+**`permisos_rol` manda sobre `config.js` — sin la fila, no la ve nadie.** El Sidebar hace `dbPermisos[nav_key] || []`, así que una nav_key nueva sin filas en la tabla queda invisible para todos salvo `superadmin`. Migración `permisos_depositos_control`: gerente, admin, ejecutivo, contador.
+
+**Verificado corriendo el componente, no leyéndolo.** La lógica se separó a `depositosConciliacion.js` (sin React ni Supabase) justo para poder probarla. `scripts/test-depositos-calendario.mjs` corre **21 casos** sobre las formas reales de septiembre (el depósito de 6 días con −$41.43, el de **$0.01** contra $331.59 de S004 el 7-sep, los dos cierres del mismo día de S003, el cierre negativo, el cruce de fin de mes) y las invariantes: ningún día en dos grupos, ningún depósito huérfano, cada grupo suma exactamente sus depósitos. Además un render real en jsdom con los efectos corridos: la grilla pinta las 5 columnas derivadas de los datos, los 6 estados salen, el modal muestra el desglose por caja y la miniatura del voucher abre el visor, y React no tira un solo warning. `--real` corre las mismas consultas contra producción desde una máquina con salida a `*.supabase.co` (desde la sesión no se pudo: el host no está en el allowlist de egress).
+
+**Lo que la pantalla encontró apenas se le pusieron los datos de septiembre** (para Jose, no arreglado acá):
+- **S001 · 7-sep · $444.61** sin ningún depósito que lo cubra, hace más de una semana.
+- **S004 · 7-sep**: depósito de **$0.01** contra $331.59 esperados. Parece un dedazo al registrar.
+- **S004 · 8 al 13-sep**: un depósito de $2,985.42 por 6 días que esperaban $3,026.85 → **−$41.43**, y sigue **sin confirmar**.
+- **M001 · 10-sep ($549.73)**, **S006 · 10-sep ($434.68)**, **S003 · 12 y 13-sep**, **M001 · 13-sep** sin depósito.
+- El depósito de M001 con `fecha_deposito` **30-sep** (registrado el 2-sep, $55.43 vs $911.87).
+
+
 ## 15-Sep-2026 — BPM Chili fase 4: los pasos 11 al 17, con los dos puntos críticos medidos por el sistema
 
 La auditoría de Mauricio llegaba hasta el paso 10, pero la tanda tiene 17 y **los dos CCP viven en la segunda mitad**. Hasta hoy el paso 12 guardaba una temperatura suelta y el 16 otra: el procedimiento pedía por escrito la retención, los tiempos de enfriado, el peso final, las 7 bolsas y el conteo de laurel, y nada de eso se registraba. Con esto, los 17 pasos tienen el mismo nivel de evidencia.
@@ -10,6 +38,7 @@ La auditoría de Mauricio llegaba hasta el paso 10, pero la tanda tiene 17 y **l
 - **`bpm_fase4_controles_ccp_y_cierre`:** paso 11 (termómetro de la tapa identificado, sonda centrada a media profundidad, tapa sin escape, hora de tapado); **paso 12** (hito de los 80 °C → hito de cierre, retención 15–20 min calculada, olla tapada en hervor); paso 13 (machacado de 2 kg al minuto 20, duración real, **peso final 15,500–16,500 g**, olor a quemado); paso 14 (reposo ≥ 5 min calculado, desgrase sin arrastre, **laurel recuperado = 9**); paso 15 (temperatura al envasar, **tabla de 7 bolsas** con peso 2,268 ± 50 g y sello revisado uno por uno, merma y rendimiento); **paso 16** (hielo inicial, hito de entrada → 30 min → 5 °C, con los dos tiempos calculados contra 30 min y 6 h de la FDA, recirculación y método que no compromete el sello); paso 17 (freezer, temperatura del producto, etiquetado y acomodo). 15 parámetros nuevos, todos editables por Calidad.
 - **Sin temperaturas duplicadas (`bpm_fase4_sin_temperaturas_duplicadas`):** los pasos 12, 15, 16 y 17 ya pedían su temperatura en `bpm_registros.temperatura_c`, que es lo que leen los reportes. Se quitó el campo espejo del control para que no haya dos números que puedan no coincidir; quedan en el control solo las temperaturas de **otros** momentos (inicial y final del enfriado, producto al congelar).
 - Pendiente de validación, tal como lo dice el paso 11: **el estudio de mapeo térmico del punto frío**. Hasta tenerlo, el CCP de los 80 °C es provisional — está escrito en la instrucción y ahora también queda dicho acá.
+
 
 ## 15-Sep-2026 — BPM Chili fase 3: la cocción deja registro y el expediente sale en un clic
 
