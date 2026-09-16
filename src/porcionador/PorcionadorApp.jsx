@@ -25,6 +25,18 @@ const QUEUE_KEY = 'porcionador_cola_pendiente'
 
 const SERIAL_CONFIG = { baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' }
 
+// ── Alerta de papa sobrante ───────────────────────────────────
+// Pedido de Cesar (16-sep-2026). La papa frita que se queda en la canasta
+// pierde textura rapido; despues de un rato ya no se puede servir. Nadie
+// llevaba el tiempo, asi que se servia papa vieja o se botaba de mas sin
+// registrarlo. Ahora la estacion lo cuenta sola:
+//   · 30 s sin pesar una porcion  -> pregunta a pantalla completa si sobro papa
+//   · si dicen que si             -> cuenta 6 min en regresion
+//   · el conteo SOLO se corta     -> cuando se pesa otra porcion en rango
+//   · al llegar a cero            -> aviso de desechar o pasar a merma
+const SIN_PESAR_MS = 30 * 1000
+const MERMA_MS = 6 * 60 * 1000
+
 // ── Parser de peso (idéntico al de la app v11) ────────────────
 function parseWeight(line) {
   const m = line.replace(/,/g, '.').match(/(-?\d+(?:\.\d+)?)\s*(kg|g|lb)s?/i)
@@ -52,6 +64,35 @@ function beepOk(ctx) {
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42)
     o.connect(g).connect(master); o.start(t0); o.stop(t0 + 0.44)
   })
+}
+
+// ── Sirenas de la alerta de papa ──────────────────────────────
+// Suenan fuerte a proposito: esto compite con la freidora, la campana y la
+// musica del food court. Onda cuadrada, ganancia alta y varias voces a la vez.
+function sirena(ctx, tipo) {
+  if (!ctx) return
+  try { ctx.resume() } catch {}
+  const master = ctx.createGain()
+  master.gain.value = tipo === 'merma' ? 3.0 : 2.2
+  master.connect(ctx.destination)
+  // 'pregunta': dos notas que suben. 'merma': sirena de dos tonos, mas urgente.
+  const patron = tipo === 'merma'
+    ? [[880, 0.00], [660, 0.22], [880, 0.44], [660, 0.66], [880, 0.88]]
+    : [[784, 0.00], [1047, 0.20], [784, 0.40]]
+  for (const [f, off] of patron) {
+    for (const mult of [1, 2]) {          // dos voces = mas presencia
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      const t0 = ctx.currentTime + off
+      o.type = mult === 1 ? 'square' : 'triangle'
+      o.frequency.value = f * mult
+      g.gain.setValueAtTime(0.0001, t0)
+      g.gain.exponentialRampToValueAtTime(mult === 1 ? 0.95 : 0.35, t0 + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.19)
+      o.connect(g).connect(master); o.start(t0); o.stop(t0 + 0.2)
+    }
+  }
+  // La tablet de la freidora suele estar en una funda: la vibracion ayuda.
+  try { navigator.vibrate?.(tipo === 'merma' ? [400, 120, 400, 120, 400] : [250, 120, 250]) } catch {}
 }
 
 // ── Cola offline con localStorage (simple; migrar a IndexedDB fase 2) ─
@@ -142,6 +183,20 @@ export default function PorcionadorApp() {
   const zeroReadingsRef = useRef(0)
   const responseCountRef = useRef(0)
   const audioRef = useRef(null)
+
+  // ── Alerta de papa sobrante ──
+  // Todo lo que toca registerWeight va por REF: esa funcion la ejecuta el
+  // readLoop que arranco en connect(), o sea una clausura vieja. Si leyera
+  // estado de React leeria el de hace rato.
+  const ultimaPorcionRef = useRef(Date.now())
+  const porcionTickRef = useRef(0)      // sube en cada porcion aceptada
+  const tickVistoRef = useRef(0)        // hasta cual la maquina ya reacciono
+  const faseRef = useRef('idle')        // idle | preguntando | contando | vencido
+  const finCuentaRef = useRef(0)
+  const armadoRef = useRef(true)        // false = no volver a preguntar hasta la proxima porcion
+  const alarmaRef = useRef(null)
+  const [fase, setFase] = useState('idle')
+  const [restanteMs, setRestanteMs] = useState(MERMA_MS)
 
   const CFG = config || { min_g: 150, target_g: 155, max_g: 160, empty_max_g: 4, stability_window_ms: 1100, stability_min_readings: 4, stability_max_spread_g: 2, poll_interval_ms: 250 }
 
@@ -324,6 +379,10 @@ export default function PorcionadorApp() {
       // aunque la porcion si estuviera guardada en la base.
       setCompleted(c => c + 1)
       beepOk(audioRef.current)
+      // Marca para la alerta de papa sobrante. Solo se toca el ref; el
+      // effect de abajo es el que decide que hacer con la fase.
+      ultimaPorcionRef.current = Date.now()
+      porcionTickRef.current += 1
       // Registrar porción
       const event = {
         event_id: crypto.randomUUID(),
@@ -457,8 +516,80 @@ export default function PorcionadorApp() {
     writerRef.current = null
     try { await portRef.current?.close() } catch {}
     portRef.current = null
+    pararAlarma()
     setConnection('idle'); setConnMsg('Desconectada')
   }
+
+  // ══════════ ALERTA DE PAPA SOBRANTE ══════════
+  function pararAlarma() {
+    if (alarmaRef.current) clearInterval(alarmaRef.current)
+    alarmaRef.current = null
+  }
+  function arrancarAlarma(tipo) {
+    pararAlarma()
+    const ctx = audioRef.current
+    if (!ctx) return
+    const toca = () => sirena(ctx, tipo)
+    toca()
+    alarmaRef.current = setInterval(toca, tipo === 'merma' ? 1300 : 2000)
+  }
+  function irA(f) { faseRef.current = f; setFase(f) }
+
+  function responderSobro(hubo) {
+    pararAlarma()
+    if (hubo) {
+      finCuentaRef.current = Date.now() + MERMA_MS
+      setRestanteMs(MERMA_MS)
+      irA('contando')
+    } else {
+      // No sobro nada: no tiene sentido volver a preguntar cada 30 s con la
+      // estacion parada. Se rearma sola cuando se pese la proxima porcion.
+      armadoRef.current = false
+      irA('idle')
+    }
+  }
+  function confirmarMerma() {
+    pararAlarma()
+    armadoRef.current = false
+    irA('idle')
+  }
+
+  useEffect(() => {
+    if (connection !== 'connected') {
+      pararAlarma(); faseRef.current = 'idle'; setFase('idle')
+      return
+    }
+    // Al conectar se arranca el reloj desde cero, no desde la ultima porcion
+    // de hace media hora: si no, preguntaria apenas se enchufa la bascula.
+    ultimaPorcionRef.current = Date.now()
+    armadoRef.current = true
+    const id = setInterval(() => {
+      const ahora = Date.now()
+
+      // ¿Se peso una porcion desde el ultimo tick?
+      if (porcionTickRef.current !== tickVistoRef.current) {
+        tickVistoRef.current = porcionTickRef.current
+        armadoRef.current = true
+        // Pesar una porcion correcta corta el conteo y baja cualquier aviso.
+        if (faseRef.current !== 'idle') { pararAlarma(); faseRef.current = 'idle'; setFase('idle') }
+      }
+
+      if (faseRef.current === 'idle') {
+        if (armadoRef.current && ahora - ultimaPorcionRef.current >= SIN_PESAR_MS) {
+          faseRef.current = 'preguntando'; setFase('preguntando')
+          arrancarAlarma('pregunta')
+        }
+      } else if (faseRef.current === 'contando') {
+        const queda = finCuentaRef.current - ahora
+        setRestanteMs(Math.max(0, queda))
+        if (queda <= 0) {
+          faseRef.current = 'vencido'; setFase('vencido')
+          arrancarAlarma('merma')
+        }
+      }
+    }, 250)
+    return () => { clearInterval(id); pararAlarma() }
+  }, [connection])
 
   // ══════════ RENDER ══════════
   if (!token) return (
@@ -487,8 +618,52 @@ export default function PorcionadorApp() {
   else if (stable) { color = '#16a34a'; label = '✓ ¡PORCIÓN LISTA!' }
   else { color = '#a3e635'; label = 'En rango, esperá que estabilice…' }
 
+  const mm = String(Math.floor(restanteMs / 60000)).padStart(2, '0')
+  const ss = String(Math.floor((restanteMs % 60000) / 1000)).padStart(2, '0')
+
   return (
     <div style={sMain}>
+
+      {/* ── Pregunta: ¿sobro papa? ── */}
+      {fase === 'preguntando' && (
+        <div style={sOverlay('#7c2d12')}>
+          <div style={sOverlayIcono}>🍟</div>
+          <div style={sOverlayTitulo}>¿Sobró papa?</div>
+          <div style={sOverlayTexto}>
+            Pasaron 30 segundos sin pesar una porción.
+          </div>
+          <div style={{ display: 'flex', gap: 18, marginTop: 40, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button onClick={() => responderSobro(true)} style={sOverlayBtn('#dc2626')}>SÍ, sobró</button>
+            <button onClick={() => responderSobro(false)} style={sOverlayBtn('#16a34a')}>NO</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Aviso final: hay que desechar ── */}
+      {fase === 'vencido' && (
+        <div style={{ ...sOverlay('#7f1d1d'), animation: 'fdParpadeo 0.75s steps(2, start) infinite' }}>
+          <div style={sOverlayIcono}>⚠️</div>
+          <div style={sOverlayTitulo}>Papa vencida</div>
+          <div style={{ ...sOverlayTexto, fontSize: 30, fontWeight: 700, lineHeight: 1.35 }}>
+            Las papas que ya están fritas<br />tienen que desecharse<br />o pasarse a merma.
+          </div>
+          <button onClick={confirmarMerma} style={{ ...sOverlayBtn('#111827'), marginTop: 44 }}>
+            Entendido, ya se desecharon
+          </button>
+        </div>
+      )}
+
+      {/* ── Cuenta regresiva (no tapa la pantalla: hay que poder seguir pesando) ── */}
+      {fase === 'contando' && (
+        <div style={sBarraCuenta}>
+          <span style={{ fontSize: 15 }}>🍟 Papa sobrando · se vence en</span>
+          <b style={{ fontSize: 30, letterSpacing: 1, fontVariantNumeric: 'tabular-nums' }}>{mm}:{ss}</b>
+          <span style={{ fontSize: 13, opacity: 0.85 }}>Pesá una porción para reiniciar</span>
+        </div>
+      )}
+
+      <style>{`@keyframes fdParpadeo { 0%,100% { filter: brightness(1) } 50% { filter: brightness(1.55) } }`}</style>
+
       {/* Top bar */}
       <div style={sTopBar}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -653,3 +828,31 @@ const sKpiCard = { flex: 1, background: '#fff', borderRadius: 12, padding: '14px
 const sKpiLabel = { fontSize: 12, color: '#888' }
 const sKpiValue = { fontSize: 28, fontWeight: 700, marginTop: 4 }
 const sDiag = { padding: '20px 16px', fontSize: 11, color: '#888', textAlign: 'center', fontFamily: 'monospace' }
+
+// ── Estilos de la alerta de papa sobrante ─────────────────────
+// A pantalla completa y con z-index alto a proposito: el pedido fue que no se
+// pueda ignorar. La barra de cuenta regresiva SI deja ver la pantalla, porque
+// durante esos 6 minutos hay que poder seguir pesando.
+const sOverlay = (fondo) => ({
+  position: 'fixed', inset: 0, zIndex: 9999,
+  background: fondo, color: '#fff',
+  display: 'flex', flexDirection: 'column',
+  alignItems: 'center', justifyContent: 'center',
+  textAlign: 'center', padding: 24, boxSizing: 'border-box',
+  fontFamily: 'system-ui,sans-serif',
+})
+const sOverlayIcono = { fontSize: 92, lineHeight: 1, marginBottom: 12 }
+const sOverlayTitulo = { fontSize: 58, fontWeight: 900, letterSpacing: -1, marginBottom: 14 }
+const sOverlayTexto = { fontSize: 24, opacity: 0.95, maxWidth: 620, lineHeight: 1.4 }
+const sOverlayBtn = (fondo) => ({
+  background: fondo, color: '#fff', border: '3px solid rgba(255,255,255,0.45)',
+  borderRadius: 16, padding: '26px 52px', fontSize: 28, fontWeight: 800,
+  cursor: 'pointer', minWidth: 210, fontFamily: 'inherit',
+})
+const sBarraCuenta = {
+  position: 'sticky', top: 0, zIndex: 900,
+  background: '#7c2d12', color: '#fed7aa',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  gap: 16, flexWrap: 'wrap', padding: '10px 16px',
+  borderBottom: '2px solid #ea580c',
+}
