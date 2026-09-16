@@ -627,7 +627,11 @@ export default function TabPedidos({ show = () => {} }) {
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa };
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   // Traslado de sucursal: el estado vive en TabPedidos pero el boton
+                   // se pinta dentro de <Tarjeta>, asi que tiene que viajar por props.
+                   trasladando, setTrasladando, trasSel, setTrasSel,
+                   trasMotivo, setTrasMotivo, trasladar };
 
   return (
     <div>
@@ -898,7 +902,9 @@ function Historial({ historial }) {
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa }) {
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   trasladando, setTrasladando, trasSel, setTrasSel,
+                   trasMotivo, setTrasMotivo, trasladar }) {
   const paraLlevar = p.tipo === 'para_llevar';
   const ahora = useAhora();
   const reloj = useRelojes(p, ahora);
