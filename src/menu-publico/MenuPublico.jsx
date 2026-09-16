@@ -125,6 +125,15 @@ export default function MenuPublico() {
   const [misPedidos, setMisPedidos] = useState(null) // {activos, pasados} del teléfono guardado
   const [misPedidosOpen, setMisPedidosOpen] = useState(false)
   const [sugerenciaOculta, setSugerenciaOculta] = useState(false)
+  // ── Productos apagados por sucursal (el "86" del día) ──
+  // El menú es uno solo para las seis tiendas, pero cada tienda puede
+  // quedarse sin algo. `bloqueos` es {sucursal_id: [menu_item_id,...]}.
+  // La gracia es que la app NO sabe de qué tienda va a salir el pedido
+  // hasta que el cliente marca su ubicación en el checkout: hasta ese
+  // momento se muestra todo, y en cuanto se sabe la sucursal se apagan
+  // los que no hay. El servidor vuelve a revisar al crear el pedido.
+  const [bloqueos, setBloqueos] = useState({})
+  const [sucRuteada, setSucRuteada] = useState(null)   // {id, nombre}
   const seccionesRef = useRef({})
   const abierto = abiertoAhora(horarioBD)
 
@@ -158,6 +167,33 @@ export default function MenuPublico() {
       .finally(() => vivo && setCargando(false))
     return () => { vivo = false }
   }, [])
+
+  // Se relee cada minuto: si a Santa Tecla se le acaba el queso frito
+  // mientras alguien arma el carrito, se entera sin recargar la página.
+  useEffect(() => {
+    let vivo = true
+    const leer = () => db.rpc('menu_publico_bloqueos')
+      .then(({ data }) => { if (vivo && data) setBloqueos(data) })
+      .catch(() => {})
+    leer()
+    const id = setInterval(leer, 60000)
+    return () => { vivo = false; clearInterval(id) }
+  }, [])
+
+  // Ids apagados en la tienda que le toca a este cliente.
+  const agotados = useMemo(
+    () => new Set(sucRuteada?.id ? (bloqueos[sucRuteada.id] || []) : []),
+    [bloqueos, sucRuteada])
+
+  // Líneas del carrito que dejaron de estar disponibles.
+  const lineasAgotadas = useMemo(
+    () => carrito.filter(i => agotados.has(i.id)),
+    [carrito, agotados])
+
+  const quitarAgotados = () => {
+    setCarrito(prev => prev.filter(i => !agotados.has(i.id)))
+    setToast('Listo, lo quitamos de tu pedido')
+  }
 
   // Toast (auto-hide 2s)
   useEffect(() => {
@@ -359,7 +395,15 @@ export default function MenuPublico() {
                 <ProductoCard
                   key={prod.id}
                   producto={prod}
-                  onClick={() => setProductoModal(prod)}
+                  agotado={agotados.has(prod.id)}
+                  dondeAgotado={sucRuteada?.nombre}
+                  onClick={() => {
+                    if (agotados.has(prod.id)) {
+                      setToast(`Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
+                      return
+                    }
+                    setProductoModal(prod)
+                  }}
                 />
               ))}
             </div>
@@ -408,6 +452,9 @@ export default function MenuPublico() {
           items={carrito}
           total={totalCarrito}
           reglas={reglas}
+          agotados={agotados}
+          dondeAgotado={sucRuteada?.nombre}
+          onQuitarAgotados={quitarAgotados}
           onClose={() => setCarritoAbierto(false)}
           onUpdate={setCarrito}
           onCheckout={() => { setCarritoAbierto(false); setCheckoutOpen(true) }}
@@ -419,6 +466,10 @@ export default function MenuPublico() {
         <Checkout
           items={carrito}
           total={totalCarrito}
+          lineasAgotadas={lineasAgotadas}
+          dondeAgotado={sucRuteada?.nombre}
+          onQuitarAgotados={quitarAgotados}
+          onSucursal={setSucRuteada}
           onClose={() => setCheckoutOpen(false)}
           onEnviado={(datos) => {
             setCarrito([])
@@ -590,11 +641,16 @@ function HeaderNegocio({ horarioBD }) {
   )
 }
 
-function ProductoCard({ producto, onClick }) {
+function ProductoCard({ producto, onClick, agotado = false, dondeAgotado }) {
   const tieneOpciones = (producto.grupos || []).length > 0
     || (producto.componentes || []).some(c => (c.grupos || []).length > 0)
   return (
-    <button className="mp-card" onClick={onClick}>
+    <button className={`mp-card${agotado ? ' mp-card-agotado' : ''}`} onClick={onClick}>
+      {agotado && (
+        <div className="mp-card-cinta">
+          Hoy no hay{dondeAgotado ? ` en ${dondeAgotado}` : ''}
+        </div>
+      )}
       <div className="mp-card-info">
         <div className="mp-card-nombre">{producto.nombre}</div>
         {producto.descripcion && (
@@ -951,7 +1007,9 @@ function lineaPedidoTexto(it) {
   return partes.join('\n')
 }
 
-function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) {
+function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
+                        agotados = new Set(), dondeAgotado, onQuitarAgotados = () => {} }) {
+  const hayAgotados = items.some(i => agotados.has(i.id))
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
   const faltaGratis = reglas ? Math.max(0, reglas.gratisDesde - total) : 0
   const removeLinea = (lineaId) => {
@@ -980,9 +1038,15 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
             </div>
           ) : (
             items.map(it => (
-              <div key={it.lineaId} className="mp-linea">
+              <div key={it.lineaId}
+                   className={`mp-linea${agotados.has(it.id) ? ' mp-linea-agotada' : ''}`}>
                 <div className="mp-linea-info">
                   <div className="mp-linea-nombre">{it.nombre}</div>
+                  {agotados.has(it.id) && (
+                    <div className="mp-linea-agotada-nota">
+                      😔 Hoy no hay{dondeAgotado ? ` en ${dondeAgotado}` : ''}
+                    </div>
+                  )}
                   {it.nota && <div className="mp-linea-nota">📝 {it.nota}</div>}
                   {it.mods && it.mods.map((m, i) => (
                     <div key={i} className="mp-linea-mod">
@@ -1019,8 +1083,19 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
               <span>Total</span>
               <span className="mp-drawer-total-num">{fmt(total)}</span>
             </div>
-            <button className="mp-btn-checkout" onClick={onCheckout} disabled={faltaMinimo > 0}>
-              {faltaMinimo > 0 ? `Mínimo ${fmt(reglas.minimo)} para pedir` : 'Continuar al pedido →'}
+            {hayAgotados && (
+              <div className="mp-agotado-aviso">
+                Algo de tu pedido no hay hoy{dondeAgotado ? ` en ${dondeAgotado}` : ''}.
+                <button className="mp-agotado-quitar" onClick={onQuitarAgotados}>
+                  Quitarlo y seguir
+                </button>
+              </div>
+            )}
+            <button className="mp-btn-checkout" onClick={onCheckout}
+                    disabled={faltaMinimo > 0 || hayAgotados}>
+              {hayAgotados ? 'Quitá lo que no hay para seguir'
+                : faltaMinimo > 0 ? `Mínimo ${fmt(reglas.minimo)} para pedir`
+                : 'Continuar al pedido →'}
             </button>
           </div>
         )}
@@ -1148,7 +1223,9 @@ function PedidoEnviado({ datos, onClose }) {
   )
 }
 
-function Checkout({ items, total, onClose, onEnviado }) {
+function Checkout({ items, total, onClose, onEnviado,
+                   lineasAgotadas = [], dondeAgotado,
+                   onQuitarAgotados = () => {}, onSucursal = () => {} }) {
   const perfil = useMemo(leerPerfil, [])
   const clienteConocido = !!(perfil.nombre || perfil.telefono)
   const [tipo, setTipo] = useState('delivery') // 'delivery' | 'pickup'
@@ -1183,7 +1260,13 @@ function Checkout({ items, total, onClose, onEnviado }) {
     try {
       const { data } = await db.rpc('sucursal_mas_cercana', { p_lat: lat, p_lng: lng })
       setRuteo(data || null)
-    } catch { setRuteo(null) }
+      // Recién acá la app sabe de qué tienda sale el pedido, y recién acá
+      // puede apagar lo que esa tienda no tiene. Fuera de cobertura no se
+      // asigna sucursal (la rutea Karina a mano), así que no se filtra nada.
+      onSucursal(data?.en_cobertura
+        ? { id: data.sucursal_id, nombre: data.nombre }
+        : null)
+    } catch { setRuteo(null); onSucursal(null) }
     setGeoEstado('ok')
     setVerMapa(false)
   }
@@ -1221,6 +1304,13 @@ function Checkout({ items, total, onClose, onEnviado }) {
     if (tipo !== 'pickup' || tiendas.length) return
     db.rpc('sucursales_pickup').then(({ data }) => setTiendas(data || [])).catch(() => {})
   }, [tipo]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Si viene a recoger, la tienda no hay que adivinarla: la eligió él.
+  useEffect(() => {
+    if (tipo !== 'pickup') return
+    const t = tiendas.find(x => x.id === tiendaSel)
+    onSucursal(t ? { id: t.id, nombre: t.nombre } : null)
+  }, [tipo, tiendaSel, tiendas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Costo de envío según distancia a la sucursal ruteada (parametrizable en la torre)
   const [envio, setEnvio] = useState(null)
@@ -1269,6 +1359,11 @@ function Checkout({ items, total, onClose, onEnviado }) {
   // los datos de la tarjeta en un solo request.
   const validar = () => {
     setError('')
+    if (lineasAgotadas.length) {
+      setError(`Hoy no hay ${lineasAgotadas.map(i => i.nombre).join(', ')}`
+        + `${dondeAgotado ? ` en ${dondeAgotado}` : ''}. Quitalo y el resto sale igual.`)
+      return false
+    }
     if (!nombre.trim()) { setError('Ingresá tu nombre'); return false }
     const tel = telefono.trim()
     if (!TEL_VALIDO.test(tel)) {
@@ -1647,6 +1742,17 @@ function Checkout({ items, total, onClose, onEnviado }) {
               <span>{fmt(totalConEnvio)}</span>
             </div>
           </div>
+
+          {lineasAgotadas.length > 0 && (
+            <div className="mp-agotado-aviso">
+              😔 Hoy no hay <b>{lineasAgotadas.map(i => i.nombre).join(', ')}</b>
+              {dondeAgotado ? <> en <b>{dondeAgotado}</b></> : null}, que es la tienda
+              que te queda más cerca.
+              <button className="mp-agotado-quitar" onClick={onQuitarAgotados}>
+                Quitarlo y seguir con el resto
+              </button>
+            </div>
+          )}
 
           {error && <div className="mp-error">{error}</div>}
 
