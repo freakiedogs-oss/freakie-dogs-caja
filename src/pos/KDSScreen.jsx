@@ -230,6 +230,13 @@ export default function KDSScreen({ user, onBack }) {
   const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
   const [soundReady, setSoundReady] = useState(false)   // audio desbloqueado por gesto
   const [alarmOn,    setAlarmOn]    = useState(false)    // alarma insistente sonando
+
+  // ── Pedidos que la torre le quito a esta sucursal ──
+  // Cuando Karina mueve un pedido a otra tienda, el insumo YA se descargo aca.
+  // No se revierte solo: esta cocina es la unica que sabe si alcanzo a
+  // prepararlo. Mientras no contesten, el insumo sigue descontado.
+  const [traslados, setTraslados] = useState([])
+  const [respondiendo, setRespondiendo] = useState(null)
   const wakeLockRef  = useRef(null)
   useTimer()  // fuerza re-render cada 10s para actualizar timers
 
@@ -566,6 +573,70 @@ export default function KDSScreen({ user, onBack }) {
     )
   }
 
+  // Traslados pendientes de contestar. Se refresca con el mismo pulso que la
+  // cola: si la torre mueve un pedido, la cocina se entera en segundos.
+  useEffect(() => {
+    let vivo = true
+    const cargarTraslados = async () => {
+      // Primero el id de MI sucursal: asi el filtro va en el servidor y esta
+      // pantalla nunca ve traslados de otra tienda.
+      const { data: miSuc } = await db
+        .from('sucursales').select('id').eq('store_code', storeCode).maybeSingle()
+      if (!vivo || !miSuc?.id) return
+
+      const { data, error } = await db
+        .from('delivery_traslados')
+        .select('id, movido_at, motivo, sucursal_destino_id, delivery_id')
+        .eq('sucursal_origen_id', miSuc.id)
+        .is('ya_preparado', null)
+        .order('movido_at')
+      if (error || !vivo) return
+      if (!data?.length) { setTraslados([]); return }
+
+      const destinos = [...new Set(data.map(t => t.sucursal_destino_id))]
+      const pedidos  = [...new Set(data.map(t => t.delivery_id))]
+      const [{ data: sucs }, { data: peds }] = await Promise.all([
+        db.from('sucursales').select('id, nombre').in('id', destinos),
+        db.from('delivery_clientes').select('id, cliente_nombre, numero_orden').in('id', pedidos),
+      ])
+      if (!vivo) return
+      const nom = Object.fromEntries((sucs || []).map(x => [x.id, x.nombre]))
+      const ped = Object.fromEntries((peds || []).map(x => [x.id, x]))
+      setTraslados(data.map(t => ({
+        traslado_id:  t.id,
+        movido_at:    t.movido_at,
+        motivo:       t.motivo,
+        va_para:      nom[t.sucursal_destino_id] || 'otra sucursal',
+        cliente:      ped[t.delivery_id]?.cliente_nombre,
+        numero_orden: ped[t.delivery_id]?.numero_orden,
+      })))
+    }
+    cargarTraslados()
+    const id = setInterval(cargarTraslados, 15000)
+    return () => { vivo = false; clearInterval(id) }
+  }, [storeCode])
+
+  const responderTraslado = async (t, yaPreparado) => {
+    setRespondiendo(t.traslado_id)
+    try {
+      const { error } = await db.rpc('traslado_responder_kds', {
+        p_store_code: storeCode,
+        p_traslado_id: t.traslado_id,
+        p_ya_preparado: yaPreparado,
+        p_usuario_id: user?.id || null,
+      })
+      if (error) throw error
+      toast.success(yaPreparado
+        ? 'Anotado: la comida ya estaba hecha, queda como merma de esta sucursal'
+        : 'Anotado: el inventario vuelve a esta sucursal')
+      setTraslados(ts => ts.filter(x => x.traslado_id !== t.traslado_id))
+    } catch (e) {
+      toast.error('No se pudo registrar: ' + (e.message || 'error'))
+    } finally {
+      setRespondiendo(null)
+    }
+  }
+
   return (
     <div className="kds-root">
 
@@ -667,6 +738,44 @@ export default function KDSScreen({ user, onBack }) {
             })}
           </div>
         )
+      )}
+
+      {/* ── Aviso: la torre movio un pedido a otra sucursal ──
+          Hay que contestar si alcanzamos a prepararlo, porque de eso depende
+          si el inventario se nos devuelve o se queda como merma nuestra. */}
+      {traslados.length > 0 && (
+        <div className="kds-traslados">
+          {traslados.map(t => (
+            <div key={t.traslado_id} className="kds-traslado">
+              <div className="kds-traslado-tit">
+                🏪 Se movio un pedido a {t.va_para}
+              </div>
+              <div className="kds-traslado-sub">
+                {t.cliente || 'Cliente'} · pedido {t.numero_orden || '—'}
+                {t.motivo ? ` · ${t.motivo}` : ''}
+              </div>
+              <div className="kds-traslado-preg">¿Ya lo habian preparado?</div>
+              <div className="kds-traslado-btns">
+                <button
+                  disabled={respondiendo === t.traslado_id}
+                  onClick={() => responderTraslado(t, true)}
+                  className="kds-traslado-si">
+                  SI, ya estaba hecho
+                </button>
+                <button
+                  disabled={respondiendo === t.traslado_id}
+                  onClick={() => responderTraslado(t, false)}
+                  className="kds-traslado-no">
+                  NO, no lo tocamos
+                </button>
+              </div>
+              <div className="kds-traslado-pie">
+                Si dicen que NO, el inventario vuelve a esta sucursal. Si dicen
+                que SI, queda descontado como merma de aca.
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* ── CUERPO ── */}
