@@ -324,6 +324,11 @@ export default function TabPedidos({ show = () => {} }) {
   const [sucSel, setSucSel] = useState({});
   const [reasignando, setReasignando] = useState(null);
   const [cancelando, setCancelando] = useState(null);   // pedido cuyo motorista se está cambiando
+  // Traslado de sucursal estando el pedido YA en cocina (pedido de Cesar
+  // 16-sep-2026). No confundir con `sucSel`, que es el ruteo inicial.
+  const [trasladando, setTrasladando] = useState(null);
+  const [trasSel, setTrasSel] = useState({});
+  const [trasMotivo, setTrasMotivo] = useState({});
   const [cargando, setCargando] = useState(false);
   const [ultima, setUltima] = useState(null);
   const [err, setErr] = useState('');
@@ -451,6 +456,32 @@ export default function TabPedidos({ show = () => {} }) {
       setCancelando(null);
       await cargar();
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
+  // Mover un pedido que ya entró a cocina a otra sucursal.
+  //   · baja la comanda de la cocina vieja y la levanta en la nueva
+  //   · anula la cuenta vieja (queda el rastro) y mueve el cobro
+  //   · NO toca el inventario de origen: le deja la pregunta "¿ya lo habían
+  //     preparado?" a esa tienda, que es la única que sabe. Hasta que
+  //     contesten, el insumo sigue descontado allá.
+  const trasladar = async (p) => {
+    const destino = trasSel[p.id];
+    if (!destino) return;
+    const nombreDestino = sucursales.find(s => s.id === destino)?.nombre || 'la otra sucursal';
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_mover_sucursal', {
+        p_token: token, p_delivery_id: p.id,
+        p_sucursal_destino: destino,
+        p_motivo: (trasMotivo[p.id] || '').trim() || null });
+      if (error) throw error;
+      show(`🏪 ${p.numero_orden} movido a ${data?.a || nombreDestino} — se le preguntó a ${data?.de || 'la sucursal'} si ya lo había preparado`);
+      setTrasladando(null);
+      setTrasSel(t => ({ ...t, [p.id]: '' }));
+      setTrasMotivo(t => ({ ...t, [p.id]: '' }));
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo mover')); }
     finally { setOcupado(null); }
   };
 
@@ -1146,6 +1177,54 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
             <div style={{ fontSize: 11.5, color: c.dim, textAlign: 'center' }}>
               Reservado — sale cuando cocina lo marque listo
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Cambiar de sucursal con el pedido YA en cocina. Solo hasta 'lista':
+          una vez que salió en la moto, mover el pedido no arregla nada y sí
+          ensucia las cajas de las dos tiendas. */}
+      {['preparando','lista'].includes(p.estado) && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
+          {trasladando !== p.id ? (
+            <button onClick={() => setTrasladando(p.id)}
+                    style={{ ...btn('none', c.dim), border: `1px solid ${c.border}`,
+                             width: '100%', fontSize: 11.5, padding: '5px 9px' }}>
+              🏪 Cambiar de sucursal
+            </button>
+          ) : (
+            <>
+              <div style={{ fontSize: 11.5, color: c.yellow, fontWeight: 700, marginBottom: 4 }}>
+                Sale de {p.sucursal_nombre || 'esta sucursal'} → ¿a cuál lo pasás?
+              </div>
+              <select value={trasSel[p.id] || ''}
+                      onChange={e => setTrasSel(t => ({ ...t, [p.id]: e.target.value }))}
+                      style={{ ...sel, width: '100%', marginBottom: 6 }}>
+                <option value="">— elegí la sucursal —</option>
+                {sucursales.filter(s => s.id !== p.sucursal_id).map(s => (
+                  <option key={s.id} value={s.id}>{s.store_code} · {s.nombre}</option>
+                ))}
+              </select>
+              <input value={trasMotivo[p.id] || ''}
+                     onChange={e => setTrasMotivo(t => ({ ...t, [p.id]: e.target.value }))}
+                     placeholder="¿Por qué se mueve? (opcional)"
+                     style={{ ...sel, width: '100%', marginBottom: 6 }} />
+              <div style={{ fontSize: 10.5, color: c.dim, marginBottom: 6, lineHeight: 1.35 }}>
+                A la sucursal de origen le va a aparecer la pregunta de si ya lo
+                había preparado. Si dicen que no, se le devuelve el inventario.
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button disabled={ocupado === p.id || !trasSel[p.id]}
+                        onClick={() => trasladar(p)}
+                        style={{ ...btn(c.orange), flex: 1, fontSize: 12 }}>
+                  {ocupado === p.id ? '…' : '🏪 Mover'}
+                </button>
+                <button onClick={() => setTrasladando(null)}
+                        style={{ ...btn('none', c.dim), border: `1px solid ${c.border}`, fontSize: 12 }}>
+                  Dejar así
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
