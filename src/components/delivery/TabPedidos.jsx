@@ -326,6 +326,10 @@ export default function TabPedidos({ show = () => {} }) {
   const [cancelando, setCancelando] = useState(null);   // pedido cuyo motorista se está cambiando
   // Traslado de sucursal estando el pedido YA en cocina (pedido de Cesar
   // 16-sep-2026). No confundir con `sucSel`, que es el ruteo inicial.
+  // Cancelar es de dos pasos cuando el pedido ya entró a cocina: primero
+  // el motivo, después "¿ya se había preparado?". Acá se guarda el motivo
+  // mientras se contesta la segunda.
+  const [cancelaMotivo, setCancelaMotivo] = useState({});
   const [trasladando, setTrasladando] = useState(null);
   const [trasSel, setTrasSel] = useState({});
   const [trasMotivo, setTrasMotivo] = useState({});
@@ -444,16 +448,22 @@ export default function TabPedidos({ show = () => {} }) {
 
   // Sacar del tablero lo que no va a suceder. Queda documentado con motivo
   // y autor: si ya había entrado a cocina, es comida perdida y hay que saberlo.
-  const cancelar = async (p, motivo) => {
+  // `yaPreparado` decide qué pasa con el inventario:
+  //   false → lo que se descontó se devuelve
+  //   true  → la comida ya no existe; queda como merma de esa sucursal
+  //   null  → solo vale si el pedido nunca entró a cocina
+  // El servidor no deja cancelar sin respuesta cuando ya había comanda:
+  // ese hueco silencioso es el que nos costó las bolitas de Cafetalón.
+  const cancelar = async (p, motivo, yaPreparado = null) => {
     setOcupado(p.id);
     try {
       const { data, error } = await db.rpc('torre_cancelar_pedido', {
-        p_token: token, p_delivery_id: p.id, p_motivo: motivo, p_detalle: null });
+        p_token: token, p_delivery_id: p.id, p_motivo: motivo,
+        p_detalle: null, p_ya_preparado: yaPreparado });
       if (error) throw error;
-      show(data?.habia_entrado_a_cocina
-        ? `🚫 ${p.numero_orden} cancelado — ya estaba en cocina, avisá a la sucursal`
-        : `🚫 ${p.numero_orden} cancelado`);
+      show(`🚫 ${p.numero_orden} cancelado${data?.inventario ? ` — ${data.inventario}` : ''}`);
       setCancelando(null);
+      setCancelaMotivo(m => ({ ...m, [p.id]: undefined }));
       await cargar();
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
     finally { setOcupado(null); }
@@ -631,7 +641,8 @@ export default function TabPedidos({ show = () => {} }) {
                    // Traslado de sucursal: el estado vive en TabPedidos pero el boton
                    // se pinta dentro de <Tarjeta>, asi que tiene que viajar por props.
                    trasladando, setTrasladando, trasSel, setTrasSel,
-                   trasMotivo, setTrasMotivo, trasladar };
+                   trasMotivo, setTrasMotivo, trasladar,
+                   cancelaMotivo, setCancelaMotivo };
 
   return (
     <div>
@@ -904,7 +915,8 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
                    marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
                    trasladando, setTrasladando, trasSel, setTrasSel,
-                   trasMotivo, setTrasMotivo, trasladar }) {
+                   trasMotivo, setTrasMotivo, trasladar,
+                   cancelaMotivo, setCancelaMotivo }) {
   const paraLlevar = p.tipo === 'para_llevar';
   const ahora = useAhora();
   const reloj = useRelojes(p, ahora);
@@ -1248,16 +1260,58 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                 ⚠️ Ya está en cocina. Avisale a la sucursal para que no lo preparen.
               </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {MOTIVOS_CANCELA.map(m => (
-                <button key={m} disabled={ocupado === p.id} onClick={() => cancelar(p, m)}
-                        style={{ ...btn('none', c.text), border: `1px solid ${c.border}`,
-                                 fontSize: 11.5, textAlign: 'left', padding: '8px 10px' }}>
-                  {ocupado === p.id ? '…' : m}
+
+            {/* Paso 2: solo si ya había entrado a cocina. Sin esta respuesta
+                el inventario queda mintiendo — si la comida se hizo, se hizo,
+                y eso es merma de la sucursal, no un faltante sin explicación
+                que aparezca en el conteo nocturno tres semanas después. */}
+            {p.pos_cuenta_id && cancelaMotivo[p.id] ? (
+              <>
+                <div style={{ fontSize: 11.5, color: c.dim, marginBottom: 6 }}>
+                  Motivo: <b style={{ color: c.text }}>{cancelaMotivo[p.id]}</b>
+                </div>
+                <div style={{ fontSize: 12.5, color: c.yellow, fontWeight: 800, marginBottom: 6 }}>
+                  ¿La comida ya estaba hecha?
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <button disabled={ocupado === p.id}
+                          onClick={() => cancelar(p, cancelaMotivo[p.id], true)}
+                          style={{ ...btn(c.red), fontSize: 12, padding: '9px 10px' }}>
+                    {ocupado === p.id ? '…' : 'SÍ, ya estaba preparada'}
+                  </button>
+                  <button disabled={ocupado === p.id}
+                          onClick={() => cancelar(p, cancelaMotivo[p.id], false)}
+                          style={{ ...btn(c.green, '#04210f'), fontSize: 12, padding: '9px 10px' }}>
+                    {ocupado === p.id ? '…' : 'NO, no la habían hecho'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 10.5, color: c.dim, marginTop: 6, lineHeight: 1.35 }}>
+                  Si ya estaba hecha, el insumo se registra como merma de esa
+                  sucursal. Si no, se le devuelve al inventario. Si no sabés,
+                  preguntale a la cocina antes de contestar.
+                </div>
+                <button onClick={() => setCancelaMotivo(m => ({ ...m, [p.id]: undefined }))}
+                        style={{ ...btn('none', c.dim), fontSize: 11, marginTop: 6, width: '100%' }}>
+                  ← Cambiar el motivo
                 </button>
-              ))}
-            </div>
-            <button onClick={() => setCancelando(null)}
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {MOTIVOS_CANCELA.map(m => (
+                  <button key={m} disabled={ocupado === p.id}
+                          onClick={() => p.pos_cuenta_id
+                            ? setCancelaMotivo(x => ({ ...x, [p.id]: m }))
+                            : cancelar(p, m, null)}
+                          style={{ ...btn('none', c.text), border: `1px solid ${c.border}`,
+                                   fontSize: 11.5, textAlign: 'left', padding: '8px 10px' }}>
+                    {ocupado === p.id ? '…' : m}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button onClick={() => { setCancelando(null);
+                                     setCancelaMotivo(m => ({ ...m, [p.id]: undefined })); }}
                     style={{ ...btn('none', c.dim), fontSize: 11, marginTop: 6, width: '100%' }}>
               Dejar así
             </button>
