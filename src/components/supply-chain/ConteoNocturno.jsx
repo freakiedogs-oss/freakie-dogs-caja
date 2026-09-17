@@ -136,12 +136,13 @@ export default function ConteoNocturno({user,onBack}){
   // habilitan los conteos. Si no se pide antes, la merma se "esconde" dentro de la
   // diferencia del conteo y el tab de Fugas la lee como faltante sin explicación.
   const [mermaLista,setMermaLista]=useState(false);      // ya declarada en esta sesión
-  const [mermaItems,setMermaItems]=useState([]);         // [{producto_id,nombre,unidad,cantidad}]
-  const [mermaMotivo,setMermaMotivo]=useState('');
+  const [mermaItems,setMermaItems]=useState([]);         // [{producto_id,nombre,unidad,cantidad,nota}]
   const [mermaBusca,setMermaBusca]=useState('');
   const [mermaCatalogo,setMermaCatalogo]=useState([]);   // productos de la sucursal
   const [guardandoMerma,setGuardandoMerma]=useState(false);
-  const [mermaHoy,setMermaHoy]=useState(null);           // merma ya registrada hoy (informativa)
+  const [mermaHoy,setMermaHoy]=useState(null);           // cuántos movimientos de merma hay hoy
+  const [mermaYaRegistrada,setMermaYaRegistrada]=useState(false); // true = ya se guardó hoy, solo lectura
+  const [mermaResumen,setMermaResumen]=useState([]);     // [{nombre,unidad,cantidad,nota}] para la vista de solo lectura
 
   // ── Faltante del conteo: pasa con PIN de gerente + nota (pedido Jose 30-ago) ──
   // El faltante no se bloquea (el conteo debe poder cerrarse), pero no pasa mudo:
@@ -299,29 +300,49 @@ export default function ConteoNocturno({user,onBack}){
     }
   };
 
-  // Carga el catálogo de la sucursal para el buscador de merma y avisa si ya se
-  // registró merma hoy (para no pedirla dos veces si vuelven a entrar).
+  // Antes de mostrar el formulario, revisa si hoy YA se registró merma en esta
+  // sucursal (kardex tipo='merma'). Si ya hay, no se vuelve a pedir el
+  // formulario — se entra directo a un consolidado de solo lectura, igual que
+  // un conteo nocturno cerrado: se puede ver, pero no editar.
   const abrirMerma=async(sucId)=>{
     setSucursalId(sucId);
     setLoading(true);
     try{
-      const {data:invData}=await db.from('inventario')
-        .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
-        .eq('sucursal_id', sucId);
-      const cat=(invData||[])
-        .filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false)
-        .map(r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
-                  unidad:r.catalogo_productos.unidad_medida||'unidad',
-                  ...camposConteo(r.catalogo_productos)}))
-        .sort((a,b)=>a.nombre.localeCompare(b.nombre));
-      setMermaCatalogo(cat);
+      let yaRegistrada=false, resumen=[];
       try{
         const desde=today()+'T00:00:00-06:00';
         const {data:km}=await db.from('kardex_movimientos')
-          .select('cantidad, notas')
-          .eq('sucursal_id', sucId).eq('tipo','merma').gte('created_at', desde);
+          .select('cantidad, notas, created_at, catalogo_productos(nombre, unidad_medida)')
+          .eq('sucursal_id', sucId).eq('tipo','merma').gte('created_at', desde)
+          .order('created_at');
+        if(km && km.length){
+          yaRegistrada=true;
+          resumen=km.map(r=>({
+            nombre: r.catalogo_productos?.nombre || 'Producto',
+            unidad: r.catalogo_productos?.unidad_medida || 'unidad',
+            cantidad: Math.abs(n(r.cantidad)),
+            nota: r.notas || '',
+          }));
+        }
         setMermaHoy(km && km.length ? km.length : null);
       }catch{ setMermaHoy(null); }
+
+      setMermaYaRegistrada(yaRegistrada);
+      setMermaResumen(resumen);
+
+      if(!yaRegistrada){
+        const {data:invData}=await db.from('inventario')
+          .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
+          .eq('sucursal_id', sucId);
+        const cat=(invData||[])
+          .filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false)
+          .map(r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
+                    unidad:r.catalogo_productos.unidad_medida||'unidad',
+                    ...camposConteo(r.catalogo_productos)}))
+          .sort((a,b)=>a.nombre.localeCompare(b.nombre));
+        setMermaCatalogo(cat);
+      }
+
       setScreen('merma');
       setLoading(false);
     }catch(e){ show('❌ Error cargando productos: '+e.message); setLoading(false); }
@@ -330,27 +351,34 @@ export default function ConteoNocturno({user,onBack}){
   const guardarMerma=async()=>{
     const items=mermaItems.filter(m=>n(m.cantidad)>0);
     if(items.length===0){ show('⚠️ Agregá al menos un producto con cantidad, o marcá "No hubo merma"'); return; }
-    if(mermaMotivo.trim().length<5){ show('⚠️ Escribí el motivo (mínimo 5 caracteres)'); return; }
+    const sinNota=items.find(m=>(m.nota||'').trim().length<5);
+    if(sinNota){ show(`⚠️ Falta justificar "${sinNota.nombre}" (mínimo 5 caracteres)`); return; }
     setGuardandoMerma(true);
     try{
       const {data:resp,error}=await db.rpc('registrar_merma',{
         // Se digita en la unidad más chica (botellas, panes, lascas) pero el
         // kardex se mueve en unidad de costeo: la conversión pasa acá, igual
-        // que en el conteo y en el pedido.
+        // que en el conteo y en el pedido. Cada ítem lleva su propia nota —
+        // el servidor exige mínimo 5 caracteres por producto, no un motivo
+        // compartido para todo el lote.
         p_items: items.map(m=>({
           producto_id: m.producto_id,
           cantidad: redondear(n(m.cantidad) * factorMerma(m)),
+          nota: m.nota.trim(),
         })),
         p_sucursal_id: sucursalId,
-        p_motivo: mermaMotivo.trim(),
         p_usuario_id: user.id,
-        p_notas: null,
       });
       if(error) throw error;
       show(`✅ Merma registrada: ${resp?.productos||items.length} producto(s)`
            + (resp?.valor ? ` · $${Number(resp.valor).toFixed(2)}` : ''));
       setMermaLista(true);
-      setMermaItems([]); setMermaMotivo('');
+      // Queda bloqueada de inmediato: si se vuelve a entrar a esta pantalla ya
+      // no se puede editar, solo ver lo que se guardó (misma idea que un
+      // conteo nocturno ya cerrado).
+      setMermaResumen(items.map(m=>({nombre:m.nombre, unidad:unidadMerma(m), cantidad:n(m.cantidad), nota:m.nota.trim()})));
+      setMermaYaRegistrada(true);
+      setMermaItems([]);
       setScreen('elegir');
     }catch(e){ show('❌ No se pudo registrar la merma: '+e.message); }
     finally{ setGuardandoMerma(false); }
@@ -877,11 +905,52 @@ export default function ConteoNocturno({user,onBack}){
 
   // ── PANTALLA MERMA: obligatoria antes de cualquier conteo ──
   if(screen==='merma'){
+    // Ya se registró hoy → solo lectura, no se puede volver a editar.
+    if(mermaYaRegistrada){
+      const totalItems=mermaResumen.length;
+      return(
+        <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
+          <Toast/>
+          <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
+            <button onClick={needsSucursalPicker?()=>setScreen(0):onBack}
+              style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+            <div>
+              <div style={{fontWeight:800,fontSize:18}}>🗑️ Reporte de merma</div>
+              <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ya registrada hoy</div>
+            </div>
+          </div>
+
+          <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#16a34a20',border:'1px solid #16a34a'}}>
+            <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:4}}>Merma ya registrada — solo lectura</div>
+            <div style={{fontSize:11,color:'#9fd8b3',lineHeight:1.5}}>
+              Hoy ya se reportó la merma de esta sucursal ({totalItems} producto{totalItems===1?'':'s'}). No se puede editar desde acá — si algo quedó mal, que tu encargado lo corrija desde Kardex.
+            </div>
+          </div>
+
+          {mermaResumen.map((m,i)=>(
+            <div key={i} className="card" style={{borderLeft:'3px solid #16a34a',marginBottom:8}}>
+              <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>{m.nombre}</div>
+              <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:6}}>{m.cantidad} {m.unidad}</div>
+              <div style={{fontSize:12,color:'#aaa',fontStyle:'italic'}}>"{m.nota||'Sin nota'}"</div>
+            </div>
+          ))}
+
+          <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 20px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
+            <button className="btn btn-red" onClick={()=>setScreen('elegir')}
+              style={{fontSize:17,padding:18,width:'100%'}}>
+              Continuar →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     const filtrados=mermaBusca.trim().length<2 ? [] : mermaCatalogo
       .filter(p=>p.nombre.toLowerCase().includes(mermaBusca.trim().toLowerCase())
                  && !mermaItems.some(m=>m.producto_id===p.producto_id))
       .slice(0,8);
     const totalUnidades=mermaItems.reduce((s,m)=>s+n(m.cantidad),0);
+    const notasIncompletas=mermaItems.some(m=>(m.nota||'').trim().length<5);
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
         <Toast/>
@@ -902,12 +971,6 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         </div>
 
-        {mermaHoy>0&&(
-          <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:'#facc1520',border:'1px solid #facc15',fontSize:11,color:'#d4a017'}}>
-            Ojo: hoy ya se registraron <b>{mermaHoy}</b> movimiento(s) de merma en esta sucursal. Si ya la reportaste, seguí sin agregar nada.
-          </div>
-        )}
-
         {/* Buscador */}
         <input value={mermaBusca} onChange={e=>setMermaBusca(e.target.value)}
           placeholder="Buscar producto… (ej: pan, carne, coca)"
@@ -915,7 +978,7 @@ export default function ConteoNocturno({user,onBack}){
                   borderRadius:10,color:'#fff',fontSize:15,marginBottom:8}}/>
         {filtrados.map(p=>(
           <button key={p.producto_id} className="card"
-            onClick={()=>{setMermaItems(prev=>[...prev,{...p,cantidad:1}]);setMermaBusca('');}}
+            onClick={()=>{setMermaItems(prev=>[...prev,{...p,cantidad:1,nota:''}]);setMermaBusca('');}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:6,padding:12}}>
             <div style={{fontSize:14,color:'#fff'}}>{p.nombre}</div>
             <div style={{fontSize:11,color:'#888'}}>se reporta en {unidadMerma(p)}</div>
@@ -950,28 +1013,28 @@ export default function ConteoNocturno({user,onBack}){
                 = {redondear(n(m.cantidad)*factorMerma(m))} {m.unidad} de inventario
               </div>
             )}
+            {/* Nota OBLIGATORIA por cada ítem — sin el porqué de ESTE producto,
+                el dato no sirve después (queda "faltó" sin causa asignable). */}
+            <div style={{marginTop:10}}>
+              <div style={{fontSize:11,color:'#aaa',marginBottom:4}}>¿Qué pasó con este producto? (obligatorio)</div>
+              <textarea rows={2} value={m.nota||''}
+                onChange={e=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,nota:e.target.value}:x))}
+                placeholder="Ej: se quemó en la plancha, se cayó al piso…"
+                style={{width:'100%',padding:10,background:'#0a0a0a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:13,resize:'vertical'}}/>
+            </div>
           </div>
         ))}
 
-        {mermaItems.length>0&&(
-          <div style={{marginTop:10}}>
-            <div style={{fontSize:12,color:'#aaa',marginBottom:6}}>¿Qué pasó? (obligatorio)</div>
-            <textarea rows={2} value={mermaMotivo} onChange={e=>setMermaMotivo(e.target.value)}
-              placeholder="Ej: se quemaron 3 hamburguesas, se cayó una bolsa de papas…"
-              style={{width:'100%',padding:12,background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:14,resize:'vertical'}}/>
-          </div>
-        )}
-
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 20px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
           {mermaItems.length>0?(
-            // Con merma reportada la nota es OBLIGATORIA: sin el porqué, el dato no
-            // sirve para nada después (queda "faltó" sin causa).
+            // Con merma reportada, la nota de CADA producto es OBLIGATORIA: sin el
+            // porqué, el dato no sirve para nada después (queda "faltó" sin causa).
             <button className="btn btn-red" onClick={guardarMerma}
-              disabled={guardandoMerma||mermaMotivo.trim().length<5}
+              disabled={guardandoMerma||notasIncompletas}
               style={{fontSize:17,padding:18,width:'100%',marginBottom:8,
-                      opacity:mermaMotivo.trim().length<5?0.5:1}}>
+                      opacity:notasIncompletas?0.5:1}}>
               {guardandoMerma?<span className="spin"/>
-                : mermaMotivo.trim().length<5 ? '✍️ Escribí el motivo de la merma'
+                : notasIncompletas ? '✍️ Justificá cada producto reportado'
                 : `🗑️ Reportar merma (${totalUnidades} u) y continuar`}
             </button>
           ):(
@@ -981,7 +1044,7 @@ export default function ConteoNocturno({user,onBack}){
             </button>
           )}
           {mermaItems.length>0&&(
-            <button onClick={()=>{setMermaItems([]);setMermaMotivo('');}}
+            <button onClick={()=>setMermaItems([])}
               style={{background:'none',border:'none',color:'#555',fontSize:12,cursor:'pointer',width:'100%',padding:6}}>
               Limpiar lista
             </button>
