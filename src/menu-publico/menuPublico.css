@@ -1115,3 +1115,21 @@ button { font-family: inherit; }
   font-weight: 800;
   cursor: pointer;
 }
+
+.mp-linea-cambio {
+  font-size: 12px;
+  color: #2e7d32;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.mp-agotado-op {
+  padding: 8px 12px;
+  border: 1px solid #e63946;
+  border-radius: 999px;
+  background: #fff;
+  color: #8c2020;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mp-agotado-op:hover { background: #e63946; color: #fff; }

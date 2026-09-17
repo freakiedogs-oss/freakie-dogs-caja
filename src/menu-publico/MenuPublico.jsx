@@ -4,7 +4,7 @@
 // (RPC menu_publico_delivery → canal delivery_propio, con modificadores),
 // así los precios y opciones son los mismos que cobra la caja.
 // ────────────────────────────────────────────────────────────────────
-import { useState, useEffect, useMemo, useRef, Fragment, Suspense, lazy } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, Suspense, lazy } from 'react'
 import { db } from '../supabase'
 import { URL_DELIVERY } from '../config'
 import { NEGOCIO, BANNERS } from './catalogoBuho'
@@ -180,18 +180,88 @@ export default function MenuPublico() {
     return () => { vivo = false; clearInterval(id) }
   }, [])
 
-  // Ids apagados en la tienda que le toca a este cliente.
-  const agotados = useMemo(
-    () => new Set(sucRuteada?.id ? (bloqueos[sucRuteada.id] || []) : []),
+  // Lo apagado en la tienda que le toca a este cliente. Son tres mapas
+  // porque el mismo producto se puede pedir de tres formas distintas, y
+  // cada una se arregla distinto:
+  //   items → el producto suelto            → se cambia la línea entera
+  //   comps → metido adentro de un combo    → se cambia esa parte del combo
+  //   mods  → como extra / "cambio por"     → se cambia ese extra
+  // El valor de cada llave es con qué se puede reemplazar (puede venir
+  // vacío: entonces solo queda quitarlo).
+  const bloq = useMemo(
+    () => (sucRuteada?.id && bloqueos[sucRuteada.id]) || { items: {}, comps: {}, mods: {} },
     [bloqueos, sucRuteada])
 
-  // Líneas del carrito que dejaron de estar disponibles.
-  const lineasAgotadas = useMemo(
-    () => carrito.filter(i => agotados.has(i.id)),
-    [carrito, agotados])
+  // Índice del menú por id, para poder mirar los componentes de un combo
+  // que ya está en el carrito.
+  const menuPorId = useMemo(() => {
+    const m = {}
+    for (const cat of menu) for (const it of (cat.items || [])) m[it.id] = it
+    return m
+  }, [menu])
 
-  const quitarAgotados = () => {
-    setCarrito(prev => prev.filter(i => !agotados.has(i.id)))
+  // Todo lo que le falta a una línea del carrito, con sus opciones de cambio.
+  const problemasDe = useCallback((it) => {
+    const out = []
+    const yaCambiado = (id) => (it.cambiosCombo || []).some(x => x.de === id)
+
+    if (bloq.items[it.id] && !it.cambioDe) {
+      out.push({ tipo: 'producto', deId: it.id, deNombre: it.nombre,
+                 opciones: bloq.items[it.id] || [] })
+    }
+    for (const comp of (menuPorId[it.id]?.componentes || [])) {
+      if (bloq.comps[comp.item_id] && !yaCambiado(comp.item_id)) {
+        out.push({ tipo: 'combo', deId: comp.item_id, deNombre: comp.nombre,
+                   opciones: bloq.comps[comp.item_id] || [] })
+      }
+    }
+    for (const m of (it.mods || [])) {
+      if (bloq.mods[m.id]) {
+        out.push({ tipo: 'extra', deId: m.id, deNombre: m.nombre,
+                   opciones: bloq.mods[m.id] || [] })
+      }
+    }
+    return out
+  }, [bloq, menuPorId])
+
+  const lineasConProblema = useMemo(
+    () => carrito.map(i => ({ linea: i, problemas: problemasDe(i) }))
+                 .filter(x => x.problemas.length > 0),
+    [carrito, problemasDe])
+
+  // Aceptar un cambio. El precio nunca sube: si el reemplazo vale más, se
+  // deja el que el cliente ya tenía en el carrito (la casa pone la
+  // diferencia). El servidor revalida esto mismo al crear el pedido.
+  const aplicarCambio = (lineaId, prob, op) => {
+    setCarrito(prev => prev.map(it => {
+      if (it.lineaId !== lineaId) return it
+      if (prob.tipo === 'producto') {
+        return { ...it, id: op.id, nombre: op.nombre,
+                 precio: Math.min(Number(it.precio) || 0, Number(op.precio) || 0),
+                 cambioDe: prob.deId, cambioDeNombre: prob.deNombre }
+      }
+      if (prob.tipo === 'combo') {
+        return { ...it, cambiosCombo: [...(it.cambiosCombo || []),
+                 { de: prob.deId, a: op.id, deNombre: prob.deNombre, aNombre: op.nombre }] }
+      }
+      const viejo = (it.mods || []).find(m => m.id === prob.deId)
+      const precio = Math.min(Number(viejo?.precio_extra) || 0, Number(op.precio_extra) || 0)
+      return {
+        ...it,
+        mods: (it.mods || []).map(m => m.id === prob.deId
+          ? { ...m, id: op.id, nombre: op.nombre, precio_extra: precio } : m),
+        modsCambio: { ...(it.modsCambio || {}), [op.id]: prob.deId },
+        precioMods: (it.mods || []).reduce((sum, m) =>
+          sum + (m.id === prob.deId ? precio : (Number(m.precio_extra) || 0)), 0)
+          + (it.comps || []).reduce((t, cp) => t + (cp.mods || []).reduce(
+              (u, m) => u + (Number(m.precio_extra) || 0), 0) * (Number(cp.cantidad) || 1), 0),
+      }
+    }))
+    setToast(`Listo, va ${op.nombre}`)
+  }
+
+  const quitarLinea = (lineaId) => {
+    setCarrito(prev => prev.filter(i => i.lineaId !== lineaId))
     setToast('Listo, lo quitamos de tu pedido')
   }
 
@@ -395,11 +465,14 @@ export default function MenuPublico() {
                 <ProductoCard
                   key={prod.id}
                   producto={prod}
-                  agotado={agotados.has(prod.id)}
+                  agotado={!!bloq.items[prod.id]}
                   dondeAgotado={sucRuteada?.nombre}
                   onClick={() => {
-                    if (agotados.has(prod.id)) {
-                      setToast(`Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
+                    const ops = bloq.items[prod.id]
+                    if (ops) {
+                      setToast(ops.length
+                        ? `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} — probá ${ops.map(o => o.nombre).join(' o ')}`
+                        : `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
                       return
                     }
                     setProductoModal(prod)
@@ -452,9 +525,10 @@ export default function MenuPublico() {
           items={carrito}
           total={totalCarrito}
           reglas={reglas}
-          agotados={agotados}
+          problemasDe={problemasDe}
           dondeAgotado={sucRuteada?.nombre}
-          onQuitarAgotados={quitarAgotados}
+          onCambiar={aplicarCambio}
+          onQuitarLinea={quitarLinea}
           onClose={() => setCarritoAbierto(false)}
           onUpdate={setCarrito}
           onCheckout={() => { setCarritoAbierto(false); setCheckoutOpen(true) }}
@@ -466,9 +540,10 @@ export default function MenuPublico() {
         <Checkout
           items={carrito}
           total={totalCarrito}
-          lineasAgotadas={lineasAgotadas}
+          lineasConProblema={lineasConProblema}
           dondeAgotado={sucRuteada?.nombre}
-          onQuitarAgotados={quitarAgotados}
+          onCambiar={aplicarCambio}
+          onQuitarLinea={quitarLinea}
           onSucursal={setSucRuteada}
           onClose={() => setCheckoutOpen(false)}
           onEnviado={(datos) => {
@@ -637,6 +712,53 @@ function HeaderNegocio({ horarioBD }) {
       <div className="mp-consumo-min">
         Consumo mínimo de {fmt(NEGOCIO.consumoMinimo)} para envíos a domicilio
       </div>
+    </div>
+  )
+}
+
+// ── "Hoy no hay X — ¿te lo cambiamos por Y?" ────────────────────────
+// Sale cuando la app ya sabe de qué tienda va a salir el pedido. Antes de
+// esto no se puede saber: el cliente arma el carrito y recién marca su
+// ubicación en el checkout.
+//
+// El cambio lo propuso la torre, no lo inventa la app, y nunca sube el
+// precio: si el reemplazo vale más, la diferencia la pone la casa.
+function AvisoCambio({ problemas, dondeAgotado, onCambiar, onQuitar }) {
+  if (!problemas?.length) return null
+  return (
+    <div className="mp-agotado-aviso">
+      {problemas.map((p, i) => (
+        <div key={`${p.tipo}-${p.deId}`} style={{ marginTop: i ? 10 : 0 }}>
+          <div>
+            😔 Hoy no hay <b>{p.deNombre}</b>
+            {dondeAgotado ? <> en <b>{dondeAgotado}</b></> : null}
+            {p.tipo === 'combo' ? ', que viene adentro de este combo' : ''}
+            {p.tipo === 'extra' ? ', que pediste de extra' : ''}.
+          </div>
+          {p.opciones.length > 0 ? (
+            <>
+              <div style={{ fontSize: 12.5, marginTop: 5 }}>
+                Te lo cambiamos sin costo por:
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                {p.opciones.map(op => (
+                  <button key={op.id} className="mp-agotado-op"
+                          onClick={() => onCambiar(p, op)}>
+                    {op.nombre}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, marginTop: 5 }}>
+              No tenemos con qué cambiarlo hoy.
+            </div>
+          )}
+        </div>
+      ))}
+      <button className="mp-agotado-quitar" onClick={onQuitar}>
+        Mejor quitalo de mi pedido
+      </button>
     </div>
   )
 }
@@ -1008,8 +1130,10 @@ function lineaPedidoTexto(it) {
 }
 
 function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
-                        agotados = new Set(), dondeAgotado, onQuitarAgotados = () => {} }) {
-  const hayAgotados = items.some(i => agotados.has(i.id))
+                        problemasDe = () => [], dondeAgotado,
+                        onCambiar = () => {}, onQuitarLinea = () => {} }) {
+  const problemas = items.map(i => ({ linea: i, p: problemasDe(i) })).filter(x => x.p.length)
+  const hayAgotados = problemas.length > 0
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
   const faltaGratis = reglas ? Math.max(0, reglas.gratisDesde - total) : 0
   const removeLinea = (lineaId) => {
@@ -1039,12 +1163,22 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
           ) : (
             items.map(it => (
               <div key={it.lineaId}
-                   className={`mp-linea${agotados.has(it.id) ? ' mp-linea-agotada' : ''}`}>
+                   className={`mp-linea${problemasDe(it).length ? ' mp-linea-agotada' : ''}`}>
                 <div className="mp-linea-info">
                   <div className="mp-linea-nombre">{it.nombre}</div>
-                  {agotados.has(it.id) && (
+                  {it.cambioDeNombre && (
+                    <div className="mp-linea-cambio">
+                      ↪ en vez de {it.cambioDeNombre}
+                    </div>
+                  )}
+                  {(it.cambiosCombo || []).map(x => (
+                    <div key={x.de} className="mp-linea-cambio">
+                      ↪ {x.aNombre} en vez de {x.deNombre}
+                    </div>
+                  ))}
+                  {problemasDe(it).length > 0 && (
                     <div className="mp-linea-agotada-nota">
-                      😔 Hoy no hay{dondeAgotado ? ` en ${dondeAgotado}` : ''}
+                      😔 Falta algo{dondeAgotado ? ` en ${dondeAgotado}` : ''}
                     </div>
                   )}
                   {it.nota && <div className="mp-linea-nota">📝 {it.nota}</div>}
@@ -1083,17 +1217,14 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
               <span>Total</span>
               <span className="mp-drawer-total-num">{fmt(total)}</span>
             </div>
-            {hayAgotados && (
-              <div className="mp-agotado-aviso">
-                Algo de tu pedido no hay hoy{dondeAgotado ? ` en ${dondeAgotado}` : ''}.
-                <button className="mp-agotado-quitar" onClick={onQuitarAgotados}>
-                  Quitarlo y seguir
-                </button>
-              </div>
-            )}
+            {problemas.map(({ linea, p }) => (
+              <AvisoCambio key={linea.lineaId} problemas={p} dondeAgotado={dondeAgotado}
+                           onCambiar={(prob, op) => onCambiar(linea.lineaId, prob, op)}
+                           onQuitar={() => onQuitarLinea(linea.lineaId)} />
+            ))}
             <button className="mp-btn-checkout" onClick={onCheckout}
                     disabled={faltaMinimo > 0 || hayAgotados}>
-              {hayAgotados ? 'Quitá lo que no hay para seguir'
+              {hayAgotados ? 'Elegí el cambio para seguir'
                 : faltaMinimo > 0 ? `Mínimo ${fmt(reglas.minimo)} para pedir`
                 : 'Continuar al pedido →'}
             </button>
@@ -1224,8 +1355,9 @@ function PedidoEnviado({ datos, onClose }) {
 }
 
 function Checkout({ items, total, onClose, onEnviado,
-                   lineasAgotadas = [], dondeAgotado,
-                   onQuitarAgotados = () => {}, onSucursal = () => {} }) {
+                   lineasConProblema = [], dondeAgotado,
+                   onCambiar = () => {}, onQuitarLinea = () => {},
+                   onSucursal = () => {} }) {
   const perfil = useMemo(leerPerfil, [])
   const clienteConocido = !!(perfil.nombre || perfil.telefono)
   const [tipo, setTipo] = useState('delivery') // 'delivery' | 'pickup'
@@ -1359,9 +1491,11 @@ function Checkout({ items, total, onClose, onEnviado,
   // los datos de la tarjeta en un solo request.
   const validar = () => {
     setError('')
-    if (lineasAgotadas.length) {
-      setError(`Hoy no hay ${lineasAgotadas.map(i => i.nombre).join(', ')}`
-        + `${dondeAgotado ? ` en ${dondeAgotado}` : ''}. Quitalo y el resto sale igual.`)
+    if (lineasConProblema.length) {
+      const faltan = lineasConProblema.flatMap(x => x.problemas.map(p => p.deNombre))
+      setError(`Hoy no hay ${[...new Set(faltan)].join(', ')}`
+        + `${dondeAgotado ? ` en ${dondeAgotado}` : ''}. Elegí el cambio o quitalo,`
+        + ' y el resto de tu pedido sale igual.')
       return false
     }
     if (!nombre.trim()) { setError('Ingresá tu nombre'); return false }
@@ -1418,6 +1552,12 @@ function Checkout({ items, total, onClose, onEnviado,
             menu_item_id: i.id,
             cantidad: i.qty,
             nota: i.nota || null,
+            // Cambios que el cliente aceptó porque a la tienda se le acabó
+            // algo. El servidor los revalida contra lo que autorizó la torre
+            // y decide el precio: nunca cobra más de lo que se le mostró.
+            cambio_de: i.cambioDe || null,
+            cambios_combo: (i.cambiosCombo || []).map(x => ({ de: x.de, a: x.a })),
+            mods_cambio: i.modsCambio || {},
             // Solo las opciones del ítem: las de cada unidad del combo van en `componentes`,
             // porque el servidor las cobra por separado (mandarlas dos veces cobraría doble).
             modificadores: (i.mods || []).map(m => m.id),
@@ -1743,16 +1883,11 @@ function Checkout({ items, total, onClose, onEnviado,
             </div>
           </div>
 
-          {lineasAgotadas.length > 0 && (
-            <div className="mp-agotado-aviso">
-              😔 Hoy no hay <b>{lineasAgotadas.map(i => i.nombre).join(', ')}</b>
-              {dondeAgotado ? <> en <b>{dondeAgotado}</b></> : null}, que es la tienda
-              que te queda más cerca.
-              <button className="mp-agotado-quitar" onClick={onQuitarAgotados}>
-                Quitarlo y seguir con el resto
-              </button>
-            </div>
-          )}
+          {lineasConProblema.map(({ linea, problemas }) => (
+            <AvisoCambio key={linea.lineaId} problemas={problemas} dondeAgotado={dondeAgotado}
+                         onCambiar={(prob, op) => onCambiar(linea.lineaId, prob, op)}
+                         onQuitar={() => onQuitarLinea(linea.lineaId)} />
+          ))}
 
           {error && <div className="mp-error">{error}</div>}
 
