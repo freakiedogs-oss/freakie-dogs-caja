@@ -129,6 +129,11 @@ export default function ConteoNocturno({user,onBack}){
   // registra la compra cuando BEES confirma el pedido).
   const [modo,setModo]=useState(null);           // 'normal' | 'bebidas'
   const [storeCodeSel,setStoreCodeSel]=useState(user.store_code||null);
+  // Lo contado las noches anteriores. Antes el conteo de bebidas no dejaba
+  // rastro: se contaba, salía el PDF de BEES y el numero se perdia. Ahora
+  // queda guardado y se puede mirar hacia atras.
+  const [histBebidas,setHistBebidas]=useState(null);
+  const [histAbierto,setHistAbierto]=useState(false);
   const [descargandoPdf,setDescargandoPdf]=useState(false);
 
   // ── Reporte de MERMA, obligatorio antes de contar (pedido Jose 30-ago) ──
@@ -393,11 +398,22 @@ export default function ConteoNocturno({user,onBack}){
       setIsEdit(false);setEditExpira(null);setConteoCerrado(false);
       setScreen(1);
       setLoading(false);
+      cargarHistorialBebidas();
     }catch(e){show('❌ Error cargando bebidas: '+e.message);setLoading(false);}
   };
 
-  // Bebidas: no escribe NADA en BD — arma el pedido sugerido y pasa a la pantalla del PDF
-  const prepararPedidoBebidas=()=>{
+  // Bebidas: guarda el conteo en su propia tabla y arma el pedido sugerido.
+  //
+  // El conteo va a `inventario_conteo_bebidas`, aparte del conteo normal: si
+  // escribiera en la tabla del conteo nocturno, el conteo normal de esa misma
+  // noche entraria en modo edicion con solo bebidas adentro.
+  //
+  // Sigue SIN tocar kardex ni inventario, y es a proposito. Hoy cada lata
+  // vendida descuenta una CAJA entera (los productos de bebida estan mapeados
+  // con cantidad=1 contra una unidad de 12 o 24). Comparar contra eso le
+  // sacaria faltantes enormes a las sucursales que no son suyos. Primero se
+  // arreglan los mapeos; mientras tanto se acumula historia.
+  const prepararPedidoBebidas=async()=>{
     const sinCantidad=productos.filter(p=>p.cantidad_real===null);
     if(sinCantidad.length>0){show('⚠️ Faltan '+sinCantidad.length+' bebidas sin contar');return;}
     const items=productos.map(p=>{
@@ -414,9 +430,37 @@ export default function ConteoNocturno({user,onBack}){
       };
     });
     items.sort((a,b)=>(b.bajominimo?1:0)-(a.bajominimo?1:0));
+
+    // El guardado no traba el pedido: si algo falla, la sucursal igual se
+    // lleva su PDF de BEES y nadie se queda sin pedir bebidas por esto.
+    try{
+      const {data:g,error:gErr}=await db.rpc('guardar_conteo_bebidas',{
+        p_store_code: storeCodeSel||user.store_code,
+        p_items: items.map(p=>({
+          producto_id:p.producto_id, nombre:p.nombre, unidad:p.unidad,
+          cantidad_real:p.cantidad_real, stock_minimo:p.stock_minimo,
+          stock_maximo:p.stock_maximo, cantidad_sugerida:p.cantidad_sugerida,
+        })),
+        p_usuario_id: user.id,
+        p_usuario_nombre: user.nombre||null,
+        p_notas: null,
+      });
+      if(gErr) throw gErr;
+      show(`✅ Conteo de ${g?.bebidas??items.length} bebidas guardado`);
+      cargarHistorialBebidas();
+    }catch(e){ show('⚠️ El conteo no se pudo guardar ('+(e.message||'error')+'), pero el pedido sigue'); }
+
     setPedidoItems(items);
     setPedidoQtys(Object.fromEntries(items.map(s=>[s.producto_id, s.cantidad_sugerida])));
     setScreen(2);
+  };
+
+  const cargarHistorialBebidas=async()=>{
+    try{
+      const {data}=await db.rpc('conteo_bebidas_historial',{
+        p_store_code: storeCodeSel||user.store_code, p_dias: 14 });
+      setHistBebidas(data||[]);
+    }catch{ setHistBebidas([]); }
   };
 
   const descargarPdfBebidas=async()=>{
@@ -1145,7 +1189,46 @@ export default function ConteoNocturno({user,onBack}){
           )}
           {modo==='bebidas'&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
-              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…). Al final se genera el <b>pedido BEES sugerido en PDF</b>. Este conteo NO ajusta el inventario del sistema.</div>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…). Al final se genera el <b>pedido BEES sugerido en PDF</b> y <b>el conteo queda guardado</b>. No ajusta el inventario del sistema.</div>
+            </div>
+          )}
+
+          {/* ── Lo que se contó las noches anteriores ──
+              Antes esto no existía: se contaba y el número se perdía. Sirve
+              para ver de un vistazo si una bebida está bajando más rápido de
+              lo normal, sin depender del kardex (que hoy, en bebidas, miente:
+              cada lata vendida descuenta una caja entera). */}
+          {modo==='bebidas'&&histBebidas&&histBebidas.length>0&&(
+            <div style={{marginBottom:8,borderRadius:8,border:'1px solid #333',background:'#151515',overflow:'hidden'}}>
+              <button onClick={()=>setHistAbierto(v=>!v)}
+                style={{width:'100%',display:'flex',alignItems:'center',gap:8,padding:'9px 12px',
+                        background:'none',border:'none',color:'#ddd',cursor:'pointer',textAlign:'left',fontSize:12.5}}>
+                <span style={{fontWeight:700}}>Noches anteriores</span>
+                <span style={{color:'#888'}}>{histBebidas.length} conteo{histBebidas.length>1?'s':''} guardado{histBebidas.length>1?'s':''}</span>
+                <span style={{flex:1}}/>
+                <span style={{color:'#888'}}>{histAbierto?'▾':'▸'}</span>
+              </button>
+              {histAbierto&&(
+                <div style={{padding:'0 12px 10px'}}>
+                  {histBebidas.slice(0,7).map(h=>(
+                    <div key={h.id} style={{padding:'7px 0',borderTop:'1px solid #262626'}}>
+                      <div style={{display:'flex',gap:8,alignItems:'baseline',fontSize:12.5}}>
+                        <b>{h.fecha}</b>
+                        <span style={{color:'#888'}}>{h.total_items} bebidas</span>
+                        <span style={{flex:1}}/>
+                        <span style={{color:'#888',fontSize:11.5}}>{h.quien||''}</span>
+                      </div>
+                      <div style={{fontSize:11.5,color:'#9a9a9a',marginTop:3,lineHeight:1.5}}>
+                        {(h.items||[]).filter(i=>Number(i.cantidad_real)>0)
+                          .slice(0,8)
+                          .map(i=>`${i.nombre}: ${i.cantidad_real}`)
+                          .join(' · ')}
+                        {(h.items||[]).filter(i=>Number(i.cantidad_real)>0).length>8?' …':''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
