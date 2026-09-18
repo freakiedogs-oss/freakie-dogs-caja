@@ -343,7 +343,12 @@ export default function ConteoNocturno({user,onBack}){
         setMermaCatalogo(cat);
       }
 
-      setScreen('merma');
+      // Antes esto abría directo la pantalla de merma como paso obligatorio
+      // previo. Ahora abre el hub ('elegir') con las 3 tareas de la noche —
+      // merma, conteo normal y bebidas — visibles de una vez; el estado de
+      // mermaYaRegistrada que ya calculamos arriba es lo que bloquea o
+      // desbloquea las otras dos tarjetas ahí.
+      setScreen('elegir');
       setLoading(false);
     }catch(e){ show('❌ Error cargando productos: '+e.message); setLoading(false); }
   };
@@ -912,7 +917,7 @@ export default function ConteoNocturno({user,onBack}){
         <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
           <Toast/>
           <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
-            <button onClick={needsSucursalPicker?()=>setScreen(0):onBack}
+            <button onClick={()=>setScreen('elegir')}
               style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
             <div>
               <div style={{fontWeight:800,fontSize:18}}>🗑️ Reporte de merma</div>
@@ -955,19 +960,19 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
         <Toast/>
         <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
-          <button onClick={needsSucursalPicker?()=>setScreen(0):onBack}
+          <button onClick={()=>setScreen('elegir')}
             style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
             <div style={{fontWeight:800,fontSize:18}}>🗑️ Reporte de merma</div>
-            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · paso 1 de 2</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · 1 de 3 tareas de hoy</div>
           </div>
         </div>
 
         <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#e6394620',border:'1px solid #e63946'}}>
-          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Primero la merma, después el conteo</div>
+          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Reportá la merma antes de contar</div>
           <div style={{fontSize:11,color:'#d98a8f',lineHeight:1.5}}>
             Reportá lo que se botó, se quemó o se dañó hoy. Si no hubo nada, tocá "No hubo merma".
-            Lo que no se reporte acá aparece como faltante sin explicación en el tab de Fugas.
+            Lo que no se reporte acá aparece después como faltante sin explicación en el tab de Fugas.
           </div>
         </div>
 
@@ -1054,32 +1059,88 @@ export default function ConteoNocturno({user,onBack}){
     );
   }
 
-  // ── PANTALLA ELEGIR MODO: conteo normal vs bebidas ──
+  // ── PANTALLA ELEGIR: hub con las 3 tareas de la noche ──
+  // Antes esto solo elegía entre conteo normal y bebidas, y se llegaba acá
+  // DESPUÉS de pasar obligatoriamente por la pantalla de merma. Ahora es el
+  // primer hub que se ve al entrar: las 3 tareas están siempre visibles, en
+  // orden fijo (merma → conteo normal → bebidas), pero conteo normal y
+  // bebidas quedan bloqueadas con candado hasta que mermaYaRegistrada sea
+  // true (con productos o con "no hubo merma") — eso es lo que garantiza que
+  // las 9 sucursales tomen esa decisión todas las noches: un faltante que no
+  // se explicó como merma a tiempo se registra después como faltante y se
+  // descuenta del pago de la sucursal (ver registrar_faltantes_conteo), así
+  // que el bloqueo no es solo estético.
   if(screen==='elegir'){
+    const bloqueado=!mermaYaRegistrada;
+    const avisoBloqueo=()=>show('🔒 Primero reportá la merma de hoy (o marcá "no hubo merma")');
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
         <Toast/>
         <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
-          <button onClick={()=>setScreen('merma')}
+          <button onClick={needsSucursalPicker?()=>setScreen(0):onBack}
             style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
             <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
             <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ¿qué vas a contar?</div>
           </div>
         </div>
-        <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80',fontSize:11,color:'#4ade80'}}>
-          ✓ Merma reportada. Ya podés contar. <span style={{color:'#3bbd6b'}}>(¿Faltó algo? Volvé con la flecha.)</span>
-        </div>
-        <button className="card" onClick={()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
-          style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:10,padding:18}}>
+
+        {mermaYaRegistrada && (
+          <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80',fontSize:11,color:'#4ade80'}}>
+            ✓ Merma reportada. Ya podés contar. <span style={{color:'#3bbd6b'}}>(¿Faltó algo? Volvé a la tarjeta de Merma.)</span>
+          </div>
+        )}
+
+        {/* 1. Merma — siempre habilitada, es la que desbloquea el resto */}
+        <button className="card" onClick={()=>setScreen('merma')}
+          style={{width:'100%',textAlign:'left',cursor:'pointer',position:'relative',
+                  border: mermaYaRegistrada?'1px solid #333':'1px solid #e6394660',
+                  background: mermaYaRegistrada?'#111':'#1a0d0f',marginBottom:10,padding:18}}>
+          <span style={{position:'absolute',top:16,right:16,fontSize:10.5,fontWeight:700,padding:'4px 9px',
+                        borderRadius:999,letterSpacing:.02,
+                        background: mermaYaRegistrada?'#4ade8022':'#e6394625',
+                        color: mermaYaRegistrada?'#4ade80':'#f38b91',
+                        border: mermaYaRegistrada?'1px solid #4ade8060':'1px solid #e6394660'}}>
+            {mermaYaRegistrada?'✓ REGISTRADA':'PENDIENTE'}
+          </span>
+          <div style={{fontSize:26,marginBottom:6}}>🗑️</div>
+          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistrada?'#fff':'#f38b91'}}>1. Merma</div>
+          <div style={{color:'#888',fontSize:12,marginTop:4}}>
+            {mermaYaRegistrada
+              ? `Ya se reportó (${mermaResumen.length} producto${mermaResumen.length===1?'':'s'}). Tocá para ver el detalle.`
+              : 'Todavía no se reportó la merma de hoy. Tocá para registrar lo que se botó, se quemó o se dañó.'}
+          </div>
+        </button>
+
+        {/* 2. Conteo normal — bloqueado hasta resolver merma */}
+        <button className="card" onClick={bloqueado?avisoBloqueo:()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
+          style={{width:'100%',textAlign:'left',cursor:bloqueado?'not-allowed':'pointer',position:'relative',
+                  border: bloqueado?'1px solid #262626':'1px solid #333',
+                  background: bloqueado?'#0a0a0a':'#111',opacity:bloqueado?0.55:1,marginBottom:10,padding:18}}>
+          {bloqueado && (
+            <span style={{position:'absolute',top:16,right:16,fontSize:10.5,fontWeight:700,padding:'4px 9px',
+                          borderRadius:999,background:'#33333366',color:'#888',border:'1px solid #444'}}>
+              🔒 BLOQUEADO
+            </span>
+          )}
           <div style={{fontSize:26,marginBottom:6}}>📋</div>
-          <div style={{fontWeight:700,fontSize:16,color:'#fff'}}>Conteo normal</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#fff'}}>2. Conteo normal</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>Inventario completo de la noche. Ajusta el stock y genera el pedido a Casa Matriz.</div>
         </button>
-        <button className="card" onClick={()=>{setModo('bebidas');cargarBebidas(sucursalId);}}
-          style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #60a5fa50',background:'#0a1520',padding:18}}>
+
+        {/* 3. Conteo de bebidas — bloqueado hasta resolver merma */}
+        <button className="card" onClick={bloqueado?avisoBloqueo:()=>{setModo('bebidas');cargarBebidas(sucursalId);}}
+          style={{width:'100%',textAlign:'left',cursor:bloqueado?'not-allowed':'pointer',position:'relative',
+                  border: bloqueado?'1px solid #262626':'1px solid #60a5fa50',
+                  background: bloqueado?'#0a0a0a':'#0a1520',opacity:bloqueado?0.55:1,padding:18}}>
+          {bloqueado && (
+            <span style={{position:'absolute',top:16,right:16,fontSize:10.5,fontWeight:700,padding:'4px 9px',
+                          borderRadius:999,background:'#33333366',color:'#888',border:'1px solid #444'}}>
+              🔒 BLOQUEADO
+            </span>
+          )}
           <div style={{fontSize:26,marginBottom:6}}>🥤</div>
-          <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>Conteo de bebidas</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>3. Conteo de bebidas</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>Contás solo sodas, tés y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</div>
         </button>
       </div>
