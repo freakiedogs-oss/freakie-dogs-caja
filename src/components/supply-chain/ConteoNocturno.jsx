@@ -161,6 +161,13 @@ export default function ConteoNocturno({user,onBack}){
   // y el historial del 18-sep-2026 de por qué esto importa).
   const [confirmandoSinMerma,setConfirmandoSinMerma]=useState(false);
   const [guardandoSinMerma,setGuardandoSinMerma]=useState(false);
+  // Nombres visibles para cada categoría de merma (18-sep-2026): "alimentos" y
+  // "bebidas" a secas confundía, porque 'alimentos' internamente es todo lo
+  // que cuenta el Conteo Normal (comida Y bebidas que no son BEES, como
+  // Kolashampan o té Lipton), y 'bebidas' es específicamente lo que se pide
+  // por la app de BEES (La Constancia + Nescafé). El candado/lógica no cambia
+  // — solo la etiqueta que ve el usuario.
+  const catLabelFor = (c)=> c==='alimentos' ? 'Conteo Normal' : 'Bebidas BEES';
 
   // ── Faltante del conteo: pasa con PIN de gerente + nota (pedido Jose 30-ago) ──
   // El faltante no se bloquea (el conteo debe poder cerrarse), pero no pasa mudo:
@@ -421,7 +428,7 @@ export default function ConteoNocturno({user,onBack}){
         p_usuario_id: user.id,
       });
       if(error) throw error;
-      show(`✅ Merma de ${cat} registrada: ${resp?.productos||items.length} producto(s)`
+      show(`✅ Merma — ${catLabelFor(cat)} registrada: ${resp?.productos||items.length} producto(s)`
            + (resp?.valor ? ` · $${Number(resp.valor).toFixed(2)}` : ''));
       // Queda bloqueada de inmediato: si se vuelve a entrar a esta categoría ya
       // no se puede editar, solo ver lo que se guardó (misma idea que un
@@ -449,7 +456,7 @@ export default function ConteoNocturno({user,onBack}){
       if(cat==='alimentos') setMermaYaRegistradaAlimentos(true);
       else setMermaYaRegistradaBebidas(true);
       setConfirmandoSinMerma(false);
-      show(`✓ Confirmado: hoy no hubo merma de ${cat}`);
+      show(`✓ Confirmado: hoy no hubo merma — ${catLabelFor(cat)}`);
       setScreen('elegir');
     }catch(e){ show('❌ No se pudo confirmar: '+e.message); }
     finally{ setGuardandoSinMerma(false); }
@@ -975,9 +982,17 @@ export default function ConteoNocturno({user,onBack}){
   }
 
   // ── PANTALLA MERMA: alimentos o bebidas, según mermaCategoria ──
+  // El nombre visible ya NO dice "alimentos"/"bebidas" a secas — eso confundía,
+  // porque la categoría 'alimentos' internamente es en realidad "todo lo que
+  // se cuenta en el Conteo Normal" (comida Y varias bebidas que no son BEES,
+  // como Kolashampan, té Lipton o Salutari), y 'bebidas' es específicamente
+  // "lo que se pide por BEES" (La Constancia + Nescafé). Ver catLabelFor.
+  // (18-sep-2026: de paso se corrigió en catalogo_productos el conteo_modo de
+  // 13 cervezas — Michelob Ultra, Pilsener, Corona, Heineken, Modelo, etc. —
+  // que estaban marcadas como 'normal' cuando en realidad se piden por BEES.)
   if(screen==='merma'){
     const cat=mermaCategoria;
-    const catLabel = cat==='alimentos' ? 'alimentos' : 'bebidas';
+    const catLabel = catLabelFor(cat);
     const yaRegistrada = cat==='alimentos' ? mermaYaRegistradaAlimentos : mermaYaRegistradaBebidas;
     const resumen = cat==='alimentos' ? mermaResumenAlimentos : mermaResumenBebidas;
     const itemsAll = cat==='alimentos' ? mermaItemsAlimentos : mermaItemsBebidas;
@@ -997,13 +1012,13 @@ export default function ConteoNocturno({user,onBack}){
             <button onClick={()=>setScreen('elegir')}
               style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
             <div>
-              <div style={{fontWeight:800,fontSize:18}}>🗑️ Merma de {catLabel}</div>
+              <div style={{fontWeight:800,fontSize:18}}>🗑️ Merma – {catLabel}</div>
               <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ya resuelta hoy</div>
             </div>
           </div>
 
           <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#16a34a20',border:'1px solid #16a34a'}}>
-            <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:4}}>Merma de {catLabel} ya resuelta — solo lectura</div>
+            <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:4}}>Merma – {catLabel} ya resuelta — solo lectura</div>
             <div style={{fontSize:11,color:'#9fd8b3',lineHeight:1.5}}>
               {totalItems>0
                 ? `Hoy ya se reportó (${totalItems} producto${totalItems===1?'':'s'}). No se puede editar desde acá — si algo quedó mal, que tu encargado lo corrija desde Kardex.`
@@ -1050,9 +1065,9 @@ export default function ConteoNocturno({user,onBack}){
             <div onClick={e=>e.stopPropagation()}
               style={{width:'100%',maxWidth:400,background:'#141419',border:'1px solid #e6394660',
                       borderRadius:14,padding:18}}>
-              <div style={{fontWeight:800,fontSize:15,color:'#f38b91',marginBottom:8}}>⚠️ Confirmar: sin merma de {catLabel}</div>
+              <div style={{fontWeight:800,fontSize:15,color:'#f38b91',marginBottom:8}}>⚠️ Confirmar: sin merma — {catLabel}</div>
               <div style={{fontSize:12,color:'#ccc',lineHeight:1.6,marginBottom:14}}>
-                ¿Confirmás que HOY no hubo ningún producto de {catLabel} dañado, quemado, vencido o perdido en {sucursalNombre}?
+                ¿Confirmás que HOY no hubo ningún producto de "{catLabel}" dañado, quemado, vencido o perdido en {sucursalNombre}?
                 Esto va a quedar registrado con tu nombre y la hora — no es un trámite, es tu palabra.
               </div>
               <div style={{display:'flex',gap:8}}>
@@ -1073,13 +1088,13 @@ export default function ConteoNocturno({user,onBack}){
           <button onClick={()=>setScreen('elegir')}
             style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
-            <div style={{fontWeight:800,fontSize:18}}>🗑️ Merma de {catLabel}</div>
+            <div style={{fontWeight:800,fontSize:18}}>🗑️ Merma – {catLabel}</div>
             <div style={{color:'#555',fontSize:12}}>{sucursalNombre}</div>
           </div>
         </div>
 
         <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#e6394620',border:'1px solid #e63946'}}>
-          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Reportá la merma de {catLabel} antes de contar</div>
+          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Reportá la merma — {catLabel} — antes de contar</div>
           <div style={{fontSize:11,color:'#d98a8f',lineHeight:1.5}}>
             Reportá lo que se botó, se quemó o se dañó hoy. Lo que no se reporte acá aparece después como faltante sin explicación en el tab de Fugas.
           </div>
@@ -1087,7 +1102,7 @@ export default function ConteoNocturno({user,onBack}){
 
         {/* Buscador */}
         <input value={busca} onChange={e=>setBusca(e.target.value)}
-          placeholder={cat==='alimentos' ? "Buscar producto… (ej: pan, carne, queso)" : "Buscar bebida… (ej: coca, cerveza, té)"}
+          placeholder={cat==='alimentos' ? "Buscar producto… (ej: pan, carne, kolashampan)" : "Buscar bebida BEES… (ej: coca, cerveza, nescafé)"}
           style={{width:'100%',padding:'13px 14px',background:'#0a0a0a',border:'1px solid #333',
                   borderRadius:10,color:'#fff',fontSize:15,marginBottom:8}}/>
         {filtrados.map(p=>(
@@ -1165,7 +1180,7 @@ export default function ConteoNocturno({user,onBack}){
             <div onClick={()=>setConfirmandoSinMerma(true)}
               style={{textAlign:'center',color:'#666',fontSize:12,padding:'8px 0 2px',cursor:'pointer',
                       textDecoration:'underline',textUnderlineOffset:'3px'}}>
-              No hubo merma de {catLabel} hoy
+              No hubo merma hoy ({catLabel})
             </div>
           )}
         </div>
@@ -1178,15 +1193,21 @@ export default function ConteoNocturno({user,onBack}){
   // Eso causaba que dos personas de departamentos distintos (cocina vs caja)
   // se pisaran entre sí — la merma de alimentos de una bloqueaba/confundía
   // a la otra que solo quería reportar bebidas, y viceversa. Ahora son dos
-  // pares totalmente independientes: Merma de alimentos desbloquea Conteo
-  // normal, y Merma de bebidas desbloquea Conteo de bebidas, cada uno con
+  // pares totalmente independientes: Merma – Conteo Normal desbloquea Conteo
+  // normal, y Merma – Bebidas BEES desbloquea Conteo de bebidas, cada uno con
   // su propio estado. Un faltante que no se explicó como merma a tiempo se
   // registra después como faltante y se descuenta del pago de la sucursal
   // (ver registrar_faltantes_conteo), así que el bloqueo no es solo estético.
+  // (18-sep-2026: las etiquetas dejaron de decir "alimentos"/"bebidas" a secas
+  // porque confundía — "alimentos" en realidad es TODO lo que se cuenta en el
+  // Conteo Normal, incluyendo bebidas que no son BEES como Kolashampan o té
+  // Lipton. De paso se corrigieron 13 cervezas en catalogo_productos que
+  // estaban mal marcadas como conteo normal cuando en realidad se piden por
+  // BEES — ver catLabelFor arriba.)
   if(screen==='elegir'){
     const bloqueadoNormal=!mermaYaRegistradaAlimentos;
     const bloqueadoBebidas=!mermaYaRegistradaBebidas;
-    const avisoBloqueo=(cat)=>show(`🔒 Primero reportá la merma de ${cat} (o marcá "no hubo merma")`);
+    const avisoBloqueo=(cat)=>show(`🔒 Primero reportá la merma — ${catLabelFor(cat)} (o marcá "no hubo merma")`);
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
         <Toast/>
@@ -1199,10 +1220,10 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         </div>
 
-        {/* ── Grupo Comida ── */}
-        <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'2px 2px 8px'}}>🍔 Comida</div>
+        {/* ── Grupo Conteo Normal ── */}
+        <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'2px 2px 8px'}}>🍔 Conteo Normal</div>
 
-        {/* Merma de alimentos — siempre habilitada, es la que desbloquea Conteo normal */}
+        {/* Merma — Conteo Normal — siempre habilitada, es la que desbloquea Conteo normal */}
         <button className="card" onClick={()=>{setMermaCategoria('alimentos');setScreen('merma');}}
           style={{width:'100%',textAlign:'left',cursor:'pointer',position:'relative',
                   border: mermaYaRegistradaAlimentos?'1px solid #333':'1px solid #e6394660',
@@ -1215,15 +1236,15 @@ export default function ConteoNocturno({user,onBack}){
             {mermaYaRegistradaAlimentos?'✓ REGISTRADA':'PENDIENTE'}
           </span>
           <div style={{fontSize:26,marginBottom:6}}>🗑️</div>
-          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaAlimentos?'#fff':'#f38b91'}}>Merma de alimentos</div>
+          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaAlimentos?'#fff':'#f38b91'}}>Merma – Conteo Normal</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>
             {mermaYaRegistradaAlimentos
               ? `Ya se reportó (${mermaResumenAlimentos.length} producto${mermaResumenAlimentos.length===1?'':'s'}). Tocá para ver el detalle.`
-              : 'Panes, carnes, quesos, papas, salsas… todo lo que no sea bebida. Tocá para registrar lo que se botó, se quemó o se dañó.'}
+              : 'Panes, carnes, quesos, papas, salsas y bebidas que no son del pedido BEES (Kolashampan, té Lipton, Salutari, etc.). Tocá para registrar lo que se botó, se quemó o se dañó.'}
           </div>
         </button>
 
-        {/* Conteo normal — bloqueado hasta resolver merma de alimentos */}
+        {/* Conteo normal — bloqueado hasta resolver merma de esta categoría */}
         <button className="card" onClick={bloqueadoNormal?()=>avisoBloqueo('alimentos'):()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
           style={{width:'100%',textAlign:'left',cursor:bloqueadoNormal?'not-allowed':'pointer',position:'relative',
                   border: bloqueadoNormal?'1px solid #262626':'1px solid #333',
@@ -1241,10 +1262,10 @@ export default function ConteoNocturno({user,onBack}){
 
         <div style={{height:1,background:'#1d1d1d',margin:'16px 0 4px'}}/>
 
-        {/* ── Grupo Bebidas ── */}
-        <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'14px 2px 8px'}}>🥤 Bebidas</div>
+        {/* ── Grupo Bebidas BEES ── */}
+        <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'14px 2px 8px'}}>🥤 Bebidas BEES</div>
 
-        {/* Merma de bebidas — siempre habilitada, es la que desbloquea Conteo de bebidas */}
+        {/* Merma — Bebidas BEES — siempre habilitada, es la que desbloquea Conteo de bebidas */}
         <button className="card" onClick={()=>{setMermaCategoria('bebidas');setScreen('merma');}}
           style={{width:'100%',textAlign:'left',cursor:'pointer',position:'relative',
                   border: mermaYaRegistradaBebidas?'1px solid #333':'1px solid #e6394660',
@@ -1257,11 +1278,11 @@ export default function ConteoNocturno({user,onBack}){
             {mermaYaRegistradaBebidas?'✓ REGISTRADA':'PENDIENTE'}
           </span>
           <div style={{fontSize:26,marginBottom:6}}>🗑️</div>
-          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaBebidas?'#fff':'#f38b91'}}>Merma de bebidas</div>
+          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaBebidas?'#fff':'#f38b91'}}>Merma – Bebidas BEES</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>
             {mermaYaRegistradaBebidas
               ? `Ya se reportó (${mermaResumenBebidas.length} producto${mermaResumenBebidas.length===1?'':'s'}). Tocá para ver el detalle.`
-              : 'Sodas, tés, cervezas y demás bebidas. Tocá para registrar lo que se botó, se dañó o venció.'}
+              : 'Solo los productos del pedido BEES: cervezas, sodas de La Constancia y Nescafé. Tocá para registrar lo que se botó, se dañó o venció.'}
           </div>
         </button>
 
