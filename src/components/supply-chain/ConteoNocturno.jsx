@@ -132,17 +132,35 @@ export default function ConteoNocturno({user,onBack}){
   const [descargandoPdf,setDescargandoPdf]=useState(false);
 
   // ── Reporte de MERMA, obligatorio antes de contar (pedido Jose 30-ago) ──
-  // Primero se declara la merma del día (puede ser "no hubo") y hasta entonces se
-  // habilitan los conteos. Si no se pide antes, la merma se "esconde" dentro de la
-  // diferencia del conteo y el tab de Fugas la lee como faltante sin explicación.
-  const [mermaLista,setMermaLista]=useState(false);      // ya declarada en esta sesión
-  const [mermaItems,setMermaItems]=useState([]);         // [{producto_id,nombre,unidad,cantidad,nota}]
-  const [mermaBusca,setMermaBusca]=useState('');
-  const [mermaCatalogo,setMermaCatalogo]=useState([]);   // productos de la sucursal
+  // Dividida en 2 categorías INDEPENDIENTES desde el 18-sep-2026 (pedido de
+  // Frank): alimentos y bebidas. Antes era una sola merma para toda la
+  // sucursal, y como la resolvía quien primero entrara esa noche, dos
+  // personas reportando cosas distintas (cocina y caja) se pisaban sin darse
+  // cuenta — pasó la noche del 17-sep con Hazel y una cajera en Cafetalón: la
+  // cajera reportó su merma de bebidas, eso "resolvió" la merma del día para
+  // toda la sucursal, y el pan de hot dog que Hazel había querido reportar
+  // nunca quedó guardado. Ahora cada categoría tiene su propio candado y
+  // desbloquea un conteo distinto: alimentos → Conteo normal, bebidas →
+  // Conteo de bebidas. La categoría de cada producto sale del mismo campo
+  // `conteo_modo` que ya separa Conteo normal de Conteo de bebidas (ver
+  // cargarBebidas más abajo), así que no hace falta categorizar nada de nuevo.
+  const [mermaCategoria,setMermaCategoria]=useState('alimentos'); // cuál se está viendo/editando ahora
+  const [mermaItemsAlimentos,setMermaItemsAlimentos]=useState([]);
+  const [mermaItemsBebidas,setMermaItemsBebidas]=useState([]);
+  const [mermaBuscaAlimentos,setMermaBuscaAlimentos]=useState('');
+  const [mermaBuscaBebidas,setMermaBuscaBebidas]=useState('');
+  const [mermaCatalogoAlimentos,setMermaCatalogoAlimentos]=useState([]);
+  const [mermaCatalogoBebidas,setMermaCatalogoBebidas]=useState([]);
   const [guardandoMerma,setGuardandoMerma]=useState(false);
-  const [mermaHoy,setMermaHoy]=useState(null);           // cuántos movimientos de merma hay hoy
-  const [mermaYaRegistrada,setMermaYaRegistrada]=useState(false); // true = ya se guardó hoy, solo lectura
-  const [mermaResumen,setMermaResumen]=useState([]);     // [{nombre,unidad,cantidad,nota}] para la vista de solo lectura
+  const [mermaYaRegistradaAlimentos,setMermaYaRegistradaAlimentos]=useState(false);
+  const [mermaYaRegistradaBebidas,setMermaYaRegistradaBebidas]=useState(false);
+  const [mermaResumenAlimentos,setMermaResumenAlimentos]=useState([]); // [{nombre,unidad,cantidad,nota}]
+  const [mermaResumenBebidas,setMermaResumenBebidas]=useState([]);
+  // "No hubo merma" ahora pide una confirmación explícita y SÍ queda
+  // guardada (antes era solo un estado de pantalla — ver public.merma_sin_reporte
+  // y el historial del 18-sep-2026 de por qué esto importa).
+  const [confirmandoSinMerma,setConfirmandoSinMerma]=useState(false);
+  const [guardandoSinMerma,setGuardandoSinMerma]=useState(false);
 
   // ── Faltante del conteo: pasa con PIN de gerente + nota (pedido Jose 30-ago) ──
   // El faltante no se bloquea (el conteo debe poder cerrarse), pero no pasa mudo:
@@ -308,54 +326,82 @@ export default function ConteoNocturno({user,onBack}){
     setSucursalId(sucId);
     setLoading(true);
     try{
-      let yaRegistrada=false, resumen=[];
+      const hoy=today();
+      let yaAlimentos=false, yaBebidas=false;
+      let resumenAlimentos=[], resumenBebidas=[];
       try{
-        const desde=today()+'T00:00:00-06:00';
+        const desde=hoy+'T00:00:00-06:00';
         const {data:km}=await db.from('kardex_movimientos')
-          .select('cantidad, notas, created_at, catalogo_productos(nombre, unidad_medida)')
+          .select('cantidad, notas, created_at, catalogo_productos(nombre, unidad_medida, conteo_modo)')
           .eq('sucursal_id', sucId).eq('tipo','merma').gte('created_at', desde)
           .order('created_at');
-        if(km && km.length){
-          yaRegistrada=true;
-          resumen=km.map(r=>({
+        (km||[]).forEach(r=>{
+          const item={
             nombre: r.catalogo_productos?.nombre || 'Producto',
             unidad: r.catalogo_productos?.unidad_medida || 'unidad',
             cantidad: Math.abs(n(r.cantidad)),
             nota: r.notas || '',
-          }));
-        }
-        setMermaHoy(km && km.length ? km.length : null);
-      }catch{ setMermaHoy(null); }
+          };
+          // La misma categorización que ya separa Conteo normal de Conteo de
+          // bebidas (conteo_modo) decide a cuál de las 2 mermas pertenece.
+          if(r.catalogo_productos?.conteo_modo==='bebidas'){ resumenBebidas.push(item); yaBebidas=true; }
+          else { resumenAlimentos.push(item); yaAlimentos=true; }
+        });
+      }catch{}
 
-      setMermaYaRegistrada(yaRegistrada);
-      setMermaResumen(resumen);
+      // Una confirmación de "no hubo merma" (ver confirmarSinMerma) también
+      // cuenta como resuelto, aunque no haya productos — a diferencia de
+      // antes, esto SÍ queda guardado en public.merma_sin_reporte.
+      try{
+        const {data:sinReporte}=await db.from('merma_sin_reporte')
+          .select('categoria').eq('sucursal_id', sucId).eq('fecha', hoy);
+        (sinReporte||[]).forEach(r=>{
+          if(r.categoria==='bebidas') yaBebidas=true; else if(r.categoria==='alimentos') yaAlimentos=true;
+        });
+      }catch{}
 
-      if(!yaRegistrada){
+      setMermaYaRegistradaAlimentos(yaAlimentos);
+      setMermaYaRegistradaBebidas(yaBebidas);
+      setMermaResumenAlimentos(resumenAlimentos);
+      setMermaResumenBebidas(resumenBebidas);
+
+      if(!yaAlimentos || !yaBebidas){
         const {data:invData}=await db.from('inventario')
-          .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
+          .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
           .eq('sucursal_id', sucId);
-        const cat=(invData||[])
-          .filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false)
-          .map(r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
+        const activos=(invData||[]).filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false);
+        const mapear=r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
                     unidad:r.catalogo_productos.unidad_medida||'unidad',
-                    ...camposConteo(r.catalogo_productos)}))
-          .sort((a,b)=>a.nombre.localeCompare(b.nombre));
-        setMermaCatalogo(cat);
+                    ...camposConteo(r.catalogo_productos)});
+        if(!yaAlimentos){
+          setMermaCatalogoAlimentos(activos
+            .filter(r=>r.catalogo_productos.conteo_modo!=='bebidas')
+            .map(mapear).sort((a,b)=>a.nombre.localeCompare(b.nombre)));
+        }
+        if(!yaBebidas){
+          setMermaCatalogoBebidas(activos
+            .filter(r=>r.catalogo_productos.conteo_modo==='bebidas')
+            .map(mapear).sort((a,b)=>a.nombre.localeCompare(b.nombre)));
+        }
       }
 
       // Antes esto abría directo la pantalla de merma como paso obligatorio
-      // previo. Ahora abre el hub ('elegir') con las 3 tareas de la noche —
-      // merma, conteo normal y bebidas — visibles de una vez; el estado de
-      // mermaYaRegistrada que ya calculamos arriba es lo que bloquea o
-      // desbloquea las otras dos tarjetas ahí.
+      // previo. Ahora abre el hub ('elegir') con las 4 tareas de la noche —
+      // merma de alimentos, conteo normal, merma de bebidas y conteo de
+      // bebidas — visibles de una vez, en 2 pares independientes.
       setScreen('elegir');
       setLoading(false);
     }catch(e){ show('❌ Error cargando productos: '+e.message); setLoading(false); }
   };
 
   const guardarMerma=async()=>{
-    const items=mermaItems.filter(m=>n(m.cantidad)>0);
-    if(items.length===0){ show('⚠️ Agregá al menos un producto con cantidad, o marcá "No hubo merma"'); return; }
+    const cat=mermaCategoria;
+    const itemsAll = cat==='alimentos' ? mermaItemsAlimentos : mermaItemsBebidas;
+    const setItemsAll = cat==='alimentos' ? setMermaItemsAlimentos : setMermaItemsBebidas;
+    const setResumen = cat==='alimentos' ? setMermaResumenAlimentos : setMermaResumenBebidas;
+    const setYaRegistrada = cat==='alimentos' ? setMermaYaRegistradaAlimentos : setMermaYaRegistradaBebidas;
+    const items=itemsAll.filter(m=>n(m.cantidad)>0);
+    if(items.length===0){ show('⚠️ Agregá al menos un producto con cantidad, o confirmá que no hubo merma'); return; }
     const sinNota=items.find(m=>(m.nota||'').trim().length<5);
     if(sinNota){ show(`⚠️ Falta justificar "${sinNota.nombre}" (mínimo 5 caracteres)`); return; }
     setGuardandoMerma(true);
@@ -375,18 +421,38 @@ export default function ConteoNocturno({user,onBack}){
         p_usuario_id: user.id,
       });
       if(error) throw error;
-      show(`✅ Merma registrada: ${resp?.productos||items.length} producto(s)`
+      show(`✅ Merma de ${cat} registrada: ${resp?.productos||items.length} producto(s)`
            + (resp?.valor ? ` · $${Number(resp.valor).toFixed(2)}` : ''));
-      setMermaLista(true);
-      // Queda bloqueada de inmediato: si se vuelve a entrar a esta pantalla ya
+      // Queda bloqueada de inmediato: si se vuelve a entrar a esta categoría ya
       // no se puede editar, solo ver lo que se guardó (misma idea que un
-      // conteo nocturno ya cerrado).
-      setMermaResumen(items.map(m=>({nombre:m.nombre, unidad:unidadMerma(m), cantidad:n(m.cantidad), nota:m.nota.trim()})));
-      setMermaYaRegistrada(true);
-      setMermaItems([]);
+      // conteo nocturno ya cerrado). La OTRA categoría de merma no se toca.
+      setResumen(items.map(m=>({nombre:m.nombre, unidad:unidadMerma(m), cantidad:n(m.cantidad), nota:m.nota.trim()})));
+      setYaRegistrada(true);
+      setItemsAll([]);
       setScreen('elegir');
     }catch(e){ show('❌ No se pudo registrar la merma: '+e.message); }
     finally{ setGuardandoMerma(false); }
+  };
+
+  // "No hubo merma" ahora es una confirmación real, firmada con usuario y
+  // hora — antes era solo un estado de pantalla que no dejaba ningún rastro
+  // en la base de datos (así se perdió el reporte de Hazel la noche del
+  // 17-sep-2026: nadie pudo saber después qué había pasado).
+  const confirmarSinMerma=async()=>{
+    const cat=mermaCategoria;
+    setGuardandoSinMerma(true);
+    try{
+      const {error}=await db.from('merma_sin_reporte')
+        .upsert({sucursal_id:sucursalId, fecha:today(), categoria:cat, usuario_id:user.id},
+                {onConflict:'sucursal_id,fecha,categoria'});
+      if(error) throw error;
+      if(cat==='alimentos') setMermaYaRegistradaAlimentos(true);
+      else setMermaYaRegistradaBebidas(true);
+      setConfirmandoSinMerma(false);
+      show(`✓ Confirmado: hoy no hubo merma de ${cat}`);
+      setScreen('elegir');
+    }catch(e){ show('❌ No se pudo confirmar: '+e.message); }
+    finally{ setGuardandoSinMerma(false); }
   };
 
   // Conteo de BEBIDAS: solo productos de bebida/cerveza/soda de la sucursal.
@@ -908,11 +974,22 @@ export default function ConteoNocturno({user,onBack}){
     );
   }
 
-  // ── PANTALLA MERMA: obligatoria antes de cualquier conteo ──
+  // ── PANTALLA MERMA: alimentos o bebidas, según mermaCategoria ──
   if(screen==='merma'){
-    // Ya se registró hoy → solo lectura, no se puede volver a editar.
-    if(mermaYaRegistrada){
-      const totalItems=mermaResumen.length;
+    const cat=mermaCategoria;
+    const catLabel = cat==='alimentos' ? 'alimentos' : 'bebidas';
+    const yaRegistrada = cat==='alimentos' ? mermaYaRegistradaAlimentos : mermaYaRegistradaBebidas;
+    const resumen = cat==='alimentos' ? mermaResumenAlimentos : mermaResumenBebidas;
+    const itemsAll = cat==='alimentos' ? mermaItemsAlimentos : mermaItemsBebidas;
+    const setItemsAll = cat==='alimentos' ? setMermaItemsAlimentos : setMermaItemsBebidas;
+    const catalogo = cat==='alimentos' ? mermaCatalogoAlimentos : mermaCatalogoBebidas;
+    const busca = cat==='alimentos' ? mermaBuscaAlimentos : mermaBuscaBebidas;
+    const setBusca = cat==='alimentos' ? setMermaBuscaAlimentos : setMermaBuscaBebidas;
+
+    // Ya se resolvió hoy (con productos, o con la confirmación de "no hubo
+    // merma") → solo lectura, no se puede volver a editar.
+    if(yaRegistrada){
+      const totalItems=resumen.length;
       return(
         <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
           <Toast/>
@@ -920,19 +997,21 @@ export default function ConteoNocturno({user,onBack}){
             <button onClick={()=>setScreen('elegir')}
               style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
             <div>
-              <div style={{fontWeight:800,fontSize:18}}>🗑️ Reporte de merma</div>
-              <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ya registrada hoy</div>
+              <div style={{fontWeight:800,fontSize:18}}>🗑️ Merma de {catLabel}</div>
+              <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ya resuelta hoy</div>
             </div>
           </div>
 
           <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#16a34a20',border:'1px solid #16a34a'}}>
-            <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:4}}>Merma ya registrada — solo lectura</div>
+            <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:4}}>Merma de {catLabel} ya resuelta — solo lectura</div>
             <div style={{fontSize:11,color:'#9fd8b3',lineHeight:1.5}}>
-              Hoy ya se reportó la merma de esta sucursal ({totalItems} producto{totalItems===1?'':'s'}). No se puede editar desde acá — si algo quedó mal, que tu encargado lo corrija desde Kardex.
+              {totalItems>0
+                ? `Hoy ya se reportó (${totalItems} producto${totalItems===1?'':'s'}). No se puede editar desde acá — si algo quedó mal, que tu encargado lo corrija desde Kardex.`
+                : 'Hoy se confirmó que no hubo merma en esta categoría. No se puede editar desde acá.'}
             </div>
           </div>
 
-          {mermaResumen.map((m,i)=>(
+          {resumen.map((m,i)=>(
             <div key={i} className="card" style={{borderLeft:'3px solid #16a34a',marginBottom:8}}>
               <div style={{fontWeight:600,fontSize:14,marginBottom:4}}>{m.nombre}</div>
               <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:6}}>{m.cantidad} {m.unidad}</div>
@@ -950,66 +1029,96 @@ export default function ConteoNocturno({user,onBack}){
       );
     }
 
-    const filtrados=mermaBusca.trim().length<2 ? [] : mermaCatalogo
-      .filter(p=>p.nombre.toLowerCase().includes(mermaBusca.trim().toLowerCase())
-                 && !mermaItems.some(m=>m.producto_id===p.producto_id))
+    const filtrados=busca.trim().length<2 ? [] : catalogo
+      .filter(p=>p.nombre.toLowerCase().includes(busca.trim().toLowerCase())
+                 && !itemsAll.some(m=>m.producto_id===p.producto_id))
       .slice(0,8);
-    const totalUnidades=mermaItems.reduce((s,m)=>s+n(m.cantidad),0);
-    const notasIncompletas=mermaItems.some(m=>(m.nota||'').trim().length<5);
+    const totalUnidades=itemsAll.reduce((s,m)=>s+n(m.cantidad),0);
+    const notasIncompletas=itemsAll.some(m=>(m.nota||'').trim().length<5);
     return(
-      <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
+      <div style={{minHeight:'100vh',padding:'0 16px 150px'}}>
         <Toast/>
+
+        {/* Modal de confirmación de "no hubo merma": ya no es un botón grande
+            al mismo nivel que reportar de verdad. Es casi imposible que un
+            día entero no haya NADA, así que le agregamos un paso explícito de
+            confirmación — y esta vez SÍ queda guardado con usuario y hora. */}
+        {confirmandoSinMerma && (
+          <div onClick={()=>!guardandoSinMerma&&setConfirmandoSinMerma(false)}
+            style={{position:'fixed',inset:0,zIndex:60,background:'rgba(0,0,0,0.75)',display:'flex',
+                    alignItems:'center',justifyContent:'center',padding:16}}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{width:'100%',maxWidth:400,background:'#141419',border:'1px solid #e6394660',
+                      borderRadius:14,padding:18}}>
+              <div style={{fontWeight:800,fontSize:15,color:'#f38b91',marginBottom:8}}>⚠️ Confirmar: sin merma de {catLabel}</div>
+              <div style={{fontSize:12,color:'#ccc',lineHeight:1.6,marginBottom:14}}>
+                ¿Confirmás que HOY no hubo ningún producto de {catLabel} dañado, quemado, vencido o perdido en {sucursalNombre}?
+                Esto va a quedar registrado con tu nombre y la hora — no es un trámite, es tu palabra.
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>setConfirmandoSinMerma(false)} disabled={guardandoSinMerma}
+                  style={{flex:1,padding:12,borderRadius:10,border:'none',background:'#222',color:'#aaa',fontWeight:700,fontSize:13,cursor:'pointer'}}>
+                  Cancelar, sí hubo algo
+                </button>
+                <button onClick={confirmarSinMerma} disabled={guardandoSinMerma}
+                  style={{flex:1,padding:12,borderRadius:10,border:'none',background:'#e63946',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>
+                  {guardandoSinMerma?<span className="spin"/>:'Sí, confirmo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
           <button onClick={()=>setScreen('elegir')}
             style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
-            <div style={{fontWeight:800,fontSize:18}}>🗑️ Reporte de merma</div>
-            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · 1 de 3 tareas de hoy</div>
+            <div style={{fontWeight:800,fontSize:18}}>🗑️ Merma de {catLabel}</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre}</div>
           </div>
         </div>
 
         <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#e6394620',border:'1px solid #e63946'}}>
-          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Reportá la merma antes de contar</div>
+          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Reportá la merma de {catLabel} antes de contar</div>
           <div style={{fontSize:11,color:'#d98a8f',lineHeight:1.5}}>
-            Reportá lo que se botó, se quemó o se dañó hoy. Si no hubo nada, tocá "No hubo merma".
-            Lo que no se reporte acá aparece después como faltante sin explicación en el tab de Fugas.
+            Reportá lo que se botó, se quemó o se dañó hoy. Lo que no se reporte acá aparece después como faltante sin explicación en el tab de Fugas.
           </div>
         </div>
 
         {/* Buscador */}
-        <input value={mermaBusca} onChange={e=>setMermaBusca(e.target.value)}
-          placeholder="Buscar producto… (ej: pan, carne, coca)"
+        <input value={busca} onChange={e=>setBusca(e.target.value)}
+          placeholder={cat==='alimentos' ? "Buscar producto… (ej: pan, carne, queso)" : "Buscar bebida… (ej: coca, cerveza, té)"}
           style={{width:'100%',padding:'13px 14px',background:'#0a0a0a',border:'1px solid #333',
                   borderRadius:10,color:'#fff',fontSize:15,marginBottom:8}}/>
         {filtrados.map(p=>(
           <button key={p.producto_id} className="card"
-            onClick={()=>{setMermaItems(prev=>[...prev,{...p,cantidad:1,nota:''}]);setMermaBusca('');}}
+            onClick={()=>{setItemsAll(prev=>[...prev,{...p,cantidad:1,nota:''}]);setBusca('');}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:6,padding:12}}>
             <div style={{fontSize:14,color:'#fff'}}>{p.nombre}</div>
             <div style={{fontSize:11,color:'#888'}}>se reporta en {unidadMerma(p)}</div>
           </button>
         ))}
-        {mermaBusca.trim().length>=2&&filtrados.length===0&&(
+        {busca.trim().length>=2&&filtrados.length===0&&(
           <div style={{color:'#666',fontSize:12,padding:'6px 2px',marginBottom:8}}>Sin resultados</div>
         )}
 
         {/* Items agregados */}
-        {mermaItems.map((m,i)=>(
+        {itemsAll.map((m,i)=>(
           <div key={m.producto_id} className="card" style={{borderLeft:'3px solid #e63946'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
               <div>
                 <div style={{fontWeight:600,fontSize:14}}>{m.nombre}</div>
                 <div style={{fontSize:12,fontWeight:700,color:'#e63946'}}>¿cuántas {unidadMerma(m)}?</div>
               </div>
-              <button onClick={()=>setMermaItems(prev=>prev.filter((_,j)=>j!==i))}
+              <button onClick={()=>setItemsAll(prev=>prev.filter((_,j)=>j!==i))}
                 style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>✕</button>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <button style={stepBtn} onClick={()=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,cantidad:Math.max(0,n(x.cantidad)-1)}:x))}>−</button>
+              <button style={stepBtn} onClick={()=>setItemsAll(prev=>prev.map((x,j)=>j===i?{...x,cantidad:Math.max(0,n(x.cantidad)-1)}:x))}>−</button>
               <input type="number" inputMode="decimal" min="0" step="any" value={m.cantidad}
-                onChange={e=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,cantidad:e.target.value}:x))}
+                onChange={e=>setItemsAll(prev=>prev.map((x,j)=>j===i?{...x,cantidad:e.target.value}:x))}
                 style={{flex:1,padding:'12px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:18,textAlign:'center',fontWeight:700}}/>
-              <button style={stepBtn} onClick={()=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,cantidad:n(x.cantidad)+1}:x))}>+</button>
+              <button style={stepBtn} onClick={()=>setItemsAll(prev=>prev.map((x,j)=>j===i?{...x,cantidad:n(x.cantidad)+1}:x))}>+</button>
             </div>
             {/* Lo que realmente se le baja al inventario, cuando la unidad que
                 se reporta no es la de costeo (2 panes = 0.0952 bolsa). */}
@@ -1023,15 +1132,15 @@ export default function ConteoNocturno({user,onBack}){
             <div style={{marginTop:10}}>
               <div style={{fontSize:11,color:'#aaa',marginBottom:4}}>¿Qué pasó con este producto? (obligatorio)</div>
               <textarea rows={2} value={m.nota||''}
-                onChange={e=>setMermaItems(prev=>prev.map((x,j)=>j===i?{...x,nota:e.target.value}:x))}
+                onChange={e=>setItemsAll(prev=>prev.map((x,j)=>j===i?{...x,nota:e.target.value}:x))}
                 placeholder="Ej: se quemó en la plancha, se cayó al piso…"
                 style={{width:'100%',padding:10,background:'#0a0a0a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:13,resize:'vertical'}}/>
             </div>
           </div>
         ))}
 
-        <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 20px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
-          {mermaItems.length>0?(
+        <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 14px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
+          {itemsAll.length>0 && (
             // Con merma reportada, la nota de CADA producto es OBLIGATORIA: sin el
             // porqué, el dato no sirve para nada después (queda "faltó" sin causa).
             <button className="btn btn-red" onClick={guardarMerma}
@@ -1042,37 +1151,42 @@ export default function ConteoNocturno({user,onBack}){
                 : notasIncompletas ? '✍️ Justificá cada producto reportado'
                 : `🗑️ Reportar merma (${totalUnidades} u) y continuar`}
             </button>
-          ):(
-            <button className="btn btn-red" onClick={()=>{setMermaLista(true);setScreen('elegir');}}
-              style={{fontSize:17,padding:18,width:'100%',marginBottom:8,background:'#16a34a'}}>
-              ✓ No hubo merma — continuar
-            </button>
           )}
-          {mermaItems.length>0&&(
-            <button onClick={()=>setMermaItems([])}
+          {itemsAll.length>0&&(
+            <button onClick={()=>setItemsAll([])}
               style={{background:'none',border:'none',color:'#555',fontSize:12,cursor:'pointer',width:'100%',padding:6}}>
               Limpiar lista
             </button>
+          )}
+          {/* Movido a un texto chico y secundario (antes era un botón grande
+              del mismo tamaño que "Reportar merma") para que no sea la salida
+              fácil — y ahora sí pide confirmación y queda guardado. */}
+          {itemsAll.length===0 && (
+            <div onClick={()=>setConfirmandoSinMerma(true)}
+              style={{textAlign:'center',color:'#666',fontSize:12,padding:'8px 0 2px',cursor:'pointer',
+                      textDecoration:'underline',textUnderlineOffset:'3px'}}>
+              No hubo merma de {catLabel} hoy
+            </div>
           )}
         </div>
       </div>
     );
   }
 
-  // ── PANTALLA ELEGIR: hub con las 3 tareas de la noche ──
-  // Antes esto solo elegía entre conteo normal y bebidas, y se llegaba acá
-  // DESPUÉS de pasar obligatoriamente por la pantalla de merma. Ahora es el
-  // primer hub que se ve al entrar: las 3 tareas están siempre visibles, en
-  // orden fijo (merma → conteo normal → bebidas), pero conteo normal y
-  // bebidas quedan bloqueadas con candado hasta que mermaYaRegistrada sea
-  // true (con productos o con "no hubo merma") — eso es lo que garantiza que
-  // las 9 sucursales tomen esa decisión todas las noches: un faltante que no
-  // se explicó como merma a tiempo se registra después como faltante y se
-  // descuenta del pago de la sucursal (ver registrar_faltantes_conteo), así
-  // que el bloqueo no es solo estético.
+  // ── PANTALLA ELEGIR: hub con las 4 tareas de la noche, agrupadas ──
+  // Antes había una sola merma que bloqueaba todo el conteo por sucursal.
+  // Eso causaba que dos personas de departamentos distintos (cocina vs caja)
+  // se pisaran entre sí — la merma de alimentos de una bloqueaba/confundía
+  // a la otra que solo quería reportar bebidas, y viceversa. Ahora son dos
+  // pares totalmente independientes: Merma de alimentos desbloquea Conteo
+  // normal, y Merma de bebidas desbloquea Conteo de bebidas, cada uno con
+  // su propio estado. Un faltante que no se explicó como merma a tiempo se
+  // registra después como faltante y se descuenta del pago de la sucursal
+  // (ver registrar_faltantes_conteo), así que el bloqueo no es solo estético.
   if(screen==='elegir'){
-    const bloqueado=!mermaYaRegistrada;
-    const avisoBloqueo=()=>show('🔒 Primero reportá la merma de hoy (o marcá "no hubo merma")');
+    const bloqueadoNormal=!mermaYaRegistradaAlimentos;
+    const bloqueadoBebidas=!mermaYaRegistradaBebidas;
+    const avisoBloqueo=(cat)=>show(`🔒 Primero reportá la merma de ${cat} (o marcá "no hubo merma")`);
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
         <Toast/>
@@ -1085,62 +1199,85 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         </div>
 
-        {mermaYaRegistrada && (
-          <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80',fontSize:11,color:'#4ade80'}}>
-            ✓ Merma reportada. Ya podés contar. <span style={{color:'#3bbd6b'}}>(¿Faltó algo? Volvé a la tarjeta de Merma.)</span>
-          </div>
-        )}
+        {/* ── Grupo Comida ── */}
+        <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'2px 2px 8px'}}>🍔 Comida</div>
 
-        {/* 1. Merma — siempre habilitada, es la que desbloquea el resto */}
-        <button className="card" onClick={()=>setScreen('merma')}
+        {/* Merma de alimentos — siempre habilitada, es la que desbloquea Conteo normal */}
+        <button className="card" onClick={()=>{setMermaCategoria('alimentos');setScreen('merma');}}
           style={{width:'100%',textAlign:'left',cursor:'pointer',position:'relative',
-                  border: mermaYaRegistrada?'1px solid #333':'1px solid #e6394660',
-                  background: mermaYaRegistrada?'#111':'#1a0d0f',marginBottom:10,padding:18}}>
+                  border: mermaYaRegistradaAlimentos?'1px solid #333':'1px solid #e6394660',
+                  background: mermaYaRegistradaAlimentos?'#111':'#1a0d0f',marginBottom:10,padding:18}}>
           <span style={{position:'absolute',top:16,right:16,fontSize:10.5,fontWeight:700,padding:'4px 9px',
                         borderRadius:999,letterSpacing:.02,
-                        background: mermaYaRegistrada?'#4ade8022':'#e6394625',
-                        color: mermaYaRegistrada?'#4ade80':'#f38b91',
-                        border: mermaYaRegistrada?'1px solid #4ade8060':'1px solid #e6394660'}}>
-            {mermaYaRegistrada?'✓ REGISTRADA':'PENDIENTE'}
+                        background: mermaYaRegistradaAlimentos?'#4ade8022':'#e6394625',
+                        color: mermaYaRegistradaAlimentos?'#4ade80':'#f38b91',
+                        border: mermaYaRegistradaAlimentos?'1px solid #4ade8060':'1px solid #e6394660'}}>
+            {mermaYaRegistradaAlimentos?'✓ REGISTRADA':'PENDIENTE'}
           </span>
           <div style={{fontSize:26,marginBottom:6}}>🗑️</div>
-          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistrada?'#fff':'#f38b91'}}>1. Merma</div>
+          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaAlimentos?'#fff':'#f38b91'}}>Merma de alimentos</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>
-            {mermaYaRegistrada
-              ? `Ya se reportó (${mermaResumen.length} producto${mermaResumen.length===1?'':'s'}). Tocá para ver el detalle.`
-              : 'Todavía no se reportó la merma de hoy. Tocá para registrar lo que se botó, se quemó o se dañó.'}
+            {mermaYaRegistradaAlimentos
+              ? `Ya se reportó (${mermaResumenAlimentos.length} producto${mermaResumenAlimentos.length===1?'':'s'}). Tocá para ver el detalle.`
+              : 'Panes, carnes, quesos, papas, salsas… todo lo que no sea bebida. Tocá para registrar lo que se botó, se quemó o se dañó.'}
           </div>
         </button>
 
-        {/* 2. Conteo normal — bloqueado hasta resolver merma */}
-        <button className="card" onClick={bloqueado?avisoBloqueo:()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
-          style={{width:'100%',textAlign:'left',cursor:bloqueado?'not-allowed':'pointer',position:'relative',
-                  border: bloqueado?'1px solid #262626':'1px solid #333',
-                  background: bloqueado?'#0a0a0a':'#111',opacity:bloqueado?0.55:1,marginBottom:10,padding:18}}>
-          {bloqueado && (
+        {/* Conteo normal — bloqueado hasta resolver merma de alimentos */}
+        <button className="card" onClick={bloqueadoNormal?()=>avisoBloqueo('alimentos'):()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
+          style={{width:'100%',textAlign:'left',cursor:bloqueadoNormal?'not-allowed':'pointer',position:'relative',
+                  border: bloqueadoNormal?'1px solid #262626':'1px solid #333',
+                  background: bloqueadoNormal?'#0a0a0a':'#111',opacity:bloqueadoNormal?0.55:1,marginBottom:10,padding:18}}>
+          {bloqueadoNormal && (
             <span style={{position:'absolute',top:16,right:16,fontSize:10.5,fontWeight:700,padding:'4px 9px',
                           borderRadius:999,background:'#33333366',color:'#888',border:'1px solid #444'}}>
               🔒 BLOQUEADO
             </span>
           )}
           <div style={{fontSize:26,marginBottom:6}}>📋</div>
-          <div style={{fontWeight:700,fontSize:16,color:'#fff'}}>2. Conteo normal</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#fff'}}>Conteo normal</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>Inventario completo de la noche. Ajusta el stock y genera el pedido a Casa Matriz.</div>
         </button>
 
-        {/* 3. Conteo de bebidas — bloqueado hasta resolver merma */}
-        <button className="card" onClick={bloqueado?avisoBloqueo:()=>{setModo('bebidas');cargarBebidas(sucursalId);}}
-          style={{width:'100%',textAlign:'left',cursor:bloqueado?'not-allowed':'pointer',position:'relative',
-                  border: bloqueado?'1px solid #262626':'1px solid #60a5fa50',
-                  background: bloqueado?'#0a0a0a':'#0a1520',opacity:bloqueado?0.55:1,padding:18}}>
-          {bloqueado && (
+        <div style={{height:1,background:'#1d1d1d',margin:'16px 0 4px'}}/>
+
+        {/* ── Grupo Bebidas ── */}
+        <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'14px 2px 8px'}}>🥤 Bebidas</div>
+
+        {/* Merma de bebidas — siempre habilitada, es la que desbloquea Conteo de bebidas */}
+        <button className="card" onClick={()=>{setMermaCategoria('bebidas');setScreen('merma');}}
+          style={{width:'100%',textAlign:'left',cursor:'pointer',position:'relative',
+                  border: mermaYaRegistradaBebidas?'1px solid #333':'1px solid #e6394660',
+                  background: mermaYaRegistradaBebidas?'#111':'#1a0d0f',marginBottom:10,padding:18}}>
+          <span style={{position:'absolute',top:16,right:16,fontSize:10.5,fontWeight:700,padding:'4px 9px',
+                        borderRadius:999,letterSpacing:.02,
+                        background: mermaYaRegistradaBebidas?'#4ade8022':'#e6394625',
+                        color: mermaYaRegistradaBebidas?'#4ade80':'#f38b91',
+                        border: mermaYaRegistradaBebidas?'1px solid #4ade8060':'1px solid #e6394660'}}>
+            {mermaYaRegistradaBebidas?'✓ REGISTRADA':'PENDIENTE'}
+          </span>
+          <div style={{fontSize:26,marginBottom:6}}>🗑️</div>
+          <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaBebidas?'#fff':'#f38b91'}}>Merma de bebidas</div>
+          <div style={{color:'#888',fontSize:12,marginTop:4}}>
+            {mermaYaRegistradaBebidas
+              ? `Ya se reportó (${mermaResumenBebidas.length} producto${mermaResumenBebidas.length===1?'':'s'}). Tocá para ver el detalle.`
+              : 'Sodas, tés, cervezas y demás bebidas. Tocá para registrar lo que se botó, se dañó o venció.'}
+          </div>
+        </button>
+
+        {/* Conteo de bebidas — bloqueado hasta resolver merma de bebidas */}
+        <button className="card" onClick={bloqueadoBebidas?()=>avisoBloqueo('bebidas'):()=>{setModo('bebidas');cargarBebidas(sucursalId);}}
+          style={{width:'100%',textAlign:'left',cursor:bloqueadoBebidas?'not-allowed':'pointer',position:'relative',
+                  border: bloqueadoBebidas?'1px solid #262626':'1px solid #60a5fa50',
+                  background: bloqueadoBebidas?'#0a0a0a':'#0a1520',opacity:bloqueadoBebidas?0.55:1,padding:18}}>
+          {bloqueadoBebidas && (
             <span style={{position:'absolute',top:16,right:16,fontSize:10.5,fontWeight:700,padding:'4px 9px',
                           borderRadius:999,background:'#33333366',color:'#888',border:'1px solid #444'}}>
               🔒 BLOQUEADO
             </span>
           )}
           <div style={{fontSize:26,marginBottom:6}}>🥤</div>
-          <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>3. Conteo de bebidas</div>
+          <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>Conteo de bebidas</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>Contás solo sodas, tés y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</div>
         </button>
       </div>
