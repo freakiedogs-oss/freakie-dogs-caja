@@ -135,6 +135,11 @@ export default function ConteoNocturno({user,onBack}){
   const [histBebidas,setHistBebidas]=useState(null);
   const [histAbierto,setHistAbierto]=useState(false);
   const [descargandoPdf,setDescargandoPdf]=useState(false);
+  // El conteo de bebidas de ESTA noche, si alguien ya lo guardó. Una sola
+  // persona cuenta las sodas por noche: si Elmer ya lo hizo, el siguiente que
+  // entre lo ve tal cual y no puede digitar otro encima (pedido Cesar 17-sep:
+  // dos conteos la misma noche = dos pedidos a BEES).
+  const [bebidasHoy,setBebidasHoy]=useState(null);
 
   // ── Reporte de MERMA, obligatorio antes de contar (pedido Jose 30-ago) ──
   // Primero se declara la merma del día (puede ser "no hubo") y hasta entonces se
@@ -369,6 +374,17 @@ export default function ConteoNocturno({user,onBack}){
     setSucursalId(sucId);
     setLoading(true);
     try{
+      // ¿Ya se contaron las sodas esta noche? Entonces no se abre el formulario:
+      // se muestra lo que se guardó, con quién y a qué hora, y el PDF se puede
+      // volver a bajar. El corte de "esta noche" lo decide el servidor (05:00).
+      const yaHoy=await consultarBebidasHoy();
+      if(yaHoy){
+        setIsEdit(false);setEditExpira(null);setConteoCerrado(false);
+        setScreen('bebidas_listo');
+        setLoading(false);
+        cargarHistorialBebidas();
+        return;
+      }
       const {data:invData}=await db.from('inventario')
         .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
         .eq('sucursal_id', sucId);
@@ -448,7 +464,18 @@ export default function ConteoNocturno({user,onBack}){
       if(gErr) throw gErr;
       show(`✅ Conteo de ${g?.bebidas??items.length} bebidas guardado`);
       cargarHistorialBebidas();
-    }catch(e){ show('⚠️ El conteo no se pudo guardar ('+(e.message||'error')+'), pero el pedido sigue'); }
+      consultarBebidasHoy(); // desde ya, esta noche queda cerrada para otro conteo
+    }catch(e){
+      // Alguien más lo guardó mientras este contaba (dos teléfonos abiertos a
+      // la vez): vale el primero. Se muestra ese y este no genera pedido.
+      if(String(e.message||'').includes('YA_CONTADO')){
+        show('⚠️ '+String(e.message).replace(/^.*YA_CONTADO:\s*/,''));
+        await consultarBebidasHoy();
+        setScreen('bebidas_listo');
+        return;
+      }
+      show('⚠️ El conteo no se pudo guardar ('+(e.message||'error')+'), pero el pedido sigue');
+    }
 
     setPedidoItems(items);
     setPedidoQtys(Object.fromEntries(items.map(s=>[s.producto_id, s.cantidad_sugerida])));
@@ -463,8 +490,39 @@ export default function ConteoNocturno({user,onBack}){
     }catch{ setHistBebidas([]); }
   };
 
-  const descargarPdfBebidas=async()=>{
-    const items=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])>0);
+  // Devuelve el conteo de bebidas de esta noche (o null) y lo deja en estado.
+  // Si la consulta falla se asume que no hay: mejor dejar contar que trabar
+  // la noche por un error de red.
+  const consultarBebidasHoy=async()=>{
+    try{
+      const {data,error}=await db.rpc('conteo_bebidas_de_hoy',{
+        p_store_code: storeCodeSel||user.store_code });
+      if(error) throw error;
+      setBebidasHoy(data||null);
+      return data||null;
+    }catch{ setBebidasHoy(null); return null; }
+  };
+
+  // Vuelve a armar el pedido BEES a partir del conteo guardado (sin recontar)
+  // y baja el PDF. Las cantidades sugeridas ya venían calculadas al guardar.
+  const descargarPdfDeGuardado=async()=>{
+    const items=(bebidasHoy?.items||[]).map(i=>({
+      ...i,
+      cantidad_real:n(i.cantidad_real),
+      cantidad_sugerida:n(i.cantidad_sugerida),
+    }));
+    if(items.length===0){show('⚠️ El conteo guardado no tiene bebidas');return;}
+    setPedidoItems(items);
+    setPedidoQtys(Object.fromEntries(items.map(s=>[s.producto_id, s.cantidad_sugerida])));
+    // descargarPdfBebidas lee pedidoItems/pedidoQtys del estado: se le pasan
+    // directo para no depender de que React ya haya re-renderizado.
+    await descargarPdfBebidas(items, Object.fromEntries(items.map(s=>[s.producto_id, s.cantidad_sugerida])));
+  };
+
+  const descargarPdfBebidas=async(itemsArg,qtysArg)=>{
+    const todos=Array.isArray(itemsArg)?itemsArg:pedidoItems;
+    const qtys=qtysArg&&typeof qtysArg==='object'?qtysArg:pedidoQtys;
+    const items=todos.filter(p=>n(qtys[p.producto_id])>0);
     if(items.length===0){show('⚠️ No hay bebidas con cantidad > 0');return;}
     setDescargandoPdf(true);
     try{
@@ -482,12 +540,12 @@ export default function ConteoNocturno({user,onBack}){
         // El PDF se digita en la app de BEES, que pide por caja/fardo: la
         // columna PEDIR va en empaques, no en unidades sueltas.
         head:[['Producto','Presentación','Contado (un)','Mín','Máx','PEDIR (empaques)']],
-        body:items.map(p=>[p.nombre,labelCerrado(p),String(p.cantidad_real),String(n(p.stock_minimo)),String(n(p.stock_maximo)),String(n(pedidoQtys[p.producto_id]))]),
+        body:items.map(p=>[p.nombre,labelCerrado(p),String(p.cantidad_real),String(n(p.stock_minimo)),String(n(p.stock_maximo)),String(n(qtys[p.producto_id]))]),
         styles:{fontSize:9},
         headStyles:{fillColor:[230,35,41]},
         columnStyles:{2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{fontStyle:'bold',halign:'right'}},
       });
-      const noPedidas=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])===0);
+      const noPedidas=todos.filter(p=>n(qtys[p.producto_id])===0);
       const y=(doc.lastAutoTable?.finalY||31)+8;
       doc.setFontSize(8);doc.setTextColor(120);
       doc.text(`Digitá este pedido en la app de BEES tal cual.${noPedidas.length>0?' '+noPedidas.length+' bebida(s) quedaron sin pedir (stock suficiente).':''}`,14,y);
@@ -528,6 +586,13 @@ export default function ConteoNocturno({user,onBack}){
     };
     init();
   },[]);
+
+  // Al llegar a "¿qué vas a contar?" se consulta si las sodas ya se contaron
+  // esta noche, para decirlo en la tarjeta antes de que la toquen.
+  useEffect(()=>{
+    if(screen==='elegir'&&(storeCodeSel||user.store_code)) consultarBebidasHoy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[screen,storeCodeSel]);
 
   // Recalcula cantidad_real (unidad de stock) a partir de las casillas que el
   // empleado ve. cantidad_real sigue siendo la fuente de verdad para el kardex,
@@ -1058,11 +1123,95 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{color:'#888',fontSize:12,marginTop:4}}>Inventario completo de la noche. Ajusta el stock y genera el pedido a Casa Matriz.</div>
         </button>
         <button className="card" onClick={()=>{setModo('bebidas');cargarBebidas(sucursalId);}}
-          style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #60a5fa50',background:'#0a1520',padding:18}}>
+          style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid '+(bebidasHoy?'#4ade8060':'#60a5fa50'),background:bebidasHoy?'#0a1a10':'#0a1520',padding:18}}>
           <div style={{fontSize:26,marginBottom:6}}>🥤</div>
-          <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>Conteo de bebidas</div>
-          <div style={{color:'#888',fontSize:12,marginTop:4}}>Contás solo sodas, tés y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</div>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <div style={{fontWeight:700,fontSize:16,color:bebidasHoy?'#4ade80':'#60a5fa'}}>Conteo de bebidas</div>
+            {bebidasHoy&&(
+              <span style={{fontSize:11,fontWeight:700,color:'#0d0d0d',background:'#4ade80',borderRadius:999,padding:'2px 9px'}}>
+                ✓ ya contadas hoy{bebidasHoy.quien?' · '+bebidasHoy.quien:''}
+              </span>
+            )}
+          </div>
+          <div style={{color:'#888',fontSize:12,marginTop:4}}>
+            {bebidasHoy
+              ?<>Esta noche ya se contaron ({bebidasHoy.total_items} bebidas). Entrá a verlas o a volver a bajar el PDF del pedido BEES. No se puede hacer otro conteo hoy.</>
+              :<>Contás solo sodas, tés y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</>}
+          </div>
         </button>
+      </div>
+    );
+  }
+
+  // ── PANTALLA: las bebidas de esta noche YA se contaron ──
+  // Solo lectura, a propósito. Quien entra después del que contó ve lo mismo
+  // que él guardó y puede volver a bajar el PDF, pero no digita otro conteo:
+  // dos conteos la misma noche eran dos pedidos a BEES.
+  if(screen==='bebidas_listo'){
+    const h=bebidasHoy||{};
+    const items=(h.items||[]);
+    const conCantidad=items.filter(i=>n(i.cantidad_real)>0);
+    const enCero=items.filter(i=>n(i.cantidad_real)===0);
+    const aPedir=items.filter(i=>n(i.cantidad_sugerida)>0);
+    const hora=h.contado_at?new Date(h.contado_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',timeZone:'America/El_Salvador'}):'';
+    return(
+      <div style={{minHeight:'100vh',padding:'0 16px 100px'}}>
+        <Toast/>
+        <div style={{padding:'20px 0 8px',display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={()=>setScreen('elegir')} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:18}}>🥤 Conteo de Bebidas</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · {h.fecha||''}</div>
+          </div>
+        </div>
+
+        <div style={{padding:'12px 14px',marginBottom:12,borderRadius:10,background:'#4ade8018',border:'1px solid #4ade80'}}>
+          <div style={{fontSize:14,fontWeight:800,color:'#4ade80'}}>✓ Las bebidas de esta noche ya están contadas</div>
+          <div style={{fontSize:12.5,color:'#9be0b4',marginTop:4,lineHeight:1.5}}>
+            Las contó <b>{h.quien||'alguien de la sucursal'}</b>{hora?<> a las <b>{hora}</b></>:null}: {items.length} bebidas.
+            Este es el conteo que vale para hoy; no se puede digitar otro. Si hay un número mal, avisale a gerencia.
+          </div>
+        </div>
+
+        {aPedir.length>0&&(
+          <div style={{marginBottom:12,borderRadius:10,border:'1px solid #e6394650',background:'#1a0c0d',padding:'10px 14px'}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#ff6b73',marginBottom:6}}>Pedido BEES sugerido ({aPedir.length})</div>
+            {aPedir.map(i=>(
+              <div key={i.producto_id} style={{display:'flex',gap:8,alignItems:'baseline',fontSize:13,padding:'4px 0',borderTop:'1px solid #2a1416'}}>
+                <span style={{flex:1}}>{i.nombre}</span>
+                <span style={{color:'#888',fontSize:11.5}}>hay {n(i.cantidad_real)}</span>
+                <span style={{fontWeight:800,color:'#ff6b73',minWidth:70,textAlign:'right'}}>pedir {n(i.cantidad_sugerida)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{borderRadius:10,border:'1px solid #333',background:'#151515',padding:'10px 14px',marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:'#ddd',marginBottom:6}}>Lo que se contó</div>
+          {conCantidad.map(i=>(
+            <div key={i.producto_id} style={{display:'flex',gap:8,alignItems:'baseline',fontSize:13,padding:'5px 0',borderTop:'1px solid #262626'}}>
+              <span style={{flex:1}}>{i.nombre}</span>
+              <span style={{color:'#888',fontSize:11.5}}>{i.unidad||''}</span>
+              <span style={{fontWeight:700,minWidth:44,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{n(i.cantidad_real)}</span>
+            </div>
+          ))}
+          {enCero.length>0&&(
+            <div style={{fontSize:11.5,color:'#777',marginTop:8,lineHeight:1.5}}>
+              En cero ({enCero.length}): {enCero.map(i=>i.nombre).join(' · ')}
+            </div>
+          )}
+        </div>
+
+        <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 18px',background:'linear-gradient(transparent,#0d0d0d 30%)',display:'flex',gap:10}}>
+          <button className="btn" onClick={()=>setScreen('elegir')}
+            style={{flex:1,padding:14,borderRadius:10,border:'1px solid #333',background:'#151515',color:'#ccc',fontWeight:700}}>
+            Volver
+          </button>
+          <button className="btn btn-red" onClick={descargarPdfDeGuardado} disabled={descargandoPdf||aPedir.length===0}
+            style={{flex:2,padding:14,borderRadius:10,fontWeight:800}}>
+            {descargandoPdf?<span className="spin"/>:aPedir.length>0?`⬇️ Bajar de nuevo el PDF (${aPedir.length})`:'Nada que pedir esta noche'}
+          </button>
+        </div>
       </div>
     );
   }
