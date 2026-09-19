@@ -69,6 +69,21 @@ const labelSuelta=(p)=>p?.conteo_unidad_suelta||'sueltas';
 const unidadMerma=(p)=>
   (esFraccionado(p) && p?.conteo_unidad_suelta) ? p.conteo_unidad_suelta : (p?.unidad||'unidad');
 const factorMerma=(p)=> esFraccionado(p) ? facSuelta(p) : 1;
+/* ── Margen de aceptación de sobrante (19-sep-2026) ──────────────────────
+   SOLO aplica a SOBRANTE (cantidad_real > stock_teorico). El faltante NUNCA
+   se toca acá: cualquier faltante, por mínimo que sea, sigue disparando el
+   PIN de gerente y `registrar_faltantes_conteo` exactamente igual que antes
+   (ver calcFaltantes/faltanteGate más abajo, sin cambios).
+   El margen se configura por producto en `catalogo_productos.margen_sobrante_sueltas`,
+   medido en unidad SUELTA (la que la sucursal realmente cuenta: salchichas,
+   panes, lascas) porque así es como Frank quiere calibrarlo producto por
+   producto. Acá se convierte a unidad de stock para compararlo directo
+   contra la diferencia (que vive en unidad de stock). Default 2 si el
+   producto no tiene el campo seteado. */
+const margenSobranteStock=(p)=>{
+  const margen=n(p?.margen_sobrante_sueltas ?? 2);
+  return esFraccionado(p) ? margen*facSuelta(p) : margen;
+};
 // Cómo nombrar la unidad en la que vive el inventario. `unidad_medida` miente
 // seguido (la Coca Vidrio la tiene como "Caja" pero el stock son botellas), así
 // que cuando la casilla de sueltas ES la unidad de stock (factor 1) se usa ese
@@ -95,6 +110,7 @@ const camposConteo=(cp)=>({
   conteo_fraccionado: !!cp?.conteo_fraccionado,
   conteo_unidad_suelta: cp?.conteo_unidad_suelta||null,
   conteo_factor_suelta: cp?.conteo_factor_suelta??1,
+  margen_sobrante_sueltas: cp?.margen_sobrante_sueltas??2,
   cerrados: null, sueltas: null,
 });
 
@@ -242,7 +258,7 @@ export default function ConteoNocturno({user,onBack}){
 
       // 2. Cargar solo productos marcados para conteo nocturno
       const {data:invData} = await db.from('inventario')
-        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas)')
         .eq('sucursal_id', sucId)
         .eq('catalogo_productos.incluir_conteo', true);
 
@@ -384,7 +400,7 @@ export default function ConteoNocturno({user,onBack}){
 
       if(!yaAlimentos || !yaBebidas){
         const {data:invData}=await db.from('inventario')
-          .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
+          .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas)')
           .eq('sucursal_id', sucId);
         const activos=(invData||[]).filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false);
         const mapear=r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
@@ -481,7 +497,7 @@ export default function ConteoNocturno({user,onBack}){
     setLoading(true);
     try{
       const {data:invData}=await db.from('inventario')
-        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas)')
         .eq('sucursal_id', sucId);
       // El corte ya no es por categoría sino por `conteo_modo`: Jose separó el
       // pedido de La Constancia + Nescafé (BEES) del conteo normal. Filtrar por
@@ -778,14 +794,52 @@ export default function ConteoNocturno({user,onBack}){
       setConteoHoy({});
       // Se le dice al empleado lo que el conteo encontró, en vez de un "guardado"
       // mudo: si hay faltante, es lo que hay que revisar antes de irse.
-      const falt=n(ajuste?.faltante), sobr=n(ajuste?.sobrante);
-      if(falt>0||sobr>0){
+      // 19-sep-2026: margen de aceptación de sobrante (SOLO sobrante, nunca
+      // faltante — ver margenSobranteStock arriba). El faltante se sigue
+      // leyendo tal cual del RPC (`ajuste.faltante`), sin tocar. El sobrante
+      // que cae DENTRO del margen de cada producto ya no se reporta como
+      // "sobran X" — cuenta como cuadrado. El stock igual queda ajustado
+      // exacto por el kardex; esto es solo el mensaje/clasificación.
+      const diffsDetalle=contadosAhora.map(p=>({
+        producto_id:p.producto_id, nombre:p.nombre,
+        diff:redondear(n(p.cantidad_real)-n(p.stock_teorico)),
+        margen:margenSobranteStock(p),
+      }));
+      const sobrantesFueraMargen=diffsDetalle.filter(d=>d.diff>0 && d.diff>d.margen);
+      const sobrantesDentroMargen=diffsDetalle.filter(d=>d.diff>0 && d.diff<=d.margen);
+      const falt=n(ajuste?.faltante);
+      const sobrAReportar=redondear(sobrantesFueraMargen.reduce((a,d)=>a+d.diff,0));
+      if(falt>0||sobrAReportar>0){
         show((isEdit?'✅ Conteo actualizado':'✅ Conteo guardado')
-          +' — '+(falt>0?`faltan ${falt}`:'')+(falt>0&&sobr>0?', ':'')
-          +(sobr>0?`sobran ${sobr}`:'')+` (${n(ajuste?.ajustados)} productos con diferencia)`);
+          +' — '+(falt>0?`faltan ${falt}`:'')+(falt>0&&sobrAReportar>0?', ':'')
+          +(sobrAReportar>0?`sobran ${sobrAReportar}`:'')+` (${n(ajuste?.ajustados)} productos con diferencia)`);
+      }else if(sobrantesDentroMargen.length>0){
+        show((isEdit?'✅ Conteo actualizado':'✅ Conteo guardado')+' — todo cuadra (sobrante dentro del margen aceptado)');
       }else{
         show((isEdit?'✅ Conteo actualizado':'✅ Conteo guardado')+' — todo cuadra');
       }
+
+      // Alerta de 2 noches seguidas con sobrante en el mismo producto (dentro
+      // o fuera de margen — cualquier sobrante repetido es un patrón, no
+      // ruido). Puramente informativo: si falla, no debe tumbar el guardado
+      // que ya se completó arriba.
+      try{
+        const productosConSobranteHoy=diffsDetalle.filter(d=>d.diff>0).map(d=>d.producto_id);
+        if(productosConSobranteHoy.length){
+          const ayer=new Date(Date.now()-6*3600*1000-24*3600*1000).toISOString().split('T')[0];
+          const {data:ayerData}=await db.from('inventario_conteo_nocturno')
+            .select('producto_id, diferencia')
+            .eq('sucursal_id', sucursalId).eq('fecha', ayer)
+            .in('producto_id', productosConSobranteHoy)
+            .gt('diferencia', 0);
+          if(ayerData?.length){
+            const nombres=ayerData
+              .map(r=>diffsDetalle.find(d=>d.producto_id===r.producto_id)?.nombre)
+              .filter(Boolean).join(', ');
+            show(`⚠️ 2 noches seguidas con sobrante en: ${nombres} — revisar, puede ser un problema distinto`);
+          }
+        }
+      }catch(e){ /* silencioso: es solo un aviso, no debe romper el flujo de guardado */ }
 
       // 4. Preparar pedido sugerido — mostrar TODOS los productos
       // Los que están bajo mínimo tienen cantidad sugerida, el resto qty=0
