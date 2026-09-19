@@ -2,6 +2,17 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 19-Sep-2026 — Coca-Cola Combo: los dos agrandados se cobraban juntos (migración `pos_agrandados_bebida_a_su_seccion`)
+
+Captura de Cafetalón, 14:14: el Coca-Cola Combo con **"Agrandado de bebida" $0.50 marcado en la sección de papas Y "Agrandado Papa y Bebida" $1.25 marcado dentro de la sección de bebida**, total $5.74, y la caja trabada en *"Falta elegir en: Bebida"* — el grupo de bebida se había quedado sin opciones elegibles.
+
+- **Causa:** los dos disparadores vivían en la sección equivocada y nada impedía marcar ambos. Venía del arreglo de Jose (30–31-ago) que resolvió el doble menú de bebida pero dejó las dos vías conviviendo.
+- **Base:** grupo nuevo `Agrandado de bebida` (`b3a1c5e2…`) colgado del **ítem Bebida de los 5 canales**; el modificador de $0.50 (`63706873…`) se mudó ahí **conservando su id** (857 usos en 30 días que no se pierden) y se apagó su duplicado de "Salsas Papas 2". En papas ya existía `Agrandado Combo` ($1.25, mismo insumo Papa Sazonada, 1,060 usos), así que **se renombró a "Agrandado Papa y Bebida"** y se apagaron las tres copias que vivían dentro de grupos de bebida — decisión de Cesar: un solo botón, en su sección, con el nombre que usa la operación.
+- **Antes de mover se midió el impacto:** de los 32 pares combo/canal que usaron el agrandado de bebida en 30 días, **31 tienen componente Bebida** y lo van a seguir viendo. El único que pierde el botón es **Pilsener Freakie Burger en delivery**, que no tiene ese componente (lleva cerveza). Avisar o resolver aparte.
+- **POS (`POSMain.jsx`, ComboModal):** se separó lo que antes era un solo `esGrupoAgrandado` en **grupo de sabores** (`/bebida\s*agrandad/`, los 19 — se muestra solo si hay agrandado) y **grupo disparador puro** (todas sus opciones son agrandados — se ve siempre, porque es el botón que enciende a los otros). Los agrandados quedaron **excluyentes**: marcar uno apaga los demás estén en la sección que estén. Y con el de $1.25 marcado, el grupo del de $0.50 **se oculta** (`tapaDisparador`), porque la bebida ya va agrandada en el $1.25.
+- Sin migrar el esquema que proponía el documento de la Mac (`habilita_si_modificador_id` / `bloquea_si_modificador_id`): habría duplicado la lógica que ya existe por nombre y está probada en producción desde agosto.
+- **Confirmado de paso:** los 19 sabores del agrandado **sí** tienen su insumo; el de $0.50 no tiene y está bien (no es una bebida, es el cobro del cambio). Que el 18-sep no bajara ninguna botella en Cafetalón fue por el combo local sin componente Bebida, que Cesar ya había arreglado; ese día se descontaron 1,025 bebidas, el máximo de los últimos ocho.
+
 ## 15-Sep-2026 — Control de Depósitos: un calendario que dice de qué días NO llegó el efectivo al banco
 
 Jose pidió ver de un vistazo qué sucursal ya cubrió su depósito y cuál no. Los datos ya existían (`depositos_bancarios` desde el 23-mar, 639 registros) pero no había dónde leerlos en conjunto: `Deposito.jsx` sólo REGISTRA, `AdminView` los muestra de a uno al abrir un cierre, y `EfectivoConciliacion` los agrega por mes. Faltaba la pregunta del día: **¿falta alguno?**
