@@ -4,6 +4,7 @@ import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
 import { STORES_SIN_PROPINA, STORES_FOOD_COURT } from '../../config'
 import { db } from '../../supabase'
+import { normalizarIdPeya, PEYA_ID_MAX } from '../peyaId'
 
 // Sucursales que verifican pagers en uso (evita asignar 2 clientes al mismo pager)
 // Solo S006 por ahora (piloto Metrocentro). Extender a S001/S002 después de validar.
@@ -33,9 +34,14 @@ const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residen
 const validEmail = s => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(
   (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''))
 
-export default function PaymentModal({ items, total, storeCode, tipo, onConfirm, onComplete, onPrintFactura, onClose, saving }) {
+export default function PaymentModal({ items, total, storeCode, tipo, onConfirm, onComplete, onPrintFactura, onClose, saving, peyaRef = null, peyaIdObligatorio = false }) {
   const toast = useToast()
   const [metodo, setMetodo]     = useState('efectivo')
+  // ID del pedido de PedidosYa: viene lleno si la orden nació como PeYa; si la
+  // abrieron como "para llevar" y la cobran con CxC PeYa, se pide acá.
+  const [peyaId, setPeyaId] = useState(peyaRef || '')
+  const peyaIdNorm = normalizarIdPeya(peyaId)
+  const faltaPeyaId = peyaIdObligatorio && metodo === 'pedidos_ya' && !peyaIdNorm
   const [efectivo, setEfectivo] = useState('')
   const [tarjeta, setTarjeta]   = useState('')
   // Propina por defecto:
@@ -104,6 +110,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
   const totalMixto = efectivoNum + tarjetaNum
 
   const canConfirm = () => {
+    if (metodo === 'pedidos_ya' && peyaIdObligatorio && !peyaIdNorm) return false
     if (metodo === 'efectivo' && efectivoNum < totalConProp) return false
     if (metodo === 'mixto' && Math.abs(totalMixto - totalConProp) >= 0.01) return false
     // CCF y SE requieren cliente seleccionado
@@ -131,6 +138,8 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
       tipoDte,
       pager: esFoodCourt ? pagerValue : null,
       referencia: refFinal,
+      // ID de PedidosYa (solo cuando se cobra como CxC PeYa)
+      peyaRef: metodo === 'pedidos_ya' ? peyaIdNorm : null,
       // Datos del cliente para DTE
       cliente: cliente ? {
         id: cliente.id,
@@ -477,6 +486,37 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
           <div className="pos-payment-field">
             <div style={{ background: '#1a1420', border: '1px solid #6b2d6b', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#e0b3e0' }}>
               &#128690; <b>Cuenta por Cobrar &mdash; PedidosYa.</b> Se registra la venta por ${totalConProp.toFixed(2)}, pero NO entra efectivo a la caja. PeYa liquida el viernes. Sin DTE (solo ticket interno).
+            </div>
+          </div>
+        )}
+
+        {/* ID del pedido de PedidosYa: obligatorio donde la sucursal lo tiene encendido */}
+        {metodo === 'pedidos_ya' && (peyaIdObligatorio || peyaId) && (
+          <div className="pos-payment-field">
+            <div style={{ padding: 12, background: '#141418', border: `1px solid ${faltaPeyaId ? '#f87171' : '#a78bfa66'}`, borderRadius: 12 }}>
+              <label htmlFor="peya-id-cobro" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#c4b5fd', fontWeight: 700, marginBottom: 8 }}>
+                ID del pedido en PedidosYa
+                {peyaIdObligatorio && (
+                  <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, color: '#0a0a0a', background: faltaPeyaId ? '#f87171' : '#a78bfa', borderRadius: 999, padding: '2px 8px' }}>OBLIGATORIO</span>
+                )}
+              </label>
+              <input
+                id="peya-id-cobro"
+                className="pos-payment-input"
+                type="text"
+                autoCapitalize="characters"
+                autoComplete="off"
+                placeholder="Ej: 7F3K2A"
+                value={peyaId}
+                maxLength={PEYA_ID_MAX + 4}
+                onChange={e => setPeyaId(e.target.value)}
+                style={{ fontSize: 20, fontWeight: 800, letterSpacing: 3, textTransform: 'uppercase', borderColor: faltaPeyaId ? '#f87171' : '#a78bfa' }}
+              />
+              <div style={{ fontSize: 12, color: faltaPeyaId ? '#f87171' : '#8b8997', marginTop: 8, lineHeight: 1.45 }}>
+                {faltaPeyaId
+                  ? 'Sin el ID no se puede registrar el cobro. Está arriba del pedido en la tablet de PeYa.'
+                  : 'Viene lleno si la orden se abrió como PedidosYa. Si la abrieron como otro tipo, ponelo acá.'}
+              </div>
             </div>
           </div>
         )}

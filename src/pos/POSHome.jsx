@@ -5,6 +5,7 @@ import AgrandadoChip from './AgrandadoChip'
 import Icon from './Icon'
 import PlanoEditor from './cajero/PlanoEditor'
 import { confirmAsync } from './confirmDialog'
+import { usePeyaIdObligatorio, normalizarIdPeya, PEYA_ID_MAX } from './peyaId'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -91,6 +92,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const [showPlanoEditor, setShowPlanoEditor] = useState(false)
   const [aperturaMesa, setAperturaMesa] = useState(null)      // mesa libre que se está abriendo (modal demografía)
   const [pax,          setPax]          = useState({ m: 1, h: 1, k: 0 })
+  // ID de PedidosYa al abrir la orden (piloto Cafetalón). Mientras la sucursal
+  // no tenga la bandera encendida, el botón PedidosYa abre la orden directo
+  // como siempre.
+  const peyaIdObligatorio = usePeyaIdObligatorio(storeCode)
+  const [peyaModal,    setPeyaModal]    = useState(null)      // { id, cliente } mientras se digita
   const longPressRef   = useRef(null)
   const firstLoadRef   = useRef(true)   // el spinner solo en la 1ª carga; los refrescos son silenciosos
 
@@ -251,7 +257,17 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   }
 
   const handleNueva = (tipo) => {
+    if (tipo === 'pedidos_ya' && peyaIdObligatorio) { setPeyaModal({ id: '', cliente: '' }); return }
     onStartOrder({ tipo, mesa_ref: null, mesa_id: null, cuentaId: null })
+  }
+
+  const confirmarPeya = () => {
+    const id = normalizarIdPeya(peyaModal?.id)
+    if (!id) return
+    const cliente = (peyaModal.cliente || '').trim() || null
+    setPeyaModal(null)
+    onStartOrder({ tipo: 'pedidos_ya', mesa_ref: null, mesa_id: null, cuentaId: null,
+                   delivery_referencia: id, cliente_nombre: cliente })
   }
 
   // ── Loading ──
@@ -585,6 +601,64 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </button>
         )}
       </div>
+
+      {/* ── MODAL ID DE PEDIDOSYA (obligatorio donde la sucursal lo tiene encendido) ── */}
+      {peyaModal && (() => {
+        const idNorm = normalizarIdPeya(peyaModal.id)
+        return (
+        <div className="pos-modal-overlay" onClick={() => setPeyaModal(null)}>
+          <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="pos-modal-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Icon name="bike" size={18} color="#a78bfa" /> Nuevo pedido de PedidosYa
+            </div>
+            <div style={{ color: '#8b8997', fontSize: 12, margin: '4px 0 14px' }}>
+              Con el ID del pedido, cuadrar contra el panel de PeYa es buscarlo y ya.
+            </div>
+
+            <div style={{ padding: 14, background: '#141418', border: '1px solid #a78bfa66', borderRadius: 12, marginBottom: 12 }}>
+              <label htmlFor="peya-id-nuevo" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#c4b5fd', fontWeight: 700, marginBottom: 8 }}>
+                ID del pedido en PedidosYa
+                <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, color: '#0a0a0a', background: '#a78bfa', borderRadius: 999, padding: '2px 8px' }}>OBLIGATORIO</span>
+              </label>
+              <input
+                id="peya-id-nuevo"
+                className="pos-mesa-input"
+                type="text"
+                autoFocus
+                autoCapitalize="characters"
+                autoComplete="off"
+                placeholder="Ej: 7F3K2A"
+                value={peyaModal.id}
+                maxLength={PEYA_ID_MAX + 4}
+                onChange={e => setPeyaModal(m => ({ ...m, id: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') confirmarPeya() }}
+                style={{ width: '100%', boxSizing: 'border-box', fontSize: 22, fontWeight: 800, letterSpacing: 3, textTransform: 'uppercase', borderColor: '#a78bfa' }}
+              />
+              <div style={{ fontSize: 12, color: '#8b8997', marginTop: 8, lineHeight: 1.45 }}>
+                Es el código que sale arriba del pedido en la tablet de PeYa. Sin él no se puede abrir la orden.
+              </div>
+            </div>
+
+            <label htmlFor="peya-cliente-nuevo" style={{ fontSize: 12, color: '#8b8997', display: 'block', marginBottom: 6 }}>Nombre del cliente (opcional)</label>
+            <input
+              id="peya-cliente-nuevo"
+              className="pos-mesa-input"
+              type="text"
+              placeholder="Ej: Juan García"
+              value={peyaModal.cliente}
+              maxLength={60}
+              onChange={e => setPeyaModal(m => ({ ...m, cliente: e.target.value }))}
+              style={{ width: '100%', boxSizing: 'border-box', marginBottom: 14 }}
+            />
+
+            <button className="pos-confirmar-btn" disabled={!idNorm} onClick={confirmarPeya}>
+              {idNorm ? `Continuar → PedidosYa #${idNorm}` : 'Escribí el ID para continuar'}
+            </button>
+            <button className="pos-cancelar-btn" onClick={() => setPeyaModal(null)}>Cancelar</button>
+          </div>
+        </div>
+        )
+      })()}
 
       {/* ── MODAL APERTURA DE MESA (demografía) ── */}
       {aperturaMesa && (

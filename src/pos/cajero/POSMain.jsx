@@ -11,6 +11,7 @@ import { printComanda, printPreCuenta, printFactura, getImpresora } from '../pri
 import Icon, { EMOJI_ICON } from '../Icon'
 import PinAuthModal from '../PinAuthModal'
 import { useToast } from '../../hooks/useToast'
+import { usePeyaIdObligatorio } from '../peyaId'
 
 // ──────────────────────────────────────────────
 // Constantes de display
@@ -209,6 +210,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [cuentaId,   setCuentaId]   = useState(cuentaCtx?.cuentaId || null)
   const [cuentaNum,  setCuentaNum]  = useState(null)
   const [mesaActual, setMesaActual] = useState(mesaRef)
+  // ID del pedido de PedidosYa (pedido Cesar 17-sep). Llega desde POSHome al
+  // abrir la orden como PeYa; si la cuenta ya existía se lee de la base; y si la
+  // orden nació como otro tipo y se cobra con CxC PeYa, lo pide el PaymentModal.
+  const peyaIdObligatorio = usePeyaIdObligatorio(storeCode)
+  const [peyaRef, setPeyaRef] = useState(cuentaCtx?.delivery_referencia || null)
+  const clienteNombreCtx = cuentaCtx?.cliente_nombre || null
   const [comandaSeq, setComandaSeq] = useState(1)
 
   // Ítems: los ya guardados (comandados) + los nuevos (pendientes de comandar)
@@ -465,6 +472,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           .select('delivery_referencia, cliente_nombre, delivery_cliente_id')
           .eq('id', cuentaCtx.cuentaId)
           .maybeSingle()
+        if (cab?.delivery_referencia) setPeyaRef(cab.delivery_referencia)
         if (cab?.delivery_cliente_id) {
           const { data: dinfo } = await db.rpc('pos_cuentas_delivery_info', { p_cuenta_ids: [cuentaCtx.cuentaId] })
           const d = dinfo?.[cuentaCtx.cuentaId]
@@ -819,6 +827,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     storeName,
     mesa: mesaActual,
     tipoLabel: tipoInfo.label,
+    // ID de PedidosYa: sale en el ticket para poder cuadrar contra el panel
+    peyaRef: peyaRef || null,
     orden: null,
     mesero: user?.nombre || user?.name || null,
     cajero: user?.nombre || user?.name || null,
@@ -967,6 +977,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             total:      total,
             comanda_uid: comandaUid,
             ...paxFields,
+            ...(peyaRef ? { delivery_referencia: peyaRef } : {}),
+            ...(clienteNombreCtx ? { cliente_nombre: clienteNombreCtx } : {}),
           })
           .select()
           .single()
@@ -1113,6 +1125,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             mesa_ref:    mesaActual,
             menu_id:     menuActivo?.id || null,
             estado:      'cobrada',
+            ...((paymentData.peyaRef || peyaRef) ? { delivery_referencia: paymentData.peyaRef || peyaRef } : {}),
+            ...(clienteNombreCtx ? { cliente_nombre: clienteNombreCtx } : {}),
             subtotal:    subtotal,
             iva:         0,
             propina:     paymentData.propina || 0,
@@ -1164,6 +1178,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           .update({
             estado:     'cobrada',
             ...(paymentData.metodo === 'pedidos_ya' ? { tipo: 'pedidos_ya' } : {}),
+            ...(paymentData.peyaRef ? { delivery_referencia: paymentData.peyaRef } : {}),
             subtotal,
             iva:        0,
             propina:    paymentData.propina || 0,
@@ -1388,7 +1403,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           className="pos-header-btn"
           style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
         >
-          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
+          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : (tipo === 'pedidos_ya' && peyaRef ? ` #${peyaRef}` : '')}
         </span>
 
         {tipo === 'mesa' && perms.moverMesa && (
@@ -1491,7 +1506,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               className="pos-order-type-badge"
               style={{ background: tipoInfo.color + '22', color: tipoInfo.color }}
             >
-              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
+              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : (tipo === 'pedidos_ya' && peyaRef ? ` #${peyaRef}` : '')}
             </span>
             {cuentaId
               ? <span className="pos-order-open-badge">Cuenta Abierta</span>
@@ -1806,6 +1821,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           total={total}
           storeCode={storeCode}
           tipo={tipo}
+          peyaRef={peyaRef}
+          peyaIdObligatorio={peyaIdObligatorio}
           onConfirm={handlePaymentConfirm}
           onComplete={handlePaymentComplete}
           onPrintFactura={handlePrintFactura}
