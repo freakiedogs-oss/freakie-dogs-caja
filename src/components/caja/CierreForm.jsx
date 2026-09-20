@@ -17,6 +17,17 @@ const METODO_LABEL = {
 
 const MOTIVOS_EMPLEADO = ['Adelanto de Salario', 'Pago de Salario', 'Pago Propina'];
 
+// Por qué el datáfono no cuadra con lo registrado. Salen de los casos reales
+// que reportan las sucursales; "Otro" abre un campo para escribirlo.
+const OTRO_N1CO = 'Otro (escribir)';
+const MOTIVOS_N1CO = [
+  'Un cobro quedó sin registrar en el sistema',
+  'Se cobró en el datáfono y se anuló después',
+  'Cobro de otra sucursal en este datáfono',
+  'Propina cobrada con tarjeta',
+  OTRO_N1CO,
+];
+
 const uploadFoto = async (file, folder) => {
   const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
   const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
@@ -485,6 +496,23 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
     ventas_transferencia: existingCierre ? String(existingCierre.ventas_transferencia || 0) : '',
     ventas_link_pago: existingCierre ? String(existingCierre.ventas_link_pago || 0) : '',
   });
+  // ── Cuadre de tarjeta contra el POS de n1co (Cesar, 19-sep-2026) ──
+  // La tarjeta del cierre salía sola del sistema y nadie la contrastaba con
+  // el datáfono. Ahora la sucursal escribe lo que muestra n1co y adjunta el
+  // voucher; si no cuadra, tiene que decir por qué antes de guardar.
+  const [n1co, setN1co] = useState(existingCierre?.tarjeta_n1co != null ? String(existingCierre.tarjeta_n1co) : '');
+  const [voucherFile, setVoucherFile] = useState(null);
+  const [voucherUrl, setVoucherUrl] = useState(existingCierre?.voucher_n1co_url || '');
+  const [motivoN1co, setMotivoN1co] = useState(() => {
+    const m = existingCierre?.motivo_diferencia_n1co || '';
+    return m && !MOTIVOS_N1CO.includes(m) ? OTRO_N1CO : m;
+  });
+  const [motivoOtroN1co, setMotivoOtroN1co] = useState(() => {
+    const m = existingCierre?.motivo_diferencia_n1co || '';
+    return m && !MOTIVOS_N1CO.includes(m) ? m : '';
+  });
+  const voucherRef = useRef(null);
+
   const [efectivoReal, setEfectivoReal] = useState(existingCierre ? String(existingCierre.efectivo_real_depositar || '') : '');
   const [obs, setObs] = useState(existingCierre?.observaciones || '');
   const [comentarioCorreccion, setComentarioCorreccion] = useState(existingCierre?.comentario_correccion || '');
@@ -575,6 +603,14 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
   const efCalculado = ef - totalEg + totalIn;
   const efReal = n(efectivoReal);
   const difDeposito = efReal - efCalculado;
+
+  // ── Cuadre n1co ──
+  const hayN1co = n1co.trim() !== '' && Number.isFinite(parseFloat(n1co));
+  const difN1co = hayN1co ? parseFloat((n(n1co) - n(ventas.tarjeta_quanto)).toFixed(2)) : null;
+  const n1coCuadra = difN1co != null && Math.abs(difN1co) < 0.005;
+  const hayVoucher = !!voucherFile || !!voucherUrl;
+  const motivoN1coFinal = motivoN1co === OTRO_N1CO ? motivoOtroN1co.trim() : motivoN1co;
+  const faltaMotivoN1co = hayN1co && !n1coCuadra && !motivoN1coFinal;
   const difClass = () => {
     const a = Math.abs(difDeposito);
     if (efReal === 0) return 'diff-bar';
@@ -590,6 +626,20 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
     }
     if (!efectivoReal) {
       show('⚠️ Ingresa el efectivo real a depositar');
+      return;
+    }
+    // El cuadre de tarjeta no es opcional: sin el total del datáfono y su
+    // voucher no hay contra qué comparar lo que el sistema cobró.
+    if (!hayN1co) {
+      show('⚠️ Ingresa el total de tarjeta que muestra el POS de n1co');
+      return;
+    }
+    if (!hayVoucher) {
+      show('⚠️ Adjunta la foto del voucher de cierre de n1co');
+      return;
+    }
+    if (faltaMotivoN1co) {
+      show('⚠️ El total de n1co no cuadra con el sistema: explica por qué');
       return;
     }
     if (!selectedStore && !existingCierre?.store_code) {
@@ -612,6 +662,20 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
     }
     setLoading(true);
     const storeCode = existingCierre?.store_code || selectedStore;
+
+    // El voucher se sube antes del payload: si falla, el cierre no se guarda
+    // a medias con la tarjeta dicha pero sin la prueba.
+    let voucherFinal = voucherUrl || null;
+    if (voucherFile) {
+      try {
+        voucherFinal = await uploadFoto(voucherFile, `vouchers-n1co/${storeCode}`);
+      } catch (e) {
+        show('❌ No se pudo subir el voucher: ' + (e.message || e));
+        setLoading(false);
+        return;
+      }
+    }
+
     const payload = {
       fecha,
       store_code: storeCode,
@@ -626,6 +690,10 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       efectivo_calculado: parseFloat(efCalculado.toFixed(2)),
       efectivo_real_depositar: efReal,
       diferencia_deposito: parseFloat(difDeposito.toFixed(2)),
+      tarjeta_n1co: n(n1co),
+      voucher_n1co_url: voucherFinal,
+      diferencia_n1co: difN1co,
+      motivo_diferencia_n1co: n1coCuadra ? null : (motivoN1coFinal || null),
       estado: 'enviado',
       observaciones: obs.trim() || null,
       creado_por: existingCierre?.creado_por || `${user.nombre} ${user.apellido}`,
@@ -870,6 +938,105 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
           <span style={{ fontSize: 13, color: '#888' }}>Total ventas QUANTO</span>
           <span style={{ fontWeight: 700, fontSize: 16 }}>{fmt$(totalVentas)}</span>
         </div>
+      </div>
+
+      {/* ── Cuadre de tarjeta contra el datáfono (19-sep-2026) ──
+          Va pegado a las ventas porque se llena con el voucher en la mano,
+          antes de contar el efectivo. */}
+      <div className="card" style={{ borderColor: '#3b82f6' }}>
+        <div className="sec-title">Cierre de tarjeta · n1co</div>
+
+        <div className="row">
+          <span style={{ fontSize: 13, color: '#888' }}>Según el sistema</span>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{fmt$(n(ventas.tarjeta_quanto))}</span>
+        </div>
+
+        <Mi
+          label="Total que muestra el POS de n1co *"
+          value={n1co}
+          onChange={setN1co}
+          hint="El total de tarjeta del cierre del datáfono"
+        />
+
+        {hayN1co && (
+          <div style={{
+            borderRadius: 8, padding: '9px 11px', fontSize: 13, lineHeight: 1.45, marginTop: 4,
+            background: n1coCuadra ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+            color: n1coCuadra ? '#86efac' : '#fca5a5',
+          }}>
+            {n1coCuadra
+              ? 'Cuadra exacto con el sistema'
+              : <>
+                  <b>{difN1co > 0 ? 'Sobran ' : 'Faltan '}{fmt$(Math.abs(difN1co))} contra el sistema</b><br />
+                  {difN1co > 0
+                    ? 'el datáfono cobró más de lo registrado'
+                    : 'hay cobros registrados que el datáfono no tiene'}
+                </>}
+          </div>
+        )}
+
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 13, color: '#888', marginBottom: 6 }}>Foto del voucher de cierre *</div>
+          <input
+            ref={voucherRef} type="file" accept="image/*" capture="environment"
+            style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) { setVoucherFile(f); setVoucherUrl(''); } }}
+          />
+          <div
+            onClick={() => voucherRef.current?.click()}
+            style={{
+              border: `2px ${hayVoucher ? 'solid #22c55e' : 'dashed #34343f'}`,
+              background: hayVoucher ? 'rgba(34,197,94,0.06)' : 'transparent',
+              borderRadius: 10, padding: 16, textAlign: 'center', cursor: 'pointer',
+              color: hayVoucher ? '#86efac' : '#8a8a96', fontSize: 13,
+            }}
+          >
+            {hayVoucher
+              ? <>✓ Voucher adjunto · tocá para cambiarlo</>
+              : <>📷 Tomar foto del voucher</>}
+          </div>
+          {voucherUrl && !voucherFile && (
+            <a href={voucherUrl} target="_blank" rel="noreferrer"
+               style={{ fontSize: 12, color: '#60a5fa', display: 'inline-block', marginTop: 6 }}>
+              ver el voucher guardado
+            </a>
+          )}
+          <div style={{ fontSize: 11.5, color: '#666', marginTop: 6, lineHeight: 1.45 }}>
+            El ticket de cierre que imprime el datáfono, con el total del día visible.
+          </div>
+        </div>
+
+        {hayN1co && !n1coCuadra && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 13, color: '#888', marginBottom: 6 }}>¿Por qué no cuadra? *</div>
+            <select
+              value={motivoN1co}
+              onChange={(e) => setMotivoN1co(e.target.value)}
+              style={{
+                width: '100%', background: '#0b0b0e', color: '#e8e8ec',
+                border: '1px solid #2e2e38', borderRadius: 8, padding: '10px 11px',
+                fontSize: 14, fontFamily: 'inherit',
+              }}
+            >
+              <option value="">Seleccioná</option>
+              {MOTIVOS_N1CO.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+            {motivoN1co === OTRO_N1CO && (
+              <textarea
+                value={motivoOtroN1co}
+                onChange={(e) => setMotivoOtroN1co(e.target.value)}
+                placeholder="Contá qué pasó con esa diferencia"
+                rows={3}
+                style={{
+                  width: '100%', boxSizing: 'border-box', marginTop: 8,
+                  background: '#0b0b0e', color: '#e8e8ec', border: '1px solid #2e2e38',
+                  borderRadius: 8, padding: '10px 11px', fontSize: 14,
+                  fontFamily: 'inherit', resize: 'vertical',
+                }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card">
