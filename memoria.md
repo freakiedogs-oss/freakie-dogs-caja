@@ -2,6 +2,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 19-Sep-2026 — Cierre de caja: la tarjeta ahora se cuadra contra el POS de n1co (migración `cierre_tarjeta_n1co_voucher`)
+
+Pedido de Cesar: hasta hoy la tarjeta del cierre salía sola del sistema y **nadie la contrastaba con el datáfono**. Si un cobro no se registraba, o se anulaba en n1co después de cobrado, nadie se enteraba hasta la conciliación bancaria — o nunca.
+
+- **`ventas_diarias`** (la tabla del cierre, no existe `cierres_caja`) + `tarjeta_n1co`, `voucher_n1co_url`, `diferencia_n1co` y `motivo_diferencia_n1co`, con índice parcial sobre los cierres que **no** cuadran, que son los únicos que interesan para el reporte.
+- **`CierreForm.jsx`:** apartado nuevo pegado a las ventas (se llena con el voucher en la mano, antes de contar el efectivo): muestra lo que dice el sistema, pide el total del POS de n1co, calcula la diferencia en vivo y exige la **foto del voucher de cierre** (cámara directa, `capture="environment"`, sube al bucket de cierres bajo `vouchers-n1co/<sucursal>/`). Si no cuadra, aparece el motivo **obligatorio** con cinco causas reales y **"Otro (escribir)" abre un textarea**. Las tres validaciones cortan el guardado con mensaje propio; el voucher se sube **antes** del payload para que no quede un cierre con el monto dicho pero sin la prueba.
+- Al editar un cierre ya guardado se precargan monto, voucher (con link para verlo) y motivo — si el motivo guardado no está en la lista, cae solo en "Otro" con su texto.
+- Aplica a las **6 sucursales** desde el mismo formulario (42 cierres en los últimos 7 días). Hay que avisarles que desde hoy el cierre no se guarda sin el total de n1co y su foto.
+
 ## 19-Sep-2026 — Coca-Cola Combo: los dos agrandados se cobraban juntos (migración `pos_agrandados_bebida_a_su_seccion`)
 
 Captura de Cafetalón, 14:14: el Coca-Cola Combo con **"Agrandado de bebida" $0.50 marcado en la sección de papas Y "Agrandado Papa y Bebida" $1.25 marcado dentro de la sección de bebida**, total $5.74, y la caja trabada en *"Falta elegir en: Bebida"* — el grupo de bebida se había quedado sin opciones elegibles.
