@@ -231,6 +231,20 @@ async function correr() {
     total: checks.length,
     fallas: fallas.length,
     ordenDePrueba: idEsperado,
+    // Para cotejar a mano contra lo que PedidosYa confirmó por correo el 15-sep:
+    // ellos dicen cuál es la base de producción y enmascaran el pluginSecret
+    // mostrando sólo sus dos últimos caracteres. Acá se devuelven esos dos y el
+    // largo, nunca el secreto: alcanza para saber si el que está configurado es
+    // el que ellos esperan, y si no lo fuera, el JWT de TODOS los pedidos reales
+    // fallaría y los perderíamos sin enterarnos.
+    config: {
+      baseUrl: Deno.env.get("PEYA_BASE_URL") ??
+        "https://integration-middleware.us.restaurant-partners.com (por defecto)",
+      pluginSecret: {
+        largo: PLUGIN_SECRET.length,
+        terminaEn: PLUGIN_SECRET.slice(-2),
+      },
+    },
     checks,
   };
 }

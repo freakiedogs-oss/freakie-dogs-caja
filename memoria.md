@@ -2,6 +2,35 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 19-Sep-2026 — PedidosYa contestó las tres, y una de sus respuestas destapó un riesgo
+
+Cristian Pereira respondió punto por punto. Resumen de lo que dijeron y de lo que hubo que hacer.
+
+**a) No existe ambiente de staging.** Las URLs de la documentación apuntan a staging porque el doc es global e incluye mercados europeos que sí lo tienen; PedidosYa siempre trabaja sobre producción. La tienda de pruebas y nuestro usuario llevan un flag suyo que permite pedir sin afectar la operación real ni generar penalizaciones. Al migrar a las tiendas reales **la integración, las credenciales y los secrets se mantienen iguales**: lo único que cambia es la chain, y con ella el ChainID en los endpoints que lo pidan — `ChainName: SV-FREAKIE-DOGS-PROD-1`, `ChainCode: SVFREAKIEDOGSPROD0001`. Eso toca la gestión de catálogo, que es lo que queda pendiente; las órdenes no lo usan.
+
+**b) El pluginSecret es el de producción, el que termina en `2i`.** Verificado: la autoprueba ahora devuelve el largo y los dos últimos caracteres del secreto configurado (nunca el secreto), y coincide. También confirma que la base en uso es la de producción, que es la que ya teníamos por defecto. 25/25 en verde. Sin esa verificación, un secreto equivocado habría hecho fallar el JWT de **todos** los pedidos reales y los habríamos perdido sin enterarnos.
+
+**c) El remoteId se asigna al dar de alta cada tienda** y nos lo van a pasar cuando confirmen la activación. O sea: el respaldo por id de local que se armó el 13-sep deja de ser necesidad y queda como red de seguridad, que es su mejor papel.
+
+**El riesgo que destapó la respuesta (a).** Dijeron que el flag especial evita penalizaciones; NO dijeron que viaje como `test: true` dentro del pedido. Y de eso dependía todo: la regla de «esto no se cocina» miraba sólo ese flag, y el vendor sandbox `AR-PRUEBAS-INTEGRACION-0001` está mapeado a **Cafetalón**. Un pedido de homologación sin el flag habría armado una comanda real en una cocina que está vendiendo.
+
+Apostar la cocina de Cafetalón a una suposición sobre un campo que no controlamos no valía la pena. Ahora **la tienda misma se declara de pruebas** (`peya_vendor_map.es_pruebas`) y eso manda, mande lo que mande Delivery Hero.
+
+**Y la regla vive en un solo lugar.** Estaba duplicada: una copia en `peya_auto_decidir` y otra en TypeScript dentro de `peya-responder`. Dos copias de una regla de seguridad son una copia de más — basta que alguien arregle una para que la otra quede mintiendo. Ahora es `peya_debe_cocinar`, y el candado de verdad está en `peya_crear_cuenta`, así que da igual por dónde entre la llamada.
+
+**Falla cerrado, y hubo que corregirlo.** `peya_debe_cocinar` devuelve NULL si el pedido no existe para el snapshot de quien pregunta, y en plpgsql `if not NULL` **no entra**: ante la duda se cocinaba. Para un candado cuyo trabajo es que un pedido de homologación no llegue a una cocina real, «no sé» tiene que significar «no». Se envuelve en `coalesce(..., false)` de los dos lados.
+
+Los cuatro casos verificados contra la base, incluida la regresión de que el camino normal sigue intacto:
+
+| pedido | debe cocinar |
+|---|---|
+| vendor de homologación, sin flag test | **no** ← el caso que preocupaba |
+| tienda real, pedido normal | **sí** ← no se rompió nada |
+| tienda real, `test: true` de DH | no |
+| simulado nuestro | sí |
+
+Queda pendiente agendar la meet con ellos para arrancar la homologación.
+
 ## 13-Sep-2026 — El bloqueo de los códigos de local no era tal, y el correo salió
 
 Jose señaló que los códigos de local de PedidosYa están en los reportes de pedidos. Tenía razón a medias, y la mitad que faltaba es la que importa.
