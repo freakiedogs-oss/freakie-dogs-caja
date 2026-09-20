@@ -11,6 +11,7 @@ import { printComanda, printPreCuenta, printFactura, getImpresora } from '../pri
 import Icon, { EMOJI_ICON } from '../Icon'
 import PinAuthModal from '../PinAuthModal'
 import { useToast } from '../../hooks/useToast'
+import { usePeyaIdObligatorio } from '../peyaId'
 
 // ──────────────────────────────────────────────
 // Constantes de display
@@ -209,6 +210,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [cuentaId,   setCuentaId]   = useState(cuentaCtx?.cuentaId || null)
   const [cuentaNum,  setCuentaNum]  = useState(null)
   const [mesaActual, setMesaActual] = useState(mesaRef)
+  // ID del pedido de PedidosYa (pedido Cesar 17-sep). Llega desde POSHome al
+  // abrir la orden como PeYa; si la cuenta ya existía se lee de la base; y si la
+  // orden nació como otro tipo y se cobra con CxC PeYa, lo pide el PaymentModal.
+  const peyaIdObligatorio = usePeyaIdObligatorio(storeCode)
+  const [peyaRef, setPeyaRef] = useState(cuentaCtx?.delivery_referencia || null)
+  const clienteNombreCtx = cuentaCtx?.cliente_nombre || null
   const [comandaSeq, setComandaSeq] = useState(1)
 
   // Ítems: los ya guardados (comandados) + los nuevos (pendientes de comandar)
@@ -465,6 +472,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           .select('delivery_referencia, cliente_nombre, delivery_cliente_id')
           .eq('id', cuentaCtx.cuentaId)
           .maybeSingle()
+        if (cab?.delivery_referencia) setPeyaRef(cab.delivery_referencia)
         if (cab?.delivery_cliente_id) {
           const { data: dinfo } = await db.rpc('pos_cuentas_delivery_info', { p_cuenta_ids: [cuentaCtx.cuentaId] })
           const d = dinfo?.[cuentaCtx.cuentaId]
@@ -819,6 +827,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     storeName,
     mesa: mesaActual,
     tipoLabel: tipoInfo.label,
+    // ID de PedidosYa: sale en el ticket para poder cuadrar contra el panel
+    peyaRef: peyaRef || null,
     orden: null,
     mesero: user?.nombre || user?.name || null,
     cajero: user?.nombre || user?.name || null,
@@ -967,6 +977,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             total:      total,
             comanda_uid: comandaUid,
             ...paxFields,
+            ...(peyaRef ? { delivery_referencia: peyaRef } : {}),
+            ...(clienteNombreCtx ? { cliente_nombre: clienteNombreCtx } : {}),
           })
           .select()
           .single()
@@ -1113,6 +1125,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             mesa_ref:    mesaActual,
             menu_id:     menuActivo?.id || null,
             estado:      'cobrada',
+            ...((paymentData.peyaRef || peyaRef) ? { delivery_referencia: paymentData.peyaRef || peyaRef } : {}),
+            ...(clienteNombreCtx ? { cliente_nombre: clienteNombreCtx } : {}),
             subtotal:    subtotal,
             iva:         0,
             propina:     paymentData.propina || 0,
@@ -1164,6 +1178,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           .update({
             estado:     'cobrada',
             ...(paymentData.metodo === 'pedidos_ya' ? { tipo: 'pedidos_ya' } : {}),
+            ...(paymentData.peyaRef ? { delivery_referencia: paymentData.peyaRef } : {}),
             subtotal,
             iva:        0,
             propina:    paymentData.propina || 0,
@@ -1388,7 +1403,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           className="pos-header-btn"
           style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
         >
-          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
+          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : (tipo === 'pedidos_ya' && peyaRef ? ` #${peyaRef}` : '')}
         </span>
 
         {tipo === 'mesa' && perms.moverMesa && (
@@ -1491,7 +1506,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               className="pos-order-type-badge"
               style={{ background: tipoInfo.color + '22', color: tipoInfo.color }}
             >
-              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ''}
+              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : (tipo === 'pedidos_ya' && peyaRef ? ` #${peyaRef}` : '')}
             </span>
             {cuentaId
               ? <span className="pos-order-open-badge">Cuenta Abierta</span>
@@ -1806,6 +1821,8 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           total={total}
           storeCode={storeCode}
           tipo={tipo}
+          peyaRef={peyaRef}
+          peyaIdObligatorio={peyaIdObligatorio}
           onConfirm={handlePaymentConfirm}
           onComplete={handlePaymentComplete}
           onPrintFactura={handlePrintFactura}
@@ -2131,10 +2148,29 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
     const k = secKey + ':' + g.id
     setSel(prev => {
       const cur = prev[k] || []
-      if (g.tipo === 'unico') return { ...prev, [k]: [m.id] }
-      if (cur.includes(m.id)) return { ...prev, [k]: cur.filter(x => x !== m.id) }
-      if (g.max_selecciones > 0 && cur.length >= g.max_selecciones) return prev
-      return { ...prev, [k]: [...cur, m.id] }
+      const yaEstaba = cur.includes(m.id)
+      let next
+      if (g.tipo === 'unico') next = { ...prev, [k]: yaEstaba ? [] : [m.id] }
+      else if (yaEstaba) next = { ...prev, [k]: cur.filter(x => x !== m.id) }
+      else if (g.max_selecciones > 0 && cur.length >= g.max_selecciones) return prev
+      else next = { ...prev, [k]: [...cur, m.id] }
+
+      // Los agrandados son excluyentes entre sí: el de $1.25 ya incluye la
+      // bebida agrandada, así que marcarlo junto al de $0.50 cobraba los dos
+      // (caja de Cafetalón, 19-sep: $5.74 y la pantalla trabada). Al encender
+      // uno se apagan los demás, estén en la sección que estén.
+      if (!yaEstaba && /agrandad/i.test(m?.nombre || '') && !/bebida\s*agrandad/i.test(g?.nombre || '')) {
+        for (const sec of secciones) {
+          for (const gg of sec.grupos || []) {
+            if (/bebida\s*agrandad/i.test(gg.nombre || '')) continue
+            const kk = sec.key + ':' + gg.id
+            const sinOtros = (next[kk] || []).filter(id =>
+              id === m.id || !/agrandad/i.test((gg.opciones || []).find(o => o.id === id)?.nombre || ''))
+            if (sinOtros.length !== (next[kk] || []).length) next = { ...next, [kk]: sinOtros }
+          }
+        }
+      }
+      return next
     })
   }
 
@@ -2144,14 +2180,37 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   // sabor real queda capturado y su insumo se descuenta del kardex (el modificador
   // Agrandado solo descuenta la papa extra; la bebida viaja en el sabor marcado).
   // Detección por nombre para no cablear ids de BD en el cliente.
-  const esGrupoAgrandado = (g) => /agrandado/i.test(g?.nombre || '')
-  // El agrandado se busca en TODO el combo, no solo en su sección: hay dos vías
-  // vivas y ambas valen igual (decisión Jose 30-ago) — "Agrandado Papa y Bebida"
-  // (sección Bebida) y "Agrandado Combo" (sección Fries, 773 usos/30d). Marcar
-  // cualquiera pide el sabor, así nadie tiene que cambiar cómo lo hace hoy.
-  const hayAgrandado = secciones.some(sec => (sec.grupos || []).some(g =>
-    !esGrupoAgrandado(g) && (sel[sec.key + ':' + g.id] || []).some(mid =>
-      /agrandado/i.test(g.opciones.find(o => o.id === mid)?.nombre || ''))))
+  //
+  // 19-sep-2026: los dos agrandados se mudaron a su sección (el de $0.50 a
+  // Bebida, el de $1.25 a papas). Eso obliga a separar dos cosas que antes se
+  // confundían en un solo `esGrupoAgrandado`:
+  //   · el grupo de SABORES — "Bebida Agrandado", los 19 — que se muestra solo
+  //     cuando hay un agrandado marcado;
+  //   · el grupo DISPARADOR — "Agrandado de bebida", el de $0.50 — que ahora
+  //     también lleva "agrandado" en el nombre pero tiene que verse siempre,
+  //     porque es el botón que enciende a los otros.
+  const esGrupoSabores = (g) => /bebida\s*agrandad/i.test(g?.nombre || '')
+  const esOpcionAgrandado = (m) => /agrandad/i.test(m?.nombre || '')
+  // Un grupo "disparador puro" es el que solo ofrece agrandados (el de $0.50).
+  // "Salsas Papas" no lo es: ahí el agrandado convive con Chili, Trufa y Aros.
+  const esDisparadorPuro = (g) =>
+    !esGrupoSabores(g) && (g.opciones || []).length > 0 && (g.opciones || []).every(esOpcionAgrandado)
+
+  // Agrandados marcados en TODO el combo, con su clave para poder desmarcarlos:
+  // el de papas vive en otra sección que el de bebida y son excluyentes.
+  const agrandadosMarcados = []
+  secciones.forEach(sec => (sec.grupos || []).forEach(g => {
+    if (esGrupoSabores(g)) return
+    ;(sel[sec.key + ':' + g.id] || []).forEach(mid => {
+      const m = (g.opciones || []).find(o => o.id === mid)
+      if (m && esOpcionAgrandado(m)) agrandadosMarcados.push({ k: sec.key + ':' + g.id, id: m.id, nombre: m.nombre })
+    })
+  }))
+  const hayAgrandado = agrandadosMarcados.length > 0
+  // Con "Agrandado Papa y Bebida" marcado, el de $0.50 ya no tiene sentido:
+  // la bebida ya va agrandada dentro del $1.25 (pedido de Cesar, 19-sep).
+  const tapaDisparador = (g) =>
+    esDisparadorPuro(g) && agrandadosMarcados.some(a => !(g.opciones || []).some(o => o.id === a.id))
 
   // Al agrandar salían DOS menús de bebida (el normal y el del agrandado) y se
   // comandaban DOS bebidas, que además se descontaban las dos del inventario
@@ -2160,18 +2219,16 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   // de bebida normal se oculta. Solo aplica si este combo TIENE grupo de agrandado:
   // el Royal ofrece "Agrandado Combo" en las papas pero su bebida no tiene grupo
   // agrandado, y sin este guard quedaría sin dónde elegirla.
-  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g)
-  const esOpcionAgrandado = (m) => /agrandado/i.test(m?.nombre || '')
-  const hayGrupoAgrandado = secciones.some(sec => (sec.grupos || []).some(esGrupoAgrandado))
+  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoSabores(g) && !esDisparadorPuro(g)
+  const hayGrupoSabores = secciones.some(sec => (sec.grupos || []).some(esGrupoSabores))
   // El combo solo incluye las 3 bebidas gratis; cualquier otra entra por un
   // agrandado. Por eso, al agrandar, el grupo de bebida normal deja de ofrecer
-  // bebidas — pero SÍ sigue mostrando su opción de agrandado, o el cajero que la
-  // marcó ahí ("Agrandado Papa y Bebida") se quedaría sin poder desmarcarla.
-  const filtraBebidas = (g) => hayAgrandado && hayGrupoAgrandado && esGrupoBebida(g)
+  // bebidas: el sabor se elige en "Bebida Agrandado" y es el que se descuenta.
+  const filtraBebidas = (g) => hayAgrandado && hayGrupoSabores && esGrupoBebida(g)
   const opcionesVisibles = (g) =>
     filtraBebidas(g) ? (g.opciones || []).filter(esOpcionAgrandado) : (g.opciones || [])
   const grupoOculto = (g) =>
-    (esGrupoAgrandado(g) && !hayAgrandado) || opcionesVisibles(g).length === 0
+    (esGrupoSabores(g) && !hayAgrandado) || tapaDisparador(g) || opcionesVisibles(g).length === 0
 
   const modsDe = (secKey, grupos) => {
     const out = []
@@ -2218,14 +2275,14 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
     // (Salsas Papas), pedirlo acá obligaría a cobrarlo dos veces.
     if (filtraBebidas(g)) return false
     // El grupo del agrandado solo es obligatorio cuando hay Agrandado marcado
-    if (esGrupoAgrandado(g)) return hayAgrandado && n < 1
+    if (esGrupoSabores(g)) return hayAgrandado && n < 1
     if (g.obligatorio && n < 1) return true
     if (g.min_selecciones > 0 && n < g.min_selecciones) return true
     return false
   }))
 
   const reqLabel = (g) => {
-    if (esGrupoAgrandado(g)) return 'Elige el sabor del agrandado'
+    if (esGrupoSabores(g)) return 'Elige el sabor del agrandado'
     if (g.obligatorio || g.min_selecciones > 0) {
       const min = Math.max(g.min_selecciones || 0, g.obligatorio ? 1 : 0)
       return `Elige ${min}${g.max_selecciones > 0 && g.max_selecciones !== min ? `–${g.max_selecciones}` : ''}`
@@ -2258,7 +2315,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                 <div key={g.id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontWeight: 800, fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                      {g.nombre}{(g.obligatorio || esGrupoAgrandado(g)) && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
+                      {g.nombre}{(g.obligatorio || esGrupoSabores(g)) && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
                     </span>
                     <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                   </div>
@@ -2308,7 +2365,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
               <div key={g.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
                   <span style={{ fontWeight: 800, fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                    {g.nombre}{(g.obligatorio || esGrupoAgrandado(g)) && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
+                    {g.nombre}{(g.obligatorio || esGrupoSabores(g)) && <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>}
                   </span>
                   <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                 </div>

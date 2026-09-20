@@ -4,6 +4,7 @@ import { paletaC as C } from '@/theme'
 import InfoTip from '../ui/InfoTip'
 import EmitirDTEModal from './EmitirDTEModal'
 import CorregirDTEModal from './CorregirDTEModal'
+import AccionesDTEEmitido from './AccionesDTEEmitido'
 
 /**
  * DTEsEmitidosView — los documentos que Freakie le EMITE a Hacienda.
@@ -363,6 +364,8 @@ export default function DTEsEmitidosView({ user }) {
                                   Esta es la que hay que invalidar.
                                 </div>
                               )}
+                              <AccionesDTEEmitido fila={r} detalle={det} puedeReenviar={puedeEmitir} />
+
                               {puedeEmitir && ['aceptado'].includes(r.estado) && (
                                 <button onClick={(ev) => { ev.stopPropagation(); setCorrigiendo({ ...r, _dup: dupInfo[r.codigo_generacion] || null }) }}
                                   style={{ marginTop: 10, background: 'transparent', border: `1px solid ${C.red}`, color: '#fca5a5', borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>

@@ -4,7 +4,7 @@
 // (RPC menu_publico_delivery → canal delivery_propio, con modificadores),
 // así los precios y opciones son los mismos que cobra la caja.
 // ────────────────────────────────────────────────────────────────────
-import { useState, useEffect, useMemo, useRef, Fragment, Suspense, lazy } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, Suspense, lazy } from 'react'
 import { db } from '../supabase'
 import { URL_DELIVERY } from '../config'
 import { NEGOCIO, BANNERS } from './catalogoBuho'
@@ -15,7 +15,7 @@ const MapaUbicacion = lazy(() => import('./MapaUbicacion'))
 
 // Igual que el mapa: el formulario de tarjeta solo lo necesita quien paga con
 // tarjeta, y no tiene por qué pesar en la primera carga del menú.
-const PagoTarjeta = lazy(() => import('./PagoTarjeta'))
+const BloquePago = lazy(() => import('./PagoTarjeta'))
 
 const fmt = (n) => `$${Number(n).toFixed(2)}`
 
@@ -119,13 +119,21 @@ export default function MenuPublico() {
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [pedidoOk, setPedidoOk] = useState(null)  // respuesta de crear_pedido_delivery + nombre
-  const [pagoTarjeta, setPagoTarjeta] = useState(false)  // cobro con tarjeta abierto encima
   const [toast, setToast] = useState(null)
   const [showTop, setShowTop] = useState(false)
   const [horarioBD, setHorarioBD] = useState(null)   // horario en vivo del Panel Delivery
   const [misPedidos, setMisPedidos] = useState(null) // {activos, pasados} del teléfono guardado
   const [misPedidosOpen, setMisPedidosOpen] = useState(false)
   const [sugerenciaOculta, setSugerenciaOculta] = useState(false)
+  // ── Productos apagados por sucursal (el "86" del día) ──
+  // El menú es uno solo para las seis tiendas, pero cada tienda puede
+  // quedarse sin algo. `bloqueos` es {sucursal_id: [menu_item_id,...]}.
+  // La gracia es que la app NO sabe de qué tienda va a salir el pedido
+  // hasta que el cliente marca su ubicación en el checkout: hasta ese
+  // momento se muestra todo, y en cuanto se sabe la sucursal se apagan
+  // los que no hay. El servidor vuelve a revisar al crear el pedido.
+  const [bloqueos, setBloqueos] = useState({})
+  const [sucRuteada, setSucRuteada] = useState(null)   // {id, nombre}
   const seccionesRef = useRef({})
   const abierto = abiertoAhora(horarioBD)
 
@@ -159,6 +167,103 @@ export default function MenuPublico() {
       .finally(() => vivo && setCargando(false))
     return () => { vivo = false }
   }, [])
+
+  // Se relee cada minuto: si a Santa Tecla se le acaba el queso frito
+  // mientras alguien arma el carrito, se entera sin recargar la página.
+  useEffect(() => {
+    let vivo = true
+    const leer = () => db.rpc('menu_publico_bloqueos')
+      .then(({ data }) => { if (vivo && data) setBloqueos(data) })
+      .catch(() => {})
+    leer()
+    const id = setInterval(leer, 60000)
+    return () => { vivo = false; clearInterval(id) }
+  }, [])
+
+  // Lo apagado en la tienda que le toca a este cliente. Son tres mapas
+  // porque el mismo producto se puede pedir de tres formas distintas, y
+  // cada una se arregla distinto:
+  //   items → el producto suelto            → se cambia la línea entera
+  //   comps → metido adentro de un combo    → se cambia esa parte del combo
+  //   mods  → como extra / "cambio por"     → se cambia ese extra
+  // El valor de cada llave es con qué se puede reemplazar (puede venir
+  // vacío: entonces solo queda quitarlo).
+  const bloq = useMemo(
+    () => (sucRuteada?.id && bloqueos[sucRuteada.id]) || { items: {}, comps: {}, mods: {} },
+    [bloqueos, sucRuteada])
+
+  // Índice del menú por id, para poder mirar los componentes de un combo
+  // que ya está en el carrito.
+  const menuPorId = useMemo(() => {
+    const m = {}
+    for (const cat of menu) for (const it of (cat.items || [])) m[it.id] = it
+    return m
+  }, [menu])
+
+  // Todo lo que le falta a una línea del carrito, con sus opciones de cambio.
+  const problemasDe = useCallback((it) => {
+    const out = []
+    const yaCambiado = (id) => (it.cambiosCombo || []).some(x => x.de === id)
+
+    if (bloq.items[it.id] && !it.cambioDe) {
+      out.push({ tipo: 'producto', deId: it.id, deNombre: it.nombre,
+                 opciones: bloq.items[it.id] || [] })
+    }
+    for (const comp of (menuPorId[it.id]?.componentes || [])) {
+      if (bloq.comps[comp.item_id] && !yaCambiado(comp.item_id)) {
+        out.push({ tipo: 'combo', deId: comp.item_id, deNombre: comp.nombre,
+                   opciones: bloq.comps[comp.item_id] || [] })
+      }
+    }
+    for (const m of (it.mods || [])) {
+      if (bloq.mods[m.id]) {
+        out.push({ tipo: 'extra', deId: m.id, deNombre: m.nombre,
+                   opciones: bloq.mods[m.id] || [] })
+      }
+    }
+    return out
+  }, [bloq, menuPorId])
+
+  const lineasConProblema = useMemo(
+    () => carrito.map(i => ({ linea: i, problemas: problemasDe(i) }))
+                 .filter(x => x.problemas.length > 0),
+    [carrito, problemasDe])
+
+  // Aceptar un cambio. El precio nunca sube: si el reemplazo vale más, se
+  // deja el que el cliente ya tenía en el carrito (la casa pone la
+  // diferencia). El servidor revalida esto mismo al crear el pedido.
+  const aplicarCambio = (lineaId, prob, op) => {
+    setCarrito(prev => prev.map(it => {
+      if (it.lineaId !== lineaId) return it
+      if (prob.tipo === 'producto') {
+        return { ...it, id: op.id, nombre: op.nombre,
+                 precio: Math.min(Number(it.precio) || 0, Number(op.precio) || 0),
+                 cambioDe: prob.deId, cambioDeNombre: prob.deNombre }
+      }
+      if (prob.tipo === 'combo') {
+        return { ...it, cambiosCombo: [...(it.cambiosCombo || []),
+                 { de: prob.deId, a: op.id, deNombre: prob.deNombre, aNombre: op.nombre }] }
+      }
+      const viejo = (it.mods || []).find(m => m.id === prob.deId)
+      const precio = Math.min(Number(viejo?.precio_extra) || 0, Number(op.precio_extra) || 0)
+      return {
+        ...it,
+        mods: (it.mods || []).map(m => m.id === prob.deId
+          ? { ...m, id: op.id, nombre: op.nombre, precio_extra: precio } : m),
+        modsCambio: { ...(it.modsCambio || {}), [op.id]: prob.deId },
+        precioMods: (it.mods || []).reduce((sum, m) =>
+          sum + (m.id === prob.deId ? precio : (Number(m.precio_extra) || 0)), 0)
+          + (it.comps || []).reduce((t, cp) => t + (cp.mods || []).reduce(
+              (u, m) => u + (Number(m.precio_extra) || 0), 0) * (Number(cp.cantidad) || 1), 0),
+      }
+    }))
+    setToast(`Listo, va ${op.nombre}`)
+  }
+
+  const quitarLinea = (lineaId) => {
+    setCarrito(prev => prev.filter(i => i.lineaId !== lineaId))
+    setToast('Listo, lo quitamos de tu pedido')
+  }
 
   // Toast (auto-hide 2s)
   useEffect(() => {
@@ -278,6 +383,20 @@ export default function MenuPublico() {
         {/* LOGO + INFO NEGOCIO */}
         <HeaderNegocio horarioBD={horarioBD} />
 
+        {/* PEDIDO SIN PAGAR: va primero porque es lo único que pide acción del
+            cliente. El pedido existe pero está invisible para la cocina hasta
+            que pague, así que en vez de dejarlo perdido se le ofrece volver.
+            La RPC solo devuelve los que todavía se pueden pagar (menos de 3 h). */}
+        {misPedidos?.pendientes?.length > 0 && (
+          <a href={`${URL_DELIVERY}/track?t=${misPedidos.pendientes[0].tracking_token}`}
+             style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0', padding: '12px 14px', borderRadius: 12, background: '#2a1a0d', border: '1px solid #b45309', color: '#fde8c8', textDecoration: 'none', fontSize: 14 }}>
+            <span style={{ fontSize: 22 }}>💳</span>
+            <span style={{ flex: 1 }}><b>Te falta pagar un pedido</b> ({misPedidos.pendientes[0].numero_orden} · {fmt(misPedidos.pendientes[0].total)})<br />
+              <span style={{ fontSize: 12, opacity: .85 }}>Tocá para terminar de pagarlo</span></span>
+            <span style={{ fontSize: 18 }}>→</span>
+          </a>
+        )}
+
         {/* MIS PEDIDOS: pedido activo → seguir en vivo; si no, sugerencia de repetir */}
         {misPedidos?.activos?.length > 0 && (
           <a href={`${URL_DELIVERY}/track?t=${misPedidos.activos[0].tracking_token}`}
@@ -346,7 +465,18 @@ export default function MenuPublico() {
                 <ProductoCard
                   key={prod.id}
                   producto={prod}
-                  onClick={() => setProductoModal(prod)}
+                  agotado={!!bloq.items[prod.id]}
+                  dondeAgotado={sucRuteada?.nombre}
+                  onClick={() => {
+                    const ops = bloq.items[prod.id]
+                    if (ops) {
+                      setToast(ops.length
+                        ? `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} — probá ${ops.map(o => o.nombre).join(' o ')}`
+                        : `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
+                      return
+                    }
+                    setProductoModal(prod)
+                  }}
                 />
               ))}
             </div>
@@ -395,6 +525,10 @@ export default function MenuPublico() {
           items={carrito}
           total={totalCarrito}
           reglas={reglas}
+          problemasDe={problemasDe}
+          dondeAgotado={sucRuteada?.nombre}
+          onCambiar={aplicarCambio}
+          onQuitarLinea={quitarLinea}
           onClose={() => setCarritoAbierto(false)}
           onUpdate={setCarrito}
           onCheckout={() => { setCarritoAbierto(false); setCheckoutOpen(true) }}
@@ -406,44 +540,27 @@ export default function MenuPublico() {
         <Checkout
           items={carrito}
           total={totalCarrito}
+          lineasConProblema={lineasConProblema}
+          dondeAgotado={sucRuteada?.nombre}
+          onCambiar={aplicarCambio}
+          onQuitarLinea={quitarLinea}
+          onSucursal={setSucRuteada}
           onClose={() => setCheckoutOpen(false)}
           onEnviado={(datos) => {
             setCarrito([])
             setCheckoutOpen(false)
             setPedidoOk(datos)
-            setPagoTarjeta(datos.metodoPago === 'tarjeta' && datos.cobroEnLinea !== false)
           }}
         />
       )}
 
-      {/* COBRO CON TARJETA
-          Mientras está abierto es LO ÚNICO que se ve. La versión anterior
-          montaba también la confirmación "debajo", pero los dos drawers usan
-          el mismo z-index, así que mandaba el orden del DOM y la confirmación
-          terminaba TAPANDO el formulario de tarjeta: el cliente veía "¡Pedido
-          enviado!" y no podía pagar.
-          Al cerrar el cobro, `pagoTarjeta` pasa a false y ahí sí aparece la
-          confirmación — el pedido ya está creado, no se pierde nada. */}
-      {pedidoOk && pagoTarjeta && (
-        <Suspense fallback={null}>
-          <PagoTarjeta
-            pedido={pedidoOk}
-            onAprobado={(r) => setPedidoOk(p => ({ ...p, pagado: true, pago: r }))}
-            onPagarEnEfectivo={() => {
-              setPagoTarjeta(false)
-              setPedidoOk(p => ({ ...p, metodoPago: 'efectivo' }))
-            }}
-            onCerrar={() => setPagoTarjeta(false)}
-          />
-        </Suspense>
-      )}
-
-      {/* CONFIRMACIÓN POST-PEDIDO — solo cuando no se está cobrando */}
-      {pedidoOk && !pagoTarjeta && (
-        <PedidoEnviado
-          datos={pedidoOk}
-          onClose={() => { setPedidoOk(null); setPagoTarjeta(false) }}
-        />
+      {/* CONFIRMACIÓN POST-PEDIDO
+          Solo se monta con el pedido YA VIVO: pagado con tarjeta o confirmado
+          como efectivo. Antes salía también tras abandonar el cobro, y el
+          botón de WhatsApp mandaba al cliente a escribirle a Karina por un
+          pedido que ella no podía ver. */}
+      {pedidoOk && (
+        <PedidoEnviado datos={pedidoOk} onClose={() => setPedidoOk(null)} />
       )}
 
       {/* TOAST */}
@@ -599,11 +716,63 @@ function HeaderNegocio({ horarioBD }) {
   )
 }
 
-function ProductoCard({ producto, onClick }) {
+// ── "Hoy no hay X — ¿te lo cambiamos por Y?" ────────────────────────
+// Sale cuando la app ya sabe de qué tienda va a salir el pedido. Antes de
+// esto no se puede saber: el cliente arma el carrito y recién marca su
+// ubicación en el checkout.
+//
+// El cambio lo propuso la torre, no lo inventa la app, y nunca sube el
+// precio: si el reemplazo vale más, la diferencia la pone la casa.
+function AvisoCambio({ problemas, dondeAgotado, onCambiar, onQuitar }) {
+  if (!problemas?.length) return null
+  return (
+    <div className="mp-agotado-aviso">
+      {problemas.map((p, i) => (
+        <div key={`${p.tipo}-${p.deId}`} style={{ marginTop: i ? 10 : 0 }}>
+          <div>
+            😔 Hoy no hay <b>{p.deNombre}</b>
+            {dondeAgotado ? <> en <b>{dondeAgotado}</b></> : null}
+            {p.tipo === 'combo' ? ', que viene adentro de este combo' : ''}
+            {p.tipo === 'extra' ? ', que pediste de extra' : ''}.
+          </div>
+          {p.opciones.length > 0 ? (
+            <>
+              <div style={{ fontSize: 12.5, marginTop: 5 }}>
+                Te lo cambiamos sin costo por:
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                {p.opciones.map(op => (
+                  <button key={op.id} className="mp-agotado-op"
+                          onClick={() => onCambiar(p, op)}>
+                    {op.nombre}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, marginTop: 5 }}>
+              No tenemos con qué cambiarlo hoy.
+            </div>
+          )}
+        </div>
+      ))}
+      <button className="mp-agotado-quitar" onClick={onQuitar}>
+        Mejor quitalo de mi pedido
+      </button>
+    </div>
+  )
+}
+
+function ProductoCard({ producto, onClick, agotado = false, dondeAgotado }) {
   const tieneOpciones = (producto.grupos || []).length > 0
     || (producto.componentes || []).some(c => (c.grupos || []).length > 0)
   return (
-    <button className="mp-card" onClick={onClick}>
+    <button className={`mp-card${agotado ? ' mp-card-agotado' : ''}`} onClick={onClick}>
+      {agotado && (
+        <div className="mp-card-cinta">
+          Hoy no hay{dondeAgotado ? ` en ${dondeAgotado}` : ''}
+        </div>
+      )}
       <div className="mp-card-info">
         <div className="mp-card-nombre">{producto.nombre}</div>
         {producto.descripcion && (
@@ -960,7 +1129,11 @@ function lineaPedidoTexto(it) {
   return partes.join('\n')
 }
 
-function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) {
+function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
+                        problemasDe = () => [], dondeAgotado,
+                        onCambiar = () => {}, onQuitarLinea = () => {} }) {
+  const problemas = items.map(i => ({ linea: i, p: problemasDe(i) })).filter(x => x.p.length)
+  const hayAgotados = problemas.length > 0
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
   const faltaGratis = reglas ? Math.max(0, reglas.gratisDesde - total) : 0
   const removeLinea = (lineaId) => {
@@ -989,9 +1162,25 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
             </div>
           ) : (
             items.map(it => (
-              <div key={it.lineaId} className="mp-linea">
+              <div key={it.lineaId}
+                   className={`mp-linea${problemasDe(it).length ? ' mp-linea-agotada' : ''}`}>
                 <div className="mp-linea-info">
                   <div className="mp-linea-nombre">{it.nombre}</div>
+                  {it.cambioDeNombre && (
+                    <div className="mp-linea-cambio">
+                      ↪ en vez de {it.cambioDeNombre}
+                    </div>
+                  )}
+                  {(it.cambiosCombo || []).map(x => (
+                    <div key={x.de} className="mp-linea-cambio">
+                      ↪ {x.aNombre} en vez de {x.deNombre}
+                    </div>
+                  ))}
+                  {problemasDe(it).length > 0 && (
+                    <div className="mp-linea-agotada-nota">
+                      😔 Falta algo{dondeAgotado ? ` en ${dondeAgotado}` : ''}
+                    </div>
+                  )}
                   {it.nota && <div className="mp-linea-nota">📝 {it.nota}</div>}
                   {it.mods && it.mods.map((m, i) => (
                     <div key={i} className="mp-linea-mod">
@@ -1028,8 +1217,16 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas }) 
               <span>Total</span>
               <span className="mp-drawer-total-num">{fmt(total)}</span>
             </div>
-            <button className="mp-btn-checkout" onClick={onCheckout} disabled={faltaMinimo > 0}>
-              {faltaMinimo > 0 ? `Mínimo ${fmt(reglas.minimo)} para pedir` : 'Continuar al pedido →'}
+            {problemas.map(({ linea, p }) => (
+              <AvisoCambio key={linea.lineaId} problemas={p} dondeAgotado={dondeAgotado}
+                           onCambiar={(prob, op) => onCambiar(linea.lineaId, prob, op)}
+                           onQuitar={() => onQuitarLinea(linea.lineaId)} />
+            ))}
+            <button className="mp-btn-checkout" onClick={onCheckout}
+                    disabled={faltaMinimo > 0 || hayAgotados}>
+              {hayAgotados ? 'Elegí el cambio para seguir'
+                : faltaMinimo > 0 ? `Mínimo ${fmt(reglas.minimo)} para pedir`
+                : 'Continuar al pedido →'}
             </button>
           </div>
         )}
@@ -1157,7 +1354,10 @@ function PedidoEnviado({ datos, onClose }) {
   )
 }
 
-function Checkout({ items, total, onClose, onEnviado }) {
+function Checkout({ items, total, onClose, onEnviado,
+                   lineasConProblema = [], dondeAgotado,
+                   onCambiar = () => {}, onQuitarLinea = () => {},
+                   onSucursal = () => {} }) {
   const perfil = useMemo(leerPerfil, [])
   const clienteConocido = !!(perfil.nombre || perfil.telefono)
   const [tipo, setTipo] = useState('delivery') // 'delivery' | 'pickup'
@@ -1192,7 +1392,13 @@ function Checkout({ items, total, onClose, onEnviado }) {
     try {
       const { data } = await db.rpc('sucursal_mas_cercana', { p_lat: lat, p_lng: lng })
       setRuteo(data || null)
-    } catch { setRuteo(null) }
+      // Recién acá la app sabe de qué tienda sale el pedido, y recién acá
+      // puede apagar lo que esa tienda no tiene. Fuera de cobertura no se
+      // asigna sucursal (la rutea Karina a mano), así que no se filtra nada.
+      onSucursal(data?.en_cobertura
+        ? { id: data.sucursal_id, nombre: data.nombre }
+        : null)
+    } catch { setRuteo(null); onSucursal(null) }
     setGeoEstado('ok')
     setVerMapa(false)
   }
@@ -1230,6 +1436,13 @@ function Checkout({ items, total, onClose, onEnviado }) {
     if (tipo !== 'pickup' || tiendas.length) return
     db.rpc('sucursales_pickup').then(({ data }) => setTiendas(data || [])).catch(() => {})
   }, [tipo]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Si viene a recoger, la tienda no hay que adivinarla: la eligió él.
+  useEffect(() => {
+    if (tipo !== 'pickup') return
+    const t = tiendas.find(x => x.id === tiendaSel)
+    onSucursal(t ? { id: t.id, nombre: t.nombre } : null)
+  }, [tipo, tiendaSel, tiendas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Costo de envío según distancia a la sucursal ruteada (parametrizable en la torre)
   const [envio, setEnvio] = useState(null)
@@ -1273,19 +1486,30 @@ function Checkout({ items, total, onClose, onEnviado }) {
   const totalConEnvio = total + costoEnvio
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
-  const enviar = async () => {
+  // Valida el formulario. Lo usan los dos caminos: el de efectivo y el del
+  // bloque de tarjeta, que necesita el pedido armado para mandarlo junto con
+  // los datos de la tarjeta en un solo request.
+  const validar = () => {
     setError('')
-    if (!nombre.trim()) return setError('Ingresá tu nombre')
+    if (lineasConProblema.length) {
+      const faltan = lineasConProblema.flatMap(x => x.problemas.map(p => p.deNombre))
+      setError(`Hoy no hay ${[...new Set(faltan)].join(', ')}`
+        + `${dondeAgotado ? ` en ${dondeAgotado}` : ''}. Elegí el cambio o quitalo,`
+        + ' y el resto de tu pedido sale igual.')
+      return false
+    }
+    if (!nombre.trim()) { setError('Ingresá tu nombre'); return false }
     const tel = telefono.trim()
     if (!TEL_VALIDO.test(tel)) {
-      return setError(tel.length !== 8
+      setError(tel.length !== 8
         ? 'El teléfono debe tener 8 dígitos'
         : 'Revisá el teléfono: en El Salvador empieza con 2, 6 o 7')
+      return false
     }
-    if (tipo === 'pickup' && !tiendaSel) return setError('Elegí en qué tienda vas a recoger')
+    if (tipo === 'pickup' && !tiendaSel) { setError('Elegí en qué tienda vas a recoger'); return false }
     if (tipo === 'delivery') {
-      if (!direccion.trim()) return setError('Dirección requerida para delivery')
-      if (!zona) return setError('Elegí tu zona')
+      if (!direccion.trim()) { setError('Dirección requerida para delivery'); return false }
+      if (!zona) { setError('Elegí tu zona'); return false }
       // Sin punto en el mapa el motorista sale a buscar la dirección a ciegas.
       // Antes se podía enviar el pedido sin tocar el botón de ubicación y ~1 de
       // cada 3 llegaba sin coordenadas; ahora se abre el mapa y no se sigue
@@ -1298,17 +1522,20 @@ function Checkout({ items, total, onClose, onEnviado }) {
           document.getElementById('mp-campo-ubicacion')
             ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 80)
-        return setError('Necesitamos tu ubicación para llevarte el pedido. Marcá tu casa en el mapa.')
+        setError('Necesitamos tu ubicación para llevarte el pedido. Marcá tu casa en el mapa.')
+        return false
       }
-      if (!cumpleMinimo) return setError(`Pedido mínimo ${fmt(envio?.minimo ?? NEGOCIO.consumoMinimo)} para delivery`)
+      if (!cumpleMinimo) {
+        setError(`Pedido mínimo ${fmt(envio?.minimo ?? NEGOCIO.consumoMinimo)} para delivery`)
+        return false
+      }
     }
-    setEnviando(true)
-    try {
-      // El pedido se crea vía RPC: valida precios contra el menú real,
-      // guarda el shape canónico y entra 'recibida' SIN comandar. La comanda
-      // a cocina la dispara Karina al confirmar el pago (torre de control).
-      const { data, error: rpcErr } = await db.rpc('crear_pedido_delivery', {
-        p: {
+    return true
+  }
+
+  // El payload canónico del pedido. `crear_pedido_delivery` revalida todo
+  // contra el menú real, así que esto es una propuesta, no la verdad.
+  const armarPedido = () => ({
           cliente_nombre: nombre.trim(),
           cliente_telefono: telefono.trim(),
           tipo,
@@ -1325,6 +1552,12 @@ function Checkout({ items, total, onClose, onEnviado }) {
             menu_item_id: i.id,
             cantidad: i.qty,
             nota: i.nota || null,
+            // Cambios que el cliente aceptó porque a la tienda se le acabó
+            // algo. El servidor los revalida contra lo que autorizó la torre
+            // y decide el precio: nunca cobra más de lo que se le mostró.
+            cambio_de: i.cambioDe || null,
+            cambios_combo: (i.cambiosCombo || []).map(x => ({ de: x.de, a: x.a })),
+            mods_cambio: i.modsCambio || {},
             // Solo las opciones del ítem: las de cada unidad del combo van en `componentes`,
             // porque el servidor las cobra por separado (mandarlas dos veces cobraría doble).
             modificadores: (i.mods || []).map(m => m.id),
@@ -1335,38 +1568,63 @@ function Checkout({ items, total, onClose, onEnviado }) {
               modificadores: (c.mods || []).map(m => m.id),
             })),
           })),
-        },
-      })
+  })
+
+  const recordarPerfil = () => guardarPerfil({
+    nombre: nombre.trim(), telefono: telefono.trim(),
+    direccion: direccion.trim(), zona,
+  })
+
+  // Lo que ve la pantalla de confirmación. El total que manda el servidor es el
+  // que manda; el desglose local es informativo.
+  const datosConfirmacion = (data, extra = {}) => ({
+    ...data,
+    nombre: nombre.trim(),
+    items, subtotal: total, costoEnvio, tipo,
+    direccion: direccion.trim(),
+    ...extra,
+  })
+
+  // ── Camino EFECTIVO: igual que siempre, el pedido nace visible ──
+  const enviar = async () => {
+    if (!validar()) return
+    setEnviando(true)
+    try {
+      const { data, error: rpcErr } = await db.rpc('crear_pedido_delivery', { p: armarPedido() })
       if (rpcErr) throw rpcErr
       if (!data?.ok) throw new Error('respuesta inesperada')
-
-      // Recordar datos en este dispositivo para el próximo pedido (el CRM
-      // server-side lo actualiza la propia RPC).
-      guardarPerfil({
-        nombre: nombre.trim(),
-        telefono: telefono.trim(),
-        direccion: direccion.trim(),
-        zona,
-      })
-
-      // Se pasa el detalle del carrito para que la pantalla de confirmación muestre la orden
-      // completa y no solo el número. El total que manda el servidor sigue siendo el que manda:
-      // el desglose local es informativo.
-      onEnviado({
-        ...data,
-        nombre: nombre.trim(),
-        items, subtotal: total, costoEnvio, tipo,
-        direccion: direccion.trim(), metodoPago,
-        // Sin esto, fuera del piloto se abriría el drawer de cobro para
-        // cerrarse solo. Con esto el pedido termina como termina hoy.
-        cobroEnLinea,
-      })
+      recordarPerfil()
+      onEnviado(datosConfirmacion(data, { metodoPago: 'efectivo' }))
     } catch (err) {
       console.error('Error enviando pedido:', err)
       setError('No se pudo enviar el pedido. Intentá otra vez o llamanos.')
     } finally {
       setEnviando(false)
     }
+  }
+
+  // ── Camino TARJETA: el bloque de pago crea y cobra en un solo request ──
+  // Devuelve null si el formulario no está completo; el error ya quedó puesto.
+  const construirPedido = () => {
+    if (!validar()) return null
+    return armarPedido()
+  }
+
+  const cobroAprobado = (r) => {
+    recordarPerfil()
+    onEnviado(datosConfirmacion(r, {
+      metodoPago: 'tarjeta', pagado: true,
+      pago: { marca: r.marca, last4: r.last4, comandado: r.comandado },
+      costoEnvio: Number(r.costo_envio ?? costoEnvio),
+    }))
+  }
+
+  // El cliente eligió pagar al recibir. Si ya había un pedido creado (hubo un
+  // intento de cobro), el servidor ya lo pasó a efectivo; si no, se crea acá.
+  const cobroEnEfectivo = async (r) => {
+    setMetodoPago('efectivo')
+    if (r?.ok) { recordarPerfil(); onEnviado(datosConfirmacion(r, { metodoPago: 'efectivo' })); return }
+    await enviar()
   }
 
   return (
@@ -1625,22 +1883,41 @@ function Checkout({ items, total, onClose, onEnviado }) {
             </div>
           </div>
 
+          {lineasConProblema.map(({ linea, problemas }) => (
+            <AvisoCambio key={linea.lineaId} problemas={problemas} dondeAgotado={dondeAgotado}
+                         onCambiar={(prob, op) => onCambiar(linea.lineaId, prob, op)}
+                         onQuitar={() => onQuitarLinea(linea.lineaId)} />
+          ))}
+
           {error && <div className="mp-error">{error}</div>}
+
+          {/* PAGO CON TARJETA — va en el cuerpo, NO en el pie.
+              `.mp-drawer-body` es el único con overflow-y:auto; el pie no
+              scrollea. Con el formulario de tarjeta ahí adentro, el pie crecía
+              y aplastaba al cuerpo: el cliente no podía volver arriba a
+              corregir la dirección antes de pagar. */}
+          {metodoPago === 'tarjeta' && cobroEnLinea && (
+            <Suspense fallback={<div className="mp-pago-esperando"><div className="mp-pago-spinner" /></div>}>
+              <BloquePago
+                total={totalConEnvio}
+                construirPedido={construirPedido}
+                onAprobado={cobroAprobado}
+                onEfectivo={cobroEnEfectivo}
+                onNoDisponible={(msg) => { setCobroEnLinea(false); if (msg) setError(msg) }}
+              />
+            </Suspense>
+          )}
         </div>
 
-        <div className="mp-drawer-footer">
-          <button
-            className="mp-btn-checkout"
-            onClick={enviar}
-            disabled={enviando}
-          >
-            {enviando
-              ? 'Enviando...'
-              : metodoPago === 'tarjeta'
-                ? `Continuar al pago · ${fmt(totalConEnvio)}`
-                : `Confirmar pedido · ${fmt(totalConEnvio)}`}
-          </button>
-        </div>
+        {/* El pie solo existe para el camino de efectivo. Con tarjeta el botón
+            va al final del formulario, dentro del cuerpo scrolleable. */}
+        {!(metodoPago === 'tarjeta' && cobroEnLinea) && (
+          <div className="mp-drawer-footer">
+            <button className="mp-btn-checkout" onClick={enviar} disabled={enviando}>
+              {enviando ? 'Enviando...' : `Confirmar pedido · ${fmt(totalConEnvio)}`}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -187,6 +187,7 @@ export function buildFactura(c, cols = 48) {
   // Canal de venta (y número de mesa si aplica)
   t.row('Canal:', c.tipoLabel || 'Para llevar');
   if (c.mesa) t.row('Mesa:', `#${c.mesa}`);
+  if (c.peyaRef) t.bold(true).row('PeYa ID:', `#${c.peyaRef}`).bold(false);
 
   if (c.cliente?.nombre) {
     t.hr().ln(`Cliente: ${c.cliente.nombre}`);

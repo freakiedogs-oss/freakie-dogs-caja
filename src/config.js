@@ -87,6 +87,10 @@ export const NAV_SECTIONS = [
       { key: 'cierre', label: 'Cierre de Caja', icon: '💰', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
       { key: 'reporte', label: 'Reporte de Turno', icon: '📝', roles: ['cajero', 'cajera', 'cocina', 'gerente', 'admin'] },
       { key: 'deposito', label: 'Depósitos', icon: '🏦', roles: ['cajero', 'cajera', 'gerente', 'admin'] },
+      // Calendario sucursal × día de venta: de qué días NO llegó el efectivo
+      // al banco. Va acá y no en Finanzas porque quien persigue el depósito
+      // que falta es la gerencia de la sucursal, no contabilidad. Sólo lee.
+      { key: 'depositos-control', label: 'Control de Depósitos', icon: '📅', roles: ['gerente', 'admin', 'ejecutivo', 'contador', 'superadmin'] },
     ],
   },
   {
@@ -158,6 +162,9 @@ export const NAV_SECTIONS = [
       { key: 'incidentes-cm', label: 'Incidentes CM', icon: '🚨', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'ing_alimentos'] },
       { key: 'devoluciones', label: 'Devoluciones', icon: '🔄', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'gerente', 'cocina', 'admin', 'ing_alimentos'] },
       { key: 'bpm-chili', label: 'Control BPM · Chili', icon: '🌶️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      // Lo que administra Calidad (Mauricio): equipos y calibración, químicos y
+      // rangos, color de esponja por área, causas/acciones de desvío. (14-sep-2026)
+      { key: 'bpm-parametros', label: 'Parámetros BPM · Calidad', icon: '🧪', roles: ['ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'carne-boleado', label: 'Mezclado y boleado', icon: '🥩', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'bpm-temperatura', label: 'Temperatura · Carne boleada', icon: '🌡️', roles: ['produccion', 'ing_alimentos', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       // Protocolo de apertura — abierto a todas las sucursales (9-sep-2026).

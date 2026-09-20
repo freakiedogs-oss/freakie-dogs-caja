@@ -5,6 +5,7 @@ import { anularDTE } from './cajero/dteService'
 import NotaCreditoModal from './cajero/NotaCreditoModal'
 import DevolucionModal from './cajero/DevolucionModal'
 import { useToast } from '../hooks/useToast'
+import { usePeyaIdObligatorio, normalizarIdPeya, PEYA_ID_MAX } from './peyaId'
 import Icon from './Icon'
 import { printFactura } from './print/printService'
 
@@ -65,6 +66,13 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
   const [devolucion, setDevolucion] = useState(null)
   const [filtroFecha, setFiltroFecha] = useState('hoy') // 'hoy' | 'ayer' | 'custom'
   const [fechaCustom, setFechaCustom] = useState('')
+  // ID de PedidosYa (pedido Cesar 17-sep): filtro "PeYa" / "Sin ID", buscador por
+  // ID y campo para ponérselo a los que entraron sin él. Se enciende por sucursal.
+  const peyaIdObligatorio = usePeyaIdObligatorio(storeCode)
+  const [filtroPeya, setFiltroPeya] = useState('todos')  // 'todos' | 'peya' | 'sin_id'
+  const [buscar, setBuscar]         = useState('')
+  const [peyaEdit, setPeyaEdit]     = useState({})       // cuentaId -> texto que se está digitando
+  const [peyaSaving, setPeyaSaving] = useState(null)     // cuentaId guardando
 
   // Obtener hoy en zona horaria El Salvador
   const getToday = useCallback(() => {
@@ -117,6 +125,10 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
           nc_codigo_generacion,
           nc_emitida_at,
           sucursal_id,
+          delivery_referencia,
+          referencia_puesta_por,
+          referencia_puesta_at,
+          created_at,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
             id,
             nombre,
@@ -155,6 +167,51 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
   }, [storeCode, getToday, filtroFecha, fechaCustom])
 
   useEffect(() => { load() }, [load, refreshKey])
+
+  // IDs de PeYa repetidos en la lista cargada (mismo día): el segundo casi
+  // siempre es un pedido digitado dos veces (#18/#19 del 16-sep).
+  const peyaRepetidos = (() => {
+    const c = {}
+    cuentas.forEach(x => { if (x.tipo === 'pedidos_ya' && x.delivery_referencia) c[x.delivery_referencia] = (c[x.delivery_referencia] || 0) + 1 })
+    return new Set(Object.keys(c).filter(k => c[k] > 1))
+  })()
+  const peyaSinId = cuentas.filter(x => x.tipo === 'pedidos_ya' && !x.delivery_referencia).length
+  const peyaTotal = cuentas.filter(x => x.tipo === 'pedidos_ya').length
+
+  const q = buscar.trim().toUpperCase()
+  const cuentasVisibles = cuentas.filter(x => {
+    if (filtroPeya === 'peya'   && x.tipo !== 'pedidos_ya') return false
+    if (filtroPeya === 'sin_id' && !(x.tipo === 'pedidos_ya' && !x.delivery_referencia)) return false
+    if (!q) return true
+    const ref = (x.delivery_referencia || '').toUpperCase()
+    const tot = parseFloat(x.total || 0).toFixed(2)
+    const mesa = (x.mesa_ref || '').toString().toUpperCase()
+    return ref.includes(q) || tot.includes(q) || mesa.includes(q) || formatTime(x.cobrada_at).toUpperCase().includes(q)
+  })
+
+  const guardarPeyaId = async (cuenta) => {
+    const texto = peyaEdit[cuenta.id] ?? ''
+    const norm = normalizarIdPeya(texto)
+    if (!norm) { toast.warning('Escribí el ID del pedido'); return }
+    setPeyaSaving(cuenta.id)
+    try {
+      const { data, error } = await db.rpc('pos_poner_referencia_peya', {
+        p_cuenta_id: cuenta.id, p_referencia: norm, p_usuario_id: user?.id || null,
+      })
+      if (error) throw error
+      setCuentas(prev => prev.map(c => c.id === cuenta.id
+        ? { ...c, delivery_referencia: data?.referencia || norm, referencia_puesta_por: user?.id || null, referencia_puesta_at: new Date().toISOString() }
+        : c))
+      setPeyaEdit(prev => { const n = { ...prev }; delete n[cuenta.id]; return n })
+      const dups = data?.duplicados || []
+      if (dups.length > 0) toast.warning(`Ojo: el ID #${data.referencia} ya está en otro pedido de hoy (${dups.map(d => '$' + parseFloat(d.total).toFixed(2)).join(', ')}). ¿Se digitó dos veces?`)
+      else toast.success(`ID #${data?.referencia || norm} guardado`)
+    } catch (e) {
+      toast.error('No se pudo guardar el ID: ' + e.message)
+    } finally {
+      setPeyaSaving(null)
+    }
+  }
 
   // Realtime: actualizar cuando haya nuevas cobradas
   useEffect(() => {
@@ -380,6 +437,36 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
         )}
       </div>
 
+      {/* ── FILTRO PEDIDOSYA + BUSCADOR ── */}
+      {(peyaIdObligatorio || peyaTotal > 0) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: '#141418', borderBottom: '1px solid #2a2a32', flexWrap: 'wrap' }}>
+          {[
+            { k: 'todos',  label: `Todos · ${cuentas.length}`, color: '#8b8997' },
+            { k: 'peya',   label: `PedidosYa · ${peyaTotal}`,  color: '#a78bfa' },
+            { k: 'sin_id', label: `Sin ID · ${peyaSinId}`,     color: '#fbbf24' },
+          ].map(f => (
+            <button key={f.k} onClick={() => setFiltroPeya(f.k)}
+              style={{
+                padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                border: '1px solid ' + (filtroPeya === f.k ? f.color : '#2a2a32'),
+                background: filtroPeya === f.k ? f.color + '22' : '#1e1e24',
+                color: filtroPeya === f.k ? f.color : '#8b8997',
+              }}>
+              {f.label}
+            </button>
+          ))}
+          <label htmlFor="historial-buscar" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Buscar</label>
+          <input
+            id="historial-buscar"
+            type="text"
+            value={buscar}
+            onChange={e => setBuscar(e.target.value)}
+            placeholder="Buscar por ID de PeYa, monto u hora…"
+            style={{ flex: '1 1 220px', minWidth: 180, background: '#1e1e24', border: '1px solid #333', borderRadius: 8, color: '#f0f0f0', padding: '6px 12px', fontSize: 13 }}
+          />
+        </div>
+      )}
+
       {/* ── CUERPO ── */}
       <div className="historial-cobros-body">
 
@@ -397,14 +484,21 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
               {cuentas.length} cobro{cuentas.length !== 1 ? 's' : ''} {filtroFecha === 'hoy' ? 'hoy' : filtroFecha === 'ayer' ? 'ayer' : fechaCustom}
             </div>
 
-            {cuentas.map((cuenta) => {
+            {cuentasVisibles.length === 0 && (
+              <div style={{ color: '#8b8997', fontSize: 13, padding: '16px 4px' }}>Nada coincide con el filtro o la búsqueda.</div>
+            )}
+            {cuentasVisibles.map((cuenta) => {
               const tipoInfo = TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']
+              const esPeya = cuenta.tipo === 'pedidos_ya'
+              const peyaSinRef = esPeya && !cuenta.delivery_referencia
+              const peyaRepetido = esPeya && cuenta.delivery_referencia && peyaRepetidos.has(cuenta.delivery_referencia)
               const dteDisplay = DTE_DISPLAY[cuenta.dte_tipo] || DTE_DISPLAY[null]
               const items = cuenta.pos_cuenta_items || []
               const isExpanded = expandedId === cuenta.id
 
               return (
-                <div key={cuenta.id} className="historial-ticket-card">
+                <div key={cuenta.id} className="historial-ticket-card"
+                  style={peyaSinRef ? { borderColor: '#fbbf2466' } : peyaRepetido ? { borderColor: '#f8717166' } : undefined}>
 
                   {/* Header de ticket */}
                   <div
@@ -417,7 +511,16 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                       <span style={{ color: tipoInfo.color, fontWeight: 600 }}>
                         {tipoInfo.label}
                         {cuenta.mesa_ref && ` #${cuenta.mesa_ref}`}
+                        {esPeya && cuenta.delivery_referencia && (
+                          <span style={{ color: '#fff', letterSpacing: 1.2, marginLeft: 6 }}>#{cuenta.delivery_referencia}</span>
+                        )}
                       </span>
+                      {peyaSinRef && (
+                        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: '#0a0a0a', background: '#fbbf24', borderRadius: 999, padding: '2px 8px', marginLeft: 6 }}>SIN ID</span>
+                      )}
+                      {peyaRepetido && (
+                        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: '#fff', background: '#e63946', borderRadius: 999, padding: '2px 8px', marginLeft: 6 }} title="Otro pedido de PeYa de hoy tiene este mismo ID">REPETIDO</span>
+                      )}
                       {cuenta.tipo === 'mesa' && cuenta.pax_total > 0 && (
                         <span style={{ color: '#8b8997', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 6 }}>
                           · {cuenta.pax_total} <Icon name="users" size={11} />
@@ -449,6 +552,35 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                   {/* Detalles (items) — expandible */}
                   {isExpanded && (
                     <>
+                      {/* ID de PedidosYa: ponérselo si entró sin él, o corregirlo */}
+                      {esPeya && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#17171d', borderTop: '1px solid #2a2a32', flexWrap: 'wrap' }}>
+                          <label htmlFor={`peya-id-${cuenta.id}`} style={{ fontSize: 13, fontWeight: 700, color: peyaSinRef ? '#fbbf24' : '#c4b5fd', whiteSpace: 'nowrap' }}>
+                            {peyaSinRef ? 'Este pedido entró sin ID. Ponéselo:' : 'ID de PedidosYa:'}
+                          </label>
+                          <input
+                            id={`peya-id-${cuenta.id}`}
+                            type="text"
+                            autoCapitalize="characters"
+                            autoComplete="off"
+                            placeholder={cuenta.delivery_referencia || 'Ej: 7F3K2A'}
+                            value={peyaEdit[cuenta.id] ?? ''}
+                            maxLength={PEYA_ID_MAX + 4}
+                            onChange={e => setPeyaEdit(prev => ({ ...prev, [cuenta.id]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter') guardarPeyaId(cuenta) }}
+                            style={{ width: 170, background: '#0f0f13', border: `1px solid ${peyaSinRef ? '#fbbf24' : '#a78bfa66'}`, borderRadius: 10, color: '#fff', fontSize: 17, fontWeight: 800, letterSpacing: 3, padding: '8px 12px', textTransform: 'uppercase' }}
+                          />
+                          <button
+                            onClick={() => guardarPeyaId(cuenta)}
+                            disabled={peyaSaving === cuenta.id || !normalizarIdPeya(peyaEdit[cuenta.id])}
+                            style={{ padding: '10px 16px', background: '#2dd4a8', color: '#0a0a0a', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (peyaSaving === cuenta.id || !normalizarIdPeya(peyaEdit[cuenta.id])) ? 0.4 : 1 }}>
+                            {peyaSaving === cuenta.id ? 'Guardando…' : (peyaSinRef ? 'Guardar ID' : 'Corregir ID')}
+                          </button>
+                          {cuenta.referencia_puesta_at && (
+                            <span style={{ fontSize: 11, color: '#8b8997' }}>ID agregado después del cobro · {formatTime(cuenta.referencia_puesta_at)}</span>
+                          )}
+                        </div>
+                      )}
                       <div className="historial-ticket-items">
                         {items.length === 0 ? (
                           <div style={{ color: '#8b8997', fontSize: 12, padding: 8 }}>Sin ítems registrados</div>

@@ -323,6 +323,7 @@ function TabPedido({ user, evento, show, onRefresh }) {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState(null);
   const [pedidoItems, setPedidoItems] = useState({});
+  const [verTodo, setVerTodo] = useState(false);
 
   const notasPrefix = `EVT:${evento.id}`;
 
@@ -336,7 +337,10 @@ function TabPedido({ user, evento, show, onRefresh }) {
   }, [evento.id]);
 
   const fetchProductos = useCallback(async () => {
-    const { data } = await db.from('catalogo_productos').select('id, nombre, codigo, unidad_medida, categoria').eq('activo', true).order('nombre');
+    const { data } = await db.from('catalogo_productos')
+      .select('id, nombre, codigo, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden')
+      .eq('activo', true)
+      .order('nombre');
     setProductos(data || []);
   }, []);
 
@@ -395,7 +399,32 @@ function TabPedido({ user, evento, show, onRefresh }) {
     fetchPedidos(); onRefresh();
   };
 
-  const filtered = productos.filter(p => p.nombre.toLowerCase().includes(search.toLowerCase()));
+  // Mismo orden de grupos que la hoja de conteo de las sucursales (RPC conteo_lista)
+  const ORDEN_GRUPOS = ['Carnicos', 'Vegetales', 'Queso Lacteos', 'Harina Panes',
+    'Congelado Papas', 'Aderezos y Salsas', 'Desechables y Empaques', 'Especies',
+    'Utensilios de Limpieza', 'Extras', 'Bebidas', 'Nescafe'];
+
+  const q = search.trim().toLowerCase();
+  const base = verTodo ? productos : productos.filter(p => p.incluir_conteo);
+  const filtered = q ? base.filter(p => p.nombre.toLowerCase().includes(q)) : base;
+
+  const grupos = (() => {
+    const m = new Map();
+    filtered.forEach(p => {
+      const g = (p.conteo_categoria || '').trim() || 'Otros';
+      if (!m.has(g)) m.set(g, []);
+      m.get(g).push(p);
+    });
+    const norm = (x) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return [...m.entries()]
+      .map(([grupo, its]) => {
+        let pos = ORDEN_GRUPOS.findIndex(x => norm(x) === norm(grupo));
+        if (pos < 0) pos = 998;
+        its.sort((x, y) => ((x.conteo_orden ?? 9999) - (y.conteo_orden ?? 9999)) || x.nombre.localeCompare(y.nombre));
+        return { grupo, items: its, pos };
+      })
+      .sort((x, y) => (x.pos - y.pos) || x.grupo.localeCompare(y.grupo));
+  })();
 
   return (
     <div>
@@ -408,14 +437,37 @@ function TabPedido({ user, evento, show, onRefresh }) {
 
       {creating && (
         <div className="card" style={{ padding: 14, marginBottom: 16 }}>
-          <input style={{ ...inputStyle, marginBottom: 10 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
-          <div style={{ maxHeight: 180, overflowY: 'auto', marginBottom: 10 }}>
-            {filtered.slice(0, 25).map(p => (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px', borderBottom: '1px solid #1a1a1a' }}>
-                <span style={{ color: '#ccc', fontSize: 13 }}>{p.nombre} <span style={{ color: '#666' }}>({p.unidad_medida})</span></span>
-                <button className="btn btn-sm btn-ghost" onClick={() => addItem(p)}>+</button>
+          <input style={{ ...inputStyle, marginBottom: 8 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ color: '#666', fontSize: 11 }}>
+              {filtered.length} {filtered.length === 1 ? 'producto' : 'productos'} · {verTodo ? 'catalogo completo' : 'hoja de inventario'}
+            </span>
+            <button className="btn btn-sm btn-ghost" onClick={() => setVerTodo(!verTodo)}>
+              {verTodo ? 'Solo hoja de inventario' : 'Ver todo el catalogo'}
+            </button>
+          </div>
+          <div style={{ maxHeight: 320, overflowY: 'auto', marginBottom: 10 }}>
+            {grupos.map(g => (
+              <div key={g.grupo}>
+                <div style={{ position: 'sticky', top: 0, background: '#111', color: '#e23227', fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', padding: '8px 4px 4px' }}>
+                  {g.grupo} <span style={{ color: '#555', fontWeight: 400 }}>({g.items.length})</span>
+                </div>
+                {g.items.map(p => {
+                  const ya = items.some(i => i.producto_id === p.id);
+                  return (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px', borderBottom: '1px solid #1a1a1a', opacity: ya ? 0.45 : 1 }}>
+                      <span style={{ color: '#ccc', fontSize: 13 }}>{p.nombre} <span style={{ color: '#666' }}>({p.unidad_medida})</span></span>
+                      <button className="btn btn-sm btn-ghost" disabled={ya} onClick={() => addItem(p)}>{ya ? 'OK' : '+'}</button>
+                    </div>
+                  );
+                })}
               </div>
             ))}
+            {filtered.length === 0 && (
+              <p style={{ color: '#555', textAlign: 'center', padding: 16, fontSize: 12 }}>
+                Sin resultados. Proba con &quot;Ver todo el catalogo&quot;.
+              </p>
+            )}
           </div>
 
           {items.length > 0 && (

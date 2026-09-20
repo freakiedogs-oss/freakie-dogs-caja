@@ -8,6 +8,9 @@ import { db } from '../supabase'
 
 const MapaEnVivo = lazy(() => import('./MapaEnVivo'))
 const Juego = lazy(() => import('./Juego'))
+// El bloque de pago del menú sirve igual acá: con un pedido ya creado cobra ese
+// en vez de crear uno nuevo.
+const BloquePago = lazy(() => import('../menu-publico/PagoTarjeta'))
 
 const PASOS = [
   { k: 'recibida',   ic: '📝', t: 'Pedido recibido',  sub: 'Te vamos a escribir para coordinar el pago' },
@@ -16,6 +19,11 @@ const PASOS = [
   { k: 'en_camino',  ic: '🛵', t: 'En camino',        sub: 'Tu pedido va para allá' },
   { k: 'entregada',  ic: '🎉', t: 'Entregado',        sub: '¡Buen provecho!' },
 ]
+// OJO: `Math.max(0, …)` colapsa cualquier estado que no esté en PASOS al paso
+// 0, o sea "Pedido recibido — Te vamos a escribir para coordinar el pago". Para
+// un pedido sin pagar eso era una promesa falsa: nadie le iba a escribir porque
+// el pedido ni siquiera está en la torre. Por eso `pendiente_pago` se atiende
+// antes, con su propia pantalla, y nunca llega acá.
 const idxDe = (e) => Math.max(0, PASOS.findIndex(p => p.k === e))
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 
@@ -46,6 +54,39 @@ export default function TrackingPedido() {
   const paso = idxDe(d.estado)
   const enCamino = d.estado === 'en_camino'
   const entregado = d.estado === 'entregada'
+  const sinPagar = d.estado === 'pendiente_pago'
+
+  // ── Pedido sin pagar: honesto y con salida ──
+  // No se muestra la línea de tiempo ni el juego: no hay nada en marcha
+  // todavía. Lo único que corresponde es terminar de pagarlo.
+  if (sinPagar) {
+    return (
+      <Marco>
+        <div className="tk-hero">
+          <div className="tk-hero-ic">💳</div>
+          <h1 className="tk-hero-t">Falta pagar tu pedido</h1>
+          <p className="tk-hero-s">
+            Todavía no lo mandamos a cocina. Pagalo acá y sale de una.
+          </p>
+        </div>
+
+        <div className="mp-pago-resumen">
+          <span>Pedido {d.numero_orden}</span>
+          <b>{fmt(d.total)}</b>
+        </div>
+
+        <Suspense fallback={<div className="tk-cargando"><span className="tk-spin" /></div>}>
+          <BloquePago
+            total={Number(d.total)}
+            trackingToken={token}
+            onAprobado={() => window.location.reload()}
+            onEfectivo={() => window.location.reload()}
+            onNoDisponible={() => {}}
+          />
+        </Suspense>
+      </Marco>
+    )
+  }
 
   return (
     <Marco>

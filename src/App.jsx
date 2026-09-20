@@ -13,6 +13,7 @@ const CierreForm         = lazy(() => import('./components/caja/CierreForm'))
 const CorteXZView        = lazy(() => import('./components/caja/CorteXZView'))
 const ReporteForm        = lazy(() => import('./components/caja/ReporteForm'))
 const Deposito           = lazy(() => import('./components/caja/Deposito'))
+const DepositosCalendarioView = lazy(() => import('./components/finanzas/DepositosCalendarioView'))
 const AdminView          = lazy(() => import('./components/admin/AdminView'))
 const IncidentesDash     = lazy(() => import('./components/admin/IncidentesDash'))
 const VentasFreakies     = lazy(() => import('./components/dashboard/VentasFreakies'))
@@ -51,6 +52,7 @@ const MediaView          = lazy(() => import('./components/marketing/MediaView')
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
 const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView'))
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
+const BPMParametrosView  = lazy(() => import('./components/produccion/BPMParametrosView'))
 const BPMTemperaturaView = lazy(() => import('./components/produccion/BPMTemperaturaView'))
 const CarneBoleadoView   = lazy(() => import('./components/produccion/CarneBoleadoView'))
 const ProtocoloAperturaView = lazy(() => import('./components/produccion/ProtocoloAperturaView'))
@@ -95,7 +97,7 @@ const ROLE_DEFAULTS = {
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
   superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
   bodeguero: ['recepcion-dte', 'recepcion', 'despacho', 'inventario', 'historial'],
-  jefe_casa_matriz: ['bpm-temperatura', 'despacho-operativo', 'recepcion-dte', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
+  jefe_casa_matriz: ['bpm-temperatura', 'bpm-parametros', 'despacho-operativo', 'recepcion-dte', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
   cocina: ['conteo', 'reporte', 'devoluciones'],
   rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales', 'validacion-planilla'],
   contador: ['gastos', 'conciliacion', 'planilla'],
@@ -260,6 +262,8 @@ export default function App() {
         return <ReporteForm user={user} onBack={() => setScreen('home')} />
       case 'deposito':
         return <Deposito user={user} onBack={() => setScreen('home')} />
+      case 'depositos-control':
+        return <DepositosCalendarioView user={user} />
 
       // Dashboards
       case 'ventas-freakies':
@@ -346,6 +350,8 @@ export default function App() {
         return <AgrandadosView user={user} />
       case 'bpm-chili':
         return <BPMChiliView user={user} />
+      case 'bpm-parametros':
+        return <BPMParametrosView user={user} />
       case 'carne-boleado':
         return <CarneBoleadoView user={user} />
       case 'protocolo-apertura':

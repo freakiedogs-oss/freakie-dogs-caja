@@ -16,9 +16,33 @@
 //
 // ⚠️ En DEV local el cliente va directo a Supabase (no hay proxy), así que las
 // pantallas de finanzas necesitan el deploy —o `vercel dev`— para leer datos.
+//
+// ⚠️ Este cliente NO usa `URL_SB`: la usa el resto del ERP y desde el 8-sep-2026
+// apunta al dominio propio (`VITE_SB_URL` = api.freakiedogs.com), que es Supabase
+// directo y por lo tanto NO pasa por el gate. Con la anon key y sin gate, todo
+// objeto de finanzas cerrado a `anon` responde `permission denied` (ver abajo).
 // ────────────────────────────────────────────────────────────────────
 import { createClient } from '@supabase/supabase-js'
 import { db, URL_SB, KEY_SB } from './supabase'
+
+// ── Por qué finanzas se queda en el proxy `/sb` ──
+// El dominio propio mató al proxy para el resto del ERP (sin techo de 25 s, sin
+// límite de concurrencia, con WebSocket). Pero el gate de finanzas ES el proxy:
+// vive en `api/supaproxy.js` y es lo único que cambia la llave pública por el
+// rol privado `erp_finanzas_ro`. Contra `api.freakiedogs.com` no hay dónde
+// colgarlo — el request llega a Postgres como `anon` y `v_dtes_emitidos`,
+// `v_empleados_expediente`, `planillas`, `planilla_detalle`, `v_planilla_*` y
+// el RPC `dte_emitido_detalle` (todos revocados a `anon` a propósito) devuelven
+// `permission denied for view ...`. Eso dejó muertas las pantallas de DTEs
+// emitidos, expediente y planilla desde el switch del 8-sep.
+//
+// El costo de volver al proxy acá es aceptable: son consultas de back-office
+// (unas pocas por pantalla, no la operación en vivo del POS), que es justo lo
+// que el proxy sí aguanta. El día que el gate se mueva a la DB (RPC SECURITY
+// DEFINER que valide el token de sesión), esta línea vuelve a ser `URL_SB`.
+const isBrowser = typeof window !== 'undefined'
+const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV === true
+const URL_FIN = isBrowser && !isDev ? `${window.location.origin}/sb` : URL_SB
 
 // Misma clave que usan la torre de delivery y SubirFotoItem: sesión compartida.
 export const TOKEN_KEY = 'freakie_torre_token'
@@ -63,7 +87,7 @@ const fetchConSesion = async (input, init = {}) => {
   return res
 }
 
-export const dbFin = createClient(URL_SB, KEY_SB, {
+export const dbFin = createClient(URL_FIN, KEY_SB, {
   auth: { persistSession: false },
   global: { fetch: fetchConSesion },
 })

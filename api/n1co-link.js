@@ -111,7 +111,7 @@ async function rpc(fn, args) {
 
 async function pagosOnline(filtro) {
   const key = claveServicio();
-  const cols = 'id,delivery_id,estado,monto,order_id,order_code,link_url,intento';
+  const cols = 'id,delivery_id,estado,monto,order_id,order_code,link_url,intento,metodo';
   const res = await fetchConTimeout(`${SUPA_URL}/rest/v1/pagos_online?${filtro}&select=${cols}&limit=1`, {
     headers: { apikey: key, Authorization: `Bearer ${key}`, accept: 'application/json' },
   });
@@ -190,6 +190,63 @@ async function confirmarContraN1co(pago) {
   return { estado: 'pendiente', pago_id: pago.id };
 }
 
+// ── Resolver un cobro de EPay desde el evento del webhook ────────────
+//
+// Los cobros de EPay (api/n1co.js) no tienen `orderCode`: ese es de los links
+// de pago. Para ellos no hay endpoint de consulta, así que la fuente es el
+// propio evento — y por eso la firma NO es opcional: es lo único que prueba
+// que lo mandó n1co.
+//
+// Existe por el peor caso del cobro online: n1co cobra la tarjeta y nuestra
+// confirmación se cae en el medio. Sin esto el cliente queda cobrado y el
+// pedido sin entrar a cocina.
+const EVENTOS_PAGADO = new Set([
+  'successpayment', 'paymentsuccess', 'success', 'finalized', 'paid',
+]);
+const EVENTOS_FALLIDO = new Set([
+  'paymenterror', 'cancelled', 'canceled', 'failed', 'paymentfailed',
+]);
+
+async function resolverEpayDesdeEvento(pago, body) {
+  if (pago.estado === 'aprobado') return { estado: 'aprobado', pago_id: pago.id };
+
+  const tipo = String(body?.type || '').toLowerCase().replace(/[^a-z]/g, '');
+  const meta = body?.metadata || {};
+
+  if (EVENTOS_PAGADO.has(tipo)) {
+    const res = await rpc('pago_online_resolver', {
+      p: {
+        pago_id: pago.id, estado: 'aprobado',
+        // El monto NO se toma del evento: pago_online_resolver usa el que la
+        // BD fijó al abrir el intento.
+        authorization_code: meta.authorizationCode || meta.authorization_code || null,
+        raw: { origen: 'webhook', type: body?.type, orderId: body?.orderId },
+      },
+    });
+    return {
+      estado: 'aprobado', pago_id: pago.id,
+      comandado: res?.comandado !== false, via: 'webhook',
+    };
+  }
+
+  if (EVENTOS_FALLIDO.has(tipo)) {
+    // Solo si sigue abierto: un rechazo tardío no puede pisar un cobro bueno.
+    if (pago.estado === 'iniciado' || pago.estado === 'requiere_3ds') {
+      await rpc('pago_online_resolver', {
+        p: {
+          pago_id: pago.id, estado: 'rechazado',
+          error_code: String(body?.type || 'WEBHOOK'),
+          error_msg: String(body?.description || '').slice(0, 300),
+          raw: { origen: 'webhook', type: body?.type },
+        },
+      });
+    }
+    return { estado: 'rechazado', pago_id: pago.id, via: 'webhook' };
+  }
+
+  return { estado: pago.estado, pago_id: pago.id, ignorado: `tipo:${tipo || 'vacio'}` };
+}
+
 // ── Verificación de la firma del webhook ─────────────────────────────
 // n1co manda X-H4B-Hmac-Sha256 = HMAC-SHA256 del cuerpo crudo con la llave del
 // portal. Sin esto, cualquiera que adivine la URL marca pedidos como pagados.
@@ -256,9 +313,12 @@ export default async function handler(req) {
       const pago = await pagosOnline(`order_id=eq.${encodeURIComponent(ref)}`);
       if (!pago) return json(200, { ok: true, ignorado: 'pago_desconocido' }, origin);
 
-      // No se confía en el `type` del evento para dar por pagado: se relee la
-      // orden desde n1co, que es la fuente de verdad.
-      const out = await confirmarContraN1co(pago);
+      // Link de pago: se relee la orden desde n1co, que es más fuerte que el
+      // evento. Cobro de EPay: no hay orden que consultar, así que se resuelve
+      // con el evento — que llegó firmado.
+      const out = pago.order_code
+        ? await confirmarContraN1co(pago)
+        : await resolverEpayDesdeEvento(pago, body);
       return json(200, { ok: true, ...out }, origin);
     }
 

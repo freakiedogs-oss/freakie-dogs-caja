@@ -307,6 +307,10 @@ export default function TabPedidos({ show = () => {} }) {
   const [sesion, setSesion] = useState(null);
   const [pin, setPin] = useState('');
   const [pedidos, setPedidos] = useState([]);
+  // Pedidos con tarjeta que el cliente nunca terminó de pagar. No son tareas de
+  // Karina —el cliente puede retomarlos solo, y si no se cancelan a las 3 h—,
+  // pero tiene que poder encontrarlos si alguien llama preguntando.
+  const [sinPagar, setSinPagar] = useState([]);
   const [entregados, setEntregados] = useState([]);
   // La franja de entregados arranca plegada: es para revisar, no para operar.
   const [entregadosAbierto, setEntregadosAbierto] = useState(
@@ -320,6 +324,15 @@ export default function TabPedidos({ show = () => {} }) {
   const [sucSel, setSucSel] = useState({});
   const [reasignando, setReasignando] = useState(null);
   const [cancelando, setCancelando] = useState(null);   // pedido cuyo motorista se está cambiando
+  // Traslado de sucursal estando el pedido YA en cocina (pedido de Cesar
+  // 16-sep-2026). No confundir con `sucSel`, que es el ruteo inicial.
+  // Cancelar es de dos pasos cuando el pedido ya entró a cocina: primero
+  // el motivo, después "¿ya se había preparado?". Acá se guarda el motivo
+  // mientras se contesta la segunda.
+  const [cancelaMotivo, setCancelaMotivo] = useState({});
+  const [trasladando, setTrasladando] = useState(null);
+  const [trasSel, setTrasSel] = useState({});
+  const [trasMotivo, setTrasMotivo] = useState({});
   const [cargando, setCargando] = useState(false);
   const [ultima, setUltima] = useState(null);
   const [err, setErr] = useState('');
@@ -342,13 +355,15 @@ export default function TabPedidos({ show = () => {} }) {
     if (!t) return;
     setCargando(true);
     try {
-      const [{ data, error }, dr, ent] = await Promise.all([
+      const [{ data, error }, dr, ent, sp] = await Promise.all([
         db.rpc('torre_listar_pedidos', { p_token: t }),
         db.rpc('drivers_en_linea'),
         db.rpc('torre_entregados_hoy', { p_token: t }),
+        db.rpc('torre_pedidos_sin_pagar', { p_token: t }),
       ]);
       if (error) throw error;
       setPedidos(data || []);
+      setSinPagar(sp?.data || []);
       setDrivers(dr?.data || []);
       setEntregados(ent?.data || []);
       setUltima(new Date());
@@ -433,18 +448,50 @@ export default function TabPedidos({ show = () => {} }) {
 
   // Sacar del tablero lo que no va a suceder. Queda documentado con motivo
   // y autor: si ya había entrado a cocina, es comida perdida y hay que saberlo.
-  const cancelar = async (p, motivo) => {
+  // `yaPreparado` decide qué pasa con el inventario:
+  //   false → lo que se descontó se devuelve
+  //   true  → la comida ya no existe; queda como merma de esa sucursal
+  //   null  → solo vale si el pedido nunca entró a cocina
+  // El servidor no deja cancelar sin respuesta cuando ya había comanda:
+  // ese hueco silencioso es el que nos costó las bolitas de Cafetalón.
+  const cancelar = async (p, motivo, yaPreparado = null) => {
     setOcupado(p.id);
     try {
       const { data, error } = await db.rpc('torre_cancelar_pedido', {
-        p_token: token, p_delivery_id: p.id, p_motivo: motivo, p_detalle: null });
+        p_token: token, p_delivery_id: p.id, p_motivo: motivo,
+        p_detalle: null, p_ya_preparado: yaPreparado });
       if (error) throw error;
-      show(data?.habia_entrado_a_cocina
-        ? `🚫 ${p.numero_orden} cancelado — ya estaba en cocina, avisá a la sucursal`
-        : `🚫 ${p.numero_orden} cancelado`);
+      show(`🚫 ${p.numero_orden} cancelado${data?.inventario ? ` — ${data.inventario}` : ''}`);
       setCancelando(null);
+      setCancelaMotivo(m => ({ ...m, [p.id]: undefined }));
       await cargar();
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
+  // Mover un pedido que ya entró a cocina a otra sucursal.
+  //   · baja la comanda de la cocina vieja y la levanta en la nueva
+  //   · anula la cuenta vieja (queda el rastro) y mueve el cobro
+  //   · NO toca el inventario de origen: le deja la pregunta "¿ya lo habían
+  //     preparado?" a esa tienda, que es la única que sabe. Hasta que
+  //     contesten, el insumo sigue descontado allá.
+  const trasladar = async (p) => {
+    const destino = trasSel[p.id];
+    if (!destino) return;
+    const nombreDestino = sucursales.find(s => s.id === destino)?.nombre || 'la otra sucursal';
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_mover_sucursal', {
+        p_token: token, p_delivery_id: p.id,
+        p_sucursal_destino: destino,
+        p_motivo: (trasMotivo[p.id] || '').trim() || null });
+      if (error) throw error;
+      show(`🏪 ${p.numero_orden} movido a ${data?.a || nombreDestino} — se le preguntó a ${data?.de || 'la sucursal'} si ya lo había preparado`);
+      setTrasladando(null);
+      setTrasSel(t => ({ ...t, [p.id]: '' }));
+      setTrasMotivo(t => ({ ...t, [p.id]: '' }));
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo mover')); }
     finally { setOcupado(null); }
   };
 
@@ -590,7 +637,12 @@ export default function TabPedidos({ show = () => {} }) {
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa };
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   // Traslado de sucursal: el estado vive en TabPedidos pero el boton
+                   // se pinta dentro de <Tarjeta>, asi que tiene que viajar por props.
+                   trasladando, setTrasladando, trasSel, setTrasSel,
+                   trasMotivo, setTrasMotivo, trasladar,
+                   cancelaMotivo, setCancelaMotivo };
 
   return (
     <div>
@@ -742,6 +794,42 @@ export default function TabPedidos({ show = () => {} }) {
         />
       </Suspense>
 
+      {sinPagar.length > 0 && (
+        <div style={{ marginTop: 14, background: c.card, border: `1px solid ${c.border}`,
+                      borderRadius: 12, padding: '11px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 14 }}>💳</span>
+            <span style={{ fontWeight: 800, fontSize: 13.5 }}>Sin pagar</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: c.yellow }}>{sinPagar.length}</span>
+            <span style={{ fontSize: 11.5, color: c.dim }}>
+              · el cliente no terminó el pago con tarjeta · no están en cocina
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {sinPagar.map(p => (
+              <div key={p.id} style={{ ...tarjeta, padding: '8px 10px', minWidth: 210 }}>
+                <div style={{ fontSize: 12, fontWeight: 800 }}>
+                  {p.numero_orden} <span style={{ color: c.dim, fontWeight: 600 }}>· {fmt(p.total)}</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: c.dim, marginTop: 2 }}>
+                  {p.cliente_nombre} · {p.cliente_telefono}
+                </div>
+                {p.ultimo_error && (
+                  <div style={{ fontSize: 11, color: c.yellow, marginTop: 3 }}>
+                    ⚠️ {String(p.ultimo_error).slice(0, 70)}
+                  </div>
+                )}
+                <a href={`${URL_DELIVERY}/track?t=${p.tracking_token}`} target="_blank" rel="noopener"
+                   style={{ ...btn('#333'), display: 'block', textAlign: 'center', marginTop: 7,
+                            fontSize: 11.5, textDecoration: 'none' }}>
+                  🔗 Link para que lo pague
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Retiros en local ya pagados: informativos, no son tareas de Karina.
           Se muestran para que sepa qué hay esperando en cada tienda, pero fuera
           de las columnas y sin relojes de atraso. */}
@@ -825,7 +913,10 @@ function Historial({ historial }) {
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa }) {
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   trasladando, setTrasladando, trasSel, setTrasSel,
+                   trasMotivo, setTrasMotivo, trasladar,
+                   cancelaMotivo, setCancelaMotivo }) {
   const paraLlevar = p.tipo === 'para_llevar';
   const ahora = useAhora();
   const reloj = useRelojes(p, ahora);
@@ -1108,6 +1199,54 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
         </div>
       )}
 
+      {/* Cambiar de sucursal con el pedido YA en cocina. Solo hasta 'lista':
+          una vez que salió en la moto, mover el pedido no arregla nada y sí
+          ensucia las cajas de las dos tiendas. */}
+      {['preparando','lista'].includes(p.estado) && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${c.border}` }}>
+          {trasladando !== p.id ? (
+            <button onClick={() => setTrasladando(p.id)}
+                    style={{ ...btn('none', c.dim), border: `1px solid ${c.border}`,
+                             width: '100%', fontSize: 11.5, padding: '5px 9px' }}>
+              🏪 Cambiar de sucursal
+            </button>
+          ) : (
+            <>
+              <div style={{ fontSize: 11.5, color: c.yellow, fontWeight: 700, marginBottom: 4 }}>
+                Sale de {p.sucursal_nombre || 'esta sucursal'} → ¿a cuál lo pasás?
+              </div>
+              <select value={trasSel[p.id] || ''}
+                      onChange={e => setTrasSel(t => ({ ...t, [p.id]: e.target.value }))}
+                      style={{ ...sel, width: '100%', marginBottom: 6 }}>
+                <option value="">— elegí la sucursal —</option>
+                {sucursales.filter(s => s.id !== p.sucursal_id).map(s => (
+                  <option key={s.id} value={s.id}>{s.store_code} · {s.nombre}</option>
+                ))}
+              </select>
+              <input value={trasMotivo[p.id] || ''}
+                     onChange={e => setTrasMotivo(t => ({ ...t, [p.id]: e.target.value }))}
+                     placeholder="¿Por qué se mueve? (opcional)"
+                     style={{ ...sel, width: '100%', marginBottom: 6 }} />
+              <div style={{ fontSize: 10.5, color: c.dim, marginBottom: 6, lineHeight: 1.35 }}>
+                A la sucursal de origen le va a aparecer la pregunta de si ya lo
+                había preparado. Si dicen que no, se le devuelve el inventario.
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button disabled={ocupado === p.id || !trasSel[p.id]}
+                        onClick={() => trasladar(p)}
+                        style={{ ...btn(c.orange), flex: 1, fontSize: 12 }}>
+                  {ocupado === p.id ? '…' : '🏪 Mover'}
+                </button>
+                <button onClick={() => setTrasladando(null)}
+                        style={{ ...btn('none', c.dim), border: `1px solid ${c.border}`, fontSize: 12 }}>
+                  Dejar así
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Cancelar: para duplicados, clientes que no pagan, arrepentidos.
           Solo mientras no se haya entregado. */}
       {p.estado !== 'entregada' && (
@@ -1121,16 +1260,58 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                 ⚠️ Ya está en cocina. Avisale a la sucursal para que no lo preparen.
               </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {MOTIVOS_CANCELA.map(m => (
-                <button key={m} disabled={ocupado === p.id} onClick={() => cancelar(p, m)}
-                        style={{ ...btn('none', c.text), border: `1px solid ${c.border}`,
-                                 fontSize: 11.5, textAlign: 'left', padding: '8px 10px' }}>
-                  {ocupado === p.id ? '…' : m}
+
+            {/* Paso 2: solo si ya había entrado a cocina. Sin esta respuesta
+                el inventario queda mintiendo — si la comida se hizo, se hizo,
+                y eso es merma de la sucursal, no un faltante sin explicación
+                que aparezca en el conteo nocturno tres semanas después. */}
+            {p.pos_cuenta_id && cancelaMotivo[p.id] ? (
+              <>
+                <div style={{ fontSize: 11.5, color: c.dim, marginBottom: 6 }}>
+                  Motivo: <b style={{ color: c.text }}>{cancelaMotivo[p.id]}</b>
+                </div>
+                <div style={{ fontSize: 12.5, color: c.yellow, fontWeight: 800, marginBottom: 6 }}>
+                  ¿La comida ya estaba hecha?
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <button disabled={ocupado === p.id}
+                          onClick={() => cancelar(p, cancelaMotivo[p.id], true)}
+                          style={{ ...btn(c.red), fontSize: 12, padding: '9px 10px' }}>
+                    {ocupado === p.id ? '…' : 'SÍ, ya estaba preparada'}
+                  </button>
+                  <button disabled={ocupado === p.id}
+                          onClick={() => cancelar(p, cancelaMotivo[p.id], false)}
+                          style={{ ...btn(c.green, '#04210f'), fontSize: 12, padding: '9px 10px' }}>
+                    {ocupado === p.id ? '…' : 'NO, no la habían hecho'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 10.5, color: c.dim, marginTop: 6, lineHeight: 1.35 }}>
+                  Si ya estaba hecha, el insumo se registra como merma de esa
+                  sucursal. Si no, se le devuelve al inventario. Si no sabés,
+                  preguntale a la cocina antes de contestar.
+                </div>
+                <button onClick={() => setCancelaMotivo(m => ({ ...m, [p.id]: undefined }))}
+                        style={{ ...btn('none', c.dim), fontSize: 11, marginTop: 6, width: '100%' }}>
+                  ← Cambiar el motivo
                 </button>
-              ))}
-            </div>
-            <button onClick={() => setCancelando(null)}
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {MOTIVOS_CANCELA.map(m => (
+                  <button key={m} disabled={ocupado === p.id}
+                          onClick={() => p.pos_cuenta_id
+                            ? setCancelaMotivo(x => ({ ...x, [p.id]: m }))
+                            : cancelar(p, m, null)}
+                          style={{ ...btn('none', c.text), border: `1px solid ${c.border}`,
+                                   fontSize: 11.5, textAlign: 'left', padding: '8px 10px' }}>
+                    {ocupado === p.id ? '…' : m}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button onClick={() => { setCancelando(null);
+                                     setCancelaMotivo(m => ({ ...m, [p.id]: undefined })); }}
                     style={{ ...btn('none', c.dim), fontSize: 11, marginTop: 6, width: '100%' }}>
               Dejar así
             </button>

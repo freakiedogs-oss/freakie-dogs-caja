@@ -6,3 +6,6 @@ dist
 *.local
 vercel-deploy
 supabase/.temp
+
+# PDFs y hojas que deja Claude en la carpeta; no son código
+Claude outputs/
