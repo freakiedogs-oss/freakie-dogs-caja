@@ -262,6 +262,29 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
           })
 
       if (r?.ok === false && !r?.estado) {
+        // El pedido que teníamos en la sesión ya no se puede cobrar (lo tomó
+        // efectivo, venció, se canceló…). En vez de dejar al cliente trabado
+        // con un mensaje que no puede resolver, se suelta y se crea uno nuevo
+        // con lo que tiene en el carrito ahora.
+        if (r?.reiniciable && trackingRef.current) {
+          trackingRef.current = null
+          const nuevo = construirPedido?.()
+          if (nuevo) {
+            const r2 = await postear('crear-y-pagar', {
+              pedido: nuevo, email: email.trim(), billing,
+              dispositivo: dispRef.current, guardar,
+              card: {
+                number: soloDigitos(numero), cardHolder: titular.trim(),
+                expirationMonth: mm, expirationYear: anio, cvv: soloDigitos(cvv),
+              },
+            })
+            if (r2?.ok === false && !r2?.estado) {
+              setFase('fondo')
+              return setError(r2?.mensaje || 'No pudimos crear el pedido.')
+            }
+            return aplicar(r2)
+          }
+        }
         if (r?.tracking_token) trackingRef.current = r.tracking_token
         setFase('fondo')
         return setError(r?.mensaje || 'Revisá los datos de la tarjeta.')
@@ -281,9 +304,15 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
     if (!trackingRef.current) { onEfectivo?.(null); return }
     setFase('procesando')
     try {
-      const r = await postear('efectivo', { tracking_token: trackingRef.current })
+      const tt = trackingRef.current
+      const r = await postear('efectivo', { tracking_token: tt })
       if (!r?.ok) { setFase('rechazado'); return setError(r?.mensaje || 'No pudimos cambiarlo a efectivo.') }
-      onEfectivo?.({ ...r, tracking_token: trackingRef.current })
+      // Ese pedido ya no se cobra con tarjeta. Si no se suelta la referencia,
+      // un reintento posterior intenta pagarlo y el servidor responde que ya
+      // está tomado — que es como una clienta terminó viendo "ya está pagado"
+      // sin que se le hubiera cobrado nada.
+      trackingRef.current = null
+      onEfectivo?.({ ...r, tracking_token: tt })
     } catch {
       setFase('rechazado')
       setError('No hay conexión. Probá de nuevo.')
