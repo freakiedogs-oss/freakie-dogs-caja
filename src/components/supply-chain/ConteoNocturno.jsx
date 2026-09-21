@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
+import MermasProductoHoy from './MermasProductoHoy'
 import { today, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
@@ -1387,6 +1388,9 @@ export default function ConteoNocturno({user,onBack}){
             )}
           </div>
         )}
+
+        {/* Platos anulados después de entrar a cocina (ya descontados) */}
+        <MermasProductoHoy sucursalId={sucursalId} />
 
         {/* ── Grupo Conteo Normal ── */}
         <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'2px 2px 8px'}}>🍔 Conteo Normal</div>

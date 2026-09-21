@@ -4,6 +4,7 @@ import { STORES } from '../config'
 import Icon from './Icon'
 import HistorialCobros from './HistorialCobros'
 import PinAuthModal from './PinAuthModal'
+import PreparadoModal from './PreparadoModal'
 
 const TIPO = {
   mesa:            { ic: 'armchair', l: 'Mesa',        c: '#2dd4a8' },
@@ -31,6 +32,7 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
   const [activas, setActivas] = useState([])
   const [loading, setLoading] = useState(true)
   const [pinAuth, setPinAuth] = useState(null)
+  const [preparado, setPreparado] = useState(null) // { cuenta, auth, motivo, label, cocinaListo }
   const firstLoadRef = useRef(true)   // spinner solo en la 1ª carga; los refrescos son silenciosos
 
   const loadActivas = useCallback(async () => {
@@ -57,20 +59,37 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
     setPinAuth({ cuenta: c, label })
   }
 
-  const doCancelar = async (c, auth) => {
+  // Anular orden completa. Si algo ya está en cocina se pregunta si se preparó
+  // (PreparadoModal): lo hecho y botado queda como merma de producto preparado,
+  // en vez de borrar la cola de cocina sin rastro (21-sep-2026).
+  const doCancelar = async (c, auth, preparado) => {
     const items = c.pos_cuenta_items?.length || 0
     const label = c.mesa_ref ? `Mesa #${c.mesa_ref}` : (TIPO[c.tipo]?.l || c.tipo)
-    const motivo = window.prompt(`Anular orden ${label} (${items} ítem${items !== 1 ? 's' : ''}). Escribe el motivo:`, '')
-    if (motivo === null) return   // canceló el prompt
-    // Limpia la cola de cocina pendiente de esta orden
-    await db.from('pos_cocina_queue').delete().eq('cuenta_id', c.id).in('estado', ['pendiente', 'en_preparacion'])
-    // Nunca cancela una cuenta ya cobrada (para eso está la anulación/NC)
-    const { error } = await db.from('pos_cuentas').update({
-      estado: 'cancelada',
-      cancelada_motivo: (motivo.trim() || 'Sin motivo') + ` · autorizó ${auth?.nombre || ''}`,
-      cancelada_por: auth?.id || user.id,
-      updated_at: new Date().toISOString(),
-    }).eq('id', c.id).neq('estado', 'cobrada')
+    let motivo = preparado?.motivo
+    if (motivo === undefined) {
+      motivo = window.prompt(`Anular orden ${label} (${items} ítem${items !== 1 ? 's' : ''}). Escribe el motivo:`, '')
+      if (motivo === null) return   // canceló el prompt
+    }
+    let respuesta = preparado?.respuesta
+    if (respuesta === undefined) {
+      const { data: enCocina, error: eq } = await db.from('pos_cocina_queue')
+        .select('estado').eq('cuenta_id', c.id).neq('estado', 'anulado')
+      if (eq) { window.alert('No se pudo revisar la cocina: ' + eq.message); return }
+      if ((enCocina || []).length > 0) {
+        setPreparado({ cuenta: c, auth, motivo, label,
+          cocinaListo: enCocina.every(r => r.estado === 'completado') })
+        return
+      }
+      respuesta = null
+    }
+    // Nunca cancela una cuenta ya cobrada (para eso está la anulación/NC): lo valida el servidor
+    const { error } = await db.rpc('pos_anular_cuenta', {
+      p_cuenta_id: c.id,
+      p_respuesta: respuesta,
+      p_motivo: motivo.trim() || 'Sin motivo',
+      p_usuario_id: auth?.id || user.id,
+      p_usuario_nombre: auth?.nombre || user?.nombre || null,
+    })
     if (error) { window.alert('Error al cancelar: ' + error.message); return }
     loadActivas()
   }
@@ -197,6 +216,15 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
             </div>
           )}
         </div>
+      )}
+
+      {preparado && (
+        <PreparadoModal
+          titulo={preparado.label}
+          cocinaListo={preparado.cocinaListo}
+          onCancel={() => setPreparado(null)}
+          onElegir={(resp) => { const p = preparado; setPreparado(null); doCancelar(p.cuenta, p.auth, { motivo: p.motivo, respuesta: resp }) }}
+        />
       )}
 
       {pinAuth && (

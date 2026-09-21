@@ -160,7 +160,7 @@ export function calcularContadoresS006(queueRows) {
   const sumar = (k, q) => { contador[k] = (contador[k] || 0) + q }
 
   for (const row of queueRows || []) {
-    if (row.estado === 'completado' || row.estado === 'cancelado') continue
+    if (row.estado === 'completado' || row.estado === 'cancelado' || row.estado === 'anulado') continue
     const cantidad = row.cantidad || 1
     const nombreN = norm(row.nombre_item)
     const mapeo = KDS_CONTADOR_MAP[nombreN]

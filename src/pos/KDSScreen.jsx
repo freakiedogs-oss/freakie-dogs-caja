@@ -33,11 +33,14 @@ const NIVEL_INFO = {
   // El cliente canceló en PedidosYa. Manda sobre cualquier otro nivel: de esa
   // tarjeta lo único que importa es que nadie la siga armando.
   cancelado:  { label: '❌ CANCELADO', color: '#f43f5e' },
+  // Todo lo de la tarjeta se anuló en caja: sólo falta que cocina diga si ya
+  // estaba hecho (merma de producto preparado, 21-sep-2026).
+  anulado:    { label: '✕ ANULADO EN CAJA', color: '#f43f5e' },
   especial:   { label: 'ESPECIAL',   color: '#ef4444' },
   modificado: { label: 'MODIFICADO', color: '#fbbf24' },
   normal:     { label: 'NORMAL',     color: '#22c55e' },
 }
-const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2, cancelado: 3 }
+const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2, cancelado: 3, anulado: 4 }
 
 // Con qué número se pide esta comanda en el mostrador.
 //
@@ -67,8 +70,14 @@ const itemNivel = (it) => {
     || mods.some(m => Number(m?.precio_extra || 0) > 0 || !esConTodo(m?.nombre))
   return modificado ? 'modificado' : 'normal'
 }
-const comandaNivel = (items) =>
-  (items || []).reduce((acc, it) => (NIVEL_RANK[itemNivel(it)] > NIVEL_RANK[acc] ? itemNivel(it) : acc), 'normal')
+// Las filas anuladas en caja no cuentan para el color: el resto de la
+// tarjeta se sigue preparando normal. Si TODO se anuló, la tarjeta es 'anulado'.
+const esAnulado = (it) => it?.estado === 'anulado'
+const comandaNivel = (items) => {
+  const vivos = (items || []).filter(it => !esAnulado(it))
+  if ((items || []).length && !vivos.length) return 'anulado'
+  return vivos.reduce((acc, it) => (NIVEL_RANK[itemNivel(it)] > NIVEL_RANK[acc] ? itemNivel(it) : acc), 'normal')
+}
 
 // "Modificadores" es el nombre de relleno que se pone cuando el grupo real no
 // se pudo resolver. No le dice nada al cocinero y le roba una línea a cada
@@ -314,7 +323,7 @@ export default function KDSScreen({ user, onBack }) {
     const hayNuevos = prevIds.current && rows.some(r => !prevIds.current.has(r.id))
     // Una cancelación NO crea una fila: cambia el estado de una que ya estaba, y
     // la alarma por id nuevo no se enteraba. Es justo la que más urge oír.
-    const cancelados = new Set(rows.filter(r => r.estado === 'cancelado').map(r => r.id))
+    const cancelados = new Set(rows.filter(r => r.estado === 'cancelado' || r.estado === 'anulado').map(r => r.id))
     const hayCancelados = prevCancel.current &&
       [...cancelados].some(id => !prevCancel.current.has(id))
     prevCancel.current = cancelados
@@ -510,12 +519,27 @@ export default function KDSScreen({ user, onBack }) {
   })
   const contEst = {}
   ESTACIONES.forEach(e => {
-    contEst[e.key] = queue.filter(r => (r.estacion || 'general') === e.key).length
+    contEst[e.key] = queue.filter(r => !esAnulado(r) && (r.estacion || 'general') === e.key).length
   })
 
   // ── Acciones ──
   // Marcar ítem individual como en_preparacion / listo
+  // Cocina confirma un ítem anulado en caja: ¿ya estaba hecho? Si no coincide con
+  // lo que dijo la caja, el servidor corrige la merma (gana cocina).
+  const confirmarAnulado = async (item, respuesta) => {
+    setAlarmOn(false)
+    const { data, error } = await db.rpc('pos_merma_confirmar_cocina', {
+      p_cuenta_item_id: item.cuenta_item_id,
+      p_respuesta: respuesta,
+      p_nombre: user?.nombre || 'Cocina',
+    })
+    if (error) { toast.error('No se pudo confirmar: ' + error.message); return }
+    if (data && data.coincide === false) toast.info('Se corrigió lo que había dicho la caja.')
+    load()
+  }
+
   const toggleItem = async (queueId, estadoActual) => {
+    if (estadoActual === 'anulado') return
     setAlarmOn(false)   // cocina está atendiendo → callar alarma
     const siguiente = estadoActual === 'pendiente' ? 'en_preparacion'
       : estadoActual === 'en_preparacion' ? 'completado'
@@ -532,7 +556,9 @@ export default function KDSScreen({ user, onBack }) {
     setBumping(comanda.key)
     try {
       // Marcar todos los ítems de esta comanda como completados
-      const ids = comanda.items.map(i => i.id)
+      // Las anuladas en caja NO se marcan listas: esperan la confirmación de cocina.
+      const ids = comanda.items.filter(i => !esAnulado(i)).map(i => i.id)
+      if (!ids.length) { toast.warning('Confirmá primero si lo anulado ya estaba hecho.'); return }
       await db.from('pos_cocina_queue')
         .update({ estado: 'completado', completado_at: new Date().toISOString() })
         .in('id', ids)
@@ -896,7 +922,8 @@ export default function KDSScreen({ user, onBack }) {
                 const info       = canalInfo(comanda.canal)
                 const nivel      = NIVEL_INFO[comanda.nivel] || NIVEL_INFO.normal
                 const timer      = elapsed(comanda.recibido_at)
-                const todosListos = comanda.items.every(i => i.estado === 'completado')
+                const vivos       = comanda.items.filter(i => !esAnulado(i))
+                const todosListos = vivos.length > 0 && vivos.every(i => i.estado === 'completado')
                 const isBumping   = bumping === comanda.key
                 const totalItems  = comanda.items.reduce((s, i) => s + (i.cantidad || 1), 0)
 
@@ -969,6 +996,14 @@ export default function KDSScreen({ user, onBack }) {
                         </div>
                       </div>
                     )}
+                    {comanda.nivel === 'anulado' && (
+                      <div className="kds-card-cancelada">
+                        ✕ ANULADO EN CAJA — NO PREPARAR
+                        <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 3, opacity: .9 }}>
+                          Decí si ya estaba hecho: si se bota, queda como merma.
+                        </div>
+                      </div>
+                    )}
 
                     {comanda.mesero && (
                       <div className="kds-card-mesero">
@@ -985,6 +1020,28 @@ export default function KDSScreen({ user, onBack }) {
                       // `nota`: undefined = usar la del ítem; null = ocultarla
                       // (la muestra el encabezado del combo, una sola vez).
                       const renderItem = (item, { nota } = {}) => {
+                        if (esAnulado(item)) {
+                          return (
+                            <div key={item.id} className="kds-item" style={{ borderColor: '#f43f5e88', background: '#f43f5e14', cursor: 'default' }}>
+                              <span className="kds-item-main">
+                                <span className="kds-item-status"><Icon name="x" size={14} color="#f43f5e" /></span>
+                                <span className="kds-item-qty" style={{ textDecoration: 'line-through', opacity: .7 }}>{item.cantidad || 1}×</span>
+                                <span className="kds-item-name" style={{ textDecoration: 'line-through', opacity: .7 }}>{item.nombre_item}</span>
+                                <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#fff', background: '#f43f5e', padding: '1px 6px', borderRadius: 5 }}>ANULADO EN CAJA</span>
+                              </span>
+                              <span style={{ display: 'flex', gap: 6, marginTop: 6, width: '100%' }}>
+                                <button onClick={() => confirmarAnulado(item, 'preparado')}
+                                  style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: '1px solid #ef444488', background: '#ef444422', color: '#fecaca', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+                                  🗑️ Ya estaba hecho
+                                </button>
+                                <button onClick={() => confirmarAnulado(item, 'no_preparado')}
+                                  style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: '1px solid #22c55e88', background: '#22c55e22', color: '#bbf7d0', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+                                  ✋ No se hizo
+                                </button>
+                              </span>
+                            </div>
+                          )
+                        }
                         const done = item.estado === 'completado'
                         const inProg = item.estado === 'en_preparacion'
                         const notaVisible = nota === undefined ? item.nota : nota
@@ -1051,9 +1108,11 @@ export default function KDSScreen({ user, onBack }) {
                     {/* Resumen + botón LISTA */}
                     <div className="kds-card-footer">
                       <span className="kds-card-count">
-                        {comanda.items.filter(i => i.estado === 'completado').length}/{comanda.items.length} listos
+                        {vivos.length
+                          ? `${vivos.filter(i => i.estado === 'completado').length}/${vivos.length} listos`
+                          : 'Confirmá lo anulado'}
                       </span>
-                      <button
+                      {vivos.length > 0 && <button
                         className={`kds-bump-btn${todosListos ? ' ready' : ''}`}
                         onClick={() => (comanda.nivel !== 'normal' ? setConfirmar(comanda) : bumparComanda(comanda))}
                         disabled={isBumping}
@@ -1061,7 +1120,7 @@ export default function KDSScreen({ user, onBack }) {
                         {isBumping ? '⏳'
                           : comanda.nivel === 'cancelado' ? '✕ QUITAR'
                           : todosListos ? '✓ LISTA' : '▷ LISTA'}
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 )
