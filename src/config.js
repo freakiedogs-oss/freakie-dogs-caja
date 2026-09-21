@@ -230,6 +230,7 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'marketing', label: 'Analytics Redes', icon: '📱', roles: ['ejecutivo', 'marketing', 'admin'] },
       { key: 'media', label: 'Media', icon: '🖼️', roles: ['ejecutivo', 'marketing', 'admin'] },
+      { key: 'freakie-flow', label: 'Freakie Flow', icon: '📅', roles: ['ejecutivo', 'marketing', 'admin'] },
     ],
   },
   {

@@ -49,6 +49,7 @@ const ConciliacionView   = lazy(() => import('./components/admin/ConciliacionVie
 const DeliveryView       = lazy(() => import('./components/delivery/DeliveryView'))
 const MarketingView      = lazy(() => import('./components/marketing/MarketingView'))
 const MediaView          = lazy(() => import('./components/marketing/MediaView'))
+const FreakieFlowView    = lazy(() => import('./components/marketing/FreakieFlowView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
 const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView'))
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
@@ -423,6 +424,8 @@ export default function App() {
         return <MarketingView user={user} />
       case 'media':
         return <MediaView user={user} />
+      case 'freakie-flow':
+        return <FreakieFlowView user={user} />
       case 'superadmin-panel':
         return <SuperAdminView user={user} />
       case 'plan-maestro':
