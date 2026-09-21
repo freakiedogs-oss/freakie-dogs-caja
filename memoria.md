@@ -2,6 +2,31 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 21-Sep-2026 — Conteo de Críticos: la hoja de Saúl entra al ERP y se cruza sola contra las descargas
+
+Pedido de Saúl: poder digitar el conteo físico diario de los productos críticos (su `Criticos_FD_FORMATO.xlsx`, Manual de Operaciones · Sistemas de Inventario v1A) y que se cruce contra el consumo que el POS descargó, para auditar sucursal por sucursal si lo que la venta descontó es lo que realmente se usó.
+
+**Pestaña nueva `Conteo de Críticos`** dentro de Consumo por Venta (`ConteoCriticosTab.jsx`). Va ahí y no en Almacén porque la pregunta sólo tiene sentido al lado del consumo teórico. Es **captura**, no reporte: trabaja sobre **un día y una sucursal**, con sus propios controles, así que los filtros de rango/multi-sucursal del reporte se ocultan (`esCaptura`).
+
+**La ecuación.** `teórico = CID + Se pidió − Descargas AM − Descargas PM`; `real = TPS Final + En Línea`; `dif = real − teórico`. Que es idénticamente **`descargas del sistema − consumo físico`**, y por eso el signo se lee: **negativo = se fue producto que ninguna venta descontó** (merma no reportada, sobre-porcionado, fuga); positivo = el sistema descargó de más. Saúl digita CID, TPS Final y En Línea; **AM/PM y "Se pidió" los pone el sistema** (el pedido es editable y avisa cuando lo digitado no coincide con el kardex).
+
+**`null` NO es `0`, y de eso depende que la pantalla no mienta.** Una celda vacía es "no lo contó" y deja la fila *sin contar*, sin veredicto; un 0 es "contó y no había". Si el vacío valiera cero, el primer día de uso cada fila sin llenar le inventaría un faltante a la sucursal. La regla viaja completa: `aPayload` manda `null`, y `fn_criticos_guardar` **borra** la fila en vez de guardarla en ceros.
+
+**Una fila de la hoja puede ser VARIOS productos del catálogo** (`criticos_items` + `criticos_item_productos` con `factor_a_item`), y no un flag en `catalogo_productos`. Lo obligó "Pan Tradicional HD": el insumo se cambió el **25-ago-2026** —antes descargaba como *Pan HOT DOG Berna 10X60 GR* (unidades, 10 = 1 bolsa) y desde esa fecha como *PA002 bolsa de 10*—, así que una hoja anterior al cambio sólo cuadra si los dos suman a la misma fila.
+
+**Los 15 productos se mapearon por lo que el kardex REALMENTE mueve, no por nombre.** El pan de hamburguesa es `Pan de Hamburguesa Brioche 2.8oz` (23,222 un/30d), no el `PA001 [unificado]`, que no registra consumo. Donde el Excel y el catálogo discrepan **manda el catálogo** (es contra lo que descarga y costea el kardex) y la discrepancia queda escrita en `nota_config`, visible en pantalla en vez de perderse:
+- **Pan Super Friek**: la hoja dice bolsa de **48**; catálogo y recetas del Super Freak usan la de **21**. *Hay que preguntarle a Saúl cuál es la real.*
+- **Queso P Freir**: el kardex lo mueve en **libras** (`Queso para dorar`) y sin presentación cargada; la hoja dice "paquete de 25 bolsitas". Se cuenta en libras hasta que se defina cuántas libras trae el paquete. El producto `Queso frito`, que sí tiene esa presentación, lleva **0 movimientos en 30 días**.
+- **Queso Cheedar**: hoja 2.25 lb, catálogo 2 lb (`Cheddar Porcionado`). Papas/Aros: la hoja anota la caja, acá se cuenta por bolsa (como ya lo hace el conteo nocturno); los aros el kardex los descarga en **porciones**, no en libras.
+
+**El corte AM/PM por turno de caja sólo existe en Venecia.** Se implementó como se pidió (AM = el `numero_turno` más bajo del día), pero medido en 21 días: **sólo S004 abre un segundo turno**; M001/S001/S002/S006 corren un turno único de apertura a cierre, y **Lourdes tiene DOS cajas ('general' y 'drive') ambas con `numero_turno` = 1** — son la misma jornada en paralelo, no dos tramos, por eso el corte va por `numero_turno` y no por cantidad de filas. Donde no hay segundo turno **todo cae en AM y el PM va en cero**, así que la pantalla lo dice con un banner (un PM vacío se lee como "no se vendió en la tarde", que es falso) y ofrece el modo **Hora fija** al lado. El ~4% de cuentas sin `turno_id` cae por reloj contra la apertura del segundo turno.
+
+**Verificado contra producción, no leyendo el código.** Invariante corrida sobre **6 sucursales × 4 días = 24 casos**: el total del día es idéntico en los dos modos de corte y coincide con el kardex crudo (desvío máximo 0.0002, que es el redondeo a 4 decimales de 15 filas). `scripts/test-criticos.mjs` corre **80 pruebas** de la lógica pura (`criticosConteo.js`, sin React ni Supabase) con los factores reales y las descargas reales de Venecia del 20-sep. `scripts/test-criticos-render.mjs` monta el componente en jsdom con los efectos corridos: 15 filas, **92 casillas** (15 × 4 campos + 8 fraccionados × 4), y al teclear CID 3 / TPS 3+4 sale teórico 6.2, real 3.2, **−3 paquetes (−17.9%)** y el resumen pasa a 1 descuadre — sin un solo warning de React. jsdom y esbuild entran con `npm i --no-save`: no van en `package.json`.
+
+- **Migraciones:** `criticos_catalogo_items`, `criticos_seed_hoja_saul`, `criticos_conteo_captura`, `criticos_fn_hoja`, `criticos_fn_guardar`, `criticos_nota_pan_berna_precisa`.
+- Los factores se **congelan** en `criticos_conteo_items` al digitar: si mañana cambia el empaque de un producto, la hoja de ayer tiene que seguir significando lo mismo. Las descargas, en cambio, **no se guardan** — se recalculan en cada lectura, porque si una venta se anula después el número guardado mentiría.
+- Sin `nav_key` nueva: hereda los permisos de `consumo-venta` (admin, ejecutivo, superadmin), que es donde Saúl ya entra.
+
 ## 21-Sep-2026 — Eventos: la requisición se importa del Excel de Edgar
 
 Pedido de Cesar: en lugar de que Edgar marque ítem por ítem en la pantalla, que suba **su** hoja de control ("Copia Hoja de Control Eventos FreakieDogs.xlsx") y de ahí salga la requisición. Es la hoja que ya llena hoy, con una pestaña por montaje (BURGERS, HOT DOGS) y tres columnas: Alimentos · Cantidad · Listo.
