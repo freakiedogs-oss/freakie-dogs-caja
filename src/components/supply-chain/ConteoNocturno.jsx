@@ -345,6 +345,14 @@ export default function ConteoNocturno({user,onBack}){
   // sucursal (kardex tipo='merma'). Si ya hay, no se vuelve a pedir el
   // formulario — se entra directo a un consolidado de solo lectura, igual que
   // un conteo nocturno cerrado: se puede ver, pero no editar.
+  //
+  // OJO: se filtra también por referencia_tipo='merma', que es la firma que
+  // deja SOLO el formulario real (registrar_merma). Antes se tomaba cualquier
+  // fila con tipo='merma' sin ver de dónde vino, y otros procesos del sistema
+  // (por ejemplo, cuando se cancela un pedido con la comida ya preparada)
+  // también insertan kardex tipo='merma' con referencia_tipo='pos_cuenta'.
+  // Eso dejaba la pantalla trabada en "ya reportada" sin que el equipo hubiera
+  // reportado nada de verdad, y sin poder hacer el ingreso manual real.
   const abrirMerma=async(sucId)=>{
     setSucursalId(sucId);
     setLoading(true);
@@ -356,7 +364,7 @@ export default function ConteoNocturno({user,onBack}){
         const desde=hoy+'T00:00:00-06:00';
         const {data:km}=await db.from('kardex_movimientos')
           .select('cantidad, notas, created_at, catalogo_productos(nombre, unidad_medida, conteo_modo, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta)')
-          .eq('sucursal_id', sucId).eq('tipo','merma').gte('created_at', desde)
+          .eq('sucursal_id', sucId).eq('tipo','merma').eq('referencia_tipo','merma').gte('created_at', desde)
           .order('created_at');
         (km||[]).forEach(r=>{
           const cp=r.catalogo_productos;
