@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { db } from '../../supabase'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import ImportarRequisicionPanel from './ImportarRequisicionPanel'
 
 // Edgar (eventos) y Casa Matriz editan. Jazmin es 'admin' y solo consulta.
 const ROLES_EDITAN = ['eventos', 'ejecutivo', 'jefe_casa_matriz', 'superadmin']
@@ -66,6 +67,7 @@ export default function EventosMapaView({ user }) {
   const [tab, setTab]         = useState('datos')
   const [msg, setMsg]         = useState('')
   const [guardando, setG]     = useState(false)
+  const [importar, setImportar] = useState(false)
 
   const mapRef = useRef(null)
   const divRef = useRef(null)
@@ -259,13 +261,39 @@ export default function EventosMapaView({ user }) {
     setG(false)
   }
 
+  /* El Excel de Edgar entra acá: el panel ya resolvió qué producto del ERP
+     es cada renglón, esto solo vuelca las cantidades a la requisición. Suma
+     sobre lo que ya hubiera cargado — importar dos pestañas (burgers + hot
+     dogs) del mismo evento tiene que acumular, no pisar.
+     El pedido a Casa Matriz sigue saliendo del botón de guardar. */
+  function aplicarImportacion(mapa, meta, nombreHoja) {
+    const n = Object.keys(mapa).length
+    if (!n) return
+    setReqs(r => {
+      const out = { ...r }
+      for (const [id, c] of Object.entries(mapa)) out[id] = (Number(out[id]) || 0) + Number(c)
+      return out
+    })
+    // Lugar y nombre del evento solo si están vacíos: nunca pisar lo tecleado.
+    setForm(f => ({
+      ...f,
+      nombre: f.nombre || meta.nombre || '',
+      direccion_texto: f.direccion_texto || meta.lugar || '',
+    }))
+    setImportar(false)
+    setMsg(`✓ ${n} ítems cargados desde la hoja «${nombreHoja}». Revisá las cantidades y guardá el evento para enviar el pedido.`)
+  }
+
   if (!puedeVer) {
     return <div style={{ padding: 20, color: C.dim, background: C.bg, minHeight: '100%' }}>
       Tu rol no tiene acceso a eventos.
     </div>
   }
 
-  const visibles = items.filter(i => i.aplica === 'ambos' || i.aplica === form.tipo_evento)
+  // Lo importado se muestra aunque el filtro por tipo de evento lo dejaría
+  // fuera: si viene con cantidad, hay que poder verlo y corregirlo.
+  const visibles = items.filter(i =>
+    i.aplica === 'ambos' || i.aplica === form.tipo_evento || Number(reqs[i.id]) > 0)
   const secciones = [...new Set(visibles.map(i => i.seccion))]
   const nReq = Object.values(reqs).filter(c => Number(c) > 0).length
 
@@ -430,12 +458,28 @@ export default function EventosMapaView({ user }) {
             </div>
           )}
 
+          {tab === 'req' && importar && puedeEditar && (
+            <ImportarRequisicionPanel
+              catalogo={items}
+              onAplicar={aplicarImportacion}
+              onCerrar={() => setImportar(false)}
+            />
+          )}
+
           {tab === 'req' && (
             <div style={card}>
-              <b style={{ fontSize: 15 }}>Requisición</b>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <b style={{ fontSize: 15 }}>Requisición</b>
+                {puedeEditar && !importar && (
+                  <button onClick={() => setImportar(true)} style={{ ...btn(C.acc), padding: '9px 15px', fontSize: 13.5 }}>
+                    📄 Subir Excel
+                  </button>
+                )}
+              </div>
               <div style={{ color: C.dim, fontSize: 12.5, marginTop: 4, marginBottom: 12 }}>
                 Filtrada para {TIPOS.find(t => t.v === form.tipo_evento)?.t}. Poné cantidad
-                solo a lo que se necesita; lo demás queda en cero.
+                solo a lo que se necesita; lo demás queda en cero. O subí tu hoja de
+                control en Excel y se llena sola.
               </div>
               {secciones.map(sec => (
                 <div key={sec} style={{ marginBottom: 16 }}>
