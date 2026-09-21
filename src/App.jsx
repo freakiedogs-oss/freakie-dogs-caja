@@ -355,7 +355,7 @@ export default function App() {
       case 'carne-boleado':
         return <CarneBoleadoView user={user} />
       case 'protocolo-apertura':
-        return <ProtocoloAperturaView user={user} onEditar={() => setScreen('protocolo-editor')} />
+        return <ProtocoloAperturaView user={user} onEditar={() => setScreen('protocolo-editor')} onEquipo={() => setScreen('protocolo-equipo')} />
       case 'protocolo-editor':
         return <ProtocoloEditorView user={user} onVolver={() => setScreen('protocolo-apertura')} />
       case 'protocolo-equipo':

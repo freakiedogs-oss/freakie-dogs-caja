@@ -39,7 +39,7 @@ const hora = (iso) => {
   })
 }
 
-export default function ProtocoloAperturaView({ user, onEditar }) {
+export default function ProtocoloAperturaView({ user, onEditar, onEquipo }) {
   const [suc, setSuc]         = useState(user?.store_code || '')
   const [sucursales, setSucs] = useState([])
   const [pasos, setPasos]     = useState([])
@@ -365,6 +365,15 @@ export default function ProtocoloAperturaView({ user, onEditar }) {
               background: '#1e3a5f', color: '#bfdbfe', border: 0, borderRadius: 8,
               padding: '8px 13px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
             }}>✏️ Editar el protocolo</button>
+          )}
+          {/* PIN del personal: lo ve quien puede editar esta sucursal según
+              protocolo_permisos (p.ej. Rosa en Metrocentro), aunque su rol no
+              tenga 'protocolo-equipo' en el menú. La base valida sucursal y deja bitácora. */}
+          {puedeSuc && onEquipo && (
+            <button onClick={onEquipo} style={{
+              background: '#3b2f14', color: '#fde68a', border: 0, borderRadius: 8,
+              padding: '8px 13px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
+            }}>🔑 Mi equipo · PIN</button>
           )}
           <button onClick={() => avisar(null)} disabled={guardando === 'aviso'} style={{
             background: 'none', color: '#9ca3af', border: '1px solid #2b3344', borderRadius: 8,
