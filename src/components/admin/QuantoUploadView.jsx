@@ -42,6 +42,10 @@ const NOMBRE_TO_STORE_PEYA = {
   'Freakie Dogs Plaza Mundo Usulutan': 'S002',
   'Freakie Dogs Lourdes': 'S003',
   'Freakie Dogs - Paseo Venecia': 'S004',
+  // Metrocentro abrió el 31-ago-2026, después de que se escribió este mapa. Sus
+  // pedidos entraron con store_code en nulo — 337 hasta el 12-sep — y por eso no
+  // aparecían en ningún reporte por sucursal.
+  'Freakie Dogs - Metrocentro': 'S006',
 }
 
 // Helpers PeYa CSV (formato europeo: "9,50" → 9.50  |  "1.234,56" → 1234.56)

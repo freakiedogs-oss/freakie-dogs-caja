@@ -30,13 +30,36 @@ const CANAL_INFO = {
 //    complementos específicos (piden ketchup/mayonesa en vez de "Con Todo" → cocina debe OMITIR el resto).
 //  - normal: preparación estándar = sin complementos o solo "Con Todo".
 const NIVEL_INFO = {
+  // El cliente canceló en PedidosYa. Manda sobre cualquier otro nivel: de esa
+  // tarjeta lo único que importa es que nadie la siga armando.
+  cancelado:  { label: '❌ CANCELADO', color: '#f43f5e' },
   especial:   { label: 'ESPECIAL',   color: '#ef4444' },
   modificado: { label: 'MODIFICADO', color: '#fbbf24' },
   normal:     { label: 'NORMAL',     color: '#22c55e' },
 }
-const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2 }
+const NIVEL_RANK = { normal: 0, modificado: 1, especial: 2, cancelado: 3 }
+
+// Con qué número se pide esta comanda en el mostrador.
+//
+// En mesa es el número de mesa. En PedidosYa es el `shortCode` que grita el
+// motorista al llegar — y que NO es nuestro #comanda: ese ellos no lo conocen.
+// `peya_crear_cuenta` lo deja en `mesa_ref` ya armado ("🛵 PeYa #431", o
+// "🧪 PRUEBA — NO COCINAR · PeYa #431" si es de prueba). Hasta ahora el KDS sólo
+// leía `mesa_ref` cuando el canal era `mesa`, así que en PedidosYa se perdía y
+// la tarjeta quedaba sin el único dato que sirve para entregar la bolsa.
+const partirRef = (txt) => {
+  const s = String(txt || '').trim()
+  const i = s.indexOf(' · ')
+  return i < 0 ? { aviso: null, ref: s } : { aviso: s.slice(0, i), ref: s.slice(i + 3) }
+}
+const refComanda = (c, info) => {
+  if (c.canal === 'mesa') return { aviso: null, ref: `Mesa #${c.mesa_ref}`, propia: false }
+  if (!c.mesa_ref) return { aviso: null, ref: info.label, propia: false }
+  return { ...partirRef(c.mesa_ref), propia: true }
+}
 const esConTodo = (nombre) => String(nombre || '').trim().toLowerCase() === 'con todo'
 const itemNivel = (it) => {
+  if (it?.estado === 'cancelado') return 'cancelado'
   if (it?.atencion_especial) return 'especial'
   const mods = Array.isArray(it?.modificadores) ? it.modificadores : []
   // Amarillo si hay algún costo, o algún complemento elegido que NO sea "Con Todo".
@@ -228,6 +251,7 @@ export default function KDSScreen({ user, onBack }) {
   const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial' | 'delivery'
   const [reverting,   setReverting]   = useState(null)       // id de item en revert
   const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
+  const prevCancel = useRef(null) // Set de ids ya cancelados (misma regla)
   const [soundReady, setSoundReady] = useState(false)   // audio desbloqueado por gesto
   const [alarmOn,    setAlarmOn]    = useState(false)    // alarma insistente sonando
 
@@ -288,10 +312,16 @@ export default function KDSScreen({ user, onBack }) {
     // Alarma si aparece alguna fila NUEVA (id no visto antes). La 1ª carga no suena.
     const ids = new Set(rows.map(r => r.id))
     const hayNuevos = prevIds.current && rows.some(r => !prevIds.current.has(r.id))
+    // Una cancelación NO crea una fila: cambia el estado de una que ya estaba, y
+    // la alarma por id nuevo no se enteraba. Es justo la que más urge oír.
+    const cancelados = new Set(rows.filter(r => r.estado === 'cancelado').map(r => r.id))
+    const hayCancelados = prevCancel.current &&
+      [...cancelados].some(id => !prevCancel.current.has(id))
+    prevCancel.current = cancelados
     prevIds.current = ids
     setQueue(rows)
     setLoading(false)
-    if (hayNuevos) setAlarmOn(true)
+    if (hayNuevos || hayCancelados) setAlarmOn(true)
     else if (rows.length === 0) setAlarmOn(false)   // nada pendiente → callar
   }, [storeCode])
 
@@ -890,9 +920,20 @@ export default function KDSScreen({ user, onBack }) {
                           <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.4px', padding: '2px 8px', borderRadius: 6, background: '#fbbf24', color: '#1a1a1a' }}>MIXTA</span>
                         )}
                         <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
-                        <span className="kds-card-canal" style={{ color: info.color }}>
-                          {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
-                        </span>
+                        {(() => {
+                          const r = refComanda(comanda, info)
+                          return (
+                            <>
+                              {r.aviso && <span className="kds-card-aviso">{r.aviso}</span>}
+                              <span
+                                className={r.propia ? 'kds-card-ref' : 'kds-card-canal'}
+                                style={r.propia ? { borderColor: info.color, color: info.color } : { color: info.color }}
+                              >
+                                {r.ref}
+                              </span>
+                            </>
+                          )
+                        })()}
                         {comanda.comanda_numero && (
                           <span className="kds-card-num">#{comanda.comanda_numero}</span>
                         )}
@@ -919,6 +960,15 @@ export default function KDSScreen({ user, onBack }) {
                         {timer.text}
                       </span>
                     </div>
+
+                    {comanda.nivel === 'cancelado' && (
+                      <div className="kds-card-cancelada">
+                        ❌ CANCELADO EN PEDIDOSYA — NO ENTREGAR
+                        <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 3, opacity: .9 }}>
+                          Pará lo que falte. Lo que ya esté hecho, descartalo.
+                        </div>
+                      </div>
+                    )}
 
                     {comanda.mesero && (
                       <div className="kds-card-mesero">
@@ -1008,7 +1058,9 @@ export default function KDSScreen({ user, onBack }) {
                         onClick={() => (comanda.nivel !== 'normal' ? setConfirmar(comanda) : bumparComanda(comanda))}
                         disabled={isBumping}
                       >
-                        {isBumping ? '⏳' : todosListos ? '✓ LISTA' : '▷ LISTA'}
+                        {isBumping ? '⏳'
+                          : comanda.nivel === 'cancelado' ? '✕ QUITAR'
+                          : todosListos ? '✓ LISTA' : '▷ LISTA'}
                       </button>
                     </div>
                   </div>
@@ -1077,9 +1129,20 @@ export default function KDSScreen({ user, onBack }) {
                       <div className="kds-card-header">
                         <div className="kds-card-title">
                           <span style={{ color: info.color, display: 'inline-flex' }}><Icon name={info.ic} size={18} color={info.color} /></span>
-                          <span className="kds-card-canal" style={{ color: info.color }}>
-                            {comanda.canal === 'mesa' ? `Mesa #${comanda.mesa_ref}` : info.label}
-                          </span>
+                          {(() => {
+                            const r = refComanda(comanda, info)
+                            return (
+                              <>
+                                {r.aviso && <span className="kds-card-aviso">{r.aviso}</span>}
+                                <span
+                                  className={r.propia ? 'kds-card-ref' : 'kds-card-canal'}
+                                  style={r.propia ? { borderColor: info.color, color: info.color } : { color: info.color }}
+                                >
+                                  {r.ref}
+                                </span>
+                              </>
+                            )
+                          })()}
                           {comanda.comanda_numero && (
                             <span className="kds-card-num">#{comanda.comanda_numero}</span>
                           )}

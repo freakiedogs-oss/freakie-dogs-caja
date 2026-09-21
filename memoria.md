@@ -13,6 +13,217 @@ Pedido de Cesar: en lugar de que Edgar marque ítem por ítem en la pantalla, qu
 - **Hallazgo:** en la pestaña HOT DOGS la columna de nombres está **vacía en 35 renglones** (solo quedaron las cantidades). No se puede importar así; el panel lo avisa en pantalla. Hay que pedirle a Edgar que la arregle.
 - `xlsx@0.18.5` entra por import dinámico (~400 kB que no viajan en el bundle de todos). Requiere `npm install`.
 
+## 19-Sep-2026 — PedidosYa contestó las tres, y una de sus respuestas destapó un riesgo
+
+Cristian Pereira respondió punto por punto. Resumen de lo que dijeron y de lo que hubo que hacer.
+
+**a) No existe ambiente de staging.** Las URLs de la documentación apuntan a staging porque el doc es global e incluye mercados europeos que sí lo tienen; PedidosYa siempre trabaja sobre producción. La tienda de pruebas y nuestro usuario llevan un flag suyo que permite pedir sin afectar la operación real ni generar penalizaciones. Al migrar a las tiendas reales **la integración, las credenciales y los secrets se mantienen iguales**: lo único que cambia es la chain, y con ella el ChainID en los endpoints que lo pidan — `ChainName: SV-FREAKIE-DOGS-PROD-1`, `ChainCode: SVFREAKIEDOGSPROD0001`. Eso toca la gestión de catálogo, que es lo que queda pendiente; las órdenes no lo usan.
+
+**b) El pluginSecret es el de producción, el que termina en `2i`.** Verificado: la autoprueba ahora devuelve el largo y los dos últimos caracteres del secreto configurado (nunca el secreto), y coincide. También confirma que la base en uso es la de producción, que es la que ya teníamos por defecto. 25/25 en verde. Sin esa verificación, un secreto equivocado habría hecho fallar el JWT de **todos** los pedidos reales y los habríamos perdido sin enterarnos.
+
+**c) El remoteId se asigna al dar de alta cada tienda** y nos lo van a pasar cuando confirmen la activación. O sea: el respaldo por id de local que se armó el 13-sep deja de ser necesidad y queda como red de seguridad, que es su mejor papel.
+
+**El riesgo que destapó la respuesta (a).** Dijeron que el flag especial evita penalizaciones; NO dijeron que viaje como `test: true` dentro del pedido. Y de eso dependía todo: la regla de «esto no se cocina» miraba sólo ese flag, y el vendor sandbox `AR-PRUEBAS-INTEGRACION-0001` está mapeado a **Cafetalón**. Un pedido de homologación sin el flag habría armado una comanda real en una cocina que está vendiendo.
+
+Apostar la cocina de Cafetalón a una suposición sobre un campo que no controlamos no valía la pena. Ahora **la tienda misma se declara de pruebas** (`peya_vendor_map.es_pruebas`) y eso manda, mande lo que mande Delivery Hero.
+
+**Y la regla vive en un solo lugar.** Estaba duplicada: una copia en `peya_auto_decidir` y otra en TypeScript dentro de `peya-responder`. Dos copias de una regla de seguridad son una copia de más — basta que alguien arregle una para que la otra quede mintiendo. Ahora es `peya_debe_cocinar`, y el candado de verdad está en `peya_crear_cuenta`, así que da igual por dónde entre la llamada.
+
+**Falla cerrado, y hubo que corregirlo.** `peya_debe_cocinar` devuelve NULL si el pedido no existe para el snapshot de quien pregunta, y en plpgsql `if not NULL` **no entra**: ante la duda se cocinaba. Para un candado cuyo trabajo es que un pedido de homologación no llegue a una cocina real, «no sé» tiene que significar «no». Se envuelve en `coalesce(..., false)` de los dos lados.
+
+Los cuatro casos verificados contra la base, incluida la regresión de que el camino normal sigue intacto:
+
+| pedido | debe cocinar |
+|---|---|
+| vendor de homologación, sin flag test | **no** ← el caso que preocupaba |
+| tienda real, pedido normal | **sí** ← no se rompió nada |
+| tienda real, `test: true` de DH | no |
+| simulado nuestro | sí |
+
+Queda pendiente agendar la meet con ellos para arrancar la homologación.
+
+## 13-Sep-2026 — El bloqueo de los códigos de local no era tal, y el correo salió
+
+Jose señaló que los códigos de local de PedidosYa están en los reportes de pedidos. Tenía razón a medias, y la mitad que faltaba es la que importa.
+
+**Son dos identificadores distintos.** `remoteId` viaja en la URL del dispatch (`POST /order/{remoteId}`) y es el código con el que el middleware de Delivery Hero nombra nuestra integración por local: de los seis de producción no conocemos ninguno, sólo el sandbox `AR-PRUEBAS-INTEGRACION-0001`. `platformRestaurant.id` viaja **dentro** del pedido y es el id del local en PedidosYa — ése sí lo tenemos, es el mismo «ID del local» del reporte de liquidación.
+
+**Revisado antes de afirmar nada:** `peya_ordenes_raw` tiene 44 registros y **ninguno vino de una IP de Delivery Hero**. Son todos nuestros. O sea que PedidosYa nunca nos ha mandado un request real y no tenemos evidencia de qué forma tiene su `remoteId` de producción.
+
+**Lo que se hizo:** `peya_vendor_map` gana `platform_restaurant_id`, sembrado con los cinco del histórico (Cafetalón 224235, Soyapango 519400, Usulután 567479, Lourdes 583558, Paseo Venecia 593019). El webhook lo usa **de respaldo**: si el `remoteId` no mapea, el pedido igual encuentra su tienda. El `remoteId` sigue mandando cuando existe, y cuando entra por el respaldo queda anotado — significa que ya sabemos el código de verdad y hay que cargarlo.
+
+Metrocentro queda fuera: abrió el 31-ago y el reporte dejó de traer esa columna en junio.
+
+Que los dos números sean lo mismo es **deducción, no confirmación**: coinciden en forma (seis dígitos) y el ejemplo de la documentación de DH, 478876, cae en el mismo rango. El primer pedido real lo confirma o lo desmiente.
+
+**Y salió el correo a PedidosYa** (hilo «Integración Freakie Dogs»), con las dos preguntas viejas —homologar en producción contra la tienda sandbox, y si el pluginSecret es el mismo por entorno— más una tercera nueva: el `remoteId` de cada local, con la lista de ids de local adjunta para que el cruce les cueste un minuto. Si resulta que son el mismo número, con que lo confirmen alcanza.
+
+## 12-Sep-2026 — Las salsas llegaban revueltas: el grupo se elegía por tamaño, no por significado
+
+Probando el lote en Cafetalón, un «Combo Dúo ×2» salió en el KDS con «Con Todo» dos veces y diez salsas sueltas mezcladas en un solo montón. El cocinero no podía saber qué llevaba cada hot dog ni cada papa.
+
+**PedidosYa manda los toppings de un producto en una lista plana**, sin decir dónde termina una unidad y empieza la otra. El pedido real venía así: Coca Cola, «Con todo (…)», «Con todo (…)», y después diez salsas — cinco y cinco. Traducido de a uno y volcado a un solo arreglo, se pierde el corte.
+
+**Y el grupo se elegía mal.** `peya_traducir_modificador` resolvía el grupo con `order by (cantidad de opciones del grupo) desc limit 1` — literalmente «gana el grupo más grande». Por eso el «Con Todo» del hot dog caía en Salsas Papas: Salsas Papas tiene 16 opciones y Complemento de Hot Dog 12. Una coincidencia aritmética decidiendo qué come el cliente.
+
+**La respuesta ya estaba en nuestro menú.** Un Combo Dúo declara sus grupos numerados — Complemento de Hot Dog 1..4, Salsas Papas 1..2 — y eso es exactamente lo que usa el POS cuando se teclea a mano. `peya_traducir_toppings` recibe la lista COMPLETA y la reparte en esos grupos. El corte entre unidades es que se repita una opción: nadie pide «Ketchup y Ketchup» en la misma papa. Un preset ocupa su unidad entera.
+
+**Y un bug de plpgsql que escondía todo:** el mapa de familias se armaba con `jsonb_set(v_fams, array[clave, slot], …)`. `jsonb_set` NO crea niveles intermedios — no falla, devuelve el objeto sin tocar. `v_fams` se quedaba en `{}` para siempre y cada topping caía a la rama de descarte. La clave ahora es plana (`clave#slot`).
+
+Contra el día completo del 11-sep en Cafetalón: 419 chips, **0 sin mapear**, 351 en un grupo real del producto. Los 68 restantes destapan dos huecos del menú de PeYa, que también afectarían a un pedido tecleado: los combos no declaran grupo de bebida, y el Combo Trío declara menos grupos de salsas que unidades manda PedidosYa.
+
+## 12-Sep-2026 — Cancelaciones, cronómetro real y Metrocentro
+
+**Las cancelaciones llegaban y morían en una tabla.** El webhook ya recibía `ORDER_CANCELLED` y lo anotaba en `peya_ordenes` — y ahí terminaba. La comanda seguía en el KDS y el cocinero la seguía armando; la cuenta seguía abierta y entraba al cierre de turno. Los números de 2026 dicen el tamaño: de **784 cancelaciones**, **737 (94%) llegaron después de aceptar** y **652 con la comida ya lista — $7,204**. Casi ninguna llega a tiempo de evitar cocinar; lo que sí se evita es lo de después.
+
+`peya_cancelar_cuenta` la propaga. Cocina la ve en rojo: las filas pasan a `cancelado` y el KDS carga con `estado <> 'completado'`, así que **siguen en pantalla** hasta que alguien las quite — borrarlas sería lo peor, la bolsa se terminaría igual. Y si la cuenta ya estaba cobrada porque el pedido alcanzó a salir, **no se toca la plata**: se marca para revisar contra la liquidación. Esa decisión no la toma una función sola. Verificadas las dos ramas.
+
+**El cronómetro dejó de ser un fijo de 20 minutos.** `acceptanceTime` salía de un número inventado igual para las 6 tiendas. Lourdes tiene mediana real de 7: le prometíamos casi el triple y el motorista llegaba tarde a una bolsa que ya estaba lista. Ahora sale de `peya_minutos_prep` — el p50 de `aceptado_en → lista_para_retiro` de esa tienda **a esa hora**, sobre 90 días del CSV de liquidación, con recálculo semanal por pg_cron. Cafetalón 9, Lourdes 7, Soyapango 13, Metrocentro 13. A la mediana le toca llegar tarde la mitad de las veces: es la elección, y se cambia con un argumento.
+
+**Metrocentro no estaba mapeada.** El importador del CSV traduce `nombre_local → store_code` con un mapa cableado, y «Freakie Dogs - Metrocentro» no estaba: abrió el 31-ago, después de que se escribió el mapa. 337 pedidos y **$4,249.48** sin sucursal, invisibles en todo reporte por tienda. Una línea en `QuantoUploadView` y un backfill.
+
+## 12-Sep-2026 — Aceptar a mano dejaba el pedido en tierra de nadie (arreglado, `peya-responder` v6)
+
+Probando en vivo en Cafetalón: se simuló el pedido **PeYa #431**, se apretó «Aceptar» en la bandeja, PedidosYa contestó 200… y el pedido no apareció en el KDS ni como cuenta en el POS. En la base: `estado = aceptado`, `pos_cuenta_id = null`.
+
+**Por qué.** `peya_crear_cuenta` sólo se llamaba desde el adaptador del webhook (la aceptación automática). El botón de la bandeja pega directo a `peya-responder`, y ese camino nunca armaba la comanda. Mientras el interruptor `auto_aceptar` esté apagado en una tienda — hoy lo está en las 6 — **ése es el único camino que existe**, así que el pedido quedaba aceptado en PedidosYa y en ningún lado más: ni cocina, ni caja. Lo peor posible: PeYa lo da por vivo y manda al motorista a recoger algo que nadie está haciendo.
+
+**El arreglo.** `peya-responder` arma la comanda él mismo cuando la acción es `aceptar` y DH confirmó, con la misma regla que el webhook: los `test: true` de DH se aceptan pero no bajan a cocina; los simulados nuestros sí. `peya_crear_cuenta` ya era idempotente (si hay `pos_cuenta_id`, devuelve la misma), así que un doble clic no duplica nada. Si la comanda falla se deja constancia en `notas` y en la respuesta — el pedido ya está aceptado en PeYa, no se revierte.
+
+**La lección es la de siempre, en otra forma:** dos caminos hacia el mismo estado y sólo uno hacía el trabajo completo. La autoprueba no lo agarró porque prueba el camino del webhook; el que usa la cajera todos los días no estaba cubierto.
+
+**Verificado en vivo, no en teoría.** v6 quedó desplegada a las 15:23:16; a las 15:23:59 el pedido simulado **#297** se aceptó desde la bandeja y la comanda salió sola: cuenta 26, 3 líneas, 3 en la cola de cocina. Y el **#431** completó el ciclo entero: `retirado` → cuenta `cobrada` de $20.45 con pago `pedidos_ya` y referencia «PeYa #431».
+
+## 12-Sep-2026 — El flujo automático de PeYa completo: entra solo, cocina solo, y la cajera sólo cierra
+
+Piezas 2 y 3. Con esto el ciclo está entero de punta a punta, y probado contra la base.
+
+**El webhook decide solo** (`peya_auto_decidir` + el adaptador en `peya-plugin`). Cuatro escenarios, los cuatro verificados: caja cerrada → rechaza con `CLOSED`; caja abierta → acepta y arma la comanda; pedido `test: true` de DH → acepta pero NO baja a cocina (lo exige el contrato); interruptor apagado → no hace nada, como hoy.
+
+**Dos decisiones de orden que no son intercambiables.** Primero se contesta a Delivery Hero y después se cocina: si fuera al revés y la aceptación fallara, DH cancelaría el pedido por vencimiento con la comida ya hecha. En este orden, si la aceptación sale bien y la comanda falla, el pedido queda visible como «aceptado sin comanda» y alguien lo resuelve — eso se arregla, lo otro se tira. Y la decisión tampoco se toma antes de responder el dispatch: DH espera el acuse y dos llamadas más de latencia serían pedir un timeout, así que va por `EdgeRuntime.waitUntil`.
+
+**`peya_cerrar_cuenta`: el retiro es el momento en que la venta se vuelve cuenta por cobrar.** Reusa el método `pedidos_ya` («CxC PeYa») que ya existía y ya alimenta el cierre de turno por `conteo_pedidos_ya`; no se inventó nada. Sin DTE, porque se factura a PeYa y no al cliente final. Se llama **después** de que DH confirmó el retiro: una cuenta cobrada sobre un pedido que ellos no dan por retirado descuadra la liquidación del viernes.
+
+**Revisado antes de tocar nada:** los dos triggers sobre `pos_cuentas` (`fn_pos_cobro_update_delivery`, `fn_delivery_sync_lista`) se activan sólo si `delivery_cliente_id` no es nulo, y en las cuentas de PeYa es nulo. No se disparan. Importaba mirarlo: uno de esos triggers ya rompió los retiros en septiembre.
+
+**La bandeja se rehizo alrededor del trabajo que de verdad queda.** Con la aceptación automática nadie tiene que aceptar: el driver llega, dice un número, y hay que encontrarlo y cerrarlo. Así que el `shortCode` es lo más grande de la pantalla y el botón es uno solo, del ancho de la tarjeta. La franja «sin contestar» ahora dice explícitamente que si algo aparece ahí, es que algo falló.
+
+**Ciclo completo verificado:** pedido → comanda → aceptar → retirar → cuenta `cobrada` de **$20.45** (totalNet, sin el envío) con su pago `pedidos_ya` y referencia «PeYa #579», y `respondido_por` con la persona. Cerrar dos veces deja **un solo pago**. Build de la PWA limpio. Autoprueba del receptor 25/25.
+
+**Lo que NO pude verificar:** que el adaptador dentro de la edge function realmente ejecute la decisión. La autoprueba borra su propio pedido antes de dejar rastro, y me puse a perseguir el nombre de la tabla de logs de Supabase sin acertar. La lógica está probada 4/4 en SQL y el adaptador es delgado, pero la confirmación queda para la primera prueba supervisada con la UI.
+
+**Todo apagado:** los seis interruptores de `auto_aceptar` quedaron en false. Nada cambió en producción todavía.
+
+## 12-Sep-2026 — `peya_crear_cuenta`: un pedido de PeYa ya se vuelve comanda y cuenta
+
+Primera de las tres piezas del flujo automático. Probada de punta a punta en Casa Matriz y limpiada después: cero rastros.
+
+**Se siguió el molde que ya existía.** `fn_delivery_to_pos` lleva tiempo convirtiendo pedidos de la app propia en cuenta + comanda; `peya_crear_cuenta` usa sus mismas tablas, columnas y numeración en vez de inventar un camino paralelo. Por eso **el KDS no necesitó ni un cambio**.
+
+**Lo que ve la cocina, verificado con el vocabulario real de PeYa:** «Combo La Freakie Burger + Papas + Bebida» → **COMBO FREAKIE BURGER**; «Con todo (Ketchup, Mayonesa, Escabeche…)» → **Con Todo**, una etiqueta y no ocho; «Coca Cola» → **Coca-Cola Lata**; «Super Freak» → **Combo Super Freak**; «Kids (Solo Ketchup y Mayonesa)» + «Queso cheddar» → **Ketchup · Mayonesa · Cheddar**; «Plain (Pan y Salchicha)» → sin salsas. La etiqueta de la comanda es `🛵 PeYa #<shortCode>`, que es el número por el que pregunta el driver.
+
+**El bug de dinero que casi se cuela: `grandTotal` NO es la venta.** La primera versión tomaba `grandTotal` y eso incluye el envío, que cobra PedidosYa. El spec de DH define `totalNet` como *«the total net of the order… should be used as a replacement for the subTotal field»* — ése es el subtotal de productos y es lo que corresponde a la cuenta por cobrar. Con `grandTotal` se habría inflado la CxC y el cierre de turno en el monto del envío, en cada pedido. Coincide además con lo que se hace a mano hoy: la cajera teclea los productos, sin envío. Cuando la suma de líneas no cuadra con `totalNet`, queda anotado en `notas_internas` con los tres números.
+
+**Dos guardas que ya probaron funcionar:** sin turno abierto la función se niega a crear la cuenta (saltó sola con Casa Matriz, que no tenía caja abierta), y un segundo llamado sobre el mismo pedido devuelve la cuenta existente en vez de duplicarla — DH reintenta hasta diez veces.
+
+**Detalle menor anotado:** al resolver un modificador que existe en varios grupos se toma el del grupo más grande, así que el `grupo_nombre` puede decir «Salsas Papas» en un hot dog. El nombre visible —que es lo que la cocina lee— siempre es el correcto.
+
+**Falta:** la aceptación automática en el webhook (mirar turno, aceptar o rechazar con `CLOSED`, llamar a esta función) y el retiro con cierre a CxC más la bandeja simplificada.
+
+## 12-Sep-2026 — El cableado de PeYa salió de 45,987 pedidos reales, no de suposiciones
+
+Cambio de rumbo pedido por Jose: **todo pedido que llegue con la caja abierta se acepta solo** y entra a cocina y caja de una vez; la cajera sólo marca «retirado», y eso cierra la cuenta como CxC PeYa. Sin caja abierta se rechaza solo con `CLOSED` — mejor decir «cerrado» rápido que dejar vencer y comerse un `NO_RESPONSE`.
+
+**La regla que define la arquitectura:** *la cocina no se entera*. El pedido se traduce al vocabulario de nuestro menú —nuestros nombres, nuestros grupos— antes de llegar al KDS. Para cocina es una comanda más; lo único distinto es el tag PEYA y el número.
+
+**Me equivoqué proponiendo el cableado dos veces, y la segunda vez importó.** Primero propuse dejar pasar los modificadores como texto de PeYa: la regla de arriba lo descarta. Después armé el mapeo asumiendo que PeYa publica nuestros mismos nombres — y **eso era falso**. Lo que lo destapó fue encontrar **`pedidos_peya.articulos`**: 45,987 pedidos históricos de enero a septiembre con los nombres tal como los escribe PeYa. Dicen «Combo La Freakie Burger + Papas + Bebida» donde nosotros decimos «COMBO FREAKIE BURGER», y «Queso cheddar» donde decimos «Cheddar». Sin esa tabla el cableado habría fallado en casi todos los productos.
+
+**El histórico también corrigió dos mapeos que por nombre habrían mandado el producto equivocado a cocina.** Reconstruyendo precios desde los pedidos de un solo artículo: «Super Freak» en PeYa vale **$5.99**, que es nuestro *Combo* Super Freak, no el suelto de $2.99 — 3,016 pedidos que habrían salido mal. Y «La Freakie Burger» ($7.99) no es la clásica: es el mismo combo con precio de promo (confirmado por Jose).
+
+**Los presets: 45,987 pedidos y sólo SEIS paréntesis distintos.** PeYa escribe `Preset (lo que incluye)` y la regla es quedarse con el paréntesis, porque hay decenas de prefijos («Kids», «Plain», «Solo Salsas») que dicen lo mismo. Pero aplicarla al pie de la letra rompía la regla de oro: el paréntesis más común —25,327 pedidos— habría puesto **ocho etiquetas en el KDS donde hoy no hay ninguna**, porque cuando la cajera elige «Con Todo» el KDS lo esconde a propósito. Y resulta que esas dos listas completas **son** nuestro «Con Todo» ingrediente por ingrediente (la de 8 = grupo de hot dog, la de 5 = grupo de papas). Traducirlas a «Con Todo» no es una excepción a la regla: es aplicarla bien.
+
+**Cableado en tablas, no en código** (`peya_producto_map`, `peya_modificador_map`, `peya_preset_map`), porque el menú se mueve y corregir un mapeo tiene que ser un `UPDATE`, no un deploy. Más `peya_sin_mapear`, que guarda con texto exacto lo que no calce en vez de perderlo.
+
+**Verificado contra todo el histórico:** 64,534 líneas de producto → **99.97%** resueltas (lo que falta es ruido del parser de texto, no del contrato real). 347,653 líneas de modificador → **100%**, cero sin resolver.
+
+**Interruptor por tienda** (`peya_vendor_map.auto_aceptar`, apagado por defecto): la aceptación automática se prende en una sucursal, se mira funcionando, y recién después se suelta en las seis. Esto toca caja y cocina en vivo; no se estrena en las seis a la vez.
+
+**Pendiente:** las RPC que arman la cuenta y cierran el retiro, y simplificar la bandeja del POS a un botón por pedido con el `shortCode` grande —que es el número por el que pregunta el driver, según el spec de DH.
+
+## 12-Sep-2026 — La bandeja de PedidosYa ya vive en el POS (y simular destapó una fuga hacia DH)
+
+El pedido entraba solo desde el 9-Sep, pero contestarlo seguía siendo cosa de un script. Ahora está donde trabaja el cajero: **`PeyaInboxView`**, con tres franjas (por contestar / en curso / cerrados) y el botón que corresponde a cada tipo de orden.
+
+**La cuenta regresiva es lo más grande de la pantalla, y es a propósito.** Verde arriba de 5 min, ámbar entre 2 y 5, rojo parpadeando abajo de 2. Los umbrales no son estéticos: **abajo de 2 minutos ya no se puede aceptar**, porque DH exige que el `acceptanceTime` esté al menos 2 min en el futuro. Todo lo demás —productos, cliente, dirección— es contexto para decidir; el reloj *es* la decisión. Y el badge de pendientes va en el home, porque el reloj corre aunque nadie tenga la bandeja abierta.
+
+**El botón siguiente depende del tipo de orden:** *vendor delivery* (lo lleva un rider de DH) → "Comida lista" (`preparation-completed`); *own delivery* y *pickup* → "Retirado" (`order_picked_up`). Son los únicos válidos en cada caso según el contrato; ofrecer el otro sería un 4xx garantizado.
+
+**Auth por PIN, no por secreto compartido — y esto era una decisión pendiente, no un detalle.** El POS es una PWA en el navegador: cualquier secreto fijo en el frontend se lee con F12, así que `PEYA_ACCION_SECRET` nunca iba a servir ahí. El PIN ya es la credencial con la que el cajero entra; el servidor lo valida contra `usuarios_erp` en cada llamada, y de yapa ata la acción **a una persona** (`respondido_por`, nueva columna) **y a una sucursal** — un cajero no contesta pedidos de otra tienda. El secreto de servidor sigue vivo para scripts, cron y la autoprueba: son dos puertas para dos mundos distintos, no una redundante.
+
+**RPCs nuevas:** `peya_panel(p_pin)` —mismo patrón que `sucursal_panel_delivery`: el alcance lo decide el servidor— y `peya_simular_pedido(p_pin)`, que inyecta un pedido de prueba para recorrer el flujo sin depender de que PedidosYa dispare uno.
+
+**Lo que destapó probar el flujo completo, que es justo para lo que sirve probarlo:** la acción **"retirado" de un pedido simulado SÍ salía a la API real de PedidosYa**. La simulación definía `orderAcceptedUrl`, `orderRejectedUrl` y `orderPreparedUrl` pero **no `orderPickedUpUrl`**, y el responder cae —correctamente, para pedidos reales— a la URL por defecto de DH cuando falta el callback. O sea: la pantalla decía "no toca PedidosYa" y en ese camino la tocaba. Arreglado por los dos lados: la simulación ahora define los cuatro callbacks, **y** el responder corta de raíz —si el pedido es de un vendor `SIMULADO-` y la URL resuelta no es nuestra, se rechaza con `simulado_no_sale_a_peya` nombrando adónde habría ido. El corte es el **vendor simulado, no el flag `es_prueba`**: los pedidos `test: true` de DH sí deben contestarse contra DH, que es todo el mecanismo de homologación.
+
+**Lección:** una promesa de aislamiento que depende de que N campos estén completos no es aislamiento, es suerte. El corte tiene que estar en la salida, donde se puede verificar una sola vez.
+
+**Verificado de punta a punta:** aceptar / rechazar / retirado devuelven 200 contra nuestro echo, PIN falso 401, rechazo sin motivo 400 (lo frena nuestra función, no DH), el cinturón 400 nombrando la URL, el `acceptanceTime` sale del `riderPickupTime`, y la autoprueba de la cadena sigue **25/25**. Build de la PWA limpio.
+
+## 12-Sep-2026 — La cadena completa de PeYa probada de punta a punta: 25/25 (y la autoprueba vive dentro de Supabase)
+
+`peya_ordenes` estaba **vacía**: desde el arreglo de GRANTs, el test del receptor nunca había llegado a correr entero. O sea que hasta hoy no existía evidencia de que un pedido entrara de verdad. Ya existe: **25 de 25 chequeos en verde**.
+
+**Cómo, sin que ningún secreto saliera de Supabase.** El problema era de acceso, no de código: el `pluginSecret` vive como Edge Function Secret y no se puede leer desde la base ni desde una sesión de Claude, así que nadie podía firmar el JWT de Delivery Hero sin tenerlo a mano en una terminal. La salida fue **`peya-selftest`**: una edge function que corre *adentro*, donde los secretos sí están, firma el JWT ella misma, ejercita toda la cadena y devuelve sólo un reporte. Se dispara por SQL con `pg_net`. **Los secretos nunca viajan a un chat, a un log ni al repo.**
+
+**Puerta de la autoprueba: token de un solo uso emitido por SQL** (`peya_selftest_tokens`, vence a los 30 min, se quema *antes* de correr para que una prueba que revienta a la mitad no deje el token vivo). No podía ser un secreto en env ni en código: la función crea pedidos y habla con PeYa, así que no puede quedar abierta con sólo conocer la URL.
+
+**No le manda pedidos falsos a PedidosYa.** El pedido de prueba lleva sus `callbackUrls` apuntando al `/echo` de la propia autoprueba, así que el responder recorre su camino real contra un destino nuestro. Lo único que sí toca a PeYa es el **login**, que es justo lo que conviene verificar que sigue vivo — y funcionó.
+
+**Lo que quedó demostrado, no supuesto:** el JWT rechaza las tres formas de pasar mal (sin header, claim equivocado, firma inválida); el dispatch devuelve el `remoteOrderId` y el reintento **no duplica la fila**; `es_prueba`, `expiry_date`, `tipo_orden` (`own_delivery`) y la sucursal mapeada se guardan bien; el responder saca token contra PeYa y **el `acceptanceTime` sale del `riderPickupTime`** con 25 min de margen; el estado local avanza a `aceptado` sólo tras el 200; y el 404 de orden inexistente y el 202 de menuimport responden como el contrato pide.
+
+**La falla número 25, que valió la pena:** `permission denied for table peya_ordenes` al borrar el pedido de prueba. El GRANT de la vez pasada enumeró `select/insert/update` y **se olvidó de `delete`**. Es exactamente la misma trampa de antes —tabla creada por SQL crudo que no hereda los GRANTs por defecto de Supabase— y reapareció porque enumerar privilegios a mano deja huecos que sólo se ven cuando alguien ejerce el que falta. Arreglado con `grant delete`, y la segunda corrida dio 25/25 limpio.
+
+**Ojo con el diseño del botón del POS:** `PEYA_ACCION_SECRET` sirve para scripts, cron y esta autoprueba, pero **no va a servir para el POS**. El POS es una PWA en el navegador: cualquier secreto fijo que le pongamos al frontend se lee con F12. Cuando se arme el botón "Aceptar" hay que autenticarlo con la sesión de Supabase del cajero, no con un secreto compartido.
+
+## 12-Sep-2026 — PedidosYa: ya podemos contestarle a Delivery Hero (y por qué el reloj manda)
+
+Hasta ahora `peya-plugin` **recibía** pedidos y no había forma de contestarlos. Eso no es "media integración": un pedido sin respuesta lo cancela DH solo con **`NO_RESPONSE`** cuando vence su `expiryDate` (~15 min) y, si pasa seguido, **cierra la tienda** para proteger su tasa de fallas. La mitad de salida no era un extra, era lo que mantiene la tienda abierta.
+
+**`peya-responder` (edge fn nueva, `verify_jwt=false`)** — cuatro acciones: `aceptar`, `rechazar`, `preparado`, `retirado`.
+
+- **Token cacheado.** `expires_in` viene en 7200 s; se renueva con 5 min de margen en vez de pedir uno por request. Un 401 en el primer intento tira el cache y reintenta con token nuevo.
+- **`acceptanceTime` significa cosas distintas según el tipo de orden:** en *pickup* es cuándo lo recoge el cliente (`pickup.pickupTime`), en *vendor delivery* cuándo se entrega (`delivery.expectedDeliveryTime`), en *own delivery* no tiene efecto. Y sobre todo: la doc exige **≥ 2 minutos en el futuro o la aceptación falla**. Se puso **piso duro de 3 min** para absorber latencia. Si fallara, el pedido se pierde por vencimiento — el fallo silencioso más caro de todos.
+- **El 409 sólo se reintenta si es el recuperable.** Si `currentState` es `ASSIGNED_TO_TRANSPORT` o `WAITING_FOR_ACKNOWLEDGEMENT`, el dispatch todavía se está asentando del lado de DH y hay que reintentar; los demás 409 (ya cancelado, integración indirecta) **no** — reintentarlos sería ruido sobre un pedido muerto.
+- **El estado local sólo avanza si DH confirmó** (`if (ok) cambios.estado = estadoNuevo`). Marcarlo aceptado tras una llamada fallida haría que en el tablero el pedido se vea vivo mientras se vence solo. Falle o no, se guardan `respuesta_http`, `respuesta_cuerpo` e `intentos_respuesta`.
+- **Secreto propio (`PEYA_ACCION_SECRET`, header `x-freakie-secreto`).** Esta función hace acciones con consecuencias reales contra PeYa; no puede quedar expuesta con sólo conocer la URL. No reusa `PEYA_PLUGIN_SECRET` a propósito: ése es de ellos, éste es nuestro.
+
+**`peya-plugin` ahora guarda los campos que importan para la seguridad de la operación:** `expiry_date` (el reloj), **`es_prueba`** (`test: true` — la doc dice literal *"make sure that the order won't be prepared in the kitchen"*; es lo que permite homologar sin que salga comida), `code`, `short_code` y `platform_restaurant_id`. Migración `peya_ordenes_campos_del_contrato`, con índice parcial sobre `expiry_date where estado = 'recibido'` para poder vigilar los que están por vencer.
+
+**GRANTs, la trampa de crear tablas por SQL crudo:** `peya_ordenes` nació sin los GRANTs por defecto de Supabase ⇒ `permission denied for table` aunque la RLS estuviera bien. **Una policy sin GRANT no sirve, y un GRANT sin policy tampoco.** Arreglado y verificado asumiendo el rol en un `DO`.
+
+**Staging sigue dando 401** con las mismas credenciales que dan 200 en producción. La lectura: probablemente nunca se aprovisionaron credenciales de staging. **No es bloqueante** — DH nos dio cadena de pruebas (`SV-FREAKIE-DOGS-TEST-1`), una tienda sandbox **en Argentina** (`AR-PRUEBAS-INTEGRACION-0001`, que no es una tienda nuestra, así que un pedido ahí no puede llegar a ninguna cocina real) y el flag `test`. Ése es el mecanismo del propio Delivery Hero para homologar dentro de producción.
+
+**Pendiente:** crear el secreto `PEYA_ACCION_SECRET`, correr `scripts/peya-responder.sh` de punta a punta contra la tienda sandbox, y reemplazar las 6 filas `PENDIENTE-*` de `peya_vendor_map` cuando PeYa confirme los `vendor_code` reales.
+
+## 09-Sep-2026 — PedidosYa nos dio de alta: credenciales en mano y login contra su API funcionando
+
+**Estamos dentro.** PeYa aprobó la integración y mandó las credenciales cifradas con nuestra llave PGP. Nombre del sistema en su ecosistema: **`SV-FREAKIE-DOGS-1`**. Cadena de pruebas `SV-FREAKIE-DOGS-TEST-1` (`SVFREAKIEDOGSTEST0001`) y una tienda sandbox suya en Argentina (`AR-PRUEBAS-INTEGRACION-0001`, PlatformRestaurantID 478876) para homologar sin tocar las 5 tiendas reales. Usuario de prueba: `freakiedogs+peya@gmail.com` — **no hubo que crear cuenta**, el `+alias` de Gmail cae en la bandeja de siempre y para ellos es una dirección nueva.
+
+**Login verificado: HTTP 200.** `POST /v2/login` con `Content-Type: application/x-www-form-urlencoded` y `username` / `password` / `grant_type=client_credentials`; devuelve `access_token` + `token_type: Bearer` + **`expires_in: 7200`**. Dos horas de vida ⇒ el cliente tiene que cachear el token y renovarlo, no pedir uno por request.
+
+**Hay DOS secretos y confundirlos rompe la mitad del flujo:** el **password** es para que nosotros saquemos token de *su* API (estados de orden, catálogo, disponibilidad); el **pluginSecret** es para que *ellos* se autentiquen cuando llaman a *nuestro* webhook. Guardados como **Edge Function Secrets** en Supabase (`PEYA_USERNAME`, `PEYA_PASSWORD`, `PEYA_PLUGIN_SECRET`), nunca en el repo.
+
+**Dos hosts distintos, ojo con cuál se usa:** las credenciales traen `baseUrl` de **producción** (`integration-middleware.us.restaurant-partners.com` — región "us" cubre LatAm) pero el bloque `middleware` apunta a **staging** (`...stg.restaurant-partners.com`), que es donde vive la doc y donde se homologa. El login que dio 200 fue contra producción; **falta confirmar si las mismas credenciales sirven en staging** o si hay un par aparte.
+
+**Trampa de PGP que casi nos cuesta un ciclo:** PeYa cifra con BouncyCastle y **cifró contra la llave principal (`[SC]`), no contra la subllave de cifrado (`[E]`)**. `gpg --decrypt` avisa *"used key is not marked for encryption use"* y **descifra igual** — no hay que pedirles reenvío. Antes de eso hubo que **generar una llave RSA-2048 nueva** porque la del formulario self-service era 4096 y ellos piden 2048 explícitamente; la 2048 nació `[SC]` sola y hubo que agregarle la subllave `[E]` con `--quick-add-key ... encr` (sin eso no podían cifrar nada hacia nosotros). Huella de la buena: `3D67 89DA E344 F9A1 49A7 EB72 5741 A518 F566 FBA2`, vive en la mini.
+
+**Lección de proceso, cara:** adjuntar la llave tipeando su base64 a mano falló **dos veces** (un carácter cambiado en 5,340 ⇒ llave inválida). La verificación que sirve es `cmp` contra el original y `gpg --show-keys` sobre lo que quedó *dentro del borrador de Gmail*, no sobre lo que uno cree que subió. Además **Gmail reescribe los links** (`google.com/url?q=...`): la URL del webhook hay que pegarla en el editor de Gmail, no dejar la que inserta la API.
+
+**`peya_vendor_map`:** agregada la fila de la tienda sandbox (`AR-PRUEBAS-INTEGRACION-0001` → M001) para que el webhook sepa a qué sucursal mandar los pedidos de prueba. Las 6 filas `PENDIENTE-*` siguen esperando los `vendor_code` reales de las tiendas de El Salvador.
+
+**Dominio propio:** el webhook también responde en `https://api.freakiedogs.com/functions/v1/peya-plugin` (custom domain de Supabase, ya activo). PeYa registró la URL `*.supabase.co`; **no se toca ahora** — cambiarla es un correo de una línea cuando la integración esté estable.
+
+**Siguiente:** leer los specs (`pluginApi.yaml` / `middlewareExternalApi.yaml` — los HTML del visor son solo cáscara Redoc, el contrato vive en los YAML), implementar la autenticación del plugin con `PEYA_PLUGIN_SECRET` (hoy el webhook solo valida IP), y mapear pedido → POS/KDS.
+
 ## 19-Sep-2026 — Cierre de caja: la tarjeta ahora se cuadra contra el POS de n1co (migración `cierre_tarjeta_n1co_voucher`)
 
 Pedido de Cesar: hasta hoy la tarjeta del cierre salía sola del sistema y **nadie la contrastaba con el datáfono**. Si un cobro no se registraba, o se anulaba en n1co después de cobrado, nadie se enteraba hasta la conciliación bancaria — o nunca.
@@ -211,7 +422,6 @@ Jose reportó **"permission denied for view v_dtes_emitidos"** en Finanzas → *
 **Verificado:** el proxy y el gate están vivos en prod (`GET /sb/rest/v1/v_dtes_emitidos` sin token → `401 FIN_SIN_SESION`); `erp_finanzas_ro` lee **18,202 documentos** en el rango exacto de la pantalla (10-ago → 9-sep); y el build de producción emite `dbFin` contra `${origin}/sb` mientras `db` sigue en el dominio propio.
 
 **La lección:** el switch de `VITE_SB_URL` se pensó como "una variable, rollback = borrarla", pero **no es transparente para lo que depende de que el proxy esté en el camino**. Todo lo que viva DENTRO de `api/supaproxy.js` (hoy: el gate de finanzas y el de RRHH) muere en silencio al saltearlo. Se dejó nota cruzada en `src/supabase.js`. La solución de raíz es mover el gate a la DB — un RPC `SECURITY DEFINER` que valide el token de sesión y devuelva las filas —; ahí sí `dbFin` puede volver a `URL_SB` y el proxy se muere de verdad.
-
 
 ## 09-Sep-2026 — "¿Y quién marca cuándo fue retirado?" — la pregunta que destapó un bug propio
 
@@ -582,6 +792,13 @@ Jose subió el compute de `btboxlwfqcbrdfrlnwln` de **Micro a Small** después d
 - **Sigue abierto y es OTRO problema:** "en Kaeru no carga en ciertos dispositivos". El deadlock de `onAuthStateChange` está corregido (`26a595f`, 1-sep) y `usePermisos` ya tiene timeout. Hipótesis sin confirmar: **service worker viejo** sirviendo el bundle previo al fix (Kaeru es PWA con assets `immutable` a 1 año). Falta evidencia del dispositivo, no de la base. — *Jose + Claude, 05-sep-2026*
 
 ---
+
+## 05-Sep-2026 — PedidosYa aprobó la integración (INT-PEYA): webhook `peya-plugin` listo para alta
+- **PeYa aprobó la solicitud** (correo 4-sep, Cristian Pereira, Soporte): piden llave PGP RSA, webhook con SSL, contactos clave (dev/soporte/emergencias) y datos de un usuario de prueba (nombre, país, Gmail no registrado en PeYa). Con eso mandan credenciales + documentación de la API.
+- **Edge fn `peya-plugin` → v2 con `verify_jwt=false`** (era el pendiente de Jose del 17-ago): el middleware de Delivery Hero no manda JWT de Supabase, así que con Verify JWT ON todo webhook moría en 401 antes de llegar al código. La autenticación queda por whitelist de IPs oficiales DH (prod LatAm + staging) — IP fuera de lista se registra en `peya_ordenes_raw` con `ip_valida=false` y responde 403. Se agregó **GET = health check público** (`{"status":"ok","service":"freakie-dogs-peya-plugin"}`, sin tocar BD) para que PeYa valide SSL/disponibilidad. POST/PUT intactos (grabador crudo → 200 `received`).
+- **URL del webhook para PeYa:** `https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/peya-plugin` (las subrutas del contrato DH `/order/{remoteId}`, `/remoteId/.../posOrderStatus`, etc. caen en la misma función). `peya_ordenes_raw` sigue en 0 filas: nadie ha pegado todavía. No se pudo probar por curl desde el sandbox (proxy bloquea supabase.co); probar desde la mini.
+- **Datos usados en la respuesta a PeYa:** 5 locales activos con ID PeYa (M001 224235 · S001 519400 · S002 567479 · S003 583558 · S004 593019, de `pedidos_peya.local_id`), ~5,000 pedidos/mes, S006 Metro Centro + S007 + S008 como expansión. `peya_vendor_map.vendor_code` sigue `PENDIENTE-*`: reemplazar por los IDs reales cuando confirmen el mapeo. PeYa maneja hoy los pedidos por tablet: solo 1 cuenta `tipo='pedidos_ya'` en `pos_cuentas` (prueba).
+- **Siguiente:** recibir credenciales cifradas → Login API → staging → mapeo pedido→POS/KDS. La llave PGP (RSA-4096, freakiedogs@gmail.com) vive en la mini, NO en el repo.
 
 ## 03-Sep-2026 — Mi planilla: el mes en curso pasa a ser panel de trabajo del encargado
 
