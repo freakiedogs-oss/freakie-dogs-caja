@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
 import { STORES_SHORT, today, shiftDate } from '../../config'
 import InfoTip from '../ui/InfoTip'
+import ConteoCriticosTab from './ConteoCriticosTab'
 
 /**
  * ConsumoVentaDashboard — "¿Qué se consumió por lo que se vendió?"
@@ -67,6 +68,10 @@ const TABS = [
   { key: 'conteo', label: 'Ingredientes (Conteo)', icon: '📋' },
   { key: 'bebidas', label: 'Bebidas y Cervezas', icon: '🥤' },
   { key: 'ventas', label: 'Ventas por producto', icon: '💵' },
+  // Captura, no reporte: la hoja de críticos de Saúl. Va acá porque la
+  // pregunta que responde —¿lo que descargó la venta es lo que se consumió
+  // físicamente?— sólo tiene sentido al lado del consumo teórico.
+  { key: 'criticos', label: 'Conteo de Críticos', icon: '📝' },
 ]
 
 const n = (v) => Number(v) || 0
@@ -177,7 +182,7 @@ const td = { padding: '6px 10px', whiteSpace: 'nowrap', fontSize: 12.5 }
 
 // ── pantalla ──────────────────────────────────────────────────────────────
 
-export default function ConsumoVentaDashboard() {
+export default function ConsumoVentaDashboard({ user }) {
   const hoy = today()
   const [desde, setDesde] = useState(shiftDate(hoy, -6))
   const [hasta, setHasta] = useState(hoy)
@@ -215,6 +220,11 @@ export default function ConsumoVentaDashboard() {
     setAbiertos(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
   const dias = diasEntre(desde, hasta)
+
+  /* La pestaña de Conteo de Críticos es CAPTURA, no reporte: trabaja sobre
+     un día y una sucursal, con sus propios controles. Compartir los filtros
+     del rango sería mentir sobre qué está mirando. */
+  const esCaptura = tab === 'criticos'
 
   // ── totales ──
   const totalCosto = useMemo(() => (consumo || []).reduce((a, r) => a + n(r.costo_total), 0), [consumo])
@@ -281,14 +291,19 @@ export default function ConsumoVentaDashboard() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 20, fontWeight: 800 }}>🍔 Consumo por Venta</div>
         <div style={{ flex: 1 }} />
-        <button onClick={exportar} style={{ ...btn, background: '#2a2a2a', color: c.text }}>⬇ CSV</button>
-        <button onClick={cargar} style={{ ...btn, background: '#2a2a2a', color: c.text }}>↻</button>
+        {!esCaptura && <>
+          <button onClick={exportar} style={{ ...btn, background: '#2a2a2a', color: c.text }}>⬇ CSV</button>
+          <button onClick={cargar} style={{ ...btn, background: '#2a2a2a', color: c.text }}>↻</button>
+        </>}
       </div>
       <div style={{ fontSize: 12, color: c.textDim, marginBottom: 12 }}>
-        Lo que las ventas del rango se llevaron del inventario, en unidades y en dinero al costo.
+        {esCaptura
+          ? 'Hoja diaria de productos críticos: el conteo físico de la sucursal contra lo que la venta descargó.'
+          : 'Lo que las ventas del rango se llevaron del inventario, en unidades y en dinero al costo.'}
       </div>
 
       {/* Filtros */}
+      {!esCaptura && <>
       <div style={{ ...cardStyle, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <label style={{ fontSize: 11, color: c.textDim, fontWeight: 600 }}>
           Desde<br />
@@ -353,6 +368,8 @@ export default function ConsumoVentaDashboard() {
         </div>
       )}
 
+      </>}
+
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
         {TABS.map(t => (
@@ -362,11 +379,17 @@ export default function ConsumoVentaDashboard() {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar componente…"
-          style={{ background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, minWidth: 180 }} />
+        {!esCaptura && (
+          <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar componente…"
+            style={{ background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, minWidth: 180 }} />
+        )}
       </div>
 
-      {cargando && <div style={{ padding: 24, color: c.textDim }}>Cargando…</div>}
+      {/* La captura trae su propio estado de carga y no depende de fn_consumo_venta,
+          así que va FUERA del gate de `cargando` del reporte. */}
+      {esCaptura && <ConteoCriticosTab user={user} />}
+
+      {!esCaptura && cargando && <div style={{ padding: 24, color: c.textDim }}>Cargando…</div>}
 
       {!cargando && tab === 'componentes' && (
         <ListaConsumo grupos={gruposComponentes} total={totalCosto} abiertos={abiertos} onToggle={toggle}
@@ -396,12 +419,12 @@ export default function ConsumoVentaDashboard() {
         <ListaVentas grupos={gruposVentas} total={totalVenta} abiertos={abiertos} onToggle={toggle} dias={dias} />
       )}
 
-      <div style={{ fontSize: 11, color: c.textOff, marginTop: 16, lineHeight: 1.6 }}>
+      {!esCaptura && <div style={{ fontSize: 11, color: c.textOff, marginTop: 16, lineHeight: 1.6 }}>
         El consumo sale del kardex que escribe el POS al cobrar, ya con los combos y los modificadores resueltos:
         un "Coca-Cola Combo" aparece acá como su pan de hot dog, su salchicha, su papa y su gaseosa.
         Por eso <b>Componentes</b> y <b>Ventas por producto</b> no se suman entre sí — son la misma venta vista por el
         lado del insumo y por el lado del precio.
-      </div>
+      </div>}
     </div>
   )
 }
