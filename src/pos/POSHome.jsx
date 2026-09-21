@@ -261,10 +261,40 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
     onStartOrder({ tipo, mesa_ref: null, mesa_id: null, cuentaId: null })
   }
 
-  const confirmarPeya = () => {
+  const confirmarPeya = async () => {
     const id = normalizarIdPeya(peyaModal?.id)
-    if (!id) return
+    if (!id || peyaModal?.checking) return
     const cliente = (peyaModal.cliente || '').trim() || null
+
+    // Caso real de Cafetalón: el pedido #2682 se digitó dos veces (dos
+    // cuentas, mismo ID, mismo contenido) y se descontó doble de inventario
+    // sin que nadie se diera cuenta hasta el conteo nocturno. Antes de abrir
+    // la orden, avisamos si ya existe un pedido de PeYa con este mismo ID hoy
+    // en esta sucursal. No se bloquea (puede ser una corrección legítima),
+    // pero obliga a confirmar con conocimiento de causa en vez de pasar
+    // desapercibido.
+    setPeyaModal(m => ({ ...m, checking: true }))
+    try {
+      const hoy = new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('T')[0]
+      const { data: existentes } = await db.from('pos_cuentas')
+        .select('cliente_nombre, total, estado, created_at')
+        .eq('store_code', storeCode)
+        .eq('delivery_referencia', id)
+        .neq('estado', 'cancelada')
+        .gte('created_at', `${hoy}T00:00:00-06:00`)
+      if (existentes?.length) {
+        const detalle = existentes.map(c =>
+          `${new Date(c.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit', timeZone: 'America/El_Salvador' })}`
+          + `${c.cliente_nombre ? ' · ' + c.cliente_nombre : ''} · $${Number(c.total || 0).toFixed(2)} · ${c.estado}`
+        ).join('\n')
+        const seguir = await confirmAsync(
+          `Ya hay ${existentes.length === 1 ? 'un pedido' : existentes.length + ' pedidos'} con el ID PedidosYa #${id} hoy:\n\n${detalle}\n\n¿Seguro que este es un pedido distinto y no el mismo digitado dos veces?`,
+          { title: '⚠️ ID de PedidosYa repetido', confirmText: 'Sí, es otro pedido', cancelText: 'Cancelar', danger: true }
+        )
+        if (!seguir) { setPeyaModal(m => ({ ...m, checking: false })); return }
+      }
+    } catch { /* si falla la verificación no se traba la venta: sigue como antes */ }
+
     setPeyaModal(null)
     onStartOrder({ tipo: 'pedidos_ya', mesa_ref: null, mesa_id: null, cuentaId: null,
                    delivery_referencia: id, cliente_nombre: cliente })
@@ -651,8 +681,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
               style={{ width: '100%', boxSizing: 'border-box', marginBottom: 14 }}
             />
 
-            <button className="pos-confirmar-btn" disabled={!idNorm} onClick={confirmarPeya}>
-              {idNorm ? `Continuar → PedidosYa #${idNorm}` : 'Escribí el ID para continuar'}
+            <button className="pos-confirmar-btn" disabled={!idNorm || peyaModal.checking} onClick={confirmarPeya}>
+              {peyaModal.checking ? 'Verificando…' : idNorm ? `Continuar → PedidosYa #${idNorm}` : 'Escribí el ID para continuar'}
             </button>
             <button className="pos-cancelar-btn" onClick={() => setPeyaModal(null)}>Cancelar</button>
           </div>
