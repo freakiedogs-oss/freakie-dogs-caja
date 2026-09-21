@@ -2,6 +2,20 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 21-Sep-2026 — Conteo de Críticos: Saúl vio la pantalla y la hoja no significaba lo que se había entendido
+
+Correcciones de Saúl sobre la primera versión (mismo día). Cuatro, y una cambia la ecuación entera. La tabla estaba vacía (0 hojas, 0 filas), así que se reestructuró en vez de migrar datos.
+
+- **"Descargas AM/PM" NO son la venta.** Son el movimiento **bodega de la sucursal → cocina**: un control interno que Saúl lleva a mano en su hoja. Pasan a ser **casillas editables** y **salen de la ecuación**. Lo que entra en su lugar es una columna nueva del sistema, **Venta del día**, un solo número del kardex. Esto es lo que invalidó la respuesta original de "las calcula el sistema": el nombre era el mismo, el significado no.
+- **Con eso se cayó todo el aparato de turnos.** El corte AM/PM existía sólo para partir la venta en dos tramos; si la venta es un número del día, no hay qué partir. Se borraron el selector Turno/Hora, el banner de "un solo turno" y los parámetros `p_modo`/`p_hora_corte` de `fn_criticos_hoja`. La firma vieja se **dropeó** en vez de dejar las dos: dos firmas dejan a PostgREST eligiendo, y en este repo eso ya costó un bug con `guardar_foto`.
+- **"Se pidió" va siempre en paquetes completos** — fuera la casilla de unidades sueltas.
+- **"TPS Final" y "En Línea" son una casilla cada uno, no dos.** TPS Final = paquetes **enteros en bodega**; En Línea = las **unidades sueltas de los paquetes ya abiertos**, en cocina. Juntos forman el cierre, con la misma forma que el CID forma la apertura (cerrado + suelto). Antes había 4 casillas porque cada columna llevaba su propio par enteros/sueltas.
+- **La ecuación queda:** `teórico = CID + Se pidió − Venta del día`; `real = TPS Final + En Línea`. Sigue siendo idénticamente `venta del día − consumo físico`, así que el signo se lee igual: negativo = se fue producto que ninguna venta descontó.
+- **`facSuelta` ahora cae en el factor del empaque cuando el producto no es fraccionado**, porque "En Línea" existe para todos: una bolsa de chili abierta sigue siendo una bolsa, y no hay unidad suelta más chica declarada.
+- Migraciones: `criticos_columnas_segun_hoja_real` (drop `pedido_sueltas`, `tps_sueltas`, `linea_enteros`; add `descarga_am`, `descarga_pm`), `criticos_fn_hoja_v2_venta_dia`, `criticos_fn_guardar_v2`.
+- **88 pruebas** (antes 80) y el render en jsdom ahora verifica **98 casillas** (15 filas × 6 + 8 fraccionados × 1 por las sueltas del CID), que digitar las descargas **no mueve** el teórico ni la diferencia, y que el control de corte AM/PM ya no existe. Con la venta real de Venecia del 20-sep: CID 3 paq + 5 bolitas, TPS 2 paq, línea 7 → teórico 6.45 paq, real 2.35, **−4.1 paquetes (−24.4%)**.
+- **El arnés de render encontró un error de mi test, no del código:** los índices de las casillas estaban corridos y escribían en "Se pidió" en vez de en las descargas. Lo delató el aviso `sistema: 20` apareciendo donde no debía — de paso quedó probado que el pedido digitado pisa al del sistema y avisa.
+
 ## 21-Sep-2026 — Conteo de Críticos: la hoja de Saúl entra al ERP y se cruza sola contra las descargas
 
 Pedido de Saúl: poder digitar el conteo físico diario de los productos críticos (su `Criticos_FD_FORMATO.xlsx`, Manual de Operaciones · Sistemas de Inventario v1A) y que se cruce contra el consumo que el POS descargó, para auditar sucursal por sucursal si lo que la venta descontó es lo que realmente se usó.

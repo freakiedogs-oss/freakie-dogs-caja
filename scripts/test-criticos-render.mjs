@@ -7,9 +7,9 @@
  * PANTALLA la muestra: que pinta las 15 filas con sus casillas, que teclear
  * recalcula la diferencia en vivo, y que React no tira un solo warning.
  *
- * `db.rpc` va stubbeado con la respuesta REAL de fn_criticos_hoja para
- * Venecia (S004) el 20-sep-2026 — la única sucursal y el único día en que la
- * caja abrió dos turnos, que es el caso que parte AM/PM de verdad.
+ * `db.rpc` va stubbeado con la respuesta de fn_criticos_hoja para Venecia
+ * (S004) el 20-sep-2026, con la venta real de ese día (336 bolitas de carne,
+ * 167 panes) verificada contra el kardex.
  */
 import { JSDOM } from 'jsdom'
 import * as esbuild from 'esbuild'
@@ -22,31 +22,11 @@ const HOJA = {
     "store_code": "S004",
     "sucursal": "Paseo Venecia",
     "fecha": "2026-09-20",
-    "modo": "turno",
-    "hora_corte": "16:00",
     "estado": "sin_hoja",
     "notas": null,
     "ingresado_por_nombre": null,
-    "actualizado": null,
-    "n_turnos": 2,
-    "hay_pm": true
+    "actualizado": null
   },
-  "turnos": [
-    {
-      "numero_turno": 1,
-      "caja": null,
-      "abierto": "11:00",
-      "cerrado": "17:53",
-      "tramo": "AM"
-    },
-    {
-      "numero_turno": 2,
-      "caja": null,
-      "abierto": "17:53",
-      "cerrado": "22:04",
-      "tramo": "PM"
-    }
-  ],
   "items": [
     {
       "item_id": "it1",
@@ -70,17 +50,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 225,
-      "descarga_pm": 111,
+      "venta_dia": 336,
       "pedido_sistema": 400,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -107,17 +85,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 2.04,
-      "descarga_pm": 1.04,
+      "venta_dia": 3.08,
       "pedido_sistema": 5,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -135,7 +111,7 @@ const HOJA = {
       "fraccionado": false,
       "unidad_suelta": null,
       "factor_suelta": null,
-      "nota_config": "La hoja dice \"Caja / *Libras\"; el kardex lo mueve por BANDEJA de 200 lascas. Se cuenta por bandeja.",
+      "nota_config": "La hoja dice \"Caja / *Libras\"; el kardex lo mueve por BANDEJA de 200 lascas.",
       "productos": [
         {
           "id": "p3",
@@ -144,17 +120,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 0.3527,
-      "descarga_pm": 1.1082,
+      "venta_dia": 1.4609,
       "pedido_sistema": 2,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -181,17 +155,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 1.625,
-      "descarga_pm": 0.5313,
+      "venta_dia": 2.1563,
       "pedido_sistema": 3,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -218,17 +190,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 4.5,
-      "descarga_pm": 2.7,
+      "venta_dia": 7.2,
       "pedido_sistema": 0,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -255,17 +225,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 0.8732,
-      "descarga_pm": 0,
+      "venta_dia": 0.8732,
       "pedido_sistema": 0,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -292,17 +260,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 1.7031,
-      "descarga_pm": 0.9219,
+      "venta_dia": 2.625,
       "pedido_sistema": 8,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -329,17 +295,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 7.5038,
-      "descarga_pm": 3.7019,
+      "venta_dia": 11.2057,
       "pedido_sistema": 24,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -366,17 +330,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 0,
-      "descarga_pm": 0.7,
+      "venta_dia": 0.7,
       "pedido_sistema": 150,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -403,17 +365,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 2.45,
-      "descarga_pm": 0.45,
+      "venta_dia": 2.9,
       "pedido_sistema": 16.5,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -440,17 +400,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 0,
-      "descarga_pm": 6,
+      "venta_dia": 6,
       "pedido_sistema": 0,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -477,17 +435,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 2,
-      "descarga_pm": 0,
+      "venta_dia": 2,
       "pedido_sistema": 0,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -514,17 +470,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 112,
-      "descarga_pm": 55,
+      "venta_dia": 167,
       "pedido_sistema": 180,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -551,17 +505,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 4.9,
-      "descarga_pm": 2.4,
+      "venta_dia": 7.3,
       "pedido_sistema": 10,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -588,17 +540,15 @@ const HOJA = {
           "principal": true
         }
       ],
-      "descarga_am": 0.0952,
-      "descarga_pm": 0.0952,
+      "venta_dia": 0.1904,
       "pedido_sistema": 2,
       "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
-      "pedido_sueltas": null,
+      "descarga_am": null,
+      "descarga_pm": null,
       "tps_enteros": null,
-      "tps_sueltas": null,
-      "linea_enteros": null,
       "linea_sueltas": null,
       "notas": null,
       "guardado": false
@@ -684,15 +634,21 @@ for (const c of ['Carnicos','Lacteos','Congelados','Harinas Panes'])
   chk(txt.includes(c), `sale la categoría "${c}"`)
 chk(document.querySelectorAll('input[type=number]').length > 0,
     `${document.querySelectorAll('input[type=number]').length} casillas de captura`)
-// 15 items: 4 campos c/u; los fraccionados llevan casilla de sueltas
+// Por fila: CID enteros, Se pidió, Desc AM, Desc PM, TPS Final, En línea = 6.
+// Los fraccionados suman UNA más: las sueltas del CID. Ninguna otra columna
+// lleva doble casilla — es la corrección de Saúl del 21-sep.
 const frac = HOJA.items.filter(i => i.fraccionado).length
-const esperadas = HOJA.items.length * 4 + frac * 4
+const esperadas = HOJA.items.length * 6 + frac
 chk(document.querySelectorAll('input[type=number]').length === esperadas,
-    `son exactamente ${esperadas} (15 items × 4 campos + ${frac} fraccionados × 4)`)
+    `son exactamente ${esperadas} (15 filas × 6 + ${frac} fraccionados × 1 por las sueltas del CID)`)
 chk(txt.includes('Venecia'), 'el encabezado nombra la sucursal')
-chk(txt.includes('CID') && txt.includes('TPS Final') && txt.includes('En línea'), 'están las columnas de la hoja')
-chk(txt.includes('Desc. AM') && txt.includes('Desc. PM'), 'están las columnas del sistema')
-chk(/AM<\/b>\s*11:00/.test(html) || txt.includes('11:00'), 'muestra los tramos de turno reales')
+chk(txt.includes('CID') && txt.includes('TPS Final') && txt.includes('En línea'),
+    'están las columnas de la hoja')
+chk(txt.includes('Desc. AM') && txt.includes('Desc. PM'), 'están las descargas bodega→cocina')
+chk(txt.includes('Venta día'), 'está la columna de venta del día')
+chk(!txt.includes('CORTE AM/PM') && !txt.includes('Turno de caja'),
+    'ya NO está el control de corte AM/PM (la venta es un solo número del día)')
+chk(!txt.includes('un solo turno'), 'ni el banner de turnos')
 chk(txt.includes('no dicen lo mismo'), 'avisa de las discrepancias hoja vs catálogo')
 chk(txt.includes('sin contar'), 'la hoja vacía dice "sin contar", no "descuadre"')
 chk(!txt.includes('NaN') && !txt.includes('undefined'), 'no hay NaN ni undefined en pantalla')
@@ -708,24 +664,34 @@ function teclear(el, valor) {
 }
 const filaCarne = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Carne P Burguer'))
 const ins = filaCarne.querySelectorAll('input[type=number]')
-chk(ins.length === 8, `la carne (fraccionada) tiene 8 casillas: CID, pedido, TPS y línea × (enteros+sueltas) — dio ${ins.length}`)
+chk(ins.length === 7, `la carne (fraccionada) tiene 7 casillas, no 8 — dio ${ins.length}`)
 
-// CID 3 paquetes, TPS 3 paquetes + 4 bolitas. Con AM 225 + PM 111 y pedido 400:
-//   teórico = 60 + 400 − 336 = 124 unidades = 6.2 paquetes
-//   real    = 64 unidades = 3.2 paquetes  →  dif = −60 un = −3 paquetes
-await act(async () => { teclear(ins[0], '3') })            // CID enteros
-await act(async () => { teclear(ins[4], '3') })            // TPS enteros
-await act(async () => { teclear(ins[5], '4') })            // TPS sueltas
+// CID 3 paquetes + 5 bolitas (65), TPS 2 paquetes (40), En línea 7 bolitas.
+// Con venta 336 y pedido 400:
+//   teórico = 65 + 400 − 336 = 129 un = 6.45 paquetes
+//   real    = 47 un = 2.35 paquetes  →  dif = −82 un = −4.1 paquetes (−24.4%)
+await act(async () => { teclear(ins[0], '3') })   // CID enteros
+await act(async () => { teclear(ins[1], '5') })   // CID sueltas
+await act(async () => { teclear(ins[5], '2') })   // TPS Final
+await act(async () => { teclear(ins[6], '7') })   // En línea
+// (ins[2] es Se pidió y se deja vacío a propósito: así el teórico usa los
+//  400 del sistema y se prueba de paso el camino de la sugerencia.)
 
 const filaAhora = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Carne P Burguer'))
 const celdas = [...filaAhora.querySelectorAll('td')].map(t => t.textContent.trim())
-const linea = celdas.join(' | ')
-chk(celdas.includes('6.2'), `el teórico sale 6.2 paquetes (fila: ${linea.slice(-70)})`)
-chk(celdas.includes('3.2'), 'el real sale 3.2 paquetes')
-chk(celdas.some(t => t === '-3'), 'la diferencia sale −3 paquetes')
-chk(celdas.some(t => t.includes('-17.9%')), 'y el porcentaje −17.9%')
+chk(celdas.includes('6.45'), `el teórico sale 6.45 paquetes (fila: ${celdas.join(' | ').slice(-60)})`)
+chk(celdas.includes('2.35'), 'el real sale 2.35 paquetes')
+chk(celdas.some(t => t === '-4.1'), 'la diferencia sale −4.1 paquetes')
+chk(celdas.some(t => t.includes('-24.4%')), 'y el porcentaje −24.4%')
 
-// El resumen de cabecera tiene que moverse de "sin contar" a un descuadre.
+// Las descargas bodega→cocina se digitan pero NO deben mover la diferencia.
+await act(async () => { teclear(ins[3], '8') })   // Desc. AM
+await act(async () => { teclear(ins[4], '4') })   // Desc. PM
+const tras = [...[...document.querySelectorAll('tr')].find(t => t.textContent.includes('Carne P Burguer'))
+  .querySelectorAll('td')].map(t => t.textContent.trim())
+chk(tras.includes('6.45') && tras.some(t => t === '-4.1'),
+    'digitar las descargas NO cambia el teórico ni la diferencia')
+
 const resumenTxt = document.getElementById('r').textContent
 chk(/✕ 1 descuadres/.test(resumenTxt), 'el resumen pasa a contar 1 descuadre')
 chk(/○ 14 sin contar/.test(resumenTxt), 'y deja 14 filas sin contar')

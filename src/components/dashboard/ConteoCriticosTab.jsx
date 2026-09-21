@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { db } from '../../supabase'
 import { STORES_SHORT, today, shiftDate } from '../../config'
 import InfoTip from '../ui/InfoTip'
 import {
   auditarHoja, resumenHoja, agruparPorCategoria, aPayload,
-  aEmpaques, fmtCant, decirEnEmpaques, vacio, n,
+  aEmpaques, fmtCant, decirEnEmpaques, vacio,
 } from './criticosConteo'
 
 /**
@@ -13,14 +13,20 @@ import {
  * Espejo de `Criticos_FD_FORMATO.xlsx` (Manual de Operaciones · Sistemas de
  * Inventario v1A): 15 productos críticos, una hoja por sucursal y día.
  *
- * Lo que digita Saúl (blanco):  CID · Se pidió · TPS Final · En Línea
- * Lo que pone el sistema (gris): Descargas AM/PM desde el kardex de ventas,
- *                                y "Se pidió" propuesto desde los traslados
- *                                recibidos, que él puede corregir.
+ * Lo que digita Saúl:
+ *   CID        apertura: paquetes enteros + unidades sueltas
+ *   Se pidió   lo que entró, SIEMPRE en paquetes completos
+ *   Desc AM/PM bodega de sucursal → cocina. Control interno; NO es la venta
+ *   TPS Final  paquetes enteros que quedan en bodega
+ *   En Línea   unidades sueltas de los paquetes ya abiertos, en cocina
  *
- *     teórico = CID + Se pidió − Descargas
+ * Lo que pone el sistema:
+ *   Venta día  lo que el POS descargó del inventario ese día (kardex)
+ *   Se pidió   propuesto desde los traslados recibidos — editable
+ *
+ *     teórico = CID + Se pidió − Venta del día
  *     real    = TPS Final + En Línea
- *     dif     = real − teórico  ( = descargas del sistema − consumo físico )
+ *     dif     = real − teórico   ( = venta del día − consumo físico )
  *
  * Una diferencia NEGATIVA es la que duele: se fue producto del físico que
  * ninguna venta descontó.
@@ -53,16 +59,11 @@ const td = { padding: '5px 8px', whiteSpace: 'nowrap', fontSize: 12.5 }
 const CAT_ICONO = {
   'Carnicos': '🥩', 'Lacteos': '🧀', 'Congelados': '🍟', 'Harinas Panes': '🍞',
 }
-
-const COLOR_ESTADO = {
-  ok: c.green, aviso: c.yellow, alerta: c.red, sin_datos: c.textOff,
-}
-const TEXTO_ESTADO = {
-  ok: 'Cuadra', aviso: 'Revisar', alerta: 'Descuadre', sin_datos: 'Sin contar',
-}
+const COLOR_ESTADO = { ok: c.green, aviso: c.yellow, alerta: c.red, sin_datos: c.textOff }
+const TEXTO_ESTADO = { ok: 'Cuadra', aviso: 'Revisar', alerta: 'Descuadre', sin_datos: 'Sin contar' }
 
 /* Sólo sucursales que operan caja. Casa Matriz no vende, así que no tiene
-   descargas contra las que cruzar, y Eventos no tiene bodega fija. */
+   venta contra la que cruzar, y Eventos no tiene bodega fija. */
 const SUCURSALES = ['M001', 'S001', 'S002', 'S003', 'S004', 'S006']
 
 function csvEscape(v) {
@@ -79,39 +80,40 @@ function downloadCSV(filename, rows) {
   URL.revokeObjectURL(url)
 }
 
-/* ── Celda de captura ───────────────────────────────────────────────────
-   Un input para empaques enteros y, sólo si el producto se abre en
-   sucursal, otro para lo suelto. Es la misma forma de contar del conteo
-   nocturno: la carne son paquetes de 20 MÁS las bolitas del paquete
-   abierto, y pedirla en decimales de paquete sería pedir una cuenta
-   mental que nadie hace bien a las 10 de la noche.
-   ─────────────────────────────────────────────────────────────────────── */
-function Celda({ item, campo, valores, onChange, disabled, sugerido }) {
-  const kE = `${campo}_enteros`, kS = `${campo}_sueltas`
-  const vE = valores[kE], vS = valores[kS]
-  const inputStyle = {
-    width: item.fraccionado ? 46 : 62, background: disabled ? '#151515' : c.input,
-    color: c.text, border: `1px solid ${c.border}`, borderRadius: 6,
-    padding: '4px 5px', fontSize: 12.5, textAlign: 'right',
-  }
+const inputBase = {
+  background: c.input, color: c.text, border: `1px solid ${c.border}`,
+  borderRadius: 6, padding: '4px 5px', fontSize: 12.5, textAlign: 'right',
+}
+
+/** Una casilla suelta (Se pidió, Desc AM/PM, TPS Final, En Línea). */
+function Casilla({ item, campo, valores, onChange, disabled, sugerido, ancho = 62, titulo }) {
+  const v = valores[campo]
+  return (
+    <input
+      type="number" min="0" step="any" inputMode="decimal"
+      value={vacio(v) ? '' : v} disabled={disabled}
+      placeholder={sugerido != null ? fmtCant(sugerido) : ''}
+      onChange={e => onChange(item.item_id, campo, e.target.value)}
+      style={{ ...inputBase, width: ancho, background: disabled ? '#151515' : c.input }}
+      title={titulo}
+    />
+  )
+}
+
+/* El CID es la ÚNICA columna con dos casillas: la apertura son paquetes
+   cerrados más lo suelto del paquete abierto. Al cerrar, esas dos mitades
+   viven en columnas propias (TPS Final y En Línea), tal como en el Excel. */
+function CeldaCid({ item, valores, onChange, disabled, sugerido }) {
   return (
     <div style={{ display: 'flex', gap: 3, alignItems: 'center', justifyContent: 'flex-end' }}>
-      <input
-        type="number" min="0" step="any" inputMode="decimal"
-        value={vacio(vE) ? '' : vE} disabled={disabled}
-        placeholder={sugerido != null ? fmtCant(sugerido) : ''}
-        onChange={e => onChange(item.item_id, kE, e.target.value)}
-        style={inputStyle} title={item.unidad_conteo}
-      />
+      <Casilla item={item} campo="cid_enteros" valores={valores} onChange={onChange}
+        disabled={disabled} sugerido={sugerido} ancho={item.fraccionado ? 46 : 62}
+        titulo={item.unidad_conteo} />
       {item.fraccionado && (
         <>
           <span style={{ color: c.textOff, fontSize: 11 }}>+</span>
-          <input
-            type="number" min="0" step="any" inputMode="decimal"
-            value={vacio(vS) ? '' : vS} disabled={disabled}
-            onChange={e => onChange(item.item_id, kS, e.target.value)}
-            style={inputStyle} title={item.unidad_suelta}
-          />
+          <Casilla item={item} campo="cid_sueltas" valores={valores} onChange={onChange}
+            disabled={disabled} ancho={46} titulo={item.unidad_suelta} />
         </>
       )}
     </div>
@@ -123,22 +125,19 @@ export default function ConteoCriticosTab({ user }) {
   const [store, setStore] = useState(user?.store_code && SUCURSALES.includes(user.store_code)
     ? user.store_code : SUCURSALES[0])
   const [fecha, setFecha] = useState(hoy)
-  const [modo, setModo] = useState('turno')         // 'turno' | 'hora'
-  const [horaCorte, setHoraCorte] = useState('16:00')
   const [hoja, setHoja] = useState(null)
-  const [valores, setValores] = useState({})         // item_id → { campo: valor }
+  const [valores, setValores] = useState({})
   const [notas, setNotas] = useState('')
   const [cargando, setCargando] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
   const [sucio, setSucio] = useState(false)
-  const notasCargadas = useRef('')
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(''); setAviso('')
     const { data, error: err } = await db.rpc('fn_criticos_hoja', {
-      p_store_code: store, p_fecha: fecha, p_modo: modo, p_hora_corte: horaCorte,
+      p_store_code: store, p_fecha: fecha,
     })
     if (err) {
       setError(err.message || 'No se pudo cargar la hoja')
@@ -149,19 +148,18 @@ export default function ConteoCriticosTab({ user }) {
       for (const it of (data?.items || [])) {
         v[it.item_id] = {
           cid_enteros: it.cid_enteros, cid_sueltas: it.cid_sueltas,
-          pedido_enteros: it.pedido_enteros, pedido_sueltas: it.pedido_sueltas,
-          tps_enteros: it.tps_enteros, tps_sueltas: it.tps_sueltas,
-          linea_enteros: it.linea_enteros, linea_sueltas: it.linea_sueltas,
+          pedido_enteros: it.pedido_enteros,
+          descarga_am: it.descarga_am, descarga_pm: it.descarga_pm,
+          tps_enteros: it.tps_enteros, linea_sueltas: it.linea_sueltas,
           notas: it.notas,
         }
       }
       setValores(v)
-      const nt = data?.cabecera?.notas || ''
-      setNotas(nt); notasCargadas.current = nt
+      setNotas(data?.cabecera?.notas || '')
       setSucio(false)
     }
     setCargando(false)
-  }, [store, fecha, modo, horaCorte])
+  }, [store, fecha])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -194,9 +192,7 @@ export default function ConteoCriticosTab({ user }) {
 
   const guardar = async (cerrar = false) => {
     setGuardando(true); setError(''); setAviso('')
-    const payload = aPayload(filas.map(f => ({
-      item_id: f.item_id, ...(valores[f.item_id] || {}),
-    })))
+    const payload = aPayload(filas.map(f => ({ item_id: f.item_id, ...(valores[f.item_id] || {}) })))
     const { data, error: err } = await db.rpc('fn_criticos_guardar', {
       p_store_code: store, p_fecha: fecha, p_items: payload,
       p_usuario_id: user?.id || null, p_usuario_nombre: user?.nombre || null,
@@ -222,24 +218,25 @@ export default function ConteoCriticosTab({ user }) {
   const exportar = () => {
     downloadCSV(`criticos_${store}_${fecha}.csv`, [
       ['Categoría', 'Producto', 'Presentación', 'Unidades derivadas', 'Unidad de conteo',
-       'CID', 'Se pidió', 'Descarga AM', 'Descarga PM', 'TPS Final', 'En línea',
-       'Cierre real', 'Cierre teórico', 'Diferencia', '% dif', 'Estado', 'Unidad'],
+       'CID', 'Se pidió', 'Desc. AM (bodega→cocina)', 'Desc. PM (bodega→cocina)',
+       'Venta del día', 'TPS Final', 'En línea',
+       'Cierre teórico', 'Cierre real', 'Diferencia', '% dif', 'Estado'],
       ...filas.map(f => {
         const a = f.aud
         const e = (q) => (q == null ? '' : Number(aEmpaques(f, q).toFixed(4)))
         return [
           f.categoria, f.nombre, f.presentacion, f.unidades_derivadas, f.unidad_conteo,
-          e(a.cid), e(a.pedido), e(a.am), e(a.pm), e(a.tps), e(a.linea),
-          e(a.real), e(a.teorico), e(a.diferencia),
+          e(a.cid), e(a.pedido), a.descargaAm ?? '', a.descargaPm ?? '',
+          e(a.venta), e(a.tps), e(a.linea),
+          e(a.teorico), e(a.real), e(a.diferencia),
           a.pct == null ? '' : Number(a.pct.toFixed(2)),
-          TEXTO_ESTADO[a.estado], f.unidad_conteo,
+          TEXTO_ESTADO[a.estado],
         ]
       }),
     ])
   }
 
   const cab = hoja?.cabecera
-  const turnos = hoja?.turnos || []
 
   return (
     <div>
@@ -269,49 +266,6 @@ export default function ConteoCriticosTab({ user }) {
           ))}
         </div>
       </div>
-
-      {/* ── Corte AM/PM ── */}
-      <div style={{ ...cardStyle, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 12 }}>
-        <span style={{ fontSize: 11, color: c.textDim, fontWeight: 600 }}>
-          CORTE AM/PM
-          <InfoTip text="Cómo se parte el día para las descargas. Por turno de caja usa el turno real que abrió la sucursal; por hora fija corta a la hora que elijas. El total del día es el mismo en los dos modos." />
-        </span>
-        <button onClick={() => setModo('turno')}
-          style={{ ...btn, padding: '6px 10px', fontSize: 12, background: modo === 'turno' ? c.blue : '#262626', color: modo === 'turno' ? '#0a0a0a' : c.textDim }}>
-          Turno de caja
-        </button>
-        <button onClick={() => setModo('hora')}
-          style={{ ...btn, padding: '6px 10px', fontSize: 12, background: modo === 'hora' ? c.blue : '#262626', color: modo === 'hora' ? '#0a0a0a' : c.textDim }}>
-          Hora fija
-        </button>
-        {modo === 'hora' && (
-          <input type="time" value={horaCorte} onChange={e => setHoraCorte(e.target.value)}
-            style={{ background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 8, padding: '5px 8px', fontSize: 12.5 }} />
-        )}
-        {turnos.length > 0 && (
-          <span style={{ color: c.textDim, marginLeft: 4 }}>
-            {turnos.map((t, i) => (
-              <span key={i} style={{ marginRight: 10 }}>
-                <b style={{ color: t.tramo === 'AM' ? c.cyan : c.purple }}>{t.tramo}</b>
-                {' '}{t.abierto}–{t.cerrado || '…'}
-                {t.caja ? ` · ${t.caja}` : ''}
-              </span>
-            ))}
-          </span>
-        )}
-      </div>
-
-      {/* El PM vacío tiene que explicarse, o se lee como "no se vendió en la
-          tarde" — que es falso y es justo lo que un auditor no debe creer. */}
-      {modo === 'turno' && cab && !cab.hay_pm && (
-        <div style={{ ...cardStyle, borderColor: c.yellow, fontSize: 12, color: c.yellow }}>
-          ⚠️ El {fecha} en {STORES_SHORT[store]} la caja corrió con <b>un solo turno</b>
-          {turnos.length > 1 ? ` (${turnos.length} cajas en paralelo, todas turno 1)` : ''},
-          así que <b>todas las descargas caen en AM</b> y la columna PM va en cero.
-          No significa que no se vendió en la tarde. Para partir el día igual,
-          cambiá el corte a <b>Hora fija</b>.
-        </div>
-      )}
 
       {error && <div style={{ ...cardStyle, borderColor: c.red, color: c.red, fontSize: 13 }}>⚠️ {error}</div>}
       {aviso && <div style={{ ...cardStyle, borderColor: c.green, color: c.green, fontSize: 13 }}>✓ {aviso}</div>}
@@ -355,20 +309,21 @@ export default function ConteoCriticosTab({ user }) {
             <span style={{ marginRight: 8 }}>{CAT_ICONO[g.categoria] || '📦'}</span>{g.categoria}
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
               <thead>
                 <tr>
                   <th style={{ ...th, textAlign: 'left' }}>Producto</th>
                   <th style={{ ...th, textAlign: 'left' }}>Presentación</th>
-                  <th style={{ ...th, textAlign: 'right' }}>CID<InfoTip text="Conteo Inicial del Día: existencia al abrir, en empaques enteros (+ sueltos si el empaque se abre en sucursal). Si ayer se contó, el gris de fondo es el cierre de ayer." /></th>
-                  <th style={{ ...th, textAlign: 'right' }}>Se pidió<InfoTip text="Lo que entró ese día según el kardex (traslados recibidos + recepciones). Se puede corregir si la hoja de papel dice otra cosa." /></th>
-                  <th style={{ ...th, textAlign: 'right', color: c.cyan }}>Desc. AM</th>
-                  <th style={{ ...th, textAlign: 'right', color: c.purple }}>Desc. PM</th>
-                  <th style={{ ...th, textAlign: 'right' }}>TPS Final</th>
-                  <th style={{ ...th, textAlign: 'right' }}>En línea</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Teórico<InfoTip text="CID + Se pidió − Descargas. Lo que debería haber quedado si cada venta descontó exactamente lo que se usó." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>CID<InfoTip text="Conteo Inicial del Día: existencia al abrir, en paquetes enteros (+ las unidades sueltas del paquete abierto). El gris de fondo es el cierre de ayer, si se contó." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>Se pidió<InfoTip text="Lo que entró ese día, en PAQUETES COMPLETOS. Se propone desde el kardex (traslados recibidos + recepciones) y se puede corregir si la hoja de papel dice otra cosa." /></th>
+                  <th style={{ ...th, textAlign: 'right', color: c.orange }}>Desc. AM<InfoTip text="Lo que salió de la bodega de la sucursal hacia la cocina en el turno AM, en paquetes. Es un control interno de la sucursal: NO es la venta y no entra en el cálculo de la diferencia." /></th>
+                  <th style={{ ...th, textAlign: 'right', color: c.orange }}>Desc. PM<InfoTip text="Lo mismo que Desc. AM, para el turno PM. Control interno bodega → cocina." /></th>
+                  <th style={{ ...th, textAlign: 'right', color: c.cyan }}>Venta día<InfoTip text="Lo que el POS descontó del inventario ese día, del kardex de ventas, ya con combos y modificadores resueltos. Es el número del sistema contra el que se audita." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>TPS Final<InfoTip text="Paquetes ENTEROS que quedan en bodega al cerrar." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>En línea<InfoTip text="Unidades SUELTAS de los paquetes ya abiertos, las que están en cocina. Junto con el TPS Final forman el cierre real." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>Teórico<InfoTip text="CID + Se pidió − Venta del día. Lo que debería haber quedado si cada venta descontó exactamente lo que se usó." /></th>
                   <th style={{ ...th, textAlign: 'right' }}>Real<InfoTip text="TPS Final + En línea: lo que se contó físicamente al cerrar." /></th>
-                  <th style={{ ...th, textAlign: 'right' }}>Dif.<InfoTip text="Real − Teórico. Negativo = se fue producto que ninguna venta descontó (merma no reportada, sobre-porcionado, fuga). Positivo = sobra producto contra lo que descargó el sistema." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>Dif.<InfoTip text="Real − Teórico. Negativo = se fue producto que ninguna venta descontó (merma no reportada, sobre-porcionado, fuga). Positivo = la venta descargó más de lo que realmente se usó." /></th>
                   <th style={{ ...th, textAlign: 'right' }}>%</th>
                 </tr>
               </thead>
@@ -376,6 +331,7 @@ export default function ConteoCriticosTab({ user }) {
                 {g.filas.map(f => {
                   const a = f.aud
                   const col = COLOR_ESTADO[a.estado]
+                  const vals = valores[f.item_id] || {}
                   const emp = (q) => (q == null ? '—' : fmtCant(aEmpaques(f, q)))
                   return (
                     <tr key={f.item_id} style={{ borderTop: '1px solid #222' }}>
@@ -389,25 +345,36 @@ export default function ConteoCriticosTab({ user }) {
                         {f.unidades_derivadas && <div style={{ color: c.textOff }}>{f.unidades_derivadas}</div>}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
-                        <Celda item={f} campo="cid" valores={valores[f.item_id] || {}} onChange={onChange}
+                        <CeldaCid item={f} valores={vals} onChange={onChange}
                           disabled={cerrada} sugerido={aEmpaques(f, f.cid_sugerido)} />
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
-                        <Celda item={f} campo="pedido" valores={valores[f.item_id] || {}} onChange={onChange}
-                          disabled={cerrada} sugerido={aEmpaques(f, a.pedidoSistema)} />
+                        <Casilla item={f} campo="pedido_enteros" valores={vals} onChange={onChange}
+                          disabled={cerrada} sugerido={aEmpaques(f, a.pedidoSistema)}
+                          titulo={f.unidad_conteo} />
                         {a.pedidoDifiere && (
                           <div style={{ fontSize: 10, color: c.yellow }} title="Lo digitado no coincide con lo que registró el kardex">
                             sistema: {emp(a.pedidoSistema)}
                           </div>
                         )}
                       </td>
-                      <td style={{ ...td, textAlign: 'right', color: c.cyan, fontWeight: 600 }}>{emp(a.am)}</td>
-                      <td style={{ ...td, textAlign: 'right', color: c.purple, fontWeight: 600 }}>{emp(a.pm)}</td>
                       <td style={{ ...td, textAlign: 'right' }}>
-                        <Celda item={f} campo="tps" valores={valores[f.item_id] || {}} onChange={onChange} disabled={cerrada} />
+                        <Casilla item={f} campo="descarga_am" valores={vals} onChange={onChange}
+                          disabled={cerrada} titulo={`Bodega → cocina AM (${f.unidad_conteo})`} />
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
-                        <Celda item={f} campo="linea" valores={valores[f.item_id] || {}} onChange={onChange} disabled={cerrada} />
+                        <Casilla item={f} campo="descarga_pm" valores={vals} onChange={onChange}
+                          disabled={cerrada} titulo={`Bodega → cocina PM (${f.unidad_conteo})`} />
+                      </td>
+                      <td style={{ ...td, textAlign: 'right', color: c.cyan, fontWeight: 700 }}>{emp(a.venta)}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <Casilla item={f} campo="tps_enteros" valores={vals} onChange={onChange}
+                          disabled={cerrada} titulo={`Paquetes en bodega (${f.unidad_conteo})`} />
+                      </td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <Casilla item={f} campo="linea_sueltas" valores={vals} onChange={onChange}
+                          disabled={cerrada}
+                          titulo={f.fraccionado ? `Sueltas en cocina (${f.unidad_suelta})` : `Abierto en cocina (${f.unidad_conteo})`} />
                       </td>
                       <td style={{ ...td, textAlign: 'right', color: c.textDim }}>{emp(a.teorico)}</td>
                       <td style={{ ...td, textAlign: 'right', color: c.textDim }}>{emp(a.real)}</td>
@@ -456,10 +423,12 @@ export default function ConteoCriticosTab({ user }) {
       )}
 
       <div style={{ fontSize: 11, color: c.textOff, marginTop: 4, lineHeight: 1.6 }}>
-        Las <b>descargas</b> salen del mismo kardex que alimenta la pestaña de Componentes: lo que el POS
-        descontó al cobrar, ya con combos y modificadores resueltos. El <b>físico</b> lo pone Saúl.
+        <b>Teórico = CID + Se pidió − Venta del día</b> · <b>Real = TPS Final + En línea</b>.
+        La <b style={{ color: c.cyan }}>venta del día</b> sale del kardex que escribe el POS al cobrar, ya con
+        combos y modificadores resueltos. Las columnas <b style={{ color: c.orange }}>Desc. AM/PM</b> son el
+        control interno de bodega a cocina: se guardan pero no entran en el cálculo.
         Una diferencia <b style={{ color: c.red }}>negativa</b> significa que se fue producto del inventario
-        que ninguna venta descontó; una <b style={{ color: c.green }}>positiva</b>, que el sistema descargó
+        que ninguna venta descontó; una <b style={{ color: c.green }}>positiva</b>, que la venta descargó
         más de lo que realmente se usó. Una celda vacía no es cero: la fila queda <i>sin contar</i> y no
         entra en el veredicto.
       </div>
