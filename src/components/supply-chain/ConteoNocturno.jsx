@@ -380,7 +380,14 @@ export default function ConteoNocturno({user,onBack}){
           if(r.catalogo_productos?.conteo_modo==='bebidas'){ resumenBebidas.push(item); yaBebidas=true; }
           else { resumenAlimentos.push(item); yaAlimentos=true; }
         });
-      }catch{}
+      }catch(e){
+        // Antes este catch quedaba vacío: si esta consulta fallaba (por red u
+        // otro motivo), el código seguía como si no hubiera merma reportada
+        // hoy, y la app dejaba entrar de nuevo al formulario — riesgo de
+        // reportar la misma merma dos veces. Ahora se relanza el error para
+        // que lo capture el catch de abajo, que sí avisa y NO deja avanzar.
+        throw new Error('No se pudo verificar si ya hay merma reportada hoy: '+e.message);
+      }
 
       // Una confirmación de "no hubo merma" (ver confirmarSinMerma) también
       // cuenta como resuelto, aunque no haya productos — a diferencia de
@@ -391,7 +398,12 @@ export default function ConteoNocturno({user,onBack}){
         (sinReporte||[]).forEach(r=>{
           if(r.categoria==='bebidas') yaBebidas=true; else if(r.categoria==='alimentos') yaAlimentos=true;
         });
-      }catch{}
+      }catch(e){
+        // Mismo riesgo que arriba: si esto falla en silencio, se puede volver
+        // a pedir "¿hubo merma?" aunque ya se haya confirmado que no. Se
+        // relanza para que el catch externo avise y detenga el flujo.
+        throw new Error('No se pudo verificar la confirmación de "no hubo merma" de hoy: '+e.message);
+      }
 
       setMermaYaRegistradaAlimentos(yaAlimentos);
       setMermaYaRegistradaBebidas(yaBebidas);
@@ -730,14 +742,15 @@ export default function ConteoNocturno({user,onBack}){
     try{
       const hoy=today();
 
-      // 1. Borrar registros previos de hoy SOLO de lo que se está contando ahora.
-      // Acotado con .in(): en un guardado parcial, un delete sin filtro borraría
-      // lo que se contó en un pase anterior.
-      await db.from('inventario_conteo_nocturno')
-        .delete().eq('sucursal_id',sucursalId).eq('fecha',hoy)
-        .in('producto_id', contadosAhora.map(p=>p.producto_id));
-
-      // 2. Insertar conteo (sin "diferencia" — es columna generada en DB)
+      // Guardado ATÓMICO del conteo (sin "diferencia" — es columna generada en DB).
+      // Antes esto era un delete() de lo de hoy seguido de un insert() en dos
+      // viajes separados al servidor: si el delete pasaba y el insert fallaba
+      // a medio camino (red, timeout, refresco de página), el conteo de esa
+      // pasada quedaba borrado sin nada que lo reemplazara — se perdía un
+      // conteo ya guardado. upsert() hace todo en una sola sentencia
+      // (INSERT ... ON CONFLICT ... DO UPDATE) usando la restricción
+      // UNIQUE (sucursal_id, producto_id, fecha) que ya tiene la tabla: o se
+      // guarda completo, o no se guarda nada — nunca a medias.
       const conteos=contadosAhora.map(p=>({
         sucursal_id: sucursalId,
         producto_id: p.producto_id,
@@ -749,7 +762,7 @@ export default function ConteoNocturno({user,onBack}){
       }));
 
       const {error:conteoErr}=await db.from('inventario_conteo_nocturno')
-        .insert(conteos);
+        .upsert(conteos, {onConflict:'sucursal_id,producto_id,fecha'});
       if(conteoErr)throw conteoErr;
 
       // 3. Ajustar el stock POR KARDEX, no a mano.
