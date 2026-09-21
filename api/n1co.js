@@ -352,13 +352,23 @@ function respuestaNoDisponible(sesion) {
   const motivos = {
     no_existe: 'No encontramos ese pedido.',
     ya_pagado: 'Este pedido ya está pagado.',
+    // NO es lo mismo que pagado: el pedido siguió por efectivo y ya va en
+    // marcha. Decirle "ya está pagado" a quien no pagó lo hace creer que le
+    // cobraron.
+    ya_en_curso: 'Este pedido ya va en camino y se paga al recibir. Si querés pagar con tarjeta, hacé un pedido nuevo.',
     cancelado: 'Este pedido fue cancelado.',
     expirado: 'El pedido venció. Hacelo de nuevo, por favor.',
     demasiados_intentos: 'Demasiados intentos. Escribinos por WhatsApp para ayudarte.',
     monto_invalido: 'No pudimos calcular el total del pedido.',
   };
+  // `reiniciable` le dice al front que este pedido ya no se puede cobrar, pero
+  // que puede crear uno nuevo sin molestar al cliente. Sin esto, quien tenía un
+  // pedido viejo en la sesión quedaba trabado sin poder comprar.
+  const reiniciable = ['ya_pagado', 'ya_en_curso', 'cancelado', 'expirado',
+                       'demasiados_intentos', 'no_existe'].includes(sesion?.motivo);
   return {
     ok: false, error: sesion?.motivo || 'no_disponible',
+    reiniciable,
     mensaje: motivos[sesion?.motivo] || 'No pudimos iniciar el cobro.',
   };
 }
@@ -611,7 +621,16 @@ export default async function handler(req) {
       // 4. Tokenizar y cobrar, igual que en `pagar`.
       const hashDisp = await dispositivoHash(body?.dispositivo);
       const guardar = body?.guardar === true && !!hashDisp;
-      const customerId = `SV${sesion.cliente_telefono}`;
+      // n1co rechaza con 400 ("Error de validación") re-tokenizar la MISMA
+      // tarjeta para el mismo customer. Se vio en producción: un emisor de
+      // EE.UU. pidió billingInfo y los 4 reintentos siguientes dieron 400, sin
+      // llegar nunca al banco. Cuando NO se guarda la tarjeta el token es de un
+      // solo uso, así que el customer puede ser único por intento y el choque
+      // desaparece. Si se guarda, el id tiene que ser estable o se pierde la
+      // tarjeta guardada.
+      const customerId = guardar
+        ? `SV${sesion.cliente_telefono}`
+        : `SV${sesion.cliente_telefono}-${sesion.order_id}`;
 
       const tok = await n1co('/api/v3/PaymentMethods', {
         customer: {
@@ -901,7 +920,13 @@ export default async function handler(req) {
     // pide multi-uso si el cliente marcó guardar.
     const hashDisp = await dispositivoHash(body?.dispositivo);
     const guardar = body?.guardar === true && !!hashDisp;
-    const customerId = `SV${sesion.cliente_telefono}`;
+    // Mismo motivo que en crear-y-pagar: sin guardar, el token es de un solo
+    // uso y el customer puede ser único por intento, lo que evita el 400 de
+    // n1co al re-tokenizar la misma tarjeta. `order_id` ya trae el número de
+    // intento, así que cada reintento es un customer distinto.
+    const customerId = guardar
+      ? `SV${sesion.cliente_telefono}`
+      : `SV${sesion.cliente_telefono}-${sesion.order_id}`;
 
     // Tokenizar: acá muere el PAN.
     const tok = await n1co('/api/v3/PaymentMethods', {
