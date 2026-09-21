@@ -10,6 +10,7 @@ import { emitDTE } from './dteService'
 import { printComanda, printPreCuenta, printFactura, getImpresora } from '../print/printService'
 import Icon, { EMOJI_ICON } from '../Icon'
 import PinAuthModal from '../PinAuthModal'
+import PreparadoModal from '../PreparadoModal'
 import { useToast } from '../../hooks/useToast'
 import { usePeyaIdObligatorio } from '../peyaId'
 
@@ -228,6 +229,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [showNoteModal,     setShowNoteModal]      = useState(null)
   const [pinAuth,           setPinAuth]            = useState(null)
   const [cortesiaModal,     setCortesiaModal]      = useState(null)  // {idx, auth, motivo}
+  const [preparadoModal,    setPreparadoModal]     = useState(null)  // {idx, auth, titulo, cocinaListo}
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [removibles,        setRemovibles]         = useState([])    // ingredientes que admiten "SIN"
@@ -747,7 +749,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     }
   }
 
-  const doDeleteItem = async (idx, auth) => {
+  // respuesta: undefined = todavía no se preguntó; null = no estaba en cocina;
+  // 'preparado' | 'no_preparado' | 'reutilizado' = lo que contestó la caja.
+  const doDeleteItem = async (idx, auth, respuesta) => {
     const item = items[idx]
     if (!item) return
     if (item.saved) {
@@ -767,18 +771,39 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           }
         } catch (_e) { /* si la consulta falla no se bloquea la operación normal */ }
       }
+      // ¿Ya está en cocina? Entonces hay que saber si se preparó: antes se
+      // borraba la fila del KDS y lo cocinado se perdía sin rastro (merma de
+      // producto preparado, 21-sep-2026). La respuesta llega por PreparadoModal.
+      if (respuesta === undefined) {
+        const { data: enCocina, error: eq } = await db.from('pos_cocina_queue')
+          .select('estado').eq('cuenta_item_id', item.dbId).neq('estado', 'anulado')
+        if (eq) { toast.error('No se pudo revisar la cocina: ' + eq.message); return }
+        if ((enCocina || []).length > 0) {
+          setPreparadoModal({
+            idx, auth,
+            titulo: `${item.qty > 1 ? item.qty + '× ' : ''}${item.nombre}`,
+            cocinaListo: enCocina.every(r => r.estado === 'completado'),
+          })
+          return
+        }
+        respuesta = null
+      }
       try {
-        await db.from('pos_cuenta_items')
-          .update({ cancelado_motivo: `Anulado en POS (${auth?.nombre || 'sup'})`, cancelado_por: auth?.id || null })
-          .eq('id', item.dbId)
-        await db.from('pos_cocina_queue').delete().eq('cuenta_item_id', item.dbId)
+        const { error: ea } = await db.rpc('pos_anular_item', {
+          p_item_id: item.dbId,
+          p_respuesta: respuesta,
+          p_motivo: null,
+          p_usuario_id: auth?.id || null,
+          p_usuario_nombre: auth?.nombre || user?.nombre || null,
+        })
+        if (ea) throw ea
         const next = items.filter((_, i) => i !== idx)
         setItems(next)
         if (cuentaId) {
           const s = next.reduce((a, i) => a + precioLinea(i), 0)
           await db.from('pos_cuentas').update({ subtotal: s, total: s, updated_at: new Date().toISOString() }).eq('id', cuentaId)
         }
-        toast.success('Item anulado')
+        toast.success(respuesta === 'preparado' ? 'Ítem anulado · quedó como merma de producto preparado' : 'Item anulado')
       } catch (e) {
         toast.error('No se pudo anular: ' + e.message)
       }
@@ -1781,6 +1806,14 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       )}
       {/* Nota de la cortesía: obligatoria y explicativa — es lo que después
           permite revisar en el corte por qué se regaló cada cosa. */}
+      {preparadoModal && (
+        <PreparadoModal
+          titulo={preparadoModal.titulo}
+          cocinaListo={preparadoModal.cocinaListo}
+          onCancel={() => setPreparadoModal(null)}
+          onElegir={(resp) => { const p = preparadoModal; setPreparadoModal(null); doDeleteItem(p.idx, p.auth, resp) }}
+        />
+      )}
       {cortesiaModal && (
         <div className="pos-modal-overlay" onClick={() => setCortesiaModal(null)}>
           <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>

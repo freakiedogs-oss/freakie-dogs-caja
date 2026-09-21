@@ -2,6 +2,19 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 21-Sep-2026 — Merma de producto preparado: anular algo que ya está en cocina ya no se pierde sin rastro
+
+Pedido de Cesar tras cuadrar Cafetalón. El −4 de salchichas del 20-sep apuntaba a la mesa 17: 5 hot dogs mandados a cocina, anulados 4 min después y reingresados en la mesa 6. La anulación **borraba la fila del KDS** y no descargaba nada, así que si cocina ya los había hecho, el producto salía del inventario sin dejar huella y aparecía de noche como faltante.
+
+- **Al anular un ítem que está en cocina** (POS o "Anular orden" en Órdenes activas) sale `PreparadoModal`: *No se preparó* / *Sí, se bota* / *Sí, se usa en otra orden*. Si no está en cocina, se anula como siempre.
+- **Registro por PRODUCTO, no por insumo** (pedido explícito de Cesar): tabla nueva `pos_mermas_producto` ("2× Freakie Dog · Mesa 17 · anuló Jazmín"). Los insumos igual se descargan en el kardex como `merma`, con `referencia_tipo='pos_merma_producto'` y la nota "Merma de producto preparado: …". Esa firma NO es `'merma'`, así que el candado del conteo nocturno no la confunde con el reporte manual.
+- **La fila del KDS ya no se borra**: queda `estado='anulado'` (nuevo valor del check), tachada, con dos botones para cocina: *Ya estaba hecho* / *No se hizo*. **Gana cocina**: `pos_merma_confirmar_cocina` corrige el kardex por diferencia (`_pos_merma_producto_sync` es idempotente) y recién ahí borra la fila. Las filas anuladas no cuentan para LISTA, contadores de estación, S006, porcionador ni pagers; `peya_listo_para_retirar` las ignora y `limpiar_cola_cocina_colgada` borra las que nadie confirmó en 3 h (el registro queda con la respuesta de la caja).
+- **Delivery/web ya descontados al entrar**: si la cuenta ya tenía `venta` en kardex, anular una línea la devuelve (`referencia_tipo='pos_cuenta_item'`). Antes eso tampoco pasaba. Probado en transacción revertida: anular la cuenta completa deja el neto por producto en 0.
+- **`pos_explotar_linea`** repite la explosión de `pos_deducir_inventario` para una sola línea (verificado: la suma por líneas = la venta del kardex de la cuenta). Si cambia una, cambiar la otra.
+- El conteo nocturno muestra el panel **"Merma de producto preparado de hoy"** (ya descontada, no reportarla de nuevo).
+- Migración: `merma_producto_preparado` (archivo en `supabase/migrations/20260921_merma_producto_preparado.sql`).
+- Pendiente a decidir: las cancelaciones de delivery (`torre_cancelar_pedido`) y de PedidosYa podrían escribir en la misma tabla; hoy siguen su propio camino.
+
 ## 21-Sep-2026 — Conteo de Críticos: Saúl vio la pantalla y la hoja no significaba lo que se había entendido
 
 Correcciones de Saúl sobre la primera versión (mismo día). Cuatro, y una cambia la ecuación entera. La tabla estaba vacía (0 hojas, 0 filas), así que se reestructuró en vez de migrar datos.

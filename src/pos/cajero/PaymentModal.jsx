@@ -72,7 +72,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
         .select('pager')
         .eq('store_code', storeCode)
         .not('pager', 'is', null)
-        .neq('estado', 'completado')
+        .not('estado', 'in', '(completado,anulado)')
       if (cancelado) return
       if (error) {
         console.error('No se pudieron traer los pagers en uso:', error.message)
