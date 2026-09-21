@@ -2,6 +2,17 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 21-Sep-2026 — Eventos: la requisición se importa del Excel de Edgar
+
+Pedido de Cesar: en lugar de que Edgar marque ítem por ítem en la pantalla, que suba **su** hoja de control ("Copia Hoja de Control Eventos FreakieDogs.xlsx") y de ahí salga la requisición. Es la hoja que ya llena hoy, con una pestaña por montaje (BURGERS, HOT DOGS) y tres columnas: Alimentos · Cantidad · Listo.
+
+- **`importarRequisicion.js`** — el lector. No asume que el archivo venga limpio, porque no viene: nombres con erratas (*Esmasher*, *Cuchillo de cierra*, *Ketchu sobresitos*, *Sal y Pimineta*), cantidades escritas ("1 C/U", "3 paquetes"), renglones de sección mezclados y metadatos del evento en el pie. Normaliza (sin tildes, sin plurales de empaque), aplica una tabla de **ALIAS** con las erratas reales de las hojas, y empareja contra `evento_items_catalogo` en tres pasadas: exacta → uno contiene al otro → todas las palabras. Lo que no alcanza, lo devuelve **sin ítem** en vez de inventar.
+- **`ImportarRequisicionPanel.jsx`** — subir archivo → elegir la pestaña del montaje → revisar. Cada renglón queda editable: la cantidad y un desplegable con el catálogo completo. Lo que venía escrito muestra el texto original («1 C/U») para confirmar la unidad. Botón *omitir* por renglón. El panel **no crea el pedido**: vuelca las cantidades a `reqs` y el pedido a Casa Matriz sigue saliendo del botón de guardar del evento, que es el que ya tenía permisos y validación. Importar dos pestañas del mismo evento **suma**, no pisa. Lugar y nombre del evento se copian del pie de la hoja solo si están vacíos.
+- En `EventosMapaView` el filtro por tipo de evento ahora deja ver también lo importado aunque no aplique a ese tipo — si viene con cantidad, hay que poder corregirlo.
+- **Probado con el archivo real:** BURGERS = 50 renglones leídos, **50 emparejados solos (0 sin producto)**, 48 pasan a la requisición (2 venían en cero en el Excel), 1 marcado por cantidad escrita. Carne 45, pan 45, soda 45 — cuadra con la hoja.
+- **Hallazgo:** en la pestaña HOT DOGS la columna de nombres está **vacía en 35 renglones** (solo quedaron las cantidades). No se puede importar así; el panel lo avisa en pantalla. Hay que pedirle a Edgar que la arregle.
+- `xlsx@0.18.5` entra por import dinámico (~400 kB que no viajan en el bundle de todos). Requiere `npm install`.
+
 ## 19-Sep-2026 — Cierre de caja: la tarjeta ahora se cuadra contra el POS de n1co (migración `cierre_tarjeta_n1co_voucher`)
 
 Pedido de Cesar: hasta hoy la tarjeta del cierre salía sola del sistema y **nadie la contrastaba con el datáfono**. Si un cobro no se registraba, o se anulaba en n1co después de cobrado, nadie se enteraba hasta la conciliación bancaria — o nunca.
