@@ -22,6 +22,14 @@ const ETAPAS = {
 }
 const ETAPA_ORDER = ['definicion', 'planificado', 'proceso', 'revision', 'finalizado']
 
+// ── Tipos de evento en el historial (inmutable: ver migración, sin policy de update/delete) ──
+const ACCION_META = {
+  creado: { icon: '✨', label: 'Creado', color: '#7AAAD6' },
+  editado: { icon: '✏️', label: 'Editado', color: '#9C9AA0' },
+  etapa_cambiada: { icon: '🔥', label: 'Cambio de etapa', color: '#F2B25A' },
+  eliminado: { icon: '🗑️', label: 'Eliminado', color: '#ff8b7a' },
+}
+
 const BG = '#0e0e0f'
 const SURFACE = '#1a1a1a'
 const SURFACE_2 = '#202022'
@@ -30,8 +38,28 @@ const INK = '#f2f0ec'
 const MUTED = '#9c9aa0'
 const RED = '#e63946'
 const DANGER = '#ff8b7a'
+const GOOD = '#4FBFA4'
 
 const isOverdue = (o) => o.deadline && o.etapa !== 'finalizado' && o.deadline < today()
+
+const fmtDateTime = (iso) => {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('es-SV', {
+      timeZone: 'America/El_Salvador', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    })
+  } catch { return iso }
+}
+
+// Lunes de la semana que contiene `dateStr` (YYYY-MM-DD)
+const startOfWeek = (dateStr) => {
+  const d = new Date(dateStr + 'T12:00:00')
+  const dow = d.getDay() // 0=dom..6=sab
+  const diff = dow === 0 ? 6 : dow - 1
+  d.setDate(d.getDate() - diff)
+  return d.toISOString().split('T')[0]
+}
+const startOfMonth = (dateStr) => dateStr.slice(0, 7) + '-01'
 
 function ProgressRing({ pct, color, icon, overdue }) {
   const ringColor = overdue ? DANGER : color
@@ -181,9 +209,15 @@ function EditModal({ objetivo, onClose, onSave, onDelete }) {
           <textarea style={{ ...inputStyle, minHeight: 60 }} value={form.notas || ''} onChange={e => set('notas', e.target.value)} placeholder="Contexto, bloqueos, aclaraciones..." />
         </div>
 
+        {!isNew && (
+          <div style={{ fontSize: 11, color: '#666', marginBottom: 12 }}>
+            Si lo eliminás, queda guardado en el Historial (no se puede editar ni borrar) para que nada se pierda.
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, justifyContent: isNew ? 'flex-end' : 'space-between' }}>
           {!isNew && (
-            <button onClick={() => onDelete(form.id)} style={{ background: 'none', border: `1px solid ${DANGER}55`, color: DANGER, borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>
+            <button onClick={() => onDelete(form)} style={{ background: 'none', border: `1px solid ${DANGER}55`, color: DANGER, borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>
               Eliminar
             </button>
           )}
@@ -196,11 +230,45 @@ function EditModal({ objetivo, onClose, onSave, onDelete }) {
   )
 }
 
+function HistorialRow({ entry, onRestaurar }) {
+  const meta = ACCION_META[entry.accion] || ACCION_META.editado
+  const etapaAnt = entry.etapa_anterior ? ETAPAS[entry.etapa_anterior]?.label : null
+  const etapaNueva = entry.etapa_nueva ? ETAPAS[entry.etapa_nueva]?.label : null
+  return (
+    <div style={{ background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: 12, marginBottom: 8, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div style={{ fontSize: 18, lineHeight: 1 }}>{meta.icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+          <div style={{ color: INK, fontWeight: 700, fontSize: 13 }}>{entry.titulo}</div>
+          <Avatar who={entry.responsable} size={20} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: meta.color, background: meta.color + '22', padding: '1px 7px', borderRadius: 7 }}>
+            {meta.label}
+          </span>
+          {etapaAnt && etapaNueva && (
+            <span style={{ fontSize: 11, color: MUTED }}>{etapaAnt} → {etapaNueva}</span>
+          )}
+          <span style={{ fontSize: 11, color: '#666' }}>{fmtDateTime(entry.created_at)}</span>
+          {entry.usuario_nombre && <span style={{ fontSize: 11, color: '#666' }}>· {entry.usuario_nombre}</span>}
+        </div>
+      </div>
+      {entry.accion === 'eliminado' && onRestaurar && (
+        <button onClick={() => onRestaurar(entry)} style={{ background: 'none', border: `1px solid ${GOOD}66`, color: GOOD, borderRadius: 8, padding: '6px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          ↺ Restaurar
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function FreakieFlowView({ user }) {
   const toast = useToast()
   const [objetivos, setObjetivos] = useState([])
+  const [historial, setHistorial] = useState([])
   const [loading, setLoading] = useState(true)
-  const [vista, setVista] = useState('lunes') // 'lunes' | 'kanban'
+  const [vista, setVista] = useState('lunes') // 'lunes' | 'kanban' | 'historial'
+  const [periodo, setPeriodo] = useState('semana') // 'semana' | 'mes' | 'todo'
   const [editing, setEditing] = useState(null)
 
   const loadData = useCallback(async () => {
@@ -211,7 +279,31 @@ export default function FreakieFlowView({ user }) {
     setLoading(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadData() }, [loadData])
+  const loadHistorial = useCallback(async () => {
+    const { data, error } = await db.from('freakie_flow_historial').select('*').order('created_at', { ascending: false }).limit(300)
+    if (error) { toast.error('Error cargando historial: ' + error.message); return }
+    setHistorial(data || [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadData(); loadHistorial() }, [loadData, loadHistorial])
+
+  const logHistorial = async (entry) => {
+    try {
+      await db.from('freakie_flow_historial').insert({
+        objetivo_id: entry.objetivo_id || null,
+        accion: entry.accion,
+        titulo: entry.titulo,
+        responsable: entry.responsable || null,
+        etapa_anterior: entry.etapa_anterior || null,
+        etapa_nueva: entry.etapa_nueva || null,
+        snapshot: entry.snapshot || {},
+        usuario_nombre: user?.nombre || user?.email || null,
+        usuario_id: user?.id || null,
+      })
+    } catch (e) {
+      console.warn('No se pudo registrar en el historial de Freakie Flow', e)
+    }
+  }
 
   const { semanal, mensual, vencidos } = useMemo(() => {
     const semanal = [], mensual = [], vencidos = []
@@ -232,6 +324,23 @@ export default function FreakieFlowView({ user }) {
     return map
   }, [objetivos])
 
+  const { historialFiltrado, stats } = useMemo(() => {
+    let desde = null
+    if (periodo === 'semana') desde = startOfWeek(today())
+    else if (periodo === 'mes') desde = startOfMonth(today())
+    const filtrado = desde ? historial.filter(h => (h.created_at || '').slice(0, 10) >= desde) : historial
+    const st = { creados: 0, finalizados: 0, eliminados: 0, cambios: 0 }
+    for (const h of filtrado) {
+      if (h.accion === 'creado') st.creados++
+      else if (h.accion === 'eliminado') st.eliminados++
+      else if (h.accion === 'etapa_cambiada') {
+        st.cambios++
+        if (h.etapa_nueva === 'finalizado') st.finalizados++
+      }
+    }
+    return { historialFiltrado: filtrado, stats: st }
+  }, [historial, periodo])
+
   const guardar = async (form) => {
     const payload = {
       titulo: form.titulo,
@@ -244,21 +353,62 @@ export default function FreakieFlowView({ user }) {
       updated_at: new Date().toISOString(),
     }
     if (form.id) {
-      const { error } = await db.from('freakie_flow_objetivos').update(payload).eq('id', form.id)
+      const etapaAnterior = objetivos.find(o => o.id === form.id)?.etapa
+      const { data, error } = await db.from('freakie_flow_objetivos').update(payload).eq('id', form.id).select().single()
       if (error) { toast.error('Error: ' + error.message); return }
+      const cambioEtapa = etapaAnterior && etapaAnterior !== payload.etapa
+      await logHistorial({
+        objetivo_id: form.id,
+        accion: cambioEtapa ? 'etapa_cambiada' : 'editado',
+        titulo: payload.titulo,
+        responsable: payload.responsable,
+        etapa_anterior: cambioEtapa ? etapaAnterior : null,
+        etapa_nueva: cambioEtapa ? payload.etapa : null,
+        snapshot: data,
+      })
     } else {
-      const { error } = await db.from('freakie_flow_objetivos').insert(payload)
+      const { data, error } = await db.from('freakie_flow_objetivos').insert(payload).select().single()
       if (error) { toast.error('Error: ' + error.message); return }
+      await logHistorial({ objetivo_id: data.id, accion: 'creado', titulo: data.titulo, responsable: data.responsable, snapshot: data })
     }
     setEditing(null)
     loadData()
+    loadHistorial()
   }
 
-  const eliminar = async (id) => {
-    const { error } = await db.from('freakie_flow_objetivos').delete().eq('id', id)
+  const eliminar = async (objetivo) => {
+    const { error } = await db.from('freakie_flow_objetivos').delete().eq('id', objetivo.id)
     if (error) { toast.error('Error: ' + error.message); return }
+    await logHistorial({
+      objetivo_id: objetivo.id,
+      accion: 'eliminado',
+      titulo: objetivo.titulo,
+      responsable: objetivo.responsable,
+      etapa_anterior: objetivo.etapa,
+      snapshot: objetivo,
+    })
     setEditing(null)
     loadData()
+    loadHistorial()
+  }
+
+  const restaurar = async (entry) => {
+    const snap = entry.snapshot || {}
+    if (!snap.titulo) { toast.error('Este registro no tiene datos suficientes para restaurar.'); return }
+    const payload = {
+      titulo: snap.titulo,
+      entregable: snap.entregable || null,
+      responsable: snap.responsable || 'adri',
+      etapa: snap.etapa || 'definicion',
+      scope: snap.scope || 'semanal',
+      deadline: snap.deadline || null,
+      notas: snap.notas || null,
+    }
+    const { data, error } = await db.from('freakie_flow_objetivos').insert(payload).select().single()
+    if (error) { toast.error('Error al restaurar: ' + error.message); return }
+    await logHistorial({ objetivo_id: data.id, accion: 'creado', titulo: data.titulo, responsable: data.responsable, snapshot: { ...data, restaurado_de: entry.id } })
+    loadData()
+    loadHistorial()
   }
 
   const nuevoObjetivo = () => setEditing({ titulo: '', responsable: 'adri', etapa: 'definicion', scope: 'semanal' })
@@ -267,6 +417,11 @@ export default function FreakieFlowView({ user }) {
     background: active ? RED : 'none', color: active ? '#fff' : MUTED,
     border: active ? 'none' : `1px solid ${LINE}`, borderRadius: 10, padding: '8px 16px',
     fontSize: 13, fontWeight: 700, cursor: 'pointer',
+  })
+  const btnPeriodo = (active) => ({
+    background: active ? SURFACE_2 : 'none', color: active ? INK : MUTED,
+    border: `1px solid ${active ? INK + '33' : LINE}`, borderRadius: 8, padding: '5px 12px',
+    fontSize: 12, fontWeight: 700, cursor: 'pointer',
   })
 
   if (loading) return <div style={{ padding: 20, color: MUTED, textAlign: 'center' }}>Cargando Freakie Flow...</div>
@@ -293,15 +448,16 @@ export default function FreakieFlowView({ user }) {
         })}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         <button style={btnTab(vista === 'lunes')} onClick={() => setVista('lunes')}>Vista de los lunes</button>
         <button style={btnTab(vista === 'kanban')} onClick={() => setVista('kanban')}>Flujo interno · Kanban</button>
+        <button style={btnTab(vista === 'historial')} onClick={() => setVista('historial')}>Historial</button>
         <button onClick={nuevoObjetivo} style={{ marginLeft: 'auto', background: 'none', border: `1px solid ${RED}88`, color: RED, borderRadius: 10, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           + Objetivo
         </button>
       </div>
 
-      {vista === 'lunes' ? (
+      {vista === 'lunes' && (
         <>
           <Section
             title="🎯 Misiones de la semana"
@@ -323,7 +479,9 @@ export default function FreakieFlowView({ user }) {
             empty="No hay objetivos vencidos. 🎉"
           />
         </>
-      ) : (
+      )}
+
+      {vista === 'kanban' && (
         <>
           <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8, marginBottom: 18 }}>
             {ETAPA_ORDER.map(key => {
@@ -375,6 +533,42 @@ export default function FreakieFlowView({ user }) {
               </tbody>
             </table>
           </div>
+        </>
+      )}
+
+      {vista === 'historial' && (
+        <>
+          <div style={{ color: MUTED, fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+            Registro de todo lo que pasa con los objetivos — sobre todo lo eliminado, que queda guardado acá para siempre (no se puede editar ni borrar) y sirve para medir el avance semana a semana o mes a mes.
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            <button style={btnPeriodo(periodo === 'semana')} onClick={() => setPeriodo('semana')}>Esta semana</button>
+            <button style={btnPeriodo(periodo === 'mes')} onClick={() => setPeriodo('mes')}>Este mes</button>
+            <button style={btnPeriodo(periodo === 'todo')} onClick={() => setPeriodo('todo')}>Todo</button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+            {[
+              { label: 'Creados', val: stats.creados, color: ACCION_META.creado.color },
+              { label: 'Cambios de etapa', val: stats.cambios, color: ACCION_META.etapa_cambiada.color },
+              { label: 'Finalizados', val: stats.finalizados, color: '#E8C158' },
+              { label: 'Eliminados', val: stats.eliminados, color: ACCION_META.eliminado.color },
+            ].map((s, i) => (
+              <div key={i} style={{ background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 6px', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.val}</div>
+                <div style={{ fontSize: 10, color: MUTED }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {historialFiltrado.length === 0 ? (
+            <div style={{ color: '#666', fontSize: 12.5, background: SURFACE_2, border: `1px dashed ${LINE}`, borderRadius: 12, padding: 14, textAlign: 'center' }}>
+              Sin movimientos en este período.
+            </div>
+          ) : historialFiltrado.map(h => (
+            <HistorialRow key={h.id} entry={h} onRestaurar={restaurar} />
+          ))}
         </>
       )}
 
