@@ -6,28 +6,28 @@ import { useToast } from '../../hooks/useToast';
 
 const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
 
-// Escotilla para revisar las pantallas de conteo con la caja abierta, saltándose los
-// gates de cierre Z y de despachos pendientes. VA VACÍA salvo mientras se revisa algo:
-// sin gates se puede contar sobre un día sin cerrar y el teórico queda comparado
-// contra ventas a medio turno, así que el conteo sale mal y nadie se entera.
-// Historial: M001 estuvo acá del 30-ago al 1-sep para revisar merma/bebidas/cortesías
-// (Jose), y se devolvió al confirmar que las pantallas quedaron listas.
-// 2-sep (Cesar): M001 (Cafetalón) vuelve a entrar para las pruebas de conteo
+// Escotilla para revisar las pantallas de conteo con la caja abierta, saltandose los
+// gates de cierre Z y de despachos pendientes. VA VACIA salvo mientras se revisa algo:
+// sin gates se puede contar sobre un dia sin cerrar y el teorico queda comparado
+// contra ventas a medio turno, asi que el conteo sale mal y nadie se entera.
+// Historial: M001 estuvo aca del 30-ago al 1-sep para revisar merma/bebidas/cortesias
+// (Jose), y se devolvio al confirmar que las pantallas quedaron listas.
+// 2-sep (Cesar): M001 (Cafetalon) vuelve a entrar para las pruebas de conteo
 // nocturno — se saltan el gate de cierre Z y el de despachos sin recibir.
-// SACAR M001 DE ACÁ AL TERMINAR LAS PRUEBAS: mientras esté, el conteo de
-// Cafetalón se compara contra un teórico a medio turno y la diferencia no sirve.
+// SACAR M001 DE ACA AL TERMINAR LAS PRUEBAS: mientras este, el conteo de
+// Cafetalon se compara contra un teorico a medio turno y la diferencia no sirve.
 const SIN_GATES_TEMPORAL = ['M001'];
 
-// Quién puede autorizar un faltante de conteo (lo que se le descuenta a la
+// Quien puede autorizar un faltante de conteo (lo que se le descuenta a la
 // sucursal): gerencia hacia arriba. La cajera que cuenta no puede firmarse sola.
 const ROLES_AUTORIZA_FALTANTE = ['gerente', 'jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'];
 
 // Escotilla del PIN de faltante, con fecha de vencimiento (YYYY-MM-DD, inclusive).
-// Para la noche en que la encargada no está y nadie puede firmar en la sucursal.
-// El faltante se registra igual en Fugas, firmado por quien autorizó la
+// Para la noche en que la encargada no esta y nadie puede firmar en la sucursal.
+// El faltante se registra igual en Fugas, firmado por quien autorizo la
 // escotilla (el servidor exige un autorizador; no se inventa uno). Pasada la
-// fecha, la entrada no hace nada aunque siga acá — sacarla igual.
-// 10-sep: Cafetalón, Jazmin ausente. Autoriza Cesar. `hasta` es el 11 porque
+// fecha, la entrada no hace nada aunque siga aca — sacarla igual.
+// 10-sep: Cafetalon, Jazmin ausente. Autoriza Cesar. `hasta` es el 11 porque
 // el conteo nocturno a veces se guarda pasada la medianoche.
 const SIN_PIN_FALTANTE_TEMPORAL = {
   M001: { hasta: '2026-09-11', autoriza: '0a0ad760-38af-43a3-abc0-add9b4c53258', quien: 'Cesar' },
@@ -43,13 +43,13 @@ const stepBtn={
 };
 const stepBtnActive={...stepBtn,background:'#e63946',border:'1px solid #e63946'};
 
-/* ── Capa de conversión presentación ↔ stock ──────────────────────────────
+/* ── Capa de conversion presentacion ↔ stock ───────────────────────────────────────
    La sucursal cuenta en lo que ve (cajas, bolsas, paquetes) pero el inventario
    vive en la unidad de costeo (unidades, libras, onzas). `conteo_factor` es el
-   puente: cuántas unidades de stock trae un empaque cerrado.
-   Los items que se abren en sucursal (`conteo_fraccionado`) llevan además una
+   puente: cuantas unidades de stock trae un empaque cerrado.
+   Los items que se abren en sucursal (`conteo_fraccionado`) llevan ademas una
    segunda casilla para lo suelto, con su propio factor: la carne se cuenta en
-   paquetes de 20 bolitas MÁS las bolitas del paquete abierto.
+   paquetes de 20 bolitas MAS las bolitas del paquete abierto.
    Nada de esto toca el costeo: cantidad_real sigue viajando al kardex y al
    pedido en unidad de stock, igual que antes. */
 const facCerrado=(p)=>{const f=n(p?.conteo_factor);return f>0?f:1;};
@@ -58,42 +58,42 @@ const esFraccionado=(p)=>!!p?.conteo_fraccionado;
 // Etiqueta de lo que el empleado tiene en la mano
 const labelCerrado=(p)=>p?.conteo_unidad||p?.unidad||'unidad';
 const labelSuelta=(p)=>p?.conteo_unidad_suelta||'sueltas';
-/* ── Unidad de merma ────────────────────────────────────────────────────
-   La merma se reporta pieza por pieza: se rompió UNA coca, se quemaron DOS
-   panes. Por eso se captura en la unidad más chica que el producto tenga
+/* ── Unidad de merma ──────────────────────────────────────────────
+   La merma se reporta pieza por pieza: se rompio UNA coca, se quemaron DOS
+   panes. Por eso se captura en la unidad mas chica que el producto tenga
    registrada — la casilla de sueltos si el empaque se abre en sucursal, y si
    no, la unidad de costeo. Antes se mostraba `unidad_medida` a secas, que para
-   la Coca Vidrio dice "Caja": el número que se digitaba era correcto (el stock
-   son botellas) pero la etiqueta decía otra cosa, así que no había forma de
+   la Coca Vidrio dice "Caja": el numero que se digitaba era correcto (el stock
+   son botellas) pero la etiqueta decia otra cosa, asi que no habia forma de
    reportar una botella sin creer que se estaban dando de baja 24. */
 const unidadMerma=(p)=>
   (esFraccionado(p) && p?.conteo_unidad_suelta) ? p.conteo_unidad_suelta : (p?.unidad||'unidad');
 const factorMerma=(p)=> esFraccionado(p) ? facSuelta(p) : 1;
-/* ── Margen de aceptación de sobrante (19-sep-2026) ──────────────────────
+/* ── Margen de aceptacion de sobrante (19-sep-2026) ──────────────────────────
    SOLO aplica a SOBRANTE (cantidad_real > stock_teorico). El faltante NUNCA
-   se toca acá: cualquier faltante, por mínimo que sea, sigue disparando el
+   se toca aca: cualquier faltante, por minimo que sea, sigue disparando el
    PIN de gerente y `registrar_faltantes_conteo` exactamente igual que antes
-   (ver calcFaltantes/faltanteGate más abajo, sin cambios).
+   (ver calcFaltantes/faltanteGate mas abajo, sin cambios).
    El margen se configura por producto en `catalogo_productos.margen_sobrante_sueltas`,
    medido en unidad SUELTA (la que la sucursal realmente cuenta: salchichas,
-   panes, lascas) porque así es como Frank quiere calibrarlo producto por
-   producto. Acá se convierte a unidad de stock para compararlo directo
+   panes, lascas) porque asi es como Frank quiere calibrarlo producto por
+   producto. Aca se convierte a unidad de stock para compararlo directo
    contra la diferencia (que vive en unidad de stock). Default 2 si el
    producto no tiene el campo seteado. */
 const margenSobranteStock=(p)=>{
   const margen=n(p?.margen_sobrante_sueltas ?? 2);
   return esFraccionado(p) ? margen*facSuelta(p) : margen;
 };
-// Cómo nombrar la unidad en la que vive el inventario. `unidad_medida` miente
-// seguido (la Coca Vidrio la tiene como "Caja" pero el stock son botellas), así
+// Como nombrar la unidad en la que vive el inventario. `unidad_medida` miente
+// seguido (la Coca Vidrio la tiene como "Caja" pero el stock son botellas), asi
 // que cuando la casilla de sueltas ES la unidad de stock (factor 1) se usa ese
 // nombre, que es el que entiende quien cuenta.
 const unidadStock=(p)=>
   (esFraccionado(p)&&facSuelta(p)===1&&p?.conteo_unidad_suelta) ? p.conteo_unidad_suelta : (p?.unidad||'unidad');
-// presentación → stock
+// presentacion → stock
 const aStock=(p,cerrados,sueltas)=>
   n(cerrados)*facCerrado(p) + (esFraccionado(p)?n(sueltas)*facSuelta(p):0);
-// stock → presentación (para precargar un conteo guardado o el teórico)
+// stock → presentacion (para precargar un conteo guardado o el teorico)
 const aPresentacion=(p,qty)=>{
   const q=n(qty), fc=facCerrado(p);
   if(!esFraccionado(p)) return {cerrados:redondear(q/fc), sueltas:0};
@@ -103,7 +103,7 @@ const aPresentacion=(p,qty)=>{
 };
 // 4 decimales: evita que 0.1+0.2 pinte "0.30000000000000004" en la casilla
 function redondear(v){return Math.round((Number(v)||0)*10000)/10000;}
-// Campos de la capa, tal como vienen del catálogo
+// Campos de la capa, tal como vienen del catalogo
 const camposConteo=(cp)=>({
   conteo_unidad: cp?.conteo_unidad||null,
   conteo_factor: cp?.conteo_factor??1,
@@ -128,19 +128,19 @@ export default function ConteoNocturno({user,onBack}){
   const [pedidoItems,setPedidoItems]=useState([]);
   const [pedidoQtys,setPedidoQtys]=useState({});
   const [isEdit,setIsEdit]=useState(false);        // editando conteo existente
-  const [editExpira,setEditExpira]=useState(null);  // Date cuando expira la ventana de edición
+  const [editExpira,setEditExpira]=useState(null);  // Date cuando expira la ventana de edicion
   const [ocultarCero,setOcultarCero]=useState(false); // toggle para ocultar pedido=0 en Screen 2
   const [gruposAbiertos,setGruposAbiertos]=useState({}); // {cat: bool} — todos cerrados al inicio
   const toggleGrupo=(cat)=>setGruposAbiertos(prev=>({...prev,[cat]:!prev[cat]}));
   const [tiempoRestante,setTiempoRestante]=useState('');
   const [conteoCerrado,setConteoCerrado]=useState(false); // true cuando hay conteo >6h
   const [cajaPendiente,setCajaPendiente]=useState(false); // true si falta cierre Z
-  const [despachosPendientes,setDespachosPendientes]=useState(null); // despachos sin recepción
+  const [despachosPendientes,setDespachosPendientes]=useState(null); // despachos sin recepcion
 
   // ── Modo de conteo (pedido de Jose 30-ago): al entrar se elige entre el conteo
   // normal y el de BEBIDAS. El de bebidas NO toca kardex ni inventario_conteo_nocturno
-  // (si escribiera ahí, el conteo normal de la noche entraría en "edición" con solo
-  // bebidas): cuenta lo físico y genera el pedido BEES sugerido en PDF descargable,
+  // (si escribiera ahi, el conteo normal de la noche entraria en "edicion" con solo
+  // bebidas): cuenta lo fisico y genera el pedido BEES sugerido en PDF descargable,
   // porque el pedido real se digita en la app de BEES (la ingesta por correo ya
   // registra la compra cuando BEES confirma el pedido).
   const [modo,setModo]=useState(null);           // 'normal' | 'bebidas'
@@ -148,19 +148,19 @@ export default function ConteoNocturno({user,onBack}){
   const [descargandoPdf,setDescargandoPdf]=useState(false);
 
   // ── Reporte de MERMA, obligatorio antes de contar (pedido Jose 30-ago) ──
-  // Dividida en 2 categorías INDEPENDIENTES desde el 18-sep-2026 (pedido de
+  // Dividida en 2 categorias INDEPENDIENTES desde el 18-sep-2026 (pedido de
   // Frank): alimentos y bebidas. Antes era una sola merma para toda la
-  // sucursal, y como la resolvía quien primero entrara esa noche, dos
+  // sucursal, y como la resolvia quien primero entrara esa noche, dos
   // personas reportando cosas distintas (cocina y caja) se pisaban sin darse
-  // cuenta — pasó la noche del 17-sep con Hazel y una cajera en Cafetalón: la
-  // cajera reportó su merma de bebidas, eso "resolvió" la merma del día para
-  // toda la sucursal, y el pan de hot dog que Hazel había querido reportar
-  // nunca quedó guardado. Ahora cada categoría tiene su propio candado y
+  // cuenta — paso la noche del 17-sep con Hazel y una cajera en Cafetalon: la
+  // cajera reporto su merma de bebidas, eso "resolvio" la merma del dia para
+  // toda la sucursal, y el pan de hot dog que Hazel habia querido reportar
+  // nunca quedo guardado. Ahora cada categoria tiene su propio candado y
   // desbloquea un conteo distinto: alimentos → Conteo normal, bebidas →
-  // Conteo de bebidas. La categoría de cada producto sale del mismo campo
+  // Conteo de bebidas. La categoria de cada producto sale del mismo campo
   // `conteo_modo` que ya separa Conteo normal de Conteo de bebidas (ver
-  // cargarBebidas más abajo), así que no hace falta categorizar nada de nuevo.
-  const [mermaCategoria,setMermaCategoria]=useState('alimentos'); // cuál se está viendo/editando ahora
+  // cargarBebidas mas abajo), asi que no hace falta categorizar nada de nuevo.
+  const [mermaCategoria,setMermaCategoria]=useState('alimentos'); // cual se esta viendo/editando ahora
   const [mermaItemsAlimentos,setMermaItemsAlimentos]=useState([]);
   const [mermaItemsBebidas,setMermaItemsBebidas]=useState([]);
   const [mermaBuscaAlimentos,setMermaBuscaAlimentos]=useState('');
@@ -170,18 +170,27 @@ export default function ConteoNocturno({user,onBack}){
   const [guardandoMerma,setGuardandoMerma]=useState(false);
   const [mermaYaRegistradaAlimentos,setMermaYaRegistradaAlimentos]=useState(false);
   const [mermaYaRegistradaBebidas,setMermaYaRegistradaBebidas]=useState(false);
-  const [mermaResumenAlimentos,setMermaResumenAlimentos]=useState([]); // [{nombre,unidad,cantidad,nota}]
+  // ── Revision PedidosYa (pedido de Frank 21-sep-2026): el pedido #2682 de
+  // PeYa se digito dos veces en Cafetalon (mismo pedido, dos cuentas, doble
+  // descuento de inventario) y aparte se saltaron los pedidos #2671 y #2673
+  // (nunca se ingresaron, aunque el cliente si los recibio) — entre los dos
+  // problemas explicaban buena parte del faltante de salchicha de esa noche.
+  // Esto se revisa solo (informativo, no bloquea nada): compara el ID de
+  // PeYa mas bajo y mas alto del dia contra los que realmente estan en el
+  // POS, para encontrar huecos (pedidos nunca digitados) y IDs repetidos
+  // (pedidos digitados dos veces) antes de cerrar la noche.
+  const [peyaAlerta,setPeyaAlerta]=useState(null); // {faltantes:[], duplicados:[], rango:[min,max]} | null
   const [mermaResumenBebidas,setMermaResumenBebidas]=useState([]);
-  // "No hubo merma" ahora pide una confirmación explícita y SÍ queda
+  // "No hubo merma" ahora pide una confirmacion explicita y SI queda
   // guardada (antes era solo un estado de pantalla — ver public.merma_sin_reporte
-  // y el historial del 18-sep-2026 de por qué esto importa).
+  // y el historial del 18-sep-2026 de por que esto importa).
   const [confirmandoSinMerma,setConfirmandoSinMerma]=useState(false);
   const [guardandoSinMerma,setGuardandoSinMerma]=useState(false);
-  // Nombres visibles para cada categoría de merma (18-sep-2026): "alimentos" y
-  // "bebidas" a secas confundía, porque 'alimentos' internamente es todo lo
+  // Nombres visibles para cada categoria de merma (18-sep-2026): "alimentos" y
+  // "bebidas" a secas confundia, porque 'alimentos' internamente es todo lo
   // que cuenta el Conteo Normal (comida Y bebidas que no son BEES, como
-  // Kolashampan o té Lipton), y 'bebidas' es específicamente lo que se pide
-  // por la app de BEES (La Constancia + Nescafé). El candado/lógica no cambia
+  // Kolashampan o te Lipton), y 'bebidas' es especificamente lo que se pide
+  // por la app de BEES (La Constancia + Nescafe). El candado/logica no cambia
   // — solo la etiqueta que ve el usuario.
   const catLabelFor = (c)=> c==='alimentos' ? 'Conteo Normal' : 'Bebidas BEES';
 
@@ -193,7 +202,7 @@ export default function ConteoNocturno({user,onBack}){
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
 
-  // Timer para mostrar tiempo restante de edición
+  // Timer para mostrar tiempo restante de edicion
   useEffect(()=>{
     if(!editExpira) return;
     const tick=()=>{
@@ -208,7 +217,7 @@ export default function ConteoNocturno({user,onBack}){
     return ()=>clearInterval(iv);
   },[editExpira]);
 
-  // Cargar inventario para una sucursal específica
+  // Cargar inventario para una sucursal especifica
   const cargarInventario = async (sucId, storeCode) => {
     setSucursalId(sucId);
     setCajaPendiente(false);
@@ -217,7 +226,7 @@ export default function ConteoNocturno({user,onBack}){
     try {
       const hoy = today();
 
-      // 0a. Gate: no se puede contar sin cierre Z del día
+      // 0a. Gate: no se puede contar sin cierre Z del dia
       const sc = storeCode || user.store_code;
       const sinGates = SIN_GATES_TEMPORAL.includes(sc);   // normalmente false, ver arriba
       if (sc && !sinGates) {
@@ -234,13 +243,13 @@ export default function ConteoNocturno({user,onBack}){
         }
       }
 
-      // 0b. Gate: no se puede hacer pedido si hay despachos sin recepción humana
+      // 0b. Gate: no se puede hacer pedido si hay despachos sin recepcion humana
       const { data: despPend } = sinGates ? { data: [] } : await db.from('despachos_sucursal')
         .select('id, fecha_despacho, estado')
         .eq('sucursal_id', sucId)
         // Solo bloquean los despachos que la sucursal YA PUEDE recibir. Con
-        // `neq('recibido')` también bloqueaban los que seguían en preparación en
-        // casa matriz: no aparecían en Confirmar Entrega (que lista despachado/
+        // `neq('recibido')` tambien bloqueaban los que seguian en preparacion en
+        // casa matriz: no aparecian en Confirmar Entrega (que lista despachado/
         // en_ruta) y dejaban el conteo trabado sin salida posible.
         .in('estado', ['despachado', 'en_ruta'])
         .order('fecha_despacho', { ascending: false })
@@ -251,7 +260,7 @@ export default function ConteoNocturno({user,onBack}){
         return;
       }
 
-      // 1. Verificar si ya existe conteo hoy (múltiples filas, una por producto)
+      // 1. Verificar si ya existe conteo hoy (multiples filas, una por producto)
       const {data:conteoRows} = await db.from('inventario_conteo_nocturno')
         .select('producto_id, cantidad_real, cantidad_teorica, created_at')
         .eq('sucursal_id', sucId).eq('fecha', hoy);
@@ -264,8 +273,8 @@ export default function ConteoNocturno({user,onBack}){
 
       const prods = (invData||[])
         // `conteo_modo='bebidas'` = lo que se pide a BEES (La Constancia +
-        // Nescafé): esos van en su propio conteo, no acá. Sin este filtro las 11
-        // de La Constancia salían en los dos conteos y se contaban dos veces.
+        // Nescafe): esos van en su propio conteo, no aca. Sin este filtro las 11
+        // de La Constancia salian en los dos conteos y se contaban dos veces.
         .filter(inv => inv.catalogo_productos?.incluir_conteo
           && inv.catalogo_productos?.conteo_modo!=='bebidas')
         .map(inv => ({
@@ -295,10 +304,10 @@ export default function ConteoNocturno({user,onBack}){
         const teoricoMap = Object.fromEntries(conteoRows.map(r=>[r.producto_id, r.cantidad_teorica]));
 
         if (dentroDeVentana) {
-          // Dentro de ventana → edición con el teórico ORIGINAL (pre-conteo, post-cierre Z)
+          // Dentro de ventana → edicion con el teorico ORIGINAL (pre-conteo, post-cierre Z)
           const prodsConDatos = prods.map(p=>{
-            // Lo guardado está en unidad de stock; hay que devolverlo a la
-            // presentación para que las casillas muestren lo que se digitó.
+            // Lo guardado esta en unidad de stock; hay que devolverlo a la
+            // presentacion para que las casillas muestren lo que se digito.
             const guardado = conteoMap[p.producto_id];
             const pres = guardado==null ? {cerrados:null,sueltas:null} : aPresentacion(p,guardado);
             return {
@@ -324,7 +333,7 @@ export default function ConteoNocturno({user,onBack}){
           setIsEdit(false);
           setEditExpira(null);
           setScreen(1);
-          show('📋 Nuevo conteo — el anterior se guardó hace >6h');
+          show('📋 Nuevo conteo — el anterior se guardo hace >6h');
         }
       } else {
         // Sin conteo → formulario nuevo
@@ -341,21 +350,58 @@ export default function ConteoNocturno({user,onBack}){
     }
   };
 
-  // Antes de mostrar el formulario, revisa si hoy YA se registró merma en esta
+  // Antes de mostrar el formulario, revisa si hoy YA se registro merma en esta
   // sucursal (kardex tipo='merma'). Si ya hay, no se vuelve a pedir el
   // formulario — se entra directo a un consolidado de solo lectura, igual que
   // un conteo nocturno cerrado: se puede ver, pero no editar.
   //
-  // OJO: se filtra también por referencia_tipo='merma', que es la firma que
+  // OJO: se filtra tambien por referencia_tipo='merma', que es la firma que
   // deja SOLO el formulario real (registrar_merma). Antes se tomaba cualquier
-  // fila con tipo='merma' sin ver de dónde vino, y otros procesos del sistema
+  // fila con tipo='merma' sin ver de donde vino, y otros procesos del sistema
   // (por ejemplo, cuando se cancela un pedido con la comida ya preparada)
-  // también insertan kardex tipo='merma' con referencia_tipo='pos_cuenta'.
+  // tambien insertan kardex tipo='merma' con referencia_tipo='pos_cuenta'.
   // Eso dejaba la pantalla trabada en "ya reportada" sin que el equipo hubiera
   // reportado nada de verdad, y sin poder hacer el ingreso manual real.
-  const abrirMerma=async(sucId)=>{
+  // Revisa los pedidos de PedidosYa del dia operativo en esta sucursal:
+  // huecos en el correlativo (pedidos nunca digitados) y IDs repetidos
+  // (pedidos digitados dos veces). Puramente informativo — si falla, no debe
+  // tumbar el resto del conteo, por eso no se relanza el error.
+  const revisarPeya=async(sucId, storeCode)=>{
+    try{
+      const sc=storeCode||user.store_code;
+      if(!sc){ setPeyaAlerta(null); return; }
+      const desde=today()+'T00:00:00-06:00';
+      const {data:cuentas}=await db.from('pos_cuentas')
+        .select('delivery_referencia, cliente_nombre, total, estado, created_at')
+        .eq('store_code', sc).eq('tipo','pedidos_ya').gte('created_at', desde);
+      const refs=(cuentas||[])
+        .map(c=>({...c, refNum: parseInt(String(c.delivery_referencia||'').replace(/\D/g,''),10)}))
+        .filter(c=>Number.isFinite(c.refNum));
+      if(refs.length<2){ setPeyaAlerta(null); return; }
+
+      // Duplicados: mismo numero de referencia con mas de una cuenta activa
+      // (una cuenta ya anulada no cuenta — ese caso ya se resolvio).
+      const porRef={};
+      refs.forEach(c=>{ (porRef[c.refNum] ||= []).push(c); });
+      const duplicados=Object.entries(porRef)
+        .filter(([,arr])=>arr.filter(c=>c.estado!=='cancelada').length>1)
+        .map(([ref,arr])=>({ref:Number(ref), cuentas:arr}));
+
+      // Huecos: dentro del rango minimo-maximo del dia, que numeros nunca
+      // llegaron a tener una cuenta en el POS.
+      const nums=[...new Set(refs.map(c=>c.refNum))].sort((a,b)=>a-b);
+      const min=nums[0], max=nums[nums.length-1];
+      const faltantes=[];
+      for(let i=min;i<=max;i++){ if(!nums.includes(i)) faltantes.push(i); }
+
+      setPeyaAlerta((faltantes.length||duplicados.length) ? {faltantes,duplicados,rango:[min,max],total:refs.length} : null);
+    }catch(e){ setPeyaAlerta(null); }
+  };
+
+  const abrirMerma=async(sucId, storeCode)=>{
     setSucursalId(sucId);
     setLoading(true);
+    revisarPeya(sucId, storeCode); // en paralelo, no bloquea el resto de la carga
     try{
       const hoy=today();
       let yaAlimentos=false, yaBebidas=false;
@@ -372,9 +418,9 @@ export default function ConteoNocturno({user,onBack}){
           // El kardex solo guarda la cantidad ya convertida a la unidad de
           // costeo (ej. 0.0999 lb), que a simple vista no dice nada — nadie
           // reporta "0.0999 libras de queso", reporta "3 lascas". Como el
-          // reporte ya pasó por factorMerma() al guardarse, se puede deshacer
-          // esa conversión (dividir por el mismo factor) para mostrar también
-          // la cantidad en la unidad con la que de verdad se reportó.
+          // reporte ya paso por factorMerma() al guardarse, se puede deshacer
+          // esa conversion (dividir por el mismo factor) para mostrar tambien
+          // la cantidad en la unidad con la que de verdad se reporto.
           const item={
             nombre: cp?.nombre || 'Producto',
             unidad: cp?.unidad_medida || 'unidad',
@@ -383,23 +429,23 @@ export default function ConteoNocturno({user,onBack}){
             unidadSuelta: esFraccionado(cp) ? (cp?.conteo_unidad_suelta || null) : null,
             nota: r.notas || '',
           };
-          // La misma categorización que ya separa Conteo normal de Conteo de
-          // bebidas (conteo_modo) decide a cuál de las 2 mermas pertenece.
+          // La misma categorizacion que ya separa Conteo normal de Conteo de
+          // bebidas (conteo_modo) decide a cual de las 2 mermas pertenece.
           if(r.catalogo_productos?.conteo_modo==='bebidas'){ resumenBebidas.push(item); yaBebidas=true; }
           else { resumenAlimentos.push(item); yaAlimentos=true; }
         });
       }catch(e){
-        // Antes este catch quedaba vacío: si esta consulta fallaba (por red u
-        // otro motivo), el código seguía como si no hubiera merma reportada
+        // Antes este catch quedaba vacio: si esta consulta fallaba (por red u
+        // otro motivo), el codigo seguia como si no hubiera merma reportada
         // hoy, y la app dejaba entrar de nuevo al formulario — riesgo de
         // reportar la misma merma dos veces. Ahora se relanza el error para
-        // que lo capture el catch de abajo, que sí avisa y NO deja avanzar.
+        // que lo capture el catch de abajo, que si avisa y NO deja avanzar.
         throw new Error('No se pudo verificar si ya hay merma reportada hoy: '+e.message);
       }
 
-      // Una confirmación de "no hubo merma" (ver confirmarSinMerma) también
+      // Una confirmacion de "no hubo merma" (ver confirmarSinMerma) tambien
       // cuenta como resuelto, aunque no haya productos — a diferencia de
-      // antes, esto SÍ queda guardado en public.merma_sin_reporte.
+      // antes, esto SI queda guardado en public.merma_sin_reporte.
       try{
         const {data:sinReporte}=await db.from('merma_sin_reporte')
           .select('categoria').eq('sucursal_id', sucId).eq('fecha', hoy);
@@ -410,7 +456,7 @@ export default function ConteoNocturno({user,onBack}){
         // Mismo riesgo que arriba: si esto falla en silencio, se puede volver
         // a pedir "¿hubo merma?" aunque ya se haya confirmado que no. Se
         // relanza para que el catch externo avise y detenga el flujo.
-        throw new Error('No se pudo verificar la confirmación de "no hubo merma" de hoy: '+e.message);
+        throw new Error('No se pudo verificar la confirmacion de "no hubo merma" de hoy: '+e.message);
       }
 
       setMermaYaRegistradaAlimentos(yaAlimentos);
@@ -438,7 +484,7 @@ export default function ConteoNocturno({user,onBack}){
         }
       }
 
-      // Antes esto abría directo la pantalla de merma como paso obligatorio
+      // Antes esto abria directo la pantalla de merma como paso obligatorio
       // previo. Ahora abre el hub ('elegir') con las 4 tareas de la noche —
       // merma de alimentos, conteo normal, merma de bebidas y conteo de
       // bebidas — visibles de una vez, en 2 pares independientes.
@@ -454,16 +500,16 @@ export default function ConteoNocturno({user,onBack}){
     const setResumen = cat==='alimentos' ? setMermaResumenAlimentos : setMermaResumenBebidas;
     const setYaRegistrada = cat==='alimentos' ? setMermaYaRegistradaAlimentos : setMermaYaRegistradaBebidas;
     const items=itemsAll.filter(m=>n(m.cantidad)>0);
-    if(items.length===0){ show('⚠️ Agregá al menos un producto con cantidad, o confirmá que no hubo merma'); return; }
+    if(items.length===0){ show('⚠️ Agrega al menos un producto con cantidad, o confirma que no hubo merma'); return; }
     const sinNota=items.find(m=>(m.nota||'').trim().length<5);
-    if(sinNota){ show(`⚠️ Falta justificar "${sinNota.nombre}" (mínimo 5 caracteres)`); return; }
+    if(sinNota){ show(`⚠️ Falta justificar "${sinNota.nombre}" (minimo 5 caracteres)`); return; }
     setGuardandoMerma(true);
     try{
       const {data:resp,error}=await db.rpc('registrar_merma',{
-        // Se digita en la unidad más chica (botellas, panes, lascas) pero el
-        // kardex se mueve en unidad de costeo: la conversión pasa acá, igual
-        // que en el conteo y en el pedido. Cada ítem lleva su propia nota —
-        // el servidor exige mínimo 5 caracteres por producto, no un motivo
+        // Se digita en la unidad mas chica (botellas, panes, lascas) pero el
+        // kardex se mueve en unidad de costeo: la conversion pasa aca, igual
+        // que en el conteo y en el pedido. Cada item lleva su propia nota —
+        // el servidor exige minimo 5 caracteres por producto, no un motivo
         // compartido para todo el lote.
         p_items: items.map(m=>({
           producto_id: m.producto_id,
@@ -476,9 +522,9 @@ export default function ConteoNocturno({user,onBack}){
       if(error) throw error;
       show(`✅ Merma — ${catLabelFor(cat)} registrada: ${resp?.productos||items.length} producto(s)`
            + (resp?.valor ? ` · $${Number(resp.valor).toFixed(2)}` : ''));
-      // Queda bloqueada de inmediato: si se vuelve a entrar a esta categoría ya
-      // no se puede editar, solo ver lo que se guardó (misma idea que un
-      // conteo nocturno ya cerrado). La OTRA categoría de merma no se toca.
+      // Queda bloqueada de inmediato: si se vuelve a entrar a esta categoria ya
+      // no se puede editar, solo ver lo que se guardo (misma idea que un
+      // conteo nocturno ya cerrado). La OTRA categoria de merma no se toca.
       setResumen(items.map(m=>({nombre:m.nombre, unidad:unidadMerma(m), cantidad:n(m.cantidad), nota:m.nota.trim()})));
       setYaRegistrada(true);
       setItemsAll([]);
@@ -487,10 +533,10 @@ export default function ConteoNocturno({user,onBack}){
     finally{ setGuardandoMerma(false); }
   };
 
-  // "No hubo merma" ahora es una confirmación real, firmada con usuario y
-  // hora — antes era solo un estado de pantalla que no dejaba ningún rastro
-  // en la base de datos (así se perdió el reporte de Hazel la noche del
-  // 17-sep-2026: nadie pudo saber después qué había pasado).
+  // "No hubo merma" ahora es una confirmacion real, firmada con usuario y
+  // hora — antes era solo un estado de pantalla que no dejaba ningun rastro
+  // en la base de datos (asi se perdio el reporte de Hazel la noche del
+  // 17-sep-2026: nadie pudo saber despues que habia pasado).
   const confirmarSinMerma=async()=>{
     const cat=mermaCategoria;
     setGuardandoSinMerma(true);
@@ -511,7 +557,7 @@ export default function ConteoNocturno({user,onBack}){
   // Conteo de BEBIDAS: solo productos de bebida/cerveza/soda de la sucursal.
   // Sin gates de cierre/despachos (no ajusta stock ni pide a CM) y SIN filtrar por
   // incluir_conteo: la Coca de food court vive como "Insumo Soda" fuera del conteo
-  // normal y es justo lo que más se pide a BEES.
+  // normal y es justo lo que mas se pide a BEES.
   const cargarBebidas=async(sucId)=>{
     setSucursalId(sucId);
     setLoading(true);
@@ -519,10 +565,10 @@ export default function ConteoNocturno({user,onBack}){
       const {data:invData}=await db.from('inventario')
         .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas)')
         .eq('sucursal_id', sucId);
-      // El corte ya no es por categoría sino por `conteo_modo`: Jose separó el
-      // pedido de La Constancia + Nescafé (BEES) del conteo normal. Filtrar por
-      // categoría metía acá la Kolashampan y los tés — que van en el conteo
-      // normal — y dejaba fuera los Nescafé, que son categoría "Insumos".
+      // El corte ya no es por categoria sino por `conteo_modo`: Jose separo el
+      // pedido de La Constancia + Nescafe (BEES) del conteo normal. Filtrar por
+      // categoria metia aca la Kolashampan y los tes — que van en el conteo
+      // normal — y dejaba fuera los Nescafe, que son categoria "Insumos".
       const prods=(invData||[])
         .filter(inv=>inv.catalogo_productos?.activo!==false
           && inv.catalogo_productos?.conteo_modo==='bebidas')
@@ -576,7 +622,7 @@ export default function ConteoNocturno({user,onBack}){
     if(items.length===0){show('⚠️ No hay bebidas con cantidad > 0');return;}
     setDescargandoPdf(true);
     try{
-      // jsPDF se carga bajo demanda (import dinámico): no pesa en el bundle del POS
+      // jsPDF se carga bajo demanda (import dinamico): no pesa en el bundle del POS
       const {jsPDF}=await import('jspdf');
       const {default:autoTable}=await import('jspdf-autotable');
       const doc=new jsPDF();
@@ -589,7 +635,7 @@ export default function ConteoNocturno({user,onBack}){
         startY:31,
         // El PDF se digita en la app de BEES, que pide por caja/fardo: la
         // columna PEDIR va en empaques, no en unidades sueltas.
-        head:[['Producto','Presentación','Contado (un)','Mín','Máx','PEDIR (empaques)']],
+        head:[['Producto','Presentacion','Contado (un)','Min','Max','PEDIR (empaques)']],
         body:items.map(p=>[p.nombre,labelCerrado(p),String(p.cantidad_real),String(n(p.stock_minimo)),String(n(p.stock_maximo)),String(n(pedidoQtys[p.producto_id]))]),
         styles:{fontSize:9},
         headStyles:{fillColor:[230,35,41]},
@@ -598,7 +644,7 @@ export default function ConteoNocturno({user,onBack}){
       const noPedidas=pedidoItems.filter(p=>n(pedidoQtys[p.producto_id])===0);
       const y=(doc.lastAutoTable?.finalY||31)+8;
       doc.setFontSize(8);doc.setTextColor(120);
-      doc.text(`Digitá este pedido en la app de BEES tal cual.${noPedidas.length>0?' '+noPedidas.length+' bebida(s) quedaron sin pedir (stock suficiente).':''}`,14,y);
+      doc.text(`Digita este pedido en la app de BEES tal cual.${noPedidas.length>0?' '+noPedidas.length+' bebida(s) quedaron sin pedir (stock suficiente).':''}`,14,y);
       doc.save(`Pedido_BEES_${storeCodeSel||'suc'}_${fecha}.pdf`);
       show('⬇️ PDF descargado — digitalo en la app de BEES');
     }catch(e){show('❌ No se pudo generar el PDF: '+e.message);}
@@ -616,7 +662,7 @@ export default function ConteoNocturno({user,onBack}){
             .neq('store_code', 'CM001')
             .order('nombre');
           setSucursales(allSucs || []);
-          setScreen(0); // pantalla de selección
+          setScreen(0); // pantalla de seleccion
           setLoading(false);
           return;
         }
@@ -624,11 +670,11 @@ export default function ConteoNocturno({user,onBack}){
         // Usuario con store_code: ir directo
         const {data:suc}=await db.from('sucursales')
           .select('id, nombre').eq('store_code',user.store_code).maybeSingle();
-        if(!suc){show('❌ No se encontró sucursal');setLoading(false);return;}
+        if(!suc){show('❌ No se encontro sucursal');setLoading(false);return;}
         setSucursalNombre(suc.nombre);
         setSucursalId(suc.id);
         setStoreCodeSel(user.store_code);
-        await abrirMerma(suc.id);
+        await abrirMerma(suc.id, user.store_code);
       }catch(e){
         show('❌ Error cargando datos: '+e.message);
         setLoading(false);
@@ -689,8 +735,8 @@ export default function ConteoNocturno({user,onBack}){
     return '#facc15'; // amarillo
   };
 
-  // Faltantes = contado por debajo del teórico. Es lo que la sucursal tiene que
-  // explicar (y lo que se le descuenta), así que se calcula sobre lo mismo que ve
+  // Faltantes = contado por debajo del teorico. Es lo que la sucursal tiene que
+  // explicar (y lo que se le descuenta), asi que se calcula sobre lo mismo que ve
   // en pantalla.
   const calcFaltantes=()=>productos
     .filter(p=>p.cantidad_real!==null && n(p.cantidad_real) < n(p.stock_teorico))
@@ -700,11 +746,11 @@ export default function ConteoNocturno({user,onBack}){
   const guardarConteo=async(gate=null)=>{
     // Se permite guardar PARCIAL. Exigir los 109 productos dejaba a la sucursal
     // trabada por un solo item sin contar, y sin conteo no puede pasar pedido.
-    // Lo que no se contó simplemente no se guarda: no se inventa un cero, que
-    // además mandaría ese stock a cero por el ajuste de kardex.
+    // Lo que no se conto simplemente no se guarda: no se inventa un cero, que
+    // ademas mandaria ese stock a cero por el ajuste de kardex.
     const contadosAhora=productos.filter(p=>p.cantidad_real!==null);
     if(contadosAhora.length===0){
-      show('⚠️ Contá al menos un producto antes de guardar');
+      show('⚠️ Conta al menos un producto antes de guardar');
       return;
     }
     const sinCantidad=productos.filter(p=>p.cantidad_real===null);
@@ -712,13 +758,13 @@ export default function ConteoNocturno({user,onBack}){
       const ok=window.confirm(
         `Faltan ${sinCantidad.length} productos sin contar.\n\n`+
         `Se va a guardar solo lo que contaste (${contadosAhora.length} productos). `+
-        `Los que quedaron vacíos no se tocan.\n\n¿Guardar así?`);
+        `Los que quedaron vacios no se tocan.\n\n¿Guardar asi?`);
       if(!ok) return;
     }
 
-    // Si es edición, verificar que aún estemos dentro de la ventana
+    // Si es edicion, verificar que aun estemos dentro de la ventana
     if(isEdit && editExpira && Date.now()>=editExpira.getTime()){
-      show('🔒 La ventana de edición (6h) ha expirado');
+      show('🔒 La ventana de edicion (6h) ha expirado');
       return;
     }
 
@@ -728,15 +774,15 @@ export default function ConteoNocturno({user,onBack}){
     if(!gate){
       const faltantes=calcFaltantes();
       if(faltantes.length>0){
-        // Escotilla con fecha: si la sucursal está en la lista y hoy no pasó la
-        // fecha, el faltante se guarda sin PIN pero con nota de quién lo
-        // autorizó. Al día siguiente vuelve a pedir PIN sola — nadie tiene que
+        // Escotilla con fecha: si la sucursal esta en la lista y hoy no paso la
+        // fecha, el faltante se guarda sin PIN pero con nota de quien lo
+        // autorizo. Al dia siguiente vuelve a pedir PIN sola — nadie tiene que
         // acordarse de sacarla.
         const esc=SIN_PIN_FALTANTE_TEMPORAL[storeCodeSel||user.store_code];
         if(esc && today()<=esc.hasta){
           guardarConteo({
             faltantes,
-            nota:`Sin PIN en sucursal: encargada ausente. Autorizado por ${esc.quien} (escotilla válida hasta ${esc.hasta}).`,
+            nota:`Sin PIN en sucursal: encargada ausente. Autorizado por ${esc.quien} (escotilla valida hasta ${esc.hasta}).`,
             auth:{id:esc.autoriza},
           });
           return;
@@ -750,13 +796,13 @@ export default function ConteoNocturno({user,onBack}){
     try{
       const hoy=today();
 
-      // Guardado ATÓMICO del conteo (sin "diferencia" — es columna generada en DB).
+      // Guardado ATOMICO del conteo (sin "diferencia" — es columna generada en DB).
       // Antes esto era un delete() de lo de hoy seguido de un insert() en dos
       // viajes separados al servidor: si el delete pasaba y el insert fallaba
-      // a medio camino (red, timeout, refresco de página), el conteo de esa
-      // pasada quedaba borrado sin nada que lo reemplazara — se perdía un
+      // a medio camino (red, timeout, refresco de pagina), el conteo de esa
+      // pasada quedaba borrado sin nada que lo reemplazara — se perdia un
       // conteo ya guardado. upsert() hace todo en una sola sentencia
-      // (INSERT ... ON CONFLICT ... DO UPDATE) usando la restricción
+      // (INSERT ... ON CONFLICT ... DO UPDATE) usando la restriccion
       // UNIQUE (sucursal_id, producto_id, fecha) que ya tiene la tabla: o se
       // guarda completo, o no se guarda nada — nunca a medias.
       const conteos=contadosAhora.map(p=>({
@@ -774,12 +820,12 @@ export default function ConteoNocturno({user,onBack}){
       if(conteoErr)throw conteoErr;
 
       // 3. Ajustar el stock POR KARDEX, no a mano.
-      // Antes esto hacía `update inventario set stock_actual = cantidad_real`:
-      // el stock quedaba bien, pero la diferencia contra el teórico se perdía
+      // Antes esto hacia `update inventario set stock_actual = cantidad_real`:
+      // el stock quedaba bien, pero la diferencia contra el teorico se perdia
       // sin dejar rastro — y esa diferencia es justamente la merma.
       // El delta lo calcula el servidor con la fila lockeada: mientras el
-      // empleado cuenta, el POS sigue descontando ventas, así que restar contra
-      // el `stock_teorico` que se leyó al abrir la pantalla se comería el turno.
+      // empleado cuenta, el POS sigue descontando ventas, asi que restar contra
+      // el `stock_teorico` que se leyo al abrir la pantalla se comeria el turno.
       const {data:ajuste,error:ajErr}=await db.rpc('kardex_ajustar_absoluto',{
         p_items: contadosAhora.map(p=>({producto_id:p.producto_id, cantidad:n(p.cantidad_real)})),
         p_tipo: 'conteo_fisico',
@@ -792,8 +838,8 @@ export default function ConteoNocturno({user,onBack}){
       if(ajErr) throw ajErr;
 
       // 3b. Faltantes justificados: quedan valorizados y acumulados por sucursal
-      // (tab de Fugas) para descontarlos del pago de esa sucursal. Va DESPUÉS del
-      // ajuste: si el kardex falla, no se registra un descuento de algo que no pasó.
+      // (tab de Fugas) para descontarlos del pago de esa sucursal. Va DESPUES del
+      // ajuste: si el kardex falla, no se registra un descuento de algo que no paso.
       if(gate?.faltantes?.length){
         try{
           const {data:rf,error:rfErr}=await db.rpc('registrar_faltantes_conteo',{
@@ -805,22 +851,22 @@ export default function ConteoNocturno({user,onBack}){
             p_modo: modo||'normal',
           });
           if(rfErr) throw rfErr;
-          if(rf?.valor>0) show(`📌 Faltante registrado: $${Number(rf.valor).toFixed(2)} — queda en Fugas de ${sucursalNombre}`);
+          if(rf?.valor>0) show(`📌c Faltante registrado: $${Number(rf.valor).toFixed(2)} — queda en Fugas de ${sucursalNombre}`);
         }catch(e){
-          // El conteo YA se guardó: no se revierte, pero hay que decirlo fuerte
-          show('⚠️ El conteo se guardó pero el faltante NO se registró en Fugas: '+e.message);
+          // El conteo YA se guardo: no se revierte, pero hay que decirlo fuerte
+          show('⚠️ El conteo se guardo pero el faltante NO se registro en Fugas: '+e.message);
         }
       }
 
       setConteoHoy({});
-      // Se le dice al empleado lo que el conteo encontró, en vez de un "guardado"
+      // Se le dice al empleado lo que el conteo encontro, en vez de un "guardado"
       // mudo: si hay faltante, es lo que hay que revisar antes de irse.
-      // 19-sep-2026: margen de aceptación de sobrante (SOLO sobrante, nunca
+      // 19-sep-2026: margen de aceptacion de sobrante (SOLO sobrante, nunca
       // faltante — ver margenSobranteStock arriba). El faltante se sigue
       // leyendo tal cual del RPC (`ajuste.faltante`), sin tocar. El sobrante
       // que cae DENTRO del margen de cada producto ya no se reporta como
       // "sobran X" — cuenta como cuadrado. El stock igual queda ajustado
-      // exacto por el kardex; esto es solo el mensaje/clasificación.
+      // exacto por el kardex; esto es solo el mensaje/clasificacion.
       const diffsDetalle=contadosAhora.map(p=>({
         producto_id:p.producto_id, nombre:p.nombre,
         diff:redondear(n(p.cantidad_real)-n(p.stock_teorico)),
@@ -841,9 +887,9 @@ export default function ConteoNocturno({user,onBack}){
       }
 
       // Alerta de 2 noches seguidas con sobrante en el mismo producto (dentro
-      // o fuera de margen — cualquier sobrante repetido es un patrón, no
+      // o fuera de margen — cualquier sobrante repetido es un patron, no
       // ruido). Puramente informativo: si falla, no debe tumbar el guardado
-      // que ya se completó arriba.
+      // que ya se completo arriba.
       try{
         const productosConSobranteHoy=diffsDetalle.filter(d=>d.diff>0).map(d=>d.producto_id);
         if(productosConSobranteHoy.length){
@@ -863,7 +909,7 @@ export default function ConteoNocturno({user,onBack}){
       }catch(e){ /* silencioso: es solo un aviso, no debe romper el flujo de guardado */ }
 
       // 4. Preparar pedido sugerido — mostrar TODOS los productos
-      // Los que están bajo mínimo tienen cantidad sugerida, el resto qty=0
+      // Los que estan bajo minimo tienen cantidad sugerida, el resto qty=0
       const todosParaPedido=productos.map(p=>{
         const bajominimo=p.stock_minimo>0 && p.cantidad_real<p.stock_minimo;
         const sugeridaStock = bajominimo ? Math.max(0, p.stock_maximo-p.cantidad_real) : 0;
@@ -882,7 +928,7 @@ export default function ConteoNocturno({user,onBack}){
           ...camposConteo(p)
         };
       });
-      // Ordenar: bajo mínimo primero, luego el resto
+      // Ordenar: bajo minimo primero, luego el resto
       todosParaPedido.sort((a,b)=>(b.bajominimo?1:0)-(a.bajominimo?1:0));
 
       setPedidoItems(todosParaPedido);
@@ -905,12 +951,12 @@ export default function ConteoNocturno({user,onBack}){
 
     setGenerandoPedido(true);
     try{
-      // Una sola orden VIVA por sucursal: la RPC sobrescribe atómicamente la orden
+      // Una sola orden VIVA por sucursal: la RPC sobrescribe atomicamente la orden
       // 'enviado' existente (o crea una nueva si no hay), con candado por sucursal
-      // que mata doble-envíos y carreras. Ya no borramos/insertamos a mano.
+      // que mata doble-envios y carreras. Ya no borramos/insertamos a mano.
       // La sucursal pide en empaques, pero el pedido viaja en unidad de stock:
       // el despacho, el kardex y el costeo de Casa Matriz siguen hablando esa
-      // unidad. La conversión se hace acá y en ningún otro lado.
+      // unidad. La conversion se hace aca y en ningun otro lado.
       const payload=items.map(p=>({
         producto_id: p.producto_id,
         cantidad: redondear(n(pedidoQtys[p.producto_id])*facCerrado(p)),
@@ -930,9 +976,9 @@ export default function ConteoNocturno({user,onBack}){
       setGenerandoPedido(false);
       if(faltan.length>0){
         const lista=faltan.slice(0,8).map(f=>`• ${f.nombre} (CM: ${Number(f.cm||0)})`).join('\n');
-        window.alert(`✓ Pedido enviado.\n\n⚠️ Casa Matriz NO tiene stock de ${faltan.length} producto(s) — quedan en pedido:\n${lista}${faltan.length>8?`\n…y ${faltan.length-8} más`:''}`);
+        window.alert(`✓ Pedido enviado.\n\n⚠️ Casa Matriz NO tiene stock de ${faltan.length} producto(s) — quedan en pedido:\n${lista}${faltan.length>8?`\n…y ${faltan.length-8} mas`:''}`);
       } else {
-        show('✓ Pedido enviado al almacén');
+        show('✓ Pedido enviado al almacen');
       }
       setTimeout(()=>onBack(), 2000);
     }catch(e){
@@ -945,7 +991,7 @@ export default function ConteoNocturno({user,onBack}){
     onBack();
   };
 
-  // Orden y nombres de la "Requisición Oficial Restaurantes FD" (Jose 2-sep-2026).
+  // Orden y nombres de la "Requisicion Oficial Restaurantes FD" (Jose 2-sep-2026).
   // Deben coincidir con catalogo_productos.conteo_categoria y con el orden de los
   // RPCs conteo_lista/conteo_categorias, o los grupos caen al final en desorden.
   const ORDEN_GRUPOS=[
@@ -963,7 +1009,7 @@ export default function ConteoNocturno({user,onBack}){
   ];
   const ordenIdx=(cat)=>{ const i=ORDEN_GRUPOS.findIndex(g=>g.toLowerCase()===cat.toLowerCase()); return i===-1?999:i; };
 
-  // Agrupar productos por categoría
+  // Agrupar productos por categoria
   const porCategoria={};
   productos.forEach(p=>{
     if(!porCategoria[p.categoria])porCategoria[p.categoria]=[];
@@ -1002,14 +1048,14 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{fontSize:40,marginBottom:12}}>🔒</div>
           <div style={{fontWeight:700,fontSize:16,color:'#e63946',marginBottom:8}}>Caja sin cerrar</div>
           <div style={{color:'#aaa',fontSize:14,lineHeight:1.5}}>
-            Primero hacé el <b>corte Z</b> (cierre del día) antes de iniciar el conteo nocturno.
+            Primero hace el <b>corte Z</b> (cierre del dia) antes de iniciar el conteo nocturno.
           </div>
         </div>
       </div>
     );
   }
 
-  // ── GATE: despachos pendientes de recepción ──
+  // ── GATE: despachos pendientes de recepcion ──
   if(despachosPendientes && despachosPendientes.length>0){
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
@@ -1026,12 +1072,12 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{fontSize:40,marginBottom:12}}>📦</div>
           <div style={{fontWeight:700,fontSize:16,color:'#e63946',marginBottom:8}}>Despachos sin recibir</div>
           <div style={{color:'#aaa',fontSize:14,lineHeight:1.5,marginBottom:16}}>
-            Tenés <b>{despachosPendientes.length} despacho{despachosPendientes.length>1?'s':''}</b> pendiente{despachosPendientes.length>1?'s':''} de recepción.
-            Confirmá la recepción antes de hacer conteo y pedido.
+            Tenes <b>{despachosPendientes.length} despacho{despachosPendientes.length>1?'s':''}</b> pendiente{despachosPendientes.length>1?'s':''} de recepcion.
+            Confirma la recepcion antes de hacer conteo y pedido.
           </div>
           <div style={{color:'#e6a817',fontSize:13,lineHeight:1.5,marginBottom:16,background:'#1a1a1a',borderRadius:8,padding:'8px 12px'}}>
-            Se recibe en <b>Supply Chain → Confirmar Entrega</b>. Si ahí no aparece, avisá a Casa Matriz:
-            puede que el despacho todavía no salga de bodega.
+            Se recibe en <b>Supply Chain → Confirmar Entrega</b>. Si ahi no aparece, avisa a Casa Matriz:
+            puede que el despacho todavia no salga de bodega.
           </div>
           {despachosPendientes.map(d=>(
             <div key={d.id} style={{background:'#1a1a1a',borderRadius:8,padding:'8px 12px',marginBottom:6,fontSize:13,color:'#ccc',textAlign:'left'}}>
@@ -1056,7 +1102,7 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         </div>
         {sucursales.map(s=>(
-          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);setStoreCodeSel(s.store_code);abrirMerma(s.id);}}
+          <button key={s.id} className="card" onClick={()=>{setSucursalNombre(s.nombre);setStoreCodeSel(s.store_code);abrirMerma(s.id, s.store_code);}}
             style={{width:'100%',textAlign:'left',cursor:'pointer',border:'1px solid #333',background:'#111',marginBottom:8}}>
             <div style={{fontWeight:600,fontSize:15,color:'#fff'}}>{s.nombre}</div>
             <div style={{color:'#888',fontSize:12}}>{s.store_code}</div>
@@ -1066,13 +1112,13 @@ export default function ConteoNocturno({user,onBack}){
     );
   }
 
-  // ── PANTALLA MERMA: alimentos o bebidas, según mermaCategoria ──
-  // El nombre visible ya NO dice "alimentos"/"bebidas" a secas — eso confundía,
-  // porque la categoría 'alimentos' internamente es en realidad "todo lo que
+  // ── PANTALLA MERMA: alimentos o bebidas, segun mermaCategoria ──
+  // El nombre visible ya NO dice "alimentos"/"bebidas" a secas — eso confundia,
+  // porque la categoria 'alimentos' internamente es en realidad "todo lo que
   // se cuenta en el Conteo Normal" (comida Y varias bebidas que no son BEES,
-  // como Kolashampan, té Lipton o Salutari), y 'bebidas' es específicamente
-  // "lo que se pide por BEES" (La Constancia + Nescafé). Ver catLabelFor.
-  // (18-sep-2026: de paso se corrigió en catalogo_productos el conteo_modo de
+  // como Kolashampan, te Lipton o Salutari), y 'bebidas' es especificamente
+  // "lo que se pide por BEES" (La Constancia + Nescafe). Ver catLabelFor.
+  // (18-sep-2026: de paso se corrigio en catalogo_productos el conteo_modo de
   // 13 cervezas — Michelob Ultra, Pilsener, Corona, Heineken, Modelo, etc. —
   // que estaban marcadas como 'normal' cuando en realidad se piden por BEES.)
   if(screen==='merma'){
@@ -1086,7 +1132,7 @@ export default function ConteoNocturno({user,onBack}){
     const busca = cat==='alimentos' ? mermaBuscaAlimentos : mermaBuscaBebidas;
     const setBusca = cat==='alimentos' ? setMermaBuscaAlimentos : setMermaBuscaBebidas;
 
-    // Ya se resolvió hoy (con productos, o con la confirmación de "no hubo
+    // Ya se resolvio hoy (con productos, o con la confirmacion de "no hubo
     // merma") → solo lectura, no se puede volver a editar.
     if(yaRegistrada){
       const totalItems=resumen.length;
@@ -1106,8 +1152,8 @@ export default function ConteoNocturno({user,onBack}){
             <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:4}}>Merma – {catLabel} ya resuelta — solo lectura</div>
             <div style={{fontSize:11,color:'#9fd8b3',lineHeight:1.5}}>
               {totalItems>0
-                ? `Hoy ya se reportó (${totalItems} producto${totalItems===1?'':'s'}). No se puede editar desde acá — si algo quedó mal, que tu encargado lo corrija desde Kardex.`
-                : 'Hoy se confirmó que no hubo merma en esta categoría. No se puede editar desde acá.'}
+                ? `Hoy ya se reporto (${totalItems} producto${totalItems===1?'':'s'}). No se puede editar desde aca — si algo quedo mal, que tu encargado lo corrija desde Kardex.`
+                : 'Hoy se confirmo que no hubo merma en esta categoria. No se puede editar desde aca.'}
             </div>
           </div>
 
@@ -1143,10 +1189,10 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{minHeight:'100vh',padding:'0 16px 150px'}}>
         <Toast/>
 
-        {/* Modal de confirmación de "no hubo merma": ya no es un botón grande
+        {/* Modal de confirmacion de "no hubo merma": ya no es un boton grande
             al mismo nivel que reportar de verdad. Es casi imposible que un
-            día entero no haya NADA, así que le agregamos un paso explícito de
-            confirmación — y esta vez SÍ queda guardado con usuario y hora. */}
+            dia entero no haya NADA, asi que le agregamos un paso explicito de
+            confirmacion — y esta vez SI queda guardado con usuario y hora. */}
         {confirmandoSinMerma && (
           <div onClick={()=>!guardandoSinMerma&&setConfirmandoSinMerma(false)}
             style={{position:'fixed',inset:0,zIndex:60,background:'rgba(0,0,0,0.75)',display:'flex',
@@ -1156,17 +1202,17 @@ export default function ConteoNocturno({user,onBack}){
                       borderRadius:14,padding:18}}>
               <div style={{fontWeight:800,fontSize:15,color:'#f38b91',marginBottom:8}}>⚠️ Confirmar: sin merma — {catLabel}</div>
               <div style={{fontSize:12,color:'#ccc',lineHeight:1.6,marginBottom:14}}>
-                ¿Confirmás que HOY no hubo ningún producto de "{catLabel}" dañado, quemado, vencido o perdido en {sucursalNombre}?
-                Esto va a quedar registrado con tu nombre y la hora — no es un trámite, es tu palabra.
+                ¿Confirmas que HOY no hubo ningun producto de "{catLabel}" danado, quemado, vencido o perdido en {sucursalNombre}?
+                Esto va a quedar registrado con tu nombre y la hora — no es un tramite, es tu palabra.
               </div>
               <div style={{display:'flex',gap:8}}>
                 <button onClick={()=>setConfirmandoSinMerma(false)} disabled={guardandoSinMerma}
                   style={{flex:1,padding:12,borderRadius:10,border:'none',background:'#222',color:'#aaa',fontWeight:700,fontSize:13,cursor:'pointer'}}>
-                  Cancelar, sí hubo algo
+                  Cancelar, si hubo algo
                 </button>
                 <button onClick={confirmarSinMerma} disabled={guardandoSinMerma}
                   style={{flex:1,padding:12,borderRadius:10,border:'none',background:'#e63946',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>
-                  {guardandoSinMerma?<span className="spin"/>:'Sí, confirmo'}
+                  {guardandoSinMerma?<span className="spin"/>:'Si, confirmo'}
                 </button>
               </div>
             </div>
@@ -1183,15 +1229,15 @@ export default function ConteoNocturno({user,onBack}){
         </div>
 
         <div style={{padding:'10px 12px',marginBottom:12,borderRadius:8,background:'#e6394620',border:'1px solid #e63946'}}>
-          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Reportá la merma — {catLabel} — antes de contar</div>
+          <div style={{fontSize:12,color:'#e63946',fontWeight:700,marginBottom:4}}>Reporta la merma — {catLabel} — antes de contar</div>
           <div style={{fontSize:11,color:'#d98a8f',lineHeight:1.5}}>
-            Reportá lo que se botó, se quemó o se dañó hoy. Lo que no se reporte acá aparece después como faltante sin explicación en el tab de Fugas.
+            Reporta lo que se boto, se quemo o se dano hoy. Lo que no se reporte aca aparece despues como faltante sin explicacion en el tab de Fugas.
           </div>
         </div>
 
         {/* Buscador */}
         <input value={busca} onChange={e=>setBusca(e.target.value)}
-          placeholder={cat==='alimentos' ? "Buscar producto… (ej: pan, carne, kolashampan)" : "Buscar bebida BEES… (ej: coca, cerveza, nescafé)"}
+          placeholder={cat==='alimentos' ? "Buscar producto… (ej: pan, carne, kolashampan)" : "Buscar bebida BEES… (ej: coca, cerveza, nescafe)"}
           style={{width:'100%',padding:'13px 14px',background:'#0a0a0a',border:'1px solid #333',
                   borderRadius:10,color:'#fff',fontSize:15,marginBottom:8}}/>
         {filtrados.map(p=>(
@@ -1212,7 +1258,7 @@ export default function ConteoNocturno({user,onBack}){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
               <div>
                 <div style={{fontWeight:600,fontSize:14}}>{m.nombre}</div>
-                <div style={{fontSize:12,fontWeight:700,color:'#e63946'}}>¿cuántas {unidadMerma(m)}?</div>
+                <div style={{fontSize:12,fontWeight:700,color:'#e63946'}}>¿cuantas {unidadMerma(m)}?</div>
               </div>
               <button onClick={()=>setItemsAll(prev=>prev.filter((_,j)=>j!==i))}
                 style={{background:'none',border:'none',color:'#e63946',fontSize:18,cursor:'pointer'}}>✕</button>
@@ -1231,13 +1277,13 @@ export default function ConteoNocturno({user,onBack}){
                 = {redondear(n(m.cantidad)*factorMerma(m))} {m.unidad} de inventario
               </div>
             )}
-            {/* Nota OBLIGATORIA por cada ítem — sin el porqué de ESTE producto,
-                el dato no sirve después (queda "faltó" sin causa asignable). */}
+            {/* Nota OBLIGATORIA por cada item — sin el porque de ESTE producto,
+                el dato no sirve despues (queda "falto" sin causa asignable). */}
             <div style={{marginTop:10}}>
-              <div style={{fontSize:11,color:'#aaa',marginBottom:4}}>¿Qué pasó con este producto? (obligatorio)</div>
+              <div style={{fontSize:11,color:'#aaa',marginBottom:4}}>¿Que paso con este producto? (obligatorio)</div>
               <textarea rows={2} value={m.nota||''}
                 onChange={e=>setItemsAll(prev=>prev.map((x,j)=>j===i?{...x,nota:e.target.value}:x))}
-                placeholder="Ej: se quemó en la plancha, se cayó al piso…"
+                placeholder="Ej: se quemo en la plancha, se cayo al piso…"
                 style={{width:'100%',padding:10,background:'#0a0a0a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:13,resize:'vertical'}}/>
             </div>
           </div>
@@ -1246,13 +1292,13 @@ export default function ConteoNocturno({user,onBack}){
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px 14px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
           {itemsAll.length>0 && (
             // Con merma reportada, la nota de CADA producto es OBLIGATORIA: sin el
-            // porqué, el dato no sirve para nada después (queda "faltó" sin causa).
+            // porque, el dato no sirve para nada despues (queda "falto" sin causa).
             <button className="btn btn-red" onClick={guardarMerma}
               disabled={guardandoMerma||notasIncompletas}
               style={{fontSize:17,padding:18,width:'100%',marginBottom:8,
                       opacity:notasIncompletas?0.5:1}}>
               {guardandoMerma?<span className="spin"/>
-                : notasIncompletas ? '✍️ Justificá cada producto reportado'
+                : notasIncompletas ? '✍️ Justifica cada producto reportado'
                 : `🗑️ Reportar merma (${totalUnidades} u) y continuar`}
             </button>
           )}
@@ -1262,9 +1308,9 @@ export default function ConteoNocturno({user,onBack}){
               Limpiar lista
             </button>
           )}
-          {/* Movido a un texto chico y secundario (antes era un botón grande
-              del mismo tamaño que "Reportar merma") para que no sea la salida
-              fácil — y ahora sí pide confirmación y queda guardado. */}
+          {/* Movido a un texto chico y secundario (antes era un boton grande
+              del mismo tamano que "Reportar merma") para que no sea la salida
+              facil — y ahora si pide confirmacion y queda guardado. */}
           {itemsAll.length===0 && (
             <div onClick={()=>setConfirmandoSinMerma(true)}
               style={{textAlign:'center',color:'#666',fontSize:12,padding:'8px 0 2px',cursor:'pointer',
@@ -1278,25 +1324,25 @@ export default function ConteoNocturno({user,onBack}){
   }
 
   // ── PANTALLA ELEGIR: hub con las 4 tareas de la noche, agrupadas ──
-  // Antes había una sola merma que bloqueaba todo el conteo por sucursal.
+  // Antes habia una sola merma que bloqueaba todo el conteo por sucursal.
   // Eso causaba que dos personas de departamentos distintos (cocina vs caja)
-  // se pisaran entre sí — la merma de alimentos de una bloqueaba/confundía
-  // a la otra que solo quería reportar bebidas, y viceversa. Ahora son dos
+  // se pisaran entre si — la merma de alimentos de una bloqueaba/confundia
+  // a la otra que solo queria reportar bebidas, y viceversa. Ahora son dos
   // pares totalmente independientes: Merma – Conteo Normal desbloquea Conteo
   // normal, y Merma – Bebidas BEES desbloquea Conteo de bebidas, cada uno con
-  // su propio estado. Un faltante que no se explicó como merma a tiempo se
-  // registra después como faltante y se descuenta del pago de la sucursal
-  // (ver registrar_faltantes_conteo), así que el bloqueo no es solo estético.
+  // su propio estado. Un faltante que no se explico como merma a tiempo se
+  // registra despues como faltante y se descuenta del pago de la sucursal
+  // (ver registrar_faltantes_conteo), asi que el bloqueo no es solo estetico.
   // (18-sep-2026: las etiquetas dejaron de decir "alimentos"/"bebidas" a secas
-  // porque confundía — "alimentos" en realidad es TODO lo que se cuenta en el
-  // Conteo Normal, incluyendo bebidas que no son BEES como Kolashampan o té
+  // porque confundia — "alimentos" en realidad es TODO lo que se cuenta en el
+  // Conteo Normal, incluyendo bebidas que no son BEES como Kolashampan o te
   // Lipton. De paso se corrigieron 13 cervezas en catalogo_productos que
   // estaban mal marcadas como conteo normal cuando en realidad se piden por
   // BEES — ver catLabelFor arriba.)
   if(screen==='elegir'){
     const bloqueadoNormal=!mermaYaRegistradaAlimentos;
     const bloqueadoBebidas=!mermaYaRegistradaBebidas;
-    const avisoBloqueo=(cat)=>show(`🔒 Primero reportá la merma — ${catLabelFor(cat)} (o marcá "no hubo merma")`);
+    const avisoBloqueo=(cat)=>show(`🔒 Primero reporta la merma — ${catLabelFor(cat)} (o marca "no hubo merma")`);
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 60px'}}>
         <Toast/>
@@ -1305,9 +1351,42 @@ export default function ConteoNocturno({user,onBack}){
             style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
           <div>
             <div style={{fontWeight:800,fontSize:18}}>📋 Conteo Nocturno</div>
-            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ¿qué vas a contar?</div>
+            <div style={{color:'#555',fontSize:12}}>{sucursalNombre} · ¿que vas a contar?</div>
           </div>
         </div>
+
+        {/* ── Revision PedidosYa: huecos en el correlativo y pedidos repetidos ──
+            Informativo, no bloquea el conteo — pero conviene resolverlo (o al
+            menos saberlo) ANTES de contar, porque un pedido nunca digitado o
+            digitado dos veces se ve exactamente igual que un faltante o un
+            sobrante real en el conteo fisico. */}
+        {peyaAlerta && (
+          <div style={{padding:16,background:'#1a140d',border:'1px solid #f0a01e60',borderRadius:12,marginBottom:14}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+              <span style={{fontSize:20}}>🛵</span>
+              <div style={{fontWeight:700,fontSize:15,color:'#f0a01e'}}>Revisa PedidosYa antes de contar</div>
+            </div>
+            <div style={{color:'#aaa',fontSize:12,marginBottom:10}}>
+              Pedidos de hoy del #{peyaAlerta.rango[0]} al #{peyaAlerta.rango[1]} — {peyaAlerta.total} digitados en el POS.
+            </div>
+            {peyaAlerta.faltantes.length>0 && (
+              <div style={{marginBottom:peyaAlerta.duplicados.length>0?10:0}}>
+                <div style={{fontSize:12.5,fontWeight:700,color:'#f38b91',marginBottom:3}}>
+                  ⚠️ Nunca se digitaron: {peyaAlerta.faltantes.map(f=>'#'+f).join(', ')}
+                </div>
+                <div style={{fontSize:11.5,color:'#888'}}>Revisa el panel de PeYa — si el pedido si salio, hay que ingresarlo manualmente para que descuente el inventario que ya se uso.</div>
+              </div>
+            )}
+            {peyaAlerta.duplicados.length>0 && (
+              <div>
+                <div style={{fontSize:12.5,fontWeight:700,color:'#f38b91',marginBottom:3}}>
+                  ⚠️ Digitados mas de una vez: {peyaAlerta.duplicados.map(d=>'#'+d.ref).join(', ')}
+                </div>
+                <div style={{fontSize:11.5,color:'#888'}}>Si de verdad es el mismo pedido repetido, hay que anular una de las cuentas y revertir su inventario.</div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Grupo Conteo Normal ── */}
         <div style={{fontSize:11,color:'#666',fontWeight:700,textTransform:'uppercase',letterSpacing:.06,margin:'2px 2px 8px'}}>🍔 Conteo Normal</div>
@@ -1328,12 +1407,12 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaAlimentos?'#fff':'#f38b91'}}>Merma – Conteo Normal</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>
             {mermaYaRegistradaAlimentos
-              ? `Ya se reportó (${mermaResumenAlimentos.length} producto${mermaResumenAlimentos.length===1?'':'s'}). Tocá para ver el detalle.`
-              : 'Panes, carnes, quesos, papas, salsas y bebidas que no son del pedido BEES (Kolashampan, té Lipton, Salutari, etc.). Tocá para registrar lo que se botó, se quemó o se dañó.'}
+              ? `Ya se reporto (${mermaResumenAlimentos.length} producto${mermaResumenAlimentos.length===1?'':'s'}). Toca para ver el detalle.`
+              : 'Panes, carnes, quesos, papas, salsas y bebidas que no son del pedido BEES (Kolashampan, te Lipton, Salutari, etc.). Toca para registrar lo que se boto, se quemo o se dano.'}
           </div>
         </button>
 
-        {/* Conteo normal — bloqueado hasta resolver merma de esta categoría */}
+        {/* Conteo normal — bloqueado hasta resolver merma de esta categoria */}
         <button className="card" onClick={bloqueadoNormal?()=>avisoBloqueo('alimentos'):()=>{setModo('normal');cargarInventario(sucursalId,storeCodeSel);}}
           style={{width:'100%',textAlign:'left',cursor:bloqueadoNormal?'not-allowed':'pointer',position:'relative',
                   border: bloqueadoNormal?'1px solid #262626':'1px solid #333',
@@ -1370,8 +1449,8 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{fontWeight:700,fontSize:16,color: mermaYaRegistradaBebidas?'#fff':'#f38b91'}}>Merma – Bebidas BEES</div>
           <div style={{color:'#888',fontSize:12,marginTop:4}}>
             {mermaYaRegistradaBebidas
-              ? `Ya se reportó (${mermaResumenBebidas.length} producto${mermaResumenBebidas.length===1?'':'s'}). Tocá para ver el detalle.`
-              : 'Solo los productos del pedido BEES: cervezas, sodas de La Constancia y Nescafé. Tocá para registrar lo que se botó, se dañó o venció.'}
+              ? `Ya se reporto (${mermaResumenBebidas.length} producto${mermaResumenBebidas.length===1?'':'s'}). Toca para ver el detalle.`
+              : 'Solo los productos del pedido BEES: cervezas, sodas de La Constancia y Nescafe. Toca para registrar lo que se boto, se dano o vencio.'}
           </div>
         </button>
 
@@ -1388,7 +1467,7 @@ export default function ConteoNocturno({user,onBack}){
           )}
           <div style={{fontSize:26,marginBottom:6}}>🥤</div>
           <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>Conteo de bebidas</div>
-          <div style={{color:'#888',fontSize:12,marginTop:4}}>Contás solo sodas, tés y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</div>
+          <div style={{color:'#888',fontSize:12,marginTop:4}}>Contas solo sodas, tes y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</div>
         </button>
       </div>
     );
@@ -1396,7 +1475,7 @@ export default function ConteoNocturno({user,onBack}){
 
   // ── MODAL: faltante en el conteo (PIN de gerente + nota) ──
   // Se renderiza como overlay sobre la pantalla de conteo, no como pantalla aparte:
-  // la cajera tiene que seguir viendo lo que contó mientras el gerente autoriza.
+  // la cajera tiene que seguir viendo lo que conto mientras el gerente autoriza.
   const modalFaltante = faltanteGate && (()=>{
     const g=faltanteGate;
     const validar=async()=>{
@@ -1423,7 +1502,7 @@ export default function ConteoNocturno({user,onBack}){
           <div style={{fontWeight:800,fontSize:17,color:'#e63946',marginBottom:4}}>⚠️ Hay faltante</div>
           <div style={{fontSize:12,color:'#aaa',lineHeight:1.5,marginBottom:12}}>
             {g.faltantes.length} producto{g.faltantes.length>1?'s':''} por debajo del sistema. Se puede cerrar el
-            conteo, pero necesita <b>autorización de gerente</b> y una nota: queda acumulado en las
+            conteo, pero necesita <b>autorizacion de gerente</b> y una nota: queda acumulado en las
             <b> Fugas de {sucursalNombre}</b> para descontarlo.
           </div>
 
@@ -1453,17 +1532,17 @@ export default function ConteoNocturno({user,onBack}){
           ):(
             <>
               <div style={{fontSize:12,color:'#4ade80',marginBottom:8}}>✓ Autoriza {g.auth.nombre} ({g.auth.rol})</div>
-              <div style={{fontSize:12,color:'#aaa',marginBottom:6}}>¿Por qué falta? (obligatorio)</div>
+              <div style={{fontSize:12,color:'#aaa',marginBottom:6}}>¿Por que falta? (obligatorio)</div>
               <textarea rows={3} autoFocus value={g.nota}
                 onChange={e=>setFaltanteGate(x=>({...x,nota:e.target.value}))}
-                placeholder="Ej: se usó para pruebas de receta, se dañó el congelador, error en el despacho de ayer…"
+                placeholder="Ej: se uso para pruebas de receta, se dano el congelador, error en el despacho de ayer…"
                 style={{width:'100%',padding:12,background:'#0a0a0a',border:'1px solid #333',borderRadius:10,
                         color:'#fff',fontSize:14,resize:'vertical'}}/>
-              <div style={{fontSize:11,color:'#666',margin:'6px 0 12px'}}>Mínimo 10 caracteres. Esta nota la ve Casa Matriz en Fugas.</div>
+              <div style={{fontSize:11,color:'#666',margin:'6px 0 12px'}}>Minimo 10 caracteres. Esta nota la ve Casa Matriz en Fugas.</div>
               <button className="btn btn-red" disabled={g.nota.trim().length<10||guardando}
                 onClick={()=>{ const gate={...g,nota:g.nota.trim()}; setFaltanteGate(null); guardarConteo(gate); }}
                 style={{width:'100%',padding:14,opacity:g.nota.trim().length<10?0.5:1}}>
-                {g.nota.trim().length<10?'Escribí la explicación':'Autorizar y guardar conteo'}
+                {g.nota.trim().length<10?'Escribi la explicacion':'Autorizar y guardar conteo'}
               </button>
             </>
           )}
@@ -1493,30 +1572,30 @@ export default function ConteoNocturno({user,onBack}){
 
         {/* ── Barra de progreso sticky ── */}
         <div style={{position:'sticky',top:0,zIndex:20,background:'#0d0d0d',padding:'10px 0 12px'}}>
-          {/* Banner según estado */}
+          {/* Banner segun estado */}
           {isEdit&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#facc1520',border:'1px solid #facc15'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span style={{fontSize:12,color:'#facc15',fontWeight:600}}>✏️ Editando conteo</span>
                 <span style={{fontSize:11,color:'#facc15'}}>{tiempoRestante}</span>
               </div>
-              <div style={{fontSize:11,color:'#d4a017',marginTop:4}}>Estás editando el conteo que ya se guardó hoy. Si un producto aparece en rojo, la cantidad no cuadra con el sistema. Podés corregir.</div>
+              <div style={{fontSize:11,color:'#d4a017',marginTop:4}}>Estas editando el conteo que ya se guardo hoy. Si un producto aparece en rojo, la cantidad no cuadra con el sistema. Podes corregir.</div>
             </div>
           )}
           {conteoCerrado&&!isEdit&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#4ade8020',border:'1px solid #4ade80'}}>
               <span style={{fontSize:12,color:'#4ade80',fontWeight:600}}>📋 Nuevo conteo — reemplaza el anterior (+6h)</span>
-              <div style={{fontSize:11,color:'#3bbd6b',marginTop:4}}>Conteo nuevo del turno. Contá físicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
+              <div style={{fontSize:11,color:'#3bbd6b',marginTop:4}}>Conteo nuevo del turno. Conta fisicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
             </div>
           )}
           {!isEdit&&!conteoCerrado&&modo!=='bebidas'&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
-              <div style={{fontSize:11,color:'#60a5fa'}}>Primer conteo del día. Contá físicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Primer conteo del dia. Conta fisicamente cada producto. Si un producto aparece en rojo, la cantidad no cuadra con el sistema.</div>
             </div>
           )}
           {modo==='bebidas'&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
-              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…). Al final se genera el <b>pedido BEES sugerido en PDF</b>. Este conteo NO ajusta el inventario del sistema.</div>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Conta fisicamente cada bebida (en su unidad: fardo, caja…). Al final se genera el <b>pedido BEES sugerido en PDF</b>. Este conteo NO ajusta el inventario del sistema.</div>
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
@@ -1562,20 +1641,20 @@ export default function ConteoNocturno({user,onBack}){
             {abierto && porCategoria[cat].map(p=>{
               const contado=p.cantidad_real!==null;
               const diff=getDiferencia(p);
-              // En bebidas no se pinta rojo contra el teórico: ese teórico puede estar
+              // En bebidas no se pinta rojo contra el teorico: ese teorico puede estar
               // roto por mapeos (ej. Insumo Soda en negativo) y el conteo no lo ajusta.
               const noCuadra=modo!=='bebidas'&&contado&&diff!==null&&diff!==0;
               return(
               <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${noCuadra?'#e63946':contado?'#4ade80':'#333'}`,transition:'border 0.2s'}}>
                 <div style={{fontWeight:600,fontSize:14,marginBottom:8,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
 
-                {/* Rótulo de la casilla: dice EXACTAMENTE qué se digita ahí. Va
-                    pegado al input y no como subtítulo — es lo primero que se
-                    lee antes de escribir un número, y confundir la unidad es el
+                {/* Rotulo de la casilla: dice EXACTAMENTE que se digita ahi. Va
+                    pegado al input y no como subtitulo — es lo primero que se
+                    lee antes de escribir un numero, y confundir la unidad es el
                     error que descuadra el inventario. */}
                 <div style={{fontSize:13,fontWeight:700,color:'#60a5fa',background:'#60a5fa14',
                   border:'1px solid #60a5fa33',borderRadius:8,padding:'6px 10px',marginBottom:8}}>
-                  📦 {esFraccionado(p)?'Cerrados: ':'Contá: '}{labelCerrado(p)}
+                  📦 {esFraccionado(p)?'Cerrados: ':'Conta: '}{labelCerrado(p)}
                 </div>
 
                 {/* ── Stepper: [-] input [+] ── */}
@@ -1592,7 +1671,7 @@ export default function ConteoNocturno({user,onBack}){
                   <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,1)}>+</button>
                 </div>
 
-                {/* ── Segunda casilla: lo que quedó del empaque abierto ── */}
+                {/* ── Segunda casilla: lo que quedo del empaque abierto ── */}
                 {esFraccionado(p)&&(<>
                   <div style={{fontSize:13,fontWeight:700,color:'#facc15',background:'#facc1514',
                     border:'1px solid #facc1533',borderRadius:8,padding:'6px 10px',margin:'10px 0 8px'}}>
@@ -1609,7 +1688,7 @@ export default function ConteoNocturno({user,onBack}){
                 </>)}
 
                 {/* Equivalencia: lo que realmente entra al inventario. Solo se
-                    muestra cuando la presentación no es 1:1 con el stock. */}
+                    muestra cuando la presentacion no es 1:1 con el stock. */}
                 {contado&&(esFraccionado(p)||facCerrado(p)!==1)&&(
                   <div style={{fontSize:12,color:'#888',marginTop:10,textAlign:'center'}}>
                     = <b style={{color:'#ccc'}}>{redondear(p.cantidad_real)}</b> {unidadStock(p)} en inventario
@@ -1621,7 +1700,7 @@ export default function ConteoNocturno({user,onBack}){
           </div>
         );})}
 
-        {/* ── Botón Guardar sticky ── */}
+        {/* ── Boton Guardar sticky ── */}
         <div style={{position:'fixed',bottom:0,left:0,right:0,padding:'12px 16px',background:'linear-gradient(transparent, #0d0d0d 30%)',zIndex:20}}>
           {/* En bebidas se siguen exigiendo todas (el PDF de BEES es el pedido
               completo). En el conteo normal se permite guardar parcial: un solo
@@ -1631,7 +1710,7 @@ export default function ConteoNocturno({user,onBack}){
             style={{fontSize:17,padding:18,width:'100%',opacity:bloqueado?0.5:1}}>
             {guardando?<span className="spin"/>
               :modo==='bebidas'?(contados<totalProds?`Faltan ${totalProds-contados} bebidas`:'🛒 Generar pedido BEES')
-              :contados===0?'Contá al menos un producto'
+              :contados===0?'Conta al menos un producto'
               :contados<totalProds?`Guardar ${contados} de ${totalProds}`
               :isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
           </button>
@@ -1648,18 +1727,18 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
         <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div>
-          <div style={{fontWeight:800,fontSize:18}}>{modo==='bebidas'?'🛒 Pedido BEES sugerido':isEdit?'📦 Pedido Actual':'📦 Pedido Sugerido'} <InfoTip text={modo==='bebidas'?"Pedido de bebidas calculado del conteo: para cada bebida bajo mínimo se sugiere rellenar al máximo. Descargá el PDF y digitá el pedido en la app de BEES.":isEdit?"Pedido generado a partir del conteo editado. Las cantidades reflejan lo contado.":"Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo."} /></div>
-          <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo mínimo</span></div>
+          <div style={{fontWeight:800,fontSize:18}}>{modo==='bebidas'?'🛒 Pedido BEES sugerido':isEdit?'📦 Pedido Actual':'📦 Pedido Sugerido'} <InfoTip text={modo==='bebidas'?"Pedido de bebidas calculado del conteo: para cada bebida bajo minimo se sugiere rellenar al maximo. Descarga el PDF y digita el pedido en la app de BEES.":isEdit?"Pedido generado a partir del conteo editado. Las cantidades reflejan lo contado.":"Pedido recomendado a partir del conteo nocturno: cuanto pedir de cada producto segun su consumo y su stock minimo."} /></div>
+          <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo minimo</span></div>
         </div>
       </div>
 
       <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:isEdit?'#facc1520':'#60a5fa20',border:`1px solid ${isEdit?'#facc15':'#60a5fa'}`}}>
         <div style={{fontSize:11,color:isEdit?'#d4a017':'#60a5fa'}}>
           {modo==='bebidas'
-            ?'Ajustá las cantidades si hace falta y descargá el PDF: ese es el pedido que se digita en la app de BEES. Cuando BEES confirme, el pedido entra solo al ERP por la ingesta de correo.'
+            ?'Ajusta las cantidades si hace falta y descarga el PDF: ese es el pedido que se digita en la app de BEES. Cuando BEES confirme, el pedido entra solo al ERP por la ingesta de correo.'
             :isEdit
-            ?'Pedido basado en el conteo que editaste. "Real" es lo que contaste. Los productos bajo mínimo ya tienen cantidad sugerida (máximo − real). Podés ajustar antes de enviar.'
-            :'Pedido sugerido a partir de tu conteo. "Real" es lo que contaste físicamente. Los productos bajo mínimo ya tienen cantidad sugerida. Ajustá y enviá.'}
+            ?'Pedido basado en el conteo que editaste. "Real" es lo que contaste. Los productos bajo minimo ya tienen cantidad sugerida (maximo − real). Podes ajustar antes de enviar.'
+            :'Pedido sugerido a partir de tu conteo. "Real" es lo que contaste fisicamente. Los productos bajo minimo ya tienen cantidad sugerida. Ajusta y envia.'}
         </div>
       </div>
 
@@ -1681,7 +1760,7 @@ export default function ConteoNocturno({user,onBack}){
             </button>
           </div>
           {(()=>{
-            // Agrupar pedidoItems por categoría con el mismo orden fijo
+            // Agrupar pedidoItems por categoria con el mismo orden fijo
             const itemsFiltrados=pedidoItems.filter(p=>!ocultarCero||n(pedidoQtys[p.producto_id]||0)>0);
             const porCatPedido={};
             itemsFiltrados.forEach(p=>{
@@ -1709,7 +1788,7 @@ export default function ConteoNocturno({user,onBack}){
                     <div style={{display:'flex',alignItems:'center',gap:10}}>
                       {tieneUrgentes&&(
                         <span style={{fontSize:10,color:'#e63946',fontWeight:700,background:'#e6394620',padding:'2px 6px',borderRadius:99,border:'1px solid #e6394640'}}>
-                          BAJO MÍN
+                          BAJO MIN
                         </span>
                       )}
                       {totalPedido>0&&(
@@ -1726,18 +1805,18 @@ export default function ConteoNocturno({user,onBack}){
                     <div key={p.producto_id} className="card" style={p.bajominimo?{borderLeft:'3px solid #e63946'}:{}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                         <div style={{fontWeight:600,fontSize:14}}>{p.nombre}</div>
-                        {p.bajominimo&&qty>0&&<span style={{fontSize:10,color:'#e63946',fontWeight:600}}>BAJO MÍNIMO</span>}
+                        {p.bajominimo&&qty>0&&<span style={{fontSize:10,color:'#e63946',fontWeight:600}}>BAJO MINIMO</span>}
                         {qty===0&&<span style={{fontSize:11,color:'#555'}}>sin pedido</span>}
                       </div>
                       <div style={{display:'flex',gap:6,fontSize:12,color:'#888',marginBottom:10,flexWrap:'wrap'}}>
                         <span>Real: <b style={{color:'#ccc'}}>{p.cantidad_real}</b></span>
                         <span>·</span>
-                        <span>Mín: <b style={{color:'#facc15'}}>{p.stock_minimo}</b></span>
+                        <span>Min: <b style={{color:'#facc15'}}>{p.stock_minimo}</b></span>
                         <span>·</span>
-                        <span>Máx: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
+                        <span>Max: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
                         <span style={{width:'100%',color:'#666',fontSize:11}}>en {unidadStock(p)}</span>
                       </div>
-                      {/* Mismo criterio que en el conteo: el rótulo dice qué se
+                      {/* Mismo criterio que en el conteo: el rotulo dice que se
                           digita, pegado a la casilla. Se pide en empaques. */}
                       <div style={{fontSize:13,fontWeight:700,color:'#60a5fa',background:'#60a5fa14',
                         border:'1px solid #60a5fa33',borderRadius:8,padding:'6px 10px',marginBottom:8}}>
