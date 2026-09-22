@@ -1,0 +1,763 @@
+openapi: 3.0.0
+info:
+  title: Delivery Hero POS Plugin API
+  description: |
+    This document describes the endpoints on POS plugin side to be called by the POS Order Processing Service.
+    *POS Order Processing Service is the new POS order transmission system to which we are recently migrating.*
+
+    If you are looking for documentation on POS Order Processing Service endpoints, head over to [this page](/apidocs/pos-middleware-api).
+
+    # Security
+
+    You are in charge of protecting your plugin with a **valid SSL certificate** at all times. Order dispatching to the POS plugin endpoints with an expired, self-signed or non existing certificate isn't allowed and will fail.
+
+  version: 1.0.0
+servers:
+  - url: https://pos-plugin-api-domain.io
+
+tags:
+  - name: Plugin Endpoints
+
+paths:
+  /order/{remoteId}:
+    post:
+      security:
+        - MiddlewareJWTAuth: []
+      operationId: Dispatch Order
+      tags:
+        - Plugin Endpoints
+      description: |
+        Dispatch endpoint for POS plugins to receive new orders.
+
+        ## Order processing's continuous evolution
+        Order processing is continuously evolving to enhance existing use cases and facilitate future ones. As part of this evolution, order payload will progressively incorporate additional properties.
+        In this context it is **crucial for POS plugin to be capable to ignore these additional properties**, ensuring that the additional properties **do not lead to any disruptions or failures in the order processing**
+
+        ## Process new order
+        When a plugin gets a new order on this endpoint, the plugin should do a **quick validation of the request**,  **persist the order**, and if everything went well **acknowledge that the order was received** by returning the expected response - see the **[responses](#note-on-responses)** section below.
+
+        ### Acknowledge order
+        To learn how to acknowledge an order, please check the **[responses](#note-on-responses)** section of this method. 
+
+        ### Order validation
+        * If validation fails, plugin should respond to the dispatch request with a proper response. That way the client (POS order processing service) 
+        * If validation passes and the order is persisted, plugin should acknowledge the order and continue to process the order in an asynchronous way. 
+        **If you are using a synchronous request to receive and validate the order, plan to move to the asynchronous way. We are not supporting the synchronous dispatch flow with the new features we are developing**
+
+        ### Time to process the order
+        * It should take the plugin not more than **a few seconds** to receive, validate and acknowledge new orders.
+        * If the plugin is taking too long to respond, POS Order Processing Service could trigger **a timeout** and **retry sending the order** again to the plugin. This could lead to order duplication on the plugin side.
+        * Check [this section](#note-on-responses) for more details regarding retry functionality.
+
+        ### Inform Integration Middleware, now POS Order Processing Service
+        * After the order is acknowledged, the POS plugin needs to inform POS Order Processing Service if the vendor can serve the order (accept) or not (reject).
+        * The POS plugin must update the order status by sending a status update request.
+        * You'll find the corresponding section on POS Order Processing Service side [here with more detailed information](/apidocs/pos-middleware-api#operation/Update%20Order%20Status).
+        ** If as a POS plugin you are currently rejecting the orders by responding with a 400 on the dispatch request, also known as synchronous dispatch flow, you have to move to an asynchronous way, as described step by step in this documentation.
+        ** POS Order Processing Service is not supporting the sync flow when developing new features so it's important you move away from this logic in order to benefit from the features we are offering to the vendors. 
+
+        ### Auto-closure
+        There is a time span in place which varies depending on the platform, to accept/reject an order.
+        * If the order is not accepted/rejected within this time span, the order will be **cancelled automatically** by Delivery Hero systems in our case POS Order Processing Service.
+        * This could lead to the auto-closure of the vendor for a certain time to preserve the fail-rate should it happen too often in a row.
+        * Please check with your local team for the exact time frame before an order is auto-cancelled.
+
+        ## Order Types
+        There are 3 types of orders:
+        * **Own Delivery orders** will be picked up by Delivery Hero riders at the vendor venue and delivered to the customer.
+        * **Vendor Delivery orders** will be delivered by the vendor.
+        * **Pickup orders** will be picked up by the customer at the vendor venue.
+
+        The body of dispatch request varies slightly on the order type.
+
+        ### Identify order type
+        * To identify the order type, POS plugin should first check the ```expeditionType``` field. </br>
+        * If the expeditionType contains ```pickup```, then the order is a **Pickup Order**. </br>
+        * If the ```expeditionType```  is ```delivery``` then, the order is either an **Own Delivery Order** or a **Vendor Delivery Order**.
+
+        ### Distinguish Own Delivery Order and Vendor Delivery Order
+        * Plugin needs to check if the ``delivery.riderPickupTime`` field contains ```null```.
+        * If ```delivery.riderPickupTime``` is ```null```, then it's a **Vendor Delivery Order**.
+        * If it is containing a **riderPickupTime**, then it is an **Own Delivery Order**.
+        * For **Own Delivery Order** the "delivery.address" field will be ```null```, but will be available for **Vendor Delivery Order**.
+
+        ```type-script
+        function getOrderType(order: Order): OrderType {
+          if (order.expeditionType === "pickup") {
+
+            return OrderType.Pickup
+          }
+
+          if(order.expeditionType === "delivery") {
+
+            return getOrderTypeForDeliveryOrder(order)
+          }
+
+          throw new WrongOrderTypeError()
+        }
+
+        function getOrderTypeForDeliveryOrder(order: Order): OrderType {
+          if (order?.delivery?.riderPickupTime === null) {
+
+            return OrderType.VendorDelivery
+          }
+
+          return OrderType.OwnDelivery
+        }
+        ```
+        ### Item Level Discounts and Sponsorship for Discounts
+        
+        Discount information on item level including sponsorship information.  
+        
+        The *sponsorships* array is optional and can have up to 3 items, one per sponsor. The following sponsors are available:
+        * PLATFORM - For the amount that the delivery platform sponsors
+        * VENDOR - For the amount the vendor sponsors
+        * THIRD_PARTY - For the amount a third party sponsors
+
+        If a sponsor is not included in the list or their contribution is set to zero, the discount will not be 
+        attributed to that sponsor. Similarly, if the sponsorship array is absent or contains no information, 
+        sponsorship details for that discount will not be accessible. 
+        
+        You can find further information in the schema as well.
+
+            discounts:
+              - name: First Order
+                amount: "9"
+                sponsorships:
+                  - sponsor: PLATFORM
+                    amount: "3"
+                  - sponsor: VENDOR
+                    amount: "3"
+                  - sponsor: THIRD_PARTY
+                    amount: "3"
+
+        Item level *discounts* information is also present at *products* and *selectedToppings*. They have
+        the same structure as the *discounts* on toplevel. The *amount* from item level *discounts* are 
+        included in the toplevel *discounts*. They can be mapped by the discount name. 
+
+            product:
+              categoryName: Burgers
+              name: Cheese Burger
+              paidPrice: "8.00",
+              quantity: "1",
+              remoteCode: REMOTE_CODE,
+              discounts:
+                name: First Order
+                amount: "6.00"
+                sponsorships:
+                    - sponsor: PLATFORM
+                      amount: "2.00"
+                    - sponsor: VENDOR
+                      amount: "2.00"
+                    - sponsor: THIRD_PARTY
+                      amount: "2.00"
+              - selectedToppings:
+                  - children: []
+                    name: extra cheese,
+                    price: "1.50",
+                    quantity: "1",
+                    id: ID,
+                    remoteCode: REMOTE_CODE
+                    type: PRODUCT,
+                    discounts:
+                      name: First Order
+                      amount: "1.50
+                      sponsorships:
+                        - sponsor: PLATFORM
+                          amount: "0.50"
+                        - sponsor: VENDOR
+                          amount: "0.50"
+                        - sponsor: THIRD_PARTY
+                          amount: "0.50"
+
+        If here there is any issue after adding the discounts on POS plugin side please reach out to your local contact on platform side. 
+
+        ## Note on Responses
+
+        ### Unexpected responses
+        * Any other response code from ```[200, 201, 202, 400, 401, 429, 450, 500, 502]``` is treated as unexpected on Middleware side.
+        * POS Plugins should not use any other response code than the ones listed here.
+
+        ### Responses leading to order dispatching retry
+        * In case of a ```[429, 5XX]``` status code, POS Order Processing Service will **retry order dispatching** again.
+        * Currently POS Order Processing Service retries dispatching **up to 10 times**.
+
+        ### Span between retries
+        * Middleware uses an exponential backoff strategy with jitter to perform the retries.
+        * Currently the minimum span between retries is **30 seconds**.
+        * The maximum span is starting at **35s** on the first retry and increases exponentially **up to 240s** from one retry to another retry.
+
+      parameters:
+        - name: remoteId
+          in: path
+          description: Unique identifier of the restaurant on POS plugin side which will receive the order.
+          schema:
+            type: string
+            example: POS_RESTAURANT_0001
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'pluginOrder.yaml#/components/schemas/Order'
+            examples:
+              genericOrderExample:
+                $ref: 'genericOrderExample.yaml#/genericOrderExample'
+              orderWithItemLevelDiscountsAndSponsor:
+                $ref: 'orderWithItemLevelDiscountsAndSponsor.yaml#/orderWithItemLevelDiscountsAndSponsor'
+      responses:
+        '200':
+          description: |
+            Acknowledge that a new order was successfully dispatched to the plugin.
+
+            The **remoteOrderId**, unique order identifier on POS plugin side, should be included in the response.
+            It will be used to notify POS Plugins about any order status changes, such as cancellation, order picked up or when the order is auto-accepted, which are quite crucial for the restaurant operations.
+            These are the current status updates we support right now, they might change and extend further in the future.
+            Read more about it in section [Update Order Status](#operation/Update%20Order%20Status) on POS plugin side
+            and [Update Order Status](/apidocs/pos-middleware-api#operation/Update%20Order%20Status) on POS Order Processing Service side.
+
+            It is **mandatory** to always provide the remoteOrderId within the acknowledge response. Otherwise, you can not receive any upcoming order updates.
+          x-summary: Acknowledge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDispatchAcknowledgedResponse'
+        '202':
+          description: |
+            Acknowledge that a new order was successfully dispatched to the plugin.
+
+            The **remoteOrderId**, unique order identifier on POS plugin side, should be included in the response.
+            It will be used to notify POS plugin about order status change, like cancellation, order picked up or order is auto-accepted.
+            Read more about it in section [Update Order Status](#operation/Update%20Order%20Status) on POS plugin side
+            and [Update Order Status](/apidocs/pos-middleware-api#operation/Update%20Order%20Status) on POS Order Processing Service side.
+
+            It is **mandatory** to provide the remoteOrderId for **Direct Integrations** either within the acknowledge
+            response on dispatch request.
+          x-summary: Acknowledge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDispatchAcknowledgedResponse'
+        '400':
+          description: |
+            Invalid client request.
+            Invalid request, e.g. due to invalid field value, order-validation-error, json-not-readable, payload-limit-exceeded etc.
+          x-summary: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDispatchRejectResponse'
+  /remoteId/{remoteId}/remoteOrder/{remoteOrderId}/posOrderStatus:
+    put:
+      security:
+        - MiddlewareJWTAuth: []
+      operationId: Update Order Status
+      tags:
+        - Plugin Endpoints
+      summary: ""
+      description: |
+        Endpoint to notify a plugin about **status updates** for an already dispatched order.
+
+        **Direct integrations** must implement this endpoint to allow the POS Order Processing Service to notify about status updates.
+
+        Since this endpoint relies on the ```remoteOrderId``` from plugin side, the plugin
+        must provide the **remoteOrderId** inside of the response of an **order dispatch request**
+        or inside of an **order status update request**.
+      parameters:
+        - name: remoteId
+          in: path
+          description: Unique identifier of the **vendor** on plugin side where the order will be sent to.
+          schema:
+            type: string
+            example: POS_RESTAURANT_0001
+          required: true
+        - name: remoteOrderId
+          description: Unique identifier of the **order** on plugin side.
+          in: path
+          schema:
+            type: string
+            example: POS_RESTAURANT_0001_ORDER_000001
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderStatusUpdated'
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: UNAUTHORIZED
+        '404':
+          description: NOT_FOUND
+        '500':
+          description: INTERNAL_SERVICE_ERROR
+        '502':
+          description: EXTERNAL_SERVICE_ERROR
+  /remoteId/{remoteId}/availability:
+    put:
+      security:
+        - MiddlewareJWTAuth: []
+      operationId: Update Vendor Availability
+      tags:
+        - Plugin Endpoints
+      description: |
+        Webhook endpoint to receive **vendor availability change notifications**.
+
+        The plugin should **acknowledge receipt immediately** and handle any internal state updates asynchronously.
+
+        ### Idempotency
+        This is a notification — the same event may be delivered more than once. The plugin must handle duplicate deliveries gracefully.
+        The `timestamp` field acts as an ordering anchor: notifications with an older timestamp than the current known state should be ignored.
+
+        ### Vendor open
+        When `closures` is an empty array, or all entries in closure array have start time in futire then the vendor should be treated as open.
+
+        ### Permanent closure
+        If an entry in `closures` has no `end` field, the closure is permanent (open-ended).
+      parameters:
+        - name: remoteId
+          in: path
+          description: Unique identifier of the vendor on POS plugin side.
+          schema:
+            type: string
+            example: POS_RESTAURANT_0001
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorAvailabilityUpdate'
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: UNAUTHORIZED
+        '404':
+          description: NOT_FOUND
+        '500':
+          description: INTERNAL_SERVICE_ERROR
+        '502':
+          description: EXTERNAL_SERVICE_ERROR
+  /menuimport/{remoteId}:
+    get:
+      security:
+        - MiddlewareJWTAuth: []
+      operationId: Trigger Menu Import
+      tags:
+        - Plugin Endpoints
+      description: |
+        Endpoint to receive a request to send a menu import to the platform
+
+        When a plugin receives a request on this endpoint, it should respond with a menu
+        This response should be sent asynchronously. A synchronous **202** response code should be sent with no response body, then the menu should be submitted to the menu import trigger response endpoint (See documentation [here](/apidocs/pos-middleware-api#operation/Submit%20a%20menu%20import%20due%20to%20a%20trigger))
+
+      parameters:
+        - name: remoteId
+          in: path
+          description: Unique identifier of the **vendor** on plugin side to which the menu belongs.
+          schema:
+            type: string
+            example: POS_RESTAURANT_0001
+          required: true
+        - name: vendorCode
+          in: query
+          description: Unique identifier of the **vendor** on the logistics side. This must be used by the plugin to make the menu import request.
+          schema:
+            type: string
+            example: VENDOR_CODE_0001
+          required: true
+        - name: menuImportId
+          in: query
+          description: Unique identifier to assign the menu when importing. This must be used by the plugin to make the menu import request.
+          schema:
+            type: string
+            example: MENU_ID_007
+          required: true
+      responses:
+        202:
+          description: OK! Request asynchronously accepted
+        401:
+          description: UNAUTHORIZED
+        404:
+          description: NOT_FOUND
+        500:
+          description: INTERNAL_SERVICE_ERROR
+        502:
+          description: EXTERNAL_SERVICE_ERROR
+  /{catalogImportCallback}:
+    post:
+      security:
+        - MiddlewareJWTAuth: [ ]
+      operationId: Status of a Catalog Import
+      tags:
+        - Plugin Endpoints
+      description: |
+        Endpoint to receive the status of a Catalog Import request
+
+        When a plugin receives a request on this endpoint, A synchronous **200** response code should be sent with no response body.
+        If the plugin would like to stop listening for further updates, A synchronous **204** response code should be sent with no response body.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogImportCallbackRequest"
+      responses:
+        200:
+          description: OK! Catalog import status update was received successfully
+        401:
+          description: UNAUTHORIZED
+        404:
+          description: NOT_FOUND
+        500:
+          description: INTERNAL_SERVICE_ERROR
+        502:
+          description: EXTERNAL_SERVICE_ERROR
+components:
+  securitySchemes:
+    MiddlewareJWTAuth:
+      description: |
+        ### Token
+        Every request coming from Middleware contains a **JWT Token** inside of the Authorization header as an **identifier** that the request came from Delivery Hero.
+
+        ### Secret
+        * A **secret** provided along with the credentials is needed to verify the token
+        * The secret will differ between staging and production environments.
+
+
+        In addition to validating the token against the secret, POS plugins should also check if the token includes the
+        ```service: middleware``` claim.
+
+
+        Example of the token signed with 123:
+
+        ```
+        eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzZXJ2aWNlIjoibWlkZGxld2FyZSJ9.
+        VKb-yT2Zz2e4j7R5ssXzU0Mj5MrQ7yxP1H1YRPFmlVANhOYwadSk-5GepYUBz19KASD0Qj
+        wLTWtOKLR63Y_R9g
+        ```
+
+        ```
+        header:
+          typ: JWT,
+          alg: HS512
+
+        payload:
+          service: middleware
+        ```
+
+        If you are not familiar with JWT concept, read more about it on [https://jwt.io/](https://jwt.io/).
+
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    OrderDispatchAcknowledgedResponse:
+      description: An order dispatch acknowledged response.
+      type: object
+      properties:
+        remoteResponse:
+          description: A remote response.
+          properties:
+            remoteOrderId:
+              $ref: '#/components/schemas/RemoteOrderId'
+    OrderDispatchAcceptedResponse:
+      description: An order dispatch accepted response.
+      type: object
+      properties:
+        remoteResponse:
+          description: A remote response.
+          properties:
+            remoteOrderId:
+              $ref: '#/components/schemas/RemoteOrderId'
+            acceptanceTime:
+              $ref: '#/components/schemas/AcceptanceTime'
+    OrderDispatchRejectResponse:
+      description: An order dispatch rejected response
+      type: object
+      properties:
+        reason:
+          $ref: '#/components/schemas/RejectReason'
+        message:
+          description: Field to provide additional textual information about the rejection.
+          type: string
+          default: null
+          example: Failed to persist ...
+    AcceptanceTime:
+      description: |
+        Depending on the order type, it defines either the time when the order will be ready to be picked-up
+        by the customer or when the order will be delivered to the customer. It has to be in
+        [date-time-format](https://tools.ietf.org/html/rfc3339#section-5.6).
+
+        For **Own Delivery Orders**, this time is not taken into account but is still required for compatibility reasons.
+        As a suggestion, the plugin should use ```order.delivery.expectedDeliveryTime```.
+
+        For **Vendor Delivery Orders**, this time has to be an estimate of when the food will be delivered
+        to the customer. If no accurate estimation possible on vendor side, it's recommended
+        to use ```order.delivery.expectedDeliveryTime``` if present. If not, a meaningful default should be used instead.
+
+        For **Pickup Orders**, this time should be an estimate of when the order will be ready to be picked up
+        by the customer. If no accurate estimation possible on vendor side, ```order.pickup.pickupTime``` should be used instead if present.
+        If not, a meaningful default should be provided.
+
+        In general, the acceptance time needs to be at least 2 minutes later than the sending time of the
+        request/response, otherwise acceptance request will fail.
+
+        Example of how to calculate the ```acceptanceTime```:
+
+        ```type-script
+        function calculateAcceptanceTime(order: Order, ...) {
+          const orderType = getOrderType(order);
+          switch(orderType) {
+            case OrderType.OwnDelivery:
+              return calculateAcceptanceTimeForOwnDeliveryOrder(order, ....);
+            case OrderType.VendorDelivery:
+              return calculateAcceptanceTimeForVendorDeliveryOrder(order, ....);
+            case OrderType.PickUp:
+              return calculateAcceptanceTimeForPickUpOrder
+            default:
+              return MEANINGFULL_DEFAULT_ACCEPTANCE_TIME
+          }
+
+          function calculateAcceptanceTimeForOwnDeliveryOrder(order: Order, ...) {
+            return order?.delivery?.expectedDeliveryTime ??
+                   MEANINGFULL_DEFAULT_ACCEPTANCE_TIME;
+          }
+
+          function calculateAcceptanceTimeForVendorDeliveryOrder(order: Order, ...) {
+            return getEstimatedDeliveryTime(order) ??
+                   order?.delivery?.expectedDeliveryTime ??
+                   MEANINGFULL_DEFAULT_ACCEPTANCE_TIME;
+          }
+
+          function calculateAcceptanceTimeForVendorDeliveryOrder(order: Order, ...) {
+            return getEstimatedPickupTime(order) ??
+                   order?.pickup?.pickupTime ??
+                   MEANINGFULL_DEFAULT_ACCEPTANCE_TIME;
+          }
+        }
+        ```
+      type: string
+      format: date-string
+      example: 2016-03-14T17:45:00.000Z
+    RemoteOrderId:
+      type: string
+      description: Unique identifier of the order on POS plugin side
+      example: POS_RESTAURANT_0001_ORDER_000001
+    RejectReason:
+      type: string
+      description: Get the list of valid reject reasons from [Update Order Status](/apidocs/pos-middleware-api#operation/Update%20Order%20Status) section, `order_rejected` body schema example.
+    OrderStatusUpdated:
+      type: object
+      properties:
+        status:
+          type: string
+          description: The status of the order. **Important** The list can be extended to include more statuses.
+          enum:
+            - ORDER_CANCELLED
+            - ORDER_PICKED_UP
+            - PRODUCT_ORDER_MODIFICATION_SUCCESSFUL
+            - PRODUCT_ORDER_MODIFICATION_FAILED
+            - COURIER_ARRIVED_AT_VENDOR
+            - SHOW_RIDER_WAITING_WARNING
+            - HIDE_RIDER_WAITING_WARNING
+        message:
+          description: |
+            A textual description of the order status.
+            
+            For type ```PRODUCT_ORDER_MODIFICATION_FAILED``` this field will have the error code for product
+            modification request failure. Here is the current list of error codes:
+            * ```VALIDATION_ERROR``` - There was a validation error in the request.
+            * ```INVALID_TOTAL_PRICE_CHANGE``` - The request violates pricing constraints, e.g the new order total is too high.
+            * ```MODIFICATION_HAS_NO_EFFECT``` - The request would not result in an actual change of the order (e.g. an item was removed and the same item was added again).
+            * ```UNKNOWN_PRODUCT_ID``` - The request contains an unknown product id.
+            * ```EXTRA_REMOVAL_NOT_SUPPORTED``` - The removal of an extra is not supported.
+            * ```PRODUCT_ADDITION_NOT_ALLOWED``` - The addition of a product is not supported.
+            * ```PARTIAL_REMOVAL_NOT_ALLOWED``` - The partial removal of a product is not supported (e.g. quantity reduction).
+            * ```ERROR``` - Represents any error which is not yet covered by above use-case based error codes.
+            * ```QUANTITY_CANNOT_BE_ZERO``` - The product quantity is required and should be greater than zero. If product should be removed, please use removal method.
+            * ```QUANTITY_REQUIRED``` - The product quantity is required.
+            * ```PRODUCT_ADDITION_WITH_TOPPINGS_NOT_ALLOWED``` - The product with toppings cannot be added. This feature will be added in up comming months.
+            * ```PRODUCT_REMOTE_CODE_REQUIRED``` - The product remote code required. This can be retrieved by menu endpoints.
+            * ```PRODUCT_ID_REQUIRED_FOR_MODIFICATION``` - The product id is required for modification, same as been provided in the order payload.
+            * ```SELECTED_TOPPINGS_MUST_BE_SET_FOR_TOPPING_MODIFICATION``` - Selected toppings must be set for topping modification.
+            * ```PROPERTIES_MUST_BE_SET_FOR_MODIFICATION``` - Properties must be set for modifications.
+            * ```PRODUCTS_MUST_BE_SET_FOR_MODIFICATION``` - Products must be set for modifications.
+            * ```SUB_PRODUCT_MODIFICATION_NOT_SUPPORTED``` - Sub product modifications are not supported.
+            **Important** This list can be extended to include new error codes.
+          type: string
+          example: "description of order status or just the error code"
+        occurredAt:
+          type: string
+          format: date-time
+          description: |
+            Timestamp when this notification occurred.
+            Formatted as [date-time](https://tools.ietf.org/html/rfc3339#section-5.6).
+            
+            **Only present for `SHOW_RIDER_WAITING_WARNING` and `HIDE_RIDER_WAITING_WARNING` statuses.**
+        riderWaitingWarnings:
+          type: object
+          description: |
+            Rider waiting warnings details.
+            
+            **Only present for `SHOW_RIDER_WAITING_WARNING` and `HIDE_RIDER_WAITING_WARNING` statuses.**
+            
+            For `SHOW_RIDER_WAITING_WARNING`: contains the rider waiting warning details.
+            For `HIDE_RIDER_WAITING_WARNING`: set to `null` to indicate warnings should be hidden.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/RiderWaitingWarnings'
+        updatedOrder:
+          allOf:
+            - $ref: 'pluginOrder.yaml#/components/schemas/Order'
+            - description: |
+                Mandatorily sent for type ```PRODUCT_ORDER_MODIFICATION_SUCCESSFUL``` to notify about the updated order
+                after applying product modifications.
+      required:
+        - status
+        - message
+    RiderWaitingWarnings:
+      type: object
+      description: Rider waiting warnings shown to the vendor.
+      properties:
+        waitingStartsAt:
+          description: |
+            Timestamp when the rider waiting time starts.
+            Formatted as [date-time](https://tools.ietf.org/html/rfc3339#section-5.6).
+          type: string
+          format: date-time
+        waitingFeeAppliesAt:
+          description: |
+            Timestamp when the waiting fee applies.
+            Formatted as [date-time](https://tools.ietf.org/html/rfc3339#section-5.6).
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - waitingStartsAt
+    PlatformCatalogImportStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          description: "Status of catalog import for the corresponding platform vendor"
+          enum:
+            - in_progress
+            - done
+            - done_with_errors
+            - failed
+        posVendorId:
+          type: string
+          description: "ID to uniquely identify a vendor on the POS plugin side"
+        platformVendorId:
+          type: string
+          description: "ID to uniquely identify a platform vendor within a Global Entity"
+        globalEntityId:
+          type: string
+          description: "ID to uniquely identify a global entity"
+    VendorAvailabilityUpdate:
+      type: object
+      required:
+        - timestamp
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: |
+            Timestamp of the availability event.
+            Formatted as [date-time](https://tools.ietf.org/html/rfc3339#section-5.6).
+            POS plugin should use this as an ordering anchor — requests with an older timestamp than the current state are no-ops.
+          example: "2024-01-01T10:00:00Z"
+        closures:
+          type: array
+          description: |
+            List of reasons why the vendor is closed.
+            An empty array means the vendor is open.
+            The vendor should be considered closed when at least one entry has a `start` in the past and either no `end` (permanent closure) or an `end` in the future, relative to the current time.
+          items:
+            $ref: '#/components/schemas/Closures'
+    Closures:
+      type: object
+      required:
+        - reason
+        - start
+        - changeable
+      properties:
+        reason:
+          type: string
+          description: The reason for the vendor being closed.
+          enum:
+            - TOO_BUSY_NO_DRIVERS
+            - TOO_BUSY_KITCHEN
+            - UPDATES_IN_MENU
+            - UNREACHABLE
+            - TECHNICAL_PROBLEM
+            - CLOSED
+            - OTHER
+            - TOO_MANY_REJECTED_ORDERS
+            - ORDER_FAILURE
+            - COURIER_DELAYED_AT_PICKUP
+            - RESTRICTED_VISIBILITY
+            - BAD_WEATHER
+            - HOLIDAY_SPECIAL_DAY
+            - ONBOARDING
+            - READY_TO_GO_ONLINE
+            - OFFBOARDING
+            - RETENTION
+            - COMPLIANCE_ISSUES
+            - OWNERSHIP_CHANGE
+            - REFURBISHMENT
+            - FOOD_HYGIENE
+            - FRAUD
+            - RELIGIOUS_OBSERVANCE
+            - CHECK_IN_REQUIRED
+            - CHECK_IN_FAILED
+            - AREA_DISRUPTION
+          example: CLOSED
+        start:
+          type: string
+          format: date-time
+          description: |
+            Timestamp when the closure starts.
+            Formatted as [date-time](https://tools.ietf.org/html/rfc3339#section-5.6).
+          example: "2024-01-01T10:00:00Z"
+        end:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Timestamp when the closure ends.
+            Formatted as [date-time](https://tools.ietf.org/html/rfc3339#section-5.6).
+            If absent, the closure is permanent (open-ended).
+          example: "2024-01-01T12:00:00Z"
+        changeable:
+          type: boolean
+          description: Indicates whether the vendor is allowed to remove this closure themselves.
+          example: true
+          default: true
+    CatalogImportCallbackRequest:
+      type: object
+      description: Catalog import status updates.
+      properties:
+        catalogImportId:
+          description: Unique Id to identify a Catalog Import request.
+          type: string
+        status:
+          description: overall status of the Catalog Import considering status of import in all corresponding vendors
+          type: string
+          enum:
+            - in_progress
+            - done
+            - done_with_errors
+            - failed
+        message:
+          description: message indicating the error or more details related to the status of the catalog import
+          type: string
+        details:
+          description: Status of catalog import per each platform vendor
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/PlatformCatalogImportStatus"
