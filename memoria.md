@@ -2,6 +2,16 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 22-Sep-2026 — Reporte Semanal de Redes: llevaba 5 semanas sin generarse (rutina auto-desactivada)
+
+Jose vio en Marketing → Analytics Redes → Reporte Semanal que el último era el del **17-ago (Sem. 10–16 ago)**. El ERP estaba bien; lo que se cayó fue la **rutina que lo genera**.
+
+- **Causa:** la rutina de los lunes 07:00 SV (`trig_01NojEcUdRJgGURMsEMtJAxk`, "Reporte semanal redes — Frank (mini)") estaba atada al entorno *bridge* viejo de la Mac mini. El **29-ago** se re-registraron los entornos de la mini (192.168.1.20: `hq-panel`, `venture-factory`, `freakie-dogs-caja`, etc., todos con ID nuevo) y la rutina quedó apuntando a un ID que ya no existía → el sistema la **auto-desactivó** (`ended_reason = auto_disabled_env_not_found`, último intento fallido 7-sep). No avisa a nadie: simplemente deja de correr.
+- **Se perdieron** los reportes del 24-ago, 31-ago, 7-sep y 14-sep (no hay fila en `mkt_reportes` ni correo). Quedan pendientes de decidir si se regeneran solo en el ERP, sin correo.
+- **Fix:** rutina nueva **`trig_019EEXuztusYQwrAfK3i4gef`**, mismo prompt y cron (`0 13 * * 1`), sesión nueva por disparo, push al teléfono, entorno **`env_01SVKHQMyAESKZv6Y8KhEHmY`** (`192.168.1.20:freakie-dogs-caja`). La vieja queda deshabilitada (no hay doble correo). La rutina no lleva conectores: usa el Supabase MCP y el script SMTP locales de la mini, igual que la anterior.
+- **Corrida manual 22-sep** (sesión `session_01Fd8q8RZb119NqvAwNikJ2y`): semana 14–20 sep, guardada con `semana = '2026-09-21'` (el lunes que correspondía) para que el lunes 28 no la pise. Próxima automática: **lunes 28-sep 07:00**.
+- **Lección:** si se vuelve a re-registrar un entorno de la mini (reinstalación, cambio de IP, `claude remote-control` nuevo), **todas las rutinas atadas a ese entorno mueren en silencio**. Después de tocar la mini, revisar `list_triggers` y buscar `ended_reason = auto_disabled_env_not_found`. El entorno de una rutina no se puede editar: hay que recrearla con el mismo prompt.
+
 ## 21-Sep-2026 — Dos reportes de la noche: la pantalla que "se cae con PIN extra" y los pedidos de tarjeta congelados en cocina
 
 Jazz (Soyapango, 19:18) mandó la foto de "Esta pantalla se cayó" con `Minified React error #300`; Jose lo lee como "se cae en varias partes, sobre todo donde pide un PIN extra". Lari (Torre, 18:27) pidió que "las órdenes de tarjeta pasen a cobrar cuando cocina dé listo, que no queden congeladas en el apartado de cocina". **Son la misma historia**, y ninguna tiene que ver con el PIN.
