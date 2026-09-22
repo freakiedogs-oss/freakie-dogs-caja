@@ -58,6 +58,27 @@ const MOTIVOS = [
   { v: 'TEST_ORDER',                   t: 'Pedido de prueba' },
 ]
 
+// Los `reason` de cierre del contrato (pluginApi.yaml, schema Closures). La lista
+// completa son 26; acá van los que PedidosYa usa en la práctica, y el resto sale
+// con su código crudo en vez de esconderse.
+const MOTIVO_CIERRE = {
+  TOO_BUSY_KITCHEN:   'cocina saturada',
+  TOO_BUSY_NO_DRIVERS:'sin motoristas',
+  UPDATES_IN_MENU:    'cambios en el menú',
+  UNREACHABLE:        'no nos pudieron contactar',
+  TECHNICAL_PROBLEM:  'problema técnico',
+  CLOSED:             'local cerrado',
+  TOO_MANY_REJECTED_ORDERS: 'demasiados pedidos rechazados',
+  ORDER_FAILURE:      'fallas en los pedidos',
+  COURIER_DELAYED_AT_PICKUP: 'motoristas esperando mucho',
+  BAD_WEATHER:        'mal clima',
+  HOLIDAY_SPECIAL_DAY:'feriado',
+  FOOD_HYGIENE:       'higiene',
+  COMPLIANCE_ISSUES:  'cumplimiento',
+  FRAUD:              'fraude',
+  OTHER:              'otro',
+}
+
 const dosDig = (n) => String(n).padStart(2, '0')
 
 function timbre() {
@@ -493,14 +514,16 @@ export default function PeyaInboxView({ user, onBack }) {
             {!data.tienda.disponible && (
               <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
                 {data.tienda.origen === 'plataforma' ? 'La cerró PedidosYa' : 'La cerramos nosotros'}
-                {data.tienda.motivo ? ` · ${data.tienda.motivo}` : ''}
+                {data.tienda.motivo ? ` · ${MOTIVO_CIERRE[data.tienda.motivo] || data.tienda.motivo}` : ''}
                 {data.tienda.cerrada_hasta
                   ? ` · vuelve a abrir ${new Date(data.tienda.cerrada_hasta).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}`
-                  : ''}
+                  : ' · sin fecha de reapertura'}
+                {/* `changeable: false` en el contrato: el local no puede levantarlo. */}
+                {data.tienda.levantable === false && ' · solo PedidosYa puede levantarlo'}
               </div>
             )}
           </div>
-          {data.tienda.puede_cambiar && (
+          {data.tienda.puede_cambiar && !(data.tienda.levantable === false && !data.tienda.disponible) && (
             <button
               onClick={() => onTienda(!data.tienda.disponible)}
               disabled={ocupado === '__tienda__'}
