@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 21-Sep-2026 — Tarjetas de EE.UU.: 0 de 5 habían podido pagar, y el log no decía por qué
+
+Revisando la pasarela en producción (del 11 al 20-sep): **5 pedidos con tarjeta de EE.UU.** (Chase, Capital One, Wells Fargo) pasaron por `requiere_billing`, el cliente puso su código postal, y **los 5 terminaron en 400 sin llegar al banco** — 2 de ellos se entregaron en efectivo, 3 se cancelaron. En `pagos_online.raw` quedaba `{"status":400}` y nada más.
+
+**Dos causas, las dos nuestras.** La doc de n1co (`/Charges`, ejemplo con `"countryCode": "US", "stateCode": "CA"`) pide el país en **ISO-2** y **los tres campos**; nosotros mandábamos `countryCode: 'USA'` (ISO-3, copiado del bin) y `stateCode: ''` porque el formulario solo pedía el postal. n1co responde a eso con un **ProblemDetails de .NET** (`{title, status:400, errors:{campo:[…]}}`) —no con el objeto `error` del rechazo bancario— y `saneaRespuesta` tiraba justo `title` y `errors`: por eso el log estaba mudo y el fix del 20-sep atribuyó esos 400 a la re-tokenización (que no era: `card_id` se repetía intento a intento sin problema).
+
+- **`normalizarBilling`** ahora mapea USA→US / CAN→CA, exige `stateCode` de 2 letras y devuelve `null` si falta algo → el endpoint **vuelve a pedir** el billing en vez de gastar el intento en un 400 seguro.
+- **El formulario** pide **estado + código postal** (provincia si el bin es canadiense; el servidor manda `pais` en la respuesta `requiere_billing`).
+- **`cobrar()` reconoce el 400 por billing** (`errors.BillingInfo.*`) y responde `requiere_billing` en vez de "tu banco rechazó". Es el camino de la **tarjeta guardada** de EE.UU., donde el bin no se vuelve a ver y antes no había forma de pedir el billing.
+- `saneaRespuesta` conserva `title`/`errors`/`traceId`; el mensaje al cliente nunca es el título en inglés de .NET.
+- `scripts/test-billing-n1co.mjs` **17/17** (helpers exportados solo para eso); frenos 14/14; build OK.
+
+**Sin verificar en vivo:** que con los tres campos bien n1co apruebe una tarjeta de EE.UU. — hace falta una tarjeta real de allá. Si el próximo `REQUIERE_BILLING` va seguido de otro 400, el `raw` ya va a decir qué campo fue.
+
+**Aparte, encontrado en la misma revisión:** `WEB-EA90E980` (16-sep, Soyapango) cobró **$20.49** en n1co (orden 9234653, aut. 261791) y el pedido se **canceló 7 minutos después**; no hay rastro de devolución en la BD. Hay que confirmar en el portal de n1co que se reversó.
+
 ## 21-Sep-2026 — Merma de producto preparado: anular algo que ya está en cocina ya no se pierde sin rastro
 
 Pedido de Cesar tras cuadrar Cafetalón. El −4 de salchichas del 20-sep apuntaba a la mesa 17: 5 hot dogs mandados a cocina, anulados 4 min después y reingresados en la mesa 6. La anulación **borraba la fila del KDS** y no descargaba nada, así que si cocina ya los había hecho, el producto salía del inventario sin dejar huella y aparecía de noche como faltante.
@@ -369,6 +385,29 @@ Mauricio entregó una auditoría del módulo (`reporte-interactivo-auditoria-chi
 - **`BPMParametrosView.jsx` (nuevo, nav `bpm-parametros`, permisos_rol: jefe_casa_matriz, ing_alimentos, admin, ejecutivo, superadmin):** tabla editable por catálogo. Mientras `bpm_esponjas.vigente` esté apagado, no se valida color (la pantalla lo dice), tal como pidió la auditoría: no inventar segregación.
 - **Pendiente de Calidad:** concentración y tiempo de contacto reales del Penta Quat, códigos y calibraciones reales, colores de esponja por área, tolerancia de los 150 °C de vegetales. Textos de los pasos 1–6 no se tocaron (las listas del informe son las mismas instrucciones).
 - Sandbox caído (Windows update 8-sep): sin `npm run build` de mi lado; lo corre Cesar.
+
+## 12-Sep-2026 — El pedido con tarjeta no existe hasta que el cobro se resuelve
+
+Elegir tarjeta creaba el pedido **antes** de cobrar. Medido del 9 al 12-sep: **87 pedidos con tarjeta, 64 pagados (74%), 17 abandonados sin intentar y 6 con tarjeta rechazada** — ~6 al día que Karina rescataba a mano con un link. Y al cerrar el formulario con la ✕ el cliente veía **"¡Pedido enviado!"** con el botón de WhatsApp: había **7 salidas distintas** del drawer que aterrizaban todas ahí.
+
+**El pago se mudó DENTRO del checkout, con un solo botón "Pagar y confirmar $X".** El que abandona el formulario nunca aprieta el botón, así que **no se crea ningún pedido**. Eso solo elimina el limbo para los 17 abandonos.
+
+**`pendiente_pago`: un estado invisible.** La torre y `mis_pedidos_delivery` filtran por los 4 estados operativos, así que desaparece sin tocarlos. Decisión clave: **NO se tocó `crear_pedido_delivery`** — el pedido nace `recibida` como siempre y el servidor lo marca pendiente en un segundo paso. Si ese paso falla, queda visible e impago = **el comportamiento de hoy, que Karina sabe rescatar**. Reescribir esa función de ~100 líneas era más riesgo del que resuelve.
+
+**El peor escenario del cambio, atajado:** el camino *fuera de cobertura* de `pago_online_resolver` retorna **sin** llamar a `confirmar_pago_delivery`, así que el pedido se habría quedado en `pendiente_pago` —invisible— **con la plata ya cobrada**. Ahora pasa explícito a `recibida`. Es la prueba #5 del arnés.
+
+**Rechazo: se resuelve con el cliente, no con Karina.** Se le dice el motivo real y se le ofrece otra tarjeta o efectivo ahí mismo. Los reintentos van **sobre el mismo pedido**, no se crea uno nuevo por cada tarjeta que prueba.
+
+**Retomar:** banda "Te falta pagar un pedido" en el menú y pantalla propia en el seguimiento. Antes el tracking hacía `Math.max(0, findIndex)` y colapsaba cualquier estado desconocido al paso 0: un pedido impago mostraba **"Pedido recibido — Te vamos a escribir para coordinar el pago"**, una promesa que nadie iba a cumplir porque el pedido ni estaba en la torre. Tampoco habilita ya el juego con premio.
+
+**Torre:** franja **"Sin pagar"** fuera de las 4 columnas, sin relojes ni alarmas, con el último error de la tarjeta y un link directo para que el cliente pague — reemplaza el link de pago que Karina armaba a mano. No le agrega trabajo: le devuelve la capacidad de responder si alguien llama.
+
+**Dos cosas que casi se rompen y conviene recordar:**
+- **`crear_pedido_delivery` NO era ejecutable por `service_role`** (revocada de PUBLIC en algún momento, solo quedaba `anon`). El endpoint nuevo la llama desde la Edge Function: habría dado *permission denied* en producción. Tercera vez que muerde este mismo gotcha — ver [[revoke-public-tumba-service-role]].
+- **Los estilos**: al mover el bloque de pago a su propio CSS (se usa en dos páginas ahora), se fueron también `mp-pago-btn`/`opts`/`hint`, que el checkout usa **aunque el cliente elija efectivo** — y en ese caso el chunk lazy no carga, así que los botones Efectivo/Tarjeta habrían quedado sin estilo. Volvieron a `menuPublico.css`. Importar `menuPublico.css` en el tracking no era opción: trae resets globales (`*`, `html, body`, `background`) que le rompen el layout.
+
+**Verificación:** `scripts/test-pendiente-pago.sql` **9/9**, se revierte solo. Webhook de EPay extendido antes que nada (Fase 1) porque con el pedido invisible, perder una confirmación pasa a significar perder el pedido con la plata cobrada. Cron cada 15 min que cancela los pendientes de +3 h, con guard de no tocar nada cobrado ni comandado. Control permanente: `pagados_invisibles` debe dar siempre 0.
+
 
 ## 09-Sep-2026 — `cobrado` NO significa "pagó online": el sello salía en pedidos en efectivo
 
