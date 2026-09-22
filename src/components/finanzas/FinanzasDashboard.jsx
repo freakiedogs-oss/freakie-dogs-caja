@@ -366,9 +366,12 @@ export default function FinanzasDashboard({ user }) {
         fetchAll('serfinsa_validacion_diaria',
           'fecha, total_serfinsa, total_tarjeta_reportado, diferencia, num_terminales, estado',
           q => q.gte('fecha', '2026-01-01').order('fecha')),
+        // `neq(estado,'anulado')`: un depósito anulado es un duplicado o una
+        // corrección reemplazada. Sumarlo infla el efectivo recibido — antes
+        // de la limpieza del 22-sep eran $12,080.61 de más.
         fetchAll('depositos_bancarios',
           'fecha_deposito, store_code, monto, monto_esperado, diferencia_deposito, estado',
-          q => q.gte('fecha_deposito', '2026-01-01').order('fecha_deposito')),
+          q => q.neq('estado', 'anulado').gte('fecha_deposito', '2026-01-01').order('fecha_deposito')),
         fetchAll('v_planilla_gerencial_pl',
           'mes, provisionado, pagado_real, pendiente_pago',
           q => q.gte('mes', '2026-01-01').order('mes'), dbFin),

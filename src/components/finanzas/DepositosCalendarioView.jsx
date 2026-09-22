@@ -26,6 +26,11 @@ const C = {
   ok: '#22c55e', warn: '#f59e0b', bad: '#ef4444', info: '#3b82f6', red: '#e63946',
 }
 
+// Anular es una corrección contable: mueve el efectivo recibido del mes.
+// Gerencia sí, la sucursal no — la sucursal corrige desde su propio registro
+// de depósito, que es donde tiene el voucher en la mano.
+const PUEDE_ANULAR = ['admin', 'ejecutivo', 'superadmin']
+
 const fmt$ = (v) => (v == null || isNaN(+v)) ? '—' : (+v < 0 ? '-' : '') + '$' + Math.abs(+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmt0 = (v) => (+v < 0 ? '-' : '') + '$' + Math.round(Math.abs(+v || 0)).toLocaleString('en-US')
 
@@ -45,6 +50,8 @@ const restarDias = (fecha, k) => {
   d.setDate(d.getDate() - k)
   return d.toISOString().split('T')[0]
 }
+const mayusc1 = (t) => t.charAt(0).toUpperCase() + t.slice(1)
+
 const nombreMes = (mes) =>
   new Date(mes + '-01T12:00:00').toLocaleDateString('es-SV', { month: 'long', year: 'numeric' })
 const diaCorto = (f) =>
@@ -72,6 +79,7 @@ export default function DepositosCalendarioView({ user }) {
   const [soloProblemas, setSoloProblemas] = useState(false)
   const [cierres, setCierres] = useState([])
   const [deps, setDeps] = useState([])
+  const [anulados, setAnulados] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const [sel, setSel] = useState(null)   // { store_code, fecha }
@@ -96,14 +104,19 @@ export default function DepositosCalendarioView({ user }) {
           .select('fecha,store_code,turno,caja,efectivo_real_depositar,efectivo_calculado,diferencia_deposito,estado')
           .gte('fecha', d1).lte('fecha', d2),
         db.from('depositos_bancarios')
-          .select('id,store_code,monto,fecha_deposito,dias_cubiertos,fotos_urls,estado,notas,creado_por,created_at,revisado_por,revisado_at')
+          .select('id,store_code,monto,fecha_deposito,dias_cubiertos,fotos_urls,estado,notas,creado_por,created_at,revisado_por,revisado_at,anulado_motivo,anulado_por,anulado_at')
           .overlaps('dias_cubiertos', dias),
       ])
       if (cRes.error) throw cRes.error
       if (dRes.error) throw dRes.error
 
       let cs = cRes.data || []
-      const ds = dRes.data || []
+      // Los anulados NO entran al cálculo — si sumaran, volvería el descuadre
+      // que la anulación vino a arreglar. Pero se guardan aparte para poder
+      // mostrarlos en el detalle: un depósito que desaparece sin explicación
+      // es peor que uno que sobra.
+      const todos = dRes.data || []
+      const ds = todos.filter(d => d.estado !== 'anulado')
 
       // Un depósito del mes puede cubrir días de otro mes (los que cruzan fin
       // de mes). Sin esos cierres, su "esperado" saldría corto y lo pintaría
@@ -115,7 +128,7 @@ export default function DepositosCalendarioView({ user }) {
           .in('fecha', fuera)
         cs = cs.concat(data || [])
       }
-      setCierres(cs); setDeps(ds)
+      setCierres(cs); setDeps(ds); setAnulados(todos.filter(d => d.estado === 'anulado'))
     } catch (e) {
       setErr(e.message || String(e))
     }
@@ -123,6 +136,26 @@ export default function DepositosCalendarioView({ user }) {
   }, [dias])
 
   useEffect(() => { cargar() }, [cargar])
+
+  // Anular desde acá es para los casos que la limpieza automática no podía
+  // decidir sola: una corrección vieja que nadie anuló en su momento, y los
+  // dos registros quedaron sumando. Exige motivo (lo exige también la base).
+  const anular = useCallback(async (dep) => {
+    const motivo = window.prompt(
+      `Anular el depósito de ${fmt$(dep.monto)} del ${dep.fecha_deposito}.\n\n` +
+      'No se borra: queda guardado con su foto y deja de sumar.\n' +
+      '¿Por qué se anula?'
+    )
+    if (motivo === null) return
+    if (!motivo.trim()) { setErr('El motivo es obligatorio: sin él, nadie va a saber por qué dejó de contar.'); return }
+    const { data, error } = await db.rpc('fn_deposito_anular', {
+      p_id: dep.id, p_motivo: motivo, p_por: `${user?.nombre || ''} ${user?.apellido || ''}`.trim() || 'ERP',
+    })
+    if (error) { setErr(error.message); return }
+    if (!data?.ok) { setErr({ falta_motivo: 'Falta el motivo.', no_existe: 'Ese depósito ya no existe.', ya_anulado: 'Ese depósito ya estaba anulado.' }[data?.motivo] || 'No se pudo anular.'); return }
+    setSel(null)
+    cargar()
+  }, [cargar, user])
 
   // Columnas: las sucursales que realmente aparecen, en el orden de STORES.
   const cols = useMemo(() => {
@@ -195,7 +228,7 @@ export default function DepositosCalendarioView({ user }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: C.card, border: `1px solid ${C.line}`, borderRadius: 9 }}>
           <button onClick={() => setMes(m => mesShift(m, -1))} style={{ background: 'none', border: 'none', color: C.txt, fontSize: 18, padding: '6px 11px', cursor: 'pointer' }}>‹</button>
-          <span style={{ fontSize: 13.5, fontWeight: 700, minWidth: 128, textAlign: 'center', textTransform: 'capitalize' }}>{nombreMes(mes)}</span>
+          <span style={{ fontSize: 13.5, fontWeight: 700, minWidth: 128, textAlign: 'center' }}>{mayusc1(nombreMes(mes))}</span>
           <button onClick={() => setMes(m => mesShift(m, 1))} disabled={mes >= mesDe(hoy)}
             style={{ background: 'none', border: 'none', color: mes >= mesDe(hoy) ? '#3a3a40' : C.txt, fontSize: 18, padding: '6px 11px', cursor: mes >= mesDe(hoy) ? 'default' : 'pointer' }}>›</button>
         </div>
@@ -249,8 +282,8 @@ export default function DepositosCalendarioView({ user }) {
                 <div style={{ padding: 34, textAlign: 'center', color: C.ok, fontSize: 13 }}>✓ Nada pendiente en este mes.</div>
               ) : filasVisibles.map(fecha => (
                 <div key={fecha} style={{ display: 'grid', gridTemplateColumns: `92px repeat(${cols.length}, minmax(${anchoCol}px,1fr))`, borderBottom: `1px solid ${C.line}`, background: esDomingo(fecha) ? 'rgba(255,255,255,.02)' : 'transparent' }}>
-                  <div style={{ padding: '8px 10px', fontSize: 12, color: fecha === hoy ? C.red : C.dim, fontWeight: fecha === hoy ? 800 : 500, textTransform: 'capitalize', display: 'flex', alignItems: 'center' }}>
-                    {diaCorto(fecha)}
+                  <div style={{ padding: '8px 10px', fontSize: 12, color: fecha === hoy ? C.red : C.dim, fontWeight: fecha === hoy ? 800 : 500, display: 'flex', alignItems: 'center' }}>
+                    {mayusc1(diaCorto(fecha))}
                   </div>
                   {cols.map(sc => {
                     const cel = celda(sc, fecha)
@@ -321,7 +354,7 @@ export default function DepositosCalendarioView({ user }) {
                 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: 'rgba(239,68,68,.07)', border: `1px solid ${C.line}`, borderRadius: 8, padding: '7px 10px', cursor: 'pointer', color: C.txt, fontFamily: 'inherit', textAlign: 'left' }}>
                 <span style={{ fontSize: 12.5 }}>
                   <b>{STORES_SHORT[f.sc] || f.sc}</b>
-                  <span style={{ color: C.dim, textTransform: 'capitalize' }}> · {diaCorto(f.fecha)}</span>
+                  <span style={{ color: C.dim }}> · {mayusc1(diaCorto(f.fecha))}</span>
                 </span>
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: C.bad, fontFamily: 'monospace' }}>{fmt$(f.monto)}</span>
               </button>
@@ -332,7 +365,12 @@ export default function DepositosCalendarioView({ user }) {
 
       {/* Detalle */}
       {sel && detalle && (
-        <Detalle sel={sel} cel={detalle} onClose={() => setSel(null)} onFoto={setFoto} />
+        <Detalle
+          sel={sel} cel={detalle} onClose={() => setSel(null)} onFoto={setFoto}
+          anulados={anulados.filter(a => a.store_code === sel.store_code && (a.dias_cubiertos || []).includes(sel.fecha))}
+          puedeAnular={PUEDE_ANULAR.includes(user?.rol)}
+          onAnular={anular}
+        />
       )}
 
       {/* Foto a pantalla completa */}
@@ -361,7 +399,7 @@ function Tarjeta({ titulo, valor, sub, color }) {
   )
 }
 
-function Detalle({ sel, cel, onClose, onFoto }) {
+function Detalle({ sel, cel, onClose, onFoto, anulados = [], puedeAnular, onAnular }) {
   const { store_code: sc, fecha } = sel
   const g = cel.grupo
   const multiDia = g && g.dias.length > 1
@@ -379,7 +417,7 @@ function Detalle({ sel, cel, onClose, onFoto }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.txt }}>{STORES[sc] || sc}</div>
-            <div style={{ fontSize: 12, color: C.dim, textTransform: 'capitalize' }}>{diaLargo(fecha)}</div>
+            <div style={{ fontSize: 12, color: C.dim }}>{mayusc1(diaLargo(fecha))}</div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.dim, fontSize: 22, cursor: 'pointer', lineHeight: 1, fontFamily: 'inherit' }}>✕</button>
         </div>
@@ -437,6 +475,41 @@ function Detalle({ sel, cel, onClose, onFoto }) {
             </div>
           ))}
         </Seccion>
+
+        {puedeAnular && g && (
+          <div style={{ marginTop: -6, marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {g.deps.map(d => (
+              <button key={d.id} onClick={() => onAnular(d)}
+                style={{ background: 'transparent', border: `1px solid ${C.line}`, color: C.dim, borderRadius: 8, padding: '5px 10px', fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Anular {fmt$(d.monto)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {anulados.length > 0 && (
+          <Seccion titulo={`Anulado${anulados.length > 1 ? 's' : ''} — no suma${anulados.length > 1 ? 'n' : ''}`}>
+            {anulados.map(a => (
+              <div key={a.id} style={{ border: `1px dashed ${C.line}`, borderRadius: 10, padding: 10, marginBottom: 8, opacity: .72 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, fontFamily: 'monospace', textDecoration: 'line-through', color: C.dim }}>{fmt$(a.monto)}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: C.dim }}>ANULADO</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: C.dim, marginTop: 4, lineHeight: 1.4 }}>{a.anulado_motivo}</div>
+                <div style={{ fontSize: 10.5, color: C.dim, marginTop: 3 }}>
+                  Lo subió {a.creado_por || '—'} · anulado por {a.anulado_por || '—'}
+                  {a.anulado_at ? ` el ${a.anulado_at.slice(0, 10)}` : ''}
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
+                  {(a.fotos_urls || []).map((u, i) => (
+                    <img key={i} src={u} alt={`Voucher anulado ${i + 1}`} onClick={() => onFoto(u)} loading="lazy"
+                      style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 7, border: `1px solid ${C.line}`, cursor: 'zoom-in', filter: 'grayscale(.6)' }} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Seccion>
+        )}
 
         {/* Conciliación del grupo */}
         {g && (

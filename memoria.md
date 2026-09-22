@@ -2,6 +2,34 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 22-Sep-2026 — El mismo depósito subido dos veces: 23 casos, $12,080.61, y la puerta cerrada para que no vuelva
+
+Jose abrió el Control de Depósitos y vio Cafetalón del 16-sep en amarillo: "sobra $433.65", con **el mismo depósito listado dos veces**. No era un error de la pantalla: era el bug que la pantalla existía para encontrar.
+
+**El caso:** Miliana registró el depósito a las 18:10:18 y otra vez a las 18:10:52 — **34 segundos** —, subiendo la foto del mismo voucher dos veces (dos archivos distintos en storage). Al banco entraron $433.65; en el ERP había $867.30.
+
+**Por qué nadie lo había visto en seis meses:** cada registro, por separado, cuadra perfecto (`diferencia_deposito` = $0.00 en los dos). Y `AdminView` y `CierreForm` traen el depósito del día con **`.limit(1)`**: literalmente muestran uno solo. El duplicado era invisible por construcción. Sólo aparece cuando algo los SUMA, que es lo que hace el calendario.
+
+**El alcance real: 23 pares, en las 6 sucursales, desde marzo — $12,080.61.** Dos patrones: 6 son doble clic (34s a 367s de diferencia) y **17 son días después, a veces de otra persona** (en S003 varios los cargó Wendy y después Jocelyn). Ese segundo patrón no es torpeza: nadie tenía dónde ver que ya estaba subido.
+
+**Antes de anular nada se contrastó contra el banco.** En 21 de los 23 pares, `bank_transacciones` tiene **un solo crédito** por ese monto en la ventana del depósito; en los otros 2, ninguno. **En ningún par hay dos.** Ningún caso es un depósito doble legítimo, así que la limpieza es segura. Sin ese chequeo esto habría sido adivinar.
+
+**Se ANULAN, no se borran** (`estado='anulado'`, tercer estado del CHECK, + `anulado_motivo/por/at` y `reemplazado_por`/`reemplaza_a`). Es plata con la foto de un voucher real: borrar la fila destruye la evidencia. Hay un CHECK que **exige motivo** en todo anulado — uno sin explicación es peor que el duplicado, porque nadie sabe si fue a propósito. Se conserva el más viejo de cada par; en los 10 pares con uno confirmado, el confirmado **siempre** es el más viejo, así que la regla nunca descarta uno ya revisado.
+
+**El hallazgo que cambió el diseño: el depósito PARTIDO existe y es legítimo.** Al revisar los 9 casos de "mismo día, distinto monto" aparecieron sumas exactas: S002 24-jul $77.28 + $254.25 = **$331.53**, el esperado al centavo; igual S001 1-jun ($525.15) y S003 3-may ($231.43). Son dos partidas del mismo día, no duplicados. Por eso el índice único va sobre **(sucursal, MONTO, días)** y no sobre (sucursal, días): dos partidas tienen montos distintos, un doble clic tiene el mismo monto al centavo. Un índice sobre (sucursal, días) habría roto un flujo real.
+
+**Registrar ahora pasa por `fn_deposito_registrar`, no por un INSERT suelto.** El caso que hay que cerrar es *"alguien MÁS lo subió"*, y un chequeo en el browser no puede: entre que la pantalla lee y el usuario aprieta el botón pasan segundos. La función lee, decide y escribe en **la misma transacción**, con `pg_advisory_xact_lock` por sucursal. Tres modos: `nuevo` (si hay algo, frena y devuelve qué hay), `reemplazar` (anula lo anterior — la corrección que pidió Jose) y `agregar` (otra partida; conviven y suman). Normaliza los días (ordenados y únicos) o el índice vería distintos dos arrays con el mismo contenido, y detecta solape **parcial** con `&&`, que el índice no puede ver.
+
+**`p_vistos`: la decisión se ejecuta sólo si la realidad no cambió.** El usuario manda los ids que tenía a la vista; si en el medio entró otro depósito, la función **no ejecuta** y devuelve lo nuevo para que decida otra vez. Sin esto, "reemplazar" podría anular el registro de otra persona que el usuario nunca vio.
+
+**En la pantalla de registrar:** al elegir sucursal y días se muestra qué hay vigente —monto, fecha, quién lo subió, estado y **la foto del voucher**— y el botón de guardar queda **bloqueado** hasta elegir "estoy corrigiendo el anterior" (en rojo, dice que lo va a anular) o "es otra partida del mismo día". Si la base rechaza, se repinta lo que hay **ahora** y vuelve a bloquear.
+
+**Todo lo que sumaba depósitos excluye los anulados:** `AdminView` (lista y detalle), `CierreForm` y `FinanzasDashboard` — este último es el que tenía los $12,080.61 de más en el efectivo recibido. El calendario los trae igual pero **aparte**: no cuentan, y se muestran tachados con su motivo y su foto, porque un depósito que desaparece sin explicación es peor que uno que sobra. Gerencia (`admin/ejecutivo/superadmin`) puede anular desde ahí, con motivo obligatorio.
+
+**Verificado corriendo, no leyendo.** `scripts/test-depositos-duplicados.sql`: 10 casos contra la base real sobre una sucursal falsa que se borra al final (día libre, mismo día de otra persona, doble clic exacto, partida legítima, vista desactualizada, reemplazo correcto, días desordenados, solape parcial, anular sin motivo, anular dos veces) — **10/10**. Más un render en jsdom del formulario con los efectos corridos: **21/21** (el aviso sale con foto, el botón arranca bloqueado, elegir "corrigiendo" manda `p_modo='reemplazar'` y `p_vistos=['v1']`, el rechazo por `cambio` repinta el depósito del otro y vuelve a bloquear, y en un día limpio no aparece nada). El arnés del calendario sigue 21/21. `npm run build` OK.
+
+**Queda para revisar (no lo decidí yo, son 4 casos donde adivinar sería peor):** parecen correcciones que nadie anuló y hoy suman doble — S004 15/16-ago ($1,407.42 y 4 min después $1,406.42, que es el esperado exacto), S006 3-ago ($1,220 y después $1,500), S003 7-may ($506.22 y después $521.20) y S001 29-mar ($521.29 y después $521.30, un centavo). Salen en amarillo en el calendario y ahí mismo está el botón de anular.
+
 ## 22-Sep-2026 — Reporte Semanal de Redes: llevaba 5 semanas sin generarse (rutina auto-desactivada)
 
 Jose vio en Marketing → Analytics Redes → Reporte Semanal que el último era el del **17-ago (Sem. 10–16 ago)**. El ERP estaba bien; lo que se cayó fue la **rutina que lo genera**.
