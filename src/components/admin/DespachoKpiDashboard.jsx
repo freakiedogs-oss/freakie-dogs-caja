@@ -79,18 +79,11 @@ function downloadCSV(filename, rows) {
   URL.revokeObjectURL(url)
 }
 
-export default function DespachoKpiDashboard({ user }) {
-  const [config, setConfig] = useState(null)
-  const [periodo, setPeriodo] = useState(() => rangoDefault(30))
-  const [datos, setDatos] = useState(null)     // resultado de fn_kpi_despacho_dashboard
-  const [detalle, setDetalle] = useState([])   // filas individuales del rango (para tabla + filtros)
-  const [loading, setLoading] = useState(true)
-
-  // Filtros tabla
-  const [filtroMot, setFiltroMot]   = useState('todos')
-  const [filtroColor, setFiltroColor] = useState('todos')
-  const [filtroTarde, setFiltroTarde] = useState(false)
-
+// Puerta de acceso aparte del componente con hooks: un `return` antes de un hook
+// hace que React cuente distinto los hooks entre renders y tira el error #300
+// ("Esta pantalla se cayó") si el usuario cambia con la vista montada.
+export default function DespachoKpiDashboard(props) {
+  const { user } = props
   // Permisos
   if (user.rol !== 'superadmin') {
     return (
@@ -103,6 +96,20 @@ export default function DespachoKpiDashboard({ user }) {
       </div>
     )
   }
+  return <DespachoKpiDashboardInner {...props} />
+}
+
+function DespachoKpiDashboardInner({ user }) {
+  const [config, setConfig] = useState(null)
+  const [periodo, setPeriodo] = useState(() => rangoDefault(30))
+  const [datos, setDatos] = useState(null)     // resultado de fn_kpi_despacho_dashboard
+  const [detalle, setDetalle] = useState([])   // filas individuales del rango (para tabla + filtros)
+  const [loading, setLoading] = useState(true)
+
+  // Filtros tabla
+  const [filtroMot, setFiltroMot]   = useState('todos')
+  const [filtroColor, setFiltroColor] = useState('todos')
+  const [filtroTarde, setFiltroTarde] = useState(false)
 
   const cargar = useCallback(async () => {
     setLoading(true)

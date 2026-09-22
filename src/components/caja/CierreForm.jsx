@@ -453,13 +453,18 @@ function ModalAjuste({ onSave, onClose }) {
   );
 }
 
-export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, onSuccess }) {
-  // Roles que pueden elegir sucursal (no tienen sucursal fija o son CM001)
-  const esRolLibre = ['ejecutivo', 'admin'].includes(user.rol);
-  const necesitaElegir = !isAdminEdit && !existingCierre && (!user.store_code || user.store_code === 'CM001');
+// Roles que pueden elegir sucursal (no tienen sucursal fija o son CM001)
+const esRolLibreDe = (user) => ['ejecutivo', 'admin'].includes(user.rol);
+const necesitaElegirSucursal = ({ user, existingCierre, isAdminEdit }) =>
+  !isAdminEdit && !existingCierre && (!user.store_code || user.store_code === 'CM001');
 
+// Puerta de acceso aparte del componente con hooks: un `return` antes de los
+// hooks hace que React cuente distinto los hooks entre renders y tira el error
+// #300 ("Esta pantalla se cayó") si el usuario cambia con la vista montada.
+export default function CierreForm(props) {
+  const { user, onBack } = props;
   // Si no es ejecutivo/admin Y no tiene sucursal → bloquear
-  if (necesitaElegir && !esRolLibre) {
+  if (necesitaElegirSucursal(props) && !esRolLibreDe(user)) {
     return (
       <div style={{ padding: 20, maxWidth: 480, margin: '0 auto' }}>
         <button className="btn btn-ghost" onClick={onBack} style={{ marginBottom: 16 }}>← Volver</button>
@@ -471,7 +476,12 @@ export default function CierreForm({ user, existingCierre, isAdminEdit, onBack, 
       </div>
     );
   }
+  return <CierreFormInner {...props} />;
+}
 
+function CierreFormInner({ user, existingCierre, isAdminEdit, onBack, onSuccess }) {
+  const esRolLibre = esRolLibreDe(user);
+  const necesitaElegir = necesitaElegirSucursal({ user, existingCierre, isAdminEdit });
   const isEdit = !!existingCierre;
   const { show, Toast } = useToast();
   const [fecha, setFecha] = useState(existingCierre?.fecha || today());

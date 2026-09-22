@@ -318,18 +318,11 @@ function GraficaUtilidad({ canales, bep, utilidad, sinIva }) {
 // ────────────────────────────────────────────────────────────
 // Componente principal
 // ────────────────────────────────────────────────────────────
-export default function KpiVentasTotalesDashboard({ user }) {
-  const now = new Date()
-  const [periodo, setPeriodo] = useState({
-    anio: now.getFullYear(),
-    mes: now.getMonth() + 1,
-  })
-  const [datos, setDatos] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [errMsg, setErrMsg] = useState(null)
-  const [canalActivo, setCanalActivo] = useState('todas')
-  const [sinIva, setSinIva] = useState(true)  // toggle Con IVA / Sin IVA (default: sin IVA, métrica contable)
-
+// Puerta de acceso aparte del componente con hooks: un `return` antes de un hook
+// hace que React cuente distinto los hooks entre renders y tira el error #300
+// ("Esta pantalla se cayó") si el usuario cambia con la vista montada.
+export default function KpiVentasTotalesDashboard(props) {
+  const { user } = props
   // Bloqueo de acceso por rol
   if (!['admin','superadmin','ejecutivo','gerente'].includes(user.rol)) {
     return (
@@ -342,6 +335,20 @@ export default function KpiVentasTotalesDashboard({ user }) {
       </div>
     )
   }
+  return <KpiVentasTotalesDashboardInner {...props} />
+}
+
+function KpiVentasTotalesDashboardInner({ user }) {
+  const now = new Date()
+  const [periodo, setPeriodo] = useState({
+    anio: now.getFullYear(),
+    mes: now.getMonth() + 1,
+  })
+  const [datos, setDatos] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [errMsg, setErrMsg] = useState(null)
+  const [canalActivo, setCanalActivo] = useState('todas')
+  const [sinIva, setSinIva] = useState(true)  // toggle Con IVA / Sin IVA (default: sin IVA, métrica contable)
 
   const cargar = useCallback(async () => {
     setLoading(true)

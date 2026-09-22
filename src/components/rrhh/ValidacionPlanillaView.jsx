@@ -40,10 +40,17 @@ const COLS = [
   ['observaciones', 'Obs', 'Del EXCEL: observaciones.', 'text'],
 ]
 
-export default function ValidacionPlanillaView({ user }) {
+// Puerta de acceso aparte del componente con hooks: un `return` antes de los
+// hooks tira React #300 ("Esta pantalla se cayó") si el usuario cambia montado.
+export default function ValidacionPlanillaView(props) {
+  const { user } = props
   if (!ALLOWED.includes(user?.id) && user?.rol !== 'superadmin') {
     return <div style={{ padding: 40, textAlign: 'center', color: C.red, fontWeight: 700 }}>⛔ Acceso restringido — solo Jose y Majo</div>
   }
+  return <ValidacionPlanillaInner {...props} />
+}
+
+function ValidacionPlanillaInner({ user }) {
   const [rows, setRows] = useState([]); const [emps, setEmps] = useState([]); const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState('todos'); const [soloRev, setSoloRev] = useState(false); const [q, setQ] = useState('')
   const [editId, setEditId] = useState(null); const [empQ, setEmpQ] = useState('')
