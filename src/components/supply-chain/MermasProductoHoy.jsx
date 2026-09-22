@@ -15,11 +15,15 @@ export default function MermasProductoHoy({ sucursalId }) {
     let vivo = true
     ;(async () => {
       const desde = new Date(`${today()}T00:00:00-06:00`).toISOString()
-      const { data } = await db.from('pos_mermas_producto')
-        .select('id, producto_nombre, cantidad, mesa_ref, anulado_por_nombre, respuesta_caja, respuesta_cocina, es_merma, created_at')
-        .eq('sucursal_id', sucursalId).gte('created_at', desde)
-        .order('created_at', { ascending: true })
-      if (vivo) setFilas(data || [])
+      // Si la consulta falla (permiso, red), el panel se oculta: nunca debe
+      // tumbar el conteo nocturno (pasó el 21-sep por un GRANT que faltaba).
+      try {
+        const { data, error } = await db.from('pos_mermas_producto')
+          .select('id, producto_nombre, cantidad, mesa_ref, anulado_por_nombre, respuesta_caja, respuesta_cocina, es_merma, created_at')
+          .eq('sucursal_id', sucursalId).gte('created_at', desde)
+          .order('created_at', { ascending: true })
+        if (vivo) setFilas(error ? [] : (data || []))
+      } catch (_) { if (vivo) setFilas([]) }
     })()
     return () => { vivo = false }
   }, [sucursalId])
