@@ -470,6 +470,10 @@ export default function KDSScreen({ user, onBack }) {
         ...c,
         nivel: comandaNivel(c.items),
         mixta: new Set(c.items.map(i => i.destino).filter(Boolean)).size > 1,
+        // El aviso del motorista se marca en todas las líneas de la cuenta, pero se
+        // lee con `some`: si una quedó sin actualizar, igual hay que verlo.
+        motoristaEspera: c.items.some(i => i.peya_motorista_espera),
+        motoristaAt:     c.items.map(i => i.peya_motorista_at).find(Boolean) || null,
       }))
       .sort((a, b) => new Date(a.recibido_at) - new Date(b.recibido_at))
   }
@@ -1005,6 +1009,20 @@ export default function KDSScreen({ user, onBack }) {
                         <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 3, opacity: .9 }}>
                           Decí si ya estaba hecho: si se bota, queda como merma.
                         </div>
+                      </div>
+                    )}
+
+                    {/* El motorista de PedidosYa ya está en la puerta. El cartel se
+                        enciende con SHOW_RIDER_WAITING_WARNING y se apaga solo al
+                        retirar; mientras esté, cuenta los minutos de espera. */}
+                    {comanda.nivel !== 'cancelado' && comanda.motoristaEspera && (
+                      <div className="kds-card-motorista">
+                        🛵 EL MOTORISTA ESTÁ ESPERANDO
+                        {comanda.motoristaAt && (
+                          <span className="kds-card-motorista-min">
+                            {Math.max(0, Math.floor((Date.now() - new Date(comanda.motoristaAt)) / 60000))} min
+                          </span>
+                        )}
                       </div>
                     )}
 
