@@ -191,6 +191,19 @@ export default function LoginScreen({ onLogin }) {
         onLogin(data);
         return;
       }
+      // Código de empleado nuevo (6 dígitos, se ve en "Mi equipo · PIN"):
+      // no es un usuario, solo sirve para marcar el protocolo de apertura de
+      // su sucursal. Se valida en el servidor (protocolo_codigos) y cuenta usos.
+      if (np.length === 6) {
+        const { data: cod } = await db.rpc('fn_protocolo_validar_codigo', { p_codigo: np });
+        if (cod?.ok && cod.store_code) {
+          onLogin({
+            id: null, nombre: cod.nombre || 'Empleado nuevo', apellido: '',
+            rol: 'empleado', store_code: cod.store_code, solo_apertura: true,
+          });
+          return;
+        }
+      }
       // No hubo match
       // Si el PIN ya alcanzó el máximo (6) → error definitivo
       // Si todavía es < 6 → el usuario probablemente NO va a teclear más (pasó el debounce)

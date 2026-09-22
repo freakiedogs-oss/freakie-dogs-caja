@@ -233,6 +233,25 @@ export default function App() {
   // Not logged in
   if (!user) return <UpdateGate><LoginScreen onLogin={setUser} /></UpdateGate>
 
+  // Entró con el código de empleado nuevo: solo ve la apertura de su sucursal,
+  // sin menú ni ninguna otra pantalla (no abre caja ni cobra).
+  if (user.solo_apertura) {
+    return (
+      <div className="app-layout">
+        <div className="main-content" style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #2b3344' }}>
+            <span style={{ fontSize: 13, color: '#9ca3af' }}>{user.nombre}</span>
+            <button onClick={handleLogout} style={{ background: 'none', border: '1px solid #2b3344', color: '#9ca3af', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 12.5 }}>Salir</button>
+          </div>
+          <Suspense fallback={<LoadingScreen />}>
+            <ProtocoloAperturaView user={user} />
+          </Suspense>
+        </div>
+        <Toast />
+      </div>
+    )
+  }
+
   // Render current screen content
   const renderScreen = () => {
     switch (screen) {
