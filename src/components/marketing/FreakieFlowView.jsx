@@ -287,6 +287,47 @@ function EditModal({ objetivo, onClose, onSave, onDelete }) {
   )
 }
 
+function RecordatoriosBanner({ items, onAdd, onRemove }) {
+  const [nuevo, setNuevo] = useState('')
+  const add = () => {
+    if (!nuevo.trim()) return
+    onAdd(nuevo.trim())
+    setNuevo('')
+  }
+  return (
+    <div style={{
+      background: 'linear-gradient(180deg, rgba(230,57,70,0.10), rgba(230,57,70,0.03))',
+      border: `1px solid ${RED}55`, borderRadius: 14, padding: '12px 14px', marginBottom: 16,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: items.length > 0 ? 8 : 6 }}>
+        <span style={{ fontSize: 15 }}>📌</span>
+        <span style={{ color: INK, fontWeight: 800, fontSize: 13 }}>Lineamientos y nuevos procesos</span>
+      </div>
+      {items.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          {items.map(r => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 0' }}>
+              <span style={{ color: RED, fontSize: 13, lineHeight: 1.5 }}>•</span>
+              <div style={{ flex: 1, fontSize: 12.5, color: INK, lineHeight: 1.5 }}>{r.texto}</div>
+              <button onClick={() => onRemove(r.id)} title="Quitar" style={{ background: 'none', border: 'none', color: '#999', fontSize: 15, lineHeight: 1, cursor: 'pointer', padding: '0 2px', flexShrink: 0 }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          style={{ background: '#151516', border: `1px solid ${LINE}`, borderRadius: 8, padding: '7px 10px', color: INK, fontSize: 12.5, flex: 1 }}
+          value={nuevo}
+          onChange={e => setNuevo(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          placeholder="Agregar recordatorio o nuevo lineamiento y Enter"
+        />
+        <button onClick={add} style={{ background: SURFACE_2, border: `1px solid ${LINE}`, color: INK, borderRadius: 8, padding: '0 12px', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>+</button>
+      </div>
+    </div>
+  )
+}
+
 function HistorialRow({ entry, onRestaurar }) {
   const meta = ACCION_META[entry.accion] || ACCION_META.editado
   const etapaAnt = entry.etapa_anterior ? ETAPAS[entry.etapa_anterior]?.label : null
@@ -323,6 +364,7 @@ export default function FreakieFlowView({ user }) {
   const toast = useToast()
   const [objetivos, setObjetivos] = useState([])
   const [historial, setHistorial] = useState([])
+  const [recordatorios, setRecordatorios] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('lunes') // 'lunes' | 'kanban' | 'historial'
   const [periodo, setPeriodo] = useState('semana') // 'semana' | 'mes' | 'todo'
@@ -342,7 +384,26 @@ export default function FreakieFlowView({ user }) {
     setHistorial(data || [])
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadData(); loadHistorial() }, [loadData, loadHistorial])
+  const loadRecordatorios = useCallback(async () => {
+    const { data, error } = await db.from('freakie_flow_recordatorios').select('*').order('orden', { ascending: true }).order('created_at', { ascending: true })
+    if (error) { toast.error('Error cargando recordatorios: ' + error.message); return }
+    setRecordatorios(data || [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadData(); loadHistorial(); loadRecordatorios() }, [loadData, loadHistorial, loadRecordatorios])
+
+  const agregarRecordatorio = async (texto) => {
+    const { data, error } = await db.from('freakie_flow_recordatorios').insert({ texto, orden: recordatorios.length }).select().single()
+    if (error) { toast.error('Error: ' + error.message); return }
+    setRecordatorios(r => [...r, data])
+  }
+
+  const quitarRecordatorio = async (id) => {
+    const prev = recordatorios
+    setRecordatorios(r => r.filter(x => x.id !== id))
+    const { error } = await db.from('freakie_flow_recordatorios').delete().eq('id', id)
+    if (error) { toast.error('Error: ' + error.message); setRecordatorios(prev) }
+  }
 
   const logHistorial = async (entry) => {
     try {
@@ -490,18 +551,26 @@ export default function FreakieFlowView({ user }) {
       <h2 style={{ color: INK, margin: '0 0 4px' }}>📅 Freakie Flow</h2>
       <p style={{ color: MUTED, fontSize: 13, margin: '0 0 16px' }}>Puntos de contacto con el cliente en desarrollo — la reunión de los lunes de Marketing.</p>
 
+      <RecordatoriosBanner items={recordatorios} onAdd={agregarRecordatorio} onRemove={quitarRecordatorio} />
+
       {/* Roster del equipo */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 16 }}>
         {TEAM_ORDER.map(k => {
           const t = TEAM[k]
+          const activas = porPersona[k]
+          const maxActivas = Math.max(1, ...Object.values(porPersona))
+          const pct = Math.round((activas / maxActivas) * 100)
           return (
             <div key={k} style={{ background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <Avatar who={k} size={22} />
                 <div style={{ color: INK, fontWeight: 700, fontSize: 12.5 }}>{t.name}</div>
               </div>
-              <div style={{ color: MUTED, fontSize: 10.5, lineHeight: 1.3, marginBottom: 4 }}>{t.role}</div>
-              <div style={{ color: t.color, fontSize: 11, fontWeight: 700 }}>{porPersona[k]} tareas activas</div>
+              <div style={{ color: MUTED, fontSize: 10.5, lineHeight: 1.3, marginBottom: 6 }}>{t.role}</div>
+              <div style={{ color: t.color, fontSize: 11, fontWeight: 700, marginBottom: 4 }}>{activas} tareas activas</div>
+              <div style={{ height: 6, borderRadius: 999, background: LINE, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: t.color, borderRadius: 999 }} />
+              </div>
             </div>
           )
         })}
