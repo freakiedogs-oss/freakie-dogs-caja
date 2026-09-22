@@ -3,8 +3,8 @@ import { db } from '../../supabase'
 import { STORES_SHORT, today, shiftDate } from '../../config'
 import InfoTip from '../ui/InfoTip'
 import {
-  auditarHoja, resumenHoja, agruparPorCategoria, aPayload,
-  aEmpaques, fmtCant, decirEnEmpaques, vacio,
+  auditarHoja, auditarSemana, resumenHoja, agruparPorCategoria, aPayload,
+  aEmpaques, fmtCant, fmtUSD, decirEnEmpaques, vacio, semanasRecientes, n,
 } from './criticosConteo'
 
 /**
@@ -14,7 +14,8 @@ import {
  * Inventario v1A): 15 productos críticos, una hoja por sucursal y día.
  *
  * Lo que digita Saúl:
- *   CID        apertura: paquetes enteros + unidades sueltas
+ *   CID        apertura: paquetes enteros + unidades sueltas. Se arrastra
+ *              solo del cierre real de ayer; si no lo pisa, el cálculo usa eso
  *   Se pidió   lo que entró, SIEMPRE en paquetes completos
  *   Desc AM/PM bodega de sucursal → cocina. Control interno; NO es la venta
  *   TPS Final  paquetes enteros que quedan en bodega
@@ -30,6 +31,12 @@ import {
  *
  * Una diferencia NEGATIVA es la que duele: se fue producto del físico que
  * ninguna venta descontó.
+ *
+ * Tiene dos modos: **Día** (captura) y **Semana** (sólo lectura, sumatorias
+ * de la semana que se elija en el desplegable). La semana NO resta los
+ * totales entre sí —cada día tiene su propia apertura, sumar 7 aperturas no
+ * significa nada—: `fn_criticos_semana` cierra la ecuación día por día y
+ * suma sólo los días completos.
  *
  * La aritmética vive en `criticosConteo.js` para poder probarla sin base
  * (`node scripts/test-criticos.mjs`).
@@ -103,20 +110,117 @@ function Casilla({ item, campo, valores, onChange, disabled, sugerido, ancho = 6
 /* El CID es la ÚNICA columna con dos casillas: la apertura son paquetes
    cerrados más lo suelto del paquete abierto. Al cerrar, esas dos mitades
    viven en columnas propias (TPS Final y En Línea), tal como en el Excel. */
-function CeldaCid({ item, valores, onChange, disabled, sugerido }) {
+function CeldaCid({ item, valores, onChange, disabled, arrastrado }) {
   return (
     <div style={{ display: 'flex', gap: 3, alignItems: 'center', justifyContent: 'flex-end' }}>
       <Casilla item={item} campo="cid_enteros" valores={valores} onChange={onChange}
-        disabled={disabled} sugerido={sugerido} ancho={item.fraccionado ? 46 : 62}
-        titulo={item.unidad_conteo} />
-      {item.fraccionado && (
-        <>
-          <span style={{ color: c.textOff, fontSize: 11 }}>+</span>
-          <Casilla item={item} campo="cid_sueltas" valores={valores} onChange={onChange}
-            disabled={disabled} ancho={46} titulo={item.unidad_suelta} />
-        </>
+        disabled={disabled} sugerido={item.cid_sug_enteros} ancho={46}
+        titulo={`Paquetes al abrir (${item.unidad_conteo})`} />
+      <span style={{ color: c.textOff, fontSize: 11 }}>+</span>
+      <Casilla item={item} campo="cid_sueltas" valores={valores} onChange={onChange}
+        disabled={disabled} sugerido={item.cid_sug_sueltas} ancho={46}
+        titulo={`Unidades sueltas al abrir (${item.unidad_suelta || 'sueltas'})`} />
+      {/* Marca que la apertura NO se digitó: viene del cierre de ayer y el
+          cálculo la está usando igual. Sin esto, un CID en gris se lee como
+          "vacío" y nadie entendería de dónde sale el teórico. */}
+      <span style={{ width: 10, fontSize: 10, color: arrastrado ? c.blue : 'transparent' }}
+            title={arrastrado ? 'Arrastrado del cierre de ayer' : ''}>↩</span>
+    </div>
+  )
+}
+
+/* ── KPIs ──────────────────────────────────────────────────────────────── */
+function Kpi({ label, valor, sub, color, tip }) {
+  return (
+    <div style={{ ...cardStyle, marginBottom: 0, flex: '1 1 140px', minWidth: 140, padding: 12 }}>
+      <div style={{ fontSize: 10, color: c.textDim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        {label}{tip && <InfoTip text={tip} />}
+      </div>
+      <div style={{ fontSize: 21, fontWeight: 800, color: color || c.text, marginTop: 3 }}>{valor}</div>
+      {sub && <div style={{ fontSize: 10.5, color: c.textDim, marginTop: 2 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function FilaKpis({ r, dias, diasPosibles }) {
+  const colDif = Math.abs(r.difUsd) < 1 ? c.green : r.difUsd < 0 ? c.red : c.yellow
+  return (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+      <Kpi label="Descuadre" valor={fmtUSD(r.difUsd)} color={colDif}
+        sub={r.pctSobreVenta == null ? '—' : `${r.pctSobreVenta > 0 ? '+' : ''}${r.pctSobreVenta.toFixed(1)}% de la venta`}
+        tip="La diferencia de todos los productos contados, valorizada al costo del insumo. Negativo = se fue producto que ninguna venta descontó." />
+      <Kpi label="Faltante" valor={fmtUSD(r.faltanteUsd)} color={r.faltanteUsd < -0.005 ? c.red : c.textDim}
+        tip="Sólo la parte negativa: producto que salió del inventario sin venta que lo respalde. Es la fuga, sin compensar con los sobrantes." />
+      <Kpi label="Sobrante" valor={fmtUSD(r.sobranteUsd)} color={r.sobranteUsd > 0.005 ? c.yellow : c.textDim}
+        tip="Sólo la parte positiva: la venta descargó más de lo que realmente se usó. Suele ser receta que descuenta de más o un cierre inflado." />
+      <Kpi label="Venta en críticos" valor={fmtUSD(r.ventaUsd)} color={c.cyan}
+        tip="Lo que estos 15 productos descargaron por venta, valorizado al costo. Es el denominador del porcentaje." />
+      <Kpi label="Contadas" valor={`${r.completas}/${r.total}`}
+        color={r.completas === r.total ? c.green : r.completas === 0 ? c.textOff : c.yellow}
+        sub={dias != null ? `${dias}/${diasPosibles} días con hoja` : undefined}
+        tip="Filas con apertura y cierre. Las que no, no entran en ningún número de arriba." />
+      {r.peor && (
+        <Kpi label="Peor descuadre" valor={fmtUSD(r.peor.aud.difUsd)}
+          color={n(r.peor.aud.difUsd) < 0 ? c.red : c.yellow} sub={r.peor.nombre}
+          tip="El producto que más plata mueve en la diferencia, que no es el que más unidades mueve." />
       )}
     </div>
+  )
+}
+
+/* La semana es sólo lectura: se ve qué pasó, no se digita. Las aperturas y
+   los cierres no se muestran porque son de días distintos y sumarlos no
+   significa nada — lo que sí suma es la venta, el pedido, las descargas y la
+   diferencia, que `fn_criticos_semana` cierra día por día. */
+function TablaSemana({ filas }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+      <thead>
+        <tr>
+          <th style={{ ...th, textAlign: 'left' }}>Producto</th>
+          <th style={{ ...th, textAlign: 'left' }}>Presentación</th>
+          <th style={{ ...th, textAlign: 'right' }}>Días<InfoTip text="Días de la semana con apertura y cierre. Sólo esos entran en la diferencia: un día sin contar no suma cero, se omite." /></th>
+          <th style={{ ...th, textAlign: 'right', color: c.cyan }}>Venta</th>
+          <th style={{ ...th, textAlign: 'right' }}>Se pidió</th>
+          <th style={{ ...th, textAlign: 'right', color: c.orange }}>Desc. bodega</th>
+          <th style={{ ...th, textAlign: 'right' }}>Dif.</th>
+          <th style={{ ...th, textAlign: 'right' }}>Dif. $</th>
+          <th style={{ ...th, textAlign: 'right' }}>%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filas.map(f => {
+          const a = f.aud
+          const col = COLOR_ESTADO[a.estado]
+          const emp = (q) => (q == null ? '—' : fmtCant(aEmpaques(f, q)))
+          return (
+            <tr key={f.item_id} style={{ borderTop: '1px solid #222' }}>
+              <td style={{ ...td, whiteSpace: 'normal', maxWidth: 200 }}>
+                <span style={{ color: col, marginRight: 6 }}>●</span>{f.nombre}
+              </td>
+              <td style={{ ...td, color: c.textDim, fontSize: 11 }}>{f.unidad_conteo}</td>
+              <td style={{ ...td, textAlign: 'right', color: a.diasCompletos ? c.text : c.textOff }}>
+                {a.diasCompletos || '—'}
+              </td>
+              <td style={{ ...td, textAlign: 'right', color: c.cyan, fontWeight: 700 }}>{emp(a.venta)}</td>
+              <td style={{ ...td, textAlign: 'right', color: c.textDim }}>{emp(a.pedido)}</td>
+              <td style={{ ...td, textAlign: 'right', color: c.textDim }}>
+                {a.descargas ? fmtCant(a.descargas) : '—'}
+              </td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: col }}>
+                {a.diferencia == null ? '—' : (a.diferencia > 0 ? '+' : '') + fmtCant(aEmpaques(f, a.diferencia))}
+              </td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: col }}>
+                {a.difUsd == null ? '—' : fmtUSD(a.difUsd)}
+              </td>
+              <td style={{ ...td, textAlign: 'right', fontSize: 11, color: col }}>
+                {a.pct == null ? '—' : (a.pct > 0 ? '+' : '') + a.pct.toFixed(1) + '%'}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
@@ -125,7 +229,11 @@ export default function ConteoCriticosTab({ user }) {
   const [store, setStore] = useState(user?.store_code && SUCURSALES.includes(user.store_code)
     ? user.store_code : SUCURSALES[0])
   const [fecha, setFecha] = useState(hoy)
+  const [modo, setModo] = useState('dia')            // 'dia' (captura) | 'semana' (lectura)
+  const SEMANAS = useMemo(() => semanasRecientes(hoy, 10), [hoy])
+  const [semana, setSemana] = useState(SEMANAS[0])
   const [hoja, setHoja] = useState(null)
+  const [sem, setSem] = useState(null)
   const [valores, setValores] = useState({})
   const [notas, setNotas] = useState('')
   const [cargando, setCargando] = useState(false)
@@ -133,6 +241,16 @@ export default function ConteoCriticosTab({ user }) {
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
   const [sucio, setSucio] = useState(false)
+
+  const cargarSemana = useCallback(async () => {
+    setCargando(true); setError(''); setAviso('')
+    const { data, error: err } = await db.rpc('fn_criticos_semana', {
+      p_store_code: store, p_desde: semana.desde, p_hasta: semana.hasta,
+    })
+    if (err) { setError(err.message || 'No se pudo cargar la semana'); setSem(null) }
+    else setSem(data)
+    setCargando(false)
+  }, [store, semana])
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(''); setAviso('')
@@ -161,7 +279,8 @@ export default function ConteoCriticosTab({ user }) {
     setCargando(false)
   }, [store, fecha])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => { if (modo === 'dia') cargar(); else cargarSemana() },
+            [modo, cargar, cargarSemana])
 
   /* Cambiar de día o de sucursal con cambios sin guardar los perdería. Se
      avisa antes en vez de guardar solo: guardar una hoja a medio llenar la
@@ -186,9 +305,15 @@ export default function ConteoCriticosTab({ user }) {
     return auditarHoja(items)
   }, [hoja, valores])
 
-  const grupos = useMemo(() => agruparPorCategoria(filas), [filas])
-  const resumen = useMemo(() => resumenHoja(filas), [filas])
+  const filasSemana = useMemo(() => auditarSemana(sem?.items), [sem])
+  const enSemana = modo === 'semana'
+  const activas = enSemana ? filasSemana : filas
+
+  const grupos = useMemo(() => agruparPorCategoria(activas), [activas])
+  const resumen = useMemo(() => resumenHoja(activas), [activas])
   const notasConfig = useMemo(() => filas.filter(f => f.nota_config), [filas])
+  const diasConHoja = (sem?.dias || []).length
+  const recargar = () => (enSemana ? cargarSemana() : cargar())
 
   const guardar = async (cerrar = false) => {
     setGuardando(true); setError(''); setAviso('')
@@ -216,11 +341,28 @@ export default function ConteoCriticosTab({ user }) {
   }
 
   const exportar = () => {
+    if (enSemana) {
+      downloadCSV(`criticos_semana_${store}_${semana.desde}_${semana.hasta}.csv`, [
+        ['Categoría', 'Producto', 'Unidad de conteo', 'Días contados',
+         'Venta', 'Se pidió', 'Desc. bodega→cocina', 'Diferencia', 'Diferencia USD', '% dif', 'Estado'],
+        ...filasSemana.map(f => {
+          const a = f.aud
+          const e = (q) => (q == null ? '' : Number(aEmpaques(f, q).toFixed(4)))
+          return [
+            f.categoria, f.nombre, f.unidad_conteo, a.diasCompletos,
+            e(a.venta), e(a.pedido), a.descargas || '', e(a.diferencia),
+            a.difUsd == null ? '' : Number(a.difUsd.toFixed(2)),
+            a.pct == null ? '' : Number(a.pct.toFixed(2)), TEXTO_ESTADO[a.estado],
+          ]
+        }),
+      ])
+      return
+    }
     downloadCSV(`criticos_${store}_${fecha}.csv`, [
       ['Categoría', 'Producto', 'Presentación', 'Unidades derivadas', 'Unidad de conteo',
        'CID', 'Se pidió', 'Desc. AM (bodega→cocina)', 'Desc. PM (bodega→cocina)',
        'Venta del día', 'TPS Final', 'En línea',
-       'Cierre teórico', 'Cierre real', 'Diferencia', '% dif', 'Estado'],
+       'Cierre teórico', 'Cierre real', 'Diferencia', 'Diferencia USD', '% dif', 'Estado'],
       ...filas.map(f => {
         const a = f.aud
         const e = (q) => (q == null ? '' : Number(aEmpaques(f, q).toFixed(4)))
@@ -229,6 +371,7 @@ export default function ConteoCriticosTab({ user }) {
           e(a.cid), e(a.pedido), a.descargaAm ?? '', a.descargaPm ?? '',
           e(a.venta), e(a.tps), e(a.linea),
           e(a.teorico), e(a.real), e(a.diferencia),
+          a.difUsd == null ? '' : Number(a.difUsd.toFixed(2)),
           a.pct == null ? '' : Number(a.pct.toFixed(2)),
           TEXTO_ESTADO[a.estado],
         ]
@@ -242,20 +385,47 @@ export default function ConteoCriticosTab({ user }) {
     <div>
       {/* ── Filtros ── */}
       <div style={{ ...cardStyle, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <label style={{ fontSize: 11, color: c.textDim, fontWeight: 600 }}>
-          Día<br />
-          <input type="date" value={fecha} max={hoy}
-            onChange={e => cambiar(() => setFecha(e.target.value))}
-            style={{ background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, marginTop: 3 }} />
-        </label>
         <div style={{ display: 'flex', gap: 6 }}>
-          {[['Hoy', hoy], ['Ayer', shiftDate(hoy, -1)], ['Antier', shiftDate(hoy, -2)]].map(([lbl, f]) => (
-            <button key={lbl} onClick={() => cambiar(() => setFecha(f))}
-              style={{ ...btn, padding: '6px 10px', fontSize: 12, background: fecha === f ? c.blue : '#262626', color: fecha === f ? '#0a0a0a' : c.textDim }}>
+          {[['dia', '📝 Día'], ['semana', '📅 Semana']].map(([k, lbl]) => (
+            <button key={k} onClick={() => cambiar(() => setModo(k))}
+              style={{ ...btn, padding: '6px 10px', fontSize: 12, background: modo === k ? c.purple : '#262626', color: modo === k ? '#0a0a0a' : c.textDim }}>
               {lbl}
             </button>
           ))}
         </div>
+        <div style={{ width: 1, alignSelf: 'stretch', background: c.cardBorder }} />
+
+        {enSemana ? (
+          <label style={{ fontSize: 11, color: c.textDim, fontWeight: 600 }}>
+            Semana<br />
+            <select value={semana.desde}
+              onChange={e => { const w = SEMANAS.find(x => x.desde === e.target.value); if (w) setSemana(w) }}
+              style={{ background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, marginTop: 3, minWidth: 210 }}>
+              {SEMANAS.map(w => (
+                <option key={w.desde} value={w.desde}>
+                  {w.etiqueta}{w.etiqueta.startsWith('Semana') || w.etiqueta === 'Esta semana' ? ` · ${w.rango}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <>
+            <label style={{ fontSize: 11, color: c.textDim, fontWeight: 600 }}>
+              Día<br />
+              <input type="date" value={fecha} max={hoy}
+                onChange={e => cambiar(() => setFecha(e.target.value))}
+                style={{ background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, marginTop: 3 }} />
+            </label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['Hoy', hoy], ['Ayer', shiftDate(hoy, -1)], ['Antier', shiftDate(hoy, -2)]].map(([lbl, f]) => (
+                <button key={lbl} onClick={() => cambiar(() => setFecha(f))}
+                  style={{ ...btn, padding: '6px 10px', fontSize: 12, background: fecha === f ? c.blue : '#262626', color: fecha === f ? '#0a0a0a' : c.textDim }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         <div style={{ width: 1, alignSelf: 'stretch', background: c.cardBorder }} />
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {SUCURSALES.map(code => (
@@ -270,20 +440,24 @@ export default function ConteoCriticosTab({ user }) {
       {error && <div style={{ ...cardStyle, borderColor: c.red, color: c.red, fontSize: 13 }}>⚠️ {error}</div>}
       {aviso && <div style={{ ...cardStyle, borderColor: c.green, color: c.green, fontSize: 13 }}>✓ {aviso}</div>}
 
+      {!cargando && <FilaKpis r={resumen} dias={enSemana ? diasConHoja : null} diasPosibles={7} />}
+
       {/* ── Resumen ── */}
       <div style={{ ...cardStyle, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 12.5 }}>
-        <span style={{ fontWeight: 700 }}>{STORES_SHORT[store]} · {fecha}</span>
+        <span style={{ fontWeight: 700 }}>
+          {STORES_SHORT[store]} · {enSemana ? semana.rango : fecha}
+        </span>
         <span style={{ color: c.green }}>✓ {resumen.ok} cuadran</span>
         <span style={{ color: c.yellow }}>▲ {resumen.aviso} a revisar</span>
         <span style={{ color: c.red }}>✕ {resumen.alerta} descuadres</span>
         <span style={{ color: c.textOff }}>○ {resumen.sin_datos} sin contar</span>
         <div style={{ flex: 1 }} />
-        {cab?.ingresado_por_nombre && (
+        {!enSemana && cab?.ingresado_por_nombre && (
           <span style={{ color: c.textDim, fontSize: 11 }}>Última carga: {cab.ingresado_por_nombre}</span>
         )}
-        {cerrada && <span style={{ color: c.cyan, fontWeight: 700 }}>🔒 Cerrada</span>}
+        {!enSemana && cerrada && <span style={{ color: c.cyan, fontWeight: 700 }}>🔒 Cerrada</span>}
         <button onClick={exportar} style={{ ...btn, background: '#2a2a2a', color: c.text }}>⬇ CSV</button>
-        <button onClick={cargar} disabled={cargando} style={{ ...btn, background: '#2a2a2a', color: c.text }}>↻</button>
+        <button onClick={recargar} disabled={cargando} style={{ ...btn, background: '#2a2a2a', color: c.text }}>↻</button>
       </div>
 
       {/* Discrepancias entre la hoja de papel y el catálogo. Se muestran para
@@ -309,6 +483,7 @@ export default function ConteoCriticosTab({ user }) {
             <span style={{ marginRight: 8 }}>{CAT_ICONO[g.categoria] || '📦'}</span>{g.categoria}
           </div>
           <div style={{ overflowX: 'auto' }}>
+            {enSemana ? <TablaSemana filas={g.filas} /> : (
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
               <thead>
                 <tr>
@@ -346,7 +521,7 @@ export default function ConteoCriticosTab({ user }) {
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
                         <CeldaCid item={f} valores={vals} onChange={onChange}
-                          disabled={cerrada} sugerido={aEmpaques(f, f.cid_sugerido)} />
+                          disabled={cerrada} arrastrado={a.cidFuente === 'arrastrado'} />
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
                         <Casilla item={f} campo="pedido_enteros" valores={vals} onChange={onChange}
@@ -390,12 +565,13 @@ export default function ConteoCriticosTab({ user }) {
                 })}
               </tbody>
             </table>
+            )}
           </div>
         </div>
       ))}
 
       {/* ── Guardar ── */}
-      {!cargando && (
+      {!cargando && !enSemana && (
         <div style={{ ...cardStyle, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label style={{ flex: '1 1 280px', fontSize: 11, color: c.textDim, fontWeight: 600 }}>
             Notas de la hoja<br />
@@ -422,8 +598,20 @@ export default function ConteoCriticosTab({ user }) {
         </div>
       )}
 
+      {enSemana ? (
+        <div style={{ fontSize: 11, color: c.textOff, marginTop: 4, lineHeight: 1.6 }}>
+          La diferencia de la semana <b>no</b> es la resta de los totales: cada día tiene su propia
+          apertura, y sumar siete aperturas no significa nada. Se cierra la ecuación
+          <b> día por día</b> y se suman sólo los días con apertura y cierre — por eso la columna
+          <b> Días</b>: un descuadre de la semana sobre 2 de 7 días contados no se lee igual que sobre 7.
+          La <b>apertura de cada día se arrastra del cierre del día anterior</b> cuando no se digitó,
+          y si falta un día en medio la cadena se corta ahí en vez de arrastrar sobre un hueco.
+        </div>
+      ) : (
       <div style={{ fontSize: 11, color: c.textOff, marginTop: 4, lineHeight: 1.6 }}>
         <b>Teórico = CID + Se pidió − Venta del día</b> · <b>Real = TPS Final + En línea</b>.
+        El <b>CID se arrastra solo</b> del cierre de ayer (marcado con <b style={{ color: c.blue }}>↩</b>);
+        si lo digitás, manda lo tuyo.
         La <b style={{ color: c.cyan }}>venta del día</b> sale del kardex que escribe el POS al cobrar, ya con
         combos y modificadores resueltos. Las columnas <b style={{ color: c.orange }}>Desc. AM/PM</b> son el
         control interno de bodega a cocina: se guardan pero no entran en el cálculo.
@@ -432,6 +620,7 @@ export default function ConteoCriticosTab({ user }) {
         más de lo que realmente se usó. Una celda vacía no es cero: la fila queda <i>sin contar</i> y no
         entra en el veredicto.
       </div>
+      )}
     </div>
   )
 }

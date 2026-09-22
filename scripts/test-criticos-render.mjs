@@ -52,7 +52,6 @@ const HOJA = {
       ],
       "venta_dia": 336,
       "pedido_sistema": 400,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -61,7 +60,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 0.7168,
+      "cid_sug_enteros": 3,
+      "cid_sug_sueltas": 5
     },
     {
       "item_id": "it2",
@@ -87,7 +89,6 @@ const HOJA = {
       ],
       "venta_dia": 3.08,
       "pedido_sistema": 5,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -96,7 +97,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 8.25,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it3",
@@ -108,9 +112,9 @@ const HOJA = {
       "unidad_conteo": "Bandeja de 200 lascas",
       "unidad_stock": "paquete",
       "factor": 1,
-      "fraccionado": false,
-      "unidad_suelta": null,
-      "factor_suelta": null,
+      "fraccionado": true,
+      "unidad_suelta": "lascas",
+      "factor_suelta": 0.005,
       "nota_config": "La hoja dice \"Caja / *Libras\"; el kardex lo mueve por BANDEJA de 200 lascas.",
       "productos": [
         {
@@ -122,7 +126,6 @@ const HOJA = {
       ],
       "venta_dia": 1.4609,
       "pedido_sistema": 2,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -131,7 +134,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 3.22,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it4",
@@ -143,9 +149,9 @@ const HOJA = {
       "unidad_conteo": "Bolsa de 5 libras",
       "unidad_stock": "bolsa",
       "factor": 1,
-      "fraccionado": false,
-      "unidad_suelta": null,
-      "factor_suelta": null,
+      "fraccionado": true,
+      "unidad_suelta": "libras",
+      "factor_suelta": 0.2,
       "nota_config": null,
       "productos": [
         {
@@ -157,7 +163,6 @@ const HOJA = {
       ],
       "venta_dia": 2.1563,
       "pedido_sistema": 3,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -166,7 +171,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 11.5775,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it5",
@@ -175,12 +183,12 @@ const HOJA = {
       "nombre": "Queso P Freir",
       "presentacion": "Paquete",
       "unidades_derivadas": "25 Bolsitas",
-      "unidad_conteo": "Libra",
+      "unidad_conteo": "Paquete de 25 bolsitas",
       "unidad_stock": "lb",
-      "factor": 1,
-      "fraccionado": false,
-      "unidad_suelta": null,
-      "factor_suelta": null,
+      "factor": 7.5,
+      "fraccionado": true,
+      "unidad_suelta": "bolsitas",
+      "factor_suelta": 0.3,
       "nota_config": "El kardex lo mueve en LIBRAS y el producto no tiene presentacion cargada.",
       "productos": [
         {
@@ -192,7 +200,6 @@ const HOJA = {
       ],
       "venta_dia": 7.2,
       "pedido_sistema": 0,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -201,7 +208,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 3.903,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it6",
@@ -227,7 +237,6 @@ const HOJA = {
       ],
       "venta_dia": 0.8732,
       "pedido_sistema": 0,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -236,7 +245,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 3.45,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it7",
@@ -248,9 +260,9 @@ const HOJA = {
       "unidad_conteo": "Bolsa de 2 libras",
       "unidad_stock": "bolsa",
       "factor": 1,
-      "fraccionado": false,
-      "unidad_suelta": null,
-      "factor_suelta": null,
+      "fraccionado": true,
+      "unidad_suelta": "libras",
+      "factor_suelta": 0.5,
       "nota_config": "La hoja dice bol de 2.25 libras; el catalogo lo tiene como bolsa de 2 libras.",
       "productos": [
         {
@@ -262,7 +274,6 @@ const HOJA = {
       ],
       "venta_dia": 2.625,
       "pedido_sistema": 8,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -271,7 +282,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 3.4484,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it8",
@@ -297,7 +311,6 @@ const HOJA = {
       ],
       "venta_dia": 11.2057,
       "pedido_sistema": 24,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -306,7 +319,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 2.4476,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it9",
@@ -318,9 +334,9 @@ const HOJA = {
       "unidad_conteo": "Bolsa de 5 libras",
       "unidad_stock": "libra",
       "factor": 5,
-      "fraccionado": false,
-      "unidad_suelta": null,
-      "factor_suelta": null,
+      "fraccionado": true,
+      "unidad_suelta": "libras",
+      "factor_suelta": 1,
       "nota_config": "La hoja anota la caja de 6 bolsas; aca se cuenta POR BOLSA (5 lb).",
       "productos": [
         {
@@ -332,7 +348,6 @@ const HOJA = {
       ],
       "venta_dia": 0.7,
       "pedido_sistema": 150,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -341,7 +356,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 1.2667,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it10",
@@ -353,9 +371,9 @@ const HOJA = {
       "unidad_conteo": "Bolsa de 5.5 libras",
       "unidad_stock": "lb",
       "factor": 5.5,
-      "fraccionado": false,
-      "unidad_suelta": null,
-      "factor_suelta": null,
+      "fraccionado": true,
+      "unidad_suelta": "libras",
+      "factor_suelta": 1,
       "nota_config": "La hoja anota la caja de 4 bolsas; aca se cuenta POR BOLSA (5.5 lb).",
       "productos": [
         {
@@ -367,7 +385,6 @@ const HOJA = {
       ],
       "venta_dia": 2.9,
       "pedido_sistema": 16.5,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -376,7 +393,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 1.0035,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it11",
@@ -388,9 +408,9 @@ const HOJA = {
       "unidad_conteo": "Bolsa de 2.5 libras",
       "unidad_stock": "porcion",
       "factor": 7,
-      "fraccionado": false,
-      "unidad_suelta": null,
-      "factor_suelta": null,
+      "fraccionado": true,
+      "unidad_suelta": "porciones",
+      "factor_suelta": 1,
       "nota_config": "El kardex lo descarga en PORCIONES (7 por bolsa), no en libras.",
       "productos": [
         {
@@ -402,7 +422,6 @@ const HOJA = {
       ],
       "venta_dia": 6,
       "pedido_sistema": 0,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -411,7 +430,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 0.2002,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it12",
@@ -437,7 +459,6 @@ const HOJA = {
       ],
       "venta_dia": 2,
       "pedido_sistema": 0,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -446,7 +467,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 2.5,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it13",
@@ -472,7 +496,6 @@ const HOJA = {
       ],
       "venta_dia": 167,
       "pedido_sistema": 180,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -481,7 +504,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 0.3768,
+      "cid_sug_enteros": 5,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it14",
@@ -507,7 +533,6 @@ const HOJA = {
       ],
       "venta_dia": 7.3,
       "pedido_sistema": 10,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -516,7 +541,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 1.42,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     },
     {
       "item_id": "it15",
@@ -542,7 +570,6 @@ const HOJA = {
       ],
       "venta_dia": 0.1904,
       "pedido_sistema": 2,
-      "cid_sugerido": null,
       "cid_enteros": null,
       "cid_sueltas": null,
       "pedido_enteros": null,
@@ -551,7 +578,10 @@ const HOJA = {
       "tps_enteros": null,
       "linea_sueltas": null,
       "notas": null,
-      "guardado": false
+      "guardado": false,
+      "costo_unit": 6.93,
+      "cid_sug_enteros": null,
+      "cid_sug_sueltas": null
     }
   ]
 }
@@ -578,6 +608,7 @@ const stubs = {
           globalThis.__llamadas.push([fn, args])
           if (fn === 'fn_criticos_hoja') return { data: globalThis.__hoja, error: null }
           if (fn === 'fn_criticos_guardar') return { data: { ok:true, guardados: 2 }, error: null }
+          if (fn === 'fn_criticos_semana') return { data: globalThis.__semana, error: null }
           return { data: null, error: null }
         } }`, loader: 'js' }
       return { contents: `
@@ -601,6 +632,23 @@ const BUNDLE = path.join(ROOT, 'node_modules', `.criticos-render-${process.pid}.
 fs.writeFileSync(BUNDLE, out.outputFiles[0].text)
 
 globalThis.__hoja = HOJA
+// Semana sintética: 6 días contados, la carne con un faltante de 120 bolitas.
+globalThis.__semana = {
+  store_code: 'S004', sucursal: 'Paseo Venecia',
+  desde: '2026-09-14', hasta: '2026-09-20',
+  dias: ['2026-09-15','2026-09-16','2026-09-17','2026-09-18','2026-09-19','2026-09-20']
+          .map(f => ({ fecha: f, estado: 'abierto', filas: 15 })),
+  items: HOJA.items.map(i => ({
+    item_id: i.item_id, orden: i.orden, categoria: i.categoria, nombre: i.nombre,
+    unidad_conteo: i.unidad_conteo, unidad_stock: i.unidad_stock,
+    factor: i.factor, fraccionado: i.fraccionado,
+    unidad_suelta: i.unidad_suelta, factor_suelta: i.factor_suelta,
+    costo_unit: i.costo_unit,
+    venta: i.venta_dia * 6, pedido: i.pedido_sistema * 6, descargas: 12,
+    dias_completos: i.orden === 1 ? 6 : 0,
+    diferencia: i.orden === 1 ? -120 : null,
+  })),
+}
 globalThis.__llamadas = []
 
 // Capturar warnings de React como fallos.
@@ -637,10 +685,15 @@ chk(document.querySelectorAll('input[type=number]').length > 0,
 // Por fila: CID enteros, Se pidió, Desc AM, Desc PM, TPS Final, En línea = 6.
 // Los fraccionados suman UNA más: las sueltas del CID. Ninguna otra columna
 // lleva doble casilla — es la corrección de Saúl del 21-sep.
-const frac = HOJA.items.filter(i => i.fraccionado).length
-const esperadas = HOJA.items.length * 6 + frac
+// Desde el 22-sep el CID lleva paquete + unidades en TODAS las filas, así
+// que son 7 casillas parejas: CID(2) + Se pidió + Desc AM + Desc PM + TPS +
+// En línea. Ninguna fila queda con menos que otra.
+const esperadas = HOJA.items.length * 7
 chk(document.querySelectorAll('input[type=number]').length === esperadas,
-    `son exactamente ${esperadas} (15 filas × 6 + ${frac} fraccionados × 1 por las sueltas del CID)`)
+    `son exactamente ${esperadas} (15 filas × 7, iguales para todas)`)
+chk([...document.querySelectorAll('tbody tr')].every(
+      t => t.querySelectorAll('input[type=number]').length === 7),
+    'ninguna fila tiene menos casillas que otra')
 chk(txt.includes('Venecia'), 'el encabezado nombra la sucursal')
 chk(txt.includes('CID') && txt.includes('TPS Final') && txt.includes('En línea'),
     'están las columnas de la hoja')
@@ -664,7 +717,7 @@ function teclear(el, valor) {
 }
 const filaCarne = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Carne P Burguer'))
 const ins = filaCarne.querySelectorAll('input[type=number]')
-chk(ins.length === 7, `la carne (fraccionada) tiene 7 casillas, no 8 — dio ${ins.length}`)
+chk(ins.length === 7, `la carne tiene 7 casillas — dio ${ins.length}`)
 
 // CID 3 paquetes + 5 bolitas (65), TPS 2 paquetes (40), En línea 7 bolitas.
 // Con venta 336 y pedido 400:
@@ -696,6 +749,61 @@ const resumenTxt = document.getElementById('r').textContent
 chk(/✕ 1 descuadres/.test(resumenTxt), 'el resumen pasa a contar 1 descuadre')
 chk(/○ 14 sin contar/.test(resumenTxt), 'y deja 14 filas sin contar')
 chk(warnings.length === 0, 'seguimos sin warnings de React tras teclear')
+
+/* ── KPIs ─────────────────────────────────────────────────────────────── */
+console.log('\n═ KPIs en dinero ═\n')
+const kpiTxt = document.getElementById('r').textContent
+for (const k of ['DESCUADRE', 'FALTANTE', 'SOBRANTE', 'VENTA EN CRÍTICOS', 'CONTADAS'])
+  chk(kpiTxt.toUpperCase().includes(k), `está el KPI "${k}"`)
+// Con la carne en -4.1 paquetes = -82 bolitas x $0.7168
+chk(/-\$58\.78/.test(kpiTxt), 'el descuadre sale valorizado en -$58.78')
+chk(/PEOR DESCUADRE/i.test(kpiTxt) && kpiTxt.includes('Carne P Burguer'),
+    'y señala a la carne como el peor')
+
+/* ── El CID arrastrado da veredicto sin digitar la apertura ───────────── */
+console.log('\n═ El arrastre cierra la ecuación solo ═\n')
+const filaPan = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Pan Para Burguer'))
+const insPan = filaPan.querySelectorAll('input[type=number]')
+const antesPan = [...filaPan.querySelectorAll('td')].map(t => t.textContent.trim())
+chk(antesPan.every(t => t !== '—' || true) && antesPan.filter(t => t === '—').length >= 3,
+    'el pan arranca sin veredicto (falta el cierre)')
+// El pan tiene cierre de ayer (5 bolsas) pero NADIE digita el CID: sólo el TPS.
+await act(async () => { teclear(insPan[5], '3') })   // TPS Final = 3 bolsas
+const despuesPan = [...[...document.querySelectorAll('tr')]
+  .find(t => t.textContent.includes('Pan Para Burguer')).querySelectorAll('td')].map(t => t.textContent.trim())
+chk(!despuesPan.slice(-3).includes('—'),
+    `con sólo el TPS ya hay veredicto, porque el CID se arrastró (${despuesPan.slice(-4).join(' | ')})`)
+// 5 bolsas de ayer = 60 un; pedido 180; venta 167 → teórico 73 un = 6.08 bolsas
+// real = 3 bolsas = 36 un → dif = -37 un = -3.08 bolsas
+chk(despuesPan.includes('6.08'), 'teórico 6.08 bolsas, calculado sobre el cierre de ayer')
+chk(despuesPan.some(t => t === '-3.08'), 'y la diferencia −3.08 bolsas')
+
+/* ── Modo semana ──────────────────────────────────────────────────────── */
+console.log('\n═ Modo semana ═\n')
+const botonSemana = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Semana'))
+chk(!!botonSemana, 'está el botón de Semana')
+// Venimos de teclear, así que el guard de "cambios sin guardar" se dispara y
+// jsdom no implementa confirm(). Que salte es lo correcto — lo que la prueba
+// mide es lo de después, así que se contesta que sí.
+let preguntoAntesDeIrse = false
+dom.window.confirm = (m) => { preguntoAntesDeIrse = /sin guardar/i.test(m); return true }
+await act(async () => { botonSemana.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
+await act(async () => { await new Promise(r => setTimeout(r, 30)) })
+
+chk(preguntoAntesDeIrse, 'avisa de los cambios sin guardar antes de cambiar de modo')
+chk(globalThis.__llamadas.some(([f]) => f === 'fn_criticos_semana'), 'al cambiar de modo llama a fn_criticos_semana')
+const semTxt = document.getElementById('r').textContent
+const sel = document.querySelector('select')
+chk(!!sel, 'hay un desplegable de semanas')
+chk(sel && sel.options.length === 10, `con 10 semanas preseleccionadas (dio ${sel?.options.length})`)
+chk(sel.options[0].textContent.includes('Esta semana'), 'la primera dice "Esta semana"')
+chk(document.querySelectorAll('input[type=number]').length === 0,
+    'la semana es SÓLO LECTURA: no hay ninguna casilla de captura')
+chk(/Días/i.test(semTxt) && /Dif\. \$/i.test(semTxt), 'la tabla semanal trae Días y Dif. $')
+chk(/-\$86\.02/.test(semTxt), 'la diferencia de la semana sale en dinero (−120 × $0.7168)')
+chk(/6\/7 días con hoja/.test(semTxt), 'el KPI dice cuántos días de la semana tienen hoja')
+chk(!semTxt.includes('Guardar'), 'y no se ofrece guardar nada')
+chk(warnings.length === 0, 'sin warnings de React en todo el recorrido')
 
 console.log('\n' + '─'.repeat(56))
 console.log(fallos === 0 ? `✓ ${n} comprobaciones OK` : `✗ ${fallos} de ${n} fallaron`)

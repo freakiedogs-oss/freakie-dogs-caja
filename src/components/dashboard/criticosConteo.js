@@ -25,7 +25,8 @@
                 inflado.
 
    ── Las columnas, como las llena Saúl ──────────────────────────────────
-     CID        apertura: paquetes enteros + unidades sueltas
+     CID        apertura: paquetes enteros + unidades sueltas. Se arrastra
+                solo del cierre de ayer (TPS Final + En Línea de ese día)
      Se pidió   lo que entró ese día, SIEMPRE en paquetes completos
      Desc AM/PM movimiento bodega de sucursal → cocina. CONTROL INTERNO que
                 Saúl digita a mano: no es la venta y NO entra en la ecuación
@@ -89,7 +90,17 @@ export function pisoTolerancia(item) {
 
 /* ── La auditoría de una fila ──────────────────────────────────────────── */
 export function auditar(item) {
-  const cid   = aStock(item, item.cid_enteros, item.cid_sueltas)
+  /* El CID se arrastra del cierre REAL de ayer (su TPS Final y su En Línea)
+     igual que "Se pidió" se arrastra del kardex: el sistema lo propone y, si
+     Saúl no escribe nada encima, el cálculo lo usa. Así la diferencia se va
+     contabilizando día a día sin tener que redigitar la apertura cada mañana.
+     Si ayer no se contó, no hay sugerencia y la fila queda sin veredicto. */
+  const cidDigitado = aStock(item, item.cid_enteros, item.cid_sueltas)
+  const cidSugerido = aStock(item, item.cid_sug_enteros, item.cid_sug_sueltas)
+  const cid = cidDigitado != null ? cidDigitado : cidSugerido
+  const cidFuente = cidDigitado != null ? 'digitado' : (cidSugerido != null ? 'arrastrado' : null)
+  const cidDifiere = cidDigitado != null && cidSugerido != null &&
+    Math.abs(cidDigitado - cidSugerido) > 0.0005
   const tps   = paquetesAStock(item, item.tps_enteros)
   const linea = sueltasAStock(item, item.linea_sueltas)
   const pedidoDigitado = paquetesAStock(item, item.pedido_enteros)
@@ -128,10 +139,18 @@ export function auditar(item) {
     ? (diferencia / venta) * 100
     : null
 
+  /* Lo que el descuadre significa en dinero, al costo del insumo. Es el
+     número que hace accionable la pantalla: "faltan 4 paquetes" no mueve a
+     nadie, "faltan $47" sí. */
+  const costoUnit = n(item.costo_unit)
+  const difUsd = diferencia == null ? null : diferencia * costoUnit
+  const ventaUsd = venta * costoUnit
+
   return {
-    cid, pedido, pedidoDigitado, pedidoSistema, pedidoFuente, pedidoDifiere,
+    cid, cidDigitado, cidSugerido, cidFuente, cidDifiere,
+    pedido, pedidoDigitado, pedidoSistema, pedidoFuente, pedidoDifiere,
     tps, linea, venta, descargaAm, descargaPm, descargas,
-    real, teorico, consumoFisico, diferencia, pct,
+    real, teorico, consumoFisico, diferencia, pct, costoUnit, difUsd, ventaUsd,
     completa: hayApertura && hayCierre,
     estado: estadoFila({ diferencia, pct, item }),
   }
@@ -163,12 +182,84 @@ export function auditarHoja(items) {
 
 /** Resumen de cabecera: cuántas filas cuadran, cuántas faltan por contar. */
 export function resumenHoja(filas) {
-  const r = { total: filas.length, ok: 0, aviso: 0, alerta: 0, sin_datos: 0, completas: 0 }
+  const r = {
+    total: filas.length, ok: 0, aviso: 0, alerta: 0, sin_datos: 0, completas: 0,
+    difUsd: 0, faltanteUsd: 0, sobranteUsd: 0, ventaUsd: 0, peor: null,
+  }
   for (const f of filas) {
     r[f.aud.estado] = (r[f.aud.estado] || 0) + 1
-    if (f.aud.completa) r.completas++
+    r.ventaUsd += n(f.aud.ventaUsd)
+    if (!f.aud.completa) continue
+    r.completas++
+    const d = n(f.aud.difUsd)
+    r.difUsd += d
+    if (d < 0) r.faltanteUsd += d; else r.sobranteUsd += d
+    /* El peor descuadre es el de más PLATA, no el de más unidades: 3 bolsas
+       de chili pesan más que 30 bolitas de carne. */
+    if (r.peor == null || Math.abs(d) > Math.abs(n(r.peor.aud.difUsd))) r.peor = f
   }
+  /* Merma implícita sobre la venta: cuánto del costo vendido se fue sin que
+     una venta lo descontara. Es el food cost oculto de estos 15 productos. */
+  r.pctSobreVenta = r.ventaUsd > 0.005 ? (r.difUsd / r.ventaUsd) * 100 : null
   return r
+}
+
+/* ── Sumatorias de la semana ────────────────────────────────────────────
+   `fn_criticos_semana` ya cierra la ecuación DÍA POR DÍA y suma sólo los
+   días completos: sumar 7 aperturas y 7 cierres y restarlos no significa
+   nada, porque cada día tiene su propia apertura. Acá sólo se valoriza. */
+export function auditarSemana(items) {
+  return (items || []).map(it => {
+    const costoUnit = n(it.costo_unit)
+    const dif = it.diferencia == null ? null : n(it.diferencia)
+    const venta = n(it.venta)
+    const pct = (dif != null && Math.abs(venta) > 0.0005) ? (dif / venta) * 100 : null
+    return {
+      ...it,
+      aud: {
+        venta, pedido: n(it.pedido), descargas: n(it.descargas),
+        diferencia: dif, pct, costoUnit,
+        difUsd: dif == null ? null : dif * costoUnit,
+        ventaUsd: venta * costoUnit,
+        diasCompletos: n(it.dias_completos),
+        completa: dif != null,
+        estado: dif == null ? 'sin_datos' : estadoFila({ diferencia: dif, pct, item: it }),
+      },
+    }
+  })
+}
+
+/** Las semanas del selector: lunes a domingo, de la más reciente hacia atrás. */
+export function semanasRecientes(hoyIso, cuantas = 10) {
+  const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+  const d = new Date(hoyIso + 'T12:00:00')
+  // getDay(): 0 = domingo. El lunes de esta semana está a (día+6)%7 días atrás.
+  const lunes = new Date(d)
+  lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  const iso = (x) => x.toISOString().slice(0, 10)
+  const out = []
+  for (let i = 0; i < cuantas; i++) {
+    const a = new Date(lunes); a.setDate(lunes.getDate() - 7 * i)
+    const b = new Date(a); b.setDate(a.getDate() + 6)
+    const mismoMes = a.getMonth() === b.getMonth()
+    out.push({
+      desde: iso(a), hasta: iso(b),
+      etiqueta: i === 0 ? 'Esta semana' : i === 1 ? 'Semana pasada'
+        : mismoMes ? `${a.getDate()}–${b.getDate()} ${MES[b.getMonth()]}`
+                   : `${a.getDate()} ${MES[a.getMonth()]} – ${b.getDate()} ${MES[b.getMonth()]}`,
+      rango: mismoMes ? `${a.getDate()}–${b.getDate()} ${MES[b.getMonth()]}`
+                      : `${a.getDate()} ${MES[a.getMonth()]} – ${b.getDate()} ${MES[b.getMonth()]}`,
+    })
+  }
+  return out
+}
+
+/** Dinero, con signo explícito: un faltante tiene que verse como faltante. */
+export function fmtUSD(v) {
+  if (v == null) return '—'
+  const x = n(v)
+  return (x < 0 ? '-$' : '$') + Math.abs(x).toLocaleString('en-US',
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /** Agrupa por la categoría de la hoja, conservando el orden del Excel. */
