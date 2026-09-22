@@ -619,16 +619,6 @@ export default function KDSScreen({ user, onBack }) {
   // ── Render ──
   const canalInfo = (canal) => CANAL_INFO[canal] || { ic: 'box', label: canal, color: '#8b8997' }
 
-  // Panel de delivery: pantalla aparte, con su propio mapa y refresco.
-  // Se carga solo al abrirla para no meterle Leaflet al KDS de arranque.
-  if (tab === 'delivery') {
-    return (
-      <Suspense fallback={<div className="kds-root" style={{ padding: 24, color: '#8a8a95' }}>Cargando…</div>}>
-        <PanelDeliverySucursal user={user} onBack={() => setTab('activas')} />
-      </Suspense>
-    )
-  }
-
   // Traslados pendientes de contestar. Se refresca con el mismo pulso que la
   // cola: si la torre mueve un pedido, la cocina se entera en segundos.
   useEffect(() => {
@@ -671,6 +661,19 @@ export default function KDSScreen({ user, onBack }) {
     const id = setInterval(cargarTraslados, 15000)
     return () => { vivo = false; clearInterval(id) }
   }, [storeCode])
+
+  // Panel de delivery: pantalla aparte, con su propio mapa y refresco.
+  // Se carga solo al abrirla para no meterle Leaflet al KDS de arranque.
+  // OJO: va DESPUÉS del último hook. Estaba antes del useEffect de traslados y
+  // al abrir la pestaña Delivery React tiraba el error #300 ("fewer hooks than
+  // expected") — Soyapango, 21-sep-2026 por la noche.
+  if (tab === 'delivery') {
+    return (
+      <Suspense fallback={<div className="kds-root" style={{ padding: 24, color: '#8a8a95' }}>Cargando…</div>}>
+        <PanelDeliverySucursal user={user} onBack={() => setTab('activas')} />
+      </Suspense>
+    )
+  }
 
   const responderTraslado = async (t, yaPreparado) => {
     setRespondiendo(t.traslado_id)
