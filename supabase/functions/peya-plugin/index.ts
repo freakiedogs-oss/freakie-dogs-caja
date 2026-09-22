@@ -4,8 +4,7 @@
 // Endpoints que Delivery Hero llama sobre esta función (montada en /functions/v1/peya-plugin):
 //   POST  /order/{remoteId}                                         → dispatch de una orden nueva
 //   PUT   /remoteId/{id}/remoteOrder/{remoteOrderId}/posOrderStatus → cambios de estado
-//   PUT   /remoteId/{id}/availability                               → apertura/cierre de la tienda
-//   GET   /remoteId/{id}/availability                               → nos preguntan si está abierta
+//   PUT   /remoteId/{id}/availability                               → notificación de cierres
 //   GET   /menuimport/{remoteId}?vendorCode=&menuImportId=          → pedido de menú
 //   POST  /catalog-import-callback                                  → estado de import de catálogo
 //   GET   /                                                         → health check (SSL/disponibilidad)
@@ -374,9 +373,15 @@ Deno.serve(async (req) => {
         "HIDE_RIDER_WAITING_WARNING",
       ]);
       if (MOTORISTA.has(status)) {
+        // El contrato trae cuándo empezó la espera de verdad y desde cuándo PeYa
+        // cobra por tenernos al motorista parado. Eso último es plata: se usa el
+        // dato de ellos, no la hora en que nos llegó el aviso.
+        const rww = payload?.riderWaitingWarnings ?? null;
         const { data: m, error: errM } = await svc.rpc("peya_motorista_evento", {
           p_remote_order_id: remoteOrderId,
           p_evento: status,
+          p_inicio_espera: rww?.waitingStartsAt ?? payload?.occurredAt ?? null,
+          p_cobro_desde: rww?.waitingFeeAppliesAt ?? null,
         });
         if (errM) return json({ error: "persistencia", message: errM.message }, 500);
         if ((m as Record<string, unknown> | null)?.ok === false) {
@@ -429,54 +434,38 @@ Deno.serve(async (req) => {
       return json({ ok: true }, 200);
     }
 
-    // ---- PUT /remoteId/{id}/availability — la plataforma abre/cierra la tienda ----
-    // Notificación idempotente: puede llegar repetida y fuera de orden.
-    // Se guarda el estado porque de él dependen dos cosas del checklist: contestar el
-    // GET de disponibilidad, y que la caja sepa por qué dejaron de entrar pedidos.
+    // ---- PUT /remoteId/{id}/availability — la plataforma nos notifica el estado ----
+    // Contrato: pluginApi.yaml, schema VendorAvailabilityUpdate (copia en docs/peya-api).
+    //
+    //   { "timestamp": "...", "closures": [ { reason, start, end?, changeable } ] }
+    //
+    // `closures` vacío ⇒ abierta. Cerrada si hay un cierre con `start` pasado y, o bien
+    // sin `end` (permanente), o con `end` futuro. La lógica vive en la base porque el
+    // mismo cálculo lo necesita la lectura, y dos copias de una regla es una de más.
+    //
+    // `timestamp` es ancla de orden, no marca de recepción: DH avisa que el mismo
+    // evento puede llegar repetido y desordenado, y que lo más viejo se ignora.
     if (req.method === "PUT" && ruta[0] === "remoteId" && ruta[2] === "availability") {
       const vendorId = decodeURIComponent(ruta[1] ?? "");
-      // DH manda el estado como `availabilityState` ("OPEN"/"CLOSED"); se aceptan las
-      // variantes conocidas para no depender de una sola forma del campo.
-      const crudo = String(
-        payload?.availabilityState ?? payload?.status ?? payload?.state ?? "",
-      ).toUpperCase();
-      const disponible = crudo === "OPEN" || crudo === "AVAILABLE" || crudo === "ACTIVE";
-      const motivo = String(payload?.closingReason ?? payload?.reason ?? payload?.message ?? "");
-      const hasta = payload?.closedUntil ?? payload?.availableAt ?? null;
+      const ts = payload?.timestamp ?? null;
+      const closures = Array.isArray(payload?.closures) ? payload.closures : [];
 
-      if (!crudo) return json({ error: "availability_sin_estado", recibido: payload }, 400);
+      if (!ts) return json({ error: "availability_sin_timestamp", recibido: payload }, 400);
 
-      const { data, error } = await svc.rpc("peya_fijar_disponibilidad", {
+      const { data, error } = await svc.rpc("peya_availability_webhook", {
         p_remote_id: vendorId,
-        p_disponible: disponible,
-        p_origen: "plataforma",
-        p_motivo: motivo || null,
-        p_hasta: hasta,
+        p_timestamp: ts,
+        p_closures: closures,
       });
       if (error) return json({ error: "persistencia", message: error.message }, 500);
 
       // Un vendor que no tenemos mapeado no es culpa de DH: 200 para que no reintente,
       // pero queda gritado en el log porque significa que falta configurar una tienda.
-      if ((data as Record<string, unknown> | null)?.ok === false) {
-        console.warn("availability de un vendor no mapeado", vendorId, crudo);
-      }
+      const d = data as Record<string, unknown> | null;
+      if (d?.ok === false) console.warn("availability de un vendor no mapeado", vendorId);
+      else if (d?.ignorado) console.log("availability ignorada por orden", vendorId, d.ignorado);
+
       return json({ ok: true, tienda: data }, 200);
-    }
-
-    // ---- GET /remoteId/{id}/availability — nos preguntan si la tienda está abierta ----
-    if (req.method === "GET" && ruta[0] === "remoteId" && ruta[2] === "availability") {
-      const vendorId = decodeURIComponent(ruta[1] ?? "");
-      const { data, error } = await svc.rpc("peya_disponibilidad", { p_remote_id: vendorId });
-      if (error) return json({ error: "persistencia", message: error.message }, 500);
-      if (!data) return json({ error: "vendor_no_mapeado", remoteId: vendorId }, 404);
-
-      const d = data as Record<string, unknown>;
-      return json({
-        remoteVendorId: vendorId,
-        availabilityState: d.disponible ? "OPEN" : "CLOSED",
-        closingReason: d.motivo ?? undefined,
-        closedUntil: d.cerrada_hasta ?? undefined,
-      }, 200);
     }
 
     // ---- GET /menuimport/{remoteId} — piden el menú ----
