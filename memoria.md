@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 22-Sep-2026 — Cuadre n1co: estaba en el formulario equivocado y bloqueaba la edición de cierres
+
+Jose preguntó por qué la sección "Cierre de tarjeta · n1co" (19-sep) solo la veían él y Jazz.
+- **Causa:** se agregó en `CierreForm.jsx`, que en `App.jsx` solo se abre como `cierre-edit` (editar desde Dashboard de Cierres / admin). Las sucursales cierran por `cierre` → `CorteXZView` (Corte X/Z del POS, `src/pos/CierreTurno.jsx`), que no tiene la sección. Por eso solo 1 de 21 cierres desde el 19-sep tiene `tarjeta_n1co`.
+- **Es informativo:** ninguna función ni trigger de la base lee `tarjeta_n1co`/`diferencia_n1co`; no entra a total de ventas, efectivo calculado, depósito ni conciliación.
+- **Bug corregido:** los 3 campos eran obligatorios, así que editar CUALQUIER cierre (incluso de antes del 19-sep) se trababa hasta subir un voucher. Ahora monto y voucher son opcionales; el motivo solo se exige si se escribe un total que no cuadra. Si se deja vacío se guarda `tarjeta_n1co = null` (antes guardaba 0).
+- **Pendiente de decidir:** si se quiere que las sucursales lo llenen, hay que llevarlo al Corte Z del POS (flujo en vivo).
 ## 22-Sep-2026 — "Un faltante de 6 días no son 6 faltantes": la grilla mentía, y el banco desmintió la regla obvia
 
 Jose miró Venecia y vio **−$41 repetido en varios días seguidos**. Su lectura: *"eso no significa $41 por día, sino $41 entre los días del depósito"*. Tenía razón y el error era de presentación, mío.
