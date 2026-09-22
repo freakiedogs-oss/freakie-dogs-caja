@@ -10,8 +10,11 @@ const ALLOWED_ROLES = ['ejecutivo', 'admin', 'contador', 'superadmin'];
 const fmt$ = (v) => `$${parseFloat(v || 0).toFixed(2)}`;
 
 // ── CONCILIACIÓN BANCARIA Y DTEs ──────────────────────────────────────────
-export default function ConciliacionView({ user, onBack }) {
-  // Control de acceso
+// Control de acceso. Va en un componente aparte: un `return` antes de los hooks
+// hace que React cuente distinto los hooks entre renders y tira el error #300
+// ("Esta pantalla se cayó") si el usuario cambia con la vista montada.
+export default function ConciliacionView(props) {
+  const { user, onBack } = props;
   if (!ALLOWED_ROLES.includes(user?.rol)) {
     return (
       <div style={{ padding: '20px', color: '#e63946', textAlign: 'center' }}>
@@ -21,7 +24,10 @@ export default function ConciliacionView({ user, onBack }) {
       </div>
     );
   }
+  return <ConciliacionViewInner {...props} />;
+}
 
+function ConciliacionViewInner({ user, onBack }) {
   const [tab, setTab] = useState('serfinsa');
   const [loading, setLoading] = useState(true);
 

@@ -92,7 +92,24 @@ function sumaFactoresMes(mesISO) {
   return suma;
 }
 
-export default function KpisVentaDashboard({ user, onBack }) {
+// Puerta de acceso aparte del componente con hooks: un `return` antes de un hook
+// hace que React cuente distinto los hooks entre renders y tira el error #300
+// ("Esta pantalla se cayó") si el usuario cambia con la vista montada.
+export default function KpisVentaDashboard(props) {
+  const { user, onBack } = props;
+  if (!ROLES_PERMITIDOS.includes(user?.rol)) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: '#ef4444' }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Acceso denegado</div>
+        <div style={{ fontSize: 13, color: '#888' }}>Este dashboard requiere rol admin, superadmin, ejecutivo o gerente.</div>
+        <button onClick={onBack} style={{ marginTop: 16, background: '#1f2937', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 6, cursor: 'pointer' }}>← Volver</button>
+      </div>
+    );
+  }
+  return <KpisVentaDashboardInner {...props} />;
+}
+
+function KpisVentaDashboardInner({ user, onBack }) {
   const [tab, setTab] = useState('metas');  // ★ Metas como pestaña principal
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -112,16 +129,6 @@ export default function KpisVentaDashboard({ user, onBack }) {
   const [insights, setInsights] = useState(null);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [metasData, setMetasData] = useState(null);
-
-  if (!ROLES_PERMITIDOS.includes(user?.rol)) {
-    return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#ef4444' }}>
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Acceso denegado</div>
-        <div style={{ fontSize: 13, color: '#888' }}>Este dashboard requiere rol admin, superadmin, ejecutivo o gerente.</div>
-        <button onClick={onBack} style={{ marginTop: 16, background: '#1f2937', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 6, cursor: 'pointer' }}>← Volver</button>
-      </div>
-    );
-  }
 
   useEffect(() => {
     const load = async () => {

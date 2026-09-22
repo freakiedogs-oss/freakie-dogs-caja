@@ -303,20 +303,11 @@ function Sparkline({ data, width = 120, height = 32, color }) {
 // ────────────────────────────────────────────────────────────
 // Componente principal
 // ────────────────────────────────────────────────────────────
-export default function DeliveryKpiDashboard({ user }) {
-  const now = new Date()
-  const [periodo, setPeriodo] = useState({
-    anio: now.getFullYear(),
-    mes: now.getMonth() + 1,
-  })
-  const [datos, setDatos] = useState(null)
-  const [productos, setProductos] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [msg, setMsg] = useState(null)
-  const [showMetaModal, setShowMetaModal] = useState(false)
-  const [metaInput, setMetaInput] = useState('')
-  const [savingMeta, setSavingMeta] = useState(false)
-
+// Puerta de acceso aparte del componente con hooks: un `return` antes de un hook
+// hace que React cuente distinto los hooks entre renders y tira el error #300
+// ("Esta pantalla se cayó") si el usuario cambia con la vista montada.
+export default function DeliveryKpiDashboard(props) {
+  const { user } = props
   // Bloqueo de acceso
   if (user.rol !== 'superadmin') {
     return (
@@ -329,6 +320,22 @@ export default function DeliveryKpiDashboard({ user }) {
       </div>
     )
   }
+  return <DeliveryKpiDashboardInner {...props} />
+}
+
+function DeliveryKpiDashboardInner({ user }) {
+  const now = new Date()
+  const [periodo, setPeriodo] = useState({
+    anio: now.getFullYear(),
+    mes: now.getMonth() + 1,
+  })
+  const [datos, setDatos] = useState(null)
+  const [productos, setProductos] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [msg, setMsg] = useState(null)
+  const [showMetaModal, setShowMetaModal] = useState(false)
+  const [metaInput, setMetaInput] = useState('')
+  const [savingMeta, setSavingMeta] = useState(false)
 
   const cargar = useCallback(async () => {
     setLoading(true)
