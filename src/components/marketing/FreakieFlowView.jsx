@@ -120,6 +120,11 @@ function ObjetivoCard({ o, onClick }) {
               {overdue ? '⚠️ venció ' : '📅 '}{fmtDate(o.deadline)}
             </span>
           )}
+          {o.checklist && o.checklist.length > 0 && (
+            <span style={{ fontSize: 11, color: o.checklist.every(i => i.hecho) ? GOOD : MUTED, fontWeight: 700 }}>
+              ✓ {o.checklist.filter(i => i.hecho).length}/{o.checklist.length}
+            </span>
+          )}
           {overdue && (
             <span style={{ fontSize: 10, color: DANGER, border: `1px solid ${DANGER}55`, borderRadius: 6, padding: '1px 6px' }}>
               Origen: {o.scope === 'mensual' ? 'Mensual' : 'Semanal'}
@@ -151,6 +156,18 @@ function EditModal({ objetivo, onClose, onSave, onDelete }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const inputStyle = { background: '#151516', border: `1px solid ${LINE}`, borderRadius: 8, padding: '9px 11px', color: INK, fontSize: 13.5, width: '100%' }
   const labelStyle = { fontSize: 11.5, color: MUTED, marginBottom: 4, display: 'block', fontWeight: 600 }
+
+  // ── Subtareas (checklist con burbujitas dentro del objetivo) ──
+  const checklist = form.checklist || []
+  const [nuevoItem, setNuevoItem] = useState('')
+  const addItem = () => {
+    if (!nuevoItem.trim()) return
+    const item = { id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`), texto: nuevoItem.trim(), hecho: false }
+    set('checklist', [...checklist, item])
+    setNuevoItem('')
+  }
+  const toggleItem = (id) => set('checklist', checklist.map(it => it.id === id ? { ...it, hecho: !it.hecho } : it))
+  const removeItem = (id) => set('checklist', checklist.filter(it => it.id !== id))
 
   return (
     <div style={{
@@ -207,6 +224,46 @@ function EditModal({ objetivo, onClose, onSave, onDelete }) {
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>Notas</label>
           <textarea style={{ ...inputStyle, minHeight: 60 }} value={form.notas || ''} onChange={e => set('notas', e.target.value)} placeholder="Contexto, bloqueos, aclaraciones..." />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>
+            Subtareas {checklist.length > 0 && `· ${checklist.filter(i => i.hecho).length}/${checklist.length}`}
+          </label>
+          {checklist.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {checklist.map(item => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 2px' }}>
+                  <button
+                    onClick={() => toggleItem(item.id)}
+                    title={item.hecho ? 'Marcar como pendiente' : 'Marcar como hecho'}
+                    style={{
+                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
+                      border: `2px solid ${item.hecho ? GOOD : LINE}`, background: item.hecho ? GOOD : 'transparent',
+                      color: '#0e0e0f', fontSize: 12, fontWeight: 900,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    {item.hecho ? '✓' : ''}
+                  </button>
+                  <div style={{ flex: 1, fontSize: 13, color: item.hecho ? MUTED : INK, textDecoration: item.hecho ? 'line-through' : 'none' }}>
+                    {item.texto}
+                  </div>
+                  <button onClick={() => removeItem(item.id)} title="Quitar" style={{ background: 'none', border: 'none', color: '#666', fontSize: 16, lineHeight: 1, cursor: 'pointer', padding: '0 4px' }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              style={{ ...inputStyle, flex: 1 }}
+              value={nuevoItem}
+              onChange={e => setNuevoItem(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+              placeholder="Agregar paso y Enter para añadirlo"
+            />
+            <button onClick={addItem} style={{ background: SURFACE_2, border: `1px solid ${LINE}`, color: INK, borderRadius: 8, padding: '0 14px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>+</button>
+          </div>
         </div>
 
         {!isNew && (
@@ -350,6 +407,7 @@ export default function FreakieFlowView({ user }) {
       scope: form.scope || 'semanal',
       deadline: form.deadline || null,
       notas: form.notas || null,
+      checklist: form.checklist || [],
       updated_at: new Date().toISOString(),
     }
     if (form.id) {
@@ -403,6 +461,7 @@ export default function FreakieFlowView({ user }) {
       scope: snap.scope || 'semanal',
       deadline: snap.deadline || null,
       notas: snap.notas || null,
+      checklist: snap.checklist || [],
     }
     const { data, error } = await db.from('freakie_flow_objetivos').insert(payload).select().single()
     if (error) { toast.error('Error al restaurar: ' + error.message); return }
@@ -411,7 +470,7 @@ export default function FreakieFlowView({ user }) {
     loadHistorial()
   }
 
-  const nuevoObjetivo = () => setEditing({ titulo: '', responsable: 'adri', etapa: 'definicion', scope: 'semanal' })
+  const nuevoObjetivo = () => setEditing({ titulo: '', responsable: 'adri', etapa: 'definicion', scope: 'semanal', checklist: [] })
 
   const btnTab = (active) => ({
     background: active ? RED : 'none', color: active ? '#fff' : MUTED,
@@ -466,7 +525,7 @@ export default function FreakieFlowView({ user }) {
             empty="Sin objetivos semanales activos."
           />
           <Section
-            title="👑 Jefes del mes"
+            title="👑 Objetivos del mes"
             items={mensual}
             onCardClick={setEditing}
             empty="Sin objetivos mensuales activos."
