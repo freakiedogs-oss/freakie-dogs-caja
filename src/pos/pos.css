@@ -1193,6 +1193,34 @@
   white-space: nowrap;
 }
 
+/* El motorista llegó y lleva rato parado. Urge, pero menos que una cancelación:
+   ámbar y no rojo, para que cuando aparezcan los dos no compitan por el mismo grito. */
+.kds-card-motorista {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #f59e0b;
+  color: #1c1917;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .3px;
+  line-height: 1.25;
+}
+.kds-card-motorista-min {
+  background: rgba(28, 25, 23, .82);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 13px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* El pedido se canceló en PedidosYa mientras cocina lo armaba. Ocupa el ancho
    entero y va arriba de los ítems: no puede competir con nada por atención. */
 .kds-card-cancelada {
