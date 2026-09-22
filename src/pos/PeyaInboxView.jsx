@@ -51,6 +51,7 @@ const MOTIVOS = [
   { v: 'ITEM_UNAVAILABLE',             t: 'Se acabó un producto' },
   { v: 'TOO_BUSY',                     t: 'Cocina saturada' },
   { v: 'CLOSED',                       t: 'Tienda cerrada' },
+  { v: 'MENU_ACCOUNT_SETTINGS',        t: 'El menú no coincide' },
   { v: 'TECHNICAL_PROBLEM',            t: 'Problema técnico' },
   { v: 'ADDRESS_OUT_OF_DELIVERY_AREA', t: 'Fuera de zona' },
   { v: 'CUSTOMER_CALLED_TO_CANCEL',    t: 'El cliente canceló' },
@@ -329,6 +330,25 @@ export default function PeyaInboxView({ user, onBack }) {
     return () => clearInterval(t)
   }, [cargar])
 
+  // Abrir o cerrar la tienda. El cierre va con plazo (30 min) a propósito: un cierre
+  // indefinido que nadie recuerda reabrir es una sucursal apagada todo el día.
+  const onTienda = async (abrir) => {
+    setOcupado('__tienda__'); setError(''); setAviso('')
+    try {
+      const { data: r, error: e } = await db.rpc('peya_tienda_abrir_cerrar', {
+        p_pin: String(user.pin),
+        p_disponible: abrir,
+        p_motivo: abrir ? null : 'Cerrada desde la caja',
+        p_minutos: abrir ? null : 30,
+      })
+      if (e) throw e
+      if (r?.ok === false) throw new Error(r.message || r.error || 'No se pudo cambiar')
+      setAviso(abrir ? 'Tienda abierta en PedidosYa' : 'Tienda cerrada por 30 minutos')
+      await cargar()
+    } catch (e) { setError(e.message || 'No se pudo cambiar el estado de la tienda') }
+    finally { setOcupado(null) }
+  }
+
   const enviar = async (p, accion, motivo, mensaje) => {
     setOcupado(p.remote_order_id); setError(''); setAviso('')
     try {
@@ -454,6 +474,49 @@ export default function PeyaInboxView({ user, onBack }) {
           {sonido ? '🔔' : '🔕'}
         </button>
       </div>
+
+      {/* Estado de la tienda en PedidosYa. Si está cerrada, la caja tiene que verlo
+          antes que nada: "no entran pedidos" sin explicación es una llamada a soporte
+          y media hora de ventas perdidas. Cerrar y abrir sólo lo puede quien manda. */}
+      {data?.tienda && (
+        <div style={{
+          margin: '12px 14px 0', padding: '11px 14px', borderRadius: 10, flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          background: data.tienda.disponible ? '#0d2018' : '#2a1116',
+          border: `1px solid ${data.tienda.disponible ? C.verde : C.rojo}66`,
+        }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800,
+                          color: data.tienda.disponible ? '#bff3d4' : '#ffc9cf' }}>
+              {data.tienda.disponible ? '🟢 Tienda abierta en PedidosYa' : '🔴 Tienda cerrada en PedidosYa'}
+            </div>
+            {!data.tienda.disponible && (
+              <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+                {data.tienda.origen === 'plataforma' ? 'La cerró PedidosYa' : 'La cerramos nosotros'}
+                {data.tienda.motivo ? ` · ${data.tienda.motivo}` : ''}
+                {data.tienda.cerrada_hasta
+                  ? ` · vuelve a abrir ${new Date(data.tienda.cerrada_hasta).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}`
+                  : ''}
+              </div>
+            )}
+          </div>
+          {data.tienda.puede_cambiar && (
+            <button
+              onClick={() => onTienda(!data.tienda.disponible)}
+              disabled={ocupado === '__tienda__'}
+              style={{
+                background: data.tienda.disponible ? '#3a1a1f' : '#12301f',
+                border: `1px solid ${data.tienda.disponible ? C.rojo : C.verde}`,
+                color: data.tienda.disponible ? '#ffc9cf' : '#bff3d4',
+                borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 800,
+                cursor: ocupado === '__tienda__' ? 'wait' : 'pointer',
+                opacity: ocupado === '__tienda__' ? .6 : 1,
+              }}>
+              {data.tienda.disponible ? 'Cerrar 30 min' : 'Abrir ahora'}
+            </button>
+          )}
+        </div>
+      )}
 
       {(error || aviso) && (
         <div style={{

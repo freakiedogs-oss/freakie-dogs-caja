@@ -5,6 +5,7 @@
 //   POST  /order/{remoteId}                                         → dispatch de una orden nueva
 //   PUT   /remoteId/{id}/remoteOrder/{remoteOrderId}/posOrderStatus → cambios de estado
 //   PUT   /remoteId/{id}/availability                               → apertura/cierre de la tienda
+//   GET   /remoteId/{id}/availability                               → nos preguntan si está abierta
 //   GET   /menuimport/{remoteId}?vendorCode=&menuImportId=          → pedido de menú
 //   POST  /catalog-import-callback                                  → estado de import de catálogo
 //   GET   /                                                         → health check (SSL/disponibilidad)
@@ -365,12 +366,33 @@ Deno.serve(async (req) => {
       const status = String(payload?.status ?? "");
       const ahora = new Date().toISOString();
 
+      // Los avisos del motorista no cambian el estado del pedido: se resuelven aparte,
+      // en una sola sentencia idempotente, porque DH puede repetirlos y desordenarlos.
+      const MOTORISTA = new Set([
+        "COURIER_ARRIVED_AT_VENDOR",
+        "SHOW_RIDER_WAITING_WARNING",
+        "HIDE_RIDER_WAITING_WARNING",
+      ]);
+      if (MOTORISTA.has(status)) {
+        const { data: m, error: errM } = await svc.rpc("peya_motorista_evento", {
+          p_remote_order_id: remoteOrderId,
+          p_evento: status,
+        });
+        if (errM) return json({ error: "persistencia", message: errM.message }, 500);
+        if ((m as Record<string, unknown> | null)?.ok === false) {
+          return json({ error: "not_found" }, 404);
+        }
+        return json({ ok: true, motorista: m }, 200);
+      }
+
       const cambios: Record<string, unknown> = { actualizado_at: ahora };
       if (status === "ORDER_CANCELLED") {
         cambios.estado = "cancelado";
         cambios.cancelado_at = ahora;
       } else if (status === "ORDER_PICKED_UP") {
         cambios.estado = "retirado";
+        // Si se lo llevó, dejó de esperar. Sin esto el cartel rojo queda colgado.
+        cambios.motorista_esperando = false;
       }
       cambios.notas = `${status}: ${payload?.message ?? ""}`.slice(0, 500);
 
@@ -408,10 +430,53 @@ Deno.serve(async (req) => {
     }
 
     // ---- PUT /remoteId/{id}/availability — la plataforma abre/cierra la tienda ----
-    // Notificación idempotente: puede llegar repetida y fuera de orden. Por ahora sólo
-    // se registra (queda en el crudo); aplicarla al POS requiere decidir qué hace la caja.
+    // Notificación idempotente: puede llegar repetida y fuera de orden.
+    // Se guarda el estado porque de él dependen dos cosas del checklist: contestar el
+    // GET de disponibilidad, y que la caja sepa por qué dejaron de entrar pedidos.
     if (req.method === "PUT" && ruta[0] === "remoteId" && ruta[2] === "availability") {
-      return json({ ok: true }, 200);
+      const vendorId = decodeURIComponent(ruta[1] ?? "");
+      // DH manda el estado como `availabilityState` ("OPEN"/"CLOSED"); se aceptan las
+      // variantes conocidas para no depender de una sola forma del campo.
+      const crudo = String(
+        payload?.availabilityState ?? payload?.status ?? payload?.state ?? "",
+      ).toUpperCase();
+      const disponible = crudo === "OPEN" || crudo === "AVAILABLE" || crudo === "ACTIVE";
+      const motivo = String(payload?.closingReason ?? payload?.reason ?? payload?.message ?? "");
+      const hasta = payload?.closedUntil ?? payload?.availableAt ?? null;
+
+      if (!crudo) return json({ error: "availability_sin_estado", recibido: payload }, 400);
+
+      const { data, error } = await svc.rpc("peya_fijar_disponibilidad", {
+        p_remote_id: vendorId,
+        p_disponible: disponible,
+        p_origen: "plataforma",
+        p_motivo: motivo || null,
+        p_hasta: hasta,
+      });
+      if (error) return json({ error: "persistencia", message: error.message }, 500);
+
+      // Un vendor que no tenemos mapeado no es culpa de DH: 200 para que no reintente,
+      // pero queda gritado en el log porque significa que falta configurar una tienda.
+      if ((data as Record<string, unknown> | null)?.ok === false) {
+        console.warn("availability de un vendor no mapeado", vendorId, crudo);
+      }
+      return json({ ok: true, tienda: data }, 200);
+    }
+
+    // ---- GET /remoteId/{id}/availability — nos preguntan si la tienda está abierta ----
+    if (req.method === "GET" && ruta[0] === "remoteId" && ruta[2] === "availability") {
+      const vendorId = decodeURIComponent(ruta[1] ?? "");
+      const { data, error } = await svc.rpc("peya_disponibilidad", { p_remote_id: vendorId });
+      if (error) return json({ error: "persistencia", message: error.message }, 500);
+      if (!data) return json({ error: "vendor_no_mapeado", remoteId: vendorId }, 404);
+
+      const d = data as Record<string, unknown>;
+      return json({
+        remoteVendorId: vendorId,
+        availabilityState: d.disponible ? "OPEN" : "CLOSED",
+        closingReason: d.motivo ?? undefined,
+        closedUntil: d.cerrada_hasta ?? undefined,
+      }, 200);
     }
 
     // ---- GET /menuimport/{remoteId} — piden el menú ----
