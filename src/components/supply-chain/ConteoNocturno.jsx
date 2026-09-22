@@ -100,7 +100,14 @@ const aPresentacion=(p,qty)=>{
   if(!esFraccionado(p)) return {cerrados:redondear(q/fc), sueltas:0};
   const cerrados=Math.floor(q/fc+1e-9);
   const resto=q-cerrados*fc;
-  return {cerrados:Math.max(0,cerrados), sueltas:Math.max(0,redondear(resto/facSuelta(p)))};
+  // Las sueltas son piezas físicas indivisibles (panes, salchichas, latas...):
+  // nunca existe "9.009 panes". cantidad_real se guarda con solo 3 decimales
+  // (columna numeric(10,3)) y conteo_factor_suelta rara vez es un decimal
+  // exacto (ej. 1/21 = 0.047619), asi que reconstruir dividiendo arrastra
+  // ruido de redondeo — antes eso se colaba a pantalla como "9.009" en vez
+  // de "9". Redondeamos al entero mas cercano porque una suelta siempre es
+  // una unidad entera, nunca una fraccion.
+  return {cerrados:Math.max(0,cerrados), sueltas:Math.max(0,Math.round(resto/facSuelta(p)))};
 };
 // 4 decimales: evita que 0.1+0.2 pinte "0.30000000000000004" en la casilla
 function redondear(v){return Math.round((Number(v)||0)*10000)/10000;}
@@ -701,7 +708,11 @@ export default function ConteoNocturno({user,onBack}){
   const updateCasilla=(prodId,campo,val)=>{
     setProductos(prev=>prev.map(p=>{
       if(p.producto_id!==prodId)return p;
-      const v = val===''?null:n(val);
+      let v = val===''?null:n(val);
+      // Mismo criterio que en aPresentacion: sueltas es siempre una cuenta de
+      // piezas enteras (panes, salchichas...), asi que redondeamos ni bien se
+      // digita — no tiene sentido físico "9.5 salchichas sueltas".
+      if(campo==='sueltas' && v!==null) v=Math.round(v);
       return campo==='sueltas' ? recalc(p,p.cerrados,v) : recalc(p,v,p.sueltas);
     }));
   };
@@ -1722,7 +1733,7 @@ export default function ConteoNocturno({user,onBack}){
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
                     <div style={{width:48,flexShrink:0}}/>
-                    <input type="number" inputMode="decimal" min="0" step="any" value={p.sueltas??''}
+                    <input type="number" inputMode="numeric" min="0" step="1" value={p.sueltas??''}
                       onChange={e=>updateCasilla(p.producto_id,'sueltas', e.target.value)}
                       style={{flex:1,padding:'10px 8px',background:'#0a0a0a',border:'1px solid #333',borderRadius:10,color:'#fff',fontSize:16,textAlign:'center',fontWeight:600}}
                       placeholder="0"/>
