@@ -181,6 +181,9 @@ export default function ConteoNocturno({user,onBack}){
   // POS, para encontrar huecos (pedidos nunca digitados) y IDs repetidos
   // (pedidos digitados dos veces) antes de cerrar la noche.
   const [peyaAlerta,setPeyaAlerta]=useState(null); // {faltantes:[], duplicados:[], rango:[min,max]} | null
+  // Se perdió en el merge del 21-sep (alerta PeYa + fix merma automática) y
+  // tumbaba el conteo nocturno en todas las sucursales: "Can't find variable".
+  const [mermaResumenAlimentos,setMermaResumenAlimentos]=useState([]);
   const [mermaResumenBebidas,setMermaResumenBebidas]=useState([]);
   // "No hubo merma" ahora pide una confirmación explícita y SÍ queda
   // guardada (antes era solo un estado de pantalla — ver public.merma_sin_reporte
