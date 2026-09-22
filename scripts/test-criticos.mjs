@@ -2,11 +2,10 @@
  *
  *   node scripts/test-criticos.mjs
  *
- * Casos sintéticos armados con las FORMAS REALES de la base: los factores de
- * los 15 productos de la hoja de Saúl tal como están en `criticos_items`, y
- * las descargas reales de Venecia (S004) del 20-sep-2026 — el único día y la
- * única sucursal donde la caja abrió dos turnos, que es el caso que parte
- * AM/PM de verdad.
+ * Casos sintéticos armados con las FORMAS REALES de la base: los factores y
+ * los costos de los 15 productos de la hoja de Saúl tal como están en
+ * `criticos_items` y `v_fd_costo_insumo`, y la venta real de Venecia (S004)
+ * del 20-sep-2026 (336 bolitas de carne), verificada contra el kardex.
  *
  * Corre sin red: sirve de regresión en cualquier máquina.
  */
@@ -14,6 +13,7 @@ import {
   auditar, auditarHoja, resumenHoja, agruparPorCategoria,
   aStock, paquetesAStock, sueltasAStock, aEmpaques, aPayload,
   estadoFila, pisoTolerancia, facSuelta,
+  auditarSemana, semanasRecientes, fmtUSD,
   decirEnEmpaques, fmtCant, vacio,
   TOL_PCT_OK, TOL_PCT_AVISO, TOL_PISO_SUELTAS,
 } from '../src/components/dashboard/criticosConteo.js'
@@ -27,11 +27,13 @@ const CARNE = {
   item_id: 'i1', orden: 1, categoria: 'Carnicos', nombre: 'Carne P Burguer',
   unidad_conteo: 'Paquete de 20 bolitas', unidad_stock: 'unidad',
   factor: 20, fraccionado: true, unidad_suelta: 'bolitas', factor_suelta: 1,
+  costo_unit: 0.7168,   // real, de v_fd_costo_insumo
 }
 const CHILI = {
   item_id: 'i4', orden: 4, categoria: 'Carnicos', nombre: 'Chili',
   unidad_conteo: 'Bolsa de 5 libras', unidad_stock: 'bolsa',
-  factor: 1, fraccionado: false, unidad_suelta: null, factor_suelta: null,
+  factor: 1, fraccionado: true, unidad_suelta: 'libras', factor_suelta: 0.2,
+  costo_unit: 11.5775,
 }
 const PAN = {
   item_id: 'i13', orden: 13, categoria: 'Harinas Panes', nombre: 'Pan Para Burguer',
@@ -42,11 +44,13 @@ const QUESO = {
   item_id: 'i6', orden: 6, categoria: 'Lacteos', nombre: 'Queso Mozzarela',
   unidad_conteo: 'Paquete de 5 libras', unidad_stock: 'lb',
   factor: 5, fraccionado: true, unidad_suelta: 'lascas', factor_suelta: 0.034,
+  costo_unit: 3.45,
 }
 const PAPA = {
   item_id: 'i9', orden: 9, categoria: 'Congelados', nombre: 'Papas Sazonadas',
   unidad_conteo: 'Bolsa de 5 libras', unidad_stock: 'libra',
-  factor: 5, fraccionado: false, unidad_suelta: null, factor_suelta: null,
+  factor: 5, fraccionado: true, unidad_suelta: 'libras', factor_suelta: 1,
+  costo_unit: 1.2667,
 }
 
 /* ══ 1. Conversión de unidades ═════════════════════════════════════════ */
@@ -71,9 +75,11 @@ function conversion() {
   chk(sueltasAStock(QUESO, 10) === 0.34, 'En línea 10 lascas de mozzarella = 0.34 lb')
   // ...y cuando el empaque NO se abre en sucursal, en la unidad del empaque:
   // una bolsa de chili abierta sigue siendo una bolsa.
-  chk(facSuelta(CHILI) === 1, 'no fraccionado: la suelta vale lo mismo que el empaque')
-  chk(sueltasAStock(CHILI, 2) === 2, 'En línea 2 bolsas de chili abiertas = 2 unidades')
-  chk(sueltasAStock(PAPA, 1) === 5, 'En línea 1 bolsa de papa abierta = 5 libras')
+  // Desde el 22-sep TODOS los ítems declaran unidad suelta (lo pidió Saúl
+  // para que el CID tenga paquete + unidades en las 15 filas).
+  chk(facSuelta(CHILI) === 0.2, 'chili: 1 libra suelta = 0.2 de su bolsa de 5')
+  chk(cerca(sueltasAStock(CHILI, 3), 0.6), 'En línea 3 libras de chili = 0.6 bolsa')
+  chk(sueltasAStock(PAPA, 2) === 2, 'En línea 2 libras de papa = 2 libras (su stock ya es libra)')
 
   chk(cerca(aEmpaques(CARNE, 407), 20.35), '407 unidades = 20.35 paquetes')
   chk(aEmpaques(CARNE, null) === null, 'aEmpaques(null) = null')
@@ -185,7 +191,7 @@ function semaforo() {
   console.log('\n═ 5. Semáforo y piso de tolerancia ═\n')
 
   chk(pisoTolerancia(CARNE) === 2, 'carne fraccionada: piso = 2 bolitas')
-  chk(pisoTolerancia(CHILI) === 2, 'chili no fraccionado: piso = 2 bolsas (su unidad)')
+  chk(cerca(pisoTolerancia(CHILI), 0.4), 'chili: piso = 2 libras = 0.4 bolsa')
   chk(cerca(pisoTolerancia(QUESO), 0.068), 'mozzarella: piso = 2 lascas = 0.068 lb')
 
   // Un día flojo: 3 bolitas vendidas y 1 de diferencia. Sin piso absoluto
@@ -273,7 +279,139 @@ function payload() {
   chk(fmtCant(1234) === '1,234', 'los enteros van sin decimales')
 }
 
+
+/* ══ 8. El CID se arrastra del cierre de ayer ══════════════════════════
+   Pedido de Saúl (22-sep): que la apertura la ponga sola el sistema con lo
+   que quedó real ayer, igual que "Se pidió", y que la diferencia se vaya
+   contabilizando día a día sin redigitar nada. */
+function arrastre() {
+  console.log('\n═ 8. El CID se arrastra del cierre real de ayer ═\n')
+
+  // Ayer cerró con 3 paquetes en bodega y 5 bolitas en línea = 65 unidades.
+  const base = {
+    ...CARNE, venta_dia: 336, pedido_sistema: 400,
+    cid_sug_enteros: 3, cid_sug_sueltas: 5,
+    tps_enteros: 2, linea_sueltas: 7,
+  }
+
+  const arrastrado = auditar({ ...base })
+  chk(arrastrado.cid === 65, 'sin digitar el CID, se usa el cierre de ayer (65)')
+  chk(arrastrado.cidFuente === 'arrastrado', 'y queda marcado como "arrastrado"')
+  chk(arrastrado.teorico === 129, 'el teórico sale igual que si se hubiera digitado')
+  chk(arrastrado.diferencia === -82, 'y la diferencia también: −82')
+  chk(arrastrado.completa === true, 'la fila cuenta como completa aunque nadie digitó la apertura')
+  chk(arrastrado.cidDifiere === false, 'no hay discrepancia que avisar si no se digitó')
+
+  // Si Saúl digita, manda lo suyo.
+  const digitado = auditar({ ...base, cid_enteros: 4, cid_sueltas: 0 })
+  chk(digitado.cid === 80 && digitado.cidFuente === 'digitado', 'lo digitado pisa al arrastre')
+  chk(digitado.cidDifiere === true, 'y se avisa que no coincide con el cierre de ayer')
+  chk(digitado.teorico === 144, 'el teórico usa lo digitado: 80 + 400 − 336')
+
+  // Digitar EXACTAMENTE lo de ayer no es una discrepancia.
+  const igual = auditar({ ...base, cid_enteros: 3, cid_sueltas: 5 })
+  chk(igual.cidDifiere === false, 'confirmar el arrastre a mano no dispara el aviso')
+
+  // Sin cierre de ayer no hay de dónde arrastrar: la fila queda sin veredicto
+  // en vez de abrir en cero, que le inventaría un faltante a la sucursal.
+  const sinAyer = auditar({ ...CARNE, venta_dia: 336, pedido_sistema: 400, tps_enteros: 2 })
+  chk(sinAyer.cid === null && sinAyer.cidFuente === null, 'sin cierre de ayer no hay CID')
+  chk(sinAyer.diferencia === null && sinAyer.estado === 'sin_datos',
+      'y la fila queda sin contar, no en descuadre')
+
+  // Un cierre de ayer de CERO sí es un dato: abrió sin nada.
+  const ayerEnCero = auditar({
+    ...CARNE, venta_dia: 0, pedido_sistema: 0,
+    cid_sug_enteros: 0, cid_sug_sueltas: 0, tps_enteros: 0,
+  })
+  chk(ayerEnCero.cid === 0 && ayerEnCero.cidFuente === 'arrastrado',
+      'un cierre de ayer en 0 se arrastra como 0, no como "sin dato"')
+}
+
+/* ══ 9. Los KPIs en dinero ═════════════════════════════════════════════ */
+function kpis() {
+  console.log('\n═ 9. El descuadre valorizado al costo ═\n')
+
+  const f = auditar({
+    ...CARNE, venta_dia: 336, pedido_sistema: 400,
+    cid_enteros: 3, cid_sueltas: 5, tps_enteros: 2, linea_sueltas: 7,
+  })
+  chk(cerca(f.difUsd, -82 * 0.7168), `−82 bolitas × $0.7168 = ${fmtUSD(f.difUsd)}`)
+  chk(cerca(f.ventaUsd, 336 * 0.7168), 'la venta también se valoriza al costo')
+
+  const filas = auditarHoja([
+    // faltante fuerte
+    { ...CARNE, venta_dia: 336, pedido_sistema: 400, cid_enteros: 3, cid_sueltas: 5, tps_enteros: 2, linea_sueltas: 7 },
+    // sobrante: cerró con más de lo esperado
+    { ...PAPA, venta_dia: 10, pedido_sistema: 0, cid_enteros: 4, tps_enteros: 3, linea_sueltas: 5 },
+    // sin contar
+    { ...QUESO, venta_dia: 5, pedido_sistema: 0 },
+  ])
+  const r = resumenHoja(filas)
+
+  chk(r.completas === 2 && r.sin_datos === 1, '2 filas completas, 1 sin contar')
+  chk(cerca(r.faltanteUsd, -82 * 0.7168), 'el faltante suma SÓLO lo negativo')
+  chk(r.sobranteUsd > 0, 'y el sobrante sólo lo positivo')
+  chk(cerca(r.difUsd, r.faltanteUsd + r.sobranteUsd),
+      'el descuadre neto es la suma de los dos, no un tercer cálculo')
+  // Separar faltante de sobrante importa: netear esconde la fuga.
+  chk(Math.abs(r.difUsd) < Math.abs(r.faltanteUsd),
+      'netear TAPA parte del faltante — por eso van en KPIs separados')
+
+  chk(r.peor.nombre === 'Carne P Burguer', 'el peor descuadre es el de más PLATA')
+  chk(r.ventaUsd > 0 && r.pctSobreVenta != null, 'hay % sobre la venta valorizada')
+  // La fila sin contar no puede ensuciar el dinero.
+  chk(cerca(r.difUsd, filas[0].aud.difUsd + filas[1].aud.difUsd),
+      'la fila sin contar no aporta nada al descuadre')
+
+  chk(fmtUSD(-47.5) === '-$47.50', 'un faltante se ve como faltante, con signo')
+  chk(fmtUSD(0) === '$0.00' && fmtUSD(null) === '—', 'cero es cero; null es raya')
+}
+
+/* ══ 10. La semana ═════════════════════════════════════════════════════ */
+function semana() {
+  console.log('\n═ 10. Sumatorias de la semana ═\n')
+
+  // `fn_criticos_semana` ya cerró la ecuación día por día; acá sólo se
+  // valoriza y se clasifica.
+  const filas = auditarSemana([
+    { ...CARNE, venta: 1800, pedido: 2000, descargas: 40, dias_completos: 6, diferencia: -120 },
+    { ...PAPA,  venta: 300,  pedido: 400,  descargas: 12, dias_completos: 6, diferencia: 2 },
+    { ...QUESO, venta: 40,   pedido: 50,   descargas: 0,  dias_completos: 0, diferencia: null },
+  ])
+  chk(filas.length === 3, 'auditarSemana anota las 3 filas')
+  chk(cerca(filas[0].aud.difUsd, -120 * 0.7168), 'la diferencia de la semana se valoriza igual')
+  chk(cerca(filas[0].aud.pct, -120 / 1800 * 100), 'el % es sobre la venta de la semana')
+  chk(filas[0].aud.estado === 'alerta', '−6.7% en la semana es descuadre')
+  chk(filas[1].aud.estado === 'ok', '+2 libras de papa sobre 300 cabe en el piso')
+  chk(filas[2].aud.estado === 'sin_datos' && filas[2].aud.completa === false,
+      'sin días completos no hay veredicto de semana')
+  chk(filas[0].aud.diasCompletos === 6, 'viaja cuántos días se contaron de verdad')
+
+  const r = resumenHoja(filas)
+  chk(r.completas === 2, 'el resumen semanal cuenta sólo las filas con veredicto')
+  chk(r.peor.nombre === 'Carne P Burguer', 'y el peor sigue siendo el de más plata')
+
+  // El selector de semanas: lunes a domingo, de la más reciente hacia atrás.
+  const ss = semanasRecientes('2026-09-22', 5)   // martes
+  chk(ss.length === 5, 'devuelve las 5 semanas pedidas')
+  chk(ss[0].desde === '2026-09-21' && ss[0].hasta === '2026-09-27',
+      `la semana del martes 22 va del lunes 21 al domingo 27 (dio ${ss[0].desde}..${ss[0].hasta})`)
+  chk(ss[1].desde === '2026-09-14', 'la anterior arranca el lunes 14')
+  chk(ss[0].etiqueta === 'Esta semana' && ss[1].etiqueta === 'Semana pasada',
+      'las dos primeras se nombran en palabras')
+  chk(ss.every(w => new Date(w.hasta) - new Date(w.desde) === 6 * 86400000),
+      'todas duran exactamente 7 días')
+  // Un domingo es el caso que rompe cualquier cálculo hecho con getDay() crudo.
+  const dom = semanasRecientes('2026-09-27', 2)
+  chk(dom[0].desde === '2026-09-21' && dom[0].hasta === '2026-09-27',
+      `el domingo 27 cae en la semana que EMPIEZA el lunes 21 (dio ${dom[0].desde}..${dom[0].hasta})`)
+  const lun = semanasRecientes('2026-09-21', 1)
+  chk(lun[0].desde === '2026-09-21', 'y el lunes es el primer día de la suya')
+}
+
 conversion(); ecuacion(); nulos(); pedido(); semaforo(); hoja(); payload()
+arrastre(); kpis(); semana()
 
 console.log(`\n${'─'.repeat(60)}`)
 console.log(fallos === 0 ? `✓ ${pruebas} pruebas OK` : `✗ ${fallos} de ${pruebas} fallaron`)
