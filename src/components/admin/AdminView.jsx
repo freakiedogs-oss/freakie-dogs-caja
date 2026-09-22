@@ -103,7 +103,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     setLoading(true);
     const [cRes,dRes,accRes]=await Promise.all([
       db.from('ventas_diarias').select('*').gte('fecha',fechaDesde).lte('fecha',fechaHasta).order('fecha',{ascending:false}).order('store_code'),
-      db.from('depositos_bancarios').select('*').gte('fecha_deposito',fechaDesde).lte('fecha_deposito',fechaHasta),
+      db.from('depositos_bancarios').select('*').neq('estado','anulado').gte('fecha_deposito',fechaDesde).lte('fecha_deposito',fechaHasta),
       db.from('acciones_pendientes').select('id').eq('estado','pendiente')
     ]);
     setCierres(cRes.data||[]);
@@ -135,7 +135,7 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     const [egRes,inRes,depRes]=await Promise.all([
       db.from('egresos_cierre').select('*').in('cierre_id',ids),
       db.from('ingresos_cierre').select('*').in('cierre_id',ids),
-      db.from('depositos_bancarios').select('*').eq('store_code',consolidado.store_code).contains('dias_cubiertos',[consolidado.fecha]).limit(1)
+      db.from('depositos_bancarios').select('*').eq('store_code',consolidado.store_code).neq('estado','anulado').contains('dias_cubiertos',[consolidado.fecha]).limit(1)
     ]);
     setAllEgresos(egRes.data||[]);
     setAllIngresos(inRes.data||[]);
