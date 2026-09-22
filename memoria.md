@@ -2,6 +2,22 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 21-Sep-2026 — Tarjetas de EE.UU.: 0 de 5 habían podido pagar, y el log no decía por qué
+
+Revisando la pasarela en producción (del 11 al 20-sep): **5 pedidos con tarjeta de EE.UU.** (Chase, Capital One, Wells Fargo) pasaron por `requiere_billing`, el cliente puso su código postal, y **los 5 terminaron en 400 sin llegar al banco** — 2 de ellos se entregaron en efectivo, 3 se cancelaron. En `pagos_online.raw` quedaba `{"status":400}` y nada más.
+
+**Dos causas, las dos nuestras.** La doc de n1co (`/Charges`, ejemplo con `"countryCode": "US", "stateCode": "CA"`) pide el país en **ISO-2** y **los tres campos**; nosotros mandábamos `countryCode: 'USA'` (ISO-3, copiado del bin) y `stateCode: ''` porque el formulario solo pedía el postal. n1co responde a eso con un **ProblemDetails de .NET** (`{title, status:400, errors:{campo:[…]}}`) —no con el objeto `error` del rechazo bancario— y `saneaRespuesta` tiraba justo `title` y `errors`: por eso el log estaba mudo y el fix del 20-sep atribuyó esos 400 a la re-tokenización (que no era: `card_id` se repetía intento a intento sin problema).
+
+- **`normalizarBilling`** ahora mapea USA→US / CAN→CA, exige `stateCode` de 2 letras y devuelve `null` si falta algo → el endpoint **vuelve a pedir** el billing en vez de gastar el intento en un 400 seguro.
+- **El formulario** pide **estado + código postal** (provincia si el bin es canadiense; el servidor manda `pais` en la respuesta `requiere_billing`).
+- **`cobrar()` reconoce el 400 por billing** (`errors.BillingInfo.*`) y responde `requiere_billing` en vez de "tu banco rechazó". Es el camino de la **tarjeta guardada** de EE.UU., donde el bin no se vuelve a ver y antes no había forma de pedir el billing.
+- `saneaRespuesta` conserva `title`/`errors`/`traceId`; el mensaje al cliente nunca es el título en inglés de .NET.
+- `scripts/test-billing-n1co.mjs` **17/17** (helpers exportados solo para eso); frenos 14/14; build OK.
+
+**Sin verificar en vivo:** que con los tres campos bien n1co apruebe una tarjeta de EE.UU. — hace falta una tarjeta real de allá. Si el próximo `REQUIERE_BILLING` va seguido de otro 400, el `raw` ya va a decir qué campo fue.
+
+**Aparte, encontrado en la misma revisión:** `WEB-EA90E980` (16-sep, Soyapango) cobró **$20.49** en n1co (orden 9234653, aut. 261791) y el pedido se **canceló 7 minutos después**; no hay rastro de devolución en la BD. Hay que confirmar en el portal de n1co que se reversó.
+
 ## 21-Sep-2026 — Merma de producto preparado: anular algo que ya está en cocina ya no se pierde sin rastro
 
 Pedido de Cesar tras cuadrar Cafetalón. El −4 de salchichas del 20-sep apuntaba a la mesa 17: 5 hot dogs mandados a cocina, anulados 4 min después y reingresados en la mesa 6. La anulación **borraba la fila del KDS** y no descargaba nada, así que si cocina ya los había hecho, el producto salía del inventario sin dejar huella y aparecía de noche como faltante.

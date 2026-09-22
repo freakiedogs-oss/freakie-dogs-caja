@@ -105,7 +105,11 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
   const [cvv, setCvv] = useState('')
   const [email, setEmail] = useState('')
   const [guardar, setGuardar] = useState(true)
+  // Facturación (solo tarjetas de EE.UU./Canadá): n1co exige país, estado y
+  // postal, los tres. El país lo dice el servidor a partir del bin.
   const [zip, setZip] = useState('')
+  const [estadoFact, setEstadoFact] = useState('')
+  const [paisFact, setPaisFact] = useState('US')
   const [error, setError] = useState('')
   const [url3ds, setUrl3ds] = useState('')
   const [intentosRestantes, setIntentos] = useState(null)
@@ -198,7 +202,8 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
     }
     if (r?.estado === 'requiere_billing') {
       setFase('requiere_billing')
-      setError(r.mensaje || 'Necesitamos el código postal de facturación de tu tarjeta.')
+      if (r.pais === 'US' || r.pais === 'CA') setPaisFact(r.pais)
+      setError(r.mensaje || 'Necesitamos el estado y el código postal de facturación de tu tarjeta.')
       return
     }
     setFase('rechazado')
@@ -221,8 +226,13 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
       return setError('Escribí un correo válido para enviarte el comprobante')
     }
-    if (fase === 'requiere_billing' && !zip.trim()) {
-      return setError('Escribí el código postal de facturación')
+    if (fase === 'requiere_billing') {
+      if (!/^[A-Z]{2}$/.test(estadoFact.trim().toUpperCase())) {
+        return setError(paisFact === 'CA'
+          ? 'Escribí la provincia de facturación con dos letras (ej. ON)'
+          : 'Escribí el estado de facturación con dos letras (ej. CA)')
+      }
+      if (!zip.trim()) return setError('Escribí el código postal de facturación')
     }
 
     // Si ya hay pedido (se viene a retomar el pago) no hay checkout que
@@ -231,7 +241,9 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
     const pedido = trackingRef.current ? null : construirPedido?.()
     if (!trackingRef.current && !pedido) return
 
-    const billing = zip.trim() ? { countryCode: 'USA', zipCode: zip.trim() } : null
+    const billing = zip.trim() && estadoFact.trim()
+      ? { countryCode: paisFact, stateCode: estadoFact.trim().toUpperCase(), zipCode: zip.trim() }
+      : null
     const [mm, aa] = String(vence).split('/')
     const anio = aa ? (aa.length === 2 ? `20${aa}` : aa) : ''
     datosRef.current = { email: email.trim(), billing, guardar, titular: titular.trim(), mes: mm, anio }
@@ -474,10 +486,19 @@ export default function BloquePago({ total, construirPedido, onAprobado, onEfect
       </div>
 
       {pideZip && (
-        <div className="mp-field">
-          <label>Código postal de facturación</label>
-          <input type="text" inputMode="numeric" autoComplete="postal-code"
-                 value={zip} onChange={e => setZip(e.target.value)} placeholder="12345" />
+        <div className="mp-pago-fila">
+          <div className="mp-field">
+            <label>{paisFact === 'CA' ? 'Provincia (facturación)' : 'Estado (facturación)'}</label>
+            <input type="text" autoComplete="address-level1" maxLength={2}
+                   value={estadoFact} onChange={e => setEstadoFact(e.target.value.toUpperCase())}
+                   placeholder={paisFact === 'CA' ? 'ON' : 'CA'} />
+          </div>
+          <div className="mp-field">
+            <label>Código postal</label>
+            <input type="text" inputMode={paisFact === 'CA' ? 'text' : 'numeric'} autoComplete="postal-code"
+                   value={zip} onChange={e => setZip(e.target.value)}
+                   placeholder={paisFact === 'CA' ? 'M5V 3L9' : '12345'} />
+          </div>
         </div>
       )}
 

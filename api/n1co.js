@@ -300,20 +300,38 @@ async function dispositivoHash(secreto) {
 // Hacerle String() daba "[object Object]", que es lo que se guardó en
 // error_code y lo que rompía el mensaje al cliente (9-sep: un cliente reintentó
 // 3 veces la misma tarjeta sin fondos porque nunca le dijimos que era eso).
-function detalleError(data) {
+// Se exportan (detalleError, mensajeRechazo, faltaBilling, normalizarBilling)
+// solo para scripts/test-billing-n1co.mjs: deciden qué se le manda a n1co y
+// qué se le dice al cliente, y eso no se verifica leyéndolo.
+export function detalleError(data) {
   const e = data?.error;
   if (e && typeof e === 'object') {
     return {
       code: String(e.code ?? e.codigo ?? '').trim() || 'SIN_CODIGO',
       titulo: String(e.title ?? e.message ?? '').trim(),
       detalle: String(e.detail ?? '').trim(),
+      campos: [],
     };
   }
+  // Sin `error` es un ProblemDetails de .NET ({ title, status, errors:{campo:[…]} }):
+  // así responde n1co cuando el REQUEST está mal armado (400), no cuando el
+  // banco rechaza. Del 11 al 20-sep hubo 5 tarjetas de EE.UU. con 400 y cuerpo
+  // "vacío" porque acá se tiraba el `title` y el `errors` que decían qué campo era.
+  const campos = data?.errors && typeof data.errors === 'object' ? Object.keys(data.errors) : [];
   return {
     code: String(e ?? data?.errorCode ?? data?.status ?? 'SIN_CODIGO').trim(),
-    titulo: String(data?.message ?? '').trim(),
+    titulo: String(data?.message ?? data?.title ?? '').trim(),
     detalle: '',
+    campos,
   };
+}
+
+// ¿El 400 fue porque a n1co le faltó (o no le gustó) el billingInfo? Pasa con
+// una tarjeta guardada de EE.UU./Canadá, donde el bin no se vuelve a ver, o si
+// el cliente escribió mal el estado/postal. En los dos casos lo accionable es
+// pedirle el billing, no decirle "tu banco rechazó".
+export function faltaBilling(data) {
+  return detalleError(data).campos.some(c => /billing/i.test(c));
 }
 
 // Códigos ISO 8583 que devuelve el emisor. Se traducen a algo accionable: la
@@ -334,11 +352,16 @@ const RECHAZO_POR_CODIGO = {
 // Mensaje para el cliente: primero el mapa por código, después el texto que
 // manda n1co (viene en español y ya está redactado para el comprador), y recién
 // al final el genérico.
-function mensajeRechazo(data) {
-  const { code, titulo, detalle } = detalleError(data);
+export function mensajeRechazo(data) {
+  const { code, titulo, detalle, campos } = detalleError(data);
   const porCodigo = RECHAZO_POR_CODIGO[Number(code)];
   if (porCodigo) return porCodigo;
   if (detalle) return detalle;
+  // ProblemDetails: el request no pasó la validación de n1co (el `title` viene
+  // en inglés y nombra campos internos; al cliente no le sirve).
+  if (campos?.length) {
+    return 'No pudimos validar los datos de la tarjeta. Revisalos o probá con otra.';
+  }
   // "Error de validación" a secas no le dice nada a nadie: pasa cuando se
   // reintenta la MISMA tarjeta tras un rechazo, y lo accionable es cambiarla.
   if (/validaci[óo]n/i.test(titulo)) {
@@ -385,9 +408,14 @@ function locationCode(sucursalId) {
 // n1co devuelve el bin (6 primeros) y nosotros ya teníamos los últimos 4.
 function saneaRespuesta(data) {
   if (!data || typeof data !== 'object') return null;
-  const { status, message, error, order, createdAt, authentication } = data;
+  const { status, message, error, order, createdAt, authentication, title, errors, traceId } = data;
   return {
     status, message, error, createdAt,
+    // ProblemDetails (400 por request mal armado): sin esto el raw quedaba en
+    // `{"status":400}` y no había forma de saber qué campo rechazó n1co.
+    ...(title ? { title } : {}),
+    ...(errors ? { errors } : {}),
+    ...(traceId ? { traceId } : {}),
     order: order ? {
       id: order.id, amount: order.amount,
       authorizationCode: order.authorizationCode ?? order.authorization_code,
@@ -469,6 +497,15 @@ async function cobrar({ pago, sesion, cardId, authenticationId, billing, email, 
       autorizacion: data?.order?.authorizationCode ?? null,
       facturado: dte.ok === true,
     };
+  }
+
+  if (faltaBilling(data)) {
+    await rpc('pago_online_resolver', {
+      p: { pago_id: pago, estado: 'error', card_id: cardId,
+           error_code: 'REQUIERE_BILLING', error_msg: 'n1co pidió billingInfo en /Charges',
+           raw: saneaRespuesta(data) },
+    });
+    return respuestaRequiereBilling({ pago_id: pago, pais: billing?.countryCode || null });
   }
 
   const det = detalleError(data);
@@ -661,15 +698,14 @@ export default async function handler(req) {
       const bin = tok.data.bin || {};
       const paisEmisor = String(bin.countryCode || '').toUpperCase();
       const billing = normalizarBilling(body?.billing);
-      if (['USA', 'US', 'CAN', 'CA'].includes(paisEmisor) && !billing) {
+      if (paisBilling(paisEmisor) && !billing) {
         await rpc('pago_online_resolver', {
           p: { pago_id: sesion.pago_id, estado: 'error', card_id: tok.data.id,
                marca: bin.brand, last4, emisor: bin.issuerName,
                error_code: 'REQUIERE_BILLING', error_msg: `emisor ${paisEmisor}` },
         });
-        return json(200, { ok: true, estado: 'requiere_billing', pago_id: sesion.pago_id,
-          tracking_token: tt,
-          mensaje: 'Tu tarjeta es de EE.UU./Canadá: necesitamos el código postal de facturación.' }, origin);
+        return json(200, respuestaRequiereBilling({
+          pago_id: sesion.pago_id, pais: paisEmisor, tracking_token: tt }), origin);
       }
 
       const out = await cobrar({
@@ -964,16 +1000,13 @@ export default async function handler(req) {
     // cliente en vez de gastar el intento en un rechazo seguro.
     const paisEmisor = String(bin.countryCode || '').toUpperCase();
     const billing = normalizarBilling(body?.billing);
-    if (['USA', 'US', 'CAN', 'CA'].includes(paisEmisor) && !billing) {
+    if (paisBilling(paisEmisor) && !billing) {
       await rpc('pago_online_resolver', {
         p: { pago_id: sesion.pago_id, estado: 'error', card_id: tok.data.id,
              marca: bin.brand, last4, emisor: bin.issuerName,
              error_code: 'REQUIERE_BILLING', error_msg: `emisor ${paisEmisor}` },
       });
-      return json(200, {
-        ok: true, estado: 'requiere_billing', pago_id: sesion.pago_id,
-        mensaje: 'Tu tarjeta es de EE.UU./Canadá: necesitamos el código postal de facturación.',
-      }, origin);
+      return json(200, respuestaRequiereBilling({ pago_id: sesion.pago_id, pais: paisEmisor }), origin);
     }
 
     // El resolver guarda marca/últimos4 aunque el cobro después falle: sirve
@@ -1286,13 +1319,31 @@ async function marcarTarjeta(pagoId, { marca, last4, emisor }) {
   } catch { /* best-effort: no romper un cobro aprobado por un dato de log */ }
 }
 
-function normalizarBilling(b) {
-  if (!b) return null;
-  const zip = String(b.zipCode || b.zip || '').trim();
-  if (!zip) return null;
+// n1co espera el país en ISO-2 (`"US"`, `"CA"` — así está en su ejemplo de
+// /Charges) y el bin lo devuelve en ISO-3 (`"USA"`, `"CAN"`). Acá se unifica.
+const PAIS_ISO2 = { USA: 'US', US: 'US', CAN: 'CA', CA: 'CA' };
+function paisBilling(codigo) {
+  return PAIS_ISO2[String(codigo || '').trim().toUpperCase()] || null;
+}
+
+function respuestaRequiereBilling({ pago_id, pais, ...extra }) {
   return {
-    countryCode: String(b.countryCode || 'USA').trim().toUpperCase(),
-    stateCode: String(b.stateCode || b.state || '').trim().toUpperCase(),
-    zipCode: zip,
+    ok: true, estado: 'requiere_billing', pago_id, pais: paisBilling(pais),
+    mensaje: 'Tu tarjeta es de EE.UU./Canadá: necesitamos el estado y el código postal de facturación.',
+    ...extra,
   };
+}
+
+// Los tres campos son obligatorios para n1co. Del 11 al 20-sep se mandó
+// `countryCode:'USA'` con `stateCode:''` y las 5 tarjetas de EE.UU. que lo
+// intentaron dieron 400 (ProblemDetails) sin llegar al banco: 0 de 5 pagaron.
+// Si falta algo se devuelve null y el endpoint se lo vuelve a pedir al cliente
+// en vez de gastar el intento en un 400 seguro.
+export function normalizarBilling(b) {
+  if (!b) return null;
+  const zip = String(b.zipCode || b.zip || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const stateCode = String(b.stateCode || b.state || '').trim().toUpperCase();
+  const countryCode = paisBilling(b.countryCode) || 'US';
+  if (!zip || !/^[A-Z]{2}$/.test(stateCode)) return null;
+  return { countryCode, stateCode, zipCode: zip };
 }
