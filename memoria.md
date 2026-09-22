@@ -28,7 +28,9 @@ Revisando la pasarela en producción (del 11 al 20-sep): **5 pedidos con tarjeta
 
 **Sin verificar en vivo:** que con los tres campos bien n1co apruebe una tarjeta de EE.UU. — hace falta una tarjeta real de allá. Si el próximo `REQUIERE_BILLING` va seguido de otro 400, el `raw` ya va a decir qué campo fue.
 
-**Aparte, encontrado en la misma revisión:** `WEB-EA90E980` (16-sep, Soyapango) cobró **$20.49** en n1co (orden 9234653, aut. 261791) y el pedido se **canceló 7 minutos después**; no hay rastro de devolución en la BD. Hay que confirmar en el portal de n1co que se reversó.
+**Aparte, encontrado en la misma revisión:** `WEB-EA90E980` (16-sep, Soyapango) cobró **$20.49** en n1co (orden 9234653, aut. 261791) y el pedido se **canceló 7 minutos después** sin rastro de devolución en la BD. **Jose hizo la devolución al cliente el 21-sep** desde el portal de n1co. Queda el hueco: cancelar un pedido ya cobrado en línea no reversa ni avisa — la consulta para no depender de que alguien lo vea es `delivery_clientes.estado='cancelada' and cobrado` sin devolución. Pendiente: que `torre_cancelar_pedido` marque el pago para reversar (o lo reverse por `/Refunds`) cuando `pagado_online`.
+
+Cerrado en `main` (PR #390, 21-sep).
 
 ## 21-Sep-2026 — Merma de producto preparado: anular algo que ya está en cocina ya no se pierde sin rastro
 
