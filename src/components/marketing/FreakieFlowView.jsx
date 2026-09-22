@@ -4,11 +4,12 @@ import { today, fmtDate } from '../../config'
 import { useToast } from '../../hooks/useToast'
 
 // ── Equipo (roles reales de Freakie Dogs Marketing) ──
+// Colores corporativos de Freakie Dogs, uno por persona en el orden dado por Frank.
 const TEAM = {
-  frank: { name: 'Frank', role: 'Director creativo · Marketing Lead', color: '#4FBFA4', duty: 'Detecta necesidades, define prioridades y aprueba decisiones clave.' },
-  adri: { name: 'Adriana', role: 'Marketing Project Manager + Diseño', color: '#FF7256', duty: 'Convierte prioridades en proyectos, asigna responsables, controla fechas y coordina producción.' },
-  kenya: { name: 'Kenia', role: 'Content & Growth Creative', color: '#7AAAD6', duty: 'Da seguimiento a lo digital: pautas, nuevas estrategias, pilares de contenido y grabaciones.' },
-  sam: { name: 'Samantha', role: 'Video Editor', color: '#B79CE8', duty: 'Convierte el material grabado en piezas terminadas según calendario.' },
+  frank: { name: 'Frank', role: 'Director creativo · Marketing Lead', color: '#E32829', duty: 'Detecta necesidades, define prioridades y aprueba decisiones clave.' },
+  adri: { name: 'Adriana', role: 'Marketing Project Manager + Diseño', color: '#FDDE10', duty: 'Convierte prioridades en proyectos, asigna responsables, controla fechas y coordina producción.' },
+  kenya: { name: 'Kenia', role: 'Content & Growth Creative', color: '#FFE3B3', duty: 'Da seguimiento a lo digital: pautas, nuevas estrategias, pilares de contenido y grabaciones.' },
+  sam: { name: 'Samantha', role: 'Video Editor', color: '#78C2CD', duty: 'Convierte el material grabado en piezas terminadas según calendario.' },
 }
 const TEAM_ORDER = ['frank', 'adri', 'kenya', 'sam']
 
@@ -36,7 +37,7 @@ const SURFACE_2 = '#202022'
 const LINE = '#2a2a2a'
 const INK = '#f2f0ec'
 const MUTED = '#9c9aa0'
-const RED = '#e63946'
+const RED = '#E32829' // rojo corporativo Freakie Dogs
 const DANGER = '#ff8b7a'
 const GOOD = '#4FBFA4'
 
