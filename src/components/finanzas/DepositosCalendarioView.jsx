@@ -253,7 +253,7 @@ export default function DepositosCalendarioView({ user }) {
       {/* Resumen */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(168px,1fr))', gap: 10, marginBottom: 14 }}>
         <Tarjeta titulo="Sin depositar" valor={fmt$(resumen.totalFalta)} sub={`${resumen.faltantes.length} día(s)·sucursal fuera de plazo`} color={resumen.faltantes.length ? C.bad : C.ok} />
-        <Tarjeta titulo="Con diferencia" valor={fmt$(resumen.totalDif)} sub={`${resumen.conDif.length} depósito(s) no cuadran`} color={resumen.conDif.length ? C.warn : C.ok} />
+        <Tarjeta titulo="Con diferencia" valor={fmt$(resumen.totalDif)} sub={`${resumen.conDif.length} depósito(s), no por día`} color={resumen.conDif.length ? C.warn : C.ok} />
         <Tarjeta titulo="Sin confirmar" valor={String(resumen.pendConfirmar)} sub="depósitos esperando revisión" color={resumen.pendConfirmar ? C.info : C.ok} />
         <Tarjeta titulo="Esperado vs depositado" valor={fmt$(resumen.esperado)} sub={`depositado ${fmt$(resumen.depositado)}`} color={C.txt} />
       </div>
@@ -280,7 +280,7 @@ export default function DepositosCalendarioView({ user }) {
               {/* Filas */}
               {filasVisibles.length === 0 ? (
                 <div style={{ padding: 34, textAlign: 'center', color: C.ok, fontSize: 13 }}>✓ Nada pendiente en este mes.</div>
-              ) : filasVisibles.map(fecha => (
+              ) : filasVisibles.map((fecha, iFila) => (
                 <div key={fecha} style={{ display: 'grid', gridTemplateColumns: `92px repeat(${cols.length}, minmax(${anchoCol}px,1fr))`, borderBottom: `1px solid ${C.line}`, background: esDomingo(fecha) ? 'rgba(255,255,255,.02)' : 'transparent' }}>
                   <div style={{ padding: '8px 10px', fontSize: 12, color: fecha === hoy ? C.red : C.dim, fontWeight: fecha === hoy ? 800 : 500, display: 'flex', alignItems: 'center' }}>
                     {mayusc1(diaCorto(fecha))}
@@ -290,15 +290,47 @@ export default function DepositosCalendarioView({ user }) {
                     const e = ESTADOS[cel?.estado || 'vacio']
                     const activo = sel && sel.store_code === sc && sel.fecha === fecha
                     const dif = cel?.grupo?.dif
+
+                    // Un depósito que cubre 6 días es UN faltante, no seis. Antes
+                    // la diferencia se repetía en las 6 celdas y se leía como
+                    // 6 × $41. Ahora las celdas del mismo depósito se pintan
+                    // UNIDAS (sin borde entre ellas) y la diferencia aparece UNA
+                    // sola vez, abajo de todo, diciendo en cuántos días es.
+                    // `cel.grupo` es el MISMO objeto para todos los días del
+                    // grupo, así que alcanza con comparar por identidad.
+                    const arriba = iFila > 0 ? celda(sc, filasVisibles[iFila - 1]) : null
+                    const abajo = iFila < filasVisibles.length - 1 ? celda(sc, filasVisibles[iFila + 1]) : null
+                    const unidoArriba = !!cel?.grupo && arriba?.grupo === cel.grupo
+                    const unidoAbajo = !!cel?.grupo && abajo?.grupo === cel.grupo
+                    const nDias = cel?.grupo?.dias?.length || 0
+                    // La diferencia se muestra en el ÚLTIMO día visible del grupo.
+                    const muestraDif = !!cel?.grupo && !unidoAbajo && Math.abs(dif) >= TOL_OK
+
+                    const titulo = !cel ? '' :
+                      `${STORES[sc] || sc} · ${mayusc1(diaLargo(fecha))} — ${e.label}` +
+                      (nDias > 1
+                        ? `. Parte de UN depósito de ${fmt$(cel.grupo.depositado)} que cubre ${nDias} días (${cel.grupo.dias[0]} al ${cel.grupo.dias[nDias - 1]}). Diferencia del depósito completo: ${fmt$(dif)} — no por día.`
+                        : '')
+
                     return (
                       <button key={sc} onClick={() => cel && setSel({ store_code: sc, fecha })} disabled={!cel}
-                        title={`${STORES[sc] || sc} · ${diaLargo(fecha)} — ${e.label}`}
+                        title={titulo}
                         style={{
-                          border: 'none', borderLeft: `1px solid ${C.line}`, padding: 4,
+                          border: 'none', borderLeft: `1px solid ${C.line}`,
+                          padding: `${unidoArriba ? 0 : 4}px 4px ${unidoAbajo ? 0 : 4}px`,
                           background: 'transparent', cursor: cel ? 'pointer' : 'default', fontFamily: 'inherit',
                         }}>
                         <div style={{
-                          background: e.bg, border: `1px solid ${activo ? C.txt : e.borde}`, borderRadius: 7,
+                          background: e.bg,
+                          // Bordes SIEMPRE por lado, nunca con el atajo `border`:
+                          // React aplica el atajo después al re-renderizar y pisa
+                          // el `none` de arriba/abajo, y el bloque se despega.
+                          borderStyle: 'solid', borderColor: activo ? C.txt : e.borde,
+                          borderLeftWidth: 1, borderRightWidth: 1,
+                          borderTopWidth: unidoArriba ? 0 : 1,
+                          borderBottomWidth: unidoAbajo ? 0 : 1,
+                          borderTopLeftRadius: unidoArriba ? 0 : 7, borderTopRightRadius: unidoArriba ? 0 : 7,
+                          borderBottomLeftRadius: unidoAbajo ? 0 : 7, borderBottomRightRadius: unidoAbajo ? 0 : 7,
                           padding: '6px 4px', minHeight: 38, display: 'flex', flexDirection: 'column',
                           alignItems: 'center', justifyContent: 'center', position: 'relative',
                         }}>
@@ -307,13 +339,28 @@ export default function DepositosCalendarioView({ user }) {
                               <span style={{ fontSize: 12.5, fontWeight: 700, color: e.color }}>
                                 {cel.estado === 'sinCierre' ? fmt0(cel.grupo.depositado) : fmt0(cel.esperado)}
                               </span>
-                              {cel.grupo && Math.abs(dif) >= TOL_OK && (
-                                <span style={{ fontSize: 9.5, color: cel.grave ? C.bad : C.warn, fontWeight: 700 }}>
-                                  {dif > 0 ? '+' : ''}{fmt0(dif)}
-                                </span>
+                              {muestraDif && (
+                                <>
+                                  <span style={{ fontSize: 9.5, color: cel.grave ? C.bad : C.warn, fontWeight: 700 }}>
+                                    {dif > 0 ? '+' : ''}{fmt0(dif)}
+                                  </span>
+                                  {nDias > 1 && (
+                                    <span style={{ fontSize: 8, color: C.dim, lineHeight: 1.2 }}>
+                                      en {nDias} días
+                                    </span>
+                                  )}
+                                </>
                               )}
                               {cel.estado === 'falta' && <span style={{ fontSize: 9, color: C.bad, fontWeight: 700 }}>FALTA</span>}
-                              {cel.grupo?.pendientes > 0 && (
+                              {/* Llave que marca a simple vista que son un solo depósito */}
+                              {nDias > 1 && (
+                                <span style={{
+                                  position: 'absolute', left: 2, top: unidoArriba ? 0 : 4,
+                                  bottom: unidoAbajo ? 0 : 4, width: 2, borderRadius: 2,
+                                  background: e.color, opacity: .5,
+                                }} />
+                              )}
+                              {cel.grupo?.pendientes > 0 && !unidoArriba && (
                                 <span title="Depósito sin confirmar" style={{ position: 'absolute', top: 3, right: 4, width: 5, height: 5, borderRadius: 5, background: C.info }} />
                               )}
                             </>
@@ -357,6 +404,43 @@ export default function DepositosCalendarioView({ user }) {
                   <span style={{ color: C.dim }}> · {mayusc1(diaCorto(f.fecha))}</span>
                 </span>
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: C.bad, fontFamily: 'monospace' }}>{fmt$(f.monto)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Los que no cuadran, UNO POR DEPÓSITO. La grilla es por día, y un
+          depósito de 6 días aparece en 6 celdas; acá cada diferencia se
+          nombra una sola vez, que es como hay que leerla y reportarla. */}
+      {resumen.conDif.length > 0 && (
+        <div style={{ ...box, borderColor: 'rgba(245,158,11,.35)', marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.warn, marginBottom: 3 }}>
+            {resumen.conDif.length} depósito{resumen.conDif.length > 1 ? 's' : ''} no cuadra{resumen.conDif.length > 1 ? 'n' : ''} · {fmt$(resumen.totalDif)}
+          </div>
+          <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 9 }}>
+            Una línea por depósito, no por día: un depósito que cubre varios días tiene UNA diferencia repartida entre todos ellos.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {resumen.conDif.slice().sort((a, b) => Math.abs(b.grupo.dif) - Math.abs(a.grupo.dif)).map(({ sc, grupo: g }) => (
+              <button key={sc + g.dias.join(',')} onClick={() => setSel({ store_code: sc, fecha: g.dias[g.dias.length - 1] })}
+                style={{ background: 'rgba(245,158,11,.06)', border: `1px solid ${C.line}`, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', color: C.txt, fontFamily: 'inherit', textAlign: 'left' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12.5 }}>
+                    <b>{STORES_SHORT[sc] || sc}</b>
+                    <span style={{ color: C.dim }}>
+                      {' · '}{g.dias.length === 1 ? mayusc1(diaCorto(g.dias[0]))
+                        : `${mayusc1(diaCorto(g.dias[0]))} al ${diaCorto(g.dias[g.dias.length - 1])} · ${g.dias.length} días en 1 depósito`}
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: Math.abs(g.dif) > TOL_WARN ? C.bad : C.warn }}>
+                    {g.dif > 0 ? '+' : ''}{fmt$(g.dif)}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2, fontFamily: 'monospace' }}>
+                  esperado {fmt$(g.esperado)} · depositado {fmt$(g.depositado)}
+                  {g.pendientes > 0 && <span style={{ color: C.info }}> · sin confirmar</span>}
+                </div>
               </button>
             ))}
           </div>
@@ -407,8 +491,12 @@ function Detalle({ sel, cel, onClose, onFoto, anulados = [], puedeAnular, onAnul
     ? (cel.estado === 'falta' ? { txt: 'No hay ningún depósito que cubra este día', color: C.bad }
       : cel.estado === 'plazo' ? { txt: 'Aún en plazo — se deposita la mañana siguiente', color: C.dim }
       : { txt: 'No había efectivo que depositar', color: C.dim })
-    : Math.abs(g.dif) < TOL_OK ? { txt: '✓ Cuadra contra el cierre', color: C.ok }
-    : { txt: g.dif > 0 ? `Sobra ${fmt$(g.dif)} sobre el cierre` : `Faltan ${fmt$(Math.abs(g.dif))} contra el cierre`, color: Math.abs(g.dif) > TOL_WARN ? C.bad : C.warn }
+    : Math.abs(g.dif) < TOL_OK ? { txt: multiDia ? `✓ Cuadra — el depósito de los ${g.dias.length} días está completo` : '✓ Cuadra contra el cierre', color: C.ok }
+    // El texto dice EN CUÁNTOS DÍAS, no sólo cuánto: sin eso, una diferencia
+    // de un depósito de 6 días se lee como si fuera de este día solo.
+    : { txt: (g.dif > 0 ? `Sobran ${fmt$(g.dif)}` : `Faltan ${fmt$(Math.abs(g.dif))}`)
+             + (multiDia ? ` en el depósito que cubre estos ${g.dias.length} días — no de este día solo` : ' contra el cierre'),
+        color: Math.abs(g.dif) > TOL_WARN ? C.bad : C.warn }
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', zIndex: 90, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }}>

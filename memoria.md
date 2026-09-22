@@ -2,6 +2,37 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 22-Sep-2026 — "Un faltante de 6 días no son 6 faltantes": la grilla mentía, y el banco desmintió la regla obvia
+
+Jose miró Venecia y vio **−$41 repetido en varios días seguidos**. Su lectura: *"eso no significa $41 por día, sino $41 entre los días del depósito"*. Tenía razón y el error era de presentación, mío.
+
+**El dato:** es **UN** depósito, `ad000f50`, $2,985.42, que cubre del 8 al 13-sep (6 días), esperado $3,026.85, diferencia **−$41.43 en total**. La grilla pintaba −$41 en las seis celdas, así que de un vistazo se leía como ~$248 faltantes. El número del resumen siempre estuvo bien (deduplica por grupo); lo que engañaba era la grilla. Alcance: **21 depósitos vigentes cubren más de un día**, 16 de ellos con diferencia.
+
+**Arreglo — el día y el depósito son dos unidades distintas y ya no se mezclan:**
+- Las celdas del mismo depósito se pintan **unidas**, como un solo bloque vertical (sin borde entre ellas, esquinas redondeadas sólo en las puntas, y una barrita al costado).
+- **La diferencia aparece UNA vez**, en el último día del grupo, con la leyenda **"en 6 días"** debajo. Ya no se puede sumar mentalmente.
+- Cada celda sigue mostrando **el esperado de SU día** — ese sí es por día y es correcto.
+- El tooltip dice la frase completa: *"Parte de UN depósito de $2,985.42 que cubre 6 días… Diferencia del depósito completo: −$41.43 — no por día"*.
+- Lista nueva **"N depósitos no cuadran"**, una línea por depósito con el rango de días, esperado, depositado y diferencia. Es la forma correcta de leerlo y de reportarlo.
+- El veredicto del detalle pasó de *"Faltan $41.43 contra el cierre"* a *"Faltan $41.43 en el depósito que cubre estos 6 días — no de este día solo"*.
+
+**Bug real que encontró el arnés:** la unión visual no funcionaba porque el estilo mezclaba el atajo `border` con `borderTop`/`borderBottom`. React aplica el atajo después al re-renderizar y pisa el `none`. Ahora son siempre propiedades por lado (`borderTopWidth`, etc.). Sin el render de prueba esto se iba a producción viéndose igual que antes.
+
+**Los 4 pendientes: el banco dio vuelta la regla obvia.** Iba a anular "el que no cuadra con el cierre". Antes de hacerlo los contrasté contra `bank_transacciones`, y en **3 de los 4 el que estaba en el banco era el que NO cuadraba**:
+
+| Caso | En el banco (queda) | Anulado (no existe en el banco) |
+|---|---|---|
+| S001 · 29-mar | $521.29 · `DEPOSITO NOEMY` 30-mar | $521.30 |
+| S003 · 7-may | $506.22 · `DEPOSITO JOCELYN MONTA` 8-may | $521.20 |
+| S006 · 3-ago | $1,220.00 · `DEPOSITO STEPHANIE` 4-ago | $1,500.00 |
+| S004 · 15/16-ago | $1,406.42 · `T365 DE: JOSE ISART` 18-ago | $1,407.42 |
+
+El patrón: alguien volvió a subir el depósito **tecleando el monto del cierre en vez del del voucher**, para que cuadrara. Siguiendo la regla obvia habría borrado el depósito real y dejado el inventado. Se verificó que el estado de cuenta tiene cobertura completa de marzo a septiembre (700–900 tx/mes), así que la ausencia significa algo y no es un hueco de carga.
+
+**Consecuencia: esos días tenían un faltante REAL que el duplicado tapaba.** Al anular quedan al descubierto: S006 3-ago **−$280.00**, S003 7-may **−$14.98**, S001 29-mar −$0.01, S004 15/16-ago $0.00. Se sacaron $3,949.92 de depósitos fantasma más; total anulado a la fecha **27 registros, $16,030.53**.
+
+**Regla para la próxima:** cuando dos registros compiten, la fuente de verdad es el **estado de cuenta**, no cuál cuadra con el cierre. Que un monto cuadre con el cierre es exactamente lo que hace sospechoso a un re-registro.
+
 ## 22-Sep-2026 — El mismo depósito subido dos veces: 23 casos, $12,080.61, y la puerta cerrada para que no vuelva
 
 Jose abrió el Control de Depósitos y vio Cafetalón del 16-sep en amarillo: "sobra $433.65", con **el mismo depósito listado dos veces**. No era un error de la pantalla: era el bug que la pantalla existía para encontrar.
