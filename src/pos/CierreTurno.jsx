@@ -8,6 +8,15 @@ import { printCorte, getImpresoras } from './print/printService'
 import { confirmAsync } from './confirmDialog'
 
 const MOTIVOS_EMPLEADO = ['Adelanto de Salario', 'Pago de Salario', 'Pago Propina']
+// Cuadre de tarjeta del Z contra el cierre del datáfono n1co (mismos motivos que CierreForm).
+const OTRO_N1CO = 'Otro (escribir)'
+const MOTIVOS_N1CO = [
+  'Un cobro quedó sin registrar en el sistema',
+  'Se cobró en el datáfono y se anuló después',
+  'Cobro de otra sucursal en este datáfono',
+  'Propina cobrada con tarjeta',
+  OTRO_N1CO,
+]
 const _n = (v) => parseFloat(v) || 0
 
 async function uploadFoto(file, folder) {
@@ -251,6 +260,12 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const [showEg, setShowEg]     = useState(false)
   const [showIn, setShowIn]     = useState(false)
   const [empleadosSuc, setEmpleadosSuc] = useState([])
+  // Cuadre n1co (solo Z). Informativo: no entra a ventas, depósito ni diferencia de efectivo.
+  const [n1co, setN1co]                   = useState('')
+  const [voucherFile, setVoucherFile]     = useState(null)
+  const [motivoN1co, setMotivoN1co]       = useState('')
+  const [motivoOtroN1co, setMotivoOtroN1co] = useState('')
+  const voucherRef = useRef(null)
 
   // ── Turno abierto de ESTE cajero en ESTA caja ──
   // Se filtra por cajero_id ADEMÁS de por caja: si otra persona ya abrió esta caja,
@@ -411,6 +426,12 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     ? { corte: corteDia, esp: espDia, dif: difDia, ventasLabel: 'Ventas del día (acumulado)' }
     : { corte, esp: espTurno, dif: difTurno, ventasLabel: 'Ventas del turno (sistema)' }
   const totalVentas = n(A.corte?.efectivo) + n(A.corte?.tarjeta) + n(A.corte?.transferencia) + n(A.corte?.link_pago)
+  // Cuadre n1co: contra la tarjeta del DÍA (lo mismo que termina en ventas_diarias.tarjeta_quanto)
+  const tarjetaDia = n(corteDia?.tarjeta)
+  const hayN1co = n1co.trim() !== '' && Number.isFinite(parseFloat(n1co))
+  const difN1co = hayN1co ? r2(n(n1co) - tarjetaDia) : null
+  const n1coCuadra = difN1co != null && Math.abs(difN1co) < 0.005
+  const motivoN1coFinal = motivoN1co === OTRO_N1CO ? motivoOtroN1co.trim() : motivoN1co
   const difColor = efReal === 0 ? '#9a9088' : Math.abs(A.dif) < 1 ? '#2dd4a8' : Math.abs(A.dif) <= 5 ? '#facc15' : '#f87171'
 
   // Subida de fotos de egreso CON TIMEOUT. La subida va ANTES del update del turno,
@@ -472,6 +493,13 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       } catch (e) { rebuildErr = e; if (intento < 3) await new Promise(r => setTimeout(r, 1200)) }
     }
     if (!cierreId) throw Object.assign(new Error(rebuildErr?.message || 'el resumen del día no se armó'), { soloRebuild: true })
+    // Cuadre n1co → columnas propias de ventas_diarias (el rebuild no las toca en su
+    // ON CONFLICT, así que un re-armado del cron no las borra). Es informativo: si
+    // falla, el día igual quedó cerrado.
+    if (p.n1co) {
+      const { error: n1Err } = await db.from('ventas_diarias').update(p.n1co).eq('id', cierreId)
+      if (n1Err) { console.warn('cuadre n1co no guardado:', n1Err.message); toast.warning('El día se cerró, pero el cuadre de n1co no se guardó: ' + n1Err.message) }
+    }
     return cierreId
   }
 
@@ -568,6 +596,9 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const cerrarZ = async () => {
     if (diaInfo.zExiste) { toast.error('El día ya fue cerrado con corte Z.'); return }
     if (!efectivoReal) { toast.warning('Cuenta e ingresa el efectivo de la gaveta'); return }
+    if (!hayN1co) { toast.warning('Ingresá el total de tarjeta que muestra el cierre del datáfono n1co'); return }
+    if (!voucherFile) { toast.warning('Tomá la foto del voucher de cierre de n1co'); return }
+    if (!n1coCuadra && !motivoN1coFinal) { toast.warning('El total de n1co no cuadra con el sistema: elegí por qué'); return }
     if (!(await confirmAsync('¿Cerrar el DÍA con corte Z? Es definitivo y solo se hace una vez al día. Incluye todos los turnos.', { title: 'Corte Z · cierre del día', confirmText: 'Cerrar el día', danger: true }))) return
     setSaving(true)
     // Corte DENTRO del gesto del botón: el cierre Z hace aún más await (subir
@@ -578,6 +609,14 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     const _print = printCorte('z', buildCorteData('Z'))
     try {
       const egresosFinal = await subirFotos(egresos)
+      // Voucher n1co: misma regla que las fotos de egreso — si no sube, el Z se guarda igual.
+      let voucherUrl = null
+      try {
+        voucherUrl = await Promise.race([
+          uploadFoto(voucherFile, `vouchers-n1co/${storeCode}`),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('la foto tardó demasiado')), FOTO_TIMEOUT_MS)),
+        ])
+      } catch (err) { toast.warning(`El voucher de n1co se guarda SIN foto (${err.message}).`) }
       // 1. Cierra ESTE turno con su propio snapshot (para que el rebuild sume bien por turno);
       //    el depósito y el conteo son del DÍA completo. El payload se guarda primero en
       //    el equipo: si el envío falla, el cierre se recupera en vez de perderse.
@@ -593,6 +632,10 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
           // del día es lo mismo. diferencia_efectivo (generada) = conteo − sistema_efectivo.
           conteo_efectivo: depositoDia, deposito_monto: depositoDia,
           egresos: egresosFinal, ingresos_extra: ingresos, notas: obs || null,
+        },
+        n1co: {
+          tarjeta_n1co: n(n1co), voucher_n1co_url: voucherUrl, diferencia_n1co: difN1co,
+          motivo_diferencia_n1co: n1coCuadra ? null : (motivoN1coFinal || null),
         },
       }
       guardarPendiente(p)
@@ -745,6 +788,58 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
           </div>
           {esZ && diaInfo.nTurnos > 1 && <div style={{ fontSize: 11, color: '#6b6878', marginTop: 6 }}>Acumulado de {diaInfo.nTurnos} turnos del día.</div>}
         </div>
+
+        {/* CUADRE DE TARJETA · n1co (solo Z). Informativo: no cambia ventas, depósito ni diferencia. */}
+        {esZ && (
+          <div style={{ ...card, borderColor: '#3b82f6' }}>
+            <div style={secTitle}>Cierre de tarjeta · n1co</div>
+            <div style={row}>
+              <span style={{ fontSize: 13, color: '#9a9088' }}>Tarjeta según el sistema (día)</span>
+              <span style={{ fontWeight: 700 }}>{fmt(tarjetaDia)}</span>
+            </div>
+            <Mi label="Total que muestra el datáfono n1co" star value={n1co} onChange={setN1co} hint="del voucher de cierre" />
+            {hayN1co && (
+              <div style={{
+                borderRadius: 8, padding: '9px 11px', fontSize: 13, lineHeight: 1.45, marginTop: 4,
+                background: n1coCuadra ? 'rgba(45,212,168,0.08)' : 'rgba(248,113,113,0.08)',
+                color: n1coCuadra ? '#2dd4a8' : '#fca5a5',
+              }}>
+                {n1coCuadra
+                  ? '✓ Cuadra exacto con el sistema'
+                  : <>
+                      <b>{difN1co > 0 ? 'Sobran ' : 'Faltan '}{fmt(Math.abs(difN1co))} contra el sistema</b><br />
+                      {difN1co > 0 ? 'el datáfono cobró más de lo registrado' : 'hay cobros registrados que el datáfono no tiene'}
+                    </>}
+              </div>
+            )}
+            <div style={{ marginTop: 10 }}>
+              <div style={_lbl}>Foto del voucher de cierre <span style={{ color: '#FFD900' }}>★</span></div>
+              <input ref={voucherRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setVoucherFile(f) }} />
+              <div onClick={() => voucherRef.current?.click()}
+                style={{
+                  border: `2px ${voucherFile ? 'solid #2dd4a8' : 'dashed #43382f'}`, borderRadius: 10, padding: 14,
+                  textAlign: 'center', cursor: 'pointer', fontSize: 13, color: voucherFile ? '#2dd4a8' : '#9a9088',
+                }}>
+                {voucherFile ? '✓ Voucher adjunto · tocá para cambiarlo' : '📷 Tomar foto del voucher'}
+              </div>
+            </div>
+            {hayN1co && !n1coCuadra && (
+              <div style={{ marginTop: 10 }}>
+                <div style={_lbl}>¿Por qué no cuadra? <span style={{ color: '#FFD900' }}>★</span></div>
+                <select value={motivoN1co} onChange={(e) => setMotivoN1co(e.target.value)} style={_inp}>
+                  <option value="">Seleccioná</option>
+                  {MOTIVOS_N1CO.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                {motivoN1co === OTRO_N1CO && (
+                  <textarea value={motivoOtroN1co} onChange={(e) => setMotivoOtroN1co(e.target.value)} rows={2}
+                    placeholder="Contá qué pasó con esa diferencia" style={{ ..._inp, marginTop: 8, resize: 'vertical' }} />
+                )}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: '#6b6878', marginTop: 8, lineHeight: 1.5 }}>Es solo control: no cambia las ventas, el depósito ni la diferencia de efectivo.</div>
+          </div>
+        )}
 
         {/* EGRESOS */}
         <div style={card}>
