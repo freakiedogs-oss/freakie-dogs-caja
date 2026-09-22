@@ -95,6 +95,27 @@ Jose abrió el Control de Depósitos y vio Cafetalón del 16-sep en amarillo: "s
 
 **Queda para revisar (no lo decidí yo, son 4 casos donde adivinar sería peor):** parecen correcciones que nadie anuló y hoy suman doble — S004 15/16-ago ($1,407.42 y 4 min después $1,406.42, que es el esperado exacto), S006 3-ago ($1,220 y después $1,500), S003 7-may ($506.22 y después $521.20) y S001 29-mar ($521.29 y después $521.30, un centavo). Salen en amarillo en el calendario y ahí mismo está el botón de anular.
 
+## 22-Sep-2026 — PedidosYa mandó el checklist de homologación, y es más ancho de lo que creíamos
+
+Cristian Pereira mandó el **Checklist Técnico Oficial**: 34 criterios en tres bloques que se validan en sesión conjunta. No era una llamada de alineación; es una certificación con lista de cotejo. Contrasté los 34 contra el código real: **íbamos 12**.
+
+**Los dos huecos que no estaban en el plan.**
+
+1. **Descuentos y vouchers.** Cinco escenarios obligatorios: 100 % Partner, 100 % PeYa, compartido, voucher, y el mix. `grep discount|voucher` sobre todo el proyecto —TypeScript y SQL— devolvía **cero**. No leemos el campo. Es el riesgo financiero de verdad: sin la atribución de quién absorbe el descuento, la liquidación no cuadra contra la de ellos.
+2. **El Bloque 3 de catálogo es obligatorio**, no opcional como lo teníamos. Cinco criterios, ninguno empezado. Lo bueno: el mapeo del menú ya está hecho y probado; falta serializarlo y mandarlo.
+
+**Lo que se construyó hoy (Bloque 1 + los pendientes sueltos del 2).**
+
+- **Los tres avisos del motorista.** De los cinco que exigen escuchar sólo teníamos `ORDER_CANCELLED` y `ORDER_PICKED_UP`. Los otros tres se guardaban como texto en `notas`: invisibles justo para quien los necesita. `peya_motorista_evento` los resuelve en una sentencia, se propagan a `pos_cocina_queue` y salen en el KDS como banda ámbar con los minutos de espera — ámbar y no rojo para que junto a una cancelación no compitan por el mismo grito. **El aviso repetido no reinicia el reloj** (verificado); si «está esperando» llega sin el «llegó» previo, igual se asume que está en la puerta; y al marcarse retirado el cartel se apaga solo.
+- **Estado de la tienda.** El `PUT /availability` contestaba 200 y **tiraba el dato**. Sin estado guardado no hay cómo contestar el `GET` que piden certificar, ni que la caja sepa por qué dejaron de entrar pedidos. Ahora vive en `peya_vendor_map`, el `GET` se contesta, y la bandeja del POS lo muestra con botón de cerrar 30 minutos. **El cierre va con plazo a propósito:** uno indefinido que nadie recuerda reabrir es una sucursal apagada todo el día. Sólo gerencia; verificado que una cajera queda bloqueada.
+- **`MENU_ACCOUNT_SETTINGS`**, el único de los cinco motivos de rechazo que exigen y no estaba en la lista del POS.
+
+**Lo que NO se pudo hacer, y por qué.** Ordenar el abrir/cerrar *hacia* PedidosYa y ajustar el tiempo de preparación por saturación son llamadas **salientes**, y los docs del middleware (`integration-middleware.*.restaurant-partners.com`) están **bloqueados por el proxy de egress** de este entorno. Inventar rutas de endpoints para después descubrir que eran otras cuesta más que esperar: hay que bajar los YAML (`pluginApi.yaml`, `middlewareExternalApi.yaml`) desde un navegador y dejarlos en el repo.
+
+**Trampa de siempre, otra vez.** Escritura y lectura en una misma sentencia leen el snapshot previo: `peya_disponibilidad` es STABLE y devolvía «abierta» justo después de cerrarla. No es un bug de la función; es que hay que verificar en sentencias separadas.
+
+**Agenda.** Sesión de certificación el **jueves 1-oct 14:15** (El Salvador). Se había reservado también el viernes 2 como respaldo, pero la regla del espacio es una sesión de 45 min por semana por partner, así que se liberó. El correo del 22 avisa que sin respuesta en 96 h el caso se cierra: se contestó el mismo día con cuatro consultas, la que bloquea es pedirles payloads de ejemplo de los cinco escenarios de descuento.
+
 ## 22-Sep-2026 — Reporte Semanal de Redes: llevaba 5 semanas sin generarse (rutina auto-desactivada)
 
 Jose vio en Marketing → Analytics Redes → Reporte Semanal que el último era el del **17-ago (Sem. 10–16 ago)**. El ERP estaba bien; lo que se cayó fue la **rutina que lo genera**.
