@@ -53,6 +53,10 @@ export default function ProtocoloEditorView({ user, onVolver }) {
   const [areaSel, setAreaSel]   = useState(null)
   const [editando, setEditando] = useState(null)    // paso_id | 'nuevo'
   const [form, setForm]         = useState(VACIO)
+  // Fotos elegidas mientras se crea un paso nuevo: se suben apenas se guarda
+  // (antes había que guardar, volver a abrir y recién ahí subir — Rosa, 21-sep).
+  const [fotosPend, setFotosPend] = useState([])   // File[]
+  const fotoNuevaRef = useRef(null)
   const [areaForm, setAreaForm] = useState(null)    // null | {id?, nombre, subtitulo, color}
   const [cargando, setCargando] = useState(true)
   const [ocupado, setOcupado]   = useState(false)
@@ -160,6 +164,7 @@ export default function ProtocoloEditorView({ user, onVolver }) {
     setError(null)
     setEditando('nuevo')
     setForm({ ...VACIO, ...prefill })
+    setFotosPend([])
   }
 
   async function guardar(p) {
@@ -179,7 +184,7 @@ export default function ProtocoloEditorView({ user, onVolver }) {
         })
         if (e) throw e
       } else {
-        const { error: e } = await db.rpc('fn_protocolo_guardar_paso', {
+        const { data: pasoNuevo, error: e } = await db.rpc('fn_protocolo_guardar_paso', {
           p_usuario: user.id, p_area_id: areaSel,
           p_titulo: form.titulo.trim(), p_como: t(form.como), p_bien: t(form.bien),
           p_mal: t(form.mal), p_nota: t(form.nota), p_requiere_foto: !!form.requiere_foto,
@@ -190,6 +195,12 @@ export default function ProtocoloEditorView({ user, onVolver }) {
         if (p === 'nuevo' && form._avisoId) {
           await db.rpc('fn_protocolo_resolver_aviso',
             { p_usuario: user.id, p_aviso_id: form._avisoId, p_estado: 'convertido' })
+        }
+        // Las fotos elegidas en el formulario del paso nuevo se suben ahora que
+        // ya existe el paso. Si una falla, el paso igual queda guardado.
+        if (p === 'nuevo' && pasoNuevo?.id && fotosPend.length) {
+          for (const file of fotosPend) await subirFotoAlPaso(pasoNuevo.id, file)
+          setFotosPend([])
         }
       }
       setEditando(null)
@@ -266,20 +277,21 @@ export default function ProtocoloEditorView({ user, onVolver }) {
   }
 
   // ── Fotos ──
+  async function subirFotoAlPaso(pasoId, file) {
+    const blob = await comprimir(file)
+    const dest = enBase ? 'base' : ambito
+    const path = `protocolo/ref/${dest}/${pasoId}-${Date.now()}.jpg`
+    const { error: up } = await db.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' })
+    if (up) throw up
+    const url = db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl
+    const { error: e } = await db.rpc('fn_protocolo_guardar_foto', {
+      p_usuario: user.id, p_paso_id: pasoId, p_url: url,
+      p_caption: file.name.replace(/\.[^.]+$/, '').slice(0, 60), p_store_code: ambito,
+    })
+    if (e) throw e
+  }
   async function subirFoto(p, file) {
-    await correr(async () => {
-      const blob = await comprimir(file)
-      const dest = enBase ? 'base' : ambito
-      const path = `protocolo/ref/${dest}/${p.paso_id}-${Date.now()}.jpg`
-      const { error: up } = await db.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' })
-      if (up) throw up
-      const url = db.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl
-      const { error: e } = await db.rpc('fn_protocolo_guardar_foto', {
-        p_usuario: user.id, p_paso_id: p.paso_id, p_url: url,
-        p_caption: file.name.replace(/\.[^.]+$/, '').slice(0, 60), p_store_code: ambito,
-      })
-      if (e) throw e
-    }, 'Foto subida')
+    await correr(() => subirFotoAlPaso(p.paso_id, file), 'Foto subida')
   }
   const borrarFoto = (f) => correr(async () => {
     const { error: e } = await db.rpc('fn_protocolo_borrar_foto', { p_usuario: user.id, p_foto_id: f.id })
@@ -422,7 +434,10 @@ export default function ProtocoloEditorView({ user, onVolver }) {
                     {!enBase && <span style={S.tagLocal}>solo {nombreAmbito}</span>}
                   </div>
                   <Formulario form={form} setForm={setForm} modo="directo" p={null} S={S}
-                    puedeFoto puedeNota fotos={[]} />
+                    puedeFoto puedeNota fotos={[]} enBase={enBase} ocupado={ocupado}
+                    fotosPend={fotosPend} fotoRef={fotoNuevaRef}
+                    onFotoPend={file => setFotosPend(x => [...x, file])}
+                    onQuitarPend={i => setFotosPend(x => x.filter((_, j) => j !== i))} />
                   <div style={S.acts}>
                     <button onClick={() => setEditando(null)} style={S.bt}>Cancelar</button>
                     <button onClick={() => guardar('nuevo')} disabled={ocupado} style={{ ...S.bt, ...S.btPri }}>
@@ -541,7 +556,8 @@ function Paso({ p, i, n, abierto, modo, enBase, esAdmin, ocupado, form, setForm,
 }
 
 /* ───────────────────────── formulario del paso ───────────────────────── */
-function Formulario({ form, setForm, modo, p, S, puedeFoto, puedeNota, fotos, onFoto, onBorrarFoto, enBase, ocupado, fotoRef }) {
+function Formulario({ form, setForm, modo, p, S, puedeFoto, puedeNota, fotos, onFoto, onBorrarFoto, enBase, ocupado, fotoRef,
+                      fotosPend = [], onFotoPend, onQuitarPend }) {
   const f = (k) => ({ value: form[k] || '', onChange: e => setForm(x => ({ ...x, [k]: e.target.value })) })
   const heredado = (k) => modo === 'local' && p && !(p.campos_propios || []).includes(k)
   return (
@@ -576,6 +592,23 @@ function Formulario({ form, setForm, modo, p, S, puedeFoto, puedeNota, fotos, on
           <label style={S.lbl}>Nota o pendiente (opcional)</label>
           <input type="text" {...f('nota')} style={S.inp} />
           <div style={S.ayuda}>Sale en amarillo. Sirve para dejar marcado lo que aún no está resuelto.</div>
+        </div>
+      )}
+
+      {!p && onFotoPend && (
+        <div style={S.f}>
+          <label style={S.lbl}>Fotos de apoyo</label>
+          <div style={S.fotos}>
+            {fotosPend.map((file, i) => (
+              <FotoPendiente key={i} file={file} S={S} ocupado={ocupado} onQuitar={() => onQuitarPend(i)} />
+            ))}
+            <div onClick={() => fotoRef?.current?.click()} style={S.addf}>
+              + Subir foto{!enBase ? ' de esta sucursal' : ''}
+            </div>
+            <input ref={fotoRef} type="file" accept="image/*" hidden
+              onChange={e => { const x = e.target.files?.[0]; e.target.value = ''; if (x) onFotoPend(x) }} />
+          </div>
+          <div style={S.ayuda}>Se suben al guardar el paso.</div>
         </div>
       )}
 
@@ -616,6 +649,23 @@ function Formulario({ form, setForm, modo, p, S, puedeFoto, puedeNota, fotos, on
           </p>
         </div>
       </label>
+    </div>
+  )
+}
+
+// Vista previa de una foto elegida para un paso que todavía no se guardó.
+function FotoPendiente({ file, S, ocupado, onQuitar }) {
+  const [src, setSrc] = useState(null)
+  useEffect(() => {
+    const u = URL.createObjectURL(file)
+    setSrc(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
+  return (
+    <div style={S.fbox}>
+      {src && <img src={src} alt="" style={S.fimg} />}
+      <button onClick={onQuitar} disabled={ocupado} style={S.fx} title="Quitar foto">quitar</button>
+      <div style={S.fcap}>{file.name.replace(/\.[^.]+$/, '').slice(0, 40)} · pendiente</div>
     </div>
   )
 }
