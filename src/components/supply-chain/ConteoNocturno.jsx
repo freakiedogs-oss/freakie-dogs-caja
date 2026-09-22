@@ -180,7 +180,8 @@ export default function ConteoNocturno({user,onBack}){
   // PeYa más bajo y más alto del día contra los que realmente están en el
   // POS, para encontrar huecos (pedidos nunca digitados) y IDs repetidos
   // (pedidos digitados dos veces) antes de cerrar la noche.
-  const [peyaAlerta,setPeyaAlerta]=useState(null); // {faltantes:[], duplicados:[], rango:[min,max]} | null
+  const [peyaAlerta,setPeyaAlerta]=useState(null); // {faltantes:[], duplicados:[], rango:[min,max], pedidos:[]} | null
+  const [peyaExpandido,setPeyaExpandido]=useState(false); // si esta abierto el desglose de pedidos digitados
   // Se perdió en el merge del 21-sep (alerta PeYa + fix merma automática) y
   // tumbaba el conteo nocturno en todas las sucursales: "Can't find variable".
   const [mermaResumenAlimentos,setMermaResumenAlimentos]=useState([]);
@@ -398,7 +399,8 @@ export default function ConteoNocturno({user,onBack}){
       const faltantes=[];
       for(let i=min;i<=max;i++){ if(!nums.includes(i)) faltantes.push(i); }
 
-      setPeyaAlerta((faltantes.length||duplicados.length) ? {faltantes,duplicados,rango:[min,max],total:refs.length} : null);
+      const pedidosOrdenados=[...refs].sort((a,b)=>a.refNum-b.refNum);
+      setPeyaAlerta((faltantes.length||duplicados.length) ? {faltantes,duplicados,rango:[min,max],total:refs.length,pedidos:pedidosOrdenados} : null);
     }catch(e){ setPeyaAlerta(null); }
   };
 
@@ -1365,10 +1367,14 @@ export default function ConteoNocturno({user,onBack}){
             digitado dos veces se ve exactamente igual que un faltante o un
             sobrante real en el conteo físico. */}
         {peyaAlerta && (
-          <div style={{padding:16,background:'#1a140d',border:'1px solid #f0a01e60',borderRadius:12,marginBottom:14}}>
+          <div onClick={()=>setPeyaExpandido(v=>!v)}
+            style={{padding:16,background:'#1a140d',border:'1px solid #f0a01e60',borderRadius:12,marginBottom:14,cursor:'pointer'}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
               <span style={{fontSize:20}}>🛵</span>
               <div style={{fontWeight:700,fontSize:15,color:'#f0a01e'}}>Revisá PedidosYa antes de contar</div>
+              <span style={{marginLeft:'auto',fontSize:11,color:'#f0a01e',fontWeight:700,whiteSpace:'nowrap'}}>
+                {peyaExpandido?'▲ ocultar desglose':'▼ ver desglose'}
+              </span>
             </div>
             <div style={{color:'#aaa',fontSize:12,marginBottom:10}}>
               Pedidos de hoy del #{peyaAlerta.rango[0]} al #{peyaAlerta.rango[1]} — {peyaAlerta.total} digitados en el POS.
@@ -1387,6 +1393,36 @@ export default function ConteoNocturno({user,onBack}){
                   ⚠️ Digitados más de una vez: {peyaAlerta.duplicados.map(d=>'#'+d.ref).join(', ')}
                 </div>
                 <div style={{fontSize:11.5,color:'#888'}}>Si de verdad es el mismo pedido repetido, hay que anular una de las cuentas y revertir su inventario.</div>
+              </div>
+            )}
+
+            {peyaExpandido && peyaAlerta.pedidos && (
+              <div onClick={e=>e.stopPropagation()} style={{marginTop:12,paddingTop:12,borderTop:'1px solid #f0a01e30'}}>
+                <div style={{fontSize:10.5,color:'#997a4d',fontWeight:700,textTransform:'uppercase',letterSpacing:.05,marginBottom:8}}>
+                  Desglose · {peyaAlerta.pedidos.length} pedido{peyaAlerta.pedidos.length===1?'':'s'} digitado{peyaAlerta.pedidos.length===1?'':'s'}
+                </div>
+                <div style={{maxHeight:280,overflowY:'auto'}}>
+                  {peyaAlerta.pedidos.map((p,i)=>{
+                    const esDuplicado=peyaAlerta.duplicados.some(d=>d.ref===p.refNum);
+                    const cancelada=p.estado==='cancelada';
+                    return (
+                      <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid #2a220f'}}>
+                        <div style={{display:'flex',gap:8,alignItems:'center',minWidth:0,overflow:'hidden'}}>
+                          <span style={{fontSize:11.5,fontWeight:700,flexShrink:0,color: esDuplicado?'#f38b91':cancelada?'#666':'#ddd'}}>#{p.refNum}</span>
+                          <span style={{fontSize:11.5,color:'#999',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.cliente_nombre||'—'}</span>
+                        </div>
+                        <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
+                          {cancelada && <span style={{fontSize:9,color:'#888',border:'1px solid #444',borderRadius:6,padding:'1px 5px'}}>ANULADA</span>}
+                          {esDuplicado && !cancelada && <span style={{fontSize:9,color:'#f38b91',border:'1px solid #f38b9160',borderRadius:6,padding:'1px 5px'}}>DUPLICADO</span>}
+                          <span style={{fontSize:11.5,color:'#aaa'}}>${Number(p.total||0).toFixed(2)}</span>
+                          <span style={{fontSize:10,color:'#666'}}>
+                            {p.created_at ? new Date(p.created_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',timeZone:'America/El_Salvador'}) : ''}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
