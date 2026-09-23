@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { db } from '../../supabase'
 import { Controles, PanelDesvio, evaluarControles, resumenDatos, desvioValido, useCatalogosBPM } from './BPMControles'
 import { descargarExpediente } from './bpmExpediente'
+import BPMChiliClaro from './BPMChiliClaro'
 
 /* ═══════════════════════════════════════════════════════════════════════
    BPM / HACCP — Control de producción del chili
@@ -371,14 +372,22 @@ export default function BPMChiliView({ user }) {
   const esperaOk = !pasoActual?.espera_min_seg || (segDesdePrevio ?? 0) >= pasoActual.espera_min_seg
   const esperaTarde = pasoActual?.espera_max_seg && (segDesdePrevio ?? 0) > pasoActual.espera_max_seg
 
-  async function registrarPaso() {
+  // `retener`: versión Mauricio. El operario decide retener el paso con un
+  // criterio en falla: el intento se guarda como no conforme, se abren las
+  // desviaciones y la tanda queda retenida hasta que Calidad disponga
+  // (retest o liberación con justificación). Sin `retener`, la v2 no cierra.
+  async function registrarPaso(opts) {
+    const retener = opts?.retener === true
     if (!pasoActual || !corrida) return
     setError(''); setGuardando(true)
     try {
       // ── Validaciones antes de tocar la base ──
       // En una corrida de revisión no se exige nada: el supervisor recorre los
       // pasos leyendo las instrucciones, no produciendo.
-      if (!enRevision) {
+      // Al RETENER (versión Mauricio) el intento se guarda con lo que hay: lo
+      // que falta lo resuelve Calidad en la desviación, no el operario ahora.
+      const exigeCompleto = !enRevision && !retener
+      if (exigeCompleto) {
         if (pasoActual.requiere_foto && !foto) throw new Error('Falta la foto.')
         if (pasoActual.requiere_temp && temp === '') throw new Error('Falta la temperatura.')
         if (pasoActual.requiere_duracion && dur === '') throw new Error('Faltan los segundos.')
@@ -387,7 +396,7 @@ export default function BPMChiliView({ user }) {
       // ── Pesaje: se exige TODO pesado y el lote de lo empacado. No se deja
       // avanzar con campos vacios: un peso en blanco no es "cero", es "nadie lo
       // peso", y despues no hay forma de reconstruir la tanda.
-      if (pasoActual.requiere_pesaje && !enRevision) {
+      if (pasoActual.requiere_pesaje && exigeCompleto) {
         if (!pesajeItems.length) throw new Error('No cargó la lista de ingredientes. Recargá la página.')
         // Se relee de la base justo antes de guardar: entre que el operario
         // abrio esta pantalla y toca el boton pudo terminar de pesar en la
@@ -422,7 +431,7 @@ export default function BPMChiliView({ user }) {
       if (tempN != null && Number.isNaN(tempN)) throw new Error('La temperatura no es un número.')
       if (durN != null && Number.isNaN(durN))   throw new Error('Los segundos no son un número.')
 
-      if (!esperaOk) {
+      if (!esperaOk && !retener) {
         throw new Error(`Todavía no. Faltan ${mmss(pasoActual.espera_min_seg - (segDesdePrevio ?? 0))} para poder medir.`)
       }
 
@@ -430,15 +439,17 @@ export default function BPMChiliView({ user }) {
       // el desvío lleva causa y acción antes de poder registrar. ──
       if (tieneControles && !enRevision) {
         if (!cat.listo) throw new Error('Todavía no cargaron los catálogos de Calidad. Esperá un momento.')
-        if (evalC.pendientes.length) throw new Error(`Falta: ${evalC.pendientes[0]}${evalC.pendientes.length > 1 ? ` (y ${evalC.pendientes.length - 1} más)` : ''}.`)
+        if (evalC.pendientes.length && !retener) throw new Error(`Falta: ${evalC.pendientes[0]}${evalC.pendientes.length > 1 ? ` (y ${evalC.pendientes.length - 1} más)` : ''}.`)
       }
       // Versión Mauricio (FD-CI-RG-002): con una falla el paso queda RETENIDO
       // y no se cierra. El botón ya está apagado, pero se revalida acá por si
       // el estado cambió entre el toque y el guardado.
-      if (!enRevision && fallasVivas.length && plantilla?.retiene_ante_falla)
+      if (!enRevision && fallasVivas.length && plantilla?.retiene_ante_falla && !retener)
         throw new Error('El paso quedó retenido: corregí lo que está fuera de criterio y volvé a medir. No se puede cerrar así.')
       // Cualquier "no cumple" (control o temperatura) lleva causa y acción.
-      if (!enRevision && fallasVivas.length && !desvioValido(desvio)) throw new Error('Elegí la causa y la acción correctiva del desvío.')
+      // En la versión Mauricio la causa y la acción las dispone Calidad al
+      // atender la desviación (T12), no el operario al retener.
+      if (!enRevision && fallasVivas.length && !plantilla?.retiene_ante_falla && !desvioValido(desvio)) throw new Error('Elegí la causa y la acción correctiva del desvío.')
 
       // ── Se evalua si cumple ──
       const fallas = []
@@ -487,7 +498,9 @@ export default function BPMChiliView({ user }) {
       }
 
       const cumple = fallas.length === 0
-      const bloquea = !cumple && pasoActual.es_critico
+      // Piloto: bloquea solo un paso crítico. Versión Mauricio: cualquier
+      // criterio en falla retiene el paso y la tanda (anexo, Marco común).
+      const bloquea = !cumple && (pasoActual.es_critico || retener)
 
       // ── Foto ──
       let fotoUrl = null
@@ -556,27 +569,38 @@ export default function BPMChiliView({ user }) {
       limpiarForm()
       await cargar()
 
-      if (bloquea) setError('El paso no cumplió. La tanda quedó bloqueada y se avisó a Casa Matriz.')
+      if (bloquea) setError(retener
+        ? `Paso ${pasoActual.orden} retenido. Se abrió la desviación y la tanda queda en espera de Calidad.`
+        : 'El paso no cumplió. La tanda quedó bloqueada y se avisó a Casa Matriz.')
     } catch (e) {
       setError(e.message || 'No se pudo registrar')
     }
     setGuardando(false)
   }
 
-  async function liberar() {
-    const motivo = prompt('¿Por qué se libera esta tanda? Queda registrado con tu nombre.')
-    if (!motivo) return
-    // Auditoría de Mauricio: después de corregir se REPITE la verificación,
-    // no se salta el paso. Avanzar sin repetir queda como excepción explícita.
-    const repetir = window.confirm(
-      `¿Repetir el paso ${corrida.paso_actual} con una nueva verificación?\n\n` +
-      'Aceptar = el operario vuelve a hacer el paso (recomendado).\n' +
-      'Cancelar = avanzar al siguiente paso sin repetirlo.')
-    setGuardando(true)
+  // La versión Mauricio manda la decisión desde su tarjeta (T12): `decision`
+  // 'retest' | 'liberar' y la justificación. La piloto sigue con prompt().
+  async function liberar(opts) {
+    let motivo, repetir
+    if (opts?.decision) {
+      motivo = opts.justificacion
+      repetir = opts.decision === 'retest'
+      if (!motivo || motivo.length < 20) { setError('La justificación necesita al menos 20 caracteres.'); return }
+    } else {
+      motivo = prompt('¿Por qué se libera esta tanda? Queda registrado con tu nombre.')
+      if (!motivo) return
+      // Auditoría de Mauricio: después de corregir se REPITE la verificación,
+      // no se salta el paso. Avanzar sin repetir queda como excepción explícita.
+      repetir = window.confirm(
+        `¿Repetir el paso ${corrida.paso_actual} con una nueva verificación?\n\n` +
+        'Aceptar = el operario vuelve a hacer el paso (recomendado).\n' +
+        'Cancelar = avanzar al siguiente paso sin repetirlo.')
+    }
+    setGuardando(true); setError('')
     await db.from('bpm_corridas').update({
       estado: 'liberada', liberada_por: user?.id || null,
       liberada_at: new Date().toISOString(),
-      liberacion_motivo: `${motivo}${repetir ? ' · se repite el paso' : ' · se avanza sin repetir'}`,
+      liberacion_motivo: `${opts?.decision ? (repetir ? 'Retest' : 'Liberar con justificación') + ': ' : ''}${motivo}${repetir ? ' · se repite el paso' : ' · se avanza sin repetir'}`,
       paso_actual: repetir ? corrida.paso_actual : Math.min((corrida.paso_actual || 1) + 1, pasos.length),
     }).eq('id', corrida.id)
     await db.from('bpm_desviaciones').update({
@@ -612,6 +636,25 @@ export default function BPMChiliView({ user }) {
 
   // ═══════════════════ RENDER ═══════════════════
   if (cargando) return <div style={{ padding: 20, color: C.dim }}>Cargando…</div>
+
+  // Versión Mauricio: misma lógica, pantalla en el formato del anexo
+  // FD-CI-DO-013-A01 (BPMChiliClaro). La piloto sigue abajo, como siempre.
+  if (plantilla?.retiene_ante_falla) {
+    const m = {
+      user, plantilla, plantillas, pasos, corrida, registros, desviaciones, historial,
+      pasoActual, regPrevio, intentoPrevio, enRevision,
+      cat, valores, setValores, hoy, ahoraISO, quien, ahora, horaServidor,
+      foto, preview, fileRef, onFoto,
+      temp, setTemp, dur, setDur, nota, setNota,
+      pesajeItems, pesajes, pesajeHechos, pesajeMalos, pesajeListo, cargarPesajes, banda,
+      fase, restan, hechas, setFase, setRestan, setHechas,
+      evalC, fallasVivas, tieneControles, esperaOk, esperaTarde, segDesdePrevio,
+      guardando, error, expediente,
+      puedeRegistrar, puedeLiberar, puedeRevisar,
+      iniciarTanda, registrarPaso, liberar, anular, bajarExpediente, cargar,
+    }
+    return <BPMChiliClaro m={m} />
+  }
 
   const card = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }
   const btn = (bg, dis) => ({

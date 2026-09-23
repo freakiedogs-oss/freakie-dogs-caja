@@ -85,15 +85,20 @@ const TABS = [
       { k: 'activo', label: 'Activo', tipo: 'bool', w: 55 },
     ],
     nuevo: () => ({ orden: 99, grupo: 'base', ingrediente: '', gramos_objetivo: 0, unidad: 'g', tolerancia_pct: 10, tolerancia_g: 2, fuente: 'balanza_grande', requiere_lote: false, requiere_proveedor: false, requiere_vencimiento: false, requiere_foto: false, activo: true }) },
-  { key: 'parametros', label: 'Parámetros', tabla: 'bpm_parametros', orden: 'clave', pk: 'clave',
-    ayuda: 'Valores sueltos que usan los pasos de cocción (fase 2): temperaturas objetivo, hojas de laurel, corte de vegetales.',
+  // Desde el 23-sep-2026 (versión Mauricio) una clave puede existir dos veces:
+  // global y de una plantilla (`plantilla_id`), y gana la de la plantilla. Por
+  // eso la llave es `id` y no `clave`: guardar por clave pisaba las dos filas
+  // y fallaba por llave duplicada. La columna «Versión» dice cuál es cuál.
+  { key: 'parametros', label: 'Parámetros', tabla: 'bpm_parametros', orden: 'clave', pk: 'id',
+    ayuda: 'Valores que usan los pasos: temperaturas, tiempos, laurel, corte. «Global» aplica a todas las versiones; una fila con versión solo a esa plantilla y gana sobre la global. Las filas nuevas se crean como globales.',
     cols: [
+      { k: '_version', label: 'Versión', tipo: 'ro', w: 120 },
       { k: 'clave', label: 'Clave', tipo: 'text', w: 220 },
       { k: 'valor', label: 'Valor', tipo: 'text', w: 100 },
       { k: 'descripcion', label: 'Descripción', tipo: 'text' },
     ],
     alGuardar: (row, user) => ({ ...row, actualizado_por: user?.nombre || 'Calidad', updated_at: new Date().toISOString() }),
-    nuevo: () => ({ clave: '', valor: '', descripcion: '' }) },
+    nuevo: () => ({ clave: '', valor: '', descripcion: '', plantilla_id: null }) },
 ]
 
 export default function BPMParametrosView({ user }) {
@@ -115,16 +120,27 @@ export default function BPMParametrosView({ user }) {
       .then(({ data }) => setPasoPesaje(data?.[0]?.id || null))
   }, [])
 
+  // Nombre de versión de cada plantilla, para la columna «Versión» de Parámetros.
+  const [versiones, setVersiones] = useState({})
+  useEffect(() => {
+    db.from('bpm_plantillas').select('id, version, nombre')
+      .then(({ data }) => setVersiones(Object.fromEntries((data || []).map(p => [p.id, p.version || p.nombre]))))
+  }, [])
+
   async function cargar() {
     setCargando(true); setMsg('')
     let q = db.from(def.tabla).select('*').order(def.orden)
     if (def.tabla === 'bpm_pesaje_items' && pasoPesaje) q = q.eq('paso_id', pasoPesaje)
+    if (def.tabla === 'bpm_parametros') q = q.order('plantilla_id', { nullsFirst: true })
     const { data, error } = await q
     if (error) setMsg('❌ ' + error.message)
-    setFilas((data || []).map(r => ({ ...r, _dirty: false })))
+    setFilas((data || []).map(r => ({
+      ...r, _dirty: false,
+      _version: def.tabla === 'bpm_parametros' ? (r.plantilla_id ? (versiones[r.plantilla_id] || 'plantilla') : 'Global') : undefined,
+    })))
     setCargando(false)
   }
-  useEffect(() => { cargar() }, [tab, pasoPesaje]) // eslint-disable-line
+  useEffect(() => { cargar() }, [tab, pasoPesaje, versiones]) // eslint-disable-line
 
   const edit = (i, k, v) => setFilas(fs => fs.map((f, j) => j === i ? { ...f, [k]: v, _dirty: true } : f))
 
@@ -134,7 +150,7 @@ export default function BPMParametrosView({ user }) {
     setGuardando(i); setMsg('')
     try {
       let row = { ...f }
-      delete row._dirty; delete row._nuevo
+      delete row._dirty; delete row._nuevo; delete row._version
       for (const c of def.cols) {
         if (c.tipo === 'number' || c.tipo === 'date') { if (row[c.k] === '' || row[c.k] == null) row[c.k] = null }
         if (c.tipo === 'number' && row[c.k] != null) row[c.k] = Number(row[c.k])
