@@ -11,6 +11,7 @@ import { printComanda, printPreCuenta, printFactura, getImpresora } from '../pri
 import Icon, { EMOJI_ICON } from '../Icon'
 import PinAuthModal from '../PinAuthModal'
 import PreparadoModal from '../PreparadoModal'
+import ReutilizarModal from '../ReutilizarModal'
 import { useToast } from '../../hooks/useToast'
 import { usePeyaIdObligatorio } from '../peyaId'
 
@@ -230,6 +231,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [pinAuth,           setPinAuth]            = useState(null)
   const [cortesiaModal,     setCortesiaModal]      = useState(null)  // {idx, auth, motivo}
   const [preparadoModal,    setPreparadoModal]     = useState(null)  // {idx, auth, titulo, cocinaListo}
+  const [reutilizarModal,   setReutilizarModal]    = useState(null)  // {mermaId, cuentaItemId, titulo, usuarioNombre}
   const [noteText,          setNoteText]           = useState('')
   const [modPicker,         setModPicker]          = useState(null)  // producto con grupos por elegir
   const [removibles,        setRemovibles]         = useState([])    // ingredientes que admiten "SIN"
@@ -789,7 +791,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         respuesta = null
       }
       try {
-        const { error: ea } = await db.rpc('pos_anular_item', {
+        const { data: anulada, error: ea } = await db.rpc('pos_anular_item', {
           p_item_id: item.dbId,
           p_respuesta: respuesta,
           p_motivo: null,
@@ -797,13 +799,24 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           p_usuario_nombre: auth?.nombre || user?.nombre || null,
         })
         if (ea) throw ea
+        // "Se usa en otra orden": elegir a cuál (22-sep-2026). Sin destino, el
+        // plato queda como reutilizado pendiente y sale marcado en el cuadre.
+        if (respuesta === 'reutilizado' && anulada?.merma_id) {
+          setReutilizarModal({
+            mermaId: anulada.merma_id,
+            cuentaItemId: item.dbId,
+            titulo: `${item.qty > 1 ? item.qty + '× ' : ''}${item.nombre}`,
+            usuarioNombre: auth?.nombre || user?.nombre || null,
+          })
+        }
         const next = items.filter((_, i) => i !== idx)
         setItems(next)
         if (cuentaId) {
           const s = next.reduce((a, i) => a + precioLinea(i), 0)
           await db.from('pos_cuentas').update({ subtotal: s, total: s, updated_at: new Date().toISOString() }).eq('id', cuentaId)
         }
-        toast.success(respuesta === 'preparado' ? 'Ítem anulado · quedó como merma de producto preparado' : 'Item anulado')
+        toast.success(respuesta === 'preparado' ? 'Ítem anulado · quedó como merma de producto preparado'
+          : respuesta === 'reutilizado' ? 'Ítem anulado · elegí a qué orden va' : 'Item anulado')
       } catch (e) {
         toast.error('No se pudo anular: ' + e.message)
       }
@@ -1812,6 +1825,17 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           cocinaListo={preparadoModal.cocinaListo}
           onCancel={() => setPreparadoModal(null)}
           onElegir={(resp) => { const p = preparadoModal; setPreparadoModal(null); doDeleteItem(p.idx, p.auth, resp) }}
+        />
+      )}
+      {reutilizarModal && (
+        <ReutilizarModal
+          {...reutilizarModal}
+          modo="caja"
+          onClose={(r) => {
+            setReutilizarModal(null)
+            if (r?.asignado) toast.success(`Listo: va para ${r.asignado}. Cocina lo ve marcado.`)
+            else toast.warning('Quedó pendiente: sale marcado en el cuadre de la noche.')
+          }}
         />
       )}
       {cortesiaModal && (
