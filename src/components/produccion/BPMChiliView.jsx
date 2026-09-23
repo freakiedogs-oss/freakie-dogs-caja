@@ -60,6 +60,10 @@ export default function BPMChiliView({ user }) {
   const [cargando, setCargando]   = useState(true)
   const [error, setError]         = useState('')
   const [plantilla, setPlantilla] = useState(null)
+  // Desde el 23-sep-2026 conviven dos versiones del BPM: la piloto y la
+  // «versión Mauricio» (informe FD-CI-RG-002). `plantillas` son las que
+  // este usuario puede correr; `plantilla` es la que está abierta.
+  const [plantillas, setPlantillas] = useState([])
   const [pasos, setPasos]         = useState([])
   const [corrida, setCorrida]     = useState(null)
   const [registros, setRegistros] = useState([])
@@ -94,7 +98,7 @@ export default function BPMChiliView({ user }) {
 
   // Controles estructurados del paso (bpm_pasos.controles) y el desvío que
   // se abre cuando algo no cumple. Los catálogos los administra Calidad.
-  const cat = useCatalogosBPM()
+  const cat = useCatalogosBPM(plantilla?.id)
   const [valores, setValores] = useState({})
   const [desvio, setDesvio]   = useState(null)
   // Expediente PDF de una tanda (fase 3). Guarda el id mientras lo arma:
@@ -124,17 +128,26 @@ export default function BPMChiliView({ user }) {
 
   const horaServidor = () => new Date(ahora + offsetMs)
 
-  async function cargar() {
+  async function cargar(idPreferido) {
     setCargando(true); setError('')
     try {
       const { data: srv } = await db.rpc('hora_servidor')
       const off = srv ? new Date(srv).getTime() - Date.now() : 0
       setOffsetMs(off)
 
-      const { data: pls, error: e1 } = await db
-        .from('bpm_plantillas').select('*').eq('receta_id', RECETA_CHILI).eq('activo', true).limit(1)
+      // Se traen todas las versiones del chili. Las inactivas (la versión
+      // Mauricio arranca así) solo las ve quien revisa: sirven para correr
+      // una tanda de prueba antes de encenderla para toda la cocina.
+      const { data: todas, error: e1 } = await db
+        .from('bpm_plantillas').select('*').eq('receta_id', RECETA_CHILI)
+        .order('activo', { ascending: false }).order('created_at')
       if (e1) throw e1
-      const pl = pls?.[0]
+      const disponibles = (todas || []).filter(p => p.activo || ROLES_REVISAN.includes(user?.rol))
+      setPlantillas(disponibles)
+
+      const pl = disponibles.find(p => p.id === idPreferido)
+        || disponibles.find(p => p.activo)
+        || disponibles[0]
       if (!pl) {
         setError('No está configurada la plantilla del chili. Avisá a Casa Matriz.')
         setPlantilla(null); setCargando(false); return
@@ -157,10 +170,15 @@ export default function BPMChiliView({ user }) {
 
       if (co) {
         const [{ data: rg }, { data: dv }] = await Promise.all([
-          db.from('bpm_registros').select('*').eq('corrida_id', co.id).order('orden'),
+          db.from('bpm_registros').select('*').eq('corrida_id', co.id).order('orden').order('intento'),
           db.from('bpm_desviaciones').select('*').eq('corrida_id', co.id).order('creada_at'),
         ])
-        setRegistros(rg || []); setDesv(dv || [])
+        // Un paso puede tener varios intentos (el retest es el N+1). La
+        // pantalla muestra el último; los anteriores quedan en la base y
+        // salen en el expediente.
+        const ultimo = new Map()
+        for (const r of rg || []) ultimo.set(r.paso_id, r)
+        setRegistros([...ultimo.values()]); setDesv(dv || [])
       } else { setRegistros([]); setDesv([]) }
 
       const { data: hist } = await db.from('bpm_corridas').select('*')
@@ -414,6 +432,11 @@ export default function BPMChiliView({ user }) {
         if (!cat.listo) throw new Error('Todavía no cargaron los catálogos de Calidad. Esperá un momento.')
         if (evalC.pendientes.length) throw new Error(`Falta: ${evalC.pendientes[0]}${evalC.pendientes.length > 1 ? ` (y ${evalC.pendientes.length - 1} más)` : ''}.`)
       }
+      // Versión Mauricio (FD-CI-RG-002): con una falla el paso queda RETENIDO
+      // y no se cierra. El botón ya está apagado, pero se revalida acá por si
+      // el estado cambió entre el toque y el guardado.
+      if (!enRevision && fallasVivas.length && plantilla?.retiene_ante_falla)
+        throw new Error('El paso quedó retenido: corregí lo que está fuera de criterio y volvé a medir. No se puede cerrar así.')
       // Cualquier "no cumple" (control o temperatura) lleva causa y acción.
       if (!enRevision && fallasVivas.length && !desvioValido(desvio)) throw new Error('Elegí la causa y la acción correctiva del desvío.')
 
@@ -487,8 +510,13 @@ export default function BPMChiliView({ user }) {
       } : null
 
       // ── Registro. Ojo: NO se manda registrado_at, lo pone el servidor. ──
+      // Cada registro es un intento. Si el paso ya tenía uno (retest tras una
+      // retención), este es el N+1 y el anterior no se borra — hasta el
+      // 23-sep-2026 la clave única lo impedía y el retest daba error.
+      const previo = registros.find(r => r.paso_id === pasoActual.id)
       const { data: reg, error: rErr } = await db.from('bpm_registros').insert({
         corrida_id: corrida.id, paso_id: pasoActual.id, orden: pasoActual.orden,
+        intento: (Number(previo?.intento) || 0) + 1,
         foto_url: fotoUrl, temperatura_c: tempN, duracion_seg: durN,
         nota: nota || null, registrado_por: user?.id || null, cumple, datos,
       }).select().single()
@@ -617,7 +645,41 @@ export default function BPMChiliView({ user }) {
         <h2 style={{ fontSize: 19, fontWeight: 600, margin: '0 0 4px' }}>🌶️ Control BPM · Chili</h2>
         <div style={{ color: C.dim, fontSize: 13, marginBottom: 18 }}>
           Una tanda por día. La hora la registra el sistema, no el teléfono.
+          {plantilla?.version && <> · <b style={{ color: C.txt }}>{plantilla.version}</b></>}
         </div>
+
+        {/* Cambiar de versión solo mientras no hay tanda abierta: una tanda
+            empezada con un criterio no se termina con otro. */}
+        {plantillas.length > 1 && !corrida && puedeRevisar && (
+          <div style={{ ...card, borderColor: C.acc }}>
+            <b style={{ fontSize: 14 }}>Versión del control</b>
+            <div style={{ color: C.dim, fontSize: 12.5, margin: '4px 0 10px', lineHeight: 1.5 }}>
+              La <b style={{ color: C.txt }}>piloto</b> es la que corre en Casa Matriz hoy.
+              La <b style={{ color: C.txt }}>versión Mauricio</b> suma los parámetros y los
+              criterios del informe de validación: un paso fuera de criterio no se cierra.
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {plantillas.map(p => (
+                <button key={p.id} onClick={() => cargar(p.id)}
+                  style={{ ...btn(p.id === plantilla?.id ? C.ok : '#3f3f46'), fontSize: 13.5, padding: '9px 14px' }}>
+                  {p.version || p.nombre}
+                  {!p.activo && <span style={{ fontWeight: 400, fontSize: 11.5, marginLeft: 7 }}>en pruebas</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {plantilla?.retiene_ante_falla && (
+          <div style={{
+            background: '#101827', border: `1px solid ${C.acc}`, borderRadius: 10,
+            padding: '11px 14px', marginBottom: 14, color: '#bfdbfe', fontSize: 13, lineHeight: 1.5,
+          }}>
+            <b style={{ color: C.acc }}>Versión Mauricio.</b> Un control fuera de criterio
+            <b> retiene el paso</b>: no se puede cerrar hasta corregir y volver a medir.
+            {!plantilla.activo && ' Todavía está en pruebas y no reemplaza a la piloto.'}
+          </div>
+        )}
 
         {error && (
           <div style={{ ...card, background: '#3a1414', border: `1px solid ${C.bad}`, color: '#fecaca' }}>
@@ -1054,7 +1116,32 @@ export default function BPMChiliView({ user }) {
 
             {/* Desvío: aparece en cuanto algo no cumple (control o temperatura) y
                 pide causa y acción del catálogo antes de dejar registrar. */}
-            {!enRevision && fallasVivas.length > 0 && (
+            {/* Versión Mauricio: con una falla el paso no se cierra. En vez
+                del panel de desvío —que servía para documentar y seguir— se
+                explica qué hay que corregir y se espera la nueva medición. */}
+            {!enRevision && fallasVivas.length > 0 && plantilla?.retiene_ante_falla && (
+              <div style={{ ...card, background: '#3a1212', border: `1px solid ${C.bad}`, color: '#fecaca' }}>
+                <b style={{ display: 'block', marginBottom: 6 }}>Paso {pasoActual.orden} retenido</b>
+                <div style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 9 }}>
+                  Esta versión del control no deja cerrar un paso fuera de criterio.
+                  Corregí lo de abajo, volvé a medir y el botón se habilita solo.
+                  Si no se puede corregir, llamá a Calidad antes de seguir.
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6 }}>
+                  {fallasVivas.map((f, i) => (
+                    <li key={i}>
+                      {f.detalle}
+                      {f.valor_real != null && (
+                        <span style={{ color: '#fca5a5' }}> — se midió {f.valor_real}
+                          {f.valor_esperado ? `, se pide ${f.valor_esperado}` : ''}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {!enRevision && fallasVivas.length > 0 && !plantilla?.retiene_ante_falla && (
               <PanelDesvio
                 contexto={pasoActual.contexto_desvio || 'general'} cat={cat} fallas={fallasVivas}
                 desvio={desvio} setDesvio={setDesvio} esCritico={!!pasoActual.es_critico}
@@ -1069,12 +1156,17 @@ export default function BPMChiliView({ user }) {
               const ctrl = tieneControles && !enRevision
               const faltaCtrl = ctrl && (!cat.listo || evalC.pendientes.length > 0)
               const hayFalla  = !enRevision && fallasVivas.length > 0
-              const faltaDesvio = hayFalla && !desvioValido(desvio)
-              const bloqueado  = guardando || !esperaOk || faltaPesar || faltaCtrl || faltaDesvio
+              // Versión Mauricio: una falla deja el paso RETENIDO y no se
+              // puede cerrar. En la piloto sigue como siempre — con causa y
+              // acción el paso se registra con el desvío documentado.
+              const retiene  = hayFalla && !!plantilla?.retiene_ante_falla
+              const faltaDesvio = hayFalla && !retiene && !desvioValido(desvio)
+              const bloqueado  = guardando || !esperaOk || faltaPesar || faltaCtrl || faltaDesvio || retiene
               return (
                 <button style={{ ...btn(hayFalla ? C.bad : C.ok, bloqueado), width: '100%' }}
                         disabled={bloqueado} onClick={registrarPaso}>
                   {guardando ? 'Guardando…'
+                    : retiene ? `Paso ${pasoActual.orden} retenido · corregí y volvé a medir`
                     : faltaPesar ? `Faltan ${pesajeItems.length - pesajeHechos} por pesar en la tablet`
                     : faltaCtrl ? (cat.listo ? `Falta: ${evalC.pendientes[0]}` : 'Cargando catálogos…')
                     : faltaDesvio ? 'Elegí causa y acción del desvío'
