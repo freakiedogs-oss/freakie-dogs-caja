@@ -1,0 +1,862 @@
+---
+components:
+  schemas:
+    VendorConfigurationEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - VENDOR_CREATED
+            - VENDOR_UPDATED
+            - VENDOR_DELETED
+    MenuImportLogWithoutVendorCodes:
+      type: object
+      properties:
+        menuImportId:
+          type: string
+        status:
+          type: string
+          enum:
+            - in_progress
+            - done
+            - failed
+      required:
+        - menuImportId
+        - status
+    MenuImportLog:
+      type: object
+      properties:
+        menuImportId:
+          type: string
+        status:
+          type: string
+          enum:
+            - in_progress
+            - done
+            - failed
+        vendorCodes:
+          description: A comma separated list of platformVendorCodes whose logs to fetch
+          type: string
+        url:
+          type: string
+      required:
+        - menuImportId
+        - status
+        - vendorCodes
+    MenuImportLogExtension:
+      type: object
+      properties:
+        createdAt:
+          type: string
+        message:
+          type: string
+    MenuImportLogResponse:
+      type: object
+      additionalProperties:
+        allOf:
+          - $ref: '#/components/schemas/MenuImportLog'
+          - $ref: '#/components/schemas/MenuImportLogExtension'
+    MenuImportLogPosResponse:
+      type: object
+      additionalProperties:
+        allOf:
+          - $ref: '#/components/schemas/MenuImportLogWithoutVendorCodes'
+          - $ref: '#/components/schemas/MenuImportLogExtension'
+    OrderStatusUpdateRequest:
+      anyOf:
+        - example:
+            acceptanceTime: '2016-10-05T00:00:00+05:00'
+            remoteOrderId: 123-xfal-90
+            status: order_accepted
+            modifications:
+              products:
+                - # Remove a product
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  modification:
+                    type: REMOVAL
+                - # Reduce quantity of a product
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  quantity: "1"
+                  modification:
+                    type: CHANGE
+                    properties:
+                      - quantity
+                - # Remove a topping of type `extra`
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  modification:
+                    type: CHANGE
+                    properties:
+                      - selectedToppings
+                  selectedToppings:
+                    - id: TOPPINGS_ITEM_ID_ON_PLATFORM
+                      remoteCode: TOPPINGS_ITEM_ID_ON_POS
+                      type: EXTRA
+                      modification:
+                        type: REMOVAL
+                - # Remove a topping of type `variant`
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  modification:
+                    type: CHANGE
+                    properties:
+                      - selectedToppings
+                  selectedToppings:
+                    - id: TOPPINGS_ITEM_ID_ON_PLATFORM
+                      remoteCode: TOPPINGS_ITEM_ID_ON_POS
+                      type: VARIANT
+                      modification:
+                        type: REMOVAL
+          title: order_accepted
+          properties:
+            status:
+              enum:
+                - order_accepted
+              type: string
+            acceptanceTime:
+              description: |
+                The meaning of this field strongly depends on the `expeditionType`.
+                
+                For customer pickup orders it's the expected time when the order is ready to be picked up by a customer. Vendors
+                should respect the *pickup.pickupTime* and only send a different time if here are strong reasons. If a different
+                value as *pickup.pickupTime* is send the customer will be informed. 
+                
+                For vendor delivery orders it's the expected time when the order is delivered to the customer. Vendors should respect
+                the *delivery.expectedDeliveryTime* and only send a different time if here are strong reasons. If a different time is chosen
+                the customer will be informed.  
+                
+                For own delivery orders (orders delivered by platform) it's the expected time when the order is ready to picked up by a rider and the expected
+                time when the order is delivered to the customer is calculated by internal systems. The acceptanceTime has no
+                effect at all and is only here for legacy reasons. We recommend that plugins should use the 'delivery.riderPickUpTime'.
+                
+                Formatted as [date-time](https://tools.ietf.org/html/rfc3339#section-5.6).
+              type: string
+              format: date-time
+            remoteOrderId:
+              type: string
+              description: |
+                The value from `remoteOrderId` represents an identifier for the dispatched order on POS plugin side.
+                Used to send various notifications from Middleware to POS plugin, e.g. cancellations.
+            modifications:
+              $ref: '#/components/schemas/Modifications'
+          required:
+            - status
+            - acceptanceTime
+          type: object
+        - example:
+            message: We are out of tomatoes!
+            reason: ITEM_UNAVAILABLE
+            status: order_rejected
+          title: order_rejected
+          properties:
+            status:
+              enum:
+                - order_rejected
+              type: string
+            message:
+              type: string
+            reason:
+              description: |
+                | Reason | Description |
+                | -------| ----------|
+                | ADDRESS_INCOMPLETE_MISSTATED | **Description**: Cannot be delivered because of wrong address information. </br> **OrderType:** Vendor Delivery </br> **Applicable**: before acceptance |
+                | BAD_WEATHER | **Description:** Cannot be delivered because of weather conditions. </br> **OrderType:** Vendor Delivery  </br> **Applicable**: before acceptance, after acceptance |
+                | BLACKLISTED | **Description:** Customer is blacklisted due to prank orders. </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | CARD_READER_NOT_AVAILABLE | **Description:** Customer cannot pay with card due to: <li> courier has no card reader </li> <li> card reader is not working </li>  <li> no card reader is available </li> Should only be applied if the order is not yet already payed (online payed) and customer selected to pay with card. If this is not the case you should use *UNABLE_TO_PAY*.  </br>  **OrderType:** Vendor Delivery, Pickup </br> **Applicable**: before acceptance, after acceptance |
+                | CLOSED | **Description:** Vendor is closed and order cannot be fulfilled. </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | CONTENT_WRONG_MISLEADING | **Description:** Customer gets food delivered and realises that the food does not match what was shown on the website and therefore cancels the order. </br> **OrderType:** Vendor Delivery, Pickup </br> **Applicable**: after acceptance |
+                | FOOD_QUALITY_SPILLAGE | **Description:** Customer has an issue with the food quality (cold, inedible, etc) OR order spillage occurred during transport. </br> **OrderType** VendorDelivery, Pickup </br> **Applicable**: after acceptance |
+                | FRAUD_PRANK | **Description:** Fraudulent order. Should be applied if there are strong indicators for either fraudulent or prank order, e.g. 100 x pizza, silly/famous/random character names and silly/famous/random notes. Should be not applied for online payed orders. </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | ITEM_UNAVAILABLE | **Description:** Vendor does not have all items/products available to fulfill the order. It should be not used in case of wrong items or prices (instead, use *MENU_ACCOUNT_SETTINGS*). </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | LATE_DELIVERY | **Description:** Customer has received the order but (excessively) passed promised delivery time or pickup time and wants to cancel. </br> **OrderType:** Vendor Delivery, Pickup </br> **Applicable**: after acceptance |
+                | MENU_ACCOUNT_SETTINGS | **Description:** Vendor has an issue(s) with menu items or prices, or account settings. In POS cases, it should be used for any issues related to product remote id's.  </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | MOV_NOT_REACHED | **Description:** Vendor will not accept the order as it is below their vendor-level Minimum Order Value (MOV). </br> **Important** Its only a Talabat specific reason, for all other platforms use *MENU_ACCOUNT_SETTINGS* instead.  </br> **OrderType:** Own Delivery, Vendor Delivery </br> **Applicable**: before acceptance |
+                | NO_COURIER | **Description:** Vendor has no courier (drivers/couriers/walkers/etc) available to fulfill the order. </br> **OrderType:** Vendor Delivery </br> **Applicable**: before acceptance |
+                | NO_PICKER | **Description:** Vendor has no picker. <br/> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | NO_RESPONSE | **Description:** Vendor is not answering. Should be used if the POS plugin is not able to forward the order to the vendor. It will be triggered also on Middleware side if the POS plugin is not accepting or rejecting the order in time (typically after 15 mins). </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | OUTSIDE_DELIVERY_AREA | **Description:** Vendor does not deliver to the customer's address/area. </br> **OrderType:** Vendor Delivery </br> **Applicable**: before acceptance |
+                | TECHNICAL_PROBLEM | **Description:** Please refrain from using this reason unless necessary. Should be used only if the order cannot be fulfilled due to technical issues that won't be resolved in time. </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | TEST_ORDER | **Description:** Order has been placed for test purposes and/or to check order transmission method during onboarding, troubleshooting, etc. Should be only applied if order is marked as test. </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | TOO_BUSY | **Description:** Vendor is too busy to fulfill the order. </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | UNABLE_TO_FIND | **Description:** Customer cannot be located to complete delivery. It's different from *ADDRESS_INCOMPLETE_MISSTATED* and should be used if the courier reached the address but was unable to find the customer. </br> **OrderType:** Vendor Delivery </br> **Applicable**: after acceptance |
+                | UNABLE_TO_PAY | **Description:** Customer is not able to pay. It should be not applied in case customer announced to pay with card and no card reader is available (*CARD_READER_NOT_AVAILABLE*). Does not apply in case there is no certain amount of money for change (*UNPROFESSIONAL_BEHAVIOUR*). </br> **OrderType:** Vendor Delivery, Pickup </br> **Applicable**: after acceptance |
+                | UNPROFESSIONAL_BEHAVIOUR | **Description:** Unprofessional behaviour in general. <li> For Own Delivery Orders if Courier displays unprofessional behaviour (rudeness in communication/interaction, lack of change for cash orders, bad employee hygiene, etc.) in vendor interaction.</li> <li> For Vendor Delivery Orders it should be used if the courier has no certain amount of money for exchange.</li> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: after acceptance |
+                | WILL_NOT_WORK_WITH_PLATFORM | **Description:** Vendor will not accept the order as they no longer wish to work with the platform. </br> **OrderType:** Own Delivery, Vendor Delivery, Pickup </br> **Applicable**: before acceptance |
+                | WRONG_ORDER_ITEMS_DELIVERED | **Description:** Customer has received wrong order items or is missing significant item(s). </br> **OrderType:** Vendor Delivery </br> **Applicable**: after acceptance |
+
+              enum:
+                - ADDRESS_INCOMPLETE_MISSTATED
+                - BAD_WEATHER
+                - BLACKLISTED
+                - CARD_READER_NOT_AVAILABLE
+                - CLOSED
+                - CONTENT_WRONG_MISLEADING
+                - FOOD_QUALITY_SPILLAGE
+                - FRAUD_PRANK
+                - ITEM_UNAVAILABLE
+                - LATE_DELIVERY
+                - MENU_ACCOUNT_SETTINGS
+                - MOV_NOT_REACHED
+                - NO_COURIER
+                - NO_PICKER
+                - NO_RESPONSE
+                - OUTSIDE_DELIVERY_AREA
+                - TECHNICAL_PROBLEM
+                - TEST_ORDER
+                - TOO_BUSY
+                - UNABLE_TO_FIND
+                - UNABLE_TO_PAY
+                - UNPROFESSIONAL_BEHAVIOUR
+                - WILL_NOT_WORK_WITH
+                - WRONG_ORDER_ITEMS_DELIVERED
+              type: string
+            unavailableItems:
+              description: An optional list of items that are unavailable.
+              type: array
+              maxItems: 100
+              items:
+                type: object
+                required:
+                  - id
+                  - type
+                properties:
+                  id:
+                    description: Unique identifier of the unavailable item.
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+                  type:
+                    description: The type of the unavailable item.
+                    type: string
+                    enum:
+                      - PRODUCT
+                      - EXTRA
+                      - VARIANT
+          required:
+            - status
+          type: object
+        - example:
+            status: order_picked_up
+          title: order_picked_up
+          properties:
+            status:
+              enum:
+                - order_picked_up
+              type: string
+          required:
+            - status
+          type: object
+    PreparationTimeAdjustmentRequest:
+      type: object
+      properties:
+        expectedPickupAt:
+          description: |
+            This is the adjusted pickup time from the vendor for any particular order. It should only be used when the order type is Logistics Delivery.
+          type: string
+          format: date-time
+      example:
+        expectedPickupAt: "2016-03-14T17:00:00.000Z"
+    Modifications:
+      description: |
+        The modifications to be applied for the order items. Can be optionally provided with `order_accepted` request.
+      type: object
+      required:
+        - products
+      properties:
+        products:
+          description: The products to be modified.
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required:
+              - id
+              - remoteCode
+              - modification
+            properties:
+              id:
+                description: The unique identifier of the product on the delivery platform.
+                type: string
+              remoteCode:
+                description: The unique identifier of the product on POS side.
+                type: string
+              quantity:
+                description: The quantity of the product. Must be greater than zero.
+                type: string
+              selectedToppings:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SelectedToppingModification'
+              modification:
+                $ref: '#/components/schemas/Modification'
+    SelectedToppingModification:
+      description: The toppings of the product to be modified.
+      type: object
+      required:
+        - id
+        - remoteCode
+        - type
+        - modification
+      properties:
+        id:
+          description: The unique identifier of the topping.
+          type: string
+        remoteCode:
+          description: The unique identifier of the topping on POS side.
+          type: string
+        type:
+          description: The type of the topping.
+          type: string
+          enum:
+            - EXTRA
+            - VARIANT
+        modification:
+          $ref: '#/components/schemas/Modification'
+    Modification:
+      description: Represents a modification to an order item.
+      type: object
+      anyOf:
+        - example:
+            modifications:
+              products:
+                - # Remove a product
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  modification:
+                    type: REMOVAL
+                - # Reduce quantity of a product
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  quantity: "1"
+                  modification:
+                    type: CHANGE
+                    properties:
+                      - quantity
+                - # Remove a topping of type `extra`
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  modification:
+                    type: CHANGE
+                    properties:
+                      - selectedToppings
+                  selectedToppings:
+                    - id: TOPPINGS_ITEM_ID_ON_PLATFORM
+                      remoteCode: TOPPINGS_ITEM_ID_ON_POS
+                      type: EXTRA
+                      modification:
+                        type: REMOVAL
+                - # Remove a topping of type `variant`
+                  id: ITEM_ID_ON_PLATFORM
+                  remoteCode: ITEM_ID_ON_POS
+                  modification:
+                    type: CHANGE
+                    properties:
+                      - selectedToppings
+                  selectedToppings:
+                    - id: TOPPINGS_ITEM_ID_ON_PLATFORM
+                      remoteCode: TOPPINGS_ITEM_ID_ON_POS
+                      type: VARIANT
+                      modification:
+                        type: REMOVAL
+      required:
+        - type
+      properties:
+        type:
+          description: The kind of modification that needs to be applied to the order item.
+          type: string
+          enum:
+            - REMOVAL
+            - CHANGE
+            - ADDITION
+        properties:
+          description: |
+            The properties of the order item which are affected by the modification.
+          type: array
+          items:
+            type: string
+    SuccessAcknowledged:
+      properties:
+        status:
+          enum:
+            - SUBMITTED
+            - TRIGGERED
+          type: string
+      required:
+        - status
+      type: object
+    OrderStatusUpdateConflict:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+        message:
+          type: string
+        currentState:
+          description: Actual order state.
+          type: string
+          enum:
+            - RECEIVED
+            - ASSIGNED_TO_TRANSPORT
+            - WAITING_FOR_ACKNOWLEDGEMENT
+            - WAITING_FOR_TRANSPORT
+            - MODIFIED_BY_VENDOR
+            - RECONCILIATION_STARTED
+            - RECONCILED_WITH_PLATFORM
+            - RECONCILED_WITH_TRANSPORT
+            - CANCELLED
+      required:
+        - code
+    Error:
+      type: object
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCodes'
+        message:
+          type: string
+      required:
+        - code
+    RestRequestError:
+      type: object
+      properties:
+        errorCode:
+          description: Human readable error code
+          $ref: '#/components/schemas/ErrorCodes'
+        message:
+          description: Detailed error description
+          type: string
+        required:
+          - errorCode
+          - message
+    ErrorCodes:
+      enum:
+        - POS_ERROR
+        - VALIDATION_ERROR
+        - INVALID_REQUEST
+        - INTERNAL_ERROR
+        - NOT_FOUND
+        - INVALID_ORDER_STATUS
+        - BAD_REQUEST
+        - AUTHORIZATION_ERROR
+        - FORBIDDEN
+      type: string
+    LoginRequest:
+      properties:
+        grant_type:
+          type: string
+          description: |
+            Static value: `client_credentials`
+        password:
+          type: string
+        username:
+          type: string
+      required:
+        - username
+        - password
+        - grant_type
+      type: object
+    LoginResponse:
+      properties:
+        access_token:
+          type: string
+          description: JSON Web Token (JWT) to be used as authentication token.
+        expires_in:
+          type: number
+          description: Token expiration in seconds after a plugin must re-login again
+        token_type:
+          type: string
+      required:
+        - access_token
+        - token_type
+        - expires_in
+      type: object
+      example:
+        access_token: |
+          eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+        expires_in: 1800
+        token_type: bearer
+    PosAvailabilityClosePUTRequest:
+      title: close a restaurant
+      properties:
+        availabilityState:
+          $ref: '#/components/schemas/PosAvailabilityState'
+        closedReason:
+          type: string
+          description: Specify reason for closing from closingReasons field of GET request, e.g. `OTHER`
+        closingMinutes:
+          type: integer
+          description: How long should a restaurant remains closed before opening again, e.g. `60`. Works only with `CLOSED_UNTIL` availabilityState.
+        platformKey:
+          type: string
+          description: Corresponding value from GET request, e.g. `TB`
+        platformRestaurantId:
+          type: string
+          description: Corresponding value from GET request, e.g. `123456789`
+      example:
+        availabilityState: CLOSED_UNTIL
+        closedReason: OTHER
+        closingMinutes: 60
+        platformKey: TB
+        platformRestaurantId: 123456789
+      required:
+        - platformKey
+        - platformRestaurantId
+        - availabilityState
+        - closedReason
+      type: object
+    PosAvailabilityOpenPUTRequest:
+      title: open a restaurant
+      type: object
+      properties:
+        availabilityState:
+          $ref: '#/components/schemas/PosAvailabilityState'
+        platformKey:
+          type: string
+          description: Corresponding value from GET request, e.g. `TB`
+        platformRestaurantId:
+          type: string
+          description: Corresponding value from GET request, e.g. `123456789`
+      example:
+        availabilityState: OPEN
+        platformKey: TB
+        platformRestaurantId: 123456789
+      required:
+        - platformKey
+        - platformRestaurantId
+        - availabilityState
+    PosAvailabilityState:
+      enum:
+        - CLOSED_UNTIL
+        - CLOSED
+        - INACTIVE
+        - UNKNOWN
+        - OPEN
+        - CLOSED_TODAY
+      type: string
+    PosReachabilityStatus:
+      enum:
+        - online
+        - offline
+      type: string
+    PosReachabilityStatusUpdate:
+      type: object
+      properties:
+        message:
+          type: string
+        reason:
+          type: string
+        status:
+          $ref: '#/components/schemas/PosReachabilityStatus'
+      example:
+        message: Some dummy message which can be sent
+        reason: Some reason code for logging/debugging which can be sent
+        status: online
+      required:
+        - status
+    ProductUpdateBadRequestError:
+      type: object
+      description: Error response
+      properties:
+        message:
+          type: string
+        constraintViolations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConstrainViolation'
+    ConstrainViolation:
+      type: object
+      description: Payload constrain violation
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+    ProductUpdateRequestGenericError:
+      type: object
+      description: Error response
+      properties:
+        message:
+          type: string
+  parameters:
+    PlatformVendorId:
+      description: The platform vendor code
+      example: x6dw
+      in: path
+      name: platformVendorCode
+      required: true
+      schema:
+        type: string
+    MenuImportId:
+      description: The menu import id
+      example: n2cp-1449160200
+      in: path
+      name: menuImportId
+      required: true
+      schema:
+        type: string
+    ChainCode:
+      description: |
+        It identifies the POS group of restaurants on the Middleware side.
+        It is used to avoid collisions in case two
+        different POS systems use this endpoint and have same chainVendorId.
+        This value will be defined during on-boarding process with Delivery Hero Ops team.
+      example: foo-chainId
+      in: path
+      name: chainCode
+      required: true
+      schema:
+        type: string
+    PosVendorId:
+      description: |
+        This is also sometimes referred to as the `remoteId`.
+        Combined with the `chainCode`, it identifies a restaurant from the POS plugin perspective. `chaincode` must be a value
+        hardcoded on the plugin side. It will be defined during on-boarding process with Delivery Hero Ops team.
+      example: fooPosVendorId123
+      in: path
+      name: posVendorId
+      required: true
+      schema:
+        type: string
+    GlobalEntityId:
+      description: |
+        This is also sometimes referred to as the `gEID`.
+        Uniquely identifies a global entity in the Platform Vendors domain.
+      example: geID123
+      in: path
+      name: globalEntityId
+      required: true
+      schema:
+        type: string
+  examples:
+    VendorMenuXML:
+      value: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Vendor xmlns="https://foodintegrations.com/Integration/Catalog">
+            <Id>1</Id>
+            <Menus>
+                <Menu>
+                    <Id>m1</Id>
+                    <Title>Lunch Menu</Title>
+                    <Description>Only for lunching</Description>
+                    <StartHour>12:00:00</StartHour>
+                    <EndHour>17:00:00</EndHour>
+                    <MenuType>delivery</MenuType>
+                </Menu>
+                <Menu>
+                    <Id>m2</Id>
+                    <Title>Romantic Dinner</Title>
+                    <Description>late night snacks</Description>
+                    <StartHour>17:00:01</StartHour>
+                    <EndHour>23:59:59</EndHour>
+                    <MenuType>delivery</MenuType>
+                </Menu>
+            </Menus>
+            <MenuCategories>
+                <MenuCategory>
+                    <Id>s1</Id>
+                    <Title>Sushi and sudhim</Title>
+                    <Description>Yummi sushi</Description>
+                    <Products>
+                        <Product>
+                            <Id>n12</Id>
+                            <Title>Nigiri</Title>
+                            <Description>Made of fresh Fish</Description>
+                            <Image>http://example.com/</Image>
+                            <ProductVariations>
+                                <ProductVariation>
+                                    <Id>pv1</Id>
+                                    <Title>Tuna Nigiri</Title>
+                                    <Price>10.99</Price>
+                                    <ContainerPrice>0</ContainerPrice>
+                                </ProductVariation>
+                                <ProductVariation>
+                                    <Id>pv2</Id>
+                                    <Title>Salmon Nigiri</Title>
+                                    <Price>9.99</Price>
+                                    <ContainerPrice>0.99</ContainerPrice>
+                                </ProductVariation>
+                            </ProductVariations>
+                        </Product>
+                        <Product>
+                            <Id>m36</Id>
+                            <Title>Sushimi</Title>
+                            <Description>Made of fresh Tuna</Description>
+                            <Image></Image>
+                            <ProductVariations>
+                                <ProductVariation>
+                                    <Id>pv5</Id>
+                                    <Title>Salmon Sushimi</Title>
+                                    <Price>19.99</Price>
+                                    <ContainerPrice>0</ContainerPrice>
+                                </ProductVariation>
+                            </ProductVariations>
+                        </Product>
+                    </Products>
+                </MenuCategory>
+                <MenuCategory>
+                    <Id>s2</Id>
+                    <Title>Choices and Toppings</Title>
+                    <Description>Hidden category for Choices and Toppings</Description>
+                    <Products>
+                        <Product>
+                            <Id>ttp1</Id>
+                            <Title>Black Wasabi</Title>
+                            <ProductVariations>
+                                <ProductVariation>
+                                    <Id>ttp1</Id>
+                                    <Title>Black Wasabi</Title>
+                                    <Price>0</Price>
+                                    <ContainerPrice>0</ContainerPrice>
+                                </ProductVariation>
+                            </ProductVariations>
+                        </Product>
+                        <Product>
+                            <Id>ttp6</Id>
+                            <Title>Ginger leaves</Title>
+                            <ProductVariations>
+                                <ProductVariation>
+                                    <Id>ttp6</Id>
+                                    <Title>Ginger leaves</Title>
+                                    <Price>0</Price>
+                                    <ContainerPrice>0</ContainerPrice>
+                                </ProductVariation>
+                            </ProductVariations>
+                        </Product>
+                    </Products>
+                </MenuCategory>
+            </MenuCategories>
+            <MenuProducts>
+                <MenuProduct>
+                    <MenuId>m1</MenuId>
+                    <ProductId>n12</ProductId>
+                </MenuProduct>
+                <MenuProduct>
+                    <MenuId>m2</MenuId>
+                    <ProductId>m36</ProductId>
+                </MenuProduct>
+            </MenuProducts>
+            <ToppingTemplates>
+                <ToppingTemplate>
+                    <Id>tt1</Id>
+                    <Title>Test template</Title>
+                    <IsHalfHalf>0</IsHalfHalf>
+                    <QuantityMin>1</QuantityMin>
+                    <QuantityMax>12</QuantityMax>
+                </ToppingTemplate>
+                <ToppingTemplate>
+                    <Id>tt3</Id>
+                    <Title>Test template #3</Title>
+                    <IsHalfHalf>0</IsHalfHalf>
+                    <QuantityMin>1</QuantityMin>
+                    <QuantityMax>1</QuantityMax>
+                </ToppingTemplate>
+            </ToppingTemplates>
+            <ToppingTemplateProducts>
+                <ToppingTemplateProduct>
+                    <ToppingTemplateId>tt1</ToppingTemplateId>
+                    <ProductId>ttp1</ProductId>
+                    <Price>2.49</Price>
+                </ToppingTemplateProduct>
+                <ToppingTemplateProduct>
+                    <ToppingTemplateId>tt3</ToppingTemplateId>
+                    <ProductId>ttp6</ProductId>
+                    <Price>0.50</Price>
+                </ToppingTemplateProduct>
+            </ToppingTemplateProducts>
+            <ProductVariationToppingTemplates>
+                <ProductVariationToppingTemplate>
+                    <ProductVariationId>pv1</ProductVariationId>
+                    <ToppingTemplateId>tt1</ToppingTemplateId>
+                </ProductVariationToppingTemplate>
+            </ProductVariationToppingTemplates>
+            <Translations>
+                <Language>
+                    <Code>es</Code>
+                    <MenuCategoryTranslations>
+                        <MenuCategoryTranslation>
+                            <Id>s2</Id>
+                            <Title>Coberturas y opciones</Title>
+                        </MenuCategoryTranslation>
+                        <MenuCategoryTranslation>
+                            <Id>s1</Id>
+                            <Title>Sushi y sashimi</Title>
+                            <Description>Sushi rico</Description>
+                        </MenuCategoryTranslation>
+                    </MenuCategoryTranslations>
+                    <ProductTranslations>
+                        <ProductTranslation>
+                            <Id>ttp1</Id>
+                            <Title>Wasabi negro</Title>
+                        </ProductTranslation>
+                        <ProductTranslation>
+                            <Id>m36</Id>
+                            <Title>Sushimi</Title>
+                            <Description>Hecho de atún fresco</Description>
+                        </ProductTranslation>
+                        <ProductTranslation>
+                            <Id>ttp6</Id>
+                            <Title>Hojas de jengibre</Title>
+                        </ProductTranslation>
+                    </ProductTranslations>
+                </Language>
+                <Language>
+                    <Code>ru</Code>
+                    <MenuCategoryTranslations>
+                        <MenuCategoryTranslation>
+                            <Id>s2</Id>
+                            <Title>Выбор и начинок</Title>
+                        </MenuCategoryTranslation>
+                        <MenuCategoryTranslation>
+                            <Id>s1</Id>
+                            <Title>Суши и сашими</Title>
+                            <Description>Yummi суши</Description>
+                        </MenuCategoryTranslation>
+                    </MenuCategoryTranslations>
+                    <ProductTranslations>
+                        <ProductTranslation>
+                            <Id>ttp1</Id>
+                            <Title>Васаби черный</Title>
+                        </ProductTranslation>
+                        <ProductTranslation>
+                            <Id>m36</Id>
+                            <Title>Суши вкус</Title>
+                            <Description>Свежий Тунец факт</Description>
+                        </ProductTranslation>
+                        <ProductTranslation>
+                            <Id>ttp6</Id>
+                            <Title>имбирь листья</Title>
+                        </ProductTranslation>
+                    </ProductTranslations>
+                    <ProductVariationTranslations>
+                        <ProductVariationTranslation>
+                            <Id>pv1</Id>
+                            <Title>Product variation translation</Title>
+                        </ProductVariationTranslation>
+                    </ProductVariationTranslations>
+                </Language>
+                <Language>
+                    <Code>pl</Code>
+                    <ProductTranslations>
+                        <ProductTranslation>
+                            <Id>ttp1</Id>
+                            <Title>Wasabi czarny</Title>
+                        </ProductTranslation>
+                        <ProductTranslation>
+                            <Id>m36</Id>
+                            <Title>sushimi</Title>
+                            <Description>Wykonane ze świeżego tuńczyka</Description>
+                        </ProductTranslation>
+                    </ProductTranslations>
+                    <ToppingTemplateTranslations>
+                        <ToppingTemplateTranslation>
+                            <Id>tt1</Id>
+                            <Title>Test template polish translation</Title>
+                        </ToppingTemplateTranslation>
+                    </ToppingTemplateTranslations>
+                </Language>
+            </Translations>
+        </Vendor>

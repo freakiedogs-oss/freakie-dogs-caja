@@ -1,0 +1,1303 @@
+simpleCatalog:
+  value:
+    callbackUrl: https://example.com/callback
+    catalog:
+      items:
+        MENU_ONE:
+          id: MENU_ONE
+          type: Menu
+          menuType: DELIVERY
+          title:
+            default: A Menu Example
+          images:
+            IMAGE_ONE:
+              id: IMAGE_ONE
+              order: 1
+              type: Image
+          products:
+            PRODUCT_ONE:
+              id: PRODUCT_ONE
+              order: 1
+              type: Product
+          schedule:
+            SCHEDULE_ONE:
+              id: SCHEDULE_ONE
+              type: ScheduleEntry
+        PRODUCT_ONE:
+          id: PRODUCT_ONE
+          type: Product
+          title:
+            default: A product example
+          images:
+            IMAGE_ONE:
+              id: IMAGE_ONE
+              type: Image
+          active: true
+          isPrepackedItem: true
+          isExpressItem: false
+          excludeDishInformation: true
+          containerPrice: '0.50'
+          calories: 150
+          price: '22.50'
+          toppings:
+            TOPPING_ONE:
+              id: TOPPING_ONE
+              type: Topping
+        TOPPING_ONE:
+          id: TOPPING_ONE
+          type: Topping
+          title:
+            default: A topping example
+          images:
+            IMAGE_ONE:
+              id: IMAGE_ONE
+              type: Image
+          quantity:
+            minimum: 1
+            maximum: 2
+          products:
+            TOPPING_PRODUCT_ONE:
+              id: TOPPING_PRODUCT_ONE
+              type: Product
+            TOPPING_PRODUCT_TWO:
+              id: TOPPING_PRODUCT_TWO
+              type: Product
+        TOPPING_PRODUCT_ONE:
+          id: TOPPING_PRODUCT_ONE
+          type: Product
+          title:
+            default: A product used as an topping example
+        TOPPING_PRODUCT_TWO:
+          id: TOPPING_PRODUCT_TWO
+          type: Product
+          title:
+            default: An other product used as a topping
+        CATEGORY_ONE:
+          id: CATEGORY_ONE
+          type: Category
+          title:
+            default: An example Category
+          images:
+            IMAGE_ONE:
+              id: IMAGE_ONE
+              type: Image
+          products:
+            PRODUCT_ONE:
+              id: PRODUCT_ONE
+              type: Product
+            TOPPING_PRODUCT_ONE:
+              id: TOPPING_PRODUCT_ONE
+              type: Product
+            TOPPING_PRODUCT_TWO:
+              id: TOPPING_PRODUCT_TWO
+              type: Product
+        IMAGE_ONE:
+          id: IMAGE_ONE
+          type: Image
+          url: https://images.deliveryhero.io/image/menu-import-gateway-stg/regions/example/hero.png
+          alt:
+            default: Super Erni
+        SCHEDULE_ONE:
+          id: SCHEDULE_ONE
+          type: ScheduleEntry
+          starTime: '11:00:00'
+          endTime: '14:00:00'
+          weekDays:
+            - MONDAY
+            - FRIDAY
+    vendors: ["VENDOR_ONE", "VENDOR_TWO"]
+complexCatalog:
+  value:
+    callbackUrl: https://example.com/callback
+    catalog:
+      items:
+        prd00001|001:
+          id: prd00001|001
+          title:
+            default: Pure yogurt, small
+            de: Natur Jogurt, klein
+          type: Product
+          price: '3.50'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00001|002:
+          id: prd00001|002
+          title:
+            default: Pure yogurt, medium
+            de: Natur Jogurt, mittel
+          type: Product
+          price: '4.30'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00001|003:
+          id: prd00001|003
+          title:
+            default: Pure yogurt, large
+            de: Natur Jogurt, groß
+          type: Product
+          price: '4.99'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00001:
+          id: prd00001
+          type: Product
+          title:
+            default: Pure yogurt
+            de: Natur Jogurt
+          description:
+            default: Pure yogurt
+          variants:
+            prd00001|001:
+              id: prd00001|001
+              type: Product
+            prd00001|002:
+              id: prd00001|002
+              type: Product
+            prd00001|003:
+              id: prd00001|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        prd00002|001:
+          id: prd00002|001
+          title:
+            default: Sporty yogurt, small
+            de: Fitness Jogurt, klein
+          type: Product
+          price: '3.95'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00002|002:
+          id: prd00002|002
+          title:
+            default: Sporty yogurt, medium
+            de: Fitness Jogurt, mittel
+          type: Product
+          price: '4.95'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00002|003:
+          id: prd00002|003
+          title:
+            default: Sporty yogurt, large
+            de: Fitness Jogurt, groß
+          type: Product
+          price: '6.00'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00002:
+          id: prd00002
+          type: Product
+          title:
+            default: Sporty yogurt
+            de: Fitness Jogurt
+          description:
+            default: Sporty yogurt
+          variants:
+            prd00002|001:
+              id: prd00002|001
+              type: Product
+            prd00002|002:
+              id: prd00002|002
+              type: Product
+            prd00002|003:
+              id: prd00002|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        prd00003|001:
+          id: prd00003|001
+          title:
+            default: Strawberry yogurt, small
+            de: Erdbeer Jogurt, klein
+          type: Product
+          price: '3.50'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00003|002:
+          id: prd00003|002
+          title:
+            default: Strawberry yogurt, medium
+            de: Erdbeer Jogurt, mittel
+          type: Product
+          price: '4.30'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00003|003:
+          id: prd00003|003
+          title:
+            default: Strawberry yogurt, large
+            de: Erdbeer Jogurt, groß
+          type: Product
+          price: '4.99'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00003:
+          id: prd00003
+          type: Product
+          title:
+            default: Strawberry yogurt
+            de: Erdbeer Jogurt
+          description:
+            default: Strawberry yogurt
+          variants:
+            prd00003|001:
+              id: prd00003|001
+              type: Product
+            prd00003|002:
+              id: prd00003|002
+              type: Product
+            prd00003|003:
+              id: prd00003|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        Category#mcp00001:
+          id: Category#mcp00001
+          type: Category
+          title:
+            default: yogurts
+            de: yogurts
+          description:
+            default: yammmy
+          products:
+            prd00001:
+              id: prd00001
+              type: Product
+            prd00002:
+              id: prd00002
+              type: Product
+            prd00003:
+              id: prd00003
+              type: Product
+        mct00001|0001:
+          id: mct00001|0001
+          type: Product
+          title:
+            default: Wildberries
+            de: Waldbeeren
+          description:
+            default: Wildberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        mct00001|0002:
+          id: mct00001|0002
+          type: Product
+          title:
+            default: Strawberries
+            de: Erdbeeren
+          description:
+            default: Strawberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        mct00001|0003:
+          id: mct00001|0003
+          type: Product
+          title:
+            default: Raspberries
+            de: Himbeere
+          description:
+            default: Raspberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        Category#mct00001:
+          id: Category#mct00001
+          type: Category
+          title:
+            default: Toppings
+          description:
+            default: yammmy
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+        schedule00001:
+          id: schedule00001
+          type: ScheduleEntry
+          startTime: '10:00:00'
+          endTime: '20:00:00'
+        m00001:
+          id: m00001
+          title:
+            default: Regular Menu
+            de: Standart Menü
+          description:
+            default: Regular Menu
+            de: Standart Menü
+          type: Menu
+          menuType: DELIVERY
+          schedule:
+            schedule00001:
+              id: schedule00001
+              type: ScheduleEntry
+          products:
+            prd00001:
+              id: prd00001
+              type: Product
+            prd00002:
+              id: prd00002
+              type: Product
+            prd00003:
+              id: prd00003
+              type: Product
+        tt0001:
+          id: tt0001
+          type: Topping
+          order: 1
+          title:
+            default: Free Topping Selection
+            de: kostenlos
+          quantity:
+            maximum: 2
+            minimum: 0
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+              price: '0.00'
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+              price: '0.00'
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+              price: '0.00'
+        tt0002:
+          id: tt0002
+          type: Topping
+          order: 2
+          title:
+            default: Additional Topping Selection
+            de: zusätzlich
+          quantity:
+            maximum: 2
+            minimum: 0
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+              price: '0.50'
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+              price: '0.50'
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+              price: '0.50'
+    vendors: ["VENDOR_ONE", "VENDOR_TWO"]
+platformSimpleCatalog:
+  value:
+    callbackUrl: https://example.com/callback
+    catalog:
+      items:
+        prd00001|001:
+          id: prd00001|001
+          title:
+            default: Pure yogurt, small
+            de: Natur Jogurt, klein
+          type: Product
+          price: '3.50'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00001|002:
+          id: prd00001|002
+          title:
+            default: Pure yogurt, medium
+            de: Natur Jogurt, mittel
+          type: Product
+          price: '4.30'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00001|003:
+          id: prd00001|003
+          title:
+            default: Pure yogurt, large
+            de: Natur Jogurt, groß
+          type: Product
+          price: '4.99'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00001:
+          id: prd00001
+          type: Product
+          title:
+            default: Pure yogurt
+            de: Natur Jogurt
+          description:
+            default: Pure yogurt
+          variants:
+            prd00001|001:
+              id: prd00001|001
+              type: Product
+            prd00001|002:
+              id: prd00001|002
+              type: Product
+            prd00001|003:
+              id: prd00001|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        prd00002|001:
+          id: prd00002|001
+          title:
+            default: Sporty yogurt, small
+            de: Fitness Jogurt, klein
+          type: Product
+          price: '3.95'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00002|002:
+          id: prd00002|002
+          title:
+            default: Sporty yogurt, medium
+            de: Fitness Jogurt, mittel
+          type: Product
+          price: '4.95'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00002|003:
+          id: prd00002|003
+          title:
+            default: Sporty yogurt, large
+            de: Fitness Jogurt, groß
+          type: Product
+          price: '6.00'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00002:
+          id: prd00002
+          type: Product
+          title:
+            default: Sporty yogurt
+            de: Fitness Jogurt
+          description:
+            default: Sporty yogurt
+          variants:
+            prd00002|001:
+              id: prd00002|001
+              type: Product
+            prd00002|002:
+              id: prd00002|002
+              type: Product
+            prd00002|003:
+              id: prd00002|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        prd00003|001:
+          id: prd00003|001
+          title:
+            default: Strawberry yogurt, small
+            de: Erdbeer Jogurt, klein
+          type: Product
+          price: '3.50'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00003|002:
+          id: prd00003|002
+          title:
+            default: Strawberry yogurt, medium
+            de: Erdbeer Jogurt, mittel
+          type: Product
+          price: '4.30'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00003|003:
+          id: prd00003|003
+          title:
+            default: Strawberry yogurt, large
+            de: Erdbeer Jogurt, groß
+          type: Product
+          price: '4.99'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00003:
+          id: prd00003
+          type: Product
+          title:
+            default: Strawberry yogurt
+            de: Erdbeer Jogurt
+          description:
+            default: Strawberry yogurt
+          variants:
+            prd00003|001:
+              id: prd00003|001
+              type: Product
+            prd00003|002:
+              id: prd00003|002
+              type: Product
+            prd00003|003:
+              id: prd00003|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        Category#mcp00001:
+          id: Category#mcp00001
+          type: Category
+          title:
+            default: yogurts
+            de: yogurts
+          description:
+            default: yammmy
+          products:
+            prd00001:
+              id: prd00001
+              type: Product
+            prd00002:
+              id: prd00002
+              type: Product
+            prd00003:
+              id: prd00003
+              type: Product
+        mct00001|0001:
+          id: mct00001|0001
+          type: Product
+          title:
+            default: Wildberries
+            de: Waldbeeren
+          description:
+            default: Wildberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        mct00001|0002:
+          id: mct00001|0002
+          type: Product
+          title:
+            default: Strawberries
+            de: Erdbeeren
+          description:
+            default: Strawberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        mct00001|0003:
+          id: mct00001|0003
+          type: Product
+          title:
+            default: Raspberries
+            de: Himbeere
+          description:
+            default: Raspberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        Category#mct00001:
+          id: Category#mct00001
+          type: Category
+          title:
+            default: Toppings
+          description:
+            default: yammmy
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+        schedule00001:
+          id: schedule00001
+          type: ScheduleEntry
+          startTime: '10:00:00'
+          endTime: '20:00:00'
+        m00001:
+          id: m00001
+          title:
+            default: Regular Menu
+            de: Standart Menü
+          description:
+            default: Regular Menu
+            de: Standart Menü
+          type: Menu
+          menuType: DELIVERY
+          schedule:
+            schedule00001:
+              id: schedule00001
+              type: ScheduleEntry
+          products:
+            prd00001:
+              id: prd00001
+              type: Product
+            prd00002:
+              id: prd00002
+              type: Product
+            prd00003:
+              id: prd00003
+              type: Product
+        tt0001:
+          id: tt0001
+          type: Topping
+          order: 1
+          title:
+            default: Free Topping Selection
+            de: kostenlos
+          quantity:
+            maximum: 2
+            minimum: 0
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+              price: '0.00'
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+              price: '0.00'
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+              price: '0.00'
+        tt0002:
+          id: tt0002
+          type: Topping
+          order: 2
+          title:
+            default: Additional Topping Selection
+            de: zusätzlich
+          quantity:
+            maximum: 2
+            minimum: 0
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+              price: '0.50'
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+              price: '0.50'
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+              price: '0.50'
+    platformVendors: ["VENDOR_ONE", "VENDOR_TWO"]
+platformComplexCatalog:
+  value:
+    callbackUrl: https://example.com/callback
+    catalog:
+      items:
+        prd00001|001:
+          id: prd00001|001
+          title:
+            default: Pure yogurt, small
+            de: Natur Jogurt, klein
+          type: Product
+          price: '3.50'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00001|002:
+          id: prd00001|002
+          title:
+            default: Pure yogurt, medium
+            de: Natur Jogurt, mittel
+          type: Product
+          price: '4.30'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00001|003:
+          id: prd00001|003
+          title:
+            default: Pure yogurt, large
+            de: Natur Jogurt, groß
+          type: Product
+          price: '4.99'
+          parent:
+            id: prd00001
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00001:
+          id: prd00001
+          type: Product
+          title:
+            default: Pure yogurt
+            de: Natur Jogurt
+          description:
+            default: Pure yogurt
+          variants:
+            prd00001|001:
+              id: prd00001|001
+              type: Product
+            prd00001|002:
+              id: prd00001|002
+              type: Product
+            prd00001|003:
+              id: prd00001|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        prd00002|001:
+          id: prd00002|001
+          title:
+            default: Sporty yogurt, small
+            de: Fitness Jogurt, klein
+          type: Product
+          price: '3.95'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00002|002:
+          id: prd00002|002
+          title:
+            default: Sporty yogurt, medium
+            de: Fitness Jogurt, mittel
+          type: Product
+          price: '4.95'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00002|003:
+          id: prd00002|003
+          title:
+            default: Sporty yogurt, large
+            de: Fitness Jogurt, groß
+          type: Product
+          price: '6.00'
+          parent:
+            id: prd00002
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00002:
+          id: prd00002
+          type: Product
+          title:
+            default: Sporty yogurt
+            de: Fitness Jogurt
+          description:
+            default: Sporty yogurt
+          variants:
+            prd00002|001:
+              id: prd00002|001
+              type: Product
+            prd00002|002:
+              id: prd00002|002
+              type: Product
+            prd00002|003:
+              id: prd00002|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        prd00003|001:
+          id: prd00003|001
+          title:
+            default: Strawberry yogurt, small
+            de: Erdbeer Jogurt, klein
+          type: Product
+          price: '3.50'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+        prd00003|002:
+          id: prd00003|002
+          title:
+            default: Strawberry yogurt, medium
+            de: Erdbeer Jogurt, mittel
+          type: Product
+          price: '4.30'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00003|003:
+          id: prd00003|003
+          title:
+            default: Strawberry yogurt, large
+            de: Erdbeer Jogurt, groß
+          type: Product
+          price: '4.99'
+          parent:
+            id: prd00003
+            type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          toppings:
+            tt0001:
+              id: tt0001
+              type: Topping
+            tt0002:
+              id: tt0002
+              type: Topping
+        prd00003:
+          id: prd00003
+          type: Product
+          title:
+            default: Strawberry yogurt
+            de: Erdbeer Jogurt
+          description:
+            default: Strawberry yogurt
+          variants:
+            prd00003|001:
+              id: prd00003|001
+              type: Product
+            prd00003|002:
+              id: prd00003|002
+              type: Product
+            prd00003|003:
+              id: prd00003|003
+              type: Product
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        Category#mcp00001:
+          id: Category#mcp00001
+          type: Category
+          title:
+            default: yogurts
+            de: yogurts
+          description:
+            default: yammmy
+          products:
+            prd00001:
+              id: prd00001
+              type: Product
+            prd00002:
+              id: prd00002
+              type: Product
+            prd00003:
+              id: prd00003
+              type: Product
+        mct00001|0001:
+          id: mct00001|0001
+          type: Product
+          title:
+            default: Wildberries
+            de: Waldbeeren
+          description:
+            default: Wildberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        mct00001|0002:
+          id: mct00001|0002
+          type: Product
+          title:
+            default: Strawberries
+            de: Erdbeeren
+          description:
+            default: Strawberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        mct00001|0003:
+          id: mct00001|0003
+          type: Product
+          title:
+            default: Raspberries
+            de: Himbeere
+          description:
+            default: Raspberries
+          price: '129.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        Category#mct00001:
+          id: Category#mct00001
+          type: Category
+          title:
+            default: Toppings
+          description:
+            default: yammmy
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+        schedule00001:
+          id: schedule00001
+          type: ScheduleEntry
+          startTime: '10:00:00'
+          endTime: '20:00:00'
+        m00001:
+          id: m00001
+          title:
+            default: Regular Menu
+            de: Standart Menü
+          description:
+            default: Regular Menu
+            de: Standart Menü
+          type: Menu
+          menuType: DELIVERY
+          schedule:
+            schedule00001:
+              id: schedule00001
+              type: ScheduleEntry
+          products:
+            prd00001:
+              id: prd00001
+              type: Product
+            prd00002:
+              id: prd00002
+              type: Product
+            prd00003:
+              id: prd00003
+              type: Product
+        tt0001:
+          id: tt0001
+          type: Topping
+          order: 1
+          title:
+            default: Free Topping Selection
+            de: kostenlos
+          quantity:
+            maximum: 2
+            minimum: 0
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+              price: '0.00'
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+              price: '0.00'
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+              price: '0.00'
+        tt0002:
+          id: tt0002
+          type: Topping
+          order: 2
+          title:
+            default: Additional Topping Selection
+            de: zusätzlich
+          quantity:
+            maximum: 2
+            minimum: 0
+          products:
+            mct00001|0001:
+              id: mct00001|0001
+              type: Product
+              price: '0.50'
+            mct00001|0002:
+              id: mct00001|0002
+              type: Product
+              price: '0.50'
+            mct00001|0003:
+              id: mct00001|0003
+              type: Product
+              price: '0.50'
+    platformVendors: ["VENDOR_ONE", "VENDOR_TWO"]
+
