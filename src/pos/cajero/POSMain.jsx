@@ -2162,6 +2162,23 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   // toda la selección tres veces. Si uno tiene que ir distinto, se agrega aparte.
   const [qty, setQty] = useState(1)
 
+  // Aviso "hay más opciones abajo": el modal tiene scroll propio y en combos
+  // largos la sección Bebida queda bajo el borde sin que la cajera lo note.
+  // Se re-mide en cada render (el contenido cambia al marcar agrandados) y al scrollear.
+  const scrollRef = useRef(null)
+  const [hayMas, setHayMas] = useState(false)
+  const medirScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const mas = el.scrollHeight - el.scrollTop - el.clientHeight > 24
+    setHayMas(prev => (prev === mas ? prev : mas))
+  }
+  useEffect(medirScroll)
+  useEffect(() => {
+    window.addEventListener('resize', medirScroll)
+    return () => window.removeEventListener('resize', medirScroll)
+  }, [])
+
   // Secciones con grupos por elegir: nivel combo (general) + cada componente
   const secciones = []
   if ((combo.modGrupos || []).length) secciones.push({ key: 'combo', titulo: 'General', grupos: combo.modGrupos })
@@ -2326,7 +2343,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
 
   return (
     <div className="pos-modal-overlay" onClick={onCancel}>
-      <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, maxHeight: '85vh', overflowY: 'auto' }}>
+      <div className="pos-modal" ref={scrollRef} onScroll={medirScroll} onClick={e => e.stopPropagation()} style={{ maxWidth: 480, maxHeight: '85vh', overflowY: 'auto' }}>
         <div className="pos-modal-title">{combo.nombre}</div>
         <div className="pos-modal-sub" style={{ marginBottom: 8 }}>Arma el combo</div>
 
@@ -2531,6 +2548,22 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
           {falta ? `Falta elegir en: ${falta.titulo}` : (qty > 1 ? `Agregar ${qty} combos` : 'Agregar combo')}
         </button>
         <button className="pos-cancelar-btn" onClick={onCancel}>Cancelar</button>
+
+        {hayMas && (
+          <div style={{ position: 'sticky', bottom: 0, height: 0 }}>
+            <button
+              onClick={() => scrollRef.current?.scrollBy({ top: scrollRef.current.clientHeight * 0.7, behavior: 'smooth' })}
+              style={{
+                position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)',
+                background: '#f5c518', color: '#1c1c22', border: 'none', borderRadius: 999,
+                padding: '8px 16px', fontSize: 13, fontWeight: 800, whiteSpace: 'nowrap',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.5)', cursor: 'pointer',
+              }}
+            >
+              ↓ Hay más opciones abajo
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

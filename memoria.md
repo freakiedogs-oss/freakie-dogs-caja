@@ -2,6 +2,13 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 23-Sep-2026 — Coca-Cola Combo XL sin bebida en local + aviso "hay más opciones abajo" en el ComboModal
+
+Jose mandó captura de Mesa #2 (Cafetalón): en el Coca-Cola Combo "no se puede cambiar la bebida por $0.50 como en el Royal".
+- **Coca-Cola Combo:** ya tenía el componente Bebida en los 5 canales (3 gratis + *Agrandado de bebida* $0.50 que abre los sabores). No se veía porque es la **última sección** del modal y queda bajo el borde: el modal tiene scroll propio (85vh) y nada indicaba que había más.
+- **Coca-Cola Combo XL en `local`:** era el único par combo/canal sin componente Bebida → en restaurante no se podía elegir ni cambiar la bebida. Migración `coca_cola_combo_xl_local_bebida_23sep` lo agrega (orden al final, idempotente). Es una excepción consciente a la regla "local = combos sin bebida" (1-sep): un combo que lleva Coca-Cola en el nombre sí la incluye; Jose lo pidió explícitamente.
+- **POS (`POSMain.jsx`, ComboModal):** pastilla amarilla sticky *"↓ Hay más opciones abajo"* al pie del modal mientras quede contenido debajo (>24px); al tocarla baja ~70% de la vista. Se re-mide en cada render (marcar un agrandado cambia el alto), al scrollear y en resize.
+
 ## 22-Sep-2026 — Cuadre n1co: estaba en el formulario equivocado y bloqueaba la edición de cierres
 
 Jose preguntó por qué la sección "Cierre de tarjeta · n1co" (19-sep) solo la veían él y Jazz.
