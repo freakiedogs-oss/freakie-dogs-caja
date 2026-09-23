@@ -1,0 +1,598 @@
+pandoraBundleCatalog:
+  value:
+    callbackUrl: 'https://example.com/callback'
+    vendors:
+      - ys-tr-hzt6
+    catalog:
+      items:
+        REGULAR_MENU:
+          id: REGULAR_MENU
+          type: Menu
+          title:
+            default: REGULAR_MENU
+          description:
+            default: Our Daily Menu
+          images: {}
+          products:
+            PIZZA_CHEESE:
+              id: PIZZA_CHEESE
+              type: Product
+            PIZZA_SALAMI:
+              id: PIZZA_SALAMI
+              type: Product
+            PIZZA_BUNDLE:
+              id: PIZZA_BUNDLE
+              type: Product
+            COKE:
+              id: COKE
+              type: Product
+            FANTA:
+              id: FANTA
+              type: Product
+            SPRITE:
+              id: SPRITE
+              type: Product
+          schedule:
+            WEEKLY_SCHEDULE:
+              type: ScheduleEntry
+              id: WEEKLY_SCHEDULE
+          menuType: DELIVERY
+        WEEKLY_SCHEDULE:
+          id: WEEKLY_SCHEDULE
+          type: ScheduleEntry
+          startTime: '07:00:00'
+          endTime: '23:00:00'
+          weekDays:
+            - MONDAY
+            - TUESDAY
+            - WEDNESDAY
+            - THURSDAY
+            - FRIDAY
+            - SATURDAY
+            - SUNDAY
+        PIZZA_CATEGORY:
+          id: PIZZA_CATEGORY
+          type: Category
+          title:
+            default: Pizza
+          description:
+            default: Pizza
+          images: {}
+          products:
+            PIZZA_SALAMI:
+              id: PIZZA_SALAMI
+              type: Product
+            PIZZA_CHEESE:
+              id: PIZZA_CHEESE
+              type: Product
+            PIZZA_BUNDLE:
+              id: PIZZA_BUNDLE
+              type: Product
+        DRINK_CATEGORY:
+          id: DRINK_CATEGORY
+          type: Category
+          title:
+            default: Drinks
+          description:
+            default: Drinks
+          images: {}
+          products:
+            COKE:
+              id: COKE
+              type: Product
+            FANTA:
+              id: FANTA
+              type: Product
+            SPRITE:
+              id: SPRITE
+              type: Product
+        PIZZA_EXTRAS_CATEGORY:
+          id: PIZZA_EXTRAS_CATEGORY
+          type: Category
+          title:
+            default: Pizza Toppings
+          description:
+            default: Hidden Category for Pizza Extra Toppings
+          products:
+            EXTRA_CHEESE:
+              id: EXTRA_CHEESE
+              type: Product
+            EXTRA_JALAPENOS:
+              id: EXTRA_JALAPENOS
+              type: Product
+            EXTRA_GARLIC:
+              id: EXTRA_GARLIC
+              type: Product
+        PIZZA_EXTRAS:
+          id: PIZZA_EXTRAS
+          type: Topping
+          topping-type: PRODUCT_OPTION
+          title:
+            default: Extras for your pizza
+          description:
+            default: Extras for your pizza
+          images: {}
+          quantity:
+            minimum: 0
+            maximum: 2
+          products:
+            EXTRA_CHEESE:
+              id: EXTRA_CHEESE
+              type: Product
+              price: '50'
+            EXTRA_JALAPENOS:
+              id: EXTRA_JALAPENOS
+              type: Product
+              price: '50'
+            EXTRA_GARLIC:
+              id: EXTRA_GARLIC
+              type: Product
+              price: '50'
+        SELECT_YOUR_PIZZA_CHOICE:
+          id: SELECT_YOUR_PIZZA_CHOICE
+          type: Topping
+          toppingType: PANDORA_PRODUCT_GROUP
+          title:
+            default: Please select your Pizza
+          description:
+            default: Please select your Pizza
+          quantity:
+            minimum: 1
+            maximum: 1
+          products:
+            PIZZA_SALAMI:
+              id: PIZZA_SALAMI
+              type: Product
+              surcharges:
+                - id: PIZZA_SALAMI_SMALL
+                  type: Product
+                  price: '0'
+                - id: PIZZA_SALAMI_MEDIUM
+                  type: Product
+                  price: '50'
+                - id: PIZZA_SALAMI_LARGE
+                  type: Product
+                  price: '100'
+            PIZZA_CHEESE:
+              id: PIZZA_CHEESE
+              type: Product
+              surcharges:
+                - id: PIZZA_CHEESE_SMALL
+                  type: Product
+                  price: '0'
+                - id: PIZZA_CHEESE_MEDIUM
+                  type: Product
+                  price: '50'
+                - id: PIZZA_CHEESE_LARGE
+                  type: Product
+                  price: '100'
+        SELECT_YOUR_DRINK_CHOICE:
+          id: SELECT_YOUR_DRINK_CHOICE
+          type: Topping
+          toppingType: PANDORA_PRODUCT_GROUP
+          title:
+            default: Please select your Drink
+          description:
+            default: Please select your Drink
+          quantity:
+            minimum: 1
+            maximum: 1
+          products:
+            COKE:
+              id: COKE
+              type: Product
+              surcharges:
+                - id: COKE_SMALL
+                  type: Product
+                  price: '0.00'
+                - id: COKE_MEDIUM
+                  type: Product
+                  price: '20.00'
+                - id: COKE_LARGE
+                  type: Product
+                  price: '50.00'
+            SPRITE:
+              id: SPRITE
+              type: Product
+              surcharges:
+                - id: SPRITE_SMALL
+                  type: Product
+                  price: '0.00'
+                - id: SPRITE_MEDIUM
+                  type: Product
+                  price: '20.00'
+                - id: SPRITE_LARGE
+                  type: Product
+                  price: '50.00'
+            FANTA:
+              id: FANTA
+              type: Product
+              surcharges:
+                - id: FANTA_SMALL
+                  type: Product
+                  price: '0.00'
+                - id: FANTA_MEDIUM
+                  type: Product
+                  price: '20.00'
+                - id: FANTA_LARGE
+                  type: Product
+                  price: '50.00'
+        EXTRA_CHEESE:
+          id: EXTRA_CHEESE
+          type: Product
+          parent:
+          title:
+            default: Extra Cheese
+          description:
+            default: Extra Cheese
+          images: {}
+          variants: {}
+          toppings: {}
+        EXTRA_GARLIC:
+          id: EXTRA_GARLIC
+          type: Product
+          parent:
+          title:
+            default: Extra Garlic
+          description:
+            default: Extra Garlic
+          images: {}
+          variants: {}
+          toppings: {}
+        EXTRA_JALAPENOS:
+          id: EXTRA_JALAPENOS
+          type: Product
+          parent:
+          title:
+            default: Extra Jalapenos
+          description:
+            default: Extra Jalapenos
+          images: {}
+          variants: {}
+          toppings: {}
+        PIZZA_SALAMI:
+          parent:
+          id: PIZZA_SALAMI
+          type: Product
+          title:
+            default: Pizza Salami
+          description:
+            default: Pizza Salami
+          images: {}
+          variants:
+            PIZZA_SALAMI_SMALL:
+              id: PIZZA_SALAMI_SMALL
+              type: Product
+            PIZZA_SALAMI_MEDIUM:
+              id: PIZZA_SALAMI_MEDIUM
+              type: Product
+            PIZZA_SALAMI_LARGE:
+              id: PIZZA_SALAMI_LARGE
+              type: Product
+          toppings: {}
+        PIZZA_SALAMI_SMALL:
+          parent:
+            id: PIZZA_SALAMI
+            type: Product
+          id: PIZZA_SALAMI_SMALL
+          type: Product
+          title:
+            default: Pizza Salami Small, 20cm
+          description:
+            default: Pizza Salami Small, 20cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '300.00'
+        PIZZA_SALAMI_MEDIUM:
+          parent:
+            id: PIZZA_SALAMI
+            type: Product
+          id: PIZZA_SALAMI_MEDIUM
+          type: Product
+          title:
+            default: Pizza Salami Medium, 28cm
+          description:
+            default: Pizza Salami Medium, 28cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '400.00'
+        PIZZA_SALAMI_LARGE:
+          parent:
+            id: PIZZA_SALAMI
+            type: Product
+          id: PIZZA_SALAMI_LARGE
+          type: Product
+          title:
+            default: Pizza Salami Large, 30cm
+          description:
+            default: Pizza Salami Large, 30cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '500.00'
+        PIZZA_CHEESE:
+          parent:
+          id: PIZZA_CHEESE
+          type: Product
+          title:
+            default: Pizza Cheese
+          description:
+            default: Pizza Cheese
+          images: {}
+          variants:
+            PIZZA_CHEESE_SMALL:
+              id: PIZZA_CHEESE_SMALL
+              type: Product
+            PIZZA_CHEESE_MEDIUM:
+              id: PIZZA_CHEESE_MEDIUM
+              type: Product
+            PIZZA_CHEESE_LARGE:
+              id: PIZZA_CHEESE_LARGE
+              type: Product
+          toppings: {}
+        PIZZA_CHEESE_SMALL:
+          parent:
+            id: PIZZA_CHEESE
+            type: Product
+          id: PIZZA_CHEESE_MEDIUM
+          type: Product
+          title:
+            default: Pizza Cheese Small, 20cm
+          description:
+            default: Pizza Cheese Small, 20cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '300.00'
+        PIZZA_CHEESE_MEDIUM:
+          parent:
+            id: PIZZA_CHEESE
+            type: Product
+          id: PIZZA_CHEESE_MEDIUM
+          type: Product
+          title:
+            default: Pizza Cheese Medium, 28cm
+          description:
+            default: Pizza Cheese Medium, 28cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '400.00'
+        PIZZA_CHEESE_LARGE:
+          parent:
+            id: PIZZA_CHEESE
+            type: Product
+          id: PIZZA_CHEESE_LARGE
+          type: Product
+          title:
+            default: Pizza Cheese Large, 30cm
+          description:
+            default: Pizza Cheese Large, 30cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '500.00'
+        COKE:
+          parent:
+          id: COKE
+          type: Product
+          title:
+            default: Coke
+          description:
+            default: Coke
+          images: {}
+          toppings: {}
+          variants:
+            COKE_SMALL:
+              id: COKE_SMALL
+              type: Product
+            COKE_MEDIUM:
+              id: COKE_MEDIUM
+              type: Product
+            COKE_LARGE:
+              id: COKE_LARGE
+              type: Product
+        COKE_SMALL:
+          parent:
+            id: COKE
+            type: Product
+          id: COKE_SMALL
+          type: Product
+          title:
+            default: Coke Small, 0.25l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '70.00'
+        COKE_MEDIUM:
+          parent:
+            id: COKE
+            type: Product
+          id: COKE_MEDIUM
+          type: Product
+          title:
+            default: Coke Medium, 0.33l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '100.00'
+        COKE_LARGE:
+          parent:
+            id: COKE
+            type: Product
+          id: COKE_LARGE
+          type: Product
+          title:
+            default: Coke Large, 0.5l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '130.00'
+        FANTA:
+          parent:
+          id: FANTA
+          type: Product
+          title:
+            default: Fanta
+          description:
+            default: Fanta
+          images: {}
+          toppings: {}
+          variants:
+            FANTA_SMALL:
+              id: FANTA_SMALL
+              type: Product
+            FANTA_MEDIUM:
+              id: FANTA_MEDIUM
+              type: Product
+            FANTA_LARGE:
+              id: FANTA_LARGE
+              type: Product
+        FANTA_SMALL:
+          parent:
+            id: FANTA
+            type: Product
+          id: FANTA_SMALL
+          type: Product
+          title:
+            default: Fanta Small, 0.25l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '70.00'
+        FANTA_MEDIUM:
+          parent:
+            id: FANTA
+            type: Product
+          id: FANTA_MEDIUM
+          type: Product
+          title:
+            default: Fanta Medium, 0.33l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '100.00'
+        FANTA_LARGE:
+          parent:
+            id: FANTA
+            type: Product
+          id: FANTA_LARGE
+          type: Product
+          title:
+            default: Fanya Large, 0.5l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '130.00'
+        SPRITE:
+          parent:
+          id: SPRITE
+          type: Product
+          title:
+            default: Sprite
+          description:
+            default: Sprite
+          images: {}
+          toppings: {}
+          variants:
+            SPRITE_SMALL:
+              id: SPRITE_SMALL
+              type: Product
+            SPRITE_MEDIUM:
+              id: SPRITE_MEDIUM
+              type: Product
+            SPRITE_LARGE:
+              id: SPRITE_LARGE
+              type: Product
+        SPRITE_SMALL:
+          parent:
+            id: SPRITE
+            type: Product
+          id: SPRITE_SMALL
+          type: Product
+          title:
+            default: Sprite Small, 0.25l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '70.00'
+        SPRITE_MEDIUM:
+          parent:
+            id: SPRITE
+            type: Product
+          id: SPRITE_MEDIUM
+          type: Product
+          title:
+            default: Sprite Medium, 0.33l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '100.00'
+        SPRITE_LARGE:
+          parent:
+            id: SPRITE
+            type: Product
+          id: SPRITE_LARGE
+          type: Product
+          title:
+            default: Sprite Large, 0.5l
+          images: {}
+          toppings: {}
+          variants: {}
+          price: '130.00'
+        PIZZA_BUNDLE:
+          parent:
+          id: PIZZA_BUNDLE
+          type: Product
+          isPandoraBundle: true
+          title:
+            default: Pizza bundle menu
+          description:
+            default: Pizza bundle menu
+          images: {}
+          variants:
+            PIZZA_BUNDLE_VARIANT:
+              id: PIZZA_BUNDLE_VARIANT
+              type: Product
+          toppings: {}
+          price:
+        PIZZA_BUNDLE_VARIANT:
+          parent:
+            id: PIZZA_BUNDLE
+            type: Product
+          id: PIZZA_BUNDLE_VARIANT
+          type: Product
+          title:
+            default: Pizza bundle
+          description:
+            default: Pizza bundle
+          images: {}
+          variants: {}
+          toppings:
+            SELECT_YOUR_PIZZA_CHOICE:
+              id: SELECT_YOUR_PIZZA_CHOICE
+              type: Topping
+            SELECT_YOUR_DRINK_CHOICE:
+              id: SELECT_YOUR_DRINK_CHOICE
+              type: Topping
+          price: '350'

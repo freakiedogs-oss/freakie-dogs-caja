@@ -46,16 +46,23 @@ const ESTADO = {
   cancelado: { label: 'Cancelado',     col: C.rojo },
 }
 
-// Los 24 motivos los define Delivery Hero; éstos son los que usa la operación.
+// Los 24 motivos los define Delivery Hero (shared-components.yaml, schema
+// `order_rejected`). Éstos son los aplicables ANTES de aceptar, que es el único
+// momento en que la cajera rechaza.
+//
+// Un código que no esté en su lista lo rechazan con 400, y entonces el pedido se
+// queda sin contestar hasta que vence: cuenta como fallo nuestro y, si pasa
+// seguido, cierran la tienda sola. Por eso acá no se inventa ninguno.
 const MOTIVOS = [
-  { v: 'ITEM_UNAVAILABLE',             t: 'Se acabó un producto' },
-  { v: 'TOO_BUSY',                     t: 'Cocina saturada' },
-  { v: 'CLOSED',                       t: 'Tienda cerrada' },
-  { v: 'MENU_ACCOUNT_SETTINGS',        t: 'El menú no coincide' },
-  { v: 'TECHNICAL_PROBLEM',            t: 'Problema técnico' },
-  { v: 'ADDRESS_OUT_OF_DELIVERY_AREA', t: 'Fuera de zona' },
-  { v: 'CUSTOMER_CALLED_TO_CANCEL',    t: 'El cliente canceló' },
-  { v: 'TEST_ORDER',                   t: 'Pedido de prueba' },
+  { v: 'ITEM_UNAVAILABLE',       t: 'Se acabó un producto' },
+  { v: 'TOO_BUSY',               t: 'Cocina saturada' },
+  { v: 'CLOSED',                 t: 'Tienda cerrada' },
+  { v: 'MENU_ACCOUNT_SETTINGS',  t: 'El menú no coincide' },
+  { v: 'TECHNICAL_PROBLEM',      t: 'Problema técnico' },
+  // Sólo tiene sentido cuando repartimos nosotros; en pickup no aplica.
+  { v: 'OUTSIDE_DELIVERY_AREA',  t: 'Fuera de zona', soloDelivery: true },
+  { v: 'MOV_NOT_REACHED',        t: 'No llega al mínimo', soloDelivery: true },
+  { v: 'TEST_ORDER',             t: 'Pedido de prueba' },
 ]
 
 // Los `reason` de cierre del contrato (pluginApi.yaml, schema Closures). La lista
@@ -141,7 +148,7 @@ function HojaRechazo({ pedido, onCerrar, onConfirmar, enviando }) {
           El cliente recibe el aviso de PedidosYa. Elegí el motivo real: de esto salen sus reportes.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-          {MOTIVOS.map((m) => (
+          {MOTIVOS.filter((m) => !m.soloDelivery || pedido.tipo_orden !== 'pickup').map((m) => (
             <button key={m.v} onClick={() => setMotivo(m.v)} style={{
               padding: '13px 10px', borderRadius: 10, cursor: 'pointer', fontSize: 13.5,
               fontWeight: 600, textAlign: 'left', lineHeight: 1.25,
