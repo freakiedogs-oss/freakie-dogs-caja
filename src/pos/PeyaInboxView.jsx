@@ -358,20 +358,38 @@ export default function PeyaInboxView({ user, onBack }) {
     return () => clearInterval(t)
   }, [cargar])
 
-  // Abrir o cerrar la tienda. El cierre va con plazo (30 min) a propósito: un cierre
-  // indefinido que nadie recuerda reabrir es una sucursal apagada todo el día.
+  // Abrir o cerrar la tienda EN PEDIDOSYA, no sólo acá. La diferencia importa: si
+  // sólo cambiáramos nuestro estado, la caja creería que está cerrada y los pedidos
+  // seguirían entrando igual. Por eso pasa por `peya-responder`, que consulta qué
+  // permite cada plataforma, escribe allá, y sólo entonces mueve el estado local.
+  //
+  // El cierre va con plazo (30 min) a propósito: uno indefinido que nadie recuerda
+  // reabrir es una sucursal apagada todo el día.
   const onTienda = async (abrir) => {
     setOcupado('__tienda__'); setError(''); setAviso('')
     try {
-      const { data: r, error: e } = await db.rpc('peya_tienda_abrir_cerrar', {
-        p_pin: String(user.pin),
-        p_disponible: abrir,
-        p_motivo: abrir ? null : 'Cerrada desde la caja',
-        p_minutos: abrir ? null : 30,
+      const r = await fetch(`${URL_SB}/functions/v1/peya-responder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: String(user.pin), accion: 'tienda', abrir,
+          motivo: abrir ? null : 'TOO_BUSY_KITCHEN', minutos: abrir ? null : 30,
+        }),
       })
-      if (e) throw e
-      if (r?.ok === false) throw new Error(r.message || r.error || 'No se pudo cambiar')
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) {
+        throw new Error(
+          j.error === 'sin_vendor' || j.error === 'sin_chain_code' ? j.message
+          : j.error === 'rol_sin_permiso' ? j.message
+          : j.error === 'ninguna_plataforma_cambiable'
+            ? 'PedidosYa no permite cambiar el estado de esta tienda ahora'
+          : j.error === 'consulta_en_curso'
+            ? 'PedidosYa todavía no contesta el estado. Probá de nuevo en unos segundos.'
+          : j.error === 'no_se_pudo_consultar' ? `PedidosYa respondió ${j.http}`
+          : j.error || j.message || `HTTP ${r.status}`)
+      }
       setAviso(abrir ? 'Tienda abierta en PedidosYa' : 'Tienda cerrada por 30 minutos')
+      if (j.aviso) setAviso(`${abrir ? 'Abierta' : 'Cerrada'}, pero ${j.aviso}`)
       await cargar()
     } catch (e) { setError(e.message || 'No se pudo cambiar el estado de la tienda') }
     finally { setOcupado(null) }
