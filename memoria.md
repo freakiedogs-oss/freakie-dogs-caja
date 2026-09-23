@@ -95,6 +95,24 @@ Jose abrió el Control de Depósitos y vio Cafetalón del 16-sep en amarillo: "s
 
 **Queda para revisar (no lo decidí yo, son 4 casos donde adivinar sería peor):** parecen correcciones que nadie anuló y hoy suman doble — S004 15/16-ago ($1,407.42 y 4 min después $1,406.42, que es el esperado exacto), S006 3-ago ($1,220 y después $1,500), S003 7-may ($506.22 y después $521.20) y S001 29-mar ($521.29 y después $521.30, un centavo). Salen en amarillo en el calendario y ahí mismo está el botón de anular.
 
+## 23-Sep-2026 — PeYa Bloque 1 completo, ajuste de tiempo de prep, y una batería de 26 pruebas
+
+Con la red del entorno abierta se bajó el contrato completo (12 YAML, en `docs/peya-api/`) y con eso se destrabó todo el lado saliente.
+
+**Un bug que estaba en producción esperando.** La lista de motivos de rechazo del POS tenía **dos códigos inventados**: `ADDRESS_OUT_OF_DELIVERY_AREA` (el real es `OUTSIDE_DELIVERY_AREA`) y `CUSTOMER_CALLED_TO_CANCEL`, que sencillamente no existe. Un motivo fuera de su lista lo rebotan con 400: el rechazo no se registra, el pedido se queda sin contestar hasta que vence, eso cuenta como fallo nuestro y si pasa seguido cierran la tienda sola. O sea, la cajera apretaba «Fuera de zona» creyendo que rechazaba y en realidad dejaba correr el reloj. Ahora los 8 motivos del POS son los aplicables *antes de aceptar*, los de reparto no salen en un pickup, y `peya-responder` valida contra los 24 reales antes de llamar — en el backend, porque por ahí también entra la aceptación automática.
+
+**Bloque 1, la mitad que faltaba.** Sabíamos escuchar cuando ellos cierran; no ordenar el cierre desde acá. El PUT no se puede armar a ciegas: hay que hacer el GET primero y verificar `changeable`. Y el GET devuelve un **array** — un local puede estar publicado en varias plataformas de Delivery Hero a la vez, cada una con su `platformKey`, su `platformRestaurantId` y su propia lista de estados y motivos. Así que el flujo es consultar, quedarse con las que se dejan cambiar, y mandarle a cada una sólo valores que ella declaró aceptar. Tres detalles del contrato que no se habrían adivinado: `closingMinutes` sólo funciona con `CLOSED_UNTIL`; sus `closingMinutes` son una lista cerrada (30/60/120…) y hay que elegir el más cercano; y el 204 del GET no es error, es «recibido, todavía no hay respuesta».
+
+**El estado local sólo se mueve si PedidosYa aceptó al menos una plataforma.** Al revés —marcarlo cerrado acá y seguir recibiendo pedidos— sería peor que no hacer nada: la caja creería que no entran y entrarían igual. Por eso el botón del POS pasa por `peya-responder` en vez de tocar sólo la base.
+
+**Ajuste de tiempo de preparación.** La URL viene en los `callbackUrls` del pedido y el rango válido también viene en el pedido (`minPickUpTimestamp` / `maxPickUpTimestamp`): fuera de rango lo rebotan con 400, así que se valida antes de salir. Ajustar no mueve el pedido de estado.
+
+**Pruebas — `scripts/test-peya-homologacion.sql`, 26 de 26 en verde.** Cierres (vacío, vigente, vencido, permanente, no levantable, ancla de orden, vendor inexistente), avisos del motorista (llegada, espera, repetido que no reinicia el reloj, HIDE, fuera de orden, inexistente), los cinco escenarios de descuento con su atribución, el doble conteo, y los permisos. Arma su propio vendor `TEST-HOMOLOGACION` y lo borra al final.
+
+**Y se verificó que las pruebas sirven**, que es lo que casi nunca se hace: metiendo a propósito el bug del doble conteo, la 21 y la 22 lo cazaron con el número exacto — $26.00 en vez de $20.00 y $11.00 en vez de $8.00. Después se restauró.
+
+**Nota de despliegue:** el primer intento de subir `peya-responder` murió con un error interno del lado de Supabase (quedó en v8, no a medias). El segundo pasó, v9. El repo se alineó con lo desplegado.
+
 ## 23-Sep-2026 — Descuentos y vouchers de PeYa: quién paga cada rebaja, y la trampa del doble conteo
 
 Llegaron los YAML del contrato (quedan en `docs/peya-api/`) y con ellos los cinco escenarios de descuento del checklist dejaron de necesitar que PedidosYa mande ejemplos: está todo documentado en `pluginApi.yaml`.
