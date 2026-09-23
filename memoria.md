@@ -8,6 +8,51 @@
 - **Fix inmediato (`src/pos/CierreTurno.jsx`):** debajo de "Tomar foto del voucher" hay una casilla *"Esta tablet no deja tomar la foto: cerrar sin voucher"*. Con ella marcada el Z cierra con `voucher_n1co_url = null` (el total n1co y el motivo siguen siendo obligatorios) y la foto se adjunta después desde el ERP (editar cierre, `CierreForm`, donde el voucher ya es opcional). Si luego se adjunta una foto, la casilla se desmarca sola.
 - **Pendiente:** instalar a mano la APK v1.3 en la Fire de Venecia (NO hay auto-update: la app solo recarga la web, la APK se sideloadea) y probar el botón de la foto. Los vouchers vacíos se ven en `ventas_diarias` con `tarjeta_n1co` lleno y `voucher_n1co_url` null.
 
+
+
+
+## 23-Sep-2026 — Incentivo por tocino extra en Metrocentro (migración `20260923_incentivo_tocino.sql`)
+
+**Por qué:** Cesar quiere empujar el combo con tocino. Rosa y Liseth ganan **$0.05 por cada tocino extra** vendido, encima del incentivo de agrandados, sin bloques.
+
+**Qué cambió:**
+- `agrandado_config` gana `tocino_valor` ($ por unidad, 0 = apagado) y `tocino_desde`. Nueva `fn_tocino_extra_es(nombre, mods)`: cuenta el modificador «Tocino» ($0.75, en burgers, hot dogs y papas) y el ítem suelto «Tocino»; NO cuenta «SIN Tocino» ni «Mermelada de Tocino».
+- `fn_agrandados_panel` se recreó (cambia el retorno) con `tocino_valor, tocino_desde, tocino_hoy, tocino_mes, tocino_dinero`; cuenta desde `tocino_desde` dentro del mes y excluye filas `anulado`. Grants a anon/authenticated re-aplicados.
+- POS `AgrandadoChip`: el chip muestra «🥓 $x.xx» al lado del dinero de agrandados, flotante naranja al vender uno, y tarjeta de tocino en el panel. ERP `AgrandadosView`: misma tarjeta.
+- Referencia: Stephanie vendía ~236 tocinos extra al mes en Metro (≈ $11.80 con esta tarifa).
+
+## 23-Sep-2026 — Agrandados Metrocentro: Stephanie renunció; Rosa y Liseth toman el puesto (migración `20260923_agrandados_ajuste_inicial.sql`)
+
+**Por qué:** el incentivo de agrandados cuenta por `pos_cocina_queue.mesero` (nombre del usuario que cobró) y `agrandado_config` tenía solo a Stephanie en S006. Cesar quiso repartir mitad y mitad lo acumulado en septiembre y que de ahora en adelante cada una facture con su propio PIN.
+
+**Qué cambió:**
+- `agrandado_config` gana `ajuste_inicial` (agrandados que se suman al contador) y `ajuste_mes` (mes al que aplica, día 1). `fn_agrandados_panel` suma ese arrastre al `mes` (bloques, dinero, faltan y proyección) sólo dentro de ese mes; `hoy`, cuentas y tasa siguen siendo lo propio de cada una. No se reescribe historia.
+- S006: Stephanie `activo=false`; filas nuevas para **Rosa** y **Liseth** con `activo_desde=2026-09-23`, bloque 100 × $0.10, arrastre **737 c/u** = mitad de 1,474 (1,310 de Stephanie + 164 cobrados con el PIN de Super Admin en Metro, decisión de Cesar).
+- Usuario nuevo `Liseth` (cajera, S006, PIN de 4 dígitos). Rosa cobra con su usuario de siempre (rol cocina también opera caja; el chip de agrandados empareja por nombre, sin rol).
+
+**Pendientes que salieron al revisar:** (1) en Metro hay 575 cuentas de septiembre cobradas con el PIN de **Super Admin**: alguien usa ese PIN en caja; (2) en Soyapango `agrandado_config` apunta a «Rigoberto Armando» pero quien cobra es **Ramses** (708 agrandados en el mes que no le cuentan a nadie).
+
+## 22-Sep-2026 — Cuadre nocturno: tablas de críticos, historial y pendientes compartidos
+
+**Por qué:** el skill de cuadre (`cuadre-nocturno-freakie`, lo corren Cesar y Frank con su propio Claude) tenía la lista de críticos y las tolerancias en el texto, cada corrida armaba su propia presentación y las hipótesis de una noche se perdían al día siguiente.
+
+**Qué cambió (migración `20260922_cuadre_nocturno_tablas.sql`):**
+- `productos_criticos`: lista de críticos con unidad de conteo, `factor_conteo`, `tolerancia`, `grupo` (latas se suman), `producto_descarga_id` (queso frito: se cuenta bolsita, las recetas descargan lb), `activo=false` + `nota` para los mapeos rotos (papas, pepinillos, mermelada, aceite). `store_code` null = todas; `unique nulls not distinct`. Para cambiar una tolerancia se edita la tabla, no el skill.
+- `cuadres_nocturnos`: el resultado de cada noche (`data` = objeto del panel, `resumen` = [{n,dif,cls}]). Sirve para el historial de 7 noches y la regla «3 noches para el mismo lado». Cafetalón 18–21-sep cargado como backfill (solo diferencias, sin investigación).
+- `cuadre_pendientes`: lo que queda para el encargado; el panel (HTML publicado como artifact) las tacha y anota «qué contestaron» con la anon key (RLS: select para todos, update sólo hecho/hecho_por/respuesta). El skill las retoma a la noche siguiente.
+- El panel es una plantilla fija embebida en el skill; el skill sólo llena `DATA`. Así el resultado se ve igual para quien lo corra.
+
+## 22-Sep-2026 — Cierre sin foto por excepción del día + voucher n1co por QR
+
+**Por qué:** Alejandro (Paseo Venecia S004) no podía subir fotos desde la tablet y el corte Z exigía la foto del voucher n1co (hard-coded), así que no podía cerrar ni contar. Cesar autorizó cerrar sin fotos SOLO ese día.
+
+**Qué cambió:**
+- Nueva tabla `pos_cierre_excepciones (store_code, fecha, sin_foto, motivo, creado_por)` (RLS, lectura anon/authenticated; las filas se crean a mano). Con una fila para (sucursal, día) el POS no exige foto del voucher ni fotos de egreso ese día; al día siguiente vuelve la regla sola. Fila creada: S004 · 2026-09-22.
+- `src/pos/CierreTurno.jsx`: lee la excepción al cargar (`sinFotoHoy`), relaja la validación del Z y del `ModalEgreso` (prop `sinFoto`), y muestra un aviso ámbar «Hoy se autorizó cerrar sin fotos».
+- Voucher n1co ahora también se puede tomar **desde el celular por QR** (`QrFotoUpload`, el mismo de los egresos) → `voucherQrUrl`. Esto es lo que evita que se repita: si la tablet no deja subir archivos, se escanea el QR y se toma con el teléfono.
+
+**Cómo usar la excepción otra vez:** `insert into pos_cierre_excepciones (store_code, fecha, motivo, creado_por) values ('S00x', current_date, '...', 'Cesar');`
+
 ## 23-Sep-2026 — POS: agrandado de bebida por bebida, no por combo (ComboModal)
 
 **Reporte Cesar (Metro):** en un combo con dos bebidas (Duo Picossini, Burger Duo…), marcar «Agrandado de bebida» en la bebida 1 le quitaba a la bebida 2 las opciones gratis y le exigía sabor de agrandado. Causa: `hayAgrandado` era global al combo; `filtraBebidas`/`grupoOculto`/`falta` no sabían de qué bebida se trataba. Además la exclusividad del 19-sep apagaba TODOS los agrandados del combo, así que era imposible agrandar las dos bebidas de un Duo.
@@ -18,6 +63,19 @@
 
 
 > Log de decisiones y cambios, lo más nuevo arriba.
+
+## 23-Sep-2026 — BPM del chili: la versión Mauricio se ve como su anexo de pantallas (FD-CI-DO-013-A01)
+
+Mauricio revisó la v2 en pantalla y el problema no era la lógica sino el **formato**: entregó el anexo **FD-CI-DO-013-A01** (19 plantillas de pantalla, 82 pp.) más 24 maquetas (p01–p17, s00/s01, q1–q3, m1–m5). Cesar pidió acoplar la v2 a eso «lo más parecido posible». La piloto **no cambia**.
+
+- **Tema por plantilla, no dos pantallas.** `bpmTema.jsx` define `TEMAS.oscuro` (la piloto, HEX idénticos a los de antes) y `TEMAS.claro` (tokens del anexo: crema `#f7f6f2`, tarjetas blancas, títulos Source Serif, texto Montserrat, semánticos éxito/error/advertencia/info). `BPMControles.jsx` ya no tiene colores escritos: cada control pide `useTema()`. En el claro las filas siguen el patrón del anexo **etiqueta (+ porqué) · control · resultado como pastilla**, los Sí/No son segmentados (se guarda igual `Cumple`/`No cumple`), los números llevan la unidad como sufijo fijo y miles con coma (`limpiarNumero`/`mostrarNumero`; la coma está bloqueada), y **desaparece «Otro»** en químicos (H-10). El interruptor es `bpm_plantillas.retiene_ante_falla`: la v2 abre `BPMChiliClaro`, la piloto sigue en el JSX de siempre.
+- **`BPMChiliClaro.jsx`** es solo vista: recibe el modelo `m` de `BPMChiliView` (estado, evaluación y acciones) y pinta el Marco común del anexo: barra de aplicación (marca · Control BPM · lote `CHI-AAMMDD-NN` · modo · usuario · reloj de servidor), riel de pasos (✓ / actual / candado / ✕ retenido), encabezado con **clase de control** (PCC sólido, PPRO contorno, PRP/PC claro), franja de **criterio de aceptación** con chips de documentos que abren el **DocViewer** (pestañas DO-013 · paso N con la instrucción del paso, DO-002-NN, DO-003 «pendiente», Video VNN, Concentraciones), ayudas «?» que se abren con un toque, y pie fijo con **una sola acción de 48 px** («Registrar: …», «Faltan N dato(s)», «Retener y abrir desviación»). Pantallas de tanda: Abrir tanda (T10: modo Producción/Revisión, lote previsto, RVP abiertos) y Tablero (T11: indicadores, «qué tenés que hacer ahora», desviaciones, y la **decisión de Calidad** como T12: Retest o Liberar con justificación ≥ 20 caracteres; «liberar» deshabilitado si el paso es PCC — H-36).
+- **`bpmChiliV2Ui.js`** = el `chili.v2.ts` del anexo: por `clave` de paso, clase, fase, criterio de aceptación, documentos, RVP, texto del botón y pie. Texto tomado literal de la sección «Configuración por paso».
+- **Retención (cambio de criterio, alineado al anexo).** Antes la v2 solo bloqueaba el botón. Ahora, con un criterio en falla, el operario puede corregir y volver a medir **o** tocar «Retener y abrir desviación»: `registrarPaso({ retener: true })` guarda el intento como no conforme con lo que haya (no exige foto ni pendientes), abre las desviaciones y deja la tanda `bloqueada` (retenida). Calidad dispone desde el tablero con `liberar({ decision, justificacion })`; la piloto sigue con `prompt()`.
+- **Parámetros BPM** guardaba por `clave`, y desde la v2 una clave puede existir dos veces (global y de plantilla): el `update … eq('clave')` pisaba ambas y fallaba por llave duplicada. Ahora guarda por `id` y muestra la columna **Versión** (Global / v2 · Mauricio).
+- **Pendiente de aplicar (migración `20260923_bpm_v2_pesaje_items.sql`):** el paso 7 de la v2 nació sin ítems de pesaje (cuelgan del `paso_id` de la piloto) y la tanda de prueba moría en «No cargó la lista de ingredientes». La migración clona los 25 activos. **No se aplicó todavía: falta el OK de Cesar.**
+- **Queda fuera de esta entrega** (el anexo lo pide, es otra ruta): Maestros de Calidad (T15–T19: equipos con baja motivada, calibraciones con dictamen, fichas de químicos con vigencia, tablero de vigencias, documentos controlados con huella), veredicto en el servidor (T-02), lote asignado por el servidor (`open_run`), fotos en cola sin señal, y el criterio por criterio de la v2 (severidad crítica/mayor/menor, etapa cruda/post-cocción de utensilios). Los videos VNN solo se muestran si `bpm_pasos.video_url` existe.
+- Vista previa verificada con Playwright (tableta 1400 px y teléfono 390 px, pasos 1, 7 y 12, tanda retenida, abrir tanda, DocViewer, ayuda «?», estado fuera de criterio). Las fuentes de Google no cargan en el sandbox; en producción sí.
 
 ## 23-Sep-2026 — Conteo de Críticos: los 15 no se cuentan igual (porcionado vs. peso) y el CID se cierra
 
