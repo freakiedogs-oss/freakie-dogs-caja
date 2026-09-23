@@ -1,0 +1,1043 @@
+components:
+  schemas:
+    Order:
+      type: object
+      properties:
+        token:
+          $ref: '#/components/schemas/Token'
+        code:
+          $ref: '#/components/schemas/Code'
+        comments:
+          $ref: '#/components/schemas/Comments'
+        createdAt:
+          $ref: '#/components/schemas/CreatedAt'
+        customer:
+          $ref: '#/components/schemas/Customer'
+        delivery:
+          $ref: '#/components/schemas/Delivery'
+        discounts:
+          $ref: '#/components/schemas/Discounts'
+        expeditionType:
+          $ref: '#/components/schemas/ExpeditionType'
+        expiryDate:
+          $ref: '#/components/schemas/ExpiryDate'
+        extraParameters:
+          $ref: '#/components/schemas/ExtraParameters'
+        invoicingInformation:
+          $ref: '#/components/schemas/InvoicingInformation'
+        localInfo:
+          $ref: '#/components/schemas/LocalInfo'
+        payment:
+          $ref: '#/components/schemas/Payment'
+        test:
+          $ref: '#/components/schemas/Test'
+        shortCode:
+          $ref: '#/components/schemas/ShortCode'
+        preOrder:
+          $ref: '#/components/schemas/PreOrder'
+        pickup:
+          $ref: '#/components/schemas/Pickup'
+        platformRestaurant:
+          $ref: '#/components/schemas/PlatformRestaurant'
+        price:
+          $ref: '#/components/schemas/Price'
+        products:
+          $ref: '#/components/schemas/Products'
+        corporateOrder:
+          $ref: '#/components/schemas/CorporateOrder'
+        corporateTaxId:
+          $ref: '#/components/schemas/CorporateTaxId'
+        integrationInfo:
+          $ref: '#/components/schemas/IntegrationInfo'
+        mobileOrder:
+          $ref: '#/components/schemas/MobileOrder'
+        webOrder:
+          $ref: '#/components/schemas/WebOrder'
+        vouchers:
+          $ref: '#/components/schemas/Vouchers'
+        preparationTimeAdjustmentInformation:
+          $ref: '#/components/schemas/PreparationTimeAdjustmentInformation'
+        callbackUrls:
+          $ref: '#/components/schemas/CallbackUrls'
+      required:
+        - token
+        - code
+        - comments
+        - createdAt
+        - customer
+        - discounts
+        - expeditionType
+        - expiryDate
+        - localInfo
+        - test
+        - preOrder
+        - payment
+        - platformRestaurant
+        - price
+        - products
+        - vouchers
+        - corporateTaxId
+    NotUsedDeprecateStringField:
+      description: Not used, will always be ```""```
+      deprecated: true
+      default: ""
+      example: ""
+      type: string
+    Token:
+      description: |
+        Unique identifier of the **order** in **POS middleware**.
+      type: string
+      example: 5f373562-591a-4db9-8609-7eec7880f28d
+      maxLength: 512
+    Code:
+      description: |
+        Unique identifier of the **order** on **delivery platform**. The actual content representation
+        depends on the **delivery platform** the order belongs to.
+      type: string
+      example: n0s1-w0k1
+      maxLength: 255
+    CorporateOrder:
+      description: |
+        Indicates that the **order** is a corporate order. The flag is not used anymore and
+        always set to ```false```.
+      type: boolean
+      default: false
+      deprecated: true
+      example: false
+    CorporateTaxId:
+      description: |
+        The customer's tax id. E.g. this can be the legal tax identification number. In some countries this is a legal requirement on vendor side. Is only supported for food/restaurant orders.
+      type: string
+      example: example-tax-id
+      maxLength: 512
+    CreatedAt:
+      description: |
+        Time when the **order** was created, in [date-time-format](https://tools.ietf.org/html/rfc3339#section-5.6).
+      type: string
+      format: date-time
+      example: "2016-03-14T17:00:00.000Z"
+    Comments:
+      type: object
+      description: Comments included in the order
+      properties:
+        customerComment:
+          type: string
+          description: Customer comments
+          example: Please hurry, I am hungry
+          default: null
+        vendorComment:
+          type: string
+          description: Vendor comments, not used anymore. Contains always an empty string
+          example: ""
+          default: ""
+          deprecated: true
+    Customer:
+      type: object
+      additionalProperties: false
+      description: |
+        Customer information. Due to customer data protection policies, most of the
+        fields are filled with dummy data and are deprecated.
+      properties:
+        email:
+          description: |
+            Hash of the customer email address.
+          default: ""
+          example: s188sduisddsnjknsj
+          type: string
+        firstName:
+          description: |
+            Customer's first name.
+          example: food
+          default: null
+          type: string
+        lastName:
+          description: |
+            Customers last name.
+          example: panda
+          default: null
+          type: string
+        mobilePhone:
+          description: |
+            Customer's phone number.
+          default: null
+          example: +49 99999999
+          type: string
+        code:
+          description: |
+            Unique identifier of the customer.
+          default: dummy_customer_code
+          example: dummy_customer_code
+          deprecated: true
+          type: string
+        id:
+          description: |
+            Unique identifier of the customer.
+          default: dummy_customer_id
+          example: dummy_customer_Id
+          deprecated: true
+          type: string
+        mobilePhoneCountryCode:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        flags:
+          description: |
+            These flags signal specific type, behavior, features or capabilities of the customer. Having a specific 
+            flag set means it is assigned/enabled/activated. A flag could indicate, that the customer is 
+            e.g. a VIP/new/regular customer that deserves special treatment by the vendor/platform. Supported flags are:
+            
+            PRO_SUBSCRIPTION: whether the customer has a pro subscription in place which 
+            e.g. allows food ordering without paying delivery fees etc. The concrete definition what a pro 
+            subscription includes is platform dependent.
+          items:
+            anyOf:
+              - type: string
+              - type: string
+                enum:
+                  - PRO_SUBSCRIPTION
+        invoiceAddress:
+          description: |
+            A copy of the customer delivery address exposed for invoicing purposes.
+            
+            This field is currently only sent for logistics delivery orders when enabled for the corresponding global entity.
+            It can be omitted or set to `null` when not applicable.
+          allOf:
+            - $ref: '#/components/schemas/DeliveryAddress'
+          type: "null"
+
+    Delivery:
+      type: object
+      description: |
+        Information for **Own Delivery Orders** and **Vendor Delivery Orders**. For **Pickup Orders**
+        it will not be present on the payload.
+      properties:
+        address:
+          $ref: '#/components/schemas/DeliveryAddress'
+        expectedDeliveryTime:
+          description: |
+            The expected time when order should be delivered,
+            in [date-time-format](https://tools.ietf.org/html/rfc3339#section-5.6).
+            This field can be ```null``` if it's an **Own Delivery** or **Pickup** Order.
+          type: string
+          format: date-string
+          default: null
+          example: 2016-03-14T17:50:00.000Z
+        expressDelivery:
+          description: |
+            Defines if **order** must be delivered in time. If this field is true, but the order was not delivered in time, the platform needs to chargeback the whole order or has to pay a penalty to the customer.
+          default: false
+          example: false
+          type: boolean
+        riderPickupTime:
+          description: |
+            The expected time when the order will be picked up by the customer
+            (**Pickup Order**) or rider (**Own Delivery Order**) in
+            [date-time-format](https://tools.ietf.org/html/rfc3339#section-5.6).
+            It will be null for Vendor Delivery Orders
+          oneOf:
+            - type: string
+              example: 2016-03-14T17:35:00.000Z
+            - type: "null"
+              default: null
+    DeliveryAddress:
+      description: |
+        Address where the order should be delivered to. For **Own Delivery Orders** address is ```null```.
+      type: object
+      properties:
+        building:
+          example: Delivery Hero Headquarter
+          maxLength: 255
+          minLength: 0
+          description: |
+            The actual name of the building (if any) for better identification of the delivery address
+          default: ""
+          type: string
+        city:
+          example: Berlin
+          maxLength: 255
+          minLength: 0
+          description: City/Town/Village.
+          default: ""
+          type: string
+        company:
+          example: Delivery Hero SE
+          maxLength: 255
+          minLength: 0
+          description: Company name.
+          default: ""
+          type: string
+        deliveryArea:
+          example: Block A
+          maxLength: 255
+          minLength: 0
+          readOnly: false
+          description: The delivery area, mostly common with block.
+          default: ""
+          type: string
+        deliveryAreaPostcode:
+          example: 10117
+          maxLength: 255
+          minLength: 0
+          description: The zip code of the delivery area, is the same as zip.
+          default: ""
+          deprecated: true
+          type: string
+        deliveryInstructions:
+          example: right at the street crossing
+          maxLength: 2048
+          minLength: 0
+          description: |
+            Additional information on how the customer can be found at the specified address.
+          default: null
+        deliveryMainArea:
+          example: Mitte
+          maxLength: 255
+          minLength: 0
+          readOnly: false
+          description: The main area, e.g. the suburb.
+          default: ""
+          type: string
+        entrance:
+          example: left entrance
+          maxLength: 255
+          minLength: 0
+          description: The entrance to use at the address location.
+          default: ""
+          type: string
+        flatNumber:
+          example: '42'
+          maxLength: 255
+          minLength: 0
+          description: 'The flat identifier, e.g. an apartment number.'
+          default: ""
+          type: string
+        floor:
+          example: '1'
+          maxLength: 255
+          minLength: 0
+          description: Floor number.
+          default: ""
+          type: string
+        intercom:
+          example: '1234'
+          maxLength: 255
+          minLength: 0
+          readOnly: false
+          description: Code to type at the intercom or name to ring at to open the entrance door at the address location.
+          default: ""
+          type: string
+        latitude:
+          example: 52.524807
+          maximum: 90
+          minimum: -90
+          readOnly: false
+          description: The Latitude of the customer's location
+          default: null
+          type: number
+        longitude:
+          example: 13.392943
+          maximum: 180
+          minimum: -180
+          readOnly: false
+          description: The longitude of the customer's location.
+          default: null
+          type: number
+        number:
+          example: '67'
+          maxLength: 255
+          minLength: 0
+          description: House number in a street (or any other identifier of a house in a street).
+          default: ""
+          type: string
+        postcode:
+          example: '10117'
+          maxLength: 255
+          minLength: 0
+          description: Postal code.
+          type: string
+          default: ""
+        street:
+          example: Oranienburger Straße
+          maxLength: 255
+          minLength: 0
+          readOnly: false
+          description: The street.
+          default: ""
+          type: string
+        line1:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        line2:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        line3:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        line4:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        line5:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        other:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        room:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        structure:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        district:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        deliveryMainAreaPostcode:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+      default: null
+      example:
+        postcode: 10117
+        city: Berlin
+        street: Oranienburger Staße
+        number: 67
+    Discounts:
+      type: array
+      description: List of discounts applied to the order.
+      items:
+        $ref: '#/components/schemas/Discount'
+      minItems: 0
+    Discount:
+      description: discount
+      type: object
+      required:
+        - amount
+      properties:
+        name:
+          type: string
+          description: Name of the discount applied.
+          example: First Order
+        amount:
+          type: string
+          description: Amount of the discount.
+          example: "9.00"
+          default: "0"
+        type:
+          type: string
+          description: Type of the discount applied.
+          deprecated: true
+          example: FIRST_ORDER
+        sponsorships:
+          type: array
+          description: |
+            Sponsorships of the discount. A discount can sponsored by multiple parties, e.g if you have a total discount
+            of 9.00, one third could be sponsored from the platform, one third could be sponsored from the vendor
+            and one third could be sponsored by someone else.
+          items:
+            $ref: '#/components/schemas/Sponsorship'
+          maxItems: 3
+          minItems: 0
+          example:
+            - sponsor: PLATFORM
+              amount: "3"
+            - sponsor: Vendor
+              amount: "3"
+            - sponsor: THIRD_PARTY
+              amount: "3"
+    Sponsorship:
+      type: object
+      properties:
+        sponsor:
+          type: string
+          description: The sponsor
+          enum:
+            - PLATFORM
+            - VENDOR
+            - THIRD_PARTY
+          example: PLATFORM
+        amount:
+          type: string
+          description: Amount of the Discount
+          example: "9"
+      required:
+        - sponsor
+        - amount
+    ExpeditionType:
+      description: |
+        Expedition type of the order, to differentiate between pickup and delivery orders. **Own
+        Delivery Orders** can be differentiate from **Vendor Delivery Orders** on the presence of
+        ```delivery.riderPickupTime```. For **Vendor Delivery Orders** the ```riderPickupTime``` is empty.
+      type: string
+      enum:
+        - pickup
+        - delivery
+    ExpiryDate:
+      description: |
+        Time until the **order** must be **accepted** or **rejected** by **vendor** in
+        [date-time-format](https://tools.ietf.org/html/rfc3339#section-5.6).
+        If the order is not accepted before, the order will be automatically canceled.
+      type: string
+      format: date-time
+      default: ""
+      example: 2016-03-14T17:15:00.000Z
+    ExtraParameters:
+      description: |
+        Platform-specific order parameters. Will only be part of the payload if the platform adds additional parameters
+        to the order. Please check with your local point of contact if this field is allowed on the selected platform. If not, plugins should ignore the extra parameters.
+      type: object
+      additionalProperties:
+        type: string
+    InvoicingInformation:
+      description: |
+        E-invoice information (carrierType, carrierValue) will be passed in here **if available**
+      type: object
+      properties:
+        carrierType:
+          type: string
+          description: carrier_type can be one of the following values ["mobile_barcode", "member_carrier", "npc_barcode", "business", "donation"]. Plugins should be able to handle new values without impacting order processing.
+        carrierValue:
+          type: string
+          description: the value of e-invoice carrier type used
+          example: "/ABCD4EF"
+    IntegrationInfo:
+      description: Not used, will always be ```{}```
+      deprecated: true
+      default: {}
+      type: object
+    LocalInfo:
+      description: Local information where the orders has been made. Most of the fields are deprecated.
+      properties:
+        countryCode:
+          description: ISO 3166-1 alpha-2 country code of the country the **order** was placed
+          minLength: 2
+          maxLength: 2
+          pattern: "^[a-zA-Z]{2}$"
+          example: de
+          default: null
+          type: string
+        currencySymbol:
+          description: Symbol of the currency, that the **order** belongs to.
+          example: €
+          default: null
+          type: string
+        platform:
+          description: The name of the delivery platform.
+          example: Foodpanda
+          type: string
+        platformKey:
+          description: Identifier of the platform.
+          example: FP_MY
+          type: string
+        currencySymbolPosition:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        currencySymbolSpaces:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        decimalDigits:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        decimalSeparator:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        email:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        phone:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        thousandsSeparator:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        website:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+      required:
+        - platform
+        - platformKey
+        - countryCode
+        - currencySymbol
+    Test:
+      description: |
+        States if the **order** is a **test order**.
+        For restaurants using a Delivery Hero tablet to accept the order before it's being sent to the plugin (Indirect flow), this field will always be set to **false** since **test orders** are not forwarded to the
+        **plugin**. For restaurants where orders are sent directly to the plugin (Direct flow), the field can be either ```true``` or ```false```.
+        **Plugins** should handle **test orders** carefully and make sure that the **order** won't be **prepared** in the kitchen.
+      default: false
+      example: false
+      type: boolean
+    ShortCode:
+      description: |
+        Used for **rider** to identify which **order** to pickup in a user friendly way. Unique
+        per vendor per day.
+      default: null
+      example: "42"
+      type: string
+      maxLength: 255
+    PreOrder:
+      description: |
+        Indicates that the **order** is a **pre-order**.
+      default: false
+      example: false
+      type: boolean
+    Payment:
+      description: |
+        Information regarding the payment of the **order**, e.g. if the **order** was paid online or if
+        the customer wants to pay with card at delivery.
+      type: object
+      properties:
+        status:
+          description: |
+            Payment status indicates if the **order** is already paid online ```paid``` or needs to be payed
+            at delivery or pick up ```pending```.
+          example: paid
+          type: string
+          enum:
+            - pending
+            - paid
+        type:
+          description: |
+            Payment type of the **order**, e.g. ```card on delivery``` or ```cash```. The value depends on
+            the value that is sent from **delivery platform** and may change. Type should not be used to differentiate
+            if the **order** is already paid or needs to be paid at **delivery** or **pickup**.
+          example: paid
+          type: string
+        remoteCode:
+          description: Same as **type***
+          deprecated: true
+          example: online
+          type: string
+        requiredMoneyChange:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        vatId:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        vatName:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+      required:
+        - type
+        - status
+    Pickup:
+      description: |
+        Ínformation for **Pickup Orders**. For Own Delivery Orders and Vendor Delivery Orders ```pickup```
+        is not present.
+      default: null
+      oneOf:
+      - type: object
+        properties:
+          pickupTime:
+            description: |
+              The time by when the **order** should be ready to be picked up by the **customer**
+              in [date-time-format](https://tools.ietf.org/html/rfc3339#section-5.6).
+              If it's ```null``` the **order** should be prepared asap.
+            default: null
+            example: 2016-03-14T17:45:00.000Z
+            type: string
+          pickupCode:
+            description: Optional pick up code. Present for Pickup and Dine-in orders.
+            default: ""
+            example: "somePickupCode"
+            type: string
+          pickupAddress:
+            $ref: '#/components/schemas/NotUsedDeprecateStringField'
+          pickupCity:
+            $ref: '#/components/schemas/NotUsedDeprecateStringField'
+      - type: "null"
+    PlatformRestaurant:
+      description: |
+        Information related to the **platform restaurant** that the **order** belongs to
+      type: object
+      properties:
+        id:
+          description: |
+            The unique identifier of the **restaurant** on the **delivery platform**.
+          type: string
+          example: sq-abcd
+      required:
+        - id
+    DeliveryFees:
+      description: Set of all applied fees.
+      type: array
+      items:
+        type: object
+        properties:
+          name:
+            description: Name of the fee.
+            example: "packaging fee"
+            type: string
+          value:
+            description: Amount of the fee as an absolute value.
+            example: 2.50
+            type: number
+        minItems: 0
+    Price:
+      description: |
+        Information related to the prices, e.g. total price.
+      type: object
+      properties:
+        deliveryFees:
+          $ref: '#/components/schemas/DeliveryFees'
+        grandTotal:
+          description: The grand total.
+          example: "25.50"
+          type: string
+        minimumDeliveryValue:
+          description: |
+            The minimum delivery value. Is ```""``` when the order has no minimum delivery value.
+          example: "9.99"
+          default: ""
+          type: string
+          deprecated: true
+        payRestaurant:
+          description: |
+            The amount of money the **courier** should give to **restaurant** when picking the **order** up. Only
+            for **Own Delivery Orders**.
+          default: ""
+          example: "25.50"
+          type: string
+        riderTip:
+          description: |
+            The amount that the customer is willing to pay to a rider as a **tip**.
+          default: null
+          example: "1.20"
+          type: string
+        subTotal:
+          description: |
+            Deprecated, in favor of the totalNet provided by the delivery platforms. New integration should not
+            rely on this field. 
+            The subtotal of the **order**. Formula: ```grandTotal + discountTotal - (vatTotal + deliveryFee)```.
+          example: "19.45"
+          type: string
+          deprecated: true
+        totalNet:
+          description: |
+            The total net of the **order**. Provided by the platform. Should be used as a replacement for the 
+            subTotal field.
+          type: string
+        vatTotal:
+          description: |
+            The sum of the amount of all applied taxes.
+          example: "2.50"
+          type: string
+        comission:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        containerCharge:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        deliveryFee:
+          description: |
+            The total amount of all applied fees (not only the delivery fee).
+          default: ""
+          example: "12.80"
+          deprecated: true
+          type: string
+        collectFromCustomer:
+          description: |
+            In case a driver (of the vendor or of an external logistics provider) delivers the order to the customer, this is the amount of money to get from the customer.
+          default: ""
+          example: "16.34"
+          type: string
+        discountAmountTotal:
+          description: |
+            Sum of the amount of all applied discounts. Deprecated in favor of ***discounts***
+          default: "0"
+          deprecated: true
+          example: "2.50"
+          type: string
+        deliveryFeeDiscount:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        serviceFeePercent:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        serviceFeeTotal:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        serviceTax:
+          description: Not used, will always be ```0```
+          deprecated: true
+          default: 0
+          example: 0
+          type: number
+        serviceTaxValue:
+          description: Not used, will always bec```0```
+          deprecated: true
+          default: 0
+          example: 0
+          type: number
+        differenceToMinimumDeliveryValue:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        vatVisible:
+          description: Not used, will always be ```true```
+          deprecated: true
+          default: true
+          example: true
+          type: boolean
+        vatPercent:
+          description: |
+            The sum of the percentage of all applied taxes, formula: ```vatTotal / total * 100```.
+          deprecated: true
+          type: string
+      required:
+        - minimumDeliveryValue
+        - deliveryFees
+        - subTotal
+        - totalNet
+        - vatTotal
+        - grandTotal
+        - payRestaurant
+    Products:
+      description: The products of the order.
+      type: array
+      minItems: 0
+      items:
+        $ref: '#/components/schemas/Product'
+    Topping:
+      type: object
+      properties:
+        id:
+          description: Identifier of the Topping on the delivery platform side
+          type: string
+          example: ID_FOR_EXTRA_CHEESE_ON_PLATFORM
+        name:
+          description: The name of the **topping**.
+          example: "extra cheese"
+          type: string
+        price:
+          description: The **price**.
+          default: ""
+          example: "1.50"
+          type: string
+        quantity:
+          description: The **quantity**
+          type: number
+          example: 1
+        remoteCode:
+          description: |
+            Represents a product identifier on the POS plugin side. Might be ```null``` if the **plugin** does not need them. To
+            send them, the **remoteCode** must be configured on the **menu on platform side**.
+          default: null
+          example: ID_FOR_EXTRA_CHEESE_ON_POS
+          type: string
+        sku:
+          description: |
+            The stock keeping unit of the product. This field is only sent if it contains valid data (not blank) and the integration is configured to receive it.
+          type: string
+          example: "100281"
+        type:
+          description: The type identifier to identify whether the product topping is an instance of product, extra or variant.
+          example: PRODUCT
+          type: string
+          enum:
+            - PRODUCT
+            - VARIANT
+            - EXTRA
+        itemUnavailabilityHandling:
+          $ref: '#/components/schemas/ItemUnavailabilityHandling'
+        discounts:
+          type: array
+          description: List of discounts applied to the product.
+          items:
+            $ref: '#/components/schemas/Discount'
+          example:
+            - name: First order
+              amount: "1.50"
+              sponsorships:
+                - sponsor: PLATFORM
+                  amount: "0.50"
+                - sponsor: VENDOR
+                  amount: "0.50"
+                - sponsor: THIRD_PARTY
+                  amount: "0.50"
+        children:
+          description: |
+            A **topping** might be a composition of multiple **toppings**.
+            it will be ```[]``` if there are no children. A **topping** can be nested up
+            to 5 levels.
+          default: [ ]
+          minItems: 0
+          items:
+            $ref: '#/components/schemas/Topping'
+          type: array
+      required:
+        - name
+        - quantity
+        - price
+    Variation:
+      description: |
+        Description of the concrete **variation**. Currently all product variations are
+        flattened to products and **variation** is not used.
+      type: object
+      properties:
+        name:
+          description: The name of the **product variation**. Is the same as the **product name**
+          type: string
+          example: "Double Cheese Burger"
+    Product:
+      description: |
+        Description of the **product**.
+      type: object
+      properties:
+        id:
+          description: Unique identifier of an product on the delivery platform.
+          type: string
+          example: ID_FOR_EXTRA_CHEESE_ON_PLATFORM
+        categoryName:
+          description: The menu category of the **product**
+          example: "Burgers"
+          default: null
+          type: string
+        name:
+          description: The **name** of the **product**
+          example: "Double Cheese Burger"
+          type: string
+        paidPrice:
+          description: The **total price** of the **product**.
+          example: "8.00"
+          type: string
+        quantity:
+          description: The quantity of the **product**
+          type: string
+        remoteCode:
+          description: |
+            The unique identifier of the **product** on POS side. Can be null if the **plugin** does not need them, remoteCode for a product must be configured on the **menu on platform side**.
+          example: ID_FOR_DOUBLE_CHEESE_BURGER_ON_POS
+          default: null
+          type: string
+        sku:
+          description: |
+            The stock keeping unit of the product. This field is only sent if it contains valid data (not blank) and the integration is configured to receive it.
+          type: string
+          example: "100281"
+        selectedToppings:
+          description: List of all product addons, e.g. extra cheese, extra onions
+          minItems: 0
+          items:
+            $ref: '#/components/schemas/Topping'
+          type: array
+        unitPrice:
+          description: The base price of the product, without any toppings, vat, etc.
+          example: "6.42"
+          type: string
+        comment:
+          description: Product-related customer comments, e.g. "No cheese please". ```null``` if there is no customer comment.
+          example: "No cheese please"
+          default: null
+          type: string
+        description:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        discountAmount:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        itemUnavailabilityHandling:
+          $ref: '#/components/schemas/ItemUnavailabilityHandling'
+        halfHalf:
+          description: Not used, will always be ```false```
+          deprecated: true
+          default: false
+          type: boolean
+        selectedChoices:
+          description: Not used in favor of *selectedToppings*, will always be ```[]```
+          deprecated: true
+          default: []
+          minItems: 0
+          maxItems: 0
+          items:
+            type: object
+          type: array
+        variation:
+          $ref: '#/components/schemas/Variation'
+        vatPercentage:
+          $ref: '#/components/schemas/NotUsedDeprecateStringField'
+        discounts:
+          type: array
+          description: List of discounts applied to the product.
+          items:
+            $ref: '#/components/schemas/Discount'
+          example:
+            - name: First order
+              amount: "1.50"
+              sponsorships:
+                - sponsor: PLATFORM
+                  amount: "3.00"
+                - sponsor: VENDOR
+                  amount: "3.00"
+                - sponsor: THIRD_PARTY
+                  amount: "3.00"
+    ItemUnavailabilityHandling:
+      description: |
+        The options available to the vendor for handling out-of-stock product items, as specified by the delivery
+        platform during order creation.
+        These options are only applicable for root products & any related toppings but doesn't apply to sub-products.
+        
+        Here's the list of available options:
+        * `REMOVE` - The order item can be removed from the order by using product modification feature.
+        * `REDUCE_QUANTITY` - The quantity of the root products can be reduced by using product modification feature.
+        Only possible for the root products but not for the toppings.
+        * `CALL_CUSTOMER_AND_REPLACE` - The vendor can call the customer to align on replacing the order items which are
+        not available. This is offline replacement without using product modification feature, so there will be no
+        changes reflected in the order.
+        * `CANCEL_ORDER` - The vendor can cancel the order when the order item is not available.
+        
+        **Note: Expect more options to be available in the future.**
+        
+        For a given order there can be a mix of options provided for different order items. When multiple items are
+        out-of-stock and any of those items has CANCEL_ORDER option, then the cancel order option takes precedence.
+      type: string
+      enum:
+        - REMOVE
+        - REDUCE_QUANTITY
+        - CALL_CUSTOMER_AND_REPLACE
+        - CANCEL_ORDER
+    Vouchers:
+      description: Not used, will always be ```[]```
+      deprecated: true
+      type: array
+      minItems: 0
+      maxItems: 0
+      items:
+        type: object
+      default: []
+    MobileOrder:
+      description: Not used anymore, will always be ```true```.
+      default: true
+      deprecated: true
+      example: true
+      type: boolean
+    WebOrder:
+      description: Not used anymore, will always be ```false```.
+      default: false
+      deprecated: true
+      example: false
+      type: boolean
+    PreparationTimeAdjustmentInformation:
+      description: |
+        This object will contain the suggested set of preparation time adjustments (in minutes) for the vendor along with min and max timestamp to which preparation time can be adjusted.
+      type: object
+      required:
+        - maxPickUpTimestamp
+        - minPickupTimestamp
+        - preparationTimeChangeIntervalsInMinutes
+      properties:
+        maxPickUpTimestamp:
+          description: This denotes the maximum timestamp to which preparation time can be adjusted.
+          type: string
+          format: date-time
+        minPickUpTimestamp:
+          description: This denotes the minimum timestamp to which preparation time can be adjusted.
+          type: string
+          format: date-time
+        preparationTimeChangeIntervalsInMinutes:
+          description: This is the suggested set of preparation time change intervals (in minutes) for the vendor.
+          type: array
+      example:
+        maxPickUpTimestamp: "2016-03-14T17:00:00.000Z"
+        minPickupTimestamp: "2016-03-14T17:00:00.000Z"
+        preparationTimeChangeIntervalsInMinutes: [-10,-5,5,10]
+    CallbackUrls:
+      description: Callback urls that should be used to update order processing status.
+      type: object
+      properties:
+        orderAcceptedUrl:
+          description: |
+            To be called with POST HTTP method to accept the order. Applicable for Direct orders. 
+            Please refer to [Update Order Status](https://integration-middleware.eu.restaurant-partners.com/apidocs/pos-middleware-api#tag/Order/operation/Update%20Order%20Status) in External API documentation for more details.
+          type: string
+        orderRejectedUrl:
+          description: |
+            To be used with POST HTTP method to reject the order. Applicable for Direct orders.
+            Please refer to [Update Order Status](https://integration-middleware.eu.restaurant-partners.com/apidocs/pos-middleware-api#tag/Order/operation/Update%20Order%20Status) in External API documentation for more details.
+          type: string
+        orderProductModificationUrl:
+          description: |
+            To be used with POST HTTP method to modify product items only after accepting an order. Applicable for Direct and Indirect orders. Before acceptance, this should be part of the order acceptance load.
+            Please refer to [Update Order Status](/apidocs/pos-plugin-api#tag/Plugin-Endpoints/operation/Update%20Order%20Status) in External API documentation for more details.
+          type: string
+        orderPickedUpUrl:
+          description: |
+            To be used with POST HTTP method to indicate the order has been picked up by the delivery partner. Applicable for Direct and Indirect orders. 
+            Please refer to [Update Order Status](https://integration-middleware.eu.restaurant-partners.com/apidocs/pos-middleware-api#tag/Order/operation/Update%20Order%20Status) in External API documentation for more details.
+          type: string
+        orderPreparedUrl:
+          description: |
+            To be used with POST HTTP method to indicate the food is prepared. Only applicable for orders that are being handled by Delivery Hero riders.
+            Please refer to [Update Order Status](https://integration-middleware.eu.restaurant-partners.com/apidocs/pos-middleware-api#tag/Order/paths/~1v2~1orders~1%7BorderToken%7D~1preparation-completed/post) in External API documentation for more details.
+          type: string
+        orderPreparationTimeAdjustmentUrl:
+          description: |
+            To be used with POST HTTP method to adjust the preparation time of the order based on kitchen workload. Only applicable for orders that are being handled by Delivery Hero riders.
+            Please refer to [PreparationTimeAdjustment](https://integration-middleware.eu.restaurant-partners.com/apidocs/pos-middleware-api#tag/Order/operation) in External API documentation for more details.
+          type: string

@@ -1,0 +1,144 @@
+sortedTranslatedProductsInCategoryCatalog:
+  value:
+    callbackUrl: 'https://example.com/callback'
+    vendors:
+      - u9pq
+    catalog:
+      items:
+        'Menu#SCN01':
+          id: 'Menu#SCN01'
+          title:
+            default: Scenario 02
+          description:
+            default: Menu with Combo Item
+          type: Menu
+          menuType: DELIVERY
+          schedule:
+            schedule-001:
+              id: schedule-001
+              type: ScheduleEntry
+          products:
+            CAT-1.P-1:
+              id: CAT-1.P-1
+              type: Product
+            CAT-1.P-2:
+              id: CAT-1.P-2
+              type: Product
+            CAT-1.P-3:
+              id: CAT-1.P-3
+              type: Product
+        schedule-001:
+          id: schedule-001
+          type: ScheduleEntry
+          startTime: '00:00:00'
+          endTime: '23:59:00'
+        'Category#CAT-1.M-1':
+          id: 'Category#CAT-1.M-1'
+          type: Category
+          order: 3
+          title:
+            default: KYBLÍKY
+            cs: KYBLÍKY
+            en: BUCKETS
+          description:
+            default: KYBLÍKY
+          products:
+            CAT-1.P-1:
+              id: CAT-1.P-1
+              type: Product
+              order: 1
+            CAT-1.P-2:
+              id: CAT-1.P-2
+              type: Product
+              order: 2
+            CAT-1.P-3:
+              id: CAT-1.P-3
+              type: Product
+              order: 3
+        CAT-1.P-1:
+          id: CAT-1.P-1
+          type: Product
+          title:
+            default: Veggets menu 6 ks
+            cs: Veggets menu 6 ks
+            en: Veggets menu 6 pcs
+          description:
+            default: 'Toto menu obsahuje 6x Veggets, bramborové lupínky, omáčku a plechovku Pepsi 0,33 l. Veggets - to jsou naše nuggetky s rostlinným základem, které skvěle chutnají jako příloha nebo jako odlehčené hlavní jídlo. Vyzkoušej je i ty! Vhodné i pro vegetariány.'
+            cs: 'Toto menu obsahuje 6x Veggets, bramborové lupínky, omáčku a plechovku Pepsi 0,33 l. Veggets - to jsou naše nuggetky s rostlinným základem, které skvěle chutnají jako příloha nebo jako odlehčené hlavní jídlo. Vyzkoušej je i ty! Vhodné i pro vegetariány.'
+            en: 'This menu contains 6x Veggets, potato chips, dip and a Pepsi can 0,33 l. Veggets - our plant-based nuggets that are delicious as a side but also works as a ligther main course! Try them too! Suitable also for vegetarians.'
+          price: '169.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          images: { }
+          variants: { }
+          containerPrice: '0.00'
+        CAT-1.P-2:
+          id: CAT-1.P-2
+          type: Product
+          title:
+            default: 3+1 Veggets
+            cs: 3+1 Veggets
+            en: 3+1 Veggets
+          description:
+            default: 'Dej si naše Vegggets! Zaplatíš za 3 kusy a jeden máš zdarma! Veggets - to jsou naše nuggetky s rostlinným základem, které skvěle chutnají jako příloha nebo jako odlehčené hlavní jídlo. Vyzkoušej je i ty! Vhodné i pro vegetariány.'
+            cs: 'Dej si naše Vegggets! Zaplatíš za 3 kusy a jeden máš zdarma! Veggets - to jsou naše nuggetky s rostlinným základem, které skvěle chutnají jako příloha nebo jako odlehčené hlavní jídlo. Vyzkoušej je i ty! Vhodné i pro vegetariány.'
+            en: "Try out our Veggets - you'll pay for 3 and you'll get one for free! Veggets - our plant-based nuggets that are delicious as a side but also works as a ligther main course! Try them too! Suitable also for vegetarians."
+          price: '55.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          images: { }
+          variants: { }
+          containerPrice: '0.00'
+        CAT-1.P-3:
+          id: CAT-1.P-3
+          type: Product
+          title:
+            default: Kyblík 15 Veggets
+            cs: Kyblík 15 Veggets
+            en: Bucket 15 Veggets
+          description:
+            default: 'Tento kyblík obsahuje 15x Veggets a 3x omáčku. Veggets - to jsou naše nuggetky s rostlinným základem, které skvěle chutnají jako příloha nebo jako odlehčené hlavní jídlo. Vyzkoušej je i ty! Vhodné i pro vegetariány.'
+            cs: 'Tento kyblík obsahuje 15x Veggets a 3x omáčku. Veggets - to jsou naše nuggetky s rostlinným základem, které skvěle chutnají jako příloha nebo jako odlehčené hlavní jídlo. Vyzkoušej je i ty! Vhodné i pro vegetariány.'
+            en: 'This bucket contains 15x Veggets and 3x dip. Veggets - our plant-based nuggets that are delicious as a side but also works as a ligther main course! Try them too! Suitable also for vegetarians.'
+          price: '239.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          variants: { }
+          containerPrice: '0.00'
+        CG-1.ON-1:
+          id: CG-1.ON-1
+          type: Topping
+          title:
+            default: Vyber si přílohu
+            cs: Vyber si přílohu
+            en: Choose your favourite
+          quantity:
+            maximum: 1
+            minimum: 1
+          products:
+            CAT-1.P-1:
+              id: CAT-1.P-1
+              type: Product
+        CG-2.ON-2:
+          id: CG-2.ON-2
+          type: Topping
+          title:
+            default: Vyber si nápoj 2
+            cs: Vyber si nápoj 2
+            en: Choose your favourite 2
+          quantity:
+            maximum: 1
+            minimum: 1
+          products:
+            CAT-1.P-2:
+              id: CAT-1.P-2
+              type: Product
+            CAT-1.P-3:
+              id: CAT-1.P-3
+              type: Product
