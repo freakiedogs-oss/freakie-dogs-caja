@@ -64,6 +64,15 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+## 24-Sep-2026 — Combos: aviso cuando ya no hay bebida que agrandar + "Agrandado de Papa $1" donde no hay bebida
+
+Auditoría de los 27 combos × 5 canales después del fix del 23-sep (agrandado por bebida). Todos los combos con 2+ bebidas tienen la misma estructura y quedaron cubiertos. Dos huecos sí quedaban, y Cesar decidió:
+
+- **Freakie Box (3 papas, 2 bebidas):** al marcar el tercer "Agrandado Papa y Bebida" el modal no lo marcaba y no decía nada. Ahora `toggle` avisa con toast *"Las 2 bebidas del combo ya van agrandadas: no hay otra que agrandar"* (la cuenta se hace antes de tocar el estado, con el mismo cálculo del updater).
+- **Combos sin bebida cobraban una bebida.** Por la regla del 1-sep los combos de restaurante no llevan Bebida (y el Royal Truffle no la tiene en ningún canal), pero sus papas ofrecían "Agrandado Papa y Bebida $1.25". Nuevo modificador **"Agrandado de Papa" $1.00** en "Salsas Papas" (migración `20260924_agrandado_de_papa.sql`, descuenta la misma porción de Papa Sazonada que el de $1.25). El `ComboModal` muestra uno u otro según el combo tenga sección de bebida (`comboConBebida`); `ProductoModifiersModal` (papas sueltas, sin bebida) esconde siempre el de $1.25. El KDS de Metro suma la papa igual (`agrandadoSumaPapa` mira la palabra "papa") y el incentivo de agrandados lo cuenta (`fn_agrandado_es` mira "agrandad").
+- **Royal Truffle Combo en PedidosYa** no tiene los grupos "Bebida Royal 1/2" que sí tiene en los otros canales; está apagado ahí y Cesar prefirió dejarlo así por ahora.
+- Diferencias de canal que se asumen intencionales: Combig, Combo Trío y Freakie Family solo en delivery propio (Trío y Family también PeYa); Freakie Burger no está en para llevar ni PeYa; La Clásica y Combo Chilli Dog no están en PeYa; Combo Freakie Dog apagado en local.
+
 ## 23-Sep-2026 — BPM del chili: la versión Mauricio se ve como su anexo de pantallas (FD-CI-DO-013-A01)
 
 Mauricio revisó la v2 en pantalla y el problema no era la lógica sino el **formato**: entregó el anexo **FD-CI-DO-013-A01** (19 plantillas de pantalla, 82 pp.) más 24 maquetas (p01–p17, s00/s01, q1–q3, m1–m5). Cesar pidió acoplar la v2 a eso «lo más parecido posible». La piloto **no cambia**.
