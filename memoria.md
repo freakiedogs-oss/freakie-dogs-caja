@@ -8,6 +8,17 @@
 - **Fix inmediato (`src/pos/CierreTurno.jsx`):** debajo de "Tomar foto del voucher" hay una casilla *"Esta tablet no deja tomar la foto: cerrar sin voucher"*. Con ella marcada el Z cierra con `voucher_n1co_url = null` (el total n1co y el motivo siguen siendo obligatorios) y la foto se adjunta después desde el ERP (editar cierre, `CierreForm`, donde el voucher ya es opcional). Si luego se adjunta una foto, la casilla se desmarca sola.
 - **Pendiente:** instalar a mano la APK v1.3 en la Fire de Venecia (NO hay auto-update: la app solo recarga la web, la APK se sideloadea) y probar el botón de la foto. Los vouchers vacíos se ven en `ventas_diarias` con `tarjeta_n1co` lleno y `voucher_n1co_url` null.
 
+
+## 22-Sep-2026 — Cuadre nocturno: tablas de críticos, historial y pendientes compartidos
+
+**Por qué:** el skill de cuadre (`cuadre-nocturno-freakie`, lo corren Cesar y Frank con su propio Claude) tenía la lista de críticos y las tolerancias en el texto, cada corrida armaba su propia presentación y las hipótesis de una noche se perdían al día siguiente.
+
+**Qué cambió (migración `20260922_cuadre_nocturno_tablas.sql`):**
+- `productos_criticos`: lista de críticos con unidad de conteo, `factor_conteo`, `tolerancia`, `grupo` (latas se suman), `producto_descarga_id` (queso frito: se cuenta bolsita, las recetas descargan lb), `activo=false` + `nota` para los mapeos rotos (papas, pepinillos, mermelada, aceite). `store_code` null = todas; `unique nulls not distinct`. Para cambiar una tolerancia se edita la tabla, no el skill.
+- `cuadres_nocturnos`: el resultado de cada noche (`data` = objeto del panel, `resumen` = [{n,dif,cls}]). Sirve para el historial de 7 noches y la regla «3 noches para el mismo lado». Cafetalón 18–21-sep cargado como backfill (solo diferencias, sin investigación).
+- `cuadre_pendientes`: lo que queda para el encargado; el panel (HTML publicado como artifact) las tacha y anota «qué contestaron» con la anon key (RLS: select para todos, update sólo hecho/hecho_por/respuesta). El skill las retoma a la noche siguiente.
+- El panel es una plantilla fija embebida en el skill; el skill sólo llena `DATA`. Así el resultado se ve igual para quien lo corra.
+
 ## 22-Sep-2026 — Cierre sin foto por excepción del día + voucher n1co por QR
 
 **Por qué:** Alejandro (Paseo Venecia S004) no podía subir fotos desde la tablet y el corte Z exigía la foto del voucher n1co (hard-coded), así que no podía cerrar ni contar. Cesar autorizó cerrar sin fotos SOLO ese día.
