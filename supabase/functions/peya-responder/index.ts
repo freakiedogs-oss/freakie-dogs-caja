@@ -23,6 +23,9 @@
 //   { "pin": "1234", "remoteOrderId": "FD-...", "accion": "aceptar" }
 //   { "pin": "1234", "remoteOrderId": "FD-...", "accion": "rechazar",
 //     "motivo": "ITEM_UNAVAILABLE", "mensaje": "Se acabó el pan brioche" }
+//   { "pin": "1234", "remoteOrderId": "FD-...", "accion": "ajustar_prep", "minutos": 10 }
+//   { "pin": "1234", "accion": "tienda", "abrir": false,
+//     "motivo": "TOO_BUSY_KITCHEN", "minutos": 30 }
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const svc = createClient(
@@ -156,13 +159,14 @@ const MAX_INTENTOS = 4;
 async function enviarADH(
   url: string,
   cuerpo: unknown | null,
+  metodo: "POST" | "PUT" | "GET" = "POST",
 ): Promise<{ status: number; texto: string; intentos: number }> {
   let ultimo = { status: 0, texto: "", intentos: 0 };
 
   for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
     const token = await obtenerToken();
     const r = await fetch(url, {
-      method: "POST",
+      method: metodo,
       headers: {
         "Authorization": `Bearer ${token}`,
         ...(cuerpo ? { "Content-Type": "application/json" } : {}),
@@ -200,6 +204,161 @@ async function enviarADH(
     return ultimo;
   }
   return ultimo;
+}
+
+// ---------- Bloque 1: abrir y cerrar la tienda en PedidosYa ----------
+// Contrato: middlewareExternalApi.yaml, "Availability Status GET/PUT".
+//
+// El PUT NO se puede armar a ciegas. Dice la doc: «It should first be checked which
+// kind of availability changes are allowed by making a GET request to this endpoint
+// and verifying that the `changeable` property is true otherwise the request will be
+// unsuccessful». Y el GET devuelve un ARRAY: un local puede estar publicado en varias
+// plataformas de Delivery Hero a la vez, cada una con su `platformKey`, su
+// `platformRestaurantId` y su propia lista de estados y motivos permitidos.
+//
+// O sea que el orden es: consultar, quedarse con las plataformas que se dejan
+// cambiar, y mandarle a cada una sólo valores que ella misma declaró aceptar.
+async function accionTienda(
+  pin: string | undefined,
+  cuerpo: Record<string, any>,
+): Promise<Response> {
+  const abrir = cuerpo.abrir === true;
+  const minutos = Number(cuerpo.minutos ?? 0) || null;
+  const motivo = String(cuerpo.motivo ?? "TOO_BUSY_KITCHEN").toUpperCase();
+
+  if (!pin) return json({ error: "falta_pin" }, 400);
+
+  const { data: v, error: errV } = await svc.rpc("peya_vendor_de_usuario", { p_pin: String(pin) });
+  if (errV) return json({ error: "base", message: errV.message }, 500);
+  const vendor = v as Record<string, any>;
+  if (!vendor?.ok) return json(vendor ?? { error: "sin_vendor" }, 400);
+
+  const urlDisp = `${BASE}/v2/chains/${encodeURIComponent(vendor.chain_code)}` +
+    `/remoteVendors/${encodeURIComponent(vendor.remote_id)}/availability`;
+
+  // 1) Consultar. El 204 significa «pedido recibido, todavía no hay respuesta»:
+  // no es un error y no hay que tratarlo como tal, hay que volver a preguntar.
+  const get = await enviarADH(urlDisp, null, "GET");
+  if (get.status === 204) {
+    return json({ error: "consulta_en_curso", reintentar_en_segundos: 5,
+      message: "PedidosYa acusó la consulta pero todavía no tiene el estado." }, 202);
+  }
+  if (get.status < 200 || get.status >= 300) {
+    return json({ error: "no_se_pudo_consultar", http: get.status, respuesta: get.texto }, 502);
+  }
+
+  let plataformas: Record<string, any>[] = [];
+  try {
+    const d = JSON.parse(get.texto);
+    plataformas = Array.isArray(d) ? d : [d];
+  } catch {
+    return json({ error: "respuesta_no_json", respuesta: get.texto }, 502);
+  }
+
+  // Se guarda lo consultado aunque después falle el PUT: sirve para diagnosticar y
+  // para saber en qué plataformas está publicada la tienda.
+  await svc.rpc("peya_guardar_plataformas", {
+    p_remote_id: vendor.remote_id,
+    p_plataformas: plataformas,
+  });
+
+  const cambiables = plataformas.filter((p) => p?.changeable === true);
+  if (cambiables.length === 0) {
+    return json({
+      error: "ninguna_plataforma_cambiable",
+      message: "PedidosYa no permite cambiar el estado de esta tienda ahora mismo.",
+      plataformas,
+    }, 409);
+  }
+
+  // 2) Escribir, una por plataforma y con sus propios valores permitidos.
+  const resultados: Record<string, unknown>[] = [];
+  for (const p of cambiables) {
+    const permitidos: string[] = Array.isArray(p.availabilityStates) ? p.availabilityStates : [];
+    let estado: string;
+
+    if (abrir) {
+      if (!permitidos.includes("OPEN")) {
+        resultados.push({ platformKey: p.platformKey, omitida: "no_acepta_OPEN", permitidos });
+        continue;
+      }
+      estado = "OPEN";
+    } else {
+      // `closingMinutes` sólo funciona con CLOSED_UNTIL — el resto lo ignora. Si la
+      // plataforma no lo acepta, se cae a CLOSED, que es un cierre sin hora de vuelta.
+      estado = minutos && permitidos.includes("CLOSED_UNTIL")
+        ? "CLOSED_UNTIL"
+        : permitidos.includes("CLOSED")
+        ? "CLOSED"
+        : permitidos.includes("CLOSED_UNTIL")
+        ? "CLOSED_UNTIL"
+        : "";
+      if (!estado) {
+        resultados.push({ platformKey: p.platformKey, omitida: "no_acepta_cierre", permitidos });
+        continue;
+      }
+    }
+
+    const cuerpoPut: Record<string, unknown> = {
+      availabilityState: estado,
+      platformKey: p.platformKey,
+      platformRestaurantId: String(p.platformRestaurantId),
+    };
+
+    if (!abrir) {
+      // El motivo también sale de lo que declaró esa plataforma; si no lo acepta, se
+      // usa el primero de su lista antes que arriesgar un 400 por un enum ajeno.
+      const motivosOk: string[] = Array.isArray(p.closingReasons) ? p.closingReasons : [];
+      cuerpoPut.closedReason = motivosOk.includes(motivo)
+        ? motivo
+        : motivosOk.includes("OTHER")
+        ? "OTHER"
+        : motivosOk[0] ?? motivo;
+
+      if (estado === "CLOSED_UNTIL" && minutos) {
+        // Sus `closingMinutes` son una lista cerrada (30/60/120/...): se elige el
+        // más cercano al pedido en vez de mandar un número que van a rebotar.
+        const ops: number[] = Array.isArray(p.closingMinutes) ? p.closingMinutes : [];
+        cuerpoPut.closingMinutes = ops.length
+          ? ops.reduce((a, b) => Math.abs(b - minutos) < Math.abs(a - minutos) ? b : a)
+          : minutos;
+      }
+    }
+
+    const put = await enviarADH(urlDisp, cuerpoPut, "PUT");
+    resultados.push({
+      platformKey: p.platformKey,
+      enviado: cuerpoPut,
+      http: put.status,
+      ok: put.status >= 200 && put.status < 300,
+      respuesta: put.status >= 200 && put.status < 300 ? undefined : put.texto,
+    });
+  }
+
+  const todoOk = resultados.every((r) => r.ok === true || r.omitida);
+  const algunoOk = resultados.some((r) => r.ok === true);
+
+  // El estado local sólo se mueve si PedidosYa aceptó al menos una. Al revés —
+  // marcarlo cerrado acá y seguir recibiendo pedidos— sería peor que no hacer nada:
+  // la caja creería que no entran y entrarían igual.
+  let local: unknown = null;
+  if (algunoOk) {
+    const { data: l } = await svc.rpc("peya_tienda_abrir_cerrar", {
+      p_pin: String(pin),
+      p_disponible: abrir,
+      p_motivo: abrir ? null : motivo,
+      p_minutos: abrir ? null : minutos,
+    });
+    local = l;
+  }
+
+  return json({
+    ok: algunoOk,
+    abierta: abrir,
+    plataformas: resultados,
+    local,
+    ...(algunoOk && !todoOk ? { aviso: "alguna plataforma no aceptó el cambio" } : {}),
+  }, algunoOk ? 200 : 502);
 }
 
 // ---------- Quién puede contestar un pedido ----------
@@ -255,8 +414,15 @@ Deno.serve(async (req) => {
     actor = await autorizarPorPin(pin);
     if (!actor) return json({ error: "no_autorizado", motivo: "pin_invalido_o_rol_sin_permiso" }, 401);
   }
-  if (!["aceptar", "rechazar", "preparado", "retirado"].includes(accion)) {
-    return json({ error: "accion_invalida", validas: ["aceptar", "rechazar", "preparado", "retirado"] }, 400);
+  // Abrir/cerrar la tienda no es sobre un pedido: se resuelve antes de pedir
+  // remoteOrderId.
+  if (accion === "tienda") {
+    return await accionTienda(pin, cuerpo);
+  }
+
+  const ACCIONES = ["aceptar", "rechazar", "preparado", "retirado", "ajustar_prep"];
+  if (!ACCIONES.includes(accion)) {
+    return json({ error: "accion_invalida", validas: [...ACCIONES, "tienda"] }, 400);
   }
   if (!remoteOrderId && !orderToken) {
     return json({ error: "falta_remoteOrderId_u_orderToken" }, 400);
@@ -378,6 +544,38 @@ Deno.serve(async (req) => {
       `${BASE}/v2/orders/${encodeURIComponent(token)}/preparation-completed`;
     payloadDH = null;
     estadoNuevo = "preparado";
+  } else if (accion === "ajustar_prep") {
+    // Cocina se saturó y el tiempo prometido al aceptar ya no es real. Se corre la
+    // hora de retiro para que el motorista no llegue a esperar de gusto.
+    //
+    // Sólo aplica a pedidos que reparte un rider de DH, y sólo hasta que el rider
+    // aceptó el viaje. El rango permitido viene en el propio pedido: mandar algo
+    // fuera de min/max lo rebotan con 400.
+    const info = (orden.payload?.preparationTimeAdjustmentInformation ?? {}) as Record<string, string>;
+    const min = info.minPickUpTimestamp ?? info.minPickupTimestamp ?? null;
+    const max = info.maxPickUpTimestamp ?? info.maxPickupTimestamp ?? null;
+
+    const mins = Number(cuerpo.minutos ?? 0);
+    if (!mins || !Number.isFinite(mins)) {
+      return json({ error: "faltan_minutos", message: "Cuántos minutos más necesita cocina." }, 400);
+    }
+
+    const nuevo = new Date(Date.now() + mins * 60_000);
+    if (min && nuevo < new Date(min)) {
+      return json({ error: "fuera_de_rango", limite: "minPickUpTimestamp", min, max,
+        message: "Ese tiempo es más corto de lo que PedidosYa permite para este pedido." }, 400);
+    }
+    if (max && nuevo > new Date(max)) {
+      return json({ error: "fuera_de_rango", limite: "maxPickUpTimestamp", min, max,
+        message: "Ese tiempo pasa del máximo que PedidosYa permite para este pedido." }, 400);
+    }
+
+    url = cb.orderPreparationTimeAdjustmentUrl ||
+      `${BASE}/v2/orders/${encodeURIComponent(token)}/adjust-preparation-time`;
+    payloadDH = { expectedPickupAt: nuevo.toISOString() };
+    // Ajustar el tiempo NO mueve el pedido de estado: sigue en cocina.
+    estadoNuevo = orden.estado;
+    cambios.notas = `tiempo de preparación ajustado +${mins} min → ${nuevo.toISOString()}`;
   } else {
     // order_picked_up sólo es válido para reparto del comercio y para retiro en tienda.
     url = cb.orderPickedUpUrl || `${BASE}/v2/order/status/${encodeURIComponent(token)}`;
