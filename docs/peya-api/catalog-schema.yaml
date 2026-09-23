@@ -1,0 +1,1176 @@
+components:
+  schemas:
+    Catalog:
+      description: |
+        The main entry for a Vendor Catalog.
+      type: object
+      properties:
+        items:
+          description: |
+            Collection of all Catalog items, with the unique item identifier as key.
+          type: object
+          additionalProperties:
+            x-additionalPropertiesName: <ItemId>
+            $ref: "#/components/schemas/Item"
+      required:
+        - items
+    Item:
+      description: |
+        A catalog entity that should contain a unique `identifier`. An `Item` could be one of: `Menu`, `Category`, `Product`, `Topping`, `Image` or `Schedule Entry`.
+      oneOf:
+        - $ref: "#/components/schemas/Menu"
+        - $ref: "#/components/schemas/Product"
+        - $ref: "#/components/schemas/Topping"
+        - $ref: "#/components/schemas/Category"
+        - $ref: "#/components/schemas/Image"
+        - $ref: "#/components/schemas/ScheduleEntry"
+      discriminator:
+        propertyName: type
+      example:
+        id: 7d71cdf0-1882-42f2-be3b-b2d6763102f4
+        type: Product
+        title:
+          default: A product example
+        images:
+          76872b83-0762-4a02-bc04-84f847c24871:
+            id: 76872b83-0762-4a02-bc04-84f847c24871
+            type: Image
+        active: true
+        isPrepackedItem: true
+        isExpressItem: false
+        excludeDishInformation: true
+        containerPrice: "0.50"
+        price: "22.50"
+        toppings:
+          6b3fd412-c3ca-4396-8e02-755b70af841e:
+            id: 6b3fd412-c3ca-4396-8e02-755b70af841e
+            type: Topping
+    ItemType:
+      description: The item type.
+      type: string
+      enum:
+        - Menu
+        - Product
+        - Category
+        - Topping
+        - Image
+        - ScheduleEntry
+      example: Menu
+    Category:
+      description: |
+        A collection or group with similar characteristics. A `Category` may be "hot drinks" to which hot drinks `Products` would belong.
+        `Category` could has a `Products`, and `Image` all of them shall be added as references.
+      allOf:
+        - $ref: "#/components/schemas/ItemProperties"
+        - $ref: "#/components/schemas/OrderedCategoryReference"
+        - $ref: "#/components/schemas/Tags"
+        - $ref: "#/components/schemas/MasterCategoryTags"
+        - type: object
+          properties:
+            products:
+              type: object
+              description: |
+                Collection of all references to products that should be contained in the
+                category. With the unique product identifier as key.
+              additionalProperties:
+                x-additionalPropertiesName: <ProductId>
+                $ref: "#/components/schemas/OrderedProductReference"
+          required:
+          - products
+      example:
+        id:
+        type: Category
+        title:
+          default: An example Category
+        images:
+          76872b83-0762-4a02-bc04-84f847c24871:
+            id: 76872b83-0762-4a02-bc04-84f847c24871
+            type: Image
+            order: 1
+        products:
+          5ee7e9a3-598d-466a-a4c8-a248ea337cd1:
+            id: 5ee7e9a3-598d-466a-a4c8-a248ea337cd1
+            type: Product
+            order: 1
+    Menu:
+      description: |
+        A collection of products offered to customers and their prices. A `Menu` has a schedule, to define when a customer
+        can order `Products` from it. The schedule is composed by granular `Schedule entries` that are referenced.
+        `Products` belonging to a `Menu` shall be added as references. If a top level `Product`(a product that is having different variants) is added, the variants should be added instead.
+      allOf:
+        - $ref: "#/components/schemas/ItemProperties"
+        - $ref: "#/components/schemas/OrderedMenuReference"
+        - $ref: "#/components/schemas/Tags"
+        - $ref: "#/components/schemas/OccasionTypeTags"
+        - type: object
+          properties:
+            menuType:
+              description: the type of the menu e.g. delivery, pickup
+              type: string
+              enum:
+              - DELIVERY
+              - DINE_IN
+              - PICK_UP
+            products:
+              description: |
+                Collections of Products References, that should be part of the menu
+                With the unique product identifier as key.
+              type: object
+              additionalProperties:
+                x-additionalPropertiesName: <ProductId>
+                $ref: "#/components/schemas/ProductReference"
+            schedule:
+              type: object
+              description: |
+                Collection of schedule entries references that describes the schedule.
+                With the unique schedule entry identifier as key.
+              additionalProperties:
+                x-additionalPropertiesName: <ScheduleEntryId>
+                $ref: "#/components/schemas/OrderedScheduleEntryReference"
+              default: null
+          required:
+            - menuType
+            - products
+      example:
+        id: bc5118dc-236f-43f6-b9e0-074a115950d9
+        type: Menu
+        menuType: DELIVERY
+        title:
+          default: A Menu Example
+        images:
+          76872b83-0762-4a02-bc04-84f847c24871:
+            id: 76872b83-0762-4a02-bc04-84f847c24871
+            type: Image
+            order: 1
+        products:
+          5ee7e9a3-598d-466a-a4c8-a248ea337cd1:
+            id: 5ee7e9a3-598d-466a-a4c8-a248ea337cd1
+            type: Product
+        schedule:
+          5ee7e9a3-598d-466a-a4c8-a248ea337cd1:
+            id: 5ee7e9a3-598d-466a-a4c8-a248ea337cd1
+            type: ScheduleEntry
+            order: 1
+    Product:
+      description: |
+        A recursive description of a composable sellable item. A `Product` contains properties to describe the recursive nature (variants), the composition (toppings) and the characteristics, `Product` contains price information.
+        `Variants` and `Toppings` shall be added as references.
+      allOf:
+        - $ref: "#/components/schemas/ItemProperties"
+        - $ref: "#/components/schemas/ProductReference"
+        - $ref: "#/components/schemas/Tags"
+        - $ref: "#/components/schemas/AgeRestrictedItemTags"
+        - $ref: "#/components/schemas/FoodLabelingProperties"
+        - type: object
+          properties:
+            parent:
+              $ref: "#/components/schemas/ProductReference"
+              description: Reference to its parent product
+            active:
+              type: boolean
+              description: Enables or disables a product.
+              default: true
+            isPrepackedItem:
+              type: boolean
+              description: Signals that the product is a prepacked item
+              default: false
+            isExpressItem:
+              description: Signals that the product is an express item
+              default: false
+            excludeDishInformation:
+              type: boolean
+              description: Signals that no dish informations should be shown on UI
+              default: false
+            calories:
+              type: number
+              format: int32
+              description: Amount of calories for the product
+              example: 150
+              default: null
+            containerPrice:
+              type: string
+              description: Price of the container or envelope of the product, this might be shown to the client in the checkout specifying the additional costs for the order
+              example: 0.50
+              default: null
+            price:
+              type: string
+              description: Price of the product itself
+              example: 22.50
+              default: null
+            variants:
+              description: |
+                A specialization of a `Product` to be able to define certain combination of characteristics for the Product itself (i.e. different product sizes or base sauce),
+                `Variant` might have its own price, title and description. if not present the product has no variant.
+              type: object
+              default: null
+              additionalProperties:
+                x-additionalPropertiesName: <ProductId>
+                $ref: "#/components/schemas/OrderedProductReference"
+            toppings:
+              description: |
+                A collection of choices based on  `Product` addons that a `Product` can be composed of. For that
+                it also defines a minimum and maximum number of `Product` that needs to be selected. `Products` are added by reference.
+              type: object
+              default: null
+              additionalProperties:
+                x-additionalPropertiesName: <ToppingId>
+                $ref: "#/components/schemas/OrderedToppingReference"
+            isPandoraBundle:
+              description: |
+                Marks a product as a bundle. Only used by platforms that uses the pandora backend.
+                For a detailed use of bundles see the implementation section.
+              type: boolean
+              default: false
+            pandoraPartnerId:
+              description: |
+                Used in conjunction with bundles, where some products of a bundle sponsored by
+                a partner e. g. coca cola is sponsoring the drinks. Only used by platforms that uses 
+                the pandora backend
+      example:
+        id: 7d71cdf0-1882-42f2-be3b-b2d6763102f4
+        type: Product
+        title:
+          default: A product example
+        parent:
+          id: 658844654-0744-4aaa-ber4-8kjbasd5a4524871
+          type: Product
+        images:
+          76872b83-0762-4a02-bc04-84f847c24871:
+            id: 76872b83-0762-4a02-bc04-84f847c24871
+            type: Image
+            order: 1
+        active: true
+        isPrepackedItem: true
+        isExpressItem: false
+        excludeDishInformation: true
+        containerPrice: "0.50"
+        price: "22.50"
+        toppings:
+          6b3fd412-c3ca-4396-8e02-755b70af841e:
+            id: 6b3fd412-c3ca-4396-8e02-755b70af841e
+            type: Topping
+            order: 1
+        variants:
+          b2b7e8db-0824-4002-8988-0793d2f61880:
+            id: b2b7e8db-0824-4002-8988-0793d2f61880
+            type: Product
+          3ebb7ce0-ae92-4d11-a9ca-0a9dcb72f137:
+            id: 3ebb7ce0-ae92-4d11-a9ca-0a9dcb72f137
+            type: Product
+            order: 1
+    Topping:
+      allOf:
+        - $ref: "#/components/schemas/ItemProperties"
+        - $ref: "#/components/schemas/ToppingReference"
+        - type: object
+          description: |
+            A collection of choices based on `Product` addons that a `Product` can be composed of. For that
+            it also defines a minimum and maximum number of `Product` that needs to be selected. `Products` are added by reference.
+          properties:
+            quantity:
+              $ref: "#/components/schemas/Quantity"
+            order:
+              type: number
+              description: Order for the collection of choices within the products choices selection
+            products:
+              type: object
+              description: |
+                Collection of references to products the topping is composed off.
+                With the unique product identifier as key.
+              additionalProperties:
+                x-additionalPropertiesName: "<ProductId>"
+                $ref: "#/components/schemas/ProductToppingReference"
+            toppingType:
+              type: string
+              description: |
+                Field that controls the handling of toppings to support pandora bundles
+              enum:
+              - PANDORA_PRODUCT_GROUP
+              - PRODUCT_OPTION
+              default: PRODUCT_OPTION
+      required:
+        - quantity
+        - products
+      example:
+        id: aecb8984-32f4-4a10-9903-1244bc60e68a
+        type: Topping
+        order: 1
+        title:
+          default: A topping example
+        images:
+          76872b83-0762-4a02-bc04-84f847c24871:
+            id: 76872b83-0762-4a02-bc04-84f847c24871
+            type: Image
+            order: 1
+        quantity:
+          minimum: 1
+          maximum: 2
+        products:
+          75d63dc5-f574-4858-8d0d-ba8ad7eec42e:
+            id: 75d63dc5-f574-4858-8d0d-ba8ad7eec42e
+            type: Product
+            order: 6
+          102b3036-e9fe-4775-acde-9c522ef8b5c8:
+            id: 102b3036-e9fe-4775-acde-9c522ef8b5c8
+            type: Product
+            order: 2
+    Image:
+      description: |
+        Image of an `Item` inside the catalog that can be presented to the customer. An Image shall be added as an
+        url to a resource that contains the image.
+        
+        ## Image upload limitations
+
+                * Maximum file size: **20MB**
+                * Maximum area: **16Mpx<sup>2</sup>** (16 Mega pixels square, e.g. 4000x4000px)
+                * File format:
+                  * GIF
+                  * JPEG
+                  * [Lottie](https://lottiefiles.com/)
+                  * PNG
+                  * SVG
+                  * Tiff
+                  * WebP
+
+                *Maximum area* limits how big an image can be with a flexible upper bound, for example, images with:
+                * ✔️ `4000x4000` has `16Mpx`
+                * ✔️ `3000x3000` has `9Mpx`
+                * ✔️ `6000x2000` has `12Mpx`
+                * ❌ `5000x4000` has `20Mpx`
+                * ❌ `6000x3000` has `18Mpx`
+
+                In short:
+                * If your image has **less than 4000px in *both* dimensions**, it is **accepted**.
+                * If your image has **more than 4000px in *one* dimensions**, it **might be accepted**.
+                * If your image has **more than 4000px in *both* dimensions**, it will be **rejected**.
+      allOf:
+        - $ref: "#/components/schemas/ItemReference"
+        - type: object
+          properties:
+            url:
+              type: string
+              description: Image url.
+              format: uri-reference
+              example: "https://example.com/example.jpg"
+            alt:
+              $ref: "#/components/schemas/LocaleString"
+          required:
+            - url
+      example:
+        id: 2a9b3e25-52a3-49a7-becb-3f374f941d9d
+        type: Image
+        url: httsp://example.com/image01.png
+        alt:
+          default: "An nice image"
+    ScheduleEntry:
+      description: |
+        Describes a granular schedule of an `Menu`. A 'Schedule entry' shall have properties
+        to describe when a customer can order from the menu.
+      allOf:
+        - $ref: "#/components/schemas/ScheduleEntryReference"
+        - type: object
+          properties:
+            startTime:
+              description: Start time of the menu.
+              type: string
+              format: time
+            endTime:
+              description: End time of the menu.
+              type: string
+              format: time
+            startDate:
+              description: The start date.
+              type: string
+              format: date
+              default: null
+            endDate:
+              description: The end date.
+              type: string
+              format: date
+              default: null
+            weekDays:
+              description: The weekdays.
+              type: array
+              default: []
+              items:
+                type: string
+                enum:
+                  - MONDAY
+                  - TUESDAY
+                  - WEDNESDAY
+                  - THURSDAY
+                  - FRIDAY
+                  - SATURDAY
+                  - SUNDAY
+      example:
+        id: 824cf36d-462e-4dd0-b64f-d04cc6bc2a5a
+        type: ScheduleEntry
+        startDate: 11:00:00
+        endDate: 14:00:00
+        starTime: 11:00:00
+        endTime: 14:00:00
+        weekDays:
+        - MONDAY
+        - FRIDAY
+      required:
+        - startTime
+        - endTime
+    ItemProperties:
+      description: Common Properties of elements inside of the document.
+      type: object
+      properties:
+        title:
+          $ref: "#/components/schemas/LocaleTitle"
+        description:
+          $ref: "#/components/schemas/LocaleDescription"
+        images:
+          description: |
+            Collections of image references that belongs to the item. Key
+            should be the image identifier.
+          type: object
+          additionalProperties:
+            x-additionalPropertiesName: "<ImageId>"
+            $ref: "#/components/schemas/OrderedImageReference"
+      required:
+        - title
+      example:
+        title:
+          default: item title
+        description:
+          default: item description
+        images:
+          76872b83-0762-4a02-bc04-84f847c24871:
+            id: 76872b83-0762-4a02-bc04-84f847c24871
+            type: Image
+    Identifier:
+      type: string
+      description: |
+        Unique identifier of an item in the entry vendor catalog. An identifier must be unique across the vendor catalog and consistent over time.
+      example: 48abf2f4-007e-4afe-b247-3c3cab0d40d2
+    LocaleDescription:
+      type: object
+      description: |
+        To support multiple languages, we use localized strings, which are represented as a map.
+        The map's keys are language codes that conform to the
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.
+        A list of valid language codes can be found in the
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+        
+        Each set of localized strings **must** include a `default` key,
+        which provides the text in your default language.
+      properties:
+        default:
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+      additionalProperties:
+        x-additionalPropertiesName: <IETF-Language-Tag>
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+      required:
+        - default
+      example:
+        default: "default description"
+        de: "german description"
+        fr: "french description"
+    LocaleTitle:
+      type: object
+      description: |
+        To support multiple languages, we use localized strings, which are represented as a map.
+        The map's keys are language codes that conform to the
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.
+        A list of valid language codes can be found in the
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+        
+        Each set of localized strings **must** include a `default` key,
+        which provides the text in your default language.
+      properties:
+        default:
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+          maxLength: 300
+      additionalProperties:
+        x-additionalPropertiesName: <IETF-Language-Tag>
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+        maxLength: 300
+      required:
+        - default
+      example:
+        default: "default title"
+        de: "german title"
+        fr: "french title"
+    LocaleString:
+      type: object
+      description: |
+        To support multiple languages, we use localized strings, which are represented as a map.
+        The map's keys are language codes that conform to the
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.
+        A list of valid language codes can be found in the
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+        
+        Each set of localized strings **must** include a `default` key,
+        which provides the text in your default language.
+      properties:
+        default:
+          x-additionalPropertiesName: <IETF-Language-Tag>
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+          maxLength: 300
+      additionalProperties:
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+        maxLength: 300
+      required:
+        - default
+      example:
+        default: "default string"
+        de: "german string"
+        fr: "french string"
+    Quantity:
+      type: object
+      description: Minimum and maximum quantities.
+      properties:
+        minimum:
+          type: number
+          description: Minimum quantity
+          default: 0
+        maximum:
+          type: number
+          description: Maximum quantity
+      required:
+        - maximum
+      example:
+        minimum: 2
+        maximum: 5
+    ItemReference:
+      description: |
+        Item Reference to uniquely identify an element by type and id.
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Identifier"
+        type:
+          $ref: "#/components/schemas/ItemType"
+      required:
+        - id
+        - type
+      example:
+        id: d21c9c32-bdff-41aa-a34b-81e65ae60edd
+        type: Product
+    OrderedReference:
+      description: |
+        Reference with an property for visual ordering
+      properties:
+        order:
+          description: |
+            Hint for the visual ordering, respecting the following rules:
+            * If there are is no order property defined for an item, the value of the order property will be set to the maximum
+            * If there are 2 items the one with the lesser value for the order will appear first.
+            * If there are 2 items with the same order value, it is not defined which one should appear first. The platform can freely choose the order but we recommend presenting it in a consistent way, e. g. sorting it by name/order by id
+            * The values don't need to be strictly incremental e.g 2 -> 5 -> 500 will be a valid order.
+          type: integer
+          minimum: 1
+          maximum: 65536
+          default: 65536
+    MenuReference:
+      allOf:
+        - $ref: "#/components/schemas/ItemReference"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - Menu
+      example:
+        id: a16838a2-899e-481e-80f7-0a937774fded
+        type: Menu
+    OrderedMenuReference:
+      allOf:
+        - $ref: "#/components/schemas/MenuReference"
+        - $ref: "#/components/schemas/OrderedReference"
+      example:
+        id: a16838a2-899e-481e-80f7-0a937774fded
+        type: Menu
+        order: 1
+    CategoryReference:
+      allOf:
+        - $ref: "#/components/schemas/ItemReference"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - Category
+      example:
+        id: 5c3f4179-d17f-41c6-ab0b-37a730878a89
+        type: Category
+    OrderedCategoryReference:
+      allOf:
+        - $ref: "#/components/schemas/CategoryReference"
+        - $ref: "#/components/schemas/OrderedReference"
+      example:
+        id: 5c3f4179-d17f-41c6-ab0b-37a730878a89
+        type: Category
+        order: 1
+    ProductReference:
+      allOf:
+        - $ref: "#/components/schemas/ItemReference"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - Product
+      example:
+        id: bdb19a37-d92d-4812-ab47-e7b163794b14
+        type: Product
+    OrderedProductReference:
+      allOf:
+        - $ref: "#/components/schemas/ProductReference"
+        - $ref: "#/components/schemas/OrderedReference"
+      example:
+        id: bdb19a37-d92d-4812-ab47-e7b163794b14
+        type: Product
+        order: 5
+    ProductToppingReference:
+      allOf:
+        - $ref: "#/components/schemas/OrderedProductReference"
+        - type: object
+          properties:
+            price:
+              description: |
+                Price when customer selected this option. Ignored when ```toppingType=PANDORA_PRODUCT_GROUP```
+              type: string
+            surcharges:
+              type: array
+              items:
+                $ref: "#/components/schemas/VariantToppingReference"
+              description: |
+                Allows to over write variant prices independent from the variant definitions for "PANDORA_PRODUCT_GROUP".
+                If no overwrite for the variant price is defined here it will take the price from the variant.
+      example:
+        id: bdb19a37-d92d-4812-ab47-e7b163794b14
+        type: Product
+        price: "1.25"
+        order: 5
+    VariantToppingReference:
+      allOf:
+        - $ref: "#/components/schemas/OrderedProductReference"
+        - type: object
+          properties:
+            price:
+              description: |
+                Overwrite for the variant price
+              type: string
+    ToppingReference:
+      allOf:
+        - $ref: "#/components/schemas/ItemReference"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - Topping
+      example:
+        id: d21c9c32-bdff-41aa-a34b-81e65ae60edd
+        type: Topping
+    OrderedToppingReference:
+      allOf:
+        - $ref: "#/components/schemas/ToppingReference"
+        - $ref: "#/components/schemas/OrderedReference"
+      example:
+        id: d21c9c32-bdff-41aa-a34b-81e65ae60edd
+        type: Topping
+        order: 5
+    ImageReference:
+      allOf:
+        - $ref: "#/components/schemas/ItemReference"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - Image
+      example:
+        id: 24dddcdd-7067-4bdb-9c40-eeabd854be8e
+        type: Image
+    OrderedImageReference:
+      allOf:
+        - $ref: "#/components/schemas/ImageReference"
+        - $ref: "#/components/schemas/OrderedReference"
+      example:
+        id: 24dddcdd-7067-4bdb-9c40-eeabd854be8e
+        type: Image
+        order: 2
+    ScheduleEntryReference:
+      allOf:
+        - $ref: "#/components/schemas/ItemReference"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - ScheduleEntry
+      example:
+        id: e42d29a7-af88-4185-85b3-777e03e31897
+        type: ScheduleEntry
+    OrderedScheduleEntryReference:
+      allOf:
+        - $ref: "#/components/schemas/ScheduleEntryReference"
+        - $ref: "#/components/schemas/OrderedReference"
+      example:
+        id: e42d29a7-af88-4185-85b3-777e03e31897
+        type: ScheduleEntry
+        order: 3
+    Tags:
+      type: object
+      properties:
+        tags:
+          type: object
+          description: |
+            The tags object is a critical tool that facilitates the provision of extra metadata to catalog items. 
+            Organized by namespaces and predefined, it serves key roles including:
+              * **Hint Provision:** Offers extra details to customers that can aid in their decision-making process.
+              * **In-depth Analysis:** Enhances the depth of product interpretation and analysis.
+              * **Legal Requirement Satisfaction:** Provides legally required information for business compliance.
+            
+            For a comprehensive view on how to use the tags object within the different namespaces, refer to the detailed 
+            description provided under each namespace.
+            
+            We highly recommend integrators to provide as much detail as possible when populating the tags object.
+            This comprehensive information not only enhances the user's understanding and aids analytics, 
+            but also ensures legal compliance standards are met. The more detailed the data, the more beneficial and effective the service.
+    MasterCategoryTags:
+      type: object
+      properties:
+        tags:
+          type: object
+          properties:
+            masterCategory:
+              description: |
+                Provides extra meta information about all products inside of a category. 
+                Is crucial for Pandora (Foodpanda, Foodora, MJAM, ....) delivery platforms as it 
+                aids customer decisions and enhances analytical work. 
+                Even if unused by other platforms, integrators are encouraged to provide this information 
+                for better service on Pandora platforms. Key roles of this data include hint provision, 
+                in-depth analysis, and crucially, it supports Pandora's improved operation.
+                
+                **Supported Tags:**   
+                - **TIME_BOUND_CATEGORY**
+                - **STARTERS**
+                - **SMALL_MAINS**
+                - **BIG_MAINS**
+                - **SIDE_DISHES_AND_ADD_ONS**
+                - **SUGGESTIVE_AND_MIXED_CATEGORY**
+                - **PLATES_AND_BOXES**
+                - **PRE_SET_DEALS**
+                - **DESSERTS**
+                - **PRE_PACKAGED_FOOD**
+                - **DRINKS_NON_ALCOHOLICS**
+                - **DRINKS_ALCOHOLICS**
+                - **NON_FOOD**
+                - **TOPPINGS**
+                - **GROCERIES**
+                - **KIDS**
+              type: array
+              items:
+                $ref: "#/components/schemas/MasterCategoryTag"
+              maxItems: 1
+      examples:
+        - tags:
+            masterCategory:
+              - DESSERTS
+    MasterCategoryTag:
+      type: string
+      enum:
+      - TIME_BOUND_CATEGORY
+      - STARTERS
+      - SMALL_MAINS
+      - BIG_MAINS
+      - SIDE_DISHES_AND_ADD_ONS
+      - SUGGESTIVE_AND_MIXED_CATEGORY
+      - PLATES_AND_BOXES
+      - PRE_SET_DEALS
+      - DESSERTS
+      - PRE_PACKAGED_FOOD
+      - DRINKS_NON_ALCOHOLICS
+      - DRINKS_ALCOHOLICS
+      - NON_FOOD
+      - TOPPINGS
+      - GROCERIES
+      - KIDS
+    OccasionTypeTags:
+      type: object
+      properties:
+        tags:
+          type: object
+          properties:
+            occasionType:
+              description: |
+                The occasion type tag is utilized exclusively by Pandora Platforms - its main purpose is to highlight 
+                menus for special occasions. At the moment, this tag is specifically used to mark menus intended for 
+                the 'meal for one' context.
+                
+                **Supported Tags**
+                - **MEAL_FOR_ONE**
+
+              type: array
+              items:
+                $ref: "#/components/schemas/OccasionTypeTag"
+              maxItems: 1
+      examples:
+        - tags:
+            occasionType:
+              - MEAL_FOR_ONE
+    OccasionTypeTag:
+      type: string
+      enum:
+        - MEAL_FOR_ONE
+        - REGULAR
+    AgeRestrictedItemTags:
+      type: object
+      properties:
+        tags:
+          type: object
+          properties:
+            ageRestrictedItem:
+              description: |
+                To comply with legal requirements, it's essential to provide information on items 
+                that contain age-restricted ingredients and are requiring an id card check.
+                
+                **Supported Tags:**
+                
+                * **ID_CHECK_18** to mark items that requires an id card check at drop off
+              type: array
+              items:
+                $ref: "#/components/schemas/AgeRestrictedItemTag"
+      examples:
+        - tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+    AgeRestrictedItemTag:
+      type: string
+      enum:
+        - ID_CHECK_18
+    FoodLabelingProperties:
+      description: Product Properties used for food labeling
+      type: object
+      properties:
+        allergens:
+          description: |
+            The list of allergens associated with this product
+          type: array
+          items:
+            $ref: "#/components/schemas/Allergen"
+        nutritionFacts:
+          $ref: "#/components/schemas/NutritionFacts"
+        alcoholPercentage:
+          description: |
+            Percentage of the alcohol
+          type: number
+        preparationAndStorageInstructions:
+          $ref: "#/components/schemas/LocalizedPreparationAndStorageInstructions"
+        manufacturerInformation:
+          $ref: "#/components/schemas/LocalizedManufacturerInformation"
+        ingredients:
+          $ref: "#/components/schemas/LocalizedIngredients"
+        additives:
+          $ref: "#/components/schemas/LocalizedAdditives"
+        warnings:
+          $ref: "#/components/schemas/LocalizedWarnings"
+        dietary:
+          description: |
+            Dietary preferences
+          type: array
+          items:
+            $ref: "#/components/schemas/Dietary"
+        netAmount:
+          $ref: "#/components/schemas/NetAmount"
+    Allergen:
+      description: |
+        Allergens
+      type: string
+      enum:
+        - MILK_OR_LACTOSE
+        - EGG
+        - PEANUT
+        - TREE_NUTS
+        - CRUSTACEANS
+        - FISH
+        - GLUTEN
+        - SOYA
+        - SESAME_SEEDS
+        - CELERY
+        - MUSTARD
+        - SULFITES
+        - LUPINS
+        - MOLLUSKS
+    NutritionFacts:
+      description: |
+        Nutrition facts (e.g., amount of calories, amount of fat, sugar, etc.). 
+        If no measurement basis is provided, amounts under nutrition facts are per 100g/100ml.
+      properties:
+        caffeineInGrams:
+          description: |
+            Amount of caffeine (value in grams)
+          type: number
+        measurementBasis:
+          $ref: "#/components/schemas/MeasurementBasis"
+        energyInKcal:
+          description: |
+            Amount of energy (value in kcal)
+          type: number
+        fat:
+          $ref: "#/components/schemas/Fat"
+        cholesterolInGrams:
+          description: Amount of cholesterol (value in grams)
+          type: number
+        carbohydrate:
+          $ref: "#/components/schemas/Carbohydrate"
+        proteinInGrams:
+          description: Amount of protein (value in grams)
+          type: number
+        saltInGrams:
+          description: Amount of salt (value in grams)
+          type: number
+        sodiumInGrams:
+          description: Amount of sodium (value in grams)
+          type: number
+    Fat:
+      description: Nutrition facts for fat content
+      properties:
+        totalInGrams:
+          description: Total amount of fats (value in grams)
+          type: number
+        saturatedInGrams:
+          description: Amount of saturated fat (value in grams)
+          type: number
+        transInGrams:
+          description: Amount of trans fat (value in grams)
+          type: number
+    Carbohydrate:
+      description: Nutrition facts for carbohydrate content
+      type: object
+      properties:
+        totalInGrams:
+          description: Total amount of carbohydrates (value in grams)
+          type: number
+        dietaryFiberInGrams:
+          description: Total amount of dietary fibers (value in grams)
+          type: number
+        sugar:
+          $ref: "#/components/schemas/Sugar"
+        polyolsGrams:
+          description: Total amount of polyols (Sugar alcohols) (value in grams)
+          type: number
+    Sugar:
+      description: Nutrition facts for sugar content
+      type: object
+      properties:
+        totalInGrams:
+          description: Total amount of sugar (value in grams)
+          type: number
+        addedInGrams:
+          description: Total amount of added sugar (value in grams)
+          type: number
+    NetAmount:
+      description: |
+        Weight/volume of the product item.
+      type: object
+      properties:
+        unit:
+          $ref: "#/components/schemas/NetAmountUnit"
+        value:
+          description: The amount int the given unit
+          type: number
+      required:
+        - unit
+        - value
+    NetAmountUnit:
+      description: |
+        The unit of the net amount (weight/volume). 
+          - g to use for non liquids
+          - ml to use for liquids
+          - unit to use for servings, slices, portions, pieces, cups, etc.
+      type: string
+      enum:
+        - g
+        - ml
+        - unit
+    MeasurementBasis:
+      description: |
+        Measurement basis used for all values in the nutrition_facts object.
+      type: string
+      enum:
+        - 100g
+        - 100ml
+        - unit
+    LocalizedPreparationAndStorageInstructions:
+      type: object
+      description: |
+        Preparation and storage instructions in different locales.
+        
+        To support multiple languages, we use localized strings, which are represented as a map.  
+        The map's keys are language codes that conform to the 
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.  
+        A list of valid language codes can be found in the 
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+
+        Each set of localized strings **must** include a `default` key, 
+        which provides the text in your default language
+      properties:
+        default:
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+          maxLength: 2000
+      additionalProperties:
+        x-additionalPropertiesName: <IETF-Language-Tag>
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+        maxLength: 2000
+      required:
+        - default
+      example:
+        default: "in default language"
+        de: "in german"
+        fr: "in french"
+    LocalizedManufacturerInformation:
+      type: object
+      description: |
+        Manufacturer Information e.g name, address, place of origin, of manufacturer in different locales
+        
+        To support multiple languages, we use localized strings, which are represented as a map.  
+        The map's keys are language codes that conform to the 
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.  
+        A list of valid language codes can be found in the 
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+
+        Each set of localized strings **must** include a `default` key, 
+        which provides the text in your default language
+      properties:
+        default:
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+          maxLength: 2000
+      additionalProperties:
+        x-additionalPropertiesName: <IETF-Language-Tag>
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+        maxLength: 2000
+      required:
+        - default
+      example:
+        default: "in default language"
+        de: "in german"
+        fr: "in french"
+    LocalizedIngredients:
+      type: object
+      description: |
+        Item ingredients in different locales. 
+        
+        Ideally ingredients should be listed in descending order of quantity. 
+        Ingredients which can be allergens should be input in CAPITAL LETTERS. 
+
+        To support multiple languages, we use localized strings, which are represented as a map.  
+        The map's keys are language codes that conform to the 
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.  
+        A list of valid language codes can be found in the 
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+
+        Each set of localized strings **must** include a `default` key, 
+        which provides the text in your default language.
+      properties:
+        default:
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+          maxLength: 4000
+      additionalProperties:
+        x-additionalPropertiesName: <IETF-Language-Tag>
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+        maxLength: 4000
+      required:
+        - default
+      example:
+        default: "in default language"
+        de: "in german"
+        fr: "in french"
+    LocalizedAdditives:
+      type: object
+      description: |
+        Item additives in different locales. 
+
+        To support multiple languages, we use localized strings, which are represented as a map.  
+        The map's keys are language codes that conform to the 
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.  
+        A list of valid language codes can be found in the 
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+
+        Each set of localized strings **must** include a `default` key, 
+        which provides the text in your default language.
+      properties:
+        default:
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+          maxLength: 2000
+      additionalProperties:
+        x-additionalPropertiesName: <IETF-Language-Tag>
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+        maxLength: 2000
+      required:
+        - default
+      example:
+        default: "in default language"
+        de: "in german"
+        fr: "in french"
+    LocalizedWarnings:
+      type: object
+      description: |
+        Additional product warnings in different locales, 
+        
+        e.g Lollipops are a potential choking hazard. Not suitable for children under 36 months
+
+        To support multiple languages, we use localized strings, which are represented as a map.  
+        The map's keys are language codes that conform to the 
+        [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646) standard.  
+        A list of valid language codes can be found in the 
+        [IANA language subtag registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).
+  
+        Each set of localized strings **must** include a `default` key, 
+        which provides the text in your default language.
+      properties:
+        default:
+          description: default content that will be present regardless of localisation requirements.
+          type: string
+          maxLength: 2000
+      additionalProperties:
+        x-additionalPropertiesName: <IETF-Language-Tag>
+        description: |
+          language specific entries, key should be a valid [IETF BCP 47 language tag](https://www.rfc-editor.org/info/rfc5646)
+        type: string
+        maxLength: 2000
+      required:
+        - default
+      example:
+        default: "in default language"
+        de: "in german"
+        fr: "in french"
+    Dietary:
+      description: Dietary preferences
+      type: string
+      enum:
+        - VEGETARIAN
+        - VEGAN
+        - GLUTEN_FREE
+        - LACTOSE_FREE
+        - HALAL
+        - KOSHER
+        - HEALTHY

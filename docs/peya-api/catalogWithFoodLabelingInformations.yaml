@@ -1,0 +1,456 @@
+catalogWithFoodLabelingInformations:
+  value:
+    callbackUrl: 'https://example.com/callback'
+    vendors:
+      - ys-tr-hzt6
+    catalog:
+      items:
+        REGULAR_MENU:
+          id: REGULAR_MENU
+          type: Menu
+          title:
+            default: REGULAR_MENU
+          description:
+            default: Our Daily Menu
+          images: {}
+          products:
+            PIZZA_CHEESE:
+              id: PIZZA_CHEESE
+              type: Product
+            COKE_SMALL:
+              id: COKE_SMALL
+              type: Product
+          schedule:
+            WEEKLY_SCHEDULE:
+              type: ScheduleEntry
+              id: WEEKLY_SCHEDULE
+          menuType: DELIVERY
+        WEEKLY_SCHEDULE:
+          id: WEEKLY_SCHEDULE
+          type: ScheduleEntry
+          startTime: '07:00:00'
+          endTime: '23:00:00'
+          weekDays:
+            - MONDAY
+            - TUESDAY
+            - WEDNESDAY
+            - THURSDAY
+            - FRIDAY
+            - SATURDAY
+            - SUNDAY
+        PIZZA_CATEGORY:
+          id: PIZZA_CATEGORY
+          type: Category
+          title:
+            default: Pizza
+          description:
+            default: Pizza
+          images: {}
+          products:
+            PIZZA_CHEESE:
+              id: PIZZA_CHEESE
+              type: Product
+        PIZZA_EXTRAS_CATEGORY:
+          id: PIZZA_EXTRAS_CATEGORY
+          type: Category
+          title:
+            default: Pizza Toppings
+          description:
+            default: Hidden Category for Pizza Extra Toppings
+          products:
+            EXTRA_CHEESE:
+              id: EXTRA_CHEESE
+              type: Product
+            EXTRA_JALAPENOS:
+              id: EXTRA_JALAPENOS
+              type: Product
+            EXTRA_GARLIC_OIL:
+              id: EXTRA_GARLIC_OIL
+              type: Product
+        DRINKS_CATEGORY:
+          id: DRINKS_CATEGORY
+          type: Category
+          title:
+            default: Pizza
+          description:
+            default: Pizza
+          images: { }
+          products:
+            COKE_SMALL:
+              id: COKE_SMALL
+              type: Product
+        PIZZA_EXTRAS:
+          id: PIZZA_EXTRAS
+          type: Topping
+          topping-type: PRODUCT_OPTION
+          title:
+            default: Extras for your pizza
+          description:
+            default: Extras for your pizza
+          images: {}
+          quantity:
+            minimum: 0
+            maximum: 2
+          products:
+            EXTRA_CHEESE:
+              id: EXTRA_CHEESE
+              type: Product
+              price: '50'
+            EXTRA_JALAPENOS:
+              id: EXTRA_JALAPENOS
+              type: Product
+              price: '50'
+            EXTRA_GARLIC_OIL:
+              id: EXTRA_GARLIC_OIL
+              type: Product
+              price: '50'
+        EXTRA_CHEESE:
+          id: EXTRA_CHEESE
+          type: Product
+          parent:
+          title:
+            default: Extra Cheese
+          description:
+            default: Extra Cheese
+          images: {}
+          variants: {}
+          toppings: {}
+          calories: 344
+          tags:
+            ageRestrictedItem: [ ]
+          alcoholPercentage: 0
+          allergens:
+            - MILK_OR_LACTOSE
+          dietary:
+            - VEGETARIAN
+          netAmount:
+            unit: g
+            value: 100
+          nutritionFacts:
+            measurementBasis: unit
+            energyInKcal: 344
+            fat:
+              totalInGrams: 26
+              saturatedInGrams: 18
+            cholesterolInGrams: 0
+            carbohydrate:
+              totalInGrams: 1.4
+              sugar:
+                totalInGrams: 0.2
+            proteinInGrams: 26
+            saltInGrams: 1.5
+          preparationAndStorageInstructions:
+            default: |
+              Store in a cool dry place, away from heat and sunlight
+            de-DE: |
+              An einem kühlen, trockenen Ort, vor Hitze und Sonnenlicht geschützt
+          manufacturerInformation:
+            default: |
+              Cheese Factory
+            de-DE: |
+              Kase Fabrik
+          ingredients:
+            default: |
+              Pasteurized milk, salt, stabilizer: calcium chloride; selected lactic cultures.
+            de-DE: |
+              Pasteurisierte Milch, Salz, Stabilisator: Calciumchlorid; ausgewählte Milchkulturen
+          additives:
+            default: |
+              E160a - Carotene, E235 - Natamycin
+            de-DE: |
+              E160a - Carotene, E235 - Natamycin
+          warnings:
+            default: |
+              no warnings known
+            de-DE: |
+              keine warnungen bekannt
+        EXTRA_GARLIC_OIL:
+          id: EXTRA_GARLIC_OIL
+          type: Product
+          parent:
+          title:
+            default: Extra Garlic Oil
+          description:
+            default: Extra Garlic Oil
+          images: {}
+          variants: {}
+          toppings: {}
+          calories: 828
+          tags:
+            ageRestrictedItem: [ ]
+          alcoholPercentage: 0
+          allergens:
+            - TREE_NUTS
+            - SESAME_SEEDS
+          dietary: []
+          netAmount:
+            unit: ml
+            value: 80
+          nutritionFacts:
+            measurementBasis: 100ml
+            energyInKcal: 828
+            fat:
+              totalInGrams: 92
+              saturatedInGrams: 8.8
+            carbohydrate:
+              totalInGrams: 0
+              dietaryFiberInGrams: 0
+              sugar:
+                totalInGrams: 0
+                addedInGrams: 0
+              polyolsGrams: 0
+            proteinInGrams: 0
+            saltInGrams: 0
+            sodiumInGrams: 0.05
+          preparationAndStorageInstructions:
+            default: |
+              Store in a cool dry place, away from heat and sunlight
+            de-DE: |
+              An einem kühlen, trockenen Ort, vor Hitze und Sonnenlicht geschützt
+          manufacturerInformation:
+            default: |
+              Garlic Company Limited
+            de-DE: |
+              Garlic Company Limited
+          ingredients:
+            default: |
+              vegetable oil with garlic, ingredients: lanty oils: sunflower oil and rapeseed oil 
+              in varying proportions), 1,1 % garlic qranulate, natural garlic aroma
+            de-DE: |
+              Pflanzenöl mit Knoblauch, Zutaten: Lanty-Öle: Sonnenblumenöl und Rapsöl 
+              in veränderlichen Anteilen), 1,1 % Knoblauchgranulat, natürliches Knoblaucharoma
+          additives:
+            default:
+            de-DE:
+          warnings:
+            default: |
+              Should not be consumed if you plan to use public transport
+            de-DE: |
+              Sollte nicht konsumiert werden, wenn Sie öffentliche Verkehrsmittel nutzen möchten
+        EXTRA_JALAPENOS:
+          id: EXTRA_JALAPENOS
+          type: Product
+          parent:
+          title:
+            default: Extra Jalapenos
+          description:
+            default: Extra Jalapenos
+          images: {}
+          variants: {}
+          toppings: {}
+          calories: 30
+          tags:
+            ageRestrictedItem: [ ]
+          alcoholPercentage: 0
+          allergens:
+            - TREE_NUTS
+          dietary:
+            - VEGAN
+            - VEGETARIAN
+          netAmount:
+            unit: g
+            value: 50
+          nutritionFacts:
+            measurementBasis: 100g
+            energyInKcal: 30
+            fat:
+              totalInGrams: 0.2
+              saturatedInGrams: 0.04
+            cholesterolInGrams: 0
+            carbohydrate:
+              totalInGrams: 3.9
+              dietaryFiberInGrams: 0
+              sugar:
+                totalInGrams: 0.6
+                addedInGrams: 0
+              polyolsGrams: 0
+            proteinInGrams: 0.6
+            saltInGrams: 2.5
+            sodiumInGrams: 0
+          preparationAndStorageInstructions:
+            default: |
+              Store in a cool dry place, away from heat and sunlight
+            de-DE: |
+              An einem kühlen, trockenen Ort, vor Hitze und Sonnenlicht geschützt
+          manufacturerInformation:
+            default: |
+              JALAPENOS INC
+            de-DE: |
+              JALAPENOS INC
+          ingredients:
+            default: |
+              Jalapeno chilies, water, brandy vinegar, table salt, calcium chloride, 
+              preservative, potassium metabisulfite
+            de-DE: |
+              Jalapeno-Chilis, Wasser, Branntweinessig, Speisesalz, Calciumchlorid, 
+              Konservierungsstoff, Kaliummetabisulfit
+          additives:
+            default: |
+              E224 - Potassium metabisulfite, E509 - Calcium chloride
+            de-DE: |
+              E224 - Potassium metabisulfite, E509 - Calcium chloride
+          warnings:
+            default: |
+              Spicy, person that have problems with spicy food should not consume
+            de-DE: |
+              Sehr scharf, ungeeignet fuer Personen die kein scharfes essen Vertragen
+        PIZZA_CHEESE:
+          parent:
+          id: PIZZA_CHEESE
+          type: Product
+          title:
+            default: Pizza Cheese
+          description:
+            default: Pizza Cheese
+          images: {}
+          variants:
+            PIZZA_CHEESE_SMALL:
+              id: PIZZA_CHEESE_SMALL
+              type: Product
+            PIZZA_CHEESE_MEDIUM:
+              id: PIZZA_CHEESE_MEDIUM
+              type: Product
+            PIZZA_CHEESE_LARGE:
+              id: PIZZA_CHEESE_LARGE
+              type: Product
+          toppings: {}
+          tags:
+            ageRestrictedItem: [ ]
+          alcoholPercentage: 0
+          calories: 265
+          allergens:
+            - MILK_OR_LACTOSE
+            - SOYA
+            - GLUTEN
+          dietary:
+            - VEGETARIAN
+          nutritionFacts:
+            measurementBasis: 100g
+            energyInKcal: 265
+            fat:
+              totalInGrams: 13.8
+              saturatedInGrams: 6.18
+            cholesterolInGrams: 0
+            carbohydrate:
+              totalInGrams: 23.8
+              dietaryFiberInGrams: 0
+              sugar:
+                totalInGrams: 2.79
+                addedInGrams: 0
+              polyolsGrams: 0
+            proteinInGrams: 0.6
+            saltInGrams: 1
+            sodiumInGrams: 0
+          preparationAndStorageInstructions:
+            default: |
+              Store in a cool dry place, away from heat and sunlight
+            de-DE: |
+              An einem kühlen, trockenen Ort, vor Hitze und Sonnenlicht geschützt
+          manufacturerInformation:
+            default: |
+              PIZZA PIZZA INC
+            de-DE: |
+              PIZZA PIZZA INC
+          ingredients:
+            default: |
+              wheat flour, 24 % tomato purée, 11 % firmed mozzarella cheese , 11 % edam cheese , 
+              whipping cream , rapeseed oil, 4,2% emmental cheese , water, baker's yeast, 
+              0,7 % blue cheese , sugar, salt, basil, soy sauce (water, soybeans , salt, wheat flour), 
+              modified starch, extra-virgin olive oil, spices, oregano, hydrolysed vegetable protein, 
+              maltodextrin, garlic, caramelised sugar
+            de-DE: |
+              Weizenmehl, 24 % Tomatenpüree, 11 % fester Mozzarella, 11 % Edamer, 
+              Schlagsahne, Rapsöl, 4,2 % Emmentaler, Wasser, Backhefe, 
+              0,7 % Blauschimmelkäse, Zucker, Salz, Basilikum, Sojasauce (Wasser, Sojabohnen, Salz, Weizenmehl), 
+              modifizierte Stärke, natives Olivenöl extra, Gewürze, Oregano, hydrolysiertes Pflanzenprotein, 
+              Maltodextrin, Knoblauch, karamellisierter Zucker
+          additives:
+            default: |
+              E14XX - Modified Starch
+            de-DE: |
+              E14XX - Modifizierte Staerke
+        PIZZA_CHEESE_SMALL:
+          parent:
+            id: PIZZA_CHEESE
+            type: Product
+          id: PIZZA_CHEESE_MEDIUM
+          type: Product
+          title:
+            default: Pizza Cheese Small, 20cm
+          description:
+            default: Pizza Cheese Small, 20cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '300.00'
+          netAmount:
+            unit: g
+            value: 250g
+        PIZZA_CHEESE_MEDIUM:
+          parent:
+            id: PIZZA_CHEESE
+            type: Product
+          id: PIZZA_CHEESE_MEDIUM
+          type: Product
+          title:
+            default: Pizza Cheese Medium, 28cm
+          description:
+            default: Pizza Cheese Medium, 28cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '400.00'
+          netAmount:
+            unit: g
+            value: 350g
+        PIZZA_CHEESE_LARGE:
+          parent:
+            id: PIZZA_CHEESE
+            type: Product
+          id: PIZZA_CHEESE_LARGE
+          type: Product
+          title:
+            default: Pizza Cheese Large, 30cm
+          description:
+            default: Pizza Cheese Large, 30cm
+          images: {}
+          variants: {}
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+          price: '500.00'
+          netAmount:
+            unit: g
+            value: 450g
+        COKE_SMALL:
+          parent: null
+          id: COKE_SMALL
+          type: Product
+          title:
+            default: Small Coke
+          description:
+            default: Small Coke 0.33L
+          images: { }
+          variants: { }
+          toppings: { }
+          price: "100"
+          netAmount:
+            unit: ml
+            value: 330
+          nutritionFacts:
+            measurementBasis: 100ml
+            caffeineInGrams: 0.008
+            energyInKcal: 38
+            fat:
+              totalInGrams: 0
+              saturatedInGrams: 0
+            cholesterolInGrams: 0
+            carbohydrate:
+              totalInGrams: 10

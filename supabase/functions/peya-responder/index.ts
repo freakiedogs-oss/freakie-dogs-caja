@@ -262,9 +262,34 @@ Deno.serve(async (req) => {
     return json({ error: "falta_remoteOrderId_u_orderToken" }, 400);
   }
 
-  // Rechazar sin motivo válido lo rebota DH; mejor fallar acá con un mensaje claro.
+  // Los 24 motivos válidos del contrato (shared-components.yaml, `order_rejected`).
+  // Un código fuera de esta lista lo rebota DH con 400, y entonces el pedido se queda
+  // sin contestar hasta que vence: cuenta como fallo nuestro y puede cerrar la tienda.
+  // Se valida acá y no sólo en el POS porque a este endpoint también entra la
+  // aceptación automática.
+  const MOTIVOS_VALIDOS = new Set([
+    "ADDRESS_INCOMPLETE_MISSTATED", "BAD_WEATHER", "BLACKLISTED",
+    "CARD_READER_NOT_AVAILABLE", "CLOSED", "CONTENT_WRONG_MISLEADING",
+    "FOOD_QUALITY_SPILLAGE", "FRAUD_PRANK", "ITEM_UNAVAILABLE", "LATE_DELIVERY",
+    "MENU_ACCOUNT_SETTINGS", "MOV_NOT_REACHED", "NO_COURIER", "NO_PICKER",
+    "NO_RESPONSE", "OUTSIDE_DELIVERY_AREA", "TECHNICAL_PROBLEM", "TEST_ORDER",
+    "TOO_BUSY", "UNABLE_TO_FIND", "UNABLE_TO_PAY", "UNPROFESSIONAL_BEHAVIOUR",
+    "WILL_NOT_WORK_WITH_PLATFORM", "WRONG_ORDER_ITEMS_DELIVERED",
+  ]);
+
   if (accion === "rechazar" && !motivo) {
-    return json({ error: "rechazo_sin_motivo", ayuda: "p.ej. ITEM_UNAVAILABLE, TOO_BUSY, CLOSED, TEST_ORDER" }, 400);
+    return json({
+      error: "rechazo_sin_motivo",
+      ayuda: "p.ej. ITEM_UNAVAILABLE, TOO_BUSY, CLOSED, TEST_ORDER",
+    }, 400);
+  }
+  if (accion === "rechazar" && !MOTIVOS_VALIDOS.has(String(motivo).toUpperCase())) {
+    return json({
+      error: "motivo_invalido",
+      motivo,
+      message: "Delivery Hero rebota los motivos que no están en su lista.",
+      validos: [...MOTIVOS_VALIDOS],
+    }, 400);
   }
 
   const q = svc.from("peya_ordenes").select("*").limit(1);
