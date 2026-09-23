@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Sep-2026 — POS: agrandado de bebida por bebida, no por combo (ComboModal)
+
+**Reporte Cesar (Metro):** en un combo con dos bebidas (Duo Picossini, Burger Duo…), marcar «Agrandado de bebida» en la bebida 1 le quitaba a la bebida 2 las opciones gratis y le exigía sabor de agrandado. Causa: `hayAgrandado` era global al combo; `filtraBebidas`/`grupoOculto`/`falta` no sabían de qué bebida se trataba. Además la exclusividad del 19-sep apagaba TODOS los agrandados del combo, así que era imposible agrandar las dos bebidas de un Duo.
+
+**Fix (`POSMain.jsx`, ComboModal):** se portó la regla del menú público (1-sep). Cada sección de bebida sabe si va agrandada: por su propio $0.50 (`propio`) o porque le tocó un agrandado de fuera (papas $1.25, general), que se reparten en orden entre las bebidas sin el suyo. `grupoOculto`, `opcionesVisibles`, `filtraBebidas`, `tapaDisparador` y `falta` reciben la sección. En `toggle`: un agrandado dentro de una bebida solo apaga a los de esa misma bebida; uno de fuera cubre a la primera bebida libre, si todas tienen su $0.50 le quita el $0.50 a la primera (el $1.25 ya la incluye), y si todas ya están cubiertas por otros de fuera no se marca. Combos sin grupo de sabores (Royal) siguen igual.
+
+**Afecta a 14 combos** con 2+ bebidas: Burger Box, Burger Duo, Chili Duo, Combig (4), Combo Fancy Duo, Combo Trío (3), Combpleto (3), Combros, Duo Picossini, Fancy Fries Combo (4), Freakie Box, Freakie Family (4), Sweet Burger Duo.
+
+
 > Log de decisiones y cambios, lo más nuevo arriba.
 
 ## 23-Sep-2026 — Coca-Cola Combo XL sin bebida en local + aviso "hay más opciones abajo" en el ComboModal
