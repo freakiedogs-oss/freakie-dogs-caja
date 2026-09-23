@@ -2205,18 +2205,44 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
       else if (g.max_selecciones > 0 && cur.length >= g.max_selecciones) return prev
       else next = { ...prev, [k]: [...cur, m.id] }
 
-      // Los agrandados son excluyentes entre sí: el de $1.25 ya incluye la
-      // bebida agrandada, así que marcarlo junto al de $0.50 cobraba los dos
-      // (caja de Cafetalón, 19-sep: $5.74 y la pantalla trabada). Al encender
-      // uno se apagan los demás, estén en la sección que estén.
+      // Los agrandados son excluyentes POR BEBIDA, no por combo (23-sep-2026).
+      // Antes marcar cualquier agrandado apagaba todos los demás del combo: en un
+      // Duo era imposible agrandar las dos bebidas, y además `hayAgrandado` era
+      // global, así que agrandar la bebida 1 le quitaba las opciones gratis a la
+      // bebida 2 (reporte Cesar, Metro). Ahora:
+      //   · un agrandado marcado dentro de una sección de bebida solo apaga a los
+      //     otros agrandados de ESA sección;
+      //   · un agrandado de fuera (papas $1.25, general) cubre a la primera bebida
+      //     que no tenga el suyo; si todas tienen su $0.50, le quita el $0.50 a la
+      //     primera (el $1.25 ya incluye la bebida agrandada: cobrar los dos era el
+      //     bug del 19-sep); si todas ya están cubiertas por otros de fuera, no se
+      //     marca (no hay bebida que agrandar).
       if (!yaEstaba && /agrandad/i.test(m?.nombre || '') && !/bebida\s*agrandad/i.test(g?.nombre || '')) {
-        for (const sec of secciones) {
-          for (const gg of sec.grupos || []) {
-            if (/bebida\s*agrandad/i.test(gg.nombre || '')) continue
-            const kk = sec.key + ':' + gg.id
-            const sinOtros = (next[kk] || []).filter(id =>
-              id === m.id || !/agrandad/i.test((gg.opciones || []).find(o => o.id === id)?.nombre || ''))
-            if (sinOtros.length !== (next[kk] || []).length) next = { ...next, [kk]: sinOtros }
+        const esSab = (gg) => /bebida\s*agrandad/i.test(gg?.nombre || '')
+        const esAgr = (mm) => /agrandad/i.test(mm?.nombre || '')
+        const secDe = (key) => secciones.find(sc => sc.key === key)
+        const esSecBebida = (sc) => (sc?.grupos || []).some(esSab)
+        const agrDe = (st, sc) => {   // agrandados marcados en una sección (sin sabores)
+          const out = []
+          ;(sc.grupos || []).forEach(gg => { if (esSab(gg)) return
+            ;(st[sc.key + ':' + gg.id] || []).forEach(id => { const o = (gg.opciones || []).find(x => x.id === id); if (o && esAgr(o)) out.push({ k: sc.key + ':' + gg.id, id }) }) })
+          return out
+        }
+        const quitar = (st, k, id) => ({ ...st, [k]: (st[k] || []).filter(x => x !== id) })
+        const miSec = secDe(secKey)
+        if (esSecBebida(miSec)) {
+          // dentro de la bebida: exclusivo solo con los de esta misma sección
+          agrDe(next, miSec).forEach(a => { if (a.id !== m.id) next = quitar(next, a.k, a.id) })
+        } else {
+          const bebidas = secciones.filter(esSecBebida)
+          if (bebidas.length) {
+            const externos = secciones.filter(sc => !esSecBebida(sc)).flatMap(sc => agrDe(next, sc)).filter(a => a.id !== m.id).length
+            const conPropio = bebidas.filter(sc => agrDe(next, sc).length)
+            const libres = bebidas.length - conPropio.length - externos
+            if (libres <= 0) {
+              if (conPropio.length) agrDe(next, conPropio[0]).forEach(a => { next = quitar(next, a.k, a.id) })
+              else return prev   // todas las bebidas ya van agrandadas por otros: no hay a quién aplicarlo
+            }
           }
         }
       }
@@ -2246,45 +2272,54 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   const esDisparadorPuro = (g) =>
     !esGrupoSabores(g) && (g.opciones || []).length > 0 && (g.opciones || []).every(esOpcionAgrandado)
 
-  // Agrandados marcados en TODO el combo, con su clave para poder desmarcarlos:
-  // el de papas vive en otra sección que el de bebida y son excluyentes.
-  const agrandadosMarcados = []
-  secciones.forEach(sec => (sec.grupos || []).forEach(g => {
-    if (esGrupoSabores(g)) return
-    ;(sel[sec.key + ':' + g.id] || []).forEach(mid => {
-      const m = (g.opciones || []).find(o => o.id === mid)
-      if (m && esOpcionAgrandado(m)) agrandadosMarcados.push({ k: sec.key + ':' + g.id, id: m.id, nombre: m.nombre })
+  // Agrandados marcados, separados en PROPIOS (dentro de una sección de bebida:
+  // el $0.50) y EXTERNOS (papas $1.25, general). Los externos se reparten en
+  // orden entre las bebidas que no tengan el suyo (misma regla que el menú
+  // público desde el 1-sep). Así cada bebida sabe si va agrandada o no, y un
+  // Duo puede llevar una agrandada y la otra normal, o las dos agrandadas.
+  const esSecBebida = (sec) => (sec?.grupos || []).some(esGrupoSabores)
+  const agrandadosDe = (sec) => {
+    const out = []
+    ;(sec.grupos || []).forEach(g => {
+      if (esGrupoSabores(g)) return
+      ;(sel[sec.key + ':' + g.id] || []).forEach(mid => {
+        const m = (g.opciones || []).find(o => o.id === mid)
+        if (m && esOpcionAgrandado(m)) out.push({ k: sec.key + ':' + g.id, id: m.id, nombre: m.nombre })
+      })
     })
-  }))
-  const hayAgrandado = agrandadosMarcados.length > 0
-  // Con "Agrandado Papa y Bebida" marcado, el de $0.50 ya no tiene sentido:
-  // la bebida ya va agrandada dentro del $1.25 (pedido de Cesar, 19-sep).
-  const tapaDisparador = (g) =>
-    esDisparadorPuro(g) && agrandadosMarcados.some(a => !(g.opciones || []).some(o => o.id === a.id))
+    return out
+  }
+  const cubiertaPor = {}   // secKey de bebida -> 'propio' | agrandado externo asignado
+  const externosPend = secciones.filter(sec => !esSecBebida(sec)).flatMap(agrandadosDe)
+  secciones.forEach(sec => { if (esSecBebida(sec) && agrandadosDe(sec).length) cubiertaPor[sec.key] = 'propio' })
+  secciones.forEach(sec => { if (esSecBebida(sec) && !cubiertaPor[sec.key] && externosPend.length) cubiertaPor[sec.key] = externosPend.shift() })
+  const secAgrandada = (sec) => !!cubiertaPor[sec.key]
+  // El $0.50 de una bebida ya cubierta por un agrandado de fuera (el $1.25 de
+  // sus papas) se esconde: la bebida ya va agrandada dentro del $1.25.
+  const tapaDisparador = (sec, g) =>
+    esDisparadorPuro(g) && !!cubiertaPor[sec.key] && cubiertaPor[sec.key] !== 'propio'
 
   // Al agrandar salían DOS menús de bebida (el normal y el del agrandado) y se
   // comandaban DOS bebidas, que además se descontaban las dos del inventario
   // (reporte Jose 31-ago). Con el agrandado marcado el sabor se elige en el grupo
   // del agrandado —el $1.25 ya cubre el cambio de presentación—, así que el menú
-  // de bebida normal se oculta. Solo aplica si este combo TIENE grupo de agrandado:
-  // el Royal ofrece "Agrandado Combo" en las papas pero su bebida no tiene grupo
-  // agrandado, y sin este guard quedaría sin dónde elegirla.
+  // de bebida normal se oculta. Solo en la bebida agrandada, no en las demás.
   const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoSabores(g) && !esDisparadorPuro(g)
-  const hayGrupoSabores = secciones.some(sec => (sec.grupos || []).some(esGrupoSabores))
   // El combo solo incluye las 3 bebidas gratis; cualquier otra entra por un
-  // agrandado. Por eso, al agrandar, el grupo de bebida normal deja de ofrecer
-  // bebidas: el sabor se elige en "Bebida Agrandado" y es el que se descuenta.
-  const filtraBebidas = (g) => hayAgrandado && hayGrupoSabores && esGrupoBebida(g)
-  const opcionesVisibles = (g) =>
-    filtraBebidas(g) ? (g.opciones || []).filter(esOpcionAgrandado) : (g.opciones || [])
-  const grupoOculto = (g) =>
-    (esGrupoSabores(g) && !hayAgrandado) || tapaDisparador(g) || opcionesVisibles(g).length === 0
+  // agrandado. Por eso, al agrandar, el grupo de bebida normal de ESA bebida deja
+  // de ofrecer bebidas: el sabor se elige en "Bebida Agrandado" y es el que se descuenta.
+  const filtraBebidas = (sec, g) => esSecBebida(sec) && secAgrandada(sec) && esGrupoBebida(g)
+  const opcionesVisibles = (sec, g) =>
+    filtraBebidas(sec, g) ? (g.opciones || []).filter(esOpcionAgrandado) : (g.opciones || [])
+  const grupoOculto = (sec, g) =>
+    (esGrupoSabores(g) && !secAgrandada(sec)) || tapaDisparador(sec, g) || opcionesVisibles(sec, g).length === 0
 
   const modsDe = (secKey, grupos) => {
     const out = []
+    const sec = secciones.find(sc => sc.key === secKey) || { key: secKey, grupos }
     ;(grupos || []).forEach(g => {
-      if (grupoOculto(g)) return   // selección huérfana (des-agrandó o agrandó): se ignora
-      const visibles = opcionesVisibles(g)
+      if (grupoOculto(sec, g)) return   // selección huérfana (des-agrandó o agrandó): se ignora
+      const visibles = opcionesVisibles(sec, g)
       ;(sel[secKey + ':' + g.id] || []).forEach(mid => {
         // Solo cuentan las opciones visibles: la bebida elegida antes de agrandar
         // no debe viajar a la comanda ni descontarse dos veces del inventario.
@@ -2319,13 +2354,13 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   const falta = secciones.find(sec => sec.grupos.some(g => {
     const n = (sel[sec.key + ':' + g.id] || []).length
     // Un grupo oculto no se exige (el de bebida normal cuando se agrandó)
-    if (grupoOculto(g)) return false
-    // Con el agrandado marcado la bebida se elige en "Bebida Agrandado", así que
+    if (grupoOculto(sec, g)) return false
+    // Con esta bebida agrandada el sabor se elige en "Bebida Agrandado", así que
     // el grupo normal ya no se exige: si el agrandado se marcó en otra sección
-    // (Salsas Papas), pedirlo acá obligaría a cobrarlo dos veces.
-    if (filtraBebidas(g)) return false
-    // El grupo del agrandado solo es obligatorio cuando hay Agrandado marcado
-    if (esGrupoSabores(g)) return hayAgrandado && n < 1
+    // (papas), pedirlo acá obligaría a cobrarlo dos veces.
+    if (filtraBebidas(sec, g)) return false
+    // El grupo del agrandado solo es obligatorio en la bebida que va agrandada
+    if (esGrupoSabores(g)) return secAgrandada(sec) && n < 1
     if (g.obligatorio && n < 1) return true
     if (g.min_selecciones > 0 && n < g.min_selecciones) return true
     return false
@@ -2357,10 +2392,11 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                 {grupos.length === 0 && <span style={{ color: '#6b6878', fontWeight: 400, fontSize: 12 }}> · incluido</span>}
               </div>
               {grupos.map(g => {
-                // "Bebida Agrandado" solo aparece cuando el Agrandado está marcado
-                // (en esta sección o en otra: papas o bebida, ambas vías valen).
-                // Y al agrandar se esconde el menú de bebida normal: un solo menú.
-                if (grupoOculto(g)) return null
+                // "Bebida Agrandado" solo aparece en la bebida que va agrandada
+                // (por su propio $0.50 o por el $1.25 de las papas que le tocó).
+                // Y al agrandar se esconde el menú de bebida normal de ESA bebida.
+                const secR = secciones.find(sc => sc.key === 'c' + i) || { key: 'c' + i, grupos }
+                if (grupoOculto(secR, g)) return null
                 return (
                 <div key={g.id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
@@ -2372,7 +2408,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                   {/* Mismo grid de botones que ProductoModifiersModal: al pasar los combos a
                       componentes se perdía esta vista y el cajero veía una lista distinta. */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
-                    {opcionesVisibles(g).map(m => {
+                    {opcionesVisibles(secR, g).map(m => {
                       const on = (sel['c' + i + ':' + g.id] || []).includes(m.id)
                       const px = Number(m.precio_extra) || 0
                       const enTope = g.max_selecciones > 0 && (sel['c' + i + ':' + g.id] || []).length >= g.max_selecciones
@@ -2410,7 +2446,8 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>General</div>
             {combo.modGrupos.map(g => {
-              if (grupoOculto(g)) return null
+              const secG = secciones.find(sc => sc.key === 'combo') || { key: 'combo', grupos: combo.modGrupos }
+              if (grupoOculto(secG, g)) return null
               return (
               <div key={g.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
@@ -2420,7 +2457,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                   <span style={{ fontSize: 10, color: '#8b8997' }}>{reqLabel(g)}</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
-                  {opcionesVisibles(g).map(m => {
+                  {opcionesVisibles(secG, g).map(m => {
                     const on = (sel['combo:' + g.id] || []).includes(m.id)
                     const px = Number(m.precio_extra) || 0
                     const enTope = g.max_selecciones > 0 && (sel['combo:' + g.id] || []).length >= g.max_selecciones
