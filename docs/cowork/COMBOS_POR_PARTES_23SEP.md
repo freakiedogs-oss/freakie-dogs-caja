@@ -12,7 +12,9 @@ Para poder botar o reutilizar **una parte** de un combo (fase 2 del KDS) se asig
 
 **Decisiones de Frank (23-sep):** el Chili Duo **sí lleva aros**; los jalapeños del XL van en **uno** de los dos hot dogs; en el Royal la trufa/quesos van en **papas y hamburguesas**; la cerveza de los Pilsener **no** se vuelve parte del KDS (es bebida, no se desperdicia así); el Burger Box debe descontar el **depósito de 2 oz**.
 
-**Pendientes:** cuántos depósitos trae `DEPOSITO DE 2 OZ CAJA` (y si lleva tapa) para cargarlo al Burger Box y al Pilsener Burger Box; insumos de las mejoras cobradas que descuentan cero (30 días en combos: Papas Trufa 224, Clásica 231, Aros 240, Peperoncini 217, Fancy Fries 204) — propuesta hecha, falta confirmar cantidades.
+**Mismo día (migración `super_freak_unificado_y_deposito_2oz_23sep`):** el "Combo Super Freak" repetido de Delivery se unificó en el original (`421c4de2`): sus 10 ventas pasaron al original y el repetido se borró. Burger Box y Pilsener Burger Box descuentan `DEPOSITO DE 2 OZ CAJA` y `Tapadera 2 onzas` a 1/1000 (Frank: Casa Matriz los maneja en cajas de 1,000 depósitos y 1,000 tapaderas). Ojo: esos dos productos no están en el conteo de las sucursales, solo en Casa Matriz.
+
+**Pendientes:** insumos de las mejoras cobradas que descuentan cero (30 días en combos: Papas Trufa 224, Clásica 231, Aros 240, Peperoncini 217, Fancy Fries 204) — propuesta hecha, falta confirmar cantidades.
 
 **Lección (mía):** antes de preguntar reglas del menú, leer esta bitácora. La regla "Local sin bebida" (1-sep), las cantidades del Royal (Cesar 29-ago) y el problema de los Pilsener (8-sep) ya estaban acá y los pregunté igual.
 
