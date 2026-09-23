@@ -122,6 +122,43 @@ Mauricio Bolaños entregó el 22-sep cuatro documentos controlados: el informe d
 - **Decisión de Cesar: la v2 retiene.** Con una falla el paso **no se cierra** — en vez del panel de desvío aparece qué corregir y el botón se habilita solo al volver a medir. La piloto sigue como estaba: con causa y acción el paso se registra igual.
 - **H-03 resuelto para las dos versiones:** se quitó `UNIQUE (corrida_id, paso_id)` y `bpm_registros` gana `intento`. El retest es el intento N+1, el anterior no se borra y la pantalla muestra el último. Ese era el error de clave duplicada que Mauricio cita en el informe.
 - **Queda abierto:** H-04 y H-36 — liberar todavía usa `prompt()`/`confirm()` del navegador, sin rol de Calidad ni disposiciones catalogadas. Y el veredicto lo sigue calculando el navegador, no el servidor (T-02). Son las dos piezas grandes de la ruta de Mauricio.
+## 23-Sep-2026 — Lo que la venta descuenta ahora es lo que la sucursal cuenta (equivalencias de descarga)
+
+Salió de la tabla de críticos que Cesar armó para Cafetalón ("se cuenta un producto y se descuenta otro"). Validada contra el sistema, y de paso se vio que **no era de Cafetalón: pasaba igual en las 6 sucursales**.
+
+**La causa de fondo no eran recetas con cantidades malas.** El mismo producto físico existía como 2 o 3 productos de catálogo (el de compra, el de receta, el de conteo), y la venta caía en uno que nadie contaba. Con eso, el conteo nocturno "corregía" la diferencia cada noche y la dejaba como faltante:
+- **Papa sazonada:** la sub-receta `Papa Sazonada` sigue teniendo `catalogo_id` aunque Casa Matriz dejó de porcionar el 7-sep y la receta está inactiva. `pos_deducir_inventario` frena la explosión en toda sub-receta con producto asignado, **esté activa o no**, así que la venta descontaba ~280 porciones por día que nadie produce ni cuenta. La bolsa de 30 lb, que es la que se cuenta, se ajustó **−9,891 lb en 14 días (≈ $12.5K)**, en 50 de 53 noches. **Críticos también estaba ciego ahí:** leía una venta de 0 a 1.4 lb por día en Cafetalón.
+- **Pepinillo:** la hamburguesa descuenta 0.4233 oz de `228941` (la cantidad está bien); la sucursal cuenta botes. **Queso para dorar:** venta en lb, conteo en bolsitas. **Mermelada:** venta en tandas, conteo en bolsas. Lo mismo con **waffle** (27LB y NAT CAJA vs Papa Waffle, que en 5 sucursales ni tenía inventario), **Cebolla Blanca vs Cebolla bolsa**, y **sobres de mayonesa y ketchup vs cajas**.
+
+**Por qué una tabla nueva y no reescribir recetas:** los productos que se cuentan (`Pepinillo para burguer bote`, `Mermelada bolsa`, la bolsita) tienen **costo $0**. Apuntar las recetas a ellos hubiera tirado el costeo del menú. Además, reescribir recetas cambia lo que produce Casa Matriz (`registrar_produccion`). `inventario_equivalencias(producto_origen → producto_destino, factor)` redirige **sólo la descarga por venta**; recetas, costeo y producción quedan intactos. Se parchearon los **3 motores** de descarga por venta: `pos_deducir_inventario`, `pos_deducir_preview` y `pos_explotar_linea` (este último lo usan `pos_anular_item` y `_pos_merma_producto_sync`, así que anular devuelve al mismo producto que se descontó). El parche se aplicó sobre `pg_get_functiondef` y falla si el patrón no aparece exactamente una vez. Un trigger impide las cadenas (un destino no puede ser origen).
+
+**Las 9 equivalencias, con factores sacados de las recetas (no inventados):** pepinillo 1/19.12 bote por oz escurrida (factor de Cesar del 26-ago) · queso para dorar 1/0.30 bolsita por lb (receta Queso Frito, Jose 19-ago) · mermelada 1/(0.014337×32), para que 1 oz vendida = 1/32 de bolsa de 2 lb · porción de papa 0.35 lb · waffle 1:1 (dos orígenes) · cebolla blanca 1:1 (bolsas de 2 lb) · sobres 1/900 y 1/1000. A los destinos sin costo se les puso `precio_referencia` = costo del origen ÷ factor: bolsita $1.17, bote $6.29, bolsa de cebolla $1.32. Así Consumo por Venta, los montos de Críticos y la valorización de faltantes no caen a $0.
+
+**Verificado en transacciones revertidas:** 1,095 cuentas de 2 días con preview antes/después. Cambian sólo los productos redirigidos, con la aritmética exacta (469.44 oz × 1/19.12 = 24.55 botes; 1,749 porciones × 0.35 + 2.8 = 614.95 lb; 42.3 lb / 0.30 = 141 bolsitas); los otros 75 productos, idénticos. También se probó la descarga real de una cuenta con hamburguesa y papas y la anulación de una línea: las dos usan los productos nuevos.
+
+**Otros arreglos del mismo lote:**
+- **Adivina la Marca:** la receta estaba bien (20 cartitas a $0.045). Lo malo era el conteo, con factor 1: contar una bolsa guardaba una cartita, y por eso salía sobrante las 50 noches. Ahora el factor es 20, con sueltas en cartitas, y el mínimo y el máximo se multiplicaron ×20.
+- **Bolsita de queso y bidón de aceite** estaban desactivados, pero son lo que se despacha y se cuenta: se reactivaron. La bolsita se renombró a "0.30 lb", que es lo que dice la receta.
+- **Críticos, fila Queso P Freir:** ahora suma también las bolsitas, con factor 0.30.
+- Salieron del conteo el pan "[unificado]", el pastel porción y el plato "Queso frito" (duplicaba la bolsita en S006).
+
+**Conteo nocturno (pantalla):** cada casilla muestra su unidad pegada al número. La conversión va en vivo y en palabras ("3 × Paquete de 20 bolitas + 7 bolitas = 67 bolitas"). Los productos que no se cuentan con sueltas muestran la ayuda "medio = 0.5". La ventana del PIN de faltante habla en lo que se contó ("−12 bolitas" en vez de "−12 unidad"; "2 libras" en vez de "−0.4 bolsa"). **Tolerancias** con los valores de la tabla de Cesar, en la columna nueva `catalogo_productos.conteo_tolerancia` (en unidad de stock): dentro del margen no se pinta rojo ni se pide PIN. El tocino, el chili y el cheddar **siguen en bolsas con fracción** ("medio = 0.5"): se los pasó a lascas y libras y se revirtió el mismo día, para seguir el criterio que Saúl fijó para Críticos (los productos de peso se cuentan como fracción del empaque). **No se tocó** que el borde se ponga rojo mientras se escribe, ni que el + arranque desde el teórico: es una decisión pendiente de Jose/Cesar (hoy deja "ajustar hasta que se ponga verde").
+
+**Editor de Recetas:** avisa (sin bloquear el guardado) cuando una materia prima **no se cuenta en ninguna sucursal y no tiene equivalencia**; cuando la unidad de la línea no coincide con la del producto y **no hay factor** (hoy son 16 líneas activas); y cuando una **sub-receta desactivada sigue asignada a un producto** y frena la descarga. Si hay equivalencia, avisa en azul cómo se descarga en sucursal.
+
+**Alarmas: `fn_salud_inventario(p_dias)`.** Detecta las **descargas huérfanas** (la venta descuenta algo que nadie cuenta y sin equivalencia) y el **ajuste crónico** (el conteo corrige siempre hacia el mismo lado), con un diagnóstico: `sistema` si el desvío aparece en 4 sucursales o más, `operacion` si aparece en 1 o 2, y `sin_receta` si sale sin venta y ningún insumo lo usa (consumo interno o un ingrediente que falta en las recetas). También lista los productos inactivos que siguen en el conteo, los contados sin inventario y las sub-recetas que frenan la descarga. El campo `equivalencia_desde` marca desde cuándo rige un arreglo: el desvío anterior a esa fecha es historia. La corre **cada mañana una rutina** que propone o aplica ajustes.
+
+**Pendientes que ya marca la alarma** (no se tocaron hoy):
+- **Mayonesa Hellmans:** 3,654 oz en 14 días; las recetas descuentan esa marca histórica.
+- **Salsa barbacoa:** $181.
+- **Aros de cebolla porción:** $167. **Ojo:** los aros que sí se cuentan ya dan sobrante.
+- **Kolashampan:** −1,950 fardos. Tiene toda la pinta de ser un problema de unidades.
+- **Salchicha, cheddar, chipotle y pan Berna:** faltante en 4 sucursales.
+- **Cheesecake Ailyn** (inactivo) sigue en el conteo.
+- **Papa:** la receta dice 0.35 lb por porción, pero el consumo físico medido en Cafetalón da cerca de 0.59. Si la alarma sigue mostrando faltante de papa en todas las sucursales, **es la porción**, no una fuga.
+
+Migraciones: `inventario_equivalencias_descarga`, `inventario_equivalencias_carga_inicial`, `fn_salud_inventario` (+2 parches), `conteo_tolerancia_y_sueltas_criticos`. El consolidado está en `supabase/migrations/20260923_equivalencias_descarga.sql`.
+
 ## 23-Sep-2026 — Coca-Cola Combo XL sin bebida en local + aviso "hay más opciones abajo" en el ComboModal
 
 Jose mandó captura de Mesa #2 (Cafetalón): en el Coca-Cola Combo "no se puede cambiar la bebida por $0.50 como en el Royal".

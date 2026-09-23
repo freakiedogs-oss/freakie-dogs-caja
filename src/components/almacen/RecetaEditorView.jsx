@@ -34,15 +34,17 @@ export default function RecetaEditorView({ user }) {
   const [rendLocal, setRendLocal] = useState(null); // { valor, unidad }
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [equiv, setEquiv] = useState({}); // producto_origen → { factor, destino: { nombre } }
 
   const cargar = useCallback(async () => {
     setLoading(true);
-    const [rRes, iRes, cRes, cpRes, pmRes] = await Promise.all([
+    const [rRes, iRes, cRes, cpRes, pmRes, eqRes] = await Promise.all([
       db.from('recetas').select('id,nombre,tipo,rendimiento,unidad_rendimiento,precio_venta,notas,activo,catalogo_id,aprobada_por,aprobada_at').eq('activo', true).order('nombre'),
-      db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,activo), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,rendimiento,unidad_rendimiento,catalogo_id)'),
-      db.from('catalogo_productos').select('id,nombre,unidad_medida,activo').eq('activo', true).order('nombre'),
+      db.from('receta_ingredientes').select('*, catalogo_productos(id,nombre,unidad_medida,activo,incluir_conteo), sub:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,tipo,rendimiento,unidad_rendimiento,catalogo_id,activo)'),
+      db.from('catalogo_productos').select('id,nombre,unidad_medida,activo,incluir_conteo').eq('activo', true).order('nombre'),
       db.rpc('costos_productos_recetas'),
       db.from('pos_menu_items').select('producto_id,precio').not('producto_id', 'is', null),
+      db.from('inventario_equivalencias').select('producto_origen,factor,destino:catalogo_productos!inventario_equivalencias_producto_destino_fkey(nombre)').eq('activo', true),
     ]);
     setRecetas(rRes.data || []);
     const grouped = {};
@@ -54,6 +56,8 @@ export default function RecetaEditorView({ user }) {
     setCostoProd(cpMap);
     const pm = {}; (pmRes.data || []).forEach(x => { pm[x.producto_id] = Math.max(pm[x.producto_id] || 0, n(x.precio)); });
     setPrecioMenu(pm);
+    const eq = {}; (eqRes.data || []).forEach(x => { eq[x.producto_origen] = x; });
+    setEquiv(eq);
     setLoading(false);
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
@@ -168,6 +172,32 @@ export default function RecetaEditorView({ user }) {
   const margen = precio > 0 ? (precio - costoU) / precio * 100 : null;
   const sinCosto = lineas.filter(l => l.tipo_ingrediente === 'materia_prima' && !(n(costoProd[l.producto_id]) > 0))
     .map(l => l.catalogo_productos?.nombre || '?');
+
+  // ── Candados de descarga (23-sep-2026) ─────────────────────────────────────
+  // Lo que la venta descuenta tiene que ser lo que la sucursal cuenta. Estos
+  // avisos no bloquean el guardado: señalan las tres formas en que nacían los
+  // descuadres del conteo nocturno (pepinillos, papas, queso, mermelada…).
+  const normU = (u) => {
+    const x = String(u || '').trim().toLowerCase().replace(/\.$/, '');
+    if (['lb', 'lbs', 'libra', 'libras'].includes(x)) return 'lb';
+    if (['oz', 'onza', 'onzas'].includes(x)) return 'oz';
+    if (['g', 'gr', 'gramo', 'gramos'].includes(x)) return 'g';
+    if (['unidad', 'unidades', 'u', 'un'].includes(x)) return 'unidad';
+    return x.replace(/es$|s$/, '');
+  };
+  const avisos = [];
+  lineas.forEach(l => {
+    if (l.tipo_ingrediente === 'materia_prima' && l.catalogo_productos) {
+      const cp = l.catalogo_productos; const eq = equiv[l.producto_id];
+      if (eq) avisos.push({ nivel: 'info', txt: `${cp.nombre}: en sucursal se descuenta como "${eq.destino?.nombre}" (1 ${cp.unidad_medida} = ${Number(eq.factor).toFixed(4)}).` });
+      else if (cp.incluir_conteo === false) avisos.push({ nivel: 'warn', txt: `${cp.nombre}: la venta lo va a descontar, pero ninguna sucursal lo cuenta. Si en sucursal se cuenta con otro producto, hay que cargar la equivalencia; si no, el conteo nunca va a cuadrar.` });
+      const fac = l.factor_a_stock;
+      if ((fac === null || fac === '' || fac === undefined) && l.unidad_medida && cp.unidad_medida && normU(l.unidad_medida) !== normU(cp.unidad_medida))
+        avisos.push({ nivel: 'error', txt: `${cp.nombre}: la receta pide ${l.cantidad} ${l.unidad_medida} pero el inventario vive en ${cp.unidad_medida} y no hay factor. Se va a descontar ${l.cantidad} ${cp.unidad_medida} por venta. Llená la columna factor.` });
+    }
+    if (l.tipo_ingrediente === 'sub_receta' && l.sub?.catalogo_id && l.sub.activo === false && !equiv[l.sub.catalogo_id])
+      avisos.push({ nivel: 'warn', txt: `${l.sub.nombre}: la sub-receta está desactivada pero sigue asignada a un producto, así que la venta se detiene ahí y descuenta ese producto (nadie lo produce ni lo cuenta).` });
+  });
 
   const filtro = buscar.trim().toLowerCase();
   const visible = (r) => !filtro || r.nombre.toLowerCase().includes(filtro);
@@ -305,6 +335,18 @@ export default function RecetaEditorView({ user }) {
             {sinCosto.length > 0 && (
               <div style={{ background: '#3a2f0f', border: '1px solid #5c4a14', color: '#fcd34d', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginTop: 10 }}>
                 ⚠ Sin costo cargado: {sinCosto.join(' · ')} — se consumen pero valen $0 en el costeo (mapeá su factura en Mapeo Compras).
+              </div>
+            )}
+            {avisos.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                {avisos.map((a, k) => (
+                  <div key={k} style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8,
+                    background: a.nivel === 'error' ? '#3a1414' : a.nivel === 'warn' ? '#3a2f0f' : '#12243a',
+                    border: `1px solid ${a.nivel === 'error' ? '#7f1d1d' : a.nivel === 'warn' ? '#5c4a14' : '#1e3a5f'}`,
+                    color: a.nivel === 'error' ? '#fca5a5' : a.nivel === 'warn' ? '#fcd34d' : '#93c5fd' }}>
+                    {a.nivel === 'error' ? '⛔ ' : a.nivel === 'warn' ? '⚠ ' : 'ℹ '}{a.txt}
+                  </div>
+                ))}
               </div>
             )}
           </div>

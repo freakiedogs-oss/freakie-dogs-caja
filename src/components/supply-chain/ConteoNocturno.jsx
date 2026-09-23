@@ -91,6 +91,25 @@ const margenSobranteStock=(p)=>{
 // nombre, que es el que entiende quien cuenta.
 const unidadStock=(p)=>
   (esFraccionado(p)&&facSuelta(p)===1&&p?.conteo_unidad_suelta) ? p.conteo_unidad_suelta : (p?.unidad||'unidad');
+/* ── Tolerancia (tabla de críticos de Cesar, 22-sep-2026) ─────────────────────
+   `conteo_tolerancia` está en UNIDAD DE STOCK. Una diferencia dentro de ± ese
+   valor no se pinta en rojo ni pide PIN: contar ±2 bolitas de carne no es una
+   fuga, es el margen normal de un conteo a mano. Fuera de la tolerancia todo
+   sigue igual que antes (el faltante entero va al PIN y a las fugas). */
+const tolerancia=(p)=>Math.max(0,n(p?.conteo_tolerancia));
+const fueraDeTolerancia=(p,diff)=>diff!==null&&Math.abs(diff)>tolerancia(p)+1e-9;
+// Una cantidad en unidad de stock dicha en lo que la sucursal cuenta:
+// "12 bolitas", "1.5 bolsas de 5 libras", "3 panes". Para la ventana de
+// faltantes, que antes decía "−0.0476 bolsa" y nadie sabía qué firmaba.
+const enUnidadContada=(p,qty)=>{
+  const q=n(qty);
+  if(esFraccionado(p)&&p?.conteo_unidad_suelta){
+    const s=q/facSuelta(p);
+    return `${redondear(Math.round(s*100)/100)} ${p.conteo_unidad_suelta}`;
+  }
+  if(facCerrado(p)!==1) return `${redondear(Math.round(q/facCerrado(p)*100)/100)} × ${labelCerrado(p)}`;
+  return `${redondear(q)} ${p?.conteo_unidad||p?.unidad||''}`.trim();
+};
 // presentación → stock
 const aStock=(p,cerrados,sueltas)=>
   n(cerrados)*facCerrado(p) + (esFraccionado(p)?n(sueltas)*facSuelta(p):0);
@@ -121,6 +140,7 @@ const camposConteo=(cp)=>({
   conteo_unidad_suelta: cp?.conteo_unidad_suelta||null,
   conteo_factor_suelta: cp?.conteo_factor_suelta??1,
   margen_sobrante_sueltas: cp?.margen_sobrante_sueltas??2,
+  conteo_tolerancia: cp?.conteo_tolerancia??0,
   cerrados: null, sueltas: null,
 });
 
@@ -320,7 +340,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
 
       // 2. Cargar solo productos marcados para conteo nocturno
       const {data:invData} = await db.from('inventario')
-        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas)')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, incluir_conteo, conteo_categoria, conteo_orden, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas, conteo_tolerancia)')
         .eq('sucursal_id', sucId)
         .eq('catalogo_productos.incluir_conteo', true);
 
@@ -520,7 +540,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
 
       if(!yaAlimentos || !yaBebidas){
         const {data:invData}=await db.from('inventario')
-          .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas)')
+          .select('producto_id, catalogo_productos(id, nombre, unidad_medida, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas, conteo_tolerancia)')
           .eq('sucursal_id', sucId);
         const activos=(invData||[]).filter(r=>r.catalogo_productos && r.catalogo_productos.activo!==false);
         const mapear=r=>({producto_id:r.producto_id, nombre:r.catalogo_productos.nombre,
@@ -617,7 +637,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
     setLoading(true);
     try{
       const {data:invData}=await db.from('inventario')
-        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas)')
+        .select('id, producto_id, stock_actual, stock_minimo, stock_maximo, catalogo_productos(id, nombre, unidad_medida, categoria, conteo_categoria, conteo_orden, activo, conteo_modo, conteo_unidad, conteo_factor, conteo_fraccionado, conteo_unidad_suelta, conteo_factor_suelta, margen_sobrante_sueltas, conteo_tolerancia)')
         .eq('sucursal_id', sucId);
       // El corte ya no es por categoría sino por `conteo_modo`: Jose separó el
       // pedido de La Constancia + Nescafé (BEES) del conteo normal. Filtrar por
@@ -909,9 +929,10 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
 
   // Faltantes = contado por debajo del teórico. Es lo que la sucursal tiene que
   // explicar (y lo que se le descuenta), así que se calcula sobre lo mismo que ve
-  // en pantalla.
+  // en pantalla. Dentro de la tolerancia del producto no es faltante.
   const calcFaltantes=()=>productos
-    .filter(p=>p.cantidad_real!==null && n(p.cantidad_real) < n(p.stock_teorico))
+    .filter(p=>p.cantidad_real!==null && n(p.cantidad_real) < n(p.stock_teorico)
+            && fueraDeTolerancia(p, n(p.cantidad_real)-n(p.stock_teorico)))
     .map(p=>({producto_id:p.producto_id, nombre:p.nombre, unidad:p.unidad,
               cantidad:Math.round((n(p.stock_teorico)-n(p.cantidad_real))*10000)/10000}));
 
@@ -1716,12 +1737,15 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
           </div>
 
           <div style={{maxHeight:150,overflowY:'auto',background:'#0d0d10',borderRadius:10,padding:10,marginBottom:12}}>
-            {g.faltantes.map(f=>(
+            {g.faltantes.map(f=>{
+              // En lo que se contó ("−12 bolitas"), no en la unidad interna.
+              const p=productos.find(x=>x.producto_id===f.producto_id);
+              return(
               <div key={f.producto_id} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',color:'#ccc'}}>
                 <span style={{flex:1,paddingRight:8}}>{f.nombre}</span>
-                <b style={{color:'#e63946'}}>−{f.cantidad} {f.unidad}</b>
+                <b style={{color:'#e63946',whiteSpace:'nowrap'}}>−{p?enUnidadContada(p,f.cantidad):`${f.cantidad} ${f.unidad}`}</b>
               </div>
-            ))}
+            );})}
           </div>
 
           {!g.auth?(
@@ -1869,7 +1893,8 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
               const diff=getDiferencia(p);
               // En bebidas no se pinta rojo contra el teórico: hasta que las entregas
               // de La Constancia se registren todas, ese teórico no es confiable.
-              const noCuadra=modo!=='bebidas'&&contado&&diff!==null&&diff!==0;
+              // Dentro de la tolerancia del producto (±2 bolitas, ±1 pan…) no es descuadre.
+              const noCuadra=modo!=='bebidas'&&contado&&fueraDeTolerancia(p,diff);
               return(
               <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${noCuadra?'#e63946':contado?'#4ade80':'#333'}`,transition:'border 0.2s'}}>
                 <div style={{fontWeight:600,fontSize:14,marginBottom:8,color:noCuadra?'#e63946':'#fff'}}>{p.nombre}</div>
@@ -1896,6 +1921,16 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
                     placeholder="—"/>
                   <button style={stepBtn} onClick={()=>stepCantidad(p.producto_id,1)}>+</button>
                 </div>
+                {/* La unidad pegada al número: sin esto la casilla era un número
+                    suelto y se digitaban libras donde van bolsas. */}
+                <div style={{fontSize:12,color:'#60a5fa',textAlign:'center',marginTop:4}}>
+                  {esFraccionado(p)?'empaques cerrados':'empaques'} · {labelCerrado(p)}
+                </div>
+                {!esFraccionado(p)&&facCerrado(p)<=1&&(
+                  <div style={{fontSize:11,color:'#777',textAlign:'center',marginTop:2}}>
+                    ¿Hay uno abierto? Escribí la fracción: medio = 0.5 · un cuarto = 0.25
+                  </div>
+                )}
 
                 {/* ── Segunda casilla: lo que quedo del empaque abierto ── */}
                 {esFraccionado(p)&&(<>
@@ -1911,13 +1946,19 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
                       placeholder="0"/>
                     <div style={{width:48,flexShrink:0}}/>
                   </div>
+                  <div style={{fontSize:12,color:'#facc15',textAlign:'center',marginTop:4}}>{labelSuelta(p)} sueltas</div>
                 </>)}
 
                 {/* Equivalencia: lo que realmente entra al inventario. Solo se
                     muestra cuando la presentación no es 1:1 con el stock. */}
+                {/* En vivo y en palabras: "3 × Paquete de 20 bolitas + 7 bolitas = 67 bolitas". */}
                 {contado&&(esFraccionado(p)||facCerrado(p)!==1)&&(
-                  <div style={{fontSize:12,color:'#888',marginTop:10,textAlign:'center'}}>
-                    = <b style={{color:'#ccc'}}>{redondear(p.cantidad_real)}</b> {unidadStock(p)} en inventario
+                  <div style={{fontSize:12,color:'#888',marginTop:10,textAlign:'center',lineHeight:1.4}}>
+                    {n(p.cerrados)} × {labelCerrado(p)}
+                    {esFraccionado(p)&&<> + {n(p.sueltas)} {labelSuelta(p)}</>}
+                    {' = '}<b style={{color:'#ccc'}}>{esFraccionado(p)&&p.conteo_unidad_suelta
+                      ? `${redondear(Math.round(n(p.cantidad_real)/facSuelta(p)*100)/100)} ${labelSuelta(p)}`
+                      : `${redondear(p.cantidad_real)} ${unidadStock(p)}`}</b>
                   </div>
                 )}
               </div>
