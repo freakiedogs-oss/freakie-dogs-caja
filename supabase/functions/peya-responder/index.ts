@@ -275,7 +275,7 @@ async function accionTienda(
   const resultados: Record<string, unknown>[] = [];
   for (const p of cambiables) {
     const permitidos: string[] = Array.isArray(p.availabilityStates) ? p.availabilityStates : [];
-    let estado: string;
+    let estado = "";
 
     if (abrir) {
       if (!permitidos.includes("OPEN")) {
@@ -286,13 +286,10 @@ async function accionTienda(
     } else {
       // `closingMinutes` sólo funciona con CLOSED_UNTIL — el resto lo ignora. Si la
       // plataforma no lo acepta, se cae a CLOSED, que es un cierre sin hora de vuelta.
-      estado = minutos && permitidos.includes("CLOSED_UNTIL")
-        ? "CLOSED_UNTIL"
-        : permitidos.includes("CLOSED")
-        ? "CLOSED"
-        : permitidos.includes("CLOSED_UNTIL")
-        ? "CLOSED_UNTIL"
-        : "";
+      if (minutos && permitidos.includes("CLOSED_UNTIL")) estado = "CLOSED_UNTIL";
+      else if (permitidos.includes("CLOSED")) estado = "CLOSED";
+      else if (permitidos.includes("CLOSED_UNTIL")) estado = "CLOSED_UNTIL";
+
       if (!estado) {
         resultados.push({ platformKey: p.platformKey, omitida: "no_acepta_cierre", permitidos });
         continue;
@@ -309,11 +306,9 @@ async function accionTienda(
       // El motivo también sale de lo que declaró esa plataforma; si no lo acepta, se
       // usa el primero de su lista antes que arriesgar un 400 por un enum ajeno.
       const motivosOk: string[] = Array.isArray(p.closingReasons) ? p.closingReasons : [];
-      cuerpoPut.closedReason = motivosOk.includes(motivo)
-        ? motivo
-        : motivosOk.includes("OTHER")
-        ? "OTHER"
-        : motivosOk[0] ?? motivo;
+      if (motivosOk.includes(motivo)) cuerpoPut.closedReason = motivo;
+      else if (motivosOk.includes("OTHER")) cuerpoPut.closedReason = "OTHER";
+      else cuerpoPut.closedReason = motivosOk[0] ?? motivo;
 
       if (estado === "CLOSED_UNTIL" && minutos) {
         // Sus `closingMinutes` son una lista cerrada (30/60/120/...): se elige el
@@ -326,12 +321,13 @@ async function accionTienda(
     }
 
     const put = await enviarADH(urlDisp, cuerpoPut, "PUT");
+    const okPut = put.status >= 200 && put.status < 300;
     resultados.push({
       platformKey: p.platformKey,
       enviado: cuerpoPut,
       http: put.status,
-      ok: put.status >= 200 && put.status < 300,
-      respuesta: put.status >= 200 && put.status < 300 ? undefined : put.texto,
+      ok: okPut,
+      respuesta: okPut ? undefined : put.texto,
     });
   }
 
@@ -352,13 +348,14 @@ async function accionTienda(
     local = l;
   }
 
-  return json({
+  const salida: Record<string, unknown> = {
     ok: algunoOk,
     abierta: abrir,
     plataformas: resultados,
     local,
-    ...(algunoOk && !todoOk ? { aviso: "alguna plataforma no aceptó el cambio" } : {}),
-  }, algunoOk ? 200 : 502);
+  };
+  if (algunoOk && !todoOk) salida.aviso = "alguna plataforma no aceptó el cambio";
+  return json(salida, algunoOk ? 200 : 502);
 }
 
 // ---------- Quién puede contestar un pedido ----------
@@ -422,7 +419,7 @@ Deno.serve(async (req) => {
 
   const ACCIONES = ["aceptar", "rechazar", "preparado", "retirado", "ajustar_prep"];
   if (!ACCIONES.includes(accion)) {
-    return json({ error: "accion_invalida", validas: [...ACCIONES, "tienda"] }, 400);
+    return json({ error: "accion_invalida", validas: ACCIONES.concat(["tienda"]) }, 400);
   }
   if (!remoteOrderId && !orderToken) {
     return json({ error: "falta_remoteOrderId_u_orderToken" }, 400);
@@ -454,7 +451,7 @@ Deno.serve(async (req) => {
       error: "motivo_invalido",
       motivo,
       message: "Delivery Hero rebota los motivos que no están en su lista.",
-      validos: [...MOTIVOS_VALIDOS],
+      validos: Array.from(MOTIVOS_VALIDOS),
     }, 400);
   }
 
