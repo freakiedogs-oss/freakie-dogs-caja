@@ -12,10 +12,10 @@
 import {
   auditar, auditarHoja, resumenHoja, agruparPorCategoria,
   aStock, paquetesAStock, sueltasAStock, aEmpaques, aPayload,
-  estadoFila, pisoTolerancia, facSuelta,
+  estadoFila, pisoRedondeo, facSuelta, esPeso, tolerancinaPct,
   auditarSemana, semanasRecientes, fmtUSD,
   decirEnEmpaques, fmtCant, vacio,
-  TOL_PCT_OK, TOL_PCT_AVISO, TOL_PISO_SUELTAS,
+  TOL_PCT_PESO, EPS_PIEZA,
 } from '../src/components/dashboard/criticosConteo.js'
 
 let fallos = 0, pruebas = 0
@@ -26,30 +26,36 @@ const cerca = (a, b, tol = 0.0005) => a != null && b != null && Math.abs(a - b) 
 const CARNE = {
   item_id: 'i1', orden: 1, categoria: 'Carnicos', nombre: 'Carne P Burguer',
   unidad_conteo: 'Paquete de 20 bolitas', unidad_stock: 'unidad',
+  clase: 'porcionado',
   factor: 20, fraccionado: true, unidad_suelta: 'bolitas', factor_suelta: 1,
   costo_unit: 0.7168,   // real, de v_fd_costo_insumo
 }
 const CHILI = {
   item_id: 'i4', orden: 4, categoria: 'Carnicos', nombre: 'Chili',
   unidad_conteo: 'Bolsa de 5 libras', unidad_stock: 'bolsa',
-  factor: 1, fraccionado: true, unidad_suelta: 'libras', factor_suelta: 0.2,
+  clase: 'peso',        // la bolsa abierta se pesa: En Línea es la fracción
+  factor: 1, fraccionado: true, unidad_suelta: 'de bolsa', factor_suelta: 1,
   costo_unit: 11.5775,
 }
 const PAN = {
   item_id: 'i13', orden: 13, categoria: 'Harinas Panes', nombre: 'Pan Para Burguer',
   unidad_conteo: 'Bolsa de 12 unidades', unidad_stock: 'unidad',
+  clase: 'porcionado',
   factor: 12, fraccionado: true, unidad_suelta: 'panes', factor_suelta: 1,
+  costo_unit: 0.3768,
 }
 const QUESO = {
   item_id: 'i6', orden: 6, categoria: 'Lacteos', nombre: 'Queso Mozzarela',
   unidad_conteo: 'Paquete de 5 libras', unidad_stock: 'lb',
-  factor: 5, fraccionado: true, unidad_suelta: 'lascas', factor_suelta: 0.034,
+  clase: 'peso',
+  factor: 5, fraccionado: true, unidad_suelta: 'de paquete', factor_suelta: 5,
   costo_unit: 3.45,
 }
 const PAPA = {
   item_id: 'i9', orden: 9, categoria: 'Congelados', nombre: 'Papas Sazonadas',
   unidad_conteo: 'Bolsa de 5 libras', unidad_stock: 'libra',
-  factor: 5, fraccionado: true, unidad_suelta: 'libras', factor_suelta: 1,
+  clase: 'peso',
+  factor: 5, fraccionado: true, unidad_suelta: 'de bolsa', factor_suelta: 5,
   costo_unit: 1.2667,
 }
 
@@ -59,6 +65,7 @@ function conversion() {
 
   chk(aStock(CARNE, 20, 7) === 407, 'CID 20 paquetes + 7 bolitas = 407 unidades')
   chk(aStock(CHILI, 3, null) === 3, 'Chili: 3 bolsas = 3 unidades de stock (factor 1)')
+  chk(cerca(aStock(CHILI, 3, 0.4), 3.4), 'Chili: 3 bolsas + 0.40 de bolsa abierta = 3.4')
   chk(aStock(PAPA, 4, null) === 20, 'Papa: 4 bolsas de 5 lb = 20 libras')
 
   chk(aStock(CARNE, null, null) === null, 'celda totalmente vacía → null (no 0)')
@@ -72,14 +79,16 @@ function conversion() {
 
   // "En Línea" va en unidades SUELTAS...
   chk(sueltasAStock(CARNE, 7) === 7, 'En línea 7 bolitas = 7 unidades')
-  chk(sueltasAStock(QUESO, 10) === 0.34, 'En línea 10 lascas de mozzarella = 0.34 lb')
+  chk(cerca(sueltasAStock(QUESO, 0.4), 2), 'Mozzarella: 0.40 de paquete de 5 lb = 2 lb')
   // ...y cuando el empaque NO se abre en sucursal, en la unidad del empaque:
   // una bolsa de chili abierta sigue siendo una bolsa.
   // Desde el 22-sep TODOS los ítems declaran unidad suelta (lo pidió Saúl
   // para que el CID tenga paquete + unidades en las 15 filas).
-  chk(facSuelta(CHILI) === 0.2, 'chili: 1 libra suelta = 0.2 de su bolsa de 5')
-  chk(cerca(sueltasAStock(CHILI, 3), 0.6), 'En línea 3 libras de chili = 0.6 bolsa')
-  chk(sueltasAStock(PAPA, 2) === 2, 'En línea 2 libras de papa = 2 libras (su stock ya es libra)')
+  // En los de PESO la suelta vale un empaque entero, porque es una fracción.
+  chk(facSuelta(CHILI) === 1 && esPeso(CHILI), 'chili es de peso: la fracción multiplica la bolsa')
+  chk(cerca(sueltasAStock(CHILI, 0.4), 0.4), 'En línea 0.40 de bolsa de chili = 0.4 bolsa')
+  chk(cerca(sueltasAStock(PAPA, 0.4), 2), 'En línea 0.40 de bolsa de papa de 5 lb = 2 libras')
+  chk(!esPeso(CARNE) && facSuelta(CARNE) === 1, 'la carne es porcionada: la suelta es la pieza')
 
   chk(cerca(aEmpaques(CARNE, 407), 20.35), '407 unidades = 20.35 paquetes')
   chk(aEmpaques(CARNE, null) === null, 'aEmpaques(null) = null')
@@ -186,45 +195,92 @@ function pedido() {
       'digitar 0 pisa al sistema y avisa (no llegó lo que el kardex dice)')
 }
 
-/* ══ 5. Semáforo ═══════════════════════════════════════════════════════ */
+/* ══ 5. Semáforo por clase ═════════════════════════════════════════════
+   Regla de Saúl (23-sep): los porcionados cuadran SIN ERROR; los de peso
+   llevan 5% porque se pesan en báscula. */
 function semaforo() {
-  console.log('\n═ 5. Semáforo y piso de tolerancia ═\n')
+  console.log('\n═ 5. Semáforo: exacto para porcionados, 5% para los de peso ═\n')
 
-  chk(pisoTolerancia(CARNE) === 2, 'carne fraccionada: piso = 2 bolitas')
-  chk(cerca(pisoTolerancia(CHILI), 0.4), 'chili: piso = 2 libras = 0.4 bolsa')
-  chk(cerca(pisoTolerancia(QUESO), 0.068), 'mozzarella: piso = 2 lascas = 0.068 lb')
+  chk(tolerancinaPct(CARNE) === 0, 'la carne es porcionada: 0% de margen')
+  chk(tolerancinaPct(CHILI) === TOL_PCT_PESO, `el chili es de peso: ${TOL_PCT_PESO}%`)
+  chk(tolerancinaPct({ ...CARNE, tolerancia_pct: 5 }) === 5,
+      'el margen propio del ítem manda sobre el de su clase')
 
-  // Un día flojo: 3 bolitas vendidas y 1 de diferencia. Sin piso absoluto
-  // eso es −33% y pinta rojo por una sola pieza.
-  const flojo = auditar({ ...CARNE, venta_dia: 3, pedido_sistema: 0,
-                          cid_enteros: 0, cid_sueltas: 10, linea_sueltas: 8, tps_enteros: 0 })
-  chk(flojo.diferencia === 1, 'diferencia de 1 bolita')
-  chk(Math.abs(flojo.pct) > TOL_PCT_AVISO, `su % es ${flojo.pct.toFixed(1)}%, fuera del 5%`)
-  chk(flojo.estado === 'ok', 'pero cabe en el piso de 2 bolitas → cuadra')
+  /* ── Porcionados: una pieza de diferencia YA es descuadre ── */
+  const conDif = (item, dif, venta) =>
+    estadoFila({ diferencia: dif, pct: venta ? (dif / venta) * 100 : null, item })
 
-  const fuerte = auditar({ ...CARNE, venta_dia: 300, pedido_sistema: 0,
-                           cid_enteros: 20, tps_enteros: 0, linea_sueltas: 0 })
-  chk(fuerte.diferencia === -100 && fuerte.estado === 'alerta',
-      '−100 bolitas sobre 300 vendidas → alerta')
+  chk(conDif(CARNE, 0, 400) === 'ok', 'carne sin diferencia: cuadra')
+  chk(conDif(CARNE, -1, 400) === 'alerta',
+      'UNA bolita faltante sobre 400 vendidas ya es descuadre (0.25%)')
+  chk(conDif(CARNE, 1, 400) === 'alerta', 'y una de más, también')
+  chk(conDif(CARNE, -0.4, 400) === 'ok',
+      'medio grano de redondeo se perdona: 0.4 de bolita no es una bolita')
+  chk(pisoRedondeo(CARNE) === EPS_PIEZA, 'el perdón es media pieza, nada más')
 
-  const conPct = (dif, v) => estadoFila({ diferencia: dif, pct: (dif / v) * 100, item: CARNE })
-  chk(conPct(10, 1000) === 'ok', '1% → cuadra')
-  chk(conPct(20, 1000) === 'ok', `${TOL_PCT_OK}% justo → cuadra`)
-  chk(conPct(35, 1000) === 'aviso', '3.5% → revisar')
-  chk(conPct(50, 1000) === 'aviso', `${TOL_PCT_AVISO}% justo → revisar`)
-  chk(conPct(60, 1000) === 'alerta', '6% → descuadre')
+  // El pan Súper Friek usa 1/21 = 0.047619…, un decimal periódico: sin el
+  // medio grano, el redondeo solo lo pintaría rojo.
+  const SUPER = { clase: 'porcionado', factor: 1, fraccionado: true,
+                  unidad_suelta: 'panes', factor_suelta: 1 / 21, costo_unit: 6.93 }
+  chk(conDif(SUPER, 1e-9, 5) === 'ok', 'el ruido de coma flotante no dispara alerta')
+  chk(conDif(SUPER, -1 / 21, 5) === 'alerta', 'pero un pan entero sí')
 
-  // Producto que no se vendió pero desapareció del físico: no hay
-  // denominador y aun así es lo que la pantalla busca.
-  const sinVenta = auditar({ ...CHILI, venta_dia: 0, pedido_sistema: 0,
-                             cid_enteros: 10, tps_enteros: 4 })
-  chk(sinVenta.pct === null, 'sin venta no hay porcentaje')
-  chk(sinVenta.diferencia === -6 && sinVenta.estado === 'alerta',
-      'faltan 6 bolsas y con 0 ventas eso es alerta')
+  /* ── De peso: 5% de la venta ── */
+  chk(conDif(CHILI, -0.4, 10) === 'ok', '4% sobre la venta de chili: cuadra')
+  chk(conDif(CHILI, -0.5, 10) === 'ok', `${TOL_PCT_PESO}% justo: cuadra`)
+  chk(conDif(CHILI, -0.6, 10) === 'alerta', '6%: descuadre')
+  chk(conDif(PAPA, 2, 100) === 'ok', 'papa: 2 lb sobre 100 vendidas = 2%, cuadra')
 
-  const sinVentaSinDif = auditar({ ...CHILI, venta_dia: 0, pedido_sistema: 0,
-                                   cid_enteros: 10, tps_enteros: 10 })
-  chk(sinVentaSinDif.estado === 'ok', 'sin ventas y sin diferencia: cuadra')
+  /* Sin venta no hay porcentaje. Si igual falta producto, eso es justo lo
+     que la pantalla busca: se fue sin que nada lo descontara. */
+  chk(conDif(CHILI, -3, 0) === 'alerta', 'faltan 3 bolsas y no se vendió nada: alerta')
+  chk(conDif(CHILI, 0, 0) === 'ok', 'sin venta y sin diferencia: cuadra')
+  chk(conDif(CARNE, -5, 0) === 'alerta', 'lo mismo para un porcionado')
+
+  /* Ya no hay estado intermedio: Saúl definió dos reglas, no tres. */
+  const estados = new Set()
+  for (const d of [0, 0.1, -1, 5, -50, 200]) {
+    estados.add(conDif(CARNE, d, 400)); estados.add(conDif(CHILI, d, 400))
+  }
+  chk(!estados.has('aviso'), 'ningún caso produce "revisar": el semáforo es binario')
+
+  /* ── Verificación completa, con los datos reales de Venecia ── */
+  const f = auditar({
+    ...CARNE, venta_dia: 336, pedido_sistema: 400,
+    cid_enteros: 3, cid_sueltas: 5, tps_enteros: 2, linea_sueltas: 7,
+  })
+  chk(f.diferencia === -82 && f.estado === 'alerta', '−82 bolitas: descuadre')
+  const cuadrado = auditar({
+    ...CARNE, venta_dia: 336, pedido_sistema: 400,
+    cid_enteros: 3, cid_sueltas: 5, tps_enteros: 6, linea_sueltas: 9,
+  })
+  chk(cuadrado.diferencia === 0 && cuadrado.estado === 'ok',
+      'con 6 paquetes + 9 bolitas cierra exacto: 65 + 400 − 336 = 129 = real')
+}
+
+/* ══ 5b. La fracción de bolsa vive entre 0 y 1 ═════════════════════════ */
+function fraccion() {
+  console.log('\n═ 5b. "En Línea" de un producto de peso es una fracción ═\n')
+
+  const base = { ...CHILI, venta_dia: 2, pedido_sistema: 0, cid_enteros: 5, tps_enteros: 2 }
+
+  const ok = auditar({ ...base, linea_sueltas: 0.4 })
+  chk(ok.fraccionInvalida === false, '0.40 de bolsa es válido')
+  chk(cerca(ok.real, 2.4), 'real = 2 bolsas + 0.40 = 2.4')
+
+  const uno = auditar({ ...base, linea_sueltas: 1 })
+  chk(uno.fraccionInvalida === false, 'una bolsa justo abierta todavía es válido')
+
+  const malo = auditar({ ...base, linea_sueltas: 2 })
+  chk(malo.fraccionInvalida === true,
+      'más de 1 se avisa: esa bolsa entera va en TPS, no en la fracción')
+  chk(malo.diferencia != null,
+      'pero no se bloquea el cálculo — se avisa, que es distinto de esconder')
+
+  // En un porcionado, 2 sueltas es perfectamente normal.
+  const piezas = auditar({ ...CARNE, venta_dia: 100, pedido_sistema: 0,
+                           cid_enteros: 10, tps_enteros: 5, linea_sueltas: 12 })
+  chk(piezas.fraccionInvalida === false, 'en un porcionado, 12 piezas sueltas es normal')
 }
 
 /* ══ 6. Hoja completa ══════════════════════════════════════════════════ */
@@ -410,7 +466,7 @@ function semana() {
   chk(lun[0].desde === '2026-09-21', 'y el lunes es el primer día de la suya')
 }
 
-conversion(); ecuacion(); nulos(); pedido(); semaforo(); hoja(); payload()
+conversion(); ecuacion(); nulos(); pedido(); semaforo(); fraccion(); hoja(); payload()
 arrastre(); kpis(); semana()
 
 console.log(`\n${'─'.repeat(60)}`)

@@ -5,6 +5,7 @@ import InfoTip from '../ui/InfoTip'
 import {
   auditarHoja, auditarSemana, resumenHoja, agruparPorCategoria, aPayload,
   aEmpaques, fmtCant, fmtUSD, decirEnEmpaques, vacio, semanasRecientes, n,
+  esPeso, tolerancinaPct,
 } from './criticosConteo'
 
 /**
@@ -107,24 +108,43 @@ function Casilla({ item, campo, valores, onChange, disabled, sugerido, ancho = 6
   )
 }
 
-/* El CID es la ÚNICA columna con dos casillas: la apertura son paquetes
-   cerrados más lo suelto del paquete abierto. Al cerrar, esas dos mitades
-   viven en columnas propias (TPS Final y En Línea), tal como en el Excel. */
-function CeldaCid({ item, valores, onChange, disabled, arrastrado }) {
+/* El CID es la apertura: paquetes cerrados + lo suelto. Al cerrar, esas dos
+   mitades viven en columnas propias (TPS Final y En Línea), como en el Excel.
+
+   Saúl pidió que la ÚNICA columna abierta a modificación sea "Se pidió", así
+   que la apertura NO se teclea: es, por definición, el cierre de ayer. Dejarla
+   editable permitiría cuadrar un día tocando su propia apertura, que es
+   exactamente la fuga que esta pantalla busca.
+
+   La excepción es el arranque: el primer día que una sucursal usa la hoja no
+   hay cierre anterior del cual arrastrar, y sin poder teclearlo la cadena
+   nunca podría empezar. Ahí, y sólo ahí, la casilla se abre. */
+function CeldaCid({ item, valores, onChange, cerrada, arrastrado }) {
+  if (arrastrado) {
+    const e = item.cid_sug_enteros, u = item.cid_sug_sueltas
+    return (
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'flex-end',
+                    color: c.textDim, fontSize: 12.5 }}
+           title={`Cierre de ayer: ${fmtCant(e)} ${item.unidad_conteo} + ${fmtCant(u)} ${item.unidad_suelta || ''}`}>
+        <span>{fmtCant(e)}</span>
+        <span style={{ color: c.textOff, fontSize: 11 }}>+</span>
+        <span>{fmtCant(u)}</span>
+        <span style={{ fontSize: 10, color: c.blue }} title="Arrastrado del cierre de ayer">↩</span>
+      </div>
+    )
+  }
+  /* Sin cierre de ayer: se abre para poder arrancar la cadena. */
   return (
     <div style={{ display: 'flex', gap: 3, alignItems: 'center', justifyContent: 'flex-end' }}>
       <Casilla item={item} campo="cid_enteros" valores={valores} onChange={onChange}
-        disabled={disabled} sugerido={item.cid_sug_enteros} ancho={46}
-        titulo={`Paquetes al abrir (${item.unidad_conteo})`} />
+        disabled={cerrada} ancho={46} titulo={`Paquetes al abrir (${item.unidad_conteo})`} />
       <span style={{ color: c.textOff, fontSize: 11 }}>+</span>
       <Casilla item={item} campo="cid_sueltas" valores={valores} onChange={onChange}
-        disabled={disabled} sugerido={item.cid_sug_sueltas} ancho={46}
-        titulo={`Unidades sueltas al abrir (${item.unidad_suelta || 'sueltas'})`} />
-      {/* Marca que la apertura NO se digitó: viene del cierre de ayer y el
-          cálculo la está usando igual. Sin esto, un CID en gris se lee como
-          "vacío" y nadie entendería de dónde sale el teórico. */}
-      <span style={{ width: 10, fontSize: 10, color: arrastrado ? c.blue : 'transparent' }}
-            title={arrastrado ? 'Arrastrado del cierre de ayer' : ''}>↩</span>
+        disabled={cerrada} ancho={46}
+        titulo={esPeso(item) ? 'Fracción de la bolsa abierta (0 a 1)'
+                             : `Unidades sueltas al abrir (${item.unidad_suelta || 'sueltas'})`} />
+      <span style={{ width: 10, fontSize: 10, color: c.yellow }}
+            title="No hay cierre de ayer: escribí la apertura para arrancar la cadena">✎</span>
     </div>
   )
 }
@@ -448,7 +468,6 @@ export default function ConteoCriticosTab({ user }) {
           {STORES_SHORT[store]} · {enSemana ? semana.rango : fecha}
         </span>
         <span style={{ color: c.green }}>✓ {resumen.ok} cuadran</span>
-        <span style={{ color: c.yellow }}>▲ {resumen.aviso} a revisar</span>
         <span style={{ color: c.red }}>✕ {resumen.alerta} descuadres</span>
         <span style={{ color: c.textOff }}>○ {resumen.sin_datos} sin contar</span>
         <div style={{ flex: 1 }} />
@@ -489,13 +508,13 @@ export default function ConteoCriticosTab({ user }) {
                 <tr>
                   <th style={{ ...th, textAlign: 'left' }}>Producto</th>
                   <th style={{ ...th, textAlign: 'left' }}>Presentación</th>
-                  <th style={{ ...th, textAlign: 'right' }}>CID<InfoTip text="Conteo Inicial del Día: existencia al abrir, en paquetes enteros (+ las unidades sueltas del paquete abierto). El gris de fondo es el cierre de ayer, si se contó." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>CID<InfoTip text="Conteo Inicial del Día. NO se digita: es, por definición, el cierre de ayer (su TPS Final + su En Línea), y se arrastra solo — el ↩ lo marca. Sólo se abre para escribir el primer día de una sucursal, cuando no hay cierre anterior del cual arrastrar." /></th>
                   <th style={{ ...th, textAlign: 'right' }}>Se pidió<InfoTip text="Lo que entró ese día, en PAQUETES COMPLETOS. Se propone desde el kardex (traslados recibidos + recepciones) y se puede corregir si la hoja de papel dice otra cosa." /></th>
                   <th style={{ ...th, textAlign: 'right', color: c.orange }}>Desc. AM<InfoTip text="Lo que salió de la bodega de la sucursal hacia la cocina en el turno AM, en paquetes. Es un control interno de la sucursal: NO es la venta y no entra en el cálculo de la diferencia." /></th>
                   <th style={{ ...th, textAlign: 'right', color: c.orange }}>Desc. PM<InfoTip text="Lo mismo que Desc. AM, para el turno PM. Control interno bodega → cocina." /></th>
                   <th style={{ ...th, textAlign: 'right', color: c.cyan }}>Venta día<InfoTip text="Lo que el POS descontó del inventario ese día, del kardex de ventas, ya con combos y modificadores resueltos. Es el número del sistema contra el que se audita." /></th>
                   <th style={{ ...th, textAlign: 'right' }}>TPS Final<InfoTip text="Paquetes ENTEROS que quedan en bodega al cerrar." /></th>
-                  <th style={{ ...th, textAlign: 'right' }}>En línea<InfoTip text="Unidades SUELTAS de los paquetes ya abiertos, las que están en cocina. Junto con el TPS Final forman el cierre real." /></th>
+                  <th style={{ ...th, textAlign: 'right' }}>En línea<InfoTip text="Lo que está abierto en cocina. En los productos PORCIONADOS son las piezas sueltas (bolitas, panes, lascas). En los de PESO es la FRACCIÓN de la bolsa abierta: se pesa lo que queda y se anota 0.40 si queda el 40% de la bolsa. Junto con el TPS Final forma el cierre real." /></th>
                   <th style={{ ...th, textAlign: 'right' }}>Teórico<InfoTip text="CID + Se pidió − Venta del día. Lo que debería haber quedado si cada venta descontó exactamente lo que se usó." /></th>
                   <th style={{ ...th, textAlign: 'right' }}>Real<InfoTip text="TPS Final + En línea: lo que se contó físicamente al cerrar." /></th>
                   <th style={{ ...th, textAlign: 'right' }}>Dif.<InfoTip text="Real − Teórico. Negativo = se fue producto que ninguna venta descontó (merma no reportada, sobre-porcionado, fuga). Positivo = la venta descargó más de lo que realmente se usó." /></th>
@@ -513,6 +532,14 @@ export default function ConteoCriticosTab({ user }) {
                       <td style={{ ...td, whiteSpace: 'normal', maxWidth: 190 }}>
                         <span style={{ color: col, marginRight: 6 }}>●</span>
                         {f.nombre}
+                        <span style={{ fontSize: 9.5, marginLeft: 5, color: esPeso(f) ? c.orange : c.textOff }}
+                              title={esPeso(f)
+                                ? `Se pesa: la bolsa abierta se anota como fracción. Margen ${tolerancinaPct(f)}% de la venta.`
+                                : tolerancinaPct(f) === 0
+                                  ? 'Porcionado: viene en piezas contables, tiene que cuadrar exacto.'
+                                  : `Porcionado, pero con ${tolerancinaPct(f)}% de margen provisional — ver la nota 📌.`}>
+                          {esPeso(f) ? '⚖' : tolerancinaPct(f) === 0 ? '=' : '≈'}
+                        </span>
                         {f.nota_config && <span style={{ color: c.orange, fontSize: 10, marginLeft: 5 }} title={f.nota_config}>📌</span>}
                       </td>
                       <td style={{ ...td, color: c.textDim, fontSize: 11, whiteSpace: 'normal', maxWidth: 150 }}>
@@ -521,7 +548,7 @@ export default function ConteoCriticosTab({ user }) {
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
                         <CeldaCid item={f} valores={vals} onChange={onChange}
-                          disabled={cerrada} arrastrado={a.cidFuente === 'arrastrado'} />
+                          cerrada={cerrada} arrastrado={a.cidFuente === 'arrastrado'} />
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
                         <Casilla item={f} campo="pedido_enteros" valores={vals} onChange={onChange}
@@ -549,7 +576,15 @@ export default function ConteoCriticosTab({ user }) {
                       <td style={{ ...td, textAlign: 'right' }}>
                         <Casilla item={f} campo="linea_sueltas" valores={vals} onChange={onChange}
                           disabled={cerrada}
-                          titulo={f.fraccionado ? `Sueltas en cocina (${f.unidad_suelta})` : `Abierto en cocina (${f.unidad_conteo})`} />
+                          titulo={esPeso(f)
+                            ? `Fracción de la bolsa abierta, de 0 a 1 (ej. 0.40). Se pesa lo que queda.`
+                            : `Piezas sueltas en cocina (${f.unidad_suelta})`} />
+                        {a.fraccionInvalida && (
+                          <div style={{ fontSize: 10, color: c.yellow }}
+                               title="Es la fracción de UNA bolsa abierta. Si hay una bolsa entera de más, va en TPS Final.">
+                            &gt; 1 bolsa
+                          </div>
+                        )}
                       </td>
                       <td style={{ ...td, textAlign: 'right', color: c.textDim }}>{emp(a.teorico)}</td>
                       <td style={{ ...td, textAlign: 'right', color: c.textDim }}>{emp(a.real)}</td>
@@ -610,8 +645,12 @@ export default function ConteoCriticosTab({ user }) {
       ) : (
       <div style={{ fontSize: 11, color: c.textOff, marginTop: 4, lineHeight: 1.6 }}>
         <b>Teórico = CID + Se pidió − Venta del día</b> · <b>Real = TPS Final + En línea</b>.
-        El <b>CID se arrastra solo</b> del cierre de ayer (marcado con <b style={{ color: c.blue }}>↩</b>);
-        si lo digitás, manda lo tuyo.
+        El <b>CID no se digita</b>: es el cierre de ayer y se arrastra solo (<b style={{ color: c.blue }}>↩</b>).
+        Sólo se abre el primer día de una sucursal, cuando no hay de dónde arrastrar (<b style={{ color: c.yellow }}>✎</b>).
+        Los productos marcados <b>=</b> son <b>porcionados</b>: vienen en piezas contables y tienen que
+        cuadrar <b>exacto</b>. Los marcados <b style={{ color: c.orange }}>⚖</b> se <b>pesan</b>: la bolsa
+        abierta se anota como fracción (0.40 = 40% de bolsa) y llevan <b>5% de margen</b>, porque la
+        báscula tiene error propio. Un <b>≈</b> es un porcionado con margen provisional: la nota 📌 dice por qué.
         La <b style={{ color: c.cyan }}>venta del día</b> sale del kardex que escribe el POS al cobrar, ya con
         combos y modificadores resueltos. Las columnas <b style={{ color: c.orange }}>Desc. AM/PM</b> son el
         control interno de bodega a cocina: se guardan pero no entran en el cálculo.

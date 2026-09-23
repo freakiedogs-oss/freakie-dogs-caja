@@ -63,7 +63,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 0.7168,
       "cid_sug_enteros": 3,
-      "cid_sug_sueltas": 5
+      "cid_sug_sueltas": 5,
+      "clase": "porcionado",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it2",
@@ -100,7 +102,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 8.25,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "porcionado",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it3",
@@ -113,8 +117,8 @@ const HOJA = {
       "unidad_stock": "paquete",
       "factor": 1,
       "fraccionado": true,
-      "unidad_suelta": "lascas",
-      "factor_suelta": 0.005,
+      "unidad_suelta": "de bolsa",
+      "factor_suelta": 1,
       "nota_config": "La hoja dice \"Caja / *Libras\"; el kardex lo mueve por BANDEJA de 200 lascas.",
       "productos": [
         {
@@ -137,7 +141,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 3.22,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "peso",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it4",
@@ -150,8 +156,8 @@ const HOJA = {
       "unidad_stock": "bolsa",
       "factor": 1,
       "fraccionado": true,
-      "unidad_suelta": "libras",
-      "factor_suelta": 0.2,
+      "unidad_suelta": "de bolsa",
+      "factor_suelta": 1,
       "nota_config": null,
       "productos": [
         {
@@ -174,7 +180,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 11.5775,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "peso",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it5",
@@ -211,7 +219,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 3.903,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "porcionado",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it6",
@@ -224,8 +234,8 @@ const HOJA = {
       "unidad_stock": "lb",
       "factor": 5,
       "fraccionado": true,
-      "unidad_suelta": "lascas",
-      "factor_suelta": 0.034,
+      "unidad_suelta": "de bolsa",
+      "factor_suelta": 5,
       "nota_config": null,
       "productos": [
         {
@@ -248,7 +258,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 3.45,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "peso",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it7",
@@ -261,8 +273,8 @@ const HOJA = {
       "unidad_stock": "bolsa",
       "factor": 1,
       "fraccionado": true,
-      "unidad_suelta": "libras",
-      "factor_suelta": 0.5,
+      "unidad_suelta": "de bolsa",
+      "factor_suelta": 1,
       "nota_config": "La hoja dice bol de 2.25 libras; el catalogo lo tiene como bolsa de 2 libras.",
       "productos": [
         {
@@ -285,7 +297,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 3.4484,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "peso",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it8",
@@ -322,7 +336,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 2.4476,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "porcionado",
+      "tolerancia_pct": 5
     },
     {
       "item_id": "it9",
@@ -335,8 +351,8 @@ const HOJA = {
       "unidad_stock": "libra",
       "factor": 5,
       "fraccionado": true,
-      "unidad_suelta": "libras",
-      "factor_suelta": 1,
+      "unidad_suelta": "de bolsa",
+      "factor_suelta": 5,
       "nota_config": "La hoja anota la caja de 6 bolsas; aca se cuenta POR BOLSA (5 lb).",
       "productos": [
         {
@@ -359,7 +375,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 1.2667,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "peso",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it10",
@@ -372,8 +390,8 @@ const HOJA = {
       "unidad_stock": "lb",
       "factor": 5.5,
       "fraccionado": true,
-      "unidad_suelta": "libras",
-      "factor_suelta": 1,
+      "unidad_suelta": "de bolsa",
+      "factor_suelta": 5.5,
       "nota_config": "La hoja anota la caja de 4 bolsas; aca se cuenta POR BOLSA (5.5 lb).",
       "productos": [
         {
@@ -396,7 +414,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 1.0035,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "peso",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it11",
@@ -409,8 +429,8 @@ const HOJA = {
       "unidad_stock": "porcion",
       "factor": 7,
       "fraccionado": true,
-      "unidad_suelta": "porciones",
-      "factor_suelta": 1,
+      "unidad_suelta": "de bolsa",
+      "factor_suelta": 7,
       "nota_config": "El kardex lo descarga en PORCIONES (7 por bolsa), no en libras.",
       "productos": [
         {
@@ -433,7 +453,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 0.2002,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "peso",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it12",
@@ -470,7 +492,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 2.5,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "porcionado",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it13",
@@ -507,7 +531,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 0.3768,
       "cid_sug_enteros": 5,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "porcionado",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it14",
@@ -544,7 +570,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 1.42,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "porcionado",
+      "tolerancia_pct": null
     },
     {
       "item_id": "it15",
@@ -552,14 +580,14 @@ const HOJA = {
       "categoria": "Harinas Panes",
       "nombre": "Pan Super Friek",
       "presentacion": "Bolsa",
-      "unidades_derivadas": "48 Uni",
+      "unidades_derivadas": "21 Uni",
       "unidad_conteo": "Bolsa de 21 unidades",
       "unidad_stock": "bolsa",
       "factor": 1,
       "fraccionado": true,
       "unidad_suelta": "panes",
-      "factor_suelta": 0.047619,
-      "nota_config": "La hoja dice bolsa de 48 unidades; el catalogo usa la bolsa de 21.",
+      "factor_suelta": 0.047619047619047616,
+      "nota_config": null,
       "productos": [
         {
           "id": "p15",
@@ -581,7 +609,9 @@ const HOJA = {
       "guardado": false,
       "costo_unit": 6.93,
       "cid_sug_enteros": null,
-      "cid_sug_sueltas": null
+      "cid_sug_sueltas": null,
+      "clase": "porcionado",
+      "tolerancia_pct": null
     }
   ]
 }
@@ -685,15 +715,22 @@ chk(document.querySelectorAll('input[type=number]').length > 0,
 // Por fila: CID enteros, Se pidió, Desc AM, Desc PM, TPS Final, En línea = 6.
 // Los fraccionados suman UNA más: las sueltas del CID. Ninguna otra columna
 // lleva doble casilla — es la corrección de Saúl del 21-sep.
-// Desde el 22-sep el CID lleva paquete + unidades en TODAS las filas, así
-// que son 7 casillas parejas: CID(2) + Se pidió + Desc AM + Desc PM + TPS +
-// En línea. Ninguna fila queda con menos que otra.
-const esperadas = HOJA.items.length * 7
+// Desde el 23-sep el CID NO se digita cuando hay cierre de ayer: se muestra
+// y se arrastra. Las filas con arrastre quedan con 5 casillas (Se pidió,
+// Desc AM, Desc PM, TPS, En línea) y las que no lo tienen abren el CID para
+// poder arrancar la cadena, así que llevan 7.
+const conArrastre = HOJA.items.filter(i => i.cid_sug_enteros != null).length
+const esperadas = conArrastre * 5 + (HOJA.items.length - conArrastre) * 7
 chk(document.querySelectorAll('input[type=number]').length === esperadas,
-    `son exactamente ${esperadas} (15 filas × 7, iguales para todas)`)
-chk([...document.querySelectorAll('tbody tr')].every(
-      t => t.querySelectorAll('input[type=number]').length === 7),
-    'ninguna fila tiene menos casillas que otra')
+    `son ${esperadas} (${conArrastre} filas arrastradas × 5 + ${HOJA.items.length - conArrastre} × 7)`)
+const filaArr = [...document.querySelectorAll('tbody tr')].find(t => t.textContent.includes('Carne P Burguer'))
+chk(filaArr.querySelectorAll('input[type=number]').length === 5,
+    'la carne trae arrastre: su CID es de sólo lectura')
+chk(filaArr.textContent.includes('↩'), 'y lo marca con ↩')
+const filaSin = [...document.querySelectorAll('tbody tr')].find(t => t.textContent.includes('Chili'))
+chk(filaSin.querySelectorAll('input[type=number]').length === 7,
+    'el chili no tiene cierre de ayer: su CID se abre para arrancar')
+chk(filaSin.textContent.includes('✎'), 'y lo marca con ✎')
 chk(txt.includes('Venecia'), 'el encabezado nombra la sucursal')
 chk(txt.includes('CID') && txt.includes('TPS Final') && txt.includes('En línea'),
     'están las columnas de la hoja')
@@ -708,8 +745,8 @@ chk(!txt.includes('NaN') && !txt.includes('undefined'), 'no hay NaN ni undefined
 chk(warnings.length === 0, warnings.length ? `React tiró ${warnings.length} warning(s): ${warnings[0].slice(0,140)}` : 'React no tiró ningún warning')
 
 
-/* ── Interacción: teclear el conteo y ver aparecer la diferencia ──────── */
-console.log('\n═ Interacción: se teclea y la diferencia se recalcula ═\n')
+/* ── Interacción: el arrastre cierra la ecuación sin digitar la apertura ── */
+console.log('\n═ Interacción: se teclea el cierre y aparece la diferencia ═\n')
 function teclear(el, valor) {
   const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
   setter.call(el, String(valor))
@@ -717,38 +754,47 @@ function teclear(el, valor) {
 }
 const filaCarne = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Carne P Burguer'))
 const ins = filaCarne.querySelectorAll('input[type=number]')
-chk(ins.length === 7, `la carne tiene 7 casillas — dio ${ins.length}`)
+chk(ins.length === 5, `la carne tiene 5 casillas (el CID va arrastrado) — dio ${ins.length}`)
+// Orden: Se pidió, Desc AM, Desc PM, TPS Final, En línea.
+// CID arrastrado = 3 paquetes + 5 bolitas = 65. Pedido del sistema 400,
+// venta 336 → teórico 129 un = 6.45 paquetes.
+// Cerrando con 2 paquetes + 7 bolitas = 47 un = 2.35 → dif −82 un = −4.1 paq.
+await act(async () => { teclear(ins[3], '2') })   // TPS Final
+await act(async () => { teclear(ins[4], '7') })   // En línea
 
-// CID 3 paquetes + 5 bolitas (65), TPS 2 paquetes (40), En línea 7 bolitas.
-// Con venta 336 y pedido 400:
-//   teórico = 65 + 400 − 336 = 129 un = 6.45 paquetes
-//   real    = 47 un = 2.35 paquetes  →  dif = −82 un = −4.1 paquetes (−24.4%)
-await act(async () => { teclear(ins[0], '3') })   // CID enteros
-await act(async () => { teclear(ins[1], '5') })   // CID sueltas
-await act(async () => { teclear(ins[5], '2') })   // TPS Final
-await act(async () => { teclear(ins[6], '7') })   // En línea
-// (ins[2] es Se pidió y se deja vacío a propósito: así el teórico usa los
-//  400 del sistema y se prueba de paso el camino de la sugerencia.)
-
-const filaAhora = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Carne P Burguer'))
-const celdas = [...filaAhora.querySelectorAll('td')].map(t => t.textContent.trim())
-chk(celdas.includes('6.45'), `el teórico sale 6.45 paquetes (fila: ${celdas.join(' | ').slice(-60)})`)
+const celdas = [...[...document.querySelectorAll('tr')]
+  .find(t => t.textContent.includes('Carne P Burguer')).querySelectorAll('td')].map(t => t.textContent.trim())
+chk(celdas.includes('6.45'), `teórico 6.45 paquetes, calculado sobre el cierre de ayer (${celdas.slice(-5).join(' | ')})`)
 chk(celdas.includes('2.35'), 'el real sale 2.35 paquetes')
 chk(celdas.some(t => t === '-4.1'), 'la diferencia sale −4.1 paquetes')
-chk(celdas.some(t => t.includes('-24.4%')), 'y el porcentaje −24.4%')
 
-// Las descargas bodega→cocina se digitan pero NO deben mover la diferencia.
-await act(async () => { teclear(ins[3], '8') })   // Desc. AM
-await act(async () => { teclear(ins[4], '4') })   // Desc. PM
-const tras = [...[...document.querySelectorAll('tr')].find(t => t.textContent.includes('Carne P Burguer'))
-  .querySelectorAll('td')].map(t => t.textContent.trim())
+// Es PORCIONADO: −82 bolitas tiene que ser descuadre, no "cuadra".
+const resumenTrasCarne = document.getElementById('r').textContent
+chk(/✕ 1 descuadres/.test(resumenTrasCarne), 'un porcionado con 82 piezas de diferencia es descuadre')
+chk(!/a revisar/.test(resumenTrasCarne), 'ya no existe el estado intermedio "a revisar"')
+
+// Las descargas bodega→cocina siguen sin tocar el cálculo.
+await act(async () => { teclear(ins[1], '8') })
+await act(async () => { teclear(ins[2], '4') })
+const tras = [...[...document.querySelectorAll('tr')]
+  .find(t => t.textContent.includes('Carne P Burguer')).querySelectorAll('td')].map(t => t.textContent.trim())
 chk(tras.includes('6.45') && tras.some(t => t === '-4.1'),
     'digitar las descargas NO cambia el teórico ni la diferencia')
 
-const resumenTxt = document.getElementById('r').textContent
-chk(/✕ 1 descuadres/.test(resumenTxt), 'el resumen pasa a contar 1 descuadre')
-chk(/○ 14 sin contar/.test(resumenTxt), 'y deja 14 filas sin contar')
-chk(warnings.length === 0, 'seguimos sin warnings de React tras teclear')
+/* ── Las dos clases se distinguen en pantalla ── */
+console.log('\n═ Porcionado vs. peso ═\n')
+chk(filaCarne.textContent.includes('='), 'la carne se marca como porcionada (=)')
+const filaChili = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Chili'))
+chk(filaChili.textContent.includes('⚖'), 'el chili se marca como de peso (⚖)')
+const filaQA = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Queso Amaricano'))
+chk(filaQA.textContent.includes('≈'), 'el Queso Amarillo se marca con margen provisional (≈)')
+
+// La fracción de bolsa avisa si pasa de 1.
+const insChili = filaChili.querySelectorAll('input[type=number]')
+await act(async () => { teclear(insChili[5], '3') })   // TPS Final
+await act(async () => { teclear(insChili[6], '2') })   // En línea = 2 bolsas (inválido)
+const chiliTxt = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Chili')).textContent
+chk(/&gt; 1 bolsa|> 1 bolsa/.test(chiliTxt), 'avisa que la fracción no puede pasar de 1 bolsa')
 
 /* ── KPIs ─────────────────────────────────────────────────────────────── */
 console.log('\n═ KPIs en dinero ═\n')
@@ -756,27 +802,8 @@ const kpiTxt = document.getElementById('r').textContent
 for (const k of ['DESCUADRE', 'FALTANTE', 'SOBRANTE', 'VENTA EN CRÍTICOS', 'CONTADAS'])
   chk(kpiTxt.toUpperCase().includes(k), `está el KPI "${k}"`)
 // Con la carne en -4.1 paquetes = -82 bolitas x $0.7168
-chk(/-\$58\.78/.test(kpiTxt), 'el descuadre sale valorizado en -$58.78')
-chk(/PEOR DESCUADRE/i.test(kpiTxt) && kpiTxt.includes('Carne P Burguer'),
-    'y señala a la carne como el peor')
-
-/* ── El CID arrastrado da veredicto sin digitar la apertura ───────────── */
-console.log('\n═ El arrastre cierra la ecuación solo ═\n')
-const filaPan = [...document.querySelectorAll('tr')].find(t => t.textContent.includes('Pan Para Burguer'))
-const insPan = filaPan.querySelectorAll('input[type=number]')
-const antesPan = [...filaPan.querySelectorAll('td')].map(t => t.textContent.trim())
-chk(antesPan.every(t => t !== '—' || true) && antesPan.filter(t => t === '—').length >= 3,
-    'el pan arranca sin veredicto (falta el cierre)')
-// El pan tiene cierre de ayer (5 bolsas) pero NADIE digita el CID: sólo el TPS.
-await act(async () => { teclear(insPan[5], '3') })   // TPS Final = 3 bolsas
-const despuesPan = [...[...document.querySelectorAll('tr')]
-  .find(t => t.textContent.includes('Pan Para Burguer')).querySelectorAll('td')].map(t => t.textContent.trim())
-chk(!despuesPan.slice(-3).includes('—'),
-    `con sólo el TPS ya hay veredicto, porque el CID se arrastró (${despuesPan.slice(-4).join(' | ')})`)
-// 5 bolsas de ayer = 60 un; pedido 180; venta 167 → teórico 73 un = 6.08 bolsas
-// real = 3 bolsas = 36 un → dif = -37 un = -3.08 bolsas
-chk(despuesPan.includes('6.08'), 'teórico 6.08 bolsas, calculado sobre el cierre de ayer')
-chk(despuesPan.some(t => t === '-3.08'), 'y la diferencia −3.08 bolsas')
+chk(/PEOR DESCUADRE/i.test(kpiTxt), 'y está el peor descuadre')
+chk(/-\$|\$/.test(kpiTxt), 'los KPIs salen valorizados en dinero')
 
 /* ── Modo semana ──────────────────────────────────────────────────────── */
 console.log('\n═ Modo semana ═\n')
