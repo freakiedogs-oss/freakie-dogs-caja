@@ -6,6 +6,7 @@ import Icon from './Icon'
 const PanelDeliverySucursal = lazy(() => import('./PanelDeliverySucursal'))
 import { STORES } from '../config'
 import { useToast } from '../hooks/useToast'
+import ReutilizarModal from './ReutilizarModal'
 import {
   KDS_CONTADOR_ESTACIONES,
   KDS_CONTADOR_LABELS,
@@ -257,6 +258,7 @@ export default function KDSScreen({ user, onBack }) {
   const [loading,     setLoading]     = useState(true)
   const [bumping,     setBumping]     = useState(null)       // cuenta_id+comanda en proceso
   const [confirmar,   setConfirmar]   = useState(null)       // comanda amarilla/roja esperando doble check antes de LISTA
+  const [reutilizar,  setReutilizar]  = useState(null)       // plato anulado que cocina va a pasar a otra orden
   const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial' | 'delivery'
   const [reverting,   setReverting]   = useState(null)       // id de item en revert
   const prevIds = useRef(null)   // Set de ids ya vistos (null = primera carga, no suena)
@@ -524,8 +526,10 @@ export default function KDSScreen({ user, onBack }) {
 
   // ── Acciones ──
   // Marcar ítem individual como en_preparacion / listo
-  // Cocina confirma un ítem anulado en caja: ¿ya estaba hecho? Si no coincide con
-  // lo que dijo la caja, el servidor corrige la merma (gana cocina).
+  // Cocina confirma un ítem anulado en caja: se botó / no se hizo / va para otra
+  // orden. Si no coincide con lo que dijo la caja, el servidor corrige (gana cocina).
+  // "Va para otra orden" no es merma: si la caja no eligió a cuál, cocina la elige
+  // acá (22-sep-2026). Así no se descuenta dos veces lo mismo.
   const confirmarAnulado = async (item, respuesta) => {
     setAlarmOn(false)
     const { data, error } = await db.rpc('pos_merma_confirmar_cocina', {
@@ -535,6 +539,14 @@ export default function KDSScreen({ user, onBack }) {
     })
     if (error) { toast.error('No se pudo confirmar: ' + error.message); return }
     if (data && data.coincide === false) toast.info('Se corrigió lo que había dicho la caja.')
+    if (respuesta === 'reutilizado' && data?.necesita_destino && data?.merma_id) {
+      setReutilizar({
+        mermaId: data.merma_id,
+        cuentaItemId: item.cuenta_item_id,
+        titulo: `${item.cantidad || 1}× ${item.nombre_item}${item.mesa_ref ? ` · ${item.canal === 'mesa' ? 'Mesa ' : ''}${item.mesa_ref}` : ''}`,
+        usuarioNombre: user?.nombre || 'Cocina',
+      })
+    }
     load()
   }
 
@@ -1003,7 +1015,7 @@ export default function KDSScreen({ user, onBack }) {
                       <div className="kds-card-cancelada">
                         ✕ ANULADO EN CAJA — NO PREPARAR
                         <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 3, opacity: .9 }}>
-                          Decí si ya estaba hecho: si se bota, queda como merma.
+                          Decí qué pasó: si se bota queda como merma; si va para otra orden, elegís cuál.
                         </div>
                       </div>
                     )}
@@ -1034,10 +1046,17 @@ export default function KDSScreen({ user, onBack }) {
                               </span>
                               <span style={{ display: 'flex', gap: 6, marginTop: 6, width: '100%' }}>
                                 <button onClick={() => confirmarAnulado(item, 'preparado')}
+                                  title="Ya estaba hecho y se bota: queda como merma"
                                   style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: '1px solid #ef444488', background: '#ef444422', color: '#fecaca', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
-                                  🗑️ Ya estaba hecho
+                                  🗑️ Se botó
+                                </button>
+                                <button onClick={() => confirmarAnulado(item, 'reutilizado')}
+                                  title="Ya estaba hecho y se usa en otra orden: no es merma"
+                                  style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: '1px solid #3b82f688', background: '#3b82f622', color: '#bfdbfe', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+                                  ♻️ Otra orden
                                 </button>
                                 <button onClick={() => confirmarAnulado(item, 'no_preparado')}
+                                  title="Todavía no se había preparado"
                                   style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: '1px solid #22c55e88', background: '#22c55e22', color: '#bbf7d0', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
                                   ✋ No se hizo
                                 </button>
@@ -1071,6 +1090,9 @@ export default function KDSScreen({ user, onBack }) {
                             </span>
                             {notaVisible && (
                               <span className="kds-item-notarow" style={item.atencion_especial ? { color: '#fca5a5', fontWeight: 700 } : undefined}>📝 {notaVisible}</span>
+                            )}
+                            {item.reutiliza_de && (
+                              <span className="kds-item-notarow" style={{ color: '#86efac', fontWeight: 800, background: '#22c55e1a', borderRadius: 6, padding: '2px 6px' }}>{item.reutiliza_de} · no cocinar otro</span>
                             )}
                           </button>
                         )
@@ -1315,6 +1337,20 @@ export default function KDSScreen({ user, onBack }) {
           </div>
         )
       })()}
+
+      {reutilizar && (
+        <ReutilizarModal
+          {...reutilizar}
+          modo="cocina"
+          onClose={(r) => {
+            setReutilizar(null)
+            if (r?.asignado) toast.success(`Va para ${r.asignado}: quedó marcado en esa orden.`)
+            else if (r?.botado) toast.info('Quedó como merma.')
+            else toast.warning('Quedó pendiente: sale marcado en el cuadre de la noche.')
+            load()
+          }}
+        />
+      )}
 
       <toast.Toast />
     </div>
