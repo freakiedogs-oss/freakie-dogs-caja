@@ -29,10 +29,14 @@ export default function ProductoModifiersModal({
   removibles = [],
 }) {
   // Defensive normalize: cada grupo debe tener opciones como array.
+  // 24-sep-2026: un producto suelto no trae bebida, así que de "Salsas Papas"
+  // se esconde "Agrandado Papa y Bebida" ($1.25 con una bebida que no existe)
+  // y queda "Agrandado de Papa" ($1.00). En los combos lo decide el ComboModal.
   const grupos = useMemo(() => {
+    const conBebida = (o) => /agrandad/i.test(o?.nombre || '') && /(bebida|soda)/i.test(o?.nombre || '') && /papa/i.test(o?.nombre || '')
     return (gruposRaw || []).map(g => ({
       ...g,
-      opciones: Array.isArray(g?.opciones) ? g.opciones : [],
+      opciones: (Array.isArray(g?.opciones) ? g.opciones : []).filter(o => !conBebida(o)),
     })).filter(g => g.opciones.length > 0)
   }, [gruposRaw])
 

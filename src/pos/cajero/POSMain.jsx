@@ -2155,6 +2155,7 @@ const qtyBtn = (off) => ({
 })
 
 function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
+  const toast = useToast()
   const [sel, setSel] = useState({})   // "secKey:grupoId" -> [modId,...]
   const [sin, setSin] = useState([])   // nombres de ingredientes a quitar del combo
   // Varios combos iguales de un solo golpe: si el cliente pide 3 Freakie Burger
@@ -2196,6 +2197,21 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
 
   const toggle = (secKey, g, m) => {
     const k = secKey + ':' + g.id
+    // Freakie Box (3 papas, 2 bebidas): al marcar el tercer agrandado de papa
+    // no hay bebida que agrandar y antes el botón no hacía nada, en silencio.
+    // Se avisa ANTES de tocar el estado (misma cuenta que hace el updater).
+    if (!(sel[k] || []).includes(m.id) && /agrandad/i.test(m?.nombre || '') && !/bebida\s*agrandad/i.test(g?.nombre || '')) {
+      const miSec = secciones.find(sc => sc.key === secKey)
+      if (miSec && !esSecBebida(miSec) && secciones.some(esSecBebida)) {
+        const bebidas = secciones.filter(esSecBebida)
+        const externos = secciones.filter(sc => !esSecBebida(sc)).flatMap(agrandadosDe).filter(a => a.id !== m.id).length
+        const conPropio = bebidas.filter(sc => agrandadosDe(sc).length).length
+        if (bebidas.length - conPropio - externos <= 0 && conPropio === 0) {
+          toast.warning(`Las ${bebidas.length} bebida${bebidas.length > 1 ? 's' : ''} del combo ya van agrandadas: no hay otra que agrandar.`)
+          return
+        }
+      }
+    }
     setSel(prev => {
       const cur = prev[k] || []
       const yaEstaba = cur.includes(m.id)
@@ -2309,8 +2325,22 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   // agrandado. Por eso, al agrandar, el grupo de bebida normal de ESA bebida deja
   // de ofrecer bebidas: el sabor se elige en "Bebida Agrandado" y es el que se descuenta.
   const filtraBebidas = (sec, g) => esSecBebida(sec) && secAgrandada(sec) && esGrupoBebida(g)
+  // 24-sep-2026 (Cesar): en los combos SIN bebida (restaurante, Royal) las
+  // papas ofrecían "Agrandado Papa y Bebida $1.25" y se cobraba la bebida que
+  // no existe. Ahora ese combo ofrece "Agrandado de Papa $1.00" y esconde el
+  // de papa y bebida; en un combo CON bebida pasa al revés. Las dos opciones
+  // viven en el mismo grupo "Salsas Papas": el modal decide cuál mostrar.
+  const comboConBebida = secciones.some(esSecBebida)
+  const esAgrandadoConBebida = (m) => esOpcionAgrandado(m) && /(bebida|soda)/i.test(m?.nombre || '')
+  const esAgrandadoSoloPapa  = (m) => esOpcionAgrandado(m) && /papa/i.test(m?.nombre || '') && !/(bebida|soda)/i.test(m?.nombre || '')
+  const aplicaAlCombo = (sec, m) => {
+    if (esSecBebida(sec)) return true                       // el $0.50 y los sabores siguen igual
+    if (esAgrandadoSoloPapa(m)) return !comboConBebida       // solo cuando no hay bebida
+    if (esAgrandadoConBebida(m)) return comboConBebida       // solo cuando sí la hay
+    return true
+  }
   const opcionesVisibles = (sec, g) =>
-    filtraBebidas(sec, g) ? (g.opciones || []).filter(esOpcionAgrandado) : (g.opciones || [])
+    (filtraBebidas(sec, g) ? (g.opciones || []).filter(esOpcionAgrandado) : (g.opciones || [])).filter(m => aplicaAlCombo(sec, m))
   const grupoOculto = (sec, g) =>
     (esGrupoSabores(g) && !secAgrandada(sec)) || tapaDisparador(sec, g) || opcionesVisibles(sec, g).length === 0
 
