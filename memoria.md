@@ -9,6 +9,18 @@
 - **Pendiente:** instalar a mano la APK v1.3 en la Fire de Venecia (NO hay auto-update: la app solo recarga la web, la APK se sideloadea) y probar el botón de la foto. Los vouchers vacíos se ven en `ventas_diarias` con `tarjeta_n1co` lleno y `voucher_n1co_url` null.
 
 
+
+## 23-Sep-2026 — Agrandados Metrocentro: Stephanie renunció; Rosa y Liseth toman el puesto (migración `20260923_agrandados_ajuste_inicial.sql`)
+
+**Por qué:** el incentivo de agrandados cuenta por `pos_cocina_queue.mesero` (nombre del usuario que cobró) y `agrandado_config` tenía solo a Stephanie en S006. Cesar quiso repartir mitad y mitad lo acumulado en septiembre y que de ahora en adelante cada una facture con su propio PIN.
+
+**Qué cambió:**
+- `agrandado_config` gana `ajuste_inicial` (agrandados que se suman al contador) y `ajuste_mes` (mes al que aplica, día 1). `fn_agrandados_panel` suma ese arrastre al `mes` (bloques, dinero, faltan y proyección) sólo dentro de ese mes; `hoy`, cuentas y tasa siguen siendo lo propio de cada una. No se reescribe historia.
+- S006: Stephanie `activo=false`; filas nuevas para **Rosa** y **Liseth** con `activo_desde=2026-09-23`, bloque 100 × $0.10, arrastre **737 c/u** = mitad de 1,474 (1,310 de Stephanie + 164 cobrados con el PIN de Super Admin en Metro, decisión de Cesar).
+- Usuario nuevo `Liseth` (cajera, S006, PIN de 4 dígitos). Rosa cobra con su usuario de siempre (rol cocina también opera caja; el chip de agrandados empareja por nombre, sin rol).
+
+**Pendientes que salieron al revisar:** (1) en Metro hay 575 cuentas de septiembre cobradas con el PIN de **Super Admin**: alguien usa ese PIN en caja; (2) en Soyapango `agrandado_config` apunta a «Rigoberto Armando» pero quien cobra es **Ramses** (708 agrandados en el mes que no le cuentan a nadie).
+
 ## 22-Sep-2026 — Cuadre nocturno: tablas de críticos, historial y pendientes compartidos
 
 **Por qué:** el skill de cuadre (`cuadre-nocturno-freakie`, lo corren Cesar y Frank con su propio Claude) tenía la lista de críticos y las tolerancias en el texto, cada corrida armaba su propia presentación y las hipótesis de una noche se perdían al día siguiente.
