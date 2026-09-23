@@ -10,6 +10,17 @@
 
 
 
+
+## 23-Sep-2026 — Incentivo por tocino extra en Metrocentro (migración `20260923_incentivo_tocino.sql`)
+
+**Por qué:** Cesar quiere empujar el combo con tocino. Rosa y Liseth ganan **$0.05 por cada tocino extra** vendido, encima del incentivo de agrandados, sin bloques.
+
+**Qué cambió:**
+- `agrandado_config` gana `tocino_valor` ($ por unidad, 0 = apagado) y `tocino_desde`. Nueva `fn_tocino_extra_es(nombre, mods)`: cuenta el modificador «Tocino» ($0.75, en burgers, hot dogs y papas) y el ítem suelto «Tocino»; NO cuenta «SIN Tocino» ni «Mermelada de Tocino».
+- `fn_agrandados_panel` se recreó (cambia el retorno) con `tocino_valor, tocino_desde, tocino_hoy, tocino_mes, tocino_dinero`; cuenta desde `tocino_desde` dentro del mes y excluye filas `anulado`. Grants a anon/authenticated re-aplicados.
+- POS `AgrandadoChip`: el chip muestra «🥓 $x.xx» al lado del dinero de agrandados, flotante naranja al vender uno, y tarjeta de tocino en el panel. ERP `AgrandadosView`: misma tarjeta.
+- Referencia: Stephanie vendía ~236 tocinos extra al mes en Metro (≈ $11.80 con esta tarifa).
+
 ## 23-Sep-2026 — Agrandados Metrocentro: Stephanie renunció; Rosa y Liseth toman el puesto (migración `20260923_agrandados_ajuste_inicial.sql`)
 
 **Por qué:** el incentivo de agrandados cuenta por `pos_cocina_queue.mesero` (nombre del usuario que cobró) y `agrandado_config` tenía solo a Stephanie en S006. Cesar quiso repartir mitad y mitad lo acumulado en septiembre y que de ahora en adelante cada una facture con su propio PIN.

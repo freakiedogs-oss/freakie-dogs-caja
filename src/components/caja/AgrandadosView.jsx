@@ -255,6 +255,22 @@ function Tarjeta({ f, solo }) {
         </div>
       </div>
 
+      {Number(f.tocino_valor || 0) > 0 && (
+        <div style={{ ...card, background: '#2a1a0e', border: '1px solid #7c3a12',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ color: '#fdba74', fontSize: 13 }}>🥓 Tocino extra · ${Number(f.tocino_valor).toFixed(2)} por cada uno, sin bloques</div>
+            <div style={{ color: '#fb923c', fontSize: 30, fontWeight: 700, margin: '2px 0' }}>
+              ${Number(f.tocino_dinero || 0).toFixed(2)}
+            </div>
+            <div style={{ color: '#fdba74', fontSize: 13 }}>
+              {f.tocino_mes} vendidos este mes · hoy {f.tocino_hoy}{f.tocino_desde ? ` · cuenta desde el ${new Date(f.tocino_desde + 'T12:00:00').getDate()}` : ''}
+            </div>
+          </div>
+          <div style={{ fontSize: 34 }}>🥓</div>
+        </div>
+      )}
+
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 9 }}>
           <span style={{ fontSize: 16, fontWeight: 700 }}>

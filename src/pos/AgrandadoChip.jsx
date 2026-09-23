@@ -25,6 +25,7 @@ export default function AgrandadoChip({ user }) {
 
   const previoMes = useRef(null)
   const previoBloques = useRef(null)
+  const previoTocino = useRef(null)
   const cvRef = useRef(null)
   const piezas = useRef([])
   const corriendo = useRef(false)
@@ -45,8 +46,14 @@ export default function AgrandadoChip({ user }) {
         confetti()
         setTimeout(() => setFes(null), 4500)
       }
+      // Tocino extra (23-sep-2026): $0.05 por unidad, sin bloques. Mismo flotante que
+      // el agrandado, en naranja, para que la cajera lo vea sumar al momento.
+      if (mia.ya_arranco && Number(mia.tocino_valor) > 0 && previoTocino.current !== null && mia.tocino_mes > previoTocino.current) {
+        lanzarFlotante((mia.tocino_mes - previoTocino.current) * Number(mia.tocino_valor), '#fb923c')
+      }
       previoMes.current = mia.mes
       previoBloques.current = mia.bloques
+      previoTocino.current = mia.tocino_mes
       setF(mia)
     } catch { /* si falla, el chip simplemente no aparece: no estorba el cobro */ }
   }
@@ -68,9 +75,9 @@ export default function AgrandadoChip({ user }) {
     return () => { clearInterval(t); try { db.removeChannel(canal) } catch { /* ya cerrado */ } }
   }, [user?.nombre])
 
-  function lanzarFlotante(monto) {
+  function lanzarFlotante(monto, color) {
     const id = Math.random().toString(36).slice(2)
-    setFlot(v => [...v, { id, monto }])
+    setFlot(v => [...v, { id, monto, color }])
     setTimeout(() => setFlot(v => v.filter(x => x.id !== id)), 1500)
   }
 
@@ -124,6 +131,7 @@ export default function AgrandadoChip({ user }) {
   const proyectable = f.dia_del_mes >= 6 && proy > 0
   const llega  = proy >= meta
   const cierreMes = f.dia_del_mes >= f.dias_del_mes - 5
+  const tocinoOn = Number(f.tocino_valor || 0) > 0
 
   return (
     <>
@@ -153,7 +161,7 @@ export default function AgrandadoChip({ user }) {
         {flotantes.map((x, i) => (
           <span key={x.id} style={{
             position: 'absolute', left: '50%', top: 0, transform: 'translateX(-50%)',
-            color: '#22c55e', fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap',
+            color: x.color || '#22c55e', fontSize: 17, fontWeight: 700, whiteSpace: 'nowrap',
             pointerEvents: 'none', zIndex: 9997,
             animation: 'agrSube 1.5s cubic-bezier(.22,.7,.3,1) forwards',
             animationDelay: `${i * 0.09}s`,
@@ -174,6 +182,11 @@ export default function AgrandadoChip({ user }) {
           <span style={{ color: '#86efac', fontWeight: 400, marginLeft: 6 }}>
             {f.resto}/{f.bloque_tam}
           </span>
+          {tocinoOn && (
+            <span style={{ color: '#fb923c', marginLeft: 8 }} title="Tocino extra: $0.05 cada uno">
+              🥓 ${Number(f.tocino_dinero || 0).toFixed(2)}
+            </span>
+          )}
         </button>
       </span>
 
@@ -222,6 +235,22 @@ export default function AgrandadoChip({ user }) {
                 <div style={{ color: '#8a8a92', fontSize: 12 }}>{f.hoy} agrandados</div>
               </div>
             </div>
+
+            {tocinoOn && (
+              <div style={{ background: '#2a1a0e', border: '1px solid #7c3a12', borderRadius: 11, padding: 13, marginBottom: 11,
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ color: '#fdba74', fontSize: 13 }}>🥓 Tocino extra · ${Number(f.tocino_valor).toFixed(2)} cada uno</div>
+                  <div style={{ color: '#fb923c', fontSize: 27, fontWeight: 700, margin: '2px 0' }}>
+                    ${Number(f.tocino_dinero || 0).toFixed(2)}
+                  </div>
+                  <div style={{ color: '#fdba74', fontSize: 12 }}>
+                    {f.tocino_mes} este mes · hoy {f.tocino_hoy}
+                  </div>
+                </div>
+                <div style={{ fontSize: 30 }}>🥓</div>
+              </div>
+            )}
 
             <div style={{ background: '#1a1a1c', borderRadius: 11, padding: 14, marginBottom: 11 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
