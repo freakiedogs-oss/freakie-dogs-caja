@@ -263,6 +263,9 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   // Cuadre n1co (solo Z). Informativo: no entra a ventas, depósito ni diferencia de efectivo.
   const [n1co, setN1co]                   = useState('')
   const [voucherFile, setVoucherFile]     = useState(null)
+  // Salida si el equipo no deja tomar la foto (Fire de Venecia dentro de la APK, 23-sep):
+  // el Z se cierra sin voucher y la foto se adjunta después desde el celular (editar cierre).
+  const [sinVoucher, setSinVoucher]       = useState(false)
   const [motivoN1co, setMotivoN1co]       = useState('')
   const [motivoOtroN1co, setMotivoOtroN1co] = useState('')
   const voucherRef = useRef(null)
@@ -597,7 +600,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     if (diaInfo.zExiste) { toast.error('El día ya fue cerrado con corte Z.'); return }
     if (!efectivoReal) { toast.warning('Cuenta e ingresa el efectivo de la gaveta'); return }
     if (!hayN1co) { toast.warning('Ingresá el total de tarjeta que muestra el cierre del datáfono n1co'); return }
-    if (!voucherFile) { toast.warning('Tomá la foto del voucher de cierre de n1co'); return }
+    if (!voucherFile && !sinVoucher) { toast.warning('Tomá la foto del voucher de cierre de n1co (o marcá que la tablet no deja tomarla)'); return }
     if (!n1coCuadra && !motivoN1coFinal) { toast.warning('El total de n1co no cuadra con el sistema: elegí por qué'); return }
     if (!(await confirmAsync('¿Cerrar el DÍA con corte Z? Es definitivo y solo se hace una vez al día. Incluye todos los turnos.', { title: 'Corte Z · cierre del día', confirmText: 'Cerrar el día', danger: true }))) return
     setSaving(true)
@@ -611,7 +614,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       const egresosFinal = await subirFotos(egresos)
       // Voucher n1co: misma regla que las fotos de egreso — si no sube, el Z se guarda igual.
       let voucherUrl = null
-      try {
+      if (voucherFile) try {
         voucherUrl = await Promise.race([
           uploadFoto(voucherFile, `vouchers-n1co/${storeCode}`),
           new Promise((_, rej) => setTimeout(() => rej(new Error('la foto tardó demasiado')), FOTO_TIMEOUT_MS)),
@@ -815,7 +818,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
             <div style={{ marginTop: 10 }}>
               <div style={_lbl}>Foto del voucher de cierre <span style={{ color: '#FFD900' }}>★</span></div>
               <input ref={voucherRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) setVoucherFile(f) }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setVoucherFile(f); setSinVoucher(false) } }} />
               <div onClick={() => voucherRef.current?.click()}
                 style={{
                   border: `2px ${voucherFile ? 'solid #2dd4a8' : 'dashed #43382f'}`, borderRadius: 10, padding: 14,
@@ -823,6 +826,12 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
                 }}>
                 {voucherFile ? '✓ Voucher adjunto · tocá para cambiarlo' : '📷 Tomar foto del voucher'}
               </div>
+              {!voucherFile && (
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, fontSize: 12, color: sinVoucher ? '#fbbf24' : '#9a9088', cursor: 'pointer', lineHeight: 1.45 }}>
+                  <input type="checkbox" checked={sinVoucher} onChange={(e) => setSinVoucher(e.target.checked)} style={{ marginTop: 2 }} />
+                  <span>Esta tablet no deja tomar la foto: cerrar sin voucher.{sinVoucher && <><br />Guardá el voucher y mandale la foto a administración para que la adjunte al cierre.</>}</span>
+                </label>
+              )}
             </div>
             {hayN1co && !n1coCuadra && (
               <div style={{ marginTop: 10 }}>

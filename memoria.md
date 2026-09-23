@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Sep-2026 — Corte Z: Venecia no podía cerrar por la foto del voucher n1co
+
+**Reporte Jose:** Alejandro (S004, Paseo Venecia) no pudo hacer el Z del 22-sep porque la tablet no le dejaba tomar la foto del voucher n1co (obligatoria desde el 22-sep).
+- **Qué pasó el 22-sep (BD):** Alejandro solo pudo hacer un **X** (17:05); el **Z lo hizo Josue a las 22:26**, con una foto de 1.9 MB que casi seguro salió de un celular. El voucher del 21-sep se adjuntó después desde edición de cierre.
+- **Por qué solo Venecia:** es la única sucursal con el POS dentro de la **APK propia en una Fire tablet** (`android-printer/`). Una `<input type=file>` dentro de un WebView solo funciona si la APK implementa `onShowFileChooser`, cosa que se agregó recién el 15-sep (v1.3). **La Fire de Venecia nunca subió una foto desde el POS** (0 fotos de egreso y 0 vouchers en `cierres-fotos` de S004 hechos desde la tablet), lo que apunta a que tiene instalada una APK anterior (v1.1/1.2, de julio) donde tocar el botón no hace nada. No se puede confirmar desde acá: hay que ver la versión en la tablet (Configuración → Apps → Freakie POS).
+- **Fix inmediato (`src/pos/CierreTurno.jsx`):** debajo de "Tomar foto del voucher" hay una casilla *"Esta tablet no deja tomar la foto: cerrar sin voucher"*. Con ella marcada el Z cierra con `voucher_n1co_url = null` (el total n1co y el motivo siguen siendo obligatorios) y la foto se adjunta después desde el ERP (editar cierre, `CierreForm`, donde el voucher ya es opcional). Si luego se adjunta una foto, la casilla se desmarca sola.
+- **Pendiente:** reinstalar la APK v1.3 en la Fire de Venecia (build de `.github/workflows/android.yml`) y probar el botón de la foto. Los vouchers vacíos se ven en `ventas_diarias` con `tarjeta_n1co` lleno y `voucher_n1co_url` null.
+
 ## 23-Sep-2026 — POS: agrandado de bebida por bebida, no por combo (ComboModal)
 
 **Reporte Cesar (Metro):** en un combo con dos bebidas (Duo Picossini, Burger Duo…), marcar «Agrandado de bebida» en la bebida 1 le quitaba a la bebida 2 las opciones gratis y le exigía sabor de agrandado. Causa: `hayAgrandado` era global al combo; `filtraBebidas`/`grupoOculto`/`falta` no sabían de qué bebida se trataba. Además la exclusividad del 19-sep apagaba TODOS los agrandados del combo, así que era imposible agrandar las dos bebidas de un Duo.
