@@ -5,6 +5,7 @@ import Icon from './Icon'
 import HistorialCobros from './HistorialCobros'
 import PinAuthModal from './PinAuthModal'
 import PreparadoModal from './PreparadoModal'
+import ReutilizarModal from './ReutilizarModal'
 
 const TIPO = {
   mesa:            { ic: 'armchair', l: 'Mesa',        c: '#2dd4a8' },
@@ -33,6 +34,7 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
   const [loading, setLoading] = useState(true)
   const [pinAuth, setPinAuth] = useState(null)
   const [preparado, setPreparado] = useState(null) // { cuenta, auth, motivo, label, cocinaListo }
+  const [reutilizar, setReutilizar] = useState([])  // platos "se usa en otra orden" que falta ubicar, uno por uno
   const firstLoadRef = useRef(true)   // spinner solo en la 1ª carga; los refrescos son silenciosos
 
   const loadActivas = useCallback(async () => {
@@ -91,6 +93,19 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
       p_usuario_nombre: auth?.nombre || user?.nombre || null,
     })
     if (error) { window.alert('Error al cancelar: ' + error.message); return }
+    // "Se usa en otra orden" (22-sep-2026): por cada plato que ya estaba en
+    // cocina, elegir a qué orden va. Sin destino queda pendiente para el cuadre.
+    if (respuesta === 'reutilizado') {
+      const { data: pend } = await db.from('pos_mermas_producto')
+        .select('id, cuenta_item_id, cantidad, producto_nombre')
+        .eq('cuenta_id', c.id).eq('respuesta_caja', 'reutilizado').is('destino_item_id', null)
+      setReutilizar((pend || []).map(m => ({
+        mermaId: m.id,
+        cuentaItemId: m.cuenta_item_id,
+        titulo: `${Number(m.cantidad) > 1 ? Number(m.cantidad) + '× ' : ''}${m.producto_nombre} · ${label}`,
+        usuarioNombre: auth?.nombre || user?.nombre || null,
+      })))
+    }
     loadActivas()
   }
 
@@ -224,6 +239,15 @@ export default function OrdenesView({ user, onBack, onOpenOrder }) {
           cocinaListo={preparado.cocinaListo}
           onCancel={() => setPreparado(null)}
           onElegir={(resp) => { const p = preparado; setPreparado(null); doCancelar(p.cuenta, p.auth, { motivo: p.motivo, respuesta: resp }) }}
+        />
+      )}
+
+      {reutilizar.length > 0 && (
+        <ReutilizarModal
+          key={reutilizar[0].mermaId}
+          {...reutilizar[0]}
+          modo="caja"
+          onClose={() => setReutilizar(prev => prev.slice(1))}
         />
       )}
 

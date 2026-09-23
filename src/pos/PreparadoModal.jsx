@@ -11,6 +11,7 @@ import Icon from './Icon'
 //   titulo      — qué se anula ("2× Freakie Dog" o "Mesa #17")
 //   cocinaListo — true si cocina ya lo marcó listo (se sugiere "Sí, se bota")
 //   onElegir(respuesta) — 'preparado' | 'no_preparado' | 'reutilizado'
+//     ('reutilizado' abre después ReutilizarModal para elegir la orden destino)
 //   onCancel
 export default function PreparadoModal({ titulo, cocinaListo = false, onElegir, onCancel }) {
   const opcion = (resp, color, icono, texto, sub) => (
@@ -45,8 +46,8 @@ export default function PreparadoModal({ titulo, cocinaListo = false, onElegir, 
           'Se anula y no se descarga nada.')}
         {opcion('preparado', '#ef4444', '🗑️', 'Sí, ya estaba hecho y se bota',
           'Queda como merma de producto preparado.')}
-        {opcion('reutilizado', '#3b82f6', '🔁', 'Sí, pero se usa en otra orden',
-          'No es merma: el plato hecho se entrega en la otra cuenta.')}
+        {opcion('reutilizado', '#3b82f6', '♻️', 'Sí, y va para otra orden',
+          'Después elegís a cuál. No es merma y no se descuenta dos veces.')}
 
         <div style={{ fontSize: 11.5, color: '#8b8997', margin: '4px 2px 10px' }}>
           Cocina lo confirma en su pantalla. Si no coincide, vale lo que diga cocina.
