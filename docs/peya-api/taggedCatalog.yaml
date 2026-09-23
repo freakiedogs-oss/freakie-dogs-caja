@@ -1,0 +1,588 @@
+taggedCatalog:
+  value:
+    callbackUrl: 'https://example.com/callback'
+    vendors:
+      - u9pq
+    catalog:
+      items:
+        REGULAR_MENU:
+          id: REGULAR_MENU
+          type: Menu
+          title:
+            default: REGULAR_MENU
+          description:
+            default: Our Daily Menu
+          tags:
+            occasionType:
+              - REGULAR
+          images: { }
+          products:
+            PIZZA_MENU_REGULAR:
+              id: PIZZA_MENU_REGULAR
+              type: Product
+            HOUSE_WINE_033:
+              id: HOUSE_WINE_033
+              type: Product
+            HOUSE_WINE_05:
+              id: HOUSE_WINE_05
+              type: Product
+            BEER_033:
+              id: BEER_033
+              type: Product
+            BEER_05:
+              id: BEER_05
+              type: Product
+            LIMONCELLO_075:
+              id: LIMONCELLO_075
+              type: Product
+            LIMONCELLO_01:
+              id: LIMONCELLO_01
+              type: Product
+            COKE_033:
+              id: COKE_033
+              type: Product
+              title:
+            COKE_05:
+              id: COKE_05
+              type: Product
+            FANTA_033:
+              id: FANTA_033
+              type: Product
+            FANTA_05:
+              id: FANTA_05
+              type: Product
+          schedule:
+            WEEKLY_REGULAR_MENU_SCHEDULE:
+              id: WEEKLY_REGULAR_MENU_SCHEDULE
+              type: ScheduleEntry
+          menuType: DELIVERY
+        SINGLE_LUNCH_MENU:
+          id: SINGLE_LUNCH_MENU
+          type: Menu
+          title:
+            default: Single Lunch Menu
+          description:
+            default: Single Lunch Menu
+          tags:
+            occasionType:
+              - MEAL_FOR_ONE
+          images: { }
+          products:
+            PIZZA_CHEESE_SINGLE_LUNCH_MENU:
+              id: PIZZA_CHEESE_SINGLE_LUNCH_MENU
+              type: Product
+            PIZZA_SALAMI_SINGLE_LUNCH_MENU:
+              id: PIZZA_SALAMI_SINGLE_LUNCH_MENU
+              type: Product
+          menuType: DELIVERY
+          schedule:
+            SINGLE_LUNCH_MENU_SCHEDULE:
+              type: ScheduleEntry
+              id: SINGLE_LUNCH_MENU_SCHEDULE
+        WEEKLY_REGULAR_MENU_SCHEDULE:
+          id: WEEKLY_REGULAR_MENU_SCHEDULE
+          type: ScheduleEntry
+          startTime: '00:00:00'
+          endTime: '23:59:00'
+          weekDays:
+            - MONDAY
+            - TUESDAY
+            - WEDNESDAY
+            - THURSDAY
+            - FRIDAY
+            - SATURDAY
+            - SUNDAY
+        SINGLE_LUNCH_MENU_SCHEDULE:
+          id: SINGLE_LUNCH_MENU_SCHEDULE
+          type: ScheduleEntry
+          startTime: '11:00:00'
+          endTime: '13:30:00'
+          weekDays:
+            - MONDAY
+            - TUESDAY
+            - WEDNESDAY
+            - THURSDAY
+            - FRIDAY
+        PIZZA:
+          id: PIZZA
+          type: Category
+          title:
+            default: Pizza
+          description:
+            default: Original Italian Pizzas
+          products:
+            PIZZA_MENU_REGULAR:
+              id: PIZZA_MENU_REGULAR
+              type: Product
+            PIZZA_CHEESE_SINGLE_LUNCH_MENU:
+              id: PIZZA_CHEESE_SINGLE_LUNCH_MENU
+              type: Product
+            PIZZA_SALAMI_SINGLE_LUNCH_MENU:
+              id: PIZZA_SALAMI_SINGLE_LUNCH_MENU
+              type: Product
+          tags:
+            masterCategory:
+              - BIG_MAINS
+        ALCOHOLIC_DRINKS:
+          id: ALCOHOLIC_DRINKS
+          type: Category
+          title:
+            default: Alcoholics
+          description:
+            default: Alcoholics
+          products:
+            HOUSE_WINE_033:
+              id: HOUSE_WINE_033
+              type: Product
+            HOUSE_WINE_05:
+              id: HOUSE_WINE_05
+              type: Product
+            BEER_033:
+              id: BEER_033
+              type: Product
+            BEER_05:
+              id: BEER_05
+              type: Product
+            LIMONCELLO_075:
+              id: LIMONCELLO_075
+              type: Product
+            LIMONCELLO_01:
+              id: LIMONCELLO_01
+              type: Product
+          tags:
+            masterCategory:
+              - DRINKS_ALCOHOLICS
+        DRINKS:
+          id: DRINKS
+          type: Category
+          title:
+            default: Non Alcoholic Drinks
+          description:
+            default: Non Alcoholic Drinks
+          products:
+            COKE_033:
+              id: COKE_033
+              type: Product
+            COKE_05:
+              id: COKE_05
+              type: Product
+            FANTA_033:
+              id: FANTA_033
+              type: Product
+            FANTA_05:
+              id: FANTA_05
+              type: Product
+          tags:
+            masterCategory:
+              - DRINKS_NON_ALCOHOLICS
+        PIZZA_TOPPINGS:
+          id: PIZZA_TOPPINGS
+          type: Category
+          title:
+            default: Toppings for PIZZA
+          products:
+            EXTRA_CHEESE_PIZZA:
+              id: EXTRA_CHEESE_PIZZA
+              type: Product
+            EXTRA_JALAPENOS_PIZZA:
+              id: EXTRA_JALAPENOS_PIZZA
+              type: Product
+            EXTRA_GARLIC_PIZZA:
+              id: EXTRA_GARLIC_PIZZA
+              type: Product
+          tags:
+            masterCategory:
+              - TOPPINGS
+        PIZZA_MENU_REGULAR:
+          parent:
+          id: PIZZA_MENU_REGULAR
+          type: Product
+          title:
+            default: Pizza Menu
+          description:
+            default: Pizza Menu
+          images: { }
+          variants:
+            PIZZA_SALAMI_REGULAR:
+              id: PIZZA_SALAMI_REGULAR
+              type: Product
+            PIZZA_CHEESE_REGULAR:
+              id: PIZZA_CHEESE_REGULAR
+              type: Product
+          toppings: { }
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        PIZZA_SALAMI_REGULAR:
+          parent:
+            id: PIZZA_MENU_REGULAR
+            type: Product
+          id: PIZZA_SALAMI_REGULAR
+          type: Product
+          title:
+            default: Pizza Salami
+          description:
+            default: Pizza Salami
+          images: { }
+          variants: { }
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+            DRINKS_MENU:
+              id: DRINKS_MENU
+              type: Topping
+          price: '15.00'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        PIZZA_CHEESE_REGULAR:
+          parent:
+            id: PIZZA_MENU_REGULAR
+            type: Product
+          id: PIZZA_CHEESE_REGULAR
+          type: Product
+          title:
+            default: Pizza Cheese
+          description:
+            default: Pizza Cheese
+          images: { }
+          variants: { }
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+            DRINKS_MENU:
+              id: DRINKS_MENU
+              type: Topping
+          price: '13.00'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        PIZZA_SALAMI_SINGLE_LUNCH_MENU:
+          parent:
+          id: PIZZA_SALAMI_SINGLE_LUNCH_MENU
+          type: Product
+          title:
+            default: Pizza Salami Menu
+          description:
+            default: Pizza Salami Menu
+          images: { }
+          variants:
+            PIZZA_SALAMI_SINGLE:
+              id: PIZZA_SALAMI_SINGLE
+              type: Product
+          toppings: { }
+        PIZZA_CHEESE_SINGLE_LUNCH_MENU:
+          parent:
+          id: PIZZA_CHEESE_SINGLE_LUNCH_MENU
+          type: Product
+          title:
+            default: Pizza Cheese Menu
+          description:
+            default: Pizza Cheese Menu
+          images: { }
+          variants:
+            PIZZA_CHEESE_SINGLE:
+              id: PIZZA_CHEESE_SINGLE
+              type: Product
+          toppings: { }
+        PIZZA_SALAMI_SINGLE:
+          parent:
+            id: PIZZA_SALAMI_SINGLE_LUNCH_MENU
+            type: Product
+          id: PIZZA_SALAMI_SINGLE
+          type: Product
+          title:
+            default: Pizza Salami
+          description:
+            default: Pizza Salami
+          images: { }
+          variants: { }
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+            DRINKS_MENU_SINGLE:
+              id: DRINKS_MENU_SINGLE
+              type: Topping
+          price: '11.00'
+        PIZZA_CHEESE_SINGLE:
+          parent:
+            id: PIZZA_CHEESE_SINGLE_LUNCH_MENU
+            type: Product
+          id: PIZZA_CHEESE_SINGLE
+          type: Product
+          title:
+            default: Pizza Cheese
+          description:
+            default: Pizza Cheese
+          images: { }
+          variants: { }
+          toppings:
+            PIZZA_EXTRAS:
+              id: PIZZA_EXTRAS
+              type: Topping
+            DRINKS_MENU_SINGLE:
+              id: DRINKS_MENU_SINGLE
+              type: Topping
+          price: '11.00'
+        HOUSE_WINE_033:
+          parent:
+          id: HOUSE_WINE_033
+          type: Product
+          title:
+            default: House Wine 0.33l
+          description:
+            default: House Wine 0.33l
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '3.50'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        HOUSE_WINE_05:
+          parent:
+          id: HOUSE_WINE_05
+          type: Product
+          title:
+            default: House Wine 0.5l
+          description:
+            default: House Wine 0.5l
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '5.50'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        BEER_033:
+          id: BEER_033
+          type: Product
+          title:
+            default: Beer 0.33l
+          description:
+            default: Beer 0.33l
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '3.00'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        BEER_05:
+          id: BEER_05
+          type: Product
+          title:
+            default: Beer 0.5l
+          description:
+            default: Beer 0.5l
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '4.50'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        LIMONCELLO_075:
+          id: LIMONCELLO_075
+          type: Product
+          title:
+            default: Limoncello Bottle 0.75
+          description:
+            default: Limoncello Bottle 0.75
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '21.99'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        LIMONCELLO_01:
+          id: LIMONCELLO_01
+          type: Product
+          title:
+            default: Limoncello Bottle 0.1
+          description:
+            default: Limoncello Bottle 0.1
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '3.50'
+          tags:
+            ageRestrictedItem:
+              - ID_CHECK_18
+        COKE_033:
+          id: COKE_033
+          type: Product
+          title:
+            default: Coke 0.33l
+          description:
+            default: Coke 0.33l
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '2.50'
+        COKE_05:
+          id: COKE_05
+          type: Product
+          title:
+            default: Coke 0.5l
+          description:
+            default: Coke 0.5l
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '4.00'
+        FANTA_033:
+          id: FANTA_033
+          type: Product
+          title:
+            default: Fanta 0.33l
+          description:
+            default: Fanta 0.33l
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '2.50'
+        FANTA_05:
+          id: FANTA_05
+          type: Product
+          title:
+            default: Fanta 0.5l
+          description:
+            default: Fanta 0.5l
+          images: { }
+          variants: { }
+          toppings: { }
+        EXTRA_CHEESE_PIZZA:
+          parent:
+          id: EXTRA_CHEESE_PIZZA
+          type: Product
+          title:
+            default: Extra Cheese
+          description:
+            default: Extra Cheese
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '0.00'
+        EXTRA_JALAPENOS_PIZZA:
+          parent:
+          id: EXTRA_JALAPENOS_PIZZA
+          type: Product
+          title:
+            default: Extra Jalapenos
+          description:
+            default: Extra Jalapenos
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '0.00'
+        EXTRA_GARLIC_PIZZA:
+          parent:
+          id: EXTRA_GARLIC_PIZZA
+          type: Product
+          title:
+            default: Extra Garlic
+          description:
+            default: Extra Garlic
+          images: { }
+          variants: { }
+          toppings: { }
+          price: '0.00'
+        PIZZA_EXTRAS:
+          id: PIZZA_EXTRAS
+          type: Topping
+          title:
+            default: Extras for your pizza
+          description:
+            default: Extras for your pizza
+          images: { }
+          quantity:
+            minimum: 0
+            maximum: 2
+          products:
+            EXTRA_CHEESE_PIZZA:
+              id: EXTRA_CHEESE_PIZZA
+              type: Product
+              price: '1.50'
+            EXTRA_JALAPENOS_PIZZA:
+              id: EXTRA_JALAPENOS_PIZZA
+              type: Product
+              price: '1.50'
+            EXTRA_GARLIC_PIZZA:
+              id: EXTRA_GARLIC_PIZZA
+              type: Product
+              price: '1.50'
+        DRINKS_MENU:
+          id: DRINKS_MENU
+          type: Topping
+          title:
+            default: Select a Drink
+          description:
+            default: Drinks
+          quantity:
+            minimum: 1
+            maximum: 1
+          products:
+            HOUSE_WINE_033:
+              id: HOUSE_WINE_033
+              type: Product
+              price: '1.50'
+            HOUSE_WINE_05:
+              id: HOUSE_WINE_05
+              type: Product
+              price: '2.50'
+            BEER_033:
+              id: BEER_033
+              type: Product
+              price: '1.00'
+            BEER_05:
+              id: BEER_05
+              type: Product
+              price: '1.50'
+            COKE_033:
+              id: COKE_033
+              type: Product
+              price: '0.00'
+            COKE_05:
+              id: COKE_05
+              type: Product
+              price: '1.00'
+            FANTA_033:
+              id: FANTA_033
+              type: Product
+              price: '0.00'
+            FANTA_05:
+              id: FANTA_05
+              type: Product
+              price: '1.00'
+        DRINKS_MENU_SINGLE:
+          id: DRINKS_MENU_SINGLE
+          type: Topping
+          title:
+            default: Select a Drink
+          description:
+            default: Drinks
+          quantity:
+            minimum: 1
+            maximum: 1
+          products:
+            COKE_033:
+              id: COKE_033
+              type: Product
+              price: '0.00'
+            COKE_05:
+              id: COKE_05
+              type: Product
+              price: '1.00'
+            FANTA_033:
+              id: FANTA_033
+              type: Product
+              price: '0.00'
+            FANTA_05:
+              id: FANTA_05
+              type: Product
+              price: '1.00'
