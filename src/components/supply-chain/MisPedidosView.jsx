@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
 import { STORES, fmtDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 import { Badge } from '../ui/Badge';
+import { MOTIVOS_SOS, MOTIVO_SOS_LABEL } from './sos';
 
 // ── MIS PEDIDOS (view-only, gerente/cocina de sucursal) ─────────
 // Historial de pedidos de la sucursal del usuario + estado del proceso:
@@ -93,76 +94,194 @@ function Timeline({ estado, despacho }) {
   );
 }
 
-// ── #12 PEDIDO DE EMERGENCIA (aditivo, sin exigir conteo) ────────
-function PedidoEmergenciaModal({ sucursalId, sucursalNombre, user, onClose, onDone }) {
+// ── PEDIDO SOS (v1, 23-sep-2026) ────────────────────────────────
+// Antes (#12 "Pedido de emergencia") se sumaba a la orden del día y el conteo
+// nocturno, una edición con pantalla vieja o una orden atascada lo borraban
+// sin avisar (simulación del 23-sep). Ahora cada SOS es una orden APARTE
+// (pedidos_sucursal.tipo='sos') que crea la RPC crear_pedido_sos:
+//   · se pide en el empaque del conteo (paquete de 20, bolsa de 12…) y el
+//     servidor convierte a unidad de inventario;
+//   · solo ofrece lo que la sucursal cuenta (sos_catalogo);
+//   · motivo obligatorio, usuario de esa sucursal, código único por envío
+//     (reintentar no duplica) y confirmación si es mucho o si ya va en otro SOS.
+const fmtQ = (v) => String(Math.round(Number(v || 0) * 100) / 100);
+const nuevoToken = () => {
+  try { if (window.crypto?.randomUUID) return window.crypto.randomUUID(); } catch (e) { /* sigue */ }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+};
+const sinTildes = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+function PedidoSosModal({ sucursalId, sucursalNombre, user, sosAbiertos, onClose, onDone }) {
+  const [catalogo, setCatalogo] = useState(null);
   const [q, setQ] = useState('');
-  const [res, setRes] = useState([]);
-  const [sel, setSel] = useState([]); // {producto_id, nombre, unidad, cantidad}
+  const [sel, setSel] = useState([]); // {producto_id, nombre, presentacion, factor, unidad_stock, empaques}
+  const [motivo, setMotivo] = useState('');
+  const [nota, setNota] = useState('');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [avisos, setAvisos] = useState(null);
+  const tokenRef = useRef(nuevoToken());
 
   useEffect(() => {
-    if (q.trim().length < 2) { setRes([]); return; }
-    const t = setTimeout(() => {
-      db.from('catalogo_productos').select('id,nombre,unidad_medida,tipo')
-        .eq('activo', true).ilike('nombre', `%${q.trim()}%`).limit(20)
-        .then(({ data }) => setRes(data || []));
-    }, 250);
-    return () => clearTimeout(t);
-  }, [q]);
+    db.rpc('sos_catalogo', { p_sucursal_id: sucursalId }).then(({ data, error }) => {
+      if (error) setErr('No se pudo cargar la lista de productos: ' + error.message);
+      setCatalogo(Array.isArray(data) ? data : []);
+    });
+  }, [sucursalId]);
+
+  // Mismo contenido = mismo código: si la señal falla y se toca Enviar otra vez,
+  // el servidor devuelve el SOS que ya creó en vez de hacer otro. Si cambia el
+  // contenido, es un pedido distinto.
+  useEffect(() => { tokenRef.current = nuevoToken(); setAvisos(null); },
+    [JSON.stringify(sel.map(s => [s.producto_id, s.empaques])), motivo, nota]);
+
+  const res = useMemo(() => {
+    if (!catalogo || q.trim().length < 2) return [];
+    const t = sinTildes(q.trim());
+    return catalogo
+      .filter(p => sinTildes(p.nombre).includes(t) && !sel.some(s => s.producto_id === p.producto_id))
+      .slice(0, 12);
+  }, [q, catalogo, sel]);
 
   const add = (p) => {
-    if (sel.some(s => s.producto_id === p.id)) return;
-    setSel(s => [...s, { producto_id: p.id, nombre: p.nombre, unidad: p.unidad_medida || 'unidad', cantidad: 1 }]);
-    setQ(''); setRes([]);
+    setSel(s => [...s, { ...p, empaques: '1' }]);
+    setQ('');
   };
-  const setCant = (id, v) => setSel(s => s.map(x => x.producto_id === id ? { ...x, cantidad: v } : x));
+  const setEmp = (id, v) => setSel(s => s.map(x => x.producto_id === id ? { ...x, empaques: v } : x));
+  const paso = (id, d) => setSel(s => s.map(x => x.producto_id === id
+    ? { ...x, empaques: String(Math.max(1, Math.round(n(x.empaques)) + d)) } : x));
   const quitar = (id) => setSel(s => s.filter(x => x.producto_id !== id));
 
-  const enviar = async () => {
-    const items = sel.filter(s => n(s.cantidad) > 0).map(s => ({ producto_id: s.producto_id, cantidad: n(s.cantidad), unidad: s.unidad }));
-    if (items.length === 0) return;
+  const enviar = async (confirmar = false) => {
+    setErr('');
+    if (!motivo) { setErr('Elegí el motivo del SOS.'); return; }
+    if (motivo === 'otro' && !nota.trim()) { setErr('Con motivo "Otro" escribí una nota corta de qué pasó.'); return; }
+    if (sel.length === 0) { setErr('Agregá al menos un producto.'); return; }
+    const malos = sel.filter(s => !Number.isInteger(Number(s.empaques)) || Number(s.empaques) < 1);
+    if (malos.length) { setErr(`Poné cantidades enteras (1, 2, 3…) en: ${malos.map(m => m.nombre).join(', ')}.`); return; }
     setBusy(true);
-    const { data, error } = await db.rpc('crear_pedido_emergencia', { p_sucursal_id: sucursalId, p_items: items, p_usuario_id: user.id });
+    const { data, error } = await db.rpc('crear_pedido_sos', {
+      p_sucursal_id: sucursalId,
+      p_usuario_id: user.id,
+      p_items: sel.map(s => ({ producto_id: s.producto_id, empaques: Number(s.empaques) })),
+      p_motivo: motivo,
+      p_nota: nota.trim() || null,
+      p_token: tokenRef.current,
+      p_confirmar: confirmar,
+    });
     setBusy(false);
-    if (!error && data?.ok) onDone(`🚨 Pedido de emergencia enviado (${data.items} items)`);
-    else alert('Error: ' + (error?.message || data?.error || 'no se pudo crear'));
+    if (error) { setErr('No se pudo enviar. Revisá la señal y tocá Enviar otra vez: no se va a duplicar.'); return; }
+    if (data?.requiere_confirmacion) { setAvisos(data.avisos || []); return; }
+    if (!data?.ok) { setErr(data?.error || 'No se pudo enviar el SOS.'); return; }
+    onDone(data.duplicado
+      ? '🚨 Ese SOS ya estaba enviado; no se duplicó.'
+      : `🚨 SOS enviado a Casa Matriz (${data.items} producto${data.items === 1 ? '' : 's'})`);
   };
 
+  const chip = (activo) => ({
+    padding: '8px 12px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+    border: activo ? '1px solid #f87171' : '1px solid #333',
+    background: activo ? '#7f1d1d' : '#111', color: activo ? '#fff' : '#bbb',
+  });
+  const stepBtn = { width: 34, height: 34, borderRadius: 8, border: '1px solid #333', background: '#111', color: '#fff', fontSize: 18, fontWeight: 700, cursor: 'pointer' };
+
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #3a1414', borderRadius: 14, width: '100%', maxWidth: 520, maxHeight: '85vh', display: 'flex', flexDirection: 'column', color: '#f0f0f0' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '1px solid #3a1414', borderRadius: 14, width: '100%', maxWidth: 540, maxHeight: '92vh', display: 'flex', flexDirection: 'column', color: '#f0f0f0' }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #2a2a2a' }}>
-          <div style={{ fontWeight: 800, fontSize: 15, color: '#f87171' }}>🚨 Pedido de emergencia</div>
-          <div style={{ fontSize: 11, color: '#888' }}>{sucursalNombre} · se suma al pedido del día, no exige conteo</div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: '#f87171' }}>🚨 Pedido SOS</div>
+          <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{sucursalNombre} · va aparte del pedido del día; el conteo no lo toca</div>
         </div>
-        <div style={{ padding: '12px 16px' }}>
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar producto (min 2 letras)…"
-            style={{ width: '100%', boxSizing: 'border-box', background: '#111', border: '1px solid #2a2a2a', borderRadius: 8, padding: '9px 12px', color: '#fff', fontSize: 13 }} />
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: '12px 16px' }}>
+          {sosAbiertos.length > 0 && (
+            <div style={{ background: '#2a1f0a', border: '1px solid #7c5a10', borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12.5, color: '#fcd34d' }}>
+              <b>Ya hay {sosAbiertos.length} SOS sin recibir.</b> Revisalo en la lista antes de pedir lo mismo otra vez:
+              <div style={{ marginTop: 4, color: '#e5c77a' }}>
+                {sosAbiertos.slice(0, 3).map(s => (
+                  <div key={s.id}>· {new Date(s.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit', timeZone: 'America/El_Salvador' })} — {MOTIVO_SOS_LABEL[s.motivo] || 'SOS'} ({s.estado})</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ fontSize: 12, color: '#aaa', fontWeight: 700, marginBottom: 6 }}>1. ¿Por qué lo pedís?</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+            {MOTIVOS_SOS.map(m => (
+              <button key={m.key} type="button" style={chip(motivo === m.key)} onClick={() => setMotivo(m.key)}>{m.label}</button>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 12, color: '#aaa', fontWeight: 700, marginBottom: 6 }}>2. ¿Qué necesitás? <span style={{ fontWeight: 400, color: '#777' }}>(en el mismo empaque del conteo)</span></div>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={catalogo ? 'Buscar producto (mín. 2 letras)…' : 'Cargando productos…'} disabled={!catalogo}
+            style={{ width: '100%', boxSizing: 'border-box', background: '#111', border: '1px solid #2a2a2a', borderRadius: 8, padding: '10px 12px', color: '#fff', fontSize: 14 }} />
           {res.length > 0 && (
-            <div style={{ marginTop: 6, maxHeight: 180, overflowY: 'auto', border: '1px solid #2a2a2a', borderRadius: 8 }}>
+            <div style={{ marginTop: 6, maxHeight: 200, overflowY: 'auto', border: '1px solid #2a2a2a', borderRadius: 8 }}>
               {res.map(p => (
-                <button key={p.id} onClick={() => add(p)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #222', color: '#eee', padding: '8px 10px', cursor: 'pointer', fontSize: 13 }}>
-                  {p.nombre} <span style={{ color: '#666', fontSize: 11 }}>· {p.unidad_medida || 'u'}</span>
+                <button key={p.producto_id} type="button" onClick={() => add(p)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #222', color: '#eee', padding: '9px 10px', cursor: 'pointer', fontSize: 13.5 }}>
+                  {p.nombre}<div style={{ color: '#888', fontSize: 11.5 }}>{p.presentacion}</div>
                 </button>
               ))}
             </div>
           )}
+          {catalogo && q.trim().length >= 2 && res.length === 0 && (
+            <div style={{ fontSize: 12, color: '#888', padding: '8px 2px' }}>No aparece en los productos del conteo de tu sucursal. Si de verdad hace falta, avisá al jefe de Casa Matriz.</div>
+          )}
+
+          <div style={{ marginTop: 10 }}>
+            {sel.length === 0 && <div style={{ color: '#666', fontSize: 12.5, textAlign: 'center', padding: 14 }}>Todavía no agregaste productos.</div>}
+            {sel.map(s => {
+              const emp = n(s.empaques);
+              return (
+                <div key={s.producto_id} style={{ padding: '10px 0', borderBottom: '1px solid #222' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ flex: 1, fontSize: 13.5, fontWeight: 600 }}>{s.nombre}</div>
+                    <button type="button" onClick={() => quitar(s.producto_id)} aria-label="Quitar" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>✕</button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                    <button type="button" style={stepBtn} onClick={() => paso(s.producto_id, -1)}>−</button>
+                    <input type="number" inputMode="numeric" min="1" step="1" value={s.empaques} onChange={e => setEmp(s.producto_id, e.target.value)}
+                      style={{ width: 60, height: 34, boxSizing: 'border-box', background: '#111', border: '1px solid #333', borderRadius: 8, color: '#fff', fontSize: 15, fontWeight: 700, textAlign: 'center' }} />
+                    <button type="button" style={stepBtn} onClick={() => paso(s.producto_id, 1)}>+</button>
+                    <div style={{ fontSize: 12.5, color: '#ccc', flex: '1 1 140px' }}>
+                      × {s.presentacion}
+                      {n(s.factor) !== 1 && emp > 0 && (
+                        <div style={{ color: '#8fd19e', fontSize: 11.5 }}>= {fmtQ(emp * n(s.factor))} {s.unidad_stock}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 12, color: '#aaa', fontWeight: 700, margin: '14px 0 6px' }}>3. Nota {motivo === 'otro' ? <span style={{ color: '#f87171' }}>(obligatoria)</span> : <span style={{ fontWeight: 400, color: '#777' }}>(opcional)</span>}</div>
+          <input value={nota} onChange={e => setNota(e.target.value)} maxLength={140} placeholder="Ej.: se cayó la bolsa al descargar"
+            style={{ width: '100%', boxSizing: 'border-box', background: '#111', border: '1px solid #2a2a2a', borderRadius: 8, padding: '9px 12px', color: '#fff', fontSize: 13 }} />
+
         </div>
-        <div style={{ overflowY: 'auto', padding: '0 16px', flex: 1 }}>
-          {sel.length === 0 && <div style={{ color: '#666', fontSize: 12, textAlign: 'center', padding: 16 }}>Agregá productos que necesitás con urgencia.</div>}
-          {sel.map(s => (
-            <div key={s.producto_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #222' }}>
-              <div style={{ flex: 1, fontSize: 13 }}>{s.nombre} <span style={{ color: '#666', fontSize: 11 }}>{s.unidad}</span></div>
-              <input type="number" min="0" step="0.01" value={s.cantidad} onChange={e => setCant(s.producto_id, e.target.value)}
-                style={{ width: 70, background: '#111', border: '1px solid #2a2a2a', borderRadius: 6, padding: '5px 6px', color: '#fff', fontSize: 13, textAlign: 'right' }} />
-              <button onClick={() => quitar(s.producto_id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+
+        {(avisos || err) && (
+          <div style={{ padding: '10px 16px 0', maxHeight: '34vh', overflowY: 'auto' }}>
+          {avisos && (
+            <div style={{ background: '#2a1f0a', border: '1px solid #b45309', borderRadius: 10, padding: '10px 12px', fontSize: 12.5, color: '#fde68a' }}>
+              <b>Revisá antes de enviar:</b>
+              {avisos.map((a, i) => <div key={i} style={{ marginTop: 4 }}>· <b>{a.nombre}</b>: {a.detalle}</div>)}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setAvisos(null)}>Corregir</button>
+                <button type="button" className="btn btn-sm" disabled={busy} onClick={() => enviar(true)} style={{ background: '#b45309', color: '#fff', fontWeight: 700 }}>Sí, enviar así</button>
+              </div>
             </div>
-          ))}
-        </div>
+          )}
+          {err && <div style={{ background: '#3a1414', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#fca5a5' }}>{err}</div>}
+          </div>
+        )}
         <div style={{ padding: '12px 16px', borderTop: '1px solid #2a2a2a', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="btn btn-sm btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-sm" disabled={busy || sel.length === 0} onClick={enviar}
-            style={{ background: '#dc2626', color: '#fff', fontWeight: 700 }}>{busy ? 'Enviando…' : `Enviar (${sel.length})`}</button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="button" className="btn btn-sm" disabled={busy || sel.length === 0 || !!avisos} onClick={() => enviar(false)}
+            style={{ background: '#dc2626', color: '#fff', fontWeight: 700 }}>{busy ? 'Enviando…' : `Enviar SOS (${sel.length})`}</button>
         </div>
       </div>
     </div>
@@ -275,6 +394,22 @@ export default function MisPedidosView({ user, onBack }) {
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [showEmerg, setShowEmerg] = useState(false);
   const [editPedido, setEditPedido] = useState(null); // pedido 'enviado' en edición
+  const [cancelando, setCancelando] = useState(null);
+
+  // SOS de esta sucursal que todavía no se reciben (para no pedir dos veces lo mismo)
+  const sosAbiertos = useMemo(() => pedidos.filter(p => p.tipo === 'sos'
+    && ['enviado', 'preparando', 'despachado'].includes(p.estado)
+    && despachosEstado(p.id) !== 'recibido'), [pedidos, despachos]);
+  function despachosEstado(pid) { return despachos.find(d => d.pedido_id === pid)?.estado; }
+
+  const cancelarSos = async (p) => {
+    if (!window.confirm('¿Cancelar este SOS? Casa Matriz ya no lo va a preparar.')) return;
+    setCancelando(p.id);
+    const { data, error } = await db.rpc('cancelar_pedido_sos', { p_pedido_id: p.id, p_usuario_id: user.id, p_motivo: 'Cancelado por la sucursal' });
+    setCancelando(null);
+    if (!error && data?.ok) { show('SOS cancelado'); cargar(); }
+    else show('❌ ' + (error?.message || data?.error || 'No se pudo cancelar'));
+  };
 
   const canViewAll = ROLES_VER_TODAS.includes(user.rol);
 
@@ -305,7 +440,7 @@ export default function MisPedidosView({ user, onBack }) {
     try {
       // Pedidos en rango para esta sucursal
       const { data: peds, error: eP } = await db.from('pedidos_sucursal')
-        .select('id,fecha_pedido,sucursal_id,estado,solicitado_por,fecha_entrega_estimada,notas,created_at')
+        .select('id,fecha_pedido,sucursal_id,estado,solicitado_por,fecha_entrega_estimada,notas,created_at,tipo,motivo,pedido_origen_id,motivo_cancelacion')
         .eq('sucursal_id', sucursalId)
         .gte('fecha_pedido', desde)
         .lte('fecha_pedido', hasta)
@@ -332,7 +467,7 @@ export default function MisPedidosView({ user, onBack }) {
       for (let i = 0; i < pedIds.length; i += 15) {
         const batch = pedIds.slice(i, i + 15);
         const { data: pi, error: ePI } = await db.from('pedido_items')
-          .select('id,pedido_id,producto_id,cantidad_solicitada,cantidad_despachada,unidad,sin_stock_cm')
+          .select('id,pedido_id,producto_id,cantidad_solicitada,cantidad_despachada,unidad,sin_stock_cm,cantidad_empaques')
           .in('pedido_id', batch);
         if (ePI) throw ePI;
         (pi || []).forEach(it => {
@@ -366,7 +501,7 @@ export default function MisPedidosView({ user, onBack }) {
       Object.values(ditems).flat().forEach(i => prodIds.add(i.producto_id));
       if (prodIds.size > 0) {
         const { data: prods } = await db.from('catalogo_productos')
-          .select('id,nombre,unidad_medida,categoria')
+          .select('id,nombre,unidad_medida,categoria,conteo_unidad')
           .in('id', Array.from(prodIds));
         const map = {};
         (prods || []).forEach(p => { map[p.id] = p; });
@@ -429,6 +564,9 @@ export default function MisPedidosView({ user, onBack }) {
               <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {prod?.nombre || it.producto_id.slice(0, 8)}
                 <span style={{ color: '#666', fontSize: 11, marginLeft: 4 }}>{it.unidad || prod?.unidad_medida || ''}</span>
+                {it.cantidad_empaques != null && prod?.conteo_unidad && (
+                  <div style={{ fontSize: 11, color: '#8fd19e' }}>{Number(it.cantidad_empaques)} × {prod.conteo_unidad}</div>
+                )}
                 {it.sin_stock_cm && <span title="Casa Matriz sin stock — queda en pedido" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#f87171', background: '#3a1414', padding: '1px 6px', borderRadius: 10 }}>⏳ queda en pedido</span>}
               </div>
               <div style={{ textAlign: 'right', color: '#fff' }}>{solicit}</div>
@@ -448,6 +586,7 @@ export default function MisPedidosView({ user, onBack }) {
     const s = { total: pedidos.length, enviados: 0, preparando: 0, despachados: 0, recibidos: 0 };
     pedidos.forEach(p => {
       const d = despachoByPedido[p.id];
+      if (p.estado === 'cancelado') return;
       if (d?.estado === 'recibido') s.recibidos++;
       else if (d?.estado === 'despachado' || d?.estado === 'en_ruta') s.despachados++;
       else if (d?.estado === 'preparando' || p.estado === 'preparando') s.preparando++;
@@ -471,7 +610,7 @@ export default function MisPedidosView({ user, onBack }) {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {sucursalId && (
             <button className="btn btn-sm" style={{ background: '#7f1d1d', color: '#fff', fontWeight: 700 }}
-              onClick={() => setShowEmerg(true)}>🚨 Pedido de emergencia</button>
+              onClick={() => setShowEmerg(true)}>🚨 Pedido SOS</button>
           )}
           {canViewAll && sucursales.length > 0 && (
             <select className="input" value={sucursalId || ''} onChange={e => {
@@ -485,8 +624,8 @@ export default function MisPedidosView({ user, onBack }) {
         </div>
       </div>
       {showEmerg && (
-        <PedidoEmergenciaModal
-          sucursalId={sucursalId} sucursalNombre={sucursalNombre} user={user}
+        <PedidoSosModal
+          sucursalId={sucursalId} sucursalNombre={sucursalNombre} user={user} sosAbiertos={sosAbiertos}
           onClose={() => setShowEmerg(false)}
           onDone={(msg) => { setShowEmerg(false); show(msg); cargar(); }}
         />
@@ -543,14 +682,17 @@ export default function MisPedidosView({ user, onBack }) {
         const pItems = itemsPorPedido[p.id] || [];
         const totalUnidades = pItems.reduce((s, it) => s + n(it.cantidad_solicitada), 0);
         const isOpen = expanded === p.id;
+        const esSos = p.tipo === 'sos';
 
         return (
-          <div key={p.id} className="card" style={{ marginBottom: 10, cursor: 'pointer' }}
+          <div key={p.id} className="card" style={{ marginBottom: 10, cursor: 'pointer', ...(esSos ? { borderLeft: '4px solid #dc2626' } : {}) }}
                onClick={() => setExpanded(isOpen ? null : p.id)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  Pedido {fmtDate(p.fecha_pedido)}
+                  {esSos
+                    ? <>{p.motivo === 'pendiente' ? '⏳ Pendiente SOS' : '🚨 SOS'} {fmtDate(p.fecha_pedido)} <span style={{ fontWeight: 500, fontSize: 12, color: '#aaa' }}>{new Date(p.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit', timeZone: 'America/El_Salvador' })}</span></>
+                    : <>Pedido {fmtDate(p.fecha_pedido)}</>}
                 </div>
                 <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
                   {pItems.length} items · {totalUnidades} unidades
@@ -570,14 +712,16 @@ export default function MisPedidosView({ user, onBack }) {
               </div>
             </div>
 
-            <Timeline estado={p.estado} despacho={d} />
+            {p.estado === 'cancelado'
+              ? <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>🚫 Cancelado{p.motivo_cancelacion ? ` · ${p.motivo_cancelacion}` : ''}</div>
+              : <Timeline estado={p.estado} despacho={d} />}
 
             {/* Meta estados */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, fontSize: 11, color: '#888' }}>
               {d?.fecha_despacho && <span>🚚 Despacho: {fmtDate(d.fecha_despacho)}</span>}
               {d?.hora_salida && <span>⏰ Salida: {new Date(d.hora_salida).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}</span>}
               {d?.fecha_recepcion && <span>✅ Recibido: {new Date(d.fecha_recepcion).toLocaleString('es-SV', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>}
-              {!d && <span style={{ color: '#fbbf24' }}>⏳ Aún no preparado por almacén</span>}
+              {!d && p.estado !== 'cancelado' && <span style={{ color: '#fbbf24' }}>⏳ Aún no preparado por almacén</span>}
             </div>
 
             {isOpen && (
@@ -600,10 +744,17 @@ export default function MisPedidosView({ user, onBack }) {
             )}
 
             {/* Editar: solo mientras la orden esté viva ('enviado' y almacén aún no la preparó) */}
-            {!d && p.estado === 'enviado' && (
+            {!d && p.estado === 'enviado' && !esSos && (
               <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
                 <button className="btn btn-sm btn-ghost" style={{ borderLeft: '3px solid #fbbf24' }}
                   onClick={() => setEditPedido(p)}>✏️ Editar pedido</button>
+              </div>
+            )}
+            {/* SOS: no se edita (se pide otro); se puede cancelar mientras Casa Matriz no lo prepara */}
+            {!d && p.estado === 'enviado' && esSos && (
+              <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
+                <button className="btn btn-sm btn-ghost" style={{ borderLeft: '3px solid #dc2626' }} disabled={cancelando === p.id}
+                  onClick={() => cancelarSos(p)}>{cancelando === p.id ? 'Cancelando…' : '🚫 Cancelar SOS'}</button>
               </div>
             )}
 

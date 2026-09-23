@@ -4,6 +4,7 @@ import LoginScreen from './components/layout/LoginScreen'
 import UpdateGate from './components/layout/UpdateGate'
 import AsistenteFlotante from './components/dashboard/AsistenteFlotante'
 import InboxFlotante from './components/dashboard/InboxFlotante'
+import SosAlertaGlobal from './components/almacen/SosAlertaGlobal'
 import LoadingScreen from './components/layout/LoadingScreen'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
@@ -473,6 +474,7 @@ export default function App() {
       <Toast />
       <AsistenteFlotante user={user} />
       <InboxFlotante user={user} />
+      <SosAlertaGlobal user={user} currentScreen={screen} onNavigate={handleNavigate} />
     </div>
   )
 }

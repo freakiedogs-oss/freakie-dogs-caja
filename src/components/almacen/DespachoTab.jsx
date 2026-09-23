@@ -3,6 +3,7 @@ import { db } from '../../supabase';
 import { STORES, today, fmtDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 import { Badge } from '../ui/Badge';
+import { MOTIVO_SOS_LABEL, haceTexto } from '../supply-chain/sos';
 
 /* La sucursal cuenta y pide en empaques (`conteo_unidad`, el Excel oficial) pero
    el pedido viaja en unidad de costeo. Casa Matriz tiene que ver las dos cosas:
@@ -25,9 +26,12 @@ export default function DespachoTab({user,show}){
   const [loading,setLoading]=useState(true);
   const [sel,setSel]=useState(null);
   const [tab,setTab]=useState('pendientes'); // pendientes | proceso | historial
+  const [ahora,setAhora]=useState(Date.now());
+  const sosVistos=useRef(null);
 
-  const cargar=async()=>{
-    setLoading(true);
+  // silent=true: refresco automático (sin spinner) para que los SOS aparezcan solos
+  const cargar=async(silent=false)=>{
+    if(!silent) setLoading(true);
     try{
       const [{data:ped},{data:des}]=await Promise.all([
         // Pedidos 'enviado' (pendientes) o 'preparando' (ya tienen despacho preparándose)
@@ -37,13 +41,34 @@ export default function DespachoTab({user,show}){
         // `sucursales(nombre)` a secas es ambiguo -> PostgREST tumba la consulta.
         db.from('despachos_sucursal').select('*,sucursales!despachos_sucursal_sucursal_id_fkey(nombre)').in('estado',['preparando','despachado','en_ruta','recibido']).order('created_at',{ascending:false}).limit(50),
       ]);
-      setPedidos(ped||[]);
+      // SOS primero (el más viejo arriba), después la orden del día como antes
+      const lista=(ped||[]).slice().sort((a,b)=>{
+        const sa=a.tipo==='sos'?0:1, sb=b.tipo==='sos'?0:1;
+        if(sa!==sb) return sa-sb;
+        return sa===0 ? new Date(a.created_at)-new Date(b.created_at) : new Date(b.created_at)-new Date(a.created_at);
+      });
+      const idsSos=lista.filter(p=>p.tipo==='sos'&&p.estado==='enviado').map(p=>p.id);
+      if(sosVistos.current&&idsSos.some(id=>!sosVistos.current.has(id))){
+        const nuevo=lista.find(p=>p.tipo==='sos'&&!sosVistos.current.has(p.id));
+        show(`🚨 Nuevo SOS de ${nuevo?.sucursales?.nombre||'una sucursal'}`);
+      }
+      sosVistos.current=new Set(idsSos);
+      setPedidos(lista);
       setDespachos(des||[]);
-    }catch(e){show('❌ '+e.message);}
-    setLoading(false);
+      setAhora(Date.now());
+    }catch(e){ if(!silent) show('❌ '+e.message); }
+    if(!silent) setLoading(false);
   };
 
   useEffect(()=>{cargar();},[]);
+  // Refresco solo cada 30 s mientras la lista está a la vista
+  useEffect(()=>{
+    if(view!=='lista') return;
+    const t=setInterval(()=>{ if(!document.hidden) cargar(true); },30000);
+    const onVis=()=>{ if(!document.hidden) cargar(true); };
+    document.addEventListener('visibilitychange',onVis);
+    return ()=>{ clearInterval(t); document.removeEventListener('visibilitychange',onVis); };
+  },[view]);
 
   if(view==='preparar'&&sel) return <PrepararDespacho pedido={sel} user={user} show={show} onBack={()=>{setSel(null);setView('lista');cargar();}}/>;
 
@@ -53,7 +78,7 @@ export default function DespachoTab({user,show}){
   return(
     <div style={{padding:'16px 16px 100px'}}>
       <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto',flexWrap:'nowrap'}}>
-        <button className={`btn btn-sm ${tab==='pendientes'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('pendientes')}>📋 Pendientes</button>
+        <button className={`btn btn-sm ${tab==='pendientes'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('pendientes')}>📋 Pendientes{pedidos.some(p=>p.tipo==='sos'&&p.estado==='enviado')?` · 🚨 ${pedidos.filter(p=>p.tipo==='sos'&&p.estado==='enviado').length}`:''}</button>
         <button className={`btn btn-sm ${tab==='proceso'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('proceso')}>⚙️ En proceso</button>
         <button className={`btn btn-sm ${tab==='historial'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('historial')}>✅ Historial</button>
       </div>
@@ -62,7 +87,21 @@ export default function DespachoTab({user,show}){
       {!loading&&tab==='pendientes'&&<>
         {pedidos.filter(p=>p.estado==='enviado').length===0&&pedidos.filter(p=>p.estado==='preparando').length===0&&
           <div className="empty"><div className="empty-icon">📋</div><div className="empty-text">No hay pedidos pendientes</div></div>}
-        {pedidos.filter(p=>p.estado==='enviado').map(p=>(
+        {pedidos.filter(p=>p.estado==='enviado').map(p=>p.tipo==='sos'?(
+          <div key={p.id} className="card" style={{borderLeft:'4px solid #dc2626',background:'#1f1111'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6,gap:8}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:'#fca5a5'}}>{p.motivo==='pendiente'?'⏳ Pendiente SOS':'🚨 SOS'} · {p.sucursales?.nombre||p.sucursal_id}</div>
+                <div style={{color:'#ddd',fontSize:12.5,marginTop:2}}>{MOTIVO_SOS_LABEL[p.motivo]||'SOS'}</div>
+              </div>
+              <span style={{fontSize:12,padding:'4px 10px',borderRadius:999,background:'#7f1d1d',color:'#fff',fontWeight:700,whiteSpace:'nowrap'}}>{haceTexto(p.created_at,ahora)}</span>
+            </div>
+            {(p.notas||'').split(' · ').slice(2).join(' · ')&&<div style={{fontSize:12.5,color:'#aaa',marginBottom:8}}>📝 {(p.notas||'').split(' · ').slice(2).join(' · ')}</div>}
+            <button className="btn btn-sm" style={{background:'#dc2626',color:'#fff',fontWeight:700}} onClick={()=>{setSel(p);setView('preparar');}}>
+              📦 Preparar SOS
+            </button>
+          </div>
+        ):(
           <div key={p.id} className="card">
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
               <div>
@@ -83,7 +122,7 @@ export default function DespachoTab({user,show}){
           <div key={p.id} className="card" style={{borderLeft:'3px solid #facc15'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
               <div>
-                <div style={{fontWeight:700,fontSize:15}}>{p.sucursales?.nombre||p.sucursal_id}</div>
+                <div style={{fontWeight:700,fontSize:15}}>{p.tipo==='sos'?'🚨 SOS · ':''}{p.sucursales?.nombre||p.sucursal_id}</div>
                 <div style={{color:'#666',fontSize:12,marginTop:2}}>Pedido: {fmtDate(p.fecha_pedido)}{p.created_at&&` · ${new Date(p.created_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'America/El_Salvador'})}`}</div>
               </div>
               <span style={{fontSize:11,padding:'4px 10px',borderRadius:6,background:'#facc1520',color:'#facc15',fontWeight:600}}>⚙️ Preparando</span>
@@ -188,7 +227,7 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
     <div className="card" style={{cursor:'pointer'}} onClick={handleToggle}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
         <div>
-          <div style={{fontWeight:700}}>{despacho.sucursales?.nombre}</div>
+          <div style={{fontWeight:700}}>{despacho.notas_despacho==='🚨 SOS'?'🚨 SOS · ':''}{despacho.sucursales?.nombre}</div>
           <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(despacho.fecha_despacho)}</div>
           {despacho.motorista_nombre&&<div style={{fontSize:12,color:'#60a5fa',marginTop:2}}>🚚 {despacho.motorista_nombre}</div>}
         </div>
@@ -303,8 +342,13 @@ function PrepararDespacho({pedido,user,show,onBack}){
     // Load motoristas
     db.from('usuarios_erp').select('id,nombre').in('rol',['despachador','motorista']).order('nombre')
       .then(({data})=>setMotoristas(data||[]));
-    // Load pedido items + conteo nocturno actual de la sucursal (para la hoja)
-    db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,conteo_categoria,presentacion_pedido,precio_referencia,conteo_unidad,conteo_factor)').eq('pedido_id',pedido.id)
+    cargarItems();
+  },[pedido.id]);
+
+  // Carga (y recarga, si la sucursal cambió el pedido) ítems + conteo + costos
+  const cargarItems=()=>{
+    setLoading(true);
+    return db.from('pedido_items').select('*,catalogo_productos(nombre,unidad_medida,categoria,conteo_categoria,presentacion_pedido,precio_referencia,conteo_unidad,conteo_factor)').eq('pedido_id',pedido.id)
       .then(async({data})=>{
         const its=(data||[]).map(it=>({...it,qty_despacho:String(it.cantidad_solicitada||0),conteo:0,costo_erp:null}));
         const ids=its.map(it=>it.producto_id).filter(Boolean);
@@ -321,98 +365,52 @@ function PrepararDespacho({pedido,user,show,onBack}){
         setPitems(its);
         setLoading(false);
       });
-  },[pedido.id]);
+  };
 
+  // Todo el despacho pasa en el servidor (despacho_crear) en una sola transacción:
+  // si la sucursal cambió el pedido desde que se abrió esta pantalla, se rechaza y
+  // se recarga (simulación 23-sep, E07: antes salía lo viejo y la orden se cerraba).
   const despachar=async()=>{
-    if(!cmId){show('❌ No se encontró Casa Matriz');return;}
     if(!motorista.trim()){show('⚠️ Ingresa el nombre del motorista');return;}
     setSaving(true);
     try{
-      // 0. Protección anti-duplicado: verificar que no exista despacho activo para este pedido
-      const {data:existente}=await db.from('despachos_sucursal')
-        .select('id').eq('pedido_id',pedido.id)
-        .in('estado',['preparando','despachado','en_ruta'])
-        .limit(1);
-      if(existente&&existente.length>0){
-        show('⚠️ Este pedido ya tiene un despacho en proceso');
+      const motoObj=motoristas.find(m=>m.nombre===motorista.trim());
+      const {data,error}=await db.rpc('despacho_crear',{
+        p_pedido_id:pedido.id,
+        p_usuario_id:user?.id||null,
+        p_motorista_nombre:motorista.trim(),
+        p_motorista_id:motoObj?.id||null,
+        p_items:pitems.map(it=>({producto_id:it.producto_id,solicitado:n(it.cantidad_solicitada),despachar:Math.max(0,n(it.qty_despacho))})),
+      });
+      if(error) throw error;
+      if(!data?.ok){
+        if(data?.codigo==='cambio'){
+          const det=(data.cambios||[]).slice(0,4).map(c=>`${c.nombre}: ${c.antes??'—'} → ${c.ahora??'quitado'}`).join(' · ');
+          show('⚠️ '+data.error+(det?' ('+det+')':''));
+          await cargarItems();
+        }else if(data?.codigo==='estado'){
+          show('⚠️ '+data.error);
+          onBack();
+        }else{
+          show('❌ '+(data?.error||'No se pudo crear el despacho'));
+        }
         setSaving(false);
         return;
       }
-
-      // 1. Marcar pedido como 'preparando' (NO 'despachado' todavía — eso es cuando el motorista sale)
-      await db.from('pedidos_sucursal').update({estado:'preparando'}).eq('id',pedido.id);
-
-      // 2. Crear despacho_sucursal (con motorista_id para que el driver vea su ruta)
-      const motoObj=motoristas.find(m=>m.nombre===motorista.trim());
-      const {data:des,error:desErr}=await db.from('despachos_sucursal').insert({
-        sucursal_id:pedido.sucursal_id,
-        pedido_id:pedido.id,
-        fecha_despacho:today(),
-        estado:'preparando',
-        preparado_por:user.id,
-        motorista_id:motoObj?.id||null,
-        motorista_nombre:motorista.trim(),
-      }).select().single();
-      if(desErr) throw desErr;
-
-      // 3. Crear despacho_items (with pricing)
-      const rows=[];
-      for(const it of pitems){
-        const qty=n(it.qty_despacho);
-        if(qty<=0) continue;
-
-        let costo=it.catalogo_productos?.precio_referencia||0;
-
-        rows.push({
-          despacho_id:des.id,
-          producto_id:it.producto_id||null,
-          descripcion:it.catalogo_productos?.nombre||'Producto',
-          cantidad_despachada:qty,
-          unidad_medida:it.catalogo_productos?.unidad_medida||it.unidad||'unidad',
-          costo_unitario:costo,
-        });
-      }
-
-      if(rows.length>0){
-        const {error:itmErr}=await db.from('despacho_items').insert(rows);
-        if(itmErr) throw itmErr;
-
-        // 4. Descontar de Casa Matriz POR KARDEX.
-        // Antes esto hacía read-then-write directo sobre inventario.stock_actual, en lotes de 10:
-        //   · no dejaba rastro en kardex_movimientos → el Historial del Kardex nunca mostraba
-        //     los despachos, y el kardex dejó de cuadrar con el inventario (+138,193 unidades
-        //     de diferencia en CM al momento de este cambio);
-        //   · el leer-y-escribir no era atómico: dos despachos simultáneos del mismo producto
-        //     se pisaban y uno de los dos descuentos se perdía.
-        // kardex_mover_lote hace ambas cosas del lado del servidor y en una sola llamada.
-        const validItems=pitems.filter(it=>it.producto_id&&n(it.qty_despacho)>0);
-        if(validItems.length>0){
-          const {error:kErr}=await db.rpc('kardex_mover_lote',{
-            p_items:validItems.map(it=>({producto_id:it.producto_id,cantidad:-n(it.qty_despacho)})),
-            p_tipo:'traslado',
-            p_referencia_tipo:'despacho',
-            p_referencia_id:des.id,
-            p_notas:'Salida de Casa Matriz por despacho a sucursal',
-            p_usuario_id:user?.id||null,
-            p_sucursal_id:cmId,
-            // el stock de CM todavía no es confiable; el negativo delata el faltante en vez de
-            // frenar el despacho, igual que hace registrar_produccion
-            p_permitir_negativo:true,
-          });
-          if(kErr) throw kErr;
-        }
-      }
-
-      // 5. Batch update pedido_items.cantidad_despachada
-      const itemsToUpdate=pitems.filter(it=>n(it.qty_despacho)>0);
-      await Promise.all(itemsToUpdate.map(it=>
-        db.from('pedido_items').update({cantidad_despachada:n(it.qty_despacho)}).eq('id',it.id)
-      ));
-
-      show('✅ Despacho creado — preparando');
+      show('✅ Despacho creado — preparando'+(data.pendientes>0?` · ${data.pendientes} producto(s) quedan pendientes para la sucursal`:''));
       onBack();
     }catch(e){ show('❌ '+e.message); }
     setSaving(false);
+  };
+
+  const cancelarSos=async()=>{
+    const motivo=window.prompt('¿Por qué no se puede mandar este SOS? (se le muestra a la sucursal)','Casa Matriz no tiene');
+    if(motivo===null) return;
+    setSaving(true);
+    const {data,error}=await db.rpc('cancelar_pedido_sos',{p_pedido_id:pedido.id,p_usuario_id:user?.id||null,p_motivo:motivo});
+    setSaving(false);
+    if(!error&&data?.ok){ show('SOS cancelado'); onBack(); }
+    else show('❌ '+(error?.message||data?.error||'No se pudo cancelar'));
   };
 
   // Group items by category
@@ -436,6 +434,13 @@ function PrepararDespacho({pedido,user,show,onBack}){
         </div>
       </div>
       <div style={{padding:'16px 16px 100px'}}>
+        {pedido.tipo==='sos'&&(
+          <div style={{marginBottom:12,padding:'10px 12px',background:'#2a1111',borderRadius:8,borderLeft:'4px solid #dc2626',fontSize:13}}>
+            <div style={{fontWeight:800,color:'#fca5a5'}}>{pedido.motivo==='pendiente'?'⏳ Pendiente de un SOS anterior':'🚨 SOS · '+(MOTIVO_SOS_LABEL[pedido.motivo]||'')}</div>
+            {pedido.notas&&<div style={{color:'#bbb',fontSize:12,marginTop:2}}>{pedido.notas}</div>}
+            <div style={{color:'#ddd',fontSize:12,marginTop:4}}>Lo que no mandés (cantidad menor o 0) queda como <b>pendiente</b> para la sucursal y vuelve a esta lista.</div>
+          </div>
+        )}
         <div style={{marginBottom:12,padding:'10px',background:'#1e3a5f',borderRadius:8,borderLeft:'3px solid #60a5fa'}}>
           <div style={{fontSize:12,color:'#60a5fa',fontWeight:600}}>Pedido: {fmtDate(pedido.fecha_pedido)}{pedido.created_at&&` · ${new Date(pedido.created_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'America/El_Salvador'})}`}</div>
           {pedido.fecha_entrega_estimada&&<div style={{fontSize:11,color:'#888',marginTop:2}}>Entrega estimada: {fmtDate(pedido.fecha_entrega_estimada)}</div>}
@@ -514,7 +519,10 @@ function PrepararDespacho({pedido,user,show,onBack}){
             <button className="btn btn-orange" style={{flex:1}} onClick={despachar} disabled={saving||!motorista.trim()}>
               {saving?'Creando despacho...':'📦 Crear Despacho'}
             </button>
-            <button className="btn btn-ghost" style={{flex:'0 0 auto',padding:'14px 18px'}} onClick={()=>{
+            {pedido.tipo==='sos'&&(
+              <button className="btn btn-ghost" style={{flex:'0 0 auto',width:'auto',padding:'14px 14px',color:'#f87171'}} onClick={cancelarSos} disabled={saving} title="No hay nada de este SOS">🚫</button>
+            )}
+            <button className="btn btn-ghost" style={{flex:'0 0 auto',width:'auto',padding:'14px 18px'}} onClick={()=>{
               const ORDEN=['Carnicos','Vegetales','Queso Lacteos','Harina Panes','Congelado Papas','Aderezos y Salsas','Desechables y Empaques','Especies','Utensilios de Limpieza','Extras','Bebidas'];
               const gs={};
               pitems.forEach(it=>{
