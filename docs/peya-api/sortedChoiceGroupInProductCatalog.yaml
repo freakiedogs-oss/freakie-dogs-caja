@@ -1,0 +1,157 @@
+sortedChoiceGroupInProductCatalog:
+  value:
+    callbackUrl: 'https://example.com/callback'
+    vendors:
+      - u9pq
+    catalog:
+      items:
+        product01:
+          id: product01
+          type: Product
+          title:
+            default: Extra Cheese
+          description:
+            default: Additional Cheese Slice
+          price: '0'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        product02:
+          id: product02
+          type: Product
+          title:
+            default: Chicken Wings 5pc
+          description:
+            default: Deep fried chicken wings
+          price: '0'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        product03:
+          id: product03
+          type: Product
+          title:
+            default: Coca Cola
+          description:
+            default: 250ml Coca Cola Can
+          price: '3.00'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+        'Category#mn01':
+          id: 'Category#mn01'
+          type: Category
+          title:
+            default: Topping
+          description:
+            default: Topping Item
+          products:
+            product01:
+              id: product01
+              type: Product
+            product02:
+              id: product02
+              type: Product
+            product03:
+              id: product03
+              type: Product
+        pd01:
+          id: pd01
+          type: Product
+          title:
+            default: Fillet O Fish Combo
+          description:
+            default: Fillet O Fish Set Combo
+          price: '0'
+          active: true
+          isPrepackedItem: false
+          isExpressItem: false
+          excludeDishInformation: false
+          images: { }
+          toppings:
+            tt01:
+              id: tt01
+              type: Topping
+              order: 1
+            tt02:
+              id: tt02
+              type: Topping
+              order: 2
+            tt03:
+              id: tt03
+              type: Topping
+              order: 3
+        tt01:
+          id: tt01
+          type: Topping
+          title:
+            default: Choose Sides
+          quantity:
+            maximum: 1
+            minimum: 1
+          products:
+            product02:
+              id: product02
+              type: Product
+              price: '0'
+        tt02:
+          id: tt02
+          type: Topping
+          title:
+            default: Choose Drinks
+          quantity:
+            maximum: 1
+            minimum: 1
+          products:
+            product03:
+              id: product03
+              type: Product
+              price: '0'
+        tt03:
+          id: tt03
+          type: Topping
+          title:
+            default: Choose Extras
+          quantity:
+            maximum: 1
+            minimum: 1
+          products:
+            product01:
+              id: product01
+              type: Product
+              price: '0'
+        'Category#mn02':
+          id: 'Category#mn01'
+          type: Category
+          title:
+            default: Combo Set
+          description:
+            default: Combo Menu Item
+          products:
+            pd01:
+              id: pd01
+              type: Product
+        schedule-001:
+          id: schedule-001
+          type: ScheduleEntry
+          startTime: '00:00:00'
+          endTime: '23:59:00'
+        'Menu#SCN01':
+          id: 'Menu#SCN01'
+          title:
+            default: Scenario 02
+          description:
+            default: Menu with Combo Item
+          type: Menu
+          menuType: DELIVERY
+          schedule:
+            schedule-001:
+              id: schedule-001
+              type: ScheduleEntry
+          products:
+            pd01:
+              id: pd01
+              type: Product
