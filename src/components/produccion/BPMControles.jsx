@@ -47,7 +47,11 @@ const mmss = (seg) => {
 }
 
 // ── Catálogos que administra Calidad (pantalla "Parámetros BPM") ──
-export function useCatalogosBPM() {
+/* Desde la versión Mauricio (23-sep-2026) un parámetro puede ser global
+   —como fue siempre— o pertenecer a una plantilla. Si la plantilla define
+   la clave, esa gana: así la v2 envasa a 70 °C sin cambiarle el criterio a
+   la piloto, que sigue en 65. */
+export function useCatalogosBPM(plantillaId) {
   const [cat, setCat] = useState({ equipos: [], quimicos: [], esponjas: [], desvios: [], parametros: {}, listo: false })
   useEffect(() => {
     let vivo = true
@@ -60,14 +64,17 @@ export function useCatalogosBPM() {
         db.from('bpm_parametros').select('*'),
       ])
       if (!vivo) return
+      const filas = p.data || []
+      const parametros = {}
+      for (const x of filas) if (x.plantilla_id == null) parametros[x.clave] = x.valor
+      if (plantillaId) for (const x of filas) if (x.plantilla_id === plantillaId) parametros[x.clave] = x.valor
       setCat({
         equipos: e.data || [], quimicos: q.data || [], esponjas: s.data || [], desvios: d.data || [],
-        parametros: Object.fromEntries((p.data || []).map(x => [x.clave, x.valor])),
-        listo: true,
+        parametros, listo: true,
       })
     })()
     return () => { vivo = false }
-  }, [])
+  }, [plantillaId])
   return cat
 }
 

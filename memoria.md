@@ -19,6 +19,7 @@
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
+<<<<<<< Updated upstream
 ## 23-Sep-2026 — Coca-Cola Combo XL sin bebida en local + aviso "hay más opciones abajo" en el ComboModal
 
 Jose mandó captura de Mesa #2 (Cafetalón): en el Coca-Cola Combo "no se puede cambiar la bebida por $0.50 como en el Royal".
@@ -197,6 +198,18 @@ Pedido de Saúl: poder digitar el conteo físico diario de los productos crític
 - **Migraciones:** `criticos_catalogo_items`, `criticos_seed_hoja_saul`, `criticos_conteo_captura`, `criticos_fn_hoja`, `criticos_fn_guardar`, `criticos_nota_pan_berna_precisa`.
 - Los factores se **congelan** en `criticos_conteo_items` al digitar: si mañana cambia el empaque de un producto, la hoja de ayer tiene que seguir significando lo mismo. Las descargas, en cambio, **no se guardan** — se recalculan en cada lectura, porque si una venta se anula después el número guardado mentiría.
 - Sin `nav_key` nueva: hereda los permisos de `consumo-venta` (admin, ejecutivo, superadmin), que es donde Saúl ya entra.
+=======
+## 23-Sep-2026 — BPM del chili: nace la «versión Mauricio» al lado de la piloto (migraciones `bpm_version_mauricio_*`)
+
+Mauricio Bolaños entregó el 22-sep cuatro documentos controlados: el informe de validación **FD-CI-RG-002** (242 pp., 52 hallazgos, dictamen *«no apto aún para liberar»*), el **FD-CI-RG-003** con los 13 RVP, el anexo de pantallas **FD-CI-DO-013-A01** y la lista maestra **FD-CI-LM-001 v02**. Cesar pidió una versión nueva con esos criterios **sin perder la que corre hoy en Casa Matriz**.
+
+- **Conviven dos versiones.** `bpm_plantillas` gana `codigo`, `version` y `retiene_ante_falla`. La piloto queda como `v1 · piloto`, activa y sin cambios; la nueva es `v2 · Mauricio`, clonada de los 17 pasos (así conserva instrucciones, videos y temporizadores ya probados) y **nace inactiva**: solo la ven los roles que revisan, para correr tandas de prueba antes de encenderla.
+- **Parámetros por plantilla.** `bpm_parametros` deja de tener la clave como llave primaria: ahora un parámetro es global (como siempre) o de una plantilla, y el de la plantilla gana. Se cargaron **23 parámetros de la v2** con su RVP o su norma en la descripción. El más importante: **envasado sube de 65 a 70 °C** (RVP-07) solo en la v2 — la piloto sigue en 65. Los que faltaban por completo: inicio de enfriamiento ≥60 °C, ventana de la medición de los 30 min, meta de 5 °C a los 90 min, límite crítico de 21 °C a los 120 min, ingreso al freezer ≤5 °C, post-cocción ≥70 °C, reposo 5–10 min, reducción 40–60 min, tostado 45–60 s, frijol machacado 1.8–2.2 kg, termómetro en hielo ±1 °C, contacto del quat ≥60 s.
+- **Seis pasos endurecidos** (12, 13, 14, 15, 16, 17), cada uno contra su hallazgo: **H-34** el hito «llegó a 80 °C» ahora pide la lectura en ese momento y la compara; **H-46** la medición de los 30 min solo vale entre 25 y 35 min y llegar a 5 °C antes de 30 min se rechaza por implausible; **H-47** el baño arranca con producto a 60 °C o más; **H-50** el freezer es criterio propio y el producto entra a ≤5 °C. Todos los límites apuntan a parámetro, no a números escritos en el control.
+- **Decisión de Cesar: la v2 retiene.** Con una falla el paso **no se cierra** — en vez del panel de desvío aparece qué corregir y el botón se habilita solo al volver a medir. La piloto sigue como estaba: con causa y acción el paso se registra igual.
+- **H-03 resuelto para las dos versiones:** se quitó `UNIQUE (corrida_id, paso_id)` y `bpm_registros` gana `intento`. El retest es el intento N+1, el anterior no se borra y la pantalla muestra el último. Ese era el error de clave duplicada que Mauricio cita en el informe.
+- **Queda abierto:** H-04 y H-36 — liberar todavía usa `prompt()`/`confirm()` del navegador, sin rol de Calidad ni disposiciones catalogadas. Y el veredicto lo sigue calculando el navegador, no el servidor (T-02). Son las dos piezas grandes de la ruta de Mauricio.
+>>>>>>> Stashed changes
 
 ## 21-Sep-2026 — Eventos: la requisición se importa del Excel de Edgar
 
