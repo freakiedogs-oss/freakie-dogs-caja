@@ -8,6 +8,17 @@
 - **Fix inmediato (`src/pos/CierreTurno.jsx`):** debajo de "Tomar foto del voucher" hay una casilla *"Esta tablet no deja tomar la foto: cerrar sin voucher"*. Con ella marcada el Z cierra con `voucher_n1co_url = null` (el total n1co y el motivo siguen siendo obligatorios) y la foto se adjunta después desde el ERP (editar cierre, `CierreForm`, donde el voucher ya es opcional). Si luego se adjunta una foto, la casilla se desmarca sola.
 - **Pendiente:** instalar a mano la APK v1.3 en la Fire de Venecia (NO hay auto-update: la app solo recarga la web, la APK se sideloadea) y probar el botón de la foto. Los vouchers vacíos se ven en `ventas_diarias` con `tarjeta_n1co` lleno y `voucher_n1co_url` null.
 
+## 22-Sep-2026 — Cierre sin foto por excepción del día + voucher n1co por QR
+
+**Por qué:** Alejandro (Paseo Venecia S004) no podía subir fotos desde la tablet y el corte Z exigía la foto del voucher n1co (hard-coded), así que no podía cerrar ni contar. Cesar autorizó cerrar sin fotos SOLO ese día.
+
+**Qué cambió:**
+- Nueva tabla `pos_cierre_excepciones (store_code, fecha, sin_foto, motivo, creado_por)` (RLS, lectura anon/authenticated; las filas se crean a mano). Con una fila para (sucursal, día) el POS no exige foto del voucher ni fotos de egreso ese día; al día siguiente vuelve la regla sola. Fila creada: S004 · 2026-09-22.
+- `src/pos/CierreTurno.jsx`: lee la excepción al cargar (`sinFotoHoy`), relaja la validación del Z y del `ModalEgreso` (prop `sinFoto`), y muestra un aviso ámbar «Hoy se autorizó cerrar sin fotos».
+- Voucher n1co ahora también se puede tomar **desde el celular por QR** (`QrFotoUpload`, el mismo de los egresos) → `voucherQrUrl`. Esto es lo que evita que se repita: si la tablet no deja subir archivos, se escanea el QR y se toma con el teléfono.
+
+**Cómo usar la excepción otra vez:** `insert into pos_cierre_excepciones (store_code, fecha, motivo, creado_por) values ('S00x', current_date, '...', 'Cesar');`
+
 ## 23-Sep-2026 — POS: agrandado de bebida por bebida, no por combo (ComboModal)
 
 **Reporte Cesar (Metro):** en un combo con dos bebidas (Duo Picossini, Burger Duo…), marcar «Agrandado de bebida» en la bebida 1 le quitaba a la bebida 2 las opciones gratis y le exigía sabor de agrandado. Causa: `hayAgrandado` era global al combo; `filtraBebidas`/`grupoOculto`/`falta` no sabían de qué bebida se trataba. Además la exclusividad del 19-sep apagaba TODOS los agrandados del combo, así que era imposible agrandar las dos bebidas de un Duo.
