@@ -95,6 +95,20 @@ Jose abrió el Control de Depósitos y vio Cafetalón del 16-sep en amarillo: "s
 
 **Queda para revisar (no lo decidí yo, son 4 casos donde adivinar sería peor):** parecen correcciones que nadie anuló y hoy suman doble — S004 15/16-ago ($1,407.42 y 4 min después $1,406.42, que es el esperado exacto), S006 3-ago ($1,220 y después $1,500), S003 7-may ($506.22 y después $521.20) y S001 29-mar ($521.29 y después $521.30, un centavo). Salen en amarillo en el calendario y ahí mismo está el botón de anular.
 
+## 23-Sep-2026 — Descuentos y vouchers de PeYa: quién paga cada rebaja, y la trampa del doble conteo
+
+Llegaron los YAML del contrato (quedan en `docs/peya-api/`) y con ellos los cinco escenarios de descuento del checklist dejaron de necesitar que PedidosYa mande ejemplos: está todo documentado en `pluginApi.yaml`.
+
+**El modelo.** Cada descuento trae `sponsorships`: `PLATFORM` lo paga PedidosYa, `VENDOR` lo pagamos nosotros, `THIRD_PARTY` un tercero. Con eso, los cinco escenarios que exigen certificar (100 % Partner, 100 % PeYa, compartido, voucher, y el mix) son la misma estructura con distintos patrocinadores. `peya_descuentos` la aplana y `peya_descuentos_resumen` la deja en plata.
+
+**La trampa, y es la que podía descuadrar la liquidación entera.** El contrato dice: *«The amount from item level discounts are included in the toplevel discounts»*. Los descuentos vienen repetidos en tres niveles — orden, producto y topping — y sumar los tres cuenta el mismo dinero hasta tres veces. En el caso de prueba: **$20.00 correctos contra $26.00 si se suma todo**, un 30 % inventado. El total manda siempre desde el nivel orden; los otros dos sólo dicen a qué ítem se aplicó.
+
+**Segunda trampa.** *«If the sponsorship array is absent, sponsorship details will not be accessible»*. Ausente **no es cero**: es «no sabemos». Un descuento sin atribución no se da por nuestro ni por de ellos — sale marcado en `sin_atribuir` para que alguien lo reclame, en vez de tragárselo en silencio.
+
+Del caso de prueba con los cinco escenarios: $8.00 salen de nuestro bolsillo, $7.00 los pone PedidosYa, $3.00 un tercero, y $2.00 quedan sin atribuir.
+
+**Lo que sigue bloqueado y no es código.** Los endpoints salientes (abrir/cerrar hacia PeYa, ajustar tiempo de preparación) necesitan `shared-components.yaml`, que no vino con los otros dos. Y la documentación no se puede bajar desde acá: el proxy de egress de este entorno rechaza `integration-middleware.*.restaurant-partners.com` con 403 en el CONNECT, así que ni curl ni un navegador headless llegan. Se arregla agregando el dominio en Network access del entorno.
+
 ## 22-Sep-2026 — PedidosYa mandó el checklist de homologación, y es más ancho de lo que creíamos
 
 Cristian Pereira mandó el **Checklist Técnico Oficial**: 34 criterios en tres bloques que se validan en sesión conjunta. No era una llamada de alineación; es una certificación con lista de cotejo. Contrasté los 34 contra el código real: **íbamos 12**.
