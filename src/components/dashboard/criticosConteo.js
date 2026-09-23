@@ -24,6 +24,16 @@
                 producto: receta que descuenta de más, o el cierre está
                 inflado.
 
+   ── Dos clases de producto (Saúl, 23-sep) ──────────────────────────────
+     PORCIONADO (8)  vienen en piezas contables — bolitas, panes, lascas,
+                     porciones. Deben cuadrar EXACTO: si se cuentan piezas,
+                     la cuenta da o no da. "En Línea" son piezas sueltas.
+     PESO (7)        vienen en bolsa o bandeja. Se cuentan bolsas enteras en
+                     el TPS y la bolsa abierta se PESA: "En Línea" es la
+                     FRACCIÓN del empaque que queda (0.40 de bolsa), no una
+                     unidad suelta. Como la báscula tiene error propio, van
+                     con 5% de margen sobre la venta.
+
    ── Las columnas, como las llena Saúl ──────────────────────────────────
      CID        apertura: paquetes enteros + unidades sueltas. Se arrastra
                 solo del cierre de ayer (TPS Final + En Línea de ese día)
@@ -45,24 +55,36 @@ export const n = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? x
    pantalla mienta el primer día que se use. */
 export const vacio = (v) => v === null || v === undefined || v === ''
 
-/** Umbrales del semáforo. El porcentaje es sobre la venta del día. */
-export const TOL_PCT_OK = 2      // ≤ 2% de la venta: cuadra
-export const TOL_PCT_AVISO = 5   // ≤ 5%: revisar
-/* Piso absoluto, en unidades SUELTAS (la más chica que la sucursal cuenta).
-   Sin esto, un día flojo con 3 unidades vendidas pinta rojo por una sola
-   pieza de diferencia y el rojo se vuelve ruido que se aprende a ignorar.
-   El 2 sale del `margen_sobrante_sueltas` que ya usa el conteo nocturno. */
-export const TOL_PISO_SUELTAS = 2
+/* ── Umbrales del semáforo, por clase ───────────────────────────────────
+   Los PORCIONADOS cuadran exacto: no hay margen porcentual, sólo el medio
+   grano de redondeo que meten los factores de conversión con decimales
+   (1/21 de bolsa de pan = 0.047619…). Media pieza nunca alcanza para tapar
+   un faltante real, que siempre es de una pieza o más.
+   Los de PESO llevan 5% de la venta, porque la báscula tiene error propio
+   y exigirles exactitud sería pintar rojo todos los días.
+   Un ítem puede traer su propio `tolerancia_pct` y ese manda sobre los dos
+   —existe para sacar temporalmente del "exacto" a un producto cuyo dato de
+   conversión todavía está mal, sin mentir sobre a qué clase pertenece. */
+export const TOL_PCT_PESO = 5
+export const EPS_PIEZA = 0.5
+
+/** El margen que le toca a un ítem, en % de la venta. 0 = tiene que cuadrar. */
+export function tolerancinaPct(item) {
+  if (item?.tolerancia_pct != null && item.tolerancia_pct !== '') return n(item.tolerancia_pct)
+  return item?.clase === 'peso' ? TOL_PCT_PESO : 0
+}
 
 /** Unidades de stock que trae un empaque cerrado. */
 export const facCerrado = (item) => n(item?.factor) || 1
 
-/* Unidades de stock que vale UNA suelta. Cuando el empaque no se abre en
-   sucursal no hay unidad suelta propia, así que "En Línea" se cuenta en la
-   misma unidad del empaque (una bolsa de chili abierta sigue siendo una
-   bolsa). */
-export const facSuelta = (item) =>
-  item?.fraccionado ? (n(item?.factor_suelta) || 1) : facCerrado(item)
+/* Unidades de stock que vale UNA suelta. En los porcionados es la pieza
+   (una bolita, un pan). En los de peso vale un empaque entero, porque ahí
+   "En Línea" es la FRACCIÓN de la bolsa: 0.40 × bolsa. Los 15 ítems lo
+   declaran, así que el fallback sólo cubre un dato incompleto. */
+export const facSuelta = (item) => n(item?.factor_suelta) || facCerrado(item)
+
+/** ¿Este ítem se cuenta pesando la bolsa abierta? */
+export const esPeso = (item) => item?.clase === 'peso'
 
 /** Apertura y cierre: paquetes enteros + lo suelto, a unidad de stock. */
 export function aStock(item, enteros, sueltas) {
@@ -83,9 +105,11 @@ export function sueltasAStock(item, sueltas) {
 /** Unidad de stock → empaques, que es como Saúl lee la hoja. */
 export const aEmpaques = (item, qty) => (qty == null ? null : qty / facCerrado(item))
 
-/** El piso de tolerancia de un ítem, llevado a unidad de stock. */
-export function pisoTolerancia(item) {
-  return TOL_PISO_SUELTAS * facSuelta(item)
+/* El redondeo que se le perdona a un porcionado, en unidad de stock: media
+   pieza. No es tolerancia de conteo — es el ruido de los factores con
+   decimales periódicos. */
+export function pisoRedondeo(item) {
+  return EPS_PIEZA * facSuelta(item)
 }
 
 /* ── La auditoría de una fila ──────────────────────────────────────────── */
@@ -146,7 +170,15 @@ export function auditar(item) {
   const difUsd = diferencia == null ? null : diferencia * costoUnit
   const ventaUsd = venta * costoUnit
 
+  /* En los de peso, "En Línea" es la fracción de la bolsa abierta, así que
+     vive entre 0 y 1. Más de 1 significa que hay una bolsa entera de más y
+     esa va en el TPS — se avisa en vez de aceptarlo callando, porque un 2
+     tecleado ahí infla el cierre y tapa un faltante. */
+  const fraccionInvalida = esPeso(item) &&
+    !vacio(item.linea_sueltas) && n(item.linea_sueltas) > 1
+
   return {
+    fraccionInvalida,
     cid, cidDigitado, cidSugerido, cidFuente, cidDifiere,
     pedido, pedidoDigitado, pedidoSistema, pedidoFuente, pedidoDifiere,
     tps, linea, venta, descargaAm, descargaPm, descargas,
@@ -156,23 +188,30 @@ export function auditar(item) {
   }
 }
 
-/* ── Semáforo ──────────────────────────────────────────────────────────
+/* ── Semáforo, con la regla que le toca a cada clase ────────────────────
    'sin_datos' → todavía no se puede juzgar (falta apertura o cierre).
-   'ok' → la diferencia cabe en el piso absoluto o en el 2%.
-   'aviso' / 'alerta' → hay que ir a ver.
+   'ok' → cuadra según su clase.
+   'alerta' → hay que ir a ver.
+
+   No hay estado intermedio: Saúl pidió que los porcionados cuadren "sin
+   error" y que los de peso lleven 5%. Un "revisar" en medio sería un umbral
+   que nadie definió, y en una pantalla de auditoría un color de más se
+   vuelve un color que se ignora.
    ─────────────────────────────────────────────────────────────────────── */
 export function estadoFila({ diferencia, pct, item }) {
   if (diferencia == null) return 'sin_datos'
-  if (Math.abs(diferencia) <= pisoTolerancia(item)) return 'ok'
-  /* Sin venta no hay porcentaje posible. Si aun así hay diferencia por
-     encima del piso, el producto se movió del físico sin que ninguna venta
-     lo descontara: eso es exactamente lo que la pantalla busca, no un caso
-     que haya que perdonar por falta de denominador. */
-  if (pct == null) return 'alerta'
-  const a = Math.abs(pct)
-  if (a <= TOL_PCT_OK) return 'ok'
-  if (a <= TOL_PCT_AVISO) return 'aviso'
-  return 'alerta'
+  const tol = tolerancinaPct(item)
+
+  /* Porcionado sin margen propio: tiene que dar. Sólo se perdona el medio
+     grano de redondeo de los factores con decimales periódicos, que nunca
+     alcanza para tapar una pieza faltante. */
+  if (tol === 0) return Math.abs(diferencia) <= pisoRedondeo(item) ? 'ok' : 'alerta'
+
+  /* Con margen porcentual hace falta una venta contra la cual medirlo. Si no
+     hubo venta y aun así falta producto, eso es justo lo que la pantalla
+     busca: se fue del físico sin que nada lo descontara. */
+  if (pct == null) return Math.abs(diferencia) <= pisoRedondeo(item) ? 'ok' : 'alerta'
+  return Math.abs(pct) <= tol ? 'ok' : 'alerta'
 }
 
 /* ── La hoja entera ────────────────────────────────────────────────────── */
