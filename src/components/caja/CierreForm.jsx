@@ -638,16 +638,9 @@ function CierreFormInner({ user, existingCierre, isAdminEdit, onBack, onSuccess 
       show('⚠️ Ingresa el efectivo real a depositar');
       return;
     }
-    // El cuadre de tarjeta no es opcional: sin el total del datáfono y su
-    // voucher no hay contra qué comparar lo que el sistema cobró.
-    if (!hayN1co) {
-      show('⚠️ Ingresa el total de tarjeta que muestra el POS de n1co');
-      return;
-    }
-    if (!hayVoucher) {
-      show('⚠️ Adjunta la foto del voucher de cierre de n1co');
-      return;
-    }
+    // El cuadre n1co es informativo (no mueve dinero) y este formulario solo
+    // lo abre admin para editar cierres, muchos de antes del 19-sep: no se
+    // exige. Solo si se escribe un total que no cuadra se pide el motivo.
     if (faltaMotivoN1co) {
       show('⚠️ El total de n1co no cuadra con el sistema: explica por qué');
       return;
@@ -700,7 +693,7 @@ function CierreFormInner({ user, existingCierre, isAdminEdit, onBack, onSuccess 
       efectivo_calculado: parseFloat(efCalculado.toFixed(2)),
       efectivo_real_depositar: efReal,
       diferencia_deposito: parseFloat(difDeposito.toFixed(2)),
-      tarjeta_n1co: n(n1co),
+      tarjeta_n1co: hayN1co ? n(n1co) : null,
       voucher_n1co_url: voucherFinal,
       diferencia_n1co: difN1co,
       motivo_diferencia_n1co: n1coCuadra ? null : (motivoN1coFinal || null),
@@ -962,7 +955,7 @@ function CierreFormInner({ user, existingCierre, isAdminEdit, onBack, onSuccess 
         </div>
 
         <Mi
-          label="Total que muestra el POS de n1co *"
+          label="Total que muestra el POS de n1co"
           value={n1co}
           onChange={setN1co}
           hint="El total de tarjeta del cierre del datáfono"
@@ -986,7 +979,7 @@ function CierreFormInner({ user, existingCierre, isAdminEdit, onBack, onSuccess 
         )}
 
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 13, color: '#888', marginBottom: 6 }}>Foto del voucher de cierre *</div>
+          <div style={{ fontSize: 13, color: '#888', marginBottom: 6 }}>Foto del voucher de cierre</div>
           <input
             ref={voucherRef} type="file" accept="image/*" capture="environment"
             style={{ display: 'none' }}
