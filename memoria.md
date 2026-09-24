@@ -157,7 +157,26 @@ Salió de la tabla de críticos que Cesar armó para Cafetalón ("se cuenta un p
 - **Cheesecake Ailyn** (inactivo) sigue en el conteo.
 - **Papa:** la receta dice 0.35 lb por porción, pero el consumo físico medido en Cafetalón da cerca de 0.59. Si la alarma sigue mostrando faltante de papa en todas las sucursales, **es la porción**, no una fuga.
 
-Migraciones: `inventario_equivalencias_descarga`, `inventario_equivalencias_carga_inicial`, `fn_salud_inventario` (+2 parches), `conteo_tolerancia_y_sueltas_criticos`. El consolidado está en `supabase/migrations/20260923_equivalencias_descarga.sql`.
+Migraciones: `inventario_equivalencias_descarga`, `inventario_equivalencias_carga_inicial`, `fn_salud_inventario` (+2 parches), `conteo_tolerancia_y_sueltas_criticos`. Más tarde se revirtió el conteo con sueltas de tocino, chili y cheddar (`conteo_peso_como_fraccion_criterio_saul`).
+
+**Cómo se llegó, y lo que no hay que repetir:** el primer análisis de la tabla de Cesar se hizo mirando sólo el kardex, sin leer las capas documentadas, y Jose lo corrigió ("tenemos varias capas que transforman la venta"). La lección: **antes de decir que una descarga está mal, leer `pos_deducir_inventario`, `receta_ingredientes.factor_a_stock`, las sub-recetas con `catalogo_id` y `criticos_item_productos`**. Con eso, el pepinillo resultó bien convertido (0.4233 oz por hamburguesa). Estaba mal *dónde* caía la descarga, no *cuánto*. Las 8 "preguntas para Cesar" se respondieron solas leyendo las recetas: bolsita 0.30 lb, porción de papa 0.35 lb, Adivina 20 cartitas por venta, mermelada 12 bolsas por receta y ninguna receta que use aceite.
+
+**Estado de la tabla de Cesar (one-pager que se le mandó el 24-sep):**
+- **Resueltos:** queso frito, papas sazonadas, waffle, pepinillos, mermelada y Adivina.
+- **Tolerancias cargadas** en los 10 bien mapeados.
+- **Aceite:** control visual.
+- **Papa Blanca ya estaba bien**; la tabla se equivocaba ahí.
+- **Pendientes de decisión:**
+  - Sodas y cervezas: **en parte resuelto por otra sesión el 24-sep (PR #411)**: el conteo de bebidas completo ya ajusta el inventario (`conteo_bebidas_aplicar`), y se registran las entregas de La Constancia con foto. Falta ver si las **cervezas** entran a ese conteo en todas las sucursales.
+  - Dedos de queso y Freakie sodas: crear el insumo y su receta.
+  - Conteo a ciegas: hoy el borde rojo en vivo y el + que arranca del teórico dejan ajustar el número hasta que cuadre.
+- **Por verificar con datos:** porción de papa 0.35 lb vs ~0.59 medido; pesar una tanda de mermelada (70 vs 96 oz).
+
+**Lo que falta para que todo quede vivo:**
+- **La pantalla** (conteo nocturno y Editor de Recetas) está en la rama `claude/cool-turing-54kgqr` y **no llega a producción hasta el merge a `main`**. Lo de la base (equivalencias, tolerancias, alarmas) ya rige desde el 23-sep.
+- **La rutina diaria de análisis** (`trig_015Sv9jhxTP4kXHH4MUiQutP`, 07:00 SV, sesión nueva por disparo, push al teléfono) quedó **creada y DESACTIVADA**. Se creó desde una sesión cloud que no pudo pasarle el conector de Supabase, y en su config tampoco quedó el repo, así que correría ciega. Para activarla: en claude.ai → Routines, agregarle el conector de Supabase y el repo `freakie-dogs-caja`, y activarla. El prompt ya dice qué puede aplicar sola (inventario faltante, inactivos fuera del conteo, equivalencias con factor escrito) y qué tiene que proponer (recetas, factores estimados, caja, DTE).
+- **Informes que se le pasaron a Cesar** (artifacts privados de Jose, se comparten desde Share): el informe completo de validación y el one-pager "qué se arregló", también en PDF.
+ El consolidado está en `supabase/migrations/20260923_equivalencias_descarga.sql`.
 
 ## 23-Sep-2026 — Coca-Cola Combo XL sin bebida en local + aviso "hay más opciones abajo" en el ComboModal
 
