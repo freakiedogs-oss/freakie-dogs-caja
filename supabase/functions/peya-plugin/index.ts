@@ -341,6 +341,20 @@ Deno.serve(async (req) => {
       // Un fallo de BD debe dar 5xx para que DH reintente, nunca 200.
       if (error) return json({ error: "persistencia", message: error.message }, 500);
 
+      // `localInfo.platformKey` es el globalEntityId de Delivery Hero para esta
+      // tienda (FP_DE, FP_MY… el de PeYa El Salvador lo sabremos con el primer
+      // pedido real), y es obligatorio para prender/apagar ítems del catálogo.
+      // No nos lo dan en ningún alta: viene acá, y en el contrato es `required`.
+      const platformKey = payload?.localInfo?.platformKey ?? null;
+      if (platformKey) {
+        svc.rpc("peya_guardar_global_entity", {
+          p_remote_id: remoteId,
+          p_global_entity_id: String(platformKey),
+        }).then(({ error: e }) => {
+          if (e) console.error("no se pudo guardar el globalEntityId", remoteId, e.message);
+        });
+      }
+
       // La aceptación automática NO se hace antes de contestar: DH espera el acuse
       // del dispatch y meterle dos llamadas más de latencia sería pedir un timeout.
       // Se contesta primero y se decide después, en segundo plano.
@@ -469,13 +483,79 @@ Deno.serve(async (req) => {
     }
 
     // ---- GET /menuimport/{remoteId} — piden el menú ----
-    // 202 sincrónico y sin cuerpo; el menú se envía después por la API del middleware.
+    // El contrato es explícito: «A synchronous 202 response code should be sent with
+    // no response body, then the menu should be submitted» — o sea 202 YA, y el
+    // catálogo se manda después por la API del middleware. Armarlo acá antes de
+    // contestar sería un timeout garantizado: son ~260 ítems.
+    //
+    // Se manda por la API de catálogo (PUT /v2/chains/{chain}/catalog), no por el
+    // POST /v2/menu/{vendorCode}/{menuImportId} de XML: ese está marcado deprecated
+    // en la doc de ellos y reemplazado justamente por catálogo.
     if (req.method === "GET" && ruta[0] === "menuimport") {
+      const remoteId = decodeURIComponent(ruta[1] ?? "");
+      const vendorCode = url.searchParams.get("vendorCode");
+      const menuImportId = url.searchParams.get("menuImportId");
+
+      const mandar = async () => {
+        const base = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
+        const r = await fetch(`${base}/functions/v1/peya-responder`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-freakie-secreto": ACCION_SECRET },
+          body: JSON.stringify({
+            accion: "catalogo",
+            remoteId,
+            origen: "trigger",
+            menuImportId,
+            vendorCode,
+          }),
+        });
+        const cuerpo = await r.text();
+        if (!r.ok) {
+          console.error("menuimport: el catálogo NO se envió", remoteId, r.status,
+            cuerpo.slice(0, 500));
+        } else {
+          console.log("menuimport: catálogo enviado", remoteId, cuerpo.slice(0, 300));
+        }
+      };
+
+      const erMenu = (globalThis as Record<string, any>).EdgeRuntime;
+      const tarea = mandar().catch((e) =>
+        console.error("menuimport falló", remoteId, String(e))
+      );
+      if (typeof erMenu?.waitUntil === "function") erMenu.waitUntil(tarea);
+
       return new Response(null, { status: 202 });
     }
 
     // ---- POST /catalog-import-callback — estado de un import de catálogo ----
+    // Acá se sabe si el catálogo entró de verdad. Sin registrar esto, un
+    // `failed` se ve igual que un `done`: el 202 del envío ya había dicho "ok".
+    //
+    // Se contesta 200 (recibido, seguir avisando). El 204 del contrato es para
+    // dejar de escuchar, y no queremos eso: los estados intermedios importan.
     if (req.method === "POST" && ruta[0] === "catalog-import-callback") {
+      const { data, error } = await svc.rpc("peya_catalogo_import_estado", {
+        p_catalog_import_id: payload?.catalogImportId ?? null,
+        p_estado: payload?.status ?? null,
+        p_mensaje: payload?.message ?? null,
+        p_detalles: payload?.details ?? null,
+      });
+
+      if (error) {
+        // 500 ⇒ DH reintenta el aviso. Mejor que perderlo.
+        return json({ error: "persistencia", message: error.message }, 500);
+      }
+      const d = data as Record<string, unknown> | null;
+      if (d?.ok === false) {
+        // No es motivo para devolver error: el aviso llegó bien, lo que no
+        // cuadra es de nuestro lado. Pero tiene que gritar.
+        console.warn("callback de un import que no tenemos registrado",
+          payload?.catalogImportId, JSON.stringify(d).slice(0, 300));
+      } else if (payload?.status === "failed" || payload?.status === "done_with_errors") {
+        console.error("import de catálogo con problemas", payload?.catalogImportId,
+          payload?.status, JSON.stringify(payload?.details ?? {}).slice(0, 800));
+      }
+
       return new Response(null, { status: 200 });
     }
 
