@@ -111,6 +111,8 @@ const aPresentacion=(p,qty)=>{
 };
 // 4 decimales: evita que 0.1+0.2 pinte "0.30000000000000004" en la casilla
 function redondear(v){return Math.round((Number(v)||0)*10000)/10000;}
+// Huella de lo contado en bebidas: sirve para saber si hubo cambios después de «Guardar»
+const firmaBebidas=(items)=>JSON.stringify((items||[]).map(p=>[p.producto_id,p.cerrados??null,p.sueltas??null]));
 // Campos de la capa, tal como vienen del catalogo
 const camposConteo=(cp)=>({
   conteo_unidad: cp?.conteo_unidad||null,
@@ -167,6 +169,13 @@ export default function ConteoNocturno({user,onBack}){
   // entrar para precargar lo que ya se había contado.
   const bebidasGuardarRef=useRef(null);
   const [bebidasSync,setBebidasSync]=useState('ok'); // 'ok' | 'error' — solo para avisar si el autoguardado falla
+  // Guardado EXPLÍCITO (23-sep-2026, Frank): el autoguardado no se ve, y el único
+  // botón de abajo era «Generar pedido BEES», que sacaba de la pantalla. Ahora el
+  // botón principal es «Guardar conteo de bebidas», igual que el conteo de
+  // comida; el pedido BEES queda como opción aparte después de guardar.
+  const [bebidasGuardado,setBebidasGuardado]=useState(null);   // {at, por, firma} del último «Guardar»
+  const [guardandoBebidas,setGuardandoBebidas]=useState(false);
+  const bebidasPayloadRef=useRef(null);                          // último borrador pendiente de autoguardar
 
   // ── Reporte de MERMA, obligatorio antes de contar (pedido Jose 30-ago) ──
   // Dividida en 2 categorías INDEPENDIENTES desde el 18-sep-2026 (pedido de
@@ -226,6 +235,18 @@ export default function ConteoNocturno({user,onBack}){
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
+
+  // Campos numéricos del conteo sin flechitas y sin que la rueda del mouse
+  // cambie el número (23-sep-2026, Frank): en la computadora las flechas eran
+  // demasiado sensibles y la rueda movía cantidades sin que nadie lo notara.
+  useEffect(()=>{
+    const st=document.createElement('style');
+    st.textContent='input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}input[type=number]{-moz-appearance:textfield}';
+    document.head.appendChild(st);
+    const sinRueda=(e)=>{ const el=document.activeElement; if(el&&el.tagName==='INPUT'&&el.type==='number'&&el===e.target) el.blur(); };
+    document.addEventListener('wheel',sinRueda,{passive:true});
+    return ()=>{ st.remove(); document.removeEventListener('wheel',sinRueda); };
+  },[]);
 
   // Timer para mostrar tiempo restante de edición
   useEffect(()=>{
@@ -618,10 +639,12 @@ export default function ConteoNocturno({user,onBack}){
       // Si falla la lectura (sin red, tabla recién creada, etc.) simplemente se
       // entra con el conteo en blanco, como antes.
       let draftPorProducto={};
+      setBebidasGuardado(null);
       try{
         const {data:draft}=await db.from('inventario_conteo_bebidas')
-          .select('items').eq('sucursal_id', sucId).eq('fecha', today()).maybeSingle();
+          .select('items,guardado_at,guardado_por_nombre').eq('sucursal_id', sucId).eq('fecha', today()).maybeSingle();
         if(draft?.items?.length) draftPorProducto=Object.fromEntries(draft.items.map(it=>[it.producto_id,it]));
+        setBebidasGuardado(draft?.guardado_at ? {at:draft.guardado_at, por:draft.guardado_por_nombre, firma:firmaBebidas(draft.items)} : null);
       }catch(e){ /* sin borrador previo, o no se pudo leer: se sigue con conteo en blanco */ }
 
       const prodsConDraft = Object.keys(draftPorProducto).length===0 ? prods : prods.map(p=>{
@@ -640,28 +663,61 @@ export default function ConteoNocturno({user,onBack}){
   // Guarda (con debounce) lo contado hasta ahora en bebidas, para que
   // sobreviva un refresh o volver a entrar. Nunca toca kardex ni
   // inventario_conteo_nocturno — solo esta tabla aparte.
+  const payloadBebidas=(extra={})=>({
+    sucursal_id: sucursalId,
+    store_code: storeCodeSel||user.store_code,
+    fecha: today(),
+    contado_por: user.id,
+    contado_por_nombre: user.nombre||null,
+    items: productos.map(p=>({producto_id:p.producto_id, cerrados:p.cerrados, sueltas:p.sueltas, cantidad_real:p.cantidad_real})),
+    total_items: productos.filter(p=>p.cantidad_real!==null).length,
+    updated_at: new Date().toISOString(),
+    ...extra,
+  });
+  const subirBebidas=async(payload)=>{
+    const {error}=await db.from('inventario_conteo_bebidas').upsert(payload,{onConflict:'sucursal_id,fecha'});
+    if(error) throw error;
+  };
   useEffect(()=>{
     if(modo!=='bebidas'||screen!==1||!sucursalId) return;
+    if(productos.filter(p=>p.cantidad_real!==null).length===0) return; // nada contado todavía
+    const payload=payloadBebidas();
+    bebidasPayloadRef.current=payload;
     if(bebidasGuardarRef.current) clearTimeout(bebidasGuardarRef.current);
     bebidasGuardarRef.current=setTimeout(async ()=>{
-      const contadas=productos.filter(p=>p.cantidad_real!==null);
-      if(contadas.length===0) return; // nada contado todavía: no hay qué guardar
-      try{
-        const {error}=await db.from('inventario_conteo_bebidas').upsert({
-          sucursal_id: sucursalId,
-          store_code: storeCodeSel||user.store_code,
-          fecha: today(),
-          contado_por: user.id,
-          contado_por_nombre: user.nombre||null,
-          items: productos.map(p=>({producto_id:p.producto_id, cerrados:p.cerrados, sueltas:p.sueltas, cantidad_real:p.cantidad_real})),
-          total_items: contadas.length,
-        }, {onConflict:'sucursal_id,fecha'});
-        if(error) throw error;
-        setBebidasSync('ok');
-      }catch(e){ setBebidasSync('error'); }
+      bebidasPayloadRef.current=null;
+      try{ await subirBebidas(payload); setBebidasSync('ok'); }catch(e){ setBebidasSync('error'); }
     },600);
-    return ()=>{ if(bebidasGuardarRef.current) clearTimeout(bebidasGuardarRef.current); };
   },[productos,modo,screen,sucursalId]);
+  // Al salir de la pantalla (flecha atrás, pedido BEES, cambiar de sucursal)
+  // antes de los 600 ms, el último cambio se sube igual en vez de perderse.
+  useEffect(()=>()=>{
+    if(bebidasGuardarRef.current) clearTimeout(bebidasGuardarRef.current);
+    const pendiente=bebidasPayloadRef.current; bebidasPayloadRef.current=null;
+    if(pendiente) subirBebidas(pendiente).catch(()=>{});
+  },[modo,screen,sucursalId]);
+
+  // «Guardar conteo de bebidas»: sube ya (sin esperar el autoguardado) y deja
+  // constancia de quién y a qué hora. Igual que antes, NO toca kardex ni el
+  // conteo nocturno de comida.
+  const guardarBebidas=async()=>{
+    if(guardandoBebidas) return;
+    const contadas=productos.filter(p=>p.cantidad_real!==null).length;
+    if(contadas===0){show('⚠️ Contá al menos una bebida');return;}
+    if(bebidasGuardarRef.current) clearTimeout(bebidasGuardarRef.current);
+    bebidasPayloadRef.current=null;
+    setGuardandoBebidas(true);
+    const at=new Date().toISOString();
+    try{
+      await subirBebidas(payloadBebidas({guardado_at:at, guardado_por:user.id, guardado_por_nombre:user.nombre||null}));
+      setBebidasSync('ok');
+      setBebidasGuardado({at, por:user.nombre||null, firma:firmaBebidas(productos)});
+      show(contadas<productos.length
+        ? `✓ Guardado: ${contadas} de ${productos.length} bebidas. Podés seguir después.`
+        : '✓ Conteo de bebidas guardado');
+    }catch(e){ setBebidasSync('error'); show('❌ No se pudo guardar: '+e.message+'. Revisá la señal y tocá Guardar otra vez.'); }
+    finally{ setGuardandoBebidas(false); }
+  };
 
   // Bebidas: no escribe NADA en BD — arma el pedido sugerido y pasa a la pantalla del PDF
   const prepararPedidoBebidas=()=>{
@@ -777,7 +833,9 @@ export default function ConteoNocturno({user,onBack}){
   const stepCantidad=(prodId,delta)=>{
     setProductos(prev=>prev.map(p=>{
       if(p.producto_id!==prodId)return p;
-      const base = p.cerrados!==null&&p.cerrados!=='' ? n(p.cerrados) : aPresentacion(p,p.stock_teorico).cerrados;
+      // En bebidas el teórico no sirve (Insumo Soda en negativo): el + arranca en 0.
+      const base = p.cerrados!==null&&p.cerrados!=='' ? n(p.cerrados)
+        : modo==='bebidas' ? 0 : aPresentacion(p,p.stock_teorico).cerrados;
       return recalc(p,Math.max(0,redondear(base+delta)),p.sueltas);
     }));
   };
@@ -1705,10 +1763,17 @@ export default function ConteoNocturno({user,onBack}){
           )}
           {modo==='bebidas'&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
-              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…). Al final se genera el <b>pedido BEES sugerido en PDF</b>. Este conteo NO ajusta el inventario del sistema.</div>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…) y tocá <b>Guardar conteo de bebidas</b> al terminar. Este conteo NO ajusta el inventario del sistema.</div>
               <div style={{fontSize:10.5,marginTop:4,color:bebidasSync==='error'?'#f87171':'#6b7280'}}>
-                {bebidasSync==='error' ? '⚠ No se pudo guardar el último cambio — seguí contando, se reintenta solo' : '✓ Lo que contás se guarda solo: podés salir y volver a entrar sin perderlo'}
+                {bebidasSync==='error' ? '⚠ No se pudo guardar el último cambio — seguí contando, se reintenta solo' : '✓ Lo que contás se va guardando solo: podés salir y volver a entrar sin perderlo'}
               </div>
+              {bebidasGuardado&&(
+                <div style={{fontSize:11,marginTop:4,fontWeight:700,color:bebidasGuardado.firma===firmaBebidas(productos)?'#4ade80':'#facc15'}}>
+                  {bebidasGuardado.firma===firmaBebidas(productos)
+                    ? `✓ Guardado a las ${new Date(bebidasGuardado.at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',timeZone:'America/El_Salvador'})}${bebidasGuardado.por?` por ${bebidasGuardado.por}`:''}`
+                    : '✏️ Cambiaste cantidades después de guardar: tocá Guardar otra vez'}
+                </div>
+              )}
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
@@ -1818,11 +1883,28 @@ export default function ConteoNocturno({user,onBack}){
           {/* En bebidas se siguen exigiendo todas (el PDF de BEES es el pedido
               completo). En el conteo normal se permite guardar parcial: un solo
               producto sin contar dejaba a la sucursal sin poder pasar pedido. */}
-          {(()=>{const bloqueado = modo==='bebidas' ? contados<totalProds : contados===0; return(
-          <button className="btn btn-red" onClick={()=>modo==='bebidas'?prepararPedidoBebidas():guardarConteo()} disabled={guardando||bloqueado}
+          {modo==='bebidas'?(()=>{
+            const alDia=bebidasGuardado&&bebidasGuardado.firma===firmaBebidas(productos);
+            return(<>
+              {alDia&&contados===totalProds&&(
+                <button className="btn btn-ghost" onClick={prepararPedidoBebidas}
+                  style={{fontSize:14,padding:12,width:'100%',marginBottom:8,background:'#0d0d0d'}}>
+                  🛒 Ver pedido BEES sugerido (PDF)
+                </button>
+              )}
+              <button className="btn btn-red" onClick={guardarBebidas} disabled={guardandoBebidas||contados===0}
+                style={{fontSize:17,padding:18,width:'100%',opacity:contados===0?0.5:1,background:alDia?'#166534':undefined}}>
+                {guardandoBebidas?<span className="spin"/>
+                  :contados===0?'Contá al menos una bebida'
+                  :alDia?'✓ Conteo de bebidas guardado'
+                  :contados<totalProds?`💾 Guardar ${contados} de ${totalProds} bebidas`
+                  :'💾 Guardar conteo de bebidas'}
+              </button>
+            </>);
+          })():(()=>{const bloqueado = contados===0; return(
+          <button className="btn btn-red" onClick={()=>guardarConteo()} disabled={guardando||bloqueado}
             style={{fontSize:17,padding:18,width:'100%',opacity:bloqueado?0.5:1}}>
             {guardando?<span className="spin"/>
-              :modo==='bebidas'?(contados<totalProds?`Faltan ${totalProds-contados} bebidas`:'🛒 Generar pedido BEES')
               :contados===0?'Contá al menos un producto'
               :contados<totalProds?`Guardar ${contados} de ${totalProds}`
               :isEdit?'✏️ Actualizar Conteo':'✓ Guardar Conteo'}
@@ -1838,7 +1920,7 @@ export default function ConteoNocturno({user,onBack}){
     <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
       <Toast/>
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
-        <button onClick={onBack} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
+        <button onClick={()=>modo==='bebidas'?setScreen(1):onBack()} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div>
           <div style={{fontWeight:800,fontSize:18}}>{modo==='bebidas'?'🛒 Pedido BEES sugerido':isEdit?'📦 Pedido Actual':'📦 Pedido Sugerido'} <InfoTip text={modo==='bebidas'?"Pedido de bebidas calculado del conteo: para cada bebida bajo mínimo se sugiere rellenar al máximo. Descargá el PDF y digitá el pedido en la app de BEES.":isEdit?"Pedido generado a partir del conteo editado. Las cantidades reflejan lo contado.":"Pedido recomendado a partir del conteo nocturno: cuánto pedir de cada producto según su consumo y su stock mínimo."} /></div>
           <div style={{color:'#555',fontSize:12}}>{pedidoItems.length} productos · <span style={{color:'#e63946'}}>{pedidoItems.filter(p=>p.bajominimo).length} bajo mínimo</span></div>
@@ -1969,9 +2051,9 @@ export default function ConteoNocturno({user,onBack}){
             {generandoPedido?<span className="spin"/>:itemsConQty>0?`📤 Enviar Pedido (${itemsConQty} productos)`:'📤 Enviar Pedido'}
           </button>
         );})()}
-        <button onClick={omitirPedido}
+        <button onClick={()=>modo==='bebidas'?setScreen(1):omitirPedido()}
           style={{background:'none',border:'none',color:'#555',fontSize:12,cursor:'pointer',width:'100%',padding:6}}>
-          {modo==='bebidas'?'Listo — salir sin descargar':'Omitir pedido esta noche'}
+          {modo==='bebidas'?'Volver al conteo de bebidas':'Omitir pedido esta noche'}
         </button>
       </div>
     </div>
