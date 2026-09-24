@@ -1,5 +1,32 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 24-Sep-2026 — PeYa Bloque 3 (catálogo): serializador, envío, disponibilidad de ítems y 23 tests
+
+Cerrado el Bloque 3 de la homologación PedidosYa. Todo sale del menú real del canal `pedidos_ya` (`db0f8d05-0d72-435f-bf82-41a776802549`, "Menú PedidosYa").
+
+**`peya_catalogo(p_menu_id)`** serializa el menú al formato de Delivery Hero: mapa plano `{items:{<id>: …}}` con discriminador `type` (Menu | Category | Product | Topping). Hoy da **259 ítems**: 1 Menu, 6 Category, 12 Topping, 240 Product (105 vendibles + 135 opciones de modificador). Cuatro reglas del contrato que no se adivinan:
+- El Menu referencia **Products directo**, no Categories. Las Category agrupan para mostrar; no hay enlace Menu→Category en el schema (verificado en `catalog-schema.yaml`: la palabra `categories` no aparece).
+- Las referencias son **objetos indexados por id**, no arrays. Y el id de la clave debe coincidir con el `id` de adentro.
+- Cada opción de modificador es **también un Product** del catálogo, y el **precio del extra va en la referencia** (`ProductToppingReference.price`), no en el Product suelto.
+- `quantity.maximum` es obligatorio en Topping. Sin `max_selecciones` se usa cuántas opciones tiene el grupo: es el techo real y es mejor que inventar un número.
+- `ScheduleEntry` usa `startTime`; el ejemplo de ellos trae la errata `starTime`. Manda el schema.
+
+**Lo que NO se exporta (hallazgo).** `pos_menu_items` mezcla dos cosas: productos vendibles y andamiaje interno de combos. Los 13 ítems con **precio $0.00** (los 12 de la categoría *Componentes* — Bebida, Fries, Hamburguesa, Postre, Papa Blanca… — más `HOT DOG PROMO AGUILA FAS`) no son vendibles: un producto de $0.00 en un marketplace es hallazgo de certificación, y si alguien le pone `disponible=true` un cliente pide "Hamburguesa" gratis. El serializador filtra por `precio > 0`, y eso arrastra: la categoría *Componentes* desaparece (7→6 categorías) y 3 grupos de modificadores que solo colgaban de componentes quedan huérfanos y no se mandan (15→12). **No se tocó nada en `pos_menu_items`** — la data del POS queda intacta, el filtro es solo de exportación (regla tuya: no desactivar ni borrar productos del menú).
+Los 58 ítems con precio pero `disponible=false` (cervezas, refrescos de vidrio, merch) **sí** viajan, con `active:false`: es exactamente para eso que existe el flag, y así se prenden luego por el endpoint de disponibilidad sin remandar el catálogo entero.
+
+**Envío (`peya-responder` v10).** Acción `catalogo` → `PUT /v2/chains/{chainCode}/catalog` con `{vendors, catalog, callbackUrl}`. El 202 con `catalogImportId` **no significa que el catálogo entró**: significa que lo aceptaron para procesar. El resultado real llega por callback. Por eso se abre la fila en `peya_catalogo_import` *antes* de llamar, y si la llamada se corta queda en `enviando` en vez de no quedar nada.
+Acción `item_disponible` → `PUT .../catalog/items/availability`. `globalEntityId` es `required` en el esquema (aunque su descripción diga que se puede omitir): **no se inventa**. Llega como `localInfo.platformKey` en el payload de los pedidos y el plugin lo guarda la primera vez que lo ve (`peya_guardar_global_entity`); mientras no lo tengamos, la acción falla con un mensaje claro. `willBeAvailable` solo existe al deshabilitar — mandarlo con `isAvailable:true` es un 400.
+
+**Trigger de menú (`peya-plugin` v13).** `GET /menuimport/{remoteId}` contesta **202 ya y sin cuerpo**, como pide el contrato, y manda el catálogo después en segundo plano (armarlo antes de contestar serían 260 ítems y un timeout). Va por la API de catálogo, **no** por `POST /v2/menu/{vendorCode}/{menuImportId}`: ese está marcado `deprecated` en su propia doc y reemplazado por catálogo. `POST /catalog-import-callback` registra el estado real (`in_progress → done | done_with_errors | failed`) y contesta 200 para que sigan avisando; el 204 sería "dejá de avisarme" y los estados intermedios importan.
+
+**Alcance por tienda (hueco que había).** `catalogo` e `item_disponible` recibían el `remoteId` del request: una cajera de Cafetalón podía apagar el pan de Lourdes. Ahora `resolverRemoteId` lo **deriva del PIN** para roles de tienda (403 si nombra otra), y solo el secreto de servidor o los roles de todas las tiendas pueden elegir. Es la misma regla que ya tenía `tienda`.
+
+**Tests: 23/23 verde** (`peya_test_catalogo()`, `scripts/test-peya-catalogo.sql`). El chequeo que más importa es el de **referencias colgadas**: DH valida el catálogo entero y lo rechaza completo sin decir qué ítem estaba mal. Y se comprobó que los tests fallan cuando deben: quitando el filtro `precio > 0` en una copia, el chequeo 12 encontró los 13 productos de $0.00; con un catálogo roto a mano (`PROD-A → TOP-FANTASMA`) el chequeo 5 lo marcó. El ciclo completo del import (abrir → 202 → callbacks en orden → estado inválido rechazado sin pisar nada) se corrió contra la BD y se limpió después.
+
+**Trampa de Postgres, otra vez:** `peya_test_catalogo` tuvo que declararse `VOLATILE`. Llama a `peya_catalogo_import_estado`, que hace UPDATE, y desde una función `STABLE` eso revienta en tiempo de ejecución.
+
+**Falta para poder mandarlo de verdad:** los `remoteId` y `vendor_code` reales de PeYa (hoy `PENDIENTE-*`). El código está listo y probado hasta el borde de la red; el PUT no se puede ejercitar sin esos datos. Metrocentro (`S006`) además no tiene `platform_restaurant_id`.
+
 ## 23-Sep-2026 — Corte Z: Venecia no podía cerrar por la foto del voucher n1co
 
 **Reporte Jose:** Alejandro (S004, Paseo Venecia) no pudo hacer el Z del 22-sep porque la tablet no le dejaba tomar la foto del voucher n1co (obligatoria desde el 22-sep).
