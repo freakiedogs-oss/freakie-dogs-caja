@@ -1,5 +1,6 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+<<<<<<< Updated upstream
 ## 24-Sep-2026 — Conteo de bebidas se borraba al reingresar (autoguardado en `inventario_conteo_bebidas`)
 
 **Reporte de Cesar:** contó las bebidas de Cafetalón en el Conteo de bebidas (BEES), y al volver a entrar todo aparecía en cero otra vez.
@@ -12,6 +13,18 @@ Ya existía en el esquema una tabla pensada exactamente para esto — `inventari
 - Migración `20260924_rls_inventario_conteo_bebidas.sql`: política `for all` a anon/authenticated/service_role (mismo patrón permisivo que `inventario_conteo_nocturno_all`; el control de acceso real es de la app, no RLS multi-tenant).
 - `ConteoNocturno.jsx`: `cargarBebidas` ahora lee el borrador de hoy de `inventario_conteo_bebidas` al entrar y precarga lo ya contado (con un toast "Se recuperó el conteo..."). Un nuevo `useEffect` autoguarda (debounce 600ms) cada cambio de `productos` mientras `modo==='bebidas'` — nunca toca kardex ni el conteo normal. Banner de la pantalla ahora muestra si el autoguardado está al día o falló (se reintenta solo con el siguiente cambio, no bloquea el conteo).
 - Este fix vive solo en el código: hasta que el PR se mergee y Vercel redespliegue, la pantalla en producción sigue sin guardar nada.
+=======
+## 24-Sep-2026 — Estación de pesaje y etiquetado de Casa Matriz (`/etiquetado.html`) — prueba de aparatos
+
+Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maqueta y nunca pasó de ahí. Cesar lo quiso general: elegir cualquier producto de Casa Matriz, decir cuántas unidades, y pesar e imprimir una etiqueta por unidad.
+
+- **La impresora apareció en los archivos:** dos fotos del 9-sep (1:30 y 1:37 PM) — **Zebra ZD421**, part number `ZD4A042-301E00EZ`. Habla **ZPL**, así que no hay diálogo de impresión: la tablet le manda los comandos por USB y la etiqueta sale sola. Etiqueta de **3 × 2 pulgadas**, confirmado por Cesar.
+- **`zebraZpl.js`** arma la etiqueta en pulgadas y la convierte a puntos al final, porque ZPL trabaja en puntos y la cantidad depende del cabezal: 609 × 406 a 203 dpi, 900 × 600 a 300 dpi. La resolución **se elige en pantalla** y no se adivina — si se hornea la equivocada, el texto sale corrido o cortado. Trae etiqueta de prueba para verificar el calce sin pesar nada.
+- **`zebraUsb.js`** habla WebUSB con vendor `0x0A5F`. Busca la interfaz de clase 7 (impresora) recorriendo las configuraciones en vez de asumir la 0, y cae a cualquier bulk de salida si el firmware reporta clase 255. Reusa el permiso ya dado con `getDevices()` al abrir, así que solo pide autorización la primera vez. Si `claimInterface` falla, avisa que hay que cerrar la app de Zebra: es el error real en Android.
+- **`EtiquetadoApp.jsx`** reusa `useBalanza()` del porcionador (misma Rhino, mismo parser) sin tocar esa estación. Flujo: producto → cuántas → pesar cada una. **Si la impresión falla, la pesada no se cuenta** — vale más repetirla que una bolsa sin identificar.
+- **Esta versión no guarda nada.** Es la prueba de que la Rhino y la Zebra conviven en el adaptador USB que compró Cesar; si algo falla, no quedan lotes basura. El lote es local a la tablet. Cuando se confirme, se crea el esquema de lotes y unidades y las bolsas entran al kardex.
+- **Pendiente de datos:** de los 12 productos solo cuatro tienen peso objetivo (cheddar 907 g, chili 2,268 g, cebolla morada 454 g, sal 907 g). Los días de vencimiento están puestos a mano y se muestran como provisionales — es el **RVP-13** de Mauricio, que pide un estudio de vida útil.
+>>>>>>> Stashed changes
 
 ## 23-Sep-2026 — Corte Z: Venecia no podía cerrar por la foto del voucher n1co
 
