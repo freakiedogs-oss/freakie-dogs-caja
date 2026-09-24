@@ -3,6 +3,7 @@ import { db } from '../../supabase';
 import { STORES, today, n } from '../../config';
 import { BUCKET_CIERRES as BUCKET } from '../../config';
 import { useToast } from '../../hooks/useToast';
+import { porEmpaque, tieneSueltas, labelCaja, labelSuelta, unidadStock, aUnidades, aCajas, textoCajas, fmtCant } from '../../utils/presentacion';
 
 const fmt$ = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
 
@@ -122,7 +123,7 @@ export default function ConfirmarEntrega({user,onBack}){
       // Se trae la presentación del catálogo para que quien recibe cuente lo que
       // tiene enfrente (cajas, bolsas) y no la unidad de costeo.
       const {data,error}=await db.from('despacho_items')
-        .select('id,despacho_id,producto_id,descripcion,cantidad_despachada,cantidad_recibida,unidad_medida,catalogo_productos(conteo_unidad,conteo_factor)')
+        .select('id,despacho_id,producto_id,descripcion,cantidad_despachada,cantidad_recibida,unidad_medida,catalogo_productos(conteo_unidad,conteo_factor,conteo_fraccionado,conteo_unidad_suelta,conteo_factor_suelta,conteo_modo)')
         .eq('despacho_id',desp.id)
         .order('id');
       if(error)throw error;
@@ -271,6 +272,40 @@ export default function ConfirmarEntrega({user,onBack}){
         </button>
         {items.map((it,idx)=>{
           const isDiff=it.cantidad_recibida!==it.cantidad_despachada;
+          // Bebidas (24-sep-2026, Frank): se reciben igual que se cuentan en la
+          // noche y se registran de La Constancia — cajas/fardos cerrados +
+          // sueltas — con el total en unidades a la vista. El resto de productos
+          // sigue como estaba.
+          const pp={...(it.catalogo_productos||{}),unidad_medida:it.unidad_medida};
+          if(pp.conteo_modo==='bebidas'&&porEmpaque(pp)){
+            const pres=aCajas(pp,it.cantidad_recibida||0);
+            const setPres=(cajas,sueltas)=>updateItemQuantity(idx,aUnidades(pp,cajas,sueltas));
+            const btn={padding:'8px 12px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700};
+            const inp={flex:1,padding:'8px 10px',background:'#141414',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',textAlign:'center',fontSize:14};
+            return(
+            <div key={it.id} style={{marginBottom:12,padding:'12px 14px',background:isDiff?'#4a3a1a':'#1a1a1a',borderRadius:10,border:`1px solid ${isDiff?'#713f12':'#2a2a2a'}`}}>
+              <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>{it.descripcion}</div>
+              <div style={{fontSize:12,color:'#60a5fa',marginBottom:10}}>📦 Enviado: <b>{textoCajas(pp,it.cantidad_despachada)}</b></div>
+              <div style={{fontSize:12,fontWeight:700,color:'#60a5fa',marginBottom:4}}>Cerradas: {labelCaja(pp)}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <button onClick={()=>setPres(Math.max(0,pres.cajas-1),pres.sueltas)} style={btn}>−</button>
+                <input type="text" inputMode="decimal" value={pres.cajas} onChange={(e)=>setPres(Number(e.target.value.replace(/[^\d.]/g,''))||0,pres.sueltas)} style={inp}/>
+                <button onClick={()=>setPres(pres.cajas+1,pres.sueltas)} style={btn}>+</button>
+              </div>
+              {tieneSueltas(pp)&&(<>
+                <div style={{fontSize:12,fontWeight:700,color:'#facc15',margin:'8px 0 4px'}}>Sueltas: {labelSuelta(pp)}</div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <button onClick={()=>setPres(pres.cajas,Math.max(0,pres.sueltas-1))} style={btn}>−</button>
+                  <input type="text" inputMode="numeric" value={pres.sueltas} onChange={(e)=>setPres(pres.cajas,parseInt(e.target.value.replace(/[^\d]/g,''),10)||0)} style={inp}/>
+                  <button onClick={()=>setPres(pres.cajas,pres.sueltas+1)} style={btn}>+</button>
+                </div>
+              </>)}
+              <div style={{fontSize:12,color:'#4ade80',marginTop:6,textAlign:'center',fontWeight:700}}>Recibido = {fmtCant(it.cantidad_recibida||0)} {unidadStock(pp)}</div>
+              {isDiff&&<div style={{fontSize:11,color:'#f97316',marginTop:6}}>Diferencia: {fmtCant((it.cantidad_recibida||0)-it.cantidad_despachada)} {unidadStock(pp)}</div>}
+              <input type="text" placeholder="Notas para este ítem..." value={itemsNotas[idx]||''} onChange={(e)=>updateItemNota(idx,e.target.value)} style={{width:'100%',marginTop:8,padding:'8px 10px',background:'#0a0a0a',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',fontSize:12}}/>
+            </div>
+            );
+          }
           // El ± mueve un empaque entero: el que recibe reclama "me faltó una
           // caja", no "me faltaron 24 unidades".
           const fac=Number(it.catalogo_productos?.conteo_factor)>0?Number(it.catalogo_productos.conteo_factor):1;

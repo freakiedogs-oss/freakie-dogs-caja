@@ -2,12 +2,19 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
 import { fmtDate, n } from '../../config';
 import { Badge } from '../ui/Badge';
+import { porEmpaque, tieneSueltas, labelCaja, labelSuelta, unidadStock, aUnidades, textoCajas, fmtCant } from '../../utils/presentacion';
 
 // ── TRANSFERENCIAS ENTRE SUCURSALES (solo admin) ──────────────
 // Crea un despacho ya 'despachado' con origen_sucursal_id: entra al flujo
 // existente (motorista lo ve en Confirmar Entregas, la sucursal destino lo
 // recepciona con despacho_confirmar y ahí se suma su kardex). La salida del
 // origen la asienta el RPC transferencia_crear en la misma transacción.
+//
+// 24-sep-2026 (Frank): las cantidades se digitan igual que en el Conteo
+// Nocturno y en la entrega de La Constancia — cajas/fardos cerrados + sueltas —
+// y se muestra siempre el equivalente en unidades. El RPC sigue recibiendo
+// unidades de stock (la conversión es solo aquí, con utils/presentacion).
+const CAMPOS_PRES = 'conteo_unidad,conteo_factor,conteo_fraccionado,conteo_unidad_suelta,conteo_factor_suelta';
 
 const ROLES_OK = ['admin', 'superadmin', 'ejecutivo'];
 
@@ -54,7 +61,7 @@ function NuevaTransferencia({ user, show, sucursales, onCreada }) {
   const [query, setQuery] = useState('');
   const [resultados, setResultados] = useState([]);
   const [buscando, setBuscando] = useState(false);
-  const [cart, setCart] = useState([]); // [{id,nombre,unidad_medida,categoria,qty,stock}]
+  const [cart, setCart] = useState([]); // [{id,nombre,unidad_medida,categoria,...presentación, cajas, sueltas, qty(unidades), stock}]
   const [motoristas, setMotoristas] = useState([]);
   const [motoristaId, setMotoristaId] = useState('');
   const [notas, setNotas] = useState('');
@@ -75,7 +82,7 @@ function NuevaTransferencia({ user, show, sucursales, onCreada }) {
       setBuscando(true);
       try {
         const { data, error } = await db.from('catalogo_productos')
-          .select('id,nombre,unidad_medida,categoria')
+          .select('id,nombre,unidad_medida,categoria,' + CAMPOS_PRES)
           .eq('activo', true).ilike('nombre', `%${q}%`)
           .order('nombre').limit(25);
         if (error) throw error;
@@ -106,17 +113,34 @@ function NuevaTransferencia({ user, show, sucursales, onCreada }) {
       });
   }, [origen]);
 
+  // Con caja/fardo: el + suma una caja cerrada (así llega el producto). Sin
+  // presentación: se digita la unidad tal cual, como antes.
+  const conCajas = (c, cajas, sueltas) => ({ ...c, cajas, sueltas, qty: aUnidades(c, cajas, sueltas) });
   const agregar = (p) => {
     setCart(prev => {
       const ya = prev.find(c => c.id === p.id);
-      if (ya) return prev.map(c => c.id === p.id ? { ...c, qty: n(c.qty) + 1 } : c);
-      return [...prev, { ...p, qty: 1, stock: p.stock ?? 0 }];
+      if (ya) return prev.map(c => c.id !== p.id ? c
+        : porEmpaque(c) ? conCajas(c, n(c.cajas) + 1, c.sueltas) : { ...c, qty: n(c.qty) + 1 });
+      const base = { ...p, stock: p.stock ?? 0 };
+      return [...prev, porEmpaque(p) ? conCajas(base, 1, 0) : { ...base, qty: 1 }];
     });
   };
   const setQty = (id, v) => setCart(prev => prev.map(c => c.id === id ? { ...c, qty: v } : c));
+  const setCajas = (id, campo, v) => setCart(prev => prev.map(c => {
+    if (c.id !== id) return c;
+    let x = v === '' ? '' : Math.max(0, n(v));
+    if (campo === 'sueltas' && x !== '') x = Math.round(x);
+    return campo === 'cajas' ? conCajas(c, x, c.sueltas) : conCajas(c, c.cajas, x);
+  }));
   const quitar = (id) => setCart(prev => prev.filter(c => c.id !== id));
 
   const totalUnidades = cart.reduce((s, c) => s + n(c.qty), 0);
+  const totalCajas = cart.filter(porEmpaque).reduce((s, c) => s + n(c.cajas), 0);
+  const totalSueltas = cart.filter(tieneSueltas).reduce((s, c) => s + n(c.sueltas), 0);
+  const resumenCarrito = [
+    totalCajas > 0 ? `${fmtCant(totalCajas)} caja(s)` : null,
+    totalSueltas > 0 ? `${totalSueltas} sueltas` : null,
+  ].filter(Boolean).join(' + ');
   const sobregiro = cart.filter(c => origen && n(c.qty) > n(c.stock));
   const origenNombre = sucursales.find(s => s.id === origen)?.nombre || '';
   const destinoNombre = sucursales.find(s => s.id === destino)?.nombre || '';
@@ -127,7 +151,8 @@ function NuevaTransferencia({ user, show, sucursales, onCreada }) {
     const items = cart.filter(c => n(c.qty) > 0);
     if (items.length === 0) { show('⚠️ Agregá al menos un producto'); return; }
     if (!motoristaId) { show('⚠️ Asigná el motorista que lleva la transferencia'); return; }
-    let msg = `¿Transferir ${items.length} producto(s) (${totalUnidades} unidades) de ${origenNombre} a ${destinoNombre}?\n\nEl stock sale del origen AHORA y entra al destino cuando confirmen la entrega.`;
+    const detalle = items.map(c => `• ${c.nombre}: ${textoCajas(c, c.qty)}`).join('\n');
+    let msg = `¿Transferir de ${origenNombre} a ${destinoNombre}?\n\n${detalle}\n\nEl stock sale del origen AHORA y entra al destino cuando confirmen la entrega.`;
     if (sobregiro.length > 0) {
       msg = `⚠️ ${sobregiro.length} producto(s) superan el stock del origen (quedará negativo).\n\n` + msg;
     }
@@ -194,12 +219,12 @@ function NuevaTransferencia({ user, show, sucursales, onCreada }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{p.nombre}</div>
                 <div style={{ fontSize: 11, color: '#666' }}>
-                  {p.categoria || '—'} · {p.unidad_medida || 'unidad'}
-                  {origen && <span style={{ marginLeft: 8, color: n(p.stock) > 0 ? '#4ade80' : '#f97316' }}>stock origen: {n(p.stock)}</span>}
+                  {p.categoria || '—'} · {porEmpaque(p) ? labelCaja(p) : unidadStock(p)}
+                  {origen && <span style={{ marginLeft: 8, color: n(p.stock) > 0 ? '#4ade80' : '#f97316' }}>stock origen: {textoCajas(p, p.stock)}</span>}
                 </div>
               </div>
               <button className={`btn btn-sm ${enCarrito ? 'btn-green' : 'btn-ghost'}`} onClick={() => agregar(p)}>
-                {enCarrito ? `✓ ${enCarrito.qty}` : '+ Agregar'}
+                {enCarrito ? `✓ ${porEmpaque(enCarrito) ? `${fmtCant(enCarrito.cajas || 0)} cj` : enCarrito.qty}` : '+ Agregar'}
               </button>
             </div>
           );
@@ -209,7 +234,7 @@ function NuevaTransferencia({ user, show, sucursales, onCreada }) {
       {/* Carrito */}
       {cart.length > 0 && (
         <div className="card" style={{ marginBottom: 14 }}>
-          <div className="sec-title">A TRANSFERIR ({cart.length} · {totalUnidades} unidades)</div>
+          <div className="sec-title">A TRANSFERIR ({cart.length} producto{cart.length === 1 ? '' : 's'}{resumenCarrito ? ` · ${resumenCarrito}` : ''} · {fmtCant(totalUnidades)} unidades)</div>
           {cart.map(c => {
             const excede = origen && n(c.qty) > n(c.stock);
             return (
@@ -218,18 +243,40 @@ function NuevaTransferencia({ user, show, sucursales, onCreada }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{c.nombre}</div>
                     <div style={{ fontSize: 11, color: excede ? '#f97316' : '#666' }}>
-                      {origen ? `stock origen: ${n(c.stock)} ${c.unidad_medida || ''}` : (c.unidad_medida || 'unidad')}
+                      {origen ? `stock origen: ${textoCajas(c, c.stock)}` : (porEmpaque(c) ? labelCaja(c) : unidadStock(c))}
                       {excede && ' — ⚠️ quedará negativo'}
                     </div>
                   </div>
                   <button onClick={() => quitar(c.id)} style={{ background: 'none', border: 'none', color: '#e63946', fontSize: 16, cursor: 'pointer', padding: '0 6px' }}>✕</button>
                 </div>
-                <div className="num-input">
-                  <button className="num-btn" onClick={() => setQty(c.id, String(Math.max(0, n(c.qty) - 1)))}>−</button>
-                  <input type="number" className="num-field" min="0" step="0.01" value={c.qty}
-                    onChange={e => setQty(c.id, e.target.value)} />
-                  <button className="num-btn" onClick={() => setQty(c.id, String(n(c.qty) + 1))}>+</button>
-                </div>
+                {porEmpaque(c) ? (<>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa', marginBottom: 4 }}>📦 Cerradas: {labelCaja(c)}</div>
+                  <div className="num-input">
+                    <button className="num-btn" onClick={() => setCajas(c.id, 'cajas', Math.max(0, n(c.cajas) - 1))}>−</button>
+                    <input type="text" inputMode="decimal" className="num-field" value={c.cajas}
+                      onChange={e => setCajas(c.id, 'cajas', e.target.value.replace(/[^\d.]/g, ''))} />
+                    <button className="num-btn" onClick={() => setCajas(c.id, 'cajas', n(c.cajas) + 1)}>+</button>
+                  </div>
+                  {tieneSueltas(c) && (<>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#facc15', margin: '8px 0 4px' }}>➕ Sueltas: {labelSuelta(c)}</div>
+                    <div className="num-input">
+                      <button className="num-btn" onClick={() => setCajas(c.id, 'sueltas', Math.max(0, n(c.sueltas) - 1))}>−</button>
+                      <input type="text" inputMode="numeric" className="num-field" value={c.sueltas}
+                        onChange={e => setCajas(c.id, 'sueltas', e.target.value.replace(/[^\d]/g, ''))} />
+                      <button className="num-btn" onClick={() => setCajas(c.id, 'sueltas', n(c.sueltas) + 1)}>+</button>
+                    </div>
+                  </>)}
+                  <div style={{ fontSize: 12, color: '#4ade80', marginTop: 6, textAlign: 'center', fontWeight: 700 }}>
+                    = {fmtCant(c.qty)} {unidadStock(c)}
+                  </div>
+                </>) : (
+                  <div className="num-input">
+                    <button className="num-btn" onClick={() => setQty(c.id, String(Math.max(0, n(c.qty) - 1)))}>−</button>
+                    <input type="text" inputMode="decimal" className="num-field" value={c.qty}
+                      onChange={e => setQty(c.id, e.target.value.replace(/[^\d.]/g, ''))} />
+                    <button className="num-btn" onClick={() => setQty(c.id, String(n(c.qty) + 1))}>+</button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -282,7 +329,7 @@ function HistorialTransferencias({ sucursales }) {
     if (expandId === id) { setExpandId(null); return; }
     setExpandId(id); setItems([]);
     const { data } = await db.from('despacho_items')
-      .select('id,descripcion,cantidad_despachada,cantidad_recibida,unidad_medida')
+      .select('id,descripcion,cantidad_despachada,cantidad_recibida,unidad_medida,catalogo_productos(' + CAMPOS_PRES + ')')
       .eq('despacho_id', id).order('descripcion');
     setItems(data || []);
   };
@@ -308,16 +355,18 @@ function HistorialTransferencias({ sucursales }) {
       {expandId === d.id && (
         <div style={{ marginTop: 10, borderTop: '1px solid #2a2a2a', paddingTop: 8 }} onClick={e => e.stopPropagation()}>
           {items.length === 0 && <div className="spin" style={{ width: 18, height: 18, margin: '6px auto' }} />}
-          {items.map(it => (
-            <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '5px 0', borderBottom: '1px solid #1a1a1a' }}>
+          {items.map(it => {
+            const pp = { ...(it.catalogo_productos || {}), unidad_medida: it.unidad_medida };
+            return (
+            <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '5px 0', borderBottom: '1px solid #1a1a1a' }}>
               <span>{it.descripcion}</span>
-              <span style={{ color: '#888' }}>
-                {n(it.cantidad_despachada)} {it.unidad_medida || ''}
+              <span style={{ color: '#888', textAlign: 'right' }}>
+                {textoCajas(pp, it.cantidad_despachada)}
                 {it.cantidad_recibida != null && n(it.cantidad_recibida) !== n(it.cantidad_despachada) &&
-                  <span style={{ color: '#f97316' }}> · recibido {n(it.cantidad_recibida)}</span>}
+                  <span style={{ color: '#f97316', display: 'block' }}>recibido {textoCajas(pp, it.cantidad_recibida)}</span>}
               </span>
             </div>
-          ))}
+          );})}
           {d.notas_despacho && <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>📝 {d.notas_despacho}</div>}
         </div>
       )}
