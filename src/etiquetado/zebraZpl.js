@@ -45,10 +45,28 @@ function limpio(s) {
   return String(s == null ? '' : s).replace(/[\^~]/g, ' ').trim()
 }
 
-/* Una línea de texto. `A0N` es la fuente escalable, orientación normal. */
-function texto(x, y, alto, valor, dpi) {
-  const h = pt(alto, dpi)
-  return `^FO${pt(x, dpi)},${pt(y, dpi)}^A0N,${h},${h}^FD${limpio(valor)}^FS`
+/* La fuente 0 de Zebra es proporcional, pero el ancho medio de un carácter
+   ronda el 0.6 del alto que se le pide. Sirve para estimar si una línea se
+   va a salir de la etiqueta. Es una estimación conservadora a propósito:
+   más vale que el texto quede algo chico a que salga cortado. */
+const RATIO_ANCHO = 0.6
+
+/* Una línea de texto que SE ACHICA sola si no cabe.
+
+   Sin esto, un producto de nombre largo o un peso de cuatro cifras (5.00 lb
+   (2,268 g) son 17 caracteres) se sale del borde derecho y la impresora lo
+   corta sin avisar: la etiqueta sale y parece bien hasta que alguien busca
+   los gramos y no están. El alto pedido es el máximo, no el fijo. */
+function texto(x, y, alto, valor, dpi, anchoDisponible) {
+  const txt = limpio(valor)
+  if (!txt) return ''
+  let h = pt(alto, dpi)
+  if (anchoDisponible) {
+    const cabe = pt(anchoDisponible, dpi)
+    const necesario = txt.length * h * RATIO_ANCHO
+    if (necesario > cabe) h = Math.max(12, Math.floor(cabe / (txt.length * RATIO_ANCHO)))
+  }
+  return `^FO${pt(x, dpi)},${pt(y, dpi)}^A0N,${h},${h}^FD${txt}^FS`
 }
 
 /* ── Los datos que van en la etiqueta ─────────────────────────────────
@@ -78,22 +96,28 @@ export function armarZpl(d, opciones = {}) {
     L.push(`^FO${pt(D.qr.x, dpi)},${pt(D.qr.y, dpi)}^BQN,2,${magQr}^FDQA,${limpio(d.qr)}^FS`)
   }
 
-  L.push(texto(m, D.titulo.y, D.titulo.alto, String(d.producto || '').toUpperCase(), dpi))
+  // Arriba, el QR ocupa la derecha: las tres primeras líneas solo disponen
+  // de lo que queda a su izquierda. De la mitad para abajo se usa el ancho
+  // completo de la etiqueta.
+  const anchoArriba = D.qr.x - m - 0.06
+  const anchoPleno = anchoUtil
+
+  L.push(texto(m, D.titulo.y, D.titulo.alto, String(d.producto || '').toUpperCase(), dpi, anchoArriba))
   L.push(`^FO${pt(m, dpi)},${pt(D.regla.y, dpi)}^GB${pt(anchoUtil - 0.85, dpi)},${pt(D.regla.alto, dpi)},${pt(D.regla.alto, dpi)}^FS`)
 
   const deTotal = d.total ? ` · ${d.indice} de ${d.total}` : ''
-  L.push(texto(m, D.lote.y, D.lote.alto, `Lote ${d.lote}${deTotal}`, dpi))
-  L.push(texto(m, D.peso.y, D.peso.alto, `${d.libras} lb (${d.gramos} g)`, dpi))
-  L.push(texto(m, D.fecha.y, D.fecha.alto, `Elaborado: ${d.fecha} ${d.hora}`, dpi))
-  L.push(texto(m, D.persona.y, D.persona.alto, `Elaboro: ${d.quien} · ${d.sede || 'Casa Matriz'}`, dpi))
+  L.push(texto(m, D.lote.y, D.lote.alto, `Lote ${d.lote}${deTotal}`, dpi, anchoArriba))
+  L.push(texto(m, D.peso.y, D.peso.alto, `${d.libras} lb (${d.gramos} g)`, dpi, anchoPleno))
+  L.push(texto(m, D.fecha.y, D.fecha.alto, `Elaborado: ${d.fecha} ${d.hora}`, dpi, anchoPleno))
+  L.push(texto(m, D.persona.y, D.persona.alto, `Elaboro: ${d.quien} · ${d.sede || 'Casa Matriz'}`, dpi, anchoPleno))
 
   // El vencimiento va en recuadro porque es el dato que se busca de lejos en
   // el freezer, sin sacar la bolsa.
   L.push(`^FO${pt(m, dpi)},${pt(D.vence.y, dpi)}^GB${pt(D.vence.caja.ancho, dpi)},${pt(D.vence.caja.alto, dpi)},3^FS`)
-  L.push(texto(m + 0.06, D.vence.y + 0.04, D.vence.alto, `VENCE ${String(d.vence || '').toUpperCase()}`, dpi))
+  L.push(texto(m + 0.06, D.vence.y + 0.04, D.vence.alto, `VENCE ${String(d.vence || '').toUpperCase()}`, dpi, D.vence.caja.ancho - 0.12))
 
-  if (d.conservacion) L.push(texto(m, D.leyenda.y, D.leyenda.alto, d.conservacion, dpi))
-  if (d.unidad)       L.push(texto(m, D.unidad.y, D.unidad.alto, d.unidad, dpi))
+  if (d.conservacion) L.push(texto(m, D.leyenda.y, D.leyenda.alto, d.conservacion, dpi, anchoPleno))
+  if (d.unidad)       L.push(texto(m, D.unidad.y, D.unidad.alto, d.unidad, dpi, anchoPleno))
 
   L.push('^PQ1')                                    // una copia
   L.push('^XZ')
