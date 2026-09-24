@@ -227,8 +227,23 @@ function EntregaBees({ user, show, verTodas, sucursales, miSucursal, onBack }) {
 
   const unidadesDe = (p) => entero(cant[p.producto_id]?.cajas) * n(p.factor) + entero(cant[p.producto_id]?.sueltas);
   const elegidos = catalogo.filter(p => unidadesDe(p) > 0);
-  const totCajas = elegidos.reduce((a, p) => a + entero(cant[p.producto_id]?.cajas), 0);
-  const totSueltas = elegidos.reduce((a, p) => a + entero(cant[p.producto_id]?.sueltas), 0);
+  // Las bebidas por unidad (Heineken, Blue Moon, XX, Nescafé) no son cajas:
+  // se suman aparte para no decir «12 cajas» cuando son 12 botellas.
+  const porCajaP = (p) => n(p.factor) > 1;
+  const totCajas = elegidos.filter(porCajaP).reduce((a, p) => a + entero(cant[p.producto_id]?.cajas), 0);
+  const totSueltas = elegidos.filter(porCajaP).reduce((a, p) => a + entero(cant[p.producto_id]?.sueltas), 0);
+  const totUnid = elegidos.filter(p => !porCajaP(p)).reduce((a, p) => a + entero(cant[p.producto_id]?.cajas), 0);
+  const resumenTotal = [
+    totCajas > 0 ? `${totCajas} caja(s)` : null,
+    totSueltas > 0 ? `${totSueltas} sueltas` : null,
+    totUnid > 0 ? `${totUnid} por unidad` : null,
+  ].filter(Boolean).join(' + ');
+  // "12 cajas" / "12 unidades" según la presentación del producto
+  const textoCant = (p, cajas, sueltas) => {
+    const c = n(cajas), s = n(sueltas);
+    if (!p || !porCajaP(p)) return `${fmtNum(c + s)} ${c + s === 1 ? 'unidad' : 'unidades'}`;
+    return [c > 0 ? `${fmtNum(c)} caja${c === 1 ? '' : 's'}` : null, s > 0 ? `${fmtNum(s)} ${p.unidad_suelta}` : null].filter(Boolean).join(' + ') || '0';
+  };
 
   const visibles = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -314,7 +329,7 @@ function EntregaBees({ user, show, verTodas, sucursales, miSucursal, onBack }) {
           <div key={i} className="card" style={{ padding: '10px 12px', marginBottom: 6, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
             <span style={{ fontSize: 13 }}>{nombreCorto(r.nombre)}</span>
             <span style={{ fontSize: 13, color: '#aaa', whiteSpace: 'nowrap' }}>
-              {n(r.cajas) > 0 && `${fmtNum(r.cajas)} caja${n(r.cajas) === 1 ? '' : 's'}`}{n(r.cajas) > 0 && n(r.sueltas) > 0 && ' + '}{n(r.sueltas) > 0 && `${fmtNum(r.sueltas)} sueltas`} · <b style={{ color: '#e8e6ef' }}>{fmtNum(r.unidades)} u</b>
+              {textoCant(catalogo.find(p => p.nombre === r.nombre), r.cajas, r.sueltas)} · <b style={{ color: '#e8e6ef' }}>{fmtNum(r.unidades)} u</b>
             </span>
           </div>
         ))}
@@ -340,7 +355,7 @@ function EntregaBees({ user, show, verTodas, sucursales, miSucursal, onBack }) {
               <div key={p.producto_id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderBottom: '1px solid #2a2a32', fontSize: 13 }}>
                 <span style={{ minWidth: 0 }}>{nombreCorto(p.nombre)}</span>
                 <span style={{ whiteSpace: 'nowrap', color: '#aaa' }}>
-                  {c > 0 && `${c} caja${c === 1 ? '' : 's'}`}{c > 0 && s > 0 && ' + '}{s > 0 && `${s} ${p.unidad_suelta}`}
+                  {textoCant(p, c, s)}
                   {n(p.factor) > 1 && <> · <b style={{ color: '#e8e6ef' }}>{fmtNum(unidadesDe(p))} u</b></>}
                 </span>
               </div>
@@ -348,7 +363,7 @@ function EntregaBees({ user, show, verTodas, sucursales, miSucursal, onBack }) {
           })}
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 13, fontWeight: 700 }}>
             <span>{elegidos.length} producto(s)</span>
-            <span>{totCajas} caja(s){totSueltas > 0 ? ` + ${totSueltas} sueltas` : ''}</span>
+            <span>{resumenTotal}</span>
           </div>
         </div>
 
@@ -466,7 +481,7 @@ function EntregaBees({ user, show, verTodas, sucursales, miSucursal, onBack }) {
 
       <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: '10px 16px calc(10px + env(safe-area-inset-bottom))', background: '#111116ee', borderTop: '1px solid #2a2a32', zIndex: 20 }}>
         <div style={{ fontSize: 12, color: '#aaa', marginBottom: 6, textAlign: 'center' }}>
-          {elegidos.length ? `${elegidos.length} producto(s) · ${totCajas} caja(s)${totSueltas ? ` + ${totSueltas} sueltas` : ''}` : 'Todavía no agregaste bebidas'}
+          {elegidos.length ? `${elegidos.length} producto(s) · ${resumenTotal}` : 'Todavía no agregaste bebidas'}
         </div>
         <button className="btn btn-red" disabled={!elegidos.length || !sucursal} onClick={() => setPaso('confirmar')}
           style={{ width: '100%', padding: 14, fontSize: 15 }}>
