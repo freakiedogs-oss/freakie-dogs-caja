@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
 import MermasProductoHoy from './MermasProductoHoy'
-import { today, n } from '../../config';
+import { today, n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
 
 const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
@@ -124,7 +124,7 @@ const camposConteo=(cp)=>({
   cerrados: null, sueltas: null,
 });
 
-export default function ConteoNocturno({user,onBack}){
+export default function ConteoNocturno({user,onBack,onNavigate}){
   const {show,Toast}=useToast();
   const [screen,setScreen]=useState(1); // 0=seleccionar sucursal, 1=conteo, 2=pedido
   const [sucursalId,setSucursalId]=useState(null);
@@ -148,11 +148,13 @@ export default function ConteoNocturno({user,onBack}){
   const [despachosPendientes,setDespachosPendientes]=useState(null); // despachos sin recepción
 
   // ── Modo de conteo (pedido de Jose 30-ago): al entrar se elige entre el conteo
-  // normal y el de BEBIDAS. El de bebidas NO toca kardex ni inventario_conteo_nocturno
+  // normal y el de BEBIDAS. El de bebidas NO escribe en inventario_conteo_nocturno
   // (si escribiera ahí, el conteo normal de la noche entraría en "edición" con solo
-  // bebidas): cuenta lo físico y genera el pedido BEES sugerido en PDF descargable,
-  // porque el pedido real se digita en la app de BEES (la ingesta por correo ya
-  // registra la compra cuando BEES confirma el pedido).
+  // bebidas) y genera el pedido BEES sugerido en PDF descargable.
+  // Desde el 24-sep-2026 (Frank) el conteo de bebidas COMPLETO sí ajusta el
+  // inventario, igual que el de comida: RPC `conteo_bebidas_aplicar` (kardex
+  // conteo_fisico, referencia `conteo_bebidas`). Las entregas de La Constancia
+  // se registran en Recepción BEES → «Registrar entrega».
   const [modo,setModo]=useState(null);           // 'normal' | 'bebidas'
   const [storeCodeSel,setStoreCodeSel]=useState(user.store_code||null);
   const [descargandoPdf,setDescargandoPdf]=useState(false);
@@ -173,7 +175,12 @@ export default function ConteoNocturno({user,onBack}){
   // botón de abajo era «Generar pedido BEES», que sacaba de la pantalla. Ahora el
   // botón principal es «Guardar conteo de bebidas», igual que el conteo de
   // comida; el pedido BEES queda como opción aparte después de guardar.
-  const [bebidasGuardado,setBebidasGuardado]=useState(null);   // {at, por, firma} del último «Guardar»
+  const [bebidasGuardado,setBebidasGuardado]=useState(null);   // {at, por, firma, aplicado} del último «Guardar»
+  // Entregas de La Constancia: las de hoy (para decir que ya entraron) y los
+  // pedidos BEES que siguen «por recibir» (si ya llegaron y no se registran, el
+  // conteo los lee como sobrante).
+  const [bebidasEntregas,setBebidasEntregas]=useState({hoy:[],pendientes:[]});
+  const [confirmarSinEntrega,setConfirmarSinEntrega]=useState(false);
   const [guardandoBebidas,setGuardandoBebidas]=useState(false);
   const bebidasPayloadRef=useRef(null);                          // último borrador pendiente de autoguardar
 
@@ -602,7 +609,7 @@ export default function ConteoNocturno({user,onBack}){
   };
 
   // Conteo de BEBIDAS: solo productos de bebida/cerveza/soda de la sucursal.
-  // Sin gates de cierre/despachos (no ajusta stock ni pide a CM) y SIN filtrar por
+  // Sin gates de cierre/despachos (no pide a CM) y SIN filtrar por
   // incluir_conteo: la Coca de food court vive como "Insumo Soda" fuera del conteo
   // normal y es justo lo que más se pide a BEES.
   const cargarBebidas=async(sucId)=>{
@@ -640,12 +647,25 @@ export default function ConteoNocturno({user,onBack}){
       // entra con el conteo en blanco, como antes.
       let draftPorProducto={};
       setBebidasGuardado(null);
+      setConfirmarSinEntrega(false);
       try{
         const {data:draft}=await db.from('inventario_conteo_bebidas')
-          .select('items,guardado_at,guardado_por_nombre').eq('sucursal_id', sucId).eq('fecha', today()).maybeSingle();
+          .select('items,guardado_at,guardado_por_nombre,aplicado_inventario_at').eq('sucursal_id', sucId).eq('fecha', today()).maybeSingle();
         if(draft?.items?.length) draftPorProducto=Object.fromEntries(draft.items.map(it=>[it.producto_id,it]));
-        setBebidasGuardado(draft?.guardado_at ? {at:draft.guardado_at, por:draft.guardado_por_nombre, firma:firmaBebidas(draft.items)} : null);
+        setBebidasGuardado(draft?.guardado_at ? {at:draft.guardado_at, por:draft.guardado_por_nombre, firma:firmaBebidas(draft.items),
+          aplicado:!!draft.aplicado_inventario_at && new Date(draft.aplicado_inventario_at)>=new Date(draft.guardado_at)} : null);
       }catch(e){ /* sin borrador previo, o no se pudo leer: se sigue con conteo en blanco */ }
+      // Entregas de La Constancia de hoy y pedidos BEES por recibir (informativo)
+      try{
+        const hace10=new Date(Date.now()-6*3600*1000-10*24*3600*1000).toISOString().split('T')[0];
+        const [{data:hoyE},{data:pend}]=await Promise.all([
+          db.from('compras_bees').select('id,created_at,items_count,origen')
+            .eq('sucursal_id',sucId).eq('fecha_recepcion_real',today()).eq('inventariado',true),
+          db.from('compras_bees').select('id,fecha,numero_pedido,items_count')
+            .eq('sucursal_id',sucId).in('estado_recepcion',['pendiente','en_transito']).gte('fecha',hace10),
+        ]);
+        setBebidasEntregas({hoy:hoyE||[],pendientes:pend||[]});
+      }catch(e){ setBebidasEntregas({hoy:[],pendientes:[]}); }
 
       const prodsConDraft = Object.keys(draftPorProducto).length===0 ? prods : prods.map(p=>{
         const g=draftPorProducto[p.producto_id];
@@ -697,24 +717,45 @@ export default function ConteoNocturno({user,onBack}){
     if(pendiente) subirBebidas(pendiente).catch(()=>{});
   },[modo,screen,sucursalId]);
 
-  // «Guardar conteo de bebidas»: sube ya (sin esperar el autoguardado) y deja
-  // constancia de quién y a qué hora. Igual que antes, NO toca kardex ni el
-  // conteo nocturno de comida.
+  // «Guardar conteo de bebidas».
+  //  - Incompleto: guarda el avance (sin tocar inventario) con quién y a qué hora.
+  //  - Completo: `conteo_bebidas_aplicar` deja el inventario de bebidas igual a
+  //    lo contado (kardex conteo_fisico), igual que el conteo de comida, y guarda
+  //    lo que decía el sistema al contar. Guardar otra vez vuelve a ajustarlo.
+  //  Nunca toca el conteo nocturno de comida.
   const guardarBebidas=async()=>{
     if(guardandoBebidas) return;
     const contadas=productos.filter(p=>p.cantidad_real!==null).length;
     if(contadas===0){show('⚠️ Contá al menos una bebida');return;}
+    const completo=contadas===productos.length;
+    // Pedido BEES por recibir: si ya llegó y no se registró, el conteo lo lee
+    // como sobrante. Se avisa una vez; no se bloquea (puede no haber llegado).
+    if(completo && bebidasEntregas.pendientes.length>0 && !confirmarSinEntrega){ setConfirmarSinEntrega(true); return; }
     if(bebidasGuardarRef.current) clearTimeout(bebidasGuardarRef.current);
     bebidasPayloadRef.current=null;
     setGuardandoBebidas(true);
     const at=new Date().toISOString();
     try{
-      await subirBebidas(payloadBebidas({guardado_at:at, guardado_por:user.id, guardado_por_nombre:user.nombre||null}));
+      if(!completo){
+        await subirBebidas(payloadBebidas({guardado_at:at, guardado_por:user.id, guardado_por_nombre:user.nombre||null}));
+        setBebidasSync('ok');
+        setBebidasGuardado({at, por:user.nombre||null, firma:firmaBebidas(productos), aplicado:false});
+        show(`✓ Avance guardado: ${contadas} de ${productos.length}. El inventario se ajusta cuando cuentes todas.`);
+        return;
+      }
+      const {data:res,error}=await db.rpc('conteo_bebidas_aplicar',{
+        p_sucursal_id: sucursalId,
+        p_usuario_id: user.id,
+        p_items: productos.map(p=>({producto_id:p.producto_id, cantidad_real:n(p.cantidad_real), cerrados:p.cerrados, sueltas:p.sueltas})),
+      });
+      if(error) throw error;
       setBebidasSync('ok');
-      setBebidasGuardado({at, por:user.nombre||null, firma:firmaBebidas(productos)});
-      show(contadas<productos.length
-        ? `✓ Guardado: ${contadas} de ${productos.length} bebidas. Podés seguir después.`
-        : '✓ Conteo de bebidas guardado');
+      setConfirmarSinEntrega(false);
+      setBebidasGuardado({at:res?.aplicado_at||at, por:user.nombre||null, firma:firmaBebidas(productos), aplicado:true});
+      const sob=redondear(n(res?.sobrante)), fal=redondear(n(res?.faltante));
+      show(sob===0&&fal===0
+        ? '✓ Conteo de bebidas guardado · todo cuadró con el sistema'
+        : `✓ Conteo guardado · inventario ajustado (${n(res?.ajustados)} bebidas`+(fal>0?` · faltan ${fal} u`:'')+(sob>0?` · sobran ${sob} u`:'')+')');
     }catch(e){ setBebidasSync('error'); show('❌ No se pudo guardar: '+e.message+'. Revisá la señal y tocá Guardar otra vez.'); }
     finally{ setGuardandoBebidas(false); }
   };
@@ -1635,7 +1676,7 @@ export default function ConteoNocturno({user,onBack}){
           )}
           <div style={{fontSize:26,marginBottom:6}}>🥤</div>
           <div style={{fontWeight:700,fontSize:16,color:'#60a5fa'}}>Conteo de bebidas</div>
-          <div style={{color:'#888',fontSize:12,marginTop:4}}>Contás solo sodas, tés y cervezas y te genera el <b>pedido BEES sugerido en PDF</b> para digitarlo en la app de BEES. No toca el inventario del sistema.</div>
+          <div style={{color:'#888',fontSize:12,marginTop:4}}>Contás las bebidas de La Constancia y Nescafé. Al guardarlo completo <b>ajusta el inventario</b> de bebidas, y después te genera el <b>pedido BEES sugerido en PDF</b>.</div>
         </button>
       </div>
     );
@@ -1763,14 +1804,21 @@ export default function ConteoNocturno({user,onBack}){
           )}
           {modo==='bebidas'&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
-              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…) y tocá <b>Guardar conteo de bebidas</b> al terminar. Este conteo NO ajusta el inventario del sistema.</div>
+              <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (cajas cerradas + sueltas) y tocá <b>Guardar conteo de bebidas</b> al terminar. Al guardar el conteo completo, el inventario de bebidas queda igual a lo que contaste, como en el conteo de comida.</div>
+              {bebidasEntregas.hoy.length>0
+                ? <div style={{fontSize:11,marginTop:4,color:'#4ade80'}}>📦 Entrega de La Constancia de hoy ya registrada ({bebidasEntregas.hoy.length}) — el conteo la toma en cuenta.</div>
+                : <div style={{fontSize:11,marginTop:4,color:'#fbbf24'}}>
+                    📦 ¿Llegó La Constancia hoy? Registrala antes de contar
+                    {onNavigate && <> — <span onClick={()=>onNavigate('recepcion-bees')} style={{textDecoration:'underline',cursor:'pointer',fontWeight:700}}>Registrar entrega</span></>}
+                    {!onNavigate && ' (menú → Recepción BEES)'}.
+                  </div>}
               <div style={{fontSize:10.5,marginTop:4,color:bebidasSync==='error'?'#f87171':'#6b7280'}}>
                 {bebidasSync==='error' ? '⚠ No se pudo guardar el último cambio — seguí contando, se reintenta solo' : '✓ Lo que contás se va guardando solo: podés salir y volver a entrar sin perderlo'}
               </div>
               {bebidasGuardado&&(
                 <div style={{fontSize:11,marginTop:4,fontWeight:700,color:bebidasGuardado.firma===firmaBebidas(productos)?'#4ade80':'#facc15'}}>
                   {bebidasGuardado.firma===firmaBebidas(productos)
-                    ? `✓ Guardado a las ${new Date(bebidasGuardado.at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',timeZone:'America/El_Salvador'})}${bebidasGuardado.por?` por ${bebidasGuardado.por}`:''}`
+                    ? `✓ ${bebidasGuardado.aplicado?'Guardado e inventario ajustado':'Avance guardado'} a las ${new Date(bebidasGuardado.at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',timeZone:'America/El_Salvador'})}${bebidasGuardado.por?` por ${bebidasGuardado.por}`:''}`
                     : '✏️ Cambiaste cantidades después de guardar: tocá Guardar otra vez'}
                 </div>
               )}
@@ -1819,8 +1867,8 @@ export default function ConteoNocturno({user,onBack}){
             {abierto && porCategoria[cat].map(p=>{
               const contado=p.cantidad_real!==null;
               const diff=getDiferencia(p);
-              // En bebidas no se pinta rojo contra el teórico: ese teórico puede estar
-              // roto por mapeos (ej. Insumo Soda en negativo) y el conteo no lo ajusta.
+              // En bebidas no se pinta rojo contra el teórico: hasta que las entregas
+              // de La Constancia se registren todas, ese teórico no es confiable.
               const noCuadra=modo!=='bebidas'&&contado&&diff!==null&&diff!==0;
               return(
               <div key={p.producto_id} className="card" style={{borderLeft:`3px solid ${noCuadra?'#e63946':contado?'#4ade80':'#333'}`,transition:'border 0.2s'}}>
@@ -1885,8 +1933,22 @@ export default function ConteoNocturno({user,onBack}){
               producto sin contar dejaba a la sucursal sin poder pasar pedido. */}
           {modo==='bebidas'?(()=>{
             const alDia=bebidasGuardado&&bebidasGuardado.firma===firmaBebidas(productos);
+            const aplicadoAlDia=alDia&&bebidasGuardado.aplicado;
             return(<>
-              {alDia&&contados===totalProds&&(
+              {confirmarSinEntrega&&(
+                <div style={{background:'#1f1606',border:'1px solid #fbbf24',borderRadius:10,padding:'10px 12px',marginBottom:8}}>
+                  <div style={{fontSize:13,color:'#fbbf24',fontWeight:700}}>Hay {bebidasEntregas.pendientes.length} pedido(s) BEES sin recibir</div>
+                  <div style={{fontSize:12,color:'#e5d3a1',marginTop:4}}>
+                    {bebidasEntregas.pendientes.map(p=>`#${p.numero_pedido||'—'} (${fmtDate(p.fecha)})`).join(', ')}.
+                    Si ya llegó, recibilo primero en Recepción BEES: si no, el conteo lo va a marcar como sobrante.
+                  </div>
+                  <div style={{display:'flex',gap:8,marginTop:8}}>
+                    {onNavigate&&<button className="btn" onClick={()=>onNavigate('recepcion-bees')} style={{flex:1,fontSize:13,padding:10,background:'#2a2a32',width:'auto'}}>Ir a recibirlo</button>}
+                    <button className="btn btn-red" onClick={guardarBebidas} style={{flex:1,fontSize:13,padding:10,width:'auto'}}>Todavía no llega · guardar</button>
+                  </div>
+                </div>
+              )}
+              {aplicadoAlDia&&contados===totalProds&&(
                 <button className="btn btn-ghost" onClick={prepararPedidoBebidas}
                   style={{fontSize:14,padding:12,width:'100%',marginBottom:8,background:'#0d0d0d'}}>
                   🛒 Ver pedido BEES sugerido (PDF)
@@ -1896,8 +1958,9 @@ export default function ConteoNocturno({user,onBack}){
                 style={{fontSize:17,padding:18,width:'100%',opacity:contados===0?0.5:1,background:alDia?'#166534':undefined}}>
                 {guardandoBebidas?<span className="spin"/>
                   :contados===0?'Contá al menos una bebida'
-                  :alDia?'✓ Conteo de bebidas guardado'
-                  :contados<totalProds?`💾 Guardar ${contados} de ${totalProds} bebidas`
+                  :aplicadoAlDia?'✓ Conteo guardado · inventario al día'
+                  :alDia&&contados<totalProds?`✓ Avance guardado (${contados} de ${totalProds})`
+                  :contados<totalProds?`💾 Guardar avance (${contados} de ${totalProds})`
                   :'💾 Guardar conteo de bebidas'}
               </button>
             </>);
@@ -1930,7 +1993,7 @@ export default function ConteoNocturno({user,onBack}){
       <div style={{padding:'8px 12px',marginBottom:12,borderRadius:8,background:isEdit?'#facc1520':'#60a5fa20',border:`1px solid ${isEdit?'#facc15':'#60a5fa'}`}}>
         <div style={{fontSize:11,color:isEdit?'#d4a017':'#60a5fa'}}>
           {modo==='bebidas'
-            ?'Ajustá las cantidades si hace falta y descargá el PDF: ese es el pedido que se digita en la app de BEES. Cuando BEES confirme, el pedido entra solo al ERP por la ingesta de correo.'
+            ?'Ajustá las cantidades si hace falta y descargá el PDF: ese es el pedido que se digita en la app de BEES. Cuando llegue el camión, registralo en Recepción BEES → «Registrar entrega» para que sume al inventario.'
             :isEdit
             ?'Pedido basado en el conteo que editaste. "Real" es lo que contaste. Los productos bajo mínimo ya tienen cantidad sugerida (máximo − real). Podés ajustar antes de enviar.'
             :'Pedido sugerido a partir de tu conteo. "Real" es lo que contaste físicamente. Los productos bajo mínimo ya tienen cantidad sugerida. Ajustá y enviá.'}
