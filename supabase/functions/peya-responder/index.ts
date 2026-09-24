@@ -26,6 +26,9 @@
 //   { "pin": "1234", "remoteOrderId": "FD-...", "accion": "ajustar_prep", "minutos": 10 }
 //   { "pin": "1234", "accion": "tienda", "abrir": false,
 //     "motivo": "TOO_BUSY_KITCHEN", "minutos": 30 }
+//   { "pin": "1234", "accion": "catalogo" }
+//   { "pin": "1234", "accion": "item_disponible", "items": ["PROD-..."],
+//     "tipo": "ITEM", "disponible": false, "volveraA": "NEXT_BUSINESS_DAY" }
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const svc = createClient(
@@ -358,6 +361,216 @@ async function accionTienda(
   return json(salida, algunoOk ? 200 : 502);
 }
 
+// ---------- De qué tienda puede hablar quien llama ----------
+// El catálogo y la disponibilidad de ítems son acciones por tienda, igual que
+// abrir y cerrar. Si el `remoteId` viniera del request sin más, una cajera de
+// Cafetalón podría apagar el pan de Lourdes. Así que:
+//
+//   · Por secreto de servidor (cron, scripts, el trigger de menuimport): el
+//     remoteId del request manda. No hay persona ni sucursal detrás.
+//   · Por PIN con rol de todas las tiendas (admin, ejecutivo, teléfono…): puede
+//     nombrar la tienda, porque para eso está el rol.
+//   · Por PIN de tienda: el remoteId se DERIVA del PIN. Lo que venga en el
+//     request se ignora si no coincide, y se contesta 403 para que quede claro
+//     en vez de tocar la tienda equivocada en silencio.
+type Alcance = { porSecreto: boolean; actor: Actor | null; pin?: string };
+
+async function resolverRemoteId(
+  cuerpo: Record<string, any>,
+  alcance: Alcance,
+): Promise<string | Response> {
+  const pedido = String(cuerpo.remoteId ?? "").trim();
+
+  if (alcance.porSecreto || alcance.actor?.todas) {
+    if (!pedido) return json({ error: "falta_remoteId" }, 400);
+    return pedido;
+  }
+
+  // Rol de tienda: la fuente de verdad es el PIN.
+  if (!alcance.pin) return json({ error: "falta_pin" }, 400);
+  const { data: v, error } = await svc.rpc("peya_vendor_de_usuario", {
+    p_pin: String(alcance.pin),
+  });
+  if (error) return json({ error: "base", message: error.message }, 500);
+  const vendor = v as Record<string, any> | null;
+  if (!vendor?.ok) return json(vendor ?? { error: "sin_vendor" }, 400);
+
+  if (pedido && pedido !== vendor.remote_id) {
+    return json({
+      error: "tienda_ajena",
+      message: "Tu PIN sólo puede operar el catálogo de tu propia tienda.",
+    }, 403);
+  }
+  return String(vendor.remote_id);
+}
+
+// ---------- Bloque 3: mandar el catálogo ----------
+// Contrato: PUT /v2/chains/{chainCode}/catalog, body CatalogImportRequest:
+//
+//   { vendors: [posVendorId], catalog: {items: {...}}, callbackUrl }
+//
+// Contesta 202 con { status, catalogImportId } y el resultado REAL llega después
+// al callbackUrl (in_progress → done | done_with_errors | failed). Un 202 no
+// significa que el catálogo entró: significa que lo aceptaron para procesar.
+// Por eso se registra el intento antes de llamar y se espera el callback.
+async function accionCatalogo(
+  cuerpo: Record<string, any>,
+  alcance: Alcance,
+): Promise<Response> {
+  const remoteId = await resolverRemoteId(cuerpo, alcance);
+  if (remoteId instanceof Response) return remoteId;
+
+  const { data: mapa } = await svc.from("peya_vendor_map")
+    .select("remote_id, vendor_code, chain_code")
+    .eq("remote_id", remoteId).eq("activo", true).maybeSingle();
+
+  if (!mapa) return json({ error: "vendor_no_mapeado", remoteId }, 404);
+  if (!mapa.chain_code) {
+    // Sin chainCode no hay URL posible. Es dato que da PedidosYa.
+    return json({ error: "sin_chain_code", remoteId,
+      message: "La tienda no tiene chain_code en peya_vendor_map." }, 409);
+  }
+
+  // El catálogo sale de la base, no del request: que quien llame pueda mandar
+  // items arbitrarios a PedidosYa sería una puerta abierta.
+  const { data: cat, error: errCat } = await svc.rpc("peya_catalogo",
+    cuerpo.menuId ? { p_menu_id: cuerpo.menuId } : {});
+  if (errCat) return json({ error: "catalogo_no_generado", message: errCat.message }, 500);
+
+  const c = cat as Record<string, any> | null;
+  if (!c?.ok) return json({ error: "catalogo_no_generado", detalle: c }, 500);
+
+  const items = c.catalog?.items ?? {};
+  const nItems = Object.keys(items).length;
+  if (nItems === 0) return json({ error: "catalogo_vacio" }, 409);
+
+  const { data: idImport } = await svc.rpc("peya_catalogo_import_abrir", {
+    p_remote_id: remoteId,
+    p_menu_id: c.menu_id ?? null,
+    p_items: nItems,
+    p_origen: String(cuerpo.origen ?? "manual"),
+    p_menu_import_id: cuerpo.menuImportId ?? null,
+    p_vendor_code: mapa.vendor_code ?? null,
+  });
+
+  // El callback vuelve al plugin, que es el que valida el JWT de DH.
+  const base = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
+  const callbackUrl = `${base}/functions/v1/peya-plugin/catalog-import-callback`;
+
+  const url = `${BASE}/v2/chains/${encodeURIComponent(mapa.chain_code)}/catalog`;
+  const r = await enviarADH(url, {
+    vendors: [mapa.vendor_code ?? remoteId],
+    catalog: { items },
+    callbackUrl,
+  }, "PUT");
+
+  const ok = r.status >= 200 && r.status < 300;
+  let catalogImportId: string | null = null;
+  try { catalogImportId = JSON.parse(r.texto)?.catalogImportId ?? null; } catch { /* sin cuerpo */ }
+
+  if (idImport != null) {
+    await svc.rpc("peya_catalogo_import_enviado", {
+      p_id: idImport,
+      p_catalog_import_id: catalogImportId,
+      p_estado: ok ? "aceptado" : "error_envio",
+      p_mensaje: ok ? null : `HTTP ${r.status}: ${r.texto}`.slice(0, 2000),
+    });
+  }
+
+  return json({
+    ok,
+    importId: idImport,
+    catalogImportId,
+    items: nItems,
+    http: r.status,
+    respuesta: ok ? undefined : r.texto,
+  }, ok ? 200 : 502);
+}
+
+// ---------- Bloque 3: prender/apagar un ítem sin remandar el catálogo ----------
+// PUT /v2/chains/{chain}/vendors/{posVendorId}/catalog/items/availability
+//
+//   { globalEntityId, items: [ids], type: ITEM|TOPPING, isAvailable,
+//     willBeAvailable?: NEXT_BUSINESS_DAY|AT_TIMESTAMP, atTimeStamp? }
+//
+// `globalEntityId` es obligatorio en el esquema (aunque su descripción diga que
+// se puede omitir; manda el `required`). No se inventa: se guarda cuando PeYa lo
+// menciona —llega como `platformKey` en los pedidos— y si todavía no lo vimos,
+// esto falla con un mensaje claro en vez de mandar basura.
+async function accionItemDisponibilidad(
+  cuerpo: Record<string, any>,
+  alcance: Alcance,
+): Promise<Response> {
+  const remoteId = await resolverRemoteId(cuerpo, alcance);
+  if (remoteId instanceof Response) return remoteId;
+
+  const items = Array.isArray(cuerpo.items) ? cuerpo.items.map(String).filter(Boolean) : [];
+  const tipo = String(cuerpo.tipo ?? "ITEM").toUpperCase();
+  const disponible = cuerpo.disponible === true;
+
+  if (items.length === 0) return json({ error: "sin_items" }, 400);
+  if (tipo !== "ITEM" && tipo !== "TOPPING") {
+    return json({ error: "tipo_invalido", validos: ["ITEM", "TOPPING"] }, 400);
+  }
+
+  const { data: mapa } = await svc.from("peya_vendor_map")
+    .select("vendor_code, chain_code, global_entity_id")
+    .eq("remote_id", remoteId).eq("activo", true).maybeSingle();
+
+  if (!mapa) return json({ error: "vendor_no_mapeado", remoteId }, 404);
+  if (!mapa.chain_code) return json({ error: "sin_chain_code", remoteId }, 409);
+  if (!mapa.global_entity_id) {
+    return json({
+      error: "sin_global_entity_id",
+      remoteId,
+      message: "Todavía no sabemos el globalEntityId de esta tienda. Llega como " +
+        "platformKey en el primer pedido real, o lo da PedidosYa.",
+    }, 409);
+  }
+
+  const body: Record<string, unknown> = {
+    globalEntityId: mapa.global_entity_id,
+    items,
+    type: tipo,
+    isAvailable: disponible,
+  };
+
+  // `willBeAvailable` sólo existe al DESHABILITAR. Mandarlo junto con
+  // isAvailable:true es un 400 del otro lado.
+  if (!disponible && cuerpo.volveraA) {
+    const v = String(cuerpo.volveraA).toUpperCase();
+    if (v === "NEXT_BUSINESS_DAY") {
+      body.willBeAvailable = v;
+    } else if (v === "AT_TIMESTAMP") {
+      if (!cuerpo.desde) {
+        return json({ error: "falta_desde",
+          message: "AT_TIMESTAMP exige el momento en que el ítem vuelve." }, 400);
+      }
+      body.willBeAvailable = v;
+      body.atTimeStamp = cuerpo.desde;
+    } else {
+      return json({ error: "volveraA_invalido",
+        validos: ["NEXT_BUSINESS_DAY", "AT_TIMESTAMP"] }, 400);
+    }
+  }
+
+  const url = `${BASE}/v2/chains/${encodeURIComponent(mapa.chain_code)}` +
+    `/vendors/${encodeURIComponent(mapa.vendor_code ?? remoteId)}/catalog/items/availability`;
+  const r = await enviarADH(url, body, "PUT");
+
+  // 204 = todo bien y sin cuerpo. 200 = éxito PARCIAL, con el detalle de lo que
+  // falló: no se puede tratar como un éxito liso.
+  const parcial = r.status === 200;
+  const ok = r.status === 204 || parcial;
+  return json({
+    ok,
+    parcial,
+    enviado: body,
+    http: r.status,
+    detalle: r.texto || undefined,
+  }, ok ? 200 : 502);
+}
+
 // ---------- Quién puede contestar un pedido ----------
 // Los mismos roles que pueden marcar comida lista en el panel de delivery: si
 // alguien puede decirle a la cocina que algo salió, puede aceptar un pedido.
@@ -416,10 +629,19 @@ Deno.serve(async (req) => {
   if (accion === "tienda") {
     return await accionTienda(pin, cuerpo);
   }
+  // Catálogo e inventario tampoco son sobre un pedido.
+  const alcance: Alcance = { porSecreto, actor, pin };
+  if (accion === "catalogo") {
+    return await accionCatalogo(cuerpo, alcance);
+  }
+  if (accion === "item_disponible") {
+    return await accionItemDisponibilidad(cuerpo, alcance);
+  }
 
   const ACCIONES = ["aceptar", "rechazar", "preparado", "retirado", "ajustar_prep"];
+  const SIN_PEDIDO = ["tienda", "catalogo", "item_disponible"];
   if (!ACCIONES.includes(accion)) {
-    return json({ error: "accion_invalida", validas: ACCIONES.concat(["tienda"]) }, 400);
+    return json({ error: "accion_invalida", validas: ACCIONES.concat(SIN_PEDIDO) }, 400);
   }
   if (!remoteOrderId && !orderToken) {
     return json({ error: "falta_remoteOrderId_u_orderToken" }, 400);
