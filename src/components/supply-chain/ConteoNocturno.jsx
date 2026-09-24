@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
 import MermasProductoHoy from './MermasProductoHoy'
@@ -154,6 +154,19 @@ export default function ConteoNocturno({user,onBack}){
   const [modo,setModo]=useState(null);           // 'normal' | 'bebidas'
   const [storeCodeSel,setStoreCodeSel]=useState(user.store_code||null);
   const [descargandoPdf,setDescargandoPdf]=useState(false);
+  // ── Autoguardado del conteo de BEBIDAS (24-sep-2026, reporte de Cesar) ──
+  // Esta pantalla nunca escribe en inventario_conteo_nocturno (a propósito,
+  // ver cargarBebidas): antes eso significaba que lo contado vivía SOLO en
+  // memoria del navegador, y un refresh, salir sin querer o el teléfono
+  // cerrando la pestaña lo borraba todo — a Cesar se le puso en cero el
+  // conteo de Cafetalón al volver a entrar. Ahora cada cambio se guarda
+  // (con medio segundo de espera para no golpear la base en cada tecla) en
+  // `inventario_conteo_bebidas` — una tabla que ya existía en el esquema
+  // (fila única por sucursal+fecha, con RLS pero sin políticas, así que
+  // nunca había podido escribir nadie) — y `cargarBebidas` la relee al
+  // entrar para precargar lo que ya se había contado.
+  const bebidasGuardarRef=useRef(null);
+  const [bebidasSync,setBebidasSync]=useState('ok'); // 'ok' | 'error' — solo para avisar si el autoguardado falla
 
   // ── Reporte de MERMA, obligatorio antes de contar (pedido Jose 30-ago) ──
   // Dividida en 2 categorías INDEPENDIENTES desde el 18-sep-2026 (pedido de
@@ -600,12 +613,55 @@ export default function ConteoNocturno({user,onBack}){
         }))
         .sort((a,b)=>(a.conteo_orden-b.conteo_orden)||a.nombre.localeCompare(b.nombre));
       if(prods.length===0){show('⚠️ Esta sucursal no tiene bebidas registradas en inventario');setLoading(false);return;}
-      setProductos(prods);
+
+      // Recuperar lo que ya se había contado hoy (autoguardado — ver más abajo).
+      // Si falla la lectura (sin red, tabla recién creada, etc.) simplemente se
+      // entra con el conteo en blanco, como antes.
+      let draftPorProducto={};
+      try{
+        const {data:draft}=await db.from('inventario_conteo_bebidas')
+          .select('items').eq('sucursal_id', sucId).eq('fecha', today()).maybeSingle();
+        if(draft?.items?.length) draftPorProducto=Object.fromEntries(draft.items.map(it=>[it.producto_id,it]));
+      }catch(e){ /* sin borrador previo, o no se pudo leer: se sigue con conteo en blanco */ }
+
+      const prodsConDraft = Object.keys(draftPorProducto).length===0 ? prods : prods.map(p=>{
+        const g=draftPorProducto[p.producto_id];
+        return g ? {...p, cerrados:g.cerrados??null, sueltas:g.sueltas??null, cantidad_real:g.cantidad_real??null} : p;
+      });
+      if(Object.keys(draftPorProducto).length>0) show('✏️ Se recuperó el conteo de bebidas que ya habías empezado');
+
+      setProductos(prodsConDraft);
       setIsEdit(false);setEditExpira(null);setConteoCerrado(false);
       setScreen(1);
       setLoading(false);
     }catch(e){show('❌ Error cargando bebidas: '+e.message);setLoading(false);}
   };
+
+  // Guarda (con debounce) lo contado hasta ahora en bebidas, para que
+  // sobreviva un refresh o volver a entrar. Nunca toca kardex ni
+  // inventario_conteo_nocturno — solo esta tabla aparte.
+  useEffect(()=>{
+    if(modo!=='bebidas'||screen!==1||!sucursalId) return;
+    if(bebidasGuardarRef.current) clearTimeout(bebidasGuardarRef.current);
+    bebidasGuardarRef.current=setTimeout(async ()=>{
+      const contadas=productos.filter(p=>p.cantidad_real!==null);
+      if(contadas.length===0) return; // nada contado todavía: no hay qué guardar
+      try{
+        const {error}=await db.from('inventario_conteo_bebidas').upsert({
+          sucursal_id: sucursalId,
+          store_code: storeCodeSel||user.store_code,
+          fecha: today(),
+          contado_por: user.id,
+          contado_por_nombre: user.nombre||null,
+          items: productos.map(p=>({producto_id:p.producto_id, cerrados:p.cerrados, sueltas:p.sueltas, cantidad_real:p.cantidad_real})),
+          total_items: contadas.length,
+        }, {onConflict:'sucursal_id,fecha'});
+        if(error) throw error;
+        setBebidasSync('ok');
+      }catch(e){ setBebidasSync('error'); }
+    },600);
+    return ()=>{ if(bebidasGuardarRef.current) clearTimeout(bebidasGuardarRef.current); };
+  },[productos,modo,screen,sucursalId]);
 
   // Bebidas: no escribe NADA en BD — arma el pedido sugerido y pasa a la pantalla del PDF
   const prepararPedidoBebidas=()=>{
@@ -1650,6 +1706,9 @@ export default function ConteoNocturno({user,onBack}){
           {modo==='bebidas'&&(
             <div style={{padding:'8px 12px',marginBottom:8,borderRadius:8,background:'#60a5fa20',border:'1px solid #60a5fa'}}>
               <div style={{fontSize:11,color:'#60a5fa'}}>Contá físicamente cada bebida (en su unidad: fardo, caja…). Al final se genera el <b>pedido BEES sugerido en PDF</b>. Este conteo NO ajusta el inventario del sistema.</div>
+              <div style={{fontSize:10.5,marginTop:4,color:bebidasSync==='error'?'#f87171':'#6b7280'}}>
+                {bebidasSync==='error' ? '⚠ No se pudo guardar el último cambio — seguí contando, se reintenta solo' : '✓ Lo que contás se guarda solo: podés salir y volver a entrar sin perderlo'}
+              </div>
             </div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
