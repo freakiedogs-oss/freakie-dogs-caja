@@ -64,6 +64,7 @@ export default defineConfig({
         porcionador: resolve(__dirname, 'porcionador.html'),
         carne:       resolve(__dirname, 'carne.html'),
         pesaje:      resolve(__dirname, 'pesaje.html'),
+        etiquetado:  resolve(__dirname, 'etiquetado.html'),
       },
       output: {
         manualChunks(id) {
