@@ -1,6 +1,27 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
-<<<<<<< Updated upstream
+## 24-Sep-2026 — Queso Amarillo en Conteo de Críticos: no era descuadre de recetas, era redondeo
+
+Jose reclamó (con razón) que la receta de **Combo Hamburguesa** lleva el componente *Hamburguesa Sencilla (armada)*, no un ingrediente suelto de queso amarillo, y que los 0.33 lb / 0.5 lb que yo había reportado no cuadraban. Verificado contra la BD: **tenía razón y mi diagnóstico anterior estaba mal.**
+
+**Lo que pasa realmente.** El POS resuelve la receta por `recetas.catalogo_id`. Las recetas que cargan queso amarillo suelto en 0.33 y 0.5 lb (`Combo Hamburguesa` c8bcffb9 inactiva, `Super Freak Individual` 1796920b inactiva, `Combo Super Freak` f5c30fa2) **no tienen `catalogo_id`**, así que nunca se ejecutan. Las vivas son:
+- `Combo Hamburguesa` → sub-receta `Hamburguesa Sencilla (armada)` → **0.0667 lb (2 lascas)**.
+- `Extra Carne y Queso` → **0.0334 lb (1 lasca)**.
+- `Super Freak` → `Super Freak armado` → **no lleva queso amarillo**, lleva `Cheddar Porcionado (Bolsa 2lb)`.
+
+Ambas son correctas. Comprobado contra el kardex: la venta diaria de queso amarillo es **exactamente** `burgers × 0.0667 lb` (16.0, 29.0, 142.0, 97.0, 26.5, 82.5, 166.5 — los .5 son los "Extra Carne y Queso"). No hay consumo de más.
+
+**El descuadre era de la conversión, no del consumo.** Con `factor_suelta = 0.0333`, `0.0667 / 0.0333 = 2.003` lascas en vez de 2 — un sesgo de +0.15% que crece con el volumen y a ~166 burgers ya vale media lasca, justo el piso de redondeo del semáforo. Se subió `factor_suelta` de `0.0333` a `0.033333` (= 3 lb ÷ 90 lascas, el valor físico), que corta el sesgo a un tercio. Los conteos ya guardados no se mueven: `criticos_conteo_items` guarda el factor como snapshot.
+
+**Fix definitivo (pendiente, toca recetas de producción — decisión de Jose):** subir decimales en `Hamburguesa Sencilla (armada)` (0.0667 → 0.066667) y `Extra Carne y Queso` (0.0334 → 0.033333). Con eso el sesgo es cero y se le puede quitar el `tolerancia_pct = 5` provisional para que vuelva a exigirse exacto.
+
+**Sobre "Hoja 2.25 lb" (Queso Cheedar):** "la hoja" es el Excel de Saúl `Criticos_FD_FORMATO.xlsx`, que en Unidad de Presentación dice *"Bol de 2.25 Libras"*. El catálogo lo tiene como bolsa de 2 lb y la sub-receta viva se llama literalmente `Cheddar Porcionado (Bolsa 2lb)` — o sea el sistema ya está bien y **el que hay que corregir es el Excel**. El conteo usa 2 lb.
+
+**Hallazgos de higiene de datos (reportados, no tocados):**
+- `Combo Super Freak` tiene **dos recetas con `activo = true`**: f5c30fa2 (27-mar, 6 ingredientes, sin `catalogo_id`) y 9c72bc3f (18-ago, la que sí está ligada). La huérfana debería desactivarse.
+- `Papa Sazonada` (sub-receta 8889a07d) está `activo = false` pero la usan `Combo Hamburguesa` y `Combo Super Freak`, que sí están vivas.
+- `memoria.md` venía en `main` con marcadores de conflicto de stash sin resolver (commit 037750c). Se resolvieron conservando **las dos** entradas.
+
 ## 24-Sep-2026 — Conteo de bebidas se borraba al reingresar (autoguardado en `inventario_conteo_bebidas`)
 
 **Reporte de Cesar:** contó las bebidas de Cafetalón en el Conteo de bebidas (BEES), y al volver a entrar todo aparecía en cero otra vez.
@@ -13,7 +34,6 @@ Ya existía en el esquema una tabla pensada exactamente para esto — `inventari
 - Migración `20260924_rls_inventario_conteo_bebidas.sql`: política `for all` a anon/authenticated/service_role (mismo patrón permisivo que `inventario_conteo_nocturno_all`; el control de acceso real es de la app, no RLS multi-tenant).
 - `ConteoNocturno.jsx`: `cargarBebidas` ahora lee el borrador de hoy de `inventario_conteo_bebidas` al entrar y precarga lo ya contado (con un toast "Se recuperó el conteo..."). Un nuevo `useEffect` autoguarda (debounce 600ms) cada cambio de `productos` mientras `modo==='bebidas'` — nunca toca kardex ni el conteo normal. Banner de la pantalla ahora muestra si el autoguardado está al día o falló (se reintenta solo con el siguiente cambio, no bloquea el conteo).
 - Este fix vive solo en el código: hasta que el PR se mergee y Vercel redespliegue, la pantalla en producción sigue sin guardar nada.
-=======
 ## 24-Sep-2026 — Estación de pesaje y etiquetado de Casa Matriz (`/etiquetado.html`) — prueba de aparatos
 
 Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maqueta y nunca pasó de ahí. Cesar lo quiso general: elegir cualquier producto de Casa Matriz, decir cuántas unidades, y pesar e imprimir una etiqueta por unidad.
@@ -24,7 +44,6 @@ Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maq
 - **`EtiquetadoApp.jsx`** reusa `useBalanza()` del porcionador (misma Rhino, mismo parser) sin tocar esa estación. Flujo: producto → cuántas → pesar cada una. **Si la impresión falla, la pesada no se cuenta** — vale más repetirla que una bolsa sin identificar.
 - **Esta versión no guarda nada.** Es la prueba de que la Rhino y la Zebra conviven en el adaptador USB que compró Cesar; si algo falla, no quedan lotes basura. El lote es local a la tablet. Cuando se confirme, se crea el esquema de lotes y unidades y las bolsas entran al kardex.
 - **Pendiente de datos:** de los 12 productos solo cuatro tienen peso objetivo (cheddar 907 g, chili 2,268 g, cebolla morada 454 g, sal 907 g). Los días de vencimiento están puestos a mano y se muestran como provisionales — es el **RVP-13** de Mauricio, que pide un estudio de vida útil.
->>>>>>> Stashed changes
 
 ## 23-Sep-2026 — Corte Z: Venecia no podía cerrar por la foto del voucher n1co
 
