@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 24-Sep-2026 — Conteo de bebidas se borraba al reingresar (autoguardado en `inventario_conteo_bebidas`)
+
+**Reporte de Cesar:** contó las bebidas de Cafetalón en el Conteo de bebidas (BEES), y al volver a entrar todo aparecía en cero otra vez.
+
+**Causa:** esa pantalla (`ConteoNocturno.jsx` → `cargarBebidas`/`prepararPedidoBebidas`) nunca escribe en BD a propósito — no debe tocar `kardex_movimientos` ni `inventario_conteo_nocturno` (si lo hiciera, el conteo normal de la noche entraría en "edición" con solo bebidas, ver comentario histórico de Jose del 30-ago). Eso significaba que lo contado vivía SOLO en el estado de React: un refresh, salir sin querer o el navegador matando la pestaña lo borraba todo, sin ningún rastro.
+
+Ya existía en el esquema una tabla pensada exactamente para esto — `inventario_conteo_bebidas` (fila única por `sucursal_id+fecha`, `items` jsonb) — pero nunca se conectó a ninguna pantalla, y además tenía RLS prendido sin ninguna política (todo acceso denegado por default).
+
+**Qué cambió:**
+- Migración `20260924_rls_inventario_conteo_bebidas.sql`: política `for all` a anon/authenticated/service_role (mismo patrón permisivo que `inventario_conteo_nocturno_all`; el control de acceso real es de la app, no RLS multi-tenant).
+- `ConteoNocturno.jsx`: `cargarBebidas` ahora lee el borrador de hoy de `inventario_conteo_bebidas` al entrar y precarga lo ya contado (con un toast "Se recuperó el conteo..."). Un nuevo `useEffect` autoguarda (debounce 600ms) cada cambio de `productos` mientras `modo==='bebidas'` — nunca toca kardex ni el conteo normal. Banner de la pantalla ahora muestra si el autoguardado está al día o falló (se reintenta solo con el siguiente cambio, no bloquea el conteo).
+- Este fix vive solo en el código: hasta que el PR se mergee y Vercel redespliegue, la pantalla en producción sigue sin guardar nada.
+
 ## 23-Sep-2026 — Corte Z: Venecia no podía cerrar por la foto del voucher n1co
 
 **Reporte Jose:** Alejandro (S004, Paseo Venecia) no pudo hacer el Z del 22-sep porque la tablet no le dejaba tomar la foto del voucher n1co (obligatoria desde el 22-sep).
