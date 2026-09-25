@@ -1,5 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 25-Sep-2026 — Etiquetado Casa Matriz: la cinta trae 2 etiquetas por fila, no 1 (imprime de a pares)
+
+**Reporte de Cesar (con fotos):** conectó la Zebra ZD421 y probó imprimir; la etiqueta salía partida — el título en una tira y el QR en otra. Pensé primero que era el sensor de gap sin calibrar (le di los pasos de FEED); estaba equivocado. La foto de la cinta mostró la causa real: **la cinta NO trae una etiqueta de 3×2" por fila** como se asumió el 24-sep (ver entrada de abajo) — **trae DOS etiquetas de 2×1", una junto a la otra**, con un espacio angosto entre ellas (confirmado con regla).
+
+- El diseño viejo (una sola pieza de 3×2") quedaba a caballo entre las dos etiquetas físicas.
+- Cesar pidió que cada fila lleve **2 porciones distintas** (no la misma duplicada) — la de la izquierda y la siguiente que se pese.
+- **`zebraZpl.js`** se rehizo: `armarZplFila(izq, der, opciones)` arma UNA fila con dos celdas de 2×1", cada una con su propio título/lote/peso/vencimiento/QR. No entra fecha, hora ni quién la hizo como texto propio en una etiqueta tan chica — se movieron al payload del QR. El espacio entre las dos etiquetas (`ESPACIO_ENTRE = 0.1"`) es un supuesto, no una medida con regla — es lo único que falta confirmar imprimiendo la etiqueta de prueba real.
+- **`EtiquetadoApp.jsx`**: `pesarEImprimir()` ahora empareja de a 2 — la primera unidad pesada queda "pendiente" hasta que se pesa la siguiente, y ahí se imprimen juntas. Si el lote pedido es impar, la última unidad se imprime sola pero duplicada en las dos celdas (para no dejar una etiqueta en blanco a mitad de la cinta). `reimprimir()` también duplica. El botón de "Imprimir etiqueta de prueba" ahora manda una fila de prueba con 2 celdas distintas.
+- Build de producción verificado sin errores. **Falta:** Cesar probar en la impresora real que el gap de 0.1" calza con el espacio real de la cinta — si no, es un solo número a ajustar en `ESPACIO_ENTRE`.
+- Cambio entregado como parche (`0001-etiquetado-2-porciones-por-fila.patch`) porque este sandbox no tiene permiso de push al repo — falta que alguien con acceso (Jose o Cesar) lo aplique y suba.
+- **Nota aparte, no relacionada:** esta misma edición encontró marcadores de conflicto de git sin resolver (`<<<<<<< Updated upstream` / `=======` / `>>>>>>> Stashed changes`) ya mergeados en este archivo, en la sección del 24-Sep-2026 de más abajo — alguien hizo un `git stash pop` con conflicto y lo subió sin arreglar. No lo toqué porque no es parte de este fix, pero vale la pena limpiarlo.
+
 ## 25-Sep-2026 — Eventos: no se podía guardar ningún evento desde el mapa (dos estados mal escritos)
 
 Edgar importó su Excel y al guardar salió `new row for relation "eventos" violates check constraint "eventos_estado_check"`. **El lector de Excel funcionó bien** — la requisición cargó sus 45 ítems; lo que falló fue el INSERT del evento.
