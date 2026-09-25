@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBalanza } from '../porcionador/useBalanza'
 import { ImpresoraZebra, hayWebUsb } from './zebraUsb'
-import { armarZpl, zplPrueba, DPI_OPCIONES } from './zebraZpl'
+import { armarZplFila, zplPruebaFila, DPI_OPCIONES } from './zebraZpl'
 import { conAjustes, leerAjustes } from './productos'
 
 const C = {
@@ -75,6 +75,10 @@ export default function EtiquetadoApp({ quien }) {
   const [cuenta, setCuenta] = useState('')
   const [total, setTotal] = useState(0)
   const [hechas, setHechas] = useState([])
+  // 25-sep-2026: la cinta trae 2 etiquetas por fila (ver zebraZpl.js), así que
+  // se imprime de a pares. `pendiente` es la primera unidad del par, ya
+  // pesada pero todavía sin imprimir — espera a que se pese la siguiente.
+  const [pendiente, setPendiente] = useState(null)
   const [lote] = useState(loteDeHoy)
   const [msg, setMsg]     = useState('')
   const [err, setErr]     = useState('')
@@ -110,55 +114,75 @@ export default function EtiquetadoApp({ quien }) {
 
   async function imprimirPrueba() {
     setErr('')
-    try { await zebra.current.enviar(zplPrueba(dpi)); aviso('Etiqueta de prueba enviada') }
+    try { await zebra.current.enviar(zplPruebaFila(dpi)); aviso('Fila de prueba enviada (2 etiquetas)') }
     catch (e) { setErr(e.message || 'No se pudo imprimir') }
   }
 
   const dentro = (g) => !prod?.gramos || Math.abs(g - prod.gramos) <= (prod.banda || 0)
 
+  // Arma los datos de UNA unidad en la forma que pide armarZplFila. La
+  // fecha/hora y quién la hizo van dentro del QR, no impresas: a 2×1" por
+  // etiqueta no entran como texto propio (ver zebraZpl.js).
+  const datosCelda = (u) => ({
+    producto: prod.nombre, lote, indice: u.i, total,
+    gramos: mil(u.g), libras: lbs(u.g), vence: u.vence,
+    qr: `${lote}|${prod.id}|${u.i}/${total}|${u.g}g|${u.fecha}|${u.hora}|${quien}`,
+  })
+
   async function pesarEImprimir() {
     if (!bal.estable || imprimiendo) return
     setErr(''); setImprimiendo(true)
     const g = bal.gramos
-    const i = hechas.length + 1
+    const i = hechas.length + (pendiente ? 1 : 0) + 1
     const unidad = {
       i, g, hora: horaSV(), ok: dentro(g),
       vence: fechaSV(prod.dias), fecha: fechaSV(0),
     }
+
+    // Última unidad del lote y quedó sola (total impar): no hay con qué
+    // emparejarla, así que se imprime ya, duplicada en las 2 etiquetas de la
+    // fila — mejor eso que dejar una en blanco a mitad de la cinta.
+    const esUltimaSuelta = !pendiente && i === total
+
+    if (!pendiente && !esUltimaSuelta) {
+      setPendiente(unidad)
+      setImprimiendo(false)
+      aviso(`Unidad ${i} pesada · pesá la siguiente para imprimir las dos juntas`)
+      return
+    }
+
+    // Con pareja: izq = la pendiente, der = esta. Suelta: las dos son esta
+    // misma unidad (se duplica), por eso alcanza con `unidad` en ambos casos.
+    const izq = pendiente || unidad
+    const der = unidad
     try {
-      await zebra.current.enviar(armarZpl({
-        producto: prod.nombre, unidad: prod.unidad,
-        lote, indice: i, total,
-        gramos: mil(g), libras: lbs(g),
-        fecha: unidad.fecha, hora: unidad.hora,
-        quien, sede: 'Casa Matriz',
-        vence: unidad.vence, conservacion: prod.conserva,
-        qr: `${lote}|${prod.id}|${i}/${total}|${g}g|${unidad.fecha}`,
-      }, { dpi }))
+      await zebra.current.enviar(armarZplFila(datosCelda(izq), datosCelda(der), { dpi }))
     } catch (e) {
-      // Si la impresión falla, la pesada NO se cuenta: si se contara, el
-      // operario creería que esa unidad ya tiene etiqueta y seguiría con la
-      // siguiente. Vale más repetir la pesada que una bolsa sin identificar.
+      // Si la impresión falla, NINGUNA de las dos pesadas se cuenta: si se
+      // contaran, el operario creería que ya tienen etiqueta y seguiría con
+      // las siguientes. Vale más repetir la pesada que una bolsa sin
+      // identificar.
       setErr((e.message || 'No se pudo imprimir') + ' · La unidad no se contó, volvé a pesarla.')
       setImprimiendo(false)
       return
     }
-    const listo = [...hechas, unidad]
+    const nuevas = pendiente ? [pendiente, unidad] : [unidad]
+    const listo = [...hechas, ...nuevas]
     setHechas(listo)
+    setPendiente(null)
     setImprimiendo(false)
     if (listo.length >= total) setPaso(4)
-    else aviso(`Unidad ${i} impresa · quitá la unidad de la báscula`)
+    else aviso(nuevas.length === 2
+      ? `Unidades ${izq.i} y ${der.i} impresas · quitalas de la báscula`
+      : `Unidad ${i} impresa · quitá la unidad de la báscula`)
   }
 
   async function reimprimir(u) {
     setErr('')
     try {
-      await zebra.current.enviar(armarZpl({
-        producto: prod.nombre, unidad: prod.unidad, lote, indice: u.i, total,
-        gramos: mil(u.g), libras: lbs(u.g), fecha: u.fecha, hora: u.hora,
-        quien, sede: 'Casa Matriz', vence: u.vence, conservacion: prod.conserva,
-        qr: `${lote}|${prod.id}|${u.i}/${total}|${u.g}g|${u.fecha}`,
-      }, { dpi }))
+      // Reimpresión suelta: se duplica en las 2 etiquetas de la fila. No hay
+      // con qué emparejarla porque ya se imprimió (o falló) en su momento.
+      await zebra.current.enviar(armarZplFila(datosCelda(u), datosCelda(u), { dpi }))
       aviso(`Reimpresa la unidad ${u.i}`)
     } catch (e) { setErr(e.message || 'No se pudo reimprimir') }
   }
@@ -166,11 +190,11 @@ export default function EtiquetadoApp({ quien }) {
   function empezar() {
     const n = Number(cuenta)
     if (!(n > 0)) return
-    setTotal(n); setHechas([]); setPaso(3)
+    setTotal(n); setHechas([]); setPendiente(null); setPaso(3)
   }
 
   function reiniciar() {
-    setPaso(1); setProd(null); setCuenta(''); setTotal(0); setHechas([])
+    setPaso(1); setProd(null); setCuenta(''); setTotal(0); setHechas([]); setPendiente(null)
   }
 
   // ── Barra de aparatos, siempre visible ──
@@ -312,8 +336,13 @@ export default function EtiquetadoApp({ quien }) {
             ))}
           </div>
           <div style={{ color: C.dim, fontSize: 13, textAlign: 'center' }}>
-            {prod.nombre} · unidad <b style={{ color: C.txt }}>{hechas.length + 1} de {total}</b>
+            {prod.nombre} · unidad <b style={{ color: C.txt }}>{hechas.length + (pendiente ? 1 : 0) + 1} de {total}</b>
           </div>
+          {!!pendiente && (
+            <div style={{ textAlign: 'center', fontSize: 12.5, color: C.acc, marginTop: 4 }}>
+              Unidad {pendiente.i} pesada y en espera · imprime junto con la siguiente
+            </div>
+          )}
           <div style={{
             fontSize: 62, fontWeight: 800, textAlign: 'center', letterSpacing: -2,
             fontFamily: 'ui-monospace, Menlo, monospace', padding: '12px 0 4px',
@@ -328,7 +357,10 @@ export default function EtiquetadoApp({ quien }) {
           </div>
           <button onClick={pesarEImprimir} disabled={!listo || imprimiendo || !impresoraOk}
             style={btn(bien ? C.ok : C.warn, !listo || imprimiendo || !impresoraOk)}>
-            {imprimiendo ? 'Imprimiendo…' : !impresoraOk ? 'Conectá la impresora arriba' : 'Pesar e imprimir'}
+            {imprimiendo ? 'Imprimiendo…'
+              : !impresoraOk ? 'Conectá la impresora arriba'
+              : pendiente ? 'Pesar la pareja e imprimir las 2'
+              : 'Pesar e imprimir'}
           </button>
           {!!ultima && (
             <button onClick={() => reimprimir(ultima)}
