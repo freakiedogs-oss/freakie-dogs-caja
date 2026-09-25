@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 25-Sep-2026 — Eventos: no se podía guardar ningún evento desde el mapa (dos estados mal escritos)
+
+Edgar importó su Excel y al guardar salió `new row for relation "eventos" violates check constraint "eventos_estado_check"`. **El lector de Excel funcionó bien** — la requisición cargó sus 45 ítems; lo que falló fue el INSERT del evento.
+
+- `EventosMapaView` insertaba `eventos.estado = 'planificado'`, pero el CHECK admite **`planificacion`** | activo | cerrado | aprobado | cancelado. Nunca se pudo crear un evento desde el mapa: el bug estaba desde que se escribió la pantalla y se destapó ahora porque Edgar fue el primero en usarla de punta a punta.
+- Detrás había un segundo, que habría aparecido al siguiente intento: `evento_pedidos.estado = 'solicitado'`, cuando el CHECK admite **`pendiente`** | aprobado | despachado | recibido | cancelado.
+- **Lección:** los dos estados se escribieron de memoria sin mirar el CHECK. Antes de insertar en una tabla ajena conviene leer `pg_constraint`; el mensaje de Postgres nombra la restricción pero no dice cuáles son los valores buenos, así que en pantalla el error no le sirve a nadie de piso.
+
 <<<<<<< Updated upstream
 ## 24-Sep-2026 — Conteo de bebidas se borraba al reingresar (autoguardado en `inventario_conteo_bebidas`)
 

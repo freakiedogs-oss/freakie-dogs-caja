@@ -218,7 +218,10 @@ export default function EventosMapaView({ user }) {
         if (error) throw error
       } else {
         const { data, error } = await db.from('eventos')
-          .insert({ ...payload, estado: 'planificado', responsable_id: user?.id || null })
+          // El estado tiene CHECK en la base: planificacion | activo | cerrado |
+          // aprobado | cancelado. Decía 'planificado' y por eso no se podía
+          // crear ningún evento desde el mapa (25-sep-2026, reporte de Edgar).
+          .insert({ ...payload, estado: 'planificacion', responsable_id: user?.id || null })
           .select().single()
         if (error) throw error
         id = data.id
@@ -242,7 +245,9 @@ export default function EventosMapaView({ user }) {
         .filter(x => x.item?.producto_id)
       if (pedidos.length && !form.es_prueba) {
         const { data: ped, error: ePed } = await db.from('evento_pedidos')
-          .insert({ evento_id: id, estado: 'solicitado', solicitado_por: user?.id || null,
+          // Mismo caso: evento_pedidos.estado admite pendiente | aprobado |
+          // despachado | recibido | cancelado. 'solicitado' no existe.
+          .insert({ evento_id: id, estado: 'pendiente', solicitado_por: user?.id || null,
                     notas: 'Requisición desde el mapa de eventos' })
           .select().single()
         if (ePed) throw ePed
