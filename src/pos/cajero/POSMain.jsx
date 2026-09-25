@@ -2125,6 +2125,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       {/* Modal: Combo con componentes (arma el combo eligiendo mods por cada componente) */}
       {comboPicker && (
         <ComboModal
+          key={comboPicker.id || comboPicker.nombre}
           combo={comboPicker}
           removiblesCombo={removiblesCombo}
           onCancel={() => setComboPicker(null)}
@@ -2154,9 +2155,29 @@ const qtyBtn = (off) => ({
   cursor: off ? 'not-allowed' : 'pointer',
 })
 
+// 25-sep-2026 (reporte Cesar): la bebida del combo va por defecto — la Coca-Cola
+// 300ml, la primera opción sin costo del grupo "Bebida" — y la cajera solo toca
+// la sección si el cliente la cambia. Antes el grupo era obligatorio y venía
+// vacío, así que el combo (p.ej. Coca-Cola Combo XL) no se dejaba agregar hasta
+// tocar la bebida. La preselección sigue descontando la PET del inventario; si
+// se agranda, la bebida normal se oculta y esta selección se ignora (modsDe).
+const esGrupoBebidaBase = (g) => /^\s*bebida\s*$/i.test(g?.nombre || '')
+function bebidaPorDefecto(combo) {
+  const init = {}
+  const marcar = (secKey, grupos) => (grupos || []).forEach(g => {
+    if (!esGrupoBebidaBase(g) || g.tipo !== 'unico') return
+    if (!(g.obligatorio || (g.min_selecciones || 0) > 0)) return
+    const def = (g.opciones || []).find(o => !(Number(o.precio_extra) > 0))
+    if (def) init[secKey + ':' + g.id] = [def.id]
+  })
+  marcar('combo', combo?.modGrupos)
+  ;(combo?.componentes || []).forEach((c, i) => marcar('c' + i, c.modGrupos))
+  return init
+}
+
 function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   const toast = useToast()
-  const [sel, setSel] = useState({})   // "secKey:grupoId" -> [modId,...]
+  const [sel, setSel] = useState(() => bebidaPorDefecto(combo))   // "secKey:grupoId" -> [modId,...]
   const [sin, setSin] = useState([])   // nombres de ingredientes a quitar del combo
   // Varios combos iguales de un solo golpe: si el cliente pide 3 Freakie Burger
   // con la misma personalización, la cajera arma uno y pone 3, en vez de repetir
