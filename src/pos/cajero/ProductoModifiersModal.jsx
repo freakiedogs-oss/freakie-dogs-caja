@@ -19,6 +19,9 @@ import { useMemo, useState } from 'react'
 
 const GRUPO_SIN = 'SIN'
 
+const esGrupoSabores = (g) => /bebida\s*agrandad/i.test(g?.nombre || '')
+const esAgrandadoConBebida = (o) => /agrandad/i.test(o?.nombre || '') && /(bebida|soda)/i.test(o?.nombre || '') && /papa/i.test(o?.nombre || '')
+
 export default function ProductoModifiersModal({
   producto,
   grupos: gruposRaw = [],
@@ -32,13 +35,17 @@ export default function ProductoModifiersModal({
   // 24-sep-2026: un producto suelto no trae bebida, así que de "Salsas Papas"
   // se esconde "Agrandado Papa y Bebida" ($1.25 con una bebida que no existe)
   // y queda "Agrandado de Papa" ($1.00). En los combos lo decide el ComboModal.
+  // 25-sep-2026 (Frank): EXCEPTO si el producto tiene asignado el grupo de sabores
+  // "Bebida Agrandado" (hoy: Freakie Fries $1.99 de food court). Ahí el $1.25 sí
+  // entrega una bebida: al marcarlo aparece el grupo de sabores, obligatorio, y el
+  // sabor elegido es el que se descuenta del inventario.
+  const tieneSabores = (gruposRaw || []).some(g => esGrupoSabores(g))
   const grupos = useMemo(() => {
-    const conBebida = (o) => /agrandad/i.test(o?.nombre || '') && /(bebida|soda)/i.test(o?.nombre || '') && /papa/i.test(o?.nombre || '')
     return (gruposRaw || []).map(g => ({
       ...g,
-      opciones: (Array.isArray(g?.opciones) ? g.opciones : []).filter(o => !conBebida(o)),
+      opciones: (Array.isArray(g?.opciones) ? g.opciones : []).filter(o => tieneSabores || !esAgrandadoConBebida(o)),
     })).filter(g => g.opciones.length > 0)
-  }, [gruposRaw])
+  }, [gruposRaw, tieneSabores])
 
   const [qty, setQty]                 = useState(initial?.qty || 1)
   const [nota, setNota]               = useState(initial?.nota || '')
@@ -46,6 +53,12 @@ export default function ProductoModifiersModal({
   const [atencionEspecial, setAtencionEspecial] = useState(initial?.atencionEspecial || false)
   // Ingredientes que el cliente NO quiere (por nombre; es lo que ve cocina).
   const [sinLista, setSinLista] = useState(() => new Set(initial?.sin || []))
+
+  // El grupo de sabores solo se muestra (y se exige) con el agrandado marcado;
+  // si se desmarca, la selección de sabor queda huérfana y no viaja.
+  const agrandadoMarcado = grupos.some(g => !esGrupoSabores(g) &&
+    (selecciones[g.id] || []).some(id => esAgrandadoConBebida(g.opciones.find(o => o.id === id))))
+  const visibles = grupos.filter(g => !esGrupoSabores(g) || agrandadoMarcado)
 
   const toggleSin = (nombre) => {
     setSinLista(prev => {
@@ -76,7 +89,7 @@ export default function ProductoModifiersModal({
 
   const precioModificadoresUnit = useMemo(() => {
     let sum = 0
-    for (const g of grupos) {
+    for (const g of visibles) {
       const ids = selecciones[g.id] || []
       for (const oId of ids) {
         const opt = g.opciones.find(o => o.id === oId)
@@ -84,7 +97,7 @@ export default function ProductoModifiersModal({
       }
     }
     return sum
-  }, [selecciones, grupos])
+  }, [selecciones, visibles])
 
   const precioProductoUnit = parseFloat(producto.precio) || 0
   const subtotalUnit = precioProductoUnit + precioModificadoresUnit
@@ -92,15 +105,19 @@ export default function ProductoModifiersModal({
 
   const validacion = useMemo(() => {
     const errores = []
-    for (const g of grupos) {
+    for (const g of visibles) {
       const nSel = (selecciones[g.id] || []).length
       const min = g.min_selecciones || 0
+      if (esGrupoSabores(g) && nSel < 1) {
+        errores.push('Elegí el sabor de la bebida del agrandado')
+        continue
+      }
       if (g.obligatorio && nSel < Math.max(1, min)) {
         errores.push('Faltan opciones en "' + g.nombre + '" (min. ' + Math.max(1, min) + ')')
       }
     }
     return errores
-  }, [selecciones, grupos])
+  }, [selecciones, visibles])
 
   const puedeAgregar = validacion.length === 0 && qty > 0
 
@@ -110,7 +127,7 @@ export default function ProductoModifiersModal({
       return
     }
     const modificadoresPlanos = []
-    for (const g of grupos) {
+    for (const g of visibles) {
       const ids = selecciones[g.id] || []
       for (const oId of ids) {
         const opt = g.opciones.find(o => o.id === oId)
@@ -172,7 +189,7 @@ export default function ProductoModifiersModal({
             </div>
           )}
 
-          {grupos.map(grupo => {
+          {visibles.map(grupo => {
             const seleccionadas = selecciones[grupo.id] || []
             const esUnico = grupo.tipo === 'single' || grupo.tipo === 'unico'
             const topeMax = grupo.max_selecciones && !esUnico ? grupo.max_selecciones : null
