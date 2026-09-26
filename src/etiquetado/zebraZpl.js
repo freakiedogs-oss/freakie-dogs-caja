@@ -36,7 +36,22 @@ const FILA = { ancho: CELDA.ancho * 2 + ESPACIO_ENTRE, alto: CELDA.alto }
 // — van dentro del QR, que se escanea si hace falta el detalle completo.
 const DISENO = {
   margen: 0.06,
-  qr: { size: 0.5, mag: 4 },   // mag 4 a 203dpi / 6 a 300dpi ≈ 13mm físicos, igual que la versión de 3×2"
+  // 26-sep-2026 (Cesar, por foto): el QR salía cortado en las 4 etiquetas.
+  // Dos causas, no una:
+  //  1) A este objeto de diseño le faltaba `qr.y` — la celda() de abajo hacía
+  //     `pt(D.qr.y, dpi)` sobre `undefined` y mandaba un ^FO con la Y en
+  //     "NaN" (ZPL inválido), así que el QR salía en una posición que no era
+  //     la pensada en vez de alinearse arriba con el título/lote.
+  //  2) El campo del QR se mandaba en nivel de corrección "Q" (alto, ~25%),
+  //     y con el texto que lleva adentro (lote·producto·índice·peso·fecha·
+  //     hora·quién) eso obliga a un QR de versión 4 o más — a mag 4/203dpi
+  //     eso imprime ~0.65" físicos, bien por encima de los 0.5" reservados.
+  // Se corrige la Y (alineada arriba, junto al título) y se baja a "M" (~15%,
+  // sigue siendo robusto para el freezer/refri) con mag 3/203 · 4/300: para
+  // el largo real de este texto no pasa de 33 módulos (~0.49" físicos),
+  // entra en los 0.5" reservados y su borde inferior queda antes de donde
+  // arranca el peso (y=0.56), sin pisarlo.
+  qr: { size: 0.5, y: 0.04, mag: 3 },
   titulo: { y: 0.04, alto: 0.12 },
   lote:   { y: 0.18, alto: 0.12 },
   peso:   { y: 0.56, alto: 0.22 },
@@ -83,13 +98,13 @@ function celda(d, dpi, x0) {
   const m = D.margen
   const anchoArriba = CELDA.ancho - m - D.qr.size - m - 0.04   // lo que queda a la izquierda del QR
   const anchoPleno = CELDA.ancho - m * 2
-  const magQr = dpi >= 300 ? 6 : D.qr.mag
+  const magQr = dpi >= 300 ? 4 : D.qr.mag
 
   const L = []
 
   if (d.qr) {
     const qx = x0 + (CELDA.ancho - m - D.qr.size)
-    L.push(`^FO${pt(qx, dpi)},${pt(D.qr.y, dpi)}^BQN,2,${magQr}^FDQA,${limpio(d.qr)}^FS`)
+    L.push(`^FO${pt(qx, dpi)},${pt(D.qr.y, dpi)}^BQN,2,${magQr}^FDMA,${limpio(d.qr)}^FS`)
   }
 
   L.push(texto(x0 + m, D.titulo.y, D.titulo.alto, String(d.producto || '').toUpperCase(), dpi, anchoArriba))
