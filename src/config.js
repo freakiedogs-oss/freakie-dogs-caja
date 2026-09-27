@@ -230,6 +230,9 @@ export const NAV_SECTIONS = [
       { key: 'validacion-planilla', label: 'Validación Planilla', icon: '✅', roles: ['ejecutivo', 'rrhh', 'admin'], users: ['c67b81a8-d9d3-4be7-9e7b-daf7114f4331', '2ed69499-4ad4-4cee-b827-aac250e25125'] },
       { key: 'recibos-digitales', label: 'Recibos Digitales', icon: '🧾', roles: ['ejecutivo', 'rrhh', 'contador', 'admin'] },
       { key: 'amonestaciones', label: 'Amonestaciones', icon: '⚖️', roles: ['ejecutivo', 'rrhh', 'admin', 'gerente'] },
+      // Alta de gente de piso con su PIN, en cualquier sucursal. Solo puestos
+      // de operario y caja: la lista de roles la impone la base, no el menú.
+      { key: 'usuarios-pin', label: 'Crear PIN de operario', icon: '🔑', roles: ['ejecutivo', 'rrhh', 'admin', 'superadmin'] },
       { key: 'propinas', label: 'Propinas Mensuales', icon: '💰', roles: ['ejecutivo', 'superadmin'] },
     ],
   },
