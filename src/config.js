@@ -39,6 +39,14 @@ export const STORES_SIN_PROPINA = ['S006', 'S002', 'S001']
 // controla STORES_SIN_PROPINA, aparte — S001 tiene pager pero mantiene propina.
 export const STORES_FOOD_COURT = ['S006', 'S002', 'S001']
 
+// Cuántos pagers tiene cada sucursal. Estaba escrito a mano (15) dentro del
+// modal de cobro, así que cada vez que una sucursal compraba más había que
+// tocar el POS. Ahora vive acá: se agrega la fila y listo.
+// Plaza Mundo Soyapango pasó de 15 a 20 el 27-sep-2026 (Cesar).
+export const PAGERS_POR_SUCURSAL = { S001: 20 }
+export const PAGERS_DEFAULT = 15
+export const pagersDe = (storeCode) => PAGERS_POR_SUCURSAL[storeCode] || PAGERS_DEFAULT
+
 // Sucursales que NO imprimen comanda de cocina al comandar (la orden igual entra al KDS)
 export const STORES_SIN_COMANDA = ['S004', 'S003']
 
