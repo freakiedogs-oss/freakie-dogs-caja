@@ -411,6 +411,7 @@ export function buildCorte(c, cols = 48) {
   if (c.transferencia) t.row('Transferencia', money(c.transferencia));
   if (c.link_pago) t.row('Link de pago', money(c.link_pago));
   if (c.otros) t.row('Otros/Mixto', money(c.otros));
+  if (c.hifumi) t.row('CxC Hifumi', money(c.hifumi));
   t.bold(true).size(1, 2).row('TOTAL', money(c.total)).normal();
   t.row('Propinas', money(c.propinas));
   t.row('Cuentas', String(c.n_cuentas || 0));

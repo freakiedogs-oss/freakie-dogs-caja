@@ -239,6 +239,11 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
   // El faltante no se bloquea (el conteo debe poder cerrarse), pero no pasa mudo:
   // queda firmado, valorizado y acumulado por sucursal en Fugas para descontarlo.
   const [faltanteGate,setFaltanteGate]=useState(null);   // {faltantes:[], valor, pin, nota, auth, validando, err}
+  // Doble check de Hifumi antes de cerrar el conteo (27-sep-2026, Frank): Hifumi no entra
+  // solo al POS, así que un pedido olvidado sale de la cocina sin descargar y el conteo
+  // lo marca como faltante. Se pregunta una vez por noche y queda firmado.
+  const [hifumiGate,setHifumiGate]=useState(null);       // {cargando, registrados:[], abiertas:[], guardando, err}
+  const hifumiOkRef=useRef(false);
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
@@ -915,6 +920,50 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
     .map(p=>({producto_id:p.producto_id, nombre:p.nombre, unidad:p.unidad,
               cantidad:Math.round((n(p.stock_teorico)-n(p.cantidad_real))*10000)/10000}));
 
+  // Devuelve true si hoy ya se confirmó (sigue de largo); si no, abre el modal y devuelve false.
+  const abrirCheckHifumi=async()=>{
+    const sc=storeCodeSel||user.store_code;
+    const hoy=today();
+    setHifumiGate({cargando:true,registrados:[],abiertas:[]});
+    try{
+      const {data:ya}=await db.from('conteo_check_hifumi').select('id')
+        .eq('sucursal_id',sucursalId).eq('fecha',hoy).in('respuesta',['todos_ingresados','no_hubo']).limit(1);
+      if(ya&&ya.length){ hifumiOkRef.current=true; setHifumiGate(null); return true; }
+      const desde=`${hoy}T00:00:00-06:00`;
+      const [{data:hif,error:e1},{data:abiertas,error:e2}]=await Promise.all([
+        db.from('pos_cuentas').select('id,delivery_referencia,total,estado,created_at')
+          .eq('store_code',sc).eq('tipo','delivery_app').neq('estado','cancelada')
+          .gte('created_at',desde).order('created_at'),
+        db.from('pos_cuentas').select('id,tipo,mesa_ref,cliente_nombre,delivery_referencia,delivery_plataforma,total,estado,created_at')
+          .eq('store_code',sc).not('estado','in','(cobrada,cancelada)')
+          .gte('created_at',desde).order('created_at'),
+      ]);
+      if(e1||e2) throw (e1||e2);
+      setHifumiGate({cargando:false,registrados:hif||[],abiertas:abiertas||[]});
+    }catch(e){
+      setHifumiGate({cargando:false,registrados:[],abiertas:[],err:'No se pudo revisar el POS: '+e.message});
+    }
+    return false;
+  };
+
+  const responderHifumi=async(respuesta)=>{
+    const g=hifumiGate; if(!g) return;
+    setHifumiGate({...g,guardando:true,err:''});
+    try{
+      const {error}=await db.from('conteo_check_hifumi').insert({
+        sucursal_id:sucursalId, store_code:storeCodeSel||user.store_code, fecha:today(), respuesta,
+        hifumi_registrados:g.registrados.length, cuentas_abiertas:g.abiertas.length, usuario_id:user.id,
+      });
+      if(error) throw error;
+    }catch(e){
+      setHifumiGate({...g,guardando:false,err:'No se pudo guardar la respuesta: '+e.message+'. Revisá la señal y tocá otra vez.'});
+      return;
+    }
+    setHifumiGate(null);
+    if(respuesta==='todos_ingresados'||respuesta==='no_hubo'){ hifumiOkRef.current=true; guardarConteo(); }
+    else show('Ingresá el pedido en el POS con el botón «Hifumi» (con su número) y cobralo. Después volvé a guardar el conteo.');
+  };
+
   const guardarConteo=async(gate=null)=>{
     // Se permite guardar PARCIAL. Exigir los 109 productos dejaba a la sucursal
     // trabada por un solo item sin contar, y sin conteo no puede pasar pedido.
@@ -925,6 +974,12 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
       show('⚠️ Contá al menos un producto antes de guardar');
       return;
     }
+    // Doble check Hifumi: solo en el primer guardado de la noche (no al editar).
+    if(!isEdit && !hifumiOkRef.current){
+      const yaConfirmado=await abrirCheckHifumi();
+      if(!yaConfirmado) return;
+    }
+
     const sinCantidad=productos.filter(p=>p.cantidad_real===null);
     if(sinCantidad.length>0 && !gate){
       const ok=window.confirm(
@@ -1682,6 +1737,73 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
     );
   }
 
+  // ── MODAL: doble check de Hifumi (y órdenes sin cobrar) antes de cerrar el conteo ──
+  const TIPO_CORTO={mesa:'Mesa',para_llevar:'Para llevar',delivery_propio:'Delivery',pedidos_ya:'PeYa',drive_through:'Drive',delivery_app:'Hifumi'};
+  const modalHifumi = hifumiGate && (()=>{
+    const g=hifumiGate;
+    return(
+      <div style={{position:'fixed',inset:0,zIndex:60,background:'rgba(0,0,0,0.72)',display:'flex',
+                   alignItems:'center',justifyContent:'center',padding:16}}>
+        <div style={{width:'100%',maxWidth:420,maxHeight:'88vh',overflowY:'auto',background:'#141419',
+                     border:'1px solid #f472b660',borderRadius:14,padding:18}}>
+          <div style={{fontWeight:800,fontSize:17,color:'#f472b6',marginBottom:4}}>📱 Antes de cerrar: Hifumi</div>
+          {g.cargando?<div className="spin" style={{margin:'18px auto'}}/>:(<>
+            <div style={{fontSize:12.5,color:'#bbb',lineHeight:1.5,marginBottom:10}}>
+              Los pedidos de Hifumi <b>no entran solos</b> al sistema. Si uno se preparó y no se digitó en el POS,
+              el conteo lo va a marcar como faltante.
+            </div>
+            <div style={{background:'#0d0d10',borderRadius:10,padding:10,marginBottom:10,fontSize:12.5}}>
+              {g.registrados.length===0
+                ? <span style={{color:'#aaa'}}>Hoy <b>no hay ningún pedido de Hifumi</b> digitado en el POS.</span>
+                : <>
+                    <div style={{color:'#ddd',marginBottom:4}}>Hoy hay <b>{g.registrados.length}</b> pedido{g.registrados.length===1?'':'s'} de Hifumi en el POS:</div>
+                    {g.registrados.map(c=>(
+                      <div key={c.id} style={{display:'flex',justifyContent:'space-between',color:'#aaa',padding:'2px 0'}}>
+                        <span>#{c.delivery_referencia||'sin número'} · {new Date(c.created_at).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit'})}</span>
+                        <span>${Number(c.total||0).toFixed(2)}{c.estado!=='cobrada'?' · sin cobrar':''}</span>
+                      </div>
+                    ))}
+                  </>}
+            </div>
+            {g.abiertas.length>0&&(
+              <div style={{background:'#1f1606',border:'1px solid #fbbf24',borderRadius:10,padding:10,marginBottom:10,fontSize:12.5}}>
+                <div style={{color:'#fbbf24',fontWeight:700,marginBottom:4}}>⚠️ {g.abiertas.length} orden{g.abiertas.length===1?'':'es'} de hoy sin cobrar</div>
+                <div style={{color:'#e5d3a1',marginBottom:6}}>El inventario se descarga al cobrar: si ya salieron de la cocina, cobralas antes de contar o el conteo las marca como faltante.</div>
+                {g.abiertas.slice(0,8).map(c=>(
+                  <div key={c.id} style={{display:'flex',justifyContent:'space-between',color:'#e5d3a1',padding:'2px 0'}}>
+                    <span>{TIPO_CORTO[c.tipo]||c.tipo}{c.mesa_ref?' '+c.mesa_ref:''}{c.delivery_referencia?' #'+c.delivery_referencia:''}{c.cliente_nombre?' · '+c.cliente_nombre:''}</span>
+                    <span>${Number(c.total||0).toFixed(2)}</span>
+                  </div>
+                ))}
+                {g.abiertas.length>8&&<div style={{color:'#a58f5a'}}>…y {g.abiertas.length-8} más</div>}
+              </div>
+            )}
+            {/* Hifumi no es constante: hay días sin ningún pedido y eso está bien (Frank, 27-sep).
+                Con 0 digitados, la respuesta principal es «hoy no hubo»; con alguno, «están todos». */}
+            <div style={{fontSize:14,fontWeight:700,color:'#fff',margin:'4px 0 10px'}}>
+              {g.registrados.length===0?'¿Hoy hubo algún pedido de Hifumi?':'¿Quedó algún pedido de Hifumi sin ingresar al POS?'}
+            </div>
+            {g.err&&<div style={{color:'#f87171',fontSize:12,marginBottom:8}}>{g.err}</div>}
+            <button className="btn btn-red" disabled={g.guardando}
+              onClick={()=>responderHifumi(g.registrados.length===0?'no_hubo':'todos_ingresados')} style={{width:'100%',padding:14,marginBottom:8}}>
+              {g.guardando?<span className="spin"/>
+                :g.registrados.length===0?'No, hoy no hubo pedidos de Hifumi · guardar conteo'
+                :'No falta ninguno, están todos ingresados · guardar conteo'}
+            </button>
+            <button className="btn" disabled={g.guardando} onClick={()=>responderHifumi('faltaba_ingresar')}
+              style={{width:'100%',padding:12,background:'#2a2a32'}}>
+              {g.registrados.length===0?'Sí hubo y no lo ingresé · voy a ingresarlo':'Sí, falta uno · voy a ingresarlo'}
+            </button>
+          </>)}
+          <button onClick={()=>setHifumiGate(null)}
+            style={{background:'none',border:'none',color:'#666',fontSize:12,cursor:'pointer',width:'100%',padding:10}}>
+            Cancelar — volver al conteo
+          </button>
+        </div>
+      </div>
+    );
+  })();
+
   // ── MODAL: faltante en el conteo (PIN de gerente + nota) ──
   // Se renderiza como overlay sobre la pantalla de conteo, no como pantalla aparte:
   // la cajera tiene que seguir viendo lo que contó mientras el gerente autoriza.
@@ -1770,6 +1892,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
       <div style={{minHeight:'100vh',padding:'0 16px 100px'}}>
         <Toast/>
         {modalFaltante}
+        {modalHifumi}
         {/* Header */}
         <div style={{padding:'20px 0 8px',display:'flex',alignItems:'center',gap:12}}>
           <button onClick={()=>setScreen('elegir')} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>

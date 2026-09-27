@@ -14,7 +14,7 @@ const TIPO_INFO = {
   mesa:            { ic: 'armchair', label: 'Mesas',       color: '#2dd4a8' },
   para_llevar:     { ic: 'bag',      label: 'Para Llevar', color: '#f4a261' },
   delivery_propio: { ic: 'bike',     label: 'Delivery',    color: '#60a5fa' },
-  delivery_app:    { ic: 'phone',    label: 'App Delivery', color: '#f472b6' },
+  delivery_app:    { ic: 'phone',    label: 'Hifumi',      color: '#f472b6' },
   pedidos_ya:      { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa' },
   drive_through:   { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24' },
 }
@@ -24,7 +24,7 @@ const FILTROS = [
   { key: 'mesa',           ic: 'armchair', label: 'Mesas'       },
   { key: 'para_llevar',    ic: 'bag',      label: 'Para Llevar' },
   { key: 'delivery_propio',ic: 'bike',     label: 'Delivery'    },
-  { key: 'delivery_app',   ic: 'phone',    label: 'App'         },
+  { key: 'delivery_app',   ic: 'phone',    label: 'Hifumi'      },
   { key: 'pedidos_ya',     ic: 'bike',     label: 'PedidosYa'   },
   { key: 'drive_through',  ic: 'car',      label: 'Drive Thru'  },
 ]
@@ -561,7 +561,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>
               Sin órdenes de {FILTROS.find(f => f.key === filtro)?.label || filtro}
             </div>
-            {filtro !== 'todos' && filtro !== 'mesa' && filtro !== 'delivery_app' && (
+            {filtro !== 'todos' && filtro !== 'mesa' && (
               <button
                 className="poshome-nueva-btn"
                 style={{ '--color': TIPO_INFO[filtro]?.color || '#888' }}
@@ -608,6 +608,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </button>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#a78bfa' }} onClick={() => handleNueva('pedidos_ya')}>
             <span className="poshome-quick-icon"><Icon name="bike" size={22} /></span><span className="poshome-quick-label">PedidosYa</span>
+          </button>
+          {/* Hifumi no entra solo al sistema: se digita acá con su número de pedido
+              (27-sep-2026, Frank). Descarga inventario al cobrar, como todo. */}
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#f472b6' }} onClick={() => handleNueva('delivery_app')}>
+            <span className="poshome-quick-icon"><Icon name="phone" size={22} /></span><span className="poshome-quick-label">Hifumi</span>
           </button>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#fbbf24' }} onClick={() => handleNueva('drive_through')}>
             <span className="poshome-quick-icon"><Icon name="car" size={22} /></span><span className="poshome-quick-label">Drive Thru</span>

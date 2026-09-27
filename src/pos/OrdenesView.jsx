@@ -10,7 +10,7 @@ const TIPO = {
   mesa:            { ic: 'armchair', l: 'Mesa',        c: '#2dd4a8' },
   para_llevar:     { ic: 'bag',      l: 'Para Llevar', c: '#f4a261' },
   delivery_propio: { ic: 'bike',     l: 'Delivery',    c: '#60a5fa' },
-  delivery_app:    { ic: 'phone',    l: 'App Delivery', c: '#f472b6' },
+  delivery_app:    { ic: 'phone',    l: 'Hifumi', c: '#f472b6' },
   pedidos_ya:      { ic: 'bike',     l: 'PedidosYa',   c: '#a78bfa' },
   drive_through:   { ic: 'car',      l: 'Drive Thru',  c: '#fbbf24' },
 }

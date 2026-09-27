@@ -23,7 +23,7 @@ const TIPO_INFO = {
   'delivery_propio':{ ic: 'bike',     label: 'Delivery',    color: '#60a5fa', canal: 'delivery_propio' },
   'pedidos_ya':     { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
   'drive_through':  { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24', canal: 'drive_through'   },
-  'delivery_app':   { ic: 'phone',    label: 'App Delivery', color: '#f472b6', canal: 'delivery_app'   },
+  'delivery_app':   { ic: 'phone',    label: 'Hifumi',      color: '#f472b6', canal: 'delivery_app'   },
 }
 
 // ── Permisos por rol ──
@@ -1003,6 +1003,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             comanda_uid: comandaUid,
             ...paxFields,
             ...(peyaRef ? { delivery_referencia: peyaRef } : {}),
+            ...(tipo === 'delivery_app' ? { delivery_plataforma: 'hifumi' } : {}),
             ...(clienteNombreCtx ? { cliente_nombre: clienteNombreCtx } : {}),
           })
           .select()
@@ -1151,6 +1152,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             menu_id:     menuActivo?.id || null,
             estado:      'cobrada',
             ...((paymentData.peyaRef || peyaRef) ? { delivery_referencia: paymentData.peyaRef || peyaRef } : {}),
+            ...(paymentData.metodo === 'hifumi' ? { delivery_plataforma: 'hifumi', delivery_referencia: paymentData.hifumiRef } : {}),
             ...(clienteNombreCtx ? { cliente_nombre: clienteNombreCtx } : {}),
             subtotal:    subtotal,
             iva:         0,
@@ -1204,6 +1206,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             estado:     'cobrada',
             ...(paymentData.metodo === 'pedidos_ya' ? { tipo: 'pedidos_ya' } : {}),
             ...(paymentData.peyaRef ? { delivery_referencia: paymentData.peyaRef } : {}),
+            ...(paymentData.metodo === 'hifumi' ? { delivery_plataforma: 'hifumi', delivery_referencia: paymentData.hifumiRef } : {}),
             subtotal,
             iva:        0,
             propina:    paymentData.propina || 0,
@@ -1428,7 +1431,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           className="pos-header-btn"
           style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
         >
-          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : (tipo === 'pedidos_ya' && peyaRef ? ` #${peyaRef}` : '')}
+          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
         </span>
 
         {tipo === 'mesa' && perms.moverMesa && (
@@ -1531,7 +1534,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               className="pos-order-type-badge"
               style={{ background: tipoInfo.color + '22', color: tipoInfo.color }}
             >
-              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : (tipo === 'pedidos_ya' && peyaRef ? ` #${peyaRef}` : '')}
+              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
             </span>
             {cuentaId
               ? <span className="pos-order-open-badge">Cuenta Abierta</span>
