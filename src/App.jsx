@@ -66,6 +66,7 @@ const MiAsistencia       = lazy(() => import('./components/empleado/MiAsistencia
 const MiBoleta           = lazy(() => import('./components/empleado/MiBoleta'))
 const HorariosView       = lazy(() => import('./components/rrhh/HorariosView'))
 const Amonestaciones     = lazy(() => import('./components/rrhh/Amonestaciones'))
+const UsuariosPinView    = lazy(() => import('./components/rrhh/UsuariosPinView'))
 const PropinasView       = lazy(() => import('./components/rrhh/PropinasView'))
 const PendientesView     = lazy(() => import('./components/admin/PendientesView'))
 const DTEMapeoView       = lazy(() => import('./components/admin/DTEMapeoView'))
@@ -363,6 +364,8 @@ export default function App() {
         return <HorariosView user={user} />
       case 'amonestaciones':
         return <Amonestaciones user={user} onBack={() => setScreen('home')} />
+      case 'usuarios-pin':
+        return <UsuariosPinView user={user} />
       case 'propinas':
         return <PropinasView user={user} />
       case 'produccion':

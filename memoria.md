@@ -1,5 +1,16 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 27-Sep-2026 — RRHH puede dar de alta operarios con su PIN (migración `usuarios_alta_operarios_con_pin`)
+
+Pedido de Cesar: que Jazmin cree PIN para todas las sucursales, pero **solo de operarios y cajeros**. Hasta hoy la única pantalla de PIN («Mi equipo · PIN») solo *cambia* el de quien ya existe, y está limitada a la sucursal de cada encargada — así que dar de alta gente nueva pasaba por Casa Matriz insertando a mano.
+
+- **Pantalla nueva `UsuariosPinView.jsx`** en RRHH (`nav-key usuarios-pin`, roles admin · rrhh · ejecutivo · superadmin). Nombre, apellido, sucursal y puesto; el PIN lo genera el sistema y **se muestra una sola vez**. Después se consulta desde «Mi equipo · PIN», que pide el PIN propio y deja bitácora.
+- **La lista blanca de roles vive en la base, no en la pantalla:** `fn_usuarios_roles_operarios()` = cocina, cajera, cajero, mesero, produccion, motorista. Si alguien edita el desplegable desde la consola del navegador y manda `superadmin`, el servidor lo rechaza. Probado: los tres candados (rol prohibido, actor sin permiso, sucursal inventada) rechazan.
+- **Quién puede crear se decide por rol, no por `protocolo_permisos`.** Jazmin sigue limitada a Cafetalón para editar el protocolo; esta es otra facultad y no arrastra aquella. Un gerente de sucursal **no** puede: el alta queda en una sola mano y auditable.
+- El PIN generado es **único en toda la empresa** (4 dígitos, reintenta hasta encontrar uno libre): el login es solo por PIN, así que dos personas con el mismo se pisarían entre sucursales. También corta el alta si ya hay alguien activo con el mismo nombre en esa sucursal — casi siempre es una duplicación.
+- **No se borra a nadie:** `fn_usuarios_operario_activar` da de baja o reactiva. El histórico de ventas y cierres apunta a ese id. Cada alta y cada baja entra en `usuarios_pin_bitacora` con quién la hizo.
+- **Ojo para el futuro:** el Sidebar, si `permisos_rol` tiene filas, **ignora** los roles escritos en `config.js`. Se insertaron las cuatro filas de `usuarios-pin`; sin ellas la pestaña no le aparece a nadie aunque el config diga lo contrario.
+
 ## 27-Sep-2026 — Los pagers dejan de estar escritos a mano: Soyapango pasa a 20
 
 Plaza Mundo Soyapango (S001) compró cinco pagers más y en la caja solo salían los números del 1 al 15.
