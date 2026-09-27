@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import CustomerSearch from './CustomerSearch'
 import Icon from '../Icon'
 import { useToast } from '../../hooks/useToast'
-import { STORES_SIN_PROPINA, STORES_FOOD_COURT } from '../../config'
+import { STORES_SIN_PROPINA, STORES_FOOD_COURT, pagersDe } from '../../config'
 import { db } from '../../supabase'
 import { normalizarIdPeya, PEYA_ID_MAX } from '../peyaId'
 
@@ -58,6 +58,8 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
   const [pagersOcupados, setPagersOcupados] = useState([])  // números en uso (activos en KDS)
   const [loadingPagers, setLoadingPagers]   = useState(false)
   const usaLookupPagers = STORES_PAGER_LOOKUP.includes(storeCode)
+  // Cuántos pagers ofrecerle a ESTA sucursal (config.js). Soyapango tiene 20.
+  const totalPagers = pagersDe(storeCode)
 
   // Cuando se abre el modal de pagers en S006, consulta pos_cocina_queue para
   // saber cuáles están en uso (orden aún no completada). Se refresca cada vez
@@ -655,11 +657,11 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
                       ? 'Cargando pagers disponibles...'
                       : (pagersOcupados.length > 0
                           ? `Los pagers grises están en uso (${pagersOcupados.length} activos en cocina). Elige uno libre o Sin pager.`
-                          : 'Todos los pagers están libres. Elige uno (1–15) o Sin pager.'))
-                  : 'Elige el número de pager (1–15), o Sin pager si se acabaron.'}
+                          : `Todos los pagers están libres. Elige uno (1–${totalPagers}) o Sin pager.`))
+                  : `Elige el número de pager (1–${totalPagers}), o Sin pager si se acabaron.`}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                {Array.from({ length: 15 }, (_, i) => i + 1).map(n => {
+                {Array.from({ length: totalPagers }, (_, i) => i + 1).map(n => {
                   const enUso = usaLookupPagers && pagersOcupados.includes(n)
                   return (
                     <button key={n} type="button"

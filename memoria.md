@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 27-Sep-2026 — Los pagers dejan de estar escritos a mano: Soyapango pasa a 20
+
+Plaza Mundo Soyapango (S001) compró cinco pagers más y en la caja solo salían los números del 1 al 15.
+
+- El 15 estaba **escrito a mano en tres lugares** de `PaymentModal.jsx`: el `length` de la cuadrícula y dos textos de ayuda. Cada sucursal que comprara pagers obligaba a tocar el POS.
+- Ahora vive en `config.js`: `PAGERS_POR_SUCURSAL = { S001: 20 }` con `PAGERS_DEFAULT = 15` y el helper `pagersDe(storeCode)`. Para la próxima sucursal es una línea.
+- Las demás food courts (S006 Metrocentro, S002 Usulután) siguen con 15 — no se les tocó nada.
+- **Queda abierto:** el bloqueo de pagers ya en uso (`STORES_PAGER_LOOKUP`) sigue solo en S006, que era el piloto. En Soyapango los 20 se ofrecen todos aunque haya uno ocupado en cocina.
+
 ## 25-Sep-2026 — Etiquetado Casa Matriz: la cinta trae 2 etiquetas por fila, no 1 (imprime de a pares)
 
 **Reporte de Cesar (con fotos):** conectó la Zebra ZD421 y probó imprimir; la etiqueta salía partida — el título en una tira y el QR en otra. Pensé primero que era el sensor de gap sin calibrar (le di los pasos de FEED); estaba equivocado. La foto de la cinta mostró la causa real: **la cinta NO trae una etiqueta de 3×2" por fila** como se asumió el 24-sep (ver entrada de abajo) — **trae DOS etiquetas de 2×1", una junto a la otra**, con un espacio angosto entre ellas (confirmado con regla).
@@ -20,7 +29,6 @@ Edgar importó su Excel y al guardar salió `new row for relation "eventos" viol
 - Detrás había un segundo, que habría aparecido al siguiente intento: `evento_pedidos.estado = 'solicitado'`, cuando el CHECK admite **`pendiente`** | aprobado | despachado | recibido | cancelado.
 - **Lección:** los dos estados se escribieron de memoria sin mirar el CHECK. Antes de insertar en una tabla ajena conviene leer `pg_constraint`; el mensaje de Postgres nombra la restricción pero no dice cuáles son los valores buenos, así que en pantalla el error no le sirve a nadie de piso.
 
-<<<<<<< Updated upstream
 ## 24-Sep-2026 — Conteo de bebidas se borraba al reingresar (autoguardado en `inventario_conteo_bebidas`)
 
 **Reporte de Cesar:** contó las bebidas de Cafetalón en el Conteo de bebidas (BEES), y al volver a entrar todo aparecía en cero otra vez.
@@ -33,7 +41,6 @@ Ya existía en el esquema una tabla pensada exactamente para esto — `inventari
 - Migración `20260924_rls_inventario_conteo_bebidas.sql`: política `for all` a anon/authenticated/service_role (mismo patrón permisivo que `inventario_conteo_nocturno_all`; el control de acceso real es de la app, no RLS multi-tenant).
 - `ConteoNocturno.jsx`: `cargarBebidas` ahora lee el borrador de hoy de `inventario_conteo_bebidas` al entrar y precarga lo ya contado (con un toast "Se recuperó el conteo..."). Un nuevo `useEffect` autoguarda (debounce 600ms) cada cambio de `productos` mientras `modo==='bebidas'` — nunca toca kardex ni el conteo normal. Banner de la pantalla ahora muestra si el autoguardado está al día o falló (se reintenta solo con el siguiente cambio, no bloquea el conteo).
 - Este fix vive solo en el código: hasta que el PR se mergee y Vercel redespliegue, la pantalla en producción sigue sin guardar nada.
-=======
 ## 24-Sep-2026 — Estación de pesaje y etiquetado de Casa Matriz (`/etiquetado.html`) — prueba de aparatos
 
 Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maqueta y nunca pasó de ahí. Cesar lo quiso general: elegir cualquier producto de Casa Matriz, decir cuántas unidades, y pesar e imprimir una etiqueta por unidad.
@@ -44,7 +51,6 @@ Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maq
 - **`EtiquetadoApp.jsx`** reusa `useBalanza()` del porcionador (misma Rhino, mismo parser) sin tocar esa estación. Flujo: producto → cuántas → pesar cada una. **Si la impresión falla, la pesada no se cuenta** — vale más repetirla que una bolsa sin identificar.
 - **Esta versión no guarda nada.** Es la prueba de que la Rhino y la Zebra conviven en el adaptador USB que compró Cesar; si algo falla, no quedan lotes basura. El lote es local a la tablet. Cuando se confirme, se crea el esquema de lotes y unidades y las bolsas entran al kardex.
 - **Pendiente de datos:** de los 12 productos solo cuatro tienen peso objetivo (cheddar 907 g, chili 2,268 g, cebolla morada 454 g, sal 907 g). Los días de vencimiento están puestos a mano y se muestran como provisionales — es el **RVP-13** de Mauricio, que pide un estudio de vida útil.
->>>>>>> Stashed changes
 
 ## 23-Sep-2026 — Corte Z: Venecia no podía cerrar por la foto del voucher n1co
 
@@ -53,9 +59,6 @@ Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maq
 - **Por qué solo Venecia:** es la única sucursal con el POS dentro de la **APK propia en una Fire tablet** (`android-printer/`). Una `<input type=file>` dentro de un WebView solo funciona si la APK implementa `onShowFileChooser`, cosa que se agregó en la v1.3 (1-ago, PR #66; build de Actions run 30682813807, artefacto `freakie-pos-apk`, vence 30-oct). **La Fire de Venecia nunca subió una foto desde el POS** (0 fotos de egreso y 0 vouchers en `cierres-fotos` de S004 hechos desde la tablet), lo que apunta a que tiene instalada una APK anterior (v1.1/1.2, de julio) donde tocar el botón no hace nada. No se puede confirmar desde acá: hay que ver la versión en la tablet (Configuración → Apps → Freakie POS).
 - **Fix inmediato (`src/pos/CierreTurno.jsx`):** debajo de "Tomar foto del voucher" hay una casilla *"Esta tablet no deja tomar la foto: cerrar sin voucher"*. Con ella marcada el Z cierra con `voucher_n1co_url = null` (el total n1co y el motivo siguen siendo obligatorios) y la foto se adjunta después desde el ERP (editar cierre, `CierreForm`, donde el voucher ya es opcional). Si luego se adjunta una foto, la casilla se desmarca sola.
 - **Pendiente:** instalar a mano la APK v1.3 en la Fire de Venecia (NO hay auto-update: la app solo recarga la web, la APK se sideloadea) y probar el botón de la foto. Los vouchers vacíos se ven en `ventas_diarias` con `tarjeta_n1co` lleno y `voucher_n1co_url` null.
-
-
-
 
 ## 23-Sep-2026 — Incentivo por tocino extra en Metrocentro (migración `20260923_incentivo_tocino.sql`)
 
@@ -106,7 +109,6 @@ Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maq
 **Fix (`POSMain.jsx`, ComboModal):** se portó la regla del menú público (1-sep). Cada sección de bebida sabe si va agrandada: por su propio $0.50 (`propio`) o porque le tocó un agrandado de fuera (papas $1.25, general), que se reparten en orden entre las bebidas sin el suyo. `grupoOculto`, `opcionesVisibles`, `filtraBebidas`, `tapaDisparador` y `falta` reciben la sección. En `toggle`: un agrandado dentro de una bebida solo apaga a los de esa misma bebida; uno de fuera cubre a la primera bebida libre, si todas tienen su $0.50 le quita el $0.50 a la primera (el $1.25 ya la incluye), y si todas ya están cubiertas por otros de fuera no se marca. Combos sin grupo de sabores (Royal) siguen igual.
 
 **Afecta a 14 combos** con 2+ bebidas: Burger Box, Burger Duo, Chili Duo, Combig (4), Combo Fancy Duo, Combo Trío (3), Combpleto (3), Combros, Duo Picossini, Fancy Fries Combo (4), Freakie Box, Freakie Family (4), Sweet Burger Duo.
-
 
 > Log de decisiones y cambios, lo más nuevo arriba.
 
@@ -603,7 +605,6 @@ Jose pidió ver de un vistazo qué sucursal ya cubrió su depósito y cuál no. 
 - **M001 · 10-sep ($549.73)**, **S006 · 10-sep ($434.68)**, **S003 · 12 y 13-sep**, **M001 · 13-sep** sin depósito.
 - El depósito de M001 con `fecha_deposito` **30-sep** (registrado el 2-sep, $55.43 vs $911.87).
 
-
 ## 15-Sep-2026 — BPM Chili fase 4: los pasos 11 al 17, con los dos puntos críticos medidos por el sistema
 
 La auditoría de Mauricio llegaba hasta el paso 10, pero la tanda tiene 17 y **los dos CCP viven en la segunda mitad**. Hasta hoy el paso 12 guardaba una temperatura suelta y el 16 otra: el procedimiento pedía por escrito la retención, los tiempos de enfriado, el peso final, las 7 bolsas y el conteo de laurel, y nada de eso se registraba. Con esto, los 17 pasos tienen el mismo nivel de evidencia.
@@ -612,7 +613,6 @@ La auditoría de Mauricio llegaba hasta el paso 10, pero la tanda tiene 17 y **l
 - **`bpm_fase4_controles_ccp_y_cierre`:** paso 11 (termómetro de la tapa identificado, sonda centrada a media profundidad, tapa sin escape, hora de tapado); **paso 12** (hito de los 80 °C → hito de cierre, retención 15–20 min calculada, olla tapada en hervor); paso 13 (machacado de 2 kg al minuto 20, duración real, **peso final 15,500–16,500 g**, olor a quemado); paso 14 (reposo ≥ 5 min calculado, desgrase sin arrastre, **laurel recuperado = 9**); paso 15 (temperatura al envasar, **tabla de 7 bolsas** con peso 2,268 ± 50 g y sello revisado uno por uno, merma y rendimiento); **paso 16** (hielo inicial, hito de entrada → 30 min → 5 °C, con los dos tiempos calculados contra 30 min y 6 h de la FDA, recirculación y método que no compromete el sello); paso 17 (freezer, temperatura del producto, etiquetado y acomodo). 15 parámetros nuevos, todos editables por Calidad.
 - **Sin temperaturas duplicadas (`bpm_fase4_sin_temperaturas_duplicadas`):** los pasos 12, 15, 16 y 17 ya pedían su temperatura en `bpm_registros.temperatura_c`, que es lo que leen los reportes. Se quitó el campo espejo del control para que no haya dos números que puedan no coincidir; quedan en el control solo las temperaturas de **otros** momentos (inicial y final del enfriado, producto al congelar).
 - Pendiente de validación, tal como lo dice el paso 11: **el estudio de mapeo térmico del punto frío**. Hasta tenerlo, el CCP de los 80 °C es provisional — está escrito en la instrucción y ahora también queda dicho acá.
-
 
 ## 15-Sep-2026 — BPM Chili fase 3: la cocción deja registro y el expediente sale en un clic
 
@@ -672,7 +672,6 @@ Elegir tarjeta creaba el pedido **antes** de cobrar. Medido del 9 al 12-sep: **8
 
 **Verificación:** `scripts/test-pendiente-pago.sql` **9/9**, se revierte solo. Webhook de EPay extendido antes que nada (Fase 1) porque con el pedido invisible, perder una confirmación pasa a significar perder el pedido con la plata cobrada. Cron cada 15 min que cancela los pendientes de +3 h, con guard de no tocar nada cobrado ni comandado. Control permanente: `pagados_invisibles` debe dar siempre 0.
 
-
 ## 09-Sep-2026 — `cobrado` NO significa "pagó online": el sello salía en pedidos en efectivo
 
 **Bug con plata en riesgo**, detectado por Jose: el pedido de Ivonne Suria ($7.99, **efectivo**) mostraba `PAGADO ONLINE · NO COBRAR` y no aparecía en el portal de n1co — porque nunca se pagó ahí.
@@ -702,7 +701,6 @@ Ejemplo real (`268CDF04`, 11-sep): las líneas sumaban **$22.46**, la propina de
 
 **La otra mitad quedó lista para pegar (14-sep).** La misma línea vive en el Apps Script *"Envio Correos DTE"*, que es quien arma el PDF del correo. Se bajó el código vivo de Drive (no se transcribió de memoria), se le aplicó el mismo arreglo y **se probó corriendo su `buildHtml` en Node con el caso real**: la versión de producción da $22.46 contra un total de $24.71, la nueva da $24.71 = $24.71. El diff es solo ese bloque. De paso quedó **versionado en `docs/apps-script/envio-correos-dte.gs`**: hasta hoy ese código existía únicamente dentro de Google y si alguien lo borraba se perdía. El SECRET no se versiona —va un marcador—, porque es la única llave de una función abierta en internet. Pegarlo no basta: Hasta que se edite **y se redespliegue como versión nueva** (igual que el redeploy de Vercel: guardar no alcanza), el cliente sigue recibiendo el PDF con la propina en cero mientras el ERP ya la muestra bien. Los correos ya enviados no se pueden cambiar; a quien pida su factura de vuelta, el botón de reenviar se la manda corregida.
 
-
 ## 09-Sep-2026 — DTEs Emitidos: reenviar por correo, verificar en Hacienda y descargar el documento
 
 Jose pidió tres cosas sobre un DTE ya emitido: **reenviárselo al cliente** si quedó su correo, **ver el código de generación para buscarlo en Hacienda**, y **descargar la representación gráfica**. Ninguna emite, firma ni invalida nada — el documento ya existe y ya tiene sello.
@@ -729,7 +727,6 @@ Jose pidió tres cosas sobre un DTE ya emitido: **reenviárselo al cliente** si 
 1. **Rotar el secreto de `freakie-dte-email`** (arriba). Hoy su candado es una palabra más el año, sobre una función abierta en internet que puede mandarle a cualquier cliente su DTE — o el DTE de un cliente a un correo arbitrario. Son tres lugares y hay un orden: primero el secret en Supabase y el env en Vercel (la función acepta el nuevo por env), después la función del sweep. Al revés, el envío automático se cae.
 2. **La "segunda tanda" de REVOKE a `anon`**, que sigue pendiente desde agosto. `v_bank_saldos_consolidados`, `v_gastos_consolidados`, `v_ventas_sucursal_diario`, `v_prestamos_estado`, `v_pl_pagado_categoria_mensual`, `v_egresos_excluidos_pl`, `v_ajustes_cruce_resumen` y `v_bank_tx_pendientes_match` **siguen legibles desde internet con la llave pública**. El gate del proxy no las protege: protege solo lo que además está revocado (por eso el dominio propio rompió unas y no otras).
 3. **La propina en $0.00 de los CCF** (arriba): hay que tocarlo en la PWA y en el Apps Script a la vez, o en ninguno.
-
 
 ## 10-Sep-2026 — Hamburguesa Sencilla: la cebolla morada descargaba de un producto que las sucursales no reciben (migración `receta_hamburguesa_cebolla_bolsa_1lb`)
 
@@ -762,8 +759,6 @@ El protocolo de apertura (70 pasos, 7 áreas, cierre automático 11:30 en verde/
 
 **Pendiente:** #55 pantalla del reporte diario / días anteriores con fotos (`fn_protocolo_dia` ya existe); ejecutivos sin fila en `protocolo_permisos` (Jose, Francisco, Luis) ven el menú del editor pero la base los rechaza; `.git/index.lock` aparece si Claude corre `git status` desde el sandbox sobre el mount — no correr git que escriba desde ahí.
 
-
-
 ## 09-Sep-2026 — El dominio propio se llevó puesto el gate de finanzas (y con él, DTEs Emitidos)
 
 Jose reportó **"permission denied for view v_dtes_emitidos"** en Finanzas → *DTEs Emitidos · Facturar*, en producción.
@@ -792,7 +787,6 @@ Jose preguntó quién cierra un retiro en local. Al ir a buscarlo apareció que 
 
 **Lección para lo que viene:** cerrar la `pos_cuenta` desde fuera del POS dispara triggers pensados para el cobro en mostrador. Antes de tocar `pos_cuentas.estado` desde cualquier lado nuevo, revisar `trg_pos_cobro_delivery` y `trg_delivery_sync_lista`.
 
-
 ## 09-Sep-2026 — Primer cobro real OK, y el hueco que destapó: el pago no llegaba a la caja
 
 **Funcionó de punta a punta:** Jose pagó $4.00 con tarjeta desde `pedidos.freakiedogs.com/menu`, el cobro apareció en el portal de n1co, el pedido entró a cocina y la torre mostró el sello `PAGADO ONLINE · NO COBRAR`.
@@ -807,7 +801,6 @@ Jose preguntó quién cierra un retiro en local. Al ir a buscarlo apareció que 
 
 **El delivery (no retiro) no cambió de flujo:** pago → cocina → "Por asignar" (ahí Karina **sí** asigna motorista, no es ruido) → En ruta → Entregado. El motorista ve "Ya pagado — no cobrés nada" y el pedido queda fuera de su liquidación de efectivo (`Cobros` filtra por `!cobrado` y luego por `efectivo`).
 
-
 ## 09-Sep-2026 — En vivo con piloto: la confirmación tapaba el formulario de tarjeta
 
 **Primera prueba real en producción (Jose, pedido `WEB-7B6D89A4`) y salió el bug:** al elegir tarjeta aparecían **dos modales a la vez**, con la confirmación "¡Pedido enviado!" **encima** del formulario de pago. No se podía pagar.
@@ -820,7 +813,6 @@ Causa: se montaban los dos drawers y ambos usan `.mp-drawer-overlay` con el mism
 
 **Lo que sigue sin verificarse y solo se sabe cobrando:** que el `clientId`/`clientSecret` **autentiquen** contra n1co (el chequeo 2 solo confirma que las variables existen, no que sirvan) y que el `locationCode` sea el correcto — se usa recién en `/Charges`. El primer cobro real lo dirá, y `pagos_online.error_code` distingue cuál de los dos falló.
 
-
 ## 09-Sep-2026 — Verificador de despliegue del cobro, y por qué el locationCode va aparte
 
 **`scripts/verificar-despliegue-n1co.mjs`** — caja negra, sin secretos, sin tarjeta y sin cobrar. Se corre **contra producción** apenas termina el deploy y antes de probar con una tarjeta real. El chequeo central pide cobrar un pedido **inexistente** y espera `no_existe`: solo puede contestar eso si el Edge Function fue ruteado por el rewrite, leyó `SUPABASE_SERVICE_ROLE_KEY` y llegó a Postgres. Un **502** ahí delata la falta de esa key, que es el modo de falla en que **n1co cobra la tarjeta y el pedido queda impago**.
@@ -832,7 +824,6 @@ Causa: se montaban los dos drawers y ambos usan `.mp-drawer-overlay` con el mism
 **Fuera del piloto, elegir "💳 Tarjeta" sigue funcionando como siempre.** Una versión intermedia deshabilitaba el botón, y eso les quitaba a los clientes una opción que ya tenían (significa "quiero pagar con tarjeta", con la torre coordinando por WhatsApp) y le cortaba a la torre esos pedidos. Ahora la consulta de disponibilidad decide solo si se **abre el cobro en línea**, no si se ofrece la tarjeta: el merge es un no-op para todos menos el piloto y no hay que coordinar nada con Karina para desplegarlo.
 
 **Roles de la llave de n1co:** solo **Pasarela de pagos** y **Autenticación 3DS**. n1co recomendó marcar todos, pero eso era para sandbox; esta llave es de producción y vive en Vercel. "Administrador de tienda" y las de suscripciones no se usan y, si la llave se filtra, amplían el daño.
-
 
 ## 08-Sep-2026 — El sandbox de n1co no sirve: se estrena en producción con dos frenos
 
@@ -848,7 +839,6 @@ La respuesta no fue probar menos, sino **probar acotado**. Dos frenos nuevos en 
 **`scripts/smoke-n1co.mjs` ahora distingue producción:** exige el flag explícito `--cobrar-de-verdad` y una tarjeta propia por variables de entorno (nada de números reales en el repo). Avisa que es dinero real, cobra `N1CO_TEST_AMOUNT` (default $1) y lo reversa por `/Refunds`. La doc recomienda un espacio antes del comando para que la línea con la tarjeta y el secret no quede en el historial de zsh.
 
 **El peor modo de falla del módulo, anotado en el runbook:** si `SUPABASE_SERVICE_ROLE_KEY` no está en el proyecto de Vercel del *delivery* (hoy solo está en el del ERP, para `api/dte-proxy.js`), n1co cobra la tarjeta y el pedido queda impago. Verificarlo antes de cobrar nada.
-
 
 ## 08-Sep-2026 — n1co respondió: las credenciales SÍ son self-service (la doc miente)
 
@@ -867,7 +857,6 @@ Puesta en marcha completa en **`docs/n1co-puesta-en-marcha.md`**; el registro de
 **Dominio:** la otra sesión ya puso `freakiedogs.com` en producción (`pedidos.freakiedogs.com` es el menú). `ORIGENES_OK` de los dos edge functions ahora lista `pedidos.`/`www.`/`erp.`/`pos.`/apex además de los `.vercel.app` de transición, y queda la env `N1CO_ORIGENES` para agregar cualquier otro sin tocar código. **Esto calza con el aviso de `localStorage` por origen**: como el dominio nuevo ya está arriba, la tarjeta guardada se estrena directo ahí y ningún cliente pierde la suya en una mudanza posterior.
 
 **Nota de proceso:** las dos sesiones comparten un solo working directory. La branch del dominio (`feat/dominio-env`) estaba checkouteada con cambios sin commitear, así que esta sesión trabajó `feat/pago-tarjeta-n1co` en un **git worktree** aparte (`/tmp/fd-pagos`) en vez de cambiar de branch. Cambiar de branch ahí habría pisado trabajo ajeno sin avisar.
-
 
 ## 08-Sep-2026 — Tarjeta guardada: fricción cero en la 2ª compra, atada al dispositivo
 
@@ -891,7 +880,6 @@ Se eligió la API directa **aceptando el costo PCI**, porque el CheckoutLink gen
 **⚠️ El cambio a freakiedogs.com choca de frente con esto: `localStorage` es POR ORIGEN.** Al mudar el menú de `freakiedelivery.vercel.app` a `freakiedogs.com`, el secreto del dispositivo no viaja y **todas las tarjetas guardadas quedan huérfanas** — el cliente las reingresa. Lo mismo le pasa al perfil `freakie_cliente_v1`. Conclusión operativa: **estrenar la tarjeta guardada ya en el dominio definitivo**; lanzarla antes hace que la primera camada pierda su tarjeta el día de la mudanza. El resto del módulo ya aguanta el cambio: `ORIGENES_OK` incluye `freakiedogs.com`/`www.`/`pedidos.` (y hay env `N1CO_ORIGENES` para más), y las URLs de retorno salen del `Origin` validado, no de una constante. Pendiente de la otra sesión: `URL_DELIVERY` en `src/config.js`.
 
 **Hallazgos de la doc de n1co que no estaban enlazados desde EPay:** la URL de producción es **`https://api.n1co.com`**, y **los webhooks SÍ vienen firmados** (`X-H4B-Hmac-Sha256`, HMAC-SHA256 del cuerpo crudo) — era mi motivo para no implementarlos, así que ya quedó verificación de firma en `api/n1co-link.js`.
-
 
 ## 08-Sep-2026 — Pago con tarjeta en el delivery web (n1co / EPay) — branch `feat/pago-tarjeta-n1co`
 
@@ -965,7 +953,6 @@ Pedido de Jose: que **Saúl (consultor), admin y ejecutivos** puedan ver, en un 
 **Huecos que el tablero destapa y quedan pendientes** (no se tocaron):
 - Familia **"⚠️ Platos sin receta"**: `Burger Box` (12 un), `Royal Truffle Combo`, `Freakie Burger`, `Coca-Cola Combo`. Un `producto_terminado` consumiéndose por venta significa que el plato **no tenía receta activa al cobrar** y `pos_deducir_inventario` descontó el plato mismo en vez de sus insumos.
 - `Polvo de Trufa` es el único componente consumido **sin costo cargado** por ninguna vía; sus unidades cuentan, su dinero va en $0. El tablero lo avisa arriba.
-
 
 ## 07-Sep-2026 — Bucle de recargas en Safari: la PWA no dejaba ni escribir el PIN
 
@@ -2292,7 +2279,6 @@ siempre re-otorgar a service_role en la misma migración.**
   y consultan `ventas_diarias` con la llave pública **sin ningún login**. Quedaron
   fuera del build del dominio público; en el del ERP siguen accesibles.
 
-
 ## 1-Ago-2026 — Los PINs salen del navegador; administrarlos ahora deja rastro
 
 **Qué pasaba.** Con la llave pública (`anon`, que va en el bundle y por lo tanto
@@ -2328,7 +2314,6 @@ movimientos), `pagos_proveedor` (con DELETE), `empleados` (con UPDATE),
 esto: la llave es la misma y ya está en internet. El camino es exigir sesión de
 staff reusando `staff_sesiones`, cerrando por capas y verificando qué pantalla
 depende de cada tabla antes de tocarla.
-
 
 ## 2026-08-01 — Stress test 1000 secuenciales + 200 concurrentes: el flujo aguanta
 - **1000 secuenciales** (dentro de transacción con rollback, producción no ve nada): **1000/1000** creados, comandados, al KDS, a lista, entregados y con viaje registrado. **0 errores, 0 inconsistencias** de total/envío/bono, 0 números de orden duplicados. 12.1 ms promedio, **peor caso 155 ms**, ~83 pedidos/seg. (475 con envío gratis, 125 con envío a confirmar, 800 ruteados solos.)
