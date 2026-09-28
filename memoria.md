@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 28-Sep-2026 — RRHH también cambia el PIN, no solo lo crea (migración `usuarios_operario_pin_cambiar`)
+
+Complemento del alta de ayer. El caso más común del día a día no es dar de alta: es que alguien olvidó su PIN.
+
+- **`fn_usuarios_operario_pin_cambiar(actor, usuario, pin)`**: sin `pin` lo genera el sistema (evita el 1234 de siempre); con texto valida 4–6 dígitos y que no lo tenga nadie más — el login es solo por PIN, así que un repetido pisa a otra persona.
+- Mismo candado que el alta: **solo toca los roles de piso**. Un gerente no se puede tocar desde acá aunque el pedido venga de RRHH. Probado: gerente protegido, actor sin permiso, formato con letras y PIN repetido — los cuatro rechazan.
+- En pantalla: botón «Cambiar PIN» por fila (solo en los activos), cuadro con el campo opcional, y el PIN nuevo se muestra **una vez** en el mismo banner verde del alta, distinguiendo «PIN cambiado» de «Dado de alta».
+- Sigue sin mostrar el PIN que alguien ya tiene: para consultarlo sin cambiarlo está «Mi equipo · PIN», que pide el PIN propio. Todo cambio entra en `usuarios_pin_bitacora` con quién lo hizo y si el PIN lo generó el sistema o se escribió a mano.
+
 ## 27-Sep-2026 — RRHH puede dar de alta operarios con su PIN (migración `usuarios_alta_operarios_con_pin`)
 
 Pedido de Cesar: que Jazmin cree PIN para todas las sucursales, pero **solo de operarios y cajeros**. Hasta hoy la única pantalla de PIN («Mi equipo · PIN») solo *cambia* el de quien ya existe, y está limitada a la sucursal de cada encargada — así que dar de alta gente nueva pasaba por Casa Matriz insertando a mano.

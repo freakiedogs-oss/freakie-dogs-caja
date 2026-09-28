@@ -5,13 +5,19 @@
    esperar a Casa Matriz. Antes había que pedirlo y alguien lo insertaba a
    mano en la base.
 
+   Desde el 28-sep también cambia el PIN de quien ya existe — el caso más
+   común: alguien lo olvidó. «Mi equipo · PIN» ya hacía eso pero solo para
+   la sucursal de cada encargada; acá alcanza a todas, a cambio de limitarse
+   a los mismos puestos de piso.
+
    Lo que esta pantalla NO hace, a propósito:
-   · No crea gerentes, admins ni nada que vea dinero o configuración. La
-     lista de roles permitidos la impone la base (`fn_usuarios_roles_operarios`),
+   · No crea ni toca gerentes, admins ni nada que vea dinero o configuración.
+     La lista de roles permitidos la impone la base (`fn_usuarios_roles_operarios`),
      no este archivo: si alguien edita el desplegable desde la consola del
      navegador, el servidor igual lo rechaza.
-   · No muestra el PIN de nadie. El PIN se ve UNA vez, al crearlo. Después se
-     consulta desde «Mi equipo · PIN», que pide el PIN propio y deja bitácora.
+   · No muestra el PIN que alguien ya tiene. Solo el nuevo, una vez, al
+     crearlo o al cambiarlo. Para consultarlo sin cambiarlo está «Mi equipo ·
+     PIN», que pide el PIN propio y deja bitácora.
    · No borra gente: la da de baja. El histórico de ventas y cierres apunta a
      ese usuario y borrarlo lo dejaría huérfano.
    ═══════════════════════════════════════════════════════════════════════ */
@@ -61,6 +67,10 @@ export default function UsuariosPinView({ user }) {
   const [rol, setRol]         = useState('cajera')
   const [creado, setCreado]   = useState(null)        // { nombre, pin, ... } — se muestra una vez
 
+  // Cambio de PIN de alguien que ya existe
+  const [cambiando, setCambiando] = useState(null)    // el usuario elegido
+  const [pinManual, setPinManual] = useState('')
+
   const cargar = useCallback(async () => {
     if (!user?.id) return
     setCarg(true); setError('')
@@ -96,11 +106,32 @@ export default function UsuariosPinView({ user }) {
       })
       if (e) throw e
       const r = Array.isArray(data) ? data[0] : data
-      setCreado(r)
+      setCreado({ ...r, _accion: 'alta' })
       setNombre(''); setApe('')
       await cargar()
     } catch (e) {
       setError(e.message || 'No se pudo crear')
+    }
+    setG(false)
+  }
+
+  /* Cambiar el PIN de alguien que ya existe. Sin `p_pin` la base genera uno
+     libre; con texto, valida que sean 4-6 dígitos y que no lo tenga nadie
+     más. El nuevo se muestra una vez, igual que en el alta. */
+  async function cambiarPin() {
+    const u = cambiando
+    if (!u) return
+    setError(''); setCreado(null); setG(true)
+    try {
+      const { data, error: e } = await db.rpc('fn_usuarios_operario_pin_cambiar', {
+        p_actor: user.id, p_usuario: u.id, p_pin: pinManual.trim() || null,
+      })
+      if (e) throw e
+      const r = Array.isArray(data) ? data[0] : data
+      setCreado({ ...r, _accion: 'cambio' })
+      setCambiando(null); setPinManual('')
+    } catch (e) {
+      setError(e.message || 'No se pudo cambiar el PIN')
     }
     setG(false)
   }
@@ -154,7 +185,7 @@ export default function UsuariosPinView({ user }) {
         {creado && (
           <div style={{ ...card, background: '#0b2417', borderColor: C.ok }}>
             <div style={{ color: '#86efac', fontSize: 14 }}>
-              Dado de alta: <b>{creado.nombre} {creado.apellido || ''}</b> · {ROLES.find(r => r.v === creado.rol)?.t || creado.rol} · {nombreSuc(creado.store_code)}
+              {creado._accion === 'cambio' ? 'PIN cambiado:' : 'Dado de alta:'} <b>{creado.nombre} {creado.apellido || ''}</b> · {ROLES.find(r => r.v === creado.rol)?.t || creado.rol} · {nombreSuc(creado.store_code)}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 40, fontWeight: 800, letterSpacing: 6, fontFamily: 'ui-monospace, monospace', color: '#6ee7b7' }}>
@@ -171,6 +202,31 @@ export default function UsuariosPinView({ user }) {
             </div>
             <div style={{ color: '#86efac', fontSize: 12, marginTop: 9 }}>
               Este número no se vuelve a mostrar acá. Si se pierde, se consulta o se cambia en «Mi equipo · PIN».
+            </div>
+          </div>
+        )}
+
+        {/* ── Cambio de PIN de alguien que ya existe ── */}
+        {cambiando && (
+          <div style={{ ...card, borderColor: C.warn, background: '#1a1708' }}>
+            <b style={{ fontSize: 15 }}>Cambiar el PIN de {cambiando.nombre} {cambiando.apellido || ''}</b>
+            <div style={{ color: C.dim, fontSize: 12.5, margin: '5px 0 12px', lineHeight: 1.5 }}>
+              {ROLES.find(r => r.v === cambiando.rol)?.t || cambiando.rol} · {nombreSuc(cambiando.store_code)}.
+              El PIN viejo deja de servir en cuanto se guarde. El nuevo se muestra una sola vez.
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: 1, minWidth: 190 }}>
+                <label style={lbl}>Dejalo vacío y el sistema genera uno</label>
+                <input style={inp} value={pinManual} onChange={e => setPinManual(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric" placeholder="o escribí uno de 4 a 6 dígitos" />
+              </div>
+              <button onClick={cambiarPin} disabled={guardando} style={btn(C.warn, guardando)}>
+                {guardando ? 'Cambiando…' : pinManual ? 'Poner este PIN' : 'Generar PIN nuevo'}
+              </button>
+              <button onClick={() => { setCambiando(null); setPinManual('') }}
+                style={{ ...btn('#1c1c20'), border: `1px solid ${C.line}`, color: C.dim }}>
+                Cancelar
+              </button>
             </div>
           </div>
         )}
@@ -245,6 +301,13 @@ export default function UsuariosPinView({ user }) {
                   {ROLES.find(r => r.v === u.rol)?.t || u.rol}
                 </span>
                 <span style={{ color: C.dim, fontSize: 12.5, width: 60 }}>{u.store_code || '—'}</span>
+                {u.activo && (
+                  <button onClick={() => { setCambiando(u); setPinManual(''); setCreado(null); setError('') }}
+                    style={{ background: 'none', border: `1px solid ${C.acc}`, borderRadius: 7,
+                             padding: '5px 11px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: C.acc }}>
+                    Cambiar PIN
+                  </button>
+                )}
                 <button onClick={() => cambiarEstado(u, !u.activo)}
                   style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 7,
                            padding: '5px 11px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
