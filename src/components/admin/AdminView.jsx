@@ -27,7 +27,10 @@ function consolidarCierres(arr){
   const base={...arr[0]};
   const campos=['efectivo_quanto','tarjeta_quanto','ventas_transferencia','ventas_link_pago',
     'total_ventas_quanto','total_egresos','total_ingresos','efectivo_calculado',
-    'efectivo_real_depositar','diferencia_deposito'];
+    'efectivo_real_depositar','diferencia_deposito',
+    // n1co: se suman los turnos igual que el resto. El voucher NO se consolida
+    // (cada turno tiene el suyo): se muestra por separado más abajo.
+    'tarjeta_n1co','diferencia_n1co'];
   campos.forEach(k=>{ base[k]=arr.reduce((s,c)=>s+n(c[k]),0); });
   // Observaciones: concatenar las que existan
   const obs=arr.map(c=>c.observaciones).filter(Boolean);
@@ -165,6 +168,23 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
     const turnoIds=selectedGroup.filter(c=>c.turno===turnoActivo).map(c=>c.id);
     return allIngresos.filter(e=>turnoIds.includes(e.cierre_id));
   },[allIngresos,turnoActivo,selectedGroup]);
+
+  /* Cierre de tarjeta n1co (desde 19-sep-2026): cada turno reporta el total
+     que le da el datáfono y sube la foto del voucher. Acá se muestra por
+     turno y no consolidado, porque la foto es de un voucher concreto: juntar
+     dos turnos en un solo número dejaría sin saber a cuál corresponde. */
+  const n1coDetalle=useMemo(()=>{
+    const filas=turnoActivo==='consolidado'
+      ? selectedGroup
+      : selectedGroup.filter(c=>c.turno===turnoActivo);
+    return filas
+      .filter(c=>c.tarjeta_n1co!=null||c.voucher_n1co_url)
+      .map(c=>({
+        id:c.id, turno:c.turno,
+        monto:c.tarjeta_n1co, dif:c.diferencia_n1co,
+        motivo:c.motivo_diferencia_n1co, url:c.voucher_n1co_url,
+      }));
+  },[selectedGroup,turnoActivo]);
 
   // Datos numéricos del modal según turno activo
   const datosModal=useMemo(()=>{
@@ -383,6 +403,50 @@ export default function AdminView({user,onEditCierre,onBack,onAcciones}){
                 </div>
               )}
             </div>
+
+            {/* Tarjeta n1co: lo que dice el datáfono y la foto del voucher.
+                Va antes de los egresos porque es lo primero que se revisa:
+                si el POS de n1co no cuadra con el sistema, el resto del
+                cierre se mira distinto. */}
+            {n1coDetalle.length>0&&(
+              <div style={{marginTop:12}}>
+                <div className="sec-title">Tarjeta n1co (datáfono)</div>
+                {n1coDetalle.map(v=>{
+                  const cuadra=v.dif==null||Math.abs(n(v.dif))<0.005
+                  return (
+                    <div key={v.id} style={{padding:'10px 12px',background:'#1a1a1a',borderRadius:8,marginBottom:8}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                        <span style={{fontWeight:600,fontSize:13}}>
+                          {v.turno ? v.turno.charAt(0).toUpperCase()+v.turno.slice(1) : 'Turno'}
+                        </span>
+                        <span style={{fontWeight:700,fontSize:15}}>{fmt$(v.monto)}</span>
+                      </div>
+                      <div style={{marginTop:4,fontSize:12.5,color:cuadra?'#4ade80':'#f87171'}}>
+                        {cuadra
+                          ? '✓ Cuadra con lo que registró el sistema'
+                          : `✕ Diferencia de ${fmt$(Math.abs(n(v.dif)))} ${n(v.dif)>0?'de más en el datáfono':'de menos en el datáfono'}`}
+                      </div>
+                      {v.motivo&&(
+                        <div style={{marginTop:4,fontSize:12.5,color:'#fbbf24'}}>Motivo: {v.motivo}</div>
+                      )}
+                      {v.url
+                        ? (
+                          <a href={v.url} target="_blank" rel="noopener" style={{display:'block',marginTop:8}}>
+                            <img src={v.url} alt={`Voucher n1co ${v.turno||''}`}
+                              style={{width:'100%',maxHeight:320,objectFit:'contain',borderRadius:8,border:'1px solid #333',background:'#111'}}/>
+                            <span style={{fontSize:11,color:'#888'}}>Tocá la foto para verla completa</span>
+                          </a>
+                        )
+                        : (
+                          <div style={{marginTop:8,fontSize:12.5,color:'#fbbf24'}}>
+                            ⚠ Sin foto del voucher. Se puede adjuntar después editando el cierre.
+                          </div>
+                        )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
 
             {/* Detalle egresos con fotos */}
             {egresosDetalleFiltrados.length>0&&(

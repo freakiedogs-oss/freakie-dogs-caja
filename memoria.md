@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 28-Sep-2026 — El voucher n1co ahora se ve en el Dashboard de Cierres
+
+Desde el 19-sep las sucursales suben el total del datáfono y la foto del voucher, pero eso **solo se veía desde el formulario de edición**: quien revisaba los cierres no lo tenía a la vista. Jazmin lo pidió.
+
+- **`AdminView.jsx`**: bloque nuevo en el modal del cierre, arriba de los egresos — es lo primero que se revisa, porque si el POS de n1co no cuadra el resto del cierre se mira distinto. Muestra el monto del datáfono, si cuadra o la diferencia con su signo («de más» / «de menos» en el datáfono), el motivo si lo escribieron, y la foto del voucher clickeable.
+- **El voucher NO se consolida entre turnos.** `tarjeta_n1co` y `diferencia_n1co` sí se suman (se agregaron a `campos` en `consolidarCierres`, que antes los ignoraba y por eso salían en blanco), pero la foto se lista **por turno**: es un voucher concreto y juntar dos turnos en un número dejaría sin saber a cuál corresponde.
+- Si falta la foto lo dice en amarillo y recuerda que se puede adjuntar después editando el cierre (el caso de las Fire de Venecia).
+- **Sin cambio de permisos:** Jazmin es `admin` y ya tenía «Dashboard de Cierres». Datos de los últimos 7 días: 42 de 49 cierres con monto, 35 con foto, 7 no cuadran.
+
 ## 28-Sep-2026 — RRHH también cambia el PIN, no solo lo crea (migración `usuarios_operario_pin_cambiar`)
 
 Complemento del alta de ayer. El caso más común del día a día no es dar de alta: es que alguien olvidó su PIN.
