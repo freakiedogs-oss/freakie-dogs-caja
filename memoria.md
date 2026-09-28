@@ -175,6 +175,19 @@ Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maq
 - **`EtiquetadoApp.jsx`** reusa `useBalanza()` del porcionador (misma Rhino, mismo parser) sin tocar esa estación. Flujo: producto → cuántas → pesar cada una. **Si la impresión falla, la pesada no se cuenta** — vale más repetirla que una bolsa sin identificar.
 - **Esta versión no guarda nada.** Es la prueba de que la Rhino y la Zebra conviven en el adaptador USB que compró Cesar; si algo falla, no quedan lotes basura. El lote es local a la tablet. Cuando se confirme, se crea el esquema de lotes y unidades y las bolsas entran al kardex.
 - **Pendiente de datos:** de los 12 productos solo cuatro tienen peso objetivo (cheddar 907 g, chili 2,268 g, cebolla morada 454 g, sal 907 g). Los días de vencimiento están puestos a mano y se muestran como provisionales — es el **RVP-13** de Mauricio, que pide un estudio de vida útil.
+## 28-Sep-2026 — RLS: las 2 tablas que la llave pública podía leer
+
+El advisory de Supabase marca **28 tablas de `public` sin RLS** y lo describe como "cualquiera con la anon key lee y modifica todo". **En este proyecto eso no era cierto**, y vale la pena tenerlo claro para no volver a asustarse con el mismo reporte: de las 28, sólo **2** tenían GRANT de lectura a `anon` (la llave pública que va en el bundle del POS). Las otras 26 —incluidas `dte_json_staging` (30 MB), `planilla_validacion`, `delivery_estado_log`, `peya_ordenes_raw`, `peya_vendor_map` y todas las `bak_*`— no tienen GRANT a `anon` ni a `authenticated`, así que PostgREST ya las rechazaba. Y **ninguna** de las 28 tenía permiso de escritura para `anon`.
+
+Las dos reales, ya con RLS activa (migración `rls_conteo_faltantes_y_peya_tiempo_prep`):
+- **`conteo_faltantes`** (3.792 filas) — faltantes de inventario por empleado con lo que se descuenta de planilla. Dato de personas; era la exposición seria.
+- **`peya_tiempo_prep`** (58 filas) — medianas de preparación por tienda y hora. Esta la creé yo, así que era mía de arreglar.
+
+Se activó RLS **sin políticas** a propósito: nadie pierde acceso porque `service_role` (Edge Functions) saltea RLS y los 5 lectores son todos `SECURITY DEFINER` (`faltantes_acumulados`, `faltante_marcar_descontable`, `registrar_faltantes_conteo`, `peya_minutos_prep`, `peya_recalcular_tiempo_prep`). Antes de tocar nada se verificó por grep que ni `src/` ni `api/` consultan esas tablas directo. Regresión después del cambio: `peya_minutos_prep` sigue dando 12 para Cafetalón, las dos tablas siguen legibles server-side, y ahora hay **0** tablas sin RLS alcanzables por `anon`.
+Si mañana el POS necesita leerlas desde el navegador, la puerta es una función `SECURITY DEFINER`, no reabrir la tabla.
+
+**Lo que queda del advisory y NO se tocó** (son decisiones, no descuidos): las 26 tablas sin RLS pero sin GRANT (varias son `bak_*` de julio que probablemente se pueden borrar), una vista `SECURITY DEFINER`, una función con `search_path` mutable, una extensión en `public`, una vista materializada expuesta en la API, y la protección de contraseñas filtradas apagada en Auth.
+
 ## 24-Sep-2026 — PeYa Bloque 3 (catálogo): serializador, envío, disponibilidad de ítems y 23 tests
 
 Cerrado el Bloque 3 de la homologación PedidosYa. Todo sale del menú real del canal `pedidos_ya` (`db0f8d05-0d72-435f-bf82-41a776802549`, "Menú PedidosYa").
