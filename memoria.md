@@ -175,6 +175,38 @@ Viene de recuperar `public/demo-embolsado-chili.html` del 9-sep, que era una maq
 - **`EtiquetadoApp.jsx`** reusa `useBalanza()` del porcionador (misma Rhino, mismo parser) sin tocar esa estación. Flujo: producto → cuántas → pesar cada una. **Si la impresión falla, la pesada no se cuenta** — vale más repetirla que una bolsa sin identificar.
 - **Esta versión no guarda nada.** Es la prueba de que la Rhino y la Zebra conviven en el adaptador USB que compró Cesar; si algo falla, no quedan lotes basura. El lote es local a la tablet. Cuando se confirme, se crea el esquema de lotes y unidades y las bolsas entran al kardex.
 - **Pendiente de datos:** de los 12 productos solo cuatro tienen peso objetivo (cheddar 907 g, chili 2,268 g, cebolla morada 454 g, sal 907 g). Los días de vencimiento están puestos a mano y se muestran como provisionales — es el **RVP-13** de Mauricio, que pide un estudio de vida útil.
+## 29-Sep-2026 — PeYa: los modificadores vienen ANIDADOS y cocina recibía la pregunta, no la respuesta
+
+Cristian (Soporte Integraciones) contestó el 24-sep con un payload real adjunto. Al abrirlo apareció un **bug en código vivo** que ni los tests ni la doc habían mostrado.
+
+**Qué pasaba.** `selectedToppings` no es una lista plana: es un árbol. El grupo es el padre y la opción que eligió el cliente vive en `children`:
+```
+"selectedToppings": [{
+   "name": "Elegí tu endulzante",  ← el GRUPO, type PRODUCT, price 0
+   "type": "PRODUCT",
+   "children": [{ "name": "Edulcorante", "remoteCode": "3697", "type": "EXTRA", "children": [] }]
+}]
+```
+`peya_traducir_toppings` recorría el arreglo plano, así que veía `"Elegí tu endulzante"`, no lo encontraba en `peya_modificador_map` y emitía **`⚠️ Elegí tu endulzante`** con `opcion_id` null. O sea: a cocina le llegaba la **pregunta** y nunca la **respuesta** — el cocinero no sabía qué ponerle. Afectaba a todo pedido real con modificadores.
+
+**Por qué no lo agarró nadie.** Los tests usaban `selectedToppings` plano (`[{"name":"extra queso","price":"1.50"}]`), que no es la forma que manda PeYa. Pasaban en verde probando una estructura que no existe. Lección para el resto del módulo: mientras no haya pedidos reales, los fixtures son una hipótesis, no evidencia.
+
+**Fix.** Nueva `peya_toppings_planos(jsonb)`: recorre el árbol y devuelve las **hojas** (una hoja siempre es una selección concreta; un nodo con hijos es una agrupación). Se llama desde dentro de `peya_traducir_toppings`, no desde `peya_crear_cuenta`, para que también queden cubiertos `peya_articulos_a_productos`, `peya_simular_pedido` y `peya_simular_lote`. Toda la lógica de familias, slots y presets quedó intacta. Es idempotente sobre un arreglo ya plano, así que los pedidos simulados y los tests viejos siguen funcionando igual.
+
+Verificado con "Super Freak" + grupo "Salsas Papas" + Ketchup: anidado y plano dan ahora **exactamente lo mismo** (`opcion_id` y `grupo_id` resueltos). Antes el anidado daba `⚠️ Salsas Papas`.
+
+**Tests: 53 verde** — `peya_test_toppings_anidados()` 4/4 (nueva; su chequeo 3 compara anidado vs plano, que es el que atrapa la regresión si alguien quita el aplanado), `peya_test_catalogo()` 23/23, `peya_test_homologacion()` 26/26.
+
+**Lo demás que respondió Cristian:**
+- **Fotos — corrijo lo que dije el 24-sep.** Yo había puesto 640×270 px; ese número sale del import XML viejo, que está *deprecated*. El requisito real y excluyente es: **JPG/JPEG/PNG, mínimo 1440×1080, máximo 4000×4000, aspecto 4:3 (±10%)**. Es bastante más exigente y hay que rehacer las fotos con eso en mente.
+- **RemoteID — tampoco era un bloqueante.** «La asignación para dar de alta se realiza una vez completada la homologación… les compartiremos el RemoteID, ya que este valor se configura al momento del encendido.» Los `PENDIENTE-*` son el estado **esperado**; no hay nada que perseguir. La homologación se hace sin ellos y el PUT del catálogo no se puede ejercitar hasta el encendido, por diseño de ellos.
+- **Sesión:** 45 minutos alcanzan si todo funciona; lo que quede se sigue por correo.
+- **Descuentos:** confirmó `PLATFORM` / `VENDOR` y que los **vouchers viajan sólo en el nodo de la orden** con `name`/`type` = "Descuento por Voucher". Corrí sus dos ejemplos textuales contra `peya_descuentos`: el mixto (promoción 200 compartida + voucher 511 de PeYa) da 711 total / 611 PeYa / **100 nuestro**; y el del Helado confirma la trampa del doble conteo — sumando todo salen 900, sumando sólo nivel orden salen los 450 correctos.
+
+**Dato nuevo del payload que hay que preguntar:** `localInfo.platformKey` es **`"PY"`** (con `countryCode: "UY"`), pero el `globalEntityId` que exige `catalog/items/availability` aparece en sus propios links como `PY_AR`. No son el mismo formato. Si mandamos `PY` donde esperan `PY_SV`, es un 400. **Preguntarlo el 1-oct.**
+
+También del payload: `price.discountAmountTotal` cuadra con el descuento de nivel orden (101.4), así que sirve como verificación cruzada; y hay un nodo `vouchers` en la raíz (vacío en el ejemplo) que NO reemplaza al de descuentos.
+
 ## 28-Sep-2026 — RLS: las 2 tablas que la llave pública podía leer
 
 El advisory de Supabase marca **28 tablas de `public` sin RLS** y lo describe como "cualquiera con la anon key lee y modifica todo". **En este proyecto eso no era cierto**, y vale la pena tenerlo claro para no volver a asustarse con el mismo reporte: de las 28, sólo **2** tenían GRANT de lectura a `anon` (la llave pública que va en el bundle del POS). Las otras 26 —incluidas `dte_json_staging` (30 MB), `planilla_validacion`, `delivery_estado_log`, `peya_ordenes_raw`, `peya_vendor_map` y todas las `bak_*`— no tienen GRANT a `anon` ni a `authenticated`, así que PostgREST ya las rechazaba. Y **ninguna** de las 28 tenía permiso de escritura para `anon`.
