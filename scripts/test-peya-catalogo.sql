@@ -2,10 +2,17 @@
 --
 -- Cómo correrlo:
 --     select public.peya_test_catalogo();
---   → { "verde": 23, "de": 23, "todo_ok": true, "fallos": [], "items": 259 }
+--   → { "verde": 23, "de": 23, "todo_ok": true, "fallos": [], "items": ... }
 --
--- Y el Bloque 1/2 va aparte:
---     select public.peya_test_homologacion();
+-- Y las otras dos suites van aparte:
+--     select public.peya_test_homologacion();      -- Bloques 1 y 2 (26)
+--     select public.peya_test_toppings_anidados();  -- modificadores anidados (4)
+--
+-- OJO con `items`: es un conteo VIVO, no una constante. El catálogo se proyecta
+-- del menú real, así que si alguien activa o desactiva modificadores el número
+-- cambia entre corridas (pasó el 29-sep: 259 → 240 → 223 en una tarde, por
+-- edición de opciones en Menú Admin). Por eso ningún chequeo compara contra un
+-- total fijo: todos validan ESTRUCTURA.
 --
 -- La función vive en la base (migración `peya_test_catalogo_fix`) y no en este
 -- archivo a propósito: corre contra el menú REAL de PedidosYa
