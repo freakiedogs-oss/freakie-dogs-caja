@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import SubirFotoItem from './SubirFotoItem'
+import DeliveryMenuTab from './DeliveryMenuTab'
 import { db } from '../../supabase'
 import Icon from '../Icon'
 import { confirmAsync } from '../confirmDialog'
@@ -14,6 +15,10 @@ const C = {
 /* tipo permitido en DB: 'unico' | 'multiple' */
 const TIPO_LABEL = { unico: 'Uno solo', multiple: 'Varios' }
 
+/* La pestaña «Delivery» solo aparece cuando el menú elegido es el de
+   delivery propio: es la vista del cliente, y en el menú de caja no
+   significa nada. Va primera porque es la que se usa a diario. */
+const TAB_DELIVERY = { key: 'delivery', label: '🛵 Delivery (lo que ve el cliente)' }
 const TABS = [
   { key: 'categorias', label: '📂 Categorías' },
   { key: 'items',      label: 'Ítems' },
@@ -86,6 +91,20 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
     load()
   }, [storeCode])
 
+  const canalActual = menus.find(m => m.id === menuId)?.canal
+  const esDeliveryMenu = canalActual === 'delivery_propio'
+  const tabsVisibles = esDeliveryMenu ? [TAB_DELIVERY, ...TABS] : TABS
+
+  // Al pararse en el menú de delivery se entra por la vista del cliente, y al
+  // salir de él no se puede quedar una pestaña que ya no existe.
+  useEffect(() => {
+    if (!menuId) return
+    setTab(t => {
+      if (esDeliveryMenu) return t === 'categorias' ? 'delivery' : t
+      return t === 'delivery' ? 'categorias' : t
+    })
+  }, [menuId, esDeliveryMenu])
+
   if (loading) return (
     <div style={{ background: C.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="spin" style={{ width: 28, height: 28 }} />
@@ -116,7 +135,7 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${C.border}`, background: C.surface }}>
-        {TABS.map(t => (
+        {tabsVisibles.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -140,8 +159,9 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
           </div>
         ) : (
           <>
+            {tab === 'delivery' && esDeliveryMenu && <DeliveryMenuTab user={user} />}
             {tab === 'categorias' && <CategoriasTab menuId={menuId} />}
-            {tab === 'items' && <ItemsTab menuId={menuId} canal={menus.find(m => m.id === menuId)?.canal} />}
+            {tab === 'items' && <ItemsTab menuId={menuId} canal={canalActual} />}
             {tab === 'grupos' && <GruposTab />}
             {tab === 'asignar' && <AsignarTab menuId={menuId} />}
           </>

@@ -116,6 +116,7 @@ export default function MenuPublico() {
   const [categoriaActiva, setCategoriaActiva] = useState('')
   const [carrito, setCarrito] = useState([])
   const [productoModal, setProductoModal] = useState(null)
+  const [reglasChoque, setReglasChoque] = useState([])   // [{a, b, item}]
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [pedidoOk, setPedidoOk] = useState(null)  // respuesta de crear_pedido_delivery + nombre
@@ -165,6 +166,18 @@ export default function MenuPublico() {
       })
       .catch(() => vivo && setErrorCarga(true))
       .finally(() => vivo && setCargando(false))
+    return () => { vivo = false }
+  }, [])
+
+  // Choques declarados desde el ERP (pestaña «Delivery» de Admin Menú). Son
+  // pares de opciones que no pueden ir juntas — antes esto vivía en el código
+  // y había que esperar a que alguien lo tocara; ahora es dato y lo declara
+  // quien ve el problema. Se releen junto con los bloqueos.
+  useEffect(() => {
+    let vivo = true
+    db.rpc('menu_publico_reglas')
+      .then(({ data }) => { if (vivo && Array.isArray(data)) setReglasChoque(data) })
+      .catch(() => {})
     return () => { vivo = false }
   }, [])
 
@@ -516,6 +529,7 @@ export default function MenuPublico() {
             setProductoModal(null)
           }}
           abierto={abierto}
+          reglasChoque={reglasChoque}
         />
       )}
 
@@ -794,7 +808,7 @@ function ProductoCard({ producto, onClick, agotado = false, dondeAgotado }) {
   )
 }
 
-function ProductoModal({ producto, onClose, onAgregar, abierto }) {
+function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [] }) {
   const [qty, setQty] = useState(1)
   const [nota, setNota] = useState('')
   // sel: { [grupoId]: [ {id,nombre,precio_extra}, ... ] }
@@ -876,10 +890,28 @@ function ProductoModal({ producto, onClose, onAgregar, abierto }) {
   const soloAgrandado = (g) =>
     esGrupoBebida(g) && compsAgrandados.has(claveComp(g)) && tieneGrupoAgrandado(claveComp(g))
 
+  /* ── Choques declarados desde el ERP ───────────────────────────────────
+     Un par de opciones que no pueden ir juntas. Al elegir una, la otra deja
+     de ofrecerse; al soltarla, vuelve. Se bloquea solo la que NO está
+     elegida, para que dos opciones ya marcadas no se tapen entre sí y el
+     cliente quede sin poder soltar ninguna.
+     Las reglas sin `item` valen en todo el menú; las demás, solo en el suyo. */
+  const bloqueadosPorRegla = useMemo(() => {
+    const relevantes = (reglasChoque || []).filter(r => !r.item || r.item === producto.id)
+    if (relevantes.length === 0) return new Set()
+    const elegidas = new Set(Object.values(sel).flat().map(o => o.id))
+    const bloq = new Set()
+    for (const r of relevantes) {
+      if (elegidas.has(r.a) && !elegidas.has(r.b)) bloq.add(r.b)
+      if (elegidas.has(r.b) && !elegidas.has(r.a)) bloq.add(r.a)
+    }
+    return bloq
+  }, [reglasChoque, producto.id, sel])
+
   const opcionesVisibles = (g) => {
     let ops = g.opciones || []
     if (soloAgrandado(g)) ops = ops.filter(esOpcionAgrandado)
-    return ops.filter(op => !esVidrio(op))
+    return ops.filter(op => !esVidrio(op) && !bloqueadosPorRegla.has(op.id))
   }
   const grupoOculto = (g) =>
     (esGrupoAgrandado(g) && !compsAgrandados.has(claveComp(g))) || opcionesVisibles(g).length === 0
