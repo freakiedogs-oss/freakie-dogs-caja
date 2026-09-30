@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 30-Sep-2026 — Corregir documento: la invalidación queda fija en "rescindir la operación" (tipo 2)
+
+Jazz intentó invalidar una factura (SIEMENS, $519) desde Finanzas → Corregir documento eligiendo "Error en la emisión" y Hacienda la rechazó: `Valor ingresado no es de los permitidos en el campo #/motivo/tipoAnulacion` + `codigoGeneracionR contiene un valor inválido`.
+
+- **Causa:** MH exige `codigoGeneracionR` (UUID del documento que reemplaza) en los tipos 1 y 3. El modal ofrecía los tres tipos pero nunca captura ni manda ese UUID, y `dte-service/handlers/invalidar.ts` lo envía `null` → rechazo seguro. La factura queda `aceptado`; el intento fallido no la toca.
+- **Fix (rápido, pedido por Jose):** `CorregirDTEModal.jsx` ya no tiene selector; manda siempre `tipoAnulacion: 2`, que es lo que usa el POS y con lo que salieron las 21 invalidaciones de los dobles cobros. Flujo para corregir una factura: invalidar (tipo 2) y después emitir la nueva.
+- **No se tocó** `dte-service` ni el proxy. Si algún día se quiere el tipo 1 de verdad, hace falta un campo para el documento de reemplazo y pasarlo como `codigoGeneracionR`.
+
 ## 30-Sep-2026 — Karina edita el menú de delivery sola (migraciones `menu_reglas_exclusion`, `menu_delivery_editor_funciones`, `menu_delivery_detalle_dedup`)
 
 Karina reportaba seguido problemas del menú de delivery (una opción que no debería ofrecerse, un precio viejo, dos opciones que se pisan) y había que esperar a que Cesar llegara a su casa a tocar código. Ahora lo arregla ella.

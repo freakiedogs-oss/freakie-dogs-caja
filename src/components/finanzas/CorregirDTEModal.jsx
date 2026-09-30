@@ -19,11 +19,12 @@ import { emitirNotaCredito, invalidarDTE, totalConIva } from './dteErpService'
  * rechazo seguro.
  */
 
-const MOTIVOS_ANULACION = [
-  { valor: 2, nombre: 'Rescindir la operación (no hubo venta)' },
-  { valor: 1, nombre: 'Error en la emisión (se reemplaza por otro documento)' },
-  { valor: 3, nombre: 'Otro' },
-]
+// Solo se ofrece "rescindir la operación" (tipo 2). MH exige un documento de
+// reemplazo (codigoGeneracionR) para los tipos 1 y 3, y esta pantalla no lo
+// captura: elegirlos terminaba en rechazo seguro ("Valor ingresado no es de los
+// permitidos en el campo #/motivo/tipoAnulacion"). Si se corrige una factura,
+// se invalida con tipo 2 y después se emite la nueva.
+const TIPO_ANULACION = 2
 
 const s = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' },
@@ -50,7 +51,6 @@ export default function CorregirDTEModal({ dte, onClose, onListo }) {
       ? `Documento duplicado por doble registro del POS. La operación se facturó en el DTE ${dte._dup.nc_original}. No hubo segunda venta.`
       : ''
   )
-  const [tipoAnulacion, setTipoAnulacion] = useState(2)
   const [pin, setPin] = useState('')
   const [procesando, setProc] = useState(false)
   const [error, setError] = useState(null)
@@ -115,7 +115,7 @@ export default function CorregirDTEModal({ dte, onClose, onListo }) {
   const hacerAnular = async () => {
     setError(null); setProc(true)
     try {
-      const res = await invalidarDTE({ codigoGeneracion: dte.codigo_generacion, motivo, tipoAnulacion, pin })
+      const res = await invalidarDTE({ codigoGeneracion: dte.codigo_generacion, motivo, tipoAnulacion: TIPO_ANULACION, pin })
       setOk({ tipo: 'anular', res })
       onListo?.()
     } catch (e) { setError(e.message) } finally { setProc(false) }
@@ -224,15 +224,10 @@ export default function CorregirDTEModal({ dte, onClose, onListo }) {
               La invalidación es <b>irreversible</b> y queda registrada en Hacienda. El documento no se puede reactivar.
             </div>
             <label style={s.label}>Tipo de anulación</label>
-            <select style={{ ...s.input, marginBottom: 10 }} value={tipoAnulacion} onChange={e => setTipoAnulacion(Number(e.target.value))}>
-              {MOTIVOS_ANULACION.map(m => <option key={m.valor} value={m.valor}>{m.nombre}</option>)}
-            </select>
-            {tipoAnulacion === 1 && (
-              <div style={{ fontSize: 11, color: C.gold, marginBottom: 10 }}>
-                Con "error en la emisión" Hacienda espera que exista un documento de reemplazo. Si todavía no
-                lo emitiste, usá "rescindir la operación".
-              </div>
-            )}
+            <div style={{ ...s.input, marginBottom: 6 }}>Rescindir la operación</div>
+            <div style={{ fontSize: 11, color: C.gold, marginBottom: 10 }}>
+              Si el documento se va a corregir, invalidalo acá y después emití el nuevo con los datos correctos.
+            </div>
             <label style={s.label}>Motivo (queda en el registro fiscal)</label>
             <input style={s.input} placeholder="Mínimo 5 caracteres" value={motivo} onChange={e => setMotivo(e.target.value)} />
           </>
