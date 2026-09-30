@@ -209,16 +209,26 @@ export default function ProtocoloEditorView({ user, onVolver }) {
 
   async function quitar(p) {
     if (modo(p) === 'local') {
+      // Un paso de la base es el MISMO objeto para las seis sucursales, así que
+      // no se puede borrar de verdad desde una: se saca de la apertura de esta
+      // y las demás lo siguen viendo. Antes el botón decía «No aplica acá» y el
+      // aviso hablaba de «ocultar», y las encargadas lo leían como pedir
+      // permiso: en dos meses solo una sucursal lo usó (Cesar, 30-sep-2026).
+      // El motivo se mantiene porque es lo que le llega a Casa Matriz como
+      // aviso y lo único que deja ver si alguien está quitando algo que importa.
       const motivo = window.prompt(
-        `¿Por qué no aplica «${p.titulo}» en ${nombreAmbito}?\n\nQueda registrado y le llega el aviso al administrador.`)
+        `Quitar «${p.titulo}» de la apertura de ${nombreAmbito}.\n\n` +
+        `Solo lo sacás de TU apertura: las otras sucursales lo siguen viendo, ` +
+        `y lo podés volver a poner cuando quieras.\n\n` +
+        `¿Por qué no aplica acá?`)
       if (motivo === null) return
-      if (!motivo.trim()) { setError('Sin motivo no se puede ocultar un paso.'); return }
+      if (!motivo.trim()) { setError('Escribí por qué no aplica. Es lo único que se pide.'); return }
       await correr(async () => {
         const { error: e } = await db.rpc('fn_protocolo_ocultar_paso',
           { p_usuario: user.id, p_store_code: ambito, p_paso_id: p.paso_id, p_motivo: motivo.trim() })
         if (e) throw e
         setEditando(null)
-      }, 'Oculto en esta sucursal')
+      }, 'Quitado de tu apertura')
       return
     }
     if (!window.confirm(`¿Quitar «${p.titulo}»?${enBase ? '\n\nDesaparece de las seis sucursales.' : ''}`)) return
@@ -233,7 +243,7 @@ export default function ProtocoloEditorView({ user, onVolver }) {
     const { error: e } = await db.rpc('fn_protocolo_mostrar_paso',
       { p_usuario: user.id, p_store_code: ambito, p_paso_id: p.paso_id })
     if (e) throw e
-  }, 'Vuelve a verse')
+  }, 'Vuelve a estar en tu apertura')
 
   const volverBase = (p) => correr(async () => {
     const { error: e } = await db.rpc('fn_protocolo_volver_a_la_base',
@@ -359,8 +369,11 @@ export default function ProtocoloEditorView({ user, onVolver }) {
 
       {!enBase && (
         <div style={S.nota}>
-          Estás editando <b>{nombreAmbito}</b>. Los pasos de la base se cambian solo para
-          esta sucursal; la base queda igual para las demás. Lo que agregues acá es propio de este local.
+          Estás editando <b>{nombreAmbito}</b>. Esta apertura es tuya: podés reescribir un paso,
+          agregar los que te falten y <b>quitar los que no aplican acá</b> — todo cambia solo
+          en esta sucursal, las demás no se enteran. Lo que quites se puede volver a poner
+          cuando quieras; solo te pedimos escribir por qué, para que Casa Matriz sepa qué está
+          sobrando en el estándar.
         </div>
       )}
 
@@ -510,10 +523,14 @@ function Paso({ p, i, n, abierto, modo, enBase, esAdmin, ocupado, form, setForm,
         {p.campos_propios?.length > 0 && <span style={S.tagLocal} title={p.editado_por ? `por ${p.editado_por}` : ''}>versión de esta sucursal</span>}
         {!p.es_base && !enBase && <span style={S.tagLocal}>propio</span>}
         {p.oculto
-          ? <button onClick={onMostrar} disabled={ocupado} style={S.bt}>Volver a mostrar</button>
+          ? <button onClick={onMostrar} disabled={ocupado} style={S.bt}>Volver a ponerlo</button>
           : <button onClick={abierto ? onCerrar : onAbrir} style={S.bt}>{abierto ? 'Cerrar' : 'Editar'}</button>}
       </div>
-      {p.oculto && <div style={S.meta}>Oculto en esta sucursal: {p.oculto_motivo}</div>}
+      {p.oculto && (
+        <div style={S.meta}>
+          No está en tu apertura: {p.oculto_motivo} · lo podés devolver con «Volver a ponerlo».
+        </div>
+      )}
       {!abierto && incompleto && !p.oculto && (
         <div style={S.meta}>Sin «cómo se ve bien hecho» ni «lo que sale mal». El paso existe pero está vacío por dentro.</div>
       )}
@@ -540,7 +557,7 @@ function Paso({ p, i, n, abierto, modo, enBase, esAdmin, ocupado, form, setForm,
             )}
             {!(modo === 'local' && p.es_critico) && (
               <button onClick={onQuitar} disabled={ocupado} style={{ ...S.bt, ...S.btRed, marginRight: 'auto' }}>
-                {modo === 'local' ? 'No aplica acá' : 'Quitar paso'}
+                {modo === 'local' ? 'Quitar de mi apertura' : 'Quitar paso'}
               </button>
             )}
             {modo === 'local' && p.es_critico && (
