@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 30-Sep-2026 — Protocolo: las encargadas ya podían quitar pasos, pero el botón no lo decía
+
+Cesar pidió «que puedan borrar pasos, los suyos y los míos, para moldearlo a su gusto». Al revisar, **la capacidad ya existía completa**: sus pasos propios se borran (`fn_protocolo_borrar_paso`) y los de la base se sacan de la apertura de esa sucursal (`fn_protocolo_ocultar_paso`), con el botón de reponer (`fn_protocolo_mostrar_paso`) ya en pantalla. No hizo falta ninguna función nueva ni tocar permisos.
+
+- **El problema era el lenguaje.** El botón decía «No aplica acá», el aviso hablaba de «ocultar» y el mensaje mencionaba al administrador: se leía como pedir permiso. En dos meses, de 70 pasos de base, solo había **3 quitados y los tres de Lourdes** — las otras cinco nunca lo usaron.
+- Ahora: «**Quitar de mi apertura**», «**Volver a ponerlo**», el toast dice «Quitado de tu apertura», y el aviso del paso quitado recuerda que se puede devolver. La nota de arriba del editor dice explícitamente que la apertura es suya y que quitar no afecta a las demás.
+- **Se mantuvo el motivo obligatorio** (decisión de Cesar): es lo único que le llega a Casa Matriz como aviso y lo que permite ver si el estándar tiene pasos que sobran. Se reencuadró de «justificate» a «para que Casa Matriz sepa qué está sobrando».
+- **Por qué no se borra de verdad un paso de la base:** es el mismo objeto para las seis sucursales; borrarlo lo quitaría en todas. `protocolo_ocultos` ES el borrado por sucursal.
+- Dato del momento: 70 pasos de base (ninguno marcado crítico, así que nada está bloqueado) y 61 pasos propios repartidos entre las seis.
+
 ## 29-Sep-2026 — Cobro de evento en el POS: cobra y factura sin descargar inventario (migración `cobro_evento_sin_descarga`)
 
 Los eventos se cobran en la caja de Plaza Cafetalón para emitir el crédito fiscal, pero lo que se usa sale del pedido del evento desde Casa Matriz. Hasta hoy el cobro descargaba el inventario de Cafetalón: el 29-sep, 130 Coca-Cola Combo del Evento Siemens ($519.20, link de pago) hicieron sobrar 130 salchichas, 131 panes Berna y 129 Coca PET en el conteo.
@@ -10,7 +20,6 @@ Los eventos se cobran en la caja de Plaza Cafetalón para emitir el crédito fis
 - **Corte**: `pos_corte` (y `_items`, `_cortesias`, `_desc_empleado`) excluyen los cobros de evento; `pos_corte` devuelve `eventos_total` y `eventos_n`, que el cierre muestra y el ticket imprime como «Eventos (aparte)». Así no inflan las ventas ni el cierre de la sucursal. Reporte: vista `v_cobros_eventos`.
 - **Corrección del 29-sep** (`fix_cobro_evento_siemens`): la cuenta del Evento Siemens pasó a `tipo='evento'` y se registró una devolución por lo que había descontado, recalculando el conteo de esa noche (el stock actual no cambió). El cierre del 29 ya estaba aprobado con esos $519.20 dentro del link de pago: no se tocó.
 - Otros reportes que leen `pos_cuentas` directo (dashboards) todavía cuentan los cobros de evento: filtrar por `tipo <> 'evento'` cuando haga falta.
-
 ## 28-Sep-2026 — El voucher n1co ahora se ve en el Dashboard de Cierres
 
 Desde el 19-sep las sucursales suben el total del datáfono y la foto del voucher, pero eso **solo se veía desde el formulario de edición**: quien revisaba los cierres no lo tenía a la vista. Jazmin lo pidió.
