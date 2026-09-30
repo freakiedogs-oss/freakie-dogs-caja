@@ -1738,7 +1738,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
   }
 
   // ── MODAL: doble check de Hifumi (y órdenes sin cobrar) antes de cerrar el conteo ──
-  const TIPO_CORTO={mesa:'Mesa',para_llevar:'Para llevar',delivery_propio:'Delivery',pedidos_ya:'PeYa',drive_through:'Drive',delivery_app:'Hifumi'};
+  const TIPO_CORTO={mesa:'Mesa',para_llevar:'Para llevar',delivery_propio:'Delivery',pedidos_ya:'PeYa',drive_through:'Drive',delivery_app:'Hifumi',evento:'Evento'};
   const modalHifumi = hifumiGate && (()=>{
     const g=hifumiGate;
     return(

@@ -1,5 +1,16 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 29-Sep-2026 — Cobro de evento en el POS: cobra y factura sin descargar inventario (migración `cobro_evento_sin_descarga`)
+
+Los eventos se cobran en la caja de Plaza Cafetalón para emitir el crédito fiscal, pero lo que se usa sale del pedido del evento desde Casa Matriz. Hasta hoy el cobro descargaba el inventario de Cafetalón: el 29-sep, 130 Coca-Cola Combo del Evento Siemens ($519.20, link de pago) hicieron sobrar 130 salchichas, 131 panes Berna y 129 Coca PET en el conteo.
+
+- **POS (`POSHome.jsx`)**: botón «Cobro de evento» (solo sucursales de `STORES_COBRO_EVENTO`, hoy `M001`). Pide elegir el evento del módulo de Eventos (de hace 15 días a 60 días adelante) y abre una cuenta `tipo='evento'` con `evento_id`.
+- **`POSMain.jsx`**: la cuenta de evento no se comanda (el botón no aparece) ni entra al KDS; se cobra directo. No llama a `pos_deducir_inventario`. En el cobro no aparece «PedidosYa» como método. El DTE (factura o crédito fiscal) sale igual que siempre.
+- **DB**: `pos_cuentas.evento_id`; `pos_deducir_inventario` devuelve sin descargar si la cuenta es `tipo='evento'` o tiene `evento_id` (candado aunque el frontend falle); `barrer_cuentas_sin_descarga` las ignora; `pos_contexto_servicio` tiene filas `evento` (usa el menú de «para llevar» de cada tipo de sucursal).
+- **Corte**: `pos_corte` (y `_items`, `_cortesias`, `_desc_empleado`) excluyen los cobros de evento; `pos_corte` devuelve `eventos_total` y `eventos_n`, que el cierre muestra y el ticket imprime como «Eventos (aparte)». Así no inflan las ventas ni el cierre de la sucursal. Reporte: vista `v_cobros_eventos`.
+- **Corrección del 29-sep** (`fix_cobro_evento_siemens`): la cuenta del Evento Siemens pasó a `tipo='evento'` y se registró una devolución por lo que había descontado, recalculando el conteo de esa noche (el stock actual no cambió). El cierre del 29 ya estaba aprobado con esos $519.20 dentro del link de pago: no se tocó.
+- Otros reportes que leen `pos_cuentas` directo (dashboards) todavía cuentan los cobros de evento: filtrar por `tipo <> 'evento'` cuando haga falta.
+
 ## 28-Sep-2026 — El voucher n1co ahora se ve en el Dashboard de Cierres
 
 Desde el 19-sep las sucursales suben el total del datáfono y la foto del voucher, pero eso **solo se veía desde el formulario de edición**: quien revisaba los cierres no lo tenía a la vista. Jazmin lo pidió.

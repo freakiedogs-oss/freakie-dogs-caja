@@ -24,6 +24,8 @@ const TIPO_INFO = {
   'pedidos_ya':     { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa', canal: 'pedidos_ya'      },
   'drive_through':  { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24', canal: 'drive_through'   },
   'delivery_app':   { ic: 'phone',    label: 'Hifumi',      color: '#f472b6', canal: 'delivery_app'   },
+  // Cobro de evento: solo cobra y factura; no descarga inventario ni va a cocina.
+  'evento':         { ic: 'calendar', label: 'Evento',      color: '#34d399', canal: 'para_llevar'    },
 }
 
 // ── Permisos por rol ──
@@ -217,6 +219,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const peyaIdObligatorio = usePeyaIdObligatorio(storeCode)
   const [peyaRef, setPeyaRef] = useState(cuentaCtx?.delivery_referencia || null)
   const clienteNombreCtx = cuentaCtx?.cliente_nombre || null
+  // Cobro de evento (29-sep-2026): la cuenta queda ligada al evento, no descarga
+  // inventario (lo bloquea también pos_deducir_inventario) y no manda comanda.
+  const esEvento     = tipo === 'evento'
+  const eventoId     = cuentaCtx?.evento_id || null
+  const eventoNombre = cuentaCtx?.evento_nombre || null
   const [comandaSeq, setComandaSeq] = useState(1)
 
   // Ítems: los ya guardados (comandados) + los nuevos (pendientes de comandar)
@@ -930,6 +937,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   // ── COMANDAR ──
   const handleComandar = async () => {
     if (!hasNew || !perms.comandar) return
+    if (esEvento) { toast.warning('El cobro de evento no va a cocina: cobralo directo.'); return }
     // Candado síncrono: si ya hay una comanda en vuelo, ignorá los toques extra.
     if (commandingRef.current) return
     commandingRef.current = true
@@ -1154,6 +1162,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             ...((paymentData.peyaRef || peyaRef) ? { delivery_referencia: paymentData.peyaRef || peyaRef } : {}),
             ...(paymentData.metodo === 'hifumi' ? { delivery_plataforma: 'hifumi', delivery_referencia: paymentData.hifumiRef } : {}),
             ...(clienteNombreCtx ? { cliente_nombre: clienteNombreCtx } : {}),
+            ...(esEvento && eventoId ? { evento_id: eventoId } : {}),
             subtotal:    subtotal,
             iva:         0,
             propina:     paymentData.propina || 0,
@@ -1249,9 +1258,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         const { data: insertedItems, error: itemsErr } = await db.from('pos_cuenta_items').insert(toInsert).select('id')
         if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
-        await db.from('pos_cocina_queue').insert(
-          buildQueueRows(itemsToSave, insertedItems, currentCuentaId, 5)
-        )
+        if (!esEvento) {
+          await db.from('pos_cocina_queue').insert(
+            buildQueueRows(itemsToSave, insertedItems, currentCuentaId, 5)
+          )
+        }
       }
 
       // 3. Registrar pago — con reintentos: una cuenta cobrada NUNCA debe quedar sin pago.
@@ -1340,8 +1351,9 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         }).eq('id', paymentData.cliente.id).then(() => {}).catch(() => {})
       }
 
-      // 7. Deducir inventario (best-effort — no bloquea el cobro)
-      try {
+      // 7. Deducir inventario (best-effort — no bloquea el cobro). El cobro de evento no
+      //    descarga: lo que se usa sale del pedido del evento desde Casa Matriz.
+      if (!esEvento) try {
         await db.rpc('pos_deducir_inventario', { p_cuenta_id: currentCuentaId, p_store_code: storeCode })
       } catch (invErr) {
         console.warn('Inventario no deducido:', invErr.message)
@@ -1431,7 +1443,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           className="pos-header-btn"
           style={{ background: tipoInfo.color + '18', borderColor: tipoInfo.color, color: tipoInfo.color, cursor: 'default' }}
         >
-          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
+          <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{esEvento && eventoNombre ? ` · ${eventoNombre}` : ''}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
         </span>
 
         {tipo === 'mesa' && perms.moverMesa && (
@@ -1534,7 +1546,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               className="pos-order-type-badge"
               style={{ background: tipoInfo.color + '22', color: tipoInfo.color }}
             >
-              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
+              <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{esEvento && eventoNombre ? ` · ${eventoNombre}` : ''}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
             </span>
             {cuentaId
               ? <span className="pos-order-open-badge">Cuenta Abierta</span>
@@ -1719,7 +1731,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               </button>
             )}
 
-            {perms.comandar && (
+            {perms.comandar && !esEvento && (
               <button
                 className="pos-comandar-btn"
                 disabled={!hasNew || commanding}

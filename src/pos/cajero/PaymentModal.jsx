@@ -319,7 +319,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
 
         {/* Método de pago */}
         <div className="pos-method-tabs" style={{ flexWrap: 'wrap' }}>
-          {(esHifumi ? ['hifumi'] : ['efectivo','tarjeta','link_pago','transferencia','mixto','pedidos_ya']).map(m => (
+          {(esHifumi ? ['hifumi'] : tipo === 'evento' ? ['link_pago','transferencia','tarjeta','efectivo','mixto'] : ['efectivo','tarjeta','link_pago','transferencia','mixto','pedidos_ya']).map(m => (
             <button
               key={m}
               className={`pos-method-tab${metodo === m ? ' active' : ''}`}

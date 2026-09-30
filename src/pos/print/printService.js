@@ -417,6 +417,7 @@ export function buildCorte(c, cols = 48) {
   t.row('Cuentas', String(c.n_cuentas || 0));
   t.row('Cancelaciones', String(c.n_cancelaciones || 0));
   t.row('Ticket prom.', money(c.ticket_promedio));
+  if (c.eventos_total) t.row('Eventos (aparte)', money(c.eventos_total));
   t.hr();
   // Ítems vendidos del turno/día (cantidad × nombre + total $), ordenados por cantidad.
   // Vienen pre-cargados en c.itemsVendidos (RPC pos_corte_items) para no meter awaits

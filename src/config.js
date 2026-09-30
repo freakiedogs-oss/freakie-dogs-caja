@@ -47,6 +47,11 @@ export const PAGERS_POR_SUCURSAL = { S001: 20 }
 export const PAGERS_DEFAULT = 15
 export const pagersDe = (storeCode) => PAGERS_POR_SUCURSAL[storeCode] || PAGERS_DEFAULT
 
+// Sucursales donde la caja cobra y factura los eventos (crédito fiscal). El cobro de
+// evento no descarga inventario de la sucursal ni va a cocina: lo que se usa sale del
+// pedido del evento desde Casa Matriz (29-sep-2026, Frank).
+export const STORES_COBRO_EVENTO = ['M001']
+
 // Sucursales que NO imprimen comanda de cocina al comandar (la orden igual entra al KDS)
 export const STORES_SIN_COMANDA = ['S004', 'S003']
 
