@@ -1,5 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 30-Sep-2026 — Karina edita el menú de delivery sola (migraciones `menu_reglas_exclusion`, `menu_delivery_editor_funciones`, `menu_delivery_detalle_dedup`)
+
+Karina reportaba seguido problemas del menú de delivery (una opción que no debería ofrecerse, un precio viejo, dos opciones que se pisan) y había que esperar a que Cesar llegara a su casa a tocar código. Ahora lo arregla ella.
+
+- **Pestaña nueva «🛵 Delivery (lo que ve el cliente)»** dentro de Admin Menú del POS (`src/pos/admin/DeliveryMenuTab.jsx`). Aparece **solo** cuando el menú elegido es el de `delivery_propio`, y va primera porque es la de uso diario. Karina ya llegaba a Admin Menú: `MULTI_STORE_ROLES` incluye su rol `telefono`.
+- **Lo que puede hacer:** abrir un combo y ver los mismos grupos y opciones que ve el cliente (incluidos los que cuelgan de cada componente del combo), apagar/encender una opción, corregir un precio extra, y **declarar que dos opciones chocan**. Lo que no puede: crear o borrar grupos, mover componentes — eso sigue en las pestañas técnicas, que son las que rompen el menú.
+- **La regla de exclusión es dato, no código** (`menu_reglas_exclusion`): par de modificadores, opcionalmente acotado a un ítem, con motivo y quién la puso. `menu_publico_reglas()` la sirve al menú web y `MenuPublico.jsx` esconde la opción contraria mientras la otra esté elegida — bloqueando solo la que NO está marcada, para que dos ya elegidas no se tapen entre sí y el cliente no quede sin poder soltar ninguna.
+- **Permisos en un solo lugar:** `fn_menu_puede_editar` (roles `telefono`, `marketing`, `admin`, `ejecutivo`, `superadmin`, `jefe_casa_matriz`). Verificado: Karina `true`, un operario `false`. Todo pasa por funciones `security definer`, no por la tabla directa, para dejar rastro de quién cambió qué.
+- **Dedup de grupos:** los dos hot dogs de un combo comparten el grupo «Complemento de Hot Dog» y salía dos veces; `fn_menu_delivery_detalle` lo colapsa (`distinct on`).
+- **No se precargó ninguna regla.** El caso de los agrandados de bebida ya está resuelto por código en `MenuPublico.jsx` (compsAgrandados / soloAgrandado) y meter la misma regla como dato la escondería dos veces. La tabla arranca vacía; Karina declara la primera cuando vea el choque.
+- Verificado de punta a punta contra la base (alta → aparece en `menu_publico_reglas()` y en la pantalla con su nombre → baja). Los tres archivos parsean; **falta correr el build en Windows**.
+
 ## 30-Sep-2026 — Protocolo: las encargadas ya podían quitar pasos, pero el botón no lo decía
 
 Cesar pidió «que puedan borrar pasos, los suyos y los míos, para moldearlo a su gusto». Al revisar, **la capacidad ya existía completa**: sus pasos propios se borran (`fn_protocolo_borrar_paso`) y los de la base se sacan de la apertura de esa sucursal (`fn_protocolo_ocultar_paso`), con el botón de reponer (`fn_protocolo_mostrar_paso`) ya en pantalla. No hizo falta ninguna función nueva ni tocar permisos.
