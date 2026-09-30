@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
 import { today, fmtDate, n, BUCKET_CIERRES as BUCKET } from '../../config';
+import { TransferenciasBebidasPanel, MandarBebidas, RecibirTransferencia } from './TransferenciaBebidas';
 
 // ════════════════════════════════════════════════════════════════
 //  BEBIDAS LA CONSTANCIA — recepción en sucursal
@@ -88,6 +89,9 @@ export default function RecepcionBeesView({ user, show }) {
   const [sel, setSel] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sucursales, setSucursales] = useState([]);
+  const [ruta, setRuta] = useState(null);             // transferencia que se está mandando
+  const [entrante, setEntrante] = useState(null);     // transferencia que se está recibiendo
+  const [refrescarTr, setRefrescarTr] = useState(0);
 
   const verTodas = ROLES_TODAS.includes(user?.rol) || !user?.store_code;
   // El login no trae sucursal_id: la sucursal se resuelve por store_code.
@@ -131,6 +135,14 @@ export default function RecepcionBeesView({ user, show }) {
     return <BeesDetalle compra={sel} user={user} show={show}
       onBack={() => { setSel(null); setView('lista'); cargar(); }} />;
   }
+  if (view === 'mandar' && ruta) {
+    return <MandarBebidas user={user} show={show} ruta={ruta} sucursales={sucursales}
+      onBack={() => { setRuta(null); setView('lista'); setRefrescarTr(x => x + 1); cargar(); }} />;
+  }
+  if (view === 'recibir' && entrante) {
+    return <RecibirTransferencia user={user} show={show} despacho={entrante} sucursales={sucursales}
+      onBack={() => { setEntrante(null); setView('lista'); setRefrescarTr(x => x + 1); cargar(); }} />;
+  }
   if (view === 'entrega') {
     return <EntregaBees user={user} show={show} verTodas={verTodas} sucursales={sucursales} miSucursal={miSucursal}
       onBack={(registrada) => { setView('lista'); if (registrada) setTab('historial'); else cargar(); }} />;
@@ -147,6 +159,10 @@ export default function RecepcionBeesView({ user, show }) {
         style={{ width: '100%', padding: '16px 14px', fontSize: 16, marginBottom: 16 }}>
         📦 Registrar entrega de La Constancia
       </button>
+
+      <TransferenciasBebidasPanel user={user} sucursales={sucursales} verTodas={verTodas} refrescar={refrescarTr}
+        onMandar={r => { setRuta(r); setView('mandar'); }}
+        onRecibir={d => { setEntrante(d); setView('recibir'); }} />
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, borderBottom: '1px solid #2a2a32' }}>
         {[['pendientes', '🚚 Por recibir'], ['historial', '✅ Recibidos'], ['stock', '🥤 Stock']].map(([key, label]) => (

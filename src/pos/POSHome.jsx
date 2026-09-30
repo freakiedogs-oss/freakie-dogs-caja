@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
-import { STORES } from '../config'
+import { STORES, STORES_COBRO_EVENTO } from '../config'
 import AgrandadoChip from './AgrandadoChip'
 import Icon from './Icon'
 import PlanoEditor from './cajero/PlanoEditor'
@@ -14,9 +14,10 @@ const TIPO_INFO = {
   mesa:            { ic: 'armchair', label: 'Mesas',       color: '#2dd4a8' },
   para_llevar:     { ic: 'bag',      label: 'Para Llevar', color: '#f4a261' },
   delivery_propio: { ic: 'bike',     label: 'Delivery',    color: '#60a5fa' },
-  delivery_app:    { ic: 'phone',    label: 'App Delivery', color: '#f472b6' },
+  delivery_app:    { ic: 'phone',    label: 'Hifumi',      color: '#f472b6' },
   pedidos_ya:      { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa' },
   drive_through:   { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24' },
+  evento:          { ic: 'calendar', label: 'Evento',      color: '#34d399' },
 }
 
 const FILTROS = [
@@ -24,7 +25,7 @@ const FILTROS = [
   { key: 'mesa',           ic: 'armchair', label: 'Mesas'       },
   { key: 'para_llevar',    ic: 'bag',      label: 'Para Llevar' },
   { key: 'delivery_propio',ic: 'bike',     label: 'Delivery'    },
-  { key: 'delivery_app',   ic: 'phone',    label: 'App'         },
+  { key: 'delivery_app',   ic: 'phone',    label: 'Hifumi'      },
   { key: 'pedidos_ya',     ic: 'bike',     label: 'PedidosYa'   },
   { key: 'drive_through',  ic: 'car',      label: 'Drive Thru'  },
 ]
@@ -271,6 +272,30 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
 
   const handleCuentaClick = (c) => {
     onStartOrder({ tipo: c.tipo, mesa_ref: c.mesa_ref || null, mesa_id: null, cuentaId: c.id })
+  }
+
+  // ── Cobro de evento: elegir el evento y abrir una cuenta que solo cobra y factura ──
+  const [eventoModal, setEventoModal] = useState(null)   // null | { cargando, lista, error }
+  const abrirCobroEvento = async () => {
+    setEventoModal({ cargando: true, lista: [] })
+    try {
+      const hoy = new Date(Date.now() - 6 * 3600 * 1000)
+      const d = (n) => new Date(hoy.getTime() + n * 86400000).toISOString().split('T')[0]
+      const { data, error } = await db.from('eventos')
+        .select('id, nombre, fecha_evento, hora_inicio, cliente, estado, es_prueba')
+        .gte('fecha_evento', d(-15)).lte('fecha_evento', d(60))
+        .not('estado', 'in', '(cancelado,anulado)')
+        .order('fecha_evento', { ascending: true })
+      if (error) throw error
+      setEventoModal({ cargando: false, lista: (data || []).filter(e => !e.es_prueba) })
+    } catch (e) {
+      setEventoModal({ cargando: false, lista: [], error: 'No se pudieron cargar los eventos: ' + (e.message || e) })
+    }
+  }
+  const elegirEvento = (ev) => {
+    setEventoModal(null)
+    onStartOrder({ tipo: 'evento', mesa_ref: null, mesa_id: null, cuentaId: null,
+      evento_id: ev.id, evento_nombre: ev.nombre, cliente_nombre: (ev.cliente || ev.nombre || '').trim() || null })
   }
 
   const handleNueva = (tipo) => {
@@ -561,7 +586,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
             <div style={{ color: '#8b8997', fontSize: 14, marginTop: 8 }}>
               Sin órdenes de {FILTROS.find(f => f.key === filtro)?.label || filtro}
             </div>
-            {filtro !== 'todos' && filtro !== 'mesa' && filtro !== 'delivery_app' && (
+            {filtro !== 'todos' && filtro !== 'mesa' && (
               <button
                 className="poshome-nueva-btn"
                 style={{ '--color': TIPO_INFO[filtro]?.color || '#888' }}
@@ -609,9 +634,21 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           <button className="poshome-quick-btn" style={{ '--qt-color': '#a78bfa' }} onClick={() => handleNueva('pedidos_ya')}>
             <span className="poshome-quick-icon"><Icon name="bike" size={22} /></span><span className="poshome-quick-label">PedidosYa</span>
           </button>
+          {/* Hifumi no entra solo al sistema: se digita acá con su número de pedido
+              (27-sep-2026, Frank). Descarga inventario al cobrar, como todo. */}
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#f472b6' }} onClick={() => handleNueva('delivery_app')}>
+            <span className="poshome-quick-icon"><Icon name="phone" size={22} /></span><span className="poshome-quick-label">Hifumi</span>
+          </button>
           <button className="poshome-quick-btn" style={{ '--qt-color': '#fbbf24' }} onClick={() => handleNueva('drive_through')}>
             <span className="poshome-quick-icon"><Icon name="car" size={22} /></span><span className="poshome-quick-label">Drive Thru</span>
           </button>
+          {/* Cobro de evento: solo cobra y factura (crédito fiscal). No descarga inventario
+              ni va a cocina; la venta queda aparte del corte de la sucursal. */}
+          {STORES_COBRO_EVENTO.includes(storeCode) && (
+            <button className="poshome-quick-btn" style={{ '--qt-color': '#34d399' }} onClick={abrirCobroEvento}>
+              <span className="poshome-quick-icon"><Icon name="calendar" size={22} /></span><span className="poshome-quick-label">Cobro de evento</span>
+            </button>
+          )}
         </>)}
         {/* KDS: acceso rápido para cocina / gerente / admin / ejecutivo */}
         {KDS_ROLES.includes(user.rol) && onGoToKDS && (
@@ -664,6 +701,40 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </button>
         )}
       </div>
+
+      {/* ── MODAL COBRO DE EVENTO ── */}
+      {eventoModal && (
+        <div className="pos-modal-overlay" onClick={() => setEventoModal(null)}>
+          <div className="pos-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="pos-modal-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Icon name="calendar" size={18} color="#34d399" /> Cobro de evento
+            </div>
+            <div style={{ color: '#8b8997', fontSize: 12, margin: '4px 0 14px', lineHeight: 1.45 }}>
+              Solo para cobrar y facturar un evento. <b style={{ color: '#e8e6ef' }}>No descarga inventario de esta sucursal
+              ni va a cocina</b>: lo del evento sale del pedido del evento desde Casa Matriz. La venta queda aparte del corte.
+            </div>
+            {eventoModal.cargando && <div style={{ color: '#8b8997', fontSize: 13, padding: '10px 0' }}>Cargando eventos…</div>}
+            {eventoModal.error && <div style={{ color: '#fca5a5', fontSize: 13, padding: '10px 0' }}>{eventoModal.error}</div>}
+            {!eventoModal.cargando && !eventoModal.error && eventoModal.lista.length === 0 && (
+              <div style={{ color: '#8b8997', fontSize: 13, padding: '10px 0' }}>
+                No hay eventos entre hace 15 días y los próximos 60. Primero hay que crear el evento en el módulo de Eventos.
+              </div>
+            )}
+            <div style={{ maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {eventoModal.lista.map(ev => (
+                <button key={ev.id} onClick={() => elegirEvento(ev)}
+                  style={{ textAlign: 'left', background: '#141418', border: '1px solid #34d39955', borderRadius: 12, padding: '10px 12px', color: '#e8e6ef', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>{ev.nombre}</div>
+                  <div style={{ fontSize: 12, color: '#8b8997', marginTop: 2 }}>
+                    {ev.fecha_evento}{ev.hora_inicio ? ` · ${String(ev.hora_inicio).slice(0, 5)}` : ''}{ev.cliente ? ` · ${ev.cliente}` : ''} · {ev.estado}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button className="pos-cancelar-btn" onClick={() => setEventoModal(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL ID DE PEDIDOSYA (obligatorio donde la sucursal lo tiene encendido) ── */}
       {peyaModal && (() => {

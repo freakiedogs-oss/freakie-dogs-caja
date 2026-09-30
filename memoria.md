@@ -1,5 +1,16 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 29-Sep-2026 — Cobro de evento en el POS: cobra y factura sin descargar inventario (migración `cobro_evento_sin_descarga`)
+
+Los eventos se cobran en la caja de Plaza Cafetalón para emitir el crédito fiscal, pero lo que se usa sale del pedido del evento desde Casa Matriz. Hasta hoy el cobro descargaba el inventario de Cafetalón: el 29-sep, 130 Coca-Cola Combo del Evento Siemens ($519.20, link de pago) hicieron sobrar 130 salchichas, 131 panes Berna y 129 Coca PET en el conteo.
+
+- **POS (`POSHome.jsx`)**: botón «Cobro de evento» (solo sucursales de `STORES_COBRO_EVENTO`, hoy `M001`). Pide elegir el evento del módulo de Eventos (de hace 15 días a 60 días adelante) y abre una cuenta `tipo='evento'` con `evento_id`.
+- **`POSMain.jsx`**: la cuenta de evento no se comanda (el botón no aparece) ni entra al KDS; se cobra directo. No llama a `pos_deducir_inventario`. En el cobro no aparece «PedidosYa» como método. El DTE (factura o crédito fiscal) sale igual que siempre.
+- **DB**: `pos_cuentas.evento_id`; `pos_deducir_inventario` devuelve sin descargar si la cuenta es `tipo='evento'` o tiene `evento_id` (candado aunque el frontend falle); `barrer_cuentas_sin_descarga` las ignora; `pos_contexto_servicio` tiene filas `evento` (usa el menú de «para llevar» de cada tipo de sucursal).
+- **Corte**: `pos_corte` (y `_items`, `_cortesias`, `_desc_empleado`) excluyen los cobros de evento; `pos_corte` devuelve `eventos_total` y `eventos_n`, que el cierre muestra y el ticket imprime como «Eventos (aparte)». Así no inflan las ventas ni el cierre de la sucursal. Reporte: vista `v_cobros_eventos`.
+- **Corrección del 29-sep** (`fix_cobro_evento_siemens`): la cuenta del Evento Siemens pasó a `tipo='evento'` y se registró una devolución por lo que había descontado, recalculando el conteo de esa noche (el stock actual no cambió). El cierre del 29 ya estaba aprobado con esos $519.20 dentro del link de pago: no se tocó.
+- Otros reportes que leen `pos_cuentas` directo (dashboards) todavía cuentan los cobros de evento: filtrar por `tipo <> 'evento'` cuando haga falta.
+
 ## 28-Sep-2026 — El voucher n1co ahora se ve en el Dashboard de Cierres
 
 Desde el 19-sep las sucursales suben el total del datáfono y la foto del voucher, pero eso **solo se veía desde el formulario de edición**: quien revisaba los cierres no lo tenía a la vista. Jazmin lo pidió.
@@ -37,6 +48,25 @@ Plaza Mundo Soyapango (S001) compró cinco pagers más y en la caja solo salían
 - Ahora vive en `config.js`: `PAGERS_POR_SUCURSAL = { S001: 20 }` con `PAGERS_DEFAULT = 15` y el helper `pagersDe(storeCode)`. Para la próxima sucursal es una línea.
 - Las demás food courts (S006 Metrocentro, S002 Usulután) siguen con 15 — no se les tocó nada.
 - **Queda abierto:** el bloqueo de pagers ya en uso (`STORES_PAGER_LOOKUP`) sigue solo en S006, que era el piloto. En Soyapango los 20 se ofrecen todos aunque haya uno ocupado en cocina.
+## 27-Sep-2026 — Descarga al cobrar para pedidos web, Hifumi en el POS con doble check en el conteo, y transferencias de bebidas para encargados
+
+**Pedido de Frank** después de los cuadres del 25 y 26-sep de Cafetalón (un pedido de Hifumi de $62.93 se preparó sin digitarse; web cancelados o corregidos en caja que dejaban descargas y devoluciones cruzadas).
+
+**1. Pedidos web descargan al COBRAR (migración `20260927_descarga_web_al_cobrar.sql`).** Dos escenarios, no uno:
+- Tarjeta en línea (n1co): el cobro es en el checkout; la cuenta nace `cobrada` y descarga al entrar a cocina. Sin cambio.
+- Efectivo (y el que termina pagando en caja con link o transferencia): `confirmar_pago_delivery`, `torre_confirmar_pago` y `torre_mover_sucursal` ya no descargan una cuenta que no está cobrada (helper `_web_descargar_si_cobrada`). Descarga `POSMain` al cobrar, con la cuenta ya corregida. Antes, lo agregado en caja a un web nunca descargaba porque `pos_deducir_inventario` es idempotente por cuenta.
+- Datos de la semana previa: 257 de 428 web se descargaban en promedio 47 min antes del cobro; ningún web en efectivo se cobró después del conteo nocturno en 14 días.
+- `traslado_responder(_kds)`: si el origen contesta «ya lo preparé» y la cuenta nunca se descargó (efectivo), se descarga en el origen como `merma` (`_traslado_merma_origen`). Antes eso venía gratis de la descarga al entrar.
+- `barrer_cuentas_sin_descarga` salta por conteo usando `coalesce(cobrada_at, created_at)`: un efectivo que entró antes del conteo y se cobró después se descarga (cae en el día siguiente).
+- Probado en rollback: pedido web en efectivo → 0 movimientos al comandar, 26 al cobrar.
+
+**2. Hifumi en el POS (`20260927_hifumi_en_pos.sql`).** El tipo `delivery_app` ya existía (canal `delivery_propio` en `pos_contexto_servicio`) pero sin botón. Ahora: botón «Hifumi» en POSHome, etiqueta Hifumi en KDS/Órdenes/Historial, y en `PaymentModal` un único método `hifumi` = CxC Hifumi (como PeYa: no entra dinero a caja, sin DTE, propina 0) con **N° de pedido Hifumi obligatorio** → `delivery_plataforma='hifumi'`, `delivery_referencia`. `pos_cuenta_pagos.metodo` admite `hifumi`; `pos_corte` lo devuelve aparte (`hifumi`) y lo excluye de `otros`, así no se suma al CxC PeYa del cierre ni al `total_ventas_quanto` de `ventas_diarias`. Sí aparece en `v_pos_ventas_diario` como venta (antes Hifumi no existía en el POS). El ticket de corte imprime «CxC Hifumi».
+
+**3. Doble check antes de cerrar el conteo nocturno (`20260927_conteo_check_hifumi.sql`).** En el primer guardado de la noche (no en edición) `ConteoNocturno` abre un modal: cuántos Hifumi hay digitados hoy (con número y monto), las órdenes del día que siguen sin cobrar (descargan al cobrar: si ya salieron, cobrarlas antes de contar) y la pregunta «¿Quedó algún pedido de Hifumi sin ingresar?». La respuesta queda firmada en `conteo_check_hifumi` (una fila por respuesta, solo select/insert): `no_hubo` (día sin Hifumi, que es normal: no entran todos los días), `todos_ingresados` o `faltaba_ingresar`. Con 0 digitados la opción principal es «hoy no hubo pedidos de Hifumi», un solo toque. Si la consulta al POS falla, no bloquea el conteo.
+
+**4. Transferencias de bebidas para encargados (`20260927_transferencias_bebidas_encargados.sql`).** Rutas fijas en `transferencia_rutas`: M001 → S006 y S001 → S002, solo en ese sentido, solo bebidas de La Constancia (sin Nescafé). En «Bebidas La Constancia» (`RecepcionBeesView` + `TransferenciaBebidas.jsx`): el gerente del origen ve «🔁 Mandar bebidas a …» (cajas + sueltas, stock del origen, aviso de negativo); el destino ve la tarjeta «por recibir» y confirma contando (prellenado con lo mandado). RPCs `transferencia_bebidas_crear` (valida rol/sucursal/ruta/producto en servidor; kardex `traslado` negativo en el origen) y `transferencia_bebidas_recibir` (valida que sea personal del destino → `despacho_confirmar`). Sin motorista obligatorio; si nadie confirma, el cron de despachos colgados la da por recibida a las 6 h. Probado en rollback (27 salen de M001, 26 recibidas en S006 con diferencia marcada; Nescafé, cocina de S001 y la ruta inversa rechazados).
+
+**Orden de despliegue:** migraciones antes que el frontend (sin la 2, un cobro Hifumi fallaría el insert del pago).
 
 ## 25-Sep-2026 — Etiquetado Casa Matriz: la cinta trae 2 etiquetas por fila, no 1 (imprime de a pares)
 

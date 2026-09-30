@@ -411,11 +411,13 @@ export function buildCorte(c, cols = 48) {
   if (c.transferencia) t.row('Transferencia', money(c.transferencia));
   if (c.link_pago) t.row('Link de pago', money(c.link_pago));
   if (c.otros) t.row('Otros/Mixto', money(c.otros));
+  if (c.hifumi) t.row('CxC Hifumi', money(c.hifumi));
   t.bold(true).size(1, 2).row('TOTAL', money(c.total)).normal();
   t.row('Propinas', money(c.propinas));
   t.row('Cuentas', String(c.n_cuentas || 0));
   t.row('Cancelaciones', String(c.n_cancelaciones || 0));
   t.row('Ticket prom.', money(c.ticket_promedio));
+  if (c.eventos_total) t.row('Eventos (aparte)', money(c.eventos_total));
   t.hr();
   // Ítems vendidos del turno/día (cantidad × nombre + total $), ordenados por cantidad.
   // Vienen pre-cargados en c.itemsVendidos (RPC pos_corte_items) para no meter awaits

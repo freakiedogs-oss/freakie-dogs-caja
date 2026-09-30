@@ -542,7 +542,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
       tipo, storeCode, caja, storeName, cajero: user.nombre || '', fecha: diaISO, abierto_at: turno?.abierto_at,
       fondo: tipo === 'Z' ? diaInfo.fondoBase : fondoRecibido,
       efectivo: n(c?.efectivo), tarjeta: n(c?.tarjeta), transferencia: n(c?.transferencia), link_pago: n(c?.link_pago),
-      otros: n(c?.otros), total: n(c?.total), propinas: n(c?.propinas), n_cuentas: c?.n_cuentas || 0,
+      otros: n(c?.otros), hifumi: n(c?.hifumi), eventos_total: n(c?.eventos_total), eventos_n: c?.eventos_n || 0, total: n(c?.total), propinas: n(c?.propinas), n_cuentas: c?.n_cuentas || 0,
       n_cancelaciones: c?.n_cancelaciones || 0, ticket_promedio: n(c?.ticket_promedio),
       efectivoEsperado: tipo === 'Z' ? espDia : espTurno,
       conteo: {}, efectivoContado: efReal, difEfectivo: tipo === 'Z' ? difDia : difTurno,
@@ -790,6 +790,11 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
           <Mi label="Tarjeta" value={n(A.corte?.tarjeta).toFixed(2)} readOnly hint="del sistema" />
           <Mi label="Transferencia" value={n(A.corte?.transferencia).toFixed(2)} readOnly hint="del sistema" />
           <Mi label="Link de pago" value={n(A.corte?.link_pago).toFixed(2)} readOnly hint="del sistema" />
+          {n(A.corte?.eventos_total) > 0 && (
+            <div style={{ fontSize: 12, color: '#34d399', margin: '2px 0 4px' }}>
+              Cobros de eventos (aparte, no suman a la caja): {fmt(A.corte?.eventos_total)} · {A.corte?.eventos_n || 0} cobro(s)
+            </div>
+          )}
           <div style={{ ...row, marginTop: 4 }}>
             <span style={{ fontSize: 13, color: '#9a9088' }}>Total ventas {esZ ? 'del día' : 'del turno'}</span>
             <span style={{ fontWeight: 800, fontSize: 16, color: '#FFD900' }}>{fmt(totalVentas)}</span>

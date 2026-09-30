@@ -22,6 +22,7 @@ const METODO_DISPLAY = {
   transferencia: { ic: 'bank',    label: 'Transferencia' },
   mixto:         { ic: 'shuffle', label: 'Mixto' },
   pedidos_ya:    { ic: 'bike',    label: 'CxC PeYa' },
+  hifumi:        { ic: 'phone',   label: 'CxC Hifumi' },
 }
 
 const BANCOS_SV = ['BAC', 'Agrícola', 'Davivienda', 'Cuscatlán', 'Promerica', 'Industrial', 'Hipotecario', 'Otro']
@@ -36,7 +37,13 @@ const validEmail = s => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(
 
 export default function PaymentModal({ items, total, storeCode, tipo, onConfirm, onComplete, onPrintFactura, onClose, saving, peyaRef = null, peyaIdObligatorio = false }) {
   const toast = useToast()
-  const [metodo, setMetodo]     = useState('efectivo')
+  // Hifumi (tipo 'delivery_app'): el cliente le paga a Hifumi y Hifumi liquida por
+  // depósito. Es cuenta por cobrar como PeYa: no entra dinero a la caja, sin DTE.
+  const esHifumi = tipo === 'delivery_app'
+  const [metodo, setMetodo]     = useState(esHifumi ? 'hifumi' : 'efectivo')
+  const [hifumiId, setHifumiId] = useState(esHifumi ? (peyaRef || '') : '')
+  const hifumiIdNorm = (hifumiId || '').trim().toUpperCase().replace(/^#/, '')
+  const faltaHifumiId = metodo === 'hifumi' && !hifumiIdNorm
   // ID del pedido de PedidosYa: viene lleno si la orden nació como PeYa; si la
   // abrieron como "para llevar" y la cobran con CxC PeYa, se pide acá.
   const [peyaId, setPeyaId] = useState(peyaRef || '')
@@ -51,7 +58,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
   const esFoodCourt = STORES_FOOD_COURT.includes(storeCode)
   const esMesa = tipo === 'mesa' || tipo === 'local'
   const [propina, setPropina]   = useState(() => (
-    sinPropinaDefault ? '0' : (esMesa && total > 0 ? (total * 0.10).toFixed(2) : '0')
+    (sinPropinaDefault || esHifumi) ? '0' : (esMesa && total > 0 ? (total * 0.10).toFixed(2) : '0')
   ))
   const [pager, setPager]       = useState(null)
   const [showPagerModal, setShowPagerModal] = useState(false)
@@ -88,7 +95,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
     return () => { cancelado = true }
   }, [showPagerModal, usaLookupPagers, storeCode])
   const [printed, setPrinted]   = useState(false)
-  const [tipoDte, setTipoDte]   = useState('factura')
+  const [tipoDte, setTipoDte]   = useState(esHifumi ? 'ticket' : 'factura')
   const [ref, setRef]           = useState('')
   const [banco, setBanco]       = useState('')
   const [confirmed, setConfirmed] = useState(false)
@@ -113,6 +120,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
 
   const canConfirm = () => {
     if (metodo === 'pedidos_ya' && peyaIdObligatorio && !peyaIdNorm) return false
+    if (faltaHifumiId) return false
     if (metodo === 'efectivo' && efectivoNum < totalConProp) return false
     if (metodo === 'mixto' && Math.abs(totalMixto - totalConProp) >= 0.01) return false
     // CCF y SE requieren cliente seleccionado
@@ -129,6 +137,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
     // Construir referencia según método
     const refFinal = metodo === 'transferencia'
       ? [banco, ref].filter(Boolean).join(' — ') || null
+      : metodo === 'hifumi' ? ('Hifumi #' + hifumiIdNorm)
       : ref || null
 
     const payData = {
@@ -142,6 +151,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
       referencia: refFinal,
       // ID de PedidosYa (solo cuando se cobra como CxC PeYa)
       peyaRef: metodo === 'pedidos_ya' ? peyaIdNorm : null,
+      hifumiRef: metodo === 'hifumi' ? hifumiIdNorm : null,
       // Datos del cliente para DTE
       cliente: cliente ? {
         id: cliente.id,
@@ -309,13 +319,13 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
 
         {/* Método de pago */}
         <div className="pos-method-tabs" style={{ flexWrap: 'wrap' }}>
-          {['efectivo','tarjeta','link_pago','transferencia','mixto','pedidos_ya'].map(m => (
+          {(esHifumi ? ['hifumi'] : tipo === 'evento' ? ['link_pago','transferencia','tarjeta','efectivo','mixto'] : ['efectivo','tarjeta','link_pago','transferencia','mixto','pedidos_ya']).map(m => (
             <button
               key={m}
               className={`pos-method-tab${metodo === m ? ' active' : ''}`}
               onClick={() => {
                 setMetodo(m)
-                if (m === 'pedidos_ya') { setTipoDte('ticket'); setPropina('0'); setCliente(null) }
+                if (m === 'pedidos_ya' || m === 'hifumi') { setTipoDte('ticket'); setPropina('0'); setCliente(null) }
                 else if (tipoDte === 'ticket') { setTipoDte('factura') }
               }}
               style={{ fontSize: 12, padding: '6px 10px' }}
@@ -492,6 +502,33 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
           </div>
         )}
 
+        {/* CxC Hifumi: número de pedido obligatorio (con eso se cuadra la liquidación y el conteo) */}
+        {metodo === 'hifumi' && (
+          <div className="pos-payment-field">
+            <div style={{ background: '#20141a', border: '1px solid #9d3b6b', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#f5b8d4', marginBottom: 10 }}>
+              <b>Cuenta por Cobrar &mdash; Hifumi.</b> Se registra la venta por ${totalConProp.toFixed(2)}, pero NO entra dinero a la caja: Hifumi liquida por depósito. Sin DTE (solo ticket interno). Al cobrarla se descarga el inventario.
+            </div>
+            <div style={{ padding: 12, background: '#141418', border: `1px solid ${faltaHifumiId ? '#f87171' : '#f472b666'}`, borderRadius: 12 }}>
+              <label htmlFor="hifumi-id-cobro" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f9a8d4', fontWeight: 700, marginBottom: 8 }}>
+                N° de pedido en Hifumi
+                <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, color: '#0a0a0a', background: faltaHifumiId ? '#f87171' : '#f472b6', borderRadius: 999, padding: '2px 8px' }}>OBLIGATORIO</span>
+              </label>
+              <input
+                id="hifumi-id-cobro"
+                className="pos-payment-input"
+                type="text"
+                autoCapitalize="characters"
+                autoComplete="off"
+                placeholder="Ej: 10457"
+                value={hifumiId}
+                maxLength={24}
+                onChange={e => setHifumiId(e.target.value)}
+                style={{ fontSize: 20, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', borderColor: faltaHifumiId ? '#f87171' : '#f472b6' }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* ID del pedido de PedidosYa: obligatorio donde la sucursal lo tiene encendido */}
         {metodo === 'pedidos_ya' && (peyaIdObligatorio || peyaId) && (
           <div className="pos-payment-field">
@@ -570,8 +607,8 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
           />
         </div>
 
-        {/* Tipo DTE — oculto para CxC PeYa (sin DTE) */}
-        {metodo !== 'pedidos_ya' && (
+        {/* Tipo DTE — oculto para CxC PeYa y CxC Hifumi (sin DTE) */}
+        {metodo !== 'pedidos_ya' && metodo !== 'hifumi' && (
         <div style={{ marginBottom: 12 }}>
           <label className="pos-payment-label" style={{ display: 'block', marginBottom: 6 }}>
             Documento fiscal

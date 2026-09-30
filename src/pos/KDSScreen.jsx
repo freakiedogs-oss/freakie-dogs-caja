@@ -21,7 +21,8 @@ const CANAL_INFO = {
   delivery_propio: { ic: 'bike',     label: 'Delivery',    color: '#60a5fa' },
   pedidos_ya:      { ic: 'bike',     label: 'PedidosYa',   color: '#a78bfa' },
   drive_through:   { ic: 'car',      label: 'Drive Thru',  color: '#fbbf24' },
-  delivery_app:    { ic: 'phone',    label: 'App Delivery', color: '#f472b6' },
+  delivery_app:    { ic: 'phone',    label: 'Hifumi', color: '#f472b6' },
+  evento:          { ic: 'calendar', label: 'Evento', color: '#34d399' },
 }
 
 // Semáforo de atención (Frank): nivel de la comanda = el MÁS ALTO de sus ítems.
