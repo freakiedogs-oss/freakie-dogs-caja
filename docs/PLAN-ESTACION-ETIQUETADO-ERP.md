@@ -295,10 +295,37 @@ Escaneo del QR en despacho y recepción (unidad → sucursal, FEFO por `vence`),
 
 ---
 
-## 7. Decisiones que necesitan a Jose / Cesar antes de empezar
-1. ¿Se aprueba que el consumo de materias primas sea **proporcional al peso real** y no a las unidades? (1.3)
-2. ¿Confirmamos que una bolsa con impresión fallida **queda registrada** y se reimprime, en vez de descartarse? (3.1)
-3. ¿Qué bolsa lleva cada producto que hoy no la tiene en receta? (fase 0, ítem 1)
-4. ¿Unificamos Cebolla Morada en la receta de bolsa 1 lb y pasamos Mermelada a bolsas? (fase 0, ítem 3)
-5. ¿Autorizan el conteo físico de arranque en CM para los subproductos? (fase 0, ítem 6)
-6. Pistola: ¿USB o Bluetooth en modo teclado? (cualquiera sirve; define si va en la tablet o en una PC de recepción)
+## 7. Decisiones tomadas (Jose, 01-oct-2026)
+1. **Sí**: el consumo de materias primas es proporcional al **peso real** (1.3).
+2. **Sí**: una bolsa con impresión fallida **queda registrada** y se reimprime (3.1).
+3. **Bolsas que faltan en recetas: se ignoran por ahora** (costo mínimo). `es_empaque` igual se crea y se marca en las recetas que ya traen bolsa (Chili, Escabeche, Mermelada, Salchicha, Cebolla Morada 1 lb), para que esas se descuenten por unidades. Agregar las bolsas faltantes queda como tarea de datos para después, sin tocar código.
+4. **Sí**: Cebolla Morada se unifica en la receta de bolsa 1 lb; Mermelada de Tocino pasa a rendir bolsas.
+5. **Conteo físico de arranque: pospuesto** hasta que todos los flujos estén probados y funcionales. Recién ahí se hace el inventario inicial de CM (una sola vez, no por gusto). Mientras tanto los negativos de CM siguen siendo "deuda" y los reportes de stock de subproductos no son confiables — está asumido.
+6. **Pistola de códigos: diferida.** Todo lo de fase 2 (1.5 pick, `catalogo_barcodes`, `produccion_pick_*`, pantalla de insumos) queda **planteado y diseñado** pero no se construye. La fase 1 tiene que quedar **funcional sin pistola**: solo backflush. Se deja `modo_consumo` en el esquema (default `backflush`) para no migrar después. Jose avisa cuando haya inventario inicial y pistola comprada.
+
+### 7.1 Qué cambia en las fases con estas decisiones
+- **Fase 0** queda en: yield test por producto (ítem 2), unificar Cebolla Morada y pasar Mermelada a bolsas (ítem 3), factores de Truffa/Ranch (ítem 4), días de vida útil provisionales (ítem 5). Se quitan: bolsas (ítem 1), conteo (ítem 6).
+- **Fase 1** se construye completa (M1, M2, M3 sin los RPC `produccion_pick_*`, estación, pestaña Etiquetado, vigilante).
+- **Fase 2** se congela. **Fase 3** igual.
+- **Inventario inicial de CM**: hito nuevo entre fase 1 y fase 2, cuando Jose lo indique.
+
+## 8. Productos de la estación vs recetas de producción (verificado en la base el 01-oct-2026)
+
+Columna "Estación" = lo que hoy está fijo en `src/etiquetado/productos.js`. Columna "ERP" = `recetas` + `catalogo_productos` vivos.
+
+| # | Estación (productos.js) | Peso obj. · banda · días | Receta ERP (tipo) | Rinde | Producto de catálogo (SKU · unidad) | Consume por tanda | Veredicto |
+|---|---|---|---|---|---|---|---|
+| 1 | Cheddar Porcionado · bolsa 2 lb | 907 g · ±50 · 30 d | Cheddar Porcionado (Bolsa 2lb) (porcionado) | **3 bolsa** | Cheddar Porcionado · SP-011 · bolsa (32 oz) | 1 Cheddar Lata | ✅ Cuadra. Sin bolsa en receta (se ignora por decisión 3). |
+| 2 | Chili con carne · bolsa 5 lb | 2,268 g · ±50 · 90 d | Chili (sub_receta) | **4 bolsa** | Chili bolsa · CC006 · bolsa | 25 líneas: 26.67 un Carne Smash (sub-receta), 1 lata tomate, 2 latas chipotle, 2+2 latas frijol, verduras, especias, 0.5 L agua, **4 bolsas vacío 12x14** | ⚠️ **Choque de tamaño**: ERP asume 4 bolsas/tanda (¿de 2 lb?), estación dice 5 lb. Cesar estimó 207 oz = 5.9 kg por tanda → serían 2.6 bolsas de 5 lb o 6.5 de 2 lb. **Pesar una tanda completa** y fijar `rendimiento` + `peso_nominal_g`. |
+| 3 | Cebolla Morada encurtida · bolsa 1 lb | 454 g · ±30 · 30 d | **Dos recetas**: (a) Cebolla Morada (sub_receta) 1 tanda → SP-004 (unidad "tanda"); (b) Cebolla Morada encurtida al vacío (bolsa 1 lb) → 30 bolsa | (a) 1 tanda · (b) **30 bolsa** | (a) Cebolla Morada · SP-004 · tanda · (b) Cebolla Morada bolsa 1 lb (procesada) · MP-253 · bolsa | (a) 25 lb cebolla + 1 bolsa hielo + 0.2 L vinagre · (b) **66 lb** cebolla + 2 bolsas hielo + 0.005 L vinagre + 30 bolsas vacío 8x12 | ⚠️ **Unificar en (b)** (decisión 4). Pendientes de datos en (b): 66 lb → 30 bolsas de 1 lb es **54 % de pérdida** (¿real?) y **0.005 L de vinagre** (¿será 0.5 L?). Reapuntar consumidoras de (a) y desactivarla. |
+| 4 | Sal de hamburguesa · bolsa 2 lb | 907 g · ±40 · 180 d | Sal de Hamburguesa (sub_receta) | **1.1 bolsa** | Sal de hamburguesa bolsa 2 lbs · SA009 · bolsa | 900 g sal fina + 100 g glutamato = 1,000 g | ✅ Cuadra (1,000 g ÷ 907 g = 1.10). Sin bolsa en receta. |
+| 5 | Escabeche · bolsa | — · — · 30 d | Escabeche (sub_receta) | **5 bolsa** | Escabeche bolsa · VV007 · bolsa | 5 repollos, 2 zanahorias, 30 ml mostaza, 16 g Gran Onion, 8 g sazonador, 0.5 L vinagre, 5 bolsas vacío 8x12 | ❓ Peso por bolsa desconocido → yield test. Bolsa 8x12 sugiere ~1–2 lb. |
+| 6 | Salsa Mil Islas · bolsa | — · — · 15 d | Salsa Mil Islas (sub_receta, V4) | **24.7 bolsa** | Mil islas bolsa · SA017 · bolsa | 16 líneas (10,080 ml mayo, 5.04 kg mayo reducida, 2.75 kg ketchup, 960 ml mostaza, …) ≈ 22 kg | ✅ Consistente con bolsa de 2 lb: 22 kg ÷ 24.7 ≈ 900 g. Falta cargar `peso_nominal_g ≈ 907`. Sin bolsa en receta. |
+| 7 | Salsa Chipotle · bolsa | — · — · 15 d | Salsa Chipotle (sub_receta) | **14.9 bolsa** | Chipotle bolsa · SA016 · bolsa | 4 bolsas mayo reducida + 4 latas chipotle 380 g | ✅ Plausible bolsa 2 lb (si la bolsa de mayo es ~3 kg: 13.5 kg ÷ 14.9 ≈ 907 g). Confirmar con una pesada. Sin bolsa en receta. |
+| 8 | Salsa Truffa · bolsa | — · — · 15 d | Salsa Truffa (sub_receta) | **0.2125 bolsa** | Truffa bolsa · SA018 · bolsa | 1 **bote** mayo (stock en oz, **sin factor → descuenta 1 oz**), 3 **cucharadas** Dijon (stock oz, **sin factor → 3 oz**), 62.5 ml aceite de trufa, ralladura y jugo de limón | ❌ **Corregir**: rendimiento 0.2125 bolsa (= 6.8 oz) no es un número de producción; faltan `factor_a_stock` en mayo y Dijon. Definir con cocina cuánto rinde una preparación real y en qué envase. |
+| 9 | Mermelada de Tocino · tanda | — · — · 21 d | Mermelada de Tocino (sub_receta) | **4 tanda** | Mermelada de Tocino · SP-015 · **tanda**; equivalencia → "Mermelada bolsa" ×2.18 | 3.5 kg tocino, 6.33 tazas maple, 1,300 g azúcar, 25 cebollas, 57 g mantequilla, vinagre de manzana, soya, **12 bolsas vacío 8x12** | ⚠️ **Pasar a bolsas** (decisión 4). Contradicción interna: la receta compra 12 bolsas por tanda pero la equivalencia dice 4 × 2.18 = **8.7 bolsas**. Pesar y fijar cuántas bolsas y de qué peso. |
+| 10 | Ranch Porcionado · bote | — · — · 15 d | Ranch Porcionado (porcionado) | **1 bote** | Ranch Porcionado · SP-016 · bote | 1 "unidad" de Ranch 1 Galón (stock en **oz**, **sin factor → descuenta 1 oz**) | ❌ **Corregir**: un galón son 128 oz; falta definir cuántos botes salen de un galón (rendimiento) y el factor. No se pesa → `requiere_peso = false`. |
+| 11 | Salchicha reempacada · paquete 25 un | — · — · 20 d | Salchicha reempacada (paquete 25 un) (sub_receta) | **1 paquete** | Salchicha Parowsi paquete 25 unidades · CC002 · paquete (**tipo materia_prima**) | 25 salchichas (unidad) + 1 bolsa vacío 10x12 | ✅ Cuadra. Cosmético: el producto de salida debería ser `sub_producto`. No se pesa → `requiere_peso = false`. |
+| 12 | Cebolla Blanca · bolsa | — · — · 7 d | Cebolla Blanca (sub_receta) | **10 bolsa** | Cebolla Blanca · SP-003 · bolsa; equivalencia → "Cebolla bolsa" ×1 | 20 cebollas + 13.6 % merma_pct (= 22.7 cebollas) | ✅ Cuadra (memoria: 10 bolsas × 2 lb). Falta `peso_nominal_g ≈ 907`. Sin bolsa en receta. Revisar que el alta caiga en el producto que cuenta la sucursal (equivalencia). |
+
+Resumen: **5 cuadran** (Cheddar, Sal, Mil Islas, Chipotle, Cebolla Blanca, Salchicha → 6 con esta), **3 necesitan pesar** (Chili, Escabeche, Mermelada), **2 están mal** (Truffa, Ranch) y **1 se unifica** (Cebolla Morada). De los 12, solo 4 tienen peso objetivo cargado; el yield test de fase 0 llena los otros 8.
