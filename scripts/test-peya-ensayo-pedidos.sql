@@ -1,0 +1,52 @@
+-- Banco de ensayo de pedidos PedidosYa: 50 pedidos sintéticos, flujo completo,
+-- SIN dejar rastro. Migración: `20261001_peya_ensayo_banco_pedidos.sql`.
+--
+-- Cómo correrlo (uno por lote, 10 pedidos cada uno):
+--
+--     do $$ begin raise exception '%', public.peya_ensayo_lote(1); end $$;
+--     ...
+--     do $$ begin raise exception '%', public.peya_ensayo_lote(5); end $$;
+--
+-- Sí, termina en `raise exception` A PROPÓSITO. El informe viaja en el mensaje
+-- del error y la transacción entera se revierte: no queda cuenta, ni comanda,
+-- ni orden, ni número consumido, ni evento realtime para el KDS. Se puede
+-- correr con la caja abierta y cocina trabajando (se hizo así el 1-oct con
+-- Cafetalón en servicio: 0 filas residuales, verificado).
+--
+-- Si la sucursal no tiene caja abierta, el lote abre un turno de ensayo
+-- (también se revierte). `turno_ensayo: true` en el informe lo dice.
+--
+-- ┌─ QUÉ CUBREN LOS 50 ────────────────────────────────────────────────────┐
+-- │ Lote 1 — básicos: pedido simple, salsas anidadas con nombres de PeYa,  │
+-- │   cantidad ×3, extras con precio, «Jalapeños» con ñ, preset «Con todo  │
+-- │   (…)», 3 productos con nota por producto, test:true, webhook          │
+-- │   reintentado, producto desconocido, modificador desconocido.          │
+-- │ Lote 2 — modificadores: presets de 7 y de 0 opciones, segunda unidad   │
+-- │   («Salsas Papas 2»), 3 grupos con precio, multi-select plano de 5,    │
+-- │   «Sin Complementos», anidado a 2 niveles, ×2 con extra, remoteCode    │
+-- │   con nombre cambiado, NUESTROS nombres sin remoteCode.                │
+-- │ Lote 3 — bebidas y combos: Coca 300ml, «Agua», agrandado + sabor,      │
+-- │   Cambio de bebida, nombres de PeYa vía producto_map, nota larga con   │
+-- │   emojis/comillas/salto, 5 bebidas, cafés, combo sin grupos propios.   │
+-- │ Lote 4 — dinero: descuento PLATFORM, VENDOR por ítem, voucher,         │
+-- │   totalNet 0, envío en grandTotal, quantity string + 3 decimales, sin  │
+-- │   paidPrice, sin unitPrice, 8 productos, pickup a medias.              │
+-- │ Lote 5 — ciclo: cocina→listo→cobro→reintento, cancelar limpio,        │
+-- │   cancelar con 1 hecha, cancelar cobrada, test:true + cobro, vendor de │
+-- │   homologación, listo parcial, sin customer/shortCode, sin sucursal,   │
+-- │   tildes y mayúsculas.                                                  │
+-- └─────────────────────────────────────────────────────────────────────────┘
+--
+-- Cada pedido valida: cuenta (tipo, estado, total = totalNet, referencia,
+-- cliente, notas), líneas (cantidad, precio_unitario = unitPrice, menu_item_id
+-- = remoteCode, modificadores con opcion_id, precio_modificadores), cola de
+-- cocina (etiqueta, estación, nota por producto, nota del cliente, total),
+-- numeración consecutiva de orden y comanda dentro de la sucursal, y el ciclo
+-- de vida que pida el escenario (pagos, estados, idempotencia).
+--
+-- Línea base 1-oct-2026 ANTES de los arreglos: 3/50. Después: 50/50.
+-- Los tres bugs que destapó están en memoria.md (1-oct, «50 pedidos»).
+--
+-- OJO con `test:true`: con vendor SIMULADO-* `peya_debe_cocinar` dice que SÍ
+-- a propósito (el simulador existe para ver comandas). La regla de producción
+-- (test → no baja a cocina) se prueba con el vendor real M001.

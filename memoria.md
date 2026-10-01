@@ -44,6 +44,22 @@ Cancelar algo que ya estaba en cocina dejaba el inventario según lo que dijera 
 - **Mismo día, ajustes (Frank):** en Cafetalón decide **Jazmín Fuentes** (`cancelacion_avisos` primero; sigue siendo admin) y se desactivó el gerente temporal del 15-sep. **El grupo ya no recibe push** (migración `cancelaciones_sin_push_grupo`): a los 15 min el aviso «⏰ Sin decidir» le vuelve a llegar a ella, y Frank/César/José lo ven solo en el ERP (píldora sin sonido, solo las pasadas de 15 min). `cancelacion_config.push_grupo=true` devuelve el salto al grupo en una sucursal sin encargado.
 - (Resuelto el mismo día) M001 no tenía gerente real: el único usuario gerente era «Autorizacion Temporal Conteo 15-sep (revocar manana)», ya desactivado.
 
+## 1-Oct-2026 — 50 pedidos de ensayo: 3 bugs de producción antes de la homologación (migraciones `peya_fix_sin_mapear_precio_linea_toppings`, `peya_ensayo_banco_pedidos`)
+
+Jose pidió «por lo menos 50 pedidos de diferentes maneras» antes de la reunión con PedidosYa. Se armó un banco (`peya_ensayo_lote(n)`, 5 lotes × 10) que fabrica pedidos con la **forma real de Delivery Hero** (remoteCode = nuestro id, toppings anidados grupo→opción, `unitPrice`/`paidPrice`, `price.totalNet`), los baja por `peya_crear_cuenta`, los recorre (cocina → listo → cobro / cancelación) y valida cada tabla. Termina en `raise exception` adrede: el informe viaja en el error y **todo se revierte** — se corrió con Cafetalón en servicio y quedaron 0 filas. Runner: `scripts/test-peya-ensayo-pedidos.sql`.
+
+**Línea base: 3/50. Después: 50/50.** Lo que destapó, en orden de daño:
+
+1. **Producto desconocido tiraba el pedido entero.** `pos_cuenta_items.menu_item_id` es NOT NULL + FK, y el centinela `00000000-…` no existe → FK violation → pedido aceptado en PeYa y sin comanda. Ahora hay un ítem comodín real en el menú de PeYa (`slug = 'peya-sin-mapear'`, $0, no disponible, no visible; el catálogo lo filtra por precio>0, verificado que no viaja). La línea sale como «⚠️ nombre» y la cuenta se crea igual.
+2. **`paidPrice` es el total de la línea, no el unitario.** Confirmado con el payload real de Cristian: `unitPrice 350 × quantity 3 = paidPrice 1050`. El intake lo guardaba como `precio_unitario` y lo volvía a multiplicar: 3 Cocas salían «3 × $5.25» y la suma de líneas no cuadraba nunca con `totalNet`. El total de la cuenta no se afectaba (usa `totalNet`), pero el ticket y el reporte por línea sí. Ahora `precio_unitario = unitPrice`; si sólo viene `paidPrice`, se deshace la cuenta (`paidPrice / cantidad − extras`). Si `paidPrice ≠ (unit + extras) × cant`, queda contado en `lineas_precio_raro` y en `notas_internas` — es el aviso de que mi lectura del spec está mal, si alguna vez lo está.
+3. **El traductor de modificadores sólo aceptaba nombres del mapa de PeYa.** Con el catálogo nuevo, PeYa nos devuelve **nuestros** nombres («Coca-Cola 300ml», «Cebolla», «Sin Extra») y el `remoteCode` de la opción — y nada de eso estaba en `peya_modificador_map` → «⚠️ sin mapear» en 7 de los 50. Orden nuevo: `remoteCode` → preset (con o sin paréntesis) → mapa de PeYa → nuestro nombre (prefiriendo los grupos del producto) → sin mapear.
+
+Menores, de paso: `notas_cocina` quedaba `''` en vez de `null` sin comentario; el preset sólo se reconocía con paréntesis (ahora también pelado).
+
+**Lo que NO es bug pero conviene saber:** con vendor `SIMULADO-*`, `test:true` baja a cocina igual (así está diseñado el simulador); la regla de producción se prueba con M001. `totalNet "0.00"` cae a la suma de líneas (`peya_total_venta`) — si PeYa manda una promo 100% patrocinada, la venta queda al precio de lista; revisar contra la primera liquidación.
+
+**Totales en verde:** 50 pedidos + 26 (bloques 1-2) + 25 (catálogo) + 4 (anidados) = **105**.
+
 ## 1-Oct-2026 — El viaje de ida y vuelta: el catálogo mandaba ids que el intake no podía leer
 
 Horas antes de la homologación, ensayando un pedido completo con la forma anidada real, `peya_crear_cuenta` reventó con **error de FK**. No era el ensayo: era un bug que habría roto todo pedido real.
