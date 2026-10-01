@@ -1854,7 +1854,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
               <div key={it.id} style={{background:'#1c1c22',border:'1px solid #2a2a32',borderRadius:10,padding:'9px 11px',marginBottom:6,fontSize:13.5}}>
                 <div style={{fontWeight:700}}>{it.titulo}</div>
                 <div style={{color:'#888',fontSize:12}}>
-                  {it.referencia?it.referencia+' · ':''}{hhmm(it.created_at)} · canceló {it.cancelado_por_nombre||'—'}{it.escalado?' · ya se avisó a Frank, César y José':''}
+                  {it.referencia?it.referencia+' · ':''}{hhmm(it.created_at)} · canceló {it.cancelado_por_nombre||'—'}{it.escalado?' · lleva más de 15 min sin decidir':''}
                 </div>
               </div>
             ))}

@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 1-Oct-2026 — Hamburguesa en lechuga (migración `pan_lechuga`)
+
+Frank: poder cambiar el pan por lechuga en cualquier hamburguesa, en cualquier canal, sin tocar nada más; que cocina lo vea y que no descargue pan.
+
+- **Grupo nuevo «Pan»** (opcional, una opción, `tipo='unico'`, orden 1) con **«EN LECHUGA (sin pan)»**, sin costo. Insumos de la opción: **−1 Pan de Hamburguesa Brioche 2.8oz** y **+0.11 lb Lechuga libra escarolada** (≈50 g; el topping de La Clásica es 0.056 lb).
+- **Dónde aparece (16 ítems):** en cada componente «Hamburguesa» de los combos que traen pan de hamburguesa en su receta (local, para llevar, drive, delivery, PedidosYa; en PeYa también el componente «Freakie Burger»), así que en un Duo sale **una vez por hamburguesa** y se elige por separado; y en las hamburguesas sueltas sin componentes (Burger La Clasica, cumpleaños, Hamburguesa sola). También sale en el menú web (`menu_publico_delivery`).
+- **Descarga:** el pan lo pone la receta del combo; el −1 de la opción se resta en la misma cuenta (`pos_deducir_inventario` suma por cuenta y descarta ≤ 0). Probado en rollback con un Burger Duo real: una hamburguesa en lechuga → pan 2→1, lechuga +0.11 lb, carne igual.
+- **Cocina:** el KDS lo muestra en la fila de esa hamburguesa como «Pan: EN LECHUGA (sin pan)». Sin cambios de código.
+- No se tocó ningún grupo, receta, precio ni la facturación. Para quitarlo: `update pos_modificadores_grupo set activo=false where nombre='Pan'`.
+
 ## 1-Oct-2026 — Cancelaciones con validación del gerente + avisos push del ERP (migración `cancelaciones_validacion`, edge function `cancelaciones-push`)
 
 Cancelar algo que ya estaba en cocina dejaba el inventario según lo que dijera caja o cocina (gana cocina), y en el cuadre aparecían mermas infladas o producto que «sobraba». Frank decidió que **el gerente decida cada caso** y que el conteo no se guarde con cancelaciones sin decidir.
@@ -9,7 +19,8 @@ Cancelar algo que ya estaba en cocina dejaba el inventario según lo que dijera 
 - **Avisos push del ERP** (Web Push, sin servicios externos): claves VAPID generadas en la edge function y guardadas en `app_secretos` (la privada no sale del servidor); la base llama a la función con `net.http_post` y el header `x-cancel-secret`. `push_suscripciones` por usuario/dispositivo; 404/410 borra la suscripción. Frontend: `src/lib/avisosPush.js` + `push`/`notificationclick` en `public/sw.js` (v12). La notificación abre `/?ir=cancelaciones`; si el ERP ya está abierto, el SW le manda `{tipo:'abrir'}`. **iPhone solo con el ERP instalado en la pantalla de inicio.**
 - **Pantallas:** «↩️ Cancelaciones» (`CancelacionesView.jsx`: activar/probar avisos, pendientes, decididas 2 días, registrar a mano); píldora global `CancelacionesAlerta.jsx` (30 s, suena con una nueva, roja a los 15 min); el **conteo nocturno** revisa `cancelaciones_pendientes_sucursal` en el primer guardado y lo bloquea si hay pendientes — el gerente decide en un overlay sin salir del conteo (el conteo de comida no tiene borrador). **KDS:** lo anulado se confirma una vez por línea (no por componente del combo), con 3 opciones apiladas (no lo hicimos / ya estaba hecho / lo usamos en otra orden) y lo que dijo caja.
 - **Modos por sucursal** (`cancelacion_config.modo`): `off` (nada), `sombra` (se guarda la decisión, el inventario sigue como lo dejaron caja/cocina — una semana en Cafetalón para comparar con el cuadre), `activo` (etapa 2: **todavía no implementada**, la decisión no mueve inventario aún). Al desplegar: `permisos_rol` para `cancelaciones` y M001 a `sombra` (SQL comentado al final de la migración).
-- Pendiente de seguridad: M001 no tiene gerente real; el único usuario gerente es «Autorizacion Temporal Conteo 15-sep (revocar manana)» y debería desactivarse.
+- **Mismo día, ajustes (Frank):** en Cafetalón decide **Jazmín Fuentes** (`cancelacion_avisos` primero; sigue siendo admin) y se desactivó el gerente temporal del 15-sep. **El grupo ya no recibe push** (migración `cancelaciones_sin_push_grupo`): a los 15 min el aviso «⏰ Sin decidir» le vuelve a llegar a ella, y Frank/César/José lo ven solo en el ERP (píldora sin sonido, solo las pasadas de 15 min). `cancelacion_config.push_grupo=true` devuelve el salto al grupo en una sucursal sin encargado.
+- (Resuelto el mismo día) M001 no tenía gerente real: el único usuario gerente era «Autorizacion Temporal Conteo 15-sep (revocar manana)», ya desactivado.
 
 ## 30-Sep-2026 — Karina edita el menú de delivery sola (migraciones `menu_reglas_exclusion`, `menu_delivery_editor_funciones`, `menu_delivery_detalle_dedup`)
 

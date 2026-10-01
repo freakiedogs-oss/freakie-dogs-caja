@@ -1,6 +1,6 @@
 // Avisos del ERP en el celular o la tablet (Web Push) — 1-oct-2026.
 // Hoy los usa la bandeja de cancelaciones: cuando se cancela algo que ya estaba
-// en cocina, el gerente (y a los 15 min Frank, César y José) recibe una
+// en cocina, el gerente de la sucursal (y a los 15 min, otra vez él) recibe una
 // notificación aunque el ERP esté cerrado.
 //
 // · Android (Chrome): funciona con el ERP cerrado y el teléfono bloqueado.
