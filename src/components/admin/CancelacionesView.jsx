@@ -24,7 +24,7 @@ const hoySV = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('
 
 const S = {
   card: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 14, marginBottom: 12 },
-  chip: (c) => ({ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: c + '22', color: c, whiteSpace: 'nowrap' }),
+  chip: (c) => ({ display: 'inline-block', flexShrink: 0, alignSelf: 'flex-start', fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: c + '22', color: c, whiteSpace: 'nowrap' }),
   input: { width: '100%', boxSizing: 'border-box', background: '#111', border: '1px solid #333', borderRadius: 8, padding: '9px 10px', color: '#eee', fontSize: 14 },
   btn: (c, on) => ({ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '11px 12px',
     borderRadius: 10, border: `1.5px solid ${on ? c : c + '55'}`, background: on ? c + '2a' : c + '10', color: '#f3f4f6', cursor: 'pointer', fontSize: 14 }),
