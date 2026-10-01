@@ -1,10 +1,11 @@
-import { useState, useCallback, lazy, Suspense } from 'react'
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react'
 import Sidebar from './components/layout/Sidebar'
 import LoginScreen from './components/layout/LoginScreen'
 import UpdateGate from './components/layout/UpdateGate'
 import AsistenteFlotante from './components/dashboard/AsistenteFlotante'
 import InboxFlotante from './components/dashboard/InboxFlotante'
 import SosAlertaGlobal from './components/almacen/SosAlertaGlobal'
+import CancelacionesAlerta from './components/layout/CancelacionesAlerta'
 import LoadingScreen from './components/layout/LoadingScreen'
 import { useToast } from './hooks/useToast'
 import { STORES, NAV_SECTIONS } from './config'
@@ -17,6 +18,7 @@ const Deposito           = lazy(() => import('./components/caja/Deposito'))
 const DepositosCalendarioView = lazy(() => import('./components/finanzas/DepositosCalendarioView'))
 const AdminView          = lazy(() => import('./components/admin/AdminView'))
 const IncidentesDash     = lazy(() => import('./components/admin/IncidentesDash'))
+const CancelacionesView  = lazy(() => import('./components/admin/CancelacionesView'))
 const VentasFreakies     = lazy(() => import('./components/dashboard/VentasFreakies'))
 const KpisVentaDashboard = lazy(() => import('./components/dashboard/KpisVentaDashboard'))
 const ConsumoVentaDashboard = lazy(() => import('./components/dashboard/ConsumoVentaDashboard'))
@@ -232,6 +234,29 @@ export default function App() {
     if (key !== 'home') incrementNavCount(key)
   }, [])
 
+  // Avisos push del ERP: la notificación abre /?ir=<pantalla>. Si la app ya
+  // estaba abierta, el service worker manda {tipo:'abrir', url} a esta pestaña.
+  // Solo se aceptan pantallas conocidas (hoy: cancelaciones).
+  const PANTALLAS_AVISO = ['cancelaciones']
+  useEffect(() => {
+    if (!user) return undefined
+    const ir = new URLSearchParams(window.location.search).get('ir')
+    if (ir && PANTALLAS_AVISO.includes(ir)) {
+      handleNavigate(ir)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+    if (!('serviceWorker' in navigator)) return undefined
+    const alMensaje = (e) => {
+      if (e.data?.tipo !== 'abrir' || !e.data.url) return
+      try {
+        const destino = new URL(e.data.url, window.location.origin).searchParams.get('ir')
+        if (destino && PANTALLAS_AVISO.includes(destino)) handleNavigate(destino)
+      } catch { /* url rara: se ignora */ }
+    }
+    navigator.serviceWorker.addEventListener('message', alMensaje)
+    return () => navigator.serviceWorker.removeEventListener('message', alMensaje)
+  }, [user, handleNavigate])
+
   // Not logged in
   if (!user) return <UpdateGate><LoginScreen onLogin={setUser} /></UpdateGate>
 
@@ -344,6 +369,8 @@ export default function App() {
             onEditCierre={(c) => { setEditCierre(c); setScreen('cierre-edit'); }}
           />
         )
+      case 'cancelaciones':
+        return <CancelacionesView user={user} onNavigate={handleNavigate} />
       case 'incidentes':
         return <IncidentesDash user={user} onBack={() => setScreen('home')} />
       case 'recetas':
@@ -478,6 +505,7 @@ export default function App() {
       <AsistenteFlotante user={user} />
       <InboxFlotante user={user} />
       <SosAlertaGlobal user={user} currentScreen={screen} onNavigate={handleNavigate} />
+      <CancelacionesAlerta user={user} currentScreen={screen} onNavigate={handleNavigate} />
     </div>
   )
 }
