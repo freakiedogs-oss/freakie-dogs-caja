@@ -1046,7 +1046,7 @@ export default function KDSScreen({ user, onBack }) {
                       const botonesAnulado = (item) => {
                         const caja = cajaDijo[item.cuenta_item_id]
                         return (
-                          <div key={'anu' + item.id} style={{ marginTop: 6, width: '100%' }}>
+                          <div key={'anu' + item.id} style={{ marginTop: 6, width: '100%', boxSizing: 'border-box', padding: '4px 8px 8px' }}>
                             {caja?.respuesta_caja && (
                               <div style={{ fontSize: 11.5, color: '#fda4af', marginBottom: 5, lineHeight: 1.3 }}>
                                 Caja{caja.anulado_por_nombre ? ` (${caja.anulado_por_nombre})` : ''} dijo: {CAJA_TXT[caja.respuesta_caja] || caja.respuesta_caja}

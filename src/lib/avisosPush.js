@@ -15,6 +15,14 @@ const b64aBytes = (b64) => {
   return Uint8Array.from(raw, c => c.charCodeAt(0))
 }
 
+// navigator.serviceWorker.ready nunca resuelve si el service worker no se
+// registró (falló la carga, modo privado raro): sin este límite la pantalla se
+// quedaba en «Revisando…» para siempre.
+const swListo = () => Promise.race([
+  navigator.serviceWorker.ready,
+  new Promise((_, rej) => setTimeout(() => rej(new Error('El ERP no terminó de cargar en este dispositivo. Recargá la página e intentá de nuevo.')), 5000)),
+])
+
 const esIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
 const esInstalada = () =>
   window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
@@ -26,7 +34,7 @@ export async function estadoAvisos() {
   }
   if (Notification.permission === 'denied') return 'bloqueado'
   try {
-    const reg = await navigator.serviceWorker.ready
+    const reg = await swListo()
     const sub = await reg.pushManager.getSubscription()
     return sub && Notification.permission === 'granted' ? 'activo' : 'inactivo'
   } catch {
@@ -46,7 +54,7 @@ export async function activarAvisos(user) {
   const { data: clave, error: ek } = await db.rpc('push_vapid_publica')
   if (ek || !clave) throw new Error('No se pudo preparar el aviso (falta la clave del servidor).')
 
-  const reg = await navigator.serviceWorker.ready
+  const reg = await swListo()
   let sub = await reg.pushManager.getSubscription()
   if (!sub) {
     sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aBytes(clave) })
@@ -65,7 +73,7 @@ export async function activarAvisos(user) {
 
 export async function desactivarAvisos() {
   try {
-    const reg = await navigator.serviceWorker.ready
+    const reg = await swListo()
     const sub = await reg.pushManager.getSubscription()
     if (sub) {
       await db.rpc('push_desuscribir', { p_endpoint: sub.endpoint })
