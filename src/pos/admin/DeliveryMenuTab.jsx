@@ -127,6 +127,26 @@ export default function DeliveryMenuTab({ user }) {
 /* ================================================================
    Detalle de un ítem
    ================================================================ */
+// Nombres de los menús activos, fuera de delivery, que tienen el grupo de esta
+// opción asignado a algún ítem. Si la consulta falla se devuelve vacío: el aviso
+// es una ayuda, no debe impedir trabajar.
+async function menusQueUsan(modificadorId) {
+  try {
+    const { data: mod } = await db.from('pos_modificadores').select('grupo_id').eq('id', modificadorId).maybeSingle()
+    if (!mod?.grupo_id) return []
+    const { data: asig } = await db.from('pos_item_modificadores').select('menu_item_id').eq('grupo_id', mod.grupo_id)
+    const itemIds = [...new Set((asig || []).map(a => a.menu_item_id))]
+    if (!itemIds.length) return []
+    const { data: items } = await db.from('pos_menu_items').select('menu_id').in('id', itemIds)
+    const menuIds = [...new Set((items || []).map(i => i.menu_id))]
+    if (!menuIds.length) return []
+    const { data: menus } = await db.from('pos_menus').select('nombre, canal, activo').in('id', menuIds)
+    return (menus || []).filter(m => m.activo && m.canal !== 'delivery_propio').map(m => m.nombre).sort()
+  } catch {
+    return []
+  }
+}
+
 function DetalleItem({ itemId, user, onBack }) {
   const [d, setD] = useState(null)
   const [cargando, setCargando] = useState(true)
@@ -143,6 +163,21 @@ function DetalleItem({ itemId, user, onBack }) {
   useEffect(() => { cargar() }, [cargar])
 
   const guardarOpcion = async (mod, campos) => {
+    // Las opciones son compartidas: la misma "Coca-Cola 300ml" sale en delivery y
+    // en las cajas. El 30-sep se apagaron bebidas y agrandados desde acá y las
+    // cajas vendieron 53 combos sin bebida entre 16:58 y 18:41. Si la opción
+    // también la usa otro menú, se avisa antes de apagarla o cambiarle el precio.
+    if (campos.activo === false || campos.precio != null) {
+      const otros = await menusQueUsan(mod.id)
+      if (otros.length) {
+        const que = campos.activo === false ? 'Apagar' : 'Cambiar el precio de'
+        const ok = window.confirm(
+          `${que} «${mod.nombre}» NO es solo para delivery.\n\n` +
+          `Esta opción también la usan: ${otros.join(', ')}.\n` +
+          `El cambio pega en esas cajas en este mismo momento.\n\n¿Seguir de todos modos?`)
+        if (!ok) return
+      }
+    }
     setGuardando(mod.id)
     const { error: e } = await db.rpc('fn_menu_opcion_guardar', {
       p_actor: user?.id, p_modificador: mod.id,

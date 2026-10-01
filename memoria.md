@@ -1,5 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 01-Oct-2026 — Menú: PeYa pedía bebida en cada componente, bebidas/agrandados apagados en todas las cajas (30-sep), Kolashampan en el agrandado
+
+Reportes de Jazz (30-sep noche). Tres problemas con la misma raíz: **las opciones y grupos del menú son compartidos entre canales**, y había herramientas que los cambian en masa sin avisar ni dejar rastro.
+
+- **PedidosYa pedía varias bebidas por combo.** El grupo `Bebida Delivery 2` (obligatorio, elige 1-10) estaba pegado a **119 de 120 ítems** del menú PeYa — el combo y cada componente (hamburguesa, papas, jalapeños…). Causa: el botón «🔗 Grupo → Todos» de Admin Menú → Asignar, que pega un grupo a todos los ítems del menú con un clic y sin confirmar. Fix: migración `20261001_peya_quitar_bebida_delivery2_masivo` (respaldo en `_bk_peya_bebida_delivery2_01oct`). Ahora el combo PeYa queda igual que Para Llevar: la bebida solo en el componente Bebida. Se verificó antes que `peya_catalogo` / `peya_modificador_map` no usan ese grupo.
+- **"Me quitaron la bebida y el cambio de bebida" / "apagaron los agrandados" (Soyapango, Usulután).** Confirmado en ventas: el 30-sep **de 16:58 a 18:41** se apagaron a la vez las bebidas base y los agrandados en **todas** las cajas. Soyapango y Metro Centro vendieron **53 combos sin bebida registrada** (las bebidas se despacharon pero no se descontaron del kardex) y ningún agrandado; Usulután no registró ventas hasta las 18:36. Causa muy probable: el editor de delivery nuevo (`DeliveryMenuTab`, mismo día) apaga `pos_modificadores`, que son los mismos que usan las cajas. No hay historial para confirmar quién fue.
+- **Kolashampan dentro del agrandado** (pedido Jose): quien agranda pero quiere conservar su Kolashampan y solo agrandar papas tiene que poder elegirla. Ya existía apagada en `Bebida Agrandado` ($0, descuenta 1 Kolashampan); se encendió (`20261001_kolashampan_en_bebida_agrandado`). Aplica a todas las sucursales. **Pendiente de Jose:** hoy igual se cobra el agrandado de $1.25; ¿debería ser el de papa $1.00?
+- **Para que no se repita (este commit):**
+  - Admin Menú → Asignar: «→ Todos» pide confirmación con el grupo (y si es OBLIGATORIO), cuántos ítems y en qué menú.
+  - Editor de delivery: antes de apagar una opción o cambiarle el precio consulta qué otros menús usan su grupo; si hay alguno (p.ej. Coca-Cola 300ml → Drive Thru, Local, Para Llevar, PedidosYa) avisa que el cambio pega en esas cajas y pide confirmar.
+- **Pendiente — historial de cambios del menú** (tabla `menu_cambios_log` + triggers en `pos_modificadores` / `pos_item_modificadores`, con actor vía `set_config` desde `fn_menu_opcion_guardar`): el SQL está escrito pero `apply_migration` se cortaba por timeout el 01-oct (otros estaban aplicando migraciones de PeYa/producción al mismo tiempo). No quedó nada a medias.
+
 ## 30-Sep-2026 — Corregir documento: la invalidación queda fija en "rescindir la operación" (tipo 2)
 
 Jazz intentó invalidar una factura (SIEMENS, $519) desde Finanzas → Corregir documento eligiendo "Error en la emisión" y Hacienda la rechazó: `Valor ingresado no es de los permitidos en el campo #/motivo/tipoAnulacion` + `codigoGeneracionR contiene un valor inválido`.

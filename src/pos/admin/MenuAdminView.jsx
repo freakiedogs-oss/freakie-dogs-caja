@@ -163,7 +163,7 @@ export default function MenuAdminView({ user, storeCode, onBack }) {
             {tab === 'categorias' && <CategoriasTab menuId={menuId} />}
             {tab === 'items' && <ItemsTab menuId={menuId} canal={canalActual} />}
             {tab === 'grupos' && <GruposTab />}
-            {tab === 'asignar' && <AsignarTab menuId={menuId} />}
+            {tab === 'asignar' && <AsignarTab menuId={menuId} menuNombre={menus.find(m => m.id === menuId)?._label} />}
           </>
         )}
       </div>
@@ -932,7 +932,7 @@ function ModsEditor({ grupo, suggestions = [], onSaveMod, onDeleteMod, onBack })
 /* ================================================================
    TAB 4: Asignar modificadores/extras a ítems
    ================================================================ */
-function AsignarTab({ menuId }) {
+function AsignarTab({ menuId, menuNombre }) {
   const [items, setItems] = useState([])
   const [grupos, setGrupos] = useState([])
   const [assignments, setAssignments] = useState({}) // { itemId: [grupoId, ...] }
@@ -978,6 +978,16 @@ function AsignarTab({ menuId }) {
     // Assign to ALL items that don't have it yet
     const toInsert = items.filter(i => !(assignments[i.id] || []).includes(grupoId)).map(i => ({ menu_item_id: i.id, grupo_id: grupoId }))
     if (toInsert.length === 0) { toast('Todos los ítems ya tienen este grupo', false); return }
+    // Un clic acá pegó "Bebida Delivery 2" (obligatorio) a 119 ítems de PedidosYa
+    // el 30-sep: cada hamburguesa y cada papa empezó a pedir bebida. Se confirma
+    // diciendo exactamente qué grupo, a cuántos ítems y en qué menú.
+    const g = grupos.find(x => x.id === grupoId)
+    const ok = window.confirm(
+      `Vas a asignar el grupo «${g?.nombre || '?'}»${g?.obligatorio ? ' (OBLIGATORIO)' : ''} ` +
+      `a ${toInsert.length} ítems del menú ${menuNombre || 'seleccionado'}.\n\n` +
+      `Incluye componentes de combo (hamburguesas, papas, bebidas…), no solo los combos.\n` +
+      `Para pegarlo a unos pocos ítems, elegí cada ítem abajo.\n\n¿Seguir?`)
+    if (!ok) return
     const { error } = await db.from('pos_item_modificadores').insert(toInsert)
     if (error) { toast('Error: ' + error.message, false); return }
     toast(`Asignado a ${toInsert.length} ítems`)
