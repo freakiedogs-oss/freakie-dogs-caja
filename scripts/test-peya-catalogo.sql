@@ -2,7 +2,7 @@
 --
 -- Cómo correrlo:
 --     select public.peya_test_catalogo();
---   → { "verde": 23, "de": 23, "todo_ok": true, "fallos": [], "items": ... }
+--   → { "verde": 25, "de": 25, "todo_ok": true, "fallos": [], "items": ... }
 --
 -- Y las otras dos suites van aparte:
 --     select public.peya_test_homologacion();      -- Bloques 1 y 2 (26)
@@ -32,6 +32,12 @@
 -- │ 16. el precio del extra va en la REFERENCIA, no en el Product suelto    │
 -- │ 18. una opción de modificador no puede venderse sola en el menú         │
 -- │ 22-23. el registro de imports valida su enum y no inventa filas         │
+-- │ 24-25. EL VIAJE DE IDA Y VUELTA: cada id que mandamos tiene que         │
+-- │        resolver con la MISMA consulta que usa peya_crear_cuenta         │
+-- │        (`pos_menu_items.id::text = remoteCode`). Si no resuelve, el     │
+-- │        pedido entra aceptado y SIN comanda. Es el que faltaba: los 23   │
+-- │        anteriores validaban que el catálogo fuera válido para PeYa,     │
+-- │        ninguno que fuera legible por nosotros de vuelta.                │
 -- └─────────────────────────────────────────────────────────────────────────┘
 --
 -- MUTACIÓN COMPROBADA (23-sep-2026): se quitó el filtro `precio > 0` del
