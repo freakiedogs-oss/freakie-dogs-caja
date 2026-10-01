@@ -6,7 +6,7 @@
 > Después, con pistola de código de barras, que los insumos se descarguen al "pickearlos"
 > antes de producir y que la diferencia contra lo producido sea la merma.
 >
-> Fecha: 01-oct-2026 · Autor: Claude (sesión con Jose) · Estado: **propuesta, pendiente de aprobación**
+> Fecha: 01-oct-2026 · Autor: Claude (sesión con Jose) · Estado: **Fase 1 construida y aplicada en la base el 02-oct-2026** (M1–M4 + estación + pestaña Etiquetado). Pistola (fase 2) e inventario inicial: diferidos por Jose.
 
 ---
 
@@ -327,5 +327,12 @@ Columna "Estación" = lo que hoy está fijo en `src/etiquetado/productos.js`. Co
 | 10 | Ranch Porcionado · bote | — · — · 15 d | Ranch Porcionado (porcionado) | **1 bote** | Ranch Porcionado · SP-016 · bote | 1 "unidad" de Ranch 1 Galón (stock en **oz**, **sin factor → descuenta 1 oz**) | ❌ **Corregir**: un galón son 128 oz; falta definir cuántos botes salen de un galón (rendimiento) y el factor. No se pesa → `requiere_peso = false`. |
 | 11 | Salchicha reempacada · paquete 25 un | — · — · 20 d | Salchicha reempacada (paquete 25 un) (sub_receta) | **1 paquete** | Salchicha Parowsi paquete 25 unidades · CC002 · paquete (**tipo materia_prima**) | 25 salchichas (unidad) + 1 bolsa vacío 10x12 | ✅ Cuadra. Cosmético: el producto de salida debería ser `sub_producto`. No se pesa → `requiere_peso = false`. |
 | 12 | Cebolla Blanca · bolsa | — · — · 7 d | Cebolla Blanca (sub_receta) | **10 bolsa** | Cebolla Blanca · SP-003 · bolsa; equivalencia → "Cebolla bolsa" ×1 | 20 cebollas + 13.6 % merma_pct (= 22.7 cebollas) | ✅ Cuadra (memoria: 10 bolsas × 2 lb). Falta `peso_nominal_g ≈ 907`. Sin bolsa en receta. Revisar que el alta caiga en el producto que cuenta la sucursal (equivalencia). |
+
+**Respuestas de Jose (02-oct-2026):**
+- **Chili**: rinde **4 bolsas de 5 lb** (2,268 g c/u → 9,072 g por tanda). `rendimiento = 4` se queda; `peso_nominal_g = 2268`.
+- **Cebolla Morada (b)**: confirmado 66 lb crudas → 30 bolsas de 1 lb. El vinagre es **0.5 L** (corregir 0.005 → 0.5).
+- **Mermelada de Tocino**: bolsa de **5 lb (asumido, revisar con peso real)**. Bolsas por tanda se fijan con la primera pesada en modo prueba; mientras tanto `vida_util_estado`/peso quedan `provisional`.
+- **Ranch Porcionado**: **ya no se porciona**, se manda el bote completo. Sale de la estación; receta → inactiva.
+- **Salsa Truffa**: se manda en **bolsas de 1 lb**; rendimiento y factores se corrigen cuando se pese.
 
 Resumen: **5 cuadran** (Cheddar, Sal, Mil Islas, Chipotle, Cebolla Blanca, Salchicha → 6 con esta), **3 necesitan pesar** (Chili, Escabeche, Mermelada), **2 están mal** (Truffa, Ranch) y **1 se unifica** (Cebolla Morada). De los 12, solo 4 tienen peso objetivo cargado; el yield test de fase 0 llena los otros 8.

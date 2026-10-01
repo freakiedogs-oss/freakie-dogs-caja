@@ -65,6 +65,7 @@ export default defineConfig({
         carne:       resolve(__dirname, 'carne.html'),
         pesaje:      resolve(__dirname, 'pesaje.html'),
         etiquetado:  resolve(__dirname, 'etiquetado.html'),
+        unidad:      resolve(__dirname, 'unidad.html'),
       },
       output: {
         manualChunks(id) {

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { db } from '../../supabase';
 import { today, fmtDate, n, STORES } from '../../config';
 import OrdenesProduccionTab from './OrdenesProduccionTab';
+import EtiquetadoParamsTab from './EtiquetadoParamsTab';
 
 // ── Roles con acceso de edición ──
 const ROLES_EDIT = ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'superadmin', 'ing_alimentos'];
@@ -83,6 +84,7 @@ export default function ProduccionDiaria({ user }) {
   const [prodSelId, setProdSelId] = useState(null);
   const [prodItems, setProdItems] = useState([]);
   const [prodSelData, setProdSelData] = useState(null);
+  const [prodUnidades, setProdUnidades] = useState([]);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
 
   // Inventario CM001
@@ -145,6 +147,11 @@ export default function ProduccionDiaria({ user }) {
     try {
       let query = db.from('produccion_diaria')
         .select('*, recetas(id,nombre,tipo,rendimiento,unidad_rendimiento,costo_calculado), responsable:usuarios_erp!produccion_diaria_responsable_id_fkey(id,nombre,apellido)')
+        // Las tandas 'abiertas' viven en la estación de etiquetado hasta que
+        // cierran; las de prueba no tocan inventario. Ninguna de las dos es
+        // historial de producción.
+        .in('estado', ['cerrada', 'cerrada_auto'])
+        .eq('es_prueba', false)
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -351,23 +358,25 @@ export default function ProduccionDiaria({ user }) {
     setProdItems([]);
     setLoadingDetalle(true);
     try {
-      const { data: bom, error: bomErr } = await db
-        .from('receta_ingredientes')
-        .select('*, catalogo_productos(id,nombre,unidad_medida,precio_referencia), sub_receta:recetas!receta_ingredientes_sub_receta_id_fkey(id,nombre,costo_calculado,rendimiento)')
-        .eq('receta_id', prod.receta_id);
-
-      if (bomErr) throw bomErr;
-
-      const tandas = n(prod.cantidad_producida);
-      const items = (bom || []).map(ri => {
-        const cantConsum = n(ri.cantidad) * tandas;
-        const esMP = ri.tipo_ingrediente === 'materia_prima';
-        const nombre = esMP ? ri.catalogo_productos?.nombre : ri.sub_receta?.nombre;
-        const unidad = ri.unidad_medida || (esMP ? ri.catalogo_productos?.unidad_medida : '');
-        const precioU = esMP ? n(ri.catalogo_productos?.precio_referencia) : n(ri.sub_receta?.costo_calculado);
-        return { nombre, unidad, tipo: ri.tipo_ingrediente, cantidad_receta: n(ri.cantidad), cantidad_consumida: cantConsum, precio_unitario: precioU, costo_linea: cantConsum * precioU };
-      });
-      setProdItems(items);
+      // Lo que DE VERDAD se descontó (produccion_diaria_items), no una
+      // re-explosión de la receta: la receta pudo cambiar después, y el
+      // recálculo viejo ignoraba factor_a_stock y merma_pct.
+      const { data: items, error: itErr } = await db
+        .from('produccion_diaria_items')
+        .select('cantidad_consumida, unidad_medida, costo_unitario, costo_linea, es_subproducto, origen, catalogo_productos(id,nombre)')
+        .eq('produccion_id', prod.id);
+      if (itErr) throw itErr;
+      setProdItems((items || []).map(i => ({
+        nombre: i.catalogo_productos?.nombre, unidad: i.unidad_medida,
+        tipo: i.es_subproducto ? 'sub_receta' : 'materia_prima',
+        cantidad_consumida: n(i.cantidad_consumida), precio_unitario: n(i.costo_unitario), costo_linea: n(i.costo_linea),
+      })));
+      // Unidades pesadas en la estación (vacío para producciones registradas a mano).
+      const { data: unidades } = await db
+        .from('produccion_unidades')
+        .select('numero, gramos, fuera_banda, vence, pesado_por, impresa, estado, codigo_corto')
+        .eq('produccion_id', prod.id).order('numero');
+      setProdUnidades(unidades || []);
     } catch (err) {
       console.error('Error cargando detalle BOM:', err);
     } finally {
@@ -393,6 +402,7 @@ export default function ProduccionDiaria({ user }) {
           { key: 'ordenes', label: 'Órdenes', icon: '📋' },
           { key: 'registrar', label: 'Registrar', icon: '📝' },
           { key: 'historial', label: 'Historial', icon: '🕓' },
+          ...(canEditPersonal ? [{ key: 'etiquetado', label: 'Etiquetado', icon: '🏷️' }] : []),
           // Solo para quien puede administrar personal — la RPC valida igual.
           ...(canEditPersonal ? [{ key: 'personal', label: 'Personal', icon: '👥' }] : []),
         ].map(t => (
@@ -548,6 +558,15 @@ export default function ProduccionDiaria({ user }) {
   // ══════════════════════════════════════════════════════════════
   // TAB: ÓRDENES — aprobación de órdenes de producción sugeridas
   // ══════════════════════════════════════════════════════════════
+  if (tab === 'etiquetado') {
+    return (
+      <div style={{ padding: '16px', maxWidth: 520, margin: '0 auto' }}>
+        <TabBar />
+        <EtiquetadoParamsTab user={user} />
+      </div>
+    );
+  }
+
   if (tab === 'ordenes') {
     return (
       <div style={{ padding: '16px', maxWidth: 480, margin: '0 auto' }}>
@@ -1052,7 +1071,9 @@ export default function ProduccionDiaria({ user }) {
               </table>
               {(() => {
                 const totalCosto = prodItems.reduce((s, i) => s + n(i.costo_linea), 0);
-                const totalUnidades = n(prodSelData?.cantidad_producida) * n(prodSelData?.recetas?.rendimiento);
+                const totalUnidades = prodSelData?.unidades_producidas != null
+                  ? n(prodSelData.unidades_producidas)
+                  : n(prodSelData?.cantidad_producida) * n(prodSelData?.recetas?.rendimiento);
                 const costoPorUnidad = totalUnidades > 0 ? totalCosto / totalUnidades : 0;
                 return (
                   <div style={{ marginTop: 12, borderTop: `2px solid ${C.border}`, paddingTop: 10 }}>
@@ -1068,6 +1089,22 @@ export default function ProduccionDiaria({ user }) {
                 );
               })()}
             </>
+          )}
+          {prodUnidades.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.textMuted, marginBottom: 8 }}>🏷️ Unidades pesadas ({prodUnidades.filter(u => u.estado === 'activa').length})</div>
+              {prodUnidades.map(u => (
+                <div key={u.numero} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${C.bg}`, fontSize: 12, opacity: u.estado === 'anulada' ? .5 : 1 }}>
+                  <span style={{ color: C.textDim, width: 28 }}>#{u.numero}</span>
+                  <span style={{ flex: 1, color: u.fuera_banda ? C.red : C.text, textDecoration: u.estado === 'anulada' ? 'line-through' : 'none' }}>
+                    {u.gramos != null ? `${Math.round(u.gramos).toLocaleString('en-US')} g` : 'sin peso'}{u.fuera_banda ? ' · fuera de banda' : ''}
+                  </span>
+                  <span style={{ color: C.textMuted }}>vence {u.vence}</span>
+                  <span style={{ color: C.textDim }}>{u.pesado_por}</span>
+                  {!u.impresa && u.estado === 'activa' && <span style={{ color: C.yellow }}>sin etiqueta</span>}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       ) : (
