@@ -271,6 +271,7 @@ export default function KDSScreen({ user, onBack }) {
   // prepararlo. Mientras no contesten, el insumo sigue descontado.
   const [traslados, setTraslados] = useState([])
   const [respondiendo, setRespondiendo] = useState(null)
+  const [cajaDijo, setCajaDijo] = useState({})   // cuenta_item_id → respuesta_caja de lo anulado
   const wakeLockRef  = useRef(null)
   useTimer()  // fuerza re-render cada 10s para actualizar timers
 
@@ -331,6 +332,16 @@ export default function KDSScreen({ user, onBack }) {
     prevIds.current = ids
     setQueue(rows)
     setLoading(false)
+    // Qué dijo la caja de lo anulado, para mostrarlo junto a los botones de cocina.
+    // Si falla, los botones salen igual, solo sin esa línea.
+    const anuladosIds = [...new Set(rows.filter(r => r.estado === 'anulado' && r.cuenta_item_id).map(r => r.cuenta_item_id))]
+    if (anuladosIds.length) {
+      try {
+        const { data: mp } = await db.from('pos_mermas_producto')
+          .select('cuenta_item_id, respuesta_caja, anulado_por_nombre').in('cuenta_item_id', anuladosIds)
+        setCajaDijo(Object.fromEntries((mp || []).map(m => [m.cuenta_item_id, m])))
+      } catch (_) { /* sin la línea de caja */ }
+    }
     if (hayNuevos || hayCancelados) setAlarmOn(true)
     else if (rows.length === 0) setAlarmOn(false)   // nada pendiente → callar
   }, [storeCode])
@@ -1023,7 +1034,37 @@ export default function KDSScreen({ user, onBack }) {
                       {(() => {
                       // `nota`: undefined = usar la del ítem; null = ocultarla
                       // (la muestra el encabezado del combo, una sola vez).
-                      const renderItem = (item, { nota } = {}) => {
+                      // Lo anulado se confirma UNA vez por línea de la cuenta (cuenta_item_id):
+                      // un combo de 6 componentes es una sola decisión. Tres opciones,
+                      // una debajo de otra para que nunca se corten en tarjetas angostas.
+                      const OPC_ANULADO = [
+                        { r: 'no_preparado', t: '✋ No lo hicimos', c: '#22c55e', fg: '#bbf7d0' },
+                        { r: 'preparado',    t: '🗑️ Ya estaba hecho (se bota)', c: '#ef4444', fg: '#fecaca' },
+                        { r: 'reutilizado',  t: '🔁 Lo usamos en otra orden', c: '#3b82f6', fg: '#bfdbfe' },
+                      ]
+                      const CAJA_TXT = { preparado: 'ya estaba hecho', no_preparado: 'no se había hecho', reutilizado: 'se usa en otra orden' }
+                      const botonesAnulado = (item) => {
+                        const caja = cajaDijo[item.cuenta_item_id]
+                        return (
+                          <div key={'anu' + item.id} style={{ marginTop: 6, width: '100%' }}>
+                            {caja?.respuesta_caja && (
+                              <div style={{ fontSize: 11.5, color: '#fda4af', marginBottom: 5, lineHeight: 1.3 }}>
+                                Caja{caja.anulado_por_nombre ? ` (${caja.anulado_por_nombre})` : ''} dijo: {CAJA_TXT[caja.respuesta_caja] || caja.respuesta_caja}
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {OPC_ANULADO.map(o => (
+                                <button key={o.r} onClick={() => confirmarAnulado(item, o.r)}
+                                  style={{ width: '100%', padding: '9px 8px', borderRadius: 8, border: `1px solid ${o.c}88`, background: o.c + '22', color: o.fg, fontWeight: 800, fontSize: 12.5, cursor: 'pointer', textAlign: 'left', whiteSpace: 'normal', lineHeight: 1.2 }}>
+                                  {o.t}
+                                </button>
+                              ))}
+                            </div>
+                            <div style={{ fontSize: 10.5, color: '#9ca3af', marginTop: 4 }}>El gerente confirma al final; esto es lo que vio cocina.</div>
+                          </div>
+                        )
+                      }
+                      const renderItem = (item, { nota, sinBotones } = {}) => {
                         if (esAnulado(item)) {
                           return (
                             <div key={item.id} className="kds-item" style={{ borderColor: '#f43f5e88', background: '#f43f5e14', cursor: 'default' }}>
@@ -1033,16 +1074,7 @@ export default function KDSScreen({ user, onBack }) {
                                 <span className="kds-item-name" style={{ textDecoration: 'line-through', opacity: .7 }}>{item.nombre_item}</span>
                                 <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#fff', background: '#f43f5e', padding: '1px 6px', borderRadius: 5 }}>ANULADO EN CAJA</span>
                               </span>
-                              <span style={{ display: 'flex', gap: 6, marginTop: 6, width: '100%' }}>
-                                <button onClick={() => confirmarAnulado(item, 'preparado')}
-                                  style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: '1px solid #ef444488', background: '#ef444422', color: '#fecaca', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
-                                  🗑️ Ya estaba hecho
-                                </button>
-                                <button onClick={() => confirmarAnulado(item, 'no_preparado')}
-                                  style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: '1px solid #22c55e88', background: '#22c55e22', color: '#bbf7d0', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
-                                  ✋ No se hizo
-                                </button>
-                              </span>
+                              {!sinBotones && botonesAnulado(item)}
                             </div>
                           )
                         }
@@ -1102,7 +1134,8 @@ export default function KDSScreen({ user, onBack }) {
                               <span className="kds-combo-progreso">{listos}/{b.items.length}</span>
                             </div>
                             {b.nota && <div className="kds-combo-nota">📝 {b.nota}</div>}
-                            {b.items.map(it => renderItem(it, { nota: null }))}
+                            {b.items.map(it => renderItem(it, { nota: null, sinBotones: true }))}
+                            {(() => { const anu = b.items.find(esAnulado); return anu ? botonesAnulado(anu) : null })()}
                           </div>
                         )
                       })

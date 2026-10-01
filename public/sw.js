@@ -1,4 +1,4 @@
-// Freakie Dogs ERP — Service Worker v11 (+ notificación persistente driver)
+// Freakie Dogs ERP — Service Worker v12 (+ avisos push del ERP: cancelaciones)
 //
 // Por qué cambió: la versión anterior cacheaba TODO, incluido el index.html.
 // Al desplegar, los archivos de la app cambian de nombre; si el teléfono se
@@ -82,11 +82,47 @@ self.addEventListener('message', e => {
   }
 });
 
+// Avisos del ERP (Web Push, 1-oct-2026): cancelaciones por decidir. El servidor
+// manda {titulo, cuerpo, url, tag}; el mismo tag reemplaza el aviso anterior de
+// esa orden en vez de apilar varios.
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { cuerpo: e.data && e.data.text() }; }
+  e.waitUntil(
+    self.registration.showNotification(d.titulo || 'Freakie Dogs ERP', {
+      body: d.cuerpo || '',
+      tag: d.tag || undefined,
+      renotify: !!d.tag,
+      requireInteraction: true,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      vibrate: [200, 100, 200, 100, 300],
+      data: { url: d.url || '/' },
+    })
+  );
+});
+
 // Motorista GPS: al tocar la notificación persistente, enfocar la app del driver
 // (o abrirla si no hay pestaña). Mientras la notif esté visible, Android tarda
 // más en matar el proceso Chrome → GPS sigue reportando más tiempo en background.
 self.addEventListener('notificationclick', e => {
   e.notification.close();
+  const destino = e.notification.data && e.notification.data.url;
+  if (destino) {
+    // Aviso del ERP: enfocar una pestaña del ERP y mandarla a la pantalla, o abrirla.
+    e.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+        for (const c of clients) {
+          if (!c.url.includes('/driver') && !c.url.includes('/pos') && 'focus' in c) {
+            c.postMessage({ tipo: 'abrir', url: destino });
+            return c.focus();
+          }
+        }
+        if (self.clients.openWindow) return self.clients.openWindow(destino);
+      })
+    );
+    return;
+  }
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
       for (const c of clients) {
