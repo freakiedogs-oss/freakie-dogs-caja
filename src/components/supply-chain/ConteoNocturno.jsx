@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
 import MermasProductoHoy from './MermasProductoHoy'
 import { today, n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
+const CancelacionesView = lazy(() => import('../admin/CancelacionesView'));
 
 const ROLES_MULTI_SUCURSAL = ['ejecutivo', 'admin', 'superadmin'];
 
@@ -244,6 +245,10 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
   // lo marca como faltante. Se pregunta una vez por noche y queda firmado.
   const [hifumiGate,setHifumiGate]=useState(null);       // {cargando, registrados:[], abiertas:[], guardando, err}
   const hifumiOkRef=useRef(false);
+  // Cancelaciones por decidir (1-oct-2026, Frank): si se canceló algo que ya
+  // estaba en cocina y el gerente no decidió qué pasó con el producto, el conteo
+  // no se guarda. Así ninguna cancelación queda «después del conteo».
+  const [cancelGate,setCancelGate]=useState(null);       // {cargando, items:[], err}
 
   const EDIT_WINDOW_MS = 6*60*60*1000; // 6 horas
   const needsSucursalPicker = ROLES_MULTI_SUCURSAL.includes(user.rol) || !user.store_code;
@@ -973,6 +978,16 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
     if(contadosAhora.length===0){
       show('⚠️ Contá al menos un producto antes de guardar');
       return;
+    }
+    // Cancelaciones sin decidir: se revisa en cada primer guardado (pueden entrar
+    // nuevas mientras se cuenta). Si la revisión falla por señal, no se traba el
+    // conteo: se avisa y sigue.
+    if(!isEdit){
+      setCancelGate({cargando:true,items:[]});
+      const {data:cp,error:ce}=await db.rpc('cancelaciones_pendientes_sucursal',{p_store_code:storeCodeSel||user.store_code});
+      if(ce){ setCancelGate(null); show('⚠️ No se pudieron revisar las cancelaciones pendientes; se guarda igual.'); }
+      else if(cp?.bloquear && (cp.items||[]).length){ setCancelGate({cargando:false,items:cp.items}); return; }
+      else setCancelGate(null);
     }
     // Doble check Hifumi: solo en el primer guardado de la noche (no al editar).
     if(!isEdit && !hifumiOkRef.current){
@@ -1804,6 +1819,61 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
     );
   })();
 
+  // ── MODAL: cancelaciones sin decidir (bloquean el conteo) ──
+  const PUEDEN_DECIDIR=['gerente','ejecutivo','admin','superadmin'];
+  const modalCancel = cancelGate && (()=>{
+    const g=cancelGate;
+    // La bandeja se abre encima del conteo (no se navega): el conteo de comida no
+    // tiene borrador y salir de la pantalla perdería lo contado.
+    if(g.bandeja) return(
+      <div style={{position:'fixed',inset:0,zIndex:61,background:'#0b0b0e',overflowY:'auto'}}>
+        <div style={{position:'sticky',top:0,zIndex:1,background:'#0b0b0e',borderBottom:'1px solid #222',padding:'10px 16px'}}>
+          <button onClick={()=>setCancelGate(null)} className="btn" style={{padding:'10px 14px',width:'auto'}}>
+            ← Volver al conteo (lo contado sigue ahí)
+          </button>
+        </div>
+        <Suspense fallback={<div className="spin" style={{margin:'40px auto'}}/>}>
+          <CancelacionesView user={user}/>
+        </Suspense>
+      </div>
+    );
+    const hhmm=ts=>new Date(ts).toLocaleTimeString('es-SV',{hour:'2-digit',minute:'2-digit',timeZone:'America/El_Salvador'});
+    return(
+      <div style={{position:'fixed',inset:0,zIndex:60,background:'rgba(0,0,0,0.72)',display:'flex',
+                   alignItems:'center',justifyContent:'center',padding:16}}>
+        <div style={{width:'100%',maxWidth:420,maxHeight:'88vh',overflowY:'auto',background:'#141419',
+                     border:'1px solid #f59e0b60',borderRadius:14,padding:18}}>
+          <div style={{fontWeight:800,fontSize:17,color:'#f59e0b',marginBottom:4}}>↩️ Antes de cerrar: cancelaciones</div>
+          {g.cargando?<div className="spin" style={{margin:'18px auto'}}/>:(<>
+            <div style={{fontSize:13.5,color:'#ccc',lineHeight:1.5,marginBottom:10}}>
+              Hay <b>{g.items.length}</b> cancelaci{g.items.length===1?'ón':'ones'} de hoy sin decidir. El gerente tiene que decir
+              qué pasó con el producto (no se hizo, se botó, se usó en otra orden o se regaló) <b>antes</b> de guardar el conteo,
+              para que el conteo cuadre.
+            </div>
+            {g.items.map(it=>(
+              <div key={it.id} style={{background:'#1c1c22',border:'1px solid #2a2a32',borderRadius:10,padding:'9px 11px',marginBottom:6,fontSize:13.5}}>
+                <div style={{fontWeight:700}}>{it.titulo}</div>
+                <div style={{color:'#888',fontSize:12}}>
+                  {it.referencia?it.referencia+' · ':''}{hhmm(it.created_at)} · canceló {it.cancelado_por_nombre||'—'}{it.escalado?' · lleva más de 15 min sin decidir':''}
+                </div>
+              </div>
+            ))}
+            {PUEDEN_DECIDIR.includes(user.rol)
+              ?<button className="btn btn-red" onClick={()=>setCancelGate({...g,bandeja:true})}
+                  style={{width:'100%',padding:14,marginTop:6}}>Decidir ahora</button>
+              :<div style={{fontSize:13,color:'#fbbf24',background:'#2a2108',borderRadius:10,padding:'10px 12px',marginTop:6,lineHeight:1.45}}>
+                 Avisale al gerente: ya le llegó la notificación en el ERP. Cuando decida, volvé a guardar el conteo (lo contado no se pierde).
+               </div>}
+          </>)}
+          <button onClick={()=>setCancelGate(null)}
+            style={{background:'none',border:'none',color:'#666',fontSize:12,cursor:'pointer',width:'100%',padding:10}}>
+            Volver al conteo
+          </button>
+        </div>
+      </div>
+    );
+  })();
+
   // ── MODAL: faltante en el conteo (PIN de gerente + nota) ──
   // Se renderiza como overlay sobre la pantalla de conteo, no como pantalla aparte:
   // la cajera tiene que seguir viendo lo que contó mientras el gerente autoriza.
@@ -1893,6 +1963,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
         <Toast/>
         {modalFaltante}
         {modalHifumi}
+        {modalCancel}
         {/* Header */}
         <div style={{padding:'20px 0 8px',display:'flex',alignItems:'center',gap:12}}>
           <button onClick={()=>setScreen('elegir')} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
