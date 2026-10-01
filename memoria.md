@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 01-Oct-2026 — Plan para conectar la estación de pesaje y etiquetado al kardex (`docs/PLAN-ESTACION-ETIQUETADO-ERP.md`)
+
+Jose pidió que al pesar e imprimir en `/etiquetado.html` se descarguen insumos y empaques por receta y se dé de alta el producto, y que después una pistola de códigos descargue los insumos al pickearlos (merma = pickeado − producido). Solo plan, sin código ni migraciones todavía.
+
+- **Lo que ya existe y se reusa:** `registrar_produccion` (consume BOM × tandas y da de alta `tandas × rendimiento` en CM), `produccion_diaria` + items + lote `LOT-AAAAMMDD-NNN`, `ordenes_produccion`, `kardex_mover`. La tanda de la estación será la misma `produccion_diaria` con `estado` (abierta/cerrada), no una tabla nueva.
+- **Decisiones clave:** cada bolsa es una fila (`produccion_unidades`, peso real + QR a la ficha); consumo por backflush **al cierre** con dos bases — materias primas proporcionales al **peso real** (`tandas_peso`), empaques por **unidades** (`receta_ingredientes.es_empaque`); `modo_consumo` backflush|pick por tanda y el cierre salta los productos ya escaneados (cero doble descuento); merma/yield se calculan en la tanda sin movimiento extra; `client_key` UNIQUE en todo (cierra el doble submit del 05-sep); lote por tanda con advisory lock; vigilante pg_cron para tandas abandonadas; `es_prueba` para calibrar sin tocar kardex; parámetros de etiquetado en tabla editable desde el ERP (adiós `productos.js`).
+- **Hallazgos de datos que bloquean (fase 0):** la receta de Cheddar **no consume la bolsa**; Chili rinde 4 bolsas en ERP vs bolsa de 5 lb en la estación; Mermelada y Cebolla Morada rinden "tanda" y la estación pesa bolsas; Truffa/Ranch con unidades cruzadas sin factor; stock CM de subproductos muy negativo (Cheddar −193) → conteo de arranque; no hay columna de código de barras en el catálogo.
+- **Cambio de regla propuesto:** si falla la impresión, la unidad **queda registrada** (`impresa=false`) y se bloquea hasta reimprimir o anular; hoy "no se cuenta", pero la bolsa física ya existe.
+- Notion no estaba autorizado en esta sesión: no se marcó en EN_PROGRESO. Hacerlo antes de tocar `registrar_produccion` o `ProduccionDiaria.jsx`.
+
 ## 30-Sep-2026 — Karina edita el menú de delivery sola (migraciones `menu_reglas_exclusion`, `menu_delivery_editor_funciones`, `menu_delivery_detalle_dedup`)
 
 Karina reportaba seguido problemas del menú de delivery (una opción que no debería ofrecerse, un precio viejo, dos opciones que se pisan) y había que esperar a que Cesar llegara a su casa a tocar código. Ahora lo arregla ella.
