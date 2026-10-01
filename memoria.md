@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 1-Oct-2026 — Hamburguesa en lechuga (migración `pan_lechuga`)
+
+Frank: poder cambiar el pan por lechuga en cualquier hamburguesa, en cualquier canal, sin tocar nada más; que cocina lo vea y que no descargue pan.
+
+- **Grupo nuevo «Pan»** (opcional, una opción, `tipo='unico'`, orden 1) con **«EN LECHUGA (sin pan)»**, sin costo. Insumos de la opción: **−1 Pan de Hamburguesa Brioche 2.8oz** y **+0.11 lb Lechuga libra escarolada** (≈50 g; el topping de La Clásica es 0.056 lb).
+- **Dónde aparece (16 ítems):** en cada componente «Hamburguesa» de los combos que traen pan de hamburguesa en su receta (local, para llevar, drive, delivery, PedidosYa; en PeYa también el componente «Freakie Burger»), así que en un Duo sale **una vez por hamburguesa** y se elige por separado; y en las hamburguesas sueltas sin componentes (Burger La Clasica, cumpleaños, Hamburguesa sola). También sale en el menú web (`menu_publico_delivery`).
+- **Descarga:** el pan lo pone la receta del combo; el −1 de la opción se resta en la misma cuenta (`pos_deducir_inventario` suma por cuenta y descarta ≤ 0). Probado en rollback con un Burger Duo real: una hamburguesa en lechuga → pan 2→1, lechuga +0.11 lb, carne igual.
+- **Cocina:** el KDS lo muestra en la fila de esa hamburguesa como «Pan: EN LECHUGA (sin pan)». Sin cambios de código.
+- No se tocó ningún grupo, receta, precio ni la facturación. Para quitarlo: `update pos_modificadores_grupo set activo=false where nombre='Pan'`.
+
 ## 1-Oct-2026 — Cancelaciones con validación del gerente + avisos push del ERP (migración `cancelaciones_validacion`, edge function `cancelaciones-push`)
 
 Cancelar algo que ya estaba en cocina dejaba el inventario según lo que dijera caja o cocina (gana cocina), y en el cuadre aparecían mermas infladas o producto que «sobraba». Frank decidió que **el gerente decida cada caso** y que el conteo no se guarde con cancelaciones sin decidir.
