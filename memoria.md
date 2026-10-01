@@ -44,6 +44,32 @@ Cancelar algo que ya estaba en cocina dejaba el inventario según lo que dijera 
 - **Mismo día, ajustes (Frank):** en Cafetalón decide **Jazmín Fuentes** (`cancelacion_avisos` primero; sigue siendo admin) y se desactivó el gerente temporal del 15-sep. **El grupo ya no recibe push** (migración `cancelaciones_sin_push_grupo`): a los 15 min el aviso «⏰ Sin decidir» le vuelve a llegar a ella, y Frank/César/José lo ven solo en el ERP (píldora sin sonido, solo las pasadas de 15 min). `cancelacion_config.push_grupo=true` devuelve el salto al grupo en una sucursal sin encargado.
 - (Resuelto el mismo día) M001 no tenía gerente real: el único usuario gerente era «Autorizacion Temporal Conteo 15-sep (revocar manana)», ya desactivado.
 
+## 1-Oct-2026 — El viaje de ida y vuelta: el catálogo mandaba ids que el intake no podía leer
+
+Horas antes de la homologación, ensayando un pedido completo con la forma anidada real, `peya_crear_cuenta` reventó con **error de FK**. No era el ensayo: era un bug que habría roto todo pedido real.
+
+**La cadena.** PedidosYa nos devuelve en `products[].remoteCode` **el mismo id que le dimos en el catálogo**. Y el intake lo resuelve así:
+
+```sql
+select id from pos_menu_items where id::text = v_prod->>'remoteCode'
+```
+
+o sea que espera un **UUID pelado**. El serializador emitía `PROD-<uuid>`: el prefijo rompía el match de todo pedido. Y el respaldo por nombre no salvaba nada — `peya_producto_map` tiene **15 filas** y hay **105 vendibles** (92 sin entrada). El camino real era: no resuelve por remoteCode → no resuelve por nombre → `peya_sin_mapear` + UUID centinela `00000000-…` → **error de FK**. Resultado: pedido aceptado en PedidosYa y **sin comanda en cocina**.
+
+**Fix.** Los `Product` (ítems vendibles y opciones de modificador) ahora llevan UUID pelado. `Menu`, `Category` y `Topping` conservan prefijo: no vuelven nunca en un pedido y el prefijo los hace legibles al depurar un import. Verificado que no hay colisión de UUID entre `pos_menu_items`, `pos_modificadores`, `pos_menu_categorias` ni `pos_modificadores_grupo` (0 en los tres cruces).
+
+Se arregló en el catálogo y **no** en `peya_crear_cuenta` a propósito: esa función es intake en producción y reescribirla a mano el día de la homologación es más riesgo que beneficio. En el catálogo es una línea.
+
+**Chequeos 24 y 25 (nuevos)** corren *exactamente la consulta del intake* contra cada id que mandamos. Eso era lo que faltaba: los 23 anteriores validaban que el catálogo fuera **válido para PeYa**, pero ninguno que fuera **legible por nosotros de vuelta**. Bloque 3 pasó de 23 a **25**.
+
+**Ensayo completo, verde:** pedido con modificador anidado → comanda en cocina con la opción resuelta ("Botella Agua", `opcion_id` presente), nota del cliente y estación. Se limpió después — Cafetalón tiene turno abierto y el ensayo generó comanda real: se borró cocina_queue, cuenta_items, cuenta y la orden, verificado 0 filas.
+
+**Total: 55 tests verde** — 26 bloques 1-2, 25 catálogo, 4 modificadores anidados.
+
+**El fixture también estaba mal:** `peya_test_toppings_anidados` mandaba *nuestro* nombre de modificador como si fuera el de PeYa. Con "Ketchup" coincidían y pasaba; cuando el menú rotó y le tocó "Botella Agua" —que PeYa llama **"agua"**— falló y parecía un bug del traductor. No lo era. Ahora manda `peya_nombre_norm` y el par a probar es determinista.
+
+**Nota de proceso:** el contenedor se re-clonó a mitad de sesión y el checkout local quedó en `main` con el nombre de la rama, aparentando que se había perdido trabajo. No se perdió nada: estaba todo en el remoto. Se recuperó con `git reset --hard origin/<rama>` y se rebaseó sobre el main nuevo de Cesar, conservando sus dos entradas de memoria y las mías.
+
 ## 30-Sep-2026 — Karina edita el menú de delivery sola (migraciones `menu_reglas_exclusion`, `menu_delivery_editor_funciones`, `menu_delivery_detalle_dedup`)
 
 Karina reportaba seguido problemas del menú de delivery (una opción que no debería ofrecerse, un precio viejo, dos opciones que se pisan) y había que esperar a que Cesar llegara a su casa a tocar código. Ahora lo arregla ella.
