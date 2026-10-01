@@ -5,7 +5,8 @@ import { estadoAvisos, activarAvisos, desactivarAvisos, probarAvisos } from '../
 // ── Cancelaciones por resolver (1-oct-2026, Frank) ─────────────────────────────
 // Cuando se cancela algo que ya entró a cocina (caja, web, PedidosYa o a mano),
 // el gerente de la sucursal decide qué pasó con el producto. Caja y cocina solo
-// opinan. Si en 15 minutos nadie decide, avisa también a Frank, César y José.
+// opinan. Si en 15 minutos nadie decide, le vuelve a avisar al gerente; Frank,
+// César y José lo ven solo dentro del ERP (sin push, decisión del 1-oct).
 // El conteo nocturno no se guarda mientras quede alguna sin decidir.
 // En modo "sombra" la decisión se guarda pero el inventario sigue como lo
 // dejaron caja y cocina (se compara una semana antes de activarlo).

@@ -5,6 +5,7 @@ import { beepSOS } from '../supply-chain/sos'
 // ── Píldora de cancelaciones por decidir (1-oct-2026) ─────────────────────────
 // Complemento del aviso push: con el ERP abierto, en cualquier pantalla, quien
 // puede decidir ve cuántas cancelaciones esperan y suena cuando entra una nueva.
+// Para el grupo es solo visual y solo con las que pasaron los 15 min.
 // Revisa cada 30 s y al volver a la app. La base decide quién puede (gerente de
 // la sucursal, primer aviso o grupo Frank/César/José): si no tiene sucursales,
 // no se muestra nada.
@@ -22,8 +23,12 @@ export default function CancelacionesAlerta({ user, currentScreen, onNavigate })
       if (document.hidden) return
       const { data, error } = await db.rpc('cancelaciones_bandeja', { p_usuario_id: user.id, p_dias: 1 })
       if (!vivo || error || !data) return
-      const p = (data.items || []).filter(c => c.estado === 'pendiente' && !c.es_mia)
-      if (vistos.current && p.some(c => !vistos.current.has(c.id))) beepSOS()
+      // El grupo (Frank, César, José) no recibe push ni sonido (1-oct, Frank:
+      // «se puede volver molesto, y así ella toma más responsabilidad»): en su
+      // ERP la píldora sale solo cuando una lleva más de 15 min sin decidir.
+      const grupo = !!data.es_grupo
+      const p = (data.items || []).filter(c => c.estado === 'pendiente' && !c.es_mia && (!grupo || c.escalado_at))
+      if (!grupo && vistos.current && p.some(c => !vistos.current.has(c.id))) beepSOS()
       vistos.current = new Set(p.map(c => c.id))
       setPend(p)
     }
