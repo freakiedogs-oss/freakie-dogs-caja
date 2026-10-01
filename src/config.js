@@ -202,8 +202,8 @@ export const NAV_SECTIONS = [
       // Los que Freakie le emite a Hacienda. Sin `contador`: la vista pasa por
       // el gate de finanzas, que solo deja entrar a admin/ejecutivo/superadmin,
       // así que ofrecérsela sería mandarlo a un error de sesión.
-      { key: 'dtes-emitidos', label: 'DTEs Emitidos · Facturar', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin'] },
-      { key: 'clientes-facturacion', label: 'Clientes de Facturación', icon: '👤', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
+      { key: 'dtes-emitidos', label: 'DTEs Emitidos · Facturar', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'eventos'] },
+      { key: 'clientes-facturacion', label: 'Clientes de Facturación', icon: '👤', roles: ['ejecutivo', 'admin', 'superadmin', 'contador', 'eventos'] },
       { key: 'libros-contables', label: 'Libros Contables', icon: '📒', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },

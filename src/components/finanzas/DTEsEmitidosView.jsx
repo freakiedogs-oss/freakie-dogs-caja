@@ -40,7 +40,9 @@ const TIPOS_FILTRO = [
   { codigo: '14', nombre: 'Sujeto Excluido' },
 ]
 
-const ROLES_EMISION = new Set(['admin', 'superadmin', 'ejecutivo'])
+// `eventos` factura a los clientes de eventos. El corte real está en el
+// proxy (api/dte-proxy.js, ERP_ROLES_OK); acá solo se muestra u oculta el botón.
+const ROLES_EMISION = new Set(['admin', 'superadmin', 'ejecutivo', 'eventos'])
 
 const fmt = (n) => n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const hoyISO = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10)
