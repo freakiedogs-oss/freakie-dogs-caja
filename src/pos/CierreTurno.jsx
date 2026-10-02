@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { db } from '../supabase'
 import { STORES, BUCKET_CIERRES } from '../config'
 import QrFotoUpload from '../components/ui/QrFotoUpload'
+import VegetalesCierre, { vegVacio, vegCompleto, guardarVegetales } from '../components/caja/VegetalesCierre'
 import Icon from './Icon'
 import { useToast } from '../hooks/useToast'
 import { printCorte, getImpresoras } from './print/printService'
@@ -274,6 +275,8 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
   const [motivoN1co, setMotivoN1co]       = useState('')
   const [motivoOtroN1co, setMotivoOtroN1co] = useState('')
   const voucherRef = useRef(null)
+  // Vegetales del día (paso del Z). Solo la foto de la factura es obligatoria, y solo si se compró.
+  const [veg, setVeg] = useState(vegVacio)
 
   // ── Turno abierto de ESTE cajero en ESTA caja ──
   // Se filtra por cajero_id ADEMÁS de por caja: si otra persona ya abrió esta caja,
@@ -609,6 +612,7 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
     if (!hayN1co) { toast.warning('Ingresá el total de tarjeta que muestra el cierre del datáfono n1co'); return }
     if (!voucherFile && !voucherQrUrl && !sinVoucher && !sinFotoHoy) { toast.warning('Tomá la foto del voucher de cierre de n1co (o marcá que la tablet no deja tomarla)'); return }
     if (!n1coCuadra && !motivoN1coFinal) { toast.warning('El total de n1co no cuadra con el sistema: elegí por qué'); return }
+    if (!vegCompleto(veg, sinFotoHoy)) { toast.warning('Falta la foto de la factura de vegetales (o marcá que hoy no se compraron vegetales)'); return }
     if (!(await confirmAsync('¿Cerrar el DÍA con corte Z? Es definitivo y solo se hace una vez al día. Incluye todos los turnos.', { title: 'Corte Z · cierre del día', confirmText: 'Cerrar el día', danger: true }))) return
     setSaving(true)
     // Corte DENTRO del gesto del botón: el cierre Z hace aún más await (subir
@@ -629,6 +633,9 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
           ])
         } catch (err) { toast.warning(`El voucher de n1co se guarda SIN foto (${err.message}).`) }
       }
+      // Vegetales del día: se guardan aparte del cierre (nunca lo tumban). Si falla, se avisa.
+      const _vr = await guardarVegetales({ v: veg, storeCode, fecha: diaISO, usuario: user.nombre, sinFotoHoy })
+      _vr.avisos.forEach(a => toast.warning(a))
       // 1. Cierra ESTE turno con su propio snapshot (para que el rebuild sume bien por turno);
       //    el depósito y el conteo son del DÍA completo. El payload se guarda primero en
       //    el equipo: si el envío falla, el cierre se recupera en vez de perderse.
@@ -943,6 +950,9 @@ export default function CierreTurno({ user, onBack, ownTurnoOnly = true }) {
             <div style={{ fontSize: 11, color: '#6b6878', marginTop: 8, lineHeight: 1.5 }}>No se deposita en el cambio de turno: entregás la gaveta ({fmt(efReal || espTurno)}) al siguiente cajero. El depósito se hace en el cierre Z del día.</div>
           )}
         </div>
+
+        {/* VEGETALES DEL DÍA (solo cierre Z) */}
+        {esZ && <VegetalesCierre value={veg} onChange={setVeg} storeCode={storeCode} diaISO={diaISO} sinFotoHoy={sinFotoHoy} />}
 
         {/* OBSERVACIONES */}
         <div style={card}>

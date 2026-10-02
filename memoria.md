@@ -1,5 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 2-Oct-2026 — «Vegetales del día» en el Corte Z + módulo «Vegetales» para Saúl (migración `cierre_vegetales`)
+
+Cesar pidió llevar el control de vegetales desde el cierre de caja, con base en la planilla «Cronograma Requisición Interna Vegetales», y que Saúl (asesor, usuario `admin`) lo pueda revisar en todas las sucursales.
+
+- **Dónde:** nuevo paso en el **Corte Z** de `src/pos/CierreTurno.jsx` (el mismo componente lo usan el POS y `CorteXZView` del ERP, así que cubre tablet y compu). Solo en Z: es un dato del día, no del turno. Componente `src/components/caja/VegetalesCierre.jsx`.
+- **Qué pide:** switch «se compraron vegetales / no se compraron», lechuga (lb), tomate (lb), monto de factura ($), quién autorizó y foto de la factura (hasta 3, cámara o QR del teléfono). Sin unidades ni merma. Colapsable «Ver semana completa» (tira Lun–Dom, totales, requisiciones X de 3, criterios de la planilla) y nota de qué segmento compra ese día.
+- **Única obligatoria:** la foto de la factura de vegetales, y solo si hubo compra. Bloquea «Cerrar el día (Z)». Respeta la excepción `pos_cierre_excepciones.sin_foto` del día (queda marcada `sin_foto=true`). Decisión de Cesar: ningún otro dato es obligatorio porque aún no está claro cómo manejar la requisición.
+- **Guardado:** `cierre_vegetales` (1 fila por `store_code`+`fecha`, upsert), fotos en el bucket `cierres-fotos` bajo `vegetales/<store>/`. Se guarda ANTES del cierre pero fuera de su flujo: si falla solo avisa, nunca tumba el Z. RLS permisiva + GRANTs como `inventario_conteo_bebidas`.
+- **Revisión:** módulo **🥬 Vegetales** (Dashboards; `VegetalesView.jsx`, `nav_key='vegetales'` en `permisos_rol` para admin/superadmin/ejecutivo): semana navegable, matriz sucursal × día (compró / no compró / sin registro «?»), compras X/3 por sucursal, totales y detalle con miniatura de cada factura.
+- No se tocó DTE, ventas ni depósitos. Build OK. **Requiere deploy de Vercel** para que las sucursales lo vean; la tabla y los permisos ya están en producción.
+- Ojo: el rol `gerente` no ve el módulo (Saúl es `admin`); se agrega a `permisos_rol` si lo piden. `CierreForm.jsx` (edición ERP de cierres viejos) no lleva el paso.
+
 ## 1-Oct-2026 — El rol `eventos` factura a clientes desde «DTEs Emitidos · Facturar» (migración `sesion_finanzas_rol_eventos`)
 
 Jose le dio a `eventos` (Edgar) los módulos `dtes-emitidos` y `clientes-facturacion` en `permisos_rol`, pero al entrar salía la «Sesión de finanzas» con «Tu rol (eventos) no puede administrar PINs». El permiso del menú no alcanzaba: esa pantalla lee `v_dtes_emitidos` por el proxy `/sb`, que exige una sesión de staff, y había tres candados más abajo que no conocían el rol.

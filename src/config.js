@@ -115,6 +115,8 @@ export const NAV_SECTIONS = [
       // Almacén porque la pregunta que responde es de negocio (qué se fue en
       // insumos por lo que se vendió), no de stock.
       { key: 'consumo-venta', label: 'Consumo por Venta', icon: '🍔', roles: ['admin', 'superadmin', 'ejecutivo'] },
+      // Compra de vegetales por sucursal y día (lo registra la cajera en el Corte Z). Para Saúl y gerencia.
+      { key: 'vegetales', label: 'Vegetales', icon: '🥬', roles: ['admin', 'superadmin', 'ejecutivo'] },
       { key: 'inventario-dash', label: 'Inventario Global', icon: '📦', roles: ['ejecutivo', 'admin'] },
       { key: 'kpi-delivery', label: 'KPI Delivery Propio', icon: '🛵', roles: ['superadmin'] },
     ],
