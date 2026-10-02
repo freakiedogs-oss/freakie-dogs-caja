@@ -231,7 +231,12 @@ async function accionTienda(
 
   if (!pin) return json({ error: "falta_pin" }, 400);
 
-  const { data: v, error: errV } = await svc.rpc("peya_vendor_de_usuario", { p_pin: String(pin) });
+  // Un rol de todas las tiendas puede nombrar el remoteId (incluida la sandbox de
+  // homologación, que por diseño nunca sale de la sucursal de nadie).
+  const { data: v, error: errV } = await svc.rpc("peya_vendor_de_usuario", {
+    p_pin: String(pin),
+    p_remote_id: cuerpo.remoteId ? String(cuerpo.remoteId).trim() : null,
+  });
   if (errV) return json({ error: "base", message: errV.message }, 500);
   const vendor = v as Record<string, any>;
   if (!vendor?.ok) return json(vendor ?? { error: "sin_vendor" }, 400);
@@ -341,7 +346,13 @@ async function accionTienda(
   // marcarlo cerrado acá y seguir recibiendo pedidos— sería peor que no hacer nada:
   // la caja creería que no entran y entrarían igual.
   let local: unknown = null;
-  if (algunoOk) {
+  if (algunoOk && vendor.es_pruebas) {
+    // La sandbox no es la tienda de ninguna sucursal: se anota en su propia fila.
+    const { error: eUp } = await svc.from("peya_vendor_map")
+      .update({ disponible: abrir, disponible_at: new Date().toISOString() })
+      .eq("remote_id", vendor.remote_id);
+    local = { ok: !eUp, remote_id: vendor.remote_id, disponible: abrir, es_pruebas: true };
+  } else if (algunoOk) {
     const { data: l } = await svc.rpc("peya_tienda_abrir_cerrar", {
       p_pin: String(pin),
       p_disponible: abrir,
