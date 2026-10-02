@@ -38,7 +38,8 @@ const FN_URL = (typeof process !== 'undefined' && process.env?.FREAKIE_DTE_EMAIL
 // Reenviar un documento fiscal es una operación de gerencia, igual que emitirlo
 // a mano: misma whitelist que usa `dte-proxy` para el origen `erp`. Una cajera
 // no reenvía facturas del back-office.
-const ROLES_OK = new Set(['admin', 'ejecutivo', 'superadmin', 'super']);
+// `eventos` (1-oct-2026): le reenvía al cliente del evento el DTE que emitió.
+const ROLES_OK = new Set(['admin', 'ejecutivo', 'superadmin', 'super', 'eventos']);
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
 

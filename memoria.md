@@ -26,6 +26,54 @@ Jose pidió que al pesar e imprimir en `/etiquetado.html` se descarguen insumos 
 - **Datos de Jose (02-oct):** Chili = 4 bolsas de **5 lb**; Cebolla Morada 66 lb → 30 bolsas 1 lb confirmado y vinagre **0.5 L** (la receta dice 0.005); Mermelada bolsa de 5 lb (asumido, pesar); **Ranch ya no se porciona** (bote completo, sale de la estación); Truffa en bolsas de 1 lb (pesar).
 - Notion no estaba autorizado en esta sesión: no se marcó en EN_PROGRESO. Hacerlo antes de tocar `registrar_produccion` o `ProduccionDiaria.jsx`.
 
+## 2-Oct-2026 — Kevin mantiene la lista de productos del etiquetado desde la misma báscula (migraciones `etiquetado_productos_tabla`, `_funciones`, `_retiro_automatico_15_dias`, `_alta_revive_retirado`)
+
+Pedido de Cesar: «que no tengan que esperar a que yo tenga tiempo libre». Si alguien llega a la báscula con un producto que no está en la lista, la producción se paraba hasta un commit + deploy. Ahora la lista es dato y la mantiene quien ve el problema, igual que las reglas de menú de Karina.
+
+- **`etiquetado_productos`** reemplaza al array de `productos.js`, sembrada con los 14 que había. `gramos` es el NETO y `tara` el empaque. `origen` distingue `base` (los 14) de `estacion` (los que crea Kevin). Cada cambio queda en `etiquetado_productos_bitacora` con quién y qué.
+- **El candado está donde se cambia la lista, no donde se pesa.** Pesar sigue sin PIN (tablet dedicada, bajo control de Casa Matriz); crear o corregir pide PIN y lo valida `fn_etiquetado_actor`, que solo deja pasar `jefe_casa_matriz`, `produccion`, `admin`, `ejecutivo`, `superadmin`. Verificado: Kevin Alberto Andrade pasa, un PIN de cocina no.
+- **Nombre y peso objetivo obligatorios** (decisión de Cesar). Banda, tara, días y conservación son opcionales y se completan después — así nadie queda trabado por un dato que todavía no tiene, pero ningún producto nace sin control de peso, que es como nacieron los 7 que arrastramos.
+- **Retiro a los 15 días sin uso**, `pg_cron` a las 03:10 SV. **Se retira, no se borra**, y Cesar pidió borrar: las etiquetas impresas llevan la clave del producto en el QR, así que borrar la fila deja QR que no resuelven a nada. Para que no haga falta una pantalla de «retirados», **volver a crear el producto con el mismo nombre revive el que estaba** (misma fila, mismo peso y tara) en vez de duplicarlo — probado de punta a punta.
+- **Solo alcanza a `origen='estacion'`.** Los 14 de base no se retiran solos: la sal dura 180 días y la mermelada 21, así que pasar más de 15 días sin producirse es normal y desaparecerlas sería un bug, no una limpieza.
+- `fn_etiquetado_marcar_uso` se llama al tocar «Empezar a pesar». Es el único rastro de uso que hay **porque la estación todavía no guarda lotes**; cuando los guarde, el uso debería salir de ahí.
+- **La tablet degrada en vez de romperse:** `cargarProductos()` lee la base, cae al cache de la última vez y, si nunca vio nada, al respaldo del código. La pantalla avisa cuando no está leyendo de la base.
+- Archivos: `productos.js` (reescrito), `ProductoEditor.jsx` (nuevo), `EtiquetadoApp.jsx` (botón «+ Agregar un producto» y ✎ por tarjeta).
+- **Pendiente:** correr el build en Windows. Y lo de siempre — la estación sigue sin guardar lotes ni tocar el kardex.
+
+## 2-Oct-2026 — Etiquetado: carne para hamburguesa y la tara del empaque
+
+Cesar pidió agregar la carne de hamburguesa a la estación: bolsa de 20 bolitas de 0.15 lb, sellada al vacío. Obligó a meter un concepto que faltaba.
+
+- **La tara.** Hasta ahora ningún producto la necesitaba (bolsas livianas, sin objetivo estricto), pero acá la báscula ve carne + plástico. Sin descontarla, toda bolsa salía marcada como sobrepeso y la etiqueta decía más de lo que la sucursal recibe. `productos.js` acepta `tara` (gramos, default 0) y `EtiquetadoApp` juzga e imprime **neto**: `neto(g) = g - tara`. El bruto y la tara viajan en el payload del QR (`|br1373|t12`) por si hay que rehacer la cuenta; en la etiqueta no entran, no hay espacio en 2×1".
+- **Objetivo 1,361 g netos** (20 × 0.15 lb = 3.00 lb). Con tara provisional de 12 g la báscula debería marcar ~1,373 g.
+- **Banda ±34 g, no ±50** como los demás. Una bolita pesa 68 g, así que media bolita es el límite que garantiza atrapar una bolsa de 19 o de 21 sin que la variación normal del boleado dispare falsas alarmas. Con ±50 pasaría una bolsa incompleta.
+- **Vencimiento 5 días**, puesto por criterio (carne cruda refrigerada), no por estudio. Entra en la misma lista de provisionales que espera el RVP-13 de Mauricio.
+- **PENDIENTE — la tara de 12 g es un número inventado.** Hay que pesar 10 bolsas vacías y promediar. La pantalla lo muestra marcado como provisional.
+- **Queso frito** (mismo día): cada orden son 0.30 lb = **136 g**, banda ±8 g, tara 2 g. El catálogo lo confirma — «Bolsa de 25 bolsitas de 0.30 lb» —, así que lo que se pesa es la bolsita, una por orden, no el paquete de 25. Si se decide etiquetar el paquete entero son 3,402 g y es un renglón.
+- Sigue pendiente de antes: 7 de los 14 productos no tienen peso objetivo (salsas, ranch, mermelada, salchicha, cebolla blanca); ahora se ven en ámbar en la lista para que se note. Y lo grande: **la estación todavía no guarda nada** — ni lote en BD ni kardex.
+
+## 2-Oct-2026 — «Vegetales del día» en el Corte Z + módulo «Vegetales» para Saúl (migración `cierre_vegetales`)
+
+Cesar pidió llevar el control de vegetales desde el cierre de caja, con base en la planilla «Cronograma Requisición Interna Vegetales», y que Saúl (asesor, usuario `admin`) lo pueda revisar en todas las sucursales.
+
+- **Dónde:** nuevo paso en el **Corte Z** de `src/pos/CierreTurno.jsx` (el mismo componente lo usan el POS y `CorteXZView` del ERP, así que cubre tablet y compu). Solo en Z: es un dato del día, no del turno. Componente `src/components/caja/VegetalesCierre.jsx`.
+- **Qué pide:** switch «se compraron vegetales / no se compraron», lechuga (lb), tomate (lb), monto de factura ($), quién autorizó y foto de la factura (hasta 3, cámara o QR del teléfono). Sin unidades ni merma. Colapsable «Ver semana completa» (tira Lun–Dom, totales, requisiciones X de 3, criterios de la planilla) y nota de qué segmento compra ese día.
+- **Única obligatoria:** la foto de la factura de vegetales, y solo si hubo compra. Bloquea «Cerrar el día (Z)». Respeta la excepción `pos_cierre_excepciones.sin_foto` del día (queda marcada `sin_foto=true`). Decisión de Cesar: ningún otro dato es obligatorio porque aún no está claro cómo manejar la requisición.
+- **Guardado:** `cierre_vegetales` (1 fila por `store_code`+`fecha`, upsert), fotos en el bucket `cierres-fotos` bajo `vegetales/<store>/`. Se guarda ANTES del cierre pero fuera de su flujo: si falla solo avisa, nunca tumba el Z. RLS permisiva + GRANTs como `inventario_conteo_bebidas`.
+- **Revisión:** módulo **🥬 Vegetales** (Dashboards; `VegetalesView.jsx`, `nav_key='vegetales'` en `permisos_rol` para admin/superadmin/ejecutivo): semana navegable, matriz sucursal × día (compró / no compró / sin registro «?»), compras X/3 por sucursal, totales y detalle con miniatura de cada factura.
+- No se tocó DTE, ventas ni depósitos. Build OK. **Requiere deploy de Vercel** para que las sucursales lo vean; la tabla y los permisos ya están en producción.
+- Ojo: el rol `gerente` no ve el módulo (Saúl es `admin`); se agrega a `permisos_rol` si lo piden. `CierreForm.jsx` (edición ERP de cierres viejos) no lleva el paso.
+
+## 1-Oct-2026 — El rol `eventos` factura a clientes desde «DTEs Emitidos · Facturar» (migración `sesion_finanzas_rol_eventos`)
+
+Jose le dio a `eventos` (Edgar) los módulos `dtes-emitidos` y `clientes-facturacion` en `permisos_rol`, pero al entrar salía la «Sesión de finanzas» con «Tu rol (eventos) no puede administrar PINs». El permiso del menú no alcanzaba: esa pantalla lee `v_dtes_emitidos` por el proxy `/sb`, que exige una sesión de staff, y había tres candados más abajo que no conocían el rol.
+
+- **`erp_admin_sesion`** ahora emite sesión también para `eventos` (mensaje nuevo: «no puede abrir sesión de finanzas»). **`_admin_sesion` no se tocó**: los RPC de usuarios/PINs siguen rechazando a `eventos`. Probado con una sesión real de prueba (borrada): `fin_sesion_rol` devuelve `eventos`, `_admin_sesion` devuelve null.
+- **`api/supaproxy.js`**: `v_dtes_emitidos`, `dte_emitido_detalle` y `v_dte_duplicados_pendientes` salen de `FINANZAS_OBJETOS` a una lista propia **`DTE_OBJETOS`** con `ROLES_DTE = admin/superadmin/ejecutivo/eventos`. P&L, banco y planilla siguen con las listas de antes: `eventos` no las ve aunque tenga sesión.
+- **Emisión y reenvío**: `api/dte-proxy.js` (`ERP_ROLES_OK`, origen `erp`) y `api/dte-email.js` (`ROLES_OK`) aceptan `eventos`; `DTEsEmitidosView` muestra el botón «Facturar» a ese rol. Sigue pidiendo el PIN de quien emite en cada documento. `config.js` lleva `eventos` en los dos módulos como fallback de `permisos_rol`.
+- **Hueco cerrado de rebote:** `_staff_valida` (validador de TODOS los RPC `torre_*` de delivery) solo miraba que el token existiera, así que cualquier sesión de `erp_admin_sesion` —también las de `rrhh`— servía para asignar motoristas o cancelar pedidos. Ahora exige `_torre_rol_ok`, la misma regla con la que `staff_login` emite tokens de torre. Verificado: las 5 sesiones activas (telefono, despachador, superadmin) siguen validando; la de `eventos` no pasa. `rrhh` no tiene ninguna pantalla de delivery en `permisos_rol`, así que nadie pierde algo que usara.
+- No se tocó `dte-service` ni la firma: solo quién puede pedirle al proxy que emita. Build OK; **el deploy de Vercel es necesario** para que apliquen los tres `api/*.js`.
+
 ## 1-Oct-2026 — Hamburguesa en lechuga (migración `pan_lechuga`)
 
 Frank: poder cambiar el pan por lechuga en cualquier hamburguesa, en cualquier canal, sin tocar nada más; que cocina lo vea y que no descargue pan.

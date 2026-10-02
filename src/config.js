@@ -115,6 +115,8 @@ export const NAV_SECTIONS = [
       // Almacén porque la pregunta que responde es de negocio (qué se fue en
       // insumos por lo que se vendió), no de stock.
       { key: 'consumo-venta', label: 'Consumo por Venta', icon: '🍔', roles: ['admin', 'superadmin', 'ejecutivo'] },
+      // Compra de vegetales por sucursal y día (lo registra la cajera en el Corte Z). Para Saúl y gerencia.
+      { key: 'vegetales', label: 'Vegetales', icon: '🥬', roles: ['admin', 'superadmin', 'ejecutivo'] },
       { key: 'inventario-dash', label: 'Inventario Global', icon: '📦', roles: ['ejecutivo', 'admin'] },
       { key: 'kpi-delivery', label: 'KPI Delivery Propio', icon: '🛵', roles: ['superadmin'] },
     ],
@@ -202,8 +204,8 @@ export const NAV_SECTIONS = [
       // Los que Freakie le emite a Hacienda. Sin `contador`: la vista pasa por
       // el gate de finanzas, que solo deja entrar a admin/ejecutivo/superadmin,
       // así que ofrecérsela sería mandarlo a un error de sesión.
-      { key: 'dtes-emitidos', label: 'DTEs Emitidos · Facturar', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin'] },
-      { key: 'clientes-facturacion', label: 'Clientes de Facturación', icon: '👤', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
+      { key: 'dtes-emitidos', label: 'DTEs Emitidos · Facturar', icon: '🧾', roles: ['ejecutivo', 'admin', 'superadmin', 'eventos'] },
+      { key: 'clientes-facturacion', label: 'Clientes de Facturación', icon: '👤', roles: ['ejecutivo', 'admin', 'superadmin', 'contador', 'eventos'] },
       { key: 'libros-contables', label: 'Libros Contables', icon: '📒', roles: ['ejecutivo', 'admin', 'superadmin', 'contador'] },
       { key: 'gastos', label: 'Gastos de Caja', icon: '💸', roles: ['ejecutivo', 'contador', 'admin'] },
       { key: 'conciliacion', label: 'Conciliación', icon: '🏦', roles: ['ejecutivo', 'contador', 'admin'] },
