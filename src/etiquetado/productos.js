@@ -83,5 +83,5 @@ export async function guardarProducto(pin, p) {
 /* Se llama al empezar a pesar. Es lo que mantiene vivo al producto: lo que
    nadie pesa en 15 días lo retira solo un job de la base. */
 export function marcarUso(clave) {
-  db.rpc('fn_etiquetado_marcar_uso', { p_clave: clave }).catch(() => { /* no bloquea el pesaje */ })
+  Promise.resolve(db.rpc('fn_etiquetado_marcar_uso', { p_clave: clave })).catch(() => { /* no bloquea el pesaje */ })
 }
