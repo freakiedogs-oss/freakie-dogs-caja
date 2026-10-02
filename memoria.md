@@ -1,5 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 2-Oct-2026 — Etiquetado: carne para hamburguesa y la tara del empaque
+
+Cesar pidió agregar la carne de hamburguesa a la estación: bolsa de 20 bolitas de 0.15 lb, sellada al vacío. Obligó a meter un concepto que faltaba.
+
+- **La tara.** Hasta ahora ningún producto la necesitaba (bolsas livianas, sin objetivo estricto), pero acá la báscula ve carne + plástico. Sin descontarla, toda bolsa salía marcada como sobrepeso y la etiqueta decía más de lo que la sucursal recibe. `productos.js` acepta `tara` (gramos, default 0) y `EtiquetadoApp` juzga e imprime **neto**: `neto(g) = g - tara`. El bruto y la tara viajan en el payload del QR (`|br1373|t12`) por si hay que rehacer la cuenta; en la etiqueta no entran, no hay espacio en 2×1".
+- **Objetivo 1,361 g netos** (20 × 0.15 lb = 3.00 lb). Con tara provisional de 12 g la báscula debería marcar ~1,373 g.
+- **Banda ±34 g, no ±50** como los demás. Una bolita pesa 68 g, así que media bolita es el límite que garantiza atrapar una bolsa de 19 o de 21 sin que la variación normal del boleado dispare falsas alarmas. Con ±50 pasaría una bolsa incompleta.
+- **Vencimiento 5 días**, puesto por criterio (carne cruda refrigerada), no por estudio. Entra en la misma lista de provisionales que espera el RVP-13 de Mauricio.
+- **PENDIENTE — la tara de 12 g es un número inventado.** Hay que pesar 10 bolsas vacías y promediar. La pantalla lo muestra marcado como provisional.
+- **Queso frito** (mismo día): cada orden son 0.30 lb = **136 g**, banda ±8 g, tara 2 g. El catálogo lo confirma — «Bolsa de 25 bolsitas de 0.30 lb» —, así que lo que se pesa es la bolsita, una por orden, no el paquete de 25. Si se decide etiquetar el paquete entero son 3,402 g y es un renglón.
+- Sigue pendiente de antes: 7 de los 14 productos no tienen peso objetivo (salsas, ranch, mermelada, salchicha, cebolla blanca); ahora se ven en ámbar en la lista para que se note. Y lo grande: **la estación todavía no guarda nada** — ni lote en BD ni kardex.
+
 ## 2-Oct-2026 — «Vegetales del día» en el Corte Z + módulo «Vegetales» para Saúl (migración `cierre_vegetales`)
 
 Cesar pidió llevar el control de vegetales desde el cierre de caja, con base en la planilla «Cronograma Requisición Interna Vegetales», y que Saúl (asesor, usuario `admin`) lo pueda revisar en todas las sucursales.
