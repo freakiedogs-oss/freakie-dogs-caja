@@ -118,15 +118,22 @@ export default function EtiquetadoApp({ quien }) {
     catch (e) { setErr(e.message || 'No se pudo imprimir') }
   }
 
-  const dentro = (g) => !prod?.gramos || Math.abs(g - prod.gramos) <= (prod.banda || 0)
+  // La báscula pesa producto + empaque. Todo lo que se juzga y todo lo que se
+  // imprime es NETO: la sucursal recibe carne, no bolsa.
+  const neto = (g) => Math.max(0, g - (prod?.tara || 0))
+  const dentro = (g) => !prod?.gramos || Math.abs(neto(g) - prod.gramos) <= (prod.banda || 0)
 
   // Arma los datos de UNA unidad en la forma que pide armarZplFila. La
   // fecha/hora y quién la hizo van dentro del QR, no impresas: a 2×1" por
   // etiqueta no entran como texto propio (ver zebraZpl.js).
   const datosCelda = (u) => ({
     producto: prod.nombre, lote, indice: u.i, total,
-    gramos: mil(u.g), libras: lbs(u.g), vence: u.vence,
-    qr: `${lote}|${prod.id}|${u.i}/${total}|${u.g}g|${u.fecha}|${u.hora}|${quien}`,
+    gramos: mil(u.n), libras: lbs(u.n), vence: u.vence,
+    // En el QR va el neto y, cuando hay empaque, también el bruto y la tara:
+    // si algún día se discute un peso, ahí está la cuenta completa.
+    qr: `${lote}|${prod.id}|${u.i}/${total}|${Math.round(u.n)}g`
+      + (prod.tara ? `|br${Math.round(u.g)}|t${prod.tara}` : '')
+      + `|${u.fecha}|${u.hora}|${quien}`,
   })
 
   async function pesarEImprimir() {
@@ -135,7 +142,7 @@ export default function EtiquetadoApp({ quien }) {
     const g = bal.gramos
     const i = hechas.length + (pendiente ? 1 : 0) + 1
     const unidad = {
-      i, g, hora: horaSV(), ok: dentro(g),
+      i, g, n: neto(g), hora: horaSV(), ok: dentro(g),
       vence: fechaSV(prod.dias), fecha: fechaSV(0),
     }
 
@@ -272,8 +279,8 @@ export default function EtiquetadoApp({ quien }) {
           <button key={p.id} onClick={() => { setProd(p); setCuenta(''); setPaso(2) }}
             style={{ ...card, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', color: C.txt }}>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{p.nombre}</div>
-            <div style={{ color: C.dim, fontSize: 12.5, marginTop: 3 }}>
-              {p.unidad} · {p.gramos ? `${mil(p.gramos)} g ±${p.banda}` : 'sin objetivo'}
+            <div style={{ color: p.gramos ? C.dim : C.warn, fontSize: 12.5, marginTop: 3 }}>
+              {p.unidad} · {p.gramos ? `${mil(p.gramos)} g ±${p.banda}${p.tara ? ' neto' : ''}` : 'sin objetivo'}
             </div>
           </button>
         ))}
@@ -288,7 +295,8 @@ export default function EtiquetadoApp({ quien }) {
         <div style={{ fontSize: 19, fontWeight: 800 }}>{prod.nombre}</div>
         <div style={{ color: C.dim, fontSize: 13.5, marginTop: 6, lineHeight: 1.7 }}>
           {prod.unidad}<br />
-          {prod.gramos ? `Objetivo ${mil(prod.gramos)} g, banda ±${prod.banda} g` : 'Sin peso objetivo cargado'}<br />
+          {prod.gramos ? `Objetivo ${mil(prod.gramos)} g netos, banda ±${prod.banda} g` : 'Sin peso objetivo cargado'}<br />
+          {prod.tara ? <>Tara del empaque {prod.tara} g · en báscula ≈ {mil(prod.gramos + prod.tara)} g <span style={{ color: C.warn }}>(tara provisional)</span><br /></> : null}
           Vence a los {prod.dias} días <span style={{ color: C.warn }}>(provisional)</span><br />
           {prod.conserva}
         </div>
@@ -353,7 +361,12 @@ export default function EtiquetadoApp({ quien }) {
           <div style={{ textAlign: 'center', fontSize: 14, color: C.dim, marginBottom: 12 }}>
             {bal.estado !== 'conectada' ? 'conectá la báscula arriba'
               : !bal.estable ? 'estabilizando…'
-              : `${lbs(g)} lb · ${bien ? 'dentro de banda' : 'fuera de banda, se imprime igual'}`}
+              : <>
+                  {prod.tara
+                    ? <>neto <b style={{ color: C.txt }}>{mil(neto(g))} g</b> · {lbs(neto(g))} lb <span style={{ opacity: .7 }}>(menos {prod.tara} g de bolsa)</span></>
+                    : <>{lbs(g)} lb</>}
+                  {' · '}{bien ? 'dentro de banda' : 'fuera de banda, se imprime igual'}
+                </>}
           </div>
           <button onClick={pesarEImprimir} disabled={!listo || imprimiendo || !impresoraOk}
             style={btn(bien ? C.ok : C.warn, !listo || imprimiendo || !impresoraOk)}>
@@ -387,7 +400,7 @@ export default function EtiquetadoApp({ quien }) {
                                       borderBottom: `1px solid ${C.line}`, fontSize: 14 }}>
                 <span style={{ color: C.dim, width: 22 }}>{u.i}</span>
                 <span style={{ flex: 1, fontFamily: 'ui-monospace, monospace', color: u.ok ? C.txt : '#fca5a5' }}>
-                  {mil(u.g)} g · {lbs(u.g)} lb
+                  {mil(u.n ?? u.g)} g · {lbs(u.n ?? u.g)} lb
                 </span>
                 <span style={{ color: C.dim, fontSize: 12.5 }}>{u.hora}</span>
                 <button onClick={() => reimprimir(u)}
@@ -402,7 +415,7 @@ export default function EtiquetadoApp({ quien }) {
   }
 
   // ── 4 · Resumen ──
-  const suma = hechas.reduce((a, u) => a + u.g, 0)
+  const suma = hechas.reduce((a, u) => a + (u.n ?? u.g), 0)   // neto: es lo que sale a sucursal
   const malas = hechas.filter(u => !u.ok)
   return marco(
     <>

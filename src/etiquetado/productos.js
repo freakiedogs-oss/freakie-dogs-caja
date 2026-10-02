@@ -13,7 +13,18 @@
    que nadie los lea como aprobados.
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* `gramos` es el peso NETO del producto; `tara` es lo que pesa el empaque
+   vacío. La báscula ve neto + tara, así que la estación resta la tara antes
+   de juzgar el peso y antes de imprimirlo: en la etiqueta va lo que la
+   sucursal realmente recibe, no el plástico. Sin tara declarada vale 0 y
+   todo funciona como antes. */
 export const PRODUCTOS = [
+  // 2-oct-2026 (Cesar): 20 bolitas de 0.15 lb = 3.00 lb netas = 1,361 g, en
+  // bolsa de vacío de 5 lb. La banda es ±34 g a propósito: media bolita pesa
+  // 34 g, así que cualquier bolsa a la que le falte o le sobre una bolita cae
+  // fuera de banda sí o sí, y la variación normal del boleado no la dispara.
+  // TARA PROVISIONAL: hay que pesar 10 bolsas vacías y sacar el promedio.
+  { id: 'carne',     nombre: 'Carne para hamburguesa',    unidad: 'bolsa 20 bolitas', gramos: 1361, banda: 34, tara: 12, dias: 5, conserva: 'Mantener refrigerado' },
   { id: 'cheddar',   nombre: 'Cheddar Porcionado',        unidad: 'bolsa 2 lb',      gramos: 907,  banda: 50,  dias: 30,  conserva: 'Mantener refrigerado' },
   { id: 'chili',     nombre: 'Chili con carne',           unidad: 'bolsa 5 lb',      gramos: 2268, banda: 50,  dias: 90,  conserva: 'Mantener congelado' },
   { id: 'cebmorada', nombre: 'Cebolla Morada encurtida',  unidad: 'bolsa 1 lb',      gramos: 454,  banda: 30,  dias: 30,  conserva: 'Mantener refrigerado' },
