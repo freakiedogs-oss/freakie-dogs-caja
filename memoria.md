@@ -22,6 +22,27 @@ Jose le dio a `eventos` (Edgar) los módulos `dtes-emitidos` y `clientes-factura
 - **Hueco cerrado de rebote:** `_staff_valida` (validador de TODOS los RPC `torre_*` de delivery) solo miraba que el token existiera, así que cualquier sesión de `erp_admin_sesion` —también las de `rrhh`— servía para asignar motoristas o cancelar pedidos. Ahora exige `_torre_rol_ok`, la misma regla con la que `staff_login` emite tokens de torre. Verificado: las 5 sesiones activas (telefono, despachador, superadmin) siguen validando; la de `eventos` no pasa. `rrhh` no tiene ninguna pantalla de delivery en `permisos_rol`, así que nadie pierde algo que usara.
 - No se tocó `dte-service` ni la firma: solo quién puede pedirle al proxy que emita. Build OK; **el deploy de Vercel es necesario** para que apliquen los tres `api/*.js`.
 
+## 2-Oct-2026 — La tienda sandbox de PedidosYa nunca se había tocado (responder v11, migración `peya_vendor_de_usuario_remote_id`)
+
+Cristian mandó la minuta de la sesión del 1-oct: las pruebas que mostramos eran contra **nuestro simulador**, no contra la tienda de pruebas que Delivery Hero creó (`AR-PRUEBAS-INTEGRACION-0001`, cadena `SVFREAKIEDOGSTEST0001`). Al revisar quedó claro por qué nunca la usamos:
+
+- **`peya_ordenes` tenía 0 filas** y en `peya_ordenes_raw` las 58 entradas eran nuestras (curl/pg_net/Deno). **Jamás llegó un request de Delivery Hero** al webhook.
+- La fila de la sandbox en `peya_vendor_map` tenía **`chain_code = null`** → toda URL de availability/catálogo se armaba con `chains/null`.
+- `peya_vendor_de_usuario` **excluía `es_pruebas` siempre**, así que la acción «tienda» del responder no podía apuntar a la sandbox ni con rol admin.
+- `vendor_code` era el PlatformRestaurantID (`478876`); el `posVendorId` del contrato es **nuestro** remoteId. Con 478876 DH responde «Vendor does not exist».
+- `peya_catalogo_import` estaba **vacía**: el catálogo nunca se había enviado de verdad; los "imports" del 30-sep eran curls al plugin sin JWT.
+
+**Lo que se hizo** (todo contra la API real, con la sandbox):
+1. Datos: `chain_code = SVFREAKIEDOGSTEST0001`, `vendor_code = remote_id`, `global_entity_id = PY_AR` (lo devolvió el propio GET de availability — responde la pregunta abierta del formato).
+2. `peya_vendor_de_usuario(p_pin, p_remote_id default null)`: un rol de todas las tiendas puede nombrar el remoteId (sandbox incluida); el responder (v11) se lo pasa en `accionTienda` y, si el vendor es `es_pruebas`, anota el estado en su propia fila en vez de en la sucursal del usuario.
+3. **Bloque 1 verde contra DH:** GET availability 200 (PY, changeable, estados `OPEN/CLOSED_UNTIL/CLOSED_TODAY`, minutos 30/60/90), PUT OPEN 200, PUT CLOSED_UNTIL 30 min 200 (motivo `OTHER` porque `TOO_BUSY_KITCHEN` no está en su lista — el fallback funcionó), reapertura 200.
+4. **Item availability verde:** PUT items/availability 204 apagando y 204 prendiendo Fancys.
+5. **Catálogo bloqueado de su lado:** PUT `/catalog` → **403 FORBIDDEN** «Unauthorized to import catalog… PosVendorIds: [AR-PRUEBAS-INTEGRACION-0001]». Hay que pedirles que habiliten la importación para la sandbox.
+
+Las llamadas se hicieron con `net.http_post` desde SQL al responder, con el PIN de superadmin tomado por subconsulta (nunca en el chat). Reporte para Cristian en borrador de Gmail (hilo «Integración Freakie Dogs»).
+
+**Lo que sigue:** pedidos reales desde la app con el usuario de prueba `freakiedogs+peya@gmail.com` sobre la sandbox; sin eso el Bloque 2 no se puede evidenciar. Y confirmar con ellos que el webhook está asociado a la sandbox.
+
 ## 1-Oct-2026 — Hamburguesa en lechuga (migración `pan_lechuga`)
 
 Frank: poder cambiar el pan por lechuga en cualquier hamburguesa, en cualquier canal, sin tocar nada más; que cocina lo vea y que no descargue pan.
