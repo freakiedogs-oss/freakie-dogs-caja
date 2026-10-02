@@ -25,6 +25,11 @@ export const PRODUCTOS = [
   // fuera de banda sí o sí, y la variación normal del boleado no la dispara.
   // TARA PROVISIONAL: hay que pesar 10 bolsas vacías y sacar el promedio.
   { id: 'carne',     nombre: 'Carne para hamburguesa',    unidad: 'bolsa 20 bolitas', gramos: 1361, banda: 34, tara: 12, dias: 5, conserva: 'Mantener refrigerado' },
+  // 2-oct-2026 (Cesar): cada orden son 0.30 lb = 136 g. El catálogo lo confirma
+  // («Bolsa de 25 bolsitas de 0.30 lb»): lo que se pesa es LA BOLSITA, una por
+  // orden, no el paquete de 25. Si algún día se etiqueta el paquete entero son
+  // 3,402 g y es cambiar este renglón.
+  { id: 'quesofrito', nombre: 'Queso frito',              unidad: 'bolsita 0.30 lb', gramos: 136,  banda: 8,  tara: 2,  dias: 30,  conserva: 'Mantener refrigerado' },
   { id: 'cheddar',   nombre: 'Cheddar Porcionado',        unidad: 'bolsa 2 lb',      gramos: 907,  banda: 50,  dias: 30,  conserva: 'Mantener refrigerado' },
   { id: 'chili',     nombre: 'Chili con carne',           unidad: 'bolsa 5 lb',      gramos: 2268, banda: 50,  dias: 90,  conserva: 'Mantener congelado' },
   { id: 'cebmorada', nombre: 'Cebolla Morada encurtida',  unidad: 'bolsa 1 lb',      gramos: 454,  banda: 30,  dias: 30,  conserva: 'Mantener refrigerado' },
