@@ -1,5 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 2-Oct-2026 — Kevin mantiene la lista de productos del etiquetado desde la misma báscula (migraciones `etiquetado_productos_tabla`, `_funciones`, `_retiro_automatico_15_dias`, `_alta_revive_retirado`)
+
+Pedido de Cesar: «que no tengan que esperar a que yo tenga tiempo libre». Si alguien llega a la báscula con un producto que no está en la lista, la producción se paraba hasta un commit + deploy. Ahora la lista es dato y la mantiene quien ve el problema, igual que las reglas de menú de Karina.
+
+- **`etiquetado_productos`** reemplaza al array de `productos.js`, sembrada con los 14 que había. `gramos` es el NETO y `tara` el empaque. `origen` distingue `base` (los 14) de `estacion` (los que crea Kevin). Cada cambio queda en `etiquetado_productos_bitacora` con quién y qué.
+- **El candado está donde se cambia la lista, no donde se pesa.** Pesar sigue sin PIN (tablet dedicada, bajo control de Casa Matriz); crear o corregir pide PIN y lo valida `fn_etiquetado_actor`, que solo deja pasar `jefe_casa_matriz`, `produccion`, `admin`, `ejecutivo`, `superadmin`. Verificado: Kevin Alberto Andrade pasa, un PIN de cocina no.
+- **Nombre y peso objetivo obligatorios** (decisión de Cesar). Banda, tara, días y conservación son opcionales y se completan después — así nadie queda trabado por un dato que todavía no tiene, pero ningún producto nace sin control de peso, que es como nacieron los 7 que arrastramos.
+- **Retiro a los 15 días sin uso**, `pg_cron` a las 03:10 SV. **Se retira, no se borra**, y Cesar pidió borrar: las etiquetas impresas llevan la clave del producto en el QR, así que borrar la fila deja QR que no resuelven a nada. Para que no haga falta una pantalla de «retirados», **volver a crear el producto con el mismo nombre revive el que estaba** (misma fila, mismo peso y tara) en vez de duplicarlo — probado de punta a punta.
+- **Solo alcanza a `origen='estacion'`.** Los 14 de base no se retiran solos: la sal dura 180 días y la mermelada 21, así que pasar más de 15 días sin producirse es normal y desaparecerlas sería un bug, no una limpieza.
+- `fn_etiquetado_marcar_uso` se llama al tocar «Empezar a pesar». Es el único rastro de uso que hay **porque la estación todavía no guarda lotes**; cuando los guarde, el uso debería salir de ahí.
+- **La tablet degrada en vez de romperse:** `cargarProductos()` lee la base, cae al cache de la última vez y, si nunca vio nada, al respaldo del código. La pantalla avisa cuando no está leyendo de la base.
+- Archivos: `productos.js` (reescrito), `ProductoEditor.jsx` (nuevo), `EtiquetadoApp.jsx` (botón «+ Agregar un producto» y ✎ por tarjeta).
+- **Pendiente:** correr el build en Windows. Y lo de siempre — la estación sigue sin guardar lotes ni tocar el kardex.
+
 ## 2-Oct-2026 — Etiquetado: carne para hamburguesa y la tara del empaque
 
 Cesar pidió agregar la carne de hamburguesa a la estación: bolsa de 20 bolitas de 0.15 lb, sellada al vacío. Obligó a meter un concepto que faltaba.

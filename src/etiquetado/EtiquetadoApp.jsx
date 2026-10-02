@@ -15,11 +15,12 @@
    impresora Zebra ZD421 por ZPL sobre WebUSB.
    ═══════════════════════════════════════════════════════════════════════ */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBalanza } from '../porcionador/useBalanza'
 import { ImpresoraZebra, hayWebUsb } from './zebraUsb'
 import { armarZplFila, zplPruebaFila, DPI_OPCIONES } from './zebraZpl'
-import { conAjustes, leerAjustes } from './productos'
+import { cargarProductos, marcarUso } from './productos'
+import ProductoEditor from './ProductoEditor'
 
 const C = {
   bg: '#0a0a0b', card: '#141416', line: '#2a2a2e', txt: '#f0f0f2',
@@ -64,11 +65,18 @@ function loteDeHoy() {
 const CLAVE_DPI = 'etiquetado_dpi'
 
 export default function EtiquetadoApp({ quien }) {
-  // Los ajustes del operario (peso objetivo, días) se leen una vez al abrir.
-  // Todavía no se editan desde acá: el panel de engranaje es solo la
-  // resolución, que es lo único que puede arruinar la impresión.
-  const [ajustes] = useState(leerAjustes)
-  const productos = useMemo(() => conAjustes(ajustes), [ajustes])
+  // La lista viene de la base (`etiquetado_productos`). Si la red falla cae a
+  // lo último que vio esta tablet, y si nunca vio nada, al respaldo del
+  // código: una lista vieja deja seguir produciendo, una vacía no.
+  const [productos, setProductos] = useState([])
+  const [fuente, setFuente] = useState(null)   // base | cache | respaldo
+  const [editor, setEditor] = useState(null)   // null · 'nuevo' · producto a corregir
+
+  const releer = useCallback(async () => {
+    const { lista, fuente: f } = await cargarProductos()
+    setProductos(lista); setFuente(f)
+  }, [])
+  useEffect(() => { releer() }, [releer])
 
   const [paso, setPaso]   = useState(1)     // 1 producto · 2 cantidad · 3 pesaje · 4 resumen
   const [prod, setProd]   = useState(null)
@@ -197,6 +205,10 @@ export default function EtiquetadoApp({ quien }) {
   function empezar() {
     const n = Number(cuenta)
     if (!(n > 0)) return
+    // Deja constancia de que este producto se usa hoy: es lo que lo mantiene
+    // en la lista (lo que nadie pesa en 15 días lo retira solo la base).
+    // No espera la respuesta — si la red está caída, se pesa igual.
+    marcarUso(prod.id)
     setTotal(n); setHechas([]); setPendiente(null); setPaso(3)
   }
 
@@ -270,20 +282,62 @@ export default function EtiquetadoApp({ quien }) {
     </div>
   )
 
+  // El editor tapa la pantalla: es una decisión sobre la lista, no sobre la
+  // tanda que se está pesando.
+  if (editor) return (
+    <ProductoEditor
+      productoBase={editor === 'nuevo' ? null : editor}
+      onCerrar={() => setEditor(null)}
+      onListo={async (guardado) => {
+        setEditor(null)
+        await releer()
+        // Recién creado: se entra directo a decir cuántas. El operario vino
+        // acá porque tenía el producto en la mano.
+        if (guardado && editor === 'nuevo') { setProd(guardado); setCuenta(''); setPaso(2) }
+        else if (guardado && prod?.id === guardado.id) setProd(guardado)
+        aviso(`«${guardado?.nombre}» guardado`)
+      }}
+    />
+  )
+
   // ── 1 · Qué se va a pesar ──
   if (paso === 1) return marco(
     <>
-      <div style={{ color: C.dim, fontSize: 14, marginBottom: 11 }}>¿Qué vas a pesar?</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 11 }}>
+        <span style={{ color: C.dim, fontSize: 14 }}>¿Qué vas a pesar?</span>
+        {fuente && fuente !== 'base' && (
+          <span style={{ color: C.warn, fontSize: 12 }}>
+            sin conexión · lista {fuente === 'cache' ? 'de la última vez' : 'de respaldo'}
+          </span>
+        )}
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 9 }}>
         {productos.map(p => (
-          <button key={p.id} onClick={() => { setProd(p); setCuenta(''); setPaso(2) }}
-            style={{ ...card, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', color: C.txt }}>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{p.nombre}</div>
-            <div style={{ color: p.gramos ? C.dim : C.warn, fontSize: 12.5, marginTop: 3 }}>
-              {p.unidad} · {p.gramos ? `${mil(p.gramos)} g ±${p.banda}${p.tara ? ' neto' : ''}` : 'sin objetivo'}
-            </div>
-          </button>
+          <div key={p.id} style={{ ...card, position: 'relative' }}>
+            <button onClick={() => { setProd(p); setCuenta(''); setPaso(2) }}
+              style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer',
+                       fontFamily: 'inherit', color: C.txt, width: '100%' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, paddingRight: 26 }}>{p.nombre}</div>
+              <div style={{ color: p.gramos ? C.dim : C.warn, fontSize: 12.5, marginTop: 3 }}>
+                {p.unidad} · {p.gramos ? `${mil(p.gramos)} g${p.banda ? ` ±${p.banda}` : ''}${p.tara ? ' neto' : ''}` : 'sin objetivo'}
+              </div>
+            </button>
+            {/* Corregir está en cada tarjeta, no en un menú: los pesos malos se
+                descubren pesando, no administrando. */}
+            <button onClick={() => setEditor(p)} title={`Corregir ${p.nombre}`}
+              style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 0,
+                       color: C.dim, fontSize: 15, cursor: 'pointer', padding: 4, lineHeight: 1 }}>✎</button>
+          </div>
         ))}
+
+        <button onClick={() => setEditor('nuevo')}
+          style={{ ...card, borderStyle: 'dashed', borderColor: C.acc, color: '#93c5fd',
+                   textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>+ Agregar un producto</div>
+          <div style={{ fontSize: 12.5, marginTop: 3, opacity: .85 }}>
+            ¿Vas a pesar algo que no está en la lista?
+          </div>
+        </button>
       </div>
     </>
   )
