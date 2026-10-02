@@ -47,7 +47,8 @@ const POS_ROLES_OK = new Set([
 // POS a propósito: en la caja emite quien cobra, pero facturar a mano desde el
 // ERP es una operación de gerencia. Sin este corte la restricción del front
 // sería cosmética — bastaba el PIN de una cajera para emitir desde el ERP.
-const ERP_ROLES_OK = new Set(['admin', 'ejecutivo', 'superadmin', 'super']);
+// `eventos` (1-oct-2026): factura a los clientes de eventos desde el ERP.
+const ERP_ROLES_OK = new Set(['admin', 'ejecutivo', 'superadmin', 'super', 'eventos']);
 
 // Timeout upstream
 const UPSTREAM_TIMEOUT_MS = 30_000;

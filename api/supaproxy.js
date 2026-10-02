@@ -46,22 +46,32 @@ const FINANZAS_OBJETOS = new Set([
   // 139 empleados; era legible con la llave publica del bundle.
   'v_planilla_desglose_pl',
   'v_planilla_operativa_pl',
-  // Agregadas 3-sep-2026 con la sección de DTEs emitidos. Son los 28.8k
-  // documentos fiscales que Freakie le emitió a Hacienda: traen nombre, NIT y
-  // NRC de cada cliente y el monto de cada venta. Nunca se le abrieron a anon
-  // (se crearon ya cerradas), así que acá el gate es la única puerta.
-  'v_dtes_emitidos',
-  'dte_emitido_detalle',
-  // Agregada 05-sep-2026: las facturas emitidas dos veces por un doble cobro del
-  // POS que siguen aceptadas en Hacienda. Deriva de v_dtes_emitidos y expone los
-  // mismos datos fiscales, así que va cerrada a anon y detrás del mismo gate.
-  'v_dte_duplicados_pendientes',
 ]);
 
 // Ojo: `staff_login` (torre de delivery) emite sesiones para roles que NO
 // deben ver el P&L (telefono, despachador, gerente). Por eso acá se valida el
 // ROL, no solo que la sesión exista.
 const ROLES_FINANZAS = new Set(['admin', 'superadmin', 'ejecutivo']);
+
+// ── Gate de DTEs emitidos ──
+// Agregadas 3-sep-2026 con la sección de DTEs emitidos. Son los 28.8k
+// documentos fiscales que Freakie le emitió a Hacienda: traen nombre, NIT y
+// NRC de cada cliente y el monto de cada venta. Nunca se le abrieron a anon
+// (se crearon ya cerradas), así que acá el gate es la única puerta.
+// `v_dte_duplicados_pendientes` (05-sep-2026): las facturas emitidas dos veces
+// por un doble cobro del POS que siguen aceptadas en Hacienda. Deriva de
+// v_dtes_emitidos y expone los mismos datos fiscales.
+//
+// Lista aparte de FINANZAS_OBJETOS desde el 1-oct-2026: el rol `eventos`
+// factura a los clientes de eventos desde «DTEs Emitidos · Facturar», así que
+// necesita leer estas vistas, pero NO el P&L, banco ni planilla. La sesión la
+// emite `erp_admin_sesion` (acepta `eventos`); el corte por objeto vive acá.
+const DTE_OBJETOS = new Set([
+  'v_dtes_emitidos',
+  'dte_emitido_detalle',
+  'v_dte_duplicados_pendientes',
+]);
+const ROLES_DTE = new Set(['admin', 'superadmin', 'ejecutivo', 'eventos']);
 
 // ── Gate de RRHH (SEG-1) ──
 // El expediente de empleados (DUI, NIT, cuenta bancaria, salario, teléfono,
@@ -92,6 +102,7 @@ const ROLES_RRHH = new Set(['admin', 'superadmin', 'ejecutivo', 'rrhh']);
 // Devuelve el set de roles con acceso a un objeto gateado, o null si es abierto.
 function rolesRequeridos(objeto) {
   if (FINANZAS_OBJETOS.has(objeto)) return ROLES_FINANZAS;
+  if (DTE_OBJETOS.has(objeto)) return ROLES_DTE;
   if (RRHH_OBJETOS.has(objeto)) return ROLES_RRHH;
   return null;
 }

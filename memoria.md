@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 1-Oct-2026 — El rol `eventos` factura a clientes desde «DTEs Emitidos · Facturar» (migración `sesion_finanzas_rol_eventos`)
+
+Jose le dio a `eventos` (Edgar) los módulos `dtes-emitidos` y `clientes-facturacion` en `permisos_rol`, pero al entrar salía la «Sesión de finanzas» con «Tu rol (eventos) no puede administrar PINs». El permiso del menú no alcanzaba: esa pantalla lee `v_dtes_emitidos` por el proxy `/sb`, que exige una sesión de staff, y había tres candados más abajo que no conocían el rol.
+
+- **`erp_admin_sesion`** ahora emite sesión también para `eventos` (mensaje nuevo: «no puede abrir sesión de finanzas»). **`_admin_sesion` no se tocó**: los RPC de usuarios/PINs siguen rechazando a `eventos`. Probado con una sesión real de prueba (borrada): `fin_sesion_rol` devuelve `eventos`, `_admin_sesion` devuelve null.
+- **`api/supaproxy.js`**: `v_dtes_emitidos`, `dte_emitido_detalle` y `v_dte_duplicados_pendientes` salen de `FINANZAS_OBJETOS` a una lista propia **`DTE_OBJETOS`** con `ROLES_DTE = admin/superadmin/ejecutivo/eventos`. P&L, banco y planilla siguen con las listas de antes: `eventos` no las ve aunque tenga sesión.
+- **Emisión y reenvío**: `api/dte-proxy.js` (`ERP_ROLES_OK`, origen `erp`) y `api/dte-email.js` (`ROLES_OK`) aceptan `eventos`; `DTEsEmitidosView` muestra el botón «Facturar» a ese rol. Sigue pidiendo el PIN de quien emite en cada documento. `config.js` lleva `eventos` en los dos módulos como fallback de `permisos_rol`.
+- **Hueco cerrado de rebote:** `_staff_valida` (validador de TODOS los RPC `torre_*` de delivery) solo miraba que el token existiera, así que cualquier sesión de `erp_admin_sesion` —también las de `rrhh`— servía para asignar motoristas o cancelar pedidos. Ahora exige `_torre_rol_ok`, la misma regla con la que `staff_login` emite tokens de torre. Verificado: las 5 sesiones activas (telefono, despachador, superadmin) siguen validando; la de `eventos` no pasa. `rrhh` no tiene ninguna pantalla de delivery en `permisos_rol`, así que nadie pierde algo que usara.
+- No se tocó `dte-service` ni la firma: solo quién puede pedirle al proxy que emita. Build OK; **el deploy de Vercel es necesario** para que apliquen los tres `api/*.js`.
+
 ## 1-Oct-2026 — Hamburguesa en lechuga (migración `pan_lechuga`)
 
 Frank: poder cambiar el pan por lechuga en cualquier hamburguesa, en cualquier canal, sin tocar nada más; que cocina lo vea y que no descargue pan.
