@@ -45,6 +45,13 @@ let operador = null;          // { id, n } quien entró con su PIN. Se borra al 
 let loteActual = null;        // { id, lote }: solo cuando se abre un lote ya existente (deuda) o se reabre uno cerrado
 let ALIAS = {};               // código de fábrica que alguien ligó a un insumo de la lista (se guarda en la base)
 let step = 1;
+let restringido = false;     // personas de producción: solo ven lo que pesaron e imprimieron (los encargados ven todo)
+let permitidas = new Set();   // ids de receta que esa persona puede registrar
+let resumenImp = '';          // texto: qué imprimió
+let bloqT = null;
+let catalogoListo = null;
+const ENC = ['jefe_casa_matriz','admin','superadmin','ejecutivo'];
+const RECETA_DE = { pepinillotritura:'pepinillo' };   // clave de etiquetado -> id de receta, cuando no coinciden
 let sel = {};                 // recipeId -> tandas
 let uses = [];                // {id, code, rid, qty, unit, envases, extra}
 let uid = 1;
@@ -84,13 +91,13 @@ function renderSteps(){
   const n=['1 · Qué preparás','2 · Pistolear insumos','3 · Revisar y cerrar'];
   document.getElementById('steps').innerHTML = n.map((t,i)=>`<span class="${i+1===step?'on':i+1<step?'done':''}">${t}</span>`).join('');
 }
-function drawWho(){ const w=document.getElementById('who'); if(!w) return; w.innerHTML = operador? `<span class="who">👤 ${esc(operador.n)} <button id="w-x">cerrar sesión</button></span>` : ''; const b=document.getElementById('w-x'); if(b) b.onclick=()=>{ operador=null; drawWho(); toast('Sesión cerrada','ok'); if(step>1 && !cerrado){ step=1; render(); } }; }
-function render(){ drawWho(); renderSteps(); if(step===1) renderStep1(); else if(step===2) renderStep2(); else renderStep3(); window.scrollTo(0,0); }
+function drawWho(){ const w=document.getElementById('who'); if(!w) return; w.innerHTML = operador? `<span class="who">👤 ${esc(operador.n)} <button id="w-x">cerrar sesión</button></span>` : ''; const b=document.getElementById('w-x'); if(b) b.onclick=()=>{ operador=null; sel={}; uses=[]; loteActual=null; restringido=false; step=1; drawWho(); toast('Sesión cerrada','ok'); if(!cerrado) render(); }; }
+function render(){ if(!operador && !cerrado){ drawWho(); pedirEntrada(); return; } drawWho(); renderSteps(); if(step===1) renderStep1(); else if(step===2) renderStep2(); else renderStep3(); window.scrollTo(0,0); armarBloqueo(); }
 
 /* ---------- paso 1 ---------- */
 function renderStep1(){
   const libres = DATA.recetas.filter(r=>r.libre);
-  const tiles = DATA.recetas.map(r => `<button class="tile ${sel[r.id]?'on':''}" data-rec="${r.id}"><b>${esc(r.nombre)}</b><small>${r.lineas.length? r.lineas.length+' insumos en la receta' : 'sin ingredientes cargados — se arman al pistolear'}</small></button>`).join('');
+  const tiles = DATA.recetas.filter(r => !restringido || permitidas.has(r.id)).map(r => `<button class="tile ${sel[r.id]?'on':''}" data-rec="${r.id}"><b>${esc(r.nombre)}</b><small>${r.lineas.length? r.lineas.length+' insumos en la receta' : 'sin ingredientes cargados — se arman al pistolear'}</small></button>`).join('');
   const picked = Object.keys(sel);
   const rows = picked.map(id => { const r=REC[id]; const opts=r.lineas.map(l=>`<option value="${l.code}">${esc(INS[l.code].nombre)}</option>`).join('');
     return `<div class="selrow" style="display:block"><div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>${esc(r.nombre)}</b>
@@ -100,9 +107,10 @@ function renderStep1(){
       ${r.lineas.length?`<details style="margin-top:8px"><summary class="link" style="cursor:pointer">…o decime cuánto tenés de un insumo y calculo la tanda</summary>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center"><select class="num" id="an-i-${id}" style="max-width:240px">${opts}</select><input class="num" type="number" step="any" min="0" placeholder="cantidad" id="an-q-${id}"><select class="num" id="an-u-${id}">${unitOptions('lb')}</select><button class="btn sm acc" data-anc="${id}">Calcular</button><span id="an-r-${id}" style="font-size:12px;color:var(--ok)"></span></div></details>`:'<div style="font-size:12px;color:var(--dim);margin-top:6px">Sin receta cargada: no hay tanda que calcular, solo se registra lo que uses.</div>'}</div>`; }).join('');
   document.getElementById('stage').innerHTML = `
-    <h2>¿Qué estás preparando?</h2>
-    <p class="lead">Tocá una o varias recetas. Si hacés más de una tanda, cambiá el número: las cantidades esperadas se multiplican solas. Podés cambiar de idea y volver a este paso cuando quieras.</p>
-    <div class="tiles">${tiles}<button class="tile" id="libre" style="border-style:dashed"><b>＋ Otra preparación</b><small>Algo que no está en la lista: le ponés nombre y listo</small></button></div>
+    <h2>${restringido?'Lo que pesaste e imprimiste':'¿Qué estás preparando?'}</h2>
+    ${restringido?`<p class="lead"><b>${esc(loteActual?loteActual.lote:'')}</b> · ${esc(resumenImp)}. Solo se pueden registrar los insumos de esto. Si hiciste más de una tanda, cambiá el número de tandas.</p>`:''}
+    <p class="lead" ${restringido?'style="display:none"':''}>Tocá una o varias recetas. Si hacés más de una tanda, cambiá el número: las cantidades esperadas se multiplican solas. Podés cambiar de idea y volver a este paso cuando quieras.</p>
+    <div class="tiles">${tiles}${restringido?'':'<button class="tile" id="libre" style="border-style:dashed"><b>＋ Otra preparación</b><small>Algo que no está en la lista: le ponés nombre y listo</small></button>'}</div>
     <div class="selbar">${rows}</div>
     <div style="margin-top:16px"><button class="btn big ${picked.length?'ok':'off'}" id="go1">${picked.length?'Empezar a pistolear insumos →':'Elegí al menos una receta'}</button></div>
     <div class="notes"><b>Pensado para que nada se trabe:</b> aunque una receta no tenga ingredientes cargados (Ranch, Mermelada, Truffa), igual se puede preparar: lo que pistoleen queda registrado y después se ajusta la receta.</div>`;
@@ -114,9 +122,9 @@ function renderStep1(){
     if(a.fam===c.fam && a.fam!=='u') t=(q*a.k)/(ln.qty*c.k); else if(u===ln.unit) t=q/ln.qty;
     const out=document.getElementById('an-r-'+id); if(t==null){ out.style.color='var(--warn)'; out.textContent='Esa unidad no se puede comparar con la de la receta'; return; }
     t=Math.round(t*100)/100; sel[id]=t; document.getElementById('t-'+id).value=t; out.style.color='var(--ok)'; out.textContent='= '+t+' tandas (las demás cantidades se ajustan solas)'; });
-  document.getElementById('libre').onclick = () => { openModal(`<h3>Otra preparación</h3><div class="sub">Escribí cómo se llama. No necesita receta: se registra lo que uses y después se puede convertir en receta.</div><input class="search" id="ln" placeholder="Ej. Salsa de prueba, Mezcla especial…" autocomplete="off"><div style="display:flex;gap:8px"><button class="btn" id="l-x">Cancelar</button><button class="btn ok" style="flex:1" id="l-ok">Crear y elegir</button></div>`); document.getElementById('ln').focus();
+  const libreBtn = document.getElementById('libre'); if(libreBtn) libreBtn.onclick = () => { openModal(`<h3>Otra preparación</h3><div class="sub">Escribí cómo se llama. No necesita receta: se registra lo que uses y después se puede convertir en receta.</div><input class="search" id="ln" placeholder="Ej. Salsa de prueba, Mezcla especial…" autocomplete="off"><div style="display:flex;gap:8px"><button class="btn" id="l-x">Cancelar</button><button class="btn ok" style="flex:1" id="l-ok">Crear y elegir</button></div>`); document.getElementById('ln').focus();
     document.getElementById('l-x').onclick=closeModal; document.getElementById('l-ok').onclick=()=>{ const n=document.getElementById('ln').value.trim(); if(!n) return; const id='libre'+(uid++); const r={id,nombre:n,lineas:[],libre:true}; DATA.recetas.push(r); REC[id]=r; sel[id]=1; closeModal(); renderStep1(); }; };
-  document.getElementById('go1').onclick = () => { if(!Object.keys(sel).length) return; if(operador){ step=2; render(); return; } askPin('¿Quién va a preparar?','Cada persona entra con su PIN. Todo lo que se registre queda a su nombre.',op=>{ operador=op; step=2; render(); }); };
+  document.getElementById('go1').onclick = () => { if(!Object.keys(sel).length) return; step=2; render(); };
 }
 
 /* ---------- paso 2 ---------- */
@@ -144,7 +152,7 @@ function renderStep2(){
   s.onblur = () => setTimeout(()=>{ if(step===2 && !document.getElementById('ov') && !document.activeElement.matches('input,select,textarea,button,summary')) s.focus(); },150);
   document.getElementById('find').onclick = () => openSearch();
   document.getElementById('nuevo').onclick = () => { if(cfg.nuevos) openNewInsumo(null); else toast('El encargado tiene bloqueado agregar insumos nuevos','bad'); };
-  document.getElementById('back2').onclick = () => { operador=null; step=1; render(); };
+  document.getElementById('back2').onclick = () => { step=1; render(); };
   document.getElementById('go2').onclick = () => { step=3; render(); };
   drawList(); drawCheck(); s.focus();
 }
@@ -317,10 +325,10 @@ const quitar = (k) => { try { localStorage.removeItem(k) } catch { /* sin storag
 /* ---------- PIN ---------- */
 // El PIN se valida en el servidor (fn_prep_actor, con el mismo freno de intentos
 // que el login). Aquí solo vive en memoria mientras dura la pantalla.
-function askPin(title, sub, cb, encargado){
+function askPin(title, sub, cb, encargado, sinCancelar){
   openModal(`<h3>${esc(title)}</h3><div class="sub">${esc(sub)}</div><input class="pinin" id="pin-in" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••"><div id="pin-err" style="color:#fca5a5;font-size:13px;min-height:18px;text-align:center;margin-top:6px"></div>
     <div class="pad">${[1,2,3,4,5,6,7,8,9,'⌫',0,'OK'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}</div>
-    <button class="btn" id="pin-x" style="width:100%">Cancelar</button>`);
+    ${sinCancelar?'':'<button class="btn" id="pin-x" style="width:100%">Cancelar</button>'}`);
   const inp=document.getElementById('pin-in'); inp.focus();
   let ocupado=false, t=null;
   const go=async()=>{
@@ -338,7 +346,7 @@ function askPin(title, sub, cb, encargado){
   inp.oninput=programar;
   inp.onkeydown=e=>{ if(e.key==='Enter') go(); };
   document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{ const k=b.dataset.k; if(k==='⌫') inp.value=inp.value.slice(0,-1); else if(k==='OK') { go(); return; } else if(inp.value.length<6) inp.value+=k; programar(); inp.focus(); });
-  document.getElementById('pin-x').onclick=()=>{ clearTimeout(t); closeModal(); };
+  const px=document.getElementById('pin-x'); if(px) px.onclick=()=>{ clearTimeout(t); closeModal(); };
 }
 
 /* ---------- guardar la tanda ---------- */
@@ -389,8 +397,8 @@ async function cerrarTanda(faltan){
 
 /* ---------- borrador: si la tablet se reinicia a mitad de tanda ---------- */
 function guardarBorrador(){
-  if(!operador || cerrado || step<2){ return; }
-  guardar(BORRADOR, { t:Date.now(), nombre:operador.n, sel, uses, uid, step, loteActual, nuevos:DATA.insumos.filter(i => i.nuevo), libres:DATA.recetas.filter(r => r.libre) });
+  if(!operador || cerrado || (!uses.length && step<2)){ return; }
+  guardar(BORRADOR, { t:Date.now(), usuario:operador.id, nombre:operador.n, sel, uses, uid, step, loteActual, nuevos:DATA.insumos.filter(i => i.nuevo), libres:DATA.recetas.filter(r => r.libre) });
 }
 
 function renderDone(){
@@ -399,8 +407,8 @@ function renderDone(){
   document.getElementById('stage').innerHTML = `
     <div class="okbox" style="text-align:center;padding:26px"><div style="font-size:13px;font-weight:700;color:#6ee7b7">Tanda registrada</div><div class="big-lote">${cerrado.lote?esc(cerrado.lote):'Guardada en la tablet'}</div><div style="font-weight:600;font-size:14px;margin-top:4px">${cerrado.n} registro${cerrado.n===1?'':'s'} de insumos${cerrado.faltan?` · ${cerrado.faltan} pendiente${cerrado.faltan===1?'':'s'} de la receta`:''}</div></div>
     ${cerrado.subir?'<div class="warnbox" style="margin-top:12px">No hay internet: la tanda quedó guardada en esta tablet y se sube sola cuando vuelva. El número de lote aparece entonces.</div>':''}
-    <p class="lead" style="margin-top:14px">La sesión se cerró sola: la siguiente persona entra con su propio PIN. Después, en la tablet de la báscula, se elige este lote y cada bolsa que se pese y etiquete queda ligada a los insumos que acabás de registrar.</p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="edit4" ${cerrado.subir?'disabled':''}>✏️ Corregir esta tanda</button><button class="btn acc" style="flex:1" id="new4">Empezar otra tanda</button></div>`;
+    <p class="lead" style="margin-top:14px">La sesión se cerró sola: la siguiente persona entra con su propio PIN. Tus etiquetas de este lote ya tienen sus insumos registrados y podés marcar tu salida.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="edit4" ${cerrado.subir?'disabled':''}>✏️ Corregir esta tanda</button><button class="btn acc" style="flex:1" id="new4">Listo · cerrar sesión</button></div>`;
   document.getElementById('edit4').onclick=()=>{ askPin('Corregir la tanda','Para volver a abrir una tanda cerrada hay que entrar con PIN otra vez. La versión anterior queda en el historial.',op=>{ operador=op; cerrado=null; step=3; render(); }); };
   document.getElementById('new4').onclick=()=>{ sel={}; uses=[]; cerrado=null; loteActual=null; step=1; render(); };
 }
@@ -421,16 +429,6 @@ function openDatos(d){
     <button class="btn" id="d-x" style="margin-top:10px;width:100%">Cerrar</button>`);
   document.getElementById('d-x').onclick=closeModal;
 }
-// Fin de turno: con el PIN se buscan las etiquetas que esa persona imprimió y
-// todavía no tienen insumos, y se abre ese lote para registrarlos.
-document.getElementById('pend').onclick = () => askPin('Mis pendientes','Con tu PIN vemos qué etiquetas imprimiste y aún no tienen sus insumos registrados.', async op => {
-  try{
-    const { data, error } = await db.rpc('fn_salida_pendientes', { p_usuario:op.id }); if(error) throw error;
-    const lista = (data && data.pendientes) || [];
-    if(!lista.length){ toast('No tenés nada pendiente, '+String(op.n||'').split(' ')[0],'ok'); return; }
-    abrirLoteDeDeuda(lista[0].lote_id, op);
-  }catch(e){ toast(e.message || 'No se pudo consultar','bad'); }
-});
 document.getElementById('datos').onclick = () => askPin('PIN del encargado','Los datos y los ajustes son solo para el encargado.', async enc => {
   try{ const { data, error } = await db.rpc('fn_prep_datos', { p_pin_encargado:enc.pin, p_dias:30 }); if(error) throw error; openDatos(data); }
   catch(e){ toast(e.message || 'No se pudieron cargar los datos','bad'); }
@@ -486,39 +484,61 @@ async function cargarAjustes(){
   try{ const { data, error } = await db.rpc('fn_prep_ajustes'); if(error) throw error; if(data) cfg = { ...cfg, ...data }; }
   catch{ /* se usan los de siempre */ }
 }
-function ofrecerBorrador(){
-  const b = leer(BORRADOR); if(!b) return false;
-  if(Date.now()-b.t > 18*3600*1000 || !b.uses || !b.uses.length){ quitar(BORRADOR); return false; }
-  openModal(`<h3>Quedó una tanda sin cerrar</h3><div class="sub">${esc(b.nombre)} llevaba ${b.uses.length} insumo${b.uses.length===1?'':'s'} registrado${b.uses.length===1?'':'s'} cuando se cerró la pantalla. ¿Seguimos con esa tanda?</div>
-    <div style="display:grid;gap:8px"><button class="btn ok" id="b-si">Continuar (pide PIN)</button><button class="btn" id="b-no">Descartarla y empezar de cero</button></div>`);
-  document.getElementById('b-no').onclick=()=>{ quitar(BORRADOR); closeModal(); };
-  document.getElementById('b-si').onclick=()=>{ closeModal(); askPin('PIN para continuar','La tanda sigue a nombre de quien entre ahora.', op => {
-    operador=op; sel=b.sel||{}; uses=b.uses||[]; uid=b.uid||uses.length+1; loteActual=b.loteActual||null;
-    (b.nuevos||[]).forEach(n => { if(!INS[n.code]){ INS[n.code]=n; DATA.insumos.push(n); } });
-    (b.libres||[]).forEach(r => { if(!REC[r.id]){ REC[r.id]=r; DATA.recetas.push(r); } });
-    uses = uses.filter(u => INS[u.code] && REC[u.rid]);
-    Object.keys(sel).forEach(id => { if(!REC[id]) delete sel[id]; });
-    step = Math.max(2, Math.min(3, b.step||2)); render(); }); };
-  return true;
+// Compuerta: sin PIN no se ve nada. Con PIN: las personas de producción solo
+// pueden registrar insumos de lo que ellas pesaron e imprimieron (lote del día);
+// los encargados ven todo.
+function pedirEntrada(aviso){
+  clearTimeout(bloqT);
+  document.getElementById('steps').innerHTML='';
+  document.getElementById('stage').innerHTML = `<div style="text-align:center;margin-top:70px"><div style="font-size:42px">🔒</div><h2>Registro de insumos</h2><p class="lead">${esc(aviso||'Entrá con tu PIN para registrar los insumos de lo que pesaste e imprimiste.')}</p></div>`;
+  if(document.getElementById('ov')) return;
+  askPin('¿Quién va a registrar insumos?','Solo vas a ver lo que pesaste e imprimiste con tu PIN. Todo queda a tu nombre.', op => { resolverAcceso(op); }, false, true);
 }
-// Enlace desde Mi Asistencia: ?lote=<id> abre un lote que ya tiene etiquetas
-// impresas para registrarle los insumos (saldar la deuda).
-async function abrirLoteDeDeuda(id, yaIdentificado){
-  try{
-    const { data, error } = await db.rpc('fn_prep_lote_get', { p_lote_id:id }); if(error||!data) throw error||new Error('No existe');
-    const rec = (data.lote.recetas||[]).filter(r => REC[r.id]);
-    openModal(`<h3>Registrar los insumos de ${esc(data.lote.lote)}</h3><div class="sub">Ese lote ya tiene etiquetas impresas y le faltan los insumos. Entrá con tu PIN, elegí qué preparaste y cerrá la tanda: la deuda se salda sola.</div><button class="btn ok" id="dl-ok" style="width:100%">Entrar con PIN</button>`);
-    const entrar = op => { operador=op; loteActual={ id, lote:data.lote.lote }; sel={}; rec.forEach(r => { sel[r.id]=r.tandas||1; }); uses=[]; step = Object.keys(sel).length ? 2 : 1; render(); };
-    if(yaIdentificado){ closeModal(); entrar(yaIdentificado); return; }
-    document.getElementById('dl-ok').onclick=()=>{ closeModal(); askPin('¿Quién registra?','Todo queda a su nombre.', entrar); };
-  }catch(e){ toast('No se encontró ese lote','bad'); }
+function avisoEntrada(titulo, texto){
+  openModal(`<h3>${esc(titulo)}</h3><div class="sub">${esc(texto)}</div><button class="btn ok" id="av-ok" style="width:100%">Entendido</button>`);
+  document.getElementById('av-ok').onclick=()=>{ closeModal(); pedirEntrada(); };
 }
+async function resolverAcceso(op){
+  try{ await catalogoListo; }catch{}
+  sel={}; uses=[]; loteActual=null; permitidas=new Set(); resumenImp='';
+  if(ENC.includes(op.rol)){ operador=op; restringido=false; step=1; aplicarBorrador(op); render(); return; }
+  let lista;
+  try{ const { data, error } = await db.rpc('fn_prep_pendientes_detalle', { p_usuario:op.id }); if(error) throw error; lista = data||[]; }
+  catch{ avisoEntrada('Sin conexión','No pude ver lo que imprimiste. Esperá unos segundos y entrá de nuevo con tu PIN.'); return; }
+  const want = new URLSearchParams(location.search).get('lote');
+  const l = lista.find(x => x.lote_id===want) || lista[0];
+  if(!l){ avisoEntrada('No tenés nada pendiente', op.n.split(' ')[0]+', no hay etiquetas tuyas sin insumos. Primero se pesa e imprime; los insumos se registran al final del turno.'); return; }
+  (l.productos||[]).forEach(p => {
+    let rid = RECETA_DE[p.clave] || p.clave;
+    if(!rid || !REC[rid]){ rid = 'prod-'+p.producto_id; if(!REC[rid]){ const r={ id:rid, nombre:p.nombre, lineas:[], libre:true }; DATA.recetas.push(r); REC[rid]=r; } }
+    permitidas.add(rid); sel[rid]=1;
+  });
+  resumenImp = 'Imprimiste ' + (l.productos||[]).map(p => p.nombre+' ('+p.unidades+' etiqueta'+(p.unidades==1?'':'s')+')').join(', ');
+  operador=op; restringido=true; loteActual={ id:l.lote_id, lote:l.lote }; step=1; aplicarBorrador(op); render();
+}
+// Si esta misma persona dejó una tanda a medias (se cayó la tablet, se bloqueó la pantalla), vuelve a donde iba.
+function aplicarBorrador(op){
+  const b = leer(BORRADOR); if(!b) return;
+  if(Date.now()-b.t > 18*3600*1000 || !b.uses || !b.uses.length){ quitar(BORRADOR); return; }
+  if(b.usuario !== op.id || (b.loteActual?.id||null) !== (loteActual?.id||null)) return;
+  (b.nuevos||[]).forEach(n => { if(!INS[n.code]){ INS[n.code]=n; DATA.insumos.push(n); } });
+  (b.libres||[]).forEach(r => { if(!REC[r.id]){ REC[r.id]=r; DATA.recetas.push(r); } });
+  const ok = id => REC[id] && (!restringido || permitidas.has(id));
+  sel = {}; Object.keys(b.sel||{}).forEach(id => { if(ok(id)) sel[id]=b.sel[id]; });
+  uses = (b.uses||[]).filter(u => INS[u.code] && ok(u.rid)); uid = b.uid || uses.length+1;
+  step = Math.max(2, Math.min(3, b.step||2)); toast('Seguís con tu tanda donde ibas','ok');
+}
+// 30 s sin tocar nada en "qué preparás" cierran la sesión y vuelven a pedir el PIN.
+function armarBloqueo(){
+  clearTimeout(bloqT);
+  if(!operador || cerrado || step!==1) return;
+  bloqT = setTimeout(() => { operador=null; sel={}; uses=[]; loteActual=null; restringido=false; render(); pedirEntrada('La pantalla se bloqueó por inactividad. Entrá de nuevo con tu PIN.'); }, 30000);
+}
+['pointerdown','keydown','touchstart'].forEach(e => window.addEventListener(e, () => { if(bloqT) armarBloqueo(); }, true));
 async function init(){
+  catalogoListo = Promise.all([cargarCatalogo(), cargarAjustes()]);
   render();
-  await Promise.all([cargarCatalogo(), cargarAjustes()]);
-  if(step===1 && !Object.keys(sel).length && !document.getElementById('ov')) renderStep1();
+  await catalogoListo;
   vaciarBuzon(); window.addEventListener('online', vaciarBuzon);
-  const lote = new URLSearchParams(location.search).get('lote');
-  if(lote) abrirLoteDeDeuda(lote); else ofrecerBorrador();
 }
 init();
