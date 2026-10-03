@@ -1,5 +1,9 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 3-Oct-2026 — Apartado «Equipo y PINs» para Kevin (migración `20261004_prep_equipo_pines.sql`, YA APLICADA)
+
+Pedido de Cesar: los PIN de producción existen pero la gente no sabe cuál es el suyo; Kevin (jefe de Casa Matriz) necesita verlos para dárselos. En la tablet de etiquetado, quien entra con rol de encargado ve el recuadro «👥 Equipo y PINs» (`EquipoPines.jsx`): pide el PIN de encargado otra vez, lista al equipo (producción y despacho de su sucursal, 11 personas en CM001) y cada PIN se pide de a uno (`fn_equipo_pin_ver`), se ve 15 s y se oculta; se cierra solo a los 60 s sin tocar. La lista (`fn_equipo_lista`) nunca trae PIN, solo `tiene_pin`. Cada consulta queda en `prep_bitacora` (`pin_consultado`, con quién y a quién). No se pueden ver PIN de otros encargados ni de otras sucursales (probado en producción con una transacción revertida). Tradeoff aceptado por Cesar: si el jefe conoce el PIN de alguien, podría imprimir a su nombre; por eso la consulta es bajo demanda y auditada. Pendiente posible: «cambiar PIN» por persona y mostrar la bitácora de consultas en el panel Datos.
+
 ## 3-Oct-2026 — Estación de preparación + PIN al imprimir etiquetas + salida bloqueada en Mi Asistencia (migraciones `20261003_prep_*`, YA APLICADAS en producción)
 
 Pedido de Cesar: amarrar el inventario a algo que sí se hace siempre. Las cocineras no se van sin pasar por la tablet, así que el control se ancla en **imprimir etiquetas**: quien imprime pone su PIN, y no puede marcar su salida si el lote de lo que imprimió no tiene los insumos registrados.

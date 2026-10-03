@@ -11,7 +11,7 @@ import { db } from '../supabase'
 
 const C = { bg: '#0a0a0b', card: '#141416', line: '#2a2a2e', txt: '#f0f0f2', dim: '#8a8a92', ok: '#22c55e', bad: '#fca5a5' }
 
-export default function PinModal({ titulo, sub, onListo, onCancelar }) {
+export default function PinModal({ titulo, sub, onListo, onCancelar, soloEncargado = false }) {
   const [pin, setPin] = useState('')
   const [err, setErr] = useState('')
   const [yendo, setYendo] = useState(false)
@@ -21,10 +21,10 @@ export default function PinModal({ titulo, sub, onListo, onCancelar }) {
     if (valor.length < 4 || yendo) return
     setErr(''); setYendo(true)
     try {
-      const { data, error } = await db.rpc('fn_prep_actor', { p_pin: valor, p_solo_encargado: false })
+      const { data, error } = await db.rpc('fn_prep_actor', { p_pin: valor, p_solo_encargado: soloEncargado })
       if (error) throw new Error(error.message)
-      if (!data) { setErr('PIN incorrecto'); setPin('') }
-      else onListo({ id: data.id, nombre: data.nombre, rol: data.rol })
+      if (!data) { setErr(soloEncargado ? 'Ese PIN no es de un encargado' : 'PIN incorrecto'); setPin('') }
+      else onListo({ id: data.id, nombre: data.nombre, rol: data.rol }, valor)   // el PIN solo viaja a quien lo pidió (p. ej. el apartado Equipo y PINs)
     } catch (e) { setErr(e.message || 'No hay conexión. Intentá de nuevo.'); setPin('') }
     setYendo(false)
   }
