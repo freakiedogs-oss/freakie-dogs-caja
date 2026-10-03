@@ -287,12 +287,19 @@ export function RecibirTransferencia({ user, show, despacho, sucursales, onBack 
 
   const recibir = async () => {
     if (guardando) return;
-    if (conDiferencia.length && !window.confirm(`${conDiferencia.length} bebida(s) no llegaron completas. Se registra lo que contaste y la diferencia queda en la transferencia. ¿Confirmar?`)) return;
+    // Recibir MÁS de lo enviado exige explicar por qué (el RPC lo rechaza sin nota).
+    const deMas = items.filter(it => recibidoDe(it) > Math.round(n(it.cantidad_despachada)));
+    let notaDeMas = null;
+    if (deMas.length) {
+      notaDeMas = (window.prompt(`Estás recibiendo MÁS de lo que mandaron en: ${deMas.map(it => it.descripcion).join(', ')}.\nEscribí qué pasó (obligatorio):`) || '').trim();
+      if (!notaDeMas) { show('❌ Para recibir más de lo enviado tenés que escribir qué pasó'); return; }
+    } else if (conDiferencia.length && !window.confirm(`${conDiferencia.length} bebida(s) no llegaron completas. Se registra lo que contaste y la diferencia queda en la transferencia. ¿Confirmar?`)) return;
     setGuardando(true);
     try {
       const { data, error } = await db.rpc('transferencia_bebidas_recibir', {
         p_usuario_id: user.id, p_despacho_id: despacho.id,
-        p_items: items.map(it => ({ despacho_item_id: it.id, cantidad_recibida: recibidoDe(it) })),
+        p_items: items.map(it => ({ despacho_item_id: it.id, cantidad_recibida: recibidoDe(it),
+          nota: recibidoDe(it) > Math.round(n(it.cantidad_despachada)) ? notaDeMas : null })),
       });
       if (error) throw error;
       show(data?.ya_recibido ? 'Esta transferencia ya estaba recibida' : `✅ Recibida: ${items.length} bebida(s) sumadas al inventario`);

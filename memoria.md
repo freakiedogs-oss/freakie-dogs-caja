@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 3-Oct-2026 — Recepción contada en la sucursal (migración `recepcion_contada`)
+
+Por qué: el 2-oct Cafetalón confirmó 10 paquetes de salchicha cuando solo llegaron 5. La pantalla de «Confirmar entrega» venía llena con lo despachado y bastaba «Todo completo» para recibir sin contar; el cuadre nocturno lo destapó como faltante de 125 salchichas. Además el RPC aceptaba recibir MÁS de lo despachado sin ninguna explicación. Pedido de Frank.
+
+- **Cada producto arranca vacío** (`ConfirmarEntrega.jsx`): hay que escribir cuánto llegó; no se puede confirmar con uno sin llenar («Falta escribir lo que llegó de…»).
+- **«Todo completo» pide una segunda confirmación** que lista producto por producto lo que se va a dar por recibido («Volver» / «Sí, conté todo»).
+- **Toda diferencia (de menos o de más) lleva nota obligatoria** en la app. Si es de más, aviso naranja «Estás recibiendo MÁS de lo despachado».
+- **El candado de verdad está en el RPC:** `despacho_confirmar` rechaza (vía humana) recibir más de lo despachado sin `p_items[].nota`. La nota se guarda en `despacho_items.notas` dentro de la misma transacción (se agrega con « | » a lo que ya hubiera); la app ya no la escribe aparte.
+- **Sin cambios** para el cron reconciliador (`p_auto`) ni para clientes viejos: producto sin `cantidad_recibida` = lo despachado. La diferencia de menos no se bloquea en el RPC para no trabar una PWA en caché; la exige la app.
+- `TransferenciaBebidas.jsx` (transferencias entre sucursales, pasa por el mismo RPC): si se recibe de más pide la nota con un prompt.
+- Probado en modo prueba sobre el último despacho de M001: de más sin nota → bloquea; con nota → recibe, guarda nota y kardex; cron → igual que antes.
+- Afecta la recepción de TODAS las sucursales.
+
 ## 2-Oct-2026 — Kevin mantiene la lista de productos del etiquetado desde la misma báscula (migraciones `etiquetado_productos_tabla`, `_funciones`, `_retiro_automatico_15_dias`, `_alta_revive_retirado`)
 
 Pedido de Cesar: «que no tengan que esperar a que yo tenga tiempo libre». Si alguien llega a la báscula con un producto que no está en la lista, la producción se paraba hasta un commit + deploy. Ahora la lista es dato y la mantiene quien ve el problema, igual que las reglas de menú de Karina.
