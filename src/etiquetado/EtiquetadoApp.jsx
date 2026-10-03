@@ -269,7 +269,7 @@ export default function EtiquetadoApp() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       <div style={{ flex: 1, minWidth: 150 }}>
         <div style={{ fontSize: 17, fontWeight: 800 }}>Pesaje y etiquetado</div>
-        <div style={{ color: C.dim, fontSize: 12.5 }}>Casa Matriz · {loteSel ? `lote ${loteSel.lote}` : 'sin lote'} · {actor ? actor.nombre : 'pantalla bloqueada · entrá con tu PIN'}</div>
+        <div style={{ color: C.dim, fontSize: 12.5 }}>Casa Matriz · {loteSel ? `lote ${loteSel.lote}` : 'sin lote'} · {actor ? actor.nombre : paso === 4 ? 'sesión cerrada' : 'pantalla bloqueada · entrá con tu PIN'}</div>
       </div>
       <button onClick={bal.estado === 'conectada' ? bal.desconectar : bal.conectar}
         style={{ ...chip(bal.estado === 'conectada'), cursor: 'pointer', fontFamily: 'inherit' }}>
