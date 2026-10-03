@@ -448,7 +448,13 @@ async function cerrarTanda(faltan, forzado){
                  loteId:loteActual?.id||null, loteTxt:loteActual?.lote||null };
   let res=null;
   try{ res = await enviarTanda(pack); }
-  catch{ guardar(BUZON, [...leer(BUZON, []), pack]); }   // sin internet: queda en la tablet y se sube sola
+  catch(e){
+    // El servidor rechazó el cierre (no es tuyo, faltan insumos de algo impreso…): no es un problema de red, no se guarda en el buzón.
+    if(e && (e.code==='P0001' || /^(Ese lote|Faltan los insumos|No se registr)/.test(e.message||''))){
+      toast(e.message||'No se pudo cerrar la tanda','bad'); refrescarImpresas().then(()=>{ step = 3; render(); }); return;
+    }
+    guardar(BUZON, [...leer(BUZON, []), pack]);   // sin internet: queda en la tablet y se sube sola
+  }
   cerrado = { lote: res ? res.lote : null, n: uses.length, faltan, subir: !res };
   loteActual = res ? { id:res.id, lote:res.lote } : null;
   quitar(BORRADOR); renderDone();
@@ -480,9 +486,11 @@ function openDatos(d){
       <div style="height:6px;background:#23232b;border-radius:4px;margin:5px 0"><i style="display:block;height:6px;width:${w}%;background:${x.prom>1?'#f59e0b':'#3b82f6'};border-radius:4px"></i></div>
       <div style="font-size:11.5px;color:var(--dim)">${x.n} registro${x.n===1?'':'s'}${x.minimo!=null?` · de ${pct(x.minimo)} a ${pct(x.maximo)}`:''}${x.faltas?` · faltó ${x.faltas} vez${x.faltas===1?'':'es'}`:''}${x.fuera?` · fuera de receta ${x.fuera}`:''}</div></div>`; }).join('');
   const pers = (d.personas||[]).map(p => `<div class="line"><span>👤 ${esc(p.nombre)} · ${p.lotes} tanda${p.lotes==1?'':'s'}</span><span class="q">${p.registros?Math.round(100*p.exactos/p.registros):0}% idénticos a la receta</span></div>`).join('');
+  const viejas = (d.deudas_viejas||[]).map(v => `<div class="line"><span>⚠️ ${esc(v.nombre)} · ${esc(v.lote)} del ${esc(v.fecha)} <span style="color:var(--dim);font-size:12px">${esc((v.productos||[]).join(', '))}</span></span><span class="q">hace ${v.dias} día${v.dias==1?'':'s'}</span></div>`).join('');
   const bit = (d.bitacora||[]).map(b => `<div class="line"><span>${esc(b.actor||'')} · ${esc(b.accion)}</span><span class="q">${esc(b.hora)}</span></div>`).join('');
   openModal(`<h3>📊 Datos de los últimos 30 días</h3><div class="sub">${d.lotes} tanda${d.lotes==1?'':'s'} cerrada${d.lotes==1?'':'s'} · ${d.deudas_abiertas} deuda${d.deudas_abiertas==1?'':'s'} abierta${d.deudas_abiertas==1?'':'s'}. Ordenado por lo que más se aleja de la receta; con unas 20 tandas por receta ya hay base para proponer topes.</div>
     ${filas||'<div class="empty">Todavía no hay tandas cerradas.</div>'}
+    ${viejas?`<p class="h3" style="margin-top:14px">Etiquetas sin insumos de días anteriores</p>${viejas}<div style="font-size:11.5px;color:var(--dim);margin-top:4px">Si alguien no marca salida, el bloqueo no actúa: estas son las que hay que perseguir.</div>`:''}
     <p class="h3" style="margin-top:14px">Por persona</p>${pers||'<div class="empty">Todavía nada.</div>'}<div style="font-size:11.5px;color:var(--dim);margin-top:4px">Si alguien registra siempre «idéntico a la receta», conviene mirarlo: puede ser buen pulso o que solo toca «igual» para poder irse.</div>
     <p class="h3" style="margin-top:14px">Bitácora</p>${bit||'<div class="empty">Sin movimientos.</div>'}
     <button class="btn" id="d-x" style="margin-top:10px;width:100%">Cerrar</button>`);

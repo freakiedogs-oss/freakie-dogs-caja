@@ -303,7 +303,10 @@ export default function MiAsistencia({ user }) {
           alerta_rrhh: fueraGeofence,
         });
         if (error) throw error;
-        setMsg({ ok: !fueraGeofence, warn: fueraGeofence, text: fueraGeofence ? `⚠️ Entrada registrada pero estás a ${dInfo.dist}m del local (límite: ${dInfo.radio}m)` : '✓ Entrada registrada correctamente' });
+        // ¿Quedaron etiquetas de días anteriores sin insumos? Se avisa al entrar (no bloquea nada).
+        const viejas = (await consultarPendientes()).filter(p => p.fecha && String(p.fecha) < hoy);
+        const aviso = viejas.length ? ` · ⚠️ Tenés ${viejas.length} lote${viejas.length === 1 ? '' : 's'} de días anteriores sin insumos (${viejas.map(v => v.lote + ' del ' + v.fecha).join(', ')}). Registralos hoy en la estación de preparación.` : '';
+        setMsg({ ok: !fueraGeofence && !viejas.length, warn: fueraGeofence || viejas.length > 0, text: (fueraGeofence ? `⚠️ Entrada registrada pero estás a ${dInfo.dist}m del local (límite: ${dInfo.radio}m)` : '✓ Entrada registrada correctamente') + aviso });
       } else {
         // Antes de dejar salir: ¿imprimió etiquetas de un lote cuyos insumos
         // nadie registró? Si la consulta falla NO se bloquea (sin red no se debe
