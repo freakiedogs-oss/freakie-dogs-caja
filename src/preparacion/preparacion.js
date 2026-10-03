@@ -49,6 +49,7 @@ let restringido = false;     // personas de producción: solo ven lo que pesaron
 let permitidas = new Set();   // ids de receta que esa persona puede registrar
 let resumenImp = '';          // texto: qué imprimió
 let bloqT = null;
+let impreso = {};             // receta -> { unidades, gramos, nombre }: lo que esa persona pesó e imprimió
 let catalogoListo = null;
 const ENC = ['jefe_casa_matriz','admin','superadmin','ejecutivo'];
 const RECETA_DE = { pepinillotritura:'pepinillo' };   // clave de etiquetado -> id de receta, cuando no coinciden
@@ -69,6 +70,46 @@ function ratio(u){
   if(u.unit===e.unit) return u.qty/e.qty;
   return null;
 }
+/* ---------- coherencia con lo que se pesó ---------- */
+// Lo registrado tiene que parecerse a lo pesado: si pesaste 10 bolsitas de queso frito (3 lb),
+// no se puede registrar 0.3 lb de queso. Se calcula cuántas tandas corresponden a lo impreso y
+// se compara. Solo bloquea lo grueso; las diferencias normales de una cocina quedan como datos.
+const AJ_TANDAS = [0.65, 1.5];   // tandas registradas / tandas que corresponden a lo pesado
+const AJ_INSUMO = [0.5, 2];      // cantidad registrada / cantidad esperada para lo pesado
+const RINDE_BASE = { quesofrito:1, sal:1, salchicha:1 };   // unidades de producto por tanda cuando la receta no lo dice
+function masaReceta(r){ let g=0; r.lineas.forEach(l => { const u=UNITS[l.unit]; if(u && (u.fam==='m' || u.fam==='v')) g += l.qty*u.k; }); return g; }
+function referencia(rid){
+  const imp = impreso[rid], r = REC[rid]; if(!imp || !r) return null;
+  let R = (cfg.rendimientos && cfg.rendimientos[rid]) || RINDE_BASE[rid] || null;
+  if(!R){ const bag = r.lineas.find(l => l.unit==='unidad' && INS[l.code] && /^AB-BVNT/i.test(INS[l.code].nombre)); if(bag) R = bag.qty; }
+  if(R && imp.unidades>0) return { t: imp.unidades/R, imp, via:'unidades' };
+  const M = masaReceta(r); if(M>=300 && imp.gramos>0) return { t: imp.gramos/M, imp, via:'masa' };
+  return null;
+}
+const queSePeso = (imp) => `${imp.unidades} ${imp.unidades===1?'unidad':'unidades'}${imp.gramos?` (${Math.round(imp.gramos).toLocaleString('en-US')} g)`:''}`;
+function refNota(rid){
+  const imp = impreso[rid]; if(!imp) return '';
+  const ref = referencia(rid);
+  const st = 'order:5;flex-basis:100%;font-size:12px;';
+  return ref ? `<div style="${st}color:var(--dim)">Pesaste ${esc(queSePeso(imp))} → equivale a <b style="color:var(--txt)">${fmt(ref.t)} tanda${Math.abs(ref.t-1)<0.005?'':'s'}</b>.</div>`
+             : `<div style="${st}color:var(--warn)">Pesaste ${esc(queSePeso(imp))}. Esta receta todavía no tiene cómo compararse con lo pesado: se registra sin validar.</div>`;
+}
+function incoherencias(){
+  const out = [];
+  Object.keys(sel).forEach(rid => {
+    const ref = referencia(rid); if(!ref) return; const r = REC[rid];
+    const rt = sel[rid]/ref.t;
+    if(rt<AJ_TANDAS[0] || rt>AJ_TANDAS[1]) out.push({ rid, tipo:'tandas', texto:`${r.nombre}: pesaste ${queSePeso(ref.imp)}, que equivale a unas ${fmt(ref.t)} tandas, pero registraste ${fmt(sel[rid])}.` });
+    uses.filter(u => u.rid===rid && !u.extra).forEach(u => {
+      const ln = recLine(rid, u.code); if(!ln) return; const a=UNITS[u.unit], b=UNITS[ln.unit]; let q=null;
+      if(a.fam===b.fam && a.fam!=='u') q = (u.qty*a.k)/(ln.qty*ref.t*b.k); else if(u.unit===ln.unit) q = u.qty/(ln.qty*ref.t);
+      if(q==null || (q>=AJ_INSUMO[0] && q<=AJ_INSUMO[1])) return;
+      out.push({ rid, tipo:'insumo', code:u.code, texto:`${INS[u.code].nombre}: registraste ${fmt(u.qty)} ${UNITS[u.unit].l.split(' ')[0]} y para lo que pesaste (${queSePeso(ref.imp)}) se esperan unos ${fmt(ln.qty*ref.t)} ${UNITS[ln.unit].l.split(' ')[0]}.` });
+    });
+  });
+  return out;
+}
+
 function statusChip(u){
   if(u.extra) return '<span class="chip fr">fuera de receta</span>';
   const r = ratio(u); if(r==null) return '<span class="chip">sin comparar</span>';
@@ -100,7 +141,7 @@ function renderStep1(){
   const tiles = DATA.recetas.filter(r => !restringido || permitidas.has(r.id)).map(r => `<button class="tile ${sel[r.id]?'on':''}" data-rec="${r.id}"><b>${esc(r.nombre)}</b><small>${r.lineas.length? r.lineas.length+' insumos en la receta' : 'sin ingredientes cargados — se arman al pistolear'}</small></button>`).join('');
   const picked = Object.keys(sel);
   const rows = picked.map(id => { const r=REC[id]; const opts=r.lineas.map(l=>`<option value="${l.code}">${esc(INS[l.code].nombre)}</option>`).join('');
-    return `<div class="selrow" style="display:block"><div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>${esc(r.nombre)}</b>
+    return `<div class="selrow" style="display:block"><div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>${esc(r.nombre)}</b>${refNota(id)}
       <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><label>Tandas</label>
       <button class="btn sm" data-q-t="${id}|0.5">½</button><button class="btn sm" data-q-t="${id}|1">1</button><button class="btn sm" data-q-t="${id}|1.5">1½</button><button class="btn sm" data-q-t="${id}|2">2</button>
       <input class="num" type="number" min="0" step="any" value="${sel[id]}" data-tanda="${id}" id="t-${id}"></span></div>
@@ -114,7 +155,7 @@ function renderStep1(){
     <div class="selbar">${rows}</div>
     <div style="margin-top:16px"><button class="btn big ${picked.length?'ok':'off'}" id="go1">${picked.length?'Empezar a pistolear insumos →':'Elegí al menos una receta'}</button></div>
     <div class="notes"><b>Pensado para que nada se trabe:</b> aunque una receta no tenga ingredientes cargados (Ranch, Mermelada, Truffa), igual se puede preparar: lo que pistoleen queda registrado y después se ajusta la receta.</div>`;
-  document.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const id=b.dataset.rec; if(sel[id]) delete sel[id]; else sel[id]=1; renderStep1(); });
+  document.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const id=b.dataset.rec; if(restringido && permitidas.has(id)){ toast('Esto lo imprimiste: tiene que quedar registrado','bad'); return; } if(sel[id]) delete sel[id]; else sel[id]=1; renderStep1(); });
   document.querySelectorAll('[data-tanda]').forEach(i => i.oninput = () => { const v=parseFloat(i.value); if(v>0) sel[i.dataset.tanda]=v; });
   document.querySelectorAll('[data-q-t]').forEach(b => b.onclick = () => { const [id,v]=b.dataset.qT.split('|'); sel[id]=parseFloat(v); document.getElementById('t-'+id).value=v; });
   document.querySelectorAll('[data-anc]').forEach(b => b.onclick = () => { const id=b.dataset.anc; const code=document.getElementById('an-i-'+id).value; const q=parseFloat(document.getElementById('an-q-'+id).value); const u=document.getElementById('an-u-'+id).value; const ln=recLine(id,code);
@@ -184,6 +225,7 @@ function sugerencias(){
   // ¿lo que llevan se parece a otra cantidad de tandas? se mira la mediana de lo registrado contra la receta de 1 tanda
   const out=[];
   Object.keys(sel).forEach(rid=>{
+    if(referencia(rid)) return;   // con lo pesado como referencia no se sugiere otra cantidad de tandas
     const rs=uses.filter(u=>u.rid===rid && !u.extra).map(u=>{ const ln=recLine(rid,u.code); if(!ln) return null; const a=UNITS[u.unit], b=UNITS[ln.unit]; if(a.fam===b.fam&&a.fam!=='u') return (u.qty*a.k)/(ln.qty*b.k); if(u.unit===ln.unit) return u.qty/ln.qty; return null; }).filter(x=>x!=null&&x>0);
     if(rs.length<2) return; rs.sort((a,b)=>a-b); const med=rs[Math.floor(rs.length/2)]; const cur=sel[rid];
     if(Math.abs(med/cur-1)>0.15) out.push({rid, t:Math.round(med*100)/100});
@@ -204,6 +246,7 @@ function drawCheck(){
   }).join('');
   const sg=sugerencias(); const hint=document.getElementById('hint');
   if(hint) hint.innerHTML = sg.map(g=>`<div class="warnbox" style="background:#1e293b;border-color:#1e3a8a;color:#93c5fd">Lo que llevás de <b>${esc(REC[g.rid].nombre)}</b> se parece a <b>${fmt(g.t)} tanda${g.t===1?'':'s'}</b>, no ${fmt(sel[g.rid])}. <button class="link" data-apt="${g.rid}|${g.t}">Usar ${fmt(g.t)}</button> · <span style="color:var(--dim)">o dejalo así, no pasa nada.</span></div>`).join('');
+  if(hint){ const inc=incoherencias(); if(inc.length) hint.innerHTML += `<div class="warnbox" style="background:#2a0e0e;border-color:#7f1d1d;color:#fca5a5"><b>Esto no cuadra con lo que pesaste:</b><br>${inc.map(i=>esc(i.texto)).join('<br>')}</div>`; }
   if(hint) hint.querySelectorAll('[data-apt]').forEach(b=>b.onclick=()=>{ const [r,t]=b.dataset.apt.split('|'); sel[r]=parseFloat(t); drawList(); drawCheck(); });
   el.querySelectorAll('[data-manual]').forEach(b => b.onclick = () => { const [rid,code]=b.dataset.manual.split('|'); addUse(code,rid,null); toast('Agregado sin pistola','ok'); drawList(code); drawCheck(); });
 }
@@ -305,15 +348,18 @@ function renderStep3(){
     const miss = falt.length? `<div class="warnbox" style="margin-top:8px;${cfg.alertas?'':'background:#1a1a1e;border-color:var(--line);color:var(--dim)'}">No se registraron ${falt.length} insumo${falt.length===1?'':'s'} de la receta: ${falt.map(l=>esc(INS[l.code].nombre)).join(', ')}.</div>`:'';
     return `<div class="sumrec card"><h4>${esc(r.nombre)} <span style="font-size:12px;color:var(--dim);font-weight:600">× ${fmt(sel[rid])} tanda${sel[rid]===1?'':'s'}</span></h4>${lines}${miss}</div>`;
   }).join('');
-  const bloquea = cfg.exigirTodo && faltan>0;
+  const inc = incoherencias();
+  const bloquea = (cfg.exigirTodo && faltan>0) || inc.length>0;
   document.getElementById('stage').innerHTML = `
     <h2>Revisá antes de cerrar</h2>
     <p class="lead">Esto es lo que va a quedar guardado con el lote. Lo que falte no te frena: queda anotado como pendiente.${cfg.exigirTodo?' <b style="color:var(--warn)">(El encargado activó “exigir todos los insumos”.)</b>':''}</p>
     ${blocks}
-    ${bloquea?`<div class="warnbox">Faltan ${faltan} insumos y el encargado pidió que estén todos para cerrar. Volvé y registralos (o márcalos “sin pistola”).</div>`:''}
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="back3">← Seguir pistoleando</button><button class="btn big ${bloquea?'off':'ok'}" style="flex:1;min-width:240px" id="close3">${bloquea?'Faltan insumos':'Cerrar tanda y pasar a pesar →'}</button></div>`;
+    ${inc.length?`<div class="warnbox" style="background:#2a0e0e;border-color:#7f1d1d;color:#fca5a5"><b>Esto no cuadra con lo que pesaste e imprimiste:</b><br>${inc.map(i=>'• '+esc(i.texto)).join('<br>')}<br><span style="font-size:12.5px;opacity:.9">Volvé y corregilo. Si de verdad es así, un encargado puede autorizar el cierre con su PIN y un motivo.</span></div>`:''}
+    ${cfg.exigirTodo&&faltan>0?`<div class="warnbox">Faltan ${faltan} insumos y el encargado pidió que estén todos para cerrar. Volvé y registralos (o márcalos “sin pistola”).</div>`:''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="back3">← Seguir pistoleando</button><button class="btn big ${bloquea?'off':'ok'}" style="flex:1;min-width:240px" id="close3">${inc.length?'No cuadra con lo pesado':bloquea?'Faltan insumos':'Cerrar tanda y pasar a pesar →'}</button>${inc.length?'<button class="btn" id="force3" style="flex-basis:100%;color:var(--warn)">Cerrar de todos modos (autoriza un encargado)</button>':''}</div>`;
   document.getElementById('back3').onclick=()=>{ step=2; render(); };
   document.getElementById('close3').onclick=()=>{ if(bloquea) return; cerrarTanda(faltan); };
+  const f3=document.getElementById('force3'); if(f3) f3.onclick=()=>forzarCierre(inc, faltan);
 }
 
 /* ---------- red: nada de esto puede frenar a quien está cocinando ---------- */
@@ -383,9 +429,19 @@ async function vaciarBuzon(){
   guardar(BUZON, quedan);
   if(quedan.length < cola.length) toast('Se subieron tandas que estaban guardadas en la tablet','ok');
 }
-async function cerrarTanda(faltan){
+function forzarCierre(inc, faltan){
+  const pedirMotivo = (por) => {
+    openModal(`<h3>Motivo</h3><div class="sub">Autoriza ${esc(por)}. Escribí por qué esto no coincide con lo que se pesó. Queda anotado en el lote.</div><input class="search" id="fm" placeholder="Ej. se usó producto del día anterior…" autocomplete="off"><div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="fm-x">Cancelar</button><button class="btn ok" id="fm-ok" style="flex:1">Cerrar de todos modos</button></div>`);
+    document.getElementById('fm').focus();
+    document.getElementById('fm-x').onclick = closeModal;
+    document.getElementById('fm-ok').onclick = () => { const m=document.getElementById('fm').value.trim(); if(m.length<4){ toast('Escribí el motivo','bad'); return; } closeModal(); cerrarTanda(faltan, { por, motivo:m, detalle:inc.map(i => i.texto) }); };
+  };
+  if(ENC.includes(operador.rol)) pedirMotivo(operador.n);
+  else askPin('Autorización del encargado','Lo registrado no coincide con lo que se pesó. Un encargado puede autorizar el cierre con su PIN y queda anotado.', enc => pedirMotivo(enc.n), true);
+}
+async function cerrarTanda(faltan, forzado){
   const btn=document.getElementById('close3'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
-  const pack = { usuario:operador.id, recetas:Object.keys(sel).map(id=>({id,nombre:REC[id].nombre,tandas:sel[id]})), insumos:armarInsumos(),
+  const pack = { usuario:operador.id, recetas:Object.keys(sel).map(id=>{ const ref=referencia(id); const o={ id, nombre:REC[id].nombre, tandas:sel[id] }; if(ref){ o.tandas_esperadas=Math.round(ref.t*100)/100; o.pesado={ unidades:ref.imp.unidades, gramos:Math.round(ref.imp.gramos) }; } if(forzado){ o.forzado_por=forzado.por; o.forzado_motivo=forzado.motivo; o.forzado_detalle=forzado.detalle; } return o; }), insumos:armarInsumos(),
                  loteId:loteActual?.id||null, loteTxt:loteActual?.lote||null };
   let res=null;
   try{ res = await enviarTanda(pack); }
@@ -500,7 +556,7 @@ function avisoEntrada(titulo, texto){
 }
 async function resolverAcceso(op){
   try{ await catalogoListo; }catch{}
-  sel={}; uses=[]; loteActual=null; permitidas=new Set(); resumenImp='';
+  sel={}; uses=[]; loteActual=null; permitidas=new Set(); resumenImp=''; impreso={};
   if(ENC.includes(op.rol)){ operador=op; restringido=false; step=1; aplicarBorrador(op); render(); return; }
   let lista;
   try{ const { data, error } = await db.rpc('fn_prep_pendientes_detalle', { p_usuario:op.id }); if(error) throw error; lista = data||[]; }
@@ -512,7 +568,12 @@ async function resolverAcceso(op){
     let rid = RECETA_DE[p.clave] || p.clave;
     if(!rid || !REC[rid]){ rid = 'prod-'+p.producto_id; if(!REC[rid]){ const r={ id:rid, nombre:p.nombre, lineas:[], libre:true }; DATA.recetas.push(r); REC[rid]=r; } }
     permitidas.add(rid); sel[rid]=1;
+    const im = impreso[rid] = impreso[rid] || { unidades:0, gramos:0, nombre:p.nombre };
+    im.unidades += Number(p.unidades)||0;
+    im.gramos += p.gramos!=null ? Number(p.gramos) : (p.gramos_objetivo ? Number(p.gramos_objetivo)*(Number(p.unidades)||0) : 0);
   });
+  // Las tandas arrancan en lo que corresponde a lo pesado, no en 1.
+  Object.keys(impreso).forEach(rid => { const ref=referencia(rid); sel[rid] = ref ? Math.max(0.01, Math.round(ref.t*100)/100) : 1; });
   resumenImp = 'Imprimiste ' + (l.productos||[]).map(p => p.nombre+' ('+p.unidades+' etiqueta'+(p.unidades==1?'':'s')+')').join(', ');
   operador=op; restringido=true; loteActual={ id:l.lote_id, lote:l.lote }; step=1; aplicarBorrador(op); render();
 }

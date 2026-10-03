@@ -25,8 +25,9 @@ async function enviar(p) {
   if (!loteId) {   // quedó pendiente un lote sin número: se crea ahora
     const l = await loteDelDia(p.usuarioId); loteId = l.id
   }
-  const { data, error } = await db.rpc('fn_etiqueta_registrar', {
+  const { data, error } = await db.rpc('fn_etiqueta_registrar_v2', {
     p_usuario: p.usuarioId, p_lote_id: loteId, p_producto_id: p.productoId, p_producto: p.producto, p_unidades: p.unidades,
+    p_gramos: p.gramos ?? null,   // gramos netos realmente pesados: la estación de insumos los compara con lo registrado
   })
   if (error) throw new Error(error.message)
   return data   // { con_insumos, deuda_nueva }

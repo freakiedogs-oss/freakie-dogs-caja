@@ -189,7 +189,8 @@ export default function EtiquetadoApp() {
     setImprimiendo(false)
     // Deja constancia de la impresión a nombre de quien la hizo. Sin esperar:
     // si no hay red queda en el buzón de la tablet y se sube sola.
-    registrarImpresion({ usuarioId: actor.id, loteId: loteSel.id, productoId: prod.id, producto: prod.nombre, unidades: nuevas.length })
+    registrarImpresion({ usuarioId: actor.id, loteId: loteSel.id, productoId: prod.id, producto: prod.nombre, unidades: nuevas.length,
+      gramos: Math.round(nuevas.reduce((a, u) => a + (u.n ?? u.g ?? 0), 0)) })
       .then(r => { if (r) setSinInsumos(!r.con_insumos) })
     if (listo.length >= total) { setPaso(4); setQuienImprimio(actor.nombre); setActor(null) }
     else aviso(nuevas.length === 2
