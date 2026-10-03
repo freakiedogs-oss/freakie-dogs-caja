@@ -27,7 +27,7 @@ import { armarZplFila, zplPruebaFila, DPI_OPCIONES } from './zebraZpl'
 import { cargarProductos, marcarUso } from './productos'
 import ProductoEditor from './ProductoEditor'
 import PinModal from './PinModal'
-import { cargarLotes, abrirLoteSinPreparacion, registrarImpresion, vaciarBuzon } from './lotes'
+import { loteDelDia, registrarImpresion, vaciarBuzon } from './lotes'
 
 const C = {
   bg: '#0a0a0b', card: '#141416', line: '#2a2a2e', txt: '#f0f0f2',
@@ -79,14 +79,14 @@ export default function EtiquetadoApp() {
   // se imprime de a pares. `pendiente` es la primera unidad del par, ya
   // pesada pero todavía sin imprimir — espera a que se pese la siguiente.
   const [pendiente, setPendiente] = useState(null)
-  // Sesión por persona: `actor` entra con PIN y se borra al terminar el lote o
-  // al volver atrás. `loteSel` es el lote de preparación al que se ligan las
-  // etiquetas de esta tanda de pesaje.
+  // Sesión por persona. Sin PIN no se ve ni la lista de productos: `actor`
+  // entra con PIN al abrir la pantalla y se borra al terminar el producto, al
+  // volver atrás o a los 30 s sin tocar nada en la selección. `loteSel` es el
+  // lote del día de esa persona (donde caen todas sus etiquetas de hoy; los
+  // insumos los registra al final del turno).
   const [actor, setActor] = useState(null)
-  const [pidiendoPin, setPidiendoPin] = useState(false)
   const [loteSel, setLoteSel] = useState(null)       // { id|null, lote }
-  const [lotes, setLotes] = useState([])             // null = sin conexión
-  const [eleccion, setEleccion] = useState(null)     // id de lote | '__sin'
+  const [bloqueada, setBloqueada] = useState(false)  // se cerró sola por inactividad
   const [quienImprimio, setQuienImprimio] = useState('')
   const [sinInsumos, setSinInsumos] = useState(null) // true | false | null (sin respuesta)
   const [msg, setMsg]     = useState('')
@@ -211,23 +211,16 @@ export default function EtiquetadoApp() {
   // (o se crea uno "sin preparación", que deja deuda) y se pasa a pesar.
   function empezar() {
     const n = Number(cuenta)
-    if (!(n > 0) || !eleccion) return
-    if (!actor) { setPidiendoPin(true); return }
+    if (!(n > 0) || !actor) return
     arrancar(actor, n)
   }
 
   async function arrancar(a, n) {
     setErr('')
     let l
-    if (eleccion === '__sin') {
-      try { l = await abrirLoteSinPreparacion(a.id) }
-      // Sin red igual se imprime: el lote se crea (y la deuda se abre) cuando vuelva.
-      catch { l = { id: null, lote: 'L-' + horaSV().replace(':', '') + '-SIN' } }
-    } else {
-      const f = (lotes || []).find(x => x.id === eleccion)
-      if (!f) { setErr('Ese lote ya no está en la lista. Elegí otro.'); return }
-      l = { id: f.id, lote: f.lote }
-    }
+    try { l = await loteDelDia(a.id) }
+    // Sin red igual se imprime: el lote se resuelve (y la deuda se abre) cuando vuelva.
+    catch { l = { id: null, lote: 'L-' + horaSV().replace(':', '') + '-SIN' } }
     setLoteSel(l)
     // Deja constancia de que este producto se usa hoy: es lo que lo mantiene
     // en la lista (lo que nadie pesa en 15 días lo retira solo la base).
@@ -240,20 +233,30 @@ export default function EtiquetadoApp() {
   // Volver atrás o terminar cierra la sesión: el siguiente pone su PIN.
   function salirSesion() { setActor(null); setLoteSel(null) }
 
+  // Bloqueo por inactividad: en la selección de producto y de cantidad, 30 s sin
+  // tocar nada cierran la sesión y vuelve a pedir el PIN. Pesando no aplica.
+  useEffect(() => {
+    if (!actor || (paso !== 1 && paso !== 2) || editor) return
+    let t
+    const armar = () => {
+      clearTimeout(t)
+      t = setTimeout(() => {
+        setActor(null); setLoteSel(null); setProd(null); setCuenta(''); setPaso(1); setBloqueada(true)
+      }, 30000)
+    }
+    const evs = ['pointerdown', 'keydown', 'touchstart']
+    evs.forEach(e => window.addEventListener(e, armar, true))
+    armar()
+    return () => { clearTimeout(t); evs.forEach(e => window.removeEventListener(e, armar, true)) }
+  }, [actor, paso, editor])
+
   function reiniciar() {
     salirSesion()
     setPaso(1); setProd(null); setCuenta(''); setTotal(0); setHechas([]); setPendiente(null)
-    setEleccion(null); setSinInsumos(null); setQuienImprimio('')
+    setSinInsumos(null); setQuienImprimio('')
   }
 
-  // Lotes de preparación disponibles al entrar a "cuántas", y el buzón de
-  // impresiones que quedaron sin subir por falta de red.
-  useEffect(() => {
-    if (paso !== 2) return
-    let vivo = true
-    cargarLotes().then(l => { if (vivo) setLotes(l) })
-    return () => { vivo = false }
-  }, [paso])
+  // Buzón de impresiones que quedaron sin subir por falta de red.
   useEffect(() => {
     vaciarBuzon().then(n => { if (n) aviso(`Se subieron ${n} impresión${n === 1 ? '' : 'es'} que estaban guardadas en la tablet`) })
     const f = () => { vaciarBuzon() }
@@ -266,7 +269,7 @@ export default function EtiquetadoApp() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       <div style={{ flex: 1, minWidth: 150 }}>
         <div style={{ fontSize: 17, fontWeight: 800 }}>Pesaje y etiquetado</div>
-        <div style={{ color: C.dim, fontSize: 12.5 }}>Casa Matriz · {loteSel ? `lote ${loteSel.lote}` : 'sin lote'} · {actor ? actor.nombre : 'sin sesión (entrás con tu PIN al empezar)'}</div>
+        <div style={{ color: C.dim, fontSize: 12.5 }}>Casa Matriz · {loteSel ? `lote ${loteSel.lote}` : 'sin lote'} · {actor ? actor.nombre : 'pantalla bloqueada · entrá con tu PIN'}</div>
       </div>
       <button onClick={bal.estado === 'conectada' ? bal.desconectar : bal.conectar}
         style={{ ...chip(bal.estado === 'conectada'), cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -324,14 +327,6 @@ export default function EtiquetadoApp() {
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         {barra}{panelAjustes}{avisos}{hijos}
       </div>
-      {pidiendoPin && (
-        <PinModal
-          titulo="¿Quién va a pesar?"
-          sub="Las etiquetas salen a tu nombre. Marcá tu PIN: la sesión se cierra sola al terminar el lote."
-          onCancelar={() => setPidiendoPin(false)}
-          onListo={(a) => { setActor(a); setPidiendoPin(false); arrancar(a, Number(cuenta)) }}
-        />
-      )}
     </div>
   )
 
@@ -353,11 +348,26 @@ export default function EtiquetadoApp() {
     />
   )
 
+  // ── 0 · Pantalla bloqueada: sin PIN no se ve ni la lista de productos ──
+  if (!actor && paso !== 4) return (
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.txt, padding: 14,
+                  fontFamily: 'system-ui, -apple-system, Segoe UI, sans-serif' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>{barra}{panelAjustes}{avisos}</div>
+      <PinModal
+        titulo="¿Quién va a pesar?"
+        sub={bloqueada
+          ? 'La pantalla se bloqueó por inactividad. Marcá tu PIN para seguir: las etiquetas salen a tu nombre.'
+          : 'Marcá tu PIN para entrar. Las etiquetas salen a tu nombre y la sesión se cierra sola al terminar cada producto.'}
+        onListo={(a) => { setActor(a); setBloqueada(false); setPaso(1) }}
+      />
+    </div>
+  )
+
   // ── 1 · Qué se va a pesar ──
   if (paso === 1) return marco(
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 11 }}>
-        <span style={{ color: C.dim, fontSize: 14 }}>¿Qué vas a pesar?</span>
+        <span style={{ color: C.dim, fontSize: 14 }}>Hola, {actor?.nombre?.split(' ')[0]}. ¿Qué vas a pesar? <span style={{ fontSize: 12, opacity: .7 }}>· se bloquea sola a los 30 s sin tocar</span></span>
         {fuente && fuente !== 'base' && (
           <span style={{ color: C.warn, fontSize: 12 }}>
             sin conexión · lista {fuente === 'cache' ? 'de la última vez' : 'de respaldo'}
@@ -423,42 +433,12 @@ export default function EtiquetadoApp() {
             </button>
           ))}
         </div>
-        <button onClick={empezar} disabled={!(Number(cuenta) > 0) || !eleccion}
-          style={{ ...btn(C.ok, !(Number(cuenta) > 0) || !eleccion), marginTop: 10 }}>
-          {!(Number(cuenta) > 0) ? 'Empezar a pesar' : !eleccion ? 'Elegí el lote de abajo' : 'Empezar a pesar (pide tu PIN)'}
+        <button onClick={empezar} disabled={!(Number(cuenta) > 0)}
+          style={{ ...btn(C.ok, !(Number(cuenta) > 0)), marginTop: 10 }}>
+          Empezar a pesar
         </button>
-        <button onClick={() => { salirSesion(); setPaso(1) }} style={{ ...btn('#1c1c20'), color: C.txt, fontSize: 14, padding: 11, marginTop: 8 }}>
+        <button onClick={() => setPaso(1)} style={{ ...btn('#1c1c20'), color: C.txt, fontSize: 14, padding: 11, marginTop: 8 }}>
           Elegir otro producto
-        </button>
-      </div>
-    </div>
-    <div style={{ ...card, marginTop: 14 }}>
-      <div style={{ fontSize: 15, fontWeight: 800 }}>¿De qué lote de preparación son?</div>
-      <div style={{ color: C.dim, fontSize: 12.5, margin: '4px 0 10px', lineHeight: 1.5 }}>
-        Es el que dejó registrado quien preparó. Así cada bolsa queda ligada a los insumos que se usaron.
-      </div>
-      {lotes === null && (
-        <div style={{ color: C.warn, fontSize: 13, marginBottom: 8 }}>Sin conexión: no se ven los lotes. Podés imprimir igual con la última opción.</div>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
-        {(lotes || []).filter(l => !(l.sin_preparacion && l.estado === 'abierto')).slice(0, 12).map(l => (
-          <button key={l.id} onClick={() => setEleccion(l.id)}
-            style={{ textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', color: C.txt, borderRadius: 12, padding: 12,
-                     background: eleccion === l.id ? '#12233a' : '#1c1c20', border: `1px solid ${eleccion === l.id ? C.acc : C.line}` }}>
-            <div style={{ fontWeight: 800 }}>{l.lote} <span style={{ color: C.dim, fontWeight: 500, fontSize: 12 }}>· {l.creado_nombre}</span></div>
-            <div style={{ color: C.dim, fontSize: 12.5, marginTop: 3 }}>
-              {(l.recetas || []).map(r => r.nombre).join(', ') || 'sin recetas'}
-              {l.estado === 'abierto' && <span style={{ color: C.warn }}> · aún sin cerrar</span>}
-            </div>
-          </button>
-        ))}
-        <button onClick={() => setEleccion('__sin')}
-          style={{ textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', color: C.txt, borderRadius: 12, padding: 12,
-                   background: eleccion === '__sin' ? '#2a1f06' : '#1c1c20', border: `1px dashed ${eleccion === '__sin' ? C.warn : C.line}` }}>
-          <div style={{ fontWeight: 800 }}>Sin lote de preparación</div>
-          <div style={{ color: C.dim, fontSize: 12.5, marginTop: 3 }}>
-            Se imprime igual, pero te queda pendiente registrar los insumos antes de marcar tu salida.
-          </div>
         </button>
       </div>
     </div>
@@ -520,7 +500,7 @@ export default function EtiquetadoApp() {
               Reimprimir la última etiqueta
             </button>
           )}
-          <button onClick={() => { salirSesion(); setPaso(2) }} style={{ ...btn('#1c1c20'), color: C.dim, fontSize: 13, padding: 10, marginTop: 8 }}>
+          <button onClick={() => { salirSesion(); setProd(null); setCuenta(''); setPaso(1) }} style={{ ...btn('#1c1c20'), color: C.dim, fontSize: 13, padding: 10, marginTop: 8 }}>
             Cancelar (cierra tu sesión)
           </button>
         </div>
@@ -572,13 +552,13 @@ export default function EtiquetadoApp() {
       </div>
       {sinInsumos === true && (
         <div style={{ ...card, marginTop: 12, background: '#2a1f06', borderColor: '#78350f', color: '#fcd34d', fontSize: 14, lineHeight: 1.6 }}>
-          <b>Te quedó pendiente:</b> el lote {loteSel?.lote} no tiene los insumos registrados. No vas a poder marcar tu
-          salida hasta registrarlos (o hasta que el encargado la autorice o la pases a un compañero).
+          <b>Recordá:</b> al terminar tu turno tenés que registrar los insumos que usaste (lote {loteSel?.lote}). Sin eso
+          no vas a poder marcar tu salida (o hasta que el encargado la autorice o la pases a un compañero).
           {loteSel?.id && (
             <a href={`/preparacion.html?lote=${loteSel.id}`}
               style={{ display: 'block', marginTop: 10, background: C.ok, color: '#06180c', borderRadius: 10, padding: 12,
                        textAlign: 'center', fontWeight: 800, textDecoration: 'none' }}>
-              Registrar los insumos ahora
+              Registrar los insumos ahora (o más tarde, al terminar el turno)
             </a>
           )}
         </div>

@@ -421,6 +421,16 @@ function openDatos(d){
     <button class="btn" id="d-x" style="margin-top:10px;width:100%">Cerrar</button>`);
   document.getElementById('d-x').onclick=closeModal;
 }
+// Fin de turno: con el PIN se buscan las etiquetas que esa persona imprimió y
+// todavía no tienen insumos, y se abre ese lote para registrarlos.
+document.getElementById('pend').onclick = () => askPin('Mis pendientes','Con tu PIN vemos qué etiquetas imprimiste y aún no tienen sus insumos registrados.', async op => {
+  try{
+    const { data, error } = await db.rpc('fn_salida_pendientes', { p_usuario:op.id }); if(error) throw error;
+    const lista = (data && data.pendientes) || [];
+    if(!lista.length){ toast('No tenés nada pendiente, '+String(op.n||'').split(' ')[0],'ok'); return; }
+    abrirLoteDeDeuda(lista[0].lote_id, op);
+  }catch(e){ toast(e.message || 'No se pudo consultar','bad'); }
+});
 document.getElementById('datos').onclick = () => askPin('PIN del encargado','Los datos y los ajustes son solo para el encargado.', async enc => {
   try{ const { data, error } = await db.rpc('fn_prep_datos', { p_pin_encargado:enc.pin, p_dias:30 }); if(error) throw error; openDatos(data); }
   catch(e){ toast(e.message || 'No se pudieron cargar los datos','bad'); }
@@ -493,13 +503,14 @@ function ofrecerBorrador(){
 }
 // Enlace desde Mi Asistencia: ?lote=<id> abre un lote que ya tiene etiquetas
 // impresas para registrarle los insumos (saldar la deuda).
-async function abrirLoteDeDeuda(id){
+async function abrirLoteDeDeuda(id, yaIdentificado){
   try{
     const { data, error } = await db.rpc('fn_prep_lote_get', { p_lote_id:id }); if(error||!data) throw error||new Error('No existe');
     const rec = (data.lote.recetas||[]).filter(r => REC[r.id]);
     openModal(`<h3>Registrar los insumos de ${esc(data.lote.lote)}</h3><div class="sub">Ese lote ya tiene etiquetas impresas y le faltan los insumos. Entrá con tu PIN, elegí qué preparaste y cerrá la tanda: la deuda se salda sola.</div><button class="btn ok" id="dl-ok" style="width:100%">Entrar con PIN</button>`);
-    document.getElementById('dl-ok').onclick=()=>{ closeModal(); askPin('¿Quién registra?','Todo queda a su nombre.', op => {
-      operador=op; loteActual={ id, lote:data.lote.lote }; sel={}; rec.forEach(r => { sel[r.id]=r.tandas||1; }); uses=[]; step = Object.keys(sel).length ? 2 : 1; render(); }); };
+    const entrar = op => { operador=op; loteActual={ id, lote:data.lote.lote }; sel={}; rec.forEach(r => { sel[r.id]=r.tandas||1; }); uses=[]; step = Object.keys(sel).length ? 2 : 1; render(); };
+    if(yaIdentificado){ closeModal(); entrar(yaIdentificado); return; }
+    document.getElementById('dl-ok').onclick=()=>{ closeModal(); askPin('¿Quién registra?','Todo queda a su nombre.', entrar); };
   }catch(e){ toast('No se encontró ese lote','bad'); }
 }
 async function init(){

@@ -10,18 +10,12 @@ const BUZON = 'etiquetado_buzon_v1'
 const leer = () => { try { return JSON.parse(localStorage.getItem(BUZON) || '[]') } catch { return [] } }
 const guardar = (v) => { try { localStorage.setItem(BUZON, JSON.stringify(v)) } catch { /* sin storage */ } }
 
-export async function cargarLotes() {
-  try {
-    const { data, error } = await db.rpc('fn_prep_lotes_hoy')
-    if (error) throw error
-    return Array.isArray(data) ? data : []
-  } catch { return null }   // null = sin conexión (distinto de "no hay lotes")
-}
-
-/* Lote creado a propósito para imprimir sin pasar por la estación de
-   preparación. Queda marcado `sin_preparacion` y genera deuda. */
-export async function abrirLoteSinPreparacion(usuarioId) {
-  const { data, error } = await db.rpc('fn_prep_lote_abrir', { p_usuario: usuarioId, p_recetas: [], p_sin_preparacion: true })
+/* Lote del día de esta persona: todo lo que imprime hoy cae ahí y al final del
+   turno registra los insumos una sola vez (estación de preparación). Si ya
+   registró y lo cerró, se abre uno nuevo. Mientras no estén los insumos, cada
+   impresión mantiene abierta una deuda que bloquea su salida en Mi Asistencia. */
+export async function loteDelDia(usuarioId) {
+  const { data, error } = await db.rpc('fn_prep_lote_del_dia', { p_usuario: usuarioId })
   if (error) throw new Error(error.message)
   return { id: data.id, lote: data.lote }
 }
@@ -29,7 +23,7 @@ export async function abrirLoteSinPreparacion(usuarioId) {
 async function enviar(p) {
   let loteId = p.loteId
   if (!loteId) {   // quedó pendiente un lote sin número: se crea ahora
-    const l = await abrirLoteSinPreparacion(p.usuarioId); loteId = l.id
+    const l = await loteDelDia(p.usuarioId); loteId = l.id
   }
   const { data, error } = await db.rpc('fn_etiqueta_registrar', {
     p_usuario: p.usuarioId, p_lote_id: loteId, p_producto_id: p.productoId, p_producto: p.producto, p_unidades: p.unidades,

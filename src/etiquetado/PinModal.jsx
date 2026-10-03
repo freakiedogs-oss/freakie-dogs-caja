@@ -67,11 +67,13 @@ export default function PinModal({ titulo, sub, onListo, onCancelar }) {
                        fontFamily: 'ui-monospace, monospace', opacity: yendo ? .5 : 1 }}>{k}</button>
           ))}
         </div>
+        {onCancelar && (
         <button onClick={onCancelar}
           style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 10, padding: 11,
                    width: '100%', marginTop: 10, color: C.dim, fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit' }}>
           Cancelar
         </button>
+        )}
       </div>
     </div>
   )
