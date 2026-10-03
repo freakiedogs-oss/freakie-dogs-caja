@@ -97,6 +97,7 @@ function refNota(rid){
 function incoherencias(){
   const out = [];
   Object.keys(sel).forEach(rid => {
+    if(restringido && permitidas.has(rid) && !uses.some(u => u.rid===rid)){ out.push({ rid, tipo:'vacio', texto:`${REC[rid].nombre}: lo imprimiste pero todavía no registraste ningún insumo.` }); return; }
     const ref = referencia(rid); if(!ref) return; const r = REC[rid];
     const rt = sel[rid]/ref.t;
     if(rt<AJ_TANDAS[0] || rt>AJ_TANDAS[1]) out.push({ rid, tipo:'tandas', texto:`${r.nombre}: pesaste ${queSePeso(ref.imp)}, que equivale a unas ${fmt(ref.t)} tandas, pero registraste ${fmt(sel[rid])}.` });
@@ -440,6 +441,8 @@ function forzarCierre(inc, faltan){
   else askPin('Autorización del encargado','Lo registrado no coincide con lo que se pesó. Un encargado puede autorizar el cierre con su PIN y queda anotado.', enc => pedirMotivo(enc.n), true);
 }
 async function cerrarTanda(faltan, forzado){
+  const nuevas = await refrescarImpresas();
+  if(nuevas.length){ step=1; render(); return; }
   const btn=document.getElementById('close3'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
   const pack = { usuario:operador.id, recetas:Object.keys(sel).map(id=>{ const ref=referencia(id); const o={ id, nombre:REC[id].nombre, tandas:sel[id] }; if(ref){ o.tandas_esperadas=Math.round(ref.t*100)/100; o.pesado={ unidades:ref.imp.unidades, gramos:Math.round(ref.imp.gramos) }; } if(forzado){ o.forzado_por=forzado.por; o.forzado_motivo=forzado.motivo; o.forzado_detalle=forzado.detalle; } return o; }), insumos:armarInsumos(),
                  loteId:loteActual?.id||null, loteTxt:loteActual?.lote||null };
@@ -564,19 +567,46 @@ async function resolverAcceso(op){
   const want = new URLSearchParams(location.search).get('lote');
   const l = lista.find(x => x.lote_id===want) || lista[0];
   if(!l){ avisoEntrada('No tenés nada pendiente', op.n.split(' ')[0]+', no hay etiquetas tuyas sin insumos. Primero se pesa e imprime; los insumos se registran al final del turno.'); return; }
+  impreso = armarImpreso(l);
+  // Las tandas arrancan en lo que corresponde a lo pesado, no en 1.
+  Object.keys(impreso).forEach(rid => { permitidas.add(rid); sel[rid] = tandasIniciales(rid); });
+  resumenImp = textoImpreso(l);
+  operador=op; restringido=true; loteActual={ id:l.lote_id, lote:l.lote }; step=1; aplicarBorrador(op); render();
+}
+// Convierte lo impreso de un lote (productos) en un mapa receta → {unidades, gramos, nombre}.
+function armarImpreso(l){
+  const out = {};
   (l.productos||[]).forEach(p => {
     let rid = RECETA_DE[p.clave] || p.clave;
     if(!rid || !REC[rid]){ rid = 'prod-'+p.producto_id; if(!REC[rid]){ const r={ id:rid, nombre:p.nombre, lineas:[], libre:true }; DATA.recetas.push(r); REC[rid]=r; } }
-    permitidas.add(rid); sel[rid]=1;
-    const im = impreso[rid] = impreso[rid] || { unidades:0, gramos:0, nombre:p.nombre };
+    const im = out[rid] = out[rid] || { unidades:0, gramos:0, nombre:p.nombre };
     im.unidades += Number(p.unidades)||0;
     im.gramos += p.gramos!=null ? Number(p.gramos) : (p.gramos_objetivo ? Number(p.gramos_objetivo)*(Number(p.unidades)||0) : 0);
   });
-  // Las tandas arrancan en lo que corresponde a lo pesado, no en 1.
-  Object.keys(impreso).forEach(rid => { const ref=referencia(rid); sel[rid] = ref ? Math.max(0.01, Math.round(ref.t*100)/100) : 1; });
-  resumenImp = 'Imprimiste ' + (l.productos||[]).map(p => p.nombre+' ('+p.unidades+' etiqueta'+(p.unidades==1?'':'s')+')').join(', ');
-  operador=op; restringido=true; loteActual={ id:l.lote_id, lote:l.lote }; step=1; aplicarBorrador(op); render();
+  return out;
 }
+function textoImpreso(l){ return 'Imprimiste ' + (l.productos||[]).map(p => p.nombre+' ('+p.unidades+' etiqueta'+(p.unidades==1?'':'s')+')').join(', '); }
+function tandasIniciales(rid){ const ref=referencia(rid); return ref ? Math.max(0.01, Math.round(ref.t*100)/100) : 1; }
+// Si mientras la persona registra insumos se imprime algo más (otra tablet, otra pestaña), se suma a su lista:
+// si no, al cerrar el lote ese producto quedaría como "con insumos" sin tenerlos.
+let refrescando = false;
+async function refrescarImpresas(){
+  if(refrescando || !operador || !restringido || cerrado || !loteActual || !loteActual.id) return [];
+  refrescando = true;
+  try{
+    const { data, error } = await db.rpc('fn_prep_pendientes_detalle', { p_usuario:operador.id }); if(error) throw error;
+    const l = (data||[]).find(x => x.lote_id===loteActual.id); if(!l) return [];
+    const nuevo = armarImpreso(l); const agregadas=[];
+    Object.keys(nuevo).forEach(rid => { if(!permitidas.has(rid)){ permitidas.add(rid); impreso[rid]=nuevo[rid]; sel[rid]=1; sel[rid]=tandasIniciales(rid); agregadas.push(nuevo[rid].nombre); } else impreso[rid]=nuevo[rid]; });
+    resumenImp = textoImpreso(l);
+    if(agregadas.length){ toast('Se imprimió algo más: '+agregadas.join(', ')+'. Ya está en tu lista para registrar.','ok'); if(!document.getElementById('ov')) render(); }
+    return agregadas;
+  }catch{ return []; }
+  finally{ refrescando = false; }
+}
+document.addEventListener('visibilitychange', () => { if(!document.hidden) refrescarImpresas(); });
+window.addEventListener('focus', () => refrescarImpresas());
+setInterval(refrescarImpresas, 15000);
 // Si esta misma persona dejó una tanda a medias (se cayó la tablet, se bloqueó la pantalla), vuelve a donde iba.
 function aplicarBorrador(op){
   const b = leer(BORRADOR); if(!b) return;
