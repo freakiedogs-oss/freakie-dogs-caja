@@ -1,5 +1,22 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 3-Oct-2026 — Estación de preparación + PIN al imprimir etiquetas + salida bloqueada en Mi Asistencia (migraciones `20261003_prep_*`, YA APLICADAS en producción)
+
+Pedido de Cesar: amarrar el inventario a algo que sí se hace siempre. Las cocineras no se van sin pasar por la tablet, así que el control se ancla en **imprimir etiquetas**: quien imprime pone su PIN, y no puede marcar su salida si el lote de lo que imprimió no tiene los insumos registrados.
+
+- **Imprimir nunca se bloquea.** Si el lote no está cerrado (sin insumos registrados), imprimir abre una deuda (`prep_deudas`, estado `abierta`) a nombre de quien imprimió. Bloquear la impresión pararía la producción; bloquear la salida no.
+- **Un PIN por persona, sin sesiones abiertas.** `fn_prep_actor(p_pin, p_solo_encargado)` valida el PIN en el servidor (mismo freno de intentos que `erp_login`) y devuelve quién es; el PIN no se guarda. En etiquetado se pide al «Empezar a pesar» y se cierra al volver atrás o terminar. En la estación se pide al empezar la tanda, al cerrar y al corregir.
+- **Estación de preparación nueva (`/preparacion.html`, `src/preparacion/`).** Se elige la receta, se pesa/anota lo usado y se cierra la tanda; el lote se crea al cerrar (no quedan lotes abiertos huérfanos). Correcciones versionadas (`prep_lote_insumos.vigente=false`), nunca se borra nada. Catálogo de 64 insumos (FDI-001..064) y 17 recetas sembrado en `prep_config` ('catalogo'); `catalogo.json` es copia para la tablet sin red.
+- **Modo observación:** las recetas son la referencia, pero salirse NO bloquea; se registra el ratio real/receta por insumo y persona. Panel «Datos» (promedio por insumo, % exacto por persona, bitácora) detrás de PIN de encargado.
+- **Mi Asistencia (`MiAsistencia.jsx`):** al marcar salida consulta `fn_salida_pendientes`. Si hay deudas y el ajuste `bloquearSalida` está activo (por defecto sí) muestra un modal con tres salidas: registrar insumos ahora (abre `/preparacion.html?lote=<id>`), pasar el lote a un compañero con su PIN (`fn_salida_traspasar`), o autorización de un encargado con PIN y motivo (`fn_salida_autorizar`). Si la consulta falla NO se bloquea la salida (no trancar a nadie por falta de red).
+- **Offline:** buzón en localStorage (`prep_buzon_v1`, `etiquetado_buzon_v1`), borrador de tanda y caché del catálogo; las impresiones se suben solas al volver la red.
+- **Ajustes** del encargado en `prep_config` ('ajustes'), con `fn_prep_ajustes` / `fn_prep_ajustes_guardar`.
+- Tablas nuevas (RLS activa, sin políticas: todo entra por funciones `security definer`): `prep_config`, `prep_alias`, `prep_insumos_nuevos`, `prep_lotes`, `prep_lote_insumos`, `etiqueta_impresiones`, `prep_deudas`, `prep_bitacora`. Los cambios de base son aditivos y ya están en producción; la parte de pantallas necesita deploy.
+- Archivos: `preparacion.html` (+ entrada en `vite.config.js`), `src/preparacion/*`, `src/etiquetado/{PinModal.jsx,lotes.js}`, `EtiquetadoApp.jsx`, `etiquetado-main.jsx` (ya no hay «operador del día»), `MiAsistencia.jsx`, `supabase/migrations/20261003_prep_*.sql`.
+- Probado con Playwright y RPC simuladas (build OK): PIN bueno/malo, lote sin preparación, impresión en parejas con registro, enlace de pendiente, modal de salida con PIN de encargado y marcado automático después. NO probado con la báscula, la Zebra ni usuarios reales (no se usaron PINs reales).
+- Queda una función suelta e inofensiva `public._prep_prueba(int)` de las pruebas; se puede borrar con confirmación.
+- **Pendiente / por decidir:** ¿mantener los códigos FDI-049..053 (papas/aros)?, mapeo Salchicha paquete vs unidad, recetas sin ingredientes (Pepinillo, Jalapeño, Salchicha granel) y Ranch con unidad distinta. Medir en la práctica cuánta gente escanea vs. toca el checklist.
+
 ## 2-Oct-2026 — Kevin mantiene la lista de productos del etiquetado desde la misma báscula (migraciones `etiquetado_productos_tabla`, `_funciones`, `_retiro_automatico_15_dias`, `_alta_revive_retirado`)
 
 Pedido de Cesar: «que no tengan que esperar a que yo tenga tiempo libre». Si alguien llega a la báscula con un producto que no está en la lista, la producción se paraba hasta un commit + deploy. Ahora la lista es dato y la mantiene quien ve el problema, igual que las reglas de menú de Karina.

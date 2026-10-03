@@ -6,10 +6,15 @@
    báscula, el peso se estabiliza solo y un toque la pesa e imprime su
    etiqueta con lote, peso, fecha, quién la hizo y hasta cuándo vence.
 
-   PRIMERA PRUEBA — no guarda nada. Lee la báscula de verdad e imprime de
-   verdad, pero no toca la base ni el inventario. Es a propósito: primero se
-   ve si la Rhino y la Zebra conviven en el adaptador USB; si algo falla, no
-   quedan lotes basura que limpiar después. El lote es local y se reinicia.
+   PIN POR PERSONA (3-oct-2026). Cada tanda de pesaje empieza con el PIN de
+   quien la hace: la etiqueta sale a nombre suyo y la sesión se cierra sola al
+   terminar el lote o al volver atrás. Cada tanda se liga a un lote de
+   preparación (prep_lotes). Si ese lote no tiene sus insumos registrados, se
+   imprime igual (nunca se frena la línea) pero queda una deuda a nombre de quien
+   imprimió, y Mi Asistencia no la deja marcar salida hasta saldarla.
+
+   Todavía NO toca el inventario ni el kardex: solo registra la impresión
+   (etiqueta_impresiones). Lee la báscula e imprime de verdad.
 
    Aparatos: báscula Rhino BAR-6X (mismo cable y parser del porcionador) e
    impresora Zebra ZD421 por ZPL sobre WebUSB.
@@ -21,6 +26,8 @@ import { ImpresoraZebra, hayWebUsb } from './zebraUsb'
 import { armarZplFila, zplPruebaFila, DPI_OPCIONES } from './zebraZpl'
 import { cargarProductos, marcarUso } from './productos'
 import ProductoEditor from './ProductoEditor'
+import PinModal from './PinModal'
+import { cargarLotes, abrirLoteSinPreparacion, registrarImpresion, vaciarBuzon } from './lotes'
 
 const C = {
   bg: '#0a0a0b', card: '#141416', line: '#2a2a2e', txt: '#f0f0f2',
@@ -47,24 +54,9 @@ const horaSV = () => new Date().toLocaleTimeString('es-SV', { hour: '2-digit', m
 const lbs = (g) => (g / 453.59237).toFixed(2)
 const mil = (g) => Math.round(g).toLocaleString('en-US')
 
-// El lote del día. Local a la tablet mientras esto sea una prueba: cuando la
-// estación guarde en la base, el consecutivo lo da el servidor.
-const CLAVE_LOTE = 'etiquetado_lote_v1'
-function loteDeHoy() {
-  const hoy = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/El_Salvador' })
-  try {
-    const v = JSON.parse(localStorage.getItem(CLAVE_LOTE) || 'null')
-    if (v && v.fecha === hoy) return v.lote
-    const n = (v?.n || 0) + 1
-    const lote = 'L-' + String(n).padStart(4, '0')
-    localStorage.setItem(CLAVE_LOTE, JSON.stringify({ fecha: hoy, lote, n }))
-    return lote
-  } catch { return 'L-0001' }
-}
-
 const CLAVE_DPI = 'etiquetado_dpi'
 
-export default function EtiquetadoApp({ quien }) {
+export default function EtiquetadoApp() {
   // La lista viene de la base (`etiquetado_productos`). Si la red falla cae a
   // lo último que vio esta tablet, y si nunca vio nada, al respaldo del
   // código: una lista vieja deja seguir produciendo, una vacía no.
@@ -87,7 +79,16 @@ export default function EtiquetadoApp({ quien }) {
   // se imprime de a pares. `pendiente` es la primera unidad del par, ya
   // pesada pero todavía sin imprimir — espera a que se pese la siguiente.
   const [pendiente, setPendiente] = useState(null)
-  const [lote] = useState(loteDeHoy)
+  // Sesión por persona: `actor` entra con PIN y se borra al terminar el lote o
+  // al volver atrás. `loteSel` es el lote de preparación al que se ligan las
+  // etiquetas de esta tanda de pesaje.
+  const [actor, setActor] = useState(null)
+  const [pidiendoPin, setPidiendoPin] = useState(false)
+  const [loteSel, setLoteSel] = useState(null)       // { id|null, lote }
+  const [lotes, setLotes] = useState([])             // null = sin conexión
+  const [eleccion, setEleccion] = useState(null)     // id de lote | '__sin'
+  const [quienImprimio, setQuienImprimio] = useState('')
+  const [sinInsumos, setSinInsumos] = useState(null) // true | false | null (sin respuesta)
   const [msg, setMsg]     = useState('')
   const [err, setErr]     = useState('')
   const [imprimiendo, setImprimiendo] = useState(false)
@@ -135,13 +136,13 @@ export default function EtiquetadoApp({ quien }) {
   // fecha/hora y quién la hizo van dentro del QR, no impresas: a 2×1" por
   // etiqueta no entran como texto propio (ver zebraZpl.js).
   const datosCelda = (u) => ({
-    producto: prod.nombre, lote, indice: u.i, total,
+    producto: prod.nombre, lote: loteSel.lote, indice: u.i, total,
     gramos: mil(u.n), libras: lbs(u.n), vence: u.vence,
     // En el QR va el neto y, cuando hay empaque, también el bruto y la tara:
     // si algún día se discute un peso, ahí está la cuenta completa.
-    qr: `${lote}|${prod.id}|${u.i}/${total}|${Math.round(u.n)}g`
+    qr: `${loteSel.lote}|${prod.id}|${u.i}/${total}|${Math.round(u.n)}g`
       + (prod.tara ? `|br${Math.round(u.g)}|t${prod.tara}` : '')
-      + `|${u.fecha}|${u.hora}|${quien}`,
+      + `|${u.fecha}|${u.hora}|${actor ? actor.nombre : quienImprimio}`,
   })
 
   async function pesarEImprimir() {
@@ -186,7 +187,11 @@ export default function EtiquetadoApp({ quien }) {
     setHechas(listo)
     setPendiente(null)
     setImprimiendo(false)
-    if (listo.length >= total) setPaso(4)
+    // Deja constancia de la impresión a nombre de quien la hizo. Sin esperar:
+    // si no hay red queda en el buzón de la tablet y se sube sola.
+    registrarImpresion({ usuarioId: actor.id, loteId: loteSel.id, productoId: prod.id, producto: prod.nombre, unidades: nuevas.length })
+      .then(r => { if (r) setSinInsumos(!r.con_insumos) })
+    if (listo.length >= total) { setPaso(4); setQuienImprimio(actor.nombre); setActor(null) }
     else aviso(nuevas.length === 2
       ? `Unidades ${izq.i} y ${der.i} impresas · quitalas de la báscula`
       : `Unidad ${i} impresa · quitá la unidad de la báscula`)
@@ -202,26 +207,66 @@ export default function EtiquetadoApp({ quien }) {
     } catch (e) { setErr(e.message || 'No se pudo reimprimir') }
   }
 
+  // Empezar pide el PIN de quien va a pesar. Con el PIN adentro se arma el lote
+  // (o se crea uno "sin preparación", que deja deuda) y se pasa a pesar.
   function empezar() {
     const n = Number(cuenta)
-    if (!(n > 0)) return
+    if (!(n > 0) || !eleccion) return
+    if (!actor) { setPidiendoPin(true); return }
+    arrancar(actor, n)
+  }
+
+  async function arrancar(a, n) {
+    setErr('')
+    let l
+    if (eleccion === '__sin') {
+      try { l = await abrirLoteSinPreparacion(a.id) }
+      // Sin red igual se imprime: el lote se crea (y la deuda se abre) cuando vuelva.
+      catch { l = { id: null, lote: 'L-' + horaSV().replace(':', '') + '-SIN' } }
+    } else {
+      const f = (lotes || []).find(x => x.id === eleccion)
+      if (!f) { setErr('Ese lote ya no está en la lista. Elegí otro.'); return }
+      l = { id: f.id, lote: f.lote }
+    }
+    setLoteSel(l)
     // Deja constancia de que este producto se usa hoy: es lo que lo mantiene
     // en la lista (lo que nadie pesa en 15 días lo retira solo la base).
     // No espera la respuesta — si la red está caída, se pesa igual.
     marcarUso(prod.id)
+    setSinInsumos(null)
     setTotal(n); setHechas([]); setPendiente(null); setPaso(3)
   }
 
+  // Volver atrás o terminar cierra la sesión: el siguiente pone su PIN.
+  function salirSesion() { setActor(null); setLoteSel(null) }
+
   function reiniciar() {
+    salirSesion()
     setPaso(1); setProd(null); setCuenta(''); setTotal(0); setHechas([]); setPendiente(null)
+    setEleccion(null); setSinInsumos(null); setQuienImprimio('')
   }
+
+  // Lotes de preparación disponibles al entrar a "cuántas", y el buzón de
+  // impresiones que quedaron sin subir por falta de red.
+  useEffect(() => {
+    if (paso !== 2) return
+    let vivo = true
+    cargarLotes().then(l => { if (vivo) setLotes(l) })
+    return () => { vivo = false }
+  }, [paso])
+  useEffect(() => {
+    vaciarBuzon().then(n => { if (n) aviso(`Se subieron ${n} impresión${n === 1 ? '' : 'es'} que estaban guardadas en la tablet`) })
+    const f = () => { vaciarBuzon() }
+    window.addEventListener('online', f)
+    return () => window.removeEventListener('online', f)
+  }, [aviso])
 
   // ── Barra de aparatos, siempre visible ──
   const barra = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       <div style={{ flex: 1, minWidth: 150 }}>
         <div style={{ fontSize: 17, fontWeight: 800 }}>Pesaje y etiquetado</div>
-        <div style={{ color: C.dim, fontSize: 12.5 }}>Casa Matriz · lote {lote} · {quien}</div>
+        <div style={{ color: C.dim, fontSize: 12.5 }}>Casa Matriz · {loteSel ? `lote ${loteSel.lote}` : 'sin lote'} · {actor ? actor.nombre : 'sin sesión (entrás con tu PIN al empezar)'}</div>
       </div>
       <button onClick={bal.estado === 'conectada' ? bal.desconectar : bal.conectar}
         style={{ ...chip(bal.estado === 'conectada'), cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -279,6 +324,14 @@ export default function EtiquetadoApp({ quien }) {
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         {barra}{panelAjustes}{avisos}{hijos}
       </div>
+      {pidiendoPin && (
+        <PinModal
+          titulo="¿Quién va a pesar?"
+          sub="Las etiquetas salen a tu nombre. Marcá tu PIN: la sesión se cierra sola al terminar el lote."
+          onCancelar={() => setPidiendoPin(false)}
+          onListo={(a) => { setActor(a); setPidiendoPin(false); arrancar(a, Number(cuenta)) }}
+        />
+      )}
     </div>
   )
 
@@ -344,6 +397,7 @@ export default function EtiquetadoApp({ quien }) {
 
   // ── 2 · Cuántas ──
   if (paso === 2) return marco(
+    <>
     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
       <div style={{ ...card, flex: 1, minWidth: 240 }}>
         <div style={{ fontSize: 19, fontWeight: 800 }}>{prod.nombre}</div>
@@ -369,15 +423,46 @@ export default function EtiquetadoApp({ quien }) {
             </button>
           ))}
         </div>
-        <button onClick={empezar} disabled={!(Number(cuenta) > 0)}
-          style={{ ...btn(C.ok, !(Number(cuenta) > 0)), marginTop: 10 }}>
-          Empezar a pesar
+        <button onClick={empezar} disabled={!(Number(cuenta) > 0) || !eleccion}
+          style={{ ...btn(C.ok, !(Number(cuenta) > 0) || !eleccion), marginTop: 10 }}>
+          {!(Number(cuenta) > 0) ? 'Empezar a pesar' : !eleccion ? 'Elegí el lote de abajo' : 'Empezar a pesar (pide tu PIN)'}
         </button>
-        <button onClick={() => setPaso(1)} style={{ ...btn('#1c1c20'), color: C.txt, fontSize: 14, padding: 11, marginTop: 8 }}>
+        <button onClick={() => { salirSesion(); setPaso(1) }} style={{ ...btn('#1c1c20'), color: C.txt, fontSize: 14, padding: 11, marginTop: 8 }}>
           Elegir otro producto
         </button>
       </div>
     </div>
+    <div style={{ ...card, marginTop: 14 }}>
+      <div style={{ fontSize: 15, fontWeight: 800 }}>¿De qué lote de preparación son?</div>
+      <div style={{ color: C.dim, fontSize: 12.5, margin: '4px 0 10px', lineHeight: 1.5 }}>
+        Es el que dejó registrado quien preparó. Así cada bolsa queda ligada a los insumos que se usaron.
+      </div>
+      {lotes === null && (
+        <div style={{ color: C.warn, fontSize: 13, marginBottom: 8 }}>Sin conexión: no se ven los lotes. Podés imprimir igual con la última opción.</div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
+        {(lotes || []).filter(l => !(l.sin_preparacion && l.estado === 'abierto')).slice(0, 12).map(l => (
+          <button key={l.id} onClick={() => setEleccion(l.id)}
+            style={{ textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', color: C.txt, borderRadius: 12, padding: 12,
+                     background: eleccion === l.id ? '#12233a' : '#1c1c20', border: `1px solid ${eleccion === l.id ? C.acc : C.line}` }}>
+            <div style={{ fontWeight: 800 }}>{l.lote} <span style={{ color: C.dim, fontWeight: 500, fontSize: 12 }}>· {l.creado_nombre}</span></div>
+            <div style={{ color: C.dim, fontSize: 12.5, marginTop: 3 }}>
+              {(l.recetas || []).map(r => r.nombre).join(', ') || 'sin recetas'}
+              {l.estado === 'abierto' && <span style={{ color: C.warn }}> · aún sin cerrar</span>}
+            </div>
+          </button>
+        ))}
+        <button onClick={() => setEleccion('__sin')}
+          style={{ textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', color: C.txt, borderRadius: 12, padding: 12,
+                   background: eleccion === '__sin' ? '#2a1f06' : '#1c1c20', border: `1px dashed ${eleccion === '__sin' ? C.warn : C.line}` }}>
+          <div style={{ fontWeight: 800 }}>Sin lote de preparación</div>
+          <div style={{ color: C.dim, fontSize: 12.5, marginTop: 3 }}>
+            Se imprime igual, pero te queda pendiente registrar los insumos antes de marcar tu salida.
+          </div>
+        </button>
+      </div>
+    </div>
+    </>
   )
 
   // ── 3 · Pesar e imprimir ──
@@ -435,8 +520,8 @@ export default function EtiquetadoApp({ quien }) {
               Reimprimir la última etiqueta
             </button>
           )}
-          <button onClick={() => setPaso(2)} style={{ ...btn('#1c1c20'), color: C.dim, fontSize: 13, padding: 10, marginTop: 8 }}>
-            Cancelar
+          <button onClick={() => { salirSesion(); setPaso(2) }} style={{ ...btn('#1c1c20'), color: C.dim, fontSize: 13, padding: 10, marginTop: 8 }}>
+            Cancelar (cierra tu sesión)
           </button>
         </div>
 
@@ -474,18 +559,30 @@ export default function EtiquetadoApp({ quien }) {
   return marco(
     <>
       <div style={{ ...card, background: '#0b2417', borderColor: C.ok, color: '#86efac' }}>
-        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 5 }}>Lote {lote} terminado</div>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 5 }}>Lote {loteSel?.lote} terminado</div>
         <div style={{ fontSize: 14, lineHeight: 1.6 }}>
           {total} unidades de {prod.nombre} · {mil(suma)} g · {lbs(suma)} lb<br />
           {total} etiquetas impresas{malas.length ? <> · <b style={{ color: '#fca5a5' }}>{malas.length} fuera de banda</b></> : null}
         </div>
       </div>
       <div style={{ ...card, marginTop: 12, color: C.dim, fontSize: 13.5, lineHeight: 1.6 }}>
-        <b style={{ color: C.warn }}>Esta es la prueba de los aparatos:</b> nada de esto quedó guardado
-        ni entró al inventario. Cuando confirmemos que la báscula y la impresora
-        conviven bien, la estación empieza a crear el lote en el sistema y a dar
-        de alta las unidades en el kardex.
+        Las etiquetas quedaron a nombre de <b style={{ color: C.txt }}>{quienImprimio}</b> y tu sesión se cerró.
+        {sinInsumos === false && <> El lote tiene sus insumos registrados. <span style={{ color: C.ok }}>Todo en orden.</span></>}
+        {sinInsumos === null && <> No hubo conexión para confirmar el lote: la impresión se sube sola cuando vuelva.</>}
       </div>
+      {sinInsumos === true && (
+        <div style={{ ...card, marginTop: 12, background: '#2a1f06', borderColor: '#78350f', color: '#fcd34d', fontSize: 14, lineHeight: 1.6 }}>
+          <b>Te quedó pendiente:</b> el lote {loteSel?.lote} no tiene los insumos registrados. No vas a poder marcar tu
+          salida hasta registrarlos (o hasta que el encargado la autorice o la pases a un compañero).
+          {loteSel?.id && (
+            <a href={`/preparacion.html?lote=${loteSel.id}`}
+              style={{ display: 'block', marginTop: 10, background: C.ok, color: '#06180c', borderRadius: 10, padding: 12,
+                       textAlign: 'center', fontWeight: 800, textDecoration: 'none' }}>
+              Registrar los insumos ahora
+            </a>
+          )}
+        </div>
+      )}
       <button onClick={reiniciar} style={{ ...btn(C.ok), marginTop: 12 }}>Pesar otro producto</button>
     </>
   )
