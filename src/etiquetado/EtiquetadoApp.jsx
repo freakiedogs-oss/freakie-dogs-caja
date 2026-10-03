@@ -27,6 +27,7 @@ import { armarZplFila, zplPruebaFila, DPI_OPCIONES } from './zebraZpl'
 import { cargarProductos, marcarUso } from './productos'
 import ProductoEditor from './ProductoEditor'
 import PinModal from './PinModal'
+import EquipoPines from './EquipoPines'
 import { loteDelDia, registrarImpresion, vaciarBuzon } from './lotes'
 
 const C = {
@@ -63,6 +64,7 @@ export default function EtiquetadoApp() {
   const [productos, setProductos] = useState([])
   const [fuente, setFuente] = useState(null)   // base | cache | respaldo
   const [editor, setEditor] = useState(null)   // null · 'nuevo' · producto a corregir
+  const [equipo, setEquipo] = useState(false)   // apartado «Equipo y PINs» (solo encargados)
 
   const releer = useCallback(async () => {
     const { lista, fuente: f } = await cargarProductos()
@@ -237,7 +239,7 @@ export default function EtiquetadoApp() {
   // Bloqueo por inactividad: en la selección de producto y de cantidad, 30 s sin
   // tocar nada cierran la sesión y vuelve a pedir el PIN. Pesando no aplica.
   useEffect(() => {
-    if (!actor || (paso !== 1 && paso !== 2) || editor) return
+    if (!actor || (paso !== 1 && paso !== 2) || editor || equipo) return
     let t
     const armar = () => {
       clearTimeout(t)
@@ -249,7 +251,7 @@ export default function EtiquetadoApp() {
     evs.forEach(e => window.addEventListener(e, armar, true))
     armar()
     return () => { clearTimeout(t); evs.forEach(e => window.removeEventListener(e, armar, true)) }
-  }, [actor, paso, editor])
+  }, [actor, paso, editor, equipo])
 
   function reiniciar() {
     salirSesion()
@@ -331,6 +333,9 @@ export default function EtiquetadoApp() {
     </div>
   )
 
+  // Equipo y PINs: pantalla aparte para el jefe de Casa Matriz (pide su PIN otra vez).
+  if (equipo) return <EquipoPines onCerrar={() => setEquipo(false)} />
+
   // El editor tapa la pantalla: es una decisión sobre la lista, no sobre la
   // tanda que se está pesando.
   if (editor) return (
@@ -394,6 +399,16 @@ export default function EtiquetadoApp() {
           </div>
         ))}
 
+        {['jefe_casa_matriz', 'admin', 'superadmin', 'ejecutivo'].includes(actor?.rol) && (
+          <button onClick={() => setEquipo(true)}
+            style={{ ...card, borderStyle: 'dashed', borderColor: '#4b5563', color: C.txt,
+                     textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>👥 Equipo y PINs</div>
+            <div style={{ fontSize: 12.5, marginTop: 3, color: C.dim }}>
+              Ver a tu equipo de producción y darles su PIN.
+            </div>
+          </button>
+        )}
         <button onClick={() => setEditor('nuevo')}
           style={{ ...card, borderStyle: 'dashed', borderColor: C.acc, color: '#93c5fd',
                    textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
