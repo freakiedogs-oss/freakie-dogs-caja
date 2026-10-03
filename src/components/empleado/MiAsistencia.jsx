@@ -65,6 +65,103 @@ function colorEtiqueta(etiqueta) {
 const DIAS_CORTO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const DIAS_LARGO = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
+// ── Salida bloqueada: etiquetas impresas cuyo lote no tiene insumos registrados ──
+// Tres salidas, todas con PIN y todas quedan en la bitácora de preparación:
+//   1) registrar los insumos (abre la estación de preparación en ese lote),
+//   2) pasar la tanda a un compañero (su PIN: desde ahí es suya),
+//   3) que un encargado autorice con su PIN y un motivo.
+function SalidaBloqueada({ user, pendientes, onCerrar, onResuelta }) {
+  const [modo, setModo] = useState(null);      // null | { tipo:'traspaso', deuda } | { tipo:'encargado' }
+  const [pin, setPin] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [err, setErr] = useState('');
+  const [yendo, setYendo] = useState(false);
+
+  const volver = () => { setModo(null); setPin(''); setMotivo(''); setErr(''); };
+
+  async function confirmar() {
+    if (yendo) return;
+    setErr('');
+    if (pin.length < 4) { setErr('Escribí el PIN completo'); return; }
+    if (modo.tipo === 'encargado' && !motivo.trim()) { setErr('Escribí el motivo'); return; }
+    setYendo(true);
+    try {
+      const r = modo.tipo === 'traspaso'
+        ? await db.rpc('fn_salida_traspasar', { p_deuda: modo.deuda.id, p_pin_receptor: pin })
+        : await db.rpc('fn_salida_autorizar', { p_usuario: user.id, p_pin_encargado: pin, p_motivo: motivo.trim() });
+      if (r.error) throw new Error(r.error.message);
+      volver();
+      setYendo(false);
+      await onResuelta();
+      return;
+    } catch (e) {
+      setErr(e.message || 'No se pudo. Intentá de nuevo.');
+      setPin('');
+    }
+    setYendo(false);
+  }
+
+  const caja = { background: c.card, border: `1px solid ${c.cardBorder}`, borderRadius: 14, padding: 16, width: 'min(420px, 100%)', maxHeight: '90vh', overflowY: 'auto' };
+  const sec = { width: '100%', padding: 12, borderRadius: 10, background: '#222', color: c.text, border: `1px solid ${c.border}`, cursor: 'pointer', fontSize: 14, fontWeight: 600, textAlign: 'left', marginTop: 8 };
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div style={caja}>
+        {!modo ? (
+          <>
+            <div style={{ fontSize: 17, fontWeight: 800, color: c.text }}>Todavía no podés marcar tu salida</div>
+            <div style={{ fontSize: 13.5, color: c.textDim, margin: '6px 0 10px', lineHeight: 1.5 }}>
+              Imprimiste etiquetas de {pendientes.length === 1 ? 'un lote' : 'estos lotes'} y falta registrar los insumos que se usaron:
+            </div>
+            {pendientes.map(d => (
+              <div key={d.id} style={{ background: '#222', border: `1px solid ${c.border}`, borderRadius: 10, padding: 10, marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, color: c.text }}>Lote {d.lote}</div>
+                <div style={{ fontSize: 12.5, color: c.textDim, marginTop: 2 }}>{(d.productos || []).join(', ') || 'etiquetas impresas'}</div>
+                <a href={`/preparacion.html?lote=${d.lote_id}`}
+                  style={{ display: 'block', marginTop: 8, padding: 11, borderRadius: 9, background: c.greenDark, color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                  Registrar los insumos ahora
+                </a>
+                <button onClick={() => setModo({ tipo: 'traspaso', deuda: d })} style={{ ...sec, fontSize: 13, fontWeight: 500, marginTop: 6 }}>
+                  Pasar este lote a un compañero (con su PIN)
+                </button>
+              </div>
+            ))}
+            <button onClick={() => setModo({ tipo: 'encargado' })} style={{ ...sec, color: c.yellow }}>
+              Autorización del encargado (PIN y motivo)
+            </button>
+            <button onClick={onCerrar} style={{ ...sec, background: 'none', color: c.textDim, textAlign: 'center', fontWeight: 400 }}>
+              Volver
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 17, fontWeight: 800, color: c.text }}>
+              {modo.tipo === 'traspaso' ? `Pasar el lote ${modo.deuda.lote}` : 'Autorización del encargado'}
+            </div>
+            <div style={{ fontSize: 13.5, color: c.textDim, margin: '6px 0 12px', lineHeight: 1.5 }}>
+              {modo.tipo === 'traspaso'
+                ? 'Tu compañero pone su PIN y desde ahí el registro de insumos de ese lote queda a su nombre.'
+                : 'Un encargado pone su PIN y el motivo. Queda anotado a su nombre.'}
+            </div>
+            <input type="password" inputMode="numeric" autoFocus value={pin} maxLength={6}
+              onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+              placeholder={modo.tipo === 'traspaso' ? 'PIN de tu compañero' : 'PIN del encargado'}
+              style={{ width: '100%', boxSizing: 'border-box', padding: 12, fontSize: 20, textAlign: 'center', letterSpacing: 8, background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 10 }} />
+            {modo.tipo === 'encargado' && (
+              <input value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="Motivo (ej. la tablet no tenía red)"
+                style={{ width: '100%', boxSizing: 'border-box', padding: 12, fontSize: 14, marginTop: 8, background: c.input, color: c.text, border: `1px solid ${c.border}`, borderRadius: 10 }} />
+            )}
+            <div style={{ color: '#fca5a5', fontSize: 13, minHeight: 20, marginTop: 8 }}>{err}</div>
+            <button onClick={confirmar} disabled={yendo} style={{ ...btnPrimary, marginTop: 6, opacity: yendo ? .5 : 1 }}>
+              {yendo ? 'Validando…' : 'Confirmar'}
+            </button>
+            <button onClick={volver} style={{ ...sec, background: 'none', color: c.textDim, textAlign: 'center', fontWeight: 400 }}>Cancelar</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function MiAsistencia({ user }) {
   const [tab, setTab] = useState('marcar');
   const [gps, setGps] = useState(null);
@@ -80,6 +177,8 @@ export default function MiAsistencia({ user }) {
   const [horarios, setHorarios] = useState({});   // { diaNum: registro }
   const [loadingHorarios, setLoadingHorarios] = useState(false);
   const [semanaOffset, setSemanaOffset] = useState(0); // 0=esta semana, 1=próxima, -1=anterior
+  // Salida bloqueada por tandas de preparación sin insumos registrados.
+  const [pendSalida, setPendSalida] = useState(null); // [{id,lote_id,lote,fecha,productos}] | null
 
   const hoy = new Date(Date.now() - 6 * 3600 * 1000).toISOString().split('T')[0];
   const storeName = STORES[user.store_code] || user.store_code || '';
@@ -165,6 +264,24 @@ export default function MiAsistencia({ user }) {
     return { dist, dentro, radio: sucursal.radio_metros || 200 };
   };
 
+  const consultarPendientes = async () => {
+    try {
+      const { data, error } = await db.rpc('fn_salida_pendientes', { p_usuario: user.id });
+      if (error || !data) return [];
+      if (data.bloquear === false) return [];
+      return Array.isArray(data.pendientes) ? data.pendientes : [];
+    } catch { return []; }
+  };
+
+  // Tras resolver (traspasar / autorizar) se vuelve a revisar y, si ya no queda
+  // nada, se marca la salida directamente.
+  const salidaResuelta = async () => {
+    const pend = await consultarPendientes();
+    if (pend.length) { setPendSalida(pend); return; }
+    setPendSalida(null);
+    await marcar('salida');
+  };
+
   const marcar = async (tipo) => {
     if (!gps) return;
     setSaving(true);
@@ -186,8 +303,16 @@ export default function MiAsistencia({ user }) {
           alerta_rrhh: fueraGeofence,
         });
         if (error) throw error;
-        setMsg({ ok: !fueraGeofence, warn: fueraGeofence, text: fueraGeofence ? `⚠️ Entrada registrada pero estás a ${dInfo.dist}m del local (límite: ${dInfo.radio}m)` : '✓ Entrada registrada correctamente' });
+        // ¿Quedaron etiquetas de días anteriores sin insumos? Se avisa al entrar (no bloquea nada).
+        const viejas = (await consultarPendientes()).filter(p => p.fecha && String(p.fecha) < hoy);
+        const aviso = viejas.length ? ` · ⚠️ Tenés ${viejas.length} lote${viejas.length === 1 ? '' : 's'} de días anteriores sin insumos (${viejas.map(v => v.lote + ' del ' + v.fecha).join(', ')}). Registralos hoy en la estación de preparación.` : '';
+        setMsg({ ok: !fueraGeofence && !viejas.length, warn: fueraGeofence || viejas.length > 0, text: (fueraGeofence ? `⚠️ Entrada registrada pero estás a ${dInfo.dist}m del local (límite: ${dInfo.radio}m)` : '✓ Entrada registrada correctamente') + aviso });
       } else {
+        // Antes de dejar salir: ¿imprimió etiquetas de un lote cuyos insumos
+        // nadie registró? Si la consulta falla NO se bloquea (sin red no se debe
+        // trancar la salida de nadie: igual el update de abajo avisaría).
+        const pend = await consultarPendientes();
+        if (pend.length) { setPendSalida(pend); setSaving(false); return; }
         const { error } = await db.from('asistencia').update({
           hora_salida: new Date().toISOString(),
           gps_salida: gps,
@@ -222,6 +347,10 @@ export default function MiAsistencia({ user }) {
 
   return (
     <div style={{ padding: '16px 12px', maxWidth: 480, margin: '0 auto' }}>
+      {pendSalida && (
+        <SalidaBloqueada user={user} pendientes={pendSalida}
+          onCerrar={() => setPendSalida(null)} onResuelta={salidaResuelta} />
+      )}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: c.text }}>📍 Mi Asistencia <InfoTip text="Tu registro de entradas y salidas con geolocalización: aquí marcas y ves tu historial." /></div>
         <div style={{ fontSize: 13, color: c.textDim, marginTop: 2 }}>{user.nombre} · {storeName}</div>
