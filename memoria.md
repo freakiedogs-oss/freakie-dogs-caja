@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 3-Oct-2026 — Recepción contada en la sucursal (migración `recepcion_contada`)
+
+Por qué: el 2-oct Cafetalón confirmó 10 paquetes de salchicha cuando solo llegaron 5. La pantalla de «Confirmar entrega» venía llena con lo despachado y bastaba «Todo completo» para recibir sin contar; el cuadre nocturno lo destapó como faltante de 125 salchichas. Además el RPC aceptaba recibir MÁS de lo despachado sin ninguna explicación. Pedido de Frank.
+
+- **Cada producto arranca vacío** (`ConfirmarEntrega.jsx`): hay que escribir cuánto llegó; no se puede confirmar con uno sin llenar («Falta escribir lo que llegó de…»).
+- **«Todo completo» pide una segunda confirmación** que lista producto por producto lo que se va a dar por recibido («Volver» / «Sí, conté todo»).
+- **Toda diferencia (de menos o de más) lleva nota obligatoria** en la app. Si es de más, aviso naranja «Estás recibiendo MÁS de lo despachado».
+- **El candado de verdad está en el RPC:** `despacho_confirmar` rechaza (vía humana) recibir más de lo despachado sin `p_items[].nota`. La nota se guarda en `despacho_items.notas` dentro de la misma transacción (se agrega con « | » a lo que ya hubiera); la app ya no la escribe aparte.
+- **Sin cambios** para el cron reconciliador (`p_auto`) ni para clientes viejos: producto sin `cantidad_recibida` = lo despachado. La diferencia de menos no se bloquea en el RPC para no trabar una PWA en caché; la exige la app.
+- `TransferenciaBebidas.jsx` (transferencias entre sucursales, pasa por el mismo RPC): si se recibe de más pide la nota con un prompt.
+- Probado en modo prueba sobre el último despacho de M001: de más sin nota → bloquea; con nota → recibe, guarda nota y kardex; cron → igual que antes.
+- Afecta la recepción de TODAS las sucursales.
+
 ## 3-Oct-2026 — Apartado «Equipo y PINs» para Kevin (migración `20261004_prep_equipo_pines.sql`, YA APLICADA)
 
 Pedido de Cesar: los PIN de producción existen pero la gente no sabe cuál es el suyo; Kevin (jefe de Casa Matriz) necesita verlos para dárselos. En la tablet de etiquetado, quien entra con rol de encargado ve el recuadro «👥 Equipo y PINs» (`EquipoPines.jsx`): pide el PIN de encargado otra vez, lista al equipo (producción y despacho de su sucursal, 11 personas en CM001) y cada PIN se pide de a uno (`fn_equipo_pin_ver`), se ve 15 s y se oculta; se cierra solo a los 60 s sin tocar. La lista (`fn_equipo_lista`) nunca trae PIN, solo `tiene_pin`. Cada consulta queda en `prep_bitacora` (`pin_consultado`, con quién y a quién). No se pueden ver PIN de otros encargados ni de otras sucursales (probado en producción con una transacción revertida). Tradeoff aceptado por Cesar: si el jefe conoce el PIN de alguien, podría imprimir a su nombre; por eso la consulta es bajo demanda y auditada. Pendiente posible: «cambiar PIN» por persona y mostrar la bitácora de consultas en el panel Datos.
