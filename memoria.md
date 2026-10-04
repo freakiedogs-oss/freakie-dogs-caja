@@ -1,5 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 4-Oct-2026 — «Sin carne / sin pan / sin salchicha» en caja, escondidos en «Más opciones» (migración `sin_poco_comunes`)
+
+Por qué: el 3-oct en Cafetalón un Freakie Burger web (WEB-FA0000E6) se pidió «sin los dos medallones» solo en la nota. La descarga lee receta y modificadores, no notas: se descontaron 2 bolitas que no se usaron y el cuadre nocturno lo encontró como sobrante (se corrigió con devolución, OK Frank). Pedido de Frank: que se pueda marcar en caja, pero sin llenar la pantalla con botones que casi nunca se usan.
+
+- **Ya existía el «Sin…»** (18-ago): ingredientes con `receta_ingredientes.removible` salen como botones y viajan como modificador `grupo_nombre='SIN'` con `quitar`; `pos_explotar_linea` y `pos_deducir_inventario` no descuentan ese ingrediente. Carne, pan y salchicha simplemente no eran removibles.
+- **Nuevo `receta_ingredientes.poco_comun`.** Carne (Mezcla de Carne Smash ×2 en Hamburguesa Sencilla armada), pan de hamburguesa, salchicha y pan de hot dog (Freakie Dog armado, Super Freak armado, Chilli dog individual) pasan a removibles y poco comunes. Etiquetas distintas («Pan de hamburguesa» / «Pan de hot dog») para que en un Burger Box un SIN no le quite el pan al otro.
+- **UI** (`ProductoModifiersModal.jsx` y el `ComboModal` de `POSMain.jsx`): lo común sigue a la vista; lo `poco_comun` queda dentro de «▸ Más opciones (poco comunes) · sin carne, sin pan…», que se abre solo al tocarlo (o si ya hay uno marcado al editar). Comanda, KDS y doble check ya mostraban los SIN.
+- **RPC nueva `pos_removibles_item`** = `pos_ingredientes_removibles` + `poco_comun`. La vieja queda igual para las cajas con la app en caché (ahí carne y pan salen a la vista mientras no recarguen).
+- **Límite:** el SIN se aplica a toda la línea; en un Duo «sin carne» quita la carne de las dos hamburguesas. La extra («Carne y queso extra») no se toca, entra por modificador.
+- `RecetasView.jsx` guarda también `poco_comun` (el guardado de recetas es delete + insert: sin esto, editar la Hamburguesa Sencilla pondría «Carne» a la vista).
+- **No usar «Sin pan de hamburguesa» junto con «EN LECHUGA»**: la lechuga ya devuelve el pan.
+- **Pendiente:** el menú web todavía no tiene «Sin…»; el cliente lo sigue escribiendo en la nota.
+- Probado en modo prueba: la línea de WEB-FA0000E6 con SIN Carne pasa de 2 bolitas a 0 y el pan queda en 1.
+
 ## 3-Oct-2026 — Recepción contada en la sucursal (migración `recepcion_contada`)
 
 Por qué: el 2-oct Cafetalón confirmó 10 paquetes de salchicha cuando solo llegaron 5. La pantalla de «Confirmar entrega» venía llena con lo despachado y bastaba «Todo completo» para recibir sin contar; el cuadre nocturno lo destapó como faltante de 125 salchichas. Además el RPC aceptaba recibir MÁS de lo despachado sin ninguna explicación. Pedido de Frank.
