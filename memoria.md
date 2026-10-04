@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 4-Oct-2026 — Extras pagados en delivery que no llegaban al KDS (migraciones `delivery_quitar_grupos_duplicados_en_combos`, `comanda_delivery_extras_del_combo_al_kds`)
+
+**Reporte de Cesar:** pedido web WEB-F5F5453C (Cafetalón): el cliente pagó Carne y Queso Extra + Tocino en una Freakie Burger, la torre lo mostraba, el KDS no. «Me pasa muy seguido».
+
+**Causa — de configuración, no del KDS.** Desde el **30-sep a mediodía**, 19 combos del menú de delivery tenían el **mismo grupo colgado dos veces**: del combo y de un componente. El Freakie Burger tenía «Complementos Hamburguesa», «Salsas Papas» y «Bebida» en los dos niveles, todos obligatorios. La web preguntaba dos veces; el cliente elegía el extra en la primera y «Sin Extra» en la segunda para poder avanzar. `_comanda_delivery` arma una tarjeta del KDS **por componente** con solo las opciones de ese componente, así que la cocina veía «Sin Extra» y el extra pagado quedaba en `pos_cuenta_items.modificadores` (que la torre sí muestra). Medido: **23 pedidos y $39.23 en extras invisibles** entre el 30-sep y el 4-oct (Cafetalón $20.48, Lourdes $11.75, Soyapango $5.50, Venecia $1.50). Antes del 30-sep, cero. No hay auditoría en `pos_item_modificadores` (solo dos columnas), así que no se puede saber quién lo asignó; el botón «🔗 grupo → Todos» de Admin Menú › Asignar es el sospechoso natural.
+
+- **Arreglo de datos:** se borraron las 33 asignaciones combo-nivel duplicadas, **respaldadas** en `_respaldo_item_mods_20261004` (menu_item_id, grupo_id, combo, grupo). Solo menú de delivery y solo donde el grupo existe en un componente: ningún combo queda sin preguntar. El Freakie Burger ahora pregunta una vez por grupo.
+- **Red de seguridad en `_comanda_delivery`:** toda opción elegida a nivel combo que no esté ya en un componente se manda a la tarjeta del componente cuyo grupo la contiene (Tocino → Hamburguesa, Cheddar → Fries); si su grupo no cuelga de ningún componente, va a la primera tarjeta. Si llega un extra **pagado** y en esa tarjeta había un «Sin …» del mismo grupo, el «Sin …» se quita. **Solo cambia `pos_cocina_queue`**; la cuenta queda igual porque de ahí descarga inventario y cobra (tocarla contaría el extra dos veces).
+- **Probado con el pedido real** clonado dentro de una transacción revertida: Hamburguesa ×1 → «Kolashampan, Carne y Queso Extra $1.50, Tocino $0.75»; Hamburguesa ×3 → «Kolashampan, Sin Extra». Sin basura en la base.
+- **Todo en la base, nada en el frontend:** vale desde el próximo pedido sin deploy.
+- **Pendiente:** (1) que el Admin Menú impida asignar a un combo un grupo que ya tiene un componente, o al menos lo avise; (2) revisar si el POS (caja) y PeYa tienen el mismo hueco — esto solo cubrió delivery propio; (3) `pos_item_modificadores` sin auditoría.
+
+
 ## 4-Oct-2026 — «Sin carne / sin pan / sin salchicha» en caja, escondidos en «Más opciones» (migración `sin_poco_comunes`)
 
 Por qué: el 3-oct en Cafetalón un Freakie Burger web (WEB-FA0000E6) se pidió «sin los dos medallones» solo en la nota. La descarga lee receta y modificadores, no notas: se descontaron 2 bolitas que no se usaron y el cuadre nocturno lo encontró como sobrante (se corrigió con devolución, OK Frank). Pedido de Frank: que se pueda marcar en caja, pero sin llenar la pantalla con botones que casi nunca se usan.
