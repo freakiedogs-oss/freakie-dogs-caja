@@ -1,5 +1,30 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 6-Oct-2026 — Agrandados: cada tipo paga según su precio + desglose por tipo para la cajera (migración `20261006_agrandados_valor_por_tipo.sql`)
+
+**Reporte de Cesar:** el «Agrandado de bebida» ($0.50) pagaba lo mismo que el «Agrandado Papa y Bebida» ($1.25): $0.10 cada uno, porque `fn_agrandados_panel` contaba 1 unidad por línea, sin ver el tipo.
+
+**Decisión de Cesar:** pagar proporcional al precio (8% en los tres), desde el 1-oct-2026. Septiembre no se toca.
+- Papa y bebida / Agrandado Combo: 1 punto ($0.10).
+- Papa: 0.8 ($0.08).
+- Bebida: 0.4 ($0.04).
+- Bloques de 100 puntos = $10, igual que antes. El tocino sigue en $0.05/u, sin bloques.
+
+**Qué cambió:**
+- **Config:** `agrandado_config` gana `peso_papa_bebida` (1.0), `peso_papa` (0.8) y `peso_bebida` (0.4).
+- **`fn_agrandado_tipo(nombre, mods)`:** clasifica las líneas que ya contaba `fn_agrandado_es`, así que el total de unidades no cambia. Lo que no reconoce cae en papa y bebida, para que nadie cobre menos por un nombre raro.
+- **`fn_agrandados_panel`:**
+  - `mes`, `hoy`, `resto`, `faltan` y `proyeccion_unid` pasan a ser **puntos** (numeric).
+  - Columnas nuevas: `unid_hoy`/`unid_mes` y `pb_*`/`papa_*`/`beb_*` (hoy y mes), además de `valor_pb`/`valor_papa`/`valor_beb`.
+  - La tasa y la meta (% de cuentas) siguen en unidades.
+- **UI:** `AgrandadoDesglose.jsx` (nuevo) muestra los 4 tipos con monto, cantidad, «+N hoy» y «tu fuerte». Reemplaza la tarjeta de tocino en `AgrandadoChip` y en `AgrandadosView`. Los textos de unidades usan `unid_*`, los de bloque dicen «puntos».
+- **Aplicada vía MCP el 6-oct**, después de que Cesar reconectara el conector con la cuenta freakiedogs@gmail.com.
+- **Nombres en octubre:** «Agrandado Papa y Bebida» (mod), «Agrandado de bebida» (mod e ítem), «Agrandado Soda y Papa» (ítem → papa_bebida) y «Agrandado de bebida para coca combo». «Agrandado de Papa» todavía no tiene ventas.
+- **Efecto al 6-oct:**
+  - Rosa: 409 papa y bebida + 191 bebida = 485.4 puntos → $40 (antes $60).
+  - Kimberly (bloque de 25): 86 + 22 = 94.8 puntos → $7.50 (antes $10).
+- **Falta:** mergear el front (`AgrandadoDesglose`). Mientras tanto, el chip viejo muestra los puntos como «agrandados».
+
 ## 4-Oct-2026 — «Turno de Casa Matriz» para Kevin + bug: la estación de insumos no reconocía las recetas de lo impreso (migraciones `prep_cruce_producto_por_clave`, `prep_turno_panel_encargado`, `permisos_turno_casa_matriz`)
 
 Pedido de Cesar: una tabla en vivo para Kevin con quién marcó entrada y salida, qué pesó e imprimió cada uno, y de qué productos ya registró insumos y de cuáles no (y quién los registró).
