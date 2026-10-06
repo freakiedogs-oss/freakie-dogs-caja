@@ -14,6 +14,7 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 import { useEffect, useRef, useState } from 'react'
+import AgrandadoDesglose from '../../pos/AgrandadoDesglose'
 import { db } from '../../supabase'
 
 const ROLES_SUPERVISAN = ['ejecutivo', 'admin', 'superadmin', 'jefe_casa_matriz']
@@ -26,6 +27,8 @@ const C = {
 
 const card = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 16, marginBottom: 12 }
 const money = (n) => '$' + Number(n || 0).toFixed(Number(n) % 1 === 0 ? 0 : 2)
+// Desde el 6-oct-2026 mes/hoy/resto/faltan son PUNTOS (papa y bebida = 1, papa = 0.8, bebida = 0.4).
+const pts = (n) => Number(n || 0).toLocaleString('es', { maximumFractionDigits: 1 })
 
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio',
                'agosto','septiembre','octubre','noviembre','diciembre']
@@ -211,7 +214,8 @@ function Tarjeta({ f, solo }) {
     if (!proyectable || llega) return null
     const diasQuedan = Math.max(f.dias_del_mes - f.dia_del_mes, 1)
     const objetivo = Math.ceil((meta / 100) * (f.cuentas_mes / Math.max(f.dia_del_mes, 1)) * f.dias_del_mes)
-    return Math.max(Math.ceil((objetivo - f.mes) / diasQuedan) - Math.round(f.mes / Math.max(f.dia_del_mes, 1)), 1)
+    const u = Number(f.unid_mes ?? f.mes)  // la meta cuenta unidades, no puntos
+    return Math.max(Math.ceil((objetivo - u) / diasQuedan) - Math.round(u / Math.max(f.dia_del_mes, 1)), 1)
   })()
 
   const cierreMes = f.dia_del_mes >= f.dias_del_mes - 5
@@ -230,7 +234,7 @@ function Tarjeta({ f, solo }) {
           {money(f.dinero)}
         </div>
         <div style={{ color: C.okTxt, fontSize: 14 }}>
-          {Number(f.mes).toLocaleString('es')} agrandados · {f.bloques} bloque{f.bloques === 1 ? '' : 's'} cerrado{f.bloques === 1 ? '' : 's'}
+          {Number(f.unid_mes ?? f.mes).toLocaleString('es')} agrandados · {f.bloques} bloque{f.bloques === 1 ? '' : 's'} cerrado{f.bloques === 1 ? '' : 's'}
         </div>
       </div>
 
@@ -251,39 +255,25 @@ function Tarjeta({ f, solo }) {
           <div style={{ color: C.acc, fontSize: 32, fontWeight: 700, margin: '3px 0' }}>
             ${(f.hoy * Number(f.valor_unit)).toFixed(2)}
           </div>
-          <div style={{ color: C.dim, fontSize: 13 }}>{f.hoy} agrandados</div>
+          <div style={{ color: C.dim, fontSize: 13 }}>{f.unid_hoy ?? f.hoy} agrandados</div>
         </div>
       </div>
 
-      {Number(f.tocino_valor || 0) > 0 && (
-        <div style={{ ...card, background: '#2a1a0e', border: '1px solid #7c3a12',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ color: '#fdba74', fontSize: 13 }}>🥓 Tocino extra · ${Number(f.tocino_valor).toFixed(2)} por cada uno, sin bloques</div>
-            <div style={{ color: '#fb923c', fontSize: 30, fontWeight: 700, margin: '2px 0' }}>
-              ${Number(f.tocino_dinero || 0).toFixed(2)}
-            </div>
-            <div style={{ color: '#fdba74', fontSize: 13 }}>
-              {f.tocino_mes} vendidos este mes · hoy {f.tocino_hoy}{f.tocino_desde ? ` · cuenta desde el ${new Date(f.tocino_desde + 'T12:00:00').getDate()}` : ''}
-            </div>
-          </div>
-          <div style={{ fontSize: 34 }}>🥓</div>
-        </div>
-      )}
+      <AgrandadoDesglose f={f} grande={solo} />
 
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 9 }}>
           <span style={{ fontSize: 16, fontWeight: 700 }}>
-            {f.faltan} más y son <span style={{ color: C.ok }}>{money(f.dinero_siguiente)}</span>
+            {pts(f.faltan)} puntos más y son <span style={{ color: C.ok }}>{money(f.dinero_siguiente)}</span>
           </span>
-          <span style={{ color: C.dim, fontSize: 13 }}>{f.resto} de {f.bloque_tam}</span>
+          <span style={{ color: C.dim, fontSize: 13 }}>{pts(f.resto)} de {f.bloque_tam}</span>
         </div>
         <div style={{ background: '#101012', borderRadius: 99, height: 24, overflow: 'hidden' }}>
           <div style={{ background: C.ok, height: '100%', width: `${(f.resto / f.bloque_tam) * 100}%`,
                         borderRadius: 99, transition: 'width .4s' }} />
         </div>
         <div style={{ color: C.dim, fontSize: 12, marginTop: 8 }}>
-          El pago va de {f.bloque_tam} en {f.bloque_tam}. Esos {f.resto} se cobran al completar el bloque.
+          El pago va de {f.bloque_tam} en {f.bloque_tam}. Esos {pts(f.resto)} puntos se cobran al completar el bloque.
         </div>
       </div>
 
@@ -335,9 +325,9 @@ function Tarjeta({ f, solo }) {
           <div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Tu mejor día fue {f.mejor_dia}</div>
             <div style={{ color: C.dim, fontSize: 13, marginTop: 2 }}>
-              {f.hoy >= f.mejor_dia
+              {(f.unid_hoy ?? f.hoy) >= f.mejor_dia
                 ? '¡Hoy lo igualaste o lo superaste!'
-                : `hoy vas ${f.hoy} · faltan ${f.mejor_dia - f.hoy} para romperlo`}
+                : `hoy vas ${f.unid_hoy ?? f.hoy} · faltan ${f.mejor_dia - (f.unid_hoy ?? f.hoy)} para romperlo`}
             </div>
           </div>
           <div style={{ color: C.warn, fontSize: 28 }}>★</div>
