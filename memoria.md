@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Oct-2026 — Etiquetado: etiqueta más limpia, con fecha de elaboración y ajuste de corrimiento (`zebraZpl.js`, `EtiquetadoApp.jsx`)
+
+**Reporte de Cesar (con 3 fotos):** algunas etiquetas salían corridas: el título cortado arriba, el QR pasándose del borde derecho; y faltaba la fecha de producción. Pidió bajar el tamaño del peso y una etiqueta más minimalista.
+
+- **Causa del corte:** el diseño arrancaba a 0.04" del borde y la impresora no siempre empieza exactamente en el borde del papel (en las fotos el desfase cambia de etiqueta a etiqueta). Además el QR real (versión 5, 37 módulos) mide ~0.55", no los 0.5" que se le reservaban.
+- **Cambios:** margen de seguridad (0.12" arriba, 0.10" a los lados); título en su propia línea a todo el ancho; peso de 0.22" a 0.13" de alto; línea nueva «ELAB dd-mmm-aaaa hh:mm» arriba del vencimiento; QR a 0.55".
+- **Ajuste fino sin tocar código:** en ⚙︎ de la pantalla hay flechas de corrimiento (↑↓ ←→, pasos de 0.02", máx ±0.30") que se guardan en el navegador de la tablet (`etiquetado_ajuste`) y se aplican a todas las etiquetas. Se calibra con «Imprimir etiqueta de prueba».
+- **No probado en la impresora real** (el sandbox no tiene la Zebra ni acceso a un visor ZPL); sí compila (`npm run build`). Si el corrimiento cambia de una etiqueta a otra (no es fijo), la causa es el sensor de gap: hay que calibrar la cinta (mantener FEED apretado hasta que avance 2-3 etiquetas).
+
 ## 3-Oct-2026 — Apartado «Equipo y PINs» para Kevin (migración `20261004_prep_equipo_pines.sql`, YA APLICADA)
 
 Pedido de Cesar: los PIN de producción existen pero la gente no sabe cuál es el suyo; Kevin (jefe de Casa Matriz) necesita verlos para dárselos. En la tablet de etiquetado, quien entra con rol de encargado ve el recuadro «👥 Equipo y PINs» (`EquipoPines.jsx`): pide el PIN de encargado otra vez, lista al equipo (producción y despacho de su sucursal, 11 personas en CM001) y cada PIN se pide de a uno (`fn_equipo_pin_ver`), se ve 15 s y se oculta; se cierra solo a los 60 s sin tocar. La lista (`fn_equipo_lista`) nunca trae PIN, solo `tiene_pin`. Cada consulta queda en `prep_bitacora` (`pin_consultado`, con quién y a quién). No se pueden ver PIN de otros encargados ni de otras sucursales (probado en producción con una transacción revertida). Tradeoff aceptado por Cesar: si el jefe conoce el PIN de alguien, podría imprimir a su nombre; por eso la consulta es bajo demanda y auditada. Pendiente posible: «cambiar PIN» por persona y mostrar la bitácora de consultas en el panel Datos.
