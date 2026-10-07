@@ -56,6 +56,7 @@ const lbs = (g) => (g / 453.59237).toFixed(2)
 const mil = (g) => Math.round(g).toLocaleString('en-US')
 
 const CLAVE_DPI = 'etiquetado_dpi'
+const CLAVE_AJUSTE = 'etiquetado_ajuste'
 
 export default function EtiquetadoApp() {
   // La lista viene de la base (`etiquetado_productos`). Si la red falla cae a
@@ -96,6 +97,15 @@ export default function EtiquetadoApp() {
   const [imprimiendo, setImprimiendo] = useState(false)
   const [ajustando, setAjustando] = useState(false)
 
+  // Ajuste fino de posición (centésimas de pulgada) para compensar el
+  // corrimiento real de la impresora. x + = derecha, y + = abajo.
+  const [ajuste, setAjuste] = useState(() => {
+    try { const a = JSON.parse(localStorage.getItem(CLAVE_AJUSTE) || '{}'); return { x: Number(a.x) || 0, y: Number(a.y) || 0 } }
+    catch { return { x: 0, y: 0 } }
+  })
+  useEffect(() => { try { localStorage.setItem(CLAVE_AJUSTE, JSON.stringify(ajuste)) } catch { /* da igual */ } }, [ajuste])
+  const mover = (eje, paso) => setAjuste(a => ({ ...a, [eje]: Math.max(-30, Math.min(30, a[eje] + paso)) }))
+
   const [dpi, setDpi] = useState(() => Number(localStorage.getItem(CLAVE_DPI)) || 203)
   useEffect(() => { try { localStorage.setItem(CLAVE_DPI, String(dpi)) } catch { /* da igual */ } }, [dpi])
 
@@ -125,7 +135,7 @@ export default function EtiquetadoApp() {
 
   async function imprimirPrueba() {
     setErr('')
-    try { await zebra.current.enviar(zplPruebaFila(dpi)); aviso('Fila de prueba enviada (2 etiquetas)') }
+    try { await zebra.current.enviar(zplPruebaFila(dpi, ajuste)); aviso('Fila de prueba enviada (2 etiquetas)') }
     catch (e) { setErr(e.message || 'No se pudo imprimir') }
   }
 
@@ -140,6 +150,7 @@ export default function EtiquetadoApp() {
   const datosCelda = (u) => ({
     producto: prod.nombre, lote: loteSel.lote, indice: u.i, total,
     gramos: mil(u.n), libras: lbs(u.n), vence: u.vence,
+    elaborado: `${u.fecha} ${u.hora}`,
     // En el QR va el neto y, cuando hay empaque, también el bruto y la tara:
     // si algún día se discute un peso, ahí está la cuenta completa.
     qr: `${loteSel.lote}|${prod.id}|${u.i}/${total}|${Math.round(u.n)}g`
@@ -174,7 +185,7 @@ export default function EtiquetadoApp() {
     const izq = pendiente || unidad
     const der = unidad
     try {
-      await zebra.current.enviar(armarZplFila(datosCelda(izq), datosCelda(der), { dpi }))
+      await zebra.current.enviar(armarZplFila(datosCelda(izq), datosCelda(der), { dpi, ajuste }))
     } catch (e) {
       // Si la impresión falla, NINGUNA de las dos pesadas se cuenta: si se
       // contaran, el operario creería que ya tienen etiqueta y seguiría con
@@ -205,7 +216,7 @@ export default function EtiquetadoApp() {
     try {
       // Reimpresión suelta: se duplica en las 2 etiquetas de la fila. No hay
       // con qué emparejarla porque ya se imprimió (o falló) en su momento.
-      await zebra.current.enviar(armarZplFila(datosCelda(u), datosCelda(u), { dpi }))
+      await zebra.current.enviar(armarZplFila(datosCelda(u), datosCelda(u), { dpi, ajuste }))
       aviso(`Reimpresa la unidad ${u.i}`)
     } catch (e) { setErr(e.message || 'No se pudo reimprimir') }
   }
@@ -303,6 +314,18 @@ export default function EtiquetadoApp() {
           </button>
         ))}
       </div>
+      <b style={{ fontSize: 14, display: 'block', marginTop: 14 }}>Corrimiento de la etiqueta</b>
+      <div style={{ color: C.dim, fontSize: 12.5, margin: '5px 0 10px', lineHeight: 1.5 }}>
+        Si el título sale cortado arriba, bajá. Si el QR se sale por la derecha, movelo a la
+        izquierda. Imprimí la prueba después de cada toque (cada paso es 0.02").
+      </div>
+      {[['y', 'Abajo / arriba', '↓', '↑', 2, -2], ['x', 'Derecha / izquierda', '→', '←', 2, -2]].map(([eje, nom, mas, menos, p1, p2]) => (
+        <div key={eje} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <button onClick={() => mover(eje, p2)} style={{ ...btn('#1c1c20'), color: C.txt, fontSize: 18, padding: 10, width: 56 }}>{menos}</button>
+          <div style={{ flex: 1, textAlign: 'center', fontSize: 13.5 }}>{nom}: <b>{(ajuste[eje] / 100).toFixed(2)}"</b></div>
+          <button onClick={() => mover(eje, p1)} style={{ ...btn('#1c1c20'), color: C.txt, fontSize: 18, padding: 10, width: 56 }}>{mas}</button>
+        </div>
+      ))}
       {impresoraOk && (
         <button onClick={imprimirPrueba} style={{ ...btn('#1c1c20'), color: C.txt, fontSize: 14, padding: 11, marginTop: 8 }}>
           Imprimir etiqueta de prueba
