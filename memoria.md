@@ -1,5 +1,6 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+
 ## 5-Oct-2026 — Etiquetado: etiqueta más limpia, con fecha de elaboración y ajuste de corrimiento (`zebraZpl.js`, `EtiquetadoApp.jsx`)
 
 **Reporte de Cesar (con 3 fotos):** algunas etiquetas salían corridas: el título cortado arriba, el QR pasándose del borde derecho; y faltaba la fecha de producción. Pidió bajar el tamaño del peso y una etiqueta más minimalista.
@@ -8,6 +9,83 @@
 - **Cambios:** margen de seguridad (0.12" arriba, 0.10" a los lados); título en su propia línea a todo el ancho; peso de 0.22" a 0.13" de alto; línea nueva «ELAB dd-mmm-aaaa hh:mm» arriba del vencimiento; el QR ya no tiene tamaño fijo: se calcula según lo que lleva (versión 5–6, 0.55"–0.61") y se alinea al borde derecho con margen.
 - **Ajuste fino sin tocar código:** en ⚙︎ de la pantalla hay flechas de corrimiento (↑↓ ←→, pasos de 0.02", máx ±0.30") que se guardan en el navegador de la tablet (`etiquetado_ajuste`) y se aplican a todas las etiquetas. Se calibra con «Imprimir etiqueta de prueba».
 - **Simulado, no probado en la impresora real:** se renderizó el ZPL de los 18 productos (peor caso: nombre largo, 10 lb, lote «-SIN», 100 unidades, quien imprime con nombre largo) con fuente más ancha que la Zebra. Diseño viejo: QR fuera del borde derecho (−0.05") y encimado con título/peso en los 36 casos. Diseño nuevo: nada fuera ni encimado; tolerancia a corrimiento ≥0.10" izq, 0.07" der, 0.12" arriba, 0.13" abajo. Compila (`npm run build`). Si el corrimiento cambia de una etiqueta a otra (no es fijo), la causa es el sensor de gap: hay que calibrar la cinta (mantener FEED apretado hasta que avance 2-3 etiquetas).
+
+## 6-Oct-2026 — Agrandados: cada tipo paga según su precio + desglose por tipo para la cajera (migración `20261006_agrandados_valor_por_tipo.sql`)
+
+**Reporte de Cesar:** el «Agrandado de bebida» ($0.50) pagaba lo mismo que el «Agrandado Papa y Bebida» ($1.25): $0.10 cada uno, porque `fn_agrandados_panel` contaba 1 unidad por línea, sin ver el tipo.
+
+**Decisión de Cesar:** pagar proporcional al precio (8% en los tres), desde el 1-oct-2026. Septiembre no se toca.
+- Papa y bebida / Agrandado Combo: 1 punto ($0.10).
+- Papa: 0.8 ($0.08).
+- Bebida: 0.4 ($0.04).
+- Bloques de 100 puntos = $10, igual que antes. El tocino sigue en $0.05/u, sin bloques.
+
+**Qué cambió:**
+- **Config:** `agrandado_config` gana `peso_papa_bebida` (1.0), `peso_papa` (0.8) y `peso_bebida` (0.4).
+- **`fn_agrandado_tipo(nombre, mods)`:** clasifica las líneas que ya contaba `fn_agrandado_es`, así que el total de unidades no cambia. Lo que no reconoce cae en papa y bebida, para que nadie cobre menos por un nombre raro.
+- **`fn_agrandados_panel`:**
+  - `mes`, `hoy`, `resto`, `faltan` y `proyeccion_unid` pasan a ser **puntos** (numeric).
+  - Columnas nuevas: `unid_hoy`/`unid_mes` y `pb_*`/`papa_*`/`beb_*` (hoy y mes), además de `valor_pb`/`valor_papa`/`valor_beb`.
+  - La tasa y la meta (% de cuentas) siguen en unidades.
+- **UI:** `AgrandadoDesglose.jsx` (nuevo) muestra los 4 tipos con monto, cantidad, «+N hoy» y «tu fuerte». Reemplaza la tarjeta de tocino en `AgrandadoChip` y en `AgrandadosView`. Los textos de unidades usan `unid_*`, los de bloque dicen «puntos».
+- **Aplicada vía MCP el 6-oct**, después de que Cesar reconectara el conector con la cuenta freakiedogs@gmail.com.
+- **Nombres en octubre:** «Agrandado Papa y Bebida» (mod), «Agrandado de bebida» (mod e ítem), «Agrandado Soda y Papa» (ítem → papa_bebida) y «Agrandado de bebida para coca combo». «Agrandado de Papa» todavía no tiene ventas.
+- **Efecto al 6-oct:**
+  - Rosa: 409 papa y bebida + 191 bebida = 485.4 puntos → $40 (antes $60).
+  - Kimberly (bloque de 25): 86 + 22 = 94.8 puntos → $7.50 (antes $10).
+- **Falta:** mergear el front (`AgrandadoDesglose`). Mientras tanto, el chip viejo muestra los puntos como «agrandados».
+
+## 4-Oct-2026 — «Turno de Casa Matriz» para Kevin + bug: la estación de insumos no reconocía las recetas de lo impreso (migraciones `prep_cruce_producto_por_clave`, `prep_turno_panel_encargado`, `permisos_turno_casa_matriz`)
+
+Pedido de Cesar: una tabla en vivo para Kevin con quién marcó entrada y salida, qué pesó e imprimió cada uno, y de qué productos ya registró insumos y de cuáles no (y quién los registró).
+
+**Bug encontrado antes de construir, y arreglado (afectaba a TODO lo impreso).** Etiquetado guarda en `etiqueta_impresiones.producto_id` la **clave** del producto (`carne`, `chili`, `cebblanca`), que es lo que `fn_etiquetado_productos` devuelve como `id`. Pero `fn_prep_pendientes_detalle` y `fn_prep_lote_guardar` cruzaban `etiquetado_productos` por **uuid** (`p.id::text = e.producto_id`): nunca coincidía y la clave salía `null`. La estación (`preparacion.js` l.588) caía entonces a «receta libre» vacía (`prod-carne`) en vez de la receta real (carne = 12 insumos, chili = 24), y el servidor aceptaba el cierre igual porque `prod-<id>` es válido. Resultado: se perdía la referencia de receta y toda la validación de tandas. Visto con datos reales del 4-oct (139 impresiones, todas con clave null; 3 lotes abiertos, ninguno cerrado todavía — se arregló antes del primer cierre). Las 128 simulaciones no lo agarraron porque usaban RPC simuladas con uuids. Arreglo: el cruce ahora es `(p.id::text = e.producto_id or p.clave = e.producto_id)`, reescribiendo solo esa condición en las dos funciones (DO block con `replace` sobre `pg_get_functiondef`, falla si no encuentra el texto). Verificado: las 3 deudas abiertas ya devuelven su clave.
+
+**Panel.** `fn_prep_turno(p_actor, p_fecha)` (solo jefe_casa_matriz/admin/ejecutivo/superadmin; la gerencia ve CM001). Una fila por persona: equipo de producción y despacho de la sucursal + cualquiera que marcó entrada ahí o imprimió/debe ese día. Por producto: unidades, gramos, primera/última impresión, lote, `registrado` con **la misma regla que el cierre** (insumos vigentes del lote de la receta del producto), `registrado_por` (si fue otro, se dice), a quién se le pasó la deuda, y si salió autorizado (`prep_deudas.estado='autorizada'`, con quién y motivo). También lotes recibidos de un compañero y deudas de días anteriores. Ordena primero a quien debe.
+- Pantalla `src/components/produccion/TurnoCasaMatrizView.jsx`, pestaña **📋 Turno de Casa Matriz** en Producción (`turno-cm`), primera en el inicio de `jefe_casa_matriz`. Filas `permisos_rol` insertadas (si no, el Sidebar no la muestra). Se refresca cada 20 s y al volver a la pestaña; navega días anteriores. Solo lee.
+- Probado con los datos de hoy: 12 personas, 6 trabajando, 3 deben 4 productos (Samaris: cebolla blanca y salchicha; Alba: chili; Diego: carne).
+- **Pendiente:** correr el build en Windows. Observación de paso: el chili de hoy salió a ~708 g por bolsa (68 bolsas, 106 lb) contra un objetivo de 2,268 g; vale confirmar si cambió la presentación o si el peso objetivo quedó viejo.
+
+## 4-Oct-2026 — Extras pagados en delivery que no llegaban al KDS (migraciones `delivery_quitar_grupos_duplicados_en_combos`, `comanda_delivery_extras_del_combo_al_kds`)
+
+**Reporte de Cesar:** pedido web WEB-F5F5453C (Cafetalón): el cliente pagó Carne y Queso Extra + Tocino en una Freakie Burger, la torre lo mostraba, el KDS no. «Me pasa muy seguido».
+
+**Causa — de configuración, no del KDS.** Desde el **30-sep a mediodía**, 19 combos del menú de delivery tenían el **mismo grupo colgado dos veces**: del combo y de un componente. El Freakie Burger tenía «Complementos Hamburguesa», «Salsas Papas» y «Bebida» en los dos niveles, todos obligatorios. La web preguntaba dos veces; el cliente elegía el extra en la primera y «Sin Extra» en la segunda para poder avanzar. `_comanda_delivery` arma una tarjeta del KDS **por componente** con solo las opciones de ese componente, así que la cocina veía «Sin Extra» y el extra pagado quedaba en `pos_cuenta_items.modificadores` (que la torre sí muestra). Medido: **23 pedidos y $39.23 en extras invisibles** entre el 30-sep y el 4-oct (Cafetalón $20.48, Lourdes $11.75, Soyapango $5.50, Venecia $1.50). Antes del 30-sep, cero. No hay auditoría en `pos_item_modificadores` (solo dos columnas), así que no se puede saber quién lo asignó; el botón «🔗 grupo → Todos» de Admin Menú › Asignar es el sospechoso natural.
+
+- **Arreglo de datos:** se borraron las 33 asignaciones combo-nivel duplicadas, **respaldadas** en `_respaldo_item_mods_20261004` (menu_item_id, grupo_id, combo, grupo). Solo menú de delivery y solo donde el grupo existe en un componente: ningún combo queda sin preguntar. El Freakie Burger ahora pregunta una vez por grupo.
+- **Red de seguridad en `_comanda_delivery`:** toda opción elegida a nivel combo que no esté ya en un componente se manda a la tarjeta del componente cuyo grupo la contiene (Tocino → Hamburguesa, Cheddar → Fries); si su grupo no cuelga de ningún componente, va a la primera tarjeta. Si llega un extra **pagado** y en esa tarjeta había un «Sin …» del mismo grupo, el «Sin …» se quita. **Solo cambia `pos_cocina_queue`**; la cuenta queda igual porque de ahí descarga inventario y cobra (tocarla contaría el extra dos veces).
+- **Probado con el pedido real** clonado dentro de una transacción revertida: Hamburguesa ×1 → «Kolashampan, Carne y Queso Extra $1.50, Tocino $0.75»; Hamburguesa ×3 → «Kolashampan, Sin Extra». Sin basura en la base.
+- **Todo en la base, nada en el frontend:** vale desde el próximo pedido sin deploy.
+- **Pendiente:** (1) que el Admin Menú impida asignar a un combo un grupo que ya tiene un componente, o al menos lo avise; (2) revisar si el POS (caja) y PeYa tienen el mismo hueco — esto solo cubrió delivery propio; (3) `pos_item_modificadores` sin auditoría.
+
+
+## 4-Oct-2026 — «Sin carne / sin pan / sin salchicha» en caja, escondidos en «Más opciones» (migración `sin_poco_comunes`)
+
+Por qué: el 3-oct en Cafetalón un Freakie Burger web (WEB-FA0000E6) se pidió «sin los dos medallones» solo en la nota. La descarga lee receta y modificadores, no notas: se descontaron 2 bolitas que no se usaron y el cuadre nocturno lo encontró como sobrante (se corrigió con devolución, OK Frank). Pedido de Frank: que se pueda marcar en caja, pero sin llenar la pantalla con botones que casi nunca se usan.
+
+- **Ya existía el «Sin…»** (18-ago): ingredientes con `receta_ingredientes.removible` salen como botones y viajan como modificador `grupo_nombre='SIN'` con `quitar`; `pos_explotar_linea` y `pos_deducir_inventario` no descuentan ese ingrediente. Carne, pan y salchicha simplemente no eran removibles.
+- **Nuevo `receta_ingredientes.poco_comun`.** Carne (Mezcla de Carne Smash ×2 en Hamburguesa Sencilla armada), pan de hamburguesa, salchicha y pan de hot dog (Freakie Dog armado, Super Freak armado, Chilli dog individual) pasan a removibles y poco comunes. Etiquetas distintas («Pan de hamburguesa» / «Pan de hot dog») para que en un Burger Box un SIN no le quite el pan al otro.
+- **UI** (`ProductoModifiersModal.jsx` y el `ComboModal` de `POSMain.jsx`): lo común sigue a la vista; lo `poco_comun` queda dentro de «▸ Más opciones (poco comunes) · sin carne, sin pan…», que se abre solo al tocarlo (o si ya hay uno marcado al editar). Comanda, KDS y doble check ya mostraban los SIN.
+- **RPC nueva `pos_removibles_item`** = `pos_ingredientes_removibles` + `poco_comun`. La vieja queda igual para las cajas con la app en caché (ahí carne y pan salen a la vista mientras no recarguen).
+- **Límite:** el SIN se aplica a toda la línea; en un Duo «sin carne» quita la carne de las dos hamburguesas. La extra («Carne y queso extra») no se toca, entra por modificador.
+- `RecetasView.jsx` guarda también `poco_comun` (el guardado de recetas es delete + insert: sin esto, editar la Hamburguesa Sencilla pondría «Carne» a la vista).
+- **No usar «Sin pan de hamburguesa» junto con «EN LECHUGA»**: la lechuga ya devuelve el pan.
+- **Pendiente:** el menú web todavía no tiene «Sin…»; el cliente lo sigue escribiendo en la nota.
+- Probado en modo prueba: la línea de WEB-FA0000E6 con SIN Carne pasa de 2 bolitas a 0 y el pan queda en 1.
+
+## 3-Oct-2026 — Recepción contada en la sucursal (migración `recepcion_contada`)
+
+Por qué: el 2-oct Cafetalón confirmó 10 paquetes de salchicha cuando solo llegaron 5. La pantalla de «Confirmar entrega» venía llena con lo despachado y bastaba «Todo completo» para recibir sin contar; el cuadre nocturno lo destapó como faltante de 125 salchichas. Además el RPC aceptaba recibir MÁS de lo despachado sin ninguna explicación. Pedido de Frank.
+
+- **Cada producto arranca vacío** (`ConfirmarEntrega.jsx`): hay que escribir cuánto llegó; no se puede confirmar con uno sin llenar («Falta escribir lo que llegó de…»).
+- **«Todo completo» pide una segunda confirmación** que lista producto por producto lo que se va a dar por recibido («Volver» / «Sí, conté todo»).
+- **Toda diferencia (de menos o de más) lleva nota obligatoria** en la app. Si es de más, aviso naranja «Estás recibiendo MÁS de lo despachado».
+- **El candado de verdad está en el RPC:** `despacho_confirmar` rechaza (vía humana) recibir más de lo despachado sin `p_items[].nota`. La nota se guarda en `despacho_items.notas` dentro de la misma transacción (se agrega con « | » a lo que ya hubiera); la app ya no la escribe aparte.
+- **Sin cambios** para el cron reconciliador (`p_auto`) ni para clientes viejos: producto sin `cantidad_recibida` = lo despachado. La diferencia de menos no se bloquea en el RPC para no trabar una PWA en caché; la exige la app.
+- `TransferenciaBebidas.jsx` (transferencias entre sucursales, pasa por el mismo RPC): si se recibe de más pide la nota con un prompt.
+- Probado en modo prueba sobre el último despacho de M001: de más sin nota → bloquea; con nota → recibe, guarda nota y kardex; cron → igual que antes.
+- Afecta la recepción de TODAS las sucursales.
+
 
 ## 3-Oct-2026 — Apartado «Equipo y PINs» para Kevin (migración `20261004_prep_equipo_pines.sql`, YA APLICADA)
 
