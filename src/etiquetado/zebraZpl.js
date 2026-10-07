@@ -46,13 +46,31 @@ const FILA = { ancho: CELDA.ancho * 2 + ESPACIO_ENTRE, alto: CELDA.alto }
 // sin tocar código.
 const DISENO = {
   margen: 0.10,
-  // El QR real (versión 5, 37 módulos × 3 puntos a 203 dpi) mide ~0.55", no 0.5".
-  qr: { size: 0.55, y: 0.24, mag: 3 },
+  // El tamaño del QR ya no es fijo: depende de cuánto texto lleva (ver ladoQr).
+  qr: { y: 0.24, mag: 3, maxLado: 0.62 },
   titulo: { y: 0.12, alto: 0.12 },
   lote:   { y: 0.28, alto: 0.09 },
   peso:   { y: 0.42, alto: 0.13 },
   elab:   { y: 0.60, alto: 0.085 },
   vence:  { y: 0.72, alto: 0.10, caja: { ancho: 1.2, alto: 0.15 } },
+}
+
+/* El QR crece con el texto que lleva. Con el payload real (lote · clave del
+   producto · n/total · gramos · bruto/tara · fecha · hora · quién) llega a la
+   versión 5–7 (37–45 módulos), o sea 0.55"–0.67" a 3 puntos por módulo, y no
+   los 0.5" que se le reservaban: de ahí que se saliera por la derecha. Se
+   estima la versión con la capacidad en bytes del nivel M (UTF-8, que es el
+   caso más ancho) y se devuelve el lado real en pulgadas. Si a magnificación
+   3 no cabe en el alto de la etiqueta, baja a 2. */
+const CAPACIDAD_M = [14, 26, 42, 62, 84, 106, 122, 152, 180, 213]   // versiones 1–10
+function ladoQr(texto, dpi, magBase) {
+  const bytes = new TextEncoder().encode(String(texto)).length
+  let v = CAPACIDAD_M.findIndex(c => c >= bytes) + 1
+  if (v === 0) v = 11
+  const modulos = 17 + 4 * v
+  let mag = magBase
+  if (modulos * mag / dpi > DISENO.qr.maxLado && mag > 2) mag -= 1
+  return { mag, lado: modulos * mag / dpi }
 }
 
 const pt = (pulgadas, dpi) => Math.round(pulgadas * dpi)
@@ -94,19 +112,19 @@ function celda(d, dpi, x0, y0 = 0) {
   const D = DISENO
   const m = D.margen
   const anchoPleno = CELDA.ancho - m * 2
-  const anchoIzq = CELDA.ancho - m - D.qr.size - m - 0.04   // lo que queda a la izquierda del QR
-  const magQr = dpi >= 300 ? 4 : D.qr.mag
   const Y = (v) => v + y0
+
+  const qrTxt = d.qr ? limpio(d.qr) : ''
+  const q = qrTxt ? ladoQr(qrTxt, dpi, dpi >= 300 ? 4 : D.qr.mag) : { mag: 0, lado: 0 }
+  const qx = x0 + CELDA.ancho - m - q.lado
+  const anchoIzq = qrTxt ? (qx - (x0 + m) - 0.05) : anchoPleno   // lo que queda a la izquierda del QR
 
   const L = []
 
   // El título va solo en la primera línea, a todo el ancho.
   L.push(texto(x0 + m, Y(D.titulo.y), D.titulo.alto, String(d.producto || '').toUpperCase(), dpi, anchoPleno))
 
-  if (d.qr) {
-    const qx = x0 + (CELDA.ancho - m - D.qr.size)
-    L.push(`^FO${pt(qx, dpi)},${pt(Y(D.qr.y), dpi)}^BQN,2,${magQr}^FDMA,${limpio(d.qr)}^FS`)
-  }
+  if (qrTxt) L.push(`^FO${pt(qx, dpi)},${pt(Y(D.qr.y), dpi)}^BQN,2,${q.mag}^FDMA,${qrTxt}^FS`)
 
   const deTotal = d.total ? ` · ${d.indice}/${d.total}` : ''
   L.push(texto(x0 + m, Y(D.lote.y), D.lote.alto, `${d.lote}${deTotal}`, dpi, anchoIzq))
@@ -118,9 +136,10 @@ function celda(d, dpi, x0, y0 = 0) {
   }
 
   // El vencimiento va en recuadro porque es el dato que se busca de lejos en
-  // el freezer, sin sacar la bolsa.
-  L.push(`^FO${pt(x0 + m, dpi)},${pt(Y(D.vence.y), dpi)}^GB${pt(D.vence.caja.ancho, dpi)},${pt(D.vence.caja.alto, dpi)},2^FS`)
-  L.push(texto(x0 + m + 0.05, Y(D.vence.y + 0.025), D.vence.alto, `VENCE ${String(d.vence || '').toUpperCase()}`, dpi, D.vence.caja.ancho - 0.10))
+  // el freezer, sin sacar la bolsa. Nunca invade la columna del QR.
+  const cajaAncho = Math.min(D.vence.caja.ancho, anchoIzq)
+  L.push(`^FO${pt(x0 + m, dpi)},${pt(Y(D.vence.y), dpi)}^GB${pt(cajaAncho, dpi)},${pt(D.vence.caja.alto, dpi)},2^FS`)
+  L.push(texto(x0 + m + 0.05, Y(D.vence.y + 0.025), D.vence.alto, `VENCE ${String(d.vence || '').toUpperCase()}`, dpi, cajaAncho - 0.10))
 
   return L.filter(Boolean)
 }

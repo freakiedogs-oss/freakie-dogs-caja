@@ -4,10 +4,10 @@
 
 **Reporte de Cesar (con 3 fotos):** algunas etiquetas salían corridas: el título cortado arriba, el QR pasándose del borde derecho; y faltaba la fecha de producción. Pidió bajar el tamaño del peso y una etiqueta más minimalista.
 
-- **Causa del corte:** el diseño arrancaba a 0.04" del borde y la impresora no siempre empieza exactamente en el borde del papel (en las fotos el desfase cambia de etiqueta a etiqueta). Además el QR real (versión 5, 37 módulos) mide ~0.55", no los 0.5" que se le reservaban.
-- **Cambios:** margen de seguridad (0.12" arriba, 0.10" a los lados); título en su propia línea a todo el ancho; peso de 0.22" a 0.13" de alto; línea nueva «ELAB dd-mmm-aaaa hh:mm» arriba del vencimiento; QR a 0.55".
+- **Causa del corte:** el diseño arrancaba a 0.04" del borde y la impresora no siempre empieza exactamente en el borde del papel (en las fotos el desfase cambia de etiqueta a etiqueta). Además el QR real (versión 5–6, 37–41 módulos) mide 0.55"–0.61", no los 0.5" que se le reservaban; en la simulación el diseño viejo sacaba el QR 0.05" fuera de la etiqueta y lo encimaba con el peso.
+- **Cambios:** margen de seguridad (0.12" arriba, 0.10" a los lados); título en su propia línea a todo el ancho; peso de 0.22" a 0.13" de alto; línea nueva «ELAB dd-mmm-aaaa hh:mm» arriba del vencimiento; el QR ya no tiene tamaño fijo: se calcula según lo que lleva (versión 5–6, 0.55"–0.61") y se alinea al borde derecho con margen.
 - **Ajuste fino sin tocar código:** en ⚙︎ de la pantalla hay flechas de corrimiento (↑↓ ←→, pasos de 0.02", máx ±0.30") que se guardan en el navegador de la tablet (`etiquetado_ajuste`) y se aplican a todas las etiquetas. Se calibra con «Imprimir etiqueta de prueba».
-- **No probado en la impresora real** (el sandbox no tiene la Zebra ni acceso a un visor ZPL); sí compila (`npm run build`). Si el corrimiento cambia de una etiqueta a otra (no es fijo), la causa es el sensor de gap: hay que calibrar la cinta (mantener FEED apretado hasta que avance 2-3 etiquetas).
+- **Simulado, no probado en la impresora real:** se renderizó el ZPL de los 18 productos (peor caso: nombre largo, 10 lb, lote «-SIN», 100 unidades, quien imprime con nombre largo) con fuente más ancha que la Zebra. Diseño viejo: QR fuera del borde derecho (−0.05") y encimado con título/peso en los 36 casos. Diseño nuevo: nada fuera ni encimado; tolerancia a corrimiento ≥0.10" izq, 0.07" der, 0.12" arriba, 0.13" abajo. Compila (`npm run build`). Si el corrimiento cambia de una etiqueta a otra (no es fijo), la causa es el sensor de gap: hay que calibrar la cinta (mantener FEED apretado hasta que avance 2-3 etiquetas).
 
 ## 3-Oct-2026 — Apartado «Equipo y PINs» para Kevin (migración `20261004_prep_equipo_pines.sql`, YA APLICADA)
 
