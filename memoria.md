@@ -1,6 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
 
+## 9-Oct-2026 — Conteo nocturno: botón «Sí hubo y ya lo ingresé» en el doble check de Hifumi
+
+Pedido de la encargada de Cafetalón (vía Frank). Cuando el POS no encuentra pedidos de Hifumi (tipo `delivery_app`), el doble check solo ofrecía «No hubo» o «Sí hubo y no lo ingresé». Si el Hifumi se había ingresado sin el botón «Hifumi» (9-oct: Coca-Cola Combo XL como para llevar con la nota «Hifumiii», pagado en efectivo), no había respuesta correcta y se elegía «no hubo».
+
+- `ConteoNocturno.jsx`: con 0 digitados aparece «Sí hubo y ya lo ingresé · guardar conteo», que guarda `respuesta='todos_ingresados'` con `hifumi_registrados=0` (sin migración: el check de la tabla ya acepta ese valor). Esa combinación le dice al cuadre que hubo un Hifumi ingresado de otra forma.
+- Debajo, un aviso: si se ingresó como para llevar o en efectivo, avisar al gerente, porque Hifumi va con el botón «Hifumi» y pago Hifumi (si no, el corte de caja no cuadra).
+- No cambia nada más del conteo.
+
 ## 5-Oct-2026 — Etiquetado: etiqueta más limpia, con fecha de elaboración y ajuste de corrimiento (`zebraZpl.js`, `EtiquetadoApp.jsx`)
 
 **Reporte de Cesar (con 3 fotos):** algunas etiquetas salían corridas: el título cortado arriba, el QR pasándose del borde derecho; y faltaba la fecha de producción. Pidió bajar el tamaño del peso y una etiqueta más minimalista.
