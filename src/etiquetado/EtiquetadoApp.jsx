@@ -165,7 +165,7 @@ export default function EtiquetadoApp() {
     const i = hechas.length + (pendiente ? 1 : 0) + 1
     const unidad = {
       i, g, n: neto(g), hora: horaSV(), ok: dentro(g),
-      vence: fechaSV(prod.dias), fecha: fechaSV(0),
+      vence: fechaSV(Number(prod.dias) > 0 ? Number(prod.dias) : 15), fecha: fechaSV(0),
     }
 
     // Última unidad del lote y quedó sola (total impar): no hay con qué

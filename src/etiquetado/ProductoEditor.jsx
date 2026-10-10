@@ -66,6 +66,8 @@ export default function ProductoEditor({ productoBase, onListo, onCerrar }) {
     const gramos = Number(f.gramos)
     if (!nombre) { setErr('Ponele un nombre al producto'); return }
     if (!(gramos > 0)) { setErr('Falta el peso objetivo en gramos'); return }
+    // Sin días la etiqueta salía con vencimiento = día de elaboración (oct-2026). Obligatorio.
+    if (!(Number(f.dias) > 0)) { setErr('Falta en cuántos días vence (mínimo 1)'); return }
     setErr(''); setYendo(true)
     try {
       const guardado = await guardarProducto(pin, {
@@ -74,7 +76,7 @@ export default function ProductoEditor({ productoBase, onListo, onCerrar }) {
         gramos,
         banda: f.banda === '' ? null : Number(f.banda),
         tara: f.tara === '' ? 0 : Number(f.tara),
-        dias: f.dias === '' ? null : Number(f.dias),
+        dias: Number(f.dias),
         conserva: f.conserva,
       })
       onListo(guardado)
@@ -122,7 +124,7 @@ export default function ProductoEditor({ productoBase, onListo, onCerrar }) {
   )
 
   // ── Formulario ──
-  const listo = f.nombre.trim() && Number(f.gramos) > 0
+  const listo = f.nombre.trim() && Number(f.gramos) > 0 && Number(f.dias) > 0
   return marco(
     <div style={card}>
       <div style={{ fontSize: 17, fontWeight: 800 }}>{editando ? 'Corregir producto' : 'Producto nuevo'}</div>
@@ -156,7 +158,7 @@ export default function ProductoEditor({ productoBase, onListo, onCerrar }) {
                  inputMode="decimal" style={input} placeholder="0" />
         </div>
         <div>
-          <label style={label}>Vence en (días)</label>
+          <label style={label}>Vence en (días) *</label>
           <input value={f.dias} onChange={e => up('dias', e.target.value.replace(/[^\d]/g, ''))}
                  inputMode="numeric" style={input} placeholder="30" />
         </div>
