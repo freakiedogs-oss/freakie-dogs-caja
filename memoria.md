@@ -1,5 +1,36 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 10-Oct-2026 — Etiquetado: productos sin días imprimían «vence = elaboración»
+
+**Causa:** Bote de jalapeño, Condimento para 100 lb y Pepinillo rebanado se crearon desde la tablet con `dias` null. `fechaSV(null)` da el mismo día, así que salieron 134 etiquetas así entre el 6 y el 9 de octubre.
+
+**Arreglo:**
+- **Base:** Cesar les asignó 15 días a los tres (UPDATE directo).
+- **`ProductoEditor`:** «Vence en (días)» ahora es obligatorio (mínimo 1).
+- **`EtiquetadoApp`:** red de seguridad; si un producto llega sin días, imprime a 15 días en vez de 0.
+
+**Pendiente:** el peso objetivo del jalapeño (3.162 g) y del pepinillo rebanado (1.5 g) parece mal escrito, en lb o kg en vez de gramos.
+
+## 5-Oct-2026 — Etiquetado: etiqueta más limpia, con fecha de elaboración y ajuste de corrimiento (`zebraZpl.js`, `EtiquetadoApp.jsx`)
+
+**Reporte de Cesar (con 3 fotos):** algunas etiquetas salían corridas: el título cortado arriba, el QR pasándose del borde derecho; y faltaba la fecha de producción. Pidió bajar el tamaño del peso y una etiqueta más minimalista.
+
+- **Causa del corte:** el diseño arrancaba a 0.04" del borde y la impresora no siempre empieza exactamente en el borde del papel (en las fotos el desfase cambia de etiqueta a etiqueta). Además el QR real (versión 5–6, 37–41 módulos) mide 0.55"–0.61", no los 0.5" que se le reservaban; en la simulación el diseño viejo sacaba el QR 0.05" fuera de la etiqueta y lo encimaba con el peso.
+- **Cambios:** margen de seguridad (0.12" arriba, 0.10" a los lados); título en su propia línea a todo el ancho; peso de 0.22" a 0.13" de alto; línea nueva «ELAB dd-mmm-aaaa hh:mm» arriba del vencimiento; el QR ya no tiene tamaño fijo: se calcula según lo que lleva (versión 5–6, 0.55"–0.61") y se alinea al borde derecho con margen.
+- **Ajuste fino sin tocar código:** en ⚙︎ de la pantalla hay flechas de corrimiento (↑↓ ←→, pasos de 0.02", máx ±0.30") que se guardan en el navegador de la tablet (`etiquetado_ajuste`) y se aplican a todas las etiquetas. Se calibra con «Imprimir etiqueta de prueba».
+- **Simulado, no probado en la impresora real:** se renderizó el ZPL de los 18 productos (peor caso: nombre largo, 10 lb, lote «-SIN», 100 unidades, quien imprime con nombre largo) con fuente más ancha que la Zebra. Diseño viejo: QR fuera del borde derecho (−0.05") y encimado con título/peso en los 36 casos. Diseño nuevo: nada fuera ni encimado; tolerancia a corrimiento ≥0.10" izq, 0.07" der, 0.12" arriba, 0.13" abajo. Compila (`npm run build`). Si el corrimiento cambia de una etiqueta a otra (no es fijo), la causa es el sensor de gap: hay que calibrar la cinta (mantener FEED apretado hasta que avance 2-3 etiquetas).
+
+## 6-Oct-2026 — Torre: un pedido devuelto a «Por cobrar» ya no se podía mandar a cocina (migración `torre_confirmar_pago_reavanza_si_ya_comandado`)
+
+**Caso:** WEB-C761380B (Cafetalón). Karina lo mandó a cocina a las 10:41 y lo regresó a «Por cobrar» a las 10:42.
+
+**Causa:** la comanda quedó en el KDS. `torre_confirmar_pago` corta temprano si existe `pos_cuenta_id` («ya_comandado») y no tocaba el estado, así que el botón «En cocina ▶» respondía ok y el pedido seguía en `recibida`.
+
+**Arreglo:**
+- Si ya está comandado y sigue en `recibida`, la función lo pasa a `preparando` sin volver a comandar.
+- El pedido se movió a mano; las 6 comandas siguen en cocina.
+- No quedan otros pedidos en el mismo caso.
+
 ## 6-Oct-2026 — Agrandados: cada tipo paga según su precio + desglose por tipo para la cajera (migración `20261006_agrandados_valor_por_tipo.sql`)
 
 **Reporte de Cesar:** el «Agrandado de bebida» ($0.50) pagaba lo mismo que el «Agrandado Papa y Bebida» ($1.25): $0.10 cada uno, porque `fn_agrandados_panel` contaba 1 unidad por línea, sin ver el tipo.
