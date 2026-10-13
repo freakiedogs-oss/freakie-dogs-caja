@@ -28,6 +28,7 @@ export default function ConfirmarEntrega({user,onBack}){
   const [notas,setNotas]=useState('');
   const [itemsNotas,setItemsNotas]=useState({});
   const [actualizando,setActualizando]=useState(false);
+  const [confirmarTodo,setConfirmarTodo]=useState(false);
   const [errorCarga,setErrorCarga]=useState('');
   const fotoRef=useRef();
   const bottomRef=useRef();
@@ -127,7 +128,12 @@ export default function ConfirmarEntrega({user,onBack}){
         .eq('despacho_id',desp.id)
         .order('id');
       if(error)throw error;
-      setItems(data||[]);
+      // Recepción contada (2-oct-2026, Frank): cada producto arranca VACÍO y hay que
+      // escribir lo que llegó. Antes arrancaba en lo despachado y lo que no se tocaba
+      // contaba como «llegó todo» (Cafetalón 2-oct: 10 paquetes de salchicha
+      // confirmados, llegaron 5).
+      setItems((data||[]).map(it=>({...it,cantidad_recibida:null})));
+      setConfirmarTodo(false);
     }catch(e){
       show('❌ Error al cargar items: '+e.message);
     }
@@ -144,7 +150,7 @@ export default function ConfirmarEntrega({user,onBack}){
 
   const updateItemQuantity=(idx,qty)=>{
     const updated=[...items];
-    updated[idx].cantidad_recibida=Math.max(0,qty);
+    updated[idx].cantidad_recibida=qty==null?null:Math.max(0,qty);
     setItems(updated);
   };
 
@@ -156,6 +162,12 @@ export default function ConfirmarEntrega({user,onBack}){
     if(!selectedDespacho)return;
     // Firma obligatoria: el RPC rechaza recepciones sin usuario (auditoría 22-ago)
     if(!user?.id){show('❌ Tu sesión no tiene usuario. Cerrá y volvé a iniciar sesión para firmar la recepción.');return;}
+    // Recepción contada: todo producto tiene que tener cantidad escrita, y toda
+    // diferencia (de menos o de más) lleva nota de qué pasó.
+    const sinContar=items.filter(it=>it.cantidad_recibida==null);
+    if(sinContar.length){show(`❌ Falta escribir lo que llegó de: ${sinContar.map(it=>it.descripcion).join(', ')}`);return;}
+    const sinNota=items.filter((it,i)=>Number(it.cantidad_recibida)!==Number(it.cantidad_despachada)&&!(itemsNotas[i]||'').trim());
+    if(sinNota.length){show(`❌ Escribí en la nota qué pasó con: ${sinNota.map(it=>it.descripcion).join(', ')}`);return;}
     try{
       setActualizando(true);
       // Foto OPCIONAL (antes era obligatoria y frenaba: 78% no se confirmaba)
@@ -175,14 +187,12 @@ export default function ConfirmarEntrega({user,onBack}){
         p_despacho_id:selectedDespacho.id,
         p_usuario:user.id,
         p_foto_url:fotoUrl,
-        p_items:items.map(it=>({despacho_item_id:it.id, producto_id:it.producto_id, cantidad_recibida:it.cantidad_recibida})),
+        p_items:items.map((it,i)=>({despacho_item_id:it.id, producto_id:it.producto_id, cantidad_recibida:it.cantidad_recibida, nota:(itemsNotas[i]||'').trim()||null})),
       });
       if(error)throw error;
 
-      // Notas (el RPC no las toca)
-      const conNota=items.filter((_,i)=>itemsNotas[i]);
-      if(conNota.length) await Promise.all(items.map((item,i)=>
-        itemsNotas[i]?db.from('despacho_items').update({notas:itemsNotas[i]}).eq('id',item.id):Promise.resolve()));
+      // Las notas de cada producto las guarda el RPC (van en p_items.nota, en la
+      // misma transacción). Acá solo queda la observación general de la entrega.
       if(notas) await db.from('despachos_sucursal').update({notas_recepcion:notas}).eq('id',selectedDespacho.id);
 
       show('✅ Entrega confirmada');
@@ -264,14 +274,38 @@ export default function ConfirmarEntrega({user,onBack}){
 
       <div style={{marginTop:20,marginBottom:20}}>
         <div style={{fontWeight:700,fontSize:13,color:'#888',marginBottom:10}}>📦 ITEMS</div>
-        <button className="btn btn-ghost" onClick={()=>{
-          setItems(prev=>prev.map(it=>({...it,cantidad_recibida:it.cantidad_despachada})));
-          setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),100);
-        }} style={{width:'100%',marginBottom:16,padding:12,fontSize:14}}>
+        {!confirmarTodo?(
+        <button className="btn btn-ghost" onClick={()=>setConfirmarTodo(true)} style={{width:'100%',marginBottom:16,padding:12,fontSize:14}}>
           ✅ Todo Completo — Recibí todo conforme
         </button>
+        ):(
+        <div style={{marginBottom:16,padding:'12px 14px',background:'#1a1a1a',border:'1px solid #ca8a04',borderRadius:10}}>
+          <div style={{fontSize:13,fontWeight:800,color:'#facc15',marginBottom:8}}>¿Contaste uno por uno que llegó todo esto?</div>
+          {items.map(it=>{const pp={...(it.catalogo_productos||{}),unidad_medida:it.unidad_medida};return(
+            <div key={it.id} style={{fontSize:12,color:'#ddd',padding:'3px 0',borderTop:'1px solid #2a2a2a'}}>{it.descripcion}: <b>{porEmpaque(pp)?textoCajas(pp,it.cantidad_despachada):`${fmtCant(it.cantidad_despachada)} ${it.unidad_medida||''}`}</b></div>);})}
+          <div style={{fontSize:11,color:'#888',margin:'8px 0'}}>Si algo no llegó completo, tocá «Volver» y escribí la cantidad real en ese producto.</div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-ghost" onClick={()=>setConfirmarTodo(false)} style={{flex:1,padding:10,fontSize:13}}>Volver</button>
+            <button className="btn btn-red" onClick={()=>{
+              setItems(prev=>prev.map(it=>({...it,cantidad_recibida:it.cantidad_despachada})));
+              setConfirmarTodo(false);
+              setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),100);
+            }} style={{flex:1,padding:10,fontSize:13}}>Sí, conté todo</button>
+          </div>
+        </div>
+        )}
         {items.map((it,idx)=>{
-          const isDiff=it.cantidad_recibida!==it.cantidad_despachada;
+          const vacio=it.cantidad_recibida==null;
+          const isDiff=!vacio&&Number(it.cantidad_recibida)!==Number(it.cantidad_despachada);
+          const deMas=!vacio&&Number(it.cantidad_recibida)>Number(it.cantidad_despachada);
+          const faltaNota=isDiff&&!(itemsNotas[idx]||'').trim();
+          const borde=vacio?'#3f3f46':deMas?'#b91c1c':isDiff?'#713f12':'#166534';
+          const fondo=deMas?'#3a1616':isDiff?'#4a3a1a':'#1a1a1a';
+          const avisos=(<>
+            {vacio&&<div style={{fontSize:11,color:'#a1a1aa',marginTop:6}}>⏳ Falta escribir cuánto llegó</div>}
+            {deMas&&<div style={{fontSize:11,color:'#fca5a5',marginTop:6,fontWeight:700}}>⚠ Estás recibiendo MÁS de lo despachado. Revisá el número; si de verdad llegó de más, explicalo en la nota.</div>}
+          </>);
+          const notaInput=(<input type="text" placeholder={isDiff?'Obligatorio: ¿qué pasó? (no llegó, vino de más, dañado…)':'Notas para este ítem...'} value={itemsNotas[idx]||''} onChange={(e)=>updateItemNota(idx,e.target.value)} style={{width:'100%',marginTop:8,padding:'8px 10px',background:'#0a0a0a',border:`1px solid ${faltaNota?'#f97316':'#2a2a2a'}`,borderRadius:6,color:'#fff',fontSize:12}}/>);
           // Bebidas (24-sep-2026, Frank): se reciben igual que se cuentan en la
           // noche y se registran de La Constancia — cajas/fardos cerrados +
           // sueltas — con el total en unidades a la vista. El resto de productos
@@ -279,30 +313,32 @@ export default function ConfirmarEntrega({user,onBack}){
           const pp={...(it.catalogo_productos||{}),unidad_medida:it.unidad_medida};
           if(pp.conteo_modo==='bebidas'&&porEmpaque(pp)){
             const pres=aCajas(pp,it.cantidad_recibida||0);
+            const vCaja=vacio?'':pres.cajas, vSuelta=vacio?'':pres.sueltas;
             const setPres=(cajas,sueltas)=>updateItemQuantity(idx,aUnidades(pp,cajas,sueltas));
             const btn={padding:'8px 12px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700};
             const inp={flex:1,padding:'8px 10px',background:'#141414',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',textAlign:'center',fontSize:14};
             return(
-            <div key={it.id} style={{marginBottom:12,padding:'12px 14px',background:isDiff?'#4a3a1a':'#1a1a1a',borderRadius:10,border:`1px solid ${isDiff?'#713f12':'#2a2a2a'}`}}>
+            <div key={it.id} style={{marginBottom:12,padding:'12px 14px',background:fondo,borderRadius:10,border:`1px solid ${borde}`}}>
               <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>{it.descripcion}</div>
               <div style={{fontSize:12,color:'#60a5fa',marginBottom:10}}>📦 Enviado: <b>{textoCajas(pp,it.cantidad_despachada)}</b></div>
               <div style={{fontSize:12,fontWeight:700,color:'#60a5fa',marginBottom:4}}>Cerradas: {labelCaja(pp)}</div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 <button onClick={()=>setPres(Math.max(0,pres.cajas-1),pres.sueltas)} style={btn}>−</button>
-                <input type="text" inputMode="decimal" value={pres.cajas} onChange={(e)=>setPres(Number(e.target.value.replace(/[^\d.]/g,''))||0,pres.sueltas)} style={inp}/>
+                <input type="text" inputMode="decimal" value={vCaja} placeholder="0" onChange={(e)=>setPres(Number(e.target.value.replace(/[^\d.]/g,''))||0,pres.sueltas)} style={inp}/>
                 <button onClick={()=>setPres(pres.cajas+1,pres.sueltas)} style={btn}>+</button>
               </div>
               {tieneSueltas(pp)&&(<>
                 <div style={{fontSize:12,fontWeight:700,color:'#facc15',margin:'8px 0 4px'}}>Sueltas: {labelSuelta(pp)}</div>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <button onClick={()=>setPres(pres.cajas,Math.max(0,pres.sueltas-1))} style={btn}>−</button>
-                  <input type="text" inputMode="numeric" value={pres.sueltas} onChange={(e)=>setPres(pres.cajas,parseInt(e.target.value.replace(/[^\d]/g,''),10)||0)} style={inp}/>
+                  <input type="text" inputMode="numeric" value={vSuelta} placeholder="0" onChange={(e)=>setPres(pres.cajas,parseInt(e.target.value.replace(/[^\d]/g,''),10)||0)} style={inp}/>
                   <button onClick={()=>setPres(pres.cajas,pres.sueltas+1)} style={btn}>+</button>
                 </div>
               </>)}
-              <div style={{fontSize:12,color:'#4ade80',marginTop:6,textAlign:'center',fontWeight:700}}>Recibido = {fmtCant(it.cantidad_recibida||0)} {unidadStock(pp)}</div>
+              {!vacio&&<div style={{fontSize:12,color:'#4ade80',marginTop:6,textAlign:'center',fontWeight:700}}>Recibido = {fmtCant(it.cantidad_recibida||0)} {unidadStock(pp)}</div>}
               {isDiff&&<div style={{fontSize:11,color:'#f97316',marginTop:6}}>Diferencia: {fmtCant((it.cantidad_recibida||0)-it.cantidad_despachada)} {unidadStock(pp)}</div>}
-              <input type="text" placeholder="Notas para este ítem..." value={itemsNotas[idx]||''} onChange={(e)=>updateItemNota(idx,e.target.value)} style={{width:'100%',marginTop:8,padding:'8px 10px',background:'#0a0a0a',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',fontSize:12}}/>
+              {avisos}
+              {notaInput}
             </div>
             );
           }
@@ -312,7 +348,7 @@ export default function ConfirmarEntrega({user,onBack}){
           const pres=it.catalogo_productos?.conteo_unidad||'';
           const enEmp=(q)=>Math.round((Number(q||0)/fac)*100)/100;
           return(
-            <div key={it.id} style={{marginBottom:12,padding:'12px 14px',background:isDiff?'#4a3a1a':'#1a1a1a',borderRadius:10,border:`1px solid ${isDiff?'#713f12':'#2a2a2a'}`}}>
+            <div key={it.id} style={{marginBottom:12,padding:'12px 14px',background:fondo,borderRadius:10,border:`1px solid ${borde}`}}>
               <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>{it.descripcion}</div>
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
                 <div style={{flex:1,fontSize:12,color:'#888'}}>
@@ -326,12 +362,13 @@ export default function ConfirmarEntrega({user,onBack}){
               </div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 <button onClick={()=>updateItemQuantity(idx,Math.max(0,(it.cantidad_recibida||0)-fac))} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>−</button>
-                <input type="number" value={it.cantidad_recibida||0} onChange={(e)=>updateItemQuantity(idx,parseFloat(e.target.value)||0)} style={{flex:1,padding:'8px 10px',background:'#141414',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',textAlign:'center',fontSize:14}}/>
+                <input type="number" inputMode="decimal" placeholder="¿Cuánto llegó?" value={vacio?'':it.cantidad_recibida} onChange={(e)=>updateItemQuantity(idx,e.target.value===''?null:(parseFloat(e.target.value)||0))} style={{flex:1,padding:'8px 10px',background:'#141414',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',textAlign:'center',fontSize:14}}/>
                 <button onClick={()=>updateItemQuantity(idx,(it.cantidad_recibida||0)+fac)} style={{padding:'8px 10px',background:'#2a2a2a',border:'none',borderRadius:6,color:'#fff',fontSize:16,cursor:'pointer',fontWeight:700}}>+</button>
               </div>
-              {fac!==1&&<div style={{fontSize:11,color:'#666',marginTop:4,textAlign:'center'}}>recibido: {enEmp(it.cantidad_recibida)} × {pres||'empaque'}</div>}
+              {fac!==1&&!vacio&&<div style={{fontSize:11,color:'#666',marginTop:4,textAlign:'center'}}>recibido: {enEmp(it.cantidad_recibida)} × {pres||'empaque'}</div>}
               {isDiff&&<div style={{fontSize:11,color:'#f97316',marginTop:6}}>Diferencia: {(it.cantidad_recibida||0)-it.cantidad_despachada} {it.unidad_medida}{fac!==1?` (${enEmp((it.cantidad_recibida||0)-it.cantidad_despachada)} ${pres||'empaques'})`:''}</div>}
-              <input type="text" placeholder="Notas para este ítem..." value={itemsNotas[idx]||''} onChange={(e)=>updateItemNota(idx,e.target.value)} style={{width:'100%',marginTop:8,padding:'8px 10px',background:'#0a0a0a',border:'1px solid #2a2a2a',borderRadius:6,color:'#fff',fontSize:12}}/>
+              {avisos}
+              {notaInput}
             </div>
           );
         })}

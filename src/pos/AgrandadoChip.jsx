@@ -14,8 +14,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { db } from '../supabase'
+import AgrandadoDesglose from './AgrandadoDesglose'
 
 const money = (n) => '$' + Number(n || 0).toFixed(Number(n) % 1 === 0 ? 0 : 2)
+// Desde el 6-oct-2026 mes/hoy/resto/faltan son PUNTOS (papa y bebida = 1, papa = 0.8, bebida = 0.4).
+const pts = (n) => Number(n || 0).toLocaleString('es', { maximumFractionDigits: 1 })
 
 export default function AgrandadoChip({ user }) {
   const [f, setF]         = useState(null)
@@ -180,7 +183,7 @@ export default function AgrandadoChip({ user }) {
           }}>
           💵 {money(f.dinero)}
           <span style={{ color: '#86efac', fontWeight: 400, marginLeft: 6 }}>
-            {f.resto}/{f.bloque_tam}
+            {pts(f.resto)}/{f.bloque_tam}
           </span>
           {tocinoOn && (
             <span style={{ color: '#fb923c', marginLeft: 8 }} title="Tocino extra: $0.05 cada uno">
@@ -211,7 +214,7 @@ export default function AgrandadoChip({ user }) {
                 {money(f.dinero)}
               </div>
               <div style={{ color: '#86efac', fontSize: 13 }}>
-                {Number(f.mes).toLocaleString('es')} agrandados · {f.bloques} bloque{f.bloques === 1 ? '' : 's'}
+                {Number(f.unid_mes ?? f.mes).toLocaleString('es')} agrandados · {f.bloques} bloque{f.bloques === 1 ? '' : 's'}
               </div>
             </div>
 
@@ -232,32 +235,18 @@ export default function AgrandadoChip({ user }) {
                 <div style={{ color: '#60a5fa', fontSize: 27, fontWeight: 700, margin: '2px 0' }}>
                   ${(f.hoy * Number(f.valor_unit)).toFixed(2)}
                 </div>
-                <div style={{ color: '#8a8a92', fontSize: 12 }}>{f.hoy} agrandados</div>
+                <div style={{ color: '#8a8a92', fontSize: 12 }}>{f.unid_hoy ?? f.hoy} agrandados</div>
               </div>
             </div>
 
-            {tocinoOn && (
-              <div style={{ background: '#2a1a0e', border: '1px solid #7c3a12', borderRadius: 11, padding: 13, marginBottom: 11,
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ color: '#fdba74', fontSize: 13 }}>🥓 Tocino extra · ${Number(f.tocino_valor).toFixed(2)} cada uno</div>
-                  <div style={{ color: '#fb923c', fontSize: 27, fontWeight: 700, margin: '2px 0' }}>
-                    ${Number(f.tocino_dinero || 0).toFixed(2)}
-                  </div>
-                  <div style={{ color: '#fdba74', fontSize: 12 }}>
-                    {f.tocino_mes} este mes · hoy {f.tocino_hoy}
-                  </div>
-                </div>
-                <div style={{ fontSize: 30 }}>🥓</div>
-              </div>
-            )}
+            <AgrandadoDesglose f={f} />
 
             <div style={{ background: '#1a1a1c', borderRadius: 11, padding: 14, marginBottom: 11 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <span style={{ fontSize: 15, fontWeight: 700 }}>
-                  {f.faltan} más y son <span style={{ color: '#22c55e' }}>{money(f.dinero_siguiente)}</span>
+                  {pts(f.faltan)} puntos más y son <span style={{ color: '#22c55e' }}>{money(f.dinero_siguiente)}</span>
                 </span>
-                <span style={{ color: '#8a8a92', fontSize: 12 }}>{f.resto} de {f.bloque_tam}</span>
+                <span style={{ color: '#8a8a92', fontSize: 12 }}>{pts(f.resto)} de {f.bloque_tam}</span>
               </div>
               <div style={{ background: '#0d0d0f', borderRadius: 99, height: 20, overflow: 'hidden' }}>
                 <div style={{ background: '#22c55e', height: '100%', borderRadius: 99,
@@ -302,7 +291,7 @@ export default function AgrandadoChip({ user }) {
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700 }}>Tu mejor día fue {f.mejor_dia}</div>
                   <div style={{ color: '#8a8a92', fontSize: 12, marginTop: 2 }}>
-                    {f.hoy >= f.mejor_dia ? '¡Hoy lo igualaste o lo superaste!' : `hoy vas ${f.hoy}`}
+                    {(f.unid_hoy ?? f.hoy) >= f.mejor_dia ? '¡Hoy lo igualaste o lo superaste!' : `hoy vas ${f.unid_hoy ?? f.hoy}`}
                   </div>
                 </div>
                 <div style={{ color: '#fbbf24', fontSize: 24 }}>★</div>

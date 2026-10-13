@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 13-Oct-2026 — Estación de etiquetado: la unificación de pantalla se FRENÓ; dos sistemas conviven y ninguno mueve el kardex
+
+**Hallazgo al retomar.** Entre el 3 y el 11 de octubre Cesar mergeó a `main` (PRs #436–#446) una versión distinta de la estación: PIN al entrar (`PinModal`, `fn_prep_actor`), lote del día por persona (`prep_lotes`), cada impresión registrada en `etiqueta_impresiones` (`fn_etiqueta_registrar_v3`, idempotente), deuda de insumos que bloquea la salida en Mi Asistencia, estación `/preparacion.html` donde al final del turno la persona registra a mano (o pistoleando) qué insumos usó (`prep_lote_insumos`, validado contra los gramos impresos), «Equipo y PINs», etiqueta minimalista con ajuste de corrimiento, días obligatorios. **Esa es la pantalla en la que ya se capacitó a la gente.** La reescritura de `EtiquetadoApp.jsx` que estaba lista acá partía de la versión del 1-oct y la habría borrado completa, así que **no se mergeó**; quedó guardada fuera del repo como referencia.
+
+**Estado real al 13-oct (datos de producción):** 1,453 impresiones desde el 1-oct (queso frito 721 u, salchicha 363, cheddar 326, carne 217…), 58 lotes de preparación (40 cerrados, 502 insumos registrados a mano), 3 deudas abiertas. `produccion_diaria`: **0 tandas** en octubre. Kardex de Casa Matriz en octubre: solo traslados y recepciones. Es decir: el sistema de Cesar documenta consumo declarado por la persona pero **no toca el kardex**, y el flujo de backflush por receta (migraciones `20261002_produccion_estacion_01..05`, aplicadas y probadas) está en la base pero **ninguna pantalla lo llama**. Las bolsas no se dan de alta y las materias primas no se descuentan en ningún lado.
+
+**Qué quedó en este merge:** migración `..._05_unificacion.sql` versionada (ya aplicada: `etiquetado_productos.receta_id/producto_id/requiere_peso/vida_util_estado`, 9 productos ya vinculados; firmas viejas renombradas `_obsoleta_*`), pestaña **Producción → 🏷️ Etiquetado** reescrita sobre `etiquetado_productos` (vincular receta con `fn_etiquetado_vincular_receta`; ya no existe la tabla paralela `produccion_etiquetado_productos`), `unidad.html`. Nada de esto cambia la tablet.
+
+**Propuesta para unificar de verdad sin tocar la pantalla (decisión pendiente de Jose/Cesar):** enganchar en servidor. `fn_etiqueta_registrar_v3` abre/reusa una tanda `produccion_diaria` por (lote, producto) y registra las unidades en `produccion_unidades` con sus gramos; al cerrar el lote (`fn_prep_lote_guardar`) o por el vigilante de las 5:30, `produccion_tanda_cerrar` hace el backflush por receta y da de alta las bolsas en el kardex. Lo que la persona declara en `/preparacion.html` sirve de contraste (merma = declarado − receta), que era la fase 2 del plan. Hay que acordar antes cuál de los dos es la fuente de verdad del consumo para no descontar dos veces, y marcarlo en EN_PROGRESO (Notion sigue sin autorizar en esta sesión).
+
 ## 02-Oct-2026 — Estación de etiquetado conectada al kardex (Fase 1 construida y aplicada)
 
 Se construyó lo planeado en `docs/PLAN-ESTACION-ETIQUETADO-ERP.md` (§7 decisiones de Jose). Migraciones aplicadas en la base con `apply_migration` y versionadas en `supabase/migrations/20261002_produccion_estacion_0[1-4]_*.sql`; la definición anterior de `registrar_produccion` quedó en `supabase/snapshots/`.
@@ -25,6 +35,153 @@ Jose pidió que al pesar e imprimir en `/etiquetado.html` se descarguen insumos 
 - **Tabla estación vs recetas (plan §8):** cuadran Cheddar, Sal, Mil Islas, Chipotle, Cebolla Blanca, Salchicha; hay que pesar Chili (4 bolsas ERP vs 5 lb estación), Escabeche y Mermelada (receta compra 12 bolsas/tanda pero la equivalencia dice 8.7); están mal Truffa (rinde 0.2125 bolsa, mayo y Dijon sin factor) y Ranch (1 galón → 1 bote, descuenta 1 oz); Cebolla Morada se unifica (ojo: 66 lb → 30 bolsas = 54 % pérdida y 0.005 L vinagre, a confirmar).
 - **Datos de Jose (02-oct):** Chili = 4 bolsas de **5 lb**; Cebolla Morada 66 lb → 30 bolsas 1 lb confirmado y vinagre **0.5 L** (la receta dice 0.005); Mermelada bolsa de 5 lb (asumido, pesar); **Ranch ya no se porciona** (bote completo, sale de la estación); Truffa en bolsas de 1 lb (pesar).
 - Notion no estaba autorizado en esta sesión: no se marcó en EN_PROGRESO. Hacerlo antes de tocar `registrar_produccion` o `ProduccionDiaria.jsx`.
+
+## 10-Oct-2026 — Etiquetado: productos sin días imprimían «vence = elaboración»
+
+**Causa:** Bote de jalapeño, Condimento para 100 lb y Pepinillo rebanado se crearon desde la tablet con `dias` null. `fechaSV(null)` da el mismo día, así que salieron 134 etiquetas así entre el 6 y el 9 de octubre.
+
+**Arreglo:**
+- **Base:** Cesar les asignó 15 días a los tres (UPDATE directo).
+- **`ProductoEditor`:** «Vence en (días)» ahora es obligatorio (mínimo 1).
+- **`EtiquetadoApp`:** red de seguridad; si un producto llega sin días, imprime a 15 días en vez de 0.
+
+**Pendiente:** el peso objetivo del jalapeño (3.162 g) y del pepinillo rebanado (1.5 g) parece mal escrito, en lb o kg en vez de gramos.
+
+## 9-Oct-2026 — Conteo nocturno: botón «Sí hubo y ya lo ingresé» en el doble check de Hifumi
+
+Pedido de la encargada de Cafetalón (vía Frank). Cuando el POS no encuentra pedidos de Hifumi (tipo `delivery_app`), el doble check solo ofrecía «No hubo» o «Sí hubo y no lo ingresé». Si el Hifumi se había ingresado sin el botón «Hifumi» (9-oct: Coca-Cola Combo XL como para llevar con la nota «Hifumiii», pagado en efectivo), no había respuesta correcta y se elegía «no hubo».
+
+- `ConteoNocturno.jsx`: con 0 digitados aparece «Sí hubo y ya lo ingresé · guardar conteo», que guarda `respuesta='todos_ingresados'` con `hifumi_registrados=0` (sin migración: el check de la tabla ya acepta ese valor). Esa combinación le dice al cuadre que hubo un Hifumi ingresado de otra forma.
+- Debajo, un aviso: si se ingresó como para llevar o en efectivo, avisar al gerente, porque Hifumi va con el botón «Hifumi» y pago Hifumi (si no, el corte de caja no cuadra).
+- No cambia nada más del conteo.
+
+
+## 5-Oct-2026 — Etiquetado: etiqueta más limpia, con fecha de elaboración y ajuste de corrimiento (`zebraZpl.js`, `EtiquetadoApp.jsx`)
+
+**Reporte de Cesar (con 3 fotos):** algunas etiquetas salían corridas: el título cortado arriba, el QR pasándose del borde derecho; y faltaba la fecha de producción. Pidió bajar el tamaño del peso y una etiqueta más minimalista.
+
+- **Causa del corte:** el diseño arrancaba a 0.04" del borde y la impresora no siempre empieza exactamente en el borde del papel (en las fotos el desfase cambia de etiqueta a etiqueta). Además el QR real (versión 5–6, 37–41 módulos) mide 0.55"–0.61", no los 0.5" que se le reservaban; en la simulación el diseño viejo sacaba el QR 0.05" fuera de la etiqueta y lo encimaba con el peso.
+- **Cambios:** margen de seguridad (0.12" arriba, 0.10" a los lados); título en su propia línea a todo el ancho; peso de 0.22" a 0.13" de alto; línea nueva «ELAB dd-mmm-aaaa hh:mm» arriba del vencimiento; el QR ya no tiene tamaño fijo: se calcula según lo que lleva (versión 5–6, 0.55"–0.61") y se alinea al borde derecho con margen.
+- **Ajuste fino sin tocar código:** en ⚙︎ de la pantalla hay flechas de corrimiento (↑↓ ←→, pasos de 0.02", máx ±0.30") que se guardan en el navegador de la tablet (`etiquetado_ajuste`) y se aplican a todas las etiquetas. Se calibra con «Imprimir etiqueta de prueba».
+- **Simulado, no probado en la impresora real:** se renderizó el ZPL de los 18 productos (peor caso: nombre largo, 10 lb, lote «-SIN», 100 unidades, quien imprime con nombre largo) con fuente más ancha que la Zebra. Diseño viejo: QR fuera del borde derecho (−0.05") y encimado con título/peso en los 36 casos. Diseño nuevo: nada fuera ni encimado; tolerancia a corrimiento ≥0.10" izq, 0.07" der, 0.12" arriba, 0.13" abajo. Compila (`npm run build`). Si el corrimiento cambia de una etiqueta a otra (no es fijo), la causa es el sensor de gap: hay que calibrar la cinta (mantener FEED apretado hasta que avance 2-3 etiquetas).
+
+
+## 6-Oct-2026 — Torre: un pedido devuelto a «Por cobrar» ya no se podía mandar a cocina (migración `torre_confirmar_pago_reavanza_si_ya_comandado`)
+
+**Caso:** WEB-C761380B (Cafetalón). Karina lo mandó a cocina a las 10:41 y lo regresó a «Por cobrar» a las 10:42.
+
+**Causa:** la comanda quedó en el KDS. `torre_confirmar_pago` corta temprano si existe `pos_cuenta_id` («ya_comandado») y no tocaba el estado, así que el botón «En cocina ▶» respondía ok y el pedido seguía en `recibida`.
+
+**Arreglo:**
+- Si ya está comandado y sigue en `recibida`, la función lo pasa a `preparando` sin volver a comandar.
+- El pedido se movió a mano; las 6 comandas siguen en cocina.
+- No quedan otros pedidos en el mismo caso.
+
+
+## 6-Oct-2026 — Agrandados: cada tipo paga según su precio + desglose por tipo para la cajera (migración `20261006_agrandados_valor_por_tipo.sql`)
+
+**Reporte de Cesar:** el «Agrandado de bebida» ($0.50) pagaba lo mismo que el «Agrandado Papa y Bebida» ($1.25): $0.10 cada uno, porque `fn_agrandados_panel` contaba 1 unidad por línea, sin ver el tipo.
+
+**Decisión de Cesar:** pagar proporcional al precio (8% en los tres), desde el 1-oct-2026. Septiembre no se toca.
+- Papa y bebida / Agrandado Combo: 1 punto ($0.10).
+- Papa: 0.8 ($0.08).
+- Bebida: 0.4 ($0.04).
+- Bloques de 100 puntos = $10, igual que antes. El tocino sigue en $0.05/u, sin bloques.
+
+**Qué cambió:**
+- **Config:** `agrandado_config` gana `peso_papa_bebida` (1.0), `peso_papa` (0.8) y `peso_bebida` (0.4).
+- **`fn_agrandado_tipo(nombre, mods)`:** clasifica las líneas que ya contaba `fn_agrandado_es`, así que el total de unidades no cambia. Lo que no reconoce cae en papa y bebida, para que nadie cobre menos por un nombre raro.
+- **`fn_agrandados_panel`:**
+  - `mes`, `hoy`, `resto`, `faltan` y `proyeccion_unid` pasan a ser **puntos** (numeric).
+  - Columnas nuevas: `unid_hoy`/`unid_mes` y `pb_*`/`papa_*`/`beb_*` (hoy y mes), además de `valor_pb`/`valor_papa`/`valor_beb`.
+  - La tasa y la meta (% de cuentas) siguen en unidades.
+- **UI:** `AgrandadoDesglose.jsx` (nuevo) muestra los 4 tipos con monto, cantidad, «+N hoy» y «tu fuerte». Reemplaza la tarjeta de tocino en `AgrandadoChip` y en `AgrandadosView`. Los textos de unidades usan `unid_*`, los de bloque dicen «puntos».
+- **Aplicada vía MCP el 6-oct**, después de que Cesar reconectara el conector con la cuenta freakiedogs@gmail.com.
+- **Nombres en octubre:** «Agrandado Papa y Bebida» (mod), «Agrandado de bebida» (mod e ítem), «Agrandado Soda y Papa» (ítem → papa_bebida) y «Agrandado de bebida para coca combo». «Agrandado de Papa» todavía no tiene ventas.
+- **Efecto al 6-oct:**
+  - Rosa: 409 papa y bebida + 191 bebida = 485.4 puntos → $40 (antes $60).
+  - Kimberly (bloque de 25): 86 + 22 = 94.8 puntos → $7.50 (antes $10).
+- **Falta:** mergear el front (`AgrandadoDesglose`). Mientras tanto, el chip viejo muestra los puntos como «agrandados».
+
+## 4-Oct-2026 — «Turno de Casa Matriz» para Kevin + bug: la estación de insumos no reconocía las recetas de lo impreso (migraciones `prep_cruce_producto_por_clave`, `prep_turno_panel_encargado`, `permisos_turno_casa_matriz`)
+
+Pedido de Cesar: una tabla en vivo para Kevin con quién marcó entrada y salida, qué pesó e imprimió cada uno, y de qué productos ya registró insumos y de cuáles no (y quién los registró).
+
+**Bug encontrado antes de construir, y arreglado (afectaba a TODO lo impreso).** Etiquetado guarda en `etiqueta_impresiones.producto_id` la **clave** del producto (`carne`, `chili`, `cebblanca`), que es lo que `fn_etiquetado_productos` devuelve como `id`. Pero `fn_prep_pendientes_detalle` y `fn_prep_lote_guardar` cruzaban `etiquetado_productos` por **uuid** (`p.id::text = e.producto_id`): nunca coincidía y la clave salía `null`. La estación (`preparacion.js` l.588) caía entonces a «receta libre» vacía (`prod-carne`) en vez de la receta real (carne = 12 insumos, chili = 24), y el servidor aceptaba el cierre igual porque `prod-<id>` es válido. Resultado: se perdía la referencia de receta y toda la validación de tandas. Visto con datos reales del 4-oct (139 impresiones, todas con clave null; 3 lotes abiertos, ninguno cerrado todavía — se arregló antes del primer cierre). Las 128 simulaciones no lo agarraron porque usaban RPC simuladas con uuids. Arreglo: el cruce ahora es `(p.id::text = e.producto_id or p.clave = e.producto_id)`, reescribiendo solo esa condición en las dos funciones (DO block con `replace` sobre `pg_get_functiondef`, falla si no encuentra el texto). Verificado: las 3 deudas abiertas ya devuelven su clave.
+
+**Panel.** `fn_prep_turno(p_actor, p_fecha)` (solo jefe_casa_matriz/admin/ejecutivo/superadmin; la gerencia ve CM001). Una fila por persona: equipo de producción y despacho de la sucursal + cualquiera que marcó entrada ahí o imprimió/debe ese día. Por producto: unidades, gramos, primera/última impresión, lote, `registrado` con **la misma regla que el cierre** (insumos vigentes del lote de la receta del producto), `registrado_por` (si fue otro, se dice), a quién se le pasó la deuda, y si salió autorizado (`prep_deudas.estado='autorizada'`, con quién y motivo). También lotes recibidos de un compañero y deudas de días anteriores. Ordena primero a quien debe.
+- Pantalla `src/components/produccion/TurnoCasaMatrizView.jsx`, pestaña **📋 Turno de Casa Matriz** en Producción (`turno-cm`), primera en el inicio de `jefe_casa_matriz`. Filas `permisos_rol` insertadas (si no, el Sidebar no la muestra). Se refresca cada 20 s y al volver a la pestaña; navega días anteriores. Solo lee.
+- Probado con los datos de hoy: 12 personas, 6 trabajando, 3 deben 4 productos (Samaris: cebolla blanca y salchicha; Alba: chili; Diego: carne).
+- **Pendiente:** correr el build en Windows. Observación de paso: el chili de hoy salió a ~708 g por bolsa (68 bolsas, 106 lb) contra un objetivo de 2,268 g; vale confirmar si cambió la presentación o si el peso objetivo quedó viejo.
+
+## 4-Oct-2026 — Extras pagados en delivery que no llegaban al KDS (migraciones `delivery_quitar_grupos_duplicados_en_combos`, `comanda_delivery_extras_del_combo_al_kds`)
+
+**Reporte de Cesar:** pedido web WEB-F5F5453C (Cafetalón): el cliente pagó Carne y Queso Extra + Tocino en una Freakie Burger, la torre lo mostraba, el KDS no. «Me pasa muy seguido».
+
+**Causa — de configuración, no del KDS.** Desde el **30-sep a mediodía**, 19 combos del menú de delivery tenían el **mismo grupo colgado dos veces**: del combo y de un componente. El Freakie Burger tenía «Complementos Hamburguesa», «Salsas Papas» y «Bebida» en los dos niveles, todos obligatorios. La web preguntaba dos veces; el cliente elegía el extra en la primera y «Sin Extra» en la segunda para poder avanzar. `_comanda_delivery` arma una tarjeta del KDS **por componente** con solo las opciones de ese componente, así que la cocina veía «Sin Extra» y el extra pagado quedaba en `pos_cuenta_items.modificadores` (que la torre sí muestra). Medido: **23 pedidos y $39.23 en extras invisibles** entre el 30-sep y el 4-oct (Cafetalón $20.48, Lourdes $11.75, Soyapango $5.50, Venecia $1.50). Antes del 30-sep, cero. No hay auditoría en `pos_item_modificadores` (solo dos columnas), así que no se puede saber quién lo asignó; el botón «🔗 grupo → Todos» de Admin Menú › Asignar es el sospechoso natural.
+
+- **Arreglo de datos:** se borraron las 33 asignaciones combo-nivel duplicadas, **respaldadas** en `_respaldo_item_mods_20261004` (menu_item_id, grupo_id, combo, grupo). Solo menú de delivery y solo donde el grupo existe en un componente: ningún combo queda sin preguntar. El Freakie Burger ahora pregunta una vez por grupo.
+- **Red de seguridad en `_comanda_delivery`:** toda opción elegida a nivel combo que no esté ya en un componente se manda a la tarjeta del componente cuyo grupo la contiene (Tocino → Hamburguesa, Cheddar → Fries); si su grupo no cuelga de ningún componente, va a la primera tarjeta. Si llega un extra **pagado** y en esa tarjeta había un «Sin …» del mismo grupo, el «Sin …» se quita. **Solo cambia `pos_cocina_queue`**; la cuenta queda igual porque de ahí descarga inventario y cobra (tocarla contaría el extra dos veces).
+- **Probado con el pedido real** clonado dentro de una transacción revertida: Hamburguesa ×1 → «Kolashampan, Carne y Queso Extra $1.50, Tocino $0.75»; Hamburguesa ×3 → «Kolashampan, Sin Extra». Sin basura en la base.
+- **Todo en la base, nada en el frontend:** vale desde el próximo pedido sin deploy.
+- **Pendiente:** (1) que el Admin Menú impida asignar a un combo un grupo que ya tiene un componente, o al menos lo avise; (2) revisar si el POS (caja) y PeYa tienen el mismo hueco — esto solo cubrió delivery propio; (3) `pos_item_modificadores` sin auditoría.
+
+
+## 4-Oct-2026 — «Sin carne / sin pan / sin salchicha» en caja, escondidos en «Más opciones» (migración `sin_poco_comunes`)
+
+Por qué: el 3-oct en Cafetalón un Freakie Burger web (WEB-FA0000E6) se pidió «sin los dos medallones» solo en la nota. La descarga lee receta y modificadores, no notas: se descontaron 2 bolitas que no se usaron y el cuadre nocturno lo encontró como sobrante (se corrigió con devolución, OK Frank). Pedido de Frank: que se pueda marcar en caja, pero sin llenar la pantalla con botones que casi nunca se usan.
+
+- **Ya existía el «Sin…»** (18-ago): ingredientes con `receta_ingredientes.removible` salen como botones y viajan como modificador `grupo_nombre='SIN'` con `quitar`; `pos_explotar_linea` y `pos_deducir_inventario` no descuentan ese ingrediente. Carne, pan y salchicha simplemente no eran removibles.
+- **Nuevo `receta_ingredientes.poco_comun`.** Carne (Mezcla de Carne Smash ×2 en Hamburguesa Sencilla armada), pan de hamburguesa, salchicha y pan de hot dog (Freakie Dog armado, Super Freak armado, Chilli dog individual) pasan a removibles y poco comunes. Etiquetas distintas («Pan de hamburguesa» / «Pan de hot dog») para que en un Burger Box un SIN no le quite el pan al otro.
+- **UI** (`ProductoModifiersModal.jsx` y el `ComboModal` de `POSMain.jsx`): lo común sigue a la vista; lo `poco_comun` queda dentro de «▸ Más opciones (poco comunes) · sin carne, sin pan…», que se abre solo al tocarlo (o si ya hay uno marcado al editar). Comanda, KDS y doble check ya mostraban los SIN.
+- **RPC nueva `pos_removibles_item`** = `pos_ingredientes_removibles` + `poco_comun`. La vieja queda igual para las cajas con la app en caché (ahí carne y pan salen a la vista mientras no recarguen).
+- **Límite:** el SIN se aplica a toda la línea; en un Duo «sin carne» quita la carne de las dos hamburguesas. La extra («Carne y queso extra») no se toca, entra por modificador.
+- `RecetasView.jsx` guarda también `poco_comun` (el guardado de recetas es delete + insert: sin esto, editar la Hamburguesa Sencilla pondría «Carne» a la vista).
+- **No usar «Sin pan de hamburguesa» junto con «EN LECHUGA»**: la lechuga ya devuelve el pan.
+- **Pendiente:** el menú web todavía no tiene «Sin…»; el cliente lo sigue escribiendo en la nota.
+- Probado en modo prueba: la línea de WEB-FA0000E6 con SIN Carne pasa de 2 bolitas a 0 y el pan queda en 1.
+
+## 3-Oct-2026 — Recepción contada en la sucursal (migración `recepcion_contada`)
+
+Por qué: el 2-oct Cafetalón confirmó 10 paquetes de salchicha cuando solo llegaron 5. La pantalla de «Confirmar entrega» venía llena con lo despachado y bastaba «Todo completo» para recibir sin contar; el cuadre nocturno lo destapó como faltante de 125 salchichas. Además el RPC aceptaba recibir MÁS de lo despachado sin ninguna explicación. Pedido de Frank.
+
+- **Cada producto arranca vacío** (`ConfirmarEntrega.jsx`): hay que escribir cuánto llegó; no se puede confirmar con uno sin llenar («Falta escribir lo que llegó de…»).
+- **«Todo completo» pide una segunda confirmación** que lista producto por producto lo que se va a dar por recibido («Volver» / «Sí, conté todo»).
+- **Toda diferencia (de menos o de más) lleva nota obligatoria** en la app. Si es de más, aviso naranja «Estás recibiendo MÁS de lo despachado».
+- **El candado de verdad está en el RPC:** `despacho_confirmar` rechaza (vía humana) recibir más de lo despachado sin `p_items[].nota`. La nota se guarda en `despacho_items.notas` dentro de la misma transacción (se agrega con « | » a lo que ya hubiera); la app ya no la escribe aparte.
+- **Sin cambios** para el cron reconciliador (`p_auto`) ni para clientes viejos: producto sin `cantidad_recibida` = lo despachado. La diferencia de menos no se bloquea en el RPC para no trabar una PWA en caché; la exige la app.
+- `TransferenciaBebidas.jsx` (transferencias entre sucursales, pasa por el mismo RPC): si se recibe de más pide la nota con un prompt.
+- Probado en modo prueba sobre el último despacho de M001: de más sin nota → bloquea; con nota → recibe, guarda nota y kardex; cron → igual que antes.
+- Afecta la recepción de TODAS las sucursales.
+
+
+## 3-Oct-2026 — Apartado «Equipo y PINs» para Kevin (migración `20261004_prep_equipo_pines.sql`, YA APLICADA)
+
+Pedido de Cesar: los PIN de producción existen pero la gente no sabe cuál es el suyo; Kevin (jefe de Casa Matriz) necesita verlos para dárselos. En la tablet de etiquetado, quien entra con rol de encargado ve el recuadro «👥 Equipo y PINs» (`EquipoPines.jsx`): pide el PIN de encargado otra vez, lista al equipo (producción y despacho de su sucursal, 11 personas en CM001) y cada PIN se pide de a uno (`fn_equipo_pin_ver`), se ve 15 s y se oculta; se cierra solo a los 60 s sin tocar. La lista (`fn_equipo_lista`) nunca trae PIN, solo `tiene_pin`. Cada consulta queda en `prep_bitacora` (`pin_consultado`, con quién y a quién). No se pueden ver PIN de otros encargados ni de otras sucursales (probado en producción con una transacción revertida). Tradeoff aceptado por Cesar: si el jefe conoce el PIN de alguien, podría imprimir a su nombre; por eso la consulta es bajo demanda y auditada. Pendiente posible: «cambiar PIN» por persona y mostrar la bitácora de consultas en el panel Datos.
+
+## 3-Oct-2026 — Estación de preparación + PIN al imprimir etiquetas + salida bloqueada en Mi Asistencia (migraciones `20261003_prep_*`, YA APLICADAS en producción)
+
+Pedido de Cesar: amarrar el inventario a algo que sí se hace siempre. Las cocineras no se van sin pasar por la tablet, así que el control se ancla en **imprimir etiquetas**: quien imprime pone su PIN, y no puede marcar su salida si el lote de lo que imprimió no tiene los insumos registrados.
+
+- **Corrección de flujo (Cesar, 3-Oct tarde): el orden real es pesar/imprimir → registrar insumos al FINAL del turno → marcar salida.** Nunca se registran insumos antes de imprimir (rompe la cadena de producción). Por eso etiquetado ya no pregunta «¿de qué lote son?»: pide el PIN apenas se abre la pantalla (sin PIN ni se ve la lista de productos), al terminar cada producto o al cancelar vuelve a pedirlo, y en la selección de producto/cantidad se bloquea sola tras 30 s sin tocar nada (pesando no aplica). Todo lo que una persona imprime en el día cae en su **lote del día** (`fn_prep_lote_del_dia`, migración `20261003_prep_lote_del_dia.sql`, ya aplicada): reutiliza el lote abierto de hoy y abre uno nuevo si ya lo cerró. Al final del turno registra los insumos una sola vez entrando a `/preparacion.html` con su PIN (o desde el modal de Mi Asistencia). Decisión de Cesar: un lote por persona por día, no por producto (menos trazabilidad por tanda, pero registro de fin de turno viable).
+- **Corrección encontrada con la previsualización (migración `20261003_prep_pendientes_por_lote.sql`, aplicada):** al pasar una deuda a un compañero, `fn_prep_pendientes_detalle` y `fn_salida_pendientes` filtraban los productos por la persona que imprimió y el compañero no veía nada que registrar; ahora salen por lote (el lote del día es de una sola persona).
+- **Estación de insumos amarrada a lo impreso (Cesar, 3-Oct noche).** `/preparacion.html` ahora también pide PIN antes de mostrar nada (compuerta sin «Cancelar»; 30 s sin tocar en «qué preparás» la bloquean y vuelve a pedirlo; si había una tanda a medias, la misma persona la retoma al volver a entrar). Con el PIN, `fn_prep_pendientes_detalle` (migración `20261003_prep_pendientes_detalle.sql`, aplicada) devuelve lo que esa persona imprimió y no tiene insumos, por producto; la pantalla solo muestra las recetas de esos productos y quita «Otra preparación». Si no imprimió nada pendiente, no puede registrar. Se cruza por la clave del producto de etiquetado = id de receta del catálogo (`RECETA_DE` cubre `pepinillotritura`→`pepinillo`); un producto sin receta (p. ej. los que crea Kevin) aparece como receta libre con su nombre. **Excepción:** los encargados (jefe_casa_matriz, admin, superadmin, ejecutivo) ven todas las recetas. Limitación honesta: la restricción es de la pantalla; el servidor (`fn_prep_lote_guardar`) no valida que las recetas guardadas coincidan con lo impreso. Se quitó el botón «Mis pendientes» (el PIN ya hace esa búsqueda).
+- **Insumos coherentes con lo pesado (Cesar, 3-Oct noche: «10 bolsitas de queso frito = 3 lb no pueden registrarse como 0.3 lb»).** Migración `20261003_prep_gramos_impresos.sql` (aplicada): `etiqueta_impresiones.gramos` + `fn_etiqueta_registrar_v2` (la 5-args vieja sigue existiendo) + `fn_prep_pendientes_detalle` devuelve `gramos` y `gramos_objetivo`; etiquetado envía los gramos reales de cada impresión. La estación calcula cuántas tandas corresponden a lo impreso: por rendimiento (`RINDE_BASE`, `cfg.rendimientos[receta]` o la línea de bolsas AB-BVNT del empaque) y, si no hay, por balance de masa (suma de insumos convertibles ≥300 g vs gramos impresos). Bloquea el cierre si tandas registradas/esperadas queda fuera de [0.65, 1.5] o un insumo/esperado fuera de [0.5, 2]. Cierre forzado: PIN de encargado + motivo, guardado en `prep_lotes.recetas` (`tandas_esperadas`, `pesado`, `forzado_por`, `forzado_motivo`, `forzado_detalle`). Recetas sin referencia (cheddar, cebolla blanca, chipotle, truffa, pepinillo, jalapeño, salchicha granel, libres) se registran sin validar. Límites: validación solo en pantalla (no en el servidor), umbrales fijos en código, impresiones viejas sin gramos usan unidades × gramos_objetivo.
+- **Bug encontrado probando (Cesar, Karina en la previsualización): imprimir queso frito con la estación ya abierta no aparecía en insumos.** La estación leía `fn_prep_pendientes_detalle` una sola vez al entrar con el PIN, y al cerrar el lote la deuda se saldaba igual aunque ese producto no tuviera insumos. Ahora `refrescarImpresas()` (en `preparacion.js`) vuelve a consultar cada 15 s, al volver a la pestaña/ventana y antes de cerrar la tanda; suma a la lista lo nuevo, actualiza los gramos y, si apareció algo nuevo al cerrar, regresa al paso 1. Además `incoherencias()` bloquea el cierre si una receta impresa quedó sin ningún insumo (forzable solo con PIN de encargado). Sigue siendo validación de pantalla, no del servidor.
+- **128 simulaciones (3-Oct noche):** 72 de servidor (funciones SQL reales en Postgres local con reloj simulado: turnos normales, medianoche, día siguiente, buzón sin red, traspasos, autorizaciones, carreras, PIN) + 51 de pantalla (build real con RPC simuladas: 13 recetas honestas, ±20 %, 40 %, doble peso, absurdos ×50) + 5 de comportamiento (bloqueo a 30 s, borrador, sin red). Sin falsos bloqueos con registros honestos o ±20 %. Hallazgos principales (sin corregir todavía): impresión que llega tras cerrar el lote no abre deuda; el servidor cierra lotes vacíos/parciales/ajenos; un encargado puede autorizarse solo; 25 PIN fallidos de cualquiera bloquean también el login del POS (comparten `login_intentos`); reintento duplica impresiones; carrera crea deudas duplicadas; pasos 2–3 de la estación no se bloquean por inactividad; borrador único por tablet; salida sin marcar evade el control; cheddar/cebolla blanca/chipotle/truffa sin validación; rol `rrhh` con `es_productor` no entra.
+- **Endurecimiento tras las simulaciones (4-Oct-2026, migración `20261004_prep_endurecer.sql`, YA APLICADA y probada en producción con una transacción revertida).** (1) `fn_etiqueta_registrar_v3`: idempotente por `clave_idem` (índice único) y, si el lote ya está cerrado, mueve la impresión al lote abierto de hoy y abre deuda (`redirigida`); v2 y v1 quedan como atajos a v3. (2) `fn_prep_lote_guardar` ahora valida: el lote es de quien cierra (o traspaso, o encargado), hay al menos un insumo y cada producto impreso tiene insumos de su receta (alias `pepinillotritura`→`pepinillo`, `prod-<id>` para libres); error `P0001`. (3) `fn_salida_autorizar` rechaza autorizarse a uno mismo. (4) `fn_prep_actor` cuenta fallos en `prep_intentos` (ya no toca `login_intentos`, así no bloquea el login de la caja) y un PIN real sin permiso no cuenta como fallo. (5) Índice único `prep_deudas_una_abierta_uq` (una deuda abierta por lote y persona). (6) `fn_prep_datos` devuelve `deudas_viejas` (panel «Datos») y Mi Asistencia avisa al marcar entrada si hay lotes de días anteriores sin insumos. Pantallas: etiquetado envía `p_clave` único por impresión (también desde el buzón) y la estación no manda al buzón los rechazos del servidor (los muestra y vuelve a la revisión). Pendiente de las simulaciones (no hecho): bloqueo por inactividad en pasos 2–3, borrador por persona, tope de traspasos, día operativo desde las 5 am, rol `es_productor`, recetas sin referencia. Observación aparte: `MiAsistencia` actualiza la salida con `fecha = hoy`; un turno que cruza medianoche podría no encontrar su fila de entrada.
+- **Imprimir nunca se bloquea.** Si el lote no está cerrado (sin insumos registrados), imprimir abre una deuda (`prep_deudas`, estado `abierta`) a nombre de quien imprimió. Bloquear la impresión pararía la producción; bloquear la salida no.
+- **Un PIN por persona, sin sesiones abiertas.** `fn_prep_actor(p_pin, p_solo_encargado)` valida el PIN en el servidor (mismo freno de intentos que `erp_login`) y devuelve quién es; el PIN no se guarda. En etiquetado se pide al «Empezar a pesar» y se cierra al volver atrás o terminar. En la estación se pide al empezar la tanda, al cerrar y al corregir.
+- **Estación de preparación nueva (`/preparacion.html`, `src/preparacion/`).** Se elige la receta, se pesa/anota lo usado y se cierra la tanda; el lote se crea al cerrar (no quedan lotes abiertos huérfanos). Correcciones versionadas (`prep_lote_insumos.vigente=false`), nunca se borra nada. Catálogo de 64 insumos (FDI-001..064) y 17 recetas sembrado en `prep_config` ('catalogo'); `catalogo.json` es copia para la tablet sin red.
+- **Modo observación:** las recetas son la referencia, pero salirse NO bloquea; se registra el ratio real/receta por insumo y persona. Panel «Datos» (promedio por insumo, % exacto por persona, bitácora) detrás de PIN de encargado.
+- **Mi Asistencia (`MiAsistencia.jsx`):** al marcar salida consulta `fn_salida_pendientes`. Si hay deudas y el ajuste `bloquearSalida` está activo (por defecto sí) muestra un modal con tres salidas: registrar insumos ahora (abre `/preparacion.html?lote=<id>`), pasar el lote a un compañero con su PIN (`fn_salida_traspasar`), o autorización de un encargado con PIN y motivo (`fn_salida_autorizar`). Si la consulta falla NO se bloquea la salida (no trancar a nadie por falta de red).
+- **Offline:** buzón en localStorage (`prep_buzon_v1`, `etiquetado_buzon_v1`), borrador de tanda y caché del catálogo; las impresiones se suben solas al volver la red.
+- **Ajustes** del encargado en `prep_config` ('ajustes'), con `fn_prep_ajustes` / `fn_prep_ajustes_guardar`.
+- Tablas nuevas (RLS activa, sin políticas: todo entra por funciones `security definer`): `prep_config`, `prep_alias`, `prep_insumos_nuevos`, `prep_lotes`, `prep_lote_insumos`, `etiqueta_impresiones`, `prep_deudas`, `prep_bitacora`. Los cambios de base son aditivos y ya están en producción; la parte de pantallas necesita deploy.
+- Archivos: `preparacion.html` (+ entrada en `vite.config.js`), `src/preparacion/*`, `src/etiquetado/{PinModal.jsx,lotes.js}`, `EtiquetadoApp.jsx`, `etiquetado-main.jsx` (ya no hay «operador del día»), `MiAsistencia.jsx`, `supabase/migrations/20261003_prep_*.sql`.
+- Probado con Playwright y RPC simuladas (build OK): PIN bueno/malo, lote sin preparación, impresión en parejas con registro, enlace de pendiente, modal de salida con PIN de encargado y marcado automático después. NO probado con la báscula, la Zebra ni usuarios reales (no se usaron PINs reales).
+- Queda una función suelta e inofensiva `public._prep_prueba(int)` de las pruebas; se puede borrar con confirmación.
+- **Pendiente / por decidir:** ¿mantener los códigos FDI-049..053 (papas/aros)?, mapeo Salchicha paquete vs unidad, recetas sin ingredientes (Pepinillo, Jalapeño, Salchicha granel) y Ranch con unidad distinta. Medir en la práctica cuánta gente escanea vs. toca el checklist.
 
 ## 2-Oct-2026 — Kevin mantiene la lista de productos del etiquetado desde la misma báscula (migraciones `etiquetado_productos_tabla`, `_funciones`, `_retiro_automatico_15_dias`, `_alta_revive_retirado`)
 

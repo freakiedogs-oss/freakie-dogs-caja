@@ -66,6 +66,7 @@ export default defineConfig({
         pesaje:      resolve(__dirname, 'pesaje.html'),
         etiquetado:  resolve(__dirname, 'etiquetado.html'),
         unidad:      resolve(__dirname, 'unidad.html'),
+        preparacion: resolve(__dirname, 'preparacion.html'),
       },
       output: {
         manualChunks(id) {

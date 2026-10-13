@@ -328,7 +328,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   useEffect(() => {
     if (!modPicker?.id) { setRemovibles([]); return }
     let vivo = true
-    db.rpc('pos_ingredientes_removibles', { p_menu_item_id: modPicker.id })
+    db.rpc('pos_removibles_item', { p_menu_item_id: modPicker.id })
       .then(({ data, error }) => {
         if (vivo) setRemovibles(!error && Array.isArray(data) ? data : [])
       })
@@ -347,7 +347,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   useEffect(() => {
     if (!comboPicker?.id) { setRemoviblesCombo([]); return }
     let vivo = true
-    db.rpc('pos_ingredientes_removibles', { p_menu_item_id: comboPicker.id })
+    db.rpc('pos_removibles_item', { p_menu_item_id: comboPicker.id })
       .then(({ data, error }) => {
         if (vivo) setRemoviblesCombo(!error && Array.isArray(data) ? data : [])
       })
@@ -2194,6 +2194,7 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
   const toast = useToast()
   const [sel, setSel] = useState(() => bebidaPorDefecto(combo))   // "secKey:grupoId" -> [modId,...]
   const [sin, setSin] = useState([])   // nombres de ingredientes a quitar del combo
+  const [verRaros, setVerRaros] = useState(false)   // «Más opciones»: SIN poco comunes (carne, pan, salchicha)
   // Varios combos iguales de un solo golpe: si el cliente pide 3 Freakie Burger
   // con la misma personalización, la cajera arma uno y pone 3, en vez de repetir
   // toda la selección tres veces. Si uno tiene que ir distinto, se agrega aparte.
@@ -2559,12 +2560,42 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
             que es quien conoce sus bloques; se agrupa por bloque para que el
             cajero sepa de dónde sale cada cosa ("Cebolla" es de la hamburguesa). */}
         {removiblesCombo.length > 0 && (() => {
+          // Lo poco común (carne, pan, salchicha: `poco_comun` en la receta) va
+          // escondido en «Más opciones» (Frank, 3-oct-2026). El SIN se aplica a
+          // toda la línea: en un Duo, «sin carne» quita la carne de las dos.
+          const comunes = removiblesCombo.filter(r => !r.poco_comun)
+          const raros = removiblesCombo.filter(r => r.poco_comun)
+          const rarosAbiertos = verRaros || raros.some(r => sin.includes(r.nombre))
           const porBloque = {}
-          removiblesCombo.forEach(r => {
+          comunes.forEach(r => {
             const b = r.bloque || 'General'
             if (!porBloque[b]) porBloque[b] = []
             porBloque[b].push(r)
           })
+          const sinBtn = (r, key) => {
+            const quitado = sin.includes(r.nombre)
+            return (
+              <button key={key}
+                onClick={() => setSin(prev => prev.includes(r.nombre)
+                  ? prev.filter(x => x !== r.nombre)
+                  : [...prev, r.nombre])}
+                style={{
+                  position: 'relative', minHeight: 54, padding: 8, borderRadius: 10,
+                  border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
+                  background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
+                  color: '#e5e7eb', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                  textAlign: 'center', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', lineHeight: 1.2,
+                  textDecoration: quitado ? 'line-through' : 'none',
+                }}>
+                {quitado && (
+                  <span style={{ position: 'absolute', top: 4, right: 5, fontSize: 9, fontWeight: 800,
+                                 color: '#fff', background: '#ef4444', padding: '1px 4px', borderRadius: 4 }}>SIN</span>
+                )}
+                <span style={{ padding: '0 4px' }}>{r.nombre}</span>
+              </button>
+            )
+          }
           return (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontWeight: 800, fontSize: 12, color: '#ef4444',
@@ -2579,33 +2610,36 @@ function ComboModal({ combo, removiblesCombo = {}, onConfirm, onCancel }) {
                     <div style={{ fontSize: 11, color: '#8b8997', marginBottom: 5 }}>{bloque}</div>
                   )}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
-                    {lista.map(r => {
-                      const quitado = sin.includes(r.nombre)
-                      return (
-                        <button key={bloque + r.nombre}
-                          onClick={() => setSin(prev => prev.includes(r.nombre)
-                            ? prev.filter(x => x !== r.nombre)
-                            : [...prev, r.nombre])}
-                          style={{
-                            position: 'relative', minHeight: 54, padding: 8, borderRadius: 10,
-                            border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
-                            background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
-                            color: '#e5e7eb', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
-                            textAlign: 'center', display: 'flex', alignItems: 'center',
-                            justifyContent: 'center', lineHeight: 1.2,
-                            textDecoration: quitado ? 'line-through' : 'none',
-                          }}>
-                          {quitado && (
-                            <span style={{ position: 'absolute', top: 4, right: 5, fontSize: 9, fontWeight: 800,
-                                           color: '#fff', background: '#ef4444', padding: '1px 4px', borderRadius: 4 }}>SIN</span>
-                          )}
-                          <span style={{ padding: '0 4px' }}>{r.nombre}</span>
-                        </button>
-                      )
-                    })}
+                    {lista.map(r => sinBtn(r, bloque + r.nombre))}
                   </div>
                 </div>
               ))}
+              {raros.length > 0 && (
+                <div>
+                  <button onClick={() => setVerRaros(v => !v)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '9px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                      border: '1px dashed #3a3a46', background: 'transparent', color: '#b8b8c4',
+                      fontSize: 12.5, fontWeight: 700,
+                    }}>
+                    <span style={{ fontSize: 11 }}>{rarosAbiertos ? '▾' : '▸'}</span>
+                    <span style={{ flex: 1 }}>Más opciones (poco comunes)
+                      <span style={{ fontWeight: 400, color: '#8b8997' }}> · sin {raros.map(r => r.nombre.toLowerCase()).join(', sin ')}</span>
+                    </span>
+                  </button>
+                  {rarosAbiertos && (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8, marginTop: 8 }}>
+                        {raros.map(r => sinBtn(r, 'raro' + r.nombre))}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#8b8997', marginTop: 6 }}>
+                        Se quita de todo el combo (en un Duo, de las dos piezas).
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )
         })()}

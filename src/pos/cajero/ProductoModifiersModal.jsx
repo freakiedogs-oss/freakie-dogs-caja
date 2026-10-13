@@ -8,7 +8,8 @@
 //   producto, grupos, onClose, onConfirm({ qty, nota, modificadores, precioModificadores })
 //   initial? { qty, nota, selecciones, sin }  → precarga para EDITAR un ítem existente
 //   editMode? bool  → cambia el label del botón a "Guardar cambios"
-//   removibles? [{ nombre }]  → ingredientes que el cliente puede pedir SIN
+//   removibles? [{ nombre, poco_comun }]  → ingredientes que el cliente puede pedir SIN
+//     (los poco_comun van escondidos en «Más opciones»)
 //
 // El "SIN" NO altera el precio (decisión de Jose, 18-ago): quitar el queso no lo abarata.
 // Viaja dentro de `modificadores` con grupo_nombre 'SIN' y precio_extra 0, para reusar toda la
@@ -53,6 +54,8 @@ export default function ProductoModifiersModal({
   const [atencionEspecial, setAtencionEspecial] = useState(initial?.atencionEspecial || false)
   // Ingredientes que el cliente NO quiere (por nombre; es lo que ve cocina).
   const [sinLista, setSinLista] = useState(() => new Set(initial?.sin || []))
+  // «Más opciones»: los SIN poco comunes (carne, pan, salchicha) arrancan escondidos.
+  const [verRaros, setVerRaros] = useState(false)
 
   // El grupo de sabores solo se muestra (y se exige) con el agrandado marcado;
   // si se desmarca, la selección de sabor queda huérfana y no viaja.
@@ -252,56 +255,93 @@ export default function ProductoModifiersModal({
             )
           })}
 
-          {/* SIN — quitar ingredientes. No cambia el precio. */}
-          {removibles.length > 0 && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontWeight: 800, fontSize: 12, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                  Sin…
-                </span>
-                <span style={{ fontSize: 10, color: '#8b8997' }}>tocá lo que el cliente no quiere · no cambia el precio</span>
-              </div>
+          {/* SIN — quitar ingredientes. No cambia el precio.
+              Lo de todos los días (cebolla, pepinillos, queso…) va a la vista; lo que
+              casi nunca se pide (carne, pan, salchicha: `poco_comun` en la receta) queda
+              dentro de «Más opciones» para no llenar la pantalla (Frank, 3-oct-2026).
+              Igual descuenta bien: el cuadre del 3-oct encontró 2 bolitas descontadas
+              de un pedido «sin los dos medallones» escrito solo en la nota. */}
+          {removibles.length > 0 && (() => {
+            const comunes = removibles.filter(r => !r.poco_comun)
+            const raros = removibles.filter(r => r.poco_comun)
+            const rarosAbiertos = verRaros || raros.some(r => sinLista.has(r.nombre))
+            const sinBtn = (r) => {
+              const quitado = sinLista.has(r.nombre)
+              return (
+                <button
+                  key={r.nombre}
+                  onClick={() => toggleSin(r.nombre)}
+                  style={{
+                    position: 'relative',
+                    minHeight: 54,
+                    padding: 8,
+                    borderRadius: 10,
+                    border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
+                    background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
+                    color: quitado ? '#fecaca' : '#e5e7eb',
+                    cursor: 'pointer',
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    textAlign: 'center',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    lineHeight: 1.2,
+                    textDecoration: quitado ? 'line-through' : 'none',
+                    transition: 'border-color .1s, background .1s',
+                  }}
+                >
+                  {quitado && (
+                    <span style={{
+                      position: 'absolute', top: 4, left: 5, fontSize: 10, fontWeight: 900,
+                      color: '#ef4444', letterSpacing: '0.5px',
+                    }}>SIN</span>
+                  )}
+                  <span style={{ padding: '0 4px' }}>{r.nombre}</span>
+                </button>
+              )
+            }
+            return (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontWeight: 800, fontSize: 12, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                    Sin…
+                  </span>
+                  <span style={{ fontSize: 10, color: '#8b8997' }}>tocá lo que el cliente no quiere · no cambia el precio</span>
+                </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
-                {removibles.map(r => {
-                  const quitado = sinLista.has(r.nombre)
-                  return (
+                {comunes.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
+                    {comunes.map(sinBtn)}
+                  </div>
+                )}
+
+                {raros.length > 0 && (
+                  <div style={{ marginTop: comunes.length ? 8 : 0 }}>
                     <button
-                      key={r.nombre}
-                      onClick={() => toggleSin(r.nombre)}
+                      onClick={() => setVerRaros(v => !v)}
                       style={{
-                        position: 'relative',
-                        minHeight: 54,
-                        padding: 8,
-                        borderRadius: 10,
-                        border: '1.5px solid ' + (quitado ? '#ef4444' : '#2a2a32'),
-                        background: quitado ? 'rgba(239,68,68,0.22)' : '#22222c',
-                        color: quitado ? '#fecaca' : '#e5e7eb',
-                        cursor: 'pointer',
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        lineHeight: 1.2,
-                        textDecoration: quitado ? 'line-through' : 'none',
-                        transition: 'border-color .1s, background .1s',
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '9px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                        border: '1px dashed #3a3a46', background: 'transparent', color: '#b8b8c4',
+                        fontSize: 12.5, fontWeight: 700,
                       }}
                     >
-                      {quitado && (
-                        <span style={{
-                          position: 'absolute', top: 4, left: 5, fontSize: 10, fontWeight: 900,
-                          color: '#ef4444', letterSpacing: '0.5px',
-                        }}>SIN</span>
-                      )}
-                      <span style={{ padding: '0 4px' }}>{r.nombre}</span>
+                      <span style={{ fontSize: 11 }}>{rarosAbiertos ? '▾' : '▸'}</span>
+                      <span style={{ flex: 1 }}>Más opciones (poco comunes)
+                        <span style={{ fontWeight: 400, color: '#8b8997' }}> · sin {raros.map(r => r.nombre.toLowerCase()).join(', sin ')}</span>
+                      </span>
                     </button>
-                  )
-                })}
+                    {rarosAbiertos && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8, marginTop: 8 }}>
+                        {raros.map(sinBtn)}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Cantidad + Notas */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 12, marginTop: 4 }}>

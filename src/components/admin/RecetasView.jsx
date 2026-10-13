@@ -111,6 +111,7 @@ export default function RecetasView({ user }) {
       factor_a_stock: i.factor_a_stock ?? null,
       removible: i.removible ?? false,
       etiqueta: i.etiqueta || null,
+      poco_comun: i.poco_comun ?? false,   // SIN escondido en «Más opciones» del POS (4-oct)
       cantidad_catalogo: i.cantidad_catalogo ?? null,
     }));
     if (rows.length > 0) await db.from('receta_ingredientes').insert(rows);
@@ -179,6 +180,7 @@ export default function RecetasView({ user }) {
       factor_a_stock: i.factor_a_stock ?? null,
       removible: i.removible ?? false,
       etiqueta: i.etiqueta || null,
+      poco_comun: i.poco_comun ?? false,   // SIN escondido en «Más opciones» del POS (4-oct)
       cantidad_catalogo: i.cantidad_catalogo ?? null,
       _nombre: i.tipo_ingrediente === 'materia_prima' ? i.catalogo_productos?.nombre : i.sub?.nombre,
     }));
