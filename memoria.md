@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 13-Oct-2026 — Nuestro catálogo ya está cargado en la tienda sandbox de PedidosYa (responder v12, migración `peya_catalogo_categoria_oculta_extras`)
+
+Jose entró a «Pruebas integración» con la cuenta de pruebas y la tienda mostraba productos de kiosco de DH, no los nuestros. El import de catálogo seguía bloqueado por el 403 del 2-oct. Dos cosas destrabaron:
+
+- **Ruta alterna de import (responder v12).** El contrato tiene una segunda puerta para el mismo catálogo: `PUT /v2/chains/{chain}/global-entity/{globalEntityId}/catalog` con `platformVendors: [478876]` (la "de cocinas centralizadas"). `accionCatalogo` la intenta solo cuando la ruta normal (`/v2/chains/{chain}/catalog` con `vendors: [posVendorId]`) devuelve 403. Con la sandbox esa ruta contesta **202** y el callback llega al plugin en ~1 s. La respuesta del responder ahora dice `ruta: pos_vendor | platform_vendor`.
+- **DH validó el catálogo y lo rechazó: 119 × «Product or one or more of its variants does not belong to a category».** Eran exactamente las 119 opciones de modificador (salsas, extras, tamaños), que emitimos como `Product` para que los `Topping` las referencien. En el modelo de DH **todo** Product tiene que colgar de una Category, también los que solo existen como extra. El spec lo resuelve con una categoría oculta: una Category cuyos productos no están en `Menu.products` no se muestra al cliente. `peya_catalogo` ahora agrega `CAT-EXTRAS-<menu_id>` («Extras y modificadores») con todas las opciones; la carta visible no cambia (7 categorías en el payload, 6 visibles).
+- **Resultado:** import 7, 244 ítems, estado `done`, «gEID: PY_AR, Everything processed without errors» (13-oct 21:24 ES). Es la primera vez que un catálogo nuestro entra a PedidosYa.
+- Pendiente del lado de DH: el 403 de la ruta normal sigue (lo pide el borrador de correo a soporte). Mientras, la ruta alterna sirve para la sandbox; para las tiendas reales habrá que ver cuál de las dos autorizan.
+- Siguiente: Bloque 2 (pedidos reales desde la app contra el webhook) ya se puede hacer desde la tienda de pruebas.
 
 ## 10-Oct-2026 — Etiquetado: productos sin días imprimían «vence = elaboración»
 
