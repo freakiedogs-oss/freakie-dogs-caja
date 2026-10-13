@@ -432,7 +432,7 @@ async function accionCatalogo(
   if (remoteId instanceof Response) return remoteId;
 
   const { data: mapa } = await svc.from("peya_vendor_map")
-    .select("remote_id, vendor_code, chain_code")
+    .select("remote_id, vendor_code, chain_code, platform_restaurant_id, global_entity_id")
     .eq("remote_id", remoteId).eq("activo", true).maybeSingle();
 
   if (!mapa) return json({ error: "vendor_no_mapeado", remoteId }, 404);
@@ -469,11 +469,30 @@ async function accionCatalogo(
   const callbackUrl = `${base}/functions/v1/peya-plugin/catalog-import-callback`;
 
   const url = `${BASE}/v2/chains/${encodeURIComponent(mapa.chain_code)}/catalog`;
-  const r = await enviarADH(url, {
+  let ruta = "pos_vendor";
+  let r = await enviarADH(url, {
     vendors: [mapa.vendor_code ?? remoteId],
     catalog: { items },
     callbackUrl,
   }, "PUT");
+
+  // La sandbox de homologación contesta 403 por posVendorId («Unauthorized to
+  // import catalog…»). El contrato tiene una segunda puerta para el mismo
+  // catálogo, por identificador de plataforma y global entity:
+  //   PUT /v2/chains/{chain}/global-entity/{globalEntityId}/catalog
+  //   { platformVendors: [platformRestaurantId], catalog, callbackUrl }
+  // Se intenta sólo si la primera no estaba autorizada y tenemos ambos datos.
+  if (r.status === 403 && mapa.platform_restaurant_id && mapa.global_entity_id) {
+    const url2 = `${BASE}/v2/chains/${encodeURIComponent(mapa.chain_code)}` +
+      `/global-entity/${encodeURIComponent(mapa.global_entity_id)}/catalog`;
+    const r2 = await enviarADH(url2, {
+      platformVendors: [String(mapa.platform_restaurant_id)],
+      catalog: { items },
+      callbackUrl,
+    }, "PUT");
+    if (r2.status >= 200 && r2.status < 300) { r = r2; ruta = "platform_vendor"; }
+    else r = { ...r, texto: `${r.texto} || platform-vendor: HTTP ${r2.status}: ${r2.texto}`.slice(0, 1000) };
+  }
 
   const ok = r.status >= 200 && r.status < 300;
   let catalogImportId: string | null = null;
@@ -490,6 +509,7 @@ async function accionCatalogo(
 
   return json({
     ok,
+    ruta,
     importId: idImport,
     catalogImportId,
     items: nItems,
