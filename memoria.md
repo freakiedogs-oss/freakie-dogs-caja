@@ -113,6 +113,12 @@ Jose pidió poder imprimir las tablas de inventario y que el papel sirva: letra 
   - **Recetas y kardex:** siguen descargando «Mezcla de Carne Smash» y sus cortes.
   - **Recepción:** el 9-oct se recibieron 85 cajas contra el DTE 8969, que es de 65 cajas; el DTE 8939 (20 cajas) también aparece cruzado.
 
+## 14-Oct-2026 — Primer pedido real de DH, combos con modificadores y el globalEntityId que se pisaba (migraciones `peya_catalogo_combos_con_modificadores`, `peya_global_entity_no_pisar`)
+
+- **Primer pedido real de PedidosYa (22:53 del 13-oct):** Jose lo puso desde la app en la tienda sandbox. Llegó al webhook con JWT e IP válidos, `test: true`, 74 × Combo Hamburguesa, pago Efectivo, own delivery. Orden 234. Aceptado desde el responder (DH 200, acceptanceTime = riderPickupTime) y marcado preparado (DH 200 OK). Por regla no bajó a cocina (`test: true`). En la app quedó «en preparación»: en own delivery el estado de cara al cliente lo mueve el rider de DH, y en el sandbox no hay rider. Pregunta para Cristian, no hallazgo nuestro.
+- **Los combos salían al catálogo sin modificadores.** En el POS un combo no tiene grupos propios: se arma con componentes a $0 (Hamburguesa, Fries, Bebida…) y los grupos cuelgan de cada componente; el catálogo excluía los componentes y con ellos sus grupos. Nueva `peya_combo_slots(menu)`: una fila por unidad de componente y grupo. `peya_catalogo` le cuelga al combo los grupos de cada unidad; la segunda unidad del mismo grupo sale como Topping `TOP-<grupo>-2` titulado «Salsas Papas 2», que es la convención que ya entiende `peya_traducir_toppings` (`peya_familia_slot`). Dentro de cada unidad el grupo obligatorio va primero. Validación: 281 ítems, 0 huérfanos, 0 referencias rotas, 22 combos con grupos. Import 10 `done` sin errores.
+- **El webhook pisaba `global_entity_id`.** El plugin guarda `localInfo.platformKey` («PY») como globalEntityId; el correcto es «PY_AR» (lo da el GET de availability). Con «PY» la ruta de import por global-entity devuelve 404 «No matching platform vendor». Arreglo en SQL, sin tocar el plugin: `peya_guardar_global_entity` ya no reemplaza un valor con país por uno sin país, y `peya_guardar_plataformas` guarda el `globalEntityId` que DH declara en availability (se refresca cada vez que se abre/cierra la tienda).
+- Sigue pendiente de DH: el 403 de la ruta normal de import; y confirmar si el sandbox simula el rider.
 
 ## 13-Oct-2026 — Nuestro catálogo ya está cargado en la tienda sandbox de PedidosYa (responder v12, migración `peya_catalogo_categoria_oculta_extras`)
 
