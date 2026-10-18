@@ -1,6 +1,40 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
 
+## 18-Oct-2026 — FinanzasDashboard mostraba un food cost de ~30% en octubre: 3 proveedores de comida mal clasificados
+
+- **Causa:** al aparecer, los proveedores nuevos se dieron de alta solos en `catalogo_contable` como `insumo_venta / Varios`. Tres de ellos son comida:
+  - BELCA «S.A. DE C.V.» (id 266): papas, $12.4k.
+  - Embutidos de El Salvador (id 267): carne, $9.2k.
+  - Orantes Pineda (id 268): verduras, $2.1k.
+- **Corrección:** pasaron a `costo_comida` y se refrescó `mv_finanzas_gastos_mensual`. Octubre al 17 quedó en 46.3% (antes 29.1%); septiembre fue 45.7%.
+- **Pendiente (resuelto en parte, ver abajo):** el alta automática con default `insumo_venta` va a repetir este error con cada proveedor nuevo. También quedaron así IMEXCA y Supply Company, sin confirmar qué son.
+- **Causa de fondo:** desde el modal «Clasificar proveedor» de RecepcionDTE, `normalizar_proveedor` buscaba el nombre exacto. Como no lo encontró, creó un proveedor nuevo con la categoría elegida, y la vista prefería ese match exacto.
+- **Arreglo (migración `20261018_proveedores_match_por_clave`):**
+  - `_prov_clave()`: clave del nombre sin tildes, puntuación ni sufijos societarios.
+  - `normalizar_proveedor`: si existe un proveedor con la misma clave, devuelve el existente (`ya_existia`) y no duplica ni recategoriza.
+  - `v_gastos_consolidados`: también empareja por clave, con prioridad exacto > clave > contiene.
+  - Duplicados de la misma categoría → `duplicado_de`: 266→3 Belca, 213→1 Corte Argentino, 200→197 Banco Agrícola, 167→134 Plásticos Diversos.
+  - Verificado: los totales del MV de agosto a octubre no cambiaron. Prueba con «Belca El Salvador SA de CV» → devuelve id 3, costo_comida.
+- **UI (`RecepcionDTE`, pendiente de deploy):** el modal avisa cuando el proveedor ya existe y trae una ayuda que explica cada categoría.
+- **Duplicados con categorías distintas, para que decida Cesar:**
+  - Siman: insumo_venta / gastos_operativos.
+  - Hasgar: costo_fijo / gastos_operativos.
+  - Ice Corp: activo_fijo / gastos_operativos.
+  - Servicios Industriales Inoxidables: activo_fijo / gastos_operativos.
+
+## 14-Oct-2026 — La carne ahora se compra lista a Embutidos de El Salvador (dato de Cesar)
+
+- **Qué cambió:** desde octubre toda la carne de hamburguesa se compra a Embutidos de El Salvador. Es la «CAJA TORTA DE CARNE FREAKIE»: 135 tortas, 18.75 lb, $51 sin IVA ($2.72/lb, ~$0.38 por torta).
+- **Proveedores que salen:** Corte Argentino, PIMI y Alinsa. Corte Argentino no factura desde el 1-oct; PIMI tuvo una última compra de cortes el 6-oct.
+- **Food cost de octubre:** la carne bajó ~$8k en el 1–13 contra septiembre, y es real.
+- **Revisar:**
+  - **Peso:** la torta pesa 0.139 lb (63 g) contra 0.15 lb (68 g) de la bolita propia.
+  - **Recetas y kardex:** siguen descargando «Mezcla de Carne Smash» y sus cortes.
+  - **Recepción:** el 9-oct se recibieron 85 cajas contra el DTE 8969, que es de 65 cajas; el DTE 8939 (20 cajas) también aparece cruzado.
+
+
+
 ## 10-Oct-2026 — Etiquetado: productos sin días imprimían «vence = elaboración»
 
 **Causa:** Bote de jalapeño, Condimento para 100 lb y Pepinillo rebanado se crearon desde la tablet con `dias` null. `fechaSV(null)` da el mismo día, así que salieron 134 etiquetas así entre el 6 y el 9 de octubre.

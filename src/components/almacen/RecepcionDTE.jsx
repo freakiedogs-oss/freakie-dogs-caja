@@ -465,13 +465,20 @@ function NormalizarModal({ prov, opciones, user, onClose, onSaved }) {
   const guardar = async () => {
     if (!form.categoria) return;
     setSaving(true);
-    const { error } = await db.rpc('normalizar_proveedor', {
+    const { data, error } = await db.rpc('normalizar_proveedor', {
       p_nombre_dte: prov.proveedor, p_nombre_normalizado: form.nombre_normalizado,
       p_categoria: form.categoria, p_subcategoria: form.subcategoria || 'Varios',
       p_requiere_recepcion: form.requiere_recepcion, p_usuario: user?.nombre || null,
     });
     setSaving(false);
     if (error) { toast.error?.('❌ ' + error.message); return; }
+    // 18-oct-2026: el mismo proveedor escrito distinto (ej. «S.A. de CV.» vs «S.A. DE C.V.») ya no se
+    // duplica: la base devuelve el existente y se respeta SU categoría.
+    if (data?.ya_existia) {
+      toast.info?.(`Ya existe como «${data.nombre_existente}» (${data.categoria}). Se usa esa clasificación.`)
+      onSaved({ ...form, categoria: data.categoria, subcategoria: data.subcategoria || form.subcategoria });
+      return;
+    }
     onSaved(form);
   };
   return (
@@ -486,6 +493,10 @@ function NormalizarModal({ prov, opciones, user, onClose, onSaved }) {
           <option value="">— elegí —</option>
           {(opciones.categorias || []).map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        <div style={{ fontSize: 11.5, color: C.dim, margin: '-4px 0 10px', lineHeight: 1.45 }}>
+          <b>costo_comida</b>: todo lo que se come o se bebe (carne, papas, pan, verduras, quesos, salsas, bebidas).
+          <b> insumo_venta</b>: empaque y desechables (bolsas, vasos, servilletas). Si dudás, preguntá antes de guardar.
+        </div>
         <label style={lbl}>Subcategoría</label>
         <input value={form.subcategoria} onChange={e => setForm(f => ({ ...f, subcategoria: e.target.value }))} list="norm-subcats" placeholder="Varios" style={{ ...inp, width: '100%', marginBottom: 10 }} />
         <datalist id="norm-subcats">{(opciones.subcategorias || []).map(s => <option key={s} value={s} />)}</datalist>
