@@ -1805,6 +1805,21 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
                 :g.registrados.length===0?'No, hoy no hubo pedidos de Hifumi · guardar conteo'
                 :'No falta ninguno, están todos ingresados · guardar conteo'}
             </button>
+            {/* Hubo Hifumi y ya se ingresó, pero sin el botón «Hifumi» (p.ej. como para llevar con la
+                nota «Hifumi»): el POS no lo ve como Hifumi y antes no había cómo decirlo (pedido de la
+                encargada de Cafetalón, 9-oct-2026). Se guarda como «todos_ingresados» con 0 digitados,
+                así el cuadre sabe que hubo uno ingresado de otra forma. */}
+            {g.registrados.length===0&&(
+              <button className="btn" disabled={g.guardando} onClick={()=>responderHifumi('todos_ingresados')}
+                style={{width:'100%',padding:12,marginBottom:4,background:'#1f2a1f',border:'1px solid #4ade8060'}}>
+                Sí hubo y ya lo ingresé · guardar conteo
+              </button>
+            )}
+            {g.registrados.length===0&&(
+              <div style={{fontSize:11,color:'#888',lineHeight:1.4,marginBottom:8}}>
+                Si lo ingresaste como «Para llevar» o lo cobraste en efectivo, avisale al gerente: Hifumi va con el botón «Hifumi» y pago Hifumi, si no el corte de caja no cuadra.
+              </div>
+            )}
             <button className="btn" disabled={g.guardando} onClick={()=>responderHifumi('faltaba_ingresar')}
               style={{width:'100%',padding:12,background:'#2a2a32'}}>
               {g.registrados.length===0?'Sí hubo y no lo ingresé · voy a ingresarlo':'Sí, falta uno · voy a ingresarlo'}
