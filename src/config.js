@@ -174,6 +174,7 @@ export const NAV_SECTIONS = [
     items: [
       // Quién entró, quién salió, qué imprimió cada uno y de qué ya registró insumos. (4-oct-2026)
       { key: 'turno-cm', label: 'Turno de Casa Matriz', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      { key: 'cebolla-dia', label: 'Cebolla del día', icon: '🧅', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz', 'ing_alimentos'] },
       { key: 'costeo', label: 'Costeo / Márgenes', icon: '💰', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz', 'ing_alimentos'] },
       { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'ing_alimentos'] },
