@@ -1,6 +1,20 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
 
+## 20-Oct-2026 — «Cebolla del día»: comanda de cebolla blanca para Kevin
+
+- **Qué pidió Cesar:** que la cebolla blanca se haga todos los días de 7:00 a 8:00, para que se use fresca en la tarde. Kevin imprime a las 7:00 la comanda en carta con las bolsas por sucursal y el total.
+- **Base:** `fn_comanda_cebolla(p_actor, p_fecha)` lee `pedidos_sucursal` y `pedido_items` de «Cebolla bolsa» y «Cebolla Blanca».
+  - Ventana: del mediodía de ayer a las 7:00 de hoy.
+  - Lo que llegue después de las 7:00 sale como «agregar».
+  - También marca las sucursales sin pedido.
+  - Verificado con el 20-oct: Lourdes 4, Usulután 2, Santa Tecla 1, total 7; Soyapango y Venecia sin pedido.
+- **UI:**
+  - `ComandaCebollaView.jsx`: nav `cebolla-dia` «Cebolla del día» 🧅, con `permisos_rol` para jefe_casa_matriz, admin, ejecutivo y superadmin.
+  - Imprime en carta con una ventana nueva y `window.print`; la hoja trae casillas y firmas.
+- **Decisiones de Cesar:** solo cebolla blanca (la morada no entra), impresora normal en carta y corte a las 7:00.
+
+
 ## 18-Oct-2026 — FinanzasDashboard mostraba un food cost de ~30% en octubre: 3 proveedores de comida mal clasificados
 
 - **Causa:** al aparecer, los proveedores nuevos se dieron de alta solos en `catalogo_contable` como `insumo_venta / Varios`. Tres de ellos son comida:

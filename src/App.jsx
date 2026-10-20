@@ -59,6 +59,7 @@ const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView')
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
 const BPMParametrosView  = lazy(() => import('./components/produccion/BPMParametrosView'))
 const TurnoCasaMatrizView = lazy(() => import('./components/produccion/TurnoCasaMatrizView'))
+const ComandaCebollaView = lazy(() => import('./components/produccion/ComandaCebollaView'))
 const BPMTemperaturaView = lazy(() => import('./components/produccion/BPMTemperaturaView'))
 const CarneBoleadoView   = lazy(() => import('./components/produccion/CarneBoleadoView'))
 const ProtocoloAperturaView = lazy(() => import('./components/produccion/ProtocoloAperturaView'))
@@ -104,7 +105,7 @@ const ROLE_DEFAULTS = {
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
   superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
   bodeguero: ['recepcion-dte', 'recepcion', 'despacho', 'inventario', 'historial'],
-  jefe_casa_matriz: ['turno-cm', 'bpm-temperatura', 'bpm-parametros', 'despacho-operativo', 'recepcion-dte', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
+  jefe_casa_matriz: ['turno-cm', 'cebolla-dia', 'bpm-temperatura', 'bpm-parametros', 'despacho-operativo', 'recepcion-dte', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
   cocina: ['conteo', 'reporte', 'devoluciones'],
   rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales', 'validacion-planilla'],
   contador: ['gastos', 'conciliacion', 'planilla'],
@@ -409,6 +410,8 @@ export default function App() {
         return <BPMParametrosView user={user} />
       case 'turno-cm':
         return <TurnoCasaMatrizView user={user} />
+      case 'cebolla-dia':
+        return <ComandaCebollaView user={user} />
       case 'carne-boleado':
         return <CarneBoleadoView user={user} />
       case 'protocolo-apertura':
