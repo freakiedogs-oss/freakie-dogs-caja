@@ -28,6 +28,7 @@
 //     "motivo": "TOO_BUSY_KITCHEN", "minutos": 30 }
 //   { "pin": "1234", "accion": "catalogo" }
 //   { "pin": "1234", "accion": "catalogo_logs", "remoteId": "...", "limite": 10 }
+//   { "pin": "1234", "accion": "pedidos_dh", "remoteId": "...", "horas": 24 }
 //   { "pin": "1234", "accion": "item_disponible", "items": ["PROD-..."],
 //     "tipo": "ITEM", "disponible": false, "volveraA": "NEXT_BUSINESS_DAY" }
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -548,6 +549,37 @@ async function accionCatalogoLogs(
     logs: logs ?? r.texto.slice(0, 2000) }, r.status >= 200 && r.status < 300 ? 200 : 502);
 }
 
+// ---------- Qué pedidos tiene DH de esta tienda (últimas 24 h) ----------
+// GET /v2/chains/{chain}/orders/ids?status=accepted|cancelled&pastNumberOfHours&vendorId
+// Sirve para la pregunta «puse un pedido y no llegó»: si DH lo lista y nosotros
+// no lo tenemos, el webhook falló; si DH tampoco lo tiene, nunca se creó.
+async function accionPedidosDH(
+  cuerpo: Record<string, any>,
+  alcance: Alcance,
+): Promise<Response> {
+  const remoteId = await resolverRemoteId(cuerpo, alcance);
+  if (remoteId instanceof Response) return remoteId;
+
+  const { data: mapa } = await svc.from("peya_vendor_map")
+    .select("remote_id, vendor_code, chain_code")
+    .eq("remote_id", remoteId).eq("activo", true).maybeSingle();
+  if (!mapa) return json({ error: "vendor_no_mapeado", remoteId }, 404);
+  if (!mapa.chain_code) return json({ error: "sin_chain_code", remoteId }, 409);
+
+  const horas = Math.min(Math.max(Number(cuerpo.horas ?? 24) || 24, 1), 24);
+  const salida: Record<string, unknown> = { ok: true, horas, remoteId };
+  for (const estado of ["accepted", "cancelled"]) {
+    const url = `${BASE}/v2/chains/${encodeURIComponent(mapa.chain_code)}/orders/ids` +
+      `?status=${estado}&pastNumberOfHours=${horas}` +
+      `&vendorId=${encodeURIComponent(mapa.vendor_code ?? remoteId)}`;
+    const r = await enviarADH(url, null, "GET");
+    let cuerpoR: unknown = null;
+    try { cuerpoR = JSON.parse(r.texto); } catch { /* texto plano */ }
+    salida[estado] = { http: r.status, respuesta: cuerpoR ?? r.texto.slice(0, 1000) };
+  }
+  return json(salida);
+}
+
 // ---------- Bloque 3: prender/apagar un ítem sin remandar el catálogo ----------
 // PUT /v2/chains/{chain}/vendors/{posVendorId}/catalog/items/availability
 //
@@ -701,9 +733,12 @@ Deno.serve(async (req) => {
   if (accion === "catalogo_logs") {
     return await accionCatalogoLogs(cuerpo, alcance);
   }
+  if (accion === "pedidos_dh") {
+    return await accionPedidosDH(cuerpo, alcance);
+  }
 
   const ACCIONES = ["aceptar", "rechazar", "preparado", "retirado", "ajustar_prep"];
-  const SIN_PEDIDO = ["tienda", "catalogo", "catalogo_logs", "item_disponible"];
+  const SIN_PEDIDO = ["tienda", "catalogo", "catalogo_logs", "pedidos_dh", "item_disponible"];
   if (!ACCIONES.includes(accion)) {
     return json({ error: "accion_invalida", validas: ACCIONES.concat(SIN_PEDIDO) }, 400);
   }
