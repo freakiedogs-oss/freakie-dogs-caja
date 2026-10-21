@@ -54,6 +54,12 @@ Jose pidió poder imprimir las tablas de inventario y que el papel sirva: letra 
   - **Recetas y kardex:** siguen descargando «Mezcla de Carne Smash» y sus cortes.
   - **Recepción:** el 9-oct se recibieron 85 cajas contra el DTE 8969, que es de 65 cajas; el DTE 8939 (20 cajas) también aparece cruzado.
 
+## 21-Oct-2026 — PeYa: «puse pedidos nuevos y no llegaron» (responder v14, acción `pedidos_dh`)
+
+- Jose dijo haber puesto pedidos nuevos en la tienda sandbox. Al webhook no entró nada desde el 14-oct (sólo callbacks de catálogo) y DH tampoco lista pedidos de esa tienda en las últimas 24 h: no se perdieron en el camino, **nunca se crearon en PedidosYa**. La tienda está OPEN (verificado hoy).
+- Para poder responder esa pregunta en segundos, el responder (v14) tiene la acción `pedidos_dh`: GET `/v2/chains/{chain}/orders/ids?status=accepted|cancelled&pastNumberOfHours&vendorId`. Devuelve los ids que DH tiene de la tienda. Si DH los lista y nosotros no, falló el webhook; si DH no los tiene, el pedido no se confirmó en la app.
+- El pedido 234 del 13-oct terminó **cancelado por DH a las 23:24 (NO_COURIER)**: en el sandbox no hay rider. El evento `order_status` llegó al webhook y la orden quedó en `cancelado`. Eso cierra el ciclo completo de un pedido own delivery: recibido → aceptado → preparado → cancelado por plataforma.
+
 ## 14-Oct-2026 — Primer pedido real de DH, combos con modificadores y el globalEntityId que se pisaba (migraciones `peya_catalogo_combos_con_modificadores`, `peya_global_entity_no_pisar`)
 
 - **Primer pedido real de PedidosYa (22:53 del 13-oct):** Jose lo puso desde la app en la tienda sandbox. Llegó al webhook con JWT e IP válidos, `test: true`, 74 × Combo Hamburguesa, pago Efectivo, own delivery. Orden 234. Aceptado desde el responder (DH 200, acceptanceTime = riderPickupTime) y marcado preparado (DH 200 OK). Por regla no bajó a cocina (`test: true`). En la app quedó «en preparación»: en own delivery el estado de cara al cliente lo mueve el rider de DH, y en el sandbox no hay rider. Pregunta para Cristian, no hallazgo nuestro.
