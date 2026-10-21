@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 21-Oct-2026 — Imprimir las tablas de inventario (Kardex y vistas de stock) en hoja carta legible
+
+Jose pidió poder imprimir las tablas de inventario y que el papel sirva: letra legible, márgenes bien y en vertical. Imprimir la PWA tal cual salía en miniatura, en fondo oscuro y con las tarjetas partidas entre páginas.
+
+- **Utilidad nueva `src/lib/imprimirTabla.js`** (`imprimirTabla`, `htmlTabla`, `agruparFilas`, `fmtNum`): arma un documento aparte, blanco, carta vertical con `@page` de 15/13/16 mm, letra 11.5–12 px, encabezado de tabla **repetido en cada página**, filas que no se parten, grupos (categoría) que no quedan huérfanos, zebra suave, filas `alerta` en rosado y **casillas en blanco** (`blank: true`) con 30 px de alto para anotar a mano. Resumen + nota + firmas + pie van en un bloque indivisible para que las firmas no queden solas en otra hoja. Abre ventana nueva con el diálogo de impresión (mismo patrón que la hoja de despacho); si el navegador bloquea la ventana cae a un iframe oculto. `htmlTabla` está exportado para previsualizar/PDF sin abrir ventanas — se validó generando el PDF con Chromium (Playwright de `~/Proyectos/provia`) y revisando las páginas.
+- **Botón 🖨️ en seis lugares**, siempre sobre lo que está filtrado en pantalla: Kardex › Inventario (catálogo agrupado MP→SP→PT→Insumo), Kardex › Lista Conteo (**hoja de conteo nocturno** con "se cuenta en", casillas Cantidad / Sueltas / Obs. y firmas), Inventario Casa Matriz (`InventarioTab`), Stock Mín/Máx (con columna "Ajuste" en blanco; avisa si incluye cambios sin guardar), Inventario Físico (hoja de conteo en la pantalla de conteo + reporte de diferencias en la de revisión, junto al CSV) e Inventario por Sucursal (columna "Físico" en blanco).
+- Sin cambios de BD ni de permisos: imprime lo que la vista ya cargó.
 
 ## 20-Oct-2026 — «Cebolla del día»: comanda de cebolla blanca para Kevin
 
