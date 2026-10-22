@@ -43,7 +43,8 @@ export const STORES_FOOD_COURT = ['S006', 'S002', 'S001']
 // modal de cobro, así que cada vez que una sucursal compraba más había que
 // tocar el POS. Ahora vive acá: se agrega la fila y listo.
 // Plaza Mundo Soyapango pasó de 15 a 20 el 27-sep-2026 (Cesar).
-export const PAGERS_POR_SUCURSAL = { S001: 20 }
+// Metro Centro pasó de 15 a 18 el 22-oct-2026 (Cesar: se agregaron los pagers 16, 17 y 18).
+export const PAGERS_POR_SUCURSAL = { S001: 20, S006: 18 }
 export const PAGERS_DEFAULT = 15
 export const pagersDe = (storeCode) => PAGERS_POR_SUCURSAL[storeCode] || PAGERS_DEFAULT
 
