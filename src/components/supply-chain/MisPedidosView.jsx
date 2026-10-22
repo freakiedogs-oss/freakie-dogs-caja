@@ -5,6 +5,7 @@ import { STORES, fmtDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
 import { Badge } from '../ui/Badge';
 import { MOTIVOS_SOS, MOTIVO_SOS_LABEL } from './sos';
+import AvisosPedido from './AvisosPedido';
 
 // ── MIS PEDIDOS (view-only, gerente/cocina de sucursal) ─────────
 // Historial de pedidos de la sucursal del usuario + estado del proceso:
@@ -598,6 +599,7 @@ export default function MisPedidosView({ user, onBack }) {
   return (
     <div style={{ padding: '16px 16px 100px', maxWidth: 900, margin: '0 auto' }}>
       <Toast />
+      <AvisosPedido user={user} />
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>

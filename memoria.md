@@ -1,5 +1,42 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 22-Oct-2026 — Cebolla blanca: la bolsa pasa de 2 lb a 0.75 lb (migración `cebolla_blanca_bolsa_075lb`)
+
+- **Qué pidió Cesar:** cambiar el peso y todo lo que dependa de él, y avisar de forma muy visible al pedir.
+- **Base:** se ajustaron el catálogo, la receta de producción (26.67 bolsas por 20 cebollas) y el factor del Freakie Dog (1 oz = 1/12 de bolsa).
+  - Mínimos y máximos de las sucursales: de 1/4 a 3/11.
+  - Stock de las sucursales convertido ×2.67, con kardex `ajuste_manual`.
+  - Pedidos pendientes: S002 y S006 pasaron de 2 a 5.
+  - Etiquetado `cebblanca`: 340 g.
+- **Aviso:** tabla `avisos_pedido`, reutilizable, y componente `AvisosPedido.jsx`.
+  - Se muestra en pantalla completa con «Entendido» la primera vez (localStorage por usuario), y después como franja amarilla.
+  - Va en MisPedidosView y ConteoNocturno (pantalla de conteo y de pedido sugerido). Vigente del 22-oct al 5-nov.
+- **En el conteo de esa semana:** las bolsas viejas de 2 lb se cuentan como 2.5 nuevas.
+
+## 21-Oct-2026 — Coca-Cola Combo XL sin componente Bebida en Local y Para Llevar
+
+- **Qué pidió Cesar:** el combo no lleva bebida, y en mesa y para llevar el POS la pedía como obligatoria.
+- **Cambio:** se borraron 2 filas de `pos_combo_componentes` (canal local y para_llevar). El respaldo quedó en `_respaldo_combo_componentes_20261021`.
+- **Lo que no cambió:** la receta del combo ya no descargaba bebida. Drive Thru, Delivery propio y PeYa siguen con el componente Bebida; quedan a confirmar.
+- **Corrección el mismo día:** `pos_contexto_servicio` define que el restaurante, en mesa y para llevar, usa el menú **Local** (sin bebida), y el food court usa el menú **Para Llevar** (con bebida).
+  - Por eso se devolvió la Bebida del XL en Para Llevar (la fila 4df7d431).
+  - Verificado: en el menú Local, solo el Coca-Cola Combo tiene componente Bebida. En Para Llevar, los 16 combos la tienen.
+  - `incluye_bebida` de `pos_contexto_servicio` no se usa en el front.
+
+## 20-Oct-2026 — Venta PeYa en KPI y Finanzas: respaldo con lo digitado en caja (migración `20261020_peya_ventas_respaldo_pos`)
+
+- **Problema:** la subida del CSV PeYa del 13-oct (3,190 pedidos, del 23-sep al 13-oct) guardó la comisión en `total_pedido` (3,132 filas). Desde el 14-oct no se subió CSV. El KPI Ventas Totales mostraba ~$4.5k de PeYa en octubre contra ~$30.8k reales al 17-oct.
+- **Arreglo:** la vista `v_peya_ventas_diario` elige la fuente por día.
+  - Usa el CSV si ese día el total supera 1.5 × la comisión.
+  - Si no, usa `pos_cuentas` con `tipo='pedidos_ya'` y estado cobrada.
+  - La usan `mv_finanzas_ventas_mensual` (recreada con índice único y grants) y `fn_ventas_totales_dashboard` (parcheada).
+- **Efecto:** PeYa sin IVA sube a $45.9k en septiembre (antes $36.7k) y a $29.2k en octubre al día de hoy (antes $4.0k).
+  - Food cost Finanzas: septiembre ~44.1%, octubre al 17 ~36.5%. El 46.3% anterior estaba inflado por la venta faltante.
+- **Pendiente:**
+  - El lector de CSV PeYa en `QuantoUploadView`: probablemente cambió el formato del portal.
+  - `import_peya_jsonb` hace `ON CONFLICT DO NOTHING`, así que una resubida no corrige montos malos.
+  - Pedir a Cesar el CSV del 23-sep en adelante.
+
 ## 21-Oct-2026 — Imprimir las tablas de inventario (Kardex y vistas de stock) en hoja carta legible
 
 Jose pidió poder imprimir las tablas de inventario y que el papel sirva: letra legible, márgenes bien y en vertical. Imprimir la PWA tal cual salía en miniatura, en fondo oscuro y con las tarjetas partidas entre páginas.

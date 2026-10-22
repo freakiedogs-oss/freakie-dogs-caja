@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
 import MermasProductoHoy from './MermasProductoHoy'
+import AvisosPedido from './AvisosPedido'
 import { today, n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
 const CancelacionesView = lazy(() => import('../admin/CancelacionesView'));
@@ -1976,6 +1977,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
     return(
       <div style={{minHeight:'100vh',padding:'0 16px 100px'}}>
         <Toast/>
+        <AvisosPedido user={user}/>
         {modalFaltante}
         {modalHifumi}
         {modalCancel}
@@ -2191,6 +2193,7 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
   return(
     <div style={{minHeight:'100vh',padding:'0 16px 120px'}}>
       <Toast/>
+      <AvisosPedido user={user}/>
       <div style={{padding:'20px 0 16px',display:'flex',alignItems:'center',gap:12}}>
         <button onClick={()=>modo==='bebidas'?setScreen(1):onBack()} style={{background:'none',border:'none',color:'#888',fontSize:22,cursor:'pointer',padding:0}}>←</button>
         <div>
