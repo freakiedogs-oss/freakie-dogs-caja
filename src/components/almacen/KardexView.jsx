@@ -10,6 +10,7 @@ import CosteoView from '../admin/CosteoView';
 import BOMTreeView from './BOMTreeView';
 import RecetaEditorView from './RecetaEditorView';
 import { UnidadSelect } from '../UnidadSelect';
+import { imprimirTabla, agruparFilas, fmtNum } from '../../lib/imprimirTabla';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONSTANTES
@@ -263,6 +264,48 @@ export default function KardexView({ user, show, soloTabs = null }) {
   // Conteos por tipo
   const catCounts = { materia_prima: 0, sub_producto: 0, producto_terminado: 0, insumo: 0, total: catalogo.length };
   catalogo.forEach(c => { const t = c.tipo || 'materia_prima'; if (catCounts[t] !== undefined) catCounts[t]++; });
+
+  // Imprime el catálogo tal como está filtrado (chip de tipo + búsqueda),
+  // agrupado por tipo en el orden MP → SP → PT → Insumo.
+  const imprimirCatalogo = () => {
+    const ORDEN = ['materia_prima', 'sub_producto', 'producto_terminado', 'insumo'];
+    const filas = catalogo.map(it => ({
+      tipo: it.tipo || 'materia_prima',
+      nombre: it.nombre,
+      sku: it.sku || '',
+      unidad: it.unidad_medida || 'unidad',
+      compra: (it.unidad_compra && Number(it.factor_compra) !== 1) ? `1 ${it.unidad_compra} = ${fmtNum(it.factor_compra)} ${it.unidad_medida || 'u'}` : '',
+      categoria: it.categoria || '',
+    }));
+    const porTipo = agruparFilas(filas, 'tipo', { sinGrupo: 'materia_prima' });
+    const grupos = ORDEN
+      .map(t => porTipo.find(g => g.titulo === t))
+      .filter(Boolean)
+      .map(g => ({ titulo: TIPOS[g.titulo]?.full || g.titulo, filas: g.filas }));
+    const partes = [];
+    if (catFilter !== 'todos') partes.push(`Tipo: ${TIPOS[catFilter]?.full || catFilter}`);
+    if (catSearch.trim()) partes.push(`Filtro: "${catSearch.trim()}"`);
+    imprimirTabla({
+      titulo: 'Catálogo de Inventario',
+      subtitulo: partes.join(' · ') || 'Ingredientes, sub productos, terminados e insumos activos',
+      meta: [
+        { label: 'Fecha', value: fmtDate(today()) },
+        { label: 'Generado por', value: user?.nombre },
+      ],
+      columnas: [
+        { key: 'nombre', label: 'Producto' },
+        { key: 'sku', label: 'SKU', width: '13%', muted: true },
+        { key: 'unidad', label: 'Unidad', width: '11%', align: 'center' },
+        { key: 'compra', label: 'Presentación compra', width: '24%', muted: true },
+        { key: 'categoria', label: 'Categoría', width: '16%', muted: true },
+      ],
+      grupos,
+      resumen: [
+        { label: 'Total', value: fmtNum(filas.length) },
+        ...ORDEN.filter(t => catCounts[t] > 0).map(t => ({ label: TIPOS[t]?.full || t, value: fmtNum(catCounts[t]) })),
+      ],
+    });
+  };
 
   /* ══════════════════════════════════════════════════════════════════════
      TAB 2: MAPEO DE COMPRAS (vincular items DTE → catálogo)
@@ -669,6 +712,11 @@ export default function KardexView({ user, show, soloTabs = null }) {
               className="whitespace-nowrap shrink-0">
               + Crear
             </Button>
+            <button onClick={imprimirCatalogo} disabled={loadingCat || catalogo.length === 0}
+              title="Imprimir la tabla (hoja carta)"
+              style={{ background: '#222', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '0 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, opacity: (loadingCat || catalogo.length === 0) ? 0.5 : 1 }}>
+              🖨️ Imprimir
+            </button>
           </div>
 
           {/* Panel crear nuevo */}
@@ -1679,6 +1727,44 @@ function ConteoLista({ user }) {
   };
 
   const C = { card: '#1a1a1a', card2: '#151515', border: '#2a2a2a', dim: '#8a8a8a', green: '#4ade80', blue: '#60a5fa' };
+
+  // Hoja física de conteo: la misma lista y orden que ve la sucursal en la app,
+  // con la presentación en que se cuenta y casillas en blanco para la pluma.
+  const imprimirHoja = () => {
+    const grupos = (data?.grupos || []).map(g => ({
+      titulo: g.grupo,
+      filas: (g.items || []).map(it => ({
+        orden: it.orden ?? '',
+        nombre: it.nombre + (it.modo === 'bebidas' ? ' (BEES)' : ''),
+        presentacion: it.conteo_unidad
+          ? `${it.conteo_unidad}${Number(it.conteo_factor) !== 1 ? ` ×${fmtNum(it.conteo_factor)} ${it.unidad || 'u'}` : ''}`
+          : (it.unidad || 'u'),
+        suelto: it.fraccionado ? (it.unidad_suelta || 'sueltas') : '',
+      })),
+    }));
+    imprimirTabla({
+      titulo: 'Hoja de Conteo Nocturno',
+      subtitulo: 'Lista oficial de productos a contar, en el orden de la app',
+      meta: [
+        { label: 'Sucursal', value: '______________________' },
+        { label: 'Fecha', value: '____ / ____ / ______' },
+        { label: 'Impreso', value: fmtDate(today()) },
+      ],
+      columnas: [
+        { key: 'orden', label: '#', width: '6%', align: 'center', muted: true },
+        { key: 'nombre', label: 'Producto' },
+        { key: 'presentacion', label: 'Se cuenta en', width: '22%', muted: true },
+        { key: 'conteo', label: 'Cantidad', width: '14%', blank: true },
+        { key: 'sueltas', label: 'Sueltas', width: '12%', blank: true },
+        { key: 'obs', label: 'Obs.', width: '14%', blank: true },
+      ],
+      grupos,
+      resumen: [{ label: 'Productos en el conteo', value: fmtNum(data?.total || 0) }],
+      nota: '"Sueltas" aplica solo a lo que se abre en sucursal (latas fuera de la caja, etc.). (BEES) = va en el conteo de bebidas, no en el normal.',
+      firmas: ['Contó', 'Supervisó'],
+    });
+  };
+
   if (!data) return <div style={{ color: C.dim, padding: 12 }}>Cargando…</div>;
 
   return (
@@ -1686,6 +1772,8 @@ function ConteoLista({ user }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: C.dim }}>{data.total} productos en el conteo</div>
         <div style={{ flex: 1 }} />
+        <button onClick={imprimirHoja} disabled={!data.total} title="Imprimir hoja de conteo (hoja carta)"
+          style={{ background: '#222', color: '#fff', border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: data.total ? 1 : 0.5 }}>🖨️ Hoja de conteo</button>
         {puede && !adding && <button onClick={() => setAdding(true)} style={{ background: C.green, color: '#04220f', border: 'none', borderRadius: 8, padding: '6px 12px', fontWeight: 700, cursor: 'pointer' }}>+ Agregar producto</button>}
       </div>
 

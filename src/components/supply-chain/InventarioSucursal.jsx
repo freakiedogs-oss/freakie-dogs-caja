@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../supabase';
+import { fmtDate, today } from '../../config';
+import { imprimirTabla, fmtNum } from '../../lib/imprimirTabla';
 
 // ── DASHBOARD DE INVENTARIO POR SUCURSAL ──────────────────────────────
 // Cada sucursal ve su inventario; Casa Matriz (jefes/ejecutivos) puede ver
@@ -40,11 +42,49 @@ export default function InventarioSucursal({ user }) {
     .map(g => ({ ...g, items: (g.items || []).filter(it => (!soloBajos || it.bajo) && (!nq || (it.producto || '').toLowerCase().includes(nq))) }))
     .filter(g => g.items.length > 0);
 
+  // Imprime los grupos tal como quedaron filtrados (búsqueda / solo bajos),
+  // con una casilla en blanco para anotar el conteo físico al lado del stock.
+  const imprimir = () => {
+    const partes = [];
+    if (soloBajos) partes.push('Solo bajo mínimo');
+    if (nq) partes.push(`Filtro: "${q.trim()}"`);
+    const nFilas = grupos.reduce((a, g) => a + g.items.length, 0);
+    imprimirTabla({
+      titulo: 'Inventario de Sucursal',
+      subtitulo: partes.join(' · ') || 'Stock actual por grupo de conteo',
+      meta: [
+        { label: 'Sucursal', value: sucNombre ? `${sucNombre.store_code} — ${sucNombre.nombre}` : '' },
+        { label: 'Fecha', value: fmtDate(today()) },
+        { label: 'Stock al', value: data?.actualizado ? new Date(data.actualizado).toLocaleString('es-SV', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '' },
+        { label: 'Generado por', value: user?.nombre },
+      ],
+      columnas: [
+        { key: 'producto', label: 'Producto' },
+        { key: 'unidad', label: 'Unidad', width: '12%', align: 'center', muted: true },
+        { key: 'stock', label: 'Stock', width: '13%', align: 'right', tipo: 'num', bold: true },
+        { key: 'minimo', label: 'Mín', width: '11%', align: 'right', tipo: 'num', render: f => f.minimo > 0 ? fmtNum(f.minimo) : '' },
+        { key: 'fisico', label: 'Físico', width: '16%', blank: true },
+      ],
+      grupos: grupos.map(g => ({
+        titulo: g.grupo,
+        filas: g.items.map(it => ({ producto: it.producto, unidad: it.unidad || '', stock: Number(it.stock ?? 0), minimo: Number(it.minimo || 0), _class: it.bajo ? 'alerta' : '' })),
+      })),
+      resumen: [
+        { label: 'Productos', value: fmtNum(nFilas) },
+        { label: 'Bajo mínimo', value: fmtNum(grupos.reduce((a, g) => a + g.items.filter(it => it.bajo).length, 0)) },
+      ],
+      nota: 'Resaltado = bajo mínimo. La columna "Físico" queda en blanco para anotar lo contado.',
+      firmas: ['Contó', 'Revisó'],
+    });
+  };
+
   return (
     <div style={{ padding: 16, color: C.text, maxWidth: 900, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 18, fontWeight: 800 }}>📦 Inventario por Sucursal</div>
         <div style={{ flex: 1 }} />
+        <button onClick={imprimir} disabled={!data || grupos.length === 0} title="Imprimir tabla (hoja carta)"
+          style={{ ...btn('#222'), border: `1px solid ${C.border}`, opacity: (!data || grupos.length === 0) ? 0.5 : 1 }}>🖨️ Imprimir</button>
         <button onClick={() => cargar(sucId)} style={btn('#333')}>↻</button>
       </div>
 

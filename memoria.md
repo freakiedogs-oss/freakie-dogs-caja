@@ -37,6 +37,14 @@
   - `import_peya_jsonb` hace `ON CONFLICT DO NOTHING`, así que una resubida no corrige montos malos.
   - Pedir a Cesar el CSV del 23-sep en adelante.
 
+## 21-Oct-2026 — Imprimir las tablas de inventario (Kardex y vistas de stock) en hoja carta legible
+
+Jose pidió poder imprimir las tablas de inventario y que el papel sirva: letra legible, márgenes bien y en vertical. Imprimir la PWA tal cual salía en miniatura, en fondo oscuro y con las tarjetas partidas entre páginas.
+
+- **Utilidad nueva `src/lib/imprimirTabla.js`** (`imprimirTabla`, `htmlTabla`, `agruparFilas`, `fmtNum`): arma un documento aparte, blanco, carta vertical con `@page` de 15/13/16 mm, letra 11.5–12 px, encabezado de tabla **repetido en cada página**, filas que no se parten, grupos (categoría) que no quedan huérfanos, zebra suave, filas `alerta` en rosado y **casillas en blanco** (`blank: true`) con 30 px de alto para anotar a mano. Resumen + nota + firmas + pie van en un bloque indivisible para que las firmas no queden solas en otra hoja. Abre ventana nueva con el diálogo de impresión (mismo patrón que la hoja de despacho); si el navegador bloquea la ventana cae a un iframe oculto. `htmlTabla` está exportado para previsualizar/PDF sin abrir ventanas — se validó generando el PDF con Chromium (Playwright de `~/Proyectos/provia`) y revisando las páginas.
+- **Botón 🖨️ en seis lugares**, siempre sobre lo que está filtrado en pantalla: Kardex › Inventario (catálogo agrupado MP→SP→PT→Insumo), Kardex › Lista Conteo (**hoja de conteo nocturno** con "se cuenta en", casillas Cantidad / Sueltas / Obs. y firmas), Inventario Casa Matriz (`InventarioTab`), Stock Mín/Máx (con columna "Ajuste" en blanco; avisa si incluye cambios sin guardar), Inventario Físico (hoja de conteo en la pantalla de conteo + reporte de diferencias en la de revisión, junto al CSV) e Inventario por Sucursal (columna "Físico" en blanco).
+- Sin cambios de BD ni de permisos: imprime lo que la vista ya cargó.
+
 ## 20-Oct-2026 — «Cebolla del día»: comanda de cebolla blanca para Kevin
 
 - **Qué pidió Cesar:** que la cebolla blanca se haga todos los días de 7:00 a 8:00, para que se use fresca en la tarde. Kevin imprime a las 7:00 la comanda en carta con las bolsas por sucursal y el total.
@@ -49,6 +57,7 @@
   - `ComandaCebollaView.jsx`: nav `cebolla-dia` «Cebolla del día» 🧅, con `permisos_rol` para jefe_casa_matriz, admin, ejecutivo y superadmin.
   - Imprime en carta con una ventana nueva y `window.print`; la hoja trae casillas y firmas.
 - **Decisiones de Cesar:** solo cebolla blanca (la morada no entra), impresora normal en carta y corte a las 7:00.
+
 
 ## 18-Oct-2026 — FinanzasDashboard mostraba un food cost de ~30% en octubre: 3 proveedores de comida mal clasificados
 
@@ -82,6 +91,8 @@
   - **Recetas y kardex:** siguen descargando «Mezcla de Carne Smash» y sus cortes.
   - **Recepción:** el 9-oct se recibieron 85 cajas contra el DTE 8969, que es de 65 cajas; el DTE 8939 (20 cajas) también aparece cruzado.
 
+
+
 ## 10-Oct-2026 — Etiquetado: productos sin días imprimían «vence = elaboración»
 
 **Causa:** Bote de jalapeño, Condimento para 100 lb y Pepinillo rebanado se crearon desde la tablet con `dias` null. `fechaSV(null)` da el mismo día, así que salieron 134 etiquetas así entre el 6 y el 9 de octubre.
@@ -92,6 +103,16 @@
 - **`EtiquetadoApp`:** red de seguridad; si un producto llega sin días, imprime a 15 días en vez de 0.
 
 **Pendiente:** el peso objetivo del jalapeño (3.162 g) y del pepinillo rebanado (1.5 g) parece mal escrito, en lb o kg en vez de gramos.
+=======
+
+## 9-Oct-2026 — Conteo nocturno: botón «Sí hubo y ya lo ingresé» en el doble check de Hifumi
+
+Pedido de la encargada de Cafetalón (vía Frank). Cuando el POS no encuentra pedidos de Hifumi (tipo `delivery_app`), el doble check solo ofrecía «No hubo» o «Sí hubo y no lo ingresé». Si el Hifumi se había ingresado sin el botón «Hifumi» (9-oct: Coca-Cola Combo XL como para llevar con la nota «Hifumiii», pagado en efectivo), no había respuesta correcta y se elegía «no hubo».
+
+- `ConteoNocturno.jsx`: con 0 digitados aparece «Sí hubo y ya lo ingresé · guardar conteo», que guarda `respuesta='todos_ingresados'` con `hifumi_registrados=0` (sin migración: el check de la tabla ya acepta ese valor). Esa combinación le dice al cuadre que hubo un Hifumi ingresado de otra forma.
+- Debajo, un aviso: si se ingresó como para llevar o en efectivo, avisar al gerente, porque Hifumi va con el botón «Hifumi» y pago Hifumi (si no, el corte de caja no cuadra).
+- No cambia nada más del conteo.
+
 
 ## 5-Oct-2026 — Etiquetado: etiqueta más limpia, con fecha de elaboración y ajuste de corrimiento (`zebraZpl.js`, `EtiquetadoApp.jsx`)
 
@@ -101,6 +122,7 @@
 - **Cambios:** margen de seguridad (0.12" arriba, 0.10" a los lados); título en su propia línea a todo el ancho; peso de 0.22" a 0.13" de alto; línea nueva «ELAB dd-mmm-aaaa hh:mm» arriba del vencimiento; el QR ya no tiene tamaño fijo: se calcula según lo que lleva (versión 5–6, 0.55"–0.61") y se alinea al borde derecho con margen.
 - **Ajuste fino sin tocar código:** en ⚙︎ de la pantalla hay flechas de corrimiento (↑↓ ←→, pasos de 0.02", máx ±0.30") que se guardan en el navegador de la tablet (`etiquetado_ajuste`) y se aplican a todas las etiquetas. Se calibra con «Imprimir etiqueta de prueba».
 - **Simulado, no probado en la impresora real:** se renderizó el ZPL de los 18 productos (peor caso: nombre largo, 10 lb, lote «-SIN», 100 unidades, quien imprime con nombre largo) con fuente más ancha que la Zebra. Diseño viejo: QR fuera del borde derecho (−0.05") y encimado con título/peso en los 36 casos. Diseño nuevo: nada fuera ni encimado; tolerancia a corrimiento ≥0.10" izq, 0.07" der, 0.12" arriba, 0.13" abajo. Compila (`npm run build`). Si el corrimiento cambia de una etiqueta a otra (no es fijo), la causa es el sensor de gap: hay que calibrar la cinta (mantener FEED apretado hasta que avance 2-3 etiquetas).
+
 
 ## 6-Oct-2026 — Torre: un pedido devuelto a «Por cobrar» ya no se podía mandar a cocina (migración `torre_confirmar_pago_reavanza_si_ya_comandado`)
 
@@ -112,6 +134,7 @@
 - Si ya está comandado y sigue en `recibida`, la función lo pasa a `preparando` sin volver a comandar.
 - El pedido se movió a mano; las 6 comandas siguen en cocina.
 - No quedan otros pedidos en el mismo caso.
+
 
 ## 6-Oct-2026 — Agrandados: cada tipo paga según su precio + desglose por tipo para la cajera (migración `20261006_agrandados_valor_por_tipo.sql`)
 
@@ -188,6 +211,7 @@ Por qué: el 2-oct Cafetalón confirmó 10 paquetes de salchicha cuando solo lle
 - `TransferenciaBebidas.jsx` (transferencias entre sucursales, pasa por el mismo RPC): si se recibe de más pide la nota con un prompt.
 - Probado en modo prueba sobre el último despacho de M001: de más sin nota → bloquea; con nota → recibe, guarda nota y kardex; cron → igual que antes.
 - Afecta la recepción de TODAS las sucursales.
+
 
 ## 3-Oct-2026 — Apartado «Equipo y PINs» para Kevin (migración `20261004_prep_equipo_pines.sql`, YA APLICADA)
 
