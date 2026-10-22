@@ -1,5 +1,27 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 22-Oct-2026 — Coffee Mate, Rinso, stickers y jabón de manos en el pedido a Casa Matriz
+
+- **Productos nuevos** (mín 1 / máx 2 por sucursal):
+  - «Coffee Mate caja 530 g» y «Rollo de stickers para etiquetas», en Extras.
+  - «Rinso bolsa (detergente)», con la presentación por confirmar, y «Jabón para manos galón», en Utensilios de Limpieza.
+- **Aviso:** cuarto aviso en `avisos_pedido`, vigente hasta el 5-nov.
+
+## 22-Oct-2026 — Químicos LK, Pentaquat y cups de 1 oz en el pedido a Casa Matriz (migración `quimicos_lk_pentaquat_y_cups_1oz`)
+
+- **Renombres:** ALK MAX pasa a «LK Max galón (líquido para plancha)» y EXTRA CLEAN a «LK Kleen galón (para trastes)». Conservan su historial; ALK CLEAN de piso quedó igual.
+- **Productos nuevos:** «Pentaquat galón (sanitizante)» y «Cups 1 oz caja 1000», con mín 1 / máx 2 por sucursal.
+- **Aviso:** tercer aviso en `avisos_pedido`, vigente hasta el 5-nov.
+
+## 22-Oct-2026 — Ketchup McCormick + Ketchup El Negrito (migración `ketchup_mccormick_y_el_negrito`)
+
+- **Renombre:** la ketchup de bolsa (f731c1cd) ahora se llama «Ketchup McCormick».
+- **Producto nuevo:** «Ketchup El Negrito» (SA020, galón) para hot dogs. Se pide a Casa Matriz y tiene inventario en todas las sucursales activas (mín 1 / máx 2).
+- **Aviso:** segundo aviso en `avisos_pedido`, vigente hasta el 5-nov.
+- **Pendiente:**
+  - Pasar las recetas de hot dog a descontar El Negrito.
+  - Mapear el DTE del proveedor de El Negrito al producto.
+
 ## 22-Oct-2026 — Cebolla blanca: la bolsa pasa de 2 lb a 0.75 lb (migración `cebolla_blanca_bolsa_075lb`)
 
 - **Qué pidió Cesar:** cambiar el peso y todo lo que dependa de él, y avisar de forma muy visible al pedir.

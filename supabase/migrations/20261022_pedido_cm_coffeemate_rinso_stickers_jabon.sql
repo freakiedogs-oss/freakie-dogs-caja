@@ -1,0 +1,5 @@
+-- Aplicada vía MCP el 22-oct-2026 (migración `pedido_cm_coffeemate_rinso_stickers_jabon`). Ver memoria.md.
+-- Productos nuevos que las sucursales piden a Casa Matriz, con inventario en CM001 (0/999) y M001, S001–S006 (mín 1 / máx 2):
+--   «Coffee Mate caja 530 g» (Extras) · «Rinso bolsa (detergente)» (Utensilios de Limpieza, presentación por confirmar)
+--   «Rollo de stickers para etiquetas» (Extras) · «Jabón para manos galón» (Utensilios de Limpieza).
+-- Aviso en avisos_pedido vigente 22-oct → 5-nov.
