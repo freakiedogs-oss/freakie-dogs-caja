@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 30-Oct-2026 — PeYa: sesión de homologación agendada para el viernes 13-nov, 2:15–3:00 pm (hora SV)
+
+- **Cómo se llegó:** el caso de soporte viejo se cerró solo tras 3 días sin respuesta (regla de HeroCare: hay que abrir una cadena nueva, no responder la vieja). El 27-oct se abrió una cadena nueva a soporteintegraciones@ con copia a Mónica Zelaya y Maira Ferrufino, autocontenida (datos de la integración + todo lo validado).
+- **Respuesta de Cristian (29-oct):** el globalEntityId de las tiendas de El Salvador es **PY_SV**. En la sandbox no hay rider: los pedidos que quedan en preparación o listos se cancelan solos con **NO_COURIER** (lo del pedido 234 es lo esperado); los tiempos del rider se validan en producción. Pidió el endpoint y body del catálogo para revisar el 403 de la ruta estándar.
+- **Respuesta nuestra (30-oct):** los pedidos sí entran (no hace falta video), el catálogo completo está publicado, y se le mandaron las dos llamadas (estándar con 403 y global-entity con 202/done) con un extracto de la estructura de `items`. Queda abierta su respuesta sobre qué ruta autorizan para tiendas reales.
+- **Reunión:** Jose la reservó con el enlace de citas de soporte (Google Meet, 45 min). En la sesión se generan en vivo los casos que faltan: rechazo, pedido con modificadores, pickup y notificaciones.
+- **13-nov, antes de la sesión — la ruta estándar de catálogo ya funciona.** Cristian había contestado el 30-oct («aplicamos un ajuste, intentá nuevamente», con captura del PUT /v2/chains/SVFREAKIEDOGSTEST0001/catalog y `vendors: ["AR-PRUEBAS-INTEGRACION-0001"]`) y no lo vimos; el caso se cerró solo el 2-nov. Reintento del 13-nov 13:14 SV: la ruta estándar (`pos_vendor`) devolvió **202** sin caer al respaldo, import 11, 282 ítems, `done` sin errores. El 403 quedó resuelto de su lado; el respaldo por global-entity en el responder se queda por si acaso.
+- **Lección:** HeroCare cierra el caso a los 3 días sin respuesta nuestra. Revisar la cadena cada día hábil mientras haya un caso abierto.
+- **Antes del 13-nov:** verificar tienda sandbox OPEN y catálogo vigente, y tener el responder listo para aceptar/rechazar/preparado en vivo.
+
 ## 13-Nov-2026 — KPI Ventas Totales: la proyección solo usa días cerrados
 - Por qué: Jose vio la proyección baja a media mañana. `fn_ventas_totales_dashboard` tomaba el corte de `v_data_disponible_resumen` (= último día con alguna venta); con el POS en vivo, el día en curso contaba como día completo desde la primera venta. A las 11:30 del 13-nov: $320 de hoy divididos como un día entero → proyección $241,907 y utilidad −$2,453 en vez de $261,326 y +$8,138.
 - Fix (`20261113_ventas_totales_corte_dia_cerrado.sql`): en el mes en curso el corte nunca pasa de ayer (`LEAST(data_completa, hoy − 1, fin_mes)`). Todo el tablero (acumulado, BEP, utilidad, gráfica) queda al cierre de ayer; el encabezado ya dice «Data completa hasta …».
