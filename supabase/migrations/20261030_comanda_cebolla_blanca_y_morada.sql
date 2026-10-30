@@ -1,0 +1,4 @@
+-- Aplicada vía MCP el 30-oct-2026 (migración `comanda_cebolla_blanca_y_morada`). Ver memoria.md.
+-- fn_comanda_cebolla ahora también devuelve la cebolla morada («Cebolla Morada bolsa 1 lb (procesada)», 1f863333…):
+-- por sucursal `morada` y `morada_agregar`; totales `total_morada` y `total_morada_agregar`. Las claves de la blanca no cambian.
+-- Definición vigente: pg_get_functiondef('public.fn_comanda_cebolla(uuid,date)').

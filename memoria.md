@@ -1,5 +1,20 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 30-Oct-2026 — «Cebolla del día» con blanca y morada en una sola hoja
+
+- **Qué pidió Cesar:** la misma persona hace las dos, así que la comanda de la mañana tiene que traer también la morada (bolsa de 1 lb procesada).
+- **Base:** `fn_comanda_cebolla` agrega `morada` y `morada_agregar` por sucursal, y `total_morada` y `total_morada_agregar` en el total.
+- **Pantalla (`ComandaCebollaView`):** dos tarjetas (blanca en libras ×0.75, morada en violeta) y la tabla con columnas Blanca y Morada.
+- **Impresión:** una hoja carta con casillas para cada cebolla.
+- **Verificado el 30-oct:** blanca 6 y morada 15.
+
+## 30-Oct-2026 — Motoristas: David regresado a Venecia; cuenta de Lourdes reactivada como «Andrés Oswaldo»
+
+- **Cómo valida la app:** `driver_disponible` revisa la distancia contra la sucursal de `empleados.sucursal_id`.
+- **David González:** se movió a S004 el 7-oct, pero alguien lo regresó a S001 entre el 27 y el 28-oct, probablemente desde RRHH con `empleado_guardar`; no hay auditoría. Se volvió a poner en S004, en el empleado y en el usuario.
+- **Gustavo y Aldo:** seguían en S004 y entraron bien hasta el 29 y el 30-oct.
+- **Cuenta de Lourdes:** por pedido de Cesar, la cuenta inactiva de «Sergio Bryan Melara» (empleado 539af202, usuario d2052690, S003) se reactivó y se renombró «Andrés Oswaldo», con el mismo PIN. El historial anterior de esa cuenta es de Sergio.
+
 ## 22-Oct-2026 — Coffee Mate, Rinso, stickers y jabón de manos en el pedido a Casa Matriz
 
 - **Productos nuevos** (mín 1 / máx 2 por sucursal):
