@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 1-Nov-2026 — Porcionador de papas para Plaza Lourdes (S003)
+
+- **Qué pidió Cesar:** la misma app del medidor de papas de Metrocentro, habilitada para Lourdes.
+- **Código:** `PorcionadorApp.jsx` ahora toma la estación de la URL (`?estacion=papas-s003`). Sin parámetro sigue en Metrocentro (`papas-s006`), con sus mismas llaves de sesión en localStorage. Lourdes usa llaves con sufijo, para no mezclar sesiones.
+- **Base:** fila `papas-s003` en `porcion_estacion_config` (copia de `papas-s006`).
+- **Usuario:** «Estación Papas Lourdes» (rol despachador, S003) creado por Cesar en la pantalla de usuarios; el PIN lo definió él.
+- **Pendiente:** queso frito de Lourdes (pesos objetivo por definir).
+
 ## 30-Oct-2026 — «Cebolla del día» con blanca y morada en una sola hoja
 
 - **Qué pidió Cesar:** la misma persona hace las dos, así que la comanda de la mañana tiene que traer también la morada (bolsa de 1 lb procesada).
