@@ -6,6 +6,19 @@
 
 ---
 
+## 0. Decisiones de Jose (2-nov-2026)
+1. **Extra** = modificadores pagados + Extras + Fries & Sides + Cervezas + **bebidas individuales fuera de combo**. Son las líneas de la categoría Bebidas; la bebida dentro de `componentes` de un combo NO cuenta.
+   - Con esta definición, M001 en mesa da: Camila $96 entre semana / $132 de viernes a domingo, Elmer $73 / $124 y Karla $52 / $79.
+   - Referencia de meta: unos $75 de lunes a jueves y $110 de viernes a domingo.
+2. El 50 % retenido **se redistribuye** entre los que cumplieron.
+3. La regla aplica a **todos, incluso cocina**:
+   - Meseros y cajeros tienen meta personal.
+   - Cocina y producción tienen meta de equipo: los extras totales de la sucursal contra la meta del mes. La alternativa son los tiempos del KDS.
+   - Karina tiene meta de domicilios.
+4. **Karina = el usuario de domicilios de M001** («Katherine» en `usuarios_erp`).
+5. El mensaje de Jazz terminaba ahí; no falta nada.
+6. La versión del plan para Jazz está publicada como página: https://claude.ai/artifact/XTnU6ZMT5vq8RXA5V1ow6g (fuente: `plan-jazz-meseros-domicilios.html`).
+
 ## 1. Qué pidió Jazz
 
 **Herramienta A: meseros**

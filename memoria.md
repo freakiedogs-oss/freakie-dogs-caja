@@ -11,7 +11,12 @@
   - `metas_ventas` no genera nada desde el 25-mar y `metas_delivery` está vacía.
   - M001 tiene 2,023 clientes de delivery; el 73 % pidió una sola vez y unos 675 están «dormidos».
 - **Decisión de diseño:** un motor genérico `incentivo_*`, todo por `usuario_id` (no por nombre como `agrandado_config`). Se mide 2 semanas antes de pagar y la liquidación es mensual.
-- **Pendiente:** que Jazz conteste las 5 preguntas de la sección 7 del plan.
+- **Decisiones de Jose (mismo día):**
+  - Las bebidas cuentan como extra solo si van fuera de combo.
+  - El 50 % retenido se redistribuye entre los que cumplieron.
+  - La regla aplica a todos: cocina con meta de equipo.
+  - Karina es el usuario de domicilios de M001.
+  - El plan para Jazz se publicó como página.
 
 <<<<<<< Updated upstream
 ## 1-Nov-2026 — Porcionador de papas para Plaza Lourdes (S003)
