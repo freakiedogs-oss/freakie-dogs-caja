@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 2-Nov-2026 — PLAN (no construido): desempeño de meseros, meta de extras, propina por cumplimiento y CRM de domicilios
+
+- **Qué pidió Jazz (M001):** una meta diaria de extras por mesero, que alimente la propina (si cumple la meta cobra el 100 %, si no, el 50 %). También la lista de clientes de domicilio de Santa Tecla para recontactarlos, y una meta de domicilios para Karina.
+- **Plan completo:** `docs/planes/PLAN_desempeno_meseros_y_domicilios.md`.
+- **Hallazgos de data (últimos 30 días):**
+  - Los extras ya se pueden medir con `precio_modificadores` y las categorías. Camila vende $36.6 de extras por día y Karla $18.4.
+  - Mesas sin `mesero_id`: 27 % en M001 y 66 % en S004.
+  - Delivery propio M001 tiene `cajero_id` NULL en el 100 % de las cuentas.
+  - `metas_ventas` no genera nada desde el 25-mar y `metas_delivery` está vacía.
+  - M001 tiene 2,023 clientes de delivery; el 73 % pidió una sola vez y unos 675 están «dormidos».
+- **Decisión de diseño:** un motor genérico `incentivo_*`, todo por `usuario_id` (no por nombre como `agrandado_config`). Se mide 2 semanas antes de pagar y la liquidación es mensual.
+- **Pendiente:** que Jazz conteste las 5 preguntas de la sección 7 del plan.
+
 <<<<<<< Updated upstream
 ## 1-Nov-2026 — Porcionador de papas para Plaza Lourdes (S003)
 
