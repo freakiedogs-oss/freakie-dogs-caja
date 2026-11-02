@@ -1,5 +1,6 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+<<<<<<< Updated upstream
 ## 1-Nov-2026 — Porcionador de papas para Plaza Lourdes (S003)
 
 - **Qué pidió Cesar:** la misma app del medidor de papas de Metrocentro, habilitada para Lourdes.
@@ -81,6 +82,20 @@
   - El lector de CSV PeYa en `QuantoUploadView`: probablemente cambió el formato del portal.
   - `import_peya_jsonb` hace `ON CONFLICT DO NOTHING`, así que una resubida no corrige montos malos.
   - Pedir a Cesar el CSV del 23-sep en adelante.
+=======
+## 2-Nov-2026 — Líneas de facturas de compra: backfill, extracción automática y fin del bucle de errores
+
+Fase 0 del plan Compras HQ (`~/Proyectos/_auditorias/COMPRAS-HQ-plan-2026-10-29.md`). Migración `20261029_compras_dte_items_reparar.sql`.
+
+- **Qué pasaba:** `compras_dte_items` no tenía líneas después del 30-ago. `extraer_items_dte()` solo corría con el botón del Kardex y nadie lo apretó. El JSON sí estaba completo.
+- **Backfill:** 1,979 líneas nuevas por $394k; 525 quedaron mapeadas solas por $211k. Quedan 31 CCF de ene–mar ($30k) con JSON truncado, sin `cuerpoDocumento`; sus líneas no se pueden sacar de la base.
+- **Automático:** pg_cron `extraer-items-dte` (jobid 85) cada hora en el minuto 38. Al final llama `aplicar_mapeos_dte()`, que mapea con `proveedor_item_mapa` y con el historial del mismo NIT + descripción, y copia el factor. Con eso mapeó también 69 líneas viejas.
+- **Montos exentos:** el monto de línea tomaba `ventaGravada`, que viene 0 en ítems exentos. Ahora `_dte_monto_linea()` suma gravada + exenta + no sujeta. Se corrigieron 108 líneas viejas que estaban en $0.
+- **Desmapear deja veto:** `desmapear_descripcion_dte` ahora pone `confianza_mapeo = 'desmapeado'` para que el cron no la vuelva a mapear. Mapearla a mano la libera.
+- **Bucle de errores:** `compras_dte_propias` no tenía UNIQUE en `codigo_generacion`, y `procesar_dte_json` hace ON CONFLICT ahí. Cada DTE propio que llegaba al inbox fallaba con 42P10 y el Apps Script lo reintentaba cada 30 min: ~1,500 filas por día en `dte_import_errors`. Con el índice, la corrida de las 05:24 UTC archivó 25 sin errores. Las filas viejas de error quedan sin marcar como resueltas.
+- **Ojo para la próxima:** el MCP de Supabase se queda colgado con DROP, DELETE o UPDATE sueltos, porque pide una confirmación que la sesión remota no muestra. Se aplicó todo con `execute_sql`, sin DROP, y con los UPDATE dentro de funciones. `idx_cdp_codigo` quedó redundante.
+- **Pendiente de Jose:** factores de conversión inconsistentes en `~/Proyectos/_auditorias/COMPRAS-factores-a-revisar-2026-11-02.md` (ligado a ALM-3).
+>>>>>>> Stashed changes
 
 ## 21-Oct-2026 — Imprimir las tablas de inventario (Kardex y vistas de stock) en hoja carta legible
 
