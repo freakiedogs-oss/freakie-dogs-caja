@@ -59,17 +59,22 @@ export default function MiDesempeno({ user }) {
     const dias = d.dias || []
     const sum = (k) => dias.reduce((s, x) => s + Number(x[k] || 0), 0)
     const cuentas = sum('cuentas'), personas = sum('personas'), venta = sum('venta'), extras = sum('extras'), conExtra = sum('con_extra')
-    const conMeta = dias.filter(x => x.meta_dia != null)
+    // Meta vs logrado sobre los MISMOS días: los que tienen meta, hasta ayer (hoy no terminó).
+    const hoyIso = hoySV()
+    const cuenta = (x) => x.meta_dia != null && x.dia < hoyIso
+    const conMeta = dias.filter(cuenta)
     const meta = conMeta.reduce((s, x) => s + Number(x.meta_dia), 0)
+    const extrasMeta = conMeta.reduce((s, x) => s + Number(x.extras), 0)
     const base = d.unidad === 'persona' ? (personas || cuentas) : cuentas
     const hoy = dias.find(x => x.dia === hoySV())
     const eq = d.equipo || []
-    const eqConMeta = eq.filter(x => x.meta_dia != null)
+    const eqConMeta = eq.filter(cuenta)
     const eqMeta = eqConMeta.reduce((s, x) => s + Number(x.meta_dia), 0)
-    const eqExt = eq.reduce((s, x) => s + Number(x.extras), 0)
+    const eqExt = eqConMeta.length ? eqConMeta.reduce((s, x) => s + Number(x.extras), 0) : eq.reduce((s, x) => s + Number(x.extras), 0)
     const dom = d.domicilios || null
-    const domPed = dom ? dom.reduce((s, x) => s + Number(x.pedidos), 0) : 0
-    const domMeta = dom ? dom.filter(x => x.meta_dia != null && x.dia <= hoySV()).reduce((s, x) => s + Number(x.meta_dia), 0) : 0
+    const domCon = dom ? dom.filter(cuenta) : []
+    const domPed = dom ? (domCon.length ? domCon : dom).reduce((s, x) => s + Number(x.pedidos), 0) : 0
+    const domMeta = domCon.reduce((s, x) => s + Number(x.meta_dia), 0)
     const grupos = {}
     for (const i of d.items || []) {
       if (!grupos[i.grupo]) grupos[i.grupo] = { grupo: i.grupo, cantidad: 0, monto: 0, items: [] }
@@ -80,7 +85,8 @@ export default function MiDesempeno({ user }) {
       dias, cuentas, personas, venta, extras, base,
       pctConExtra: cuentas ? conExtra / cuentas * 100 : null,
       ventaProm: base ? venta / base : null, extrasProm: base ? extras / base : null,
-      meta: conMeta.length ? meta : null, cumpl: conMeta.length && meta > 0 ? extras / meta * 100 : null,
+      meta: conMeta.length ? meta : null, extrasMeta, diasMeta: conMeta.length,
+      cumpl: conMeta.length && meta > 0 ? extrasMeta / meta * 100 : null,
       hoy, eqMeta: eqConMeta.length ? eqMeta : null, eqExt, eqCumpl: eqConMeta.length && eqMeta > 0 ? eqExt / eqMeta * 100 : null,
       dom, domPed, domMeta, domCumpl: domMeta > 0 ? domPed / domMeta * 100 : null,
       grupos: Object.values(grupos).sort((a, b) => o(a.grupo) - o(b.grupo)),
@@ -126,15 +132,15 @@ export default function MiDesempeno({ user }) {
               <div style={{ color: C.dim, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }}>Meta del equipo · extras de la sucursal</div>
               <div style={{ fontSize: 34, fontWeight: 800, margin: '4px 0' }}>{money(r.eqExt)}{r.eqMeta ? <span style={{ fontSize: 16, color: C.dim, fontWeight: 400 }}> de {money(r.eqMeta)}</span> : null}</div>
               <Barra v={r.eqCumpl} alto={12} />
-              <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>{r.eqCumpl == null ? 'Todavía no hay meta cargada.' : `${Math.round(r.eqCumpl)} % · cocina cumple si la sucursal llega al 100 %`}</div>
+              <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>{r.eqCumpl == null ? 'Todavía no hay meta cargada (o empieza hoy).' : `${Math.round(r.eqCumpl)} % hasta ayer · cocina cumple si la sucursal llega al 100 %`}</div>
             </div>
           ) : (
             <div style={card}>
               <div style={{ color: C.dim, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }}>Tus extras del mes</div>
-              <div style={{ fontSize: 34, fontWeight: 800, margin: '4px 0' }}>{money(r.extras)}{r.meta ? <span style={{ fontSize: 16, color: C.dim, fontWeight: 400 }}> de {money(r.meta)}</span> : null}</div>
+              <div style={{ fontSize: 34, fontWeight: 800, margin: '4px 0' }}>{money(r.meta ? r.extrasMeta : r.extras)}{r.meta ? <span style={{ fontSize: 16, color: C.dim, fontWeight: 400 }}> de {money(r.meta)}</span> : null}</div>
               <Barra v={r.cumpl} alto={12} />
               <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>
-                {r.cumpl == null ? 'Todavía no hay meta cargada: estamos midiendo.' : `${Math.round(r.cumpl)} % de tu meta (suma de la meta de los ${r.dias.length} días que trabajaste)`}
+                {r.cumpl == null ? 'Todavía no hay meta cargada (o empieza hoy): estamos midiendo.' : `${Math.round(r.cumpl)} % de tu meta · ${r.diasMeta} ${r.diasMeta === 1 ? 'día trabajado' : 'días trabajados'} con meta, hasta ayer`}
               </div>
               {r.hoy && (
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>

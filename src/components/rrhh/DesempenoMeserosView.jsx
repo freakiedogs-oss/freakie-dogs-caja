@@ -105,13 +105,14 @@ export default function DesempenoMeserosView({ user }) {
     const map = {}
     for (const f of filas) {
       const k = f.usuario_id
-      if (!map[k]) map[k] = { id: k, nombre: f.nombre || 'Sin nombre', rol: f.rol, dias: [], cuentas: 0, mesas: 0, atendidas: 0, venta: 0, extras: 0, conExtra: 0, empleado: 0, meta: 0, diasConMeta: 0 }
+      if (!map[k]) map[k] = { id: k, nombre: f.nombre || 'Sin nombre', rol: f.rol, dias: [], cuentas: 0, mesas: 0, atendidas: 0, venta: 0, extras: 0, extrasMeta: 0, conExtra: 0, empleado: 0, meta: 0, diasConMeta: 0 }
       const p = map[k]
       p.dias.push(f)
       p.cuentas += Number(f.cuentas); p.mesas += Number(f.cuentas_mesa); p.atendidas += Number(f.personas)
       p.venta += Number(f.venta); p.extras += Number(f.extras); p.conExtra += Number(f.cuentas_con_extra)
       p.empleado += Number(f.ventas_empleado)
-      if (f.meta_dia != null && Number(f.cuentas) > 0) { p.meta += Number(f.meta_dia); p.diasConMeta++ }
+      // Cumplimiento sobre los MISMOS días: con meta y hasta ayer (hoy no terminó).
+      if (f.meta_dia != null && Number(f.cuentas) > 0 && f.dia < hoySV()) { p.meta += Number(f.meta_dia); p.extrasMeta += Number(f.extras); p.diasConMeta++ }
     }
     return Object.values(map)
       .filter(p => p.cuentas >= 5)
@@ -128,7 +129,7 @@ export default function DesempenoMeserosView({ user }) {
           ventaProm: p.venta / base,
           extrasProm: p.extras / base,
           pctConExtra: (p.conExtra / p.cuentas) * 100,
-          cumplimiento: p.diasConMeta > 0 && p.meta > 0 ? (p.extras / p.meta) * 100 : null,
+          cumplimiento: p.diasConMeta > 0 && p.meta > 0 ? (p.extrasMeta / p.meta) * 100 : null,
         }
       })
       .sort((a, b) => b.extrasDia - a.extrasDia)
@@ -138,10 +139,13 @@ export default function DesempenoMeserosView({ user }) {
     const porDia = {}
     for (const f of filas) porDia[f.dia] = (porDia[f.dia] || 0) + Number(f.extras)
     const dias = Object.keys(porDia).sort()
-    let meta = 0, conMeta = 0
-    for (const d of dias) { const m = metaEquipoDia(config.metas, 'extras', d); if (m != null) { meta += m; conMeta++ } }
+    let meta = 0, conMeta = 0, logrado = 0
+    for (const d of dias) {
+      const m = metaEquipoDia(config.metas, 'extras', d)
+      if (m != null && d < hoySV()) { meta += m; logrado += porDia[d]; conMeta++ }
+    }
     const total = Object.values(porDia).reduce((s, v) => s + v, 0)
-    return { total, dias: dias.length, meta: conMeta ? meta : null, cumplimiento: conMeta && meta > 0 ? (total / meta) * 100 : null }
+    return { total, logrado, dias: dias.length, meta: conMeta ? meta : null, cumplimiento: conMeta && meta > 0 ? (logrado / meta) * 100 : null }
   }, [filas, config.metas])
 
   const mesasSinMesero = useMemo(() => filas.filter(f => !ES_MESERO(f.rol)).reduce((s, f) => s + Number(f.cuentas_mesa), 0), [filas])
@@ -179,7 +183,7 @@ export default function DesempenoMeserosView({ user }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
             <Kpi titulo="Extras de la sucursal" valor={money(equipo.total)} sub={`${equipo.dias} días · ${desde} a ${hasta}`} />
             <Kpi titulo="Meta del equipo (cocina)" valor={equipo.meta == null ? 'Sin meta' : pct(equipo.cumplimiento)}
-              sub={equipo.meta == null ? 'Se carga en «Metas y reglas»' : `${money(equipo.total)} de ${money(equipo.meta)}`}
+              sub={equipo.meta == null ? 'Sin meta (o empieza hoy)' : `${money(equipo.logrado)} de ${money(equipo.meta)} · días con meta, hasta ayer`}
               estado={equipo.cumplimiento == null ? null : equipo.cumplimiento >= 100 ? 'ok' : 'bad'} />
             <Kpi titulo="Mesas sin mesero asignado" valor={mesasTotal ? pct(mesasSinMesero / mesasTotal * 100) : '—'}
               sub={`${mesasSinMesero} de ${mesasTotal} mesas`} estado={mesasTotal && mesasSinMesero / mesasTotal > 0.05 ? 'warn' : 'ok'} />

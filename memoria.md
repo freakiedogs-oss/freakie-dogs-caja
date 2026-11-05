@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 (noche) — Fix: cumplimiento comparaba días distintos
+
+- **Qué pasaba:** alguien guardó las metas sugeridas en producción (usuario «Super», vigentes desde el 5-nov): persona $75 / $110, equipo $300 / $500, domicilios 30 / 42. El logrado sumaba del 1 al 4 de noviembre (sin meta) contra la meta de un solo día, y cocina daba 534 %.
+- **Arreglo:** logrado y meta se toman sobre **los mismos días**, los que tienen meta, hasta ayer.
+  - En la base: `_propina_mes`, migración `20261105e_propina_mismos_dias.sql`.
+  - En las pantallas: ranking y meta de equipo en `DesempenoMeserosView`, y extras, equipo y domicilios en `MiDesempeno`.
+- **Al 5-nov:** todos siguen en «sin meta», con base 100 %. Desde el 6-nov se cuenta el 5.
+
 ## 5-Nov-2026 (noche) — Propina del mes en %: faltas y premios
 
 - **Tabla `incentivo_ajustes`:** falta leve −2.5, moderada −5, grave −10 o premio de +0.5 a +20.
