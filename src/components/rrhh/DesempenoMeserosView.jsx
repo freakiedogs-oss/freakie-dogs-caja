@@ -164,6 +164,7 @@ export default function DesempenoMeserosView({ user }) {
         <span style={{ width: 8 }} />
         <button style={btn(tab === 'ranking')} onClick={() => setTab('ranking')}>Ranking</button>
         <button style={btn(tab === 'vende')} onClick={() => setTab('vende')}>Qué vende cada uno</button>
+        <button style={btn(tab === 'sucursales')} onClick={() => setTab('sucursales')}>Por sucursal</button>
         {PUEDEN_CONFIGURAR.includes(rol) && <button style={btn(tab === 'config')} onClick={() => setTab('config')}>Metas y reglas</button>}
       </div>
 
@@ -212,6 +213,8 @@ export default function DesempenoMeserosView({ user }) {
       )}
 
       {tab === 'vende' && !error && <QueVende personas={personas} items={items} cargando={cargando} />}
+
+      {tab === 'sucursales' && !error && <PorSucursal user={user} desde={desde} hasta={hasta} actual={store} />}
 
       {tab === 'config' && !error && (
         <ConfigMetas user={user} store={store} config={config} personas={personas} onGuardado={cargar} />
@@ -295,7 +298,7 @@ function ItemsPersona({ items, base, unidad }) {
   const grupos = useMemo(() => agrupar(items), [items])
   if (!items.length) return <div style={{ color: C.dim }}>Sin ítems en este período.</div>
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, alignItems: 'start' }}>
       {grupos.map(g => (
         <div key={g.grupo} style={{ border: `1px solid ${C.line}`, borderRadius: 10, padding: 10, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
@@ -303,12 +306,21 @@ function ItemsPersona({ items, base, unidad }) {
             <span><b>{g.cantidad}</b> <span style={{ color: C.dim, fontSize: 11 }}>· {(g.cantidad / base * 10).toFixed(1)} c/10 {unidad === 'persona' ? 'personas' : 'tickets'}</span></span>
           </div>
           <div style={{ color: C.dim, fontSize: 12, marginBottom: 6 }}>{money(g.monto)}</div>
-          {g.items.slice(0, 6).map(it => (
-            <div key={it.item} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 8 }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.item}</span><span>{it.cantidad}</span>
-            </div>
-          ))}
-          {g.items.length > 6 && <div style={{ color: C.dim, fontSize: 11 }}>+{g.items.length - 6} más</div>}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+            <thead><tr style={{ color: C.dim }}>
+              <td>Producto</td><td style={{ textAlign: 'right' }}>Cant.</td><td style={{ textAlign: 'right' }}>c/10</td><td style={{ textAlign: 'right' }}>$</td>
+            </tr></thead>
+            <tbody>
+              {g.items.map(it => (
+                <tr key={it.item}>
+                  <td style={{ padding: '2px 6px 2px 0', whiteSpace: 'normal' }}>{it.item}</td>
+                  <td style={{ textAlign: 'right' }}>{it.cantidad}</td>
+                  <td style={{ textAlign: 'right', color: C.dim }}>{(it.cantidad / base * 10).toFixed(1)}</td>
+                  <td style={{ textAlign: 'right', color: C.dim }}>{money(it.monto)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ))}
     </div>
@@ -320,7 +332,9 @@ function agrupar(items) {
   for (const i of items) {
     if (!m[i.grupo]) m[i.grupo] = { grupo: i.grupo, cantidad: 0, monto: 0, items: [] }
     m[i.grupo].cantidad += Number(i.cantidad); m[i.grupo].monto += Number(i.monto)
-    m[i.grupo].items.push({ item: i.item, cantidad: Number(i.cantidad) })
+    const prev = m[i.grupo].items.find(x => x.item === i.item)
+    if (prev) { prev.cantidad += Number(i.cantidad); prev.monto += Number(i.monto) }
+    else m[i.grupo].items.push({ item: i.item, cantidad: Number(i.cantidad), monto: Number(i.monto) })
   }
   const orden = (g) => { const k = ORDEN_GRUPOS.indexOf(g); return k < 0 ? 99 : k }
   return Object.values(m).map(g => ({ ...g, items: g.items.sort((a, b) => b.cantidad - a.cantidad) }))
@@ -329,7 +343,7 @@ function agrupar(items) {
 
 // Comparativo: grupo/ítem × persona. Cantidad y tasa por cada 10 personas (meseros) o tickets (cajeras).
 function QueVende({ personas, items, cargando }) {
-  const [abiertos, setAbiertos] = useState({})
+  const [cerrados, setCerrados] = useState({})   // todo desglosado por defecto
   const [modo, setModo] = useState('tasa')
   const filas = useMemo(() => {
     const g = agrupar(items)
@@ -365,7 +379,9 @@ function QueVende({ personas, items, cargando }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button style={btn(modo === 'tasa')} onClick={() => setModo('tasa')}>Cada 10 personas / tickets</button>
         <button style={btn(modo === 'cant')} onClick={() => setModo('cant')}>Cantidad vendida</button>
-        <span style={{ color: C.dim, fontSize: 12 }}>Tocá un grupo para ver cada producto. En verde, quien más vende de eso.</span>
+        <button style={btn(false)} onClick={() => setCerrados(Object.fromEntries(filas.map(f => [f.grupo, true])))}>Solo grupos</button>
+        <button style={btn(false)} onClick={() => setCerrados({})}>Desglosar todo</button>
+        <span style={{ color: C.dim, fontSize: 12 }}>Tocá un grupo para abrirlo o cerrarlo. En verde, quien más vende de eso.</span>
       </div>
       <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
@@ -380,12 +396,12 @@ function QueVende({ personas, items, cargando }) {
             {filas.map(f => {
               const b = mejor(f.por)
               return [
-                <tr key={f.grupo} onClick={() => setAbiertos(a => ({ ...a, [f.grupo]: !a[f.grupo] }))} style={{ cursor: 'pointer', background: C.row }}>
-                  <td style={{ ...td, textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, background: C.row }}>{abiertos[f.grupo] ? '▾' : '▸'} {f.grupo}</td>
+                <tr key={f.grupo} onClick={() => setCerrados(c => ({ ...c, [f.grupo]: !c[f.grupo] }))} style={{ cursor: 'pointer', background: C.row }}>
+                  <td style={{ ...td, textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, background: C.row }}>{!cerrados[f.grupo] ? '▾' : '▸'} {f.grupo}</td>
                   {personas.map(p => <td key={p.id} style={{ ...td, fontWeight: 700, color: b === p.id ? C.ok : C.txt }}>{celda(f.por[p.id], p)}</td>)}
                   <td style={{ ...td, fontWeight: 700 }}>{f.total}</td>
                 </tr>,
-                ...(abiertos[f.grupo] ? f.items.map(it => {
+                ...(!cerrados[f.grupo] ? f.items.map(it => {
                   const bi = mejor(it.por)
                   return (
                     <tr key={f.grupo + it.item}>
@@ -572,6 +588,86 @@ function ConfigMetas({ user, store, config, personas, onGuardado }) {
           </ul>
         )}
       </div>
+    </>
+  )
+}
+
+// Ticket promedio por persona (mesas) y por ticket (para llevar), comparando sucursales.
+const NOMBRE_CORTO = { M001: 'Cafetalón', S001: 'Soyapango', S002: 'Usulután', S003: 'Lourdes', S004: 'Venecia', S005: 'Drive Lourdes', S006: 'Metrocentro' }
+function PorSucursal({ user, desde, hasta, actual }) {
+  const [rows, setRows] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    setCargando(true); setError('')
+    db.rpc('fn_ticket_sucursales', { p_usuario_id: user.id, p_desde: desde, p_hasta: hasta })
+      .then(({ data, error: e }) => { if (e) setError(e.message); else setRows(data || []); setCargando(false) })
+  }, [user.id, desde, hasta])
+
+  if (cargando) return <div style={{ color: C.dim }}>Cargando…</div>
+  if (error) return <div style={{ ...card, borderColor: C.bad, color: C.bad }}>{error}</div>
+
+  const conMesa = rows.filter(r => Number(r.mesas) > 0)
+  const maxTP = Math.max(1, ...conMesa.map(r => Number(r.ticket_persona || 0)))
+  const tot = conMesa.reduce((a, r) => ({ v: a.v + Number(r.venta_mesa), p: a.p + Number(r.personas_mesa), e: a.e + Number(r.extras_persona || 0) * Number(r.personas_mesa) }), { v: 0, p: 0, e: 0 })
+
+  return (
+    <>
+      {conMesa.length > 0 && (
+        <div style={card}>
+          <h3 style={{ marginTop: 0 }}>Ticket promedio por persona · mesas</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {conMesa.map(r => (
+              <div key={r.store_code} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 90px', gap: 10, alignItems: 'center' }}>
+                <span style={{ fontWeight: r.store_code === actual ? 700 : 400 }}>{NOMBRE_CORTO[r.store_code] || r.sucursal}</span>
+                <span style={{ background: C.line, borderRadius: 4, height: 14, overflow: 'hidden' }}>
+                  <span style={{ display: 'block', height: '100%', width: `${Number(r.ticket_persona) / maxTP * 100}%`, background: r.store_code === actual ? C.acc : '#3b5b85' }} />
+                </span>
+                <b style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{money(r.ticket_persona)}</b>
+              </div>
+            ))}
+          </div>
+          {tot.p > 0 && <p style={{ color: C.dim, fontSize: 12, marginBottom: 0 }}>Promedio de las sucursales con mesas: <b style={{ color: C.txt }}>{money(tot.v / tot.p)}</b> por persona · extras {money(tot.e / tot.p)} por persona.</p>}
+        </div>
+      )}
+
+      <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, textAlign: 'left' }}>Sucursal</th>
+              <th style={th}>Mesas</th><th style={th}>Personas</th><th style={th}>Personas/mesa</th>
+              <th style={th}>Ticket/persona</th><th style={th}>Ticket/mesa</th><th style={th}>Extras/persona</th>
+              <th style={th}>Tickets llevar</th><th style={th}>Ticket llevar</th><th style={th}>Extras/ticket llevar</th>
+              <th style={th}>Empleados (fuera)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const m = Number(r.mesas) > 0
+              return (
+                <tr key={r.store_code} style={{ background: r.store_code === actual ? C.row : 'transparent' }}>
+                  <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>{NOMBRE_CORTO[r.store_code] || r.sucursal}</td>
+                  <td style={td}>{m ? r.mesas : '—'}</td>
+                  <td style={td}>{m ? r.personas_mesa : '—'}</td>
+                  <td style={td}>{m ? (Number(r.personas_mesa) / Number(r.mesas)).toFixed(2) : '—'}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{m ? money(r.ticket_persona) : '—'}</td>
+                  <td style={td}>{m ? money(r.ticket_mesa) : '—'}</td>
+                  <td style={td}>{m ? money(r.extras_persona) : '—'}</td>
+                  <td style={td}>{r.tickets_llevar}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{Number(r.tickets_llevar) ? money(r.ticket_llevar) : '—'}</td>
+                  <td style={td}>{Number(r.tickets_llevar) ? money(r.extras_ticket_llevar) : '—'}</td>
+                  <td style={{ ...td, color: C.dim }}>{r.ventas_empleado}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ color: C.dim, fontSize: 12 }}>
+        Mesas: venta ÷ personas sentadas. Para llevar y drive thru: venta ÷ ticket (no se registra cuántas personas). Sin ventas a empleados, sin delivery ni PedidosYa.
+        Los food courts no tienen mesas, por eso solo muestran ticket.
+      </p>
     </>
   )
 }

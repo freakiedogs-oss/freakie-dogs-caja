@@ -1,5 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 (noche) — Ticket por persona por sucursal + «qué vende» desglosado
+
+- **`fn_ticket_sucursales(usuario, desde, hasta)`** (migración `20261105b_ticket_por_sucursal.sql`):
+  - Usa `_extras_cuentas` en cada sucursal activa, así que excluye ventas a empleados.
+  - En mesas calcula ticket por persona (venta ÷ pax), ticket por mesa y extras por persona. En para llevar y drive thru, ticket y extras por ticket.
+  - admin, ejecutivo y superadmin ven todas las sucursales; el gerente solo la suya.
+- **Resultado a 30 días:**
+  - Ticket por persona en mesas: Cafetalón $10.90, Lourdes $11.38 y Venecia $10.75.
+  - Food courts por ticket: Soyapango $12.04, Usulután $10.23 y Metrocentro $11.96.
+- **UI:**
+  - Pestaña «Por sucursal», con barras y tabla.
+  - «Qué vende cada uno» arranca con todo desglosado (botones «Solo grupos» y «Desglosar todo»).
+  - El detalle por persona lista todos los productos con cantidad, tasa por cada 10 personas o tickets y monto, sin «+N más».
+
 ## 5-Nov-2026 (tarde) — Desempeño Meseros v2: sin ventas a empleados, promedios por persona, «qué vende» y metas sugeridas
 
 - **Ventas a empleados fuera** (`_extras_cuentas`, la base común):
