@@ -16,14 +16,16 @@ const CH_COLOR = {
   para_llevar: '#3b82f6',
   delivery_propio: '#ec4899',
   drivethrough: '#14b8a6',
+  pedidos_ya: '#a855f7',
 };
 const CH_LABEL = {
   mesa: '🍴 Mesa',
   para_llevar: '🥡 Llevar',
   delivery_propio: '🛵 Delivery Propio',
   drivethrough: '🚗 Drive Thru',
+  pedidos_ya: '🟣 PeYa',
 };
-const CH_KEYS = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough'];
+const CH_KEYS = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough', 'pedidos_ya'];
 
 // ── Asuetos El Salvador 2026 (fechas YYYY-MM-DD) ──
 const ASUETOS_SV = {
@@ -67,11 +69,13 @@ function esDiaDePago(fecha) {
   return false;
 }
 
-function factorDia(fecha) {
+// dowF: factores por día de la semana calculados con venta real (ver factoresDowEmpiricos);
+// sin ellos se usa la tabla fija FACTOR_DOW.
+function factorDia(fecha, dowF = null) {
   const iso = fecha.toISOString().split('T')[0];
   if (ASUETOS_SV[iso]) return { factor: ASUETOS_SV[iso].factor, motivo: ASUETOS_SV[iso].nombre };
   const dow = fecha.getUTCDay();
-  let factor = FACTOR_DOW[dow];
+  let factor = (dowF || FACTOR_DOW)[dow];
   let motivo = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][dow];
   if (esDiaDePago(fecha)) {
     factor *= 1.12;
@@ -81,13 +85,13 @@ function factorDia(fecha) {
 }
 
 // Suma de factores de TODOS los días del mes (para repartir meta mensual proporcionalmente)
-function sumaFactoresMes(mesISO) {
+function sumaFactoresMes(mesISO, dowF = null) {
   const start = new Date(mesISO + 'T00:00:00Z');
   const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
   let suma = 0;
   for (let d = 1; d <= end.getUTCDate(); d++) {
     const f = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), d));
-    suma += factorDia(f).factor;
+    suma += factorDia(f, dowF).factor;
   }
   return suma;
 }
@@ -172,6 +176,24 @@ function KpisVentaDashboardInner({ user, onBack }) {
     load();
   }, [mesSel, user?.id]);
 
+  // La venta de hoy y el ritmo esperado se refrescan solos cada 3 min mientras se ve el mes en curso.
+  const esMesActualCargado = !!metasData?.esMesActual;
+  useEffect(() => {
+    if (!esMesActualCargado) return;
+    const id = setInterval(async () => {
+      try {
+        const h = await fetchHoy(user.id);
+        setMetasData(prev => {
+          if (!prev?.esMesActual) return prev;
+          // Si cambió el día (pasó la medianoche) recargar todo es más seguro: se pide al cambiar de mes/pestaña.
+          if (h.hoyISO !== prev.hoyISO) return prev;
+          return { ...prev, hoy: h.hoy, curva: h.curva, fechaHoy: h.fechaHoy, actualizado: h.actualizado };
+        });
+      } catch (e) { console.warn('Refresco de hoy falló:', e); }
+    }, 3 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [esMesActualCargado, user?.id]);
+
   const datos = useMemo(() => calcularDatos(kpisRaw), [kpisRaw]);
 
   return (
@@ -183,7 +205,7 @@ function KpisVentaDashboardInner({ user, onBack }) {
           <div>
             <div style={{ fontWeight: 800, fontSize: 20 }}>📊 KPIs de Venta <InfoTip text="Tablero de ventas: metas, resumen por canal y sucursal, Pareto de productos, desempeño por empleado y tendencia." /></div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-              Fuente: <code style={{ color: '#f59e0b' }}>POS interno</code> (desde 1-ago) · histórico Quanto · 4 canales · Excluye PeYa
+              Fuente: <code style={{ color: '#f59e0b' }}>POS interno</code> (desde 1-ago) · histórico Quanto antes de ago · 5 canales incl. PeYa
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -231,7 +253,7 @@ function KpisVentaDashboardInner({ user, onBack }) {
 
       {!loading && !error && (
         <div style={{ padding: 16 }}>
-          {tab === 'metas' && <TabMetas metasData={metasData} sucursalSel={sucursalSel} mesSel={mesSel} />}
+          {tab === 'metas' && <TabMetas metasData={metasData} sucursalSel={sucursalSel} />}
           {tab === 'resumen' && <TabResumen datos={datos} sucursalSel={sucursalSel} />}
           {tab === 'items' && <TabItems items={topItems} sucursalSel={sucursalSel} />}
           {tab === 'empleados' && <TabEmpleados emps={empleados} sucursalSel={sucursalSel} />}
@@ -268,8 +290,8 @@ function mesesOptions() {
 
 function calcularDatos(kpisRaw) {
   const sucursales = {};
-  const totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
-  const ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
+  const totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
+  const ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
   let total = 0, ordTotal = 0;
 
   for (const r of kpisRaw) {
@@ -364,12 +386,13 @@ async function fetchTendencia(usuarioId) {
     const desde = m.toISOString().split('T')[0];
     const hasta = next.toISOString().split('T')[0];
     const { data } = await db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: desde, p_fecha_hasta: hasta });
-    const sum = { mes: m, mesa: { ord: 0, monto: 0 }, llevar: { ord: 0, monto: 0 }, delivery: { ord: 0, monto: 0 }, drive: { ord: 0, monto: 0 } };
+    const sum = { mes: m, mesa: { ord: 0, monto: 0 }, llevar: { ord: 0, monto: 0 }, delivery: { ord: 0, monto: 0 }, drive: { ord: 0, monto: 0 }, peya: { ord: 0, monto: 0 } };
     (data || []).forEach(r => {
       const k = r.canal_venta === 'mesa' ? 'mesa'
         : r.canal_venta === 'para_llevar' ? 'llevar'
         : r.canal_venta === 'delivery_propio' ? 'delivery'
-        : r.canal_venta === 'drivethrough' ? 'drive' : null;
+        : r.canal_venta === 'drivethrough' ? 'drive'
+        : r.canal_venta === 'pedidos_ya' ? 'peya' : null;
       if (k) { sum[k].ord += Number(r.ordenes); sum[k].monto += Number(r.monto); }
     });
     out.push(sum);
@@ -378,78 +401,136 @@ async function fetchTendencia(usuarioId) {
 }
 
 // ── Cálculo de Metas ──
+const isoDia = (d) => d.toISOString().split('T')[0];
+
 async function fetchMetasData(usuarioId, mesSelISO) {
   const ahora = new Date(Date.now() - 6 * 3600 * 1000);
   const mesActualISO = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), 1)).toISOString().split('T')[0];
   const esMesActual = mesSelISO === mesActualISO;
+  const hoyISO = isoDia(ahora);
 
   const mesStart = new Date(mesSelISO + 'T00:00:00Z');
   const diasDelMes = new Date(Date.UTC(mesStart.getUTCFullYear(), mesStart.getUTCMonth() + 1, 0)).getUTCDate();
   const diaHoy = esMesActual ? ahora.getUTCDate() : diasDelMes;
+  // Días ya cerrados: en el mes en curso, hoy todavía no termina y no se compara contra un día completo.
+  const diasCerrados = esMesActual ? diaHoy - 1 : diasDelMes;
 
-  // Mes anterior, mismo número de días que llevamos
+  // Mes anterior, mismos días cerrados
   const mesAnt = new Date(Date.UTC(mesStart.getUTCFullYear(), mesStart.getUTCMonth() - 1, 1));
-  const mesAntDesde = mesAnt.toISOString().split('T')[0];
-  const mesAntHastaMismoDias = new Date(Date.UTC(mesAnt.getUTCFullYear(), mesAnt.getUTCMonth(), Math.min(diaHoy, new Date(Date.UTC(mesAnt.getUTCFullYear(), mesAnt.getUTCMonth() + 1, 0)).getUTCDate()))).toISOString().split('T')[0];
-  const mesAntHastaCompleto = new Date(Date.UTC(mesAnt.getUTCFullYear(), mesAnt.getUTCMonth() + 1, 0)).toISOString().split('T')[0];
+  const mesAntDesde = isoDia(mesAnt);
+  const diasMesAnt = new Date(Date.UTC(mesAnt.getUTCFullYear(), mesAnt.getUTCMonth() + 1, 0)).getUTCDate();
+  const mesAntHastaMismoDias = isoDia(new Date(Date.UTC(mesAnt.getUTCFullYear(), mesAnt.getUTCMonth(), Math.min(Math.max(diasCerrados, 1), diasMesAnt))));
+  const mesAntHastaCompleto = isoDia(new Date(Date.UTC(mesAnt.getUTCFullYear(), mesAnt.getUTCMonth() + 1, 0)));
 
   // Mismo mes año anterior
   const mesAA = new Date(Date.UTC(mesStart.getUTCFullYear() - 1, mesStart.getUTCMonth(), 1));
-  const mesAADesde = mesAA.toISOString().split('T')[0];
-  const mesAAHasta = new Date(Date.UTC(mesAA.getUTCFullYear(), mesAA.getUTCMonth() + 1, 0)).toISOString().split('T')[0];
+  const mesAADesde = isoDia(mesAA);
+  const mesAAHasta = isoDia(new Date(Date.UTC(mesAA.getUTCFullYear(), mesAA.getUTCMonth() + 1, 0)));
 
   // Últimos 3 meses (no incluye el actual)
   const last3 = [];
   for (let i = 1; i <= 3; i++) {
     const m = new Date(Date.UTC(mesStart.getUTCFullYear(), mesStart.getUTCMonth() - i, 1));
     const next = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 0));
-    last3.push({ desde: m.toISOString().split('T')[0], hasta: next.toISOString().split('T')[0] });
+    last3.push({ desde: isoDia(m), hasta: isoDia(next) });
   }
 
-  // Queries paralelas
-  const [actual, antMismoDias, antCompleto, mesAAtotal, ...promQueries] = await Promise.all([
-    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesSelISO, p_fecha_hasta: mesSiguiente(mesSelISO) }),
-    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesAntDesde, p_fecha_hasta: mesAntHastaMismoDias }),
-    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesAntDesde, p_fecha_hasta: mesAntHastaCompleto }),
-    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: mesAADesde, p_fecha_hasta: mesAAHasta }),
-    ...last3.map(m => db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: m.desde, p_fecha_hasta: m.hasta })),
+  const rpc = (desde, hasta) => db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: desde, p_fecha_hasta: hasta });
+  const [actual, antMismoDias, antCompleto, mesAAtotal, curvaResp, ...promQueries] = await Promise.all([
+    rpc(mesSelISO, mesSiguiente(mesSelISO)),
+    rpc(mesAntDesde, mesAntHastaMismoDias),
+    rpc(mesAntDesde, mesAntHastaCompleto),
+    rpc(mesAADesde, mesAAHasta),
+    esMesActual ? db.rpc('obtener_curva_venta_dia', { p_usuario_id: usuarioId }) : Promise.resolve({ data: [] }),
+    ...last3.map(m => rpc(m.desde, m.hasta)),
   ]);
 
-  const agruparPorCanalSucursal = (rows) => {
-    // { 'M001|mesa': monto, ..., 'TOTAL|mesa': monto, ... }
-    const m = {};
-    (rows || []).forEach(r => {
-      const k1 = `${r.store_code}|${r.canal_venta}`;
-      const k2 = `TOTAL|${r.canal_venta}`;
-      const k3 = `${r.store_code}|TOTAL`;
-      const kT = 'TOTAL|TOTAL';
-      m[k1] = (m[k1] || 0) + Number(r.monto);
-      m[k2] = (m[k2] || 0) + Number(r.monto);
-      m[k3] = (m[k3] || 0) + Number(r.monto);
-      m[kT] = (m[kT] || 0) + Number(r.monto);
-    });
-    return m;
-  };
-
-  const actualM = agruparPorCanalSucursal(actual.data);
-  const antMismoM = agruparPorCanalSucursal(antMismoDias.data);
-  const antCompletoM = agruparPorCanalSucursal(antCompleto.data);
-  const aaM = agruparPorCanalSucursal(mesAAtotal.data);
-  const last3M = promQueries.map(q => agruparPorCanalSucursal(q.data));
+  const actualRows = actual.data || [];
+  const last3Rows = promQueries.flatMap(q => q.data || []);
 
   return {
     mesSel: mesSelISO,
     esMesActual,
     diaHoy,
+    diasCerrados,
     diasDelMes,
-    actual: actualM,
-    antMismoDias: antMismoM,
-    antCompleto: antCompletoM,
-    mismoMesAA: aaM,
-    last3: last3M,
-    sumaFactores: sumaFactoresMes(mesSelISO),
+    hoyISO,
+    // Mes seleccionado sin el día de hoy (días cerrados) + hoy por separado
+    cerrado: agruparPorCanalSucursal(esMesActual ? actualRows.filter(r => r.fecha < hoyISO) : actualRows),
+    hoy: agruparPorCanalSucursal(esMesActual ? actualRows.filter(r => r.fecha === hoyISO) : []),
+    antMismoDias: diasCerrados > 0 ? agruparPorCanalSucursal(antMismoDias.data) : {},
+    antCompleto: agruparPorCanalSucursal(antCompleto.data),
+    mismoMesAA: agruparPorCanalSucursal(mesAAtotal.data),
+    last3: promQueries.map(q => agruparPorCanalSucursal(q.data)),
+    diario: ventaDiariaPorSucursal(last3Rows),
+    curva: curvaPorSucursal(curvaResp.data),
     fechaHoy: ahora,
+    actualizado: new Date(),
   };
+}
+
+// Refresco liviano de "hoy" (cada pocos minutos): solo la venta del día y el ritmo esperado.
+async function fetchHoy(usuarioId) {
+  const ahora = new Date(Date.now() - 6 * 3600 * 1000);
+  const hoyISO = isoDia(ahora);
+  const [v, c] = await Promise.all([
+    db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: hoyISO, p_fecha_hasta: hoyISO }),
+    db.rpc('obtener_curva_venta_dia', { p_usuario_id: usuarioId }),
+  ]);
+  if (v.error) throw v.error;
+  return { hoyISO, hoy: agruparPorCanalSucursal(v.data), curva: curvaPorSucursal(c.data), fechaHoy: ahora, actualizado: new Date() };
+}
+
+function agruparPorCanalSucursal(rows) {
+  // { 'M001|mesa': monto, ..., 'TOTAL|mesa': monto, 'M001|TOTAL': monto, 'TOTAL|TOTAL': monto }
+  const m = {};
+  (rows || []).forEach(r => {
+    const v = Number(r.monto);
+    for (const k of [`${r.store_code}|${r.canal_venta}`, `TOTAL|${r.canal_venta}`, `${r.store_code}|TOTAL`, 'TOTAL|TOTAL']) {
+      m[k] = (m[k] || 0) + v;
+    }
+  });
+  return m;
+}
+
+function ventaDiariaPorSucursal(rows) {
+  // { 'S001': { '2026-10-01': monto }, 'TOTAL': {...} }
+  const out = {};
+  (rows || []).forEach(r => {
+    for (const sc of [r.store_code, 'TOTAL']) {
+      (out[sc] = out[sc] || {});
+      out[sc][r.fecha] = (out[sc][r.fecha] || 0) + Number(r.monto);
+    }
+  });
+  return out;
+}
+
+function curvaPorSucursal(rows) {
+  const out = {};
+  (rows || []).forEach(r => { out[r.store_code] = { pct: Number(r.pct_esperado || 0), horaFin: r.hora_fin, dias: r.dias_muestra }; });
+  return out;
+}
+
+// Peso de cada día de la semana según la venta real de los últimos 3 meses (jueves = 1).
+// Sin asuetos ni días de pago, que ya tienen su propio ajuste. Si falta historia, usa la tabla fija.
+function factoresDowEmpiricos(diario) {
+  if (!diario) return null;
+  const acc = {};
+  for (const [f, v] of Object.entries(diario)) {
+    if (ASUETOS_SV[f]) continue;
+    const d = new Date(f + 'T00:00:00Z');
+    if (esDiaDePago(d)) continue;
+    (acc[d.getUTCDay()] = acc[d.getUTCDay()] || []).push(v);
+  }
+  const prom = {};
+  for (let i = 0; i < 7; i++) {
+    if (!acc[i] || acc[i].length < 4) return null;
+    prom[i] = acc[i].reduce((s, x) => s + x, 0) / acc[i].length;
+  }
+  if (!(prom[4] > 0)) return null;
+  const out = {};
+  for (let i = 0; i < 7; i++) out[i] = prom[i] / prom[4];
+  return out;
 }
 
 function calcularMetaMensual(canal, sucursal, m) {
@@ -458,33 +539,71 @@ function calcularMetaMensual(canal, sucursal, m) {
   const aa = m.mismoMesAA[k] || 0;
   const prom3 = m.last3.reduce((s, x) => s + (x[k] || 0), 0) / 3;
 
-  // Fallback si no hay año anterior: redistribuir 60/40 entre mesAnt y prom3
+  // Fallback si no hay año anterior: 65% mes anterior + 35% promedio 3 meses
   if (aa === 0) {
     return ant * 0.65 + prom3 * 0.35;
   }
   return ant * 0.40 + aa * 0.40 + prom3 * 0.20;
 }
 
+// Todo lo que depende de la sucursal elegida y no del canal: factores, ritmo del mes y del día.
+function contextoMetas(m, sc) {
+  const dowF = factoresDowEmpiricos(m.diario[sc]);
+  const mesStart = new Date(m.mesSel + 'T00:00:00Z');
+  const sumaFactores = sumaFactoresMes(m.mesSel, dowF);
+  const fHoy = factorDia(m.fechaHoy, dowF);
+  let factoresCerrados = 0;
+  for (let d = 1; d <= m.diasCerrados; d++) {
+    factoresCerrados += factorDia(new Date(Date.UTC(mesStart.getUTCFullYear(), mesStart.getUTCMonth(), d)), dowF).factor;
+  }
+  const curva = m.esMesActual ? (m.curva[sc] || m.curva.TOTAL || null) : null;
+  const pctDia = curva ? curva.pct : null; // parte del día que normalmente ya se vendió a esta hora
+  // Parte de la meta del mes que debería ir hecha a esta hora
+  const pctMesEsperado = sumaFactores > 0
+    ? (m.esMesActual ? (factoresCerrados + fHoy.factor * (pctDia ?? 0)) / sumaFactores : 1)
+    : null;
+  return { dowF, sumaFactores, fHoy, pctDia, pctMesEsperado, horaFin: curva?.horaFin || null };
+}
+
 function titulize(s) { return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
 function avatarLetters(nombre) { return nombre.split(/\s+/).slice(0, 2).map(p => p[0] || '').join('').toUpperCase(); }
 
+// Horas que faltan desde ahora hasta la hora típica de cierre (HH:MI).
+function horasRestantes(fechaHoy, horaFin) {
+  if (!horaFin) return null;
+  const [h, mi] = horaFin.split(':').map(Number);
+  const ahoraMin = fechaHoy.getUTCHours() * 60 + fechaHoy.getUTCMinutes();
+  const rest = (h * 60 + mi - ahoraMin) / 60;
+  return rest > 0 ? rest : 0;
+}
+
+const colorRitmo = (real, esperado) => esperado == null || esperado <= 0 ? '#9ca3af'
+  : real >= esperado ? '#10b981' : real >= esperado * 0.9 ? '#fbbf24' : '#ef4444';
+
 // ──────────────────── Tab Metas ────────────────────
-function TabMetas({ metasData, sucursalSel, mesSel }) {
+function TabMetas({ metasData, sucursalSel }) {
   if (!metasData) return <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>Cargando metas…</div>;
 
+  const m = metasData;
   const sc = sucursalSel === 'todas' ? 'TOTAL' : sucursalSel;
-  const sucLabel = sucursalSel === 'todas' ? 'Cadena completa (5 sucursales)' : `${sucursalSel} — ${STORES[sucursalSel] || sucursalSel}`;
+  const sucLabel = sucursalSel === 'todas' ? `Cadena completa (${STORES_ACTIVAS.length} sucursales)` : `${sucursalSel} — ${STORES[sucursalSel] || sucursalSel}`;
+  const ctx = contextoMetas(m, sc);
 
-  // Total cadena
-  const totalActual = metasData.actual[`${sc}|TOTAL`] || 0;
-  const totalAnt = metasData.antMismoDias[`${sc}|TOTAL`] || 0;
-  const deltaTotal = totalAnt > 0 ? ((totalActual - totalAnt) / totalAnt) * 100 : null;
+  const cerradoTotal = m.cerrado[`${sc}|TOTAL`] || 0;
+  const hoyTotal = m.hoy[`${sc}|TOTAL`] || 0;
+  const totalActual = cerradoTotal + hoyTotal;
+  const totalAnt = m.antMismoDias[`${sc}|TOTAL`] || 0;
+  const deltaTotal = totalAnt > 0 && m.diasCerrados > 0 ? ((cerradoTotal - totalAnt) / totalAnt) * 100 : null;
 
-  const metaMensualTotal = CH_KEYS.reduce((s, ch) => s + calcularMetaMensual(ch, sc, metasData), 0);
-  const metaDiariaTotal = (metaMensualTotal / metasData.sumaFactores) * factorDia(metasData.fechaHoy).factor;
-  const factorHoy = factorDia(metasData.fechaHoy);
+  const metaMensualTotal = CH_KEYS.reduce((s, ch) => s + calcularMetaMensual(ch, sc, m), 0);
+  const metaDiariaTotal = ctx.sumaFactores > 0 ? (metaMensualTotal / ctx.sumaFactores) * ctx.fHoy.factor : 0;
+  const esperadoHoy = ctx.pctDia != null ? metaDiariaTotal * ctx.pctDia : null;
+  const esperadoMes = ctx.pctMesEsperado != null ? metaMensualTotal * ctx.pctMesEsperado : null;
 
-  const fechaHoyStr = metasData.fechaHoy.toLocaleDateString('es-SV', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  const fechaHoyStr = m.fechaHoy.toLocaleDateString('es-SV', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  const mesAntNombre = new Date(Date.UTC(new Date(m.mesSel + 'T00:00:00Z').getUTCFullYear(), new Date(m.mesSel + 'T00:00:00Z').getUTCMonth() - 1, 1))
+    .toLocaleDateString('es-SV', { month: 'short', timeZone: 'UTC' });
+  const actualizadoStr = m.actualizado?.toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit', timeZone: 'America/El_Salvador' });
 
   return (
     <>
@@ -500,104 +619,171 @@ function TabMetas({ metasData, sucursalSel, mesSel }) {
               {fmt$(totalActual)}
             </div>
             <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-              Día {metasData.diaHoy} de {metasData.diasDelMes} · Mes en curso
+              {m.esMesActual ? `Día ${m.diaHoy} de ${m.diasDelMes} · Mes en curso (incluye hoy)` : `Mes cerrado · ${m.diasDelMes} días`}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: '#9ca3af' }}>Mismo período mes anterior</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#a5b4fc', marginTop: 2 }}>{fmt$(totalAnt)}</div>
-            {deltaTotal != null && (
-              <div style={{ fontSize: 13, fontWeight: 600, color: deltaTotal >= 0 ? '#10b981' : '#ef4444', marginTop: 2 }}>
-                {deltaTotal >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(deltaTotal))}
-              </div>
-            )}
+            <div style={{ fontSize: 11, color: '#9ca3af' }}>
+              {m.esMesActual ? `Días cerrados 1–${m.diasCerrados} vs 1–${m.diasCerrados} ${mesAntNombre}` : 'Vs mes anterior completo'}
+            </div>
+            {m.diasCerrados > 0 ? (
+              <>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#a5b4fc', marginTop: 2 }}>{fmt$(cerradoTotal)} <span style={{ fontSize: 12, color: '#666' }}>vs {fmt$(totalAnt)}</span></div>
+                {deltaTotal != null && (
+                  <div style={{ fontSize: 13, fontWeight: 600, color: deltaTotal >= 0 ? '#10b981' : '#ef4444', marginTop: 2 }}>
+                    {deltaTotal >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(deltaTotal))}
+                  </div>
+                )}
+              </>
+            ) : <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>Primer día del mes: aún no hay días cerrados</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 11, color: '#9ca3af' }}>Meta mensual</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#fbbf24', marginTop: 2 }}>{fmt$(metaMensualTotal)}</div>
             <div style={{ fontSize: 11, color: '#9ca3af' }}>{metaMensualTotal > 0 ? fmtPct((totalActual / metaMensualTotal) * 100) + ' alcanzado' : '—'}</div>
+            {m.esMesActual && esperadoMes != null && (
+              <div style={{ fontSize: 11, color: colorRitmo(totalActual, esperadoMes), fontWeight: 600 }}>
+                Ritmo: {fmtPct(ctx.pctMesEsperado * 100)} · {totalActual >= esperadoMes ? 'adelante' : 'atrás'} {fmt$(Math.abs(totalActual - esperadoMes))}
+              </div>
+            )}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: '#9ca3af' }}>Meta de hoy ({factorHoy.motivo})</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', marginTop: 2 }}>{fmt$(metaDiariaTotal)}</div>
-            <div style={{ fontSize: 11, color: '#9ca3af' }}>Factor ×{factorHoy.factor.toFixed(2)}</div>
-          </div>
+          {m.esMesActual && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: '#9ca3af' }}>Hoy ({ctx.fHoy.motivo}) · meta {fmt$(metaDiariaTotal)}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 2 }}>
+                {fmt$(hoyTotal)} <span style={{ fontSize: 12, color: '#10b981' }}>/ {fmt$(metaDiariaTotal)}</span>
+              </div>
+              {esperadoHoy != null ? (
+                <div style={{ fontSize: 11, color: colorRitmo(hoyTotal, esperadoHoy), fontWeight: 600 }}>
+                  A esta hora: {fmt$(esperadoHoy)} · {hoyTotal >= esperadoHoy ? 'adelante' : 'atrás'} {fmt$(Math.abs(hoyTotal - esperadoHoy))}
+                </div>
+              ) : <div style={{ fontSize: 11, color: '#9ca3af' }}>Factor ×{ctx.fHoy.factor.toFixed(2)}</div>}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Grid 4 filas (canales) × 3 columnas (Actual / Meta mensual / Meta diaria) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 12 }}>
-        {/* Header columnas */}
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 1, paddingLeft: 4 }}>📊 Actual · vs Mes Anterior</div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 1, paddingLeft: 4 }}>🎯 Meta Mensual</div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#10b981', textTransform: 'uppercase', letterSpacing: 1, paddingLeft: 4 }}>📅 Meta Diaria · {fechaHoyStr}</div>
-
-        {CH_KEYS.map(canal => <FilaMeta key={canal} canal={canal} sucursal={sc} m={metasData} />)}
+      {/* Grid 4 filas (canales) × 3 columnas (Actual / Meta mensual / Hoy) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {CH_KEYS.map(canal => <FilaMeta key={canal} canal={canal} sucursal={sc} m={m} ctx={ctx} mesAntNombre={mesAntNombre} fechaHoyStr={fechaHoyStr} />)}
       </div>
 
       {/* Footer explicativo */}
       <div style={{ marginTop: 16, padding: 14, background: 'rgba(15,23,42,0.5)', border: '1px solid #262626', borderRadius: 8, fontSize: 11, color: '#9ca3af', lineHeight: 1.6 }}>
         <strong style={{ color: '#a5b4fc' }}>📐 Fórmula meta mensual:</strong> 40% mes anterior · 40% mismo mes año anterior · 20% promedio últimos 3 meses · Si no hay data de año anterior → 65% mes anterior + 35% promedio 3 meses
         <br />
-        <strong style={{ color: '#a5b4fc' }}>📅 Meta diaria:</strong> Meta mensual ÷ Σ factores del mes × factor del día. Factores: Lun/Mar 0.85, Mié 0.95, Jue 1.0, Vie 1.20, Sáb 1.15, Dom 1.05. Días de pago (15 y último) ×1.12. Asuetos especiales: Día Madre ×1.65, Día Padre ×1.40, Año Nuevo/Navidad ×0.7.
+        <strong style={{ color: '#a5b4fc' }}>📅 Meta diaria:</strong> Meta mensual ÷ Σ factores del mes × factor del día. {ctx.dowF
+          ? <>Factores por día de la semana calculados con la venta real de los últimos 3 meses de esta vista: {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map((d, i) => `${d} ${ctx.dowF[i].toFixed(2)}`).join(' · ')}.</>
+          : <>Factores fijos (no hay 3 meses de historia): Lun/Mar 0.85, Mié 0.95, Jue 1.0, Vie 1.20, Sáb 1.15, Dom 1.05.</>
+        } Días de pago (1, 15, 16 y último) ×1.12. Asuetos con factor propio (Día Madre ×1.65, Día Padre ×1.40, Año Nuevo/Navidad ×0.7).
+        {m.esMesActual && <>
+          <br />
+          <strong style={{ color: '#a5b4fc' }}>⏱ Ritmo de hoy:</strong> qué parte de la venta de un {ctx.fHoy.motivo.split(' ')[0]} se hace normalmente antes de esta hora (cuentas cobradas en el POS, mismo día de la semana, últimas 8 semanas). Se actualiza cada 3 min{actualizadoStr ? ` · última actualización ${actualizadoStr}` : ''}.
+        </>}
       </div>
     </>
   );
 }
 
-function FilaMeta({ canal, sucursal, m }) {
+function FilaMeta({ canal, sucursal, m, ctx, mesAntNombre, fechaHoyStr }) {
   const k = `${sucursal}|${canal}`;
-  const actual = m.actual[k] || 0;
+  const cerrado = m.cerrado[k] || 0;
+  const hoy = m.hoy[k] || 0;
+  const actual = cerrado + hoy;
   const ant = m.antMismoDias[k] || 0;
-  const delta = ant > 0 ? ((actual - ant) / ant) * 100 : null;
+  const delta = ant > 0 && m.diasCerrados > 0 ? ((cerrado - ant) / ant) * 100 : null;
 
   const metaMensual = calcularMetaMensual(canal, sucursal, m);
   const pctMeta = metaMensual > 0 ? (actual / metaMensual) * 100 : 0;
-  const metaDiaria = (metaMensual / m.sumaFactores) * factorDia(m.fechaHoy).factor;
+  const esperadoMes = ctx.pctMesEsperado != null ? metaMensual * ctx.pctMesEsperado : null;
+  const metaDiaria = ctx.sumaFactores > 0 ? (metaMensual / ctx.sumaFactores) * ctx.fHoy.factor : 0;
+  const esperadoHoy = ctx.pctDia != null ? metaDiaria * ctx.pctDia : null;
+  const pctHoy = metaDiaria > 0 ? (hoy / metaDiaria) * 100 : 0;
+  const faltaHoy = Math.max(0, metaDiaria - hoy);
+  const horas = horasRestantes(m.fechaHoy, ctx.horaFin);
 
   const color = CH_COLOR[canal];
+  const card = { background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 14 };
+  const etiqueta = (txt, c) => <div style={{ fontSize: 11, color: c, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{txt}</div>;
 
   return (
-    <>
-      {/* Card 1: Actual + comparativa */}
-      <div style={{ background: '#141414', border: '1px solid #262626', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: 14 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+      {/* Card 1: Acumulado del mes + comparativa de días cerrados */}
+      <div style={{ ...card, borderLeft: `3px solid ${color}` }}>
         <div style={{ fontSize: 13, color, fontWeight: 600 }}>{CH_LABEL[canal]}</div>
         <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{fmt$(actual)}</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6, fontSize: 11 }}>
-          <span style={{ color: '#666' }}>vs {fmt$(ant)} ({m.diaHoy} días mes anterior)</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6, fontSize: 11, gap: 8 }}>
+          <span style={{ color: '#666' }}>
+            {m.diasCerrados > 0
+              ? (m.esMesActual ? `1–${m.diasCerrados}: ${fmt$(cerrado)} vs ${fmt$(ant)} (1–${m.diasCerrados} ${mesAntNombre})` : `vs ${fmt$(ant)} mes anterior`)
+              : 'Sin días cerrados para comparar'}
+          </span>
           {delta != null && (
-            <span style={{ color: delta >= 0 ? '#10b981' : '#ef4444', fontWeight: 700 }}>
+            <span style={{ color: delta >= 0 ? '#10b981' : '#ef4444', fontWeight: 700, whiteSpace: 'nowrap' }}>
               {delta >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(delta))}
             </span>
           )}
         </div>
       </div>
 
-      {/* Card 2: Meta mensual + progreso */}
-      <div style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 14 }}>
-        <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Meta del mes</div>
+      {/* Card 2: Meta mensual + progreso contra el ritmo esperado */}
+      <div style={card}>
+        {etiqueta('Meta del mes', '#fbbf24')}
         <div style={{ fontSize: 22, fontWeight: 700, color: '#fbbf24', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{fmt$(metaMensual)}</div>
-        <div style={{ height: 6, background: '#1f2937', borderRadius: 3, overflow: 'hidden', marginTop: 8 }}>
-          <div style={{ height: '100%', width: Math.min(100, pctMeta) + '%', background: pctMeta >= 100 ? '#10b981' : pctMeta >= 70 ? '#fbbf24' : '#ef4444', transition: 'width 0.4s' }} />
-        </div>
+        <BarraMeta pct={pctMeta} pctEsperado={ctx.pctMesEsperado != null ? ctx.pctMesEsperado * 100 : null} color={colorRitmo(actual, esperadoMes)} />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: '#9ca3af' }}>
           <span>{fmtPct(pctMeta)} alcanzado</span>
           <span>Falta {fmt$(Math.max(0, metaMensual - actual))}</span>
         </div>
+        {m.esMesActual && esperadoMes != null && metaMensual > 0 && (
+          <div style={{ marginTop: 4, fontSize: 11, color: colorRitmo(actual, esperadoMes), fontWeight: 600 }}>
+            Debería ir en {fmt$(esperadoMes)} · {actual >= esperadoMes ? 'adelante' : 'atrás'} {fmt$(Math.abs(actual - esperadoMes))}
+          </div>
+        )}
       </div>
 
-      {/* Card 3: Meta diaria de hoy */}
-      <div style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 14 }}>
-        <div style={{ fontSize: 11, color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Meta de hoy</div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: '#10b981', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{fmt$(metaDiaria)}</div>
-        <div style={{ marginTop: 6, fontSize: 11, color: '#666' }}>
-          {factorDia(m.fechaHoy).motivo} · factor ×{factorDia(m.fechaHoy).factor.toFixed(2)}
+      {/* Card 3: Hoy — venta real contra meta del día */}
+      {m.esMesActual ? (
+        <div style={card}>
+          {etiqueta('Hoy · ' + fechaHoyStr, '#10b981')}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{fmt$(hoy)}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#10b981' }}>/ {fmt$(metaDiaria)}</span>
+          </div>
+          <BarraMeta pct={pctHoy} pctEsperado={ctx.pctDia != null ? ctx.pctDia * 100 : null} color={colorRitmo(hoy, esperadoHoy)} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: '#9ca3af' }}>
+            <span>{fmtPct(pctHoy)} de la meta</span>
+            <span>{faltaHoy > 0 ? `Falta ${fmt$(faltaHoy)}` : '✅ Meta cumplida'}</span>
+          </div>
+          {esperadoHoy != null && metaDiaria > 0 && (
+            <div style={{ marginTop: 4, fontSize: 11, color: colorRitmo(hoy, esperadoHoy), fontWeight: 600 }}>
+              A esta hora debería llevar {fmt$(esperadoHoy)} · {hoy >= esperadoHoy ? 'adelante' : 'atrás'} {fmt$(Math.abs(hoy - esperadoHoy))}
+            </div>
+          )}
+          <div style={{ marginTop: 4, fontSize: 11, color: '#666' }}>
+            {ctx.fHoy.motivo} · factor ×{ctx.fHoy.factor.toFixed(2)}
+            {faltaHoy > 0 && horas != null && horas > 0.25 && ` · necesita ${fmt$2(faltaHoy / horas)}/hora hasta ~${ctx.horaFin}`}
+          </div>
         </div>
-        <div style={{ marginTop: 4, fontSize: 11, color: '#666' }}>
-          Equivale a {fmt$2(metaDiaria / 12)} /hora si abren 12h
+      ) : (
+        <div style={{ ...card, color: '#666', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+          La meta del día solo aplica al mes en curso
         </div>
-      </div>
-    </>
+      )}
+    </div>
+  );
+}
+
+// Barra de avance con una marca blanca donde debería ir según el ritmo esperado.
+function BarraMeta({ pct, pctEsperado, color }) {
+  return (
+    <div style={{ position: 'relative', height: 6, background: '#1f2937', borderRadius: 3, marginTop: 8 }}>
+      <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: color, borderRadius: 3, transition: 'width 0.4s' }} />
+      {pctEsperado != null && pctEsperado > 0 && pctEsperado < 100 && (
+        <div title={`Ritmo esperado: ${fmtPct(pctEsperado)}`}
+          style={{ position: 'absolute', top: -3, left: `calc(${pctEsperado}% - 1px)`, width: 2, height: 12, background: '#fff', borderRadius: 1 }} />
+      )}
+    </div>
   );
 }
 
@@ -609,8 +795,8 @@ function TabResumen({ datos, sucursalSel }) {
   if (sucursalSel !== 'todas') {
     const s = sucursales.find(x => x.store_code === sucursalSel);
     sucursales = s ? [s] : [];
-    totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
-    ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
+    totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
+    ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
     total = 0; ordTotal = 0;
     if (s) {
       CH_KEYS.forEach(ch => {
@@ -631,13 +817,14 @@ function TabResumen({ datos, sucursalSel }) {
 
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
         <KpiCard label="Órdenes Totales" value={fmtN(ordTotal)} sub={`${fmt$(total)} · Ticket ${fmt$2(ticketGlobal)}`} />
         <KpiCard label="🍴 Mesa" value={fmtN(ordCanal.mesa)} sub={`${fmt$(totalCanal.mesa)} · Ticket ${fmt$2(ticketCanal.mesa)}`} color="#f59e0b" pctMix={total ? (totalCanal.mesa / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.mesa / ordTotal) * 100 : 0} />
         <KpiCard label="🥡 Llevar" value={fmtN(ordCanal.para_llevar)} sub={`${fmt$(totalCanal.para_llevar)} · Ticket ${fmt$2(ticketCanal.para_llevar)}`} color="#3b82f6" pctMix={total ? (totalCanal.para_llevar / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.para_llevar / ordTotal) * 100 : 0} />
         <KpiCard label="🛵 Delivery Propio" value={fmtN(ordCanal.delivery_propio)} sub={`${fmt$(totalCanal.delivery_propio)} · Ticket ${fmt$2(ticketCanal.delivery_propio)}`} color="#ec4899" pctMix={total ? (totalCanal.delivery_propio / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.delivery_propio / ordTotal) * 100 : 0} />
         {/* FIX: Drive Thru ahora SÍ muestra ticket promedio */}
         <KpiCard label="🚗 Drive Thru" value={fmtN(ordCanal.drivethrough)} sub={`${fmt$(totalCanal.drivethrough)} · Ticket ${fmt$2(ticketCanal.drivethrough)} · Solo S003`} color="#14b8a6" pctMix={total ? (totalCanal.drivethrough / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.drivethrough / ordTotal) * 100 : 0} />
+        <KpiCard label="🟣 PeYa" value={fmtN(ordCanal.pedidos_ya)} sub={`${fmt$(totalCanal.pedidos_ya)} · Ticket ${fmt$2(ticketCanal.pedidos_ya)}`} color="#a855f7" pctMix={total ? (totalCanal.pedidos_ya / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.pedidos_ya / ordTotal) * 100 : 0} />
       </div>
 
       <div style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 16, overflowX: 'auto' }}>
@@ -656,10 +843,11 @@ function TabResumen({ datos, sucursalSel }) {
               <th colSpan={3} style={{ ...thStyle, color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}>🥡 Llevar</th>
               <th colSpan={3} style={{ ...thStyle, color: '#ec4899', background: 'rgba(236,72,153,0.05)' }}>🛵 Delivery</th>
               <th colSpan={3} style={{ ...thStyle, color: '#14b8a6', background: 'rgba(20,184,166,0.05)' }}>🚗 Drive</th>
+              <th colSpan={3} style={{ ...thStyle, color: '#a855f7', background: 'rgba(168,85,247,0.05)' }}>🟣 PeYa</th>
               <th colSpan={3} style={{ ...thStyle, color: '#a5b4fc', background: 'rgba(99,102,241,0.05)' }}>📊 Total</th>
             </tr>
             <tr style={{ borderBottom: '1px solid #262626' }}>
-              {[...Array(5)].flatMap((_, i) => ([
+              {[...Array(CH_KEYS.length + 1)].flatMap((_, i) => ([
                 <th key={i + '-1'} style={thStyleSm}>Órd.</th>,
                 <th key={i + '-2'} style={thStyleSm}>Monto</th>,
                 <th key={i + '-3'} style={thStyleSm}>Ticket</th>,
@@ -890,6 +1078,7 @@ function TabTendencia({ tend }) {
         { key: 'llevar', label: '🥡 Llevar', color: '#3b82f6' },
         { key: 'delivery', label: '🛵 Delivery Propio', color: '#ec4899' },
         { key: 'drive', label: '🚗 Drive Thru (S003)', color: '#14b8a6' },
+        { key: 'peya', label: '🟣 PeYa', color: '#a855f7' },
       ].map(ch => (
         <div key={ch.key} style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 14 }}>
           <div style={{ fontWeight: 600, color: ch.color, marginBottom: 10 }}>{ch.label}</div>
