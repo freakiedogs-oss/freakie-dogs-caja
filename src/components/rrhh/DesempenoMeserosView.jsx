@@ -165,6 +165,7 @@ export default function DesempenoMeserosView({ user }) {
         <button style={btn(tab === 'ranking')} onClick={() => setTab('ranking')}>Ranking</button>
         <button style={btn(tab === 'vende')} onClick={() => setTab('vende')}>Qué vende cada uno</button>
         <button style={btn(tab === 'sucursales')} onClick={() => setTab('sucursales')}>Por sucursal</button>
+        {PUEDEN_CONFIGURAR.includes(rol) && <button style={btn(tab === 'propina')} onClick={() => setTab('propina')}>Propina y faltas</button>}
         {PUEDEN_CONFIGURAR.includes(rol) && <button style={btn(tab === 'config')} onClick={() => setTab('config')}>Metas y reglas</button>}
       </div>
 
@@ -215,6 +216,8 @@ export default function DesempenoMeserosView({ user }) {
       {tab === 'vende' && !error && <QueVende personas={personas} items={items} cargando={cargando} />}
 
       {tab === 'sucursales' && !error && <PorSucursal user={user} desde={desde} hasta={hasta} actual={store} />}
+
+      {tab === 'propina' && <PropinaFaltas user={user} store={store} mes={periodo === 'anterior' ? desde : `${hoySV().slice(0, 7)}-01`} />}
 
       {tab === 'config' && !error && (
         <ConfigMetas user={user} store={store} config={config} personas={personas} onGuardado={cargar} />
@@ -668,6 +671,159 @@ function PorSucursal({ user, desde, hasta, actual }) {
         Mesas: venta ÷ personas sentadas. Para llevar y drive thru: venta ÷ ticket (no se registra cuántas personas). Sin ventas a empleados, sin delivery ni PedidosYa.
         Los food courts no tienen mesas, por eso solo muestran ticket.
       </p>
+    </>
+  )
+}
+
+// ── Propina del mes: base por meta + premios − faltas ─────────────────────
+// Leve −2.5 %, moderada −5 %, grave −10 %; premio +x % (hasta 20 por registro).
+// El cálculo vive en fn_propina_mes; cada quien ve el suyo en «Mi Desempeño».
+const TIPOS = [
+  ['falta_leve', 'Falta leve', -2.5, C.warn],
+  ['falta_moderada', 'Falta moderada', -5, '#fb923c'],
+  ['falta_grave', 'Falta grave', -10, C.bad],
+  ['premio', 'Premio', null, C.ok],
+]
+const ROL_ORDEN = { cocina: 0, mesero: 1, mesera: 1, cajera: 2, cajero: 2, domicilios: 3 }
+const ROL_LABEL = { cocina: 'Cocina', mesero: 'Meseros', mesera: 'Meseros', cajera: 'Cajeras', cajero: 'Cajeras', domicilios: 'Domicilios' }
+const fmtPct = (n) => `${Number(n) > 0 ? '+' : ''}${Number(n).toLocaleString('es', { maximumFractionDigits: 1 })}%`
+
+function PropinaFaltas({ user, store, mes }) {
+  const [filas, setFilas] = useState([])
+  const [ajustes, setAjustes] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [msg, setMsg] = useState('')
+  const [f, setF] = useState({ uid: '', tipo: 'falta_leve', pct: 5, fecha: hoySV(), motivo: '' })
+  const [anulando, setAnulando] = useState(null)   // { id, motivo }
+
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    const [r1, r2] = await Promise.all([
+      db.rpc('fn_propina_mes', { p_usuario_id: user.id, p_store: store, p_mes: mes }),
+      db.rpc('fn_ajustes_mes', { p_usuario_id: user.id, p_store: store, p_mes: mes }),
+    ])
+    if (r1.error || r2.error) setMsg((r1.error || r2.error).message)
+    setFilas((r1.data || []).sort((a, b) => (ROL_ORDEN[a.rol] ?? 9) - (ROL_ORDEN[b.rol] ?? 9) || a.nombre.localeCompare(b.nombre)))
+    setAjustes(r2.data || [])
+    setCargando(false)
+  }, [user.id, store, mes])
+  useEffect(() => { cargar() }, [cargar])
+
+  async function registrar() {
+    if (!f.uid) { setMsg('Elegí a la persona.'); return }
+    if (f.motivo.trim().length < 3) { setMsg('Escribí el motivo: la persona lo va a ver.'); return }
+    const { error } = await db.rpc('fn_ajuste_registrar', {
+      p_usuario_id: user.id, p_store: store, p_target: f.uid, p_tipo: f.tipo,
+      p_pct: f.tipo === 'premio' ? Number(f.pct) : null, p_fecha: f.fecha, p_motivo: f.motivo,
+    })
+    if (error) { setMsg('No se registró: ' + error.message); return }
+    const quien = filas.find(x => x.usuario_id === f.uid)?.nombre
+    setMsg(`Registrado para ${quien}.`); setF({ ...f, motivo: '' }); cargar()
+  }
+
+  async function anular() {
+    const { error } = await db.rpc('fn_ajuste_anular', { p_usuario_id: user.id, p_id: anulando.id, p_motivo: anulando.motivo })
+    if (error) { setMsg('No se anuló: ' + error.message); return }
+    setAnulando(null); setMsg('Anulado.'); cargar()
+  }
+
+  const grupos = {}
+  for (const x of filas) (grupos[ROL_LABEL[x.rol] || x.rol] ||= []).push(x)
+  const tipo = TIPOS.find(t => t[0] === f.tipo)
+  const lblMes = new Date(mes + 'T12:00:00Z').toLocaleDateString('es', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+
+  return (
+    <>
+      <div style={card}>
+        <h3 style={{ marginTop: 0 }}>Registrar falta o premio</h3>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+          <select style={{ ...inp, width: 240 }} value={f.uid} onChange={e => setF({ ...f, uid: e.target.value })}>
+            <option value="">Elegí a la persona…</option>
+            {Object.entries(grupos).map(([g, xs]) => (
+              <optgroup key={g} label={g}>{xs.map(x => <option key={x.usuario_id} value={x.usuario_id}>{x.nombre}</option>)}</optgroup>
+            ))}
+          </select>
+          <input type="date" style={{ ...inp, width: 150 }} value={f.fecha} max={hoySV()} onChange={e => setF({ ...f, fecha: e.target.value })} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          {TIPOS.map(([k, l, v, col]) => (
+            <button key={k} onClick={() => setF({ ...f, tipo: k })}
+              style={{ ...btn(f.tipo === k), borderColor: f.tipo === k ? col : C.line, color: f.tipo === k ? col : C.txt, background: 'transparent' }}>
+              {l} {v != null ? `${v}%` : ''}
+            </button>
+          ))}
+          {f.tipo === 'premio' && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              + <input type="number" min="0.5" max="20" step="0.5" style={{ ...inp, width: 70 }} value={f.pct} onChange={e => setF({ ...f, pct: e.target.value })} /> %
+            </label>
+          )}
+        </div>
+        <textarea rows={2} placeholder="Motivo (la persona lo ve en «Mi Desempeño»)" value={f.motivo} onChange={e => setF({ ...f, motivo: e.target.value })}
+          style={{ ...inp, width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', marginBottom: 10 }} />
+        <button style={{ ...btn(true), borderColor: tipo[3], color: tipo[3] }} onClick={registrar}>
+          Registrar {tipo[1].toLowerCase()} {f.tipo === 'premio' ? `+${f.pct}%` : `${tipo[2]}%`}
+        </button>
+        {msg && <span style={{ marginLeft: 12, color: C.dim }}>{msg}</span>}
+      </div>
+
+      <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
+        <div style={{ padding: '12px 12px 0', fontWeight: 700 }}>Propina de {lblMes}</div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+          <thead>
+            <tr>{['Persona', 'Se mide con', 'Meta', 'Base', 'Faltas', 'Premios', 'Propina del mes'].map((h, i) =>
+              <th key={h} style={{ ...th, textAlign: i < 2 ? 'left' : 'right' }}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {cargando && <tr><td colSpan={7} style={{ padding: 16, color: C.dim }}>Cargando…</td></tr>}
+            {!cargando && Object.entries(grupos).map(([g, xs]) => [
+              <tr key={g}><td colSpan={7} style={{ ...td, textAlign: 'left', background: C.row, color: C.dim, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }}>{g}</td></tr>,
+              ...xs.map(x => {
+                const col = Number(x.pct_final) >= 100 ? C.ok : Number(x.pct_final) >= 75 ? C.warn : C.bad
+                return (
+                  <tr key={x.usuario_id}>
+                    <td style={{ ...td, textAlign: 'left' }}><b>{x.nombre}</b></td>
+                    <td style={{ ...td, textAlign: 'left', color: C.dim }}>{x.ambito === 'equipo' ? 'Meta del equipo' : x.ambito === 'domicilios' ? 'Meta de domicilios' : 'Su meta de extras'}</td>
+                    <td style={td}>{x.sin_meta ? <span style={{ color: C.dim }}>Sin meta</span> : <Barra v={Number(x.cumplimiento)} />}</td>
+                    <td style={td}>{Number(x.base_pct)}%</td>
+                    <td style={{ ...td, color: Number(x.faltas_pct) ? C.bad : C.dim }}>{Number(x.faltas_pct) ? `${fmtPct(x.faltas_pct)} (${x.n_faltas})` : '—'}</td>
+                    <td style={{ ...td, color: Number(x.premios_pct) ? C.ok : C.dim }}>{Number(x.premios_pct) ? `${fmtPct(x.premios_pct)} (${x.n_premios})` : '—'}</td>
+                    <td style={{ ...td, fontWeight: 800, fontSize: 15, color: col }}>{Number(x.pct_final).toLocaleString('es', { maximumFractionDigits: 1 })}%</td>
+                  </tr>
+                )
+              }),
+            ])}
+          </tbody>
+        </table>
+        <p style={{ color: C.dim, fontSize: 12, padding: '0 12px' }}>
+          Base: 100 % si cumple su meta del mes, 50 % si no (sin meta cargada = 100 %). Cocina se mide con la meta del equipo; Karina con la de domicilios.
+          Se calcula hasta ayer. Propina del mes = base + premios − faltas. Fase de medición: todavía no cambia la planilla.
+        </p>
+      </div>
+
+      <div style={card}>
+        <h3 style={{ marginTop: 0 }}>Faltas y premios de {lblMes}</h3>
+        {ajustes.length === 0 && <div style={{ color: C.dim }}>Sin registros este mes.</div>}
+        {ajustes.map(a => {
+          const t = TIPOS.find(x => x[0] === a.tipo)
+          return (
+            <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 0', borderTop: `1px solid ${C.line}`, opacity: a.anulado ? 0.5 : 1 }}>
+              <b style={{ color: t?.[3], minWidth: 60, textAlign: 'right' }}>{fmtPct(a.pct)}</b>
+              <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                <div><b>{a.nombre}</b> <span style={{ color: C.dim, fontSize: 12 }}>· {t?.[1]} · {a.fecha} · registró {a.registrado_por}</span></div>
+                <div style={{ color: C.dim, fontSize: 13, textDecoration: a.anulado ? 'line-through' : 'none' }}>{a.motivo}</div>
+                {a.anulado && <div style={{ fontSize: 12, color: C.dim }}>Anulado: {a.anulado_motivo}</div>}
+              </div>
+              {!a.anulado && (anulando?.id === a.id ? (
+                <span style={{ display: 'inline-flex', gap: 6 }}>
+                  <input autoFocus placeholder="¿Por qué se anula?" style={{ ...inp, width: 200 }} value={anulando.motivo} onChange={e => setAnulando({ ...anulando, motivo: e.target.value })} />
+                  <button style={btn(true)} onClick={anular}>Anular</button>
+                  <button style={btn(false)} onClick={() => setAnulando(null)}>Cancelar</button>
+                </span>
+              ) : <button style={{ ...btn(false), color: C.dim }} onClick={() => setAnulando({ id: a.id, motivo: '' })}>Anular</button>)}
+            </div>
+          )
+        })}
+      </div>
     </>
   )
 }

@@ -1,5 +1,24 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 (noche) — Propina del mes en %: faltas y premios
+
+- **Tabla `incentivo_ajustes`:** falta leve −2.5, moderada −5, grave −10 o premio de +0.5 a +20.
+  - El motivo es obligatorio, porque la persona lo ve.
+  - Se anula con motivo; no se borra.
+  - RLS sin policies: solo por RPC.
+- **`_propina_mes(store, mes)`:** % final = máx(0, base + premios − faltas).
+  - Base por tramo (`incentivo_tramos`): 100 % si cumple la meta del mes, 50 % si no; sin meta cargada, 100 %.
+  - Cada rol se mide contra su meta: meseros y cajeras contra la personal de extras, cocina contra la de equipo, domicilios contra la de pedidos.
+  - **Calcula hasta ayer:** el día en curso no terminó y su meta completa bajaba el % de todos (se vio al probar: todos daban 50 %).
+- **RPC:**
+  - `fn_propina_mes`, `fn_ajustes_mes`, `fn_ajuste_registrar` y `fn_ajuste_anular` son para admin y gerente. No dejan registrarse a uno mismo, ni registrar a quien no está en el reparto o en una fecha futura.
+  - `fn_mi_propina` es la de cada quien.
+  - Probado en una transacción revertida: 100 − 2.5 − 10 + 5 = 92.5; el premio anulado no cuenta; el mesero no puede registrar; un premio de más de 20 se rechaza. No quedó ningún registro.
+- **UI:**
+  - Pestaña «Propina y faltas» en Desempeño Meseros: registrar, tabla por grupo (Cocina, Meseros, Cajeras, Domicilios) y lista con «Anular».
+  - Tarjeta «Tu propina este mes» en Mi Desempeño, con el desglose y los motivos.
+- **Pendiente:** todavía no toca planilla ni `PropinasView` (fase 4).
+
 ## 5-Nov-2026 (noche) — «Mi Desempeño»: cada persona ve solo sus métricas
 
 - **`fn_mi_desempeno(usuario, desde, hasta)`** (migración `20261105c_mi_desempeno.sql`):

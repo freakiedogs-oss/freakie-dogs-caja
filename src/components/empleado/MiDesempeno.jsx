@@ -41,7 +41,12 @@ export default function MiDesempeno({ user }) {
   const [error, setError] = useState('')
   const [cargando, setCargando] = useState(true)
   const [abierto, setAbierto] = useState(null)
+  const [prop, setProp] = useState(null)
   const [desde, hasta] = rango(periodo)
+
+  useEffect(() => {
+    db.rpc('fn_mi_propina', { p_usuario_id: user.id, p_mes: desde }).then(({ data }) => setProp(data || null))
+  }, [user.id, desde])
 
   useEffect(() => {
     setCargando(true); setError('')
@@ -103,6 +108,8 @@ export default function MiDesempeno({ user }) {
       {!cargando && d && !d.tiene_programa && !esDom && (
         <div style={{ ...card, color: C.dim }}>Tu sucursal todavía no tiene metas de extras. Igual podés ver lo que vendiste.</div>
       )}
+
+      {!cargando && prop?.resumen && <TarjetaPropina p={prop} />}
 
       {!cargando && r && (
         <>
@@ -209,6 +216,34 @@ function Mini({ titulo, v, suc, mejor }) {
       <div style={{ color: C.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em' }}>{titulo}</div>
       <div style={{ fontSize: 22, fontWeight: 700, margin: '2px 0', color: suc == null ? C.txt : mejor ? C.ok : C.txt }}>{v}</div>
       {suc != null && <div style={{ color: C.dim, fontSize: 12 }}>Sucursal: {suc}</div>}
+    </div>
+  )
+}
+
+const AJ = { falta_leve: ['Falta leve', C.warn], falta_moderada: ['Falta moderada', '#fb923c'], falta_grave: ['Falta grave', C.bad], premio: ['Premio', C.ok] }
+function TarjetaPropina({ p }) {
+  const r = p.resumen
+  const final = Number(r.pct_final)
+  const col = final >= 100 ? C.ok : final >= 75 ? C.warn : C.bad
+  const fmt = (n) => `${Number(n) > 0 ? '+' : ''}${Number(n).toLocaleString('es', { maximumFractionDigits: 1 })}%`
+  const meta = r.ambito === 'equipo' ? 'la meta del equipo' : r.ambito === 'domicilios' ? 'tu meta de domicilios' : 'tu meta de extras'
+  return (
+    <div style={{ ...card, borderColor: col }}>
+      <div style={{ color: C.dim, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }}>Tu propina este mes</div>
+      <div style={{ fontSize: 40, fontWeight: 800, color: col, lineHeight: 1.1, margin: '4px 0 8px' }}>{final.toLocaleString('es', { maximumFractionDigits: 1 })}%</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}>
+        <span>Base {r.sin_meta ? '(todavía sin meta)' : Number(r.cumplimiento) >= 100 ? `(cumplís ${meta})` : `(vas en ${Math.round(Number(r.cumplimiento))}% de ${meta})`}</span>
+        <b>{Number(r.base_pct)}%</b>
+      </div>
+      {p.ajustes.map((a, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, padding: '4px 0', borderTop: `1px solid ${C.line}` }}>
+          <span><b style={{ color: AJ[a.tipo]?.[1] }}>{AJ[a.tipo]?.[0]}</b> · {a.fecha.slice(8)}/{a.fecha.slice(5, 7)} <span style={{ color: C.dim }}>· {a.motivo}</span></span>
+          <b style={{ color: AJ[a.tipo]?.[1], whiteSpace: 'nowrap' }}>{fmt(a.pct)}</b>
+        </div>
+      ))}
+      <p style={{ color: C.dim, fontSize: 12, margin: '8px 0 0' }}>
+        Cumplir la meta del mes = 100 % de tu parte; si no, 50 %. Cada falta resta (leve 2.5 %, moderada 5 %, grave 10 %) y los premios suman. Se calcula hasta ayer.
+      </p>
     </div>
   )
 }
