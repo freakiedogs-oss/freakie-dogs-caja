@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 — Conteo crítico: la carne se cuenta en bolsas de 6 bolitas
+
+- **Qué pidió Jose:** cambiar el conteo crítico de las burgers (Carne P Burguer) de paquete de 20 bolitas a bolsa de 6.
+- **Base (migración `criticos_carne_bolsa_6`, copia en `supabase/migrations/20261105_criticos_carne_bolsa_6.sql`):** `criticos_items` de la carne queda en «Bolsa de 6 bolitas», `factor` = 6. La unidad de stock sigue siendo la bolita, así que venta, pedidos del kardex y costo no cambian.
+- **Historial conservado:** los 45 renglones guardados (M001, 21-sep a 4-nov) se pasaron a bolsas de 6 sin cambiar las bolitas. En el CID y el TPS quedan las bolsas enteras, y las bolitas que sobran se suman a la casilla suelta. Se pidió y las descargas quedan en bolsas con decimales (×20/6). Verificado: antes y después suman 250 bolitas de CID, 17,129 de cierre y 14,200 de pedido. Por eso el CID arrastrado del 4-nov al 5-nov ya sale en bolsas de 6.
+- **No se tocó:** el conteo nocturno (`ConteoNocturno.jsx`) ni etiquetado, que siguen hablando de paquetes de 20.
+
 ## 2-Nov-2026 — Líneas de facturas de compra: backfill, extracción automática y fin del bucle de errores
 
 Fase 0 del plan Compras HQ (`~/Proyectos/_auditorias/COMPRAS-HQ-plan-2026-10-29.md`). Migración `20261029_compras_dte_items_reparar.sql`.
