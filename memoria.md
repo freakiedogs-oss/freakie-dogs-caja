@@ -1,5 +1,91 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 (noche) — Propina del mes en %: faltas y premios
+
+- **Tabla `incentivo_ajustes`:** falta leve −2.5, moderada −5, grave −10 o premio de +0.5 a +20.
+  - El motivo es obligatorio, porque la persona lo ve.
+  - Se anula con motivo; no se borra.
+  - RLS sin policies: solo por RPC.
+- **`_propina_mes(store, mes)`:** % final = máx(0, base + premios − faltas).
+  - Base por tramo (`incentivo_tramos`): 100 % si cumple la meta del mes, 50 % si no; sin meta cargada, 100 %.
+  - Cada rol se mide contra su meta: meseros y cajeras contra la personal de extras, cocina contra la de equipo, domicilios contra la de pedidos.
+  - **Calcula hasta ayer:** el día en curso no terminó y su meta completa bajaba el % de todos (se vio al probar: todos daban 50 %).
+- **RPC:**
+  - `fn_propina_mes`, `fn_ajustes_mes`, `fn_ajuste_registrar` y `fn_ajuste_anular` son para admin y gerente. No dejan registrarse a uno mismo, ni registrar a quien no está en el reparto o en una fecha futura.
+  - `fn_mi_propina` es la de cada quien.
+  - Probado en una transacción revertida: 100 − 2.5 − 10 + 5 = 92.5; el premio anulado no cuenta; el mesero no puede registrar; un premio de más de 20 se rechaza. No quedó ningún registro.
+- **UI:**
+  - Pestaña «Propina y faltas» en Desempeño Meseros: registrar, tabla por grupo (Cocina, Meseros, Cajeras, Domicilios) y lista con «Anular».
+  - Tarjeta «Tu propina este mes» en Mi Desempeño, con el desglose y los motivos.
+- **Pendiente:** todavía no toca planilla ni `PropinasView` (fase 4).
+
+## 5-Nov-2026 (noche) — «Mi Desempeño»: cada persona ve solo sus métricas
+
+- **`fn_mi_desempeno(usuario, desde, hasta)`** (migración `20261105c_mi_desempeno.sql`):
+  - La persona y la sucursal salen del usuario, no de parámetros, así que no se puede pedir la de otro.
+  - Devuelve sus días (extras, meta, personas o tickets), sus ítems, la meta de equipo, el avance de domicilios (solo para el rol `domicilios`) y el **promedio de la sucursal** agregado, sin nombres, para compararse.
+  - Las vistas generales (`fn_extras_mesero`, `fn_items_mesero`) siguen bloqueadas para el personal (probado: un mesero queda bloqueado).
+- **Refactor:** los ítems pasan a `_items_cuentas` (interna), que comparten `fn_items_mesero` y `fn_mi_desempeno`.
+- **UI (`src/components/empleado/MiDesempeno.jsx`):** menú «Mi Desempeño» 🎯 para mesero, mesera, cajera, cajero, cocina y domicilios. Pensada para celular.
+  - Mesero o cajera: extras del mes contra la meta, hoy contra la meta del día, promedios por persona o por ticket contra la sucursal, «Qué vendiste» desglosado y día por día.
+  - Cocina: meta del equipo.
+  - Domicilios: pedidos del mes contra la meta.
+- **Accesos:** admin, ejecutivo y superadmin ven todo en «Desempeño Meseros»; el gerente, su sucursal.
+- **Verificado con Camila:** sus extras dan $2,844.24 en 30 días, el mismo número que en la vista de admin.
+
+## 5-Nov-2026 (noche) — Ticket por persona por sucursal + «qué vende» desglosado
+
+- **`fn_ticket_sucursales(usuario, desde, hasta)`** (migración `20261105b_ticket_por_sucursal.sql`):
+  - Usa `_extras_cuentas` en cada sucursal activa, así que excluye ventas a empleados.
+  - En mesas calcula ticket por persona (venta ÷ pax), ticket por mesa y extras por persona. En para llevar y drive thru, ticket y extras por ticket.
+  - admin, ejecutivo y superadmin ven todas las sucursales; el gerente solo la suya.
+- **Resultado a 30 días:**
+  - Ticket por persona en mesas: Cafetalón $10.90, Lourdes $11.38 y Venecia $10.75.
+  - Food courts por ticket: Soyapango $12.04, Usulután $10.23 y Metrocentro $11.96.
+- **UI:**
+  - Pestaña «Por sucursal», con barras y tabla.
+  - «Qué vende cada uno» arranca con todo desglosado (botones «Solo grupos» y «Desglosar todo»).
+  - El detalle por persona lista todos los productos con cantidad, tasa por cada 10 personas o tickets y monto, sin «+N más».
+
+## 5-Nov-2026 (tarde) — Desempeño Meseros v2: sin ventas a empleados, promedios por persona, «qué vende» y metas sugeridas
+
+- **Ventas a empleados fuera** (`_extras_cuentas`, la base común):
+  - Se excluye la cuenta con descuento `empleado` o `descuento_empleado_id`, y la cuenta que solo trae productos que matchean `patron_items_empleado` (por defecto `emplead`: Soda Empleados, Café empleado, Camisas).
+  - En M001 eran unas 640 en 30 días; solo a Miliana, 414. Su ticket pasó de $8.22 a $11.53.
+  - **Bug encontrado al probar:** `descuento_categoria = 'empleado'` con NULL daba NULL, `not NULL` filtraba todo y el ranking quedaba vacío. Se arregló con `coalesce`. También se calificó `p.tipo`, que era ambiguo contra el OUT param.
+- **Promedios:** los meseros se miden por persona atendida (pax de la mesa) y las cajeras por ticket. En para llevar y drive thru, 1 cuenta = 1 persona.
+- **`fn_items_mesero`:** qué vende cada uno, por categoría del menú más «Ingredientes extra» (modificadores con precio, de componentes y del ítem). El total de ingredientes cuadra al centavo con `precio_modificadores` ($1,321.47 en 30 días). Los nombres se normalizan con `initcap`.
+- **`fn_incentivo_sugerencias`** (últimos 30 días):
+  - Persona: percentil 60 de los extras por día-persona (días con 5 cuentas o más), redondeado a $5. En M001 da $75 / $110.
+  - Equipo: mediana × 1.05. En M001 da $300 / $500.
+  - Domicilios: promedio × 1.10. En M001 da 30 / 42.
+- **UI:**
+  - Pestaña «Qué vende cada uno»: matriz grupo × persona, por cada 10 personas o tickets, o en cantidad; resalta al mejor.
+  - Detalle por persona con «Qué vendió» y «Por día».
+  - «Usar sugeridos» y una tabla de cómo le iría a cada uno con la meta.
+
+## 5-Nov-2026 — Desempeño Meseros + Clientes Domicilio (fase «medir»; todavía no afecta propinas)
+
+- **Pedido de Jazz (M001).** Plan: `docs/planes/PLAN_desempeno_meseros_y_domicilios.md`.
+- **Base** (migración `20261104_incentivos_y_crm_domicilios.sql`, más `fn_extras_mesero_venta_mesa`):
+  - Tablas `incentivo_programas`, `incentivo_metas` (L–J / V–D, `ambito` persona o equipo, historial por `vigente_desde`), `incentivo_tramos` (0 % → 0.5, 100 % → 1.0) y `crm_plantillas` / `crm_contactos` / `crm_exclusiones`.
+  - Todas tienen RLS **sin policies**: solo se accede por RPC SECURITY DEFINER, que validan rol y sucursal con `_incentivo_acceso`. Un mesero queda bloqueado (probado).
+  - Semilla: programas `extras` y `domicilios` en M001, **sin metas cargadas**.
+- **Extra** = modificadores cobrados + subtotal de líneas de Extras, Fries & Sides, Cervezas y Bebidas.
+  - La bebida dentro de un combo vive en `componentes` y no cuenta. Cortesías y anulados, tampoco.
+  - Dueño de la cuenta = `coalesce(mesero_id, cajero_id)`. Canales: mesa, para llevar, drive thru.
+- **ERP:**
+  - `DesempenoMeserosView` («Desempeño Meseros» en Dashboards) para admin, gerente y ejecutivo. Tiene ranking, detalle por día, la meta de equipo para cocina y la pestaña «Metas y reglas».
+  - `ClientesDomicilioView` («Clientes Domicilio») para domicilios, gerente y admin. Tiene segmentos, el botón WhatsApp (registra el contacto y abre wa.me con la plantilla), «No escribir más» y la medición «volvió en 7 días». Sin exportar.
+  - Las RPC devuelven máximo 1000 filas: la vista de clientes pagina con `.range()`.
+- **POS (`POSMain`):** en una mesa abierta por alguien que no es mesero aparece «Atiende:», con quien la abre por defecto. `mesero_id` ya nunca queda NULL en mesas.
+- **Pendiente:**
+  - Jazz carga las metas tras dos semanas de medición.
+  - Chip de avance en el POS.
+  - Integración con `PropinasView` y planilla (fase 4).
+  - `metas_ventas` (meta de venta por sucursal) sigue apagada desde marzo; no tiene cron, se llenaba a mano o por Make.
+  - Los domicilios no guardan quién los tomó: la meta de Karina es por sucursal.
+
 ## 2-Nov-2026 — Líneas de facturas de compra: backfill, extracción automática y fin del bucle de errores
 
 Fase 0 del plan Compras HQ (`~/Proyectos/_auditorias/COMPRAS-HQ-plan-2026-10-29.md`). Migración `20261029_compras_dte_items_reparar.sql`.
@@ -12,6 +98,24 @@ Fase 0 del plan Compras HQ (`~/Proyectos/_auditorias/COMPRAS-HQ-plan-2026-10-29.
 - **Bucle de errores:** `compras_dte_propias` no tenía UNIQUE en `codigo_generacion`, y `procesar_dte_json` hace ON CONFLICT ahí. Cada DTE propio que llegaba al inbox fallaba con 42P10 y el Apps Script lo reintentaba cada 30 min: ~1,500 filas por día en `dte_import_errors`. Con el índice, la corrida de las 05:24 UTC archivó 25 sin errores. Las filas viejas de error quedan sin marcar como resueltas.
 - **Ojo para la próxima:** el MCP de Supabase se queda colgado con DROP, DELETE o UPDATE sueltos, porque pide una confirmación que la sesión remota no muestra. Se aplicó todo con `execute_sql`, sin DROP, y con los UPDATE dentro de funciones. `idx_cdp_codigo` quedó redundante.
 - **Pendiente de Jose:** factores de conversión inconsistentes en `~/Proyectos/_auditorias/COMPRAS-factores-a-revisar-2026-11-02.md` (ligado a ALM-3).
+
+## 2-Nov-2026 — PLAN (no construido): desempeño de meseros, meta de extras, propina por cumplimiento y CRM de domicilios
+
+- **Qué pidió Jazz (M001):** una meta diaria de extras por mesero, que alimente la propina (si cumple la meta cobra el 100 %, si no, el 50 %). También la lista de clientes de domicilio de Santa Tecla para recontactarlos, y una meta de domicilios para Karina.
+- **Plan completo:** `docs/planes/PLAN_desempeno_meseros_y_domicilios.md`.
+- **Hallazgos de data (últimos 30 días):**
+  - Los extras ya se pueden medir con `precio_modificadores` y las categorías. Camila vende $36.6 de extras por día y Karla $18.4.
+  - Mesas sin `mesero_id`: 27 % en M001 y 66 % en S004.
+  - Delivery propio M001 tiene `cajero_id` NULL en el 100 % de las cuentas.
+  - `metas_ventas` no genera nada desde el 25-mar y `metas_delivery` está vacía.
+  - M001 tiene 2,023 clientes de delivery; el 73 % pidió una sola vez y unos 675 están «dormidos».
+- **Decisión de diseño:** un motor genérico `incentivo_*`, todo por `usuario_id` (no por nombre como `agrandado_config`). Se mide 2 semanas antes de pagar y la liquidación es mensual.
+- **Decisiones de Jose (mismo día):**
+  - Las bebidas cuentan como extra solo si van fuera de combo.
+  - El 50 % retenido se redistribuye entre los que cumplieron.
+  - La regla aplica a todos: cocina con meta de equipo.
+  - Karina es el usuario de domicilios de M001.
+  - El plan para Jazz se publicó como página.
 
 ## 1-Nov-2026 — Porcionador de papas para Plaza Lourdes (S003)
 
