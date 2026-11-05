@@ -92,6 +92,8 @@ export const NAV_SECTIONS = [
       { key: 'pendientes', label: 'Mis Pendientes', icon: '📋', roles: ['ejecutivo', 'admin'] },
       { key: 'mi-asistencia', label: 'Mi Asistencia', icon: '📍', roles: ['*'] },
       { key: 'mi-boleta', label: 'Mi Boleta', icon: '🧾', roles: ['*'] },
+      // Cada quien ve SOLO sus métricas (fn_mi_desempeno toma la persona del usuario). Admin/gerencia: «Desempeño Meseros».
+      { key: 'mi-desempeno', label: 'Mi Desempeño', icon: '🎯', roles: ['mesero', 'mesera', 'cajera', 'cajero', 'cocina', 'domicilios'] },
     ],
   },
   {

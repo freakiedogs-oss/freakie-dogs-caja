@@ -1,5 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 (noche) — «Mi Desempeño»: cada persona ve solo sus métricas
+
+- **`fn_mi_desempeno(usuario, desde, hasta)`** (migración `20261105c_mi_desempeno.sql`):
+  - La persona y la sucursal salen del usuario, no de parámetros, así que no se puede pedir la de otro.
+  - Devuelve sus días (extras, meta, personas o tickets), sus ítems, la meta de equipo, el avance de domicilios (solo para el rol `domicilios`) y el **promedio de la sucursal** agregado, sin nombres, para compararse.
+  - Las vistas generales (`fn_extras_mesero`, `fn_items_mesero`) siguen bloqueadas para el personal (probado: un mesero queda bloqueado).
+- **Refactor:** los ítems pasan a `_items_cuentas` (interna), que comparten `fn_items_mesero` y `fn_mi_desempeno`.
+- **UI (`src/components/empleado/MiDesempeno.jsx`):** menú «Mi Desempeño» 🎯 para mesero, mesera, cajera, cajero, cocina y domicilios. Pensada para celular.
+  - Mesero o cajera: extras del mes contra la meta, hoy contra la meta del día, promedios por persona o por ticket contra la sucursal, «Qué vendiste» desglosado y día por día.
+  - Cocina: meta del equipo.
+  - Domicilios: pedidos del mes contra la meta.
+- **Accesos:** admin, ejecutivo y superadmin ven todo en «Desempeño Meseros»; el gerente, su sucursal.
+- **Verificado con Camila:** sus extras dan $2,844.24 en 30 días, el mismo número que en la vista de admin.
+
 ## 5-Nov-2026 (noche) — Ticket por persona por sucursal + «qué vende» desglosado
 
 - **`fn_ticket_sucursales(usuario, desde, hasta)`** (migración `20261105b_ticket_por_sucursal.sql`):
