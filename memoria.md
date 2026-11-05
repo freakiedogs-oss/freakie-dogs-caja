@@ -1,5 +1,22 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 (tarde) — Desempeño Meseros v2: sin ventas a empleados, promedios por persona, «qué vende» y metas sugeridas
+
+- **Ventas a empleados fuera** (`_extras_cuentas`, la base común):
+  - Se excluye la cuenta con descuento `empleado` o `descuento_empleado_id`, y la cuenta que solo trae productos que matchean `patron_items_empleado` (por defecto `emplead`: Soda Empleados, Café empleado, Camisas).
+  - En M001 eran unas 640 en 30 días; solo a Miliana, 414. Su ticket pasó de $8.22 a $11.53.
+  - **Bug encontrado al probar:** `descuento_categoria = 'empleado'` con NULL daba NULL, `not NULL` filtraba todo y el ranking quedaba vacío. Se arregló con `coalesce`. También se calificó `p.tipo`, que era ambiguo contra el OUT param.
+- **Promedios:** los meseros se miden por persona atendida (pax de la mesa) y las cajeras por ticket. En para llevar y drive thru, 1 cuenta = 1 persona.
+- **`fn_items_mesero`:** qué vende cada uno, por categoría del menú más «Ingredientes extra» (modificadores con precio, de componentes y del ítem). El total de ingredientes cuadra al centavo con `precio_modificadores` ($1,321.47 en 30 días). Los nombres se normalizan con `initcap`.
+- **`fn_incentivo_sugerencias`** (últimos 30 días):
+  - Persona: percentil 60 de los extras por día-persona (días con 5 cuentas o más), redondeado a $5. En M001 da $75 / $110.
+  - Equipo: mediana × 1.05. En M001 da $300 / $500.
+  - Domicilios: promedio × 1.10. En M001 da 30 / 42.
+- **UI:**
+  - Pestaña «Qué vende cada uno»: matriz grupo × persona, por cada 10 personas o tickets, o en cantidad; resalta al mejor.
+  - Detalle por persona con «Qué vendió» y «Por día».
+  - «Usar sugeridos» y una tabla de cómo le iría a cada uno con la meta.
+
 ## 5-Nov-2026 — Desempeño Meseros + Clientes Domicilio (fase «medir»; todavía no afecta propinas)
 
 - **Pedido de Jazz (M001).** Plan: `docs/planes/PLAN_desempeno_meseros_y_domicilios.md`.

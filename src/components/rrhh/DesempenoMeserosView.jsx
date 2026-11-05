@@ -1,16 +1,17 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   Desempeño de meseros — extras por persona, ticket y meta
+   Desempeño de meseros — extras por persona, ticket, qué vende cada uno y metas
 
    Pedido de Jazz (M001). Plan: docs/planes/PLAN_desempeno_meseros_y_domicilios.md
    Extra = modificadores cobrados + líneas de las categorías marcadas
    (Extras, Fries & Sides, Cervezas, Bebidas sueltas). La bebida dentro de un
    combo no es línea propia y no cuenta.
 
-   Dueño de la cuenta = mesero asignado; si no hay, quien cobró.
-   La comparación es por día trabajado y por cuenta (no por total), para no
-   medir horario en vez de esfuerzo.
+   - Ventas a empleados fuera: descuento «empleado» o productos de empleado
+     (Soda Empleados, Café empleado…). Se muestran aparte, no se promedian.
+   - Promedios: meseros POR PERSONA atendida (pax de la mesa); cajeras POR TICKET.
+   - Dueño de la cuenta = mesero asignado; si no hay, quien cobró.
 
-   Todo el cálculo vive en fn_extras_mesero(); acá se agrega y se pinta.
+   El cálculo vive en fn_extras_mesero / fn_items_mesero / fn_incentivo_sugerencias.
    Fase "medir": todavía no toca propinas.
    ═══════════════════════════════════════════════════════════════════════ */
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -18,42 +19,50 @@ import { db } from '../../supabase'
 
 const C = {
   bg: '#0f0f10', card: '#1a1a1c', line: '#2a2a2e', txt: '#f0f0f2', dim: '#8a8a92',
-  ok: '#22c55e', okBg: '#0e2a17', warn: '#fbbf24', warnBg: '#2a2210', bad: '#f87171', badBg: '#2a1414', acc: '#60a5fa',
+  ok: '#22c55e', warn: '#fbbf24', bad: '#f87171', acc: '#60a5fa', row: '#151518',
 }
 const card = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 16, marginBottom: 12 }
 const btn = (on) => ({ padding: '7px 12px', borderRadius: 8, border: `1px solid ${on ? C.acc : C.line}`, background: on ? '#13233a' : 'transparent', color: on ? C.acc : C.txt, cursor: 'pointer', fontSize: 13, fontWeight: 600 })
 const inp = { background: '#121214', border: `1px solid ${C.line}`, borderRadius: 8, padding: '7px 10px', color: C.txt, fontSize: 13, width: 90 }
 const money = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const pct = (n) => n == null ? '—' : `${Math.round(n)}%`
+const th = { padding: '10px 12px', borderBottom: `1px solid ${C.line}`, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap', color: C.dim }
+const td = { padding: '9px 12px', borderBottom: `1px solid ${C.line}`, textAlign: 'right', whiteSpace: 'nowrap' }
 
 const SUPERVISAN = ['admin', 'ejecutivo', 'superadmin']
 const PUEDEN_CONFIGURAR = ['admin', 'ejecutivo', 'superadmin', 'gerente']
 const SUCURSALES = [['M001', 'Cafetalón'], ['S003', 'Lourdes'], ['S004', 'Venecia']]
+const ES_MESERO = (rol) => rol === 'mesero' || rol === 'mesera'
+const ORDEN_GRUPOS = ['Combos', 'Individuales', 'Bebidas', 'Cervezas', 'Fries & Sides', 'Extras', 'Ingredientes extra']
 
-function hoySV() {
-  // El Salvador = UTC-6 sin DST
-  return new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10)
+// Las RPC devuelven máx. 1000 filas por llamada: paginar con .range().
+async function rpcTodo(fn, args) {
+  const out = []
+  for (let i = 0; i < 50000; i += 1000) {
+    const { data, error } = await db.rpc(fn, args).range(i, i + 999)
+    if (error) throw error
+    out.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+  return out
 }
+
+function hoySV() { return new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10) } // UTC-6 sin DST
 function rango(periodo) {
   const hoy = hoySV()
   const [y, m] = hoy.split('-').map(Number)
   if (periodo === 'mes') return [`${hoy.slice(0, 7)}-01`, hoy]
   if (periodo === 'anterior') {
-    const ini = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10)
-    const fin = new Date(Date.UTC(y, m - 1, 0)).toISOString().slice(0, 10)
-    return [ini, fin]
+    return [new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10), new Date(Date.UTC(y, m - 1, 0)).toISOString().slice(0, 10)]
   }
-  const ini = new Date(Date.parse(hoy) - 29 * 864e5).toISOString().slice(0, 10)
-  return [ini, hoy]
+  return [new Date(Date.parse(hoy) - 29 * 864e5).toISOString().slice(0, 10), hoy]
 }
 const finDeSemana = (iso) => { const d = new Date(iso + 'T12:00:00Z').getUTCDay(); return d === 5 || d === 6 || d === 0 }
 
-// Meta de equipo vigente para un día, desde la config.
 function metaEquipoDia(metas, tipo, dia) {
   const m = metas.filter(x => x.tipo === tipo && x.ambito === 'equipo' && !x.usuario_id && x.vigente_desde <= dia)
     .sort((a, b) => (a.vigente_desde < b.vigente_desde ? 1 : -1))[0]
-  if (!m) return null
-  return Number(finDeSemana(dia) ? m.meta_vd : m.meta_lj)
+  return m ? Number(finDeSemana(dia) ? m.meta_vd : m.meta_lj) : null
 }
 
 export default function DesempenoMeserosView({ user }) {
@@ -63,6 +72,7 @@ export default function DesempenoMeserosView({ user }) {
   const [periodo, setPeriodo] = useState('mes')
   const [tab, setTab] = useState('ranking')
   const [filas, setFilas] = useState([])
+  const [items, setItems] = useState([])
   const [config, setConfig] = useState({ programas: [], metas: [], tramos: [] })
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -73,14 +83,16 @@ export default function DesempenoMeserosView({ user }) {
   const cargar = useCallback(async () => {
     setCargando(true); setError('')
     try {
-      const [r1, r2] = await Promise.all([
-        db.rpc('fn_extras_mesero', { p_usuario_id: user.id, p_store: store, p_desde: desde, p_hasta: hasta }),
+      const args = { p_usuario_id: user.id, p_store: store, p_desde: desde, p_hasta: hasta }
+      const [f1, r2, i3] = await Promise.all([
+        rpcTodo('fn_extras_mesero', args),
         db.rpc('fn_incentivo_config', { p_usuario_id: user.id, p_store: store }),
+        rpcTodo('fn_items_mesero', args),
       ])
-      if (r1.error) throw r1.error
       if (r2.error) throw r2.error
-      setFilas(r1.data || [])
+      setFilas(f1)
       setConfig(r2.data || { programas: [], metas: [], tramos: [] })
+      setItems(i3)
     } catch (e) {
       setError(e.message || String(e))
     } finally { setCargando(false) }
@@ -93,29 +105,35 @@ export default function DesempenoMeserosView({ user }) {
     const map = {}
     for (const f of filas) {
       const k = f.usuario_id
-      if (!map[k]) map[k] = { id: k, nombre: f.nombre || 'Sin nombre', rol: f.rol, dias: [], cuentas: 0, mesas: 0, pax: 0, venta: 0, ventaMesa: 0, extras: 0, conExtra: 0, meta: 0, diasConMeta: 0 }
+      if (!map[k]) map[k] = { id: k, nombre: f.nombre || 'Sin nombre', rol: f.rol, dias: [], cuentas: 0, mesas: 0, atendidas: 0, venta: 0, extras: 0, conExtra: 0, empleado: 0, meta: 0, diasConMeta: 0 }
       const p = map[k]
       p.dias.push(f)
-      p.cuentas += Number(f.cuentas); p.mesas += Number(f.cuentas_mesa); p.pax += Number(f.pax)
-      p.venta += Number(f.venta); p.ventaMesa += Number(f.venta_mesa); p.extras += Number(f.extras); p.conExtra += Number(f.cuentas_con_extra)
-      if (f.meta_dia != null) { p.meta += Number(f.meta_dia); p.diasConMeta++ }
+      p.cuentas += Number(f.cuentas); p.mesas += Number(f.cuentas_mesa); p.atendidas += Number(f.personas)
+      p.venta += Number(f.venta); p.extras += Number(f.extras); p.conExtra += Number(f.cuentas_con_extra)
+      p.empleado += Number(f.ventas_empleado)
+      if (f.meta_dia != null && Number(f.cuentas) > 0) { p.meta += Number(f.meta_dia); p.diasConMeta++ }
     }
     return Object.values(map)
       .filter(p => p.cuentas >= 5)
-      .map(p => ({
-        ...p,
-        nDias: p.dias.length,
-        extrasDia: p.extras / p.dias.length,
-        extrasCuenta: p.extras / p.cuentas,
-        ticket: p.venta / p.cuentas,
-        ticketPax: p.pax > 0 ? p.ventaMesa / p.pax : null,  // solo mesas: para llevar no registra personas
-        pctConExtra: (p.conExtra / p.cuentas) * 100,
-        cumplimiento: p.diasConMeta > 0 && p.meta > 0 ? (p.extras / p.meta) * 100 : null,
-      }))
+      .map(p => {
+        const diasTrab = p.dias.filter(d => Number(d.cuentas) > 0).length || 1
+        // Meseros: por persona atendida. Cajeras y demás: por ticket.
+        const base = ES_MESERO(p.rol) ? (p.atendidas || p.cuentas) : p.cuentas
+        return {
+          ...p,
+          unidad: ES_MESERO(p.rol) ? 'persona' : 'ticket',
+          base,
+          nDias: diasTrab,
+          extrasDia: p.extras / diasTrab,
+          ventaProm: p.venta / base,
+          extrasProm: p.extras / base,
+          pctConExtra: (p.conExtra / p.cuentas) * 100,
+          cumplimiento: p.diasConMeta > 0 && p.meta > 0 ? (p.extras / p.meta) * 100 : null,
+        }
+      })
       .sort((a, b) => b.extrasDia - a.extrasDia)
   }, [filas])
 
-  // ── Equipo (cocina se mide contra esto) ──
   const equipo = useMemo(() => {
     const porDia = {}
     for (const f of filas) porDia[f.dia] = (porDia[f.dia] || 0) + Number(f.extras)
@@ -126,19 +144,16 @@ export default function DesempenoMeserosView({ user }) {
     return { total, dias: dias.length, meta: conMeta ? meta : null, cumplimiento: conMeta && meta > 0 ? (total / meta) * 100 : null }
   }, [filas, config.metas])
 
-  // Mesas cobradas por alguien que no es mesero (sin mesero asignado)
-  const mesasSinMesero = useMemo(() =>
-    filas.filter(f => !['mesero', 'mesera'].includes(f.rol)).reduce((s, f) => s + Number(f.cuentas_mesa), 0)
-  , [filas])
+  const mesasSinMesero = useMemo(() => filas.filter(f => !ES_MESERO(f.rol)).reduce((s, f) => s + Number(f.cuentas_mesa), 0), [filas])
   const mesasTotal = useMemo(() => filas.reduce((s, f) => s + Number(f.cuentas_mesa), 0), [filas])
-
+  const ventasEmpleado = useMemo(() => filas.reduce((s, f) => s + Number(f.ventas_empleado), 0), [filas])
   const tienePrograma = config.programas.some(p => p.tipo === 'extras')
 
   return (
-    <div style={{ background: C.bg, color: C.txt, minHeight: '100%', padding: 16, maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ background: C.bg, color: C.txt, minHeight: '100%', padding: 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Desempeño de meseros</h2>
       <p style={{ margin: '0 0 14px', color: C.dim, fontSize: 13 }}>
-        Extras por persona: ingredientes cobrados aparte y lo que se pide fuera del combo (bebidas, papas, cervezas, extras). Fase de medición: todavía no afecta la propina.
+        Extras = ingredientes cobrados aparte y lo que se pide fuera del combo (bebidas, papas, cervezas, extras). Sin ventas a empleados. Fase de medición: todavía no afecta la propina.
       </p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -148,6 +163,7 @@ export default function DesempenoMeserosView({ user }) {
           <button key={k} style={btn(periodo === k)} onClick={() => setPeriodo(k)}>{l}</button>)}
         <span style={{ width: 8 }} />
         <button style={btn(tab === 'ranking')} onClick={() => setTab('ranking')}>Ranking</button>
+        <button style={btn(tab === 'vende')} onClick={() => setTab('vende')}>Qué vende cada uno</button>
         {PUEDEN_CONFIGURAR.includes(rol) && <button style={btn(tab === 'config')} onClick={() => setTab('config')}>Metas y reglas</button>}
       </div>
 
@@ -165,31 +181,37 @@ export default function DesempenoMeserosView({ user }) {
               estado={equipo.cumplimiento == null ? null : equipo.cumplimiento >= 100 ? 'ok' : 'bad'} />
             <Kpi titulo="Mesas sin mesero asignado" valor={mesasTotal ? pct(mesasSinMesero / mesasTotal * 100) : '—'}
               sub={`${mesasSinMesero} de ${mesasTotal} mesas`} estado={mesasTotal && mesasSinMesero / mesasTotal > 0.05 ? 'warn' : 'ok'} />
+            <Kpi titulo="Ventas a empleados (fuera)" valor={ventasEmpleado}
+              sub="No cuentan en promedios ni metas" />
           </div>
 
           <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
               <thead>
-                <tr style={{ color: C.dim, textAlign: 'right' }}>
-                  {['Persona', 'Días', 'Cuentas', 'Ticket', 'Ticket/persona', 'Extras', 'Extras/día', 'Extras/cuenta', '% cuentas con extra', 'Meta', 'Cumplimiento'].map((h, i) =>
-                    <th key={h} style={{ padding: '10px 12px', borderBottom: `1px solid ${C.line}`, textAlign: i === 0 ? 'left' : 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>)}
+                <tr>
+                  {['Persona', 'Días', 'Cuentas', 'Personas', 'Venta prom.', 'Extras prom.', 'Extras/día', '% con extra', 'Meta', 'Cumplimiento'].map((h, i) =>
+                    <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {cargando && <tr><td colSpan={11} style={{ padding: 16, color: C.dim }}>Cargando…</td></tr>}
-                {!cargando && personas.length === 0 && <tr><td colSpan={11} style={{ padding: 16, color: C.dim }}>Sin ventas en este período.</td></tr>}
+                {cargando && <tr><td colSpan={10} style={{ padding: 16, color: C.dim }}>Cargando…</td></tr>}
+                {!cargando && personas.length === 0 && <tr><td colSpan={10} style={{ padding: 16, color: C.dim }}>Sin ventas en este período.</td></tr>}
                 {!cargando && personas.map(p => (
-                  <FilaPersona key={p.id} p={p} abierto={abierto === p.id} onToggle={() => setAbierto(abierto === p.id ? null : p.id)} />
+                  <FilaPersona key={p.id} p={p} items={items.filter(i => i.usuario_id === p.id)}
+                    abierto={abierto === p.id} onToggle={() => setAbierto(abierto === p.id ? null : p.id)} />
                 ))}
               </tbody>
             </table>
           </div>
           <p style={{ color: C.dim, fontSize: 12 }}>
-            Tocá una persona para ver su detalle por día. «Cumplimiento» = extras ÷ (meta del día × días trabajados). Lunes a jueves y viernes a domingo tienen meta distinta.
-            Las cajeras aparecen con las mesas y los «para llevar» que cobraron.
+            <b>Venta y extras promedio:</b> meseros por <b>persona atendida</b> (personas sentadas en la mesa); cajeras por <b>ticket</b>.
+            Tocá una persona para ver su detalle por día y lo que vendió. «Cumplimiento» = extras ÷ (meta del día × días trabajados);
+            lunes a jueves y viernes a domingo tienen meta distinta.
           </p>
         </>
       )}
+
+      {tab === 'vende' && !error && <QueVende personas={personas} items={items} cargando={cargando} />}
 
       {tab === 'config' && !error && (
         <ConfigMetas user={user} store={store} config={config} personas={personas} onGuardado={cargar} />
@@ -222,43 +244,166 @@ function Barra({ v }) {
   )
 }
 
-function FilaPersona({ p, abierto, onToggle }) {
-  const td = { padding: '9px 12px', borderBottom: `1px solid ${C.line}`, textAlign: 'right', whiteSpace: 'nowrap' }
+const Unidad = ({ u }) => <span style={{ color: C.dim, fontSize: 11 }}>/{u}</span>
+
+function FilaPersona({ p, items, abierto, onToggle }) {
+  const [vista, setVista] = useState('vende')
   return (
     <>
-      <tr onClick={onToggle} style={{ cursor: 'pointer', background: abierto ? '#151518' : 'transparent' }}>
-        <td style={{ ...td, textAlign: 'left' }}>
-          <b>{p.nombre}</b> <span style={{ color: C.dim, fontSize: 11 }}>{p.rol}</span>
-        </td>
+      <tr onClick={onToggle} style={{ cursor: 'pointer', background: abierto ? C.row : 'transparent' }}>
+        <td style={{ ...td, textAlign: 'left' }}><b>{p.nombre}</b> <span style={{ color: C.dim, fontSize: 11 }}>{p.rol}</span></td>
         <td style={td}>{p.nDias}</td>
-        <td style={td}>{p.cuentas}</td>
-        <td style={td}>{money(p.ticket)}</td>
-        <td style={td}>{p.ticketPax == null ? '—' : money(p.ticketPax)}</td>
-        <td style={td}>{money(p.extras)}</td>
+        <td style={td}>{p.cuentas}{p.empleado > 0 && <div style={{ color: C.dim, fontSize: 11 }}>+{p.empleado} empleados</div>}</td>
+        <td style={td}>{ES_MESERO(p.rol) ? p.atendidas : '—'}</td>
+        <td style={td}>{money(p.ventaProm)} <Unidad u={p.unidad} /></td>
+        <td style={{ ...td, fontWeight: 700 }}>{money(p.extrasProm)} <Unidad u={p.unidad} /></td>
         <td style={{ ...td, fontWeight: 700 }}>{money(p.extrasDia)}</td>
-        <td style={td}>{money(p.extrasCuenta)}</td>
         <td style={td}>{pct(p.pctConExtra)}</td>
         <td style={td}>{p.diasConMeta ? money(p.meta) : '—'}</td>
         <td style={td}><Barra v={p.cumplimiento} /></td>
       </tr>
       {abierto && (
         <tr>
-          <td colSpan={11} style={{ padding: '6px 12px 14px', borderBottom: `1px solid ${C.line}`, background: '#151518' }}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {p.dias.map(d => {
-                const ok = d.meta_dia == null ? null : Number(d.extras) >= Number(d.meta_dia)
-                return (
-                  <div key={d.dia} style={{ border: `1px solid ${ok == null ? C.line : ok ? C.ok : C.bad}`, borderRadius: 8, padding: '6px 9px', fontSize: 12, minWidth: 92 }}>
-                    <div style={{ color: C.dim }}>{d.dia.slice(5)} {finDeSemana(d.dia) ? '· V–D' : ''}</div>
-                    <div><b>{money(d.extras)}</b>{d.meta_dia != null && <span style={{ color: C.dim }}> / {money(d.meta_dia)}</span>}</div>
-                    <div style={{ color: C.dim }}>{d.cuentas} cuentas</div>
-                  </div>
-                )
-              })}
+          <td colSpan={10} style={{ padding: '8px 12px 14px', borderBottom: `1px solid ${C.line}`, background: C.row }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              <button style={btn(vista === 'vende')} onClick={() => setVista('vende')}>Qué vendió</button>
+              <button style={btn(vista === 'dias')} onClick={() => setVista('dias')}>Por día</button>
             </div>
+            {vista === 'dias' ? (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {p.dias.filter(d => Number(d.cuentas) > 0).map(d => {
+                  const ok = d.meta_dia == null ? null : Number(d.extras) >= Number(d.meta_dia)
+                  return (
+                    <div key={d.dia} style={{ border: `1px solid ${ok == null ? C.line : ok ? C.ok : C.bad}`, borderRadius: 8, padding: '6px 9px', fontSize: 12, minWidth: 92 }}>
+                      <div style={{ color: C.dim }}>{d.dia.slice(5)} {finDeSemana(d.dia) ? '· V–D' : ''}</div>
+                      <div><b>{money(d.extras)}</b>{d.meta_dia != null && <span style={{ color: C.dim }}> / {money(d.meta_dia)}</span>}</div>
+                      <div style={{ color: C.dim }}>{d.cuentas} cuentas</div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : <ItemsPersona items={items} base={p.base} unidad={p.unidad} />}
           </td>
         </tr>
       )}
+    </>
+  )
+}
+
+// Lo que vendió una persona, agrupado; con tasa «cada 10 personas/tickets».
+function ItemsPersona({ items, base, unidad }) {
+  const grupos = useMemo(() => agrupar(items), [items])
+  if (!items.length) return <div style={{ color: C.dim }}>Sin ítems en este período.</div>
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+      {grupos.map(g => (
+        <div key={g.grupo} style={{ border: `1px solid ${C.line}`, borderRadius: 10, padding: 10, minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <b>{g.grupo}</b>
+            <span><b>{g.cantidad}</b> <span style={{ color: C.dim, fontSize: 11 }}>· {(g.cantidad / base * 10).toFixed(1)} c/10 {unidad === 'persona' ? 'personas' : 'tickets'}</span></span>
+          </div>
+          <div style={{ color: C.dim, fontSize: 12, marginBottom: 6 }}>{money(g.monto)}</div>
+          {g.items.slice(0, 6).map(it => (
+            <div key={it.item} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 8 }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.item}</span><span>{it.cantidad}</span>
+            </div>
+          ))}
+          {g.items.length > 6 && <div style={{ color: C.dim, fontSize: 11 }}>+{g.items.length - 6} más</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function agrupar(items) {
+  const m = {}
+  for (const i of items) {
+    if (!m[i.grupo]) m[i.grupo] = { grupo: i.grupo, cantidad: 0, monto: 0, items: [] }
+    m[i.grupo].cantidad += Number(i.cantidad); m[i.grupo].monto += Number(i.monto)
+    m[i.grupo].items.push({ item: i.item, cantidad: Number(i.cantidad) })
+  }
+  const orden = (g) => { const k = ORDEN_GRUPOS.indexOf(g); return k < 0 ? 99 : k }
+  return Object.values(m).map(g => ({ ...g, items: g.items.sort((a, b) => b.cantidad - a.cantidad) }))
+    .sort((a, b) => orden(a.grupo) - orden(b.grupo))
+}
+
+// Comparativo: grupo/ítem × persona. Cantidad y tasa por cada 10 personas (meseros) o tickets (cajeras).
+function QueVende({ personas, items, cargando }) {
+  const [abiertos, setAbiertos] = useState({})
+  const [modo, setModo] = useState('tasa')
+  const filas = useMemo(() => {
+    const g = agrupar(items)
+    return g.map(gr => {
+      const porItem = {}
+      for (const i of items.filter(x => x.grupo === gr.grupo)) {
+        if (!porItem[i.item]) porItem[i.item] = { item: i.item, total: 0, por: {} }
+        porItem[i.item].total += Number(i.cantidad)
+        porItem[i.item].por[i.usuario_id] = (porItem[i.item].por[i.usuario_id] || 0) + Number(i.cantidad)
+      }
+      const por = {}
+      for (const i of items.filter(x => x.grupo === gr.grupo)) por[i.usuario_id] = (por[i.usuario_id] || 0) + Number(i.cantidad)
+      return { grupo: gr.grupo, total: gr.cantidad, por, items: Object.values(porItem).sort((a, b) => b.total - a.total) }
+    })
+  }, [items])
+
+  if (cargando) return <div style={{ color: C.dim }}>Cargando…</div>
+  if (!personas.length) return <div style={{ color: C.dim }}>Sin ventas en este período.</div>
+
+  const celda = (n, p) => {
+    if (!n) return <span style={{ color: C.dim }}>—</span>
+    return modo === 'tasa' ? (n / p.base * 10).toFixed(1) : n
+  }
+  // Resaltar la mejor tasa de cada fila
+  const mejor = (por) => {
+    let best = null, v = -1
+    for (const p of personas) { const t = (por[p.id] || 0) / p.base; if (t > v) { v = t; best = p.id } }
+    return v > 0 ? best : null
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button style={btn(modo === 'tasa')} onClick={() => setModo('tasa')}>Cada 10 personas / tickets</button>
+        <button style={btn(modo === 'cant')} onClick={() => setModo('cant')}>Cantidad vendida</button>
+        <span style={{ color: C.dim, fontSize: 12 }}>Tocá un grupo para ver cada producto. En verde, quien más vende de eso.</span>
+      </div>
+      <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, textAlign: 'left', position: 'sticky', left: 0, background: C.card }}>Grupo / producto</th>
+              {personas.map(p => <th key={p.id} style={th}>{p.nombre.split(' ')[0]}<div style={{ fontWeight: 400, fontSize: 11 }}>/{p.unidad}</div></th>)}
+              <th style={th}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map(f => {
+              const b = mejor(f.por)
+              return [
+                <tr key={f.grupo} onClick={() => setAbiertos(a => ({ ...a, [f.grupo]: !a[f.grupo] }))} style={{ cursor: 'pointer', background: C.row }}>
+                  <td style={{ ...td, textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, background: C.row }}>{abiertos[f.grupo] ? '▾' : '▸'} {f.grupo}</td>
+                  {personas.map(p => <td key={p.id} style={{ ...td, fontWeight: 700, color: b === p.id ? C.ok : C.txt }}>{celda(f.por[p.id], p)}</td>)}
+                  <td style={{ ...td, fontWeight: 700 }}>{f.total}</td>
+                </tr>,
+                ...(abiertos[f.grupo] ? f.items.map(it => {
+                  const bi = mejor(it.por)
+                  return (
+                    <tr key={f.grupo + it.item}>
+                      <td style={{ ...td, textAlign: 'left', paddingLeft: 28, color: C.dim, position: 'sticky', left: 0, background: C.card }}>{it.item}</td>
+                      {personas.map(p => <td key={p.id} style={{ ...td, color: bi === p.id ? C.ok : C.txt }}>{celda(it.por[p.id], p)}</td>)}
+                      <td style={td}>{it.total}</td>
+                    </tr>
+                  )
+                }) : []),
+              ]
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ color: C.dim, fontSize: 12 }}>
+        «Cada 10» compara sin importar cuánta gente atendió cada uno: meseros por cada 10 personas atendidas, cajeras por cada 10 tickets.
+        «Ingredientes extra» son los que se cobran dentro del plato (tocino, queso, agrandado de bebida…). Sin ventas a empleados ni cortesías.
+      </p>
     </>
   )
 }
@@ -269,6 +414,7 @@ function ConfigMetas({ user, store, config, personas, onGuardado }) {
   const [sel, setSel] = useState(prog?.categorias_extra || [])
   const [mods, setMods] = useState(prog?.cuenta_modificadores ?? true)
   const [msg, setMsg] = useState('')
+  const [sug, setSug] = useState(null)
   const vigente = (tipo, ambito, uid = null) => config.metas.find(m => m.tipo === tipo && m.ambito === ambito && (m.usuario_id || null) === uid)
   const [f, setF] = useState(() => {
     const pp = vigente('extras', 'persona'), eq = vigente('extras', 'equipo'), dom = vigente('domicilios', 'equipo')
@@ -283,7 +429,9 @@ function ConfigMetas({ user, store, config, personas, onGuardado }) {
     db.from('pos_menu_categorias').select('nombre').eq('activo', true).then(({ data }) => {
       setCats([...new Set((data || []).map(r => r.nombre))].sort())
     })
-  }, [])
+    db.rpc('fn_incentivo_sugerencias', { p_usuario_id: user.id, p_store: store, p_dias: 30 })
+      .then(({ data }) => setSug(data || null))
+  }, [user.id, store])
 
   async function guardarMeta(tipo, ambito, target, lj, vd) {
     if (lj === '' || vd === '') return
@@ -316,29 +464,77 @@ function ConfigMetas({ user, store, config, personas, onGuardado }) {
     } catch (e) { setMsg('No se pudo guardar: ' + (e.message || e)) }
   }
 
+  function usarSugeridos() {
+    if (!sug) return
+    setF({
+      ...f,
+      pLj: sug.persona?.lj ?? f.pLj, pVd: sug.persona?.vd ?? f.pVd,
+      eLj: sug.equipo?.lj ?? f.eLj, eVd: sug.equipo?.vd ?? f.eVd,
+      dLj: sug.domicilios?.lj ?? f.dLj, dVd: sug.domicilios?.vd ?? f.dVd,
+    })
+    setMsg('Sugeridos cargados. Revisalos y tocá «Guardar metas y reglas».')
+  }
+
   if (!prog) return <div style={{ ...card, color: C.dim }}>Esta sucursal no tiene programa de extras.</div>
 
-  // Se llama como función (no como <Par/>) para que los inputs no pierdan el foco.
-  const par = ({ t, a, b, ka, kb }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '6px 0' }}>
-      <span style={{ minWidth: 220 }}>{t}</span>
+  // Se llama como función (no como componente) para que los inputs no pierdan el foco.
+  const par = ({ t, a, b, ka, kb, s, hoy, unidad }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '8px 0' }}>
+      <span style={{ minWidth: 240 }}>{t}</span>
       <label>L–J <input type="number" min="0" step="1" style={inp} value={a} onChange={e => setF({ ...f, [ka]: e.target.value })} /></label>
       <label>V–D <input type="number" min="0" step="1" style={inp} value={b} onChange={e => setF({ ...f, [kb]: e.target.value })} /></label>
+      {s && s.lj != null && (
+        <span style={{ color: C.dim, fontSize: 12 }}>
+          Sugerido <b style={{ color: C.acc }}>{unidad}{s.lj} / {unidad}{s.vd}</b> · hoy promedian {unidad}{hoy?.lj ?? '—'} / {unidad}{hoy?.vd ?? '—'}
+        </span>
+      )}
     </div>
   )
-
   const individuales = config.metas.filter(m => m.tipo === 'extras' && m.usuario_id)
 
   return (
     <>
       <div style={card}>
-        <h3 style={{ marginTop: 0 }}>Metas diarias</h3>
-        {par({ t: "Meta por persona (extras $/día)", a: f.pLj, b: f.pVd, ka: "pLj", kb: "pVd" })}
-        {par({ t: "Meta del equipo / cocina (extras $/día de la sucursal)", a: f.eLj, b: f.eVd, ka: "eLj", kb: "eVd" })}
-        {par({ t: "Meta de domicilios (pedidos/día)", a: f.dLj, b: f.dVd, ka: "dLj", kb: "dVd" })}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0 }}>Metas diarias</h3>
+          <button style={btn(true)} onClick={usarSugeridos} disabled={!sug}>Usar sugeridos</button>
+        </div>
+        {par({ t: 'Meta por persona (extras $/día)', a: f.pLj, b: f.pVd, ka: 'pLj', kb: 'pVd', s: sug?.persona, hoy: { lj: sug?.persona?.prom_lj, vd: sug?.persona?.prom_vd }, unidad: '$' })}
+        {par({ t: 'Meta del equipo / cocina (extras $/día de la sucursal)', a: f.eLj, b: f.eVd, ka: 'eLj', kb: 'eVd', s: sug?.equipo, hoy: { lj: sug?.equipo?.prom_lj, vd: sug?.equipo?.prom_vd }, unidad: '$' })}
+        {par({ t: 'Meta de domicilios (pedidos/día)', a: f.dLj, b: f.dVd, ka: 'dLj', kb: 'dVd', s: sug?.domicilios, hoy: { lj: sug?.domicilios?.prom_lj, vd: sug?.domicilios?.prom_vd }, unidad: '' })}
         <label style={{ display: 'block', margin: '10px 0' }}>Valen desde <input type="date" style={{ ...inp, width: 150 }} value={f.desde} onChange={e => setF({ ...f, desde: e.target.value })} /></label>
-        <p style={{ color: C.dim, fontSize: 12, margin: 0 }}>Cada cambio se guarda con su fecha: el historial de metas no se pierde. Lunes a jueves (L–J) y viernes a domingo (V–D).</p>
+        {sug && (
+          <p style={{ color: C.dim, fontSize: 12, margin: 0 }}>
+            Cómo se sugieren (últimos 30 días, sin ventas a empleados): <b>persona</b> = lo que se logra en el 40 % de los mejores días de cada quien (percentil 60), redondeado a $5;
+            {' '}<b>equipo</b> = un día normal de la sucursal + 5 %; <b>domicilios</b> = promedio diario + 10 %. Lunes a jueves (L–J) y viernes a domingo (V–D) por separado.
+          </p>
+        )}
       </div>
+
+      {sug?.por_persona?.length > 0 && (
+        <div style={card}>
+          <h3 style={{ marginTop: 0 }}>Cómo le iría a cada uno con la meta sugerida</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums', width: '100%' }}>
+              <thead><tr>{['Persona', 'Días', 'Extras/día L–J', 'Extras/día V–D'].map((h, i) => <th key={h} style={{ ...th, textAlign: i ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {sug.por_persona.map(p => {
+                  const c = (v, m) => v == null ? C.dim : Number(v) >= Number(m) ? C.ok : C.bad
+                  return (
+                    <tr key={p.usuario_id}>
+                      <td style={{ ...td, textAlign: 'left' }}>{p.nombre}</td>
+                      <td style={td}>{p.dias}</td>
+                      <td style={{ ...td, color: c(p.lj, f.pLj || sug.persona.lj) }}>{p.lj == null ? '—' : money(p.lj)}</td>
+                      <td style={{ ...td, color: c(p.vd, f.pVd || sug.persona.vd) }}>{p.vd == null ? '—' : money(p.vd)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ color: C.dim, fontSize: 12, marginBottom: 0 }}>Verde: su promedio ya alcanza la meta escrita arriba. Rojo: tendría que subir. Solo días con 5 cuentas o más.</p>
+        </div>
+      )}
 
       <div style={card}>
         <h3 style={{ marginTop: 0 }}>Qué cuenta como extra</h3>
@@ -352,7 +548,7 @@ function ConfigMetas({ user, store, config, personas, onGuardado }) {
             </label>
           ))}
         </div>
-        <p style={{ color: C.dim, fontSize: 12 }}>Una categoría marcada cuenta completa cuando se pide como línea propia. Lo que viene dentro de un combo no cuenta.</p>
+        <p style={{ color: C.dim, fontSize: 12 }}>Una categoría marcada cuenta completa cuando se pide como línea propia. Lo que viene dentro de un combo no cuenta. Los productos de empleado nunca cuentan.</p>
       </div>
 
       <button onClick={guardarTodo} style={{ ...btn(true), padding: '10px 18px', fontSize: 14 }}>Guardar metas y reglas</button>
