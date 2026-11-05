@@ -1,5 +1,20 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 — KPIs de Venta: venta real de hoy contra la meta del día, y arreglos de la pestaña Metas
+
+Migración `20261105_kpis_curva_venta_dia.sql` (función nueva `obtener_curva_venta_dia`, solo lectura). Archivo: `KpisVentaDashboard.jsx`.
+
+- **Qué pidió Jose:** que el gerente vea en el día cuánto lleva vendido contra la meta de hoy, para poder reaccionar.
+- **Hoy vs meta:** la tercera tarjeta de cada canal ahora muestra venta de hoy / meta de hoy, cuánto debería llevar a esta hora y si va adelante o atrás, y cuánto necesita por hora hasta la hora típica de cierre. El encabezado muestra lo mismo para la cadena o la sucursal. Se refresca solo cada 3 min.
+- **«A esta hora»:** `obtener_curva_venta_dia` calcula, por sucursal y para la cadena, qué % de la venta de ese día de la semana se hizo antes de la hora actual (cuentas cobradas del POS, últimas 8 semanas). También da la hora típica de la última venta.
+- **Errores que tenía:**
+  - La comparación contra el mes anterior metía el día de hoy a medias contra un día completo del mes anterior. Ahora compara solo días cerrados (1–4 nov vs 1–4 oct).
+  - Los factores por día de la semana eran fijos y no se parecían a la venta real (sábado 1.15 vs 1.59 real; domingo 1.05 vs 1.48). Eso inflaba la meta de lunes a jueves y la bajaba el fin de semana. Ahora salen de la venta real de los últimos 3 meses de la sucursal elegida (sin asuetos ni días de pago). Si falta historia, usa la tabla fija. La meta del jueves 5-nov de la cadena bajó de $8,564 a $6,996.
+  - La barra de «% alcanzado» del mes se pintaba en rojo siempre a inicio de mes (rojo debajo de 70%). Ahora se compara contra lo que debería llevar a esta altura del mes y tiene una marca blanca en ese punto.
+  - Decía «5 sucursales» con 6 activas, y «Mes en curso» en meses cerrados.
+  - «$/hora si abren 12h» asumía venta pareja; se cambió por lo que falta dividido entre las horas que quedan.
+- **No cambió:** la fórmula de la meta mensual (40/40/20, o 65/35 sin año anterior). Como no hay datos antes de enero 2026, en 2026 siempre se usa el 65/35.
+
 ## 5-Nov-2026 (noche) — Propina del mes en %: faltas y premios
 
 - **Tabla `incentivo_ajustes`:** falta leve −2.5, moderada −5, grave −10 o premio de +0.5 a +20.
