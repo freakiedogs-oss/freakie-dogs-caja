@@ -17,6 +17,8 @@ const CH_COLOR = {
   delivery_propio: '#ec4899',
   drivethrough: '#14b8a6',
   pedidos_ya: '#a855f7',
+  delivery_app: '#22d3ee',
+  evento: '#f97316',
 };
 const CH_LABEL = {
   mesa: '🍴 Mesa',
@@ -24,8 +26,13 @@ const CH_LABEL = {
   delivery_propio: '🛵 Delivery Propio',
   drivethrough: '🚗 Drive Thru',
   pedidos_ya: '🟣 PeYa',
+  delivery_app: '📱 Hifumi',
+  evento: '🎪 Eventos',
 };
-const CH_KEYS = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough', 'pedidos_ya'];
+const CH_KEYS = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough', 'pedidos_ya', 'delivery_app', 'evento'];
+// Eventos son ventas sueltas (un evento grande o nada): no se les reparte meta mensual ni diaria.
+const CH_SIN_META = ['evento'];
+const canalesEnCero = () => Object.fromEntries(CH_KEYS.map(k => [k, 0]));
 
 // ── Asuetos El Salvador 2026 (fechas YYYY-MM-DD) ──
 const ASUETOS_SV = {
@@ -205,7 +212,7 @@ function KpisVentaDashboardInner({ user, onBack }) {
           <div>
             <div style={{ fontWeight: 800, fontSize: 20 }}>📊 KPIs de Venta <InfoTip text="Tablero de ventas: metas, resumen por canal y sucursal, Pareto de productos, desempeño por empleado y tendencia." /></div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-              Fuente: <code style={{ color: '#f59e0b' }}>POS interno</code> (desde 1-ago) · histórico Quanto antes de ago · 5 canales incl. PeYa
+              Fuente: <code style={{ color: '#f59e0b' }}>POS interno</code> (desde 1-ago) · histórico Quanto antes de ago · 7 canales (incl. PeYa, Hifumi y Eventos)
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -290,8 +297,8 @@ function mesesOptions() {
 
 function calcularDatos(kpisRaw) {
   const sucursales = {};
-  const totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
-  const ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
+  const totalCanal = canalesEnCero();
+  const ordCanal = canalesEnCero();
   let total = 0, ordTotal = 0;
 
   for (const r of kpisRaw) {
@@ -386,14 +393,11 @@ async function fetchTendencia(usuarioId) {
     const desde = m.toISOString().split('T')[0];
     const hasta = next.toISOString().split('T')[0];
     const { data } = await db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: desde, p_fecha_hasta: hasta });
-    const sum = { mes: m, mesa: { ord: 0, monto: 0 }, llevar: { ord: 0, monto: 0 }, delivery: { ord: 0, monto: 0 }, drive: { ord: 0, monto: 0 }, peya: { ord: 0, monto: 0 } };
+    const sum = { mes: m };
+    CH_KEYS.forEach(k => { sum[k] = { ord: 0, monto: 0 }; });
     (data || []).forEach(r => {
-      const k = r.canal_venta === 'mesa' ? 'mesa'
-        : r.canal_venta === 'para_llevar' ? 'llevar'
-        : r.canal_venta === 'delivery_propio' ? 'delivery'
-        : r.canal_venta === 'drivethrough' ? 'drive'
-        : r.canal_venta === 'pedidos_ya' ? 'peya' : null;
-      if (k) { sum[k].ord += Number(r.ordenes); sum[k].monto += Number(r.monto); }
+      const k = r.canal_venta;
+      if (sum[k]) { sum[k].ord += Number(r.ordenes); sum[k].monto += Number(r.monto); }
     });
     out.push(sum);
   }
@@ -534,6 +538,7 @@ function factoresDowEmpiricos(diario) {
 }
 
 function calcularMetaMensual(canal, sucursal, m) {
+  if (CH_SIN_META.includes(canal)) return 0;
   const k = `${sucursal}|${canal}`;
   const ant = m.antCompleto[k] || 0;
   const aa = m.mismoMesAA[k] || 0;
@@ -665,7 +670,10 @@ function TabMetas({ metasData, sucursalSel }) {
 
       {/* Grid 4 filas (canales) × 3 columnas (Actual / Meta mensual / Hoy) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {CH_KEYS.map(canal => <FilaMeta key={canal} canal={canal} sucursal={sc} m={m} ctx={ctx} mesAntNombre={mesAntNombre} fechaHoyStr={fechaHoyStr} />)}
+        {CH_KEYS.filter(canal => {
+          const k = `${sc}|${canal}`;
+          return calcularMetaMensual(canal, sc, m) > 0 || (m.cerrado[k] || 0) + (m.hoy[k] || 0) > 0;
+        }).map(canal => <FilaMeta key={canal} canal={canal} sucursal={sc} m={m} ctx={ctx} mesAntNombre={mesAntNombre} fechaHoyStr={fechaHoyStr} />)}
       </div>
 
       {/* Footer explicativo */}
@@ -726,6 +734,13 @@ function FilaMeta({ canal, sucursal, m, ctx, mesAntNombre, fechaHoyStr }) {
         </div>
       </div>
 
+      {/* Eventos: sin meta, solo lo vendido en el mes y hoy */}
+      {CH_SIN_META.includes(canal) ? (
+        <div style={{ ...card, gridColumn: 'span 2', color: '#9ca3af', fontSize: 12, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
+          <div>Sin meta: las ventas de eventos dependen de que haya evento, no del día.</div>
+          {m.esMesActual && <div>Hoy: <strong style={{ color: '#fff' }}>{fmt$(hoy)}</strong></div>}
+        </div>
+      ) : (<>
       {/* Card 2: Meta mensual + progreso contra el ritmo esperado */}
       <div style={card}>
         {etiqueta('Meta del mes', '#fbbf24')}
@@ -770,6 +785,7 @@ function FilaMeta({ canal, sucursal, m, ctx, mesAntNombre, fechaHoyStr }) {
           La meta del día solo aplica al mes en curso
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -795,8 +811,8 @@ function TabResumen({ datos, sucursalSel }) {
   if (sucursalSel !== 'todas') {
     const s = sucursales.find(x => x.store_code === sucursalSel);
     sucursales = s ? [s] : [];
-    totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
-    ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
+    totalCanal = canalesEnCero();
+    ordCanal = canalesEnCero();
     total = 0; ordTotal = 0;
     if (s) {
       CH_KEYS.forEach(ch => {
@@ -819,12 +835,11 @@ function TabResumen({ datos, sucursalSel }) {
     <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
         <KpiCard label="Órdenes Totales" value={fmtN(ordTotal)} sub={`${fmt$(total)} · Ticket ${fmt$2(ticketGlobal)}`} />
-        <KpiCard label="🍴 Mesa" value={fmtN(ordCanal.mesa)} sub={`${fmt$(totalCanal.mesa)} · Ticket ${fmt$2(ticketCanal.mesa)}`} color="#f59e0b" pctMix={total ? (totalCanal.mesa / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.mesa / ordTotal) * 100 : 0} />
-        <KpiCard label="🥡 Llevar" value={fmtN(ordCanal.para_llevar)} sub={`${fmt$(totalCanal.para_llevar)} · Ticket ${fmt$2(ticketCanal.para_llevar)}`} color="#3b82f6" pctMix={total ? (totalCanal.para_llevar / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.para_llevar / ordTotal) * 100 : 0} />
-        <KpiCard label="🛵 Delivery Propio" value={fmtN(ordCanal.delivery_propio)} sub={`${fmt$(totalCanal.delivery_propio)} · Ticket ${fmt$2(ticketCanal.delivery_propio)}`} color="#ec4899" pctMix={total ? (totalCanal.delivery_propio / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.delivery_propio / ordTotal) * 100 : 0} />
-        {/* FIX: Drive Thru ahora SÍ muestra ticket promedio */}
-        <KpiCard label="🚗 Drive Thru" value={fmtN(ordCanal.drivethrough)} sub={`${fmt$(totalCanal.drivethrough)} · Ticket ${fmt$2(ticketCanal.drivethrough)} · Solo S003`} color="#14b8a6" pctMix={total ? (totalCanal.drivethrough / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.drivethrough / ordTotal) * 100 : 0} />
-        <KpiCard label="🟣 PeYa" value={fmtN(ordCanal.pedidos_ya)} sub={`${fmt$(totalCanal.pedidos_ya)} · Ticket ${fmt$2(ticketCanal.pedidos_ya)}`} color="#a855f7" pctMix={total ? (totalCanal.pedidos_ya / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.pedidos_ya / ordTotal) * 100 : 0} />
+        {CH_KEYS.filter(ch => ordCanal[ch] > 0 || ['mesa', 'para_llevar', 'delivery_propio', 'pedidos_ya'].includes(ch)).map(ch => (
+          <KpiCard key={ch} label={CH_LABEL[ch]} value={fmtN(ordCanal[ch])}
+            sub={`${fmt$(totalCanal[ch])} · Ticket ${fmt$2(ticketCanal[ch])}${ch === 'drivethrough' ? ' · Solo S003' : ''}`}
+            color={CH_COLOR[ch]} pctMix={total ? (totalCanal[ch] / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal[ch] / ordTotal) * 100 : 0} />
+        ))}
       </div>
 
       <div style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 16, overflowX: 'auto' }}>
@@ -839,11 +854,9 @@ function TabResumen({ datos, sucursalSel }) {
           <thead>
             <tr style={{ borderBottom: '1px solid #262626' }}>
               <th rowSpan={2} style={thStyle}>Sucursal</th>
-              <th colSpan={3} style={{ ...thStyle, color: '#f59e0b', background: 'rgba(245,158,11,0.05)' }}>🍴 Mesa</th>
-              <th colSpan={3} style={{ ...thStyle, color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}>🥡 Llevar</th>
-              <th colSpan={3} style={{ ...thStyle, color: '#ec4899', background: 'rgba(236,72,153,0.05)' }}>🛵 Delivery</th>
-              <th colSpan={3} style={{ ...thStyle, color: '#14b8a6', background: 'rgba(20,184,166,0.05)' }}>🚗 Drive</th>
-              <th colSpan={3} style={{ ...thStyle, color: '#a855f7', background: 'rgba(168,85,247,0.05)' }}>🟣 PeYa</th>
+              {CH_KEYS.map(ch => (
+                <th key={ch} colSpan={3} style={{ ...thStyle, color: CH_COLOR[ch], background: CH_COLOR[ch] + '0d' }}>{CH_LABEL[ch]}</th>
+              ))}
               <th colSpan={3} style={{ ...thStyle, color: '#a5b4fc', background: 'rgba(99,102,241,0.05)' }}>📊 Total</th>
             </tr>
             <tr style={{ borderBottom: '1px solid #262626' }}>
@@ -1073,13 +1086,7 @@ function TabTendencia({ tend }) {
   if (!tend.length) return <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>Cargando tendencia…</div>;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      {[
-        { key: 'mesa', label: '🍴 Mesa', color: '#f59e0b' },
-        { key: 'llevar', label: '🥡 Llevar', color: '#3b82f6' },
-        { key: 'delivery', label: '🛵 Delivery Propio', color: '#ec4899' },
-        { key: 'drive', label: '🚗 Drive Thru (S003)', color: '#14b8a6' },
-        { key: 'peya', label: '🟣 PeYa', color: '#a855f7' },
-      ].map(ch => (
+      {CH_KEYS.map(k => ({ key: k, label: CH_LABEL[k] + (k === 'drivethrough' ? ' (S003)' : ''), color: CH_COLOR[k] })).map(ch => (
         <div key={ch.key} style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 14 }}>
           <div style={{ fontWeight: 600, color: ch.color, marginBottom: 10 }}>{ch.label}</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
