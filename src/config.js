@@ -112,6 +112,8 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'ventas-freakies', label: 'Ventas Freakies', icon: '💶', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'kpis-venta', label: 'KPIs de Venta', icon: '📊', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
+      // Extras por persona, ticket y meta (pedido de Jazz, M001). Ver docs/planes/PLAN_desempeno_meseros_y_domicilios.md
+      { key: 'desempeno-meseros', label: 'Desempeño Meseros', icon: '🏆', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       // Consumo generado por la venta, por componente y familia. Va acá y no en
       // Almacén porque la pregunta que responde es de negocio (qué se fue en
       // insumos por lo que se vendió), no de stock.
@@ -229,6 +231,8 @@ export const NAV_SECTIONS = [
   {
     label: 'Delivery',
     items: [
+      // Recontactar clientes de domicilio por WhatsApp + meta de pedidos (Karina, M001)
+      { key: 'clientes-domicilio', label: 'Clientes Domicilio', icon: '💬', roles: ['domicilios', 'gerente', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'delivery', label: 'Panel Delivery', icon: '🛵', roles: ['ejecutivo', 'despachador', 'domicilios', 'motorista', 'motorista_interno', 'gerente', 'admin'] },
     ],
   },

@@ -56,6 +56,8 @@ const MediaView          = lazy(() => import('./components/marketing/MediaView')
 const FreakieFlowView    = lazy(() => import('./components/marketing/FreakieFlowView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
 const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView'))
+const DesempenoMeserosView = lazy(() => import('./components/rrhh/DesempenoMeserosView'))
+const ClientesDomicilioView = lazy(() => import('./components/delivery/ClientesDomicilioView'))
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
 const BPMParametrosView  = lazy(() => import('./components/produccion/BPMParametrosView'))
 const TurnoCasaMatrizView = lazy(() => import('./components/produccion/TurnoCasaMatrizView'))
@@ -111,7 +113,7 @@ const ROLE_DEFAULTS = {
   contador: ['gastos', 'conciliacion', 'planilla'],
   despachador: ['mi-despacho', 'entregas', 'delivery'],
   motorista: ['mi-despacho', 'entregas', 'delivery'],
-  domicilios: ['entregas', 'delivery'],
+  domicilios: ['clientes-domicilio', 'entregas', 'delivery'],
   marketing: ['marketing'],
   produccion: ['carne-boleado', 'bpm-chili', 'bpm-temperatura', 'despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
   eventos: ['eventos-mapa', 'eventos', 'mi-asistencia', 'mi-boleta'],
@@ -404,6 +406,10 @@ export default function App() {
         return <ProduccionDiaria user={user} />
       case 'agrandados':
         return <AgrandadosView user={user} />
+      case 'desempeno-meseros':
+        return <DesempenoMeserosView user={user} />
+      case 'clientes-domicilio':
+        return <ClientesDomicilioView user={user} />
       case 'bpm-chili':
         return <BPMChiliView user={user} />
       case 'bpm-parametros':

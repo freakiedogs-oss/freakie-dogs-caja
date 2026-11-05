@@ -1,5 +1,27 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 5-Nov-2026 — Desempeño Meseros + Clientes Domicilio (fase «medir»; todavía no afecta propinas)
+
+- **Pedido de Jazz (M001).** Plan: `docs/planes/PLAN_desempeno_meseros_y_domicilios.md`.
+- **Base** (migración `20261104_incentivos_y_crm_domicilios.sql`, más `fn_extras_mesero_venta_mesa`):
+  - Tablas `incentivo_programas`, `incentivo_metas` (L–J / V–D, `ambito` persona o equipo, historial por `vigente_desde`), `incentivo_tramos` (0 % → 0.5, 100 % → 1.0) y `crm_plantillas` / `crm_contactos` / `crm_exclusiones`.
+  - Todas tienen RLS **sin policies**: solo se accede por RPC SECURITY DEFINER, que validan rol y sucursal con `_incentivo_acceso`. Un mesero queda bloqueado (probado).
+  - Semilla: programas `extras` y `domicilios` en M001, **sin metas cargadas**.
+- **Extra** = modificadores cobrados + subtotal de líneas de Extras, Fries & Sides, Cervezas y Bebidas.
+  - La bebida dentro de un combo vive en `componentes` y no cuenta. Cortesías y anulados, tampoco.
+  - Dueño de la cuenta = `coalesce(mesero_id, cajero_id)`. Canales: mesa, para llevar, drive thru.
+- **ERP:**
+  - `DesempenoMeserosView` («Desempeño Meseros» en Dashboards) para admin, gerente y ejecutivo. Tiene ranking, detalle por día, la meta de equipo para cocina y la pestaña «Metas y reglas».
+  - `ClientesDomicilioView` («Clientes Domicilio») para domicilios, gerente y admin. Tiene segmentos, el botón WhatsApp (registra el contacto y abre wa.me con la plantilla), «No escribir más» y la medición «volvió en 7 días». Sin exportar.
+  - Las RPC devuelven máximo 1000 filas: la vista de clientes pagina con `.range()`.
+- **POS (`POSMain`):** en una mesa abierta por alguien que no es mesero aparece «Atiende:», con quien la abre por defecto. `mesero_id` ya nunca queda NULL en mesas.
+- **Pendiente:**
+  - Jazz carga las metas tras dos semanas de medición.
+  - Chip de avance en el POS.
+  - Integración con `PropinasView` y planilla (fase 4).
+  - `metas_ventas` (meta de venta por sucursal) sigue apagada desde marzo; no tiene cron, se llenaba a mano o por Make.
+  - Los domicilios no guardan quién los tomó: la meta de Karina es por sucursal.
+
 ## 2-Nov-2026 — Líneas de facturas de compra: backfill, extracción automática y fin del bucle de errores
 
 Fase 0 del plan Compras HQ (`~/Proyectos/_auditorias/COMPRAS-HQ-plan-2026-10-29.md`). Migración `20261029_compras_dte_items_reparar.sql`.
