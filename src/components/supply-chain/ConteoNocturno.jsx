@@ -52,7 +52,7 @@ const stepBtnActive={...stepBtn,background:'#e63946',border:'1px solid #e63946'}
    puente: cuántas unidades de stock trae un empaque cerrado.
    Los items que se abren en sucursal (`conteo_fraccionado`) llevan además una
    segunda casilla para lo suelto, con su propio factor: la carne se cuenta en
-   paquetes de 20 bolitas MÁS las bolitas del paquete abierto.
+   bolsas de 6 bolitas MÁS las bolitas de la bolsa abierta.
    Nada de esto toca el costeo: cantidad_real sigue viajando al kardex y al
    pedido en unidad de stock, igual que antes. */
 const facCerrado=(p)=>{const f=n(p?.conteo_factor);return f>0?f:1;};
