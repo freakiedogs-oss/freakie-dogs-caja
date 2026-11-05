@@ -13,6 +13,8 @@ Migración `20261105_kpis_curva_venta_dia.sql` (función nueva `obtener_curva_ve
   - La barra de «% alcanzado» del mes se pintaba en rojo siempre a inicio de mes (rojo debajo de 70%). Ahora se compara contra lo que debería llevar a esta altura del mes y tiene una marca blanca en ese punto.
   - Decía «5 sucursales» con 6 activas, y «Mes en curso» en meses cerrados.
   - «$/hora si abren 12h» asumía venta pareja; se cambió por lo que falta dividido entre las horas que quedan.
+- **PeYa incluido (migración `20261105_kpis_venta_incluye_peya.sql`, pedido de Jose):** PeYa entra como quinto canal (`pedidos_ya`) en la vista `v_kpis_venta_canal` y aparece en todas las pestañas. También entra en Top Items. PeYa siempre se registra con su propio tipo en el POS, así que no se mezcla con los otros canales. Siguen fuera Hifumi (`delivery_app`, ~$300 desde agosto) y eventos (EVT01), y PeYa no entra en «Por Empleado». La meta de la cadena de noviembre sube a $316k; la de PeYa sola es $52.8k.
+- **Fuente:** desde el 1-ago todo sale del POS interno (`pos_cuentas`). Se verificó que la vista cuadra al dólar con `pos_cuentas` por canal (ago–nov) y que Quanto no aporta ninguna fila desde agosto. Quanto solo se usa para meses anteriores a agosto (junio y julio en el selector, julio en Tendencia); antes de agosto Quanto no tenía PeYa. Las metas de noviembre usan solo meses del POS: ago–oct, y no hay noviembre 2025.
 - **No cambió:** la fórmula de la meta mensual (40/40/20, o 65/35 sin año anterior). Como no hay datos antes de enero 2026, en 2026 siempre se usa el 65/35.
 
 ## 5-Nov-2026 (noche) — Propina del mes en %: faltas y premios

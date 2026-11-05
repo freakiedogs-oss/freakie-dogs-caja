@@ -16,14 +16,16 @@ const CH_COLOR = {
   para_llevar: '#3b82f6',
   delivery_propio: '#ec4899',
   drivethrough: '#14b8a6',
+  pedidos_ya: '#a855f7',
 };
 const CH_LABEL = {
   mesa: '🍴 Mesa',
   para_llevar: '🥡 Llevar',
   delivery_propio: '🛵 Delivery Propio',
   drivethrough: '🚗 Drive Thru',
+  pedidos_ya: '🟣 PeYa',
 };
-const CH_KEYS = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough'];
+const CH_KEYS = ['mesa', 'para_llevar', 'delivery_propio', 'drivethrough', 'pedidos_ya'];
 
 // ── Asuetos El Salvador 2026 (fechas YYYY-MM-DD) ──
 const ASUETOS_SV = {
@@ -203,7 +205,7 @@ function KpisVentaDashboardInner({ user, onBack }) {
           <div>
             <div style={{ fontWeight: 800, fontSize: 20 }}>📊 KPIs de Venta <InfoTip text="Tablero de ventas: metas, resumen por canal y sucursal, Pareto de productos, desempeño por empleado y tendencia." /></div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-              Fuente: <code style={{ color: '#f59e0b' }}>POS interno</code> (desde 1-ago) · histórico Quanto · 4 canales · Excluye PeYa
+              Fuente: <code style={{ color: '#f59e0b' }}>POS interno</code> (desde 1-ago) · histórico Quanto antes de ago · 5 canales incl. PeYa
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -288,8 +290,8 @@ function mesesOptions() {
 
 function calcularDatos(kpisRaw) {
   const sucursales = {};
-  const totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
-  const ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
+  const totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
+  const ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
   let total = 0, ordTotal = 0;
 
   for (const r of kpisRaw) {
@@ -384,12 +386,13 @@ async function fetchTendencia(usuarioId) {
     const desde = m.toISOString().split('T')[0];
     const hasta = next.toISOString().split('T')[0];
     const { data } = await db.rpc('obtener_kpis_venta_canal', { p_usuario_id: usuarioId, p_fecha_desde: desde, p_fecha_hasta: hasta });
-    const sum = { mes: m, mesa: { ord: 0, monto: 0 }, llevar: { ord: 0, monto: 0 }, delivery: { ord: 0, monto: 0 }, drive: { ord: 0, monto: 0 } };
+    const sum = { mes: m, mesa: { ord: 0, monto: 0 }, llevar: { ord: 0, monto: 0 }, delivery: { ord: 0, monto: 0 }, drive: { ord: 0, monto: 0 }, peya: { ord: 0, monto: 0 } };
     (data || []).forEach(r => {
       const k = r.canal_venta === 'mesa' ? 'mesa'
         : r.canal_venta === 'para_llevar' ? 'llevar'
         : r.canal_venta === 'delivery_propio' ? 'delivery'
-        : r.canal_venta === 'drivethrough' ? 'drive' : null;
+        : r.canal_venta === 'drivethrough' ? 'drive'
+        : r.canal_venta === 'pedidos_ya' ? 'peya' : null;
       if (k) { sum[k].ord += Number(r.ordenes); sum[k].monto += Number(r.monto); }
     });
     out.push(sum);
@@ -792,8 +795,8 @@ function TabResumen({ datos, sucursalSel }) {
   if (sucursalSel !== 'todas') {
     const s = sucursales.find(x => x.store_code === sucursalSel);
     sucursales = s ? [s] : [];
-    totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
-    ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0 };
+    totalCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
+    ordCanal = { mesa: 0, para_llevar: 0, delivery_propio: 0, drivethrough: 0, pedidos_ya: 0 };
     total = 0; ordTotal = 0;
     if (s) {
       CH_KEYS.forEach(ch => {
@@ -814,13 +817,14 @@ function TabResumen({ datos, sucursalSel }) {
 
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
         <KpiCard label="Órdenes Totales" value={fmtN(ordTotal)} sub={`${fmt$(total)} · Ticket ${fmt$2(ticketGlobal)}`} />
         <KpiCard label="🍴 Mesa" value={fmtN(ordCanal.mesa)} sub={`${fmt$(totalCanal.mesa)} · Ticket ${fmt$2(ticketCanal.mesa)}`} color="#f59e0b" pctMix={total ? (totalCanal.mesa / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.mesa / ordTotal) * 100 : 0} />
         <KpiCard label="🥡 Llevar" value={fmtN(ordCanal.para_llevar)} sub={`${fmt$(totalCanal.para_llevar)} · Ticket ${fmt$2(ticketCanal.para_llevar)}`} color="#3b82f6" pctMix={total ? (totalCanal.para_llevar / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.para_llevar / ordTotal) * 100 : 0} />
         <KpiCard label="🛵 Delivery Propio" value={fmtN(ordCanal.delivery_propio)} sub={`${fmt$(totalCanal.delivery_propio)} · Ticket ${fmt$2(ticketCanal.delivery_propio)}`} color="#ec4899" pctMix={total ? (totalCanal.delivery_propio / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.delivery_propio / ordTotal) * 100 : 0} />
         {/* FIX: Drive Thru ahora SÍ muestra ticket promedio */}
         <KpiCard label="🚗 Drive Thru" value={fmtN(ordCanal.drivethrough)} sub={`${fmt$(totalCanal.drivethrough)} · Ticket ${fmt$2(ticketCanal.drivethrough)} · Solo S003`} color="#14b8a6" pctMix={total ? (totalCanal.drivethrough / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.drivethrough / ordTotal) * 100 : 0} />
+        <KpiCard label="🟣 PeYa" value={fmtN(ordCanal.pedidos_ya)} sub={`${fmt$(totalCanal.pedidos_ya)} · Ticket ${fmt$2(ticketCanal.pedidos_ya)}`} color="#a855f7" pctMix={total ? (totalCanal.pedidos_ya / total) * 100 : 0} pctOrd={ordTotal ? (ordCanal.pedidos_ya / ordTotal) * 100 : 0} />
       </div>
 
       <div style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 16, overflowX: 'auto' }}>
@@ -839,10 +843,11 @@ function TabResumen({ datos, sucursalSel }) {
               <th colSpan={3} style={{ ...thStyle, color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}>🥡 Llevar</th>
               <th colSpan={3} style={{ ...thStyle, color: '#ec4899', background: 'rgba(236,72,153,0.05)' }}>🛵 Delivery</th>
               <th colSpan={3} style={{ ...thStyle, color: '#14b8a6', background: 'rgba(20,184,166,0.05)' }}>🚗 Drive</th>
+              <th colSpan={3} style={{ ...thStyle, color: '#a855f7', background: 'rgba(168,85,247,0.05)' }}>🟣 PeYa</th>
               <th colSpan={3} style={{ ...thStyle, color: '#a5b4fc', background: 'rgba(99,102,241,0.05)' }}>📊 Total</th>
             </tr>
             <tr style={{ borderBottom: '1px solid #262626' }}>
-              {[...Array(5)].flatMap((_, i) => ([
+              {[...Array(CH_KEYS.length + 1)].flatMap((_, i) => ([
                 <th key={i + '-1'} style={thStyleSm}>Órd.</th>,
                 <th key={i + '-2'} style={thStyleSm}>Monto</th>,
                 <th key={i + '-3'} style={thStyleSm}>Ticket</th>,
@@ -1073,6 +1078,7 @@ function TabTendencia({ tend }) {
         { key: 'llevar', label: '🥡 Llevar', color: '#3b82f6' },
         { key: 'delivery', label: '🛵 Delivery Propio', color: '#ec4899' },
         { key: 'drive', label: '🚗 Drive Thru (S003)', color: '#14b8a6' },
+        { key: 'peya', label: '🟣 PeYa', color: '#a855f7' },
       ].map(ch => (
         <div key={ch.key} style={{ background: '#141414', border: '1px solid #262626', borderRadius: 8, padding: 14 }}>
           <div style={{ fontWeight: 600, color: ch.color, marginBottom: 10 }}>{ch.label}</div>
