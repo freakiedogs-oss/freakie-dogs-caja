@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../supabase';
+import { fmtDate, today } from '../../config';
+import { imprimirTabla, agruparFilas, fmtNum } from '../../lib/imprimirTabla';
 
 export default function InventarioTab({user,show}){
   const [inv,setInv]=useState([]);
@@ -25,8 +27,46 @@ export default function InventarioTab({user,show}){
 
   const alertas=inv.filter(i=>i.alerta_activa||i.stock_actual<=i.stock_minimo);
 
+  // Hoja carta vertical con lo que se ve en pantalla (respeta la búsqueda),
+  // agrupado por categoría y con los bajo mínimo resaltados.
+  const imprimir=()=>{
+    const filas=filtrado.map(i=>({
+      nombre:i.catalogo_productos?.nombre||i.id,
+      categoria:i.catalogo_productos?.categoria||'Sin categoría',
+      unidad:i.catalogo_productos?.unidad_medida||'unid',
+      stock:i.stock_actual, minimo:i.stock_minimo, maximo:i.stock_maximo,
+      _class:(i.alerta_activa||i.stock_actual<=i.stock_minimo)?'alerta':'',
+    }));
+    imprimirTabla({
+      titulo:'Inventario Casa Matriz',
+      subtitulo:busqueda.trim()?`Filtro: "${busqueda.trim()}"`:'Stock actual por categoría',
+      meta:[{label:'Sucursal',value:'CM001 — Casa Matriz'},{label:'Fecha',value:fmtDate(today())},{label:'Generado por',value:user?.nombre}],
+      columnas:[
+        {key:'nombre',label:'Producto'},
+        {key:'unidad',label:'Unidad',width:'11%',align:'center',muted:true},
+        {key:'stock',label:'Stock',width:'12%',align:'right',tipo:'num',bold:true},
+        {key:'minimo',label:'Mín',width:'10%',align:'right',tipo:'num'},
+        {key:'maximo',label:'Máx',width:'10%',align:'right',tipo:'num'},
+        {key:'estado',label:'Estado',width:'13%',align:'center',render:f=>f._class?'⚠ Bajo mín':''},
+      ],
+      grupos:agruparFilas(filas,'categoria'),
+      resumen:[
+        {label:'Productos',value:fmtNum(filas.length)},
+        {label:'Bajo mínimo',value:fmtNum(filas.filter(f=>f._class).length)},
+      ],
+      nota:'Resaltado = stock igual o menor al mínimo definido.',
+    });
+  };
+
   return(
     <div style={{padding:'16px 16px 100px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div style={{fontWeight:800,fontSize:16}}>📦 Inventario Casa Matriz</div>
+        <button onClick={imprimir} disabled={loading||filtrado.length===0} title="Imprimir tabla (hoja carta)"
+          style={{background:'#222',color:'#fff',border:'1px solid #333',borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',opacity:(loading||filtrado.length===0)?0.5:1}}>
+          🖨️ Imprimir
+        </button>
+      </div>
       {alertas.length>0&&(
         <div className="card" style={{borderColor:'#7c2d12',marginBottom:16}}>
           <div style={{fontWeight:700,color:'#fb923c',marginBottom:6}}>⚠️ {alertas.length} producto(s) bajo mínimo</div>
