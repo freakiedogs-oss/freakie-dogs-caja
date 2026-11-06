@@ -13,6 +13,7 @@ import PinAuthModal from '../PinAuthModal'
 import PreparadoModal from '../PreparadoModal'
 import { useToast } from '../../hooks/useToast'
 import { usePeyaIdObligatorio } from '../peyaId'
+import PaxEditorModal from './PaxEditorModal'
 
 // ──────────────────────────────────────────────
 // Constantes de display
@@ -188,8 +189,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const tipo     = cuentaCtx?.tipo     || 'para_llevar'
   const mesaRef  = cuentaCtx?.mesa_ref || null
   // Demografía recibida al abrir mesa (POSHome) — se guarda al crear la cuenta
-  const paxCtx   = cuentaCtx?.pax || null
-  const paxFields = paxCtx ? { pax_mujeres: paxCtx.mujeres || 0, pax_hombres: paxCtx.hombres || 0, pax_ninos: paxCtx.ninos || 0 } : {}
+  // 6-nov-2026: editable desde el chip «👥 N · editar» (llegan clientes después de abrir la mesa).
+  const [paxLocal, setPaxLocal] = useState(cuentaCtx?.pax || null)
+  const [showPax, setShowPax] = useState(false)
+  const paxFields = paxLocal ? { pax_mujeres: paxLocal.mujeres || 0, pax_hombres: paxLocal.hombres || 0, pax_ninos: paxLocal.ninos || 0 } : {}
   const tipoInfo = TIPO_INFO[tipo] || TIPO_INFO['para_llevar']
 
   // Destino de empaque (Comer aquí / Llevar) — SOLO informa a cocina si empacar.
@@ -211,6 +214,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
   // Cuenta activa en DB
   const [cuentaId,   setCuentaId]   = useState(cuentaCtx?.cuentaId || null)
+  // Personas de la mesa ya abierta (para el chip y el ticket por persona)
+  useEffect(() => {
+    if (tipo !== 'mesa' || !cuentaId) return
+    db.from('pos_cuentas').select('pax_mujeres, pax_hombres, pax_ninos').eq('id', cuentaId).maybeSingle()
+      .then(({ data }) => { if (data) setPaxLocal({ mujeres: data.pax_mujeres || 0, hombres: data.pax_hombres || 0, ninos: data.pax_ninos || 0 }) })
+  }, [tipo, cuentaId])
   const [cuentaNum,  setCuentaNum]  = useState(null)
   const [mesaActual, setMesaActual] = useState(mesaRef)
   // ID del pedido de PedidosYa (pedido Cesar 17-sep). Llega desde POSHome al
@@ -1548,11 +1557,28 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             >
               <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{esEvento && eventoNombre ? ` · ${eventoNombre}` : ''}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
             </span>
+            {tipo === 'mesa' && (
+              <button onClick={() => setShowPax(true)} title="Personas en la mesa"
+                style={{ background: '#FFD90022', color: '#FFD900', border: '1px solid #FFD900', borderRadius: 99, padding: '3px 10px',
+                         fontSize: 12.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                👥 {(paxLocal?.mujeres || 0) + (paxLocal?.hombres || 0) + (paxLocal?.ninos || 0)} · editar
+              </button>
+            )}
             {cuentaId
               ? <span className="pos-order-open-badge">Cuenta Abierta</span>
               : <div className="pos-order-num">Orden #{String(cuentaNum || 1).padStart(4, '0')}</div>
             }
           </div>
+          {showPax && (
+            <PaxEditorModal
+              cuentaId={cuentaId}
+              mesaRef={mesaActual}
+              total={subtotal}
+              inicial={paxLocal}
+              onClose={() => setShowPax(false)}
+              onSaved={(p) => setPaxLocal({ mujeres: p.mujeres, hombres: p.hombres, ninos: p.ninos })}
+            />
+          )}
 
           {/* Destino de empaque (solo mesa / para llevar). Un toque = toda la orden. */}
           {destinoAplica && (

@@ -1,5 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 6-Nov-2026 — Mesas: personas visibles en el plano y editables después de abrir
+
+- **Qué pidió Cesar:** en los 3 restaurantes llegan clientes después de abrir la mesa, y el ticket por persona queda mal.
+- **Componente nuevo `PaxEditorModal.jsx`:** edita `pax_mujeres`, `pax_hombres` y `pax_ninos` de `pos_cuentas` (`pax_total` es columna generada).
+  - Muestra el ticket por persona en vivo, calculado como total ÷ (mujeres + hombres), igual que HistorialCobros.
+  - Si todavía no hay cuenta, solo corrige lo que se guardará al comandar.
+- **POSHome (plano):**
+  - Globo amarillo «👥 N» en cada mesa ocupada, y «$X/p» en la línea de metadatos.
+  - Al mantener presionada la mesa ocupada, el menú agrega «👥 Personas en la mesa».
+- **POSMain:** chip «👥 N · editar» en el encabezado de la orden cuando el tipo es mesa. `paxFields` ahora sale del estado `paxLocal`.
+- **Sin cambios en la base:** no hubo migración.
+
 ## 30-Oct-2026 — «Cebolla del día» con blanca y morada en una sola hoja
 
 - **Qué pidió Cesar:** la misma persona hace las dos, así que la comanda de la mañana tiene que traer también la morada (bolsa de 1 lb procesada).
