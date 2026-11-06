@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+
+## 6-Nov-2026 — Mesas: personas visibles en el plano y editables después de abrir
+
+- **Qué pidió Cesar:** en los 3 restaurantes llegan clientes después de abrir la mesa, y el ticket por persona queda mal.
+- **Componente nuevo `PaxEditorModal.jsx`:** edita `pax_mujeres`, `pax_hombres` y `pax_ninos` de `pos_cuentas` (`pax_total` es columna generada).
+  - Muestra el ticket por persona en vivo, calculado como total ÷ (mujeres + hombres), igual que HistorialCobros.
+  - Si todavía no hay cuenta, solo corrige lo que se guardará al comandar.
+- **POSHome (plano):**
+  - Globo amarillo «👥 N» en cada mesa ocupada, y «$X/p» en la línea de metadatos.
+  - Al mantener presionada la mesa ocupada, el menú agrega «👥 Personas en la mesa».
+- **POSMain:** chip «👥 N · editar» en el encabezado de la orden cuando el tipo es mesa. `paxFields` ahora sale del estado `paxLocal`.
+- **Sin cambios en la base:** no hubo migración.
+
 ## 5-Nov-2026 (noche) — Fix: cumplimiento comparaba días distintos
 
 - **Qué pasaba:** alguien guardó las metas sugeridas en producción (usuario «Super», vigentes desde el 5-nov): persona $75 / $110, equipo $300 / $500, domicilios 30 / 42. El logrado sumaba del 1 al 4 de noviembre (sin meta) contra la meta de un solo día, y cocina daba 534 %.
@@ -150,6 +163,7 @@ Fase 0 del plan Compras HQ (`~/Proyectos/_auditorias/COMPRAS-HQ-plan-2026-10-29.
 - **Base:** fila `papas-s003` en `porcion_estacion_config` (copia de `papas-s006`).
 - **Usuario:** «Estación Papas Lourdes» (rol despachador, S003) creado por Cesar en la pantalla de usuarios; el PIN lo definió él.
 - **Pendiente:** queso frito de Lourdes (pesos objetivo por definir).
+
 
 ## 30-Oct-2026 — «Cebolla del día» con blanca y morada en una sola hoja
 
