@@ -397,6 +397,8 @@ begin
     'driver_lat', v_drv_lat, 'driver_lng', v_drv_lng,
     'eta_min', v_eta,
     'paradas_antes', v_antes,
+    'calificacion', (select jsonb_build_object('nota', c.nota, 'editable', c.created_at > now() - interval '1 hour')
+                       from public.delivery_calificaciones c where c.delivery_id = d.id),
     'creado_at', d.created_at, 'recogido_at', d.recogido_at, 'entregado_at', d.entregado_at
   );
 end;

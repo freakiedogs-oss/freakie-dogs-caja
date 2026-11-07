@@ -5,6 +5,7 @@
 // ────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { db } from '../supabase'
+import EncuestaEntrega from './EncuestaEntrega'
 
 const MapaEnVivo = lazy(() => import('./MapaEnVivo'))
 const Juego = lazy(() => import('./Juego'))
@@ -183,6 +184,8 @@ export default function TrackingPedido() {
           </Suspense>
         </div>
       )}
+
+      {entregado && <EncuestaEntrega token={token} inicial={d.calificacion} />}
 
       {entregado && (
         <div className="tk-gracias">

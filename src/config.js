@@ -168,6 +168,7 @@ export const NAV_SECTIONS = [
       { key: 'admin', label: 'Dashboard de Cierres', icon: '⚙️', roles: ['admin'] },
       { key: 'incidentes', label: 'Incidentes', icon: '🚨', roles: ['gerente', 'admin'] },
       { key: 'cancelaciones', label: 'Cancelaciones', icon: '↩️', roles: ['gerente', 'ejecutivo', 'admin', 'superadmin'] },
+      { key: 'resultados-delivery', label: 'Resultados Delivery', icon: '⭐', roles: ['gerente', 'ejecutivo', 'admin', 'superadmin'] },
     ],
   },
   {

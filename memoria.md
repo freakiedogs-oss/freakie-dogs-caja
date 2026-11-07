@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 7-Nov-2026 — Encuesta de 1 toque + «Resultados delivery» para encargados
+
+- **Qué pidió Cesar:** que el cliente califique la entrega y que cada encargado vea día por día la nota, el pedido, por qué, quién lo llevó y cuánto se tardó en cocina, en asignarse y en ruta.
+- **BD (`20261107c_calificaciones_delivery.sql`, aplicada):** tabla `delivery_calificaciones` (nota 1–3, motivos[], comentario, quiere_contacto, contactado_*). `tracking_calificar(token, …)` (anon; solo entregados, 7 días, corregible 1 h). Trigger `trg_calificacion_alerta`: 😞 o pidió contacto → Telegram al chat `bot_config.telegram_grupo_alertas` (NO EXISTE todavía: hay que crear el grupo, meter al bot y guardar el chat_id; mientras tanto no envía). `fn_resultados_delivery(store|null, desde, hasta)`: resumen, motivos, días, cada calificación con min_confirmar / cocina / asignar / retirar / ruta / total. `fn_resultados_delivery_contactado(id, usuario, nota)`. `tracking_pedido` devuelve `calificacion`.
+- **Frontend:** `src/tracking/EncuestaEntrega.jsx` (en `TrackingPedido.jsx` al entregar), `src/components/delivery/ResultadosDeliveryView.jsx`, nav `resultados-delivery` en `config.js` (gerente, ejecutivo, admin, superadmin) + `App.jsx` (lazy, case, acceso rápido del gerente). El gerente ve solo su `store_code`.
+- **Alarma «pedido listo» (pendiente, APK):** diseño aprobado — notificación fija con sonido cada 10 s hasta «Ya los retiré»; si lleva varios pedidos de la misma sucursal suena cuando estén todos (o a los 8 min del primero). Cesar escucha 3 sonidos (A campana, B urgente, C timbre) para elegir.
+
 ## 7-Nov-2026 — Orden de entrega automático (torre + motorista + tracking)
 
 - **Qué pidió Cesar:** que el orden de entrega lo ponga el sistema (no Karina, no el motorista), con distancia + tiempo de espera. El motorista ve 1°/2°/3° bien marcado y no lo puede cambiar. Karina tiene un botón solo para emergencias. Y medir si la lógica acierta y cómo salen los viajes de 4.
