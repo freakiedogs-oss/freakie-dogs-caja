@@ -1,6 +1,16 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
 
+## 7-Nov-2026 — Menú web: confirmación con pago en efectivo y seguimiento dentro del WhatsApp
+
+- **Qué pidió Cesar:** el cliente tiene que volver a ver con cuánto paga y su cambio, y el link de seguimiento tiene que ir dentro del mensaje de WhatsApp que el cliente nos manda, sin botón aparte.
+- **Cambios en `MenuPublico.jsx`:**
+  - `enviar()` pasa `metodoPago` y `pagaCon` a la confirmación.
+  - `PedidoEnviado` muestra «💵 Pago en efectivo con $X · cambio: $Y», o «Pago en efectivo al recibir» si no puso monto. Si el monto es menor que el total, sale un aviso en rojo.
+  - El mensaje de WhatsApp agrega esa línea y «🛵 Aquí puedo darle seguimiento a mi pedido: <link /track>».
+  - El botón «Seguir mi pedido en vivo» solo aparece si no hay número de WhatsApp configurado (respaldo).
+
+
 ## 6-Nov-2026 — Mesas: personas visibles en el plano y editables después de abrir
 
 - **Qué pidió Cesar:** en los 3 restaurantes llegan clientes después de abrir la mesa, y el ticket por persona queda mal.
