@@ -1,0 +1,193 @@
+<title>Metas, Extras y Propina</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Layout: una columna de lectura (~68ch), bloques por herramienta, tablas con scroll propio */
+:root{
+  --bg:#fbfaf8; --surface:#ffffff; --ink:#1d1b1a; --muted:#5f5a56; --line:#e6e1dc;
+  --ketchup:#c8241d; --ketchup-soft:#fbe9e7; --mostaza:#9a6a00; --mostaza-soft:#fdf3d9;
+  --ok:#1f7a45; --ok-soft:#e5f4ea;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Source Sans 3", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#151312; --surface:#1e1b1a; --ink:#f1ece8; --muted:#aaa29c; --line:#34302d;
+  --ketchup:#ff6a5c; --ketchup-soft:#3a1d1a; --mostaza:#f0c050; --mostaza-soft:#352a12;
+  --ok:#5fd08f; --ok-soft:#173022; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#151312; --surface:#1e1b1a; --ink:#f1ece8; --muted:#aaa29c; --line:#34302d;
+  --ketchup:#ff6a5c; --ketchup-soft:#3a1d1a; --mostaza:#f0c050; --mostaza-soft:#352a12;
+  --ok:#5fd08f; --ok-soft:#173022; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6}
+.wrap{max-width:46rem;margin:0 auto;padding-block:40px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:40px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(2rem,6vw,2.8rem);font-weight:800;letter-spacing:-.02em}
+h2{font-size:1.55rem;font-weight:800}
+h3{font-size:1.1rem;font-weight:600}
+p{margin:0}
+section{display:flex;flex-direction:column;gap:14px}
+.eyebrow{font-size:.78rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ketchup);font-weight:700}
+.lede{color:var(--muted);font-size:1.08rem}
+.tool{border-top:3px solid var(--ketchup);padding-top:18px}
+.tool.b{border-top-color:var(--mostaza)}
+.tool.b .eyebrow{color:var(--mostaza)}
+ul,ol{margin:0;padding-left:1.25rem;display:flex;flex-direction:column;gap:6px}
+.decis{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:12px}
+.decis div{background:var(--ok-soft);border-radius:10px;padding:12px 14px;min-width:0}
+.decis b{display:block;color:var(--ok);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:.95rem}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+tr:last-child td{border-bottom:0}
+.note{font-size:.9rem;color:var(--muted)}
+.chip{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-variant-numeric:tabular-nums;width:fit-content;max-width:100%}
+.bar{width:120px;height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;width:68%;background:var(--ketchup)}
+.ejemplo{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.ejemplo .row{display:flex;justify-content:space-between;gap:12px;font-variant-numeric:tabular-nums}
+.ejemplo .row span:first-child{color:var(--muted)}
+.alert{background:var(--mostaza-soft);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.alert b{color:var(--mostaza)}
+.fases{display:flex;flex-direction:column;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.fase{position:relative;padding:0 0 18px 22px}
+.fase::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--ketchup)}
+.fase .when{font-size:.8rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.glos{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:12px}
+.glos div{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);min-width:0}
+.glos b{font-family:var(--display);display:block;margin-bottom:4px}
+footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+</style>
+
+<div class="wrap">
+
+<header style="display:flex;flex-direction:column;gap:12px">
+  <span class="eyebrow">Freakie Dogs · Plaza Cafetalón (Santa Tecla) · Propuesta 2-nov-2026</span>
+  <h1>Metas de extras, propina por cumplimiento y clientes de domicilio</h1>
+  <p class="lede">Jazz, este es el plan para construir las dos herramientas que pediste. Ya revisamos los datos reales del POS de los últimos 30 días: se puede hacer con lo que el sistema ya registra. Abajo está cómo va a funcionar, qué hay que ordenar antes y en qué fechas.</p>
+</header>
+
+<section>
+  <h2>Lo que ya quedó decidido</h2>
+  <div class="decis">
+    <div><b>Qué es un extra</b>Ingredientes adicionales cobrados (tocino, queso…), Extras, Fries &amp; Sides, cervezas y <strong>bebidas pedidas aparte</strong>. La bebida que viene dentro de un combo no cuenta.</div>
+    <div><b>Quién entra</b>Todo el equipo de la sucursal, también cocina. Cada uno con la meta que le corresponde (ver abajo).</div>
+    <div><b>La regla</b>Cumple la meta del mes → 100 % de su propina. No cumple → 50 %.</div>
+    <div><b>El 50 % que se pierde</b>Se reparte entre los compañeros que sí cumplieron. La propina sigue siendo del equipo.</div>
+    <div><b>Domicilios</b>Karina (usuario de domicilios de Santa Tecla) tiene su propia meta de pedidos, que también cuenta para su propina.</div>
+  </div>
+</section>
+
+<section class="tool">
+  <span class="eyebrow">Herramienta 1</span>
+  <h2>Extras por mesero y propina por cumplimiento</h2>
+
+  <h3>Cómo están hoy (mesas, últimos 30 días)</h3>
+  <p>Promedio de extras vendidos por día trabajado. «Fin de semana» es viernes a domingo.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Quién atendió</th><th>Cuentas</th><th>Extras/día L–J</th><th>Extras/día V–D</th><th>Extras por cuenta</th></tr></thead>
+    <tbody>
+      <tr><td>Camila</td><td>557</td><td>$96.01</td><td>$132.32</td><td>$5.57</td></tr>
+      <tr><td>Elmer</td><td>458</td><td>$73.09</td><td>$123.83</td><td>$5.59</td></tr>
+      <tr><td>Oscar <span class="note">(8 días)</span></td><td>144</td><td>$91.12</td><td>$92.03</td><td>$5.09</td></tr>
+      <tr><td>Karla</td><td>201</td><td>$52.37</td><td>$79.31</td><td>$4.71</td></tr>
+      <tr><td>Hazel <span class="note">(cajera)</span></td><td>164</td><td>$43.21</td><td>$61.16</td><td>$4.45</td></tr>
+      <tr><td>Miliana <span class="note">(cajera)</span></td><td>307</td><td>$27.59</td><td>$64.85</td><td>$3.70</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Ya se ven diferencias claras entre las personas. Por eso una meta tiene sentido.</p>
+
+  <h3>Cómo va a funcionar la meta</h3>
+  <ul>
+    <li><strong>Dos metas diarias:</strong> una de lunes a jueves y otra de viernes a domingo, porque un sábado no se parece a un martes.</li>
+    <li><strong>Se paga por mes:</strong> la meta del mes de cada persona es la suma de las metas de los días que trabajó. Un mal día o un turno corto no le hace perder la propina; lo que cuenta es el mes completo.</li>
+    <li><strong>Cocina:</strong> no vende directamente, así que su meta es la del equipo. Si las ventas de extras de toda la sucursal llegan a la meta del mes, cocina cumple. Esto pone a todos a empujar para el mismo lado. Si preferís otro indicador para cocina, como los tiempos de preparación del KDS, también se puede.</li>
+    <li><strong>Valor de arranque:</strong> sale de dos semanas de medición. Con los datos de hoy, la referencia ronda <strong>$75 por día de lunes a jueves y $110 de viernes a domingo</strong>. Vos decidís el número final.</li>
+    <li>Las cortesías y lo anulado no cuentan.</li>
+  </ul>
+
+  <h3>Lo que va a ver cada mesero en el POS</h3>
+  <div class="chip"><span>Extras hoy <strong>$51.00</strong> / $75</span><span class="bar"><i></i></span><span class="note">mes 92 %</span></div>
+  <p class="note">Es igual al indicador de agrandados que ya conocen. Se actualiza con cada venta. Además, cada uno tiene una pantalla «Mi desempeño» con su avance del mes, para que no haya sorpresas el día del pago.</p>
+
+  <h3>Lo que vas a ver vos</h3>
+  <ul>
+    <li><strong>Desempeño de meseros:</strong> un ranking con ticket promedio, ticket por persona, extras por día, % de cuentas con extra y % de la meta. Se puede abrir el detalle de cada día.</li>
+    <li><strong>Configuración:</strong> vos cambiás las metas y qué cuenta como extra, sin pedirle nada a sistemas.</li>
+    <li><strong>Propinas del mes:</strong> el sistema calcula el monto de cada persona con su % de cumplimiento. Vos revisás y aprobás. Quitar la propina por conducta sigue funcionando como hoy.</li>
+  </ul>
+
+  <h3>Ejemplo de reparto (números inventados)</h3>
+  <div class="ejemplo">
+    <div class="row"><span>Propina del mes × 90 %</span><span>$3,600.00</span></div>
+    <div class="row"><span>Personas que ganan (8 + 1 de producción)</span><span>9 partes de $400.00</span></div>
+    <div class="row"><span>2 personas no cumplieron la meta → reciben 50 %</span><span>2 × $200.00</span></div>
+    <div class="row"><span>Lo retenido ($400) se reparte entre los 7 que cumplieron</span><span>+$57.14 c/u</span></div>
+    <div class="row"><strong>Quien cumplió recibe</strong><strong>$457.14</strong></div>
+  </div>
+
+  <div class="alert">
+    <b>Hay que ordenar esto antes de pagar con la herramienta</b>
+    <p>El 27 % de las mesas de Cafetalón no tiene mesero asignado: las cobran las cajeras, o vos con tu usuario, sin elegir a quién atendió. Si la propina va a depender de la meta, cada mesa tiene que tener dueño. En el POS vamos a hacer obligatorio elegir el mesero al abrir la mesa. Por defecto queda quien la abre.</p>
+  </div>
+</section>
+
+<section class="tool b">
+  <span class="eyebrow">Herramienta 2</span>
+  <h2>Clientes de domicilio y meta de Karina</h2>
+
+  <h3>Lo que hay en Santa Tecla (desde el 30 de julio)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Dato</th><th>Valor</th></tr></thead>
+    <tbody>
+      <tr><td>Clientes distintos (por teléfono)</td><td>2,023</td></tr>
+      <tr><td>Pidieron solo una vez</td><td>1,470 (73 %)</td></tr>
+      <tr><td>Pidieron 2–3 veces</td><td>448</td></tr>
+      <tr><td>Pidieron 4 o más veces</td><td>105</td></tr>
+      <tr><td>«Dormidos»: pidieron antes, pero no en 30 días</td><td>≈ 675</td></tr>
+      <tr><td>Domicilios por día (L–J / V–D)</td><td>26 / 37.5</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Tres de cada cuatro clientes pidieron una sola vez. Ahí está la oportunidad de tu idea.</p>
+
+  <h3>Cómo va a funcionar</h3>
+  <ul>
+    <li>Pantalla <strong>«Clientes Domicilio»</strong> para Karina y para vos, con los clientes separados en <strong>nuevos, frecuentes, dormidos y VIP</strong>. De cada uno muestra su último pedido y su producto favorito.</li>
+    <li>Cada cliente tiene un botón de <strong>WhatsApp</strong> que abre el chat con el mensaje ya escrito y con su nombre. Karina adjunta la imagen de la burger desde su teléfono y lo envía.</li>
+    <li>El sistema anota a quién se le escribió y si <strong>volvió a pedir en los 7 días siguientes</strong>. Así vas a saber cuántas ventas trae la campaña.</li>
+    <li>Si alguien pide que no le escriban más, se marca y desaparece de la lista.</li>
+    <li>Por cuidado de los datos de los clientes, la lista se trabaja dentro del sistema y no se descarga en Excel.</li>
+  </ul>
+
+  <h3>Meta de Karina</h3>
+  <p>Pedidos de domicilio entregados en el mes, con una meta de lunes a jueves y otra de viernes a domingo, partiendo de los 26 y 37.5 diarios de hoy. También vas a ver cuántos clientes dormidos reactivó. La meta pesa en su propina con la misma regla del 100 % / 50 %.</p>
+</section>
+
+<section>
+  <h2>Cómo leer las metas y el ticket</h2>
+  <p>Me preguntaste por esto, así que acá va lo básico.</p>
+  <div class="glos">
+    <div><b>Ticket promedio</b>Venta total ÷ número de cuentas. Sube si cada mesa gasta más.</div>
+    <div><b>Ticket por persona</b>Venta ÷ personas en la mesa. Es más justo para comparar meseros: una mesa de 6 no infla el número.</div>
+    <div><b>Extras por cuenta</b>Cuánto se vendió de extras en promedio por mesa. Es lo que más depende del mesero: sugerir el tocino, la cerveza, las papas.</div>
+    <div><b>Incrementar el ticket</b>Es la suma de muchos $0.75. Una mesa más con tocino al día por mesero son más de $20 al mes por persona.</div>
+    <div><b>% de cumplimiento</b>Lo vendido ÷ la meta de los días trabajados. 100 % o más = cumplió.</div>
+    <div><b>Meta del día vs. meta del mes</b>La del día es la guía para el turno. La del mes es la que define la propina.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Fechas</h2>
+  <div class="fases">
+    <div class="fase"><span class="when">Esta semana</span><h3>Orden de datos</h3><p>Mesero obligatorio al abrir mesa y registro de quién toma cada domicilio. Se arrancan las metas de venta, que estaban apagadas desde marzo.</p></div>
+    <div class="fase"><span class="when">Semana 2</span><h3>Medir</h3><p>Pantalla Desempeño de Meseros. Los meseros ya ven su indicador, todavía sin consecuencias.</p></div>
+    <div class="fase"><span class="when">Semanas 2–3</span><h3>Clientes Domicilio</h3><p>La lista, el botón de WhatsApp y la meta de Karina. Puede empezar antes que lo demás.</p></div>
+    <div class="fase"><span class="when">Semanas 3–4</span><h3>Calibrar</h3><p>Con dos semanas de datos fijamos juntos las metas. Le avisás al equipo la regla nueva.</p></div>
+    <div class="fase"><span class="when">Diciembre</span><h3>Primer mes con la regla</h3><p>La propina de diciembre ya se reparte por cumplimiento. Nunca se cambia la regla a mitad de mes.</p></div>
+  </div>
+</section>
+
+<footer>Lo construye el equipo del ERP de Freakie Dogs. Si querés cambiar algo del plan, decíselo a José antes de la semana 3: después de esa semana ya se fijan las metas.</footer>
+</div>
