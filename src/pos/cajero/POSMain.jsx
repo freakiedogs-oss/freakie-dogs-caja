@@ -294,6 +294,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [descuentoEmpleadoId, setDescuentoEmpleadoId] = useState('') // ficha real del empleado (consistencia)
   const [empleadosLista, setEmpleadosLista] = useState(null)         // null = aún no cargada
   const [sucursalIdLocal, setSucursalIdLocal] = useState(null)
+  // Quién atiende la mesa (dueño de la venta para Desempeño Meseros / propina por meta).
+  // Mesero → él mismo. Cajera/gerente que abre una mesa → por defecto ella misma, pero
+  // puede elegir al mesero que la atiende. Nunca queda una mesa sin dueño.
+  const [meseroAtiende, setMeseroAtiende] = useState(['mesero', 'mesera'].includes(user?.rol) ? user.id : null)
+  const [staffMesa, setStaffMesa] = useState([])
 
   // Lista de empleados para el descuento de empleado (lazy: solo al elegir esa categoría).
   // OJO: este efecto debe ir DESPUÉS de las declaraciones de estado que usa —
@@ -487,9 +492,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       try {
         const { data: cab } = await db
           .from('pos_cuentas')
-          .select('delivery_referencia, cliente_nombre, delivery_cliente_id')
+          .select('delivery_referencia, cliente_nombre, delivery_cliente_id, mesero_id')
           .eq('id', cuentaCtx.cuentaId)
           .maybeSingle()
+        if (cab?.mesero_id) setMeseroAtiende(cab.mesero_id)
         if (cab?.delivery_referencia) setPeyaRef(cab.delivery_referencia)
         if (cab?.delivery_cliente_id) {
           const { data: dinfo } = await db.rpc('pos_cuentas_delivery_info', { p_cuenta_ids: [cuentaCtx.cuentaId] })
@@ -860,6 +866,24 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
   // ── Rol mesero: para asignar mesero_id en la cuenta ──
   const esMesero = user?.rol === 'mesero' || user?.rol === 'mesera'
+  const meseroIdCuenta = esMesero ? user.id : (tipo === 'mesa' ? (meseroAtiende || user.id) : null)
+
+  // Lista de quién puede atender una mesa (solo si no es mesero el que está en el POS).
+  useEffect(() => {
+    if (tipo !== 'mesa' || esMesero || !storeCode) return
+    db.from('usuarios_erp').select('id, nombre, rol')
+      .eq('store_code', storeCode).eq('activo', true)
+      .in('rol', ['mesero', 'mesera', 'cajera', 'cajero', 'gerente', 'admin'])
+      .order('nombre')
+      .then(({ data }) => setStaffMesa(data || []))
+  }, [tipo, esMesero, storeCode])
+
+  const cambiarMeseroAtiende = async (id) => {
+    setMeseroAtiende(id)
+    if (!cuentaId) return
+    const { error } = await db.from('pos_cuentas').update({ mesero_id: id }).eq('id', cuentaId)
+    if (error) toast.error('No se pudo cambiar quién atiende: ' + error.message)
+  }
 
   // ── Normaliza el carrito al formato que espera printService ──
   const buildCuentaPrint = (lista = items) => ({
@@ -1009,7 +1033,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             store_code: storeCode,
             cajero_id:  user.id,
             turno_id:   turnoId,
-            mesero_id:  esMesero ? user.id : null,
+            mesero_id:  meseroIdCuenta,
             tipo:       tipo,
             mesa_ref:   mesaActual,
             menu_id:    menuActivo?.id || null,
@@ -1163,7 +1187,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             store_code:  storeCode,
             cajero_id:   user.id,
             turno_id:    turnoId,
-            mesero_id:   esMesero ? user.id : null,
+            mesero_id:   meseroIdCuenta,
             tipo:        paymentData.metodo === 'pedidos_ya' ? 'pedidos_ya' : tipo,
             mesa_ref:    mesaActual,
             menu_id:     menuActivo?.id || null,
@@ -1578,6 +1602,20 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
               onClose={() => setShowPax(false)}
               onSaved={(p) => setPaxLocal({ mujeres: p.mujeres, hombres: p.hombres, ninos: p.ninos })}
             />
+          )}
+
+          {tipo === 'mesa' && !esMesero && staffMesa.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, padding: '8px 10px 0', alignItems: 'center', fontSize: 13 }}>
+              <span style={{ color: '#9aa0a6' }}>Atiende:</span>
+              <select
+                value={meseroAtiende || user.id}
+                onChange={e => cambiarMeseroAtiende(e.target.value)}
+                style={{ flex: 1, minWidth: 0, background: '#1e1e1e', color: '#f0f0f0', border: '1px solid #333', borderRadius: 8, padding: '6px 8px', fontSize: 13 }}
+              >
+                {!staffMesa.some(u => u.id === user.id) && <option value={user.id}>{user.nombre} (yo)</option>}
+                {staffMesa.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.id === user.id ? ' (yo)' : ''} · {u.rol}</option>)}
+              </select>
+            </div>
           )}
 
           {/* Destino de empaque (solo mesa / para llevar). Un toque = toda la orden. */}

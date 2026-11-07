@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import InfoTip from '../ui/InfoTip'
 import { db } from '../../supabase';
-import { today, n } from '../../config';
+import { today, n, fmtDate } from '../../config';
 import { useToast } from '../../hooks/useToast';
+import { imprimirTabla, fmtNum } from '../../lib/imprimirTabla';
 
 /* ── Stepper 48px touch target ── */
 const stepBtn={
@@ -411,6 +412,74 @@ export default function InventarioFisico({user, onBack}){
     show('📥 Reporte descargado');
   };
 
+  /* ── Hoja de conteo para llenar a mano (pantalla count) ── */
+  // Respeta el filtro de categoría/búsqueda. Lo ya contado sale impreso; lo
+  // que falta queda como casilla en blanco con el stock del sistema al lado.
+  const imprimirHojaConteo = () => {
+    const partes=[];
+    if(catFilter) partes.push(`Categoría: ${catFilter}`);
+    if(searchTxt.trim()) partes.push(`Filtro: "${searchTxt.trim()}"`);
+    imprimirTabla({
+      titulo:'Hoja de Inventario Físico',
+      subtitulo:partes.join(' · ')||'Casa Matriz · conteo contra el stock del sistema',
+      meta:[
+        {label:'Sucursal',value:'CM001 — Casa Matriz'},
+        {label:'Fecha',value:fmtDate(today())},
+        {label:'Avance',value:`${contados} de ${totalProds} (${pctContado}%)`},
+        {label:'Generado por',value:user?.nombre},
+      ],
+      columnas:[
+        {key:'nombre',label:'Producto'},
+        {key:'unidad',label:'Unidad',width:'11%',align:'center',muted:true},
+        {key:'stock_sistema',label:'Sistema',width:'13%',align:'right',tipo:'num'},
+        {key:'contado',label:'Contado',width:'16%',align:'right',bold:true,render:p=>p.cantidad_contada!==null?fmtNum(p.cantidad_contada):''},
+        {key:'obs',label:'Obs.',width:'18%',blank:true},
+      ],
+      grupos:catKeys.map(cat=>({titulo:cat,filas:porCategoria[cat].map(p=>({...p,_class:p.cantidad_contada!==null&&p.cantidad_contada!==p.stock_sistema?'alerta':''}))})),
+      resumen:[
+        {label:'Productos',value:fmtNum(prodsFiltrados.length)},
+        {label:'Contados',value:fmtNum(prodsFiltrados.filter(p=>p.cantidad_contada!==null).length)},
+        {label:'Pendientes',value:fmtNum(prodsFiltrados.filter(p=>p.cantidad_contada===null).length)},
+      ],
+      nota:'Anotar la cantidad física en "Contado" cuando esté vacío. Resaltado = ya contado y distinto al sistema.',
+      firmas:['Contó','Revisó'],
+    });
+  };
+
+  /* ── Reporte de diferencias (pantalla review) ── */
+  const imprimirReporte = () => {
+    const ordenadas=[...conDiferencia].sort((a,b)=>Math.abs(b.cantidad_contada-b.stock_sistema)-Math.abs(a.cantidad_contada-a.stock_sistema));
+    const faltantes=conDiferencia.filter(p=>p.cantidad_contada<p.stock_sistema).length;
+    const sobrantes=conDiferencia.filter(p=>p.cantidad_contada>p.stock_sistema).length;
+    imprimirTabla({
+      titulo:'Reporte de Inventario Físico',
+      subtitulo:conDiferencia.length?'Diferencias contra el sistema, de mayor a menor':'Sin diferencias: el conteo coincide con el sistema',
+      meta:[
+        {label:'Sucursal',value:'CM001 — Casa Matriz'},
+        {label:'Fecha',value:fmtDate(today())},
+        {label:'Generado por',value:user?.nombre},
+      ],
+      columnas:[
+        {key:'nombre',label:'Producto'},
+        {key:'categoria',label:'Categoría',width:'17%',muted:true},
+        {key:'unidad',label:'Unidad',width:'10%',align:'center',muted:true},
+        {key:'stock_sistema',label:'Sistema',width:'12%',align:'right',tipo:'num'},
+        {key:'cantidad_contada',label:'Contado',width:'12%',align:'right',tipo:'num',bold:true},
+        {key:'dif',label:'Dif.',width:'10%',align:'right',bold:true,render:p=>{const d=p.cantidad_contada-p.stock_sistema;return (d>0?'+':'')+fmtNum(d);}},
+        {key:'pct',label:'%',width:'9%',align:'right',muted:true,render:p=>{const d=p.cantidad_contada-p.stock_sistema;return p.stock_sistema>0?`${d>0?'+':''}${Math.round(d/p.stock_sistema*100)}%`:'';}},
+      ],
+      filas:ordenadas.map(p=>({...p,_class:p.cantidad_contada<p.stock_sistema?'alerta':''})),
+      resumen:[
+        {label:'Productos contados',value:fmtNum(totalProds)},
+        {label:'Con diferencia',value:fmtNum(conDiferencia.length)},
+        {label:'Faltantes',value:fmtNum(faltantes)},
+        {label:'Sobrantes',value:fmtNum(sobrantes)},
+      ],
+      nota:'Resaltado = faltante (se contó menos de lo que decía el sistema).',
+      firmas:['Contó','Jefe de almacén','Contabilidad'],
+    });
+  };
+
   // ── SCREEN: REVIEW (post-finalización) ──
   if(screen==='review'){
     const faltantes=conDiferencia.filter(p=>p.cantidad_contada<p.stock_sistema);
@@ -442,11 +511,17 @@ export default function InventarioFisico({user, onBack}){
           </div>
         </div>
 
-        {/* Botón descargar reporte */}
-        <button className="btn btn-red" onClick={descargarReporte}
-          style={{width:'100%',padding:14,fontSize:15,marginBottom:16}}>
-          📥 Descargar Reporte CSV
-        </button>
+        {/* Descargar / imprimir reporte */}
+        <div style={{display:'flex',gap:10,marginBottom:16}}>
+          <button className="btn btn-red" onClick={descargarReporte}
+            style={{flex:1,padding:14,fontSize:14}}>
+            📥 Reporte CSV
+          </button>
+          <button className="btn btn-ghost" onClick={imprimirReporte} title="Imprimir reporte (hoja carta)"
+            style={{flex:1,padding:14,fontSize:14}}>
+            🖨️ Imprimir
+          </button>
+        </div>
 
         {/* Resumen por categoría */}
         {resumenCategorias.length>0&&(
@@ -580,6 +655,10 @@ export default function InventarioFisico({user, onBack}){
           <div style={{fontWeight:800,fontSize:18}}>📦 Inventario Físico <InfoTip text="Conteo físico real del inventario para compararlo contra el sistema y ajustar diferencias (mermas, faltantes)." /></div>
           <div style={{color:'#555',fontSize:12}}>Casa Matriz · {today()}</div>
         </div>
+        <button onClick={imprimirHojaConteo} disabled={prodsFiltrados.length===0} title="Imprimir hoja de conteo (hoja carta)"
+          style={{background:'#222',color:'#fff',border:'1px solid #333',borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',flexShrink:0,opacity:prodsFiltrados.length===0?0.5:1}}>
+          🖨️ Hoja
+        </button>
       </div>
 
       {/* ── Barra progreso sticky ── */}
