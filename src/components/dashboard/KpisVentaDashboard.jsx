@@ -10,6 +10,7 @@ const fmtPct = (v) => v == null ? '—' : Number(v).toFixed(1) + '%';
 
 const ROLES_PERMITIDOS = ['admin', 'superadmin', 'ejecutivo', 'gerente'];
 const STORES_ACTIVAS = ['M001', 'S001', 'S002', 'S003', 'S004', 'S006'];
+const ROLES_VEN_TODAS = ['admin', 'superadmin', 'ejecutivo'];
 
 const CH_COLOR = {
   mesa: '#f59e0b',
@@ -130,7 +131,12 @@ function KpisVentaDashboardInner({ user, onBack }) {
   });
 
   // Sucursal default = la del user si está en STORES_ACTIVAS, sino "Todas"
-  const sucursalDefault = STORES_ACTIVAS.includes(user?.store_code) ? user.store_code : 'todas';
+  // admin, superadmin y ejecutivo ven todas; los demás (gerentes) solo su sucursal.
+  // La base aplica la misma regla (_kpis_sucursal_permitida), esto solo ajusta la pantalla.
+  const veTodas = ROLES_VEN_TODAS.includes(user?.rol);
+  const sucursalDefault = veTodas
+    ? (STORES_ACTIVAS.includes(user?.store_code) ? user.store_code : 'todas')
+    : (user?.store_code || 'todas');
   const [sucursalSel, setSucursalSel] = useState(sucursalDefault);
 
   const [kpisRaw, setKpisRaw] = useState([]);
@@ -216,22 +222,28 @@ function KpisVentaDashboardInner({ user, onBack }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Selector sucursal — default = del user */}
-            <select value={sucursalSel} onChange={e => setSucursalSel(e.target.value)}
-              style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '6px 10px', borderRadius: 6, fontSize: 13 }}>
-              <option value="todas">Todas las sucursales</option>
-              {STORES_ACTIVAS.map(sc => <option key={sc} value={sc}>{sc} — {STORES[sc] || sc}</option>)}
-            </select>
+            {/* Selector sucursal: solo quien ve todas puede cambiarla */}
+            {veTodas ? (
+              <select value={sucursalSel} onChange={e => setSucursalSel(e.target.value)}
+                style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '6px 10px', borderRadius: 6, fontSize: 13 }}>
+                <option value="todas">Todas las sucursales</option>
+                {STORES_ACTIVAS.map(sc => <option key={sc} value={sc}>{sc} — {STORES[sc] || sc}</option>)}
+              </select>
+            ) : (
+              <span style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '6px 10px', borderRadius: 6, fontSize: 13 }}>
+                {user?.store_code ? `${user.store_code} — ${STORES[user.store_code] || user.store_code}` : 'Sin sucursal asignada'}
+              </span>
+            )}
             <select value={mesSel} onChange={e => setMesSel(e.target.value)}
               style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '6px 10px', borderRadius: 6, fontSize: 13 }}>
               {mesesOptions().map(m => (<option key={m.value} value={m.value}>{m.label}</option>))}
             </select>
-            <button onClick={() => setInsightsOpen(true)}
+            {veTodas && <button onClick={() => setInsightsOpen(true)}
               style={{
                 background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)',
                 color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
-              }}>✨ Insights del día</button>
+              }}>✨ Insights del día</button>}
           </div>
         </div>
       </div>
