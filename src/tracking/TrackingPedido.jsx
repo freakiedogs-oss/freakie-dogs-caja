@@ -30,6 +30,7 @@ const fmt = (n) => `$${Number(n || 0).toFixed(2)}`
 export default function TrackingPedido() {
   const [token] = useState(() => new URLSearchParams(location.search).get('t') || '')
   const juegoRef = useRef(null)
+  const tuvoParadas = useRef(false)
   const [d, setD] = useState(null)
   const [error, setError] = useState('')
 
@@ -55,6 +56,18 @@ export default function TrackingPedido() {
   const enCamino = d.estado === 'en_camino'
   const entregado = d.estado === 'entregada'
   const sinPagar = d.estado === 'pendiente_pago'
+
+  // Entregas que el motorista hace antes que la tuya (7-nov-2026). Sin explicar
+  // el porqué: solo dónde va y que después seguís vos.
+  const paradas = enCamino ? (d.paradas_antes || []) : []
+  const nAntes = paradas.length
+  if (nAntes > 0) tuvoParadas.current = true
+  const quien = d.motorista || 'El motorista'
+  const subEnCamino = nAntes > 0
+    ? `${quien} va a dejar ${nAntes === 1 ? 'una orden' : `${nAntes} órdenes`} antes y luego seguís vos, inmediatamente.`
+    : tuvoParadas.current
+      ? `¡Seguís vos! ${quien} va directo a tu dirección.`
+      : null
 
   // ── Pedido sin pagar: honesto y con salida ──
   // No se muestra la línea de tiempo ni el juego: no hay nada en marcha
@@ -93,9 +106,12 @@ export default function TrackingPedido() {
       <div className="tk-hero">
         <div className="tk-hero-ic">{PASOS[paso].ic}</div>
         <h1 className="tk-hero-t">{PASOS[paso].t}</h1>
-        <p className="tk-hero-s">{PASOS[paso].sub}</p>
+        <p className="tk-hero-s">{(enCamino && subEnCamino) || PASOS[paso].sub}</p>
         {enCamino && d.eta_min && (
-          <div className="tk-eta">Llega en ~{d.eta_min} min{d.motorista ? ` · ${d.motorista} lo lleva` : ''}</div>
+          <div className="tk-eta">
+            Llega en ~{d.eta_min} min
+            {nAntes > 0 ? ` · sos la entrega ${nAntes + 1} de ${nAntes + 1}` : d.motorista ? ` · ${d.motorista} lo lleva` : ''}
+          </div>
         )}
       </div>
 
@@ -120,6 +136,7 @@ export default function TrackingPedido() {
             driver={{ lat: d.driver_lat, lng: d.driver_lng }}
             cliente={d.cliente_lat ? { lat: d.cliente_lat, lng: d.cliente_lng } : null}
             nombre={d.motorista}
+            paradas={paradas}
           />
         </Suspense>
       )}
