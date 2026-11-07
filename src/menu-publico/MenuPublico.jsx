@@ -1291,8 +1291,20 @@ function PedidoEnviado({ datos, onClose }) {
     + (resumen ? `:\n${resumen}` : '')
     + (datos.total ? `\nTotal: ${fmt(datos.total)}` : '')
     + (datos.direccion ? `\n📍 ${datos.direccion}` : '')
-  const waHref = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(waMsg)}` : null
   const trackHref = datos.tracking_token ? `${URL_DELIVERY}/track?t=${datos.tracking_token}` : null
+  // 6-nov-2026 (Cesar): el cliente ve con cuánto dijo que paga y su cambio, para que note si se
+  // equivocó al escribirlo; y el link de seguimiento va DENTRO del WhatsApp que él nos manda
+  // (el chat lo inicia el cliente, así que no hay riesgo de bloqueo por mandar links).
+  const efectivo = !pagado && (datos.metodoPago || 'efectivo') === 'efectivo'
+  const pagaCon = Number(datos.pagaCon) || 0
+  const cambio = pagaCon && datos.total ? Math.max(0, pagaCon - Number(datos.total)) : null
+  const lineaPago = !efectivo ? null
+    : pagaCon ? `💵 Pago en efectivo con ${fmt(pagaCon)}${cambio != null ? ` · cambio: ${fmt(cambio)}` : ''}`
+    : '💵 Pago en efectivo al recibir'
+  const waTexto = waMsg
+    + (lineaPago ? `\n${lineaPago}` : '')
+    + (trackHref ? `\n\n🛵 Aquí puedo darle seguimiento a mi pedido: ${trackHref}` : '')
+  const waHref = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(waTexto)}` : null
 
   return (
     <div className="mp-drawer-overlay" onClick={onClose}>
@@ -1306,6 +1318,17 @@ function PedidoEnviado({ datos, onClose }) {
             Tu pedido es el <b>{datos.numero_orden}</b>
             {datos.total ? <> · <b>{fmt(datos.total)}</b></> : null}
           </div>
+
+          {lineaPago && (
+            <div className="mp-enviado-pagado" style={{ background: '#fff7e0', color: '#7a5a00', borderColor: '#f0d58a' }}>
+              {lineaPago}
+              {pagaCon && cambio != null && pagaCon < Number(datos.total) && (
+                <div style={{ fontSize: 12, marginTop: 4, color: '#b3202c' }}>
+                  Ojo: el monto es menor que el total. Si te equivocaste, avisanos por WhatsApp.
+                </div>
+              )}
+            </div>
+          )}
 
           {pagado && (
             <div className="mp-enviado-pagado">
@@ -1363,7 +1386,8 @@ function PedidoEnviado({ datos, onClose }) {
                   ? <>No hace falta que escribas: tu pago ya entró. Usá este botón
                       solo si querés avisarnos algo. Guardanos como <b>Freakie Dogs</b> 💾</>
                   : <>Escribinos vos con este botón: así te contestamos en el mismo chat
-                      para coordinar el pago y avisarte de tu pedido. Guardanos como
+                      para coordinar el pago y avisarte de tu pedido. En ese mensaje va el
+                      link para seguir tu pedido en vivo. Guardanos como
                       <b> Freakie Dogs</b> 💾</>}
               </div>
             </>
@@ -1375,7 +1399,9 @@ function PedidoEnviado({ datos, onClose }) {
             </div>
           )}
 
-          {trackHref && (
+          {/* Con WhatsApp el seguimiento viaja en el mensaje; el botón aparte solo
+              queda si no hay número configurado (respaldo). */}
+          {trackHref && !waHref && (
             <a className="mp-enviado-track" href={trackHref} target="_blank" rel="noreferrer">
               🛵 Seguir mi pedido en vivo
             </a>
@@ -1626,7 +1652,10 @@ function Checkout({ items, total, onClose, onEnviado,
       if (rpcErr) throw rpcErr
       if (!data?.ok) throw new Error('respuesta inesperada')
       recordarPerfil()
-      onEnviado(datosConfirmacion(data, { metodoPago: 'efectivo' }))
+      onEnviado(datosConfirmacion(data, {
+        metodoPago,
+        pagaCon: metodoPago === 'efectivo' ? (parseFloat(pagaCon) || null) : null,
+      }))
     } catch (err) {
       console.error('Error enviando pedido:', err)
       setError('No se pudo enviar el pedido. Intentá otra vez o llamanos.')
