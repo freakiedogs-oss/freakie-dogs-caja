@@ -27,6 +27,14 @@ export function km(aLat, aLng, bLat, bLng) {
 }
 
 export function ordenarRuta(desde, pedidos, ahora = Date.now()) {
+  // 7-nov-2026: el orden ahora lo decide el servidor (fn_ruta_recalcular,
+  // fórmula "balance" probada con 720 viajes reales) y se guarda en
+  // delivery_clientes.orden_entrega. Si viene, manda: así la torre, la app
+  // del motorista y el tracking del cliente muestran exactamente lo mismo.
+  // El cálculo de abajo queda solo de respaldo (pedidos sin número todavía).
+  if (pedidos.length && pedidos.every((p) => p.orden_entrega != null)) {
+    return [...pedidos].sort((a, b) => a.orden_entrega - b.orden_entrega);
+  }
   const pend = [...pedidos];
   const ruta = [];
   let pos = desde;

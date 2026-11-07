@@ -1,5 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 7-Nov-2026 — Orden de entrega automático (torre + motorista + tracking)
+
+- **Qué pidió Cesar:** que el orden de entrega lo ponga el sistema (no Karina, no el motorista), con distancia + tiempo de espera. El motorista ve 1°/2°/3° bien marcado y no lo puede cambiar. Karina tiene un botón solo para emergencias. Y medir si la lógica acierta y cómo salen los viajes de 4.
+- **Por qué esta fórmula ("balance"):** prueba con 720 viajes reales de 2–4 pedidos (60 días). Modelo calibrado con 1,482 entregas solas: 2.14 min/km en línea recta + 6 min por parada (simulado 63.5 vs observado 62.9).
+  - Motoristas hoy: 63.5 min espera prom., 47.8% > 60 min, 7.97 km/viaje.
+  - Balance (Σ espera² — junta distancia y espera): 62.9 / 47.4% / 7.68 km, mejor peor-caso.
+  - Fórmula anterior de la torre (`rutaOrden.js`, espera − viaje, 40 min crítico): 65.4 / 53% / 8.84 km — peor que los motoristas (casi "el más viejo primero", zigzag).
+  - Hallazgo: lo que más pesa es la espera ANTES de salir (1er pedido de un viaje de 3 espera 52 min en tienda vs 26 solo; viajes de 4: 71% > 60 min).
+- **BD (`20261107_orden_entrega_automatico.sql`, aplicada):** columnas `orden_entrega`, `orden_origen`, `orden_eta_at`, `orden_fijado_at`, `ruta_id` en `delivery_clientes`; `fn_ruta_recalcular` + trigger `trg_ruta_delivery` (asignar/recoger/entregar/devolver). Se recalcula hasta la 1ª entrega del viaje; ahí se FIJA y lo que recoja después va al final. `torre_cambiar_orden` (Karina, queda en `delivery_orden_cambios` con motivo). `torre_rutas_activas` (panel + alerta pedido listo >10 min). `torre_rutas_resumen(token|null, días)` = seguimiento: espera, % > 60, error del ETA, % entregado en orden, cambios a mano, y cada viaje de 4+ con minutos por cliente. `mis_pedidos_driver`, `tracking_pedido` y `torre_mapa_vivo` usan el orden guardado.
+- **Candado (`20261107b_orden_entrega_candado_motorista.sql`, NO aplicado aún):** `driver_marcar_entregado` rechaza entregar fuera de orden. Se aplica DESPUÉS de que la app nueva del motorista esté en prod (con la vieja no ve el orden). Probado con rollback.
+- **Frontend:** `DriverBeacon.jsx` (parada actual en grande «2° AHORA», resto 🔒, ruta completa en Google Maps), `RutasEnCurso.jsx` nuevo en `TabPedidos.jsx`, `rutaOrden.js` respeta `orden_entrega`, mapas numeran con `orden_entrega`.
+
 ## 7-Nov-2026 — Tracking: el cliente ve las entregas que el motorista hace antes que la suya
 
 - **Por qué:** ~33% de las entregas (536 de 1,633 en 30 días) tienen otra entrega antes. El cliente veía al motorista alejarse con el mismo ETA y lo tomaba como desvío.

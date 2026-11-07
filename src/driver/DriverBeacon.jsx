@@ -781,6 +781,25 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const rodando = pedidos.filter(x => x.estado === 'en_camino').length
   const cocinando = pedidos.filter(x => !['lista', 'en_camino'].includes(x.estado)).length
 
+  // Orden de entrega (7-nov-2026): lo decide el sistema y el motorista lo
+  // respeta. Solo se puede entregar la parada que toca; las demás quedan
+  // bloqueadas hasta entregar la anterior. Si hay un problema, la central
+  // puede cambiar el orden.
+  const enRuta = pedidos
+    .filter(x => x.estado === 'en_camino' && x.orden_entrega != null)
+    .sort((a, b) => a.orden_entrega - b.orden_entrega)
+  const actual = enRuta[0] || null
+  const totalRuta = actual?.orden_total || enRuta.length
+  const entregadasRuta = actual ? actual.orden_entrega - 1 : 0
+  const rutaMaps = enRuta.filter(x => x.cliente_lat).length > 1
+    ? (() => {
+        const pts = enRuta.filter(x => x.cliente_lat).map(x => `${x.cliente_lat},${x.cliente_lng}`)
+        const destino = pts.pop()
+        return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${destino}&waypoints=${encodeURIComponent(pts.join('|'))}`
+      })()
+    : null
+  const ord = (n) => `${n}°`
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Disponibilidad />
@@ -802,8 +821,49 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           )}
         </div>
       )}
-      {pedidos.map(p => (
-        <div key={p.id} style={S.pedidoCard}>
+      {enRuta.length > 0 && (
+        <div style={S.rutaHead}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>🛵 Tu ruta · {totalRuta} {totalRuta === 1 ? 'entrega' : 'entregas'}</div>
+            <div style={{ fontSize: 11.5, color: '#bdb3a8', marginTop: 2 }}>
+              El orden lo pone el sistema. Entregá en este orden.
+            </div>
+          </div>
+          {entregadasRuta > 0 && <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 700 }}>{entregadasRuta} de {totalRuta} ✓</span>}
+        </div>
+      )}
+      {pedidos.map(p => {
+        const bloqueado = p.estado === 'en_camino' && actual && p.orden_entrega != null && p.id !== actual.id
+        const esActual = actual && p.id === actual.id
+        if (bloqueado) {
+          const previo = enRuta[enRuta.findIndex(x => x.id === p.id) - 1]
+          return (
+            <div key={p.id} style={S.bloqueado}>
+              <span style={S.bloqNum}>{ord(p.orden_entrega)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#d6cdc3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.cliente_direccion || p.numero_orden}
+                </div>
+                <div style={{ fontSize: 11.5, color: '#8b807a', marginTop: 2 }}>
+                  🔒 {p.numero_orden} · se habilita cuando entregués el {ord(previo?.orden_entrega ?? p.orden_entrega - 1)}
+                </div>
+              </div>
+            </div>
+          )
+        }
+        return (
+        <div key={p.id} style={esActual ? S.pedidoActual : S.pedidoCard}>
+          {esActual && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 34, fontWeight: 900, lineHeight: 1, color: '#FFD900' }}>{ord(p.orden_entrega)}</span>
+              <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: .5, color: '#FFD900' }}>AHORA · VAS A ENTREGAR ESTE</span>
+            </div>
+          )}
+          {p.estado === 'lista' && p.orden_entrega != null && listos + rodando > 1 && (
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: '#FFD900', marginBottom: 6 }}>
+              Va {ord(p.orden_entrega)} en tu ruta
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 800 }}>{p.numero_orden}</span>
             <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
@@ -936,7 +996,13 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
             </div>
           )}
         </div>
-      ))}
+        )
+      })}
+      {rutaMaps && (
+        <a href={rutaMaps} target="_blank" rel="noopener" style={S.rutaMaps}>
+          🗺️ Ver ruta completa en orden (Google Maps)
+        </a>
+      )}
       <div style={{ fontSize: 11, color: '#555', textAlign: 'center', marginTop: 4 }}>
         Al entregar se registra tu viaje y suma a tu bono. Después liquidás en caja.
       </div>
@@ -1205,6 +1271,16 @@ const S = {
   badge: { position: 'absolute', top: -4, right: -10, background: '#E63946', color: '#fff', fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '1px 5px' },
   card: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 18, padding: '28px 22px', width: '100%', maxWidth: 380, textAlign: 'center' },
   pedidoCard: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 },
+  // Orden de entrega
+  pedidoActual: { background: '#1f1b0c', border: '2px solid #FFD900', borderRadius: 14, padding: 16 },
+  bloqueado: { display: 'flex', alignItems: 'center', gap: 11, background: '#161412', border: '1px dashed #3a342e',
+               borderRadius: 12, padding: '11px 13px', opacity: .8 },
+  bloqNum: { width: 38, height: 38, borderRadius: '50%', border: '2px solid #555', color: '#aaa', fontWeight: 900,
+             fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  rutaHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+              background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '10px 13px' },
+  rutaMaps: { display: 'block', textAlign: 'center', border: '1px solid #3a342e', color: '#cfc6bc', borderRadius: 12,
+              padding: '11px 0', fontSize: 13, fontWeight: 700, textDecoration: 'none' },
   logo: { fontSize: 54, marginBottom: 6 },
   h1: { fontSize: 22, fontWeight: 800, margin: '0 0 6px', color: '#E63946' },
   sub: { fontSize: 14, color: '#aaa', margin: '0 0 16px' },
