@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 7-Nov-2026 — Tracking: el cliente ve las entregas que el motorista hace antes que la suya
+
+- **Por qué:** ~33% de las entregas (536 de 1,633 en 30 días) tienen otra entrega antes. El cliente veía al motorista alejarse con el mismo ETA y lo tomaba como desvío.
+- **Decisión de Cesar:** sin explicar el porqué (nada de «para que llegue caliente», para no dar pie a quejas). Solo mostrar hacia dónde va y que después sigue él: «David va a dejar una orden antes y luego seguís vos, inmediatamente.»
+- **BD (`20261107_tracking_paradas_antes.sql`):** `tracking_pedido` devuelve `paradas_antes` [{lat,lng}]. El orden de paradas no se guarda, se asume vecino más cercano desde el GPS del motorista (o la sucursal). Solo salen las paradas ANTES de este cliente: el cliente 1 nunca sabe que hay otra después. Lat/lng redondeadas a 3 decimales (~100 m), sin nombre/dirección/orden. ETA = suma de tramos ×4 + 5 + 3 por parada. Helper `_km()`.
+- **Incidente:** la primera versión usaba `i` como variable del loop y chocaba con el alias `i` de items → `tracking_pedido` dio error ~1-2 min en prod. Corregido (`v_j`, alias `it`).
+- **Frontend:** `TrackingPedido.jsx` (texto, «sos la entrega 2 de 2», «¡Seguís vos!» cuando ya entregó la anterior) y `MapaEnVivo.jsx` (círculos numerados por parada y ruta motorista → paradas → casa).
+- **Pendiente posible:** botón en la app del motorista para fijar el orden si no va a la más cercana primero.
+
 
 ## 7-Nov-2026 — Menú web: confirmación con pago en efectivo y seguimiento dentro del WhatsApp
 
