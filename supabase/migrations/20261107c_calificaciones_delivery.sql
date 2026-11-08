@@ -6,8 +6,7 @@
 -- quiere que lo contacten. Cada encargado ve en el ERP («Resultados
 -- delivery») día por día: nota, pedido, motivo, quién lo llevó y cuánto se
 -- tardó en cada etapa (confirmación, cocina, esperando motorista, ruta).
--- 😞 o «quiero que me contacten» → aviso por Telegram al grupo de alertas
--- (bot_config.telegram_grupo_alertas; si no está configurado no se envía).
+-- 😞 o «quiero que me contacten» quedan como pendientes de contactar en el ERP.
 -- ════════════════════════════════════════════════════════════════════
 
 create table if not exists public.delivery_calificaciones (
@@ -21,7 +20,6 @@ create table if not exists public.delivery_calificaciones (
   contactado_por  uuid,
   contactado_nombre text,
   nota_contacto   text,
-  alertado_at     timestamptz,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -61,58 +59,8 @@ end;
 $function$;
 grant execute on function public.tracking_calificar(uuid, int, text[], text, boolean) to anon, authenticated;
 
--- ── Aviso por Telegram (😞 o pidió contacto) ─────────────────────────
-create or replace function public.trg_calificacion_alerta()
-returns trigger
-language plpgsql
-security definer
-set search_path to 'public', 'pg_temp'
-as $function$
-declare v_token text; v_chat text; d record; v_txt text;
-begin
-  if new.alertado_at is not null then return null; end if;
-  if not (new.nota = 1 or new.quiere_contacto) then return null; end if;
-  begin
-    select valor into v_token from bot_config where clave = 'telegram_bot_token';
-    select valor into v_chat  from bot_config where clave = 'telegram_grupo_alertas';
-    if v_token is null or v_chat is null then return null; end if;
-
-    select dc.numero_orden, s.nombre suc, split_part(btrim(e.nombre_completo), ' ', 1) mot,
-           to_char(dc.created_at - interval '6 hours', 'HH24:MI') pidio,
-           to_char(dc.entregado_at - interval '6 hours', 'HH24:MI') entrego,
-           round(extract(epoch from dc.entregado_at - dc.created_at)/60) minutos,
-           split_part(btrim(coalesce(dc.cliente_nombre, '')), ' ', 1) cli, dc.cliente_telefono tel
-      into d
-      from delivery_clientes dc
-      left join sucursales s on s.id = dc.sucursal_id
-      left join empleados e on e.id = dc.motorista_id
-     where dc.id = new.delivery_id;
-
-    v_txt := case new.nota when 1 then '😞 Calificación MALA' when 2 then '😐 Calificación regular' else '😀 Calificación buena' end
-          || ' · ' || coalesce(d.suc, '?')
-          || E'\n' || d.numero_orden || ' · motorista ' || coalesce(d.mot, '—')
-          || E'\nPidió ' || d.pidio || ' · entregado ' || d.entrego || ' (' || d.minutos || ' min)'
-          || case when cardinality(new.motivos) > 0 then E'\nMotivo: ' || array_to_string(new.motivos, ', ') else '' end
-          || case when new.comentario is not null then E'\n«' || new.comentario || '»' else '' end
-          || case when new.quiere_contacto then E'\n✅ Quiere que lo contacten: ' || coalesce(d.cli, '') || ' ' || coalesce(d.tel, '') else '' end
-          || E'\nVer en ERP → Resultados delivery';
-
-    perform net.http_post(
-      url := 'https://api.telegram.org/bot' || v_token || '/sendMessage',
-      headers := jsonb_build_object('Content-Type', 'application/json'),
-      body := jsonb_build_object('chat_id', v_chat, 'text', v_txt));
-    update delivery_calificaciones set alertado_at = now() where id = new.id;
-  exception when others then
-    raise warning 'trg_calificacion_alerta: %', sqlerrm;
-  end;
-  return null;
-end;
-$function$;
-
-drop trigger if exists trg_calificacion_alerta on public.delivery_calificaciones;
-create trigger trg_calificacion_alerta
-  after insert or update of nota, quiere_contacto on public.delivery_calificaciones
-  for each row execute function public.trg_calificacion_alerta();
+-- Sin aviso por Telegram: Cesar prefiere que los resultados se vean solo en el ERP
+-- (privacidad de los clientes y del equipo). Se aplicó y luego se quitó (calificaciones_sin_telegram).
 
 -- ── Resultados delivery (encargados) ─────────────────────────────────
 -- p_store null = todas (ejecutivo / admin). El ERP le pasa al encargado su store_code.

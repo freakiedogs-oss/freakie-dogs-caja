@@ -609,6 +609,31 @@ function useBeacon(yo) {
   return { activo, auto, ultima, error, iniciar, detener }
 }
 
+// Campana «pedido listo» (opción A elegida por Cesar): dos ding-dong.
+// Solo para la PWA (iPhone); en el APK suena el servicio nativo.
+let _audioCtx = null
+function campana() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+    const ctx = _audioCtx
+    ctx.resume?.()
+    const tono = (f, t0, dur, vol) => {
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      o.type = 'sine'; o.frequency.setValueAtTime(f, t0)
+      g.gain.setValueAtTime(0.0001, t0)
+      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.015)
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + dur + 0.05)
+    }
+    const t = ctx.currentTime + 0.05
+    for (let r = 0; r < 2; r++) {
+      const b = t + r * 0.9
+      tono(1318, b, 0.7, 0.5); tono(2636, b, 0.4, 0.12); tono(1046, b + 0.35, 0.9, 0.45); tono(2092, b + 0.35, 0.5, 0.1)
+    }
+    navigator.vibrate?.([400, 200, 400, 200, 700])
+  } catch { /* sin audio: queda la pantalla roja */ }
+}
+
 // ── 📦 Mis pedidos ──────────────────────────────────────────────────
 function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [ocupado, setOcupado] = useState(null)
@@ -616,6 +641,42 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [devolviendo, setDevolviendo] = useState(null)
   const [confirmando, setConfirmando] = useState(null)   // evita marcar Entregado por accidente
   const [msg, setMsg] = useState('')
+
+  // ── Alarma «pedido listo» (7-nov-2026) ──
+  // En el APK suena el servicio nativo (aunque la app esté cerrada); acá se
+  // muestra la pantalla roja cuando la app está abierta, y en la PWA (iPhone)
+  // además suena la campana mientras la pantalla esté abierta.
+  const [alarma, setAlarma] = useState(null)
+  const hayPorRetirar = pedidos.some(x => ['preparando', 'lista'].includes(x.estado))
+  useEffect(() => {
+    if (!hayPorRetirar) { setAlarma(null); return }
+    let vivo = true
+    const revisar = async () => {
+      const { data } = await db.rpc('driver_alarma_estado', { p_empleado_id: yo.id })
+      if (vivo) setAlarma(data?.sonar ? data : null)
+    }
+    revisar()
+    const t = setInterval(revisar, 15000)
+    return () => { vivo = false; clearInterval(t) }
+  }, [yo.id, hayPorRetirar])
+  useEffect(() => {
+    if (!alarma || window.AndroidPrinter?.hasLocationNative?.()) return
+    campana()
+    const t = setInterval(campana, 10000)
+    return () => clearInterval(t)
+  }, [alarma])
+  const retirarListos = async () => {
+    setOcupado('alarma')
+    try {
+      const { data, error } = await db.rpc('driver_recoger_listos', { p_empleado_id: yo.id })
+      if (error) throw error
+      setAlarma(null)
+      if (!beacon.activo) beacon.iniciar()
+      setMsg(`🚀 Saliste con ${data?.recogidos || 0} pedido${data?.recogidos === 1 ? '' : 's'}. Tu ruta ya está ordenada.`)
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
 
   // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
   // que salgan a la calle con alguno sin marcar.
@@ -802,6 +863,24 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {alarma && (
+        <div style={S.alarma}>
+          <div style={S.alarmaIc}>!</div>
+          <div style={{ fontSize: 26, fontWeight: 900 }}>
+            {alarma.listos > 1 ? '¡Pedidos listos!' : '¡Pedido listo!'}
+          </div>
+          <div style={{ fontSize: 15, marginTop: 8, opacity: .92, lineHeight: 1.5 }}>
+            {alarma.sucursal} · {alarma.listos} {alarma.listos === 1 ? 'pedido' : 'pedidos'}<br />
+            {(alarma.pedidos || []).filter(p => p.estado === 'lista').map(p => p.numero_orden).join(' · ')}<br />
+            {alarma.min_espera > 0 ? `Esperando hace ${alarma.min_espera} min` : 'Recién salido de cocina'}
+            {alarma.listos < alarma.total && <><br />El otro sigue en cocina, pero este ya no puede esperar.</>}
+          </div>
+          <button disabled={ocupado === 'alarma'} onClick={retirarListos} style={S.alarmaBtn}>
+            {ocupado === 'alarma' ? 'Marcando…' : alarma.listos > 1 ? 'Ya los retiré · salgo' : 'Ya lo retiré · salgo'}
+          </button>
+          <div style={{ fontSize: 12, opacity: .75, marginTop: 10 }}>Al tocarlo se marcan en camino y se arma tu ruta 1°, 2°.</div>
+        </div>
+      )}
       <Disponibilidad />
       {msg && <div style={S.banner}>{msg}</div>}
 
@@ -1271,6 +1350,13 @@ const S = {
   badge: { position: 'absolute', top: -4, right: -10, background: '#E63946', color: '#fff', fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '1px 5px' },
   card: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 18, padding: '28px 22px', width: '100%', maxWidth: 380, textAlign: 'center' },
   pedidoCard: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 },
+  // Alarma «pedido listo»
+  alarma: { position: 'fixed', inset: 0, zIndex: 9999, background: '#7f1d1d', color: '#fff', display: 'flex',
+            flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 },
+  alarmaIc: { width: 84, height: 84, borderRadius: '50%', background: '#fff', color: '#7f1d1d', fontSize: 44,
+              fontWeight: 900, lineHeight: '84px', marginBottom: 14 },
+  alarmaBtn: { marginTop: 22, width: '100%', maxWidth: 360, background: '#16a34a', color: '#fff', border: 0,
+               borderRadius: 16, padding: '17px 0', fontSize: 18, fontWeight: 900, cursor: 'pointer' },
   // Orden de entrega
   pedidoActual: { background: '#1f1b0c', border: '2px solid #FFD900', borderRadius: 14, padding: 16 },
   bloqueado: { display: 'flex', alignItems: 'center', gap: 11, background: '#161412', border: '1px dashed #3a342e',
