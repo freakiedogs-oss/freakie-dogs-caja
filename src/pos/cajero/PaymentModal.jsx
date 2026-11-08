@@ -7,8 +7,8 @@ import { db } from '../../supabase'
 import { normalizarIdPeya, PEYA_ID_MAX } from '../peyaId'
 
 // Sucursales que verifican pagers en uso (evita asignar 2 clientes al mismo pager)
-// Solo S006 por ahora (piloto Metrocentro). Extender a S001/S002 después de validar.
-const STORES_PAGER_LOOKUP = ['S006']
+// S006 (piloto Metrocentro, validado) y S001 (Soyapango, 10-oct-2026). S002 después.
+const STORES_PAGER_LOOKUP = ['S006', 'S001']
 
 const DTE_TYPES = [
   { key: 'factura', ic: 'receipt', label: 'Consumidor Final', desc: 'Factura — se envía a Hacienda' },

@@ -57,6 +57,9 @@ const MediaView          = lazy(() => import('./components/marketing/MediaView')
 const FreakieFlowView    = lazy(() => import('./components/marketing/FreakieFlowView'))
 const IncidentesProduccion = lazy(() => import('./components/produccion/IncidentesProduccion'))
 const AgrandadosView     = lazy(() => import('./components/caja/AgrandadosView'))
+const DesempenoMeserosView = lazy(() => import('./components/rrhh/DesempenoMeserosView'))
+const MiDesempeno = lazy(() => import('./components/empleado/MiDesempeno'))
+const ClientesDomicilioView = lazy(() => import('./components/delivery/ClientesDomicilioView'))
 const BPMChiliView       = lazy(() => import('./components/produccion/BPMChiliView'))
 const BPMParametrosView  = lazy(() => import('./components/produccion/BPMParametrosView'))
 const TurnoCasaMatrizView = lazy(() => import('./components/produccion/TurnoCasaMatrizView'))
@@ -99,20 +102,22 @@ const KpiVentasTotalesDashboard = lazy(() => import('./components/admin/KpiVenta
 
 // ── Helpers para accesos rápidos ──
 const ROLE_DEFAULTS = {
-  cajero: ['agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
-  cajera: ['agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
+  cajero: ['mi-desempeno', 'agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
+  cajera: ['mi-desempeno', 'agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
+  mesero: ['mi-desempeno', 'mi-boleta', 'mi-asistencia'],
+  mesera: ['mi-desempeno', 'mi-boleta', 'mi-asistencia'],
   gerente: ['agrandados', 'cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta', 'planilla-sucursal', 'resultados-delivery'],
   admin: ['admin', 'kpis-venta', 'recepcion-dte', 'recepcion', 'despacho'],
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
   superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
   bodeguero: ['recepcion-dte', 'recepcion', 'despacho', 'inventario', 'historial'],
   jefe_casa_matriz: ['turno-cm', 'cebolla-dia', 'bpm-temperatura', 'bpm-parametros', 'despacho-operativo', 'recepcion-dte', 'recepcion', 'despacho', 'produccion', 'inventario', 'kardex'],
-  cocina: ['conteo', 'reporte', 'devoluciones'],
+  cocina: ['mi-desempeno', 'conteo', 'reporte', 'devoluciones'],
   rrhh: ['rrhh', 'horarios', 'planilla', 'recibos-digitales', 'validacion-planilla'],
   contador: ['gastos', 'conciliacion', 'planilla'],
   despachador: ['mi-despacho', 'entregas', 'delivery'],
   motorista: ['mi-despacho', 'entregas', 'delivery'],
-  domicilios: ['entregas', 'delivery'],
+  domicilios: ['clientes-domicilio', 'mi-desempeno', 'entregas', 'delivery'],
   marketing: ['marketing'],
   produccion: ['carne-boleado', 'bpm-chili', 'bpm-temperatura', 'despacho-operativo', 'produccion', 'incidentes-cm', 'recetas'],
   eventos: ['eventos-mapa', 'eventos', 'mi-asistencia', 'mi-boleta'],
@@ -407,6 +412,12 @@ export default function App() {
         return <ProduccionDiaria user={user} />
       case 'agrandados':
         return <AgrandadosView user={user} />
+      case 'mi-desempeno':
+        return <MiDesempeno user={user} />
+      case 'desempeno-meseros':
+        return <DesempenoMeserosView user={user} />
+      case 'clientes-domicilio':
+        return <ClientesDomicilioView user={user} />
       case 'bpm-chili':
         return <BPMChiliView user={user} />
       case 'bpm-parametros':
