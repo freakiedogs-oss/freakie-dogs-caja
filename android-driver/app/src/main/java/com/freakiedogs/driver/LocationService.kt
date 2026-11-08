@@ -8,6 +8,12 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.location.Location
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.net.Uri
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -21,6 +27,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -41,6 +48,8 @@ class LocationService : Service() {
         private const val TAG = "FreakieLocSvc"
         const val ACTION_START = "com.freakiedogs.driver.START"
         const val ACTION_STOP  = "com.freakiedogs.driver.STOP"
+        // «Ya los retiré» desde la notificación de la alarma
+        const val ACTION_RECOGER = "com.freakiedogs.driver.RECOGER"
         const val EXTRA_EMPLEADO_ID = "empleado_id"
         const val EXTRA_NOMBRE = "nombre"
         const val EXTRA_TIPO = "tipo"
@@ -48,6 +57,13 @@ class LocationService : Service() {
         private const val CHANNEL_ID = "freakie_gps"
         private const val CHANNEL_NAME = "Freakie GPS activo"
         private const val NOTIF_ID = 42
+
+        // Alarma «pedido listo» (7-nov-2026): canal propio de prioridad alta.
+        // El sonido NO va en el canal: se reproduce a mano cada 10 s por el
+        // stream de ALARMA, que suena aunque el celular esté en silencio.
+        private const val ALARMA_CHANNEL_ID = "freakie_pedido_listo_v1"
+        private const val ALARMA_NOTIF_ID = 43
+        private const val ALARMA_REPETIR_MS = 10_000L
 
         // Proxy de Vercel — MISMA ruta que usa la PWA en producción (src/supabase.js).
         // Varios ISPs de El Salvador filtran *.supabase.co por DNS, así que pegar
@@ -69,7 +85,7 @@ class LocationService : Service() {
 
         // Etiqueta visible en la notificación — sirve para confirmar de un vistazo
         // qué build está instalado en el celular. Subir en cada cambio.
-        private const val VERSION_APK = "v10-nav"
+        private const val VERSION_APK = "v11-alarma"
     }
 
     // Contadores de diagnóstico que se muestran en la notificación
@@ -102,7 +118,19 @@ class LocationService : Service() {
             ciclos++
             refrescarNotif()
             forzarLecturaGps()
+            revisarAlarma()
             handler.postDelayed(this, HEARTBEAT_MS)
+        }
+    }
+
+    // ── Alarma «pedido listo» ──────────────────────────────────────────
+    private var alarmaSonando = false
+    private var player: MediaPlayer? = null
+    private val sonidoRunnable = object : Runnable {
+        override fun run() {
+            if (!alarmaSonando) return
+            sonarUnaVez()
+            handler.postDelayed(this, ALARMA_REPETIR_MS)
         }
     }
 
@@ -114,6 +142,14 @@ class LocationService : Service() {
                 detenerHeartbeat()
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_RECOGER -> {
+                // Puede llegar con el servicio vivo (lo normal) o recién creado:
+                // en ese caso Android exige startForeground enseguida.
+                intent?.getStringExtra(EXTRA_EMPLEADO_ID)?.takeIf { it.isNotBlank() }?.let { empleadoId = it }
+                startForeground(NOTIF_ID, buildNotif(nombre))
+                recogerListos()
+                return START_STICKY
             }
             ACTION_START, null -> {
                 empleadoId = intent?.getStringExtra(EXTRA_EMPLEADO_ID) ?: empleadoId
@@ -360,7 +396,179 @@ class LocationService : Service() {
         }
     }
 
+    /**
+     * Pregunta al servidor si el motorista tiene pedidos listos para retirar.
+     * El servidor decide (driver_alarma_estado): suena cuando están listos TODOS
+     * sus pedidos de esa sucursal, o cuando el primero lleva 8 min esperando.
+     */
+    private fun revisarAlarma() {
+        if (empleadoId.isBlank() || tipo != "delivery") return
+        thread(name = "alarma-get") {
+            val body = """{"p_empleado_id":"$empleadoId"}"""
+            val resp = rpcJson("driver_alarma_estado", body) ?: return@thread
+            try {
+                val js = JSONObject(resp)
+                if (js.optBoolean("sonar", false)) {
+                    val suc = js.optString("sucursal", "tu sucursal")
+                    val n = js.optInt("listos", 1)
+                    val min = js.optInt("min_espera", 0)
+                    val arr = js.optJSONArray("pedidos")
+                    val ordenes = (0 until (arr?.length() ?: 0)).joinToString(", ") {
+                        arr!!.getJSONObject(it).optString("numero_orden")
+                    }
+                    handler.post { iniciarAlarma(suc, n, min, ordenes) }
+                } else {
+                    handler.post { detenerAlarma() }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Respuesta de alarma inválida: ${e.message}")
+            }
+        }
+    }
+
+    private fun iniciarAlarma(sucursal: String, listos: Int, minEspera: Int, ordenes: String) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(ALARMA_CHANNEL_ID, "Pedido listo para retirar",
+                NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Suena cuando tus pedidos están listos en la sucursal"
+                setSound(null, null)          // el sonido lo ponemos nosotros (stream de alarma)
+                enableVibration(false)        // idem: vibramos a mano junto con el sonido
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            nm.createNotificationChannel(ch)
+        }
+        val abrir = PendingIntent.getActivity(this, 2,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val recogerIntent = Intent(this, LocationService::class.java).apply {
+            action = ACTION_RECOGER
+            putExtra(EXTRA_EMPLEADO_ID, empleadoId)
+        }
+        val recoger = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            PendingIntent.getForegroundService(this, 3, recogerIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        else
+            PendingIntent.getService(this, 3, recogerIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+        val titulo = if (listos > 1) "Tus $listos pedidos están listos" else "Tu pedido está listo"
+        val texto = "$sucursal · $ordenes. Pasá a retirarlos ya." +
+            (if (minEspera > 0) " Esperando hace $minEspera min." else "")
+        val notif = NotificationCompat.Builder(this, ALARMA_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle("🔔 $titulo")
+            .setContentText(texto)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(texto))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(abrir)
+            .setFullScreenIntent(abrir, true)
+            .addAction(android.R.drawable.ic_menu_send, "Ya los retiré", recoger)
+            .build()
+        // Se vuelve a publicar en cada revisión (20 s): si el motorista la
+        // desliza para quitarla, reaparece mientras los pedidos sigan listos.
+        try { nm.notify(ALARMA_NOTIF_ID, notif) } catch (_: Exception) { }
+
+        if (!alarmaSonando) {
+            alarmaSonando = true
+            handler.post(sonidoRunnable)
+        }
+    }
+
+    private fun detenerAlarma() {
+        if (!alarmaSonando) {
+            // Igual limpiamos por si quedó una notificación de antes
+            try { (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(ALARMA_NOTIF_ID) } catch (_: Exception) { }
+            return
+        }
+        alarmaSonando = false
+        handler.removeCallbacks(sonidoRunnable)
+        try { player?.release() } catch (_: Exception) { }
+        player = null
+        try { (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(ALARMA_NOTIF_ID) } catch (_: Exception) { }
+    }
+
+    /** Campana (opción A elegida por Cesar) por el stream de alarma + vibración. */
+    private fun sonarUnaVez() {
+        try {
+            player?.release()
+            player = MediaPlayer().apply {
+                setAudioAttributes(AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build())
+                setDataSource(this@LocationService, Uri.parse("android.resource://$packageName/${R.raw.campana_pedido}"))
+                setOnCompletionListener { it.release(); if (player === it) player = null }
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo reproducir la alarma: ${e.message}")
+        }
+        try {
+            val patron = longArrayOf(0, 400, 200, 400, 200, 700)
+            vibrar(patron)
+        } catch (_: Exception) { }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun vibrar(patron: LongArray) {
+        val vib: Vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+        } else {
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vib.vibrate(VibrationEffect.createWaveform(patron, -1))
+        } else {
+            vib.vibrate(patron, -1)
+        }
+    }
+
+    /** «Ya los retiré»: marca en camino todos sus pedidos listos y apaga la alarma. */
+    private fun recogerListos() {
+        handler.post { detenerAlarma() }
+        if (empleadoId.isBlank()) return
+        thread(name = "alarma-recoger") {
+            rpcJson("driver_recoger_listos", """{"p_empleado_id":"$empleadoId"}""")
+        }
+    }
+
+    /** POST a un RPC devolviendo el cuerpo (proxy primero, origen después). */
+    private fun rpcJson(fn: String, body: String): String? {
+        for (base in listOf(PROXY_URL, SUPABASE_URL)) {
+            var conn: HttpURLConnection? = null
+            try {
+                val bytes = body.toByteArray(Charsets.UTF_8)
+                conn = (URL("$base/rest/v1/rpc/$fn").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("apikey", ANON_KEY)
+                    setRequestProperty("Authorization", "Bearer $ANON_KEY")
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Accept", "application/json")
+                    doOutput = true
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    setFixedLengthStreamingMode(bytes.size)
+                }
+                conn.outputStream.use { it.write(bytes) }
+                if (conn.responseCode in 200..299) {
+                    return conn.inputStream.bufferedReader().use { it.readText() }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "RPC $fn falló en $base: ${e.message}")
+            } finally {
+                try { conn?.disconnect() } catch (_: Exception) { }
+            }
+        }
+        return null
+    }
+
     override fun onDestroy() {
+        detenerAlarma()
         detenerLocationUpdates()
         detenerHeartbeat()
         // OJO: no llamamos desconectar_driver acá. Si Android nos mata por batería,

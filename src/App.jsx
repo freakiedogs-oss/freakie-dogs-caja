@@ -19,6 +19,7 @@ const DepositosCalendarioView = lazy(() => import('./components/finanzas/Deposit
 const AdminView          = lazy(() => import('./components/admin/AdminView'))
 const IncidentesDash     = lazy(() => import('./components/admin/IncidentesDash'))
 const CancelacionesView  = lazy(() => import('./components/admin/CancelacionesView'))
+const ResultadosDeliveryView = lazy(() => import('./components/delivery/ResultadosDeliveryView'))
 const VentasFreakies     = lazy(() => import('./components/dashboard/VentasFreakies'))
 const KpisVentaDashboard = lazy(() => import('./components/dashboard/KpisVentaDashboard'))
 const ConsumoVentaDashboard = lazy(() => import('./components/dashboard/ConsumoVentaDashboard'))
@@ -105,7 +106,7 @@ const ROLE_DEFAULTS = {
   cajera: ['mi-desempeno', 'agrandados', 'cierre', 'reporte', 'deposito', 'conteo'],
   mesero: ['mi-desempeno', 'mi-boleta', 'mi-asistencia'],
   mesera: ['mi-desempeno', 'mi-boleta', 'mi-asistencia'],
-  gerente: ['agrandados', 'cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta', 'planilla-sucursal'],
+  gerente: ['agrandados', 'cierre', 'reporte', 'incidentes', 'conteo', 'horarios', 'kpis-venta', 'planilla-sucursal', 'resultados-delivery'],
   admin: ['admin', 'kpis-venta', 'recepcion-dte', 'recepcion', 'despacho'],
   ejecutivo: ['kpis-venta', 'finanzas-dashboard', 'rentabilidad', 'superadmin-panel'],
   superadmin: ['superadmin-panel', 'kpi-delivery', 'kpi-despacho', 'kpis-venta', 'kpi-ventas-totales', 'finanzas-dashboard', 'admin'],
@@ -381,6 +382,8 @@ export default function App() {
         )
       case 'cancelaciones':
         return <CancelacionesView user={user} onNavigate={handleNavigate} />
+      case 'resultados-delivery':
+        return <ResultadosDeliveryView user={user} />
       case 'incidentes':
         return <IncidentesDash user={user} onBack={() => setScreen('home')} />
       case 'recetas':

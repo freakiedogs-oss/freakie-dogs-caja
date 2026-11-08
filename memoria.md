@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 7-Nov-2026 — Encuesta de 1 toque + «Resultados delivery» para encargados
+
+- **Qué pidió Cesar:** que el cliente califique la entrega y que cada encargado vea día por día la nota, el pedido, por qué, quién lo llevó y cuánto se tardó en cocina, en asignarse y en ruta.
+- **BD (`20261107c_calificaciones_delivery.sql`, aplicada):** tabla `delivery_calificaciones` (nota 1–3, motivos[], comentario, quiere_contacto, contactado_*). `tracking_calificar(token, …)` (anon; solo entregados, 7 días, corregible 1 h). SIN Telegram: Cesar decidió que los resultados se vean solo en el ERP (privacidad); el trigger de aviso se creó y se quitó (`calificaciones_sin_telegram`). `fn_resultados_delivery(store|null, desde, hasta)`: resumen, motivos, días, cada calificación con min_confirmar / cocina / asignar / retirar / ruta / total. `fn_resultados_delivery_contactado(id, usuario, nota)`. `tracking_pedido` devuelve `calificacion`.
+- **Frontend:** `src/tracking/EncuestaEntrega.jsx` (en `TrackingPedido.jsx` al entregar), `src/components/delivery/ResultadosDeliveryView.jsx`, nav `resultados-delivery` en `config.js` (gerente, ejecutivo, admin, superadmin) + `App.jsx` (lazy, case, acceso rápido del gerente). El gerente ve solo su `store_code`.
+- **Alarma «pedido listo» (APK v11-alarma, versionCode 11):** `20261107d_alarma_pedido_listo.sql` (aplicada): `driver_alarma_estado(empleado)` suena cuando TODOS sus pedidos asignados de esa sucursal están listos o el primero lleva ≥ 8 min; `driver_recoger_listos(empleado)` los marca en camino. `LocationService.kt`: en el heartbeat (20 s) consulta el RPC; si suena → notificación alta prioridad (canal `freakie_pedido_listo_v1`, full-screen, se re-publica si la deslizan) + campana `res/raw/campana_pedido.wav` (opción A elegida por Cesar) por stream de ALARMA cada 10 s + vibración; acción «Ya los retiré». Manifest: VIBRATE, USE_FULL_SCREEN_INTENT. `DriverBeacon.jsx`: pantalla roja con el botón cuando la app está abierta; en PWA (sin APK) suena con WebAudio. `instalar-driver.html` pide v11-alarma. Kotlin NO compilado en el sandbox (sin SDK): compilar en Android Studio.
+
 ## 7-Nov-2026 — Orden de entrega automático (torre + motorista + tracking)
 
 - **Qué pidió Cesar:** que el orden de entrega lo ponga el sistema (no Karina, no el motorista), con distancia + tiempo de espera. El motorista ve 1°/2°/3° bien marcado y no lo puede cambiar. Karina tiene un botón solo para emergencias. Y medir si la lógica acierta y cómo salen los viajes de 4.
