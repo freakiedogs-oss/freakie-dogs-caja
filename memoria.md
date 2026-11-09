@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Menú web: subir el ticket promedio (más pedidos, para compartir, sugerencias, «¿Son dos?»)
+- Por qué: pedidos web 30 días = 1,935, ticket $16.53, mediana $14.99, 66% con UN producto, postre 0.8%, extras sueltos 10%.
+- **Decisión de Cesar: el envío sigue GRATIS** (diferenciador vs PedidosYa, ya promocionado). No proponer cobrar envío para subir ticket.
+- RPC `menu_mas_pedidos(dias, limite)` (migración `20261109h`): nombres por unidades vendidas en delivery_propio. Fila «Los más pedidos en delivery» (#1–#4) arriba del menú.
+- Fila «Para compartir»: Burger Box, Combpleto, Freakie Family (`PARA_COMPARTIR`).
+- Carrito: «¿Le sumás algo?» con Queso Frito, Mini Fancys, Freakie Dog (`SUGERIDOS_CARRITO`; sin opciones = un toque; con opciones = abre el producto y vuelve al carrito). Oculta lo que ya está en el carrito.
+- Carrito: «¿Son dos? Pasate al Burger Duo» si hay Freakie Burger (1 → +$7.00; 2 → ahorra $0.99): abre el Duo y al añadirlo quita 1–2 Freakie Burger.
+- Pendiente: postre (Cesar consigue la foto) → hacerlo visible y sumarlo a `SUGERIDOS_CARRITO`.
+
+## 9-Nov-2026 — Menú web: Royal Truffle 2 bebidas + productos sueltos sin bebida (datos)
+- Royal Truffle Combo: sus 2 hamburguesas apuntan a un ítem nuevo «Hamburguesa» (no visible, sin grupos de bebida); la bebida va solo en «Bebida Royal 1/2» → pide 2, no 4.
+- Sin grupos de bebida (Bebida / Cambio / Agrandado del delivery): las 36 bebidas sueltas (Coca, tés, cervezas, Jicaritas, Salutari, latas y vidrios) y los productos de comida sueltos Hamburguesa, Super Freak, Franks Birthday Burger, HOT DOG PROMO AGUILA FAS y Costra de Queso Hot Dog. Antes pedían «escoger bebida» sin sentido.
+
 ## 9-Nov-2026 — Menú web: upsell del agrandado
 - Por qué: el agrandado es el mejor upsell (Cesar). Datos 30 días, 22,979 combos: agrandado 819 = extra de papas más pedido (aros 480, queso frito 329, trufa 242, chili 232, fancy 214), pero tocino 1,619 lo supera en total → la cinta dice «⭐ Recomendado», NO «el más pedido». Sin precio tachado (no hay precio real que lo respalde).
 - `MenuPublico.jsx`: botón «Agrandá tu combo · solo +$1.25» con cinta. Al tocar «Añadir» sin ningún combo agrandado sale UNA vez «¿Agrandamos tu combo?» (`upsell`, `aceptarUpsell`): «Sí» agranda todos y abre la bebida premium; «No, gracias» agrega normal. No se pregunta si ya agrandó alguno. Nada viene marcado de entrada.
