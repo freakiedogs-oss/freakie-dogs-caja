@@ -860,7 +860,13 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const claveComp = (g) => { const m = /^(\d+):/.exec(String(g.id)); return m ? m[1] : 'base' }
   const esGrupoAgrandado = (g) => /agrandado/i.test(g?.nombre || '')
   const esOpcionAgrandado = (op) => /agrandado/i.test(op?.nombre || '')
-  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g)
+  // «Cambio de bebida» (+$0.50, 9-nov-2026, Cesar): misma lógica que el
+  // agrandado. Al marcarlo en la bebida de un componente, ese grupo deja de
+  // ofrecer las 3 incluidas y aparece «Cambio de Bebida» (latas, tés, Kinley,
+  // sin costo: el $0.50 ya va en la opción), obligatorio.
+  const esGrupoCambio = (g) => /^cambio de bebida$/i.test(String(g?.nombre || '').trim())
+  const esOpcionCambio = (op) => /^cambio de bebida$/i.test(String(op?.nombre || '').trim())
+  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g) && !esGrupoCambio(g)
   const esVidrio = (op) => /vidrio/i.test(op?.nombre || '')
 
   // Qué componentes quedaron agrandados. Hay dos vías vivas y ambas valen: la
@@ -890,6 +896,18 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const soloAgrandado = (g) =>
     esGrupoBebida(g) && compsAgrandados.has(claveComp(g)) && tieneGrupoAgrandado(claveComp(g))
 
+  // Componentes con «Cambio de bebida» marcado (y no agrandados: el agrandado manda).
+  const compsCambio = useMemo(() => {
+    const s = new Set()
+    grupos.forEach(g => {
+      if (esGrupoBebida(g) && (sel[g.id] || []).some(esOpcionCambio) && !compsAgrandados.has(claveComp(g))) s.add(claveComp(g))
+    })
+    return s
+  }, [grupos, sel, compsAgrandados])
+  const tieneGrupoCambio = (comp) => grupos.some(g => esGrupoCambio(g) && claveComp(g) === comp)
+  const soloCambio = (g) =>
+    esGrupoBebida(g) && compsCambio.has(claveComp(g)) && tieneGrupoCambio(claveComp(g))
+
   /* ── Choques declarados desde el ERP ───────────────────────────────────
      Un par de opciones que no pueden ir juntas. Al elegir una, la otra deja
      de ofrecerse; al soltarla, vuelve. Se bloquea solo la que NO está
@@ -911,10 +929,13 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const opcionesVisibles = (g) => {
     let ops = g.opciones || []
     if (soloAgrandado(g)) ops = ops.filter(esOpcionAgrandado)
+    else if (soloCambio(g)) ops = ops.filter(esOpcionCambio)
     return ops.filter(op => !esVidrio(op) && !bloqueadosPorRegla.has(op.id))
   }
   const grupoOculto = (g) =>
-    (esGrupoAgrandado(g) && !compsAgrandados.has(claveComp(g))) || opcionesVisibles(g).length === 0
+    (esGrupoAgrandado(g) && !compsAgrandados.has(claveComp(g))) ||
+    (esGrupoCambio(g) && !compsCambio.has(claveComp(g))) ||
+    opcionesVisibles(g).length === 0
 
   // Lo que se ve, se exige y se cobra. Un grupo oculto no bloquea el botón ni
   // aporta precio, y una selección que dejó de ser visible (se agrandó después
@@ -933,7 +954,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   // El grupo del agrandado solo se muestra cuando hay un agrandado marcado, y
   // en ese caso elegir el sabor es obligatorio: es la bebida que reemplaza a la
   // incluida, y sin ella no se descuenta ningún insumo.
-  const minEfectivo = (g) => esGrupoAgrandado(g) ? Math.max(1, minDe(g)) : minDe(g)
+  const minEfectivo = (g) => (esGrupoAgrandado(g) || esGrupoCambio(g)) ? Math.max(1, minDe(g)) : minDe(g)
 
   // El siguiente grupo al que conviene llevar a la persona: el primero que
   // todavía no cumple su mínimo.
@@ -942,6 +963,14 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
     const resto = [...gruposVisibles.slice(i + 1), ...gruposVisibles.slice(0, Math.max(0, i))]
     return resto.find(g => cuentaDe(g) < minEfectivo(g))?.id ?? null
   }
+
+  // «Con Todo» / «Sin Nada» (9-nov-2026, Cesar): al elegir uno se desmarcan y
+  // bloquean los complementos gratis del grupo (ketchup, mayonesa, cebolla…),
+  // porque ya están incluidos o no van. Los extras con precio (jalapeños,
+  // tocino, costra de queso) se pueden seguir agregando.
+  const esTodoNada = (op) => /^(con todo|sin nada)$/i.test(String(op?.nombre || '').trim())
+  const esBaseGratis = (op) => !(Number(op?.precio_extra) > 0) && !esTodoNada(op)
+  const todoNadaDe = (g) => (sel[g.id] || []).find(esTodoNada) || null
 
   const toggle = (g, op) => {
     setSel(prev => {
@@ -952,7 +981,10 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
         next = ya ? [] : [op]
       } else if (ya) {
         next = actual.filter(x => x.id !== op.id)
+      } else if (esTodoNada(op)) {
+        next = [...actual.filter(x => !esBaseGratis(x) && !esTodoNada(x)), op]
       } else {
+        if (esBaseGratis(op) && actual.some(esTodoNada)) return prev  // bloqueado por Con Todo / Sin Nada
         if (g.max && actual.length >= g.max) return prev  // tope alcanzado
         next = [...actual, op]
       }
@@ -1061,14 +1093,30 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                 <div className="mp-opciones" hidden={!estaAbierto}>
                   {opcionesVisibles(g).map(op => {
                     const activa = (sel[g.id] || []).some(x => x.id === op.id)
+                    const tn = !esUnico(g) && todoNadaDe(g)
+                    const bloqueada = !activa && tn && esBaseGratis(op)
                     return (
                       <button
                         key={op.id}
                         type="button"
+                        disabled={bloqueada}
                         className={`mp-opcion ${activa ? 'active' : ''} ${esUnico(g) ? 'radio' : 'check'}`}
+                        style={bloqueada ? { opacity: .45, cursor: 'not-allowed' } : undefined}
                         onClick={() => toggle(g, op)}
                       >
-                        <span className="mp-opcion-nombre">{op.nombre}</span>
+                        <span className="mp-opcion-nombre">
+                          {op.nombre}
+                          {op.descripcion && (
+                            <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#6b5a48', marginTop: 2, lineHeight: 1.35 }}>
+                              {op.descripcion}
+                            </span>
+                          )}
+                        </span>
+                        {bloqueada && (
+                          <span style={{ fontSize: 11.5, color: '#6b5a48' }}>
+                            {/sin nada/i.test(tn.nombre) ? 'No lleva' : 'Incluido'}
+                          </span>
+                        )}
                         {Number(op.precio_extra) > 0 && (
                           <span className="mp-opcion-extra">+{fmt(op.precio_extra)}</span>
                         )}
