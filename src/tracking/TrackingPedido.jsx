@@ -104,10 +104,12 @@ export default function TrackingPedido() {
 
   // Aviso de la central (8-nov-2026): p. ej. «tu pedido ya está afuera»
   const aviso = d.aviso
+  const llego = enCamino && d.llego_at
   const avisoTel = String(aviso?.tel || '').replace(/\D/g, '')
 
   return (
     <Marco>
+      {llego && <AvisoLlego motorista={d.motorista} />}
       {aviso && (
         <div style={{ background: '#FFD900', color: '#1a1200', borderRadius: 16, padding: '16px 16px 14px',
                       margin: '4px 0 14px', textAlign: 'center', boxShadow: '0 4px 14px rgba(0,0,0,.18)' }}>
@@ -216,6 +218,44 @@ export default function TrackingPedido() {
 
       <footer className="tk-foot">Esta página se actualiza sola</footer>
     </Marco>
+  )
+}
+
+// El motorista tocó «Llegué». Suena una campana (si el navegador lo permite),
+// vibra y el título de la pestaña parpadea por si la tiene en segundo plano.
+function AvisoLlego({ motorista }) {
+  useEffect(() => {
+    const titulo = document.title
+    let alterna = false
+    const avisar = () => {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext
+        const ctx = new Ctx()
+        const t = ctx.currentTime + 0.05
+        ;[[1318, 0], [1046, 0.35]].forEach(([f, dt]) => {
+          const o = ctx.createOscillator(), g = ctx.createGain()
+          o.type = 'sine'; o.frequency.value = f
+          g.gain.setValueAtTime(0.0001, t + dt); g.gain.exponentialRampToValueAtTime(0.5, t + dt + 0.015)
+          g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.8)
+          o.connect(g).connect(ctx.destination); o.start(t + dt); o.stop(t + dt + 0.85)
+        })
+      } catch { /* sin audio */ }
+      navigator.vibrate?.([400, 200, 400])
+    }
+    avisar()
+    const sonido = setInterval(avisar, 20000)
+    const parpadeo = setInterval(() => { alterna = !alterna; document.title = alterna ? '🔔 ¡Tu pedido llegó!' : titulo }, 1000)
+    return () => { clearInterval(sonido); clearInterval(parpadeo); document.title = titulo }
+  }, [])
+  return (
+    <div style={{ background: '#FFD900', color: '#1a1200', borderRadius: 16, padding: '18px 16px', margin: '4px 0 14px',
+                  textAlign: 'center', boxShadow: '0 4px 14px rgba(0,0,0,.18)' }}>
+      <div style={{ fontSize: 40 }}>🛵📍</div>
+      <div style={{ fontSize: 22, fontWeight: 900, marginTop: 4 }}>¡Tu motorista está afuera!</div>
+      <div style={{ fontSize: 15, marginTop: 6, lineHeight: 1.4 }}>
+        {motorista ? `${motorista} llegó` : 'Llegó'} con tu pedido. Salí a recibirlo 🙌
+      </div>
+    </div>
   )
 }
 
