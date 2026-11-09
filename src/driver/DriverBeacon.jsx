@@ -826,6 +826,29 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   // «Llegué» (9-nov-2026): la página de seguimiento del cliente se pone en
   // amarillo «¡Tu motorista está afuera!». Sirve aunque el teléfono que dejó
   // el cliente esté mal: el aviso le llega por el link.
+  // Confirmación con GPS (9-nov-2026): si al tocar «Entregado» el motorista
+  // está a más de 300 m del cliente, se le pide confirmar en rojo. Hubo
+  // entregas marcadas por error con el pedido todavía en la moto.
+  const [distEnt, setDistEnt] = useState(null)   // { id, m, cargando }
+  const pedirConfirmacion = (p) => {
+    setConfirmando(p.id)
+    if (!p.cliente_lat) { setDistEnt(null); return }
+    setDistEnt({ id: p.id, m: null, cargando: true })
+    const medir = (lat, lng) => {
+      const R = 6371000, rad = (x) => x * Math.PI / 180
+      const dLat = rad(p.cliente_lat - lat), dLng = rad(p.cliente_lng - lng)
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat)) * Math.cos(rad(p.cliente_lat)) * Math.sin(dLng / 2) ** 2
+      setDistEnt({ id: p.id, m: Math.round(2 * R * Math.asin(Math.sqrt(h))), cargando: false })
+    }
+    const u = beacon.ultima
+    if (u?.lat && u.at && Date.now() - new Date(u.at).getTime() < 60000) { medir(u.lat, u.lng); return }
+    if (!navigator.geolocation) { setDistEnt(null); return }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => medir(pos.coords.latitude, pos.coords.longitude),
+      () => setDistEnt(null),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 7000 })
+  }
+
   const llegue = async (p) => {
     setOcupado('llegue-' + p.id)
     try {
@@ -1177,15 +1200,33 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                 </>
               ) : confirmando === p.id ? (
                 <>
-                  <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
-                    ¿Confirmás la entrega de {p.numero_orden}?
-                  </div>
+                  {(() => {
+                    const d = distEnt?.id === p.id ? distEnt : null
+                    const lejos = d && d.m != null && d.m > 300
+                    const dist = d?.m != null ? (d.m >= 1000 ? `${(d.m / 1000).toFixed(1)} km` : `${d.m} m`) : ''
+                    return lejos ? (
+                      <div style={{ background: '#3b1416', border: '2px solid #ef4444', borderRadius: 10, padding: '10px 11px', marginBottom: 9 }}>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: '#fecaca' }}>⚠️ Estás a {dist} de la dirección del cliente</div>
+                        <div style={{ fontSize: 12.5, color: '#fecaca', marginTop: 4, lineHeight: 1.4 }}>
+                          ¿Seguro que ya le entregaste <b>{p.numero_orden}</b> a {String(p.cliente_nombre || 'el cliente').split(' ')[0]}? Si todavía lo llevás, tocá «No, todavía no».
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
+                        ¿Confirmás la entrega de {p.numero_orden}?
+                        {d?.cargando && <span style={{ display: 'block', fontSize: 11.5, color: '#8b807a', fontWeight: 400, marginTop: 3 }}>📍 Revisando tu ubicación…</span>}
+                        {d?.m != null && <span style={{ display: 'block', fontSize: 11.5, color: '#4ade80', fontWeight: 400, marginTop: 3 }}>📍 Estás en la dirección del cliente ({dist})</span>}
+                      </div>
+                    )
+                  })()}
                   <button disabled={ocupado === p.id}
-                          onClick={() => { setConfirmando(null); entregar(p, p.metodo_pago || 'efectivo') }}
-                          style={S.accion('#16a34a')}>
-                    {ocupado === p.id ? '…' : '✅ Sí, entregado'}
+                          onClick={() => { setConfirmando(null); setDistEnt(null); entregar(p, p.metodo_pago || 'efectivo') }}
+                          style={S.accion(distEnt?.id === p.id && distEnt.m > 300 ? '#b91c1c' : '#16a34a')}>
+                    {ocupado === p.id ? '…' : distEnt?.id === p.id && distEnt.m > 300 ? 'Sí, ya se lo entregué' : '✅ Sí, entregado'}
                   </button>
-                  <button onClick={() => setConfirmando(null)} style={S.linkChico}>No, volver</button>
+                  <button onClick={() => { setConfirmando(null); setDistEnt(null) }} style={S.linkChico}>
+                    {distEnt?.id === p.id && distEnt.m > 300 ? 'No, todavía no' : 'No, volver'}
+                  </button>
                 </>
               ) : (
                 <>
@@ -1213,7 +1254,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                       {ocupado === 'llegue-' + p.id ? '…' : '📍 Llegué — avisar al cliente'}
                     </button>
                   )}
-                  <button disabled={ocupado === p.id} onClick={() => setConfirmando(p.id)}
+                  <button disabled={ocupado === p.id} onClick={() => pedirConfirmacion(p)}
                           style={S.accion('#16a34a')}>
                     {ocupado === p.id ? '…' : '✅ Entregado'}
                   </button>
