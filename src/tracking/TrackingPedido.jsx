@@ -102,8 +102,28 @@ export default function TrackingPedido() {
     )
   }
 
+  // Aviso de la central (8-nov-2026): p. ej. «tu pedido ya está afuera»
+  const aviso = d.aviso
+  const avisoTel = String(aviso?.tel || '').replace(/\D/g, '')
+
   return (
     <Marco>
+      {aviso && (
+        <div style={{ background: '#FFD900', color: '#1a1200', borderRadius: 16, padding: '16px 16px 14px',
+                      margin: '4px 0 14px', textAlign: 'center', boxShadow: '0 4px 14px rgba(0,0,0,.18)' }}>
+          <div style={{ fontSize: 30 }}>📣</div>
+          <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.3, marginTop: 4 }}>{aviso.texto}</div>
+          {avisoTel.length >= 8 && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <a href={`tel:${avisoTel}`} style={{ flex: 1, background: '#1a1200', color: '#FFD900', borderRadius: 12,
+                 padding: 12, fontWeight: 800, textDecoration: 'none' }}>📞 Llamar</a>
+              <a href={`https://wa.me/${avisoTel.length === 8 ? '503' + avisoTel : avisoTel}`} target="_blank" rel="noopener"
+                 style={{ flex: 1, background: '#25D366', color: '#04220f', borderRadius: 12, padding: 12,
+                          fontWeight: 800, textDecoration: 'none' }}>💬 WhatsApp</a>
+            </div>
+          )}
+        </div>
+      )}
       <div className="tk-hero">
         <div className="tk-hero-ic">{PASOS[paso].ic}</div>
         <h1 className="tk-hero-t">{PASOS[paso].t}</h1>
