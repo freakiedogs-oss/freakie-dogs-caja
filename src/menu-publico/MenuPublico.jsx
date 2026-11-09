@@ -1071,10 +1071,43 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
 
   const faltantes = gruposVisibles.filter(g => cuentaDe(g) < minEfectivo(g))
 
-  const confirmar = () => {
+  // Upsell del agrandado (Cesar, 9-nov-2026): si el combo trae papas con
+  // «Agrandar papa y bebida» y ninguna está agrandada, al tocar «Añadir» se
+  // pregunta UNA vez «¿Agrandamos tu combo?». «Sí» agranda todos y lleva a
+  // escoger la bebida premium; «No, gracias» agrega normal y no vuelve a preguntar.
+  const [upsell, setUpsell] = useState(null)        // null | 'abierto' | 'visto'
+  const agrandables = gruposVisibles
+    .filter(g => !esGrupoBebida(g) && !esGrupoAgrandado(g) && !esGrupoCambio(g))
+    .map(g => ({ g, op: opcionesVisibles(g).find(esOpcionAgrandado) }))
+    .filter(x => x.op)
+  const sinAgrandar = agrandables.filter(({ g, op }) => !(sel[g.id] || []).some(o => o.id === op.id))
+  const precioAgrandado = agrandables[0] ? Number(agrandables[0].op.precio_extra) || 0 : 0
+
+  const aceptarUpsell = () => {
+    setUpsell('visto')
+    const comps = new Set(sinAgrandar.map(({ g }) =>
+      armado.pareja[claveComp(g)] != null ? String(armado.pareja[claveComp(g)]) : null).filter(Boolean))
+    setSel(prev => {
+      const next = { ...prev }
+      sinAgrandar.forEach(({ g, op }) => { next[g.id] = [...(prev[g.id] || []), op] })
+      grupos.forEach(x => {
+        if (comps.has(claveComp(x)) && (esGrupoBebida(x) || esGrupoCambio(x) || esGrupoAgrandado(x))) next[x.id] = []
+      })
+      return next
+    })
+    const primera = grupos.find(x => esGrupoAgrandado(x) && comps.has(claveComp(x)))
+    setIntento(false)
+    if (primera) setTimeout(() => setGrupoAbierto(primera.id), 120)
+  }
+
+  const confirmar = (saltarUpsell = false) => {
     if (faltantes.length > 0) {
       setIntento(true)
       setGrupoAbierto(padreDe(faltantes[0].id))   // llevarlo a lo que falta, no dejarlo buscando
+      return
+    }
+    if (!saltarUpsell && upsell == null && sinAgrandar.length > 0 && sinAgrandar.length === agrandables.length) {
+      setUpsell('abierto')
       return
     }
     // Se separan: las opciones del ítem van en `mods`; las de cada unidad del combo viajan
@@ -1229,17 +1262,21 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
               </div>
               {opAgrandado && (
                 <button type="button" onClick={() => alternarAgrandado(g, opAgrandado, agrandadoOn)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
-                                 margin: '4px 0 10px', padding: '11px 12px', borderRadius: 12, cursor: 'pointer',
+                        style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                                 margin: '14px 0 10px', padding: '13px 12px 11px', borderRadius: 12, cursor: 'pointer',
                                  fontFamily: 'inherit', background: '#FAEEDA', color: '#633806',
-                                 border: agrandadoOn ? '2px solid #BA7517' : '1px solid #EF9F27' }}>
+                                 border: agrandadoOn ? '2px solid #BA7517' : '1.5px solid #EF9F27' }}>
+                  <span style={{ position: 'absolute', top: -10, right: 10, background: '#BA7517', color: '#fff',
+                                 fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8 }}>
+                    {agrandadoOn ? '✓ Agrandado' : '⭐ Recomendado'}
+                  </span>
                   <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 5, flex: 'none',
                                                     border: agrandadoOn ? '6px solid #BA7517' : '1.5px solid #BA7517', background: '#fff' }} />
                   <span style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>Agrandar papa y bebida</span>
-                    <span style={{ display: 'block', fontSize: 12 }}>Papa grande + bebida premium (Coca lata, Coca Zero, Té Lipton o Kinley)</span>
+                    <span style={{ display: 'block', fontWeight: 800, fontSize: 15 }}>Agrandá tu combo</span>
+                    <span style={{ display: 'block', fontSize: 12 }}>Papa grande + Coca lata, Coca Zero, Té Lipton o Kinley</span>
                   </span>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>+{fmt(opAgrandado.precio_extra)}</span>
+                  <span style={{ fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap' }}>solo +{fmt(opAgrandado.precio_extra)}</span>
                 </button>
               )}
               </Fragment>
@@ -1268,12 +1305,37 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
             </div>
             <button
               className="mp-btn-agregar"
-              onClick={confirmar}
+              onClick={() => confirmar()}
             >
               {`Añadir · ${fmt(precioTotal)}`}
             </button>
           </div>
         </div>
+        {upsell === 'abierto' && (
+          <div onClick={() => { setUpsell('visto'); confirmar(true) }}
+               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 5000,
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div onClick={e => e.stopPropagation()}
+                 style={{ background: '#fff', width: 'min(520px, 100%)', borderRadius: '18px 18px 0 0',
+                          padding: '18px 16px 22px', boxSizing: 'border-box' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#1f1a16' }}>¿Agrandamos tu combo?</div>
+              <div style={{ fontSize: 14, color: '#6b5a48', margin: '4px 0 14px', lineHeight: 1.4 }}>
+                Papa grande + bebida premium (Coca lata, Coca Zero, Té Lipton o Kinley) por solo {fmt(precioAgrandado)} más
+                {sinAgrandar.length > 1 ? ' cada uno' : ''}.
+              </div>
+              <button type="button" onClick={aceptarUpsell}
+                      style={{ width: '100%', padding: 14, border: 'none', borderRadius: 14, background: '#E24B4A',
+                               color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Sí, agrandar · +{fmt(precioAgrandado * sinAgrandar.length * qty)}
+              </button>
+              <button type="button" onClick={() => { setUpsell('visto'); confirmar(true) }}
+                      style={{ width: '100%', padding: 10, marginTop: 6, border: 'none', background: 'none',
+                               color: '#6b5a48', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                No, gracias
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

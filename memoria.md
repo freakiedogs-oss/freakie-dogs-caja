@@ -1,5 +1,9 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Menú web: upsell del agrandado
+- Por qué: el agrandado es el mejor upsell (Cesar). Datos 30 días, 22,979 combos: agrandado 819 = extra de papas más pedido (aros 480, queso frito 329, trufa 242, chili 232, fancy 214), pero tocino 1,619 lo supera en total → la cinta dice «⭐ Recomendado», NO «el más pedido». Sin precio tachado (no hay precio real que lo respalde).
+- `MenuPublico.jsx`: botón «Agrandá tu combo · solo +$1.25» con cinta. Al tocar «Añadir» sin ningún combo agrandado sale UNA vez «¿Agrandamos tu combo?» (`upsell`, `aceptarUpsell`): «Sí» agranda todos y abre la bebida premium; «No, gracias» agrega normal. No se pregunta si ya agrandó alguno. Nada viene marcado de entrada.
+
 ## 9-Nov-2026 — Menú web: combos producto → papas → bebida + agrandado con bebida premium
 - Por qué: la gente escogía bebida antes de ver el agrandado ($1.25, escondido entre las salsas) y podía quedar cambio $0.50 + agrandado. Cesar pidió que al agrandar la bebida pase a la lista premium sin costo extra.
 - `MenuPublico.jsx`: `armado` empareja en orden cada producto con bebida con unas papas que tengan «Agrandado» (`pareja` papas→producto) y las dibuja entre el producto y su bebida. `compsAgrandados` usa `pareja` (el agrandado de las papas 2 agranda la bebida 2). El agrandado sale como botón ámbar propio (`alternarAgrandado`): abre «Bebida premium · incluida en el agrandado»; al quitarlo borra la premium.
