@@ -1412,6 +1412,14 @@ function PedidoEnviado({ datos, onClose }) {
   )
 }
 
+// Botones de la hoja «¿Este es tu número?»
+const HT = {
+  si: { display: 'block', width: '100%', marginTop: 16, background: '#E63946', color: '#fff', border: 0, borderRadius: 14,
+        padding: 15, fontSize: 16, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
+  no: { display: 'block', width: '100%', marginTop: 8, background: 'none', color: '#555', border: '1.5px solid #ddd',
+        borderRadius: 14, padding: 12, fontSize: 14.5, cursor: 'pointer', fontFamily: 'inherit' },
+}
+
 function Checkout({ items, total, onClose, onEnviado,
                    lineasConProblema = [], dondeAgotado,
                    onCambiar = () => {}, onQuitarLinea = () => {},
@@ -1540,6 +1548,29 @@ function Checkout({ items, total, onClose, onEnviado,
     return () => { vivo = false }
   }, [telefono])
 
+  // ── Confirmación del número (9-nov-2026) ──
+  // Un dígito equivocado deja al motorista esperando sin forma de llamar. A los
+  // números que nunca recibieron un pedido se les muestra en grande antes de
+  // enviar; los que ya recibieron uno pasan directo (telefono_verificado).
+  const [telVerif, setTelVerif] = useState(null)      // null = no sé todavía
+  const [telOk, setTelOk] = useState('')              // número que el cliente confirmó
+  const [hojaTel, setHojaTel] = useState(null)        // null | 'ver' | 'corregir'
+  const [telNuevo, setTelNuevo] = useState('')
+  const [seguirEnvio, setSeguirEnvio] = useState(false)
+  const [notaTel, setNotaTel] = useState('')
+  useEffect(() => {
+    const tel = telefono.trim()
+    setTelVerif(null)
+    if (!TEL_VALIDO.test(tel)) return
+    let vivo = true
+    db.rpc('telefono_verificado', { p_telefono: tel })
+      .then(({ data, error: e }) => { if (vivo) setTelVerif(e ? null : data === true) })
+    return () => { vivo = false }
+  }, [telefono])
+  const faltaConfirmarTel = () => telVerif === false && telOk !== telefono.trim()
+  const abrirHojaTel = (continuar) => { setNotaTel(''); setTelNuevo(''); setSeguirEnvio(continuar); setHojaTel('ver') }
+  const telBonito = (t) => String(t || '').replace(/^(\d{4})(\d{4})$/, '$1-$2')
+
   const costoEnvio = tipo === 'delivery' ? Number(envio?.costo ?? 0) : 0
   const totalConEnvio = total + costoEnvio
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
@@ -1646,6 +1677,7 @@ function Checkout({ items, total, onClose, onEnviado,
   // ── Camino EFECTIVO: igual que siempre, el pedido nace visible ──
   const enviar = async () => {
     if (!validar()) return
+    if (faltaConfirmarTel()) { abrirHojaTel(true); return }
     setEnviando(true)
     try {
       const { data, error: rpcErr } = await db.rpc('crear_pedido_delivery', { p: armarPedido() })
@@ -1668,7 +1700,25 @@ function Checkout({ items, total, onClose, onEnviado,
   // Devuelve null si el formulario no está completo; el error ya quedó puesto.
   const construirPedido = () => {
     if (!validar()) return null
+    if (faltaConfirmarTel()) { abrirHojaTel(false); return null }
     return armarPedido()
+  }
+
+  // Después de confirmar o corregir el número, el pedido en efectivo sigue solo
+  useEffect(() => {
+    if (seguirEnvio && !hojaTel && telOk && telOk === telefono.trim()) {
+      setSeguirEnvio(false)
+      enviar()
+    }
+  }, [seguirEnvio, hojaTel, telOk, telefono]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const confirmarTel = (nuevo) => {
+    const n = (nuevo ?? telefono).trim()
+    if (nuevo != null) setTelefono(n)
+    setTelOk(n)
+    setHojaTel(null)
+    // Con tarjeta el cobro lo dispara el botón de pagar: hay que volver a tocarlo
+    if (!seguirEnvio) setNotaTel(`✓ Número confirmado: ${telBonito(n)}. Ahora tocá «Pagar y confirmar».`)
   }
 
   const cobroAprobado = (r) => {
@@ -1735,6 +1785,9 @@ function Checkout({ items, total, onClose, onEnviado,
               }}
               placeholder="7777-7777"
             />
+            {TEL_VALIDO.test(telefono) && (telVerif || telOk === telefono.trim()) && (
+              <div style={{ fontSize: 12, color: '#16a34a', marginTop: 4 }}>✓ Número verificado</div>
+            )}
             {telefono.length > 0 && !TEL_VALIDO.test(telefono) && (
               <div className="mp-tel-aviso">
                 {telefono.length < 8
@@ -1950,6 +2003,10 @@ function Checkout({ items, total, onClose, onEnviado,
                          onQuitar={() => onQuitarLinea(linea.lineaId)} />
           ))}
 
+          {notaTel && !error && (
+            <div style={{ background: '#e9f9ee', border: '1px solid #b7e4c4', color: '#166534', borderRadius: 10,
+                          padding: '9px 11px', fontSize: 13, margin: '8px 0' }}>{notaTel}</div>
+          )}
           {error && <div className="mp-error">{error}</div>}
 
           {/* PAGO CON TARJETA — va en el cuerpo, NO en el pie.
@@ -1969,6 +2026,47 @@ function Checkout({ items, total, onClose, onEnviado,
             </Suspense>
           )}
         </div>
+
+        {hojaTel && (
+          <div onClick={() => setHojaTel(null)}
+               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 2000,
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div onClick={e => e.stopPropagation()}
+                 style={{ width: '100%', maxWidth: 480, background: '#fff', color: '#1a1200', textAlign: 'center',
+                          borderRadius: '20px 20px 0 0', padding: '22px 18px 20px' }}>
+              {hojaTel === 'ver' ? (
+                <>
+                  <div style={{ fontSize: 34 }}>📞</div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>¿Este es tu número?</div>
+                  <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 2, margin: '10px 0 6px' }}>{telBonito(telefono)}</div>
+                  <div style={{ fontSize: 14, color: '#6b5a48', lineHeight: 1.45 }}>
+                    Te vamos a llamar a este número <b>cuando el motorista llegue</b>. Si está mal, no te vamos a poder encontrar.
+                  </div>
+                  <button onClick={() => confirmarTel()} style={HT.si}>Sí, es correcto</button>
+                  <button onClick={() => { setTelNuevo(''); setHojaTel('corregir') }} style={HT.no}>No, corregir</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>Escribí tu número de nuevo</div>
+                  <div style={{ fontSize: 13, color: '#6b5a48', marginTop: 4 }}>El que tenés en WhatsApp, 8 dígitos</div>
+                  <input autoFocus type="tel" inputMode="numeric" value={telNuevo} placeholder="7777-7777"
+                         onChange={e => { let v = e.target.value.replace(/[^\d]/g, ''); if (v.startsWith('503') && v.length >= 4) v = v.slice(3); setTelNuevo(v.slice(0, 8)) }}
+                         style={{ width: '100%', boxSizing: 'border-box', border: '2px solid #E63946', borderRadius: 12, padding: 12,
+                                  fontSize: 26, letterSpacing: 2, textAlign: 'center', marginTop: 12, fontFamily: 'inherit' }} />
+                  {telNuevo.length === 8 && !TEL_VALIDO.test(telNuevo) && (
+                    <div style={{ fontSize: 12.5, color: '#b3202c', marginTop: 6 }}>Los números de El Salvador empiezan con 2, 6 o 7</div>
+                  )}
+                  <div style={{ fontSize: 12, color: '#6b5a48', marginTop: 8 }}>Tu número anterior era {telBonito(telefono)}</div>
+                  <button disabled={!TEL_VALIDO.test(telNuevo)} onClick={() => confirmarTel(telNuevo)}
+                          style={{ ...HT.si, opacity: TEL_VALIDO.test(telNuevo) ? 1 : .45 }}>
+                    {seguirEnvio ? 'Guardar y confirmar pedido' : 'Guardar número'}
+                  </button>
+                  <button onClick={() => setHojaTel('ver')} style={HT.no}>Volver</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* El pie solo existe para el camino de efectivo. Con tarjeta el botón
             va al final del formulario, dentro del cuerpo scrolleable. */}

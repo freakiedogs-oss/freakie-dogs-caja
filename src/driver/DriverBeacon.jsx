@@ -728,6 +728,20 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
     finally { setOcupado(null) }
   }
 
+  // «Llegué» (9-nov-2026): la página de seguimiento del cliente se pone en
+  // amarillo «¡Tu motorista está afuera!». Sirve aunque el teléfono que dejó
+  // el cliente esté mal: el aviso le llega por el link.
+  const llegue = async (p) => {
+    setOcupado('llegue-' + p.id)
+    try {
+      const { error } = await db.rpc('driver_llegue', { p_empleado_id: yo.id, p_delivery_id: p.id })
+      if (error) throw error
+      setMsg(`📍 Le avisamos a ${String(p.cliente_nombre || 'el cliente').split(' ')[0]} que estás afuera.`)
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
+
   const entregar = async (p, metodo) => {
     setOcupado(p.id)
     try {
@@ -1063,6 +1077,16 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                     <div style={{ fontSize: 12.5, color: '#aaa', marginBottom: 8 }}>
                       Cobrar <b style={{ color: '#f0f0f0' }}>{fmt(p.total)}</b> en <b style={{ color: '#f0f0f0' }}>{p.metodo_pago || 'efectivo'}</b>
                     </div>
+                  )}
+                  {p.llego_at ? (
+                    <div style={{ fontSize: 12.5, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
+                      📍 Le avisamos al cliente que llegaste ({new Date(p.llego_at).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit' })})
+                    </div>
+                  ) : (
+                    <button disabled={ocupado === 'llegue-' + p.id} onClick={() => llegue(p)}
+                            style={{ ...S.accion('#b45309'), marginBottom: 8 }}>
+                      {ocupado === 'llegue-' + p.id ? '…' : '📍 Llegué — avisar al cliente'}
+                    </button>
                   )}
                   <button disabled={ocupado === p.id} onClick={() => setConfirmando(p.id)}
                           style={S.accion('#16a34a')}>

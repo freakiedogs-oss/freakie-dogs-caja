@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Números equivocados: confirmación en el menú + botón «Llegué»
+
+- **Problema (Cesar):** clientes ponen un número mal, no se les puede contactar y el motorista espera. En 30 días: 0 números con formato inválido (el menú ya valida 8 dígitos 2/6/7) → el error es un dígito equivocado; ~50% de los pedidos son de números nuevos.
+- **Menú web (`MenuPublico.jsx` Checkout):** si `telefono_verificado(tel)` = false (nunca recibió un pedido), antes de enviar sale la hoja «¿Este es tu número?» en grande con «Sí» / «Corregir». Efectivo: al confirmar sigue solo. Tarjeta: `construirPedido` devuelve null, abre la hoja y luego pide tocar «Pagar» otra vez. Números conocidos pasan directo (check verde «Número verificado»).
+- **«Llegué»:** `driver_llegue()` marca `delivery_clientes.llego_at`; `DriverBeacon.jsx` botón «📍 Llegué — avisar al cliente» antes de «Entregado»; `TrackingPedido.jsx` `AvisoLlego`: banner amarillo «¡Tu motorista está afuera!», campana cada 20 s, vibración y título de pestaña parpadeando.
+- **También (8-nov):** `aviso_cliente`/`aviso_tel` en `delivery_clientes` → banner con Llamar/WhatsApp en el tracking (PR #459). Hoy se pone a mano desde aquí; falta botón en la torre y cargar teléfonos de motoristas (`empleados.telefono` casi siempre vacío).
+- Migración: `20261109_confirmar_numero_y_llegue.sql`.
+
 ## 7-Nov-2026 — Encuesta de 1 toque + «Resultados delivery» para encargados
 
 - **Qué pidió Cesar:** que el cliente califique la entrega y que cada encargado vea día por día la nota, el pedido, por qué, quién lo llevó y cuánto se tardó en cocina, en asignarse y en ruta.
