@@ -825,22 +825,42 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   //    2 papas, 2 bebidas), cada una personalizable por separado.
   // Se aplanan a una sola lista con id compuesto "idx:grupoId" para que el resto de la lógica
   // (selección, mínimos, faltantes, precio) siga funcionando igual.
-  const grupos = useMemo(() => {
+  // Orden por combo (Cesar, 9-nov-2026): producto → papas → bebida. La bebida
+  // viene colgada del hot dog / hamburguesa y las papas son otro componente;
+  // se emparejan en orden (1.er producto con bebida ↔ 1.as papas con
+  // «Agrandado»), y las papas se muestran entre el producto y su bebida. Así
+  // la persona ve el agrandado ANTES de escoger bebida. `pareja` dice a qué
+  // bebida le toca el agrandado marcado en cada papas.
+  const armado = useMemo(() => {
     const base = (producto.grupos || []).map(g => ({ ...g, _seccion: null }))
     const comps = producto.componentes || []
     const repes = {}
     comps.forEach(c => { repes[c.nombre] = (repes[c.nombre] || 0) + 1 })
     const vistos = {}
+    const titulos = comps.map(c => {
+      vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
+      return repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre
+    })
+    const esDeBebida = (g) => /bebida/i.test(g?.nombre || '')
+    const conBebida = comps.map((c, i) => (c.grupos || []).some(g => esDeBebida(g) && !/agrandado|cambio/i.test(g.nombre)) ? i : -1).filter(i => i >= 0)
+    const conAgrandado = comps.map((c, i) => (c.grupos || []).some(g => !esDeBebida(g) &&
+      (g.opciones || []).some(o => /agrandado/i.test(o?.nombre || ''))) ? i : -1).filter(i => i >= 0 && !conBebida.includes(i))
+    const pareja = {}       // papasIdx -> productoIdx
+    const papasDe = {}      // productoIdx -> papasIdx
+    conBebida.forEach((pi, k) => { if (conAgrandado[k] != null) { pareja[conAgrandado[k]] = pi; papasDe[pi] = conAgrandado[k] } })
+    const mapear = (i, seccion) => (comps[i].grupos || []).map(g => ({ ...g, id: `${i}:${g.id}`, _seccion: seccion }))
     const deComponentes = []
     comps.forEach((c, i) => {
-      vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
-      const titulo = repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre
-      ;(c.grupos || []).forEach(g => {
-        deComponentes.push({ ...g, id: `${i}:${g.id}`, _seccion: titulo })
-      })
+      if (pareja[i] != null) return   // ya salió junto a su producto
+      if (papasDe[i] == null) { deComponentes.push(...mapear(i, titulos[i])); return }
+      const propios = mapear(i, titulos[i])
+      deComponentes.push(...propios.filter(g => !esDeBebida(g)))
+      deComponentes.push(...mapear(papasDe[i], titulos[i]))
+      deComponentes.push(...propios.filter(g => esDeBebida(g)))
     })
-    return [...base, ...deComponentes]
+    return { lista: [...base, ...deComponentes], pareja }
   }, [producto])
+  const grupos = armado.lista
 
   const esUnico = (g) => (g.max === 1) || g.tipo === 'unico' || g.tipo === 'single'
   const minDe = (g) => g.obligatorio ? Math.max(1, Number(g.min) || 0) : (Number(g.min) || 0)
@@ -884,6 +904,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
       const marcados = (sel[g.id] || []).filter(esOpcionAgrandado).length
       if (!marcados) return
       if (esGrupoBebida(g)) propios.add(claveComp(g))
+      else if (armado.pareja[claveComp(g)] != null) propios.add(String(armado.pareja[claveComp(g)]))
       else externos += marcados
     })
     const restantes = bebidas.filter(c => !propios.has(c)).slice(0, externos)
@@ -1009,6 +1030,25 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
     }
   }
 
+  // Botón «Agrandar papa y bebida». Al prenderlo se abre la «Bebida premium»
+  // de su combo; al apagarlo se borra la premium elegida, para que no quede
+  // nada a medias (vuelve a pedir la bebida normal).
+  const alternarAgrandado = (g, op, on) => {
+    const comp = armado.pareja[claveComp(g)] != null ? String(armado.pareja[claveComp(g)]) : null
+    const premium = comp != null ? grupos.find(x => esGrupoAgrandado(x) && claveComp(x) === comp) : null
+    // Bebida normal, cambio y premium de ese combo arrancan de cero en cada
+    // cambio: nada elegido antes reaparece solo (ni se cobra) al quitar el agrandado.
+    const deBebida = comp != null ? grupos.filter(x => claveComp(x) === comp &&
+      (esGrupoBebida(x) || esGrupoCambio(x) || esGrupoAgrandado(x))) : []
+    setSel(prev => {
+      const actual = prev[g.id] || []
+      const next = { ...prev, [g.id]: on ? actual.filter(x => x.id !== op.id) : [...actual, op] }
+      deBebida.forEach(x => { next[x.id] = [] })
+      return next
+    })
+    if (!on && premium) setTimeout(() => setGrupoAbierto(premium.id), 120)
+  }
+
   // Los grupos que vienen de un componente tienen id "indice:grupoId"; se recupera el índice
   // para saber a qué unidad del combo pertenece cada opción elegida.
   const modsPlanos = useMemo(
@@ -1085,6 +1125,12 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
             // Encabezado al empezar cada parte del combo ("Hamburguesa 1", "Bebida 2"), para
             // que se entienda a cuál de las unidades pertenecen las opciones de abajo.
             const abreSeccion = g._seccion && (gi === 0 || gruposVisibles[gi - 1]._seccion !== g._seccion)
+            // El agrandado ($1.25) sale como botón propio debajo de las salsas,
+            // no escondido entre ketchup y mayonesa.
+            const opAgrandado = !esGrupoBebida(g) && !esGrupoAgrandado(g)
+              ? opcionesVisibles(g).find(esOpcionAgrandado) : null
+            const agrandadoOn = opAgrandado && (sel[g.id] || []).some(x => x.id === opAgrandado.id)
+            const esPremium = esGrupoAgrandado(g)
             return (
               <Fragment key={g.id}>
               {abreSeccion && <div className="mp-comp-seccion">{g._seccion}</div>}
@@ -1096,7 +1142,15 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                     {listo ? '✓' : minEfectivo(g) > 0 ? '' : '+'}
                   </span>
                   <span className="mp-grupo-textos">
-                    <span className="mp-grupo-nombre">{g.nombre}</span>
+                    <span className="mp-grupo-nombre">
+                      {esPremium ? 'Bebida premium' : g.nombre}
+                      {esPremium && (
+                        <span style={{ fontSize: 11, fontWeight: 600, background: '#EAF3DE', color: '#27500A',
+                                       padding: '2px 7px', borderRadius: 8, marginLeft: 6, whiteSpace: 'nowrap' }}>
+                          incluida en el agrandado
+                        </span>
+                      )}
+                    </span>
                     {/* Cerrado, el resumen dice qué se eligió o qué falta: así no
                         hay que abrir cada grupo para revisar el pedido. */}
                     <span className="mp-grupo-resumen">
@@ -1110,7 +1164,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                   <span className="mp-grupo-flecha" aria-hidden="true">{estaAbierto ? '▲' : '▼'}</span>
                 </button>
                 <div className="mp-opciones" hidden={!estaAbierto}>
-                  {opcionesVisibles(g).map(op => {
+                  {opcionesVisibles(g).filter(op => op !== opAgrandado).map(op => {
                     const activa = (sel[g.id] || []).some(x => x.id === op.id)
                     const tn = !esUnico(g) && todoNadaDe(g)
                     const bloqueada = !activa && tn && esBaseGratis(op)
@@ -1173,6 +1227,21 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                   </div>
                 )}
               </div>
+              {opAgrandado && (
+                <button type="button" onClick={() => alternarAgrandado(g, opAgrandado, agrandadoOn)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                                 margin: '4px 0 10px', padding: '11px 12px', borderRadius: 12, cursor: 'pointer',
+                                 fontFamily: 'inherit', background: '#FAEEDA', color: '#633806',
+                                 border: agrandadoOn ? '2px solid #BA7517' : '1px solid #EF9F27' }}>
+                  <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 5, flex: 'none',
+                                                    border: agrandadoOn ? '6px solid #BA7517' : '1.5px solid #BA7517', background: '#fff' }} />
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>Agrandar papa y bebida</span>
+                    <span style={{ display: 'block', fontSize: 12 }}>Papa grande + bebida premium (Coca lata, Coca Zero, Té Lipton o Kinley)</span>
+                  </span>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>+{fmt(opAgrandado.precio_extra)}</span>
+                </button>
+              )}
               </Fragment>
             )
           })}
