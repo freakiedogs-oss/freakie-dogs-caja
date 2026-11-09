@@ -126,6 +126,13 @@ export default function MenuPublico() {
   const [misPedidos, setMisPedidos] = useState(null) // {activos, pasados} del teléfono guardado
   const [misPedidosOpen, setMisPedidosOpen] = useState(false)
   const [sugerenciaOculta, setSugerenciaOculta] = useState(false)
+  // Ticket promedio (9-nov-2026, Cesar): «Los más pedidos» viene del servidor
+  // (unidades vendidas por la app, 30 días). `reemplazo` = la línea que se
+  // reemplaza al aceptar «¿Son dos? Pasate al Burger Duo»; `volverAlCarrito`
+  // reabre el carrito después de armar una sugerencia que tiene opciones.
+  const [masPedidos, setMasPedidos] = useState([])
+  const [reemplazo, setReemplazo] = useState(null)       // {lineaId, quitar}
+  const [volverAlCarrito, setVolverAlCarrito] = useState(false)
   // ── Productos apagados por sucursal (el "86" del día) ──
   // El menú es uno solo para las seis tiendas, pero cada tienda puede
   // quedarse sin algo. `bloqueos` es {sucursal_id: [menu_item_id,...]}.
@@ -167,6 +174,12 @@ export default function MenuPublico() {
       .catch(() => vivo && setErrorCarga(true))
       .finally(() => vivo && setCargando(false))
     return () => { vivo = false }
+  }, [])
+
+  useEffect(() => {
+    db.rpc('menu_mas_pedidos', { p_dias: 30, p_limite: 8 })
+      .then(({ data }) => Array.isArray(data) && setMasPedidos(data))
+      .catch(() => {})
   }, [])
 
   // Choques declarados desde el ERP (pestaña «Delivery» de Admin Menú). Son
@@ -331,6 +344,66 @@ export default function MenuPublico() {
     setToast('Producto añadido')
   }
 
+  // ── Ticket promedio (9-nov-2026, Cesar) ──────────────────────────────
+  // Datos de 30 días: 66% de los pedidos web llevan UN producto y el ticket
+  // mediano es $14.99. Por eso: «Los más pedidos» y «Para compartir» arriba,
+  // sugerencias de un toque en el carrito y «¿Son dos? Pasate al Burger Duo».
+  // Los nombres de abajo son de productos del Menú Delivery; si uno no está
+  // visible o está agotado, simplemente no se muestra.
+  const PARA_COMPARTIR = ['Burger Box', 'Combpleto', 'Freakie Family']
+  const SUGERIDOS_CARRITO = ['Queso Frito', 'Mini Fancys', 'Freakie Dog']   // el postre se suma acá cuando tenga foto
+  const porNombre = useMemo(() => {
+    const m = {}
+    for (const c of menu) for (const it of (c.items || [])) if (!m[it.nombre]) m[it.nombre] = it
+    return m
+  }, [menu])
+  const conOpciones = (p) => (p.grupos || []).length > 0
+    || (p.componentes || []).some(c => (c.grupos || []).length > 0)
+  const abrirProducto = (prod) => {
+    const ops = bloq.items[prod.id]
+    if (ops) {
+      setToast(ops.length
+        ? `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} — probá ${ops.map(o => o.nombre).join(' o ')}`
+        : `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
+      return false
+    }
+    setProductoModal(prod)
+    return true
+  }
+  const filaMasPedidos = masPedidos.map(n => porNombre[n]).filter(p => p && !bloq.items[p.id]).slice(0, 4)
+  const filaCompartir = PARA_COMPARTIR.map(n => porNombre[n]).filter(Boolean)
+  const tieneFancy = carrito.some(l => /fanc/i.test(l.nombre))
+  const sugerencias = SUGERIDOS_CARRITO.map(n => porNombre[n])
+    .filter(p => p && !bloq.items[p.id] && !carrito.some(l => l.id === p.id)
+      && !(tieneFancy && /fanc/i.test(p.nombre)))
+  const agregarSugerencia = (prod) => {
+    if (!conOpciones(prod)) { agregarAlCarrito(prod); return }
+    setCarritoAbierto(false)
+    if (abrirProducto(prod)) setVolverAlCarrito(true)
+    else setCarritoAbierto(true)
+  }
+  // «¿Son dos?»: Freakie Burger → Burger Duo (2 hamburguesas + 2 papas + 2 bebidas).
+  const duo = porNombre['Burger Duo']
+  const fbUnidades = carrito.filter(l => l.nombre === 'Freakie Burger').reduce((s, l) => s + l.qty, 0)
+  const fbPrecio = Number(porNombre['Freakie Burger']?.precio) || 0
+  const ofertaDuo = duo && !bloq.items[duo.id] && fbUnidades >= 1 && fbPrecio > 0
+    && !carrito.some(l => l.nombre === 'Burger Duo')
+    ? { quitar: Math.min(2, fbUnidades), duoPrecio: Number(duo.precio), fbPrecio } : null
+  const aceptarDuo = () => {
+    if (!ofertaDuo) return
+    setCarritoAbierto(false)
+    if (abrirProducto(duo)) setReemplazo({ nombre: 'Freakie Burger', quitar: ofertaDuo.quitar })
+    else setCarritoAbierto(true)
+  }
+  const quitarUnidades = (nombre, n) => setCarrito(prev => {
+    let falta = n
+    return prev.map(l => {
+      if (falta <= 0 || l.nombre !== nombre) return l
+      const q = Math.min(falta, l.qty); falta -= q
+      return l.qty - q > 0 ? { ...l, qty: l.qty - q } : null
+    }).filter(Boolean)
+  })
+
   const scrollACategoria = (catId) => {
     const el = seccionesRef.current[catId]
     if (el) window.scrollTo({ top: el.offsetTop - 60, behavior: 'smooth' })
@@ -465,6 +538,16 @@ export default function MenuPublico() {
           <div className="mp-cargando">😕 No pudimos cargar el menú. Recargá la página o intentá en un momento.</div>
         )}
 
+        {/* TICKET PROMEDIO: lo más pedido y lo de compartir, arriba de todo */}
+        {filaMasPedidos.length >= 3 && (
+          <FilaDestacada titulo="Los más pedidos en delivery 🔥" sub="Lo que más piden nuestros clientes"
+                         items={filaMasPedidos} ranking onPick={abrirProducto} />
+        )}
+        {filaCompartir.length >= 2 && (
+          <FilaDestacada titulo="Para compartir 🍔🌭" sub="Para la familia o los cuates"
+                         items={filaCompartir} onPick={abrirProducto} />
+        )}
+
         {/* SECCIONES POR CATEGORIA */}
         {menu.map(cat => (
           <section
@@ -480,16 +563,7 @@ export default function MenuPublico() {
                   producto={prod}
                   agotado={!!bloq.items[prod.id]}
                   dondeAgotado={sucRuteada?.nombre}
-                  onClick={() => {
-                    const ops = bloq.items[prod.id]
-                    if (ops) {
-                      setToast(ops.length
-                        ? `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} — probá ${ops.map(o => o.nombre).join(' o ')}`
-                        : `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
-                      return
-                    }
-                    setProductoModal(prod)
-                  }}
+                  onClick={() => abrirProducto(prod)}
                 />
               ))}
             </div>
@@ -523,10 +597,15 @@ export default function MenuPublico() {
       {productoModal && (
         <ProductoModal
           producto={productoModal}
-          onClose={() => setProductoModal(null)}
+          onClose={() => {
+            setProductoModal(null)
+            if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
+          }}
           onAgregar={(qty, nota, mods, comps) => {
             agregarAlCarrito(productoModal, qty, nota, mods, comps)
             setProductoModal(null)
+            if (reemplazo) quitarUnidades(reemplazo.nombre, reemplazo.quitar)
+            if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
           }}
           abierto={abierto}
           reglasChoque={reglasChoque}
@@ -543,6 +622,10 @@ export default function MenuPublico() {
           dondeAgotado={sucRuteada?.nombre}
           onCambiar={aplicarCambio}
           onQuitarLinea={quitarLinea}
+          sugerencias={sugerencias}
+          onSugerencia={agregarSugerencia}
+          ofertaDuo={ofertaDuo}
+          onAceptarDuo={aceptarDuo}
           onClose={() => setCarritoAbierto(false)}
           onUpdate={setCarrito}
           onCheckout={() => { setCarritoAbierto(false); setCheckoutOpen(true) }}
@@ -774,6 +857,38 @@ function AvisoCambio({ problemas, dondeAgotado, onCambiar, onQuitar }) {
         Mejor quitalo de mi pedido
       </button>
     </div>
+  )
+}
+
+// Fila horizontal de productos destacados («Los más pedidos», «Para compartir»).
+// `ranking` numera #1, #2… porque el orden viene de las ventas reales.
+function FilaDestacada({ titulo, sub, items, ranking = false, onPick }) {
+  return (
+    <section className="mp-seccion" style={{ paddingBottom: 4 }}>
+      <h2 className="mp-seccion-titulo" style={{ marginBottom: 2 }}>{titulo}</h2>
+      {sub && <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>{sub}</div>}
+      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, scrollSnapType: 'x mandatory' }}>
+        {items.map((p, i) => (
+          <button key={p.id} type="button" onClick={() => onPick(p)}
+                  style={{ flex: '0 0 138px', scrollSnapAlign: 'start', textAlign: 'left', background: '#fff',
+                           border: '1px solid #eee', borderRadius: 12, padding: 8, cursor: 'pointer', fontFamily: 'inherit',
+                           position: 'relative' }}>
+            {ranking && (
+              <span style={{ position: 'absolute', top: 6, left: 6, zIndex: 1, background: '#E63946', color: '#fff',
+                             fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 8 }}>#{i + 1}</span>
+            )}
+            <div style={{ height: 92, borderRadius: 9, background: '#f5f5f5', overflow: 'hidden',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {p.imagen_url
+                ? <img src={p.imagen_url} alt={p.nombre} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 30, opacity: .35 }}>🍔</span>}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: '#1a1a1a', marginTop: 7, lineHeight: 1.25 }}>{p.nombre}</div>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: '#E63946', marginTop: 2 }}>{fmt(p.precio)}</div>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1389,7 +1504,9 @@ function lineaPedidoTexto(it) {
 
 function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                         problemasDe = () => [], dondeAgotado,
-                        onCambiar = () => {}, onQuitarLinea = () => {} }) {
+                        onCambiar = () => {}, onQuitarLinea = () => {},
+                        sugerencias = [], onSugerencia = () => {},
+                        ofertaDuo = null, onAceptarDuo = () => {} }) {
   const problemas = items.map(i => ({ linea: i, p: problemasDe(i) })).filter(x => x.p.length)
   const hayAgotados = problemas.length > 0
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
@@ -1456,6 +1573,54 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                 </div>
               </div>
             ))
+          )}
+
+          {/* «¿Son dos?» → Burger Duo */}
+          {items.length > 0 && ofertaDuo && (
+            <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: 12, margin: '14px 0 4px', color: '#633806' }}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>
+                {ofertaDuo.quitar >= 2 ? 'Llevás 2 Freakie Burger: mejor el Burger Duo' : '¿Son dos? Pasate al Burger Duo'}
+              </div>
+              <div style={{ fontSize: 12.5, margin: '3px 0 9px', lineHeight: 1.4 }}>
+                2 hamburguesas + 2 papas + 2 bebidas por {fmt(ofertaDuo.duoPrecio)}
+                {ofertaDuo.quitar >= 2 && 2 * ofertaDuo.fbPrecio > ofertaDuo.duoPrecio
+                  ? ` (2 Freakie Burger cuestan ${fmt(2 * ofertaDuo.fbPrecio)})` : ''}.
+              </div>
+              <button type="button" onClick={onAceptarDuo}
+                      style={{ border: '1.5px solid #BA7517', background: '#fff', color: '#633806', borderRadius: 9,
+                               padding: '7px 12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {(() => {
+                  const dif = ofertaDuo.duoPrecio - ofertaDuo.quitar * ofertaDuo.fbPrecio
+                  return dif > 0 ? `Cambiar al Burger Duo · +${fmt(dif)}`
+                    : dif < 0 ? `Cambiar al Burger Duo · ahorrás ${fmt(-dif)}` : 'Cambiar al Burger Duo'
+                })()}
+              </button>
+            </div>
+          )}
+
+          {/* «¿Le sumás algo?»: sugerencias de un toque */}
+          {items.length > 0 && sugerencias.length > 0 && (
+            <div style={{ margin: '16px 0 4px' }}>
+              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>¿Le sumás algo?</div>
+              {sugerencias.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #eee',
+                                         borderRadius: 12, padding: 8, marginTop: 6 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 8, background: '#f5f5f5', overflow: 'hidden', flex: 'none',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {p.imagen_url ? <img src={p.imagen_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🍟'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{p.nombre}</div>
+                    <div style={{ fontSize: 13, color: '#E63946', fontWeight: 700 }}>{fmt(p.precio)}</div>
+                  </div>
+                  <button type="button" onClick={() => onSugerencia(p)} aria-label={`Agregar ${p.nombre}`}
+                          style={{ border: '1.5px solid #E63946', color: '#E63946', background: '#fff', borderRadius: 9,
+                                   padding: '6px 12px', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    + Agregar
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
