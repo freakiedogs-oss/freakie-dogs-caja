@@ -8,6 +8,15 @@
 - **También (8-nov):** `aviso_cliente`/`aviso_tel` en `delivery_clientes` → banner con Llamar/WhatsApp en el tracking (PR #459). Hoy se pone a mano desde aquí; falta botón en la torre y cargar teléfonos de motoristas (`empleados.telefono` casi siempre vacío).
 - Migración: `20261109_confirmar_numero_y_llegue.sql`.
 
+## 9-Nov-2026 — KPIs de Venta: rango de fechas, gráfico «¿llegamos a la meta?» y comparación justa contra el mes anterior
+
+Archivo: `KpisVentaDashboard.jsx` (sin cambios en la base).
+
+- **Rango de fechas:** el selector de mes ahora también ofrece Hoy, Ayer, Últimos 7 días, Últimos 30 días y «Elegir fechas…» (desde / hasta). El rango aplica a Resumen, Top Items y Por Empleado. Metas sigue siendo mensual y usa el mes de la fecha final, con un aviso en pantalla. Tendencia no cambia.
+- **Gráfico de últimos días (pestaña Metas):** muestra los 3 días cerrados y hoy. La barra es la venta sin eventos y la raya blanca es la meta de ese día; para hoy, una raya punteada marca lo que normalmente ya se vendió a esta hora. Abajo, ✅/❌ y % de la meta por canal. Si alguno de esos días cae en el mes anterior (días 1–3), se usa la meta de ese mes, que se carga solo en esos casos.
+- **Comparación contra el mes anterior:** antes se comparaba 1–N de este mes contra 1–N del anterior, sin importar que un mes arrancara en fin de semana o en quincena. Ahora el número principal es lo que se habría vendido esos mismos días al ritmo del mes anterior: venta del mes anterior ÷ Σ factores de sus días × Σ factores de los días cerrados de este mes. Los factores son los mismos de la meta diaria (día de la semana real, días de pago, asuetos). La cifra por calendario queda como dato secundario. Ejemplo 1–8 nov: por calendario +3.6%; ajustado +1.7%.
+- **Ojo:** en la cadena, los 3 días del 6 al 8 de noviembre quedaron entre 93% y 94% de la meta diaria. O la meta de noviembre está alta (65% octubre + 35% ago–oct), o el mes viene flojo.
+
 ## 7-Nov-2026 — Encuesta de 1 toque + «Resultados delivery» para encargados
 
 - **Qué pidió Cesar:** que el cliente califique la entrega y que cada encargado vea día por día la nota, el pedido, por qué, quién lo llevó y cuánto se tardó en cocina, en asignarse y en ruta.
