@@ -13,6 +13,7 @@ import { URL_DELIVERY } from '../../config';
 // Leaflet pesa ~150 KB: se descarga solo si Karina abre el mapa de asignación.
 const MapaAsignacion = lazy(() => import('./MapaAsignacion'));
 import RutasEnCurso from './RutasEnCurso';
+import AvisoClienteBoton from './AvisoClienteBoton';
 
 const TOKEN_KEY = 'freakie_torre_token';
 const c = {
@@ -1339,10 +1340,13 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
               🧾 Se cierra al cobrarse en caja
             </div>
           ) : (
-            <button disabled={ocupado === p.id} onClick={() => marcarEntregado(p)}
-                    style={{ ...btn(c.green, '#04210f'), width: '100%', fontSize: 12 }}>
-              {ocupado === p.id ? '…' : '✅ Entregado'}
-            </button>
+            <>
+              <AvisoClienteBoton p={p} show={show} />
+              <button disabled={ocupado === p.id} onClick={() => marcarEntregado(p)}
+                      style={{ ...btn(c.green, '#04210f'), width: '100%', fontSize: 12 }}>
+                {ocupado === p.id ? '…' : '✅ Entregado'}
+              </button>
+            </>
           )}
         </div>
       )}

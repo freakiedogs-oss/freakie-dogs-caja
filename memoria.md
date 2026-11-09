@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Confirmar «Entregado» con GPS + «Avisar al cliente» en la torre
+
+- **GPS (`DriverBeacon.jsx`):** al tocar «Entregado» se mide la distancia a `cliente_lat/lng` (beacon.ultima si tiene < 60 s, si no geolocation). > 300 m → recuadro rojo «⚠️ Estás a X de la dirección del cliente», botones «Sí, ya se lo entregué» / «No, todavía no». Motivo: el 8-nov Rosalía y Amilcar marcaron entregados por error. Solo en la app (no bloquea en el servidor).
+- **Torre (`AvisoClienteBoton.jsx` en `TabPedidos.jsx`, pedidos en camino):** «📣 Avisar al cliente» → plantillas (ya está afuera / va tarde / no encontramos la dirección / otro), teléfono del motorista prellenado; si no está, Karina lo escribe y puede guardarlo en `empleados.telefono`. RPCs `torre_aviso_cliente_datos`, `torre_aviso_cliente` (`20261109d_torre_aviso_cliente.sql`).
+
 ## 9-Nov-2026 — Viaje actual vs. próximo viaje
 
 - **Caso (Cesar):** Gustavo iba a San Martín y le asignaron Sierra Morena para cuando regresara. Como no había entregado nada, `fn_ruta_recalcular` metía el pedido nuevo (lista) en la misma ruta que lo en_camino → «parada 2»; el cliente vio al motorista regresar a la sucursal.
