@@ -1,0 +1,14 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Menú web (Menú Delivery) · 9-nov-2026, pedido de Cesar
+--
+-- 1) «Sin Nada» en los grupos «Complemento de Hot Dog» 1–4 (dato: precio 0,
+--    orden 9; Jalapeños/Tocino/Costra pasan a 10–12). El menú web bloquea los
+--    complementos gratis al elegir «Con Todo» o «Sin Nada».
+-- 2) Fancy Fries Combo (solo Menú Delivery, combo 3977e743…): las 4 «Fries» con
+--    «Salsas Papas» pasan a UN componente «Papas» con el grupo «Tipo de Papas»
+--    (único, obligatorio): Fancy / Chili / Truffle Fries, cada una con descripción.
+--    pos_modificadores.descripcion (nueva) y menu_publico_delivery() la devuelve.
+--    Los menús de caja (Local, Para Llevar, Drive Thru) y PedidosYa no se tocaron.
+-- Aplicada como fancy_fries_combo_tipo_papas (+ datos con execute_sql).
+-- ════════════════════════════════════════════════════════════════════
+alter table public.pos_modificadores add column if not exists descripcion text;

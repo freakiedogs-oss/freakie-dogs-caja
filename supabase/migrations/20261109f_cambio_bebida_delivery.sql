@@ -1,0 +1,24 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Menú web (Menú Delivery) · «Cambio de bebida» +$0.50 · 9-nov-2026, pedido de Cesar
+--
+-- Solo datos (aplicados con execute_sql; este archivo es de registro):
+-- 1) Grupo nuevo «Bebida» 6dc2b525… (copia del compartido d8f75292…, que siguen
+--    usando caja y PeYa): Coca-Cola 300ml / Kolashampan / Botella Agua (gratis)
+--    + «Cambio de bebida» $0.50 (sin insumo propio).
+-- 2) Grupo nuevo «Cambio de Bebida» 5eb52ee9… (único, 0–1): Coca-Cola Lata,
+--    Coca-Cola Zero Lata, Crema Soda, Fanta Lata, Fresca Lata, Sprite Lata,
+--    Uva Lata, Té Frambuesa, Té Durazno, Té Limón, Kinley — $0 (el $0.50 va en
+--    la opción). Insumos copiados de «Bebida Agrandado».
+-- 3) Los 56 ítems del Menú Delivery que tenían «Bebida» pasan al grupo nuevo
+--    y reciben también «Cambio de Bebida».
+-- MenuPublico.jsx: el grupo «Cambio de Bebida» solo aparece (obligatorio) en el
+-- componente cuya bebida tiene «Cambio de bebida» marcado; esa bebida deja de
+-- ofrecer las incluidas. El agrandado tiene prioridad.
+--
+-- Se dejó APAGADO hasta que el front esté en producción (si no, el menú viejo
+-- mostraría las latas sueltas y gratis). Al desplegar, correr:
+--   update pos_modificadores_grupo set activo = true where id = '5eb52ee9-9498-413e-82b9-0c4e1d727743';
+--   update pos_modificadores set activo = true
+--    where grupo_id = '6dc2b525-4591-4dbe-ae47-d61da627da9a' and nombre = 'Cambio de bebida';
+-- ════════════════════════════════════════════════════════════════════
+select 1;

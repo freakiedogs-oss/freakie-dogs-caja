@@ -1,5 +1,23 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Menú web: «Cambio de bebida» +$0.50 en todos los combos
+- Por qué: Cesar quiere que en delivery se pueda cambiar la bebida incluida por lata/té/Kinley pagando $0.50, con la misma lógica del agrandado.
+- BD (datos): grupo «Bebida» propio del delivery (`6dc2b525…`, 3 gratis + «Cambio de bebida» $0.50) y grupo «Cambio de Bebida» (`5eb52ee9…`, 11 opciones a $0 con insumos copiados). 56 ítems del Menú Delivery cambiados; el «Bebida» compartido (`d8f75292…`) queda para caja/PeYa.
+- `MenuPublico.jsx`: `esGrupoCambio`/`compsCambio`/`soloCambio` → el grupo de cambio solo sale (obligatorio) al marcar el cambio; el agrandado manda sobre el cambio.
+- Quedó APAGADO hasta el deploy; activar con el SQL de `20261109f_cambio_bebida_delivery.sql`.
+- Crema Soda solo existe en vidrio (se descuenta ese insumo) y se llama «Crema Soda» para no chocar con el filtro de vidrio del menú web.
+
+## 9-Nov-2026 — Menú web: Chili Duo sin personalizar · Mini Fancys / Fancys XL con «Tipo de Papas»
+- Solo Menú Delivery (`46acdbea…`), datos vía execute_sql; caja y PeYa sin tocar.
+- **Chili Duo:** sus 2 hot dogs apuntan a un ítem nuevo «Chili Dog» (no visible) con solo Bebida / Bebida Agrandado → sin «Complemento de Hot Dog» (son chili dogs), conserva las 2 bebidas.
+- **Mini Fancys y Fancys XL:** se quitaron «Salsas Papas» y «Topping Fancy» (este último lo usan 15 ítems, no se tocó); ahora llevan «Tipo de Papas» (Fancy / Chili / Truffle Fries, con descripción).
+
+## 9-Nov-2026 — Menú web: «Sin Nada» y bloqueo con «Con Todo» en complementos del hot dog
+
+- **BD (dato, sin migración):** «Sin Nada» (precio 0, orden 9) agregado en los 4 grupos `Complemento de Hot Dog` (1–4); Jalapeños/Tocino/Costra pasan a orden 10–12.
+- **Fancy Fries Combo (solo Menú Delivery):** 4 «Fries» → 1 componente «Papas» (item nuevo invisible) con grupo «Tipo de Papas» (Fancy: mermelada de tocino, cheddar, mil islas · Chili: cheddar y chili con carne · Truffle: condimento de trufa y salsa de trufa negra). `pos_modificadores.descripcion` nueva; `menu_publico_delivery()` la devuelve y el menú web la muestra bajo el nombre. Caja y PeYa sin cambios. Inventario: los toppings de chili/truffle todavía no descargan insumos distintos.
+- **`MenuPublico.jsx` (`toggle` del modal):** elegir «Con Todo» o «Sin Nada» desmarca y bloquea las opciones gratis del grupo («Incluido» / «No lleva»); los extras con precio siguen. Regla por nombre (`/^(con todo|sin nada)$/i`) → aplica a cualquier grupo con esas opciones. El POS de caja todavía no tiene este bloqueo.
+
 ## 9-Nov-2026 — Confirmar «Entregado» con GPS + «Avisar al cliente» en la torre
 
 - **GPS (`DriverBeacon.jsx`):** al tocar «Entregado» se mide la distancia a `cliente_lat/lng` (beacon.ultima si tiene < 60 s, si no geolocation). > 300 m → recuadro rojo «⚠️ Estás a X de la dirección del cliente», botones «Sí, ya se lo entregué» / «No, todavía no». Motivo: el 8-nov Rosalía y Amilcar marcaron entregados por error. Solo en la app (no bloquea en el servidor).
