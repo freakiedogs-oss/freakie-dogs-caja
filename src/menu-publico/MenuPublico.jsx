@@ -1036,10 +1036,14 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const alternarAgrandado = (g, op, on) => {
     const comp = armado.pareja[claveComp(g)] != null ? String(armado.pareja[claveComp(g)]) : null
     const premium = comp != null ? grupos.find(x => esGrupoAgrandado(x) && claveComp(x) === comp) : null
+    // Bebida normal, cambio y premium de ese combo arrancan de cero en cada
+    // cambio: nada elegido antes reaparece solo (ni se cobra) al quitar el agrandado.
+    const deBebida = comp != null ? grupos.filter(x => claveComp(x) === comp &&
+      (esGrupoBebida(x) || esGrupoCambio(x) || esGrupoAgrandado(x))) : []
     setSel(prev => {
       const actual = prev[g.id] || []
       const next = { ...prev, [g.id]: on ? actual.filter(x => x.id !== op.id) : [...actual, op] }
-      if (on && premium) next[premium.id] = []
+      deBebida.forEach(x => { next[x.id] = [] })
       return next
     })
     if (!on && premium) setTimeout(() => setGrupoAbierto(premium.id), 120)
