@@ -634,6 +634,101 @@ function campana() {
   } catch { /* sin audio: queda la pantalla roja */ }
 }
 
+// Cobro de una parada aunque esté bloqueada: así prepara el vuelto antes.
+function CobroLinea({ p }) {
+  const efectivo = /efectivo/i.test(p.metodo_pago || 'efectivo')
+  const caja = (bg, bd, col) => ({ background: bg, border: `1px solid ${bd}`, color: col, borderRadius: 8,
+                                   padding: '5px 8px', fontSize: 12, marginTop: 6 })
+  if (p.pagado_online) return <div style={caja('#0e2a17', '#1f5a33', '#86efac')}>💳 Ya pagado con tarjeta — no cobrés nada</div>
+  if (efectivo && Number(p.paga_con) > 0) {
+    return (
+      <div style={caja('#2f2a10', '#5a4a12', '#fde68a')}>
+        💵 Cobrar <b>{fmt(p.total)}</b> · paga con {fmt(p.paga_con)} → vuelto <b>{fmt(Math.max(0, p.paga_con - p.total))}</b>
+      </div>
+    )
+  }
+  return <div style={caja('#26221d', '#3a342e', '#d6cdc3')}>💵 Cobrar <b>{fmt(p.total)}</b> en {p.metodo_pago || 'efectivo'}</div>
+}
+
+// Mapa del viaje (2+ paradas): vos, la sucursal y las paradas numeradas en
+// orden. La que toca va en amarillo; el resto en gris.
+function MapaViaje({ paradas, actualId, yo, vuelto }) {
+  const el = useRef(null)
+  const map = useRef(null)
+  const capa = useRef(null)
+  const encuadrado = useRef('')
+  const [gps, setGps] = useState(null)
+
+  // En el APK la ubicación la manda el servicio nativo; acá la pedimos al
+  // navegador solo para dibujar el punto «Vos».
+  useEffect(() => {
+    if (yo?.lat || !navigator.geolocation) return
+    const id = navigator.geolocation.watchPosition(
+      (pos) => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {}, { enableHighAccuracy: true, maximumAge: 20000, timeout: 20000 })
+    return () => navigator.geolocation.clearWatch(id)
+  }, [yo?.lat])
+  const yoPos = yo?.lat ? yo : gps
+
+  useEffect(() => {
+    if (map.current || !el.current) return
+    const m = L.map(el.current, { zoomControl: false, attributionControl: false }).setView([13.7, -89.2], 12)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m)
+    capa.current = L.layerGroup().addTo(m)
+    map.current = m
+    setTimeout(() => m.invalidateSize(), 150)
+    return () => { m.remove(); map.current = null }
+  }, [])
+
+  const clave = paradas.map(p => p.id + ':' + p.orden_entrega).join('|')
+  useEffect(() => {
+    const m = map.current
+    if (!m) return
+    capa.current.clearLayers()
+    const pts = []
+    const suc = paradas.find(p => p.sucursal_lat)
+    if (suc) {
+      L.marker([suc.sucursal_lat, suc.sucursal_lng], { icon: L.divIcon({ className: '', iconSize: [34, 18], iconAnchor: [17, 9],
+        html: `<div style="background:#1e40af;color:#fff;font:700 10px/18px system-ui;border-radius:4px;text-align:center;border:1px solid #fff">${suc.store_code || '🏪'}</div>` }) })
+        .addTo(capa.current)
+      pts.push([suc.sucursal_lat, suc.sucursal_lng])
+    }
+    if (yoPos?.lat) {
+      L.marker([yoPos.lat, yoPos.lng], { zIndexOffset: 1000, icon: L.divIcon({ className: '', iconSize: [30, 30], iconAnchor: [15, 15],
+        html: '<div style="font-size:24px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))">🛵</div>' }) }).addTo(capa.current)
+    }
+    const linea = [...(yoPos?.lat ? [[yoPos.lat, yoPos.lng]] : suc ? [[suc.sucursal_lat, suc.sucursal_lng]] : [])]
+    paradas.forEach((p, i) => {
+      const toca = p.id === actualId || (!actualId && i === 0)
+      const v = vuelto(p)
+      const etiqueta = p.pagado_online ? 'Pagado' : v > 0 ? `$${v.toFixed(2)} vuelto` : `Cobrar $${Number(p.total).toFixed(2)}`
+      L.marker([p.cliente_lat, p.cliente_lng], { zIndexOffset: toca ? 900 : 500, icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+        html: `<div style="width:26px;height:26px;border-radius:50%;background:${toca ? '#FFD900' : '#3a342e'};color:${toca ? '#1a1200' : '#eee'};font:800 13px/26px system-ui;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)">${p.orden_entrega ?? i + 1}</div>` }) })
+        .bindTooltip(`${String(p.cliente_nombre || '').split(' ')[0]} · ${etiqueta}`, { permanent: true, direction: 'bottom', offset: [0, 12] })
+        .addTo(capa.current)
+      linea.push([p.cliente_lat, p.cliente_lng])
+      pts.push([p.cliente_lat, p.cliente_lng])
+    })
+    if (linea.length > 1) L.polyline(linea, { color: '#E63946', weight: 3, dashArray: '6,7', opacity: .85 }).addTo(capa.current)
+    if (yoPos?.lat) pts.push([yoPos.lat, yoPos.lng])
+    // Encuadrar solo cuando cambian las paradas, no en cada lectura de GPS
+    if (pts.length && encuadrado.current !== clave) {
+      encuadrado.current = clave
+      try { m.fitBounds(L.latLngBounds(pts).pad(0.25)) } catch { /* noop */ }
+    }
+  }, [clave, actualId, yoPos?.lat, yoPos?.lng]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 14, padding: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>🗺️ Mapa de tu viaje</div>
+      <div ref={el} style={{ height: 260, borderRadius: 10, overflow: 'hidden', background: '#222' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#aaa', marginTop: 6 }}>
+        <span>🛵 vos · 🟡 te toca · ⚫ después</span><span>{paradas.length} paradas</span>
+      </div>
+    </div>
+  )
+}
+
 // ── 📦 Mis pedidos ──────────────────────────────────────────────────
 function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [ocupado, setOcupado] = useState(null)
@@ -874,6 +969,15 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       })()
     : null
   const ord = (n) => `${n}°`
+  // Viaje (9-nov-2026): cobros visibles en todas las paradas, cambio total a
+  // llevar y mapa con las paradas cuando son 2 o más.
+  const esEfectivo = (p) => /efectivo/i.test(p.metodo_pago || 'efectivo')
+  const vuelto = (p) => (!p.pagado_online && esEfectivo(p) && Number(p.paga_con) > Number(p.total))
+    ? Number(p.paga_con) - Number(p.total) : 0
+  const viaje = pedidos
+    .filter(x => ['lista', 'en_camino'].includes(x.estado))
+    .sort((a, b) => (a.orden_entrega ?? 99) - (b.orden_entrega ?? 99))
+  const cambioTotal = viaje.reduce((s, p) => s + vuelto(p), 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -922,7 +1026,19 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               El orden lo pone el sistema. Entregá en este orden.
             </div>
           </div>
-          {entregadasRuta > 0 && <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 700 }}>{entregadasRuta} de {totalRuta} ✓</span>}
+          <div style={{ textAlign: 'right' }}>
+            {entregadasRuta > 0 && <div style={{ fontSize: 12, color: '#4ade80', fontWeight: 700 }}>{entregadasRuta} de {totalRuta} ✓</div>}
+            {cambioTotal > 0 && (
+              <div style={{ fontSize: 11, color: '#bdb3a8', marginTop: 2 }}>
+                Llevá en cambio<br /><b style={{ color: '#fde68a', fontSize: 14 }}>{fmt(cambioTotal)}</b>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {enRuta.length === 0 && cambioTotal > 0 && (
+        <div style={{ ...S.rutaHead, justifyContent: 'center', color: '#fde68a', fontSize: 13 }}>
+          💵 Antes de salir, llevá <b style={{ margin: '0 4px' }}>{fmt(cambioTotal)}</b> en cambio para tus pedidos
         </div>
       )}
       {pedidos.map(p => {
@@ -940,6 +1056,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                 <div style={{ fontSize: 11.5, color: '#8b807a', marginTop: 2 }}>
                   🔒 {p.numero_orden} · se habilita cuando entregués el {ord(previo?.orden_entrega ?? p.orden_entrega - 1)}
                 </div>
+                <CobroLinea p={p} />
               </div>
             </div>
           )
@@ -1101,6 +1218,9 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
         </div>
         )
       })}
+      {viaje.filter(x => x.cliente_lat).length >= 2 && (
+        <MapaViaje paradas={viaje.filter(x => x.cliente_lat)} actualId={actual?.id} yo={beacon.ultima} vuelto={vuelto} />
+      )}
       {rutaMaps && (
         <a href={rutaMaps} target="_blank" rel="noopener" style={S.rutaMaps}>
           🗺️ Ver ruta completa en orden (Google Maps)

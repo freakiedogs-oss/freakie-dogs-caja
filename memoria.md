@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — App motorista: cobro visible en paradas bloqueadas, cambio total y mapa del viaje
+
+- **Qué pidió Cesar:** en viajes de 2+ pedidos, las paradas 2°, 3°… estaban bloqueadas y el motorista no veía cuánto cobrar ni el vuelto; y quería un mapa abajo como el del ERP.
+- **`DriverBeacon.jsx`:** `CobroLinea` (pagado con tarjeta / cobrar + paga con + vuelto / cobrar en método) también en las paradas 🔒; «Llevá en cambio $X» en el encabezado de la ruta (o antes de salir) = Σ vuelto de lista + en camino; `MapaViaje` (Leaflet) con 2+ paradas: sucursal, «Vos» (beacon.ultima o geolocation del navegador), paradas numeradas (amarilla la que toca), etiqueta con vuelto/Pagado, línea en orden; encuadra solo cuando cambian las paradas.
+- **BD:** `mis_pedidos_driver` devuelve `sucursal_lat/lng` (`20261109b_mis_pedidos_driver_sucursal.sql`).
+- **Finanzas (mismo día):** NC Corte Argentino 06-nov (−$5,251.66, anula factura 01-oct) excluida con `gasto_categoria_override` → categoría nueva `excluido_finanzas` (grupo 'Pasivo' = fuera del P&L). Pan San Francisco = Flora Imelda Rodríguez Menéndez (catálogo id 270) → subcategoría Pan. PriceSmart cotización 2050887 ($2,728.01, 3-nov) NO llegó a freakiedogs@gmail.com: compra B2B a nombre de Francisco sin NIT; pedir CCF a Henry Espinal (bsa6701@pricesmart.com).
+
 ## 9-Nov-2026 — Números equivocados: confirmación en el menú + botón «Llegué»
 
 - **Problema (Cesar):** clientes ponen un número mal, no se les puede contactar y el motorista espera. En 30 días: 0 números con formato inválido (el menú ya valida 8 dígitos 2/6/7) → el error es un dígito equivocado; ~50% de los pedidos son de números nuevos.
