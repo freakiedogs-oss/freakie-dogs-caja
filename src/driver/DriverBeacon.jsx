@@ -974,8 +974,10 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const esEfectivo = (p) => /efectivo/i.test(p.metodo_pago || 'efectivo')
   const vuelto = (p) => (!p.pagado_online && esEfectivo(p) && Number(p.paga_con) > Number(p.total))
     ? Number(p.paga_con) - Number(p.total) : 0
+  // Si ya va en camino, el viaje es solo lo que lleva: lo asignado en la
+  // sucursal mientras tanto es el PRÓXIMO viaje (9-nov-2026, caso Gustavo).
   const viaje = pedidos
-    .filter(x => ['lista', 'en_camino'].includes(x.estado))
+    .filter(x => enRuta.length > 0 ? x.estado === 'en_camino' : ['lista', 'en_camino'].includes(x.estado))
     .sort((a, b) => (a.orden_entrega ?? 99) - (b.orden_entrega ?? 99))
   const cambioTotal = viaje.reduce((s, p) => s + vuelto(p), 0)
 
@@ -1069,7 +1071,13 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: .5, color: '#FFD900' }}>AHORA · VAS A ENTREGAR ESTE</span>
             </div>
           )}
-          {p.estado === 'lista' && p.orden_entrega != null && listos + rodando > 1 && (
+          {enRuta.length > 0 && ['lista', 'preparando'].includes(p.estado) && (
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#7cc8f5', background: '#0f2b3d', border: '1px solid #1e4a66',
+                          borderRadius: 8, padding: '6px 9px', marginBottom: 8 }}>
+              🔜 Próximo viaje — recogelo cuando regreses a la sucursal
+            </div>
+          )}
+          {enRuta.length === 0 && p.estado === 'lista' && p.orden_entrega != null && listos + rodando > 1 && (
             <div style={{ fontSize: 11.5, fontWeight: 800, color: '#FFD900', marginBottom: 6 }}>
               Va {ord(p.orden_entrega)} en tu ruta
             </div>

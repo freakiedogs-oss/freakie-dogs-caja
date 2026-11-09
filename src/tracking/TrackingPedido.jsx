@@ -129,7 +129,11 @@ export default function TrackingPedido() {
       <div className="tk-hero">
         <div className="tk-hero-ic">{PASOS[paso].ic}</div>
         <h1 className="tk-hero-t">{PASOS[paso].t}</h1>
-        <p className="tk-hero-s">{(enCamino && subEnCamino) || PASOS[paso].sub}</p>
+        <p className="tk-hero-s">
+          {(enCamino && subEnCamino)
+            || (d.motorista_en_otra_entrega && `${d.motorista || 'Tu motorista'} está terminando otra entrega y regresa a la tienda por tu pedido.`)
+            || PASOS[paso].sub}
+        </p>
         {enCamino && d.eta_min && (
           <div className="tk-eta">
             Llega en ~{d.eta_min} min
