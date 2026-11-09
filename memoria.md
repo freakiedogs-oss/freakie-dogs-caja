@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Viaje actual vs. próximo viaje
+
+- **Caso (Cesar):** Gustavo iba a San Martín y le asignaron Sierra Morena para cuando regresara. Como no había entregado nada, `fn_ruta_recalcular` metía el pedido nuevo (lista) en la misma ruta que lo en_camino → «parada 2»; el cliente vio al motorista regresar a la sucursal.
+- **Regla:** si el motorista tiene algo en_camino, la ruta es solo eso; lo asignado en la sucursal queda sin número (próximo viaje) y se ordena al recogerlo. `driver_alarma_estado` no suena en ruta (`en_ruta: true`), suena al entregar lo último. `tracking_pedido.motorista_en_otra_entrega` → «X está terminando otra entrega y regresa a la tienda por tu pedido».
+- **App:** etiqueta «🔜 Próximo viaje — recogelo cuando regreses»; el mapa y el cambio total solo cuentan el viaje actual.
+- Migración resumen: `20261109c_ruta_viaje_actual_vs_proximo.sql`. Probado con rollback (A en camino + B asignado → B sin número; al entregar A, B = 1° de ruta nueva y suena la alarma).
+
 ## 9-Nov-2026 — App motorista: cobro visible en paradas bloqueadas, cambio total y mapa del viaje
 
 - **Qué pidió Cesar:** en viajes de 2+ pedidos, las paradas 2°, 3°… estaban bloqueadas y el motorista no veía cuánto cobrar ni el vuelto; y quería un mapa abajo como el del ERP.
