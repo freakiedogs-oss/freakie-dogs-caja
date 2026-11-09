@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Menú web: combos producto → papas → bebida + agrandado con bebida premium
+- Por qué: la gente escogía bebida antes de ver el agrandado ($1.25, escondido entre las salsas) y podía quedar cambio $0.50 + agrandado. Cesar pidió que al agrandar la bebida pase a la lista premium sin costo extra.
+- `MenuPublico.jsx`: `armado` empareja en orden cada producto con bebida con unas papas que tengan «Agrandado» (`pareja` papas→producto) y las dibuja entre el producto y su bebida. `compsAgrandados` usa `pareja` (el agrandado de las papas 2 agranda la bebida 2). El agrandado sale como botón ámbar propio (`alternarAgrandado`): abre «Bebida premium · incluida en el agrandado»; al quitarlo borra la premium.
+- BD (datos, `20261109g`): «Cambio de bebida» arriba con descripción «Coca lata, Coca Zero, Té Lipton o Kinley»; «Bebida Agrandado» propio del delivery (`dbad6240…`) con la misma lista de 11.
+
 ## 9-Nov-2026 — Menú web: «Cambio de bebida» +$0.50 en todos los combos
 - Por qué: Cesar quiere que en delivery se pueda cambiar la bebida incluida por lata/té/Kinley pagando $0.50, con la misma lógica del agrandado.
 - BD (datos): grupo «Bebida» propio del delivery (`6dc2b525…`, 3 gratis + «Cambio de bebida» $0.50) y grupo «Cambio de Bebida» (`5eb52ee9…`, 11 opciones a $0 con insumos copiados). 56 ítems del Menú Delivery cambiados; el «Bebida» compartido (`d8f75292…`) queda para caja/PeYa.
