@@ -4,7 +4,8 @@
 - Por qué: Cesar quiere que en delivery se pueda cambiar la bebida incluida por lata/té/Kinley pagando $0.50, con la misma lógica del agrandado.
 - BD (datos): grupo «Bebida» propio del delivery (`6dc2b525…`, 3 gratis + «Cambio de bebida» $0.50) y grupo «Cambio de Bebida» (`5eb52ee9…`, 11 opciones a $0 con insumos copiados). 56 ítems del Menú Delivery cambiados; el «Bebida» compartido (`d8f75292…`) queda para caja/PeYa.
 - `MenuPublico.jsx`: `esGrupoCambio`/`compsCambio`/`soloCambio` → el grupo de cambio solo sale (obligatorio) al marcar el cambio; el agrandado manda sobre el cambio.
-- Quedó APAGADO hasta el deploy; activar con el SQL de `20261109f_cambio_bebida_delivery.sql`.
+- Quedó APAGADO hasta el deploy; activar con el SQL de `20261109f_cambio_bebida_delivery.sql`. (Activado tras PR #464.)
+- **Ajuste (mismo día):** como grupo aparte quedaba cerrado más abajo y la gente no encontraba el sabor. Ahora los sabores se dibujan DENTRO del grupo «Bebida», debajo de «Cambio de bebida» (`grupoCambioDe`, `padreDe`); el grupo «Cambio de Bebida» no se dibuja suelto pero sigue validando/cobrando. Resumen «Cambio de bebida · Sprite Lata» / «falta el sabor»; error «Elegí el sabor del cambio de bebida».
 - Crema Soda solo existe en vidrio (se descuenta ese insumo) y se llama «Crema Soda» para no chocar con el filtro de vidrio del menú web.
 
 ## 9-Nov-2026 — Menú web: Chili Duo sin personalizar · Mini Fancys / Fancys XL con «Tipo de Papas»

@@ -904,9 +904,16 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
     })
     return s
   }, [grupos, sel, compsAgrandados])
-  const tieneGrupoCambio = (comp) => grupos.some(g => esGrupoCambio(g) && claveComp(g) === comp)
-  const soloCambio = (g) =>
-    esGrupoBebida(g) && compsCambio.has(claveComp(g)) && tieneGrupoCambio(claveComp(g))
+  // Los sabores del cambio se dibujan DENTRO del grupo «Bebida», debajo de la
+  // opción «Cambio de bebida» (Cesar, 9-nov: como grupo aparte quedaba cerrado
+  // más abajo y la gente no encontraba dónde escoger el sabor). El grupo sigue
+  // existiendo para validar, cobrar y comandar; solo no se dibuja suelto.
+  const grupoCambioDe = (g) => grupos.find(x => esGrupoCambio(x) && claveComp(x) === claveComp(g)) || null
+  const grupoBebidaDe = (g) => grupos.find(x => esGrupoBebida(x) && claveComp(x) === claveComp(g)) || null
+  const padreDe = (gid) => {
+    const g = grupos.find(x => x.id === gid)
+    return g && esGrupoCambio(g) ? (grupoBebidaDe(g)?.id ?? gid) : gid
+  }
 
   /* ── Choques declarados desde el ERP ───────────────────────────────────
      Un par de opciones que no pueden ir juntas. Al elegir una, la otra deja
@@ -929,7 +936,6 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const opcionesVisibles = (g) => {
     let ops = g.opciones || []
     if (soloAgrandado(g)) ops = ops.filter(esOpcionAgrandado)
-    else if (soloCambio(g)) ops = ops.filter(esOpcionCambio)
     return ops.filter(op => !esVidrio(op) && !bloqueadosPorRegla.has(op.id))
   }
   const grupoOculto = (g) =>
@@ -961,7 +967,8 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const siguientePendiente = (desdeId) => {
     const i = gruposVisibles.findIndex(g => g.id === desdeId)
     const resto = [...gruposVisibles.slice(i + 1), ...gruposVisibles.slice(0, Math.max(0, i))]
-    return resto.find(g => cuentaDe(g) < minEfectivo(g))?.id ?? null
+    const id = resto.find(g => cuentaDe(g) < minEfectivo(g))?.id ?? null
+    return id ? padreDe(id) : null
   }
 
   // «Con Todo» / «Sin Nada» (9-nov-2026, Cesar): al elegir uno se desmarcan y
@@ -992,8 +999,13 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
     })
     // En los de una sola opción ya no hay nada más que hacer ahí: se cierra y
     // se abre el siguiente que falte, para no obligar a buscarlo scroleando.
+    // Al tocar «Cambio de bebida» el grupo se queda abierto: falta el sabor.
+    // Al escoger el sabor se cierra la bebida y se abre lo siguiente.
+    const yaElegida = (sel[g.id] || []).some(x => x.id === op.id)
+    if (esOpcionCambio(op) && !yaElegida) return
     if (esUnico(g)) {
-      setTimeout(() => setGrupoAbierto(a => (a === g.id ? siguientePendiente(g.id) : a)), 180)
+      const propio = padreDe(g.id)
+      setTimeout(() => setGrupoAbierto(a => (a === propio ? siguientePendiente(g.id) : a)), 180)
     }
   }
 
@@ -1022,7 +1034,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const confirmar = () => {
     if (faltantes.length > 0) {
       setIntento(true)
-      setGrupoAbierto(faltantes[0].id)   // llevarlo a lo que falta, no dejarlo buscando
+      setGrupoAbierto(padreDe(faltantes[0].id))   // llevarlo a lo que falta, no dejarlo buscando
       return
     }
     // Se separan: las opciones del ítem van en `mods`; las de cada unidad del combo viajan
@@ -1058,11 +1070,18 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
 
           {/* GRUPOS DE MODIFICADORES */}
           {gruposVisibles.map((g, gi) => {
+            if (esGrupoCambio(g)) return null   // se dibuja dentro de su «Bebida»
+            // Sabores del cambio, si este grupo de bebida lo tiene marcado.
+            const gc = esGrupoBebida(g) && compsCambio.has(claveComp(g)) ? grupoCambioDe(g) : null
+            const gcVisible = gc && gruposVisibles.some(x => x.id === gc.id) ? gc : null
+            const saborCambio = gcVisible ? (sel[gcVisible.id] || []).find(o => idsVisibles.get(gcVisible.id)?.has(o.id)) : null
+            const faltaSabor = !!gcVisible && !saborCambio
             const cuenta = cuentaDe(g)
-            const incompleto = intento && cuenta < minEfectivo(g)
-            const listo = cuenta >= minEfectivo(g) && cuenta > 0
+            const incompleto = intento && (cuenta < minEfectivo(g) || faltaSabor)
+            const listo = cuenta >= minEfectivo(g) && cuenta > 0 && !faltaSabor
             const estaAbierto = grupoAbierto === g.id
             const elegidas = (sel[g.id] || []).filter(o => idsVisibles.get(g.id)?.has(o.id)).map(o => o.nombre).join(', ')
+              + (gcVisible ? (saborCambio ? ` · ${saborCambio.nombre}` : ' · falta el sabor') : '')
             // Encabezado al empezar cada parte del combo ("Hamburguesa 1", "Bebida 2"), para
             // que se entienda a cuál de las unidades pertenecen las opciones de abajo.
             const abreSeccion = g._seccion && (gi === 0 || gruposVisibles[gi - 1]._seccion !== g._seccion)
@@ -1095,7 +1114,29 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                     const activa = (sel[g.id] || []).some(x => x.id === op.id)
                     const tn = !esUnico(g) && todoNadaDe(g)
                     const bloqueada = !activa && tn && esBaseGratis(op)
+                    const sabores = activa && esOpcionCambio(op) && gcVisible ? (
+                      <div style={{ margin: '6px 0 4px 14px', paddingLeft: 10, borderLeft: '2px solid #F09595' }}>
+                        <div style={{ fontSize: 12, color: faltaSabor && intento ? '#b42318' : '#6b5a48', marginBottom: 6 }}>
+                          Elegí el sabor
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          {opcionesVisibles(gcVisible).map(s => {
+                            const on = saborCambio?.id === s.id
+                            return (
+                              <button key={s.id} type="button" onClick={() => toggle(gcVisible, s)}
+                                      style={{ padding: '8px 10px', borderRadius: 10, fontSize: 13, textAlign: 'left', cursor: 'pointer',
+                                               fontFamily: 'inherit', background: on ? '#fdecec' : '#fff',
+                                               border: on ? '1.5px solid #E24B4A' : '1px solid #e5ddd3',
+                                               color: on ? '#A32D2D' : 'inherit', fontWeight: on ? 600 : 400 }}>
+                                {s.nombre}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null
                     return (
+                      <Fragment key={op.id}>
                       <button
                         key={op.id}
                         type="button"
@@ -1121,10 +1162,16 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                           <span className="mp-opcion-extra">+{fmt(op.precio_extra)}</span>
                         )}
                       </button>
+                      {sabores}
+                      </Fragment>
                     )
                   })}
                 </div>
-                {incompleto && <div className="mp-grupo-error">Elegí al menos {minEfectivo(g)}</div>}
+                {incompleto && (
+                  <div className="mp-grupo-error">
+                    {cuenta < minEfectivo(g) ? `Elegí al menos ${minEfectivo(g)}` : 'Elegí el sabor del cambio de bebida'}
+                  </div>
+                )}
               </div>
               </Fragment>
             )
