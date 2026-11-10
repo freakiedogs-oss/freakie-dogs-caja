@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 10-Nov-2026 — Auditoría integral + plan de mejora (solo lectura)
+- Por qué: Jose pidió una revisión profunda de todo (código, base, flujos, conexiones) y un plan de acción.
+- Entregable: `docs/planes/PLAN_MEJORA_2026-11-10.md` (hallazgos con ID, evidencia y esfuerzo; fases 0 / 1 / 2). No se cambió nada en producción.
+- Lo central: la base confía en el navegador (392 políticas `USING(true)` para anon, 564 funciones SECURITY DEFINER ejecutables sin sesión); tres puertas para adivinar PINs sin límite (`dte-proxy`, `dte-email`, `peya-responder`); cobros en varios pasos sin transacción ni idempotencia; sin staging, sin build/tests en CI, sin monitoreo, y el repo no reconstruye la base.
+- Cifras de la base (30 días): 21,529 cuentas cobradas; 1 pago duplicado y 6 sobrepagos ($34.75); 788 pedidos de delivery propio sin DTE; 220 pagos en línea en `requiere_3ds`; 632 filas de inventario en negativo; 2 cron fallando siempre (`refresh_mv_vista_top_productos`, `pos-cocina-queue-archivar`).
+- Pendiente de decisión de Jose: qué de la Fase 0 se ejecuta primero; lo que toca DTE (0.1, 1.6, D-4) requiere su visto bueno.
+
 ## 9-Nov-2026 — Menú web: origen de cada producto (para medir las secciones)
 - Por qué: Cesar quiere medir la eficacia de «Los más pedidos», «Para compartir», sugerencias del carrito, oferta Burger Duo y el upsell del agrandado.
 - Cada línea del carrito lleva `origen` (menu | mas_pedidos | para_compartir | sugerencia_carrito | oferta_duo | repetir) y `agrandadoVia` (boton | pregunta); `armarPedido` los manda y `crear_pedido_delivery` los guarda en `delivery_clientes.items[*].origen / agrandado_via` (lista blanca; otro valor → null).
