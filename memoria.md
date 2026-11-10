@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 9-Nov-2026 — Menú web: origen de cada producto (para medir las secciones)
+- Por qué: Cesar quiere medir la eficacia de «Los más pedidos», «Para compartir», sugerencias del carrito, oferta Burger Duo y el upsell del agrandado.
+- Cada línea del carrito lleva `origen` (menu | mas_pedidos | para_compartir | sugerencia_carrito | oferta_duo | repetir) y `agrandadoVia` (boton | pregunta); `armarPedido` los manda y `crear_pedido_delivery` los guarda en `delivery_clientes.items[*].origen / agrandado_via` (lista blanca; otro valor → null).
+- Reporte: `select * from reporte_origen_menu_web('<desde>', now())` (solo authenticated). Pedidos anteriores salen como `sin_dato`.
+- Migración `20261109i_origen_producto_menu_web.sql`.
+
 ## 9-Nov-2026 — Menú web: subir el ticket promedio (más pedidos, para compartir, sugerencias, «¿Son dos?»)
 - Por qué: pedidos web 30 días = 1,935, ticket $16.53, mediana $14.99, 66% con UN producto, postre 0.8%, extras sueltos 10%.
 - **Decisión de Cesar: el envío sigue GRATIS** (diferenciador vs PedidosYa, ya promocionado). No proponer cobrar envío para subir ticket.

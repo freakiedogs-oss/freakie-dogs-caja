@@ -133,6 +133,7 @@ export default function MenuPublico() {
   const [masPedidos, setMasPedidos] = useState([])
   const [reemplazo, setReemplazo] = useState(null)       // {lineaId, quitar}
   const [volverAlCarrito, setVolverAlCarrito] = useState(false)
+  const [origenModal, setOrigenModal] = useState('menu')  // de qué sección se abrió el producto
   // ── Productos apagados por sucursal (el "86" del día) ──
   // El menú es uno solo para las seis tiendas, pero cada tienda puede
   // quedarse sin algo. `bloqueos` es {sucursal_id: [menu_item_id,...]}.
@@ -319,7 +320,10 @@ export default function MenuPublico() {
   )
   const cantidadCarrito = carrito.reduce((s, it) => s + it.qty, 0)
 
-  const agregarAlCarrito = (producto, qty = 1, nota = '', mods = [], comps = []) => {
+  // `origen` = de dónde salió el producto (menu | mas_pedidos | para_compartir |
+  // sugerencia_carrito | oferta_duo | repetir) y `agrandadoVia` = cómo se aceptó
+  // el agrandado (boton | pregunta). Viajan al pedido para medir cada sección.
+  const agregarAlCarrito = (producto, qty = 1, nota = '', mods = [], comps = [], origen = 'menu', agrandadoVia = null) => {
     // Los extras de un componente se cobran por cada unidad que lleva el combo.
     const precioMods = mods.reduce((s, m) => s + (Number(m.precio_extra) || 0), 0)
       + comps.reduce((s, c) => s + (c.mods || []).reduce(
@@ -327,7 +331,7 @@ export default function MenuPublico() {
     setCarrito(prev => {
       // Mismo producto sin nota ni mods → suma qty
       if (!nota && mods.length === 0 && comps.length === 0) {
-        const idx = prev.findIndex(i => i.id === producto.id && !i.nota
+        const idx = prev.findIndex(i => i.id === producto.id && !i.nota && (i.origen || 'menu') === origen
           && (!i.mods || i.mods.length === 0) && (!i.comps || i.comps.length === 0))
         if (idx >= 0) {
           const next = [...prev]
@@ -338,7 +342,7 @@ export default function MenuPublico() {
       return [...prev, {
         lineaId: Date.now() + Math.random(),
         id: producto.id, nombre: producto.nombre, precio: Number(producto.precio),
-        precioMods, qty, nota, mods, comps,
+        precioMods, qty, nota, mods, comps, origen, agrandadoVia,
       }]
     })
     setToast('Producto añadido')
@@ -359,7 +363,7 @@ export default function MenuPublico() {
   }, [menu])
   const conOpciones = (p) => (p.grupos || []).length > 0
     || (p.componentes || []).some(c => (c.grupos || []).length > 0)
-  const abrirProducto = (prod) => {
+  const abrirProducto = (prod, origen = 'menu') => {
     const ops = bloq.items[prod.id]
     if (ops) {
       setToast(ops.length
@@ -367,6 +371,7 @@ export default function MenuPublico() {
         : `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
       return false
     }
+    setOrigenModal(origen)
     setProductoModal(prod)
     return true
   }
@@ -377,9 +382,9 @@ export default function MenuPublico() {
     .filter(p => p && !bloq.items[p.id] && !carrito.some(l => l.id === p.id)
       && !(tieneFancy && /fanc/i.test(p.nombre)))
   const agregarSugerencia = (prod) => {
-    if (!conOpciones(prod)) { agregarAlCarrito(prod); return }
+    if (!conOpciones(prod)) { agregarAlCarrito(prod, 1, '', [], [], 'sugerencia_carrito'); return }
     setCarritoAbierto(false)
-    if (abrirProducto(prod)) setVolverAlCarrito(true)
+    if (abrirProducto(prod, 'sugerencia_carrito')) setVolverAlCarrito(true)
     else setCarritoAbierto(true)
   }
   // «¿Son dos?»: Freakie Burger → Burger Duo (2 hamburguesas + 2 papas + 2 bebidas).
@@ -392,7 +397,7 @@ export default function MenuPublico() {
   const aceptarDuo = () => {
     if (!ofertaDuo) return
     setCarritoAbierto(false)
-    if (abrirProducto(duo)) setReemplazo({ nombre: 'Freakie Burger', quitar: ofertaDuo.quitar })
+    if (abrirProducto(duo, 'oferta_duo')) setReemplazo({ nombre: 'Freakie Burger', quitar: ofertaDuo.quitar })
     else setCarritoAbierto(true)
   }
   const quitarUnidades = (nombre, n) => setCarrito(prev => {
@@ -446,7 +451,7 @@ export default function MenuPublico() {
       nuevo.push({
         lineaId: Date.now() + Math.random(),
         id: prod.id, nombre: prod.nombre, precio: Number(prod.precio),
-        precioMods, qty: Number(it.cantidad) || 1, nota: it.nota || '', mods: modsActuales,
+        precioMods, qty: Number(it.cantidad) || 1, nota: it.nota || '', mods: modsActuales, origen: 'repetir',
       })
     }
     if (!nuevo.length) { setToast('Ese pedido ya no está disponible en el menú'); return }
@@ -541,11 +546,11 @@ export default function MenuPublico() {
         {/* TICKET PROMEDIO: lo más pedido y lo de compartir, arriba de todo */}
         {filaMasPedidos.length >= 3 && (
           <FilaDestacada titulo="Los más pedidos en delivery 🔥" sub="Lo que más piden nuestros clientes"
-                         items={filaMasPedidos} ranking onPick={abrirProducto} />
+                         items={filaMasPedidos} ranking onPick={p => abrirProducto(p, 'mas_pedidos')} />
         )}
         {filaCompartir.length >= 2 && (
           <FilaDestacada titulo="Para compartir 🍔🌭" sub="Para la familia o los cuates"
-                         items={filaCompartir} onPick={abrirProducto} />
+                         items={filaCompartir} onPick={p => abrirProducto(p, 'para_compartir')} />
         )}
 
         {/* SECCIONES POR CATEGORIA */}
@@ -601,8 +606,8 @@ export default function MenuPublico() {
             setProductoModal(null)
             if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
           }}
-          onAgregar={(qty, nota, mods, comps) => {
-            agregarAlCarrito(productoModal, qty, nota, mods, comps)
+          onAgregar={(qty, nota, mods, comps, agrandadoVia) => {
+            agregarAlCarrito(productoModal, qty, nota, mods, comps, origenModal, agrandadoVia || null)
             setProductoModal(null)
             if (reemplazo) quitarUnidades(reemplazo.nombre, reemplazo.quitar)
             if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
@@ -1199,7 +1204,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const precioAgrandado = agrandables[0] ? Number(agrandables[0].op.precio_extra) || 0 : 0
 
   const aceptarUpsell = () => {
-    setUpsell('visto')
+    setUpsell('aceptado')
     const comps = new Set(sinAgrandar.map(({ g }) =>
       armado.pareja[claveComp(g)] != null ? String(armado.pareja[claveComp(g)]) : null).filter(Boolean))
     setSel(prev => {
@@ -1233,7 +1238,10 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
       cantidad: Number(c.cantidad) || 1,
       mods: modsPlanos.filter(m => m.compIdx === i),
     })).filter(c => c.mods.length > 0)
-    onAgregar(qty, nota, modsPlanos.filter(m => m.compIdx == null), comps)
+    // Cómo se aceptó el agrandado: desde la pregunta al añadir o tocando el botón.
+    const algunoAgrandado = agrandables.some(({ g, op }) => (sel[g.id] || []).some(o => o.id === op.id))
+    const agrandadoVia = !algunoAgrandado ? null : upsell === 'aceptado' ? 'pregunta' : 'boton'
+    onAgregar(qty, nota, modsPlanos.filter(m => m.compIdx == null), comps, agrandadoVia)
   }
 
   return (
@@ -2032,6 +2040,9 @@ function Checkout({ items, total, onClose, onEnviado,
             menu_item_id: i.id,
             cantidad: i.qty,
             nota: i.nota || null,
+            // Medición (9-nov-2026): de qué sección salió y cómo se agrandó.
+            origen: i.origen || 'menu',
+            agrandado_via: i.agrandadoVia || null,
             // Cambios que el cliente aceptó porque a la tienda se le acabó
             // algo. El servidor los revalida contra lo que autorizó la torre
             // y decide el precio: nunca cobra más de lo que se le mostró.
