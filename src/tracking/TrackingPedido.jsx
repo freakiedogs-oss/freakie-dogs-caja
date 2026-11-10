@@ -211,6 +211,8 @@ export default function TrackingPedido() {
         </div>
       )}
 
+      {entregado && <CuponGanado token={token} />}
+
       {entregado && <EncuestaEntrega token={token} inicial={d.calificacion} />}
 
       {entregado && (
@@ -222,6 +224,51 @@ export default function TrackingPedido() {
 
       <footer className="tk-foot">Esta página se actualiza sola</footer>
     </Marco>
+  )
+}
+
+// Cupón de regreso (10-nov-2026, Cesar): si este pedido lo ganó (subtotal desde
+// $20 y no usó cupón), se muestra al entregar con su vencimiento (21 días) y el
+// mínimo. Queda guardado con el teléfono: el cliente no copia ningún código.
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+function CuponGanado({ token }) {
+  const [c, setC] = useState(null)
+  useEffect(() => {
+    let vivo = true
+    db.rpc('cupon_de_pedido', { p_token: token })
+      .then(({ data }) => { if (vivo && data && Number(data.monto) > 0) setC(data) })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [token])
+  if (!c) return null
+  const vence = new Date(c.vence_at)
+  const fecha = `${vence.getDate()} de ${MESES[vence.getMonth()]}`
+  const monto = `$${Number(c.monto).toFixed(2)}`
+  if (!c.libre) {
+    return (
+      <div style={{ margin: '14px 12px 4px', border: '1px solid #e5ddd3', borderRadius: 14, padding: 12, textAlign: 'center',
+                    color: '#6b5a48', fontSize: 13 }}>
+        🎁 El cupón de {monto} que ganaste con este pedido ya se usó o venció.
+      </div>
+    )
+  }
+  return (
+    <div style={{ margin: '14px 12px 4px', border: '2px dashed #BA7517', background: '#FAEEDA', color: '#633806',
+                  borderRadius: 16, padding: 16, textAlign: 'center' }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>🎁 ¡Ganaste un cupón!</div>
+      <div style={{ fontSize: 34, fontWeight: 800, margin: '2px 0', color: '#9a3412' }}>{monto}</div>
+      <div style={{ fontSize: 14 }}>de descuento en tu próximo pedido de $20 o más</div>
+      <div style={{ fontSize: 12.5, marginTop: 6 }}>
+        Tenés <b>{c.dias} días</b> para usarlo · vence el <b>{fecha}</b>
+      </div>
+      <div style={{ fontSize: 11.5, marginTop: 8, opacity: .85 }}>
+        Queda guardado con tu número: no tenés que copiar ningún código.
+      </div>
+      <a href="/" style={{ display: 'inline-block', marginTop: 10, background: '#E63946', color: '#fff', borderRadius: 10,
+                           padding: '9px 16px', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
+        Pedir otra vez
+      </a>
+    </div>
   )
 }
 

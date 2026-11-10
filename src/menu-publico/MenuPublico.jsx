@@ -131,6 +131,8 @@ export default function MenuPublico() {
   // reemplaza al aceptar «¿Son dos? Pasate al Burger Duo»; `volverAlCarrito`
   // reabre el carrito después de armar una sugerencia que tiene opciones.
   const [masPedidos, setMasPedidos] = useState([])
+  const [extrasFav, setExtrasFav] = useState({})        // {opcionId: veces}
+  const [cupon, setCupon] = useState(null)               // cupón de regreso activo {monto, minimo, vence_at, dias}
   const [reemplazo, setReemplazo] = useState(null)       // {lineaId, quitar}
   const [volverAlCarrito, setVolverAlCarrito] = useState(false)
   const [origenModal, setOrigenModal] = useState('menu')  // de qué sección se abrió el producto
@@ -180,6 +182,10 @@ export default function MenuPublico() {
   useEffect(() => {
     db.rpc('menu_mas_pedidos', { p_dias: 30, p_limite: 8 })
       .then(({ data }) => Array.isArray(data) && setMasPedidos(data))
+      .catch(() => {})
+    // «⭐ El favorito»: veces que se eligió cada extra con precio (30 días).
+    db.rpc('menu_extras_favoritos', { p_dias: 30 })
+      .then(({ data }) => data && typeof data === 'object' && setExtrasFav(data))
       .catch(() => {})
   }, [])
 
@@ -417,6 +423,15 @@ export default function MenuPublico() {
   // ── Mis pedidos: el cliente se identifica por el teléfono guardado en el
   // dispositivo (perfil). Trae pedido activo (→ tracking) + últimos entregados
   // (→ volver a pedir). Se recarga al completar un pedido nuevo.
+  // Cupón de regreso (10-nov-2026): el del teléfono guardado en este dispositivo.
+  useEffect(() => {
+    const tel = leerPerfil().telefono
+    if (!tel) return
+    db.rpc('cupon_activo', { p_telefono: tel })
+      .then(({ data }) => setCupon(data && Number(data.monto) > 0 ? data : null))
+      .catch(() => {})
+  }, [pedidoOk])
+
   useEffect(() => {
     const tel = leerPerfil().telefono
     if (!tel) return
@@ -543,6 +558,20 @@ export default function MenuPublico() {
           <div className="mp-cargando">😕 No pudimos cargar el menú. Recargá la página o intentá en un momento.</div>
         )}
 
+        {/* CUPÓN DE REGRESO: recordatorio arriba del menú */}
+        {cupon && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 16px 0', padding: '12px 14px', borderRadius: 12,
+                        background: '#FAEEDA', border: '1px solid #EF9F27', color: '#633806', fontSize: 14 }}>
+            <span style={{ fontSize: 24 }}>🎁</span>
+            <span style={{ flex: 1 }}>
+              <b>Tenés {fmt(cupon.monto)} de descuento</b><br />
+              <span style={{ fontSize: 12 }}>
+                En pedidos de $20 o más · {Number(cupon.dias) <= 1 ? 'vence hoy' : `vence en ${cupon.dias} días`}
+              </span>
+            </span>
+          </div>
+        )}
+
         {/* TICKET PROMEDIO: lo más pedido y lo de compartir, arriba de todo */}
         {filaMasPedidos.length >= 3 && (
           <FilaDestacada titulo="Los más pedidos en delivery 🔥" sub="Lo que más piden nuestros clientes"
@@ -614,6 +643,7 @@ export default function MenuPublico() {
           }}
           abierto={abierto}
           reglasChoque={reglasChoque}
+          extrasFav={extrasFav}
         />
       )}
 
@@ -629,6 +659,7 @@ export default function MenuPublico() {
           onQuitarLinea={quitarLinea}
           sugerencias={sugerencias}
           onSugerencia={agregarSugerencia}
+          cupon={cupon}
           ofertaDuo={ofertaDuo}
           onAceptarDuo={aceptarDuo}
           onClose={() => setCarritoAbierto(false)}
@@ -928,7 +959,7 @@ function ProductoCard({ producto, onClick, agotado = false, dondeAgotado }) {
   )
 }
 
-function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [] }) {
+function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [], extrasFav = {} }) {
   const [qty, setQty] = useState(1)
   const [nota, setNota] = useState('')
   // sel: { [grupoId]: [ {id,nombre,precio_extra}, ... ] }
@@ -1320,7 +1351,14 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                   <span className="mp-grupo-flecha" aria-hidden="true">{estaAbierto ? '▲' : '▼'}</span>
                 </button>
                 <div className="mp-opciones" hidden={!estaAbierto}>
-                  {opcionesVisibles(g).filter(op => op !== opAgrandado).map(op => {
+                  {opcionesVisibles(g).filter(op => op !== opAgrandado).map((op, _i, lista) => {
+                    // «⭐ El favorito» / «⭐ Popular»: los 2 extras con precio más
+                    // elegidos de ESTE grupo en 30 días (datos reales, ≥20 veces).
+                    const ranking = lista
+                      .filter(o => Number(o.precio_extra) > 0 && !esOpcionAgrandado(o) && !esOpcionCambio(o) && Number(extrasFav[o.id]) >= 20)
+                      .sort((a, b) => Number(extrasFav[b.id]) - Number(extrasFav[a.id]))
+                    const medalla = ranking[0]?.id === op.id ? '⭐ El favorito'
+                      : ranking[1]?.id === op.id ? '⭐ Popular' : null
                     const activa = (sel[g.id] || []).some(x => x.id === op.id)
                     const tn = !esUnico(g) && todoNadaDe(g)
                     const bloqueada = !activa && tn && esBaseGratis(op)
@@ -1357,6 +1395,12 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                       >
                         <span className="mp-opcion-nombre">
                           {op.nombre}
+                          {medalla && (
+                            <span style={{ fontSize: 11, fontWeight: 700, background: '#FAEEDA', color: '#633806',
+                                           padding: '1px 7px', borderRadius: 7, marginLeft: 6, whiteSpace: 'nowrap' }}>
+                              {medalla}
+                            </span>
+                          )}
                           {op.descripcion && (
                             <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#6b5a48', marginTop: 2, lineHeight: 1.35 }}>
                               {op.descripcion}
@@ -1514,7 +1558,12 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                         problemasDe = () => [], dondeAgotado,
                         onCambiar = () => {}, onQuitarLinea = () => {},
                         sugerencias = [], onSugerencia = () => {},
-                        ofertaDuo = null, onAceptarDuo = () => {} }) {
+                        ofertaDuo = null, onAceptarDuo = () => {}, cupon = null }) {
+  // Cupón de regreso: se aplica desde $19.99 («$20» en los textos, así el Burger Box cuenta).
+  const MINIMO_CUPON = 19.99
+  const cuponAplica = !!cupon && total >= Number(cupon.minimo || MINIMO_CUPON)
+  const descCupon = cuponAplica ? Number(cupon.monto) || 0 : 0
+  const totalNeto = Math.max(0, total - descCupon)
   const problemas = items.map(i => ({ linea: i, p: problemasDe(i) })).filter(x => x.p.length)
   const hayAgotados = problemas.length > 0
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
@@ -1644,9 +1693,47 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                 Agregá <b>{fmt(faltaGratis)}</b> más y el envío te sale <b>gratis</b> 🚀
               </div>
             )}
+            {/* Cupón de regreso: ganarlo (barra) o usarlo (descuento) */}
+            {faltaMinimo === 0 && !cupon && (() => {
+              const falta = Math.max(0, MINIMO_CUPON - total)
+              return falta > 0 ? (
+                <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#633806' }}>
+                  <div style={{ fontSize: 13.5 }}>Pedí <b>{fmt(falta)}</b> más y ganás <b>$2 de descuento</b> en tu próxima compra 🎁</div>
+                  <div style={{ height: 8, borderRadius: 6, background: '#fff', overflow: 'hidden', marginTop: 8 }}>
+                    <div style={{ width: `${Math.min(100, total / MINIMO_CUPON * 100)}%`, height: '100%', background: '#E63946' }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, marginTop: 5, opacity: .85 }}>Tenés 21 días para usarlo · válido en pedidos de $20 o más</div>
+                </div>
+              ) : (
+                <div style={{ background: '#EAF3DE', border: '1px solid #97C459', borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#27500A' }}>
+                  <div style={{ fontSize: 13.5 }}>🎉 <b>¡Listo!</b> Con este pedido ganás <b>$2 de descuento</b> para tu próxima compra</div>
+                  <div style={{ fontSize: 11.5, marginTop: 5, opacity: .85 }}>Te llega al entregar tu pedido · tenés 21 días para usarlo en pedidos de $20 o más</div>
+                </div>
+              )
+            })()}
+            {faltaMinimo === 0 && cupon && (cuponAplica ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#EAF3DE', border: '1px solid #97C459',
+                              borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#27500A', fontSize: 14 }}>
+                  <span>🎁 <b>Cupón aplicado</b><br />
+                    <span style={{ fontSize: 11.5 }}>{fmt(descCupon)} de descuento · {Number(cupon.dias) <= 1 ? 'vence hoy' : `vence en ${cupon.dias} días`}</span></span>
+                  <b>−{fmt(descCupon)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#888', marginBottom: 4 }}>
+                  <span>Subtotal</span><span>{fmt(total)}</span>
+                </div>
+              </>
+            ) : (
+              <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#633806', fontSize: 13.5 }}>
+                Te faltan <b>{fmt(Math.max(0, Number(cupon.minimo || MINIMO_CUPON) - total))}</b> para usar tus <b>{fmt(cupon.monto)}</b> de descuento 🎁
+                <div style={{ fontSize: 11.5, marginTop: 4, opacity: .85 }}>
+                  Válido en pedidos de $20 o más · {Number(cupon.dias) <= 1 ? 'vence hoy' : `vence en ${cupon.dias} días`}
+                </div>
+              </div>
+            ))}
             <div className="mp-drawer-total">
               <span>Total</span>
-              <span className="mp-drawer-total-num">{fmt(total)}</span>
+              <span className="mp-drawer-total-num">{fmt(totalNeto)}</span>
             </div>
             {problemas.map(({ linea, p }) => (
               <AvisoCambio key={linea.lineaId} problemas={p} dondeAgotado={dondeAgotado}
@@ -1971,7 +2058,23 @@ function Checkout({ items, total, onClose, onEnviado,
   const telBonito = (t) => String(t || '').replace(/^(\d{4})(\d{4})$/, '$1-$2')
 
   const costoEnvio = tipo === 'delivery' ? Number(envio?.costo ?? 0) : 0
-  const totalConEnvio = total + costoEnvio
+  // Cupón de regreso del teléfono que se está usando (el servidor lo vuelve a
+  // validar y decide; esto es solo para mostrar el total correcto y cobrar con
+  // tarjeta el mismo monto).
+  const [cuponCk, setCuponCk] = useState(null)
+  const telDigitos = telefono.replace(/\D/g, '')
+  useEffect(() => {
+    if (telDigitos.length < 8) { setCuponCk(null); return }
+    let vivo = true
+    const t = setTimeout(() => {
+      db.rpc('cupon_activo', { p_telefono: telDigitos })
+        .then(({ data }) => vivo && setCuponCk(data && Number(data.monto) > 0 ? data : null))
+        .catch(() => {})
+    }, 300)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [telDigitos])
+  const descCupon = cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
+  const totalConEnvio = Math.max(0, total + costoEnvio - descCupon)
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
   // Valida el formulario. Lo usan los dos caminos: el de efectivo y el del
@@ -2391,6 +2494,12 @@ function Checkout({ items, total, onClose, onEnviado,
             {tipo === 'delivery' && envio && !envio.gratis && Number(envio.falta_para_gratis) > 0 && (
               <div className="mp-envio-tip">
                 Agregá {fmt(envio.falta_para_gratis)} más y el envío te sale gratis 🚀
+              </div>
+            )}
+            {descCupon > 0 && (
+              <div className="mp-resumen-row" style={{ color: '#27500A', fontWeight: 700 }}>
+                <span>🎁 Cupón de regreso</span>
+                <span>−{fmt(descCupon)}</span>
               </div>
             )}
             <div className="mp-resumen-total">

@@ -1,5 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 10-Nov-2026 — Cupón de regreso $2 (menú web + caja + DTE)
+- Por qué: subir ticket y traer de vuelta al cliente. **Cesar autorizó tocar el cobro del POS** (afecta el monto del DTE).
+- Regla: pedido WEB entregado con subtotal ≥ $19.99 («$20» en textos, para que cuente el Burger Box $19.99) y sin cupón usado → $2 para el próximo pedido ≥ $19.99, **21 días**, ligado al teléfono. Un cupón activo por teléfono; el pedido que usa cupón no genera otro; si se cancela (o queda sin pagar > 3 h) el cupón se libera.
+- BD (`20261110b_cupon_regreso.sql`): tabla `delivery_cupones` (RLS sin políticas), `delivery_clientes.descuento/cupon_id`, trigger `trg_cupon_al_entregar`, RPCs `cupon_activo(tel)` y `cupon_de_pedido(token)`. `crear_pedido_delivery` aplica el cupón (total = subtotal + envío − descuento). `_comanda_delivery` crea la cuenta con descuento monto/promo/«Cupón app».
+- `POSMain` (loadCuenta): si la cuenta de la app trae descuento monto, lo precarga → cobro y DTE (prorrateo de `buildDteLineItems`) por lo pagado.
+- `MenuPublico`: banner «Tenés $2 de descuento», barra para ganarlo en el carrito, «Cupón aplicado −$2» o «te faltan $X», y en el checkout la línea del cupón (tarjeta cobra el neto).
+- `TrackingPedido`: `CuponGanado` al entregar («Tenés N días para usarlo · vence el …», mínimo $20).
+- Probado en BD con rollback (aplica/no aplica, cuenta con descuento, no regenera, se libera al cancelar, gana al entregar) y en jsdom (barra, banner, descuento, checkout).
+
+## 10-Nov-2026 — Menú web: «⭐ El favorito» / «⭐ Popular» en los extras
+- Por qué: subir extras con precio; datos 30 días (tocino hamburguesa 1,811; carne y queso extra 620; papas trufa 295…).
+- RPC `menu_extras_favoritos(dias)` (migración `20261110`): `{opcion_id: veces}` de opciones con precio, ≥20 veces, todos los canales.
+- `ProductoModal` (prop `extrasFav`): en cada grupo, el extra con precio más elegido lleva «⭐ El favorito» y el segundo «⭐ Popular». Excluye agrandado y cambio de bebida. Se recalcula solo con las ventas.
+
 ## 9-Nov-2026 — Menú web: origen de cada producto (para medir las secciones)
 - Por qué: Cesar quiere medir la eficacia de «Los más pedidos», «Para compartir», sugerencias del carrito, oferta Burger Duo y el upsell del agrandado.
 - Cada línea del carrito lleva `origen` (menu | mas_pedidos | para_compartir | sugerencia_carrito | oferta_duo | repetir) y `agrandadoVia` (boton | pregunta); `armarPedido` los manda y `crear_pedido_delivery` los guarda en `delivery_clientes.items[*].origen / agrandado_via` (lista blanca; otro valor → null).
