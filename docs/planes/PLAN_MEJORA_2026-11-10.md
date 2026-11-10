@@ -102,7 +102,7 @@ Tres de estas cifras necesitan una respuesta de negocio antes de actuar: si los 
 - **S-8 Alto — tableros públicos sin login** en `public/dashboard-ejecutivo.html` y `dashboard-operativo.html` (ventas, empleados, asistencia). S.
 - **S-9 Alto — 29 tablas sin RLS**, verificado en BD. S.
 - **S-10 Alto — buckets públicos y editables por `anon`** con estados de cuenta y comprobantes, verificado en BD. `/foto` sube sin login con `upsert` (`src/foto/foto-main.jsx:20-23`). M.
-- **S-11 Medio — multiempresa.** 90 tablas de `pf_common`, `kaeru`, `kako` y `kwa` con lectura `USING(true)` para `anon` (facturas, bancos, socios, cuentas contables). Falta comprobar si esos esquemas están expuestos por la API; si lo están, el aislamiento entre empresas no existe para lectura. M.
+- **S-11 Medio — multiempresa (corregido en `PLAN_EJECUCION_2026-11-10.md`: `pf_common` no está expuesto por la API; el riesgo real está en `kaeru` y `kako`).** 90 tablas de `pf_common`, `kaeru`, `kako` y `kwa` con lectura `USING(true)` para `anon` (facturas, bancos, socios, cuentas contables). Falta comprobar si esos esquemas están expuestos por la API; si lo están, el aislamiento entre empresas no existe para lectura. M.
 - **S-12 Medio — otros.** Sin cabeceras de seguridad en `vercel.json` (CSP, `frame-ancestors`, `Referrer-Policy`; los tokens viajan en la URL de `/track` y `/foto`). `X-DTE-Origen` lo controla el cliente (`api/dte-proxy.js:168`). El puente de impresión Windows acepta cualquier origen y reenvía a cualquier IP de la red local (`freakie-print-bridge.ps1:87-125`). `proxy_dgii.py` arranca sin autenticación y sin verificar TLS: borrarlo si es legado.
 
 ### POS, caja y KDS

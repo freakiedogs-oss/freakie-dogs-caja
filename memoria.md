@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 10-Nov-2026 — Plan de ejecución (segunda pasada de la auditoría)
+- Por qué: Jose pidió terminar lo que faltaba revisar, profundizar en datos y dejar un plan listo para ejecutar con el modelo recomendado por etapa.
+- Entregable: `docs/planes/PLAN_EJECUCION_2026-11-10.md` (4 olas, paquetes W0–W3 con pasos, criterio de terminado, modelo y esfuerzo). El catálogo de hallazgos sigue en `PLAN_MEJORA_2026-11-10.md`.
+- Nuevo y urgente: `service_role` en claro en Make (rotar); `bulk-sql-kaeru` ejecuta SQL libre con secreto fijo; `dte-service` acepta cualquier API key para consultar; KWA sin DTE válido desde el 4-Nov y bucles de reintento (~5,400 rechazos/día); `ai-gateway`/`ai-query` sin autenticación; 787 de 793 pedidos web con tarjeta sin DTE; solo 22% de cobros 3DS se completan; `pos_operaciones_log` vacía.
+- Correcciones: `pf_common` NO es alcanzable por la API (el riesgo entre empresas está en `kaeru`/`kako`); `pos_turnos.diferencia_efectivo` no es faltante real (el cuadre diario aprobado cuadra a menos de $60/mes).
+- Regla de modelos: Haiku = mecánico; Sonnet = el grueso con pasos definidos; Opus = dinero, DTE y permisos; Fable = revisión independiente de lo anterior y diseño de la sesión en servidor.
+- Sin revisar todavía: Notion (no autorizado), variables de entorno de Vercel (403).
+
 ## 10-Nov-2026 — Auditoría integral + plan de mejora (solo lectura)
 - Por qué: Jose pidió una revisión profunda de todo (código, base, flujos, conexiones) y un plan de acción.
 - Entregable: `docs/planes/PLAN_MEJORA_2026-11-10.md` (hallazgos con ID, evidencia y esfuerzo; fases 0 / 1 / 2). No se cambió nada en producción.
