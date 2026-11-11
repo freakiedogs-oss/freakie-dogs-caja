@@ -48,6 +48,7 @@ export default function EtiquetadoParamsTab({ user }) {
       const { error: e } = await db.rpc('fn_etiquetado_vincular_receta', {
         p_id: edit.id, p_receta_id: edit.receta_id || null, p_requiere_peso: !!edit.requiere_peso,
         p_vida_util_estado: edit.vida_util_estado, p_usuario_id: user?.id || null,
+        p_unidades_catalogo: Number(edit.unidades_catalogo) > 0 ? Number(edit.unidades_catalogo) : 1,
       });
       if (e) throw new Error(e.message);
       setOk(`${edit.nombre}: ${edit.receta_id ? 'receta vinculada' : 'sin receta'}.`);
@@ -86,6 +87,13 @@ export default function EtiquetadoParamsTab({ user }) {
           </div>
         )}
 
+        <label style={lbl}>Unidades de catálogo por unidad impresa</label>
+        <input type="number" min="0.0001" step="any" value={edit.unidades_catalogo ?? 1}
+          onChange={e => setEdit({ ...edit, unidades_catalogo: e.target.value })} style={inp} />
+        <div style={{ fontSize: 12, color: C.textMuted, marginTop: 4, lineHeight: 1.5 }}>
+          Casi siempre 1. Carne: la bolsa trae 6 bolitas y la receta rinde bolitas → 6. Cada bolsa impresa da de alta esa cantidad y descuenta la receta en proporción.
+        </div>
+
         <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={!!edit.requiere_peso} onChange={e => setEdit({ ...edit, requiere_peso: e.target.checked })} />
           <span style={{ color: C.text, fontSize: 13 }}>Se pesa en la báscula (si no, solo se cuenta: paquetes, botes)</span>
@@ -110,8 +118,9 @@ export default function EtiquetadoParamsTab({ user }) {
       <Msg err msg={error} />
       <Msg msg={ok} />
       <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
-        Lo que ofrece la tablet de pesaje de Casa Matriz. Con receta vinculada, al cerrar una tanda el sistema descuenta la receta
-        (materias primas por el peso real, empaques por unidades) y da de alta las bolsas. Sin receta, solo registra las unidades.
+        Lo que ofrece la tablet de pesaje de Casa Matriz. Con receta vinculada, cada impresión de etiqueta descuenta la receta
+        en el kardex (materias primas por el peso real, empaques por unidades) y da de alta el producto. Sin receta, solo registra las unidades.
+        La tablet no cambia: todo pasa en el servidor al registrar la impresión (desde el 11-nov-2026).
       </div>
       {lista.map(f => (
         <div key={f.id} onClick={() => setEdit(f)} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 14px', marginBottom: 8, cursor: 'pointer', opacity: f.activo ? 1 : .5 }}>
@@ -125,6 +134,7 @@ export default function EtiquetadoParamsTab({ user }) {
             {f.unidad || '—'} · {f.gramos ? `${Math.round(f.gramos)} g ±${f.banda ?? 0}` : 'sin peso objetivo'}{f.tara ? ` · tara ${f.tara} g` : ''}
             {' · '}{f.dias ?? '?'} días {f.vida_util_estado === 'validado' ? <span style={{ color: C.green }}>(validados)</span> : <span style={{ color: C.yellow }}>(provisionales)</span>}
             {f.recetas ? ` · ${f.recetas.nombre} (${f.recetas.rendimiento} ${f.recetas.unidad_rendimiento}/tanda)` : ''}
+            {Number(f.unidades_catalogo) > 1 ? ` · ×${f.unidades_catalogo} por unidad` : ''}
             {f.origen === 'estacion' && f.creado_nombre ? ` · creado en la tablet por ${f.creado_nombre}` : ''}
           </div>
         </div>
