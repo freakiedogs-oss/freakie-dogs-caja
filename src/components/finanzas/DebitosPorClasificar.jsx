@@ -30,17 +30,17 @@ export default function DebitosPorClasificar() {
 
   async function revisar(d, destino) {
     setBusy(d.id); setMsg(null)
-    const { error } = await db.rpc('fn_banco_revisar', { p_id: d.id, p_destino: destino, p_usuario: 'pl-inline',
+    const { error } = await dbFin.rpc('fn_banco_revisar', { p_id: d.id, p_destino: destino, p_usuario: 'pl-inline',
       p_categoria: destino === 'pl_directo' ? catOf(d) : null, p_subcategoria: destino === 'pl_directo' ? (subOf(d) || null) : null })
     setBusy(null)
     if (error) return setMsg('⚠️ ' + error.message)
     setRows(rs => rs.filter(x => x.id !== d.id))
   }
-  async function sugerir(id) { setBusy(id); const { data } = await db.rpc('fn_banco_sugerir_dte', { p_id: id }); setBusy(null); setDtes(x => ({ ...x, [id]: data || [] })) }
+  async function sugerir(id) { setBusy(id); const { data } = await dbFin.rpc('fn_banco_sugerir_dte', { p_id: id }); setBusy(null); setDtes(x => ({ ...x, [id]: data || [] })) }
   function toggle(id, dteId) { setSel(s => { const cur = new Set(s[id] || []); cur.has(dteId) ? cur.delete(dteId) : cur.add(dteId); return { ...s, [id]: cur } }) }
   async function aplicarDtes(d) {
     const arr = [...(sel[d.id] || [])]; if (!arr.length) return
-    setBusy(d.id); const { error } = await db.rpc('fn_banco_revisar_multi_dte', { p_id: d.id, p_dtes: arr, p_usuario: 'pl-inline' })
+    setBusy(d.id); const { error } = await dbFin.rpc('fn_banco_revisar_multi_dte', { p_id: d.id, p_dtes: arr, p_usuario: 'pl-inline' })
     setBusy(null); if (error) return setMsg('⚠️ ' + error.message)
     setRows(rs => rs.filter(x => x.id !== d.id))
   }
