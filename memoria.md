@@ -1,5 +1,6 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+<<<<<<< HEAD
 ## 11-Nov-2026 — Ejecución Ola 0 (parte 1): DTE, proxies, POS, recepción
 - Por qué: Jose dio visto bueno a los paquetes DTE del plan (`docs/planes/PLAN_EJECUCION_2026-11-10.md`). Kaeru, Kako y Eatalia los ejecuta él.
 - **Aplicado en la base (ya en producción):**
@@ -32,6 +33,21 @@
 - Lo central: la base confía en el navegador (392 políticas `USING(true)` para anon, 564 funciones SECURITY DEFINER ejecutables sin sesión); tres puertas para adivinar PINs sin límite (`dte-proxy`, `dte-email`, `peya-responder`); cobros en varios pasos sin transacción ni idempotencia; sin staging, sin build/tests en CI, sin monitoreo, y el repo no reconstruye la base.
 - Cifras de la base (30 días): 21,529 cuentas cobradas; 1 pago duplicado y 6 sobrepagos ($34.75); 788 pedidos de delivery propio sin DTE; 220 pagos en línea en `requiere_3ds`; 632 filas de inventario en negativo; 2 cron fallando siempre (`refresh_mv_vista_top_productos`, `pos-cocina-queue-archivar`).
 - Pendiente de decisión de Jose: qué de la Fase 0 se ejecuta primero; lo que toca DTE (0.1, 1.6, D-4) requiere su visto bueno.
+=======
+## 10-Nov-2026 — Cupón de regreso $2 (menú web + caja + DTE)
+- Por qué: subir ticket y traer de vuelta al cliente. **Cesar autorizó tocar el cobro del POS** (afecta el monto del DTE).
+- Regla: pedido WEB entregado con subtotal ≥ $19.99 («$20» en textos, para que cuente el Burger Box $19.99) y sin cupón usado → $2 para el próximo pedido ≥ $19.99, **21 días**, ligado al teléfono. Un cupón activo por teléfono; el pedido que usa cupón no genera otro; si se cancela (o queda sin pagar > 3 h) el cupón se libera.
+- BD (`20261110b_cupon_regreso.sql`): tabla `delivery_cupones` (RLS sin políticas), `delivery_clientes.descuento/cupon_id`, trigger `trg_cupon_al_entregar`, RPCs `cupon_activo(tel)` y `cupon_de_pedido(token)`. `crear_pedido_delivery` aplica el cupón (total = subtotal + envío − descuento). `_comanda_delivery` crea la cuenta con descuento monto/promo/«Cupón app».
+- `POSMain` (loadCuenta): si la cuenta de la app trae descuento monto, lo precarga → cobro y DTE (prorrateo de `buildDteLineItems`) por lo pagado.
+- `MenuPublico`: banner «Tenés $2 de descuento», barra para ganarlo en el carrito, «Cupón aplicado −$2» o «te faltan $X», y en el checkout la línea del cupón (tarjeta cobra el neto).
+- `TrackingPedido`: `CuponGanado` al entregar («Tenés N días para usarlo · vence el …», mínimo $20).
+- Probado en BD con rollback (aplica/no aplica, cuenta con descuento, no regenera, se libera al cancelar, gana al entregar) y en jsdom (barra, banner, descuento, checkout).
+
+## 10-Nov-2026 — Menú web: «⭐ El favorito» / «⭐ Popular» en los extras
+- Por qué: subir extras con precio; datos 30 días (tocino hamburguesa 1,811; carne y queso extra 620; papas trufa 295…).
+- RPC `menu_extras_favoritos(dias)` (migración `20261110`): `{opcion_id: veces}` de opciones con precio, ≥20 veces, todos los canales.
+- `ProductoModal` (prop `extrasFav`): en cada grupo, el extra con precio más elegido lleva «⭐ El favorito» y el segundo «⭐ Popular». Excluye agrandado y cambio de bebida. Se recalcula solo con las ventas.
+>>>>>>> origin/main
 
 ## 9-Nov-2026 — Menú web: origen de cada producto (para medir las secciones)
 - Por qué: Cesar quiere medir la eficacia de «Los más pedidos», «Para compartir», sugerencias del carrito, oferta Burger Duo y el upsell del agrandado.

@@ -492,10 +492,20 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       try {
         const { data: cab } = await db
           .from('pos_cuentas')
-          .select('delivery_referencia, cliente_nombre, delivery_cliente_id, mesero_id')
+          .select('delivery_referencia, cliente_nombre, delivery_cliente_id, mesero_id, descuento, descuento_tipo, descuento_motivo, descuento_categoria')
           .eq('id', cuentaCtx.cuentaId)
           .maybeSingle()
         if (cab?.mesero_id) setMeseroAtiende(cab.mesero_id)
+        // Cupón de regreso de la app (10-nov-2026, autorizado por Cesar): la cuenta
+        // nace con el descuento que el cliente ya tuvo en su total. Se precarga para
+        // que el cobro y el DTE (prorrateo de buildDteLineItems) cuadren con lo que
+        // el cliente pagó. Solo cuentas de pedidos web con descuento en monto.
+        if (cab?.delivery_cliente_id && Number(cab?.descuento) > 0 && cab?.descuento_tipo === 'monto') {
+          setDescuento(Number(cab.descuento))
+          setDescuentoTipo('monto')
+          setDescuentoMotivo(cab.descuento_motivo || 'Cupón app')
+          setDescuentoCategoria(cab.descuento_categoria || 'promo')
+        }
         if (cab?.delivery_referencia) setPeyaRef(cab.delivery_referencia)
         if (cab?.delivery_cliente_id) {
           const { data: dinfo } = await db.rpc('pos_cuentas_delivery_info', { p_cuenta_ids: [cuentaCtx.cuentaId] })
