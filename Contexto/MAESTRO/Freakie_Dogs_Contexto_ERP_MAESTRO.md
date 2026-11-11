@@ -63,8 +63,8 @@ Documento centralizado de contexto operativo, técnico y estratégico para uso d
 
 Desde **17-May-2026**, el ERP se desarrolla colaborativamente con dos personas, ambas operando Claude en Cowork mode:
 
-- **Jose Isart** (PIN 1000, rol `ejecutivo`) — Arquitecto principal. Acceso full.
-- **Cesar Rodriguez** (PIN 2000, rol `ejecutivo`) — Segundo desarrollador. Acceso full.
+- **Jose Isart** (PIN [retirado], rol `ejecutivo`) — Arquitecto principal. Acceso full.
+- **Cesar Rodriguez** (PIN [retirado], rol `ejecutivo`) — Segundo desarrollador. Acceso full.
 
 **Coordinación:**
 - Notion + MAESTRO.md = cerebro compartido (single source of truth conceptual)
@@ -464,7 +464,7 @@ Diseño completo de la base de datos PostgreSQL en Supabase. Todas las tablas us
 
 **UI EventosView (16-Abr):** Navegación 2-screen: pantalla lista → pantalla detalle (botón back + 4 tabs internas: 🍔 Menú, 📦 Pedido CM, 🛒 Ventas, ✅ Cierre). Tab Cierre incluye: input "Efectivo para cambio", sección Egresos (ModalEgreso reutiliza patrón CierreForm con motivos_egreso), "Personal del evento" (multi-select desde usuarios_erp → guarda en `staff_nombres TEXT[]`), y cálculo **Efectivo a entregar = Efectivo cambio + Ventas efectivo - Egresos**.
 
-**Rol:** `eventos` — Merari Paola (PIN 7441). Permisos: eventos, mi-asistencia, mi-boleta.
+**Rol:** `eventos` — Merari Paola (PIN [retirado]). Permisos: eventos, mi-asistencia, mi-boleta.
 **Acceso adicional:** ejecutivo, admin, superadmin, jefe_casa_matriz ven módulo eventos (para aprobar/despachar).
 
 ### 7.4 Módulo RRHH — Recursos Humanos (6 tablas)
@@ -629,8 +629,8 @@ Diseño completo de la base de datos PostgreSQL en Supabase. Todas las tablas us
 **Nav:** Sección nueva "KPI Despacho a Motoristas" en `NAV_SECTIONS` con 3 entries (mi-despacho, despacho-operativo, kpi-despacho). ROLE_DEFAULTS extendido para despachador/motorista (mi-despacho first), jefe_casa_matriz/produccion (despacho-operativo), superadmin (kpi-despacho).
 
 **Usuarios involucrados:**
-- Motoristas: Israel Martinez (PIN 8200, rol despachador, CM001) | Angel Armando Ganuza Jovel (PIN 8100, rol motorista, sin store)
-- Encargados de bodega: Marcos Flores (PIN 5001, jefe_casa_matriz) | Denny Stefany Viera Alvarado (PIN 4844, jefe_casa_matriz) | Jessica Guadalupe Mendoza Barrientos (PIN 6828, rol produccion)
+- Motoristas: Israel Martinez (PIN [retirado], rol despachador, CM001) | Angel Armando Ganuza Jovel (PIN [retirado], rol motorista, sin store)
+- Encargados de bodega: Marcos Flores (PIN [retirado], jefe_casa_matriz) | Denny Stefany Viera Alvarado (PIN [retirado], jefe_casa_matriz) | Jessica Guadalupe Mendoza Barrientos (PIN [retirado], rol produccion)
 
 **Pendiente Fase 2:** cron Edge Function reporte semanal lunes 7AM, integración WhatsApp (decidir Twilio vs Make.com+Telegram), exportación PDF, notificaciones push.
 
@@ -683,7 +683,7 @@ Dashboard ejecutivo del dueño (solo superadmin) que mide ventas de delivery pro
 
 **Vista:** `v_cruce_compras` — Vista unificada email + PWA con campo `estado_cruce`: cruzado, match_pendiente, sin_recepcion, sin_dte_email.
 
-**PWA:** `almacen.html` — Módulo dedicado para Marcos Flores (jefe_casa_matriz, PIN: 5001).
+**PWA:** `almacen.html` — Módulo dedicado para Marcos Flores (jefe_casa_matriz, PIN: [retirado]).
 - Tab Recepción: recibir mercadería de proveedores, foto DTE, confirmar cantidades, campo DTE 4 dígitos, precio_unitario por item. Auto-detecta OC aprobada al seleccionar proveedor → precarga items con banner visual "OC-XXXX precargada" (desvinculable). Al guardar actualiza OC a 'recibida' y registra cantidades reales. (Flujo A)
 - Tab Compras: gestión de Órdenes de Compra. Lista OC con badges de estado (colores por estado). NuevaOC: seleccionar proveedor → RPC `sugerir_compra_proveedor` precarga items bajo stock mínimo con cantidades sugeridas. DetalleOC: ver/aprobar/cancelar OC. Estados: borrador→pendiente_aprobacion→aprobada→recibida (o cancelada).
 - Tab Despacho: ver pedidos aprobados de sucursales, preparar y confirmar despacho (Flujo C)
@@ -694,7 +694,7 @@ Dashboard ejecutivo del dueño (solo superadmin) que mide ventas de delivery pro
 **Columnas nuevas recepciones:** `dte_codigo` (VARCHAR 4) — últimos 4 dígitos del número de control DTE para cruce.
 
 **Casa Matriz:** Sucursal `CM001` creada como tipo='bodega' — sede de todas las compras globales.
-**Usuarios nuevos:** Marcos Flores (jefe_casa_matriz, PIN 5001)
+**Usuarios nuevos:** Marcos Flores (jefe_casa_matriz, PIN [retirado])
 **Roles ampliados:** usuarios_erp ahora acepta bodeguero, jefe_casa_matriz, produccion, compras, rrhh, contador, marketing, despachador
 
 ---
@@ -715,21 +715,21 @@ Los permisos de navegación se almacenan en la tabla `permisos_rol` (rol, nav_ke
 
 | Rol | Usuarios | Accesos principales |
 |-----|----------|---------------------|
-| superadmin | 1 (PIN 231155, 6 dígitos) | Acceso total bypass: ve todos los módulos, edita todos los usuarios, gestiona permisos y roles |
+| superadmin | 1 (PIN [retirado], 6 dígitos) | Acceso total bypass: ve todos los módulos, edita todos los usuarios, gestiona permisos y roles |
 | admin | 2-3 (dueño) | Vista total: todas las sucursales, configuración, reportes consolidados, planilla |
-| ejecutivo | 2 (Jose PIN 1000, Cesar PIN 2000) | Mismo acceso que admin + selector sucursal en cierre de caja |
+| ejecutivo | 2 (Jose PIN [retirado], Cesar PIN [retirado]) | Mismo acceso que admin + selector sucursal en cierre de caja |
 | gerente | 5 (uno por local activo) | Su sucursal: cierre de caja, incidentes, inventario, pedidos, propinas mensuales, horarios |
 | cajera / cajero | 5 | Su sucursal: cierre de caja, reporte de turno, depósitos |
 | cocina | ~5 (encargados cocina) | Su sucursal: conteo nocturno, pedido sugerido, confirmar entregas, reporte de turno, horarios |
-| jefe_casa_matriz | 2 (Marcos Flores PIN 5001, Denny Stefany Viera Alvarado PIN 4844) | Casa Matriz: recepción mercadería, despacho pedidos, inventario bodega, aprobación OC, stock levels |
+| jefe_casa_matriz | 2 (Marcos Flores PIN [retirado], Denny Stefany Viera Alvarado PIN [retirado]) | Casa Matriz: recepción mercadería, despacho pedidos, inventario bodega, aprobación OC, stock levels |
 | produccion | 1 (comparte cuenta) | Casa Matriz: registrar producción diaria, BOM, sub-recetas |
-| despachador | 2 (Angel Ganuza PIN 8100, Israel Martinez PIN 8200) | Despacho a sucursales, panel delivery |
+| despachador | 2 (Angel Ganuza PIN [retirado], Israel Martinez PIN [retirado]) | Despacho a sucursales, panel delivery |
 | marketing | 5 (solo lectura) | Dashboard de ventas, métricas producto, analytics redes sociales |
-| rrhh | 1 (Maria Jose PIN 7700 S001) | Planilla, asistencia GPS, horarios, empleados, bonos, propinas — todas las sucursales |
+| rrhh | 1 (Maria Jose PIN [retirado] S001) | Planilla, asistencia GPS, horarios, empleados, bonos, propinas — todas las sucursales |
 | contador | 1 (solo lectura fin.) | Compras, conciliación bancaria, reportes financieros |
 | bodeguero | 1 | Almacén: recepción, despacho, inventario, historial |
 | compras | 1 | Órdenes de compra |
-| eventos | 1 (Merari Paola PIN 7441) | Módulo Eventos: crear eventos, menú custom, pedido inventario CM, registro ventas, devolución sobrantes |
+| eventos | 1 (Merari Paola PIN [retirado]) | Módulo Eventos: crear eventos, menú custom, pedido inventario CM, registro ventas, devolución sobrantes |
 
 ### Roles operativos (acceso básico: Mi Asistencia + Mi Boleta)
 
@@ -737,7 +737,7 @@ Los permisos de navegación se almacenan en la tabla `permisos_rol` (rol, nav_ke
 |-----|------------------|-------------|
 | motorista | Motorista | Driver de delivery (lleva pedidos a clientes) |
 | motorista_interno | Motorista Interno | Lleva producto entre sucursales/bodega |
-| domicilios | Domicilios Propios, Domicilio | Delivery propio (ej. Katherine Yanes PIN 9800) |
+| domicilios | Domicilios Propios, Domicilio | Delivery propio (ej. Katherine Yanes PIN [retirado]) |
 | mesero / mesera | Mesero, Mesera, Encargada de meseros | ~15 personas |
 | tablet | Tablet, Encargada Tablet, Pedidos Ya, Encargada PEYA | Operadores plataformas ~8 personas |
 | telefono | Telefono Freakies | Atención telefónica |
@@ -783,7 +783,7 @@ Los permisos de navegación se almacenan en la tabla `permisos_rol` (rol, nav_ke
 | 28 | Panel Super Admin | ADMIN | SuperAdminView.jsx (11-Abr): 3 tabs — 👥 Usuarios (CRUD completo sin restricciones, editar PIN/rol/store de cualquiera), 🔐 Permisos (seleccionar rol → checkboxes módulos → guardar a `permisos_rol`), ➕ Nuevo Rol (crear roles custom con permisos seleccionados). Solo rol `superadmin`. Sidebar dinámico lee `permisos_rol` en vez de arrays hardcoded. |
 | 29 | Dashboard Financiero | FIN | FinanzasDashboard.jsx (11-Abr): 5 tabs — 📊 Dashboard (KPIs ventas/margen/gastos, tendencia mensual, ventas por sucursal), 📋 Estado de Resultados (P&L completo: ventas→costo comida→margen bruto→gastos op→EBITDA→utilidad neta), ⚖️ Balance de Comprobación (activos/pasivos/patrimonio), 💰 Flujo de Caja (método indirecto), 🏢 Proveedores (detalle por proveedor agrupado por categoría con % sobre ventas). Data Ago-Dic 2025 desde Excel hardcoded + 2026 live desde Supabase. **Catálogo contable DB-driven**: tabla `catalogo_contable` con 90 proveedores, 9 categorías, 30 subcategorías — reemplaza PROV_CAT hardcoded. `fetchAll()` para paginación >1000 filas Supabase. Solo roles ejecutivo/superadmin. |
 | 30 | Kardex Inventario | OPS | KardexView.jsx (14-Abr, UX 25-Abr): 5 tabs — 📦 Inventario (MP/SP/PT con SKUs auto), 🔗 Mapeo Compras (ítems DTE sin mapear), 📋 Recetas (BOM editor), 📊 Historial (movimientos kardex_movimientos filtrable), ⚙️ Ajustes (ajustes manuales con notas). **UX 25-Abr**: Radix Tabs reemplazado por pill nav nativo (botones `#e63946` activo / `#222` inactivo, `borderRadius: 20`), imports muertos eliminados. Roles: jefe_casa_matriz, admin, ejecutivo. |
-| 31 | Eventos | EVT | EventosView.jsx (16-Abr): Navegación 2-screen (lista → detalle con back button + 4 tabs internas: 🍔 Menú, 📦 Pedido CM, 🛒 Ventas, ✅ Cierre). Cierre incluye: efectivo para cambio, egresos (ModalEgreso con motivos_egreso), personal del evento (multi-select usuarios_erp → staff_nombres[]), cálculo "Efectivo a entregar = Efectivo cambio + Ventas efectivo - Egresos". 9 tablas (+evento_egresos), 2 RPCs, 2 triggers inventario. Sin DTE — contabilización interna. Rol: eventos (Merari Paola PIN 7441). |
+| 31 | Eventos | EVT | EventosView.jsx (16-Abr): Navegación 2-screen (lista → detalle con back button + 4 tabs internas: 🍔 Menú, 📦 Pedido CM, 🛒 Ventas, ✅ Cierre). Cierre incluye: efectivo para cambio, egresos (ModalEgreso con motivos_egreso), personal del evento (multi-select usuarios_erp → staff_nombres[]), cálculo "Efectivo a entregar = Efectivo cambio + Ventas efectivo - Egresos". 9 tablas (+evento_egresos), 2 RPCs, 2 triggers inventario. Sin DTE — contabilización interna. Rol: eventos (Merari Paola PIN [retirado]). |
 | 32 | Mis Pedidos (Sucursal) | OPS | MisPedidosView.jsx (19-Abr): vista **read-only** para gerente/cocina de sucursal. Timeline unificado: enviado → preparando → despachado → recibido. Filtro fecha (default 30 días, chips hoy/7d/30d + rango custom). Chips filtro por estado con contadores. Cada card: fecha pedido, N° items, unidades, entrega estimada, badge estado, motorista, timeline visual 4 pasos. Click expande detalle items (producto, solicitado, despachado, recibido, diferencia color-coded). Muestra notas despacho/recepción + foto recepción (link). Filtrado SIEMPRE a `sucursal_id` del `user.store_code` (ejecutivo/admin/jefe_casa_matriz pueden ver todas con selector). Roles: gerente, cocina, admin, ejecutivo, jefe_casa_matriz. Nav key `mis-pedidos`. Sección Supply Chain. |
 | 33 | **BancoView (Conciliación Bancaria Macro)** | FIN | 🟢 **F1-F5.5+ EN PRODUCCIÓN 27-Abr-2026**. Estado: 2,245 tx Q1 BAC + 1,960 comprobantes OCR (script Python local) + 1,033 auto_match (47% cobertura) + 657 vinculados a comprobantes + 5 patrones aprendidos + 4 reglas AUTO— (BELCA, FLAMO, Corte Argentino, Romero Sorto) + 8 categorías unificadas (`costo_comida`, `insumo_venta`, `limpieza`, `costo_fijo`, `gastos_operativos`, `gastos_logisticos`, `gasto_financiero`, `activo_fijo` con grupos P&L) + 6 centros costo. UI: 6 tabs (Resumen, Wizard tipo Tinder, Comprobantes con upload galería/cámara/ZIP, Cola Manual con drawer expandible 8 cols, Reglas con botón Aplicar Aprendizaje, Auditoría) + Modal Crear Gasto sin DTE con autocomplete proveedor + crear inline + MultiDteSelector con toggle "incluir pagadas" + auto-sugerencia combinaciones. Pendientes: F5.6 vinc gasto sin DTE→DTE posterior, F6 socios+préstamos, F7 tab Banco en FinanzasDashboard #29, F8 Agrícola. Macro-conciliación de estado de cuenta BAC (y luego Agrícola) contra el ERP. 5 tabs: 📊 Resumen (cobertura mensual + KPIs $ conciliado/total + top 10 sin clasificar), 📥 Importar (drag&drop `.xls` BAC con preview e importador idempotente vía hash MD5), 🔍 Cola Manual (tabla `bank_transacciones` con `estado='sin_clasificar'`, sugerencias rankeadas, bulk actions), ⚙️ Reglas (CRUD `bank_reglas_clasificacion` con condicion+accion JSONB y contador hits), 📋 Auditoría (tabla `bank_match` con quién hizo qué, undo). 6 tablas BD: `bank_cuentas`, `bank_transacciones` (hash_dedup MD5), `bank_contrapartes` (catálogo recurrentes), `bank_match` (N:M con ERP), `bank_reglas_clasificacion`, `movimientos_socios`. Captura de transferencias del teléfono vía Tesseract.js v5 client-side español + bucket `bank-comprobantes` privado. 10 reglas conservadoras de auto-match (planilla, POS BAC liquidación, TEF a proveedor por 4 dígitos, RAPIBAC vs efectivo, etc.). Roadmap 8 fases. Diseño: `/Contexto/Conciliacion_Bancaria_Diseno.md`. Roles: ejecutivo, superadmin. Diferencia con #13: el #13 es la versión legacy/genérica; #33 es la implementación real con esquema y matching engine. |
 
@@ -1181,11 +1181,11 @@ Empleado: **Carlos Mejía** — Delivery Driver — Sucursal: Escalón
 - **Data Warehouse QUANTO:** 135,099 trans (133,900 csv + 1,199 dte) / 101,283 DTEs / 402,954 items (Ene 2025 – Mar 2026)
 - **PWA Core:** Desplegada en Vercel, login por rol, cierre de caja, reporte de turno, incidentes
 - **PWA DashboardVentas:** ✅ OPERATIVO — 5 tabs (Hoy, 14 días, Productos, Semanal, Nómina). Admin ve todo, gerente ve su sucursal.
-- **PWA DashboardEjecutivo:** ✅ OPERATIVO — rol=ejecutivo, 3 tabs (Resumen, Sucursales, Financiero), KPIs en tiempo real, tendencia 14 días (SVG), compras vs ventas, préstamos activos. PINs: 1000/2000/3000/4000. Fix aplicado 24-Mar noche: NOMBRES→STORES global, "Marzo 2026" dinámico.
+- **PWA DashboardEjecutivo:** ✅ OPERATIVO — rol=ejecutivo, 3 tabs (Resumen, Sucursales, Financiero), KPIs en tiempo real, tendencia 14 días (SVG), compras vs ventas, préstamos activos. PINs: [retirado]/[retirado]/[retirado]/[retirado]. Fix aplicado 24-Mar noche: NOMBRES→STORES global, "Marzo 2026" dinámico.
 - **Supabase:** 41+ tablas creadas + 4 tablas Serfinsa + serfinsa_detalle_diario, RLS, Auth, Storage (5 buckets)
 - **6 Vistas SQL analytics:** vista_ventas_diarias, vista_performance_vs_meta, vista_top_productos, vista_patron_semanal, vista_labor_cost_ratio, vista_reporte_telegram — todas ✅ con RLS anon + GRANT
 - **metas_ventas:** ✅ Regenerada 25-Mar-2026 con 5 metas (M001:$2,370, S004:$1,542, S003:$1,135, S001:$987, S002:$468). Make.com 11AM lanzará primer reporte hoy.
-- **19+ usuarios** con PINs en usuarios_erp (incl. Maria Jose PIN 7700 rol rrhh), 9 sucursales configuradas (5 con store_code)
+- **19+ usuarios** con PINs en usuarios_erp (incl. Maria Jose PIN [retirado] rol rrhh), 9 sucursales configuradas (5 con store_code)
 - **PWA PlanillaView.jsx:** ✅ ~550 líneas, roles ejecutivo/rrhh/contador/admin. Crear corrida, detalle quincenal, aprobar con PIN. Bug fix 27-Mar: `user.role`→`user.rol`.
 - **PWA RRHHView.jsx:** ✅ 3 tabs: Empleados, Asistencia, Descuentos + Tab Usuarios PIN. Usa schema real. **Rediseño cosmético 25-Abr (commit `30ccb96`):** tema dark `#111`/`#1a1a1a`, pill tabs rojos `#e63946`, `canEdit` por `user?.rol` (no EDIT_PINS), hook `useToast()` elimina todos los `alert()`. Tab Usuarios PIN: wired con `show` prop.
 - **PWA ProduccionDiaria.jsx:** ✅ 499 líneas, Fase 4: registrar producción diaria con consumo BOM. 2 tabs: Registrar Producción, Historial.
@@ -1203,7 +1203,7 @@ Empleado: **Carlos Mejía** — Delivery Driver — Sucursal: Escalón
 - **Make.com DTEs→Compras** (ID 4504164): ✅ **OPERATIVO 1-Abr-2026** — Gmail Watch (filename:json) → listEmailAttachments → HTTP multipart_form_data → Edge Function `ingest-dte` v6 → RPC procesar_dte_json (dual-write compras + compras_dte). Dedup por uuid_dte. pg_cron 2AM cruce_diario_dte() con match exacto + parcial. **Fix clave:** bodyType `multipart_form_data` con `fieldType:"file"` (no raw/toString — file:data semántico de Make.com).
 - **Make.com Serfinsa→Validación** (ID 4504162): ✅ Activo — Gmail trigger (from:serfinsa) → attachment → RPC
 - **Make.com Alerta 11AM** (ID 4509069): ✅ ACTIVO — 11:00 SV diario → Edge Function alerta-11am → Telegram con meta vs proyección
-- **Make.com QUANTO CSV Upload** (ID 4512847): ✅ ACTIVO — Webhook trigger → Edge Function `importar-quanto-csv`. Webhook URL: `https://hook.us2.make.com/tekwspl79dcwnuw1xh7ftrlq183gl4ar`. Página de upload: `quanto-upload.html` en Vercel.
+- **Make.com QUANTO CSV Upload** (ID 4512847): ✅ ACTIVO — Webhook trigger → Edge Function `importar-quanto-csv`. Webhook URL: `[retirado — ver gestor de secretos]`. Página de upload: `quanto-upload.html` en Vercel.
 - **Edge Function** importar-quanto-csv ✅ ACTIVA **v6** — Parsea CSV con mapeo flexible de columnas (ES/EN, 30+ variantes), parseo de fechas en español ("marzo 24 2026, 4:19:58 pm"→ISO), hashRow() para numero_orden faltante, acepta JSON pre-parseado de DTEs (ZIP). **Incluye campo `source`** automático (csv/dte) en cada insert. Upsert en quanto_transacciones. ID 148203d8. GRANT service_role aplicado 25-Mar.
 - **quanto-upload.html v2:** Soporta drag-and-drop de CSV (QUANTO export) + ZIP de DTEs (JSON factura electrónica). Client-side: JSZip descomprime, parsea cada DTE JSON, extrae fecha+hora, store_code de numeroControl, total, metodo_pago (01→Efectivo, 02→Tarjeta), envía en chunks de 500 al Edge Function.
 - **Arquitectura datos ventas:** Columna `source` en quanto_transacciones (csv:133,900 / dte:1,199) y ventas_diarias (default 'cierre'). Tabla `ventas_diarias_historico` para snapshots. Tabla `ajustes_cruce` para correcciones de método de pago. RPC `actualizar_ventas_diarias()` con jerarquía cierre<csv<dte + auto-snapshot. Vista `v_ajustes_cruce_resumen` para reconciliación Serfinsa/BAC.
@@ -1371,7 +1371,7 @@ inventario (0), recepciones (0), pedidos_sucursal (0), incidentes (0), delivery_
 ### Fase 7 — Planilla + RRHH + Propinas Mensuales (Sem 13-14) — ⏳ PWA CREADA
 - ✅ **PlanillaView.jsx** creado 27-Mar (~550 líneas): crear corrida, detalle quincenal, aprobar con PIN ejecutivo. Bug fix: `user.role`→`user.rol`.
 - ✅ **RRHHView.jsx** creado 27-Mar (695 líneas): 3 tabs — Empleados, Asistencia, Descuentos. Schema correcto.
-- ✅ Maria Jose Siguenza (PIN 7700, rol rrhh) creada en usuarios_erp
+- ✅ Maria Jose Siguenza (PIN [retirado], rol rrhh) creada en usuarios_erp
 - ✅ 101 empleados cargados en tabla `empleados` (nombre_completo, salario_mensual, codigo_empleado, etc.)
 - ✅ 4 RPCs listos: calcular_isr, calcular_detalle_empleado, calcular_bonos_delivery_mes, calcular_propina_mensual
 - ⏳ UI RRHH necesita rediseño para coincidir con estilo del resto de la app
@@ -1427,7 +1427,7 @@ Base: ~/Documents/Freakies/Claude/Attachmets and PDFS 2026/
 9. ~~**Conectar RPC `actualizar_ventas_diarias` a flujos**~~ ✅ COMPLETADO — RPC `agregar_ventas_quanto` v2 ahora usa jerarquía source (dte>csv>cierre) + auto-snapshot a `ventas_diarias_historico`. 6 cierres reemplazados por DTEs, snapshots guardados.
 10. ~~**Iniciar Fase 3 — Supply Chain**~~ ✅ COMPLETADO — `almacen.html` desplegado. Flujos A+C+D completados. Flujo B diferido a Fase 4. **Flujo Ventas→Inventario (BOM)** completado 30-Mar: tabla `quanto_producto_map` (126 mapeos), RPC `descontar_inventario_ventas`, tabla log auditoría. **2-Abr-2026: BOM completo** — 17 sub_recetas/porcionados con ingredientes reales cargados desde 10 documentos de procesos Word. Inicialmente 17 nuevos productos → deduplicación: 6 eran duplicados de productos existentes (MSG, Nueva York, Costilla, Ajo, Cebolla, Tomate Diced) → fusionados. 11 nuevos legítimos confirmados. 3 pendientes consulta Denny (Caldo de Res, Chile Molido, I+G). ProduccionDiaria OPERATIVO.
 11. ~~**Crear 5 módulos PWA (Fases 4-8)**~~ ✅ COMPLETADO 27-Mar — PlanillaView (550 lín), RRHHView (695), ProduccionDiaria (499), ConciliacionView (947), DeliveryView (836). Integrados en App.jsx + config.js.
-12. ~~**Bug PlanillaView acceso rrhh**~~ ✅ FIX 27-Mar — `user.role`→`user.rol`. Maria Jose (PIN 7700) ya puede acceder.
+12. ~~**Bug PlanillaView acceso rrhh**~~ ✅ FIX 27-Mar — `user.role`→`user.rol`. Maria Jose (PIN [retirado]) ya puede acceder.
 13. ~~**Deploy PWA con 5 módulos nuevos + bug fix**~~ ✅ DEPLOYED 28-Mar.
 14. ~~**Rediseñar PlanillaView con asistencia**~~ ✅ DEPLOYED 28-Mar — PlanillaView reescrito (724 lín): tabs Nómina/Asistencia, vista por sucursal con grilla calendario editable (click-to-toggle), RPC único `calcular_nomina_completa`. Filtro por sucursal. Recalcular después de editar asistencia.
 15. ~~**Fix RLS planillas/planilla_detalle/asistencia_diaria**~~ ✅ FIX 28-Mar — Tablas tenían RLS solo para `authenticated` pero PWA usa `anon`. Agregadas policies `anon_all_*`. FK `calculada_por`/`aprobada_por` corregidos: apuntaban a tabla `usuarios` (obsoleta), ahora apuntan a `usuarios_erp`.
@@ -1451,7 +1451,7 @@ Base: ~/Documents/Freakies/Claude/Attachmets and PDFS 2026/
 32. **Validar cruce recepciones↔DTEs contabilizados** — Revisar si funciona la validación de si cada recepción tiene un DTE contabilizado en `compras`. Identificar recepciones huérfanas (sin DTE asociado).
 33. ~~**Recepciones sin DTE → schema y flujo contable**~~ ✅ SCHEMA 4-Abr / ✅ CLASIFICACIÓN 25-Abr — Schema implementado: `compras_sin_dte`, `v_gastos_consolidados`, `motivos_egreso`. **25-Abr**: corrección mappings `motivos_egreso` (Gasto con/sin Factura → `9-Gastos Varios`), nuevo patrón COALESCE en vista (ec.categoria_gasto_id → me.categoria_gasto_id), bulk UPDATE 362 NULLs en `egresos_cierre`, DDL exportado a `/Contexto/SQL/create_v_gastos_consolidados.sql`. Pendiente UI en PWA.
 34. ~~**Reactivar Make.com DTEs (ID 4504164) para emails nuevos**~~ — ⛔ CANCELADO 20-Abr-2026. Make.com deprecado. GAS `gmail_dte_to_supabase.gs` cubre este flujo permanentemente.
-35. ~~**Roles operativos (domicilios, motorista, mesero, etc.)**~~ ✅ COMPLETADO 2-Abr — 6 roles nuevos + motorista_interno agregados al constraint. Katherine Yanes PIN 9800 rol domicilios M001 creada.
+35. ~~**Roles operativos (domicilios, motorista, mesero, etc.)**~~ ✅ COMPLETADO 2-Abr — 6 roles nuevos + motorista_interno agregados al constraint. Katherine Yanes PIN [retirado] rol domicilios M001 creada.
 36. ~~**GPS Asistencia + Mi Asistencia + Mi Boleta**~~ ✅ COMPLETADO 2-Abr — Tablas asistencia/recibos_pago/horarios_empleados creadas. Geofencing con coordenadas por sucursal. Panel alertas para Majo. Todos los roles ven Mi Asistencia y Mi Boleta.
 37. ~~**Horarios semanales**~~ ✅ OPERATIVO 14-Abr — HorariosView en producción con multi-bloque/día (tramos JSONB), plantilla permanente + override semanal. Push a GitHub ✅. Bug M001 vacío resuelto 14-Abr (35 overrides convertidos a plantillas). **Tab Mi Horario en MiAsistencia.jsx** ✅ 25-Abr (commit 2be31db). Pendiente operativo: Majo carga plantillas S001/S002/S003/S004 vía HorariosView.
 38. **Capturar coordenadas GPS reales** — Majo debe ir a cada sucursal y desde RRHH→GPS Asistencia→Config capturar coordenadas reales (las actuales son aproximadas de Google Maps).
@@ -1842,7 +1842,7 @@ Reescritura completa del flujo de conteo nocturno:
 
 ### 28.4 DespachoTab — Mejoras velocidad + UX
 
-1. Motorista dropdown: `<select>` carga desde `usuarios_erp` rol IN ('despachador','motorista'). Motoristas: Angel Ganuza (PIN 8100), Israel Martinez (PIN 8200).
+1. Motorista dropdown: `<select>` carga desde `usuarios_erp` rol IN ('despachador','motorista'). Motoristas: Angel Ganuza (PIN [retirado]), Israel Martinez (PIN [retirado]).
 2. Botones rápidos: "Todo Solicitado" + "Limpiar"
 3. Batch despachar(): stock decrement CM001 + pedido_items update con Promise.all en batches de 10 (~80% más rápido)
 
@@ -2014,7 +2014,7 @@ Prueba inicial con RPC directo (sin credenciales Hacienda), confirmando generaci
 
 ### 30.4b Pruebas Live (4-Abr-2026) — Ambiente Pruebas DGII ✅ COMPLETO
 
-DGII aprobó ambiente de pruebas para Freakie Dogs (válido hasta ~Jun-2026, 2 meses desde 7-Abr-2026). Se corrigió bug de routing en v5 (`pathParts[2]→pathParts[1]`). Se cargaron credenciales Hacienda. Se validaron los 5 tipos vía API key `dk_test_freakie2026_pruebas`:
+DGII aprobó ambiente de pruebas para Freakie Dogs (válido hasta ~Jun-2026, 2 meses desde 7-Abr-2026). Se corrigió bug de routing en v5 (`pathParts[2]→pathParts[1]`). Se cargaron credenciales Hacienda. Se validaron los 5 tipos vía API key `[retirado — ver gestor de secretos]`:
 
 | Tipo | Número Control | Monto | IVA | Estado |
 |------|---------------|-------|-----|--------|
@@ -2071,7 +2071,7 @@ Después de múltiples iteraciones de debugging de schemas JSON (NC/ND), se conf
 ### 30.7 Pendientes DTEaaS
 
 - ✅ Credenciales Hacienda cargadas (hacienda_api_user: `06140512231010`)
-- ✅ API key test creada: `dk_test_freakie2026_pruebas`
+- ✅ API key test creada: `[retirado — ver gestor de secretos]`
 - ✅ **Certificado subido (7-Abr-2026):** `CertificadoMH_06140512231010.crt` → PKCS#8 RSA-2048 extraída → tabla `dte_service.certificates` (ID: `8da4aef2-3e44-4636-ab69-1311803a234e`, válido 2024–2029). **100% VÁLIDO — confirmado por Angel Ortiz (contador) y directamente por Hacienda. RESUELTO.**
 - ✅ **Firma RSA-PKCS1v15/SHA-512 confirmada.** DTE-01 firmado OK.
 - ✅ **🎉 PRIMER DTE ACEPTADO POR HACIENDA (8-Abr-2026):** Dominio correcto `apitest.dtes.mh.gob.sv`. Secret `DGII_PROXY_URL` actualizado.
@@ -2093,7 +2093,7 @@ Después de múltiples iteraciones de debugging de schemas JSON (NC/ND), se conf
 ### 30.8 Datos de Configuración
 
 - **Business ID:** f9d23884-037b-4810-a4cc-5f9e82549220 (freakie-dogs)
-- **API Key producción:** `dk_live_6230574b3a01728fce1799ca8c7c5da904b39d9c29d37cfa`
+- **API Key producción:** `[retirado — ver gestor de secretos]`
 - **Edge Function ID:** 81ccd468-616e-4c55-a7a8-2a50249e4d91
 - **Base URL:** `https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/dte-service/{action}`
 - **Ambiente actual:** production (01) — GO-LIVE activo desde 9-Abr-2026. Edge Function v1.23.0 (version 30, 11-Abr).
@@ -2142,14 +2142,14 @@ Generado `Manual_Bodega_FreakieDogs.docx` y `.pdf` — 10 secciones cubriendo to
 ### 32.1 Configuración Acceso Maria Jose (Recursos Humanos)
 
 **Usuario:** Maria Jose Siguenza
-- **PIN:** 7700
+- **PIN:** [retirado]
 - **Rol:** rrhh
 - **Sucursal:** S001 (Soyapango)
 - **Estado:** Activo ✅
 
 **Permiso de Edición — Componentes PWA:**
-1. **RRHHView.jsx** — EDIT_PINS: [1000, 2000, **7700**] ✅ (Gestión empleados, asistencia, descuentos)
-2. **PlanillaView.jsx** — EDIT_PINS: [1000, 2000, **7700**] ✅ (Nómina, asistencia, cálculos)
+1. **RRHHView.jsx** — EDIT_PINS: [[retirado], [retirado], **[retirado]**] ✅ (Gestión empleados, asistencia, descuentos)
+2. **PlanillaView.jsx** — EDIT_PINS: [[retirado], [retirado], **[retirado]**] ✅ (Nómina, asistencia, cálculos)
 
 **RLS Policies — Tablas Base (ya configuradas en Supabase):**
 | Tabla | RLS Policy | Acceso Maria Jose |
@@ -2167,8 +2167,8 @@ Generado `Manual_Bodega_FreakieDogs.docx` y `.pdf` — 10 secciones cubriendo to
 - Navegación: "RRHH / Planilla" visible en NAV_SECTIONS
 
 **Cambios realizados:**
-- Actualizado RRHHView.jsx: EDIT_PINS incluye 7700
-- Actualizado PlanillaView.jsx: EDIT_PINS incluye 7700
+- Actualizado RRHHView.jsx: EDIT_PINS incluye [retirado]
+- Actualizado PlanillaView.jsx: EDIT_PINS incluye [retirado]
 - Pendiente: Push a GitHub (proxy bloquea push automatizado — Jose debe hacer push manualmente)
 
 ### 32.2 Pendientes HR System Design
@@ -2230,7 +2230,7 @@ Antes de empezar desarrollo, verificar:
 - **Mobile-first:** Probar en tablet/móvil (se usa en sucursales)
 - **GPS/Cámara:** Testear on-line y off-line (sincronización posterior)
 - **Dinero:** Usar DECIMAL en SQL, no float (redondeos precisos)
-- **RLS:** Validar con usuario non-admin (pin=7700) antes de deploy
+- **RLS:** Validar con usuario non-admin (pin=[retirado]) antes de deploy
 - **Fotos:** Comprimir <2MB, guardar en Supabase Storage buckets privados
 - **PDFs legales:** Firmas digitales, auditoría completa
 
@@ -2606,7 +2606,7 @@ Completar el flip a producción: actualizar password, cambiar environment, proba
 
 **Migration `fix_dte_get_certificate_returns_pem_string_v2`** — `dte_get_certificate` retornaba `JSONB {private_key_encrypted, certificate_pem}` pero `signAndTransmit` pasaba `certData` directamente a `signDTE(dte, certData)` que esperaba `string`. Se droppó y recreó la función retornando `text` con `convert_from(private_key_encrypted, 'UTF8')`.
 
-**Password actualizado** — `hacienda_api_password_hash = 'q@antoFreakieDogs2024'` (credencial producción).
+**Password actualizado** — `hacienda_api_password_hash = '[retirado — ver gestor de secretos]'` (credencial producción).
 
 **Limpieza token cache** — Eliminado token de test de `dte_service.hacienda_tokens` para forzar reautenticación.
 
@@ -2661,7 +2661,7 @@ UPDATE dte_service.businesses SET environment = 'production' WHERE id = 'f9d2388
 # 6. Test emisión Factura real
 curl -X POST https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/dte-service/emit-factura \
   -H "Authorization: Bearer {ANON_KEY}" \
-  -H "X-API-Key: dk_live_6230574b3a01728fce1799ca8c7c5da904b39d9c29d37cfa" \
+  -H "X-API-Key: [retirado — ver gestor de secretos]" \
   -d '{"items":[{"descripcion":"Smash Burger","cantidad":1,"precioUni":6.50}]}'
 ```
 
@@ -2672,7 +2672,7 @@ curl -X POST https://btboxlwfqcbrdfrlnwln.supabase.co/functions/v1/dte-service/e
 | Edge Function | v1.18.0 (v21) — directo sin proxy ✅ |
 | `dte_authenticate_key` RPC | ✅ creada |
 | `dte_get_certificate` RPC | ✅ corregida (retorna text) |
-| `hacienda_api_password_hash` | ✅ `q@antoFreakieDogs2024` |
+| `hacienda_api_password_hash` | ✅ `[retirado — ver gestor de secretos]` |
 | `environment` | `test` (revertido hasta .p12) |
 | Private key en BD | ❌ NO corresponde a clave DGII producción |
 | **BLOQUEADOR** | `.p12 de Quanto` con módulo `ca16f7b7...` |
@@ -3595,7 +3595,7 @@ Burger Duo · Combo Hamburguesa · Burger Box · Royal Truffle · Papas/Onion Ri
 
 ### 50.9 Próximos pasos operativos
 
-1. Asignar coordinador eventos (rol `eventos` ya existe — Merari PIN 7441)
+1. Asignar coordinador eventos (rol `eventos` ya existe — Merari PIN [retirado])
 2. Poblar tabla `eventos` con pipeline May 2026 (mín. 12 eventos confirmados)
 3. Crear paquetes SKU en `catalogo_productos` con categoría `evento`
 4. Dashboard eventos en `EventosView` con KPIs semanales

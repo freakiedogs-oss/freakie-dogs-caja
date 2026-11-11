@@ -1,5 +1,23 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 11-Nov-2026 — Ejecución Ola 0 (parte 1): DTE, proxies, POS, recepción
+- Por qué: Jose dio visto bueno a los paquetes DTE del plan (`docs/planes/PLAN_EJECUCION_2026-11-10.md`). Kaeru, Kako y Eatalia los ejecuta él.
+- **Aplicado en la base (ya en producción):**
+  - `dte_authenticate_key` devuelve NULL si la llave no existe, está vencida o el negocio está inactivo. Antes devolvía `{}` y `dte-service` lo tomaba como válida (cualquier X-API-Key pasaba). No hubo que redesplegar la función. Verificado: llave inventada → rechazada; 158 DTE de Freakie aceptados en las 3 h siguientes.
+  - `GRANT` sobre `pos_dte_proxy_log_id_seq` a service_role: la bitácora del proxy DTE volvió a escribirse (antes 435 errores 403 al día).
+  - `pos_cocina_queue_archivar(p_dias, p_limite)`: columnas explícitas + 4 columnas nuevas en el histórico; revocada a anon. Probada con 5 filas y revertida. Hay ~31,800 filas por archivar; corre el domingo.
+  - Cron `refresh_mv_vista_top_productos`: refresco normal (el CONCURRENTLY fallaba a diario).
+  - Tabla `proxy_pin_intentos` + `proxy_pin_bloqueado` / `proxy_pin_fallo` (solo service_role).
+- **En la rama `claude/eager-brown-tuyddo` (se activa al fusionar a main):**
+  - `api/supaproxy.js`: rechaza rutas con `..`, `%2e`, `//`, `\`; el gate decide sobre la ruta normalizada. Prueba: `node scripts/test-supaproxy-ruta.mjs` (32 casos).
+  - `api/dte-proxy.js` y `api/dte-email.js`: 401 idéntico para PIN inexistente y rol no permitido (ya no devuelve el rol); 8 fallos en 10 min por IP → 429. Falla abierto: si el limitador da error, la emisión sigue.
+  - POS: `saveCuenta` devuelve `{ok:false, motivo}` y `PaymentModal` solo confirma con `cuenta.id`; comandar no revive cuentas cobradas/canceladas; la cola de cocina reintenta y avisa con diálogo si no llegó; el KDS conserva la cola y muestra "Sin conexión".
+  - `RecepcionTab` / `ComprasTab`: el select pedía `nombre` (no existe en `ordenes_compra_items`) y no traía `producto_id` → la OC nunca se precargaba ni entraba al kardex. Ahora bloquea guardar ítems sin producto.
+  - `FinanzasDashboard`: llave `key` en ventas por canal; banner "Datos incompletos" cuando falla una fuente.
+  - Borrados: tableros públicos `public/dashboard-*.html`, `proxy_dgii.py`, archivo `.timestamp` de vite. PINs y secretos retirados de MAESTRO, CHANGELOG, ONBOARDING_CESAR y `docs/cowork/` (siguen en el historial de git: hay que rotarlos).
+- **Probar en tablet antes de fusionar:** cobrar sin turno abierto; doble toque en Confirmar; comandar una mesa ya cobrada desde otra tablet; KDS sin wifi.
+- **Pendiente de Jose (no se puede hacer desde aquí):** rotar la `service_role` (panel de Supabase), los PINs y secretos que estuvieron en los docs, y revocar el token de GitHub que está dentro de `Contexto/MAESTRO/onboarding-cesar/plugins-y-skills/freakie-github.plugin`.
+
 ## 10-Nov-2026 — Plan de ejecución (segunda pasada de la auditoría)
 - Por qué: Jose pidió terminar lo que faltaba revisar, profundizar en datos y dejar un plan listo para ejecutar con el modelo recomendado por etapa.
 - Entregable: `docs/planes/PLAN_EJECUCION_2026-11-10.md` (4 olas, paquetes W0–W3 con pasos, criterio de terminado, modelo y esfuerzo). El catálogo de hallazgos sigue en `PLAN_MEJORA_2026-11-10.md`.

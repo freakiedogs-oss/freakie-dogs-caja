@@ -16,8 +16,7 @@ if (process.env.VITE_TARGET !== 'delivery') {
 }
 
 const FUERA = [
-  'dashboard-ejecutivo.html',   // ventas diarias, sin login
-  'dashboard-operativo.html',   // idem
+  // 11-nov-2026: dashboard-ejecutivo/operativo se borraron del repo (tableros públicos sin login).
   'quanto-upload.html',         // carga de datos internos
   'manual-pos.html',            // manual interno del POS
   'print-test.html',            // utilidad de impresión

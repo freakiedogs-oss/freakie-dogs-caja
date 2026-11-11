@@ -9,3 +9,8 @@ supabase/.temp
 
 # PDFs y hojas que deja Claude en la carpeta; no son código
 Claude outputs/
+
+# 11-nov-2026: temporales de Vite y archivos de entorno (pueden traer secretos)
+*.timestamp-*.mjs
+.env*
+!.env.example

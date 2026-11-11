@@ -45,7 +45,7 @@ State de React se actualiza:
 user = {
   id: "...",
   nombre: "Jose Isart",
-  pin: "1000",
+  pin: "[retirado]",
   store_code: "M001",
   sucursal: "Cafetalón",
   rol: "ejecutivo",      ← Campo crítico para control de acceso
@@ -253,16 +253,16 @@ rol: "superadmin" → TODO (línea 31 en Sidebar: if (user.rol === 'superadmin')
 
 ---
 
-## 💾 Ejemplo Real: Usuario Jose (PIN 1000)
+## 💾 Ejemplo Real: Usuario Jose (PIN [retirado])
 
 ### 1️⃣ Login
 ```
-→ PIN: 1000
-→ Supabase: SELECT * FROM usuarios_erp WHERE pin='1000' AND activo=true
+→ PIN: [retirado]
+→ Supabase: SELECT * FROM usuarios_erp WHERE pin='[retirado]' AND activo=true
 ← Retorna:
 {
   id: "jose-uuid",
-  pin: "1000",
+  pin: "[retirado]",
   nombre: "Jose Isart",
   rol: "ejecutivo",
   store_code: "M001",
@@ -316,8 +316,8 @@ if (user.store_code !== 'M001' && user.rol !== 'admin') {
 ## 🚀 Flujo en Tiempo Real
 
 ```
-T0:00  User: ingresa PIN "1000"
-T0:01  LoginScreen: pin="1000", length=4 → query Supabase
+T0:00  User: ingresa PIN "[retirado]"
+T0:01  LoginScreen: pin="[retirado]", length=4 → query Supabase
 T0:02  Supabase: retorna userData
 T0:03  LoginScreen: onLogin(userData) → App.setUser(userData)
 T0:04  App: user="Jose", rol="ejecutivo" → renderiza Sidebar + HomeScreen

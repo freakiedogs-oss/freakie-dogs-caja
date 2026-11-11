@@ -425,8 +425,8 @@ Cosas que vas a usar mucho y querés saber de memoria:
 - `admin` / `superadmin` — Jose, vos
 - `ejecutivo` — gerencia, ven dashboards completos
 - `gerente` — gerentes de sucursal
-- `rrhh` — Maria Jose (PIN 7700)
-- `eventos` — Merari Avalos (PIN 7441)
+- `rrhh` — Maria Jose (PIN [retirado])
+- `eventos` — Merari Avalos (PIN [retirado])
 - `usuario` — staff regular
 
 PINs claves:
@@ -469,10 +469,10 @@ Heredás esto. NO los toques sin coordinar con Jose:
 
 ## 13. Quién es quién (mini directorio)
 
-- **Jose Isart** — Dueño, arquitecto principal del ERP. PIN 1000.
-- **Cesar Rodriguez** — Vos. Segundo desarrollador. PIN 2000.
-- **Maria Jose** — RRHH. PIN 7700. Maneja módulo RRHHView.
-- **Merari Avalos** — Eventos. PIN 7441. Maneja módulo EventosView.
+- **Jose Isart** — Dueño, arquitecto principal del ERP. PIN [retirado].
+- **Cesar Rodriguez** — Vos. Segundo desarrollador. PIN [retirado].
+- **Maria Jose** — RRHH. PIN [retirado]. Maneja módulo RRHHView.
+- **Merari Avalos** — Eventos. PIN [retirado]. Maneja módulo EventosView.
 - **Marco** — Operaciones DTE (recibe por_confirmar de auto-recepción).
 - **Angel Ortiz** — Contador/asesor fiscal externo. Validador DGII.
 - **Francisco Siguenza** — Operaciones financieras (cuentas terceros, transferencias).

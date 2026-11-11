@@ -16,7 +16,8 @@
  * Respuesta: { ok:true, adjuntos:[...] } | { ok:false, error }
  */
 
-const SECRET = "ENVIODTESFREAKIES";
+// 11-nov-2026: el secreto real se retiró del repo; pegalo solo en el editor de Apps Script.
+const SECRET = "REEMPLAZAR_EN_APPS_SCRIPT";
 const REMITENTE_NOMBRE = "Freakie Dogs";
 
 const TIPO_LABEL = {
