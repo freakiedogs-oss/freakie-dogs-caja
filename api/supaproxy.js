@@ -114,10 +114,59 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const cacheSesion = new Map();
 const CACHE_MS = 60_000;
 
-function objetoDe(path) {
-  const m = /^rest\/v1\/(?:rpc\/)?([a-zA-Z0-9_]+)/.exec(path);
+// ── INICIO validación de ruta (11-nov-2026) ──
+// El gate decidía mirando el texto crudo de `_p`, pero fetch() normaliza `..`:
+// `rest/v1/v_dtes_emitidos/../planilla_detalle` pasaba como `v_dtes_emitidos` y
+// terminaba leyendo planilla_detalle con el token privilegiado. Ahora se
+// rechaza toda ruta ambigua y el objeto se deriva de la URL YA normalizada.
+// Este bloque es puro y lo evalúa tal cual `scripts/test-supaproxy-ruta.mjs`
+// (no se exporta: un export extra en un archivo de función Edge es dudoso).
+
+// Devuelve el motivo del rechazo, o null si la ruta es aceptable.
+// Un punto dentro de un nombre (`a.b.jpg`) es válido: solo se rechazan los
+// segmentos que son exactamente `.` o `..`, y `%2e` en cualquier nivel de
+// codificación (la URL trata `%2e%2e` igual que `..`).
+function motivoRutaInvalida(path) {
+  if (/[\x00-\x1f\x7f]/.test(path)) return 'caracter de control';
+  if (path.includes('\\')) return 'barra invertida';
+  if (path.includes('//')) return 'barra doble';
+  if (/%(?:25)*2e/i.test(path)) return 'punto codificado';
+  for (const seg of path.split(/[/?#]/)) {
+    if (seg === '.' || seg === '..') return 'segmento de punto';
+  }
+  return null;
+}
+
+// Recibe el pathname YA normalizado. Anclado a propósito: el objeto tiene que
+// ser el segmento completo y el último, así nada después de él (`%2f..%2f`)
+// puede hacer que upstream resuelva otra tabla con el token privilegiado.
+function objetoDe(pathname) {
+  const m = /^\/rest\/v1\/(?:rpc\/)?([a-zA-Z0-9_]+)\/?$/.exec(pathname);
   return m ? m[1].toLowerCase() : null;
 }
+
+// De `_p` crudo + query a { target, objeto } o { error }. Sin efectos.
+function resolverRuta(rawPath, qs) {
+  // Eliminar leading slash duplicado
+  const path = String(rawPath || '').replace(/^\/+/, '');
+  const motivo = motivoRutaInvalida(path);
+  if (motivo) return { error: motivo };
+  const target = `${SUPA_URL}/${path}${qs || ''}`;
+  let final;
+  try {
+    final = new URL(target);
+  } catch {
+    return { error: 'ruta ilegible' };
+  }
+  // Cinturón y tirantes: la URL final debe seguir en Supabase y bajo el mismo
+  // prefijo (`/rest/v1`, `/storage/v1`…) que traía la ruta pedida.
+  const prefijo = '/' + path.split(/[?#]/)[0].split('/').slice(0, 2).join('/');
+  if (final.origin !== SUPA_URL || !final.pathname.startsWith(prefijo)) {
+    return { error: 'ruta normalizada distinta' };
+  }
+  return { target, objeto: objetoDe(final.pathname) };
+}
+// ── FIN validación de ruta ──
 
 async function rolDeSesion(token, apikey) {
   if (!token || !UUID_RE.test(token)) return null;
@@ -198,10 +247,9 @@ export default async function handler(req) {
   // directa con ?_p=rest/v1/xxx.
   const rawPath = url.searchParams.get('_p') || '';
   url.searchParams.delete('_p');
-  // Eliminar leading slash duplicado
-  const path = rawPath.replace(/^\/+/, '');
   const qs = url.search; // ya sin _p
-  const target = `${SUPA_URL}/${path}${qs}`;
+  const ruta = resolverRuta(rawPath, qs);
+  const target = ruta.target;
 
   // Preflight CORS (probable que no haga falta, mismo origen)
   if (req.method === 'OPTIONS') {
@@ -217,6 +265,21 @@ export default async function handler(req) {
     });
   }
 
+  // Ruta ambigua (`..`, `%2e`, `\`, `//`…): se corta antes de decidir nada
+  // (11-nov-2026, ver resolverRuta).
+  if (ruta.error) {
+    return new Response(
+      JSON.stringify({ proxy_error: 'ruta_invalida', message: `Ruta no permitida (${ruta.error}).` }),
+      {
+        status: 400,
+        headers: {
+          'content-type': 'application/json',
+          'access-control-allow-origin': '*',
+        },
+      }
+    );
+  }
+
   // Construir headers para upstream
   const upstreamHeaders = new Headers();
   for (const [key, value] of req.headers.entries()) {
@@ -230,7 +293,7 @@ export default async function handler(req) {
   const tokenTorre = upstreamHeaders.get('x-torre-token');
   upstreamHeaders.delete('x-torre-token');
 
-  const rolesPermitidos = rolesRequeridos(objetoDe(path));
+  const rolesPermitidos = rolesRequeridos(ruta.objeto);
   if (rolesPermitidos) {
     if (!process.env.SB_FINANZAS_TOKEN) {
       return noAutorizado('El gate no está configurado en el servidor.');

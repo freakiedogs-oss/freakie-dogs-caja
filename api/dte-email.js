@@ -57,8 +57,81 @@ function jsonResponse(status, body) {
   });
 }
 
-/** Igual que en dte-proxy: PIN contra usuarios_erp con service_role. */
-async function validatePin(pin) {
+// ── Límite de intentos de PIN por IP (11-nov-2026) ──
+// Mismo bloque que en dte-proxy (mantener iguales).
+// Sin límite, un script recorría los 10.000 PINs de 4 dígitos en minutos. El
+// conteo vive en la base (`proxy_pin_intentos`) porque las funciones no
+// comparten memoria: 8 fallos en 10 minutos bloquean esa IP.
+// FALLA ABIERTO: si el limitador da error, tarda, o la migración aún no está
+// aplicada (404), la petición sigue como siempre. Nunca devuelve 5xx.
+// Riesgo conocido: todas las cajas de una sucursal salen por la misma IP. Por
+// eso el umbral es holgado y solo cuentan los fallos; el POS manda el PIN ya
+// validado del usuario logueado, así que los fallos legítimos son raros.
+const LIMITE_TIMEOUT_MS = 1500;
+
+function ipCliente(req) {
+  const h = req.headers;
+  const ip = (
+    h.get('x-real-ip')
+    || (h.get('x-vercel-forwarded-for') || '').split(',')[0]
+    || (h.get('x-forwarded-for') || '').split(',')[0]
+    || ''
+  ).trim();
+  return ip && ip.length <= 64 ? ip : '';
+}
+
+// Devuelve el JSON de la RPC, o null ante CUALQUIER problema (falla abierto).
+async function rpcLimite(fn, args) {
+  const serviceKey = (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY) || '';
+  if (!serviceKey) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIMITE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(args),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Solo un `true` literal bloquea; sin IP identificable no se limita.
+async function ipBloqueada(ip) {
+  if (!ip) return false;
+  return (await rpcLimite('proxy_pin_bloqueado', { p_ip: ip })) === true;
+}
+
+async function registrarFallo(ip, origen) {
+  if (!ip) return;
+  await rpcLimite('proxy_pin_fallo', { p_ip: ip, p_origen: origen });
+}
+
+function demasiadosIntentos(extra) {
+  const msg = 'Demasiados intentos. Esperá unos minutos.';
+  // El texto va también en `error` porque el POS muestra ese campo tal cual.
+  return new Response(JSON.stringify({ ...extra, error: msg, code: 'demasiados_intentos', message: msg }), {
+    status: 429,
+    headers: { 'content-type': 'application/json', 'Retry-After': '600', ...CORS_HEADERS },
+  });
+}
+
+/**
+ * Igual que en dte-proxy: PIN contra usuarios_erp con service_role.
+ * `info.noExiste` (11-nov-2026) distingue "ese PIN no existe" de "falló la
+ * consulta": un error de red no debe contar como intento fallido.
+ */
+async function validatePin(pin, info = {}) {
   const serviceKey = (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY) || '';
   if (!serviceKey || !pin) return null;
   const url = `${SUPA_URL}/rest/v1/usuarios_erp?pin=eq.${encodeURIComponent(String(pin))}&activo=eq.true&select=id,nombre,apellido,rol,store_code&limit=1`;
@@ -68,7 +141,11 @@ async function validatePin(pin) {
     });
     if (!res.ok) return null;
     const rows = await res.json();
-    if (!Array.isArray(rows) || rows.length === 0) return null;
+    if (!Array.isArray(rows)) return null;
+    if (rows.length === 0) {
+      info.noExiste = true;
+      return null;
+    }
     return rows[0];
   } catch (_) {
     return null;
@@ -149,15 +226,37 @@ export default async function handler(req) {
   }
 
   const pin = req.headers.get('x-pos-pin') || body?.pin || '';
-  const user = await validatePin(pin);
+  // El chequeo de bloqueo corre en paralelo con la consulta del PIN para no
+  // sumar latencia (11-nov-2026); con la IP bloqueada se responde 429 sin
+  // mirar el resultado del PIN.
+  const ip = ipCliente(req);
+  const pinInfo = {};
+  const [bloqueada, user] = await Promise.all([ipBloqueada(ip), validatePin(pin, pinInfo)]);
+  if (bloqueada) {
+    return demasiadosIntentos({ ok: false });
+  }
+  // 11-nov-2026: "PIN no existe" y "rol no permitido" responden IGUAL (antes
+  // 401 vs 403 con el rol en el mensaje): la diferencia confirmaba qué PINs
+  // existen y de quién. El detalle queda solo en el log del servidor.
+  const noAutorizado = () => jsonResponse(401, {
+    ok: false,
+    error: 'pin_invalido',
+    message: 'PIN incorrecto o sin permiso para esta operación.',
+  });
   if (!user) {
-    await logOperation({ status: 'auth_fail', error: 'pin_invalid' });
-    return jsonResponse(401, { ok: false, error: 'pin_invalido', message: 'PIN incorrecto.' });
+    await Promise.all([
+      logOperation({ status: 'auth_fail', error: 'pin_invalid' }),
+      pinInfo.noExiste ? registrarFallo(ip, 'dte-email') : null,
+    ]);
+    return noAutorizado();
   }
   const rol = String(user.rol || '').toLowerCase();
   if (!ROLES_OK.has(rol)) {
-    await logOperation({ user_id: user.id, store_code: user.store_code, status: 'auth_fail', error: `role_not_allowed:${rol}` });
-    return jsonResponse(403, { ok: false, error: 'rol_no_autorizado', message: `Tu rol (${rol}) no puede reenviar DTE.` });
+    await Promise.all([
+      logOperation({ user_id: user.id, store_code: user.store_code, status: 'auth_fail', error: `role_not_allowed:${rol}` }),
+      registrarFallo(ip, 'dte-email'),
+    ]);
+    return noAutorizado();
   }
 
   const controller = new AbortController();

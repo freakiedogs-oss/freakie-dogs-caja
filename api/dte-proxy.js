@@ -68,11 +68,81 @@ function jsonResponse(status, body) {
   });
 }
 
+// ── Límite de intentos de PIN por IP (11-nov-2026) ──
+// Sin límite, un script recorría los 10.000 PINs de 4 dígitos en minutos. El
+// conteo vive en la base (`proxy_pin_intentos`) porque las funciones no
+// comparten memoria: 8 fallos en 10 minutos bloquean esa IP.
+// FALLA ABIERTO: si el limitador da error, tarda, o la migración aún no está
+// aplicada (404), la petición sigue como siempre. Nunca devuelve 5xx.
+// Riesgo conocido: todas las cajas de una sucursal salen por la misma IP. Por
+// eso el umbral es holgado y solo cuentan los fallos; el POS manda el PIN ya
+// validado del usuario logueado, así que los fallos legítimos son raros.
+const LIMITE_TIMEOUT_MS = 1500;
+
+function ipCliente(req) {
+  const h = req.headers;
+  const ip = (
+    h.get('x-real-ip')
+    || (h.get('x-vercel-forwarded-for') || '').split(',')[0]
+    || (h.get('x-forwarded-for') || '').split(',')[0]
+    || ''
+  ).trim();
+  return ip && ip.length <= 64 ? ip : '';
+}
+
+// Devuelve el JSON de la RPC, o null ante CUALQUIER problema (falla abierto).
+async function rpcLimite(fn, args) {
+  const serviceKey = (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY) || '';
+  if (!serviceKey) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIMITE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(args),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Solo un `true` literal bloquea; sin IP identificable no se limita.
+async function ipBloqueada(ip) {
+  if (!ip) return false;
+  return (await rpcLimite('proxy_pin_bloqueado', { p_ip: ip })) === true;
+}
+
+async function registrarFallo(ip, origen) {
+  if (!ip) return;
+  await rpcLimite('proxy_pin_fallo', { p_ip: ip, p_origen: origen });
+}
+
+function demasiadosIntentos(extra) {
+  const msg = 'Demasiados intentos. Esperá unos minutos.';
+  // El texto va también en `error` porque el POS muestra ese campo tal cual.
+  return new Response(JSON.stringify({ ...extra, error: msg, code: 'demasiados_intentos', message: msg }), {
+    status: 429,
+    headers: { 'content-type': 'application/json', 'Retry-After': '600', ...CORS_HEADERS },
+  });
+}
+
 /**
  * Valida PIN contra usuarios_erp via REST con service_role (bypassea RLS).
  * Retorna { id, nombre, rol, store_code } o null.
+ * `info.noExiste` (11-nov-2026) distingue "ese PIN no existe" de "falló la
+ * consulta": un error de red no debe contarle un intento fallido a la caja.
  */
-async function validatePin(pin) {
+async function validatePin(pin, info = {}) {
   const serviceKey = (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY) || '';
   if (!serviceKey || !pin) return null;
   const url = `${SUPA_URL}/rest/v1/usuarios_erp?pin=eq.${encodeURIComponent(String(pin))}&activo=eq.true&select=id,nombre,apellido,rol,store_code&limit=1`;
@@ -86,7 +156,11 @@ async function validatePin(pin) {
     });
     if (!res.ok) return null;
     const rows = await res.json();
-    if (!Array.isArray(rows) || rows.length === 0) return null;
+    if (!Array.isArray(rows)) return null;
+    if (rows.length === 0) {
+      info.noExiste = true;
+      return null;
+    }
     return rows[0];
   } catch (_) {
     return null;
@@ -158,17 +232,38 @@ export default async function handler(req) {
     return jsonResponse(401, { success: false, error: 'missing_pin' });
   }
 
-  // Validar PIN + rol
-  const user = await validatePin(pin);
+  // Validar PIN + rol. El chequeo de bloqueo corre EN PARALELO con la consulta
+  // del PIN para no sumarle latencia a la emisión (11-nov-2026); si la IP está
+  // bloqueada se responde 429 sin mirar el resultado del PIN.
+  const ip = ipCliente(req);
+  const pinInfo = {};
+  const [bloqueada, user] = await Promise.all([ipBloqueada(ip), validatePin(pin, pinInfo)]);
+  if (bloqueada) {
+    return demasiadosIntentos({ success: false });
+  }
+  // 11-nov-2026: "PIN no existe" y "rol no permitido" responden IGUAL (antes
+  // 401 vs 403 + `rol`): la diferencia confirmaba qué PINs existen y de quién.
+  // El detalle queda solo en el log del servidor.
+  const noAutorizado = () => jsonResponse(401, {
+    success: false,
+    error: 'invalid_pin',
+    message: 'PIN incorrecto o sin permiso para esta operación.',
+  });
   if (!user) {
-    await logOperation({ op, status: 'auth_fail', error: 'pin_invalid' });
-    return jsonResponse(401, { success: false, error: 'invalid_pin' });
+    await Promise.all([
+      logOperation({ op, status: 'auth_fail', error: 'pin_invalid' }),
+      pinInfo.noExiste ? registrarFallo(ip, `dte-proxy:${op}`) : null,
+    ]);
+    return noAutorizado();
   }
   const origen = (req.headers.get('x-dte-origen') || 'pos').toLowerCase();
   const rolesOk = origen === 'erp' ? ERP_ROLES_OK : POS_ROLES_OK;
   if (!rolesOk.has((user.rol || '').toLowerCase())) {
-    await logOperation({ op, user_id: user.id, store_code: user.store_code, status: 'auth_fail', error: `role_not_allowed:${user.rol}:${origen}` });
-    return jsonResponse(403, { success: false, error: 'role_not_allowed', rol: user.rol });
+    await Promise.all([
+      logOperation({ op, user_id: user.id, store_code: user.store_code, status: 'auth_fail', error: `role_not_allowed:${user.rol}:${origen}` }),
+      registrarFallo(ip, `dte-proxy:${op}`),
+    ]);
+    return noAutorizado();
   }
 
   // Leer body del POS
