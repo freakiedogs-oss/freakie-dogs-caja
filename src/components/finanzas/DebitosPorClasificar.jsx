@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { db } from '../../supabase'
+import { dbFin } from '../../supabaseFinanzas'
 import { paletaC as C } from '@/theme'
 import InfoTip from '../ui/InfoTip'
 
@@ -14,7 +15,7 @@ export default function DebitosPorClasificar() {
   const [dtes, setDtes] = useState({}); const [sel, setSel] = useState({})
   const [msg, setMsg] = useState(null)
 
-  const load = () => db.from('v_banco_por_clasificar').select('*').then(({ data }) => {
+  const load = () => dbFin.from('v_banco_por_clasificar').select('*').then(({ data }) => {
     const d = (data || []).slice().sort((a, b) => a.fecha < b.fecha ? 1 : -1)
     setRows(d); setMes(m => m || [...new Set(d.map(x => x.mes))].sort().reverse()[0] || null)
   })
