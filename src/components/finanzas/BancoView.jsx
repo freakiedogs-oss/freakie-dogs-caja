@@ -259,7 +259,7 @@ function TabResumen() {
     setLoading(true)
     try {
       const [txAll, cc] = await Promise.all([
-        fetchAllRows(db, 'bank_transacciones', q => q
+        fetchAllRows(dbFin, 'bank_transacciones', q => q
           .select('fecha,debito,credito,estado,codigo_bac,descripcion,id,centro_costo_id')
           .order('fecha', { ascending: false })
         ),
@@ -363,7 +363,7 @@ function TabWizard({ user, pushNotif }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchAllRows(db, 'bank_transacciones', q => q
+      const data = await fetchAllRows(dbFin, 'bank_transacciones', q => q
         .select('id,fecha,codigo_bac,descripcion,debito,credito,balance,estado,notas,referencia,direccion')
         .eq('estado', 'sin_clasificar')
         .order('debito', { ascending: false }).order('credito', { ascending: false })
@@ -388,8 +388,8 @@ function TabWizard({ user, pushNotif }) {
     (async () => {
       try {
         const [sug, comp] = await Promise.all([
-          db.from('v_bank_sugerencias').select('id,sugerencia_label,sugerencia_monto,sugerencia_fecha,confianza,dias_diff,target_id,target_tabla').eq('bank_id', actual.id).order('confianza', { ascending: false }).limit(5),
-          db.from('bank_comprobantes').select('id,banco_origen,beneficiario,concepto,foto_url').eq('bank_transaccion_id', actual.id).maybeSingle(),
+          dbFin.from('v_bank_sugerencias').select('id,sugerencia_label,sugerencia_monto,sugerencia_fecha,confianza,dias_diff,target_id,target_tabla').eq('bank_id', actual.id).order('confianza', { ascending: false }).limit(5),
+          dbFin.from('bank_comprobantes').select('id,banco_origen,beneficiario,concepto,foto_url').eq('bank_transaccion_id', actual.id).maybeSingle(),
         ])
         setSugerencias(sug.data || [])
         setComprobante(comp.data)
@@ -1111,7 +1111,7 @@ function TabComprobantes({ user }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('bank_comprobantes')
+      const { data } = await dbFin.from('bank_comprobantes')
         .select('*, bank_transacciones:bank_transaccion_id(fecha,codigo_bac,descripcion,debito)')
         .order('created_at', { ascending: false }).limit(100)
       setComprobantes(data || [])
@@ -1132,7 +1132,7 @@ function TabComprobantes({ user }) {
         setProgress({ done: i, total: files.length, currentMsg: `Procesando ${file.name || 'imagen ' + (i + 1)}…` })
         try {
           const hash = await sha256File(file)
-          const { data: existing } = await db.from('bank_comprobantes').select('id').eq('hash_imagen', hash).maybeSingle()
+          const { data: existing } = await dbFin.from('bank_comprobantes').select('id').eq('hash_imagen', hash).maybeSingle()
           if (existing) { dup++; continue }
 
           const { text, parsed } = await ocrComprobante(file)
@@ -1144,7 +1144,7 @@ function TabComprobantes({ user }) {
           if (upErr) throw upErr
           const { data: urlData } = db.storage.from('bank-comprobantes').getPublicUrl(path)
 
-          const { error: insErr } = await db.from('bank_comprobantes').insert({
+          const { error: insErr } = await dbFin.rpc('bank_comprobante_registrar', { p: {
             foto_url: urlData.publicUrl, storage_path: path, hash_imagen: hash,
             ocr_text: text.slice(0, 5000), ocr_data: parsed,
             monto: parsed.monto || null, fecha_extraida: parsed.fecha_extraida || null,
@@ -1153,7 +1153,7 @@ function TabComprobantes({ user }) {
             concepto: parsed.concepto || null, cuenta_origen: parsed.cuenta_origen || null,
             nombre_emisor: parsed.nombre_emisor || null,
             uploaded_by: user?.nombre || user?.rol || 'unknown',
-          })
+          } })
           if (insErr) { if (insErr.code === '23505') { dup++; continue } else throw insErr }
           ok++
         } catch (e) { console.error('Error procesando', file.name, e); err++ }
@@ -1292,7 +1292,7 @@ function TabColaManual({ user }) {
     setLoading(true)
     try {
       // Usa la vista enriquecida que incluye proveedores matcheados
-      const data = await fetchAllRows(db, 'v_bank_tx_con_match', q => {
+      const data = await fetchAllRows(dbFin, 'v_bank_tx_con_match', q => {
         let qq = q.select('id,fecha,codigo_bac,descripcion,debito,credito,estado,direccion,notas,referencia,categoria_efectiva,categoria_grupo,subcategoria,centro_costo_id,centro_costo_nombre,centro_costo_tipo,proveedores_matcheados,match_confianza,match_metodo,matches_count,monto_aplicado_total,sucursal_inferida,comprobante_info').order('fecha', { ascending: false })
         if (filtroEstado !== 'todos') qq = qq.eq('estado', filtroEstado)
         return qq
@@ -1534,8 +1534,8 @@ function TabReglas() {
     setLoading(true)
     try {
       const [reg, apr] = await Promise.all([
-        db.from('bank_reglas_clasificacion').select('id,nombre,prioridad,activa,hits,last_hit_at').order('prioridad', { ascending: true }),
-        db.from('bank_aprendizaje').select('id,patron_tipo,patron_valor,proveedor_nombre,confirmaciones,regla_creada_id').order('confirmaciones', { ascending: false }).limit(20),
+        dbFin.from('bank_reglas_clasificacion').select('id,nombre,prioridad,activa,hits,last_hit_at').order('prioridad', { ascending: true }),
+        dbFin.from('bank_aprendizaje').select('id,patron_tipo,patron_valor,proveedor_nombre,confirmaciones,regla_creada_id').order('confirmaciones', { ascending: false }).limit(20),
       ])
       setReglas(reg.data || []); setAprendizaje(apr.data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
@@ -1550,7 +1550,7 @@ function TabReglas() {
   }
 
   const toggleRegla = async (id, activa) => {
-    try { await db.from('bank_reglas_clasificacion').update({ activa: !activa }).eq('id', id); await load() }
+    try { await dbFin.rpc('bank_regla_set_activa', { p_id: id, p_activa: !activa }); await load() }
     catch (e) { toast.error('Error: ' + e.message) }
   }
 
@@ -1843,7 +1843,7 @@ function TabAuditoria() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('bank_match')
+      const { data } = await dbFin.from('bank_match')
         .select('*, bank_transacciones:bank_transaccion_id(fecha,codigo_bac,descripcion,debito,credito)')
         .order('created_at', { ascending: false }).limit(200)
       setMatches(data || [])
@@ -2194,10 +2194,10 @@ function SubColaSocios({ user, pushNotif }) {
     setLoading(true)
     try {
       const [pendData, sociosData] = await Promise.all([
-        fetchAllRows(db, 'v_bank_tx_socio_pendientes', q => q
+        fetchAllRows(dbFin, 'v_bank_tx_socio_pendientes', q => q
           .select('id,fecha,codigo_bac,descripcion,monto,direccion,socio_sugerido_id')
         ),
-        db.from('socios').select('id,nombre').eq('activo', true).order('nombre'),
+        dbFin.from('socios').select('id,nombre').eq('activo', true).order('nombre'),
       ])
       setPendientes(pendData || [])
       setSocios(sociosData.data || [])
@@ -2330,7 +2330,7 @@ function SubBalanceSocios() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('v_socios_balance').select('socio_id,nombre,total_aportado,total_capital_repagado,capital_pendiente,intereses_acumulados,intereses_pagados,deuda_total,aportes_activos,total_salarios').order('deuda_total', { ascending: false })
+      const { data } = await dbFin.from('v_socios_balance').select('socio_id,nombre,total_aportado,total_capital_repagado,capital_pendiente,intereses_acumulados,intereses_pagados,deuda_total,aportes_activos,total_salarios').order('deuda_total', { ascending: false })
       setData(data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [])
@@ -2427,7 +2427,7 @@ function SubAportesFIFO() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await fetchAllRows(db, 'v_socio_aportes_detalle', q => q
+      const all = await fetchAllRows(dbFin, 'v_socio_aportes_detalle', q => q
         .select('id,socio_nombre,fecha_aporte,dias_antiguedad,monto_original,capital_repagado,capital_pendiente,interes_acumulado,interes_pagado,deuda_total,estado,fecha_ultimo_corte')
         .order('fecha_aporte', { ascending: false })
       )
@@ -2611,13 +2611,13 @@ function TabRevisionPL({ user }) {
     setLoading(true)
     try {
       const [txData, catRes, sucRes, cuadreRes, subcatRes] = await Promise.all([
-        fetchAllRows(db, 'v_banco_revision', q =>
+        fetchAllRows(dbFin, 'v_banco_revision', q =>
           q.select('id,fecha,codigo_bac,descripcion,referencia,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id,tercero_nombre,tercero_relacion,tercero_ambiguo,subcategoria_default,dte_proveedor,dte_monto,subcategoria,cuenta_origen,categoria_sugerida')
             .order('fecha', { ascending: false })),
         db.from('categorias_gasto').select('id,nombre,grupo').neq('grupo', 'Pasivo').order('orden'),
         db.from('sucursales').select('store_code,nombre').eq('activa', true).order('store_code'),
-        db.from('v_banco_cuadre_mensual').select('*').order('mes', { ascending: false }),
-        db.from('v_banco_subcategorias').select('subcategoria').limit(500),
+        dbFin.from('v_banco_cuadre_mensual').select('*').order('mes', { ascending: false }),
+        dbFin.from('v_banco_subcategorias').select('subcategoria').limit(500),
       ])
       setTx(txData)
       setCats(catRes.data || [])
@@ -2971,7 +2971,7 @@ function TabEstadoCuenta({ user }) {
 
   const load = async () => {
     try {
-      const { data } = await db.from('bank_estados_cuenta').select('*').eq('banco', 'BAC').order('created_at', { ascending: false }).limit(24)
+      const { data } = await dbFin.from('bank_estados_cuenta').select('*').eq('banco', 'BAC').order('created_at', { ascending: false }).limit(24)
       setEstados(data || [])
     } catch (e) { /* la tabla puede no existir aun */ }
   }
@@ -3022,13 +3022,13 @@ function TabEstadoCuenta({ user }) {
       if (error) throw error
       const res = data || {}
       try {
-        await db.from('bank_estados_cuenta').insert({
+        await dbFin.rpc('bank_estado_cuenta_registrar', { p: {
           banco: 'BAC', cuenta: '201500451', periodo: preview.periodo,
           fecha_desde: preview.fdesde, fecha_hasta: preview.fhasta,
           saldo_inicial: preview.saldoIni, saldo_final: preview.saldoFin,
           n_movimientos: preview.movs.length, n_nuevos: res.insertados || 0,
           archivo_nombre: preview.archivo, subido_por: user?.nombre || user?.rol || 'POS',
-        })
+        } })
       } catch (e) { /* registro opcional */ }
       setResult(res); setPreview(null); load()
       toast.success(`Importado: ${res.insertados || 0} nuevos - ${res.duplicados || 0} ya existian`)
