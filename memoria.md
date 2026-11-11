@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 11-Nov-2026 — Banco y socios pasan por el gate de sesión de finanzas
+- Por qué: banco, comprobantes, socios y cuentas de terceros deben pedir sesión de finanzas, igual que planilla y DTEs emitidos.
+- Front (PR #471): `BancoView`, `IngestaComprobantes`, `DebitosPorClasificar`, `FinanzasDashboard` y la pestaña de cuentas de `RRHHView` leen esos objetos con `dbFin`. **Regla: una consulta nueva a `bank_*`, `socios`, `socio_*`, `movimientos_socios`, `prestamo_movimientos` o `cuentas_bancarias_terceros` va con `dbFin`, no con `db`** (con `db` devuelve `permission denied`).
+- Escrituras: ya no hay `insert`/`update` directo a esas tablas. Van por RPC con `dbFin.rpc(...)`: `bank_comprobante_registrar`, `bank_estado_cuenta_registrar`, `bank_regla_set_activa`, `cuenta_tercero_guardar`, `cuenta_tercero_set_activo`.
+- `api/supaproxy.js`: `BANCO_OBJETOS` (roles de finanzas) y `TERCEROS_OBJETOS` (roles de RRHH). Un objeto o RPC nuevo de banco hay que agregarlo ahí.
+- Efecto visible: Banco pide el PIN de sesión (30 min) al entrar, como el Dashboard Financiero. En DEV local estas pantallas no leen datos (no hay proxy).
+- Pendiente: las RPC de conciliación (`bancoview_*`, `fn_banco_*`, `bank_match_*`) siguen por `db`; pasarlas al gate requiere medir su duración por el corte de 25 s del proxy.
+- Probado: build, lecturas y las 5 RPC con el rol del gate (transacción deshecha), gate en producción. Falta la prueba en pantalla con sesión real.
+
 ## 10-Nov-2026 — Cupón de regreso $2 (menú web + caja + DTE)
 - Por qué: subir ticket y traer de vuelta al cliente. **Cesar autorizó tocar el cobro del POS** (afecta el monto del DTE).
 - Regla: pedido WEB entregado con subtotal ≥ $19.99 («$20» en textos, para que cuente el Burger Box $19.99) y sin cupón usado → $2 para el próximo pedido ≥ $19.99, **21 días**, ligado al teléfono. Un cupón activo por teléfono; el pedido que usa cupón no genera otro; si se cancela (o queda sin pagar > 3 h) el cupón se libera.
