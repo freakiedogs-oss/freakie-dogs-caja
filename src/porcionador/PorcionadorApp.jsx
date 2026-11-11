@@ -1,5 +1,5 @@
 // Porcionador de papas — Rhino BAR-6X
-// Estación fija Metrocentro S006 · PIN 3006
+// Estación por URL (?estacion=papas-s006 | papas-s003); default Metrocentro S006
 // Autor: integración ERP Freakie Dogs (v1, agosto 2026)
 import { useEffect, useRef, useState } from 'react'
 import { db, URL_SB, KEY_SB } from '../supabase'
@@ -11,17 +11,28 @@ import { calcularContadoresPorDestino, KDS_CONTADOR_ESTACIONES, KDS_CONTADOR_LAB
 // para quien esta en la freidora.
 const MI_ESTACION = KDS_CONTADOR_ESTACIONES.find(e => e.id === 'fritos')
 
-const STATION_ID = 'papas-s006'
-const STORE_CODE = 'S006'
+// Estaciones disponibles. La URL elige cual: /porcionador.html?estacion=papas-s003
+// Sin parametro (o con uno desconocido) cae en Metrocentro, como siempre.
+const ESTACIONES = {
+  'papas-s006': { storeCode: 'S006', label: 'Metrocentro' },
+  'papas-s003': { storeCode: 'S003', label: 'Plaza Lourdes' },
+}
+const ESTACION_DEFAULT = 'papas-s006'
+const _param = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('estacion') : null
+const STATION_ID = ESTACIONES[_param] ? _param : ESTACION_DEFAULT
+const STORE_CODE = ESTACIONES[STATION_ID].storeCode
+const STATION_LABEL = ESTACIONES[STATION_ID].label
+// Metrocentro conserva sus llaves originales para no cerrarle la sesion a la tablet.
+const SUF = STATION_ID === ESTACION_DEFAULT ? '' : '_' + STATION_ID
 const APP_VERSION = 'erp-2-webusb'
 
 // Android casi nunca expone el CH340 por Web Serial, aunque la propiedad
 // navigator.serial exista. Por eso se decide por el sistema operativo ANTES
 // de mirar qué APIs hay: en Android siempre WebUSB, en escritorio Web Serial.
 const ES_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
-const TOKEN_KEY = 'porcionador_token'
-const NOMBRE_KEY = 'porcionador_nombre'
-const QUEUE_KEY = 'porcionador_cola_pendiente'
+const TOKEN_KEY = 'porcionador_token' + SUF
+const NOMBRE_KEY = 'porcionador_nombre' + SUF
+const QUEUE_KEY = 'porcionador_cola_pendiente' + SUF
 
 const SERIAL_CONFIG = { baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' }
 
@@ -597,7 +608,7 @@ export default function PorcionadorApp() {
       <div style={sLoginCard}>
         <div style={{ fontSize: 40, textAlign: 'center', marginBottom: 8 }}>🍟</div>
         <h1 style={{ fontSize: 22, textAlign: 'center', margin: '0 0 4px' }}>Porcionador de papas</h1>
-        <div style={{ fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 20 }}>Estación Metrocentro (S006)</div>
+        <div style={{ fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 20 }}>Estación {STATION_LABEL} ({STORE_CODE})</div>
         <input type="password" inputMode="numeric" value={pin}
           onChange={e => setPin(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && login()}
@@ -669,7 +680,7 @@ export default function PorcionadorApp() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 20 }}>🍟</span>
           <b>Porcionador</b>
-          <span style={{ color: '#888', fontSize: 12 }}>· {nombre} · S006</span>
+          <span style={{ color: '#888', fontSize: 12 }}>· {nombre} · {STORE_CODE}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12 }}>
           {pendientesCount > 0

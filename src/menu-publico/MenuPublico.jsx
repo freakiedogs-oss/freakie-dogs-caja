@@ -126,6 +126,16 @@ export default function MenuPublico() {
   const [misPedidos, setMisPedidos] = useState(null) // {activos, pasados} del teléfono guardado
   const [misPedidosOpen, setMisPedidosOpen] = useState(false)
   const [sugerenciaOculta, setSugerenciaOculta] = useState(false)
+  // Ticket promedio (9-nov-2026, Cesar): «Los más pedidos» viene del servidor
+  // (unidades vendidas por la app, 30 días). `reemplazo` = la línea que se
+  // reemplaza al aceptar «¿Son dos? Pasate al Burger Duo»; `volverAlCarrito`
+  // reabre el carrito después de armar una sugerencia que tiene opciones.
+  const [masPedidos, setMasPedidos] = useState([])
+  const [extrasFav, setExtrasFav] = useState({})        // {opcionId: veces}
+  const [cupon, setCupon] = useState(null)               // cupón de regreso activo {monto, minimo, vence_at, dias}
+  const [reemplazo, setReemplazo] = useState(null)       // {lineaId, quitar}
+  const [volverAlCarrito, setVolverAlCarrito] = useState(false)
+  const [origenModal, setOrigenModal] = useState('menu')  // de qué sección se abrió el producto
   // ── Productos apagados por sucursal (el "86" del día) ──
   // El menú es uno solo para las seis tiendas, pero cada tienda puede
   // quedarse sin algo. `bloqueos` es {sucursal_id: [menu_item_id,...]}.
@@ -167,6 +177,16 @@ export default function MenuPublico() {
       .catch(() => vivo && setErrorCarga(true))
       .finally(() => vivo && setCargando(false))
     return () => { vivo = false }
+  }, [])
+
+  useEffect(() => {
+    db.rpc('menu_mas_pedidos', { p_dias: 30, p_limite: 8 })
+      .then(({ data }) => Array.isArray(data) && setMasPedidos(data))
+      .catch(() => {})
+    // «⭐ El favorito»: veces que se eligió cada extra con precio (30 días).
+    db.rpc('menu_extras_favoritos', { p_dias: 30 })
+      .then(({ data }) => data && typeof data === 'object' && setExtrasFav(data))
+      .catch(() => {})
   }, [])
 
   // Choques declarados desde el ERP (pestaña «Delivery» de Admin Menú). Son
@@ -306,7 +326,10 @@ export default function MenuPublico() {
   )
   const cantidadCarrito = carrito.reduce((s, it) => s + it.qty, 0)
 
-  const agregarAlCarrito = (producto, qty = 1, nota = '', mods = [], comps = []) => {
+  // `origen` = de dónde salió el producto (menu | mas_pedidos | para_compartir |
+  // sugerencia_carrito | oferta_duo | repetir) y `agrandadoVia` = cómo se aceptó
+  // el agrandado (boton | pregunta). Viajan al pedido para medir cada sección.
+  const agregarAlCarrito = (producto, qty = 1, nota = '', mods = [], comps = [], origen = 'menu', agrandadoVia = null) => {
     // Los extras de un componente se cobran por cada unidad que lleva el combo.
     const precioMods = mods.reduce((s, m) => s + (Number(m.precio_extra) || 0), 0)
       + comps.reduce((s, c) => s + (c.mods || []).reduce(
@@ -314,7 +337,7 @@ export default function MenuPublico() {
     setCarrito(prev => {
       // Mismo producto sin nota ni mods → suma qty
       if (!nota && mods.length === 0 && comps.length === 0) {
-        const idx = prev.findIndex(i => i.id === producto.id && !i.nota
+        const idx = prev.findIndex(i => i.id === producto.id && !i.nota && (i.origen || 'menu') === origen
           && (!i.mods || i.mods.length === 0) && (!i.comps || i.comps.length === 0))
         if (idx >= 0) {
           const next = [...prev]
@@ -325,11 +348,72 @@ export default function MenuPublico() {
       return [...prev, {
         lineaId: Date.now() + Math.random(),
         id: producto.id, nombre: producto.nombre, precio: Number(producto.precio),
-        precioMods, qty, nota, mods, comps,
+        precioMods, qty, nota, mods, comps, origen, agrandadoVia,
       }]
     })
     setToast('Producto añadido')
   }
+
+  // ── Ticket promedio (9-nov-2026, Cesar) ──────────────────────────────
+  // Datos de 30 días: 66% de los pedidos web llevan UN producto y el ticket
+  // mediano es $14.99. Por eso: «Los más pedidos» y «Para compartir» arriba,
+  // sugerencias de un toque en el carrito y «¿Son dos? Pasate al Burger Duo».
+  // Los nombres de abajo son de productos del Menú Delivery; si uno no está
+  // visible o está agotado, simplemente no se muestra.
+  const PARA_COMPARTIR = ['Burger Box', 'Combpleto', 'Freakie Family']
+  const SUGERIDOS_CARRITO = ['Queso Frito', 'Mini Fancys', 'Freakie Dog']   // el postre se suma acá cuando tenga foto
+  const porNombre = useMemo(() => {
+    const m = {}
+    for (const c of menu) for (const it of (c.items || [])) if (!m[it.nombre]) m[it.nombre] = it
+    return m
+  }, [menu])
+  const conOpciones = (p) => (p.grupos || []).length > 0
+    || (p.componentes || []).some(c => (c.grupos || []).length > 0)
+  const abrirProducto = (prod, origen = 'menu') => {
+    const ops = bloq.items[prod.id]
+    if (ops) {
+      setToast(ops.length
+        ? `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} — probá ${ops.map(o => o.nombre).join(' o ')}`
+        : `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
+      return false
+    }
+    setOrigenModal(origen)
+    setProductoModal(prod)
+    return true
+  }
+  const filaMasPedidos = masPedidos.map(n => porNombre[n]).filter(p => p && !bloq.items[p.id]).slice(0, 4)
+  const filaCompartir = PARA_COMPARTIR.map(n => porNombre[n]).filter(Boolean)
+  const tieneFancy = carrito.some(l => /fanc/i.test(l.nombre))
+  const sugerencias = SUGERIDOS_CARRITO.map(n => porNombre[n])
+    .filter(p => p && !bloq.items[p.id] && !carrito.some(l => l.id === p.id)
+      && !(tieneFancy && /fanc/i.test(p.nombre)))
+  const agregarSugerencia = (prod) => {
+    if (!conOpciones(prod)) { agregarAlCarrito(prod, 1, '', [], [], 'sugerencia_carrito'); return }
+    setCarritoAbierto(false)
+    if (abrirProducto(prod, 'sugerencia_carrito')) setVolverAlCarrito(true)
+    else setCarritoAbierto(true)
+  }
+  // «¿Son dos?»: Freakie Burger → Burger Duo (2 hamburguesas + 2 papas + 2 bebidas).
+  const duo = porNombre['Burger Duo']
+  const fbUnidades = carrito.filter(l => l.nombre === 'Freakie Burger').reduce((s, l) => s + l.qty, 0)
+  const fbPrecio = Number(porNombre['Freakie Burger']?.precio) || 0
+  const ofertaDuo = duo && !bloq.items[duo.id] && fbUnidades >= 1 && fbPrecio > 0
+    && !carrito.some(l => l.nombre === 'Burger Duo')
+    ? { quitar: Math.min(2, fbUnidades), duoPrecio: Number(duo.precio), fbPrecio } : null
+  const aceptarDuo = () => {
+    if (!ofertaDuo) return
+    setCarritoAbierto(false)
+    if (abrirProducto(duo, 'oferta_duo')) setReemplazo({ nombre: 'Freakie Burger', quitar: ofertaDuo.quitar })
+    else setCarritoAbierto(true)
+  }
+  const quitarUnidades = (nombre, n) => setCarrito(prev => {
+    let falta = n
+    return prev.map(l => {
+      if (falta <= 0 || l.nombre !== nombre) return l
+      const q = Math.min(falta, l.qty); falta -= q
+      return l.qty - q > 0 ? { ...l, qty: l.qty - q } : null
+    }).filter(Boolean)
+  })
 
   const scrollACategoria = (catId) => {
     const el = seccionesRef.current[catId]
@@ -339,6 +423,15 @@ export default function MenuPublico() {
   // ── Mis pedidos: el cliente se identifica por el teléfono guardado en el
   // dispositivo (perfil). Trae pedido activo (→ tracking) + últimos entregados
   // (→ volver a pedir). Se recarga al completar un pedido nuevo.
+  // Cupón de regreso (10-nov-2026): el del teléfono guardado en este dispositivo.
+  useEffect(() => {
+    const tel = leerPerfil().telefono
+    if (!tel) return
+    db.rpc('cupon_activo', { p_telefono: tel })
+      .then(({ data }) => setCupon(data && Number(data.monto) > 0 ? data : null))
+      .catch(() => {})
+  }, [pedidoOk])
+
   useEffect(() => {
     const tel = leerPerfil().telefono
     if (!tel) return
@@ -373,7 +466,7 @@ export default function MenuPublico() {
       nuevo.push({
         lineaId: Date.now() + Math.random(),
         id: prod.id, nombre: prod.nombre, precio: Number(prod.precio),
-        precioMods, qty: Number(it.cantidad) || 1, nota: it.nota || '', mods: modsActuales,
+        precioMods, qty: Number(it.cantidad) || 1, nota: it.nota || '', mods: modsActuales, origen: 'repetir',
       })
     }
     if (!nuevo.length) { setToast('Ese pedido ya no está disponible en el menú'); return }
@@ -465,6 +558,30 @@ export default function MenuPublico() {
           <div className="mp-cargando">😕 No pudimos cargar el menú. Recargá la página o intentá en un momento.</div>
         )}
 
+        {/* CUPÓN DE REGRESO: recordatorio arriba del menú */}
+        {cupon && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 16px 0', padding: '12px 14px', borderRadius: 12,
+                        background: '#FAEEDA', border: '1px solid #EF9F27', color: '#633806', fontSize: 14 }}>
+            <span style={{ fontSize: 24 }}>🎁</span>
+            <span style={{ flex: 1 }}>
+              <b>Tenés {fmt(cupon.monto)} de descuento</b><br />
+              <span style={{ fontSize: 12 }}>
+                En pedidos de $20 o más · {Number(cupon.dias) <= 1 ? 'vence hoy' : `vence en ${cupon.dias} días`}
+              </span>
+            </span>
+          </div>
+        )}
+
+        {/* TICKET PROMEDIO: lo más pedido y lo de compartir, arriba de todo */}
+        {filaMasPedidos.length >= 3 && (
+          <FilaDestacada titulo="Los más pedidos en delivery 🔥" sub="Lo que más piden nuestros clientes"
+                         items={filaMasPedidos} ranking onPick={p => abrirProducto(p, 'mas_pedidos')} />
+        )}
+        {filaCompartir.length >= 2 && (
+          <FilaDestacada titulo="Para compartir 🍔🌭" sub="Para la familia o los cuates"
+                         items={filaCompartir} onPick={p => abrirProducto(p, 'para_compartir')} />
+        )}
+
         {/* SECCIONES POR CATEGORIA */}
         {menu.map(cat => (
           <section
@@ -480,16 +597,7 @@ export default function MenuPublico() {
                   producto={prod}
                   agotado={!!bloq.items[prod.id]}
                   dondeAgotado={sucRuteada?.nombre}
-                  onClick={() => {
-                    const ops = bloq.items[prod.id]
-                    if (ops) {
-                      setToast(ops.length
-                        ? `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} — probá ${ops.map(o => o.nombre).join(' o ')}`
-                        : `Hoy no hay ${prod.nombre} en ${sucRuteada?.nombre || 'tu zona'} 😔`)
-                      return
-                    }
-                    setProductoModal(prod)
-                  }}
+                  onClick={() => abrirProducto(prod)}
                 />
               ))}
             </div>
@@ -523,13 +631,19 @@ export default function MenuPublico() {
       {productoModal && (
         <ProductoModal
           producto={productoModal}
-          onClose={() => setProductoModal(null)}
-          onAgregar={(qty, nota, mods, comps) => {
-            agregarAlCarrito(productoModal, qty, nota, mods, comps)
+          onClose={() => {
             setProductoModal(null)
+            if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
+          }}
+          onAgregar={(qty, nota, mods, comps, agrandadoVia) => {
+            agregarAlCarrito(productoModal, qty, nota, mods, comps, origenModal, agrandadoVia || null)
+            setProductoModal(null)
+            if (reemplazo) quitarUnidades(reemplazo.nombre, reemplazo.quitar)
+            if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
           }}
           abierto={abierto}
           reglasChoque={reglasChoque}
+          extrasFav={extrasFav}
         />
       )}
 
@@ -543,6 +657,11 @@ export default function MenuPublico() {
           dondeAgotado={sucRuteada?.nombre}
           onCambiar={aplicarCambio}
           onQuitarLinea={quitarLinea}
+          sugerencias={sugerencias}
+          onSugerencia={agregarSugerencia}
+          cupon={cupon}
+          ofertaDuo={ofertaDuo}
+          onAceptarDuo={aceptarDuo}
           onClose={() => setCarritoAbierto(false)}
           onUpdate={setCarrito}
           onCheckout={() => { setCarritoAbierto(false); setCheckoutOpen(true) }}
@@ -777,6 +896,38 @@ function AvisoCambio({ problemas, dondeAgotado, onCambiar, onQuitar }) {
   )
 }
 
+// Fila horizontal de productos destacados («Los más pedidos», «Para compartir»).
+// `ranking` numera #1, #2… porque el orden viene de las ventas reales.
+function FilaDestacada({ titulo, sub, items, ranking = false, onPick }) {
+  return (
+    <section className="mp-seccion" style={{ paddingBottom: 4 }}>
+      <h2 className="mp-seccion-titulo" style={{ marginBottom: 2 }}>{titulo}</h2>
+      {sub && <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>{sub}</div>}
+      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, scrollSnapType: 'x mandatory' }}>
+        {items.map((p, i) => (
+          <button key={p.id} type="button" onClick={() => onPick(p)}
+                  style={{ flex: '0 0 138px', scrollSnapAlign: 'start', textAlign: 'left', background: '#fff',
+                           border: '1px solid #eee', borderRadius: 12, padding: 8, cursor: 'pointer', fontFamily: 'inherit',
+                           position: 'relative' }}>
+            {ranking && (
+              <span style={{ position: 'absolute', top: 6, left: 6, zIndex: 1, background: '#E63946', color: '#fff',
+                             fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 8 }}>#{i + 1}</span>
+            )}
+            <div style={{ height: 92, borderRadius: 9, background: '#f5f5f5', overflow: 'hidden',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {p.imagen_url
+                ? <img src={p.imagen_url} alt={p.nombre} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 30, opacity: .35 }}>🍔</span>}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: '#1a1a1a', marginTop: 7, lineHeight: 1.25 }}>{p.nombre}</div>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: '#E63946', marginTop: 2 }}>{fmt(p.precio)}</div>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function ProductoCard({ producto, onClick, agotado = false, dondeAgotado }) {
   const tieneOpciones = (producto.grupos || []).length > 0
     || (producto.componentes || []).some(c => (c.grupos || []).length > 0)
@@ -808,7 +959,7 @@ function ProductoCard({ producto, onClick, agotado = false, dondeAgotado }) {
   )
 }
 
-function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [] }) {
+function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [], extrasFav = {} }) {
   const [qty, setQty] = useState(1)
   const [nota, setNota] = useState('')
   // sel: { [grupoId]: [ {id,nombre,precio_extra}, ... ] }
@@ -825,22 +976,42 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   //    2 papas, 2 bebidas), cada una personalizable por separado.
   // Se aplanan a una sola lista con id compuesto "idx:grupoId" para que el resto de la lógica
   // (selección, mínimos, faltantes, precio) siga funcionando igual.
-  const grupos = useMemo(() => {
+  // Orden por combo (Cesar, 9-nov-2026): producto → papas → bebida. La bebida
+  // viene colgada del hot dog / hamburguesa y las papas son otro componente;
+  // se emparejan en orden (1.er producto con bebida ↔ 1.as papas con
+  // «Agrandado»), y las papas se muestran entre el producto y su bebida. Así
+  // la persona ve el agrandado ANTES de escoger bebida. `pareja` dice a qué
+  // bebida le toca el agrandado marcado en cada papas.
+  const armado = useMemo(() => {
     const base = (producto.grupos || []).map(g => ({ ...g, _seccion: null }))
     const comps = producto.componentes || []
     const repes = {}
     comps.forEach(c => { repes[c.nombre] = (repes[c.nombre] || 0) + 1 })
     const vistos = {}
+    const titulos = comps.map(c => {
+      vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
+      return repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre
+    })
+    const esDeBebida = (g) => /bebida/i.test(g?.nombre || '')
+    const conBebida = comps.map((c, i) => (c.grupos || []).some(g => esDeBebida(g) && !/agrandado|cambio/i.test(g.nombre)) ? i : -1).filter(i => i >= 0)
+    const conAgrandado = comps.map((c, i) => (c.grupos || []).some(g => !esDeBebida(g) &&
+      (g.opciones || []).some(o => /agrandado/i.test(o?.nombre || ''))) ? i : -1).filter(i => i >= 0 && !conBebida.includes(i))
+    const pareja = {}       // papasIdx -> productoIdx
+    const papasDe = {}      // productoIdx -> papasIdx
+    conBebida.forEach((pi, k) => { if (conAgrandado[k] != null) { pareja[conAgrandado[k]] = pi; papasDe[pi] = conAgrandado[k] } })
+    const mapear = (i, seccion) => (comps[i].grupos || []).map(g => ({ ...g, id: `${i}:${g.id}`, _seccion: seccion }))
     const deComponentes = []
     comps.forEach((c, i) => {
-      vistos[c.nombre] = (vistos[c.nombre] || 0) + 1
-      const titulo = repes[c.nombre] > 1 ? `${c.nombre} ${vistos[c.nombre]}` : c.nombre
-      ;(c.grupos || []).forEach(g => {
-        deComponentes.push({ ...g, id: `${i}:${g.id}`, _seccion: titulo })
-      })
+      if (pareja[i] != null) return   // ya salió junto a su producto
+      if (papasDe[i] == null) { deComponentes.push(...mapear(i, titulos[i])); return }
+      const propios = mapear(i, titulos[i])
+      deComponentes.push(...propios.filter(g => !esDeBebida(g)))
+      deComponentes.push(...mapear(papasDe[i], titulos[i]))
+      deComponentes.push(...propios.filter(g => esDeBebida(g)))
     })
-    return [...base, ...deComponentes]
+    return { lista: [...base, ...deComponentes], pareja }
   }, [producto])
+  const grupos = armado.lista
 
   const esUnico = (g) => (g.max === 1) || g.tipo === 'unico' || g.tipo === 'single'
   const minDe = (g) => g.obligatorio ? Math.max(1, Number(g.min) || 0) : (Number(g.min) || 0)
@@ -860,7 +1031,13 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   const claveComp = (g) => { const m = /^(\d+):/.exec(String(g.id)); return m ? m[1] : 'base' }
   const esGrupoAgrandado = (g) => /agrandado/i.test(g?.nombre || '')
   const esOpcionAgrandado = (op) => /agrandado/i.test(op?.nombre || '')
-  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g)
+  // «Cambio de bebida» (+$0.50, 9-nov-2026, Cesar): misma lógica que el
+  // agrandado. Al marcarlo en la bebida de un componente, ese grupo deja de
+  // ofrecer las 3 incluidas y aparece «Cambio de Bebida» (latas, tés, Kinley,
+  // sin costo: el $0.50 ya va en la opción), obligatorio.
+  const esGrupoCambio = (g) => /^cambio de bebida$/i.test(String(g?.nombre || '').trim())
+  const esOpcionCambio = (op) => /^cambio de bebida$/i.test(String(op?.nombre || '').trim())
+  const esGrupoBebida = (g) => /bebida/i.test(g?.nombre || '') && !esGrupoAgrandado(g) && !esGrupoCambio(g)
   const esVidrio = (op) => /vidrio/i.test(op?.nombre || '')
 
   // Qué componentes quedaron agrandados. Hay dos vías vivas y ambas valen: la
@@ -878,6 +1055,7 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
       const marcados = (sel[g.id] || []).filter(esOpcionAgrandado).length
       if (!marcados) return
       if (esGrupoBebida(g)) propios.add(claveComp(g))
+      else if (armado.pareja[claveComp(g)] != null) propios.add(String(armado.pareja[claveComp(g)]))
       else externos += marcados
     })
     const restantes = bebidas.filter(c => !propios.has(c)).slice(0, externos)
@@ -889,6 +1067,25 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   // mostrando su propia opción de agrandado, o quien la marcó no podría soltarla.
   const soloAgrandado = (g) =>
     esGrupoBebida(g) && compsAgrandados.has(claveComp(g)) && tieneGrupoAgrandado(claveComp(g))
+
+  // Componentes con «Cambio de bebida» marcado (y no agrandados: el agrandado manda).
+  const compsCambio = useMemo(() => {
+    const s = new Set()
+    grupos.forEach(g => {
+      if (esGrupoBebida(g) && (sel[g.id] || []).some(esOpcionCambio) && !compsAgrandados.has(claveComp(g))) s.add(claveComp(g))
+    })
+    return s
+  }, [grupos, sel, compsAgrandados])
+  // Los sabores del cambio se dibujan DENTRO del grupo «Bebida», debajo de la
+  // opción «Cambio de bebida» (Cesar, 9-nov: como grupo aparte quedaba cerrado
+  // más abajo y la gente no encontraba dónde escoger el sabor). El grupo sigue
+  // existiendo para validar, cobrar y comandar; solo no se dibuja suelto.
+  const grupoCambioDe = (g) => grupos.find(x => esGrupoCambio(x) && claveComp(x) === claveComp(g)) || null
+  const grupoBebidaDe = (g) => grupos.find(x => esGrupoBebida(x) && claveComp(x) === claveComp(g)) || null
+  const padreDe = (gid) => {
+    const g = grupos.find(x => x.id === gid)
+    return g && esGrupoCambio(g) ? (grupoBebidaDe(g)?.id ?? gid) : gid
+  }
 
   /* ── Choques declarados desde el ERP ───────────────────────────────────
      Un par de opciones que no pueden ir juntas. Al elegir una, la otra deja
@@ -914,7 +1111,9 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
     return ops.filter(op => !esVidrio(op) && !bloqueadosPorRegla.has(op.id))
   }
   const grupoOculto = (g) =>
-    (esGrupoAgrandado(g) && !compsAgrandados.has(claveComp(g))) || opcionesVisibles(g).length === 0
+    (esGrupoAgrandado(g) && !compsAgrandados.has(claveComp(g))) ||
+    (esGrupoCambio(g) && !compsCambio.has(claveComp(g))) ||
+    opcionesVisibles(g).length === 0
 
   // Lo que se ve, se exige y se cobra. Un grupo oculto no bloquea el botón ni
   // aporta precio, y una selección que dejó de ser visible (se agrandó después
@@ -933,15 +1132,24 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
   // El grupo del agrandado solo se muestra cuando hay un agrandado marcado, y
   // en ese caso elegir el sabor es obligatorio: es la bebida que reemplaza a la
   // incluida, y sin ella no se descuenta ningún insumo.
-  const minEfectivo = (g) => esGrupoAgrandado(g) ? Math.max(1, minDe(g)) : minDe(g)
+  const minEfectivo = (g) => (esGrupoAgrandado(g) || esGrupoCambio(g)) ? Math.max(1, minDe(g)) : minDe(g)
 
   // El siguiente grupo al que conviene llevar a la persona: el primero que
   // todavía no cumple su mínimo.
   const siguientePendiente = (desdeId) => {
     const i = gruposVisibles.findIndex(g => g.id === desdeId)
     const resto = [...gruposVisibles.slice(i + 1), ...gruposVisibles.slice(0, Math.max(0, i))]
-    return resto.find(g => cuentaDe(g) < minEfectivo(g))?.id ?? null
+    const id = resto.find(g => cuentaDe(g) < minEfectivo(g))?.id ?? null
+    return id ? padreDe(id) : null
   }
+
+  // «Con Todo» / «Sin Nada» (9-nov-2026, Cesar): al elegir uno se desmarcan y
+  // bloquean los complementos gratis del grupo (ketchup, mayonesa, cebolla…),
+  // porque ya están incluidos o no van. Los extras con precio (jalapeños,
+  // tocino, costra de queso) se pueden seguir agregando.
+  const esTodoNada = (op) => /^(con todo|sin nada)$/i.test(String(op?.nombre || '').trim())
+  const esBaseGratis = (op) => !(Number(op?.precio_extra) > 0) && !esTodoNada(op)
+  const todoNadaDe = (g) => (sel[g.id] || []).find(esTodoNada) || null
 
   const toggle = (g, op) => {
     setSel(prev => {
@@ -952,7 +1160,10 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
         next = ya ? [] : [op]
       } else if (ya) {
         next = actual.filter(x => x.id !== op.id)
+      } else if (esTodoNada(op)) {
+        next = [...actual.filter(x => !esBaseGratis(x) && !esTodoNada(x)), op]
       } else {
+        if (esBaseGratis(op) && actual.some(esTodoNada)) return prev  // bloqueado por Con Todo / Sin Nada
         if (g.max && actual.length >= g.max) return prev  // tope alcanzado
         next = [...actual, op]
       }
@@ -960,9 +1171,33 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
     })
     // En los de una sola opción ya no hay nada más que hacer ahí: se cierra y
     // se abre el siguiente que falte, para no obligar a buscarlo scroleando.
+    // Al tocar «Cambio de bebida» el grupo se queda abierto: falta el sabor.
+    // Al escoger el sabor se cierra la bebida y se abre lo siguiente.
+    const yaElegida = (sel[g.id] || []).some(x => x.id === op.id)
+    if (esOpcionCambio(op) && !yaElegida) return
     if (esUnico(g)) {
-      setTimeout(() => setGrupoAbierto(a => (a === g.id ? siguientePendiente(g.id) : a)), 180)
+      const propio = padreDe(g.id)
+      setTimeout(() => setGrupoAbierto(a => (a === propio ? siguientePendiente(g.id) : a)), 180)
     }
+  }
+
+  // Botón «Agrandar papa y bebida». Al prenderlo se abre la «Bebida premium»
+  // de su combo; al apagarlo se borra la premium elegida, para que no quede
+  // nada a medias (vuelve a pedir la bebida normal).
+  const alternarAgrandado = (g, op, on) => {
+    const comp = armado.pareja[claveComp(g)] != null ? String(armado.pareja[claveComp(g)]) : null
+    const premium = comp != null ? grupos.find(x => esGrupoAgrandado(x) && claveComp(x) === comp) : null
+    // Bebida normal, cambio y premium de ese combo arrancan de cero en cada
+    // cambio: nada elegido antes reaparece solo (ni se cobra) al quitar el agrandado.
+    const deBebida = comp != null ? grupos.filter(x => claveComp(x) === comp &&
+      (esGrupoBebida(x) || esGrupoCambio(x) || esGrupoAgrandado(x))) : []
+    setSel(prev => {
+      const actual = prev[g.id] || []
+      const next = { ...prev, [g.id]: on ? actual.filter(x => x.id !== op.id) : [...actual, op] }
+      deBebida.forEach(x => { next[x.id] = [] })
+      return next
+    })
+    if (!on && premium) setTimeout(() => setGrupoAbierto(premium.id), 120)
   }
 
   // Los grupos que vienen de un componente tienen id "indice:grupoId"; se recupera el índice
@@ -987,10 +1222,43 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
 
   const faltantes = gruposVisibles.filter(g => cuentaDe(g) < minEfectivo(g))
 
-  const confirmar = () => {
+  // Upsell del agrandado (Cesar, 9-nov-2026): si el combo trae papas con
+  // «Agrandar papa y bebida» y ninguna está agrandada, al tocar «Añadir» se
+  // pregunta UNA vez «¿Agrandamos tu combo?». «Sí» agranda todos y lleva a
+  // escoger la bebida premium; «No, gracias» agrega normal y no vuelve a preguntar.
+  const [upsell, setUpsell] = useState(null)        // null | 'abierto' | 'visto'
+  const agrandables = gruposVisibles
+    .filter(g => !esGrupoBebida(g) && !esGrupoAgrandado(g) && !esGrupoCambio(g))
+    .map(g => ({ g, op: opcionesVisibles(g).find(esOpcionAgrandado) }))
+    .filter(x => x.op)
+  const sinAgrandar = agrandables.filter(({ g, op }) => !(sel[g.id] || []).some(o => o.id === op.id))
+  const precioAgrandado = agrandables[0] ? Number(agrandables[0].op.precio_extra) || 0 : 0
+
+  const aceptarUpsell = () => {
+    setUpsell('aceptado')
+    const comps = new Set(sinAgrandar.map(({ g }) =>
+      armado.pareja[claveComp(g)] != null ? String(armado.pareja[claveComp(g)]) : null).filter(Boolean))
+    setSel(prev => {
+      const next = { ...prev }
+      sinAgrandar.forEach(({ g, op }) => { next[g.id] = [...(prev[g.id] || []), op] })
+      grupos.forEach(x => {
+        if (comps.has(claveComp(x)) && (esGrupoBebida(x) || esGrupoCambio(x) || esGrupoAgrandado(x))) next[x.id] = []
+      })
+      return next
+    })
+    const primera = grupos.find(x => esGrupoAgrandado(x) && comps.has(claveComp(x)))
+    setIntento(false)
+    if (primera) setTimeout(() => setGrupoAbierto(primera.id), 120)
+  }
+
+  const confirmar = (saltarUpsell = false) => {
     if (faltantes.length > 0) {
       setIntento(true)
-      setGrupoAbierto(faltantes[0].id)   // llevarlo a lo que falta, no dejarlo buscando
+      setGrupoAbierto(padreDe(faltantes[0].id))   // llevarlo a lo que falta, no dejarlo buscando
+      return
+    }
+    if (!saltarUpsell && upsell == null && sinAgrandar.length > 0 && sinAgrandar.length === agrandables.length) {
+      setUpsell('abierto')
       return
     }
     // Se separan: las opciones del ítem van en `mods`; las de cada unidad del combo viajan
@@ -1001,7 +1269,10 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
       cantidad: Number(c.cantidad) || 1,
       mods: modsPlanos.filter(m => m.compIdx === i),
     })).filter(c => c.mods.length > 0)
-    onAgregar(qty, nota, modsPlanos.filter(m => m.compIdx == null), comps)
+    // Cómo se aceptó el agrandado: desde la pregunta al añadir o tocando el botón.
+    const algunoAgrandado = agrandables.some(({ g, op }) => (sel[g.id] || []).some(o => o.id === op.id))
+    const agrandadoVia = !algunoAgrandado ? null : upsell === 'aceptado' ? 'pregunta' : 'boton'
+    onAgregar(qty, nota, modsPlanos.filter(m => m.compIdx == null), comps, agrandadoVia)
   }
 
   return (
@@ -1026,14 +1297,27 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
 
           {/* GRUPOS DE MODIFICADORES */}
           {gruposVisibles.map((g, gi) => {
+            if (esGrupoCambio(g)) return null   // se dibuja dentro de su «Bebida»
+            // Sabores del cambio, si este grupo de bebida lo tiene marcado.
+            const gc = esGrupoBebida(g) && compsCambio.has(claveComp(g)) ? grupoCambioDe(g) : null
+            const gcVisible = gc && gruposVisibles.some(x => x.id === gc.id) ? gc : null
+            const saborCambio = gcVisible ? (sel[gcVisible.id] || []).find(o => idsVisibles.get(gcVisible.id)?.has(o.id)) : null
+            const faltaSabor = !!gcVisible && !saborCambio
             const cuenta = cuentaDe(g)
-            const incompleto = intento && cuenta < minEfectivo(g)
-            const listo = cuenta >= minEfectivo(g) && cuenta > 0
+            const incompleto = intento && (cuenta < minEfectivo(g) || faltaSabor)
+            const listo = cuenta >= minEfectivo(g) && cuenta > 0 && !faltaSabor
             const estaAbierto = grupoAbierto === g.id
             const elegidas = (sel[g.id] || []).filter(o => idsVisibles.get(g.id)?.has(o.id)).map(o => o.nombre).join(', ')
+              + (gcVisible ? (saborCambio ? ` · ${saborCambio.nombre}` : ' · falta el sabor') : '')
             // Encabezado al empezar cada parte del combo ("Hamburguesa 1", "Bebida 2"), para
             // que se entienda a cuál de las unidades pertenecen las opciones de abajo.
             const abreSeccion = g._seccion && (gi === 0 || gruposVisibles[gi - 1]._seccion !== g._seccion)
+            // El agrandado ($1.25) sale como botón propio debajo de las salsas,
+            // no escondido entre ketchup y mayonesa.
+            const opAgrandado = !esGrupoBebida(g) && !esGrupoAgrandado(g)
+              ? opcionesVisibles(g).find(esOpcionAgrandado) : null
+            const agrandadoOn = opAgrandado && (sel[g.id] || []).some(x => x.id === opAgrandado.id)
+            const esPremium = esGrupoAgrandado(g)
             return (
               <Fragment key={g.id}>
               {abreSeccion && <div className="mp-comp-seccion">{g._seccion}</div>}
@@ -1045,7 +1329,15 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                     {listo ? '✓' : minEfectivo(g) > 0 ? '' : '+'}
                   </span>
                   <span className="mp-grupo-textos">
-                    <span className="mp-grupo-nombre">{g.nombre}</span>
+                    <span className="mp-grupo-nombre">
+                      {esPremium ? 'Bebida premium' : g.nombre}
+                      {esPremium && (
+                        <span style={{ fontSize: 11, fontWeight: 600, background: '#EAF3DE', color: '#27500A',
+                                       padding: '2px 7px', borderRadius: 8, marginLeft: 6, whiteSpace: 'nowrap' }}>
+                          incluida en el agrandado
+                        </span>
+                      )}
+                    </span>
                     {/* Cerrado, el resumen dice qué se eligió o qué falta: así no
                         hay que abrir cada grupo para revisar el pedido. */}
                     <span className="mp-grupo-resumen">
@@ -1059,25 +1351,101 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
                   <span className="mp-grupo-flecha" aria-hidden="true">{estaAbierto ? '▲' : '▼'}</span>
                 </button>
                 <div className="mp-opciones" hidden={!estaAbierto}>
-                  {opcionesVisibles(g).map(op => {
+                  {opcionesVisibles(g).filter(op => op !== opAgrandado).map((op, _i, lista) => {
+                    // «⭐ El favorito» / «⭐ Popular»: los 2 extras con precio más
+                    // elegidos de ESTE grupo en 30 días (datos reales, ≥20 veces).
+                    const ranking = lista
+                      .filter(o => Number(o.precio_extra) > 0 && !esOpcionAgrandado(o) && !esOpcionCambio(o) && Number(extrasFav[o.id]) >= 20)
+                      .sort((a, b) => Number(extrasFav[b.id]) - Number(extrasFav[a.id]))
+                    const medalla = ranking[0]?.id === op.id ? '⭐ El favorito'
+                      : ranking[1]?.id === op.id ? '⭐ Popular' : null
                     const activa = (sel[g.id] || []).some(x => x.id === op.id)
+                    const tn = !esUnico(g) && todoNadaDe(g)
+                    const bloqueada = !activa && tn && esBaseGratis(op)
+                    const sabores = activa && esOpcionCambio(op) && gcVisible ? (
+                      <div style={{ margin: '6px 0 4px 14px', paddingLeft: 10, borderLeft: '2px solid #F09595' }}>
+                        <div style={{ fontSize: 12, color: faltaSabor && intento ? '#b42318' : '#6b5a48', marginBottom: 6 }}>
+                          Elegí el sabor
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          {opcionesVisibles(gcVisible).map(s => {
+                            const on = saborCambio?.id === s.id
+                            return (
+                              <button key={s.id} type="button" onClick={() => toggle(gcVisible, s)}
+                                      style={{ padding: '8px 10px', borderRadius: 10, fontSize: 13, textAlign: 'left', cursor: 'pointer',
+                                               fontFamily: 'inherit', background: on ? '#fdecec' : '#fff',
+                                               border: on ? '1.5px solid #E24B4A' : '1px solid #e5ddd3',
+                                               color: on ? '#A32D2D' : 'inherit', fontWeight: on ? 600 : 400 }}>
+                                {s.nombre}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null
                     return (
+                      <Fragment key={op.id}>
                       <button
                         key={op.id}
                         type="button"
+                        disabled={bloqueada}
                         className={`mp-opcion ${activa ? 'active' : ''} ${esUnico(g) ? 'radio' : 'check'}`}
+                        style={bloqueada ? { opacity: .45, cursor: 'not-allowed' } : undefined}
                         onClick={() => toggle(g, op)}
                       >
-                        <span className="mp-opcion-nombre">{op.nombre}</span>
+                        <span className="mp-opcion-nombre">
+                          {op.nombre}
+                          {medalla && (
+                            <span style={{ fontSize: 11, fontWeight: 700, background: '#FAEEDA', color: '#633806',
+                                           padding: '1px 7px', borderRadius: 7, marginLeft: 6, whiteSpace: 'nowrap' }}>
+                              {medalla}
+                            </span>
+                          )}
+                          {op.descripcion && (
+                            <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#6b5a48', marginTop: 2, lineHeight: 1.35 }}>
+                              {op.descripcion}
+                            </span>
+                          )}
+                        </span>
+                        {bloqueada && (
+                          <span style={{ fontSize: 11.5, color: '#6b5a48' }}>
+                            {/sin nada/i.test(tn.nombre) ? 'No lleva' : 'Incluido'}
+                          </span>
+                        )}
                         {Number(op.precio_extra) > 0 && (
                           <span className="mp-opcion-extra">+{fmt(op.precio_extra)}</span>
                         )}
                       </button>
+                      {sabores}
+                      </Fragment>
                     )
                   })}
                 </div>
-                {incompleto && <div className="mp-grupo-error">Elegí al menos {minEfectivo(g)}</div>}
+                {incompleto && (
+                  <div className="mp-grupo-error">
+                    {cuenta < minEfectivo(g) ? `Elegí al menos ${minEfectivo(g)}` : 'Elegí el sabor del cambio de bebida'}
+                  </div>
+                )}
               </div>
+              {opAgrandado && (
+                <button type="button" onClick={() => alternarAgrandado(g, opAgrandado, agrandadoOn)}
+                        style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                                 margin: '14px 0 10px', padding: '13px 12px 11px', borderRadius: 12, cursor: 'pointer',
+                                 fontFamily: 'inherit', background: '#FAEEDA', color: '#633806',
+                                 border: agrandadoOn ? '2px solid #BA7517' : '1.5px solid #EF9F27' }}>
+                  <span style={{ position: 'absolute', top: -10, right: 10, background: '#BA7517', color: '#fff',
+                                 fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8 }}>
+                    {agrandadoOn ? '✓ Agrandado' : '⭐ Recomendado'}
+                  </span>
+                  <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 5, flex: 'none',
+                                                    border: agrandadoOn ? '6px solid #BA7517' : '1.5px solid #BA7517', background: '#fff' }} />
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontWeight: 800, fontSize: 15 }}>Agrandá tu combo</span>
+                    <span style={{ display: 'block', fontSize: 12 }}>Papa grande + Coca lata, Coca Zero, Té Lipton o Kinley</span>
+                  </span>
+                  <span style={{ fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap' }}>solo +{fmt(opAgrandado.precio_extra)}</span>
+                </button>
+              )}
               </Fragment>
             )
           })}
@@ -1104,12 +1472,37 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
             </div>
             <button
               className="mp-btn-agregar"
-              onClick={confirmar}
+              onClick={() => confirmar()}
             >
               {`Añadir · ${fmt(precioTotal)}`}
             </button>
           </div>
         </div>
+        {upsell === 'abierto' && (
+          <div onClick={() => { setUpsell('visto'); confirmar(true) }}
+               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 5000,
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div onClick={e => e.stopPropagation()}
+                 style={{ background: '#fff', width: 'min(520px, 100%)', borderRadius: '18px 18px 0 0',
+                          padding: '18px 16px 22px', boxSizing: 'border-box' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#1f1a16' }}>¿Agrandamos tu combo?</div>
+              <div style={{ fontSize: 14, color: '#6b5a48', margin: '4px 0 14px', lineHeight: 1.4 }}>
+                Papa grande + bebida premium (Coca lata, Coca Zero, Té Lipton o Kinley) por solo {fmt(precioAgrandado)} más
+                {sinAgrandar.length > 1 ? ' cada uno' : ''}.
+              </div>
+              <button type="button" onClick={aceptarUpsell}
+                      style={{ width: '100%', padding: 14, border: 'none', borderRadius: 14, background: '#E24B4A',
+                               color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Sí, agrandar · +{fmt(precioAgrandado * sinAgrandar.length * qty)}
+              </button>
+              <button type="button" onClick={() => { setUpsell('visto'); confirmar(true) }}
+                      style={{ width: '100%', padding: 10, marginTop: 6, border: 'none', background: 'none',
+                               color: '#6b5a48', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                No, gracias
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1163,7 +1556,14 @@ function lineaPedidoTexto(it) {
 
 function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                         problemasDe = () => [], dondeAgotado,
-                        onCambiar = () => {}, onQuitarLinea = () => {} }) {
+                        onCambiar = () => {}, onQuitarLinea = () => {},
+                        sugerencias = [], onSugerencia = () => {},
+                        ofertaDuo = null, onAceptarDuo = () => {}, cupon = null }) {
+  // Cupón de regreso: se aplica desde $19.99 («$20» en los textos, así el Burger Box cuenta).
+  const MINIMO_CUPON = 19.99
+  const cuponAplica = !!cupon && total >= Number(cupon.minimo || MINIMO_CUPON)
+  const descCupon = cuponAplica ? Number(cupon.monto) || 0 : 0
+  const totalNeto = Math.max(0, total - descCupon)
   const problemas = items.map(i => ({ linea: i, p: problemasDe(i) })).filter(x => x.p.length)
   const hayAgotados = problemas.length > 0
   const faltaMinimo = reglas ? Math.max(0, reglas.minimo - total) : 0
@@ -1231,6 +1631,54 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
               </div>
             ))
           )}
+
+          {/* «¿Son dos?» → Burger Duo */}
+          {items.length > 0 && ofertaDuo && (
+            <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: 12, margin: '14px 0 4px', color: '#633806' }}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>
+                {ofertaDuo.quitar >= 2 ? 'Llevás 2 Freakie Burger: mejor el Burger Duo' : '¿Son dos? Pasate al Burger Duo'}
+              </div>
+              <div style={{ fontSize: 12.5, margin: '3px 0 9px', lineHeight: 1.4 }}>
+                2 hamburguesas + 2 papas + 2 bebidas por {fmt(ofertaDuo.duoPrecio)}
+                {ofertaDuo.quitar >= 2 && 2 * ofertaDuo.fbPrecio > ofertaDuo.duoPrecio
+                  ? ` (2 Freakie Burger cuestan ${fmt(2 * ofertaDuo.fbPrecio)})` : ''}.
+              </div>
+              <button type="button" onClick={onAceptarDuo}
+                      style={{ border: '1.5px solid #BA7517', background: '#fff', color: '#633806', borderRadius: 9,
+                               padding: '7px 12px', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {(() => {
+                  const dif = ofertaDuo.duoPrecio - ofertaDuo.quitar * ofertaDuo.fbPrecio
+                  return dif > 0 ? `Cambiar al Burger Duo · +${fmt(dif)}`
+                    : dif < 0 ? `Cambiar al Burger Duo · ahorrás ${fmt(-dif)}` : 'Cambiar al Burger Duo'
+                })()}
+              </button>
+            </div>
+          )}
+
+          {/* «¿Le sumás algo?»: sugerencias de un toque */}
+          {items.length > 0 && sugerencias.length > 0 && (
+            <div style={{ margin: '16px 0 4px' }}>
+              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>¿Le sumás algo?</div>
+              {sugerencias.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #eee',
+                                         borderRadius: 12, padding: 8, marginTop: 6 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 8, background: '#f5f5f5', overflow: 'hidden', flex: 'none',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {p.imagen_url ? <img src={p.imagen_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🍟'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{p.nombre}</div>
+                    <div style={{ fontSize: 13, color: '#E63946', fontWeight: 700 }}>{fmt(p.precio)}</div>
+                  </div>
+                  <button type="button" onClick={() => onSugerencia(p)} aria-label={`Agregar ${p.nombre}`}
+                          style={{ border: '1.5px solid #E63946', color: '#E63946', background: '#fff', borderRadius: 9,
+                                   padding: '6px 12px', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    + Agregar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {items.length > 0 && (
@@ -1245,9 +1693,47 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                 Agregá <b>{fmt(faltaGratis)}</b> más y el envío te sale <b>gratis</b> 🚀
               </div>
             )}
+            {/* Cupón de regreso: ganarlo (barra) o usarlo (descuento) */}
+            {faltaMinimo === 0 && !cupon && (() => {
+              const falta = Math.max(0, MINIMO_CUPON - total)
+              return falta > 0 ? (
+                <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#633806' }}>
+                  <div style={{ fontSize: 13.5 }}>Pedí <b>{fmt(falta)}</b> más y ganás <b>$2 de descuento</b> en tu próxima compra 🎁</div>
+                  <div style={{ height: 8, borderRadius: 6, background: '#fff', overflow: 'hidden', marginTop: 8 }}>
+                    <div style={{ width: `${Math.min(100, total / MINIMO_CUPON * 100)}%`, height: '100%', background: '#E63946' }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, marginTop: 5, opacity: .85 }}>Tenés 21 días para usarlo · válido en pedidos de $20 o más</div>
+                </div>
+              ) : (
+                <div style={{ background: '#EAF3DE', border: '1px solid #97C459', borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#27500A' }}>
+                  <div style={{ fontSize: 13.5 }}>🎉 <b>¡Listo!</b> Con este pedido ganás <b>$2 de descuento</b> para tu próxima compra</div>
+                  <div style={{ fontSize: 11.5, marginTop: 5, opacity: .85 }}>Te llega al entregar tu pedido · tenés 21 días para usarlo en pedidos de $20 o más</div>
+                </div>
+              )
+            })()}
+            {faltaMinimo === 0 && cupon && (cuponAplica ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#EAF3DE', border: '1px solid #97C459',
+                              borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#27500A', fontSize: 14 }}>
+                  <span>🎁 <b>Cupón aplicado</b><br />
+                    <span style={{ fontSize: 11.5 }}>{fmt(descCupon)} de descuento · {Number(cupon.dias) <= 1 ? 'vence hoy' : `vence en ${cupon.dias} días`}</span></span>
+                  <b>−{fmt(descCupon)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#888', marginBottom: 4 }}>
+                  <span>Subtotal</span><span>{fmt(total)}</span>
+                </div>
+              </>
+            ) : (
+              <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#633806', fontSize: 13.5 }}>
+                Te faltan <b>{fmt(Math.max(0, Number(cupon.minimo || MINIMO_CUPON) - total))}</b> para usar tus <b>{fmt(cupon.monto)}</b> de descuento 🎁
+                <div style={{ fontSize: 11.5, marginTop: 4, opacity: .85 }}>
+                  Válido en pedidos de $20 o más · {Number(cupon.dias) <= 1 ? 'vence hoy' : `vence en ${cupon.dias} días`}
+                </div>
+              </div>
+            ))}
             <div className="mp-drawer-total">
               <span>Total</span>
-              <span className="mp-drawer-total-num">{fmt(total)}</span>
+              <span className="mp-drawer-total-num">{fmt(totalNeto)}</span>
             </div>
             {problemas.map(({ linea, p }) => (
               <AvisoCambio key={linea.lineaId} problemas={p} dondeAgotado={dondeAgotado}
@@ -1291,8 +1777,20 @@ function PedidoEnviado({ datos, onClose }) {
     + (resumen ? `:\n${resumen}` : '')
     + (datos.total ? `\nTotal: ${fmt(datos.total)}` : '')
     + (datos.direccion ? `\n📍 ${datos.direccion}` : '')
-  const waHref = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(waMsg)}` : null
   const trackHref = datos.tracking_token ? `${URL_DELIVERY}/track?t=${datos.tracking_token}` : null
+  // 6-nov-2026 (Cesar): el cliente ve con cuánto dijo que paga y su cambio, para que note si se
+  // equivocó al escribirlo; y el link de seguimiento va DENTRO del WhatsApp que él nos manda
+  // (el chat lo inicia el cliente, así que no hay riesgo de bloqueo por mandar links).
+  const efectivo = !pagado && (datos.metodoPago || 'efectivo') === 'efectivo'
+  const pagaCon = Number(datos.pagaCon) || 0
+  const cambio = pagaCon && datos.total ? Math.max(0, pagaCon - Number(datos.total)) : null
+  const lineaPago = !efectivo ? null
+    : pagaCon ? `💵 Pago en efectivo con ${fmt(pagaCon)}${cambio != null ? ` · cambio: ${fmt(cambio)}` : ''}`
+    : '💵 Pago en efectivo al recibir'
+  const waTexto = waMsg
+    + (lineaPago ? `\n${lineaPago}` : '')
+    + (trackHref ? `\n\n🛵 Aquí puedo darle seguimiento a mi pedido: ${trackHref}` : '')
+  const waHref = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(waTexto)}` : null
 
   return (
     <div className="mp-drawer-overlay" onClick={onClose}>
@@ -1306,6 +1804,17 @@ function PedidoEnviado({ datos, onClose }) {
             Tu pedido es el <b>{datos.numero_orden}</b>
             {datos.total ? <> · <b>{fmt(datos.total)}</b></> : null}
           </div>
+
+          {lineaPago && (
+            <div className="mp-enviado-pagado" style={{ background: '#fff7e0', color: '#7a5a00', borderColor: '#f0d58a' }}>
+              {lineaPago}
+              {pagaCon && cambio != null && pagaCon < Number(datos.total) && (
+                <div style={{ fontSize: 12, marginTop: 4, color: '#b3202c' }}>
+                  Ojo: el monto es menor que el total. Si te equivocaste, avisanos por WhatsApp.
+                </div>
+              )}
+            </div>
+          )}
 
           {pagado && (
             <div className="mp-enviado-pagado">
@@ -1363,7 +1872,8 @@ function PedidoEnviado({ datos, onClose }) {
                   ? <>No hace falta que escribas: tu pago ya entró. Usá este botón
                       solo si querés avisarnos algo. Guardanos como <b>Freakie Dogs</b> 💾</>
                   : <>Escribinos vos con este botón: así te contestamos en el mismo chat
-                      para coordinar el pago y avisarte de tu pedido. Guardanos como
+                      para coordinar el pago y avisarte de tu pedido. En ese mensaje va el
+                      link para seguir tu pedido en vivo. Guardanos como
                       <b> Freakie Dogs</b> 💾</>}
               </div>
             </>
@@ -1375,7 +1885,9 @@ function PedidoEnviado({ datos, onClose }) {
             </div>
           )}
 
-          {trackHref && (
+          {/* Con WhatsApp el seguimiento viaja en el mensaje; el botón aparte solo
+              queda si no hay número configurado (respaldo). */}
+          {trackHref && !waHref && (
             <a className="mp-enviado-track" href={trackHref} target="_blank" rel="noreferrer">
               🛵 Seguir mi pedido en vivo
             </a>
@@ -1384,6 +1896,14 @@ function PedidoEnviado({ datos, onClose }) {
       </div>
     </div>
   )
+}
+
+// Botones de la hoja «¿Este es tu número?»
+const HT = {
+  si: { display: 'block', width: '100%', marginTop: 16, background: '#E63946', color: '#fff', border: 0, borderRadius: 14,
+        padding: 15, fontSize: 16, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
+  no: { display: 'block', width: '100%', marginTop: 8, background: 'none', color: '#555', border: '1.5px solid #ddd',
+        borderRadius: 14, padding: 12, fontSize: 14.5, cursor: 'pointer', fontFamily: 'inherit' },
 }
 
 function Checkout({ items, total, onClose, onEnviado,
@@ -1514,8 +2034,47 @@ function Checkout({ items, total, onClose, onEnviado,
     return () => { vivo = false }
   }, [telefono])
 
+  // ── Confirmación del número (9-nov-2026) ──
+  // Un dígito equivocado deja al motorista esperando sin forma de llamar. A los
+  // números que nunca recibieron un pedido se les muestra en grande antes de
+  // enviar; los que ya recibieron uno pasan directo (telefono_verificado).
+  const [telVerif, setTelVerif] = useState(null)      // null = no sé todavía
+  const [telOk, setTelOk] = useState('')              // número que el cliente confirmó
+  const [hojaTel, setHojaTel] = useState(null)        // null | 'ver' | 'corregir'
+  const [telNuevo, setTelNuevo] = useState('')
+  const [seguirEnvio, setSeguirEnvio] = useState(false)
+  const [notaTel, setNotaTel] = useState('')
+  useEffect(() => {
+    const tel = telefono.trim()
+    setTelVerif(null)
+    if (!TEL_VALIDO.test(tel)) return
+    let vivo = true
+    db.rpc('telefono_verificado', { p_telefono: tel })
+      .then(({ data, error: e }) => { if (vivo) setTelVerif(e ? null : data === true) })
+    return () => { vivo = false }
+  }, [telefono])
+  const faltaConfirmarTel = () => telVerif === false && telOk !== telefono.trim()
+  const abrirHojaTel = (continuar) => { setNotaTel(''); setTelNuevo(''); setSeguirEnvio(continuar); setHojaTel('ver') }
+  const telBonito = (t) => String(t || '').replace(/^(\d{4})(\d{4})$/, '$1-$2')
+
   const costoEnvio = tipo === 'delivery' ? Number(envio?.costo ?? 0) : 0
-  const totalConEnvio = total + costoEnvio
+  // Cupón de regreso del teléfono que se está usando (el servidor lo vuelve a
+  // validar y decide; esto es solo para mostrar el total correcto y cobrar con
+  // tarjeta el mismo monto).
+  const [cuponCk, setCuponCk] = useState(null)
+  const telDigitos = telefono.replace(/\D/g, '')
+  useEffect(() => {
+    if (telDigitos.length < 8) { setCuponCk(null); return }
+    let vivo = true
+    const t = setTimeout(() => {
+      db.rpc('cupon_activo', { p_telefono: telDigitos })
+        .then(({ data }) => vivo && setCuponCk(data && Number(data.monto) > 0 ? data : null))
+        .catch(() => {})
+    }, 300)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [telDigitos])
+  const descCupon = cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
+  const totalConEnvio = Math.max(0, total + costoEnvio - descCupon)
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
   // Valida el formulario. Lo usan los dos caminos: el de efectivo y el del
@@ -1584,6 +2143,9 @@ function Checkout({ items, total, onClose, onEnviado,
             menu_item_id: i.id,
             cantidad: i.qty,
             nota: i.nota || null,
+            // Medición (9-nov-2026): de qué sección salió y cómo se agrandó.
+            origen: i.origen || 'menu',
+            agrandado_via: i.agrandadoVia || null,
             // Cambios que el cliente aceptó porque a la tienda se le acabó
             // algo. El servidor los revalida contra lo que autorizó la torre
             // y decide el precio: nunca cobra más de lo que se le mostró.
@@ -1620,13 +2182,17 @@ function Checkout({ items, total, onClose, onEnviado,
   // ── Camino EFECTIVO: igual que siempre, el pedido nace visible ──
   const enviar = async () => {
     if (!validar()) return
+    if (faltaConfirmarTel()) { abrirHojaTel(true); return }
     setEnviando(true)
     try {
       const { data, error: rpcErr } = await db.rpc('crear_pedido_delivery', { p: armarPedido() })
       if (rpcErr) throw rpcErr
       if (!data?.ok) throw new Error('respuesta inesperada')
       recordarPerfil()
-      onEnviado(datosConfirmacion(data, { metodoPago: 'efectivo' }))
+      onEnviado(datosConfirmacion(data, {
+        metodoPago,
+        pagaCon: metodoPago === 'efectivo' ? (parseFloat(pagaCon) || null) : null,
+      }))
     } catch (err) {
       console.error('Error enviando pedido:', err)
       setError('No se pudo enviar el pedido. Intentá otra vez o llamanos.')
@@ -1639,7 +2205,25 @@ function Checkout({ items, total, onClose, onEnviado,
   // Devuelve null si el formulario no está completo; el error ya quedó puesto.
   const construirPedido = () => {
     if (!validar()) return null
+    if (faltaConfirmarTel()) { abrirHojaTel(false); return null }
     return armarPedido()
+  }
+
+  // Después de confirmar o corregir el número, el pedido en efectivo sigue solo
+  useEffect(() => {
+    if (seguirEnvio && !hojaTel && telOk && telOk === telefono.trim()) {
+      setSeguirEnvio(false)
+      enviar()
+    }
+  }, [seguirEnvio, hojaTel, telOk, telefono]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const confirmarTel = (nuevo) => {
+    const n = (nuevo ?? telefono).trim()
+    if (nuevo != null) setTelefono(n)
+    setTelOk(n)
+    setHojaTel(null)
+    // Con tarjeta el cobro lo dispara el botón de pagar: hay que volver a tocarlo
+    if (!seguirEnvio) setNotaTel(`✓ Número confirmado: ${telBonito(n)}. Ahora tocá «Pagar y confirmar».`)
   }
 
   const cobroAprobado = (r) => {
@@ -1706,6 +2290,9 @@ function Checkout({ items, total, onClose, onEnviado,
               }}
               placeholder="7777-7777"
             />
+            {TEL_VALIDO.test(telefono) && (telVerif || telOk === telefono.trim()) && (
+              <div style={{ fontSize: 12, color: '#16a34a', marginTop: 4 }}>✓ Número verificado</div>
+            )}
             {telefono.length > 0 && !TEL_VALIDO.test(telefono) && (
               <div className="mp-tel-aviso">
                 {telefono.length < 8
@@ -1909,6 +2496,12 @@ function Checkout({ items, total, onClose, onEnviado,
                 Agregá {fmt(envio.falta_para_gratis)} más y el envío te sale gratis 🚀
               </div>
             )}
+            {descCupon > 0 && (
+              <div className="mp-resumen-row" style={{ color: '#27500A', fontWeight: 700 }}>
+                <span>🎁 Cupón de regreso</span>
+                <span>−{fmt(descCupon)}</span>
+              </div>
+            )}
             <div className="mp-resumen-total">
               <span>Total</span>
               <span>{fmt(totalConEnvio)}</span>
@@ -1921,6 +2514,10 @@ function Checkout({ items, total, onClose, onEnviado,
                          onQuitar={() => onQuitarLinea(linea.lineaId)} />
           ))}
 
+          {notaTel && !error && (
+            <div style={{ background: '#e9f9ee', border: '1px solid #b7e4c4', color: '#166534', borderRadius: 10,
+                          padding: '9px 11px', fontSize: 13, margin: '8px 0' }}>{notaTel}</div>
+          )}
           {error && <div className="mp-error">{error}</div>}
 
           {/* PAGO CON TARJETA — va en el cuerpo, NO en el pie.
@@ -1940,6 +2537,47 @@ function Checkout({ items, total, onClose, onEnviado,
             </Suspense>
           )}
         </div>
+
+        {hojaTel && (
+          <div onClick={() => setHojaTel(null)}
+               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 2000,
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div onClick={e => e.stopPropagation()}
+                 style={{ width: '100%', maxWidth: 480, background: '#fff', color: '#1a1200', textAlign: 'center',
+                          borderRadius: '20px 20px 0 0', padding: '22px 18px 20px' }}>
+              {hojaTel === 'ver' ? (
+                <>
+                  <div style={{ fontSize: 34 }}>📞</div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>¿Este es tu número?</div>
+                  <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 2, margin: '10px 0 6px' }}>{telBonito(telefono)}</div>
+                  <div style={{ fontSize: 14, color: '#6b5a48', lineHeight: 1.45 }}>
+                    Te vamos a llamar a este número <b>cuando el motorista llegue</b>. Si está mal, no te vamos a poder encontrar.
+                  </div>
+                  <button onClick={() => confirmarTel()} style={HT.si}>Sí, es correcto</button>
+                  <button onClick={() => { setTelNuevo(''); setHojaTel('corregir') }} style={HT.no}>No, corregir</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>Escribí tu número de nuevo</div>
+                  <div style={{ fontSize: 13, color: '#6b5a48', marginTop: 4 }}>El que tenés en WhatsApp, 8 dígitos</div>
+                  <input autoFocus type="tel" inputMode="numeric" value={telNuevo} placeholder="7777-7777"
+                         onChange={e => { let v = e.target.value.replace(/[^\d]/g, ''); if (v.startsWith('503') && v.length >= 4) v = v.slice(3); setTelNuevo(v.slice(0, 8)) }}
+                         style={{ width: '100%', boxSizing: 'border-box', border: '2px solid #E63946', borderRadius: 12, padding: 12,
+                                  fontSize: 26, letterSpacing: 2, textAlign: 'center', marginTop: 12, fontFamily: 'inherit' }} />
+                  {telNuevo.length === 8 && !TEL_VALIDO.test(telNuevo) && (
+                    <div style={{ fontSize: 12.5, color: '#b3202c', marginTop: 6 }}>Los números de El Salvador empiezan con 2, 6 o 7</div>
+                  )}
+                  <div style={{ fontSize: 12, color: '#6b5a48', marginTop: 8 }}>Tu número anterior era {telBonito(telefono)}</div>
+                  <button disabled={!TEL_VALIDO.test(telNuevo)} onClick={() => confirmarTel(telNuevo)}
+                          style={{ ...HT.si, opacity: TEL_VALIDO.test(telNuevo) ? 1 : .45 }}>
+                    {seguirEnvio ? 'Guardar y confirmar pedido' : 'Guardar número'}
+                  </button>
+                  <button onClick={() => setHojaTel('ver')} style={HT.no}>Volver</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* El pie solo existe para el camino de efectivo. Con tarjeta el botón
             va al final del formulario, dentro del cuerpo scrolleable. */}

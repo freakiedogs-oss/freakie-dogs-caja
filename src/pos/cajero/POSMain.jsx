@@ -13,6 +13,7 @@ import PinAuthModal from '../PinAuthModal'
 import PreparadoModal from '../PreparadoModal'
 import { useToast } from '../../hooks/useToast'
 import { usePeyaIdObligatorio } from '../peyaId'
+import PaxEditorModal from './PaxEditorModal'
 
 // ──────────────────────────────────────────────
 // Constantes de display
@@ -188,8 +189,10 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const tipo     = cuentaCtx?.tipo     || 'para_llevar'
   const mesaRef  = cuentaCtx?.mesa_ref || null
   // Demografía recibida al abrir mesa (POSHome) — se guarda al crear la cuenta
-  const paxCtx   = cuentaCtx?.pax || null
-  const paxFields = paxCtx ? { pax_mujeres: paxCtx.mujeres || 0, pax_hombres: paxCtx.hombres || 0, pax_ninos: paxCtx.ninos || 0 } : {}
+  // 6-nov-2026: editable desde el chip «👥 N · editar» (llegan clientes después de abrir la mesa).
+  const [paxLocal, setPaxLocal] = useState(cuentaCtx?.pax || null)
+  const [showPax, setShowPax] = useState(false)
+  const paxFields = paxLocal ? { pax_mujeres: paxLocal.mujeres || 0, pax_hombres: paxLocal.hombres || 0, pax_ninos: paxLocal.ninos || 0 } : {}
   const tipoInfo = TIPO_INFO[tipo] || TIPO_INFO['para_llevar']
 
   // Destino de empaque (Comer aquí / Llevar) — SOLO informa a cocina si empacar.
@@ -211,6 +214,12 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
   // Cuenta activa en DB
   const [cuentaId,   setCuentaId]   = useState(cuentaCtx?.cuentaId || null)
+  // Personas de la mesa ya abierta (para el chip y el ticket por persona)
+  useEffect(() => {
+    if (tipo !== 'mesa' || !cuentaId) return
+    db.from('pos_cuentas').select('pax_mujeres, pax_hombres, pax_ninos').eq('id', cuentaId).maybeSingle()
+      .then(({ data }) => { if (data) setPaxLocal({ mujeres: data.pax_mujeres || 0, hombres: data.pax_hombres || 0, ninos: data.pax_ninos || 0 }) })
+  }, [tipo, cuentaId])
   const [cuentaNum,  setCuentaNum]  = useState(null)
   const [mesaActual, setMesaActual] = useState(mesaRef)
   // ID del pedido de PedidosYa (pedido Cesar 17-sep). Llega desde POSHome al
@@ -285,6 +294,11 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   const [descuentoEmpleadoId, setDescuentoEmpleadoId] = useState('') // ficha real del empleado (consistencia)
   const [empleadosLista, setEmpleadosLista] = useState(null)         // null = aún no cargada
   const [sucursalIdLocal, setSucursalIdLocal] = useState(null)
+  // Quién atiende la mesa (dueño de la venta para Desempeño Meseros / propina por meta).
+  // Mesero → él mismo. Cajera/gerente que abre una mesa → por defecto ella misma, pero
+  // puede elegir al mesero que la atiende. Nunca queda una mesa sin dueño.
+  const [meseroAtiende, setMeseroAtiende] = useState(['mesero', 'mesera'].includes(user?.rol) ? user.id : null)
+  const [staffMesa, setStaffMesa] = useState([])
 
   // Lista de empleados para el descuento de empleado (lazy: solo al elegir esa categoría).
   // OJO: este efecto debe ir DESPUÉS de las declaraciones de estado que usa —
@@ -478,9 +492,20 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       try {
         const { data: cab } = await db
           .from('pos_cuentas')
-          .select('delivery_referencia, cliente_nombre, delivery_cliente_id')
+          .select('delivery_referencia, cliente_nombre, delivery_cliente_id, mesero_id, descuento, descuento_tipo, descuento_motivo, descuento_categoria')
           .eq('id', cuentaCtx.cuentaId)
           .maybeSingle()
+        if (cab?.mesero_id) setMeseroAtiende(cab.mesero_id)
+        // Cupón de regreso de la app (10-nov-2026, autorizado por Cesar): la cuenta
+        // nace con el descuento que el cliente ya tuvo en su total. Se precarga para
+        // que el cobro y el DTE (prorrateo de buildDteLineItems) cuadren con lo que
+        // el cliente pagó. Solo cuentas de pedidos web con descuento en monto.
+        if (cab?.delivery_cliente_id && Number(cab?.descuento) > 0 && cab?.descuento_tipo === 'monto') {
+          setDescuento(Number(cab.descuento))
+          setDescuentoTipo('monto')
+          setDescuentoMotivo(cab.descuento_motivo || 'Cupón app')
+          setDescuentoCategoria(cab.descuento_categoria || 'promo')
+        }
         if (cab?.delivery_referencia) setPeyaRef(cab.delivery_referencia)
         if (cab?.delivery_cliente_id) {
           const { data: dinfo } = await db.rpc('pos_cuentas_delivery_info', { p_cuenta_ids: [cuentaCtx.cuentaId] })
@@ -851,6 +876,24 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
 
   // ── Rol mesero: para asignar mesero_id en la cuenta ──
   const esMesero = user?.rol === 'mesero' || user?.rol === 'mesera'
+  const meseroIdCuenta = esMesero ? user.id : (tipo === 'mesa' ? (meseroAtiende || user.id) : null)
+
+  // Lista de quién puede atender una mesa (solo si no es mesero el que está en el POS).
+  useEffect(() => {
+    if (tipo !== 'mesa' || esMesero || !storeCode) return
+    db.from('usuarios_erp').select('id, nombre, rol')
+      .eq('store_code', storeCode).eq('activo', true)
+      .in('rol', ['mesero', 'mesera', 'cajera', 'cajero', 'gerente', 'admin'])
+      .order('nombre')
+      .then(({ data }) => setStaffMesa(data || []))
+  }, [tipo, esMesero, storeCode])
+
+  const cambiarMeseroAtiende = async (id) => {
+    setMeseroAtiende(id)
+    if (!cuentaId) return
+    const { error } = await db.from('pos_cuentas').update({ mesero_id: id }).eq('id', cuentaId)
+    if (error) toast.error('No se pudo cambiar quién atiende: ' + error.message)
+  }
 
   // ── Normaliza el carrito al formato que espera printService ──
   const buildCuentaPrint = (lista = items) => ({
@@ -1000,7 +1043,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             store_code: storeCode,
             cajero_id:  user.id,
             turno_id:   turnoId,
-            mesero_id:  esMesero ? user.id : null,
+            mesero_id:  meseroIdCuenta,
             tipo:       tipo,
             mesa_ref:   mesaActual,
             menu_id:    menuActivo?.id || null,
@@ -1154,7 +1197,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             store_code:  storeCode,
             cajero_id:   user.id,
             turno_id:    turnoId,
-            mesero_id:   esMesero ? user.id : null,
+            mesero_id:   meseroIdCuenta,
             tipo:        paymentData.metodo === 'pedidos_ya' ? 'pedidos_ya' : tipo,
             mesa_ref:    mesaActual,
             menu_id:     menuActivo?.id || null,
@@ -1548,11 +1591,42 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
             >
               <Icon name={tipoInfo.ic} size={15} /> {tipoInfo.label}{esEvento && eventoNombre ? ` · ${eventoNombre}` : ''}{mesaActual ? ` #${mesaActual}` : ((tipo === 'pedidos_ya' || tipo === 'delivery_app') && peyaRef ? ` #${peyaRef}` : '')}
             </span>
+            {tipo === 'mesa' && (
+              <button onClick={() => setShowPax(true)} title="Personas en la mesa"
+                style={{ background: '#FFD90022', color: '#FFD900', border: '1px solid #FFD900', borderRadius: 99, padding: '3px 10px',
+                         fontSize: 12.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                👥 {(paxLocal?.mujeres || 0) + (paxLocal?.hombres || 0) + (paxLocal?.ninos || 0)} · editar
+              </button>
+            )}
             {cuentaId
               ? <span className="pos-order-open-badge">Cuenta Abierta</span>
               : <div className="pos-order-num">Orden #{String(cuentaNum || 1).padStart(4, '0')}</div>
             }
           </div>
+          {showPax && (
+            <PaxEditorModal
+              cuentaId={cuentaId}
+              mesaRef={mesaActual}
+              total={subtotal}
+              inicial={paxLocal}
+              onClose={() => setShowPax(false)}
+              onSaved={(p) => setPaxLocal({ mujeres: p.mujeres, hombres: p.hombres, ninos: p.ninos })}
+            />
+          )}
+
+          {tipo === 'mesa' && !esMesero && staffMesa.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, padding: '8px 10px 0', alignItems: 'center', fontSize: 13 }}>
+              <span style={{ color: '#9aa0a6' }}>Atiende:</span>
+              <select
+                value={meseroAtiende || user.id}
+                onChange={e => cambiarMeseroAtiende(e.target.value)}
+                style={{ flex: 1, minWidth: 0, background: '#1e1e1e', color: '#f0f0f0', border: '1px solid #333', borderRadius: 8, padding: '6px 8px', fontSize: 13 }}
+              >
+                {!staffMesa.some(u => u.id === user.id) && <option value={user.id}>{user.nombre} (yo)</option>}
+                {staffMesa.map(u => <option key={u.id} value={u.id}>{u.nombre}{u.id === user.id ? ' (yo)' : ''} · {u.rol}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Destino de empaque (solo mesa / para llevar). Un toque = toda la orden. */}
           {destinoAplica && (

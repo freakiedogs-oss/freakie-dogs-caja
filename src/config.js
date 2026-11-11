@@ -43,7 +43,8 @@ export const STORES_FOOD_COURT = ['S006', 'S002', 'S001']
 // modal de cobro, así que cada vez que una sucursal compraba más había que
 // tocar el POS. Ahora vive acá: se agrega la fila y listo.
 // Plaza Mundo Soyapango pasó de 15 a 20 el 27-sep-2026 (Cesar).
-export const PAGERS_POR_SUCURSAL = { S001: 20 }
+// Metro Centro pasó de 15 a 18 el 22-oct-2026 (Cesar: se agregaron los pagers 16, 17 y 18).
+export const PAGERS_POR_SUCURSAL = { S001: 20, S006: 18 }
 export const PAGERS_DEFAULT = 15
 export const pagersDe = (storeCode) => PAGERS_POR_SUCURSAL[storeCode] || PAGERS_DEFAULT
 
@@ -91,6 +92,8 @@ export const NAV_SECTIONS = [
       { key: 'pendientes', label: 'Mis Pendientes', icon: '📋', roles: ['ejecutivo', 'admin'] },
       { key: 'mi-asistencia', label: 'Mi Asistencia', icon: '📍', roles: ['*'] },
       { key: 'mi-boleta', label: 'Mi Boleta', icon: '🧾', roles: ['*'] },
+      // Cada quien ve SOLO sus métricas (fn_mi_desempeno toma la persona del usuario). Admin/gerencia: «Desempeño Meseros».
+      { key: 'mi-desempeno', label: 'Mi Desempeño', icon: '🎯', roles: ['mesero', 'mesera', 'cajera', 'cajero', 'cocina', 'domicilios'] },
     ],
   },
   {
@@ -111,6 +114,8 @@ export const NAV_SECTIONS = [
     items: [
       { key: 'ventas-freakies', label: 'Ventas Freakies', icon: '💶', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       { key: 'kpis-venta', label: 'KPIs de Venta', icon: '📊', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
+      // Extras por persona, ticket y meta (pedido de Jazz, M001). Ver docs/planes/PLAN_desempeno_meseros_y_domicilios.md
+      { key: 'desempeno-meseros', label: 'Desempeño Meseros', icon: '🏆', roles: ['admin', 'superadmin', 'ejecutivo', 'gerente'] },
       // Consumo generado por la venta, por componente y familia. Va acá y no en
       // Almacén porque la pregunta que responde es de negocio (qué se fue en
       // insumos por lo que se vendió), no de stock.
@@ -167,6 +172,7 @@ export const NAV_SECTIONS = [
       { key: 'admin', label: 'Dashboard de Cierres', icon: '⚙️', roles: ['admin'] },
       { key: 'incidentes', label: 'Incidentes', icon: '🚨', roles: ['gerente', 'admin'] },
       { key: 'cancelaciones', label: 'Cancelaciones', icon: '↩️', roles: ['gerente', 'ejecutivo', 'admin', 'superadmin'] },
+      { key: 'resultados-delivery', label: 'Resultados Delivery', icon: '⭐', roles: ['gerente', 'ejecutivo', 'admin', 'superadmin'] },
     ],
   },
   {
@@ -174,6 +180,7 @@ export const NAV_SECTIONS = [
     items: [
       // Quién entró, quién salió, qué imprimió cada uno y de qué ya registró insumos. (4-oct-2026)
       { key: 'turno-cm', label: 'Turno de Casa Matriz', icon: '📋', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
+      { key: 'cebolla-dia', label: 'Cebolla del día', icon: '🧅', roles: ['jefe_casa_matriz', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'recetas', label: 'Recetas / BOM', icon: '📖', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz', 'ing_alimentos'] },
       { key: 'costeo', label: 'Costeo / Márgenes', icon: '💰', roles: ['admin', 'ejecutivo', 'jefe_casa_matriz', 'ing_alimentos'] },
       { key: 'produccion', label: 'Producción Diaria', icon: '🏭', roles: ['ejecutivo', 'produccion', 'jefe_casa_matriz', 'admin', 'ing_alimentos'] },
@@ -227,6 +234,8 @@ export const NAV_SECTIONS = [
   {
     label: 'Delivery',
     items: [
+      // Recontactar clientes de domicilio por WhatsApp + meta de pedidos (Karina, M001)
+      { key: 'clientes-domicilio', label: 'Clientes Domicilio', icon: '💬', roles: ['domicilios', 'gerente', 'admin', 'ejecutivo', 'superadmin'] },
       { key: 'delivery', label: 'Panel Delivery', icon: '🛵', roles: ['ejecutivo', 'despachador', 'domicilios', 'motorista', 'motorista_interno', 'gerente', 'admin'] },
     ],
   },

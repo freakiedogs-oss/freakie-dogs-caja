@@ -4,6 +4,7 @@ import { STORES, STORES_COBRO_EVENTO } from '../config'
 import AgrandadoChip from './AgrandadoChip'
 import Icon from './Icon'
 import PlanoEditor from './cajero/PlanoEditor'
+import PaxEditorModal from './cajero/PaxEditorModal'
 import { confirmAsync } from './confirmDialog'
 import { usePeyaIdObligatorio, normalizarIdPeya, PEYA_ID_MAX } from './peyaId'
 
@@ -90,6 +91,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   const [filtro,       setFiltro]       = useState('todos')   // clave activa
   const [refreshKey,   setRefreshKey]   = useState(0)
   const [mesaMenu,     setMesaMenu]     = useState(null)      // mesa con menú contextual
+  const [paxEdit,      setPaxEdit]      = useState(null)      // { cuenta, mesa } para corregir personas (6-nov-2026)
   const [showPlanoEditor, setShowPlanoEditor] = useState(false)
   const [aperturaMesa, setAperturaMesa] = useState(null)      // mesa libre que se está abriendo (modal demografía)
   const [pax,          setPax]          = useState({ m: 1, h: 1, k: 0 })
@@ -128,7 +130,7 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
         .eq('activa', true)
         .order('numero'),
       db.from('pos_cuentas')
-        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, cliente_nombre, delivery_direccion, delivery_referencia, delivery_plataforma, delivery_metodo_pago, repartidor_nombre, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
+        .select('id, tipo, mesa_ref, store_code, estado, subtotal, total, created_at, pax_mujeres, pax_hombres, pax_ninos, pax_total, cliente_nombre, delivery_direccion, delivery_referencia, delivery_plataforma, delivery_metodo_pago, repartidor_nombre, pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey(id)')
         .eq('store_code', storeCode)
         .in('estado', ESTADO_ACTIVO)
         .order('created_at'),
@@ -453,6 +455,14 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                 const redonda = (mesa.forma || '') === 'redonda'
                 return (
                   <div key={mesa.id} style={{ position: 'absolute', left: `${px}%`, top: `${py / 55 * 100}%`, width: `${pw}%`, height: `${ph / 55 * 100}%` }}>
+                  {/* Personas sentadas (6-nov-2026): confirmación rápida de que se ingresaron bien */}
+                  {cuenta && cuenta.tipo === 'mesa' && (
+                    <span title="Personas en la mesa" style={{ position: 'absolute', top: -7, right: -5, zIndex: 3, background: '#FFD900', color: '#1a1200',
+                                   borderRadius: 99, padding: '1px 7px', fontSize: 11, fontWeight: 800, pointerEvents: 'none',
+                                   boxShadow: '0 1px 4px rgba(0,0,0,.5)', whiteSpace: 'nowrap' }}>
+                      👥 {cuenta.pax_total || 0}
+                    </span>
+                  )}
                   <button
                     className="poshome-mesa-tile"
                     style={{ width: '100%', height: '100%', margin: 0, background: colors.bg, borderColor: colors.border, borderRadius: redonda ? '50%' : 12, padding: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}
@@ -471,6 +481,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                         </div>
                         <div className="poshome-mesa-meta" style={{ fontSize: 9 }}>
                           {itemCnt} ít · {elapsed(cuenta.created_at)}
+                          {(cuenta.pax_mujeres || 0) + (cuenta.pax_hombres || 0) > 0 && parseFloat(cuenta.subtotal || 0) > 0
+                            ? ` · $${(parseFloat(cuenta.subtotal) / ((cuenta.pax_mujeres || 0) + (cuenta.pax_hombres || 0))).toFixed(2)}/p` : ''}
                         </div>
                         {status === 'lista' && <div className="poshome-mesa-ready" style={{ fontSize: 9 }}>✓ Lista</div>}
                       </>
@@ -487,6 +499,10 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                         style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#f4a261', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
                         onClick={() => handleLiberarMesa(mesa)}
                       >Liberar mesa</button>
+                      <button
+                        style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#FFD900', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
+                        onClick={() => { setPaxEdit({ cuenta, mesa }); setMesaMenu(null) }}
+                      >👥 Personas en la mesa</button>
                       <button
                         style={{ display: 'block', width: '100%', padding: '8px 14px', background: 'none', border: 'none', color: '#8b8997', fontSize: 13, textAlign: 'left', cursor: 'pointer' }}
                         onClick={() => setMesaMenu(null)}
@@ -834,6 +850,16 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
       )}
 
       {/* ── EDITOR DE PLANO (admin) ── */}
+      {paxEdit && (
+        <PaxEditorModal
+          cuentaId={paxEdit.cuenta.id}
+          mesaRef={paxEdit.mesa.numero}
+          total={paxEdit.cuenta.subtotal}
+          inicial={{ mujeres: paxEdit.cuenta.pax_mujeres, hombres: paxEdit.cuenta.pax_hombres, ninos: paxEdit.cuenta.pax_ninos }}
+          onClose={() => setPaxEdit(null)}
+          onSaved={() => setRefreshKey(k => k + 1)}
+        />
+      )}
       {showPlanoEditor && (
         <PlanoEditor
           storeCode={storeCode}

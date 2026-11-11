@@ -23,6 +23,10 @@
     <!-- Wake Lock: mantener CPU despierto durante el heartbeat -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Alarma «pedido listo» (v11): vibrar y mostrarse sobre la pantalla bloqueada -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
     <!-- Al reiniciar el celular, re-arrancar el servicio si estaba activo -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

@@ -1,0 +1,11 @@
+-- Aplicada vía MCP el 22-oct-2026 (migración `cebolla_blanca_bolsa_075lb`). Ver memoria.md.
+-- La bolsa de cebolla blanca pasa de 2 lb a 0.75 lb (factor 2.6667 bolsas nuevas por bolsa vieja):
+--  · catalogo_productos «Cebolla bolsa» (9b7863ce…): conteo_unidad / presentacion_pedido «Bolsa de 0.75 libras (12 oz)»,
+--    precio_referencia ×0.375. «Cebolla Blanca» (39946903…): descripción.
+--  · recetas «Cebolla Blanca» (cd67cde8…): rendimiento 10 → 26.67 bolsas por 20 cebollas.
+--  · receta_ingredientes Freakie Dog armado (329f7039…): factor_a_stock 0.03125 → 0.083333 (1 oz = 1/12 bolsa).
+--  · inventario de sucursales: stock_minimo/maximo ×2.667 redondeado (1→3, 4→11); stock_actual convertido con
+--    kardex ajuste_manual «Cambio de presentación…».
+--  · pedido_items pendientes (estado ≠ recibido/cancelado/despachado): cantidad ×2.667 redondeada (S002 y S006: 2→5).
+--  · Tabla nueva avisos_pedido (+ RLS lectura) con el aviso vigente 22-oct → 5-nov.
+-- Además (UPDATE directo): etiquetado_productos cebblanca → unidad «bolsa 0.75 lb», 340 g, banda 15 g.

@@ -1,0 +1,12 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Menú web (Menú Delivery) · agrandado con bebida premium · 9-nov-2026, Cesar
+-- Solo datos (aplicados con execute_sql; este archivo es de registro):
+-- 1) «Cambio de bebida» (grupo 6dc2b525…) pasa arriba (orden 0) con descripción
+--    «Coca lata, Coca Zero, Té Lipton o Kinley».
+-- 2) «Bebida Agrandado» propio del delivery (dbad6240…) = la misma lista premium
+--    de 11 del cambio, a $0, con insumos copiados. Los 52 ítems del Menú Delivery
+--    pasan a él; el compartido (ffaafa80…) queda para caja/PeYa.
+-- MenuPublico.jsx: orden producto → papas → bebida por combo, botón propio
+-- «Agrandar papa y bebida» y «Bebida premium · incluida en el agrandado».
+-- ════════════════════════════════════════════════════════════════════
+select 1;

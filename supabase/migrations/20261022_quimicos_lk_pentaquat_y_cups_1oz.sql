@@ -1,0 +1,6 @@
+-- Aplicada vía MCP el 22-oct-2026 (migración `quimicos_lk_pentaquat_y_cups_1oz`). Ver memoria.md.
+-- · «Líquido para plancha ALK MAX 1 galón» (4c861847…) → «LK Max galón (líquido para plancha)».
+-- · «Jabón líquido para trastes EXTRA CLEAN 1 galón» (dbd77659…) → «LK Kleen galón (para trastes)».
+-- · Nuevos con inventario en CM001 (0/999) y M001, S001–S006 (mín 1 / máx 2):
+--     «Pentaquat galón (sanitizante)» (Utensilios de Limpieza) y «Cups 1 oz caja 1000» (Desechables y Empaques).
+-- · Aviso en avisos_pedido vigente 22-oct → 5-nov.

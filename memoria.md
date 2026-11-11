@@ -1,5 +1,446 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 11-Nov-2026 — Estación de etiquetado: estado al día y lo que falta para que mueva el kardex
+
+**Medido hoy en producción.** Desde el 1-oct van **5,275 impresiones** (3,822 desde el 13-oct; la última hoy), **324 lotes** de preparación (301 cerrados con insumos declarados a mano), 3 deudas abiertas. `produccion_diaria`: sigue en **0 tandas** desde el 10-sep. Kardex de Casa Matriz en oct-nov: solo traslados (5,072) y recepciones (425). Nada de lo producido en Casa Matriz entra al inventario ni descuenta materias primas; el conteo nocturno de CM arrastra ese hueco. Las funciones del backflush (`produccion_tanda_*`, vigilante 5:30 activo) siguen en la base sin que nadie las llame.
+
+**Qué cambió en `main` desde el 13-oct que toca esto:** nada en la pantalla de la tablet. Cesar agregó «Cebolla del día» (`fn_comanda_cebolla`, solo lee pedidos, no toca kardex) y la bolsa de cebolla blanca pasó a 0.75 lb (receta 26.67 bolsas/20 cebollas; `cebblanca` 340 g en etiquetado): el vínculo `cebblanca → receta Cebolla Blanca` sigue válido porque descuenta por peso real.
+
+**Vínculos receta:** 9 productos con receta (cebblanca, cebmorada, cheddar, chili, chipotle, escabeche, milislas, sal, salchicha). **8 activos sin receta**, por volumen oct-nov: queso frito 2,828 u (receta «Queso frito» INACTIVA y sin producto de catálogo), pepinillo rebanado 538 (peso objetivo 1.5 g, mal cargado), mermelada 243 (receta rinde «4 tanda», hay que pasarla a bolsas), carne 225 (receta «Mezcla de Carne Smash» 667 u/tanda = bolitas; la bolsa es de 6), pepinillo triturado 188 (receta INACTIVA), condimento 100 lb 94 (sin catálogo), bote de jalapeño 35 (peso 3.162 g, mal cargado; sin receta), truffa 32 (receta rinde 0.2125 bolsa, mal).
+
+**Falta, en orden:** (1) decisión Jose/Cesar: el kardex se mueve por receta (backflush) y lo declarado en `/preparacion.html` queda como contraste/merma; (2) enganche en servidor sin tocar la pantalla: `fn_etiqueta_registrar_v3` → `produccion_tanda_abrir` + `produccion_unidad_registrar`, cierre del lote (`fn_prep_lote_guardar`) o vigilante → `produccion_tanda_cerrar`; (3) arreglar recetas y vincular los 8 productos (empezar por queso frito y carne); corregir pesos objetivo de jalapeño y pepinillo rebanado; (4) fecha de corte + conteo físico de CM antes de encender, porque arrancar con stock sin contar deja negativos; (5) mergear esta rama (solo docs, migración 05 y pestaña Producción → Etiquetado), borrar `_obsoleta_*` desde el dashboard, marcar EN_PROGRESO en Notion (sin autorizar acá).
+
+## 10-Nov-2026 — Cupón de regreso $2 (menú web + caja + DTE)
+- Por qué: subir ticket y traer de vuelta al cliente. **Cesar autorizó tocar el cobro del POS** (afecta el monto del DTE).
+- Regla: pedido WEB entregado con subtotal ≥ $19.99 («$20» en textos, para que cuente el Burger Box $19.99) y sin cupón usado → $2 para el próximo pedido ≥ $19.99, **21 días**, ligado al teléfono. Un cupón activo por teléfono; el pedido que usa cupón no genera otro; si se cancela (o queda sin pagar > 3 h) el cupón se libera.
+- BD (`20261110b_cupon_regreso.sql`): tabla `delivery_cupones` (RLS sin políticas), `delivery_clientes.descuento/cupon_id`, trigger `trg_cupon_al_entregar`, RPCs `cupon_activo(tel)` y `cupon_de_pedido(token)`. `crear_pedido_delivery` aplica el cupón (total = subtotal + envío − descuento). `_comanda_delivery` crea la cuenta con descuento monto/promo/«Cupón app».
+- `POSMain` (loadCuenta): si la cuenta de la app trae descuento monto, lo precarga → cobro y DTE (prorrateo de `buildDteLineItems`) por lo pagado.
+- `MenuPublico`: banner «Tenés $2 de descuento», barra para ganarlo en el carrito, «Cupón aplicado −$2» o «te faltan $X», y en el checkout la línea del cupón (tarjeta cobra el neto).
+- `TrackingPedido`: `CuponGanado` al entregar («Tenés N días para usarlo · vence el …», mínimo $20).
+- Probado en BD con rollback (aplica/no aplica, cuenta con descuento, no regenera, se libera al cancelar, gana al entregar) y en jsdom (barra, banner, descuento, checkout).
+
+## 10-Nov-2026 — Menú web: «⭐ El favorito» / «⭐ Popular» en los extras
+- Por qué: subir extras con precio; datos 30 días (tocino hamburguesa 1,811; carne y queso extra 620; papas trufa 295…).
+- RPC `menu_extras_favoritos(dias)` (migración `20261110`): `{opcion_id: veces}` de opciones con precio, ≥20 veces, todos los canales.
+- `ProductoModal` (prop `extrasFav`): en cada grupo, el extra con precio más elegido lleva «⭐ El favorito» y el segundo «⭐ Popular». Excluye agrandado y cambio de bebida. Se recalcula solo con las ventas.
+
+## 9-Nov-2026 — Menú web: origen de cada producto (para medir las secciones)
+- Por qué: Cesar quiere medir la eficacia de «Los más pedidos», «Para compartir», sugerencias del carrito, oferta Burger Duo y el upsell del agrandado.
+- Cada línea del carrito lleva `origen` (menu | mas_pedidos | para_compartir | sugerencia_carrito | oferta_duo | repetir) y `agrandadoVia` (boton | pregunta); `armarPedido` los manda y `crear_pedido_delivery` los guarda en `delivery_clientes.items[*].origen / agrandado_via` (lista blanca; otro valor → null).
+- Reporte: `select * from reporte_origen_menu_web('<desde>', now())` (solo authenticated). Pedidos anteriores salen como `sin_dato`.
+- Migración `20261109i_origen_producto_menu_web.sql`.
+
+## 9-Nov-2026 — Menú web: subir el ticket promedio (más pedidos, para compartir, sugerencias, «¿Son dos?»)
+- Por qué: pedidos web 30 días = 1,935, ticket $16.53, mediana $14.99, 66% con UN producto, postre 0.8%, extras sueltos 10%.
+- **Decisión de Cesar: el envío sigue GRATIS** (diferenciador vs PedidosYa, ya promocionado). No proponer cobrar envío para subir ticket.
+- RPC `menu_mas_pedidos(dias, limite)` (migración `20261109h`): nombres por unidades vendidas en delivery_propio. Fila «Los más pedidos en delivery» (#1–#4) arriba del menú.
+- Fila «Para compartir»: Burger Box, Combpleto, Freakie Family (`PARA_COMPARTIR`).
+- Carrito: «¿Le sumás algo?» con Queso Frito, Mini Fancys, Freakie Dog (`SUGERIDOS_CARRITO`; sin opciones = un toque; con opciones = abre el producto y vuelve al carrito). Oculta lo que ya está en el carrito.
+- Carrito: «¿Son dos? Pasate al Burger Duo» si hay Freakie Burger (1 → +$7.00; 2 → ahorra $0.99): abre el Duo y al añadirlo quita 1–2 Freakie Burger.
+- Pendiente: postre (Cesar consigue la foto) → hacerlo visible y sumarlo a `SUGERIDOS_CARRITO`.
+
+## 9-Nov-2026 — Menú web: Royal Truffle 2 bebidas + productos sueltos sin bebida (datos)
+- Royal Truffle Combo: sus 2 hamburguesas apuntan a un ítem nuevo «Hamburguesa» (no visible, sin grupos de bebida); la bebida va solo en «Bebida Royal 1/2» → pide 2, no 4.
+- Sin grupos de bebida (Bebida / Cambio / Agrandado del delivery): las 36 bebidas sueltas (Coca, tés, cervezas, Jicaritas, Salutari, latas y vidrios) y los productos de comida sueltos Hamburguesa, Super Freak, Franks Birthday Burger, HOT DOG PROMO AGUILA FAS y Costra de Queso Hot Dog. Antes pedían «escoger bebida» sin sentido.
+
+## 9-Nov-2026 — Menú web: upsell del agrandado
+- Por qué: el agrandado es el mejor upsell (Cesar). Datos 30 días, 22,979 combos: agrandado 819 = extra de papas más pedido (aros 480, queso frito 329, trufa 242, chili 232, fancy 214), pero tocino 1,619 lo supera en total → la cinta dice «⭐ Recomendado», NO «el más pedido». Sin precio tachado (no hay precio real que lo respalde).
+- `MenuPublico.jsx`: botón «Agrandá tu combo · solo +$1.25» con cinta. Al tocar «Añadir» sin ningún combo agrandado sale UNA vez «¿Agrandamos tu combo?» (`upsell`, `aceptarUpsell`): «Sí» agranda todos y abre la bebida premium; «No, gracias» agrega normal. No se pregunta si ya agrandó alguno. Nada viene marcado de entrada.
+
+## 9-Nov-2026 — Menú web: combos producto → papas → bebida + agrandado con bebida premium
+- Por qué: la gente escogía bebida antes de ver el agrandado ($1.25, escondido entre las salsas) y podía quedar cambio $0.50 + agrandado. Cesar pidió que al agrandar la bebida pase a la lista premium sin costo extra.
+- `MenuPublico.jsx`: `armado` empareja en orden cada producto con bebida con unas papas que tengan «Agrandado» (`pareja` papas→producto) y las dibuja entre el producto y su bebida. `compsAgrandados` usa `pareja` (el agrandado de las papas 2 agranda la bebida 2). El agrandado sale como botón ámbar propio (`alternarAgrandado`): abre «Bebida premium · incluida en el agrandado»; al quitarlo borra la premium.
+- BD (datos, `20261109g`): «Cambio de bebida» arriba con descripción «Coca lata, Coca Zero, Té Lipton o Kinley»; «Bebida Agrandado» propio del delivery (`dbad6240…`) con la misma lista de 11.
+
+## 9-Nov-2026 — Menú web: «Cambio de bebida» +$0.50 en todos los combos
+- Por qué: Cesar quiere que en delivery se pueda cambiar la bebida incluida por lata/té/Kinley pagando $0.50, con la misma lógica del agrandado.
+- BD (datos): grupo «Bebida» propio del delivery (`6dc2b525…`, 3 gratis + «Cambio de bebida» $0.50) y grupo «Cambio de Bebida» (`5eb52ee9…`, 11 opciones a $0 con insumos copiados). 56 ítems del Menú Delivery cambiados; el «Bebida» compartido (`d8f75292…`) queda para caja/PeYa.
+- `MenuPublico.jsx`: `esGrupoCambio`/`compsCambio`/`soloCambio` → el grupo de cambio solo sale (obligatorio) al marcar el cambio; el agrandado manda sobre el cambio.
+- Quedó APAGADO hasta el deploy; activar con el SQL de `20261109f_cambio_bebida_delivery.sql`. (Activado tras PR #464.)
+- **Ajuste (mismo día):** como grupo aparte quedaba cerrado más abajo y la gente no encontraba el sabor. Ahora los sabores se dibujan DENTRO del grupo «Bebida», debajo de «Cambio de bebida» (`grupoCambioDe`, `padreDe`); el grupo «Cambio de Bebida» no se dibuja suelto pero sigue validando/cobrando. Resumen «Cambio de bebida · Sprite Lata» / «falta el sabor»; error «Elegí el sabor del cambio de bebida».
+- Crema Soda solo existe en vidrio (se descuenta ese insumo) y se llama «Crema Soda» para no chocar con el filtro de vidrio del menú web.
+
+## 9-Nov-2026 — Menú web: Chili Duo sin personalizar · Mini Fancys / Fancys XL con «Tipo de Papas»
+- Solo Menú Delivery (`46acdbea…`), datos vía execute_sql; caja y PeYa sin tocar.
+- **Chili Duo:** sus 2 hot dogs apuntan a un ítem nuevo «Chili Dog» (no visible) con solo Bebida / Bebida Agrandado → sin «Complemento de Hot Dog» (son chili dogs), conserva las 2 bebidas.
+- **Mini Fancys y Fancys XL:** se quitaron «Salsas Papas» y «Topping Fancy» (este último lo usan 15 ítems, no se tocó); ahora llevan «Tipo de Papas» (Fancy / Chili / Truffle Fries, con descripción).
+
+## 9-Nov-2026 — Menú web: «Sin Nada» y bloqueo con «Con Todo» en complementos del hot dog
+
+- **BD (dato, sin migración):** «Sin Nada» (precio 0, orden 9) agregado en los 4 grupos `Complemento de Hot Dog` (1–4); Jalapeños/Tocino/Costra pasan a orden 10–12.
+- **Fancy Fries Combo (solo Menú Delivery):** 4 «Fries» → 1 componente «Papas» (item nuevo invisible) con grupo «Tipo de Papas» (Fancy: mermelada de tocino, cheddar, mil islas · Chili: cheddar y chili con carne · Truffle: condimento de trufa y salsa de trufa negra). `pos_modificadores.descripcion` nueva; `menu_publico_delivery()` la devuelve y el menú web la muestra bajo el nombre. Caja y PeYa sin cambios. Inventario: los toppings de chili/truffle todavía no descargan insumos distintos.
+- **`MenuPublico.jsx` (`toggle` del modal):** elegir «Con Todo» o «Sin Nada» desmarca y bloquea las opciones gratis del grupo («Incluido» / «No lleva»); los extras con precio siguen. Regla por nombre (`/^(con todo|sin nada)$/i`) → aplica a cualquier grupo con esas opciones. El POS de caja todavía no tiene este bloqueo.
+
+## 9-Nov-2026 — Confirmar «Entregado» con GPS + «Avisar al cliente» en la torre
+
+- **GPS (`DriverBeacon.jsx`):** al tocar «Entregado» se mide la distancia a `cliente_lat/lng` (beacon.ultima si tiene < 60 s, si no geolocation). > 300 m → recuadro rojo «⚠️ Estás a X de la dirección del cliente», botones «Sí, ya se lo entregué» / «No, todavía no». Motivo: el 8-nov Rosalía y Amilcar marcaron entregados por error. Solo en la app (no bloquea en el servidor).
+- **Torre (`AvisoClienteBoton.jsx` en `TabPedidos.jsx`, pedidos en camino):** «📣 Avisar al cliente» → plantillas (ya está afuera / va tarde / no encontramos la dirección / otro), teléfono del motorista prellenado; si no está, Karina lo escribe y puede guardarlo en `empleados.telefono`. RPCs `torre_aviso_cliente_datos`, `torre_aviso_cliente` (`20261109d_torre_aviso_cliente.sql`).
+
+## 9-Nov-2026 — Viaje actual vs. próximo viaje
+
+- **Caso (Cesar):** Gustavo iba a San Martín y le asignaron Sierra Morena para cuando regresara. Como no había entregado nada, `fn_ruta_recalcular` metía el pedido nuevo (lista) en la misma ruta que lo en_camino → «parada 2»; el cliente vio al motorista regresar a la sucursal.
+- **Regla:** si el motorista tiene algo en_camino, la ruta es solo eso; lo asignado en la sucursal queda sin número (próximo viaje) y se ordena al recogerlo. `driver_alarma_estado` no suena en ruta (`en_ruta: true`), suena al entregar lo último. `tracking_pedido.motorista_en_otra_entrega` → «X está terminando otra entrega y regresa a la tienda por tu pedido».
+- **App:** etiqueta «🔜 Próximo viaje — recogelo cuando regreses»; el mapa y el cambio total solo cuentan el viaje actual.
+- Migración resumen: `20261109c_ruta_viaje_actual_vs_proximo.sql`. Probado con rollback (A en camino + B asignado → B sin número; al entregar A, B = 1° de ruta nueva y suena la alarma).
+
+## 9-Nov-2026 — App motorista: cobro visible en paradas bloqueadas, cambio total y mapa del viaje
+
+- **Qué pidió Cesar:** en viajes de 2+ pedidos, las paradas 2°, 3°… estaban bloqueadas y el motorista no veía cuánto cobrar ni el vuelto; y quería un mapa abajo como el del ERP.
+- **`DriverBeacon.jsx`:** `CobroLinea` (pagado con tarjeta / cobrar + paga con + vuelto / cobrar en método) también en las paradas 🔒; «Llevá en cambio $X» en el encabezado de la ruta (o antes de salir) = Σ vuelto de lista + en camino; `MapaViaje` (Leaflet) con 2+ paradas: sucursal, «Vos» (beacon.ultima o geolocation del navegador), paradas numeradas (amarilla la que toca), etiqueta con vuelto/Pagado, línea en orden; encuadra solo cuando cambian las paradas.
+- **BD:** `mis_pedidos_driver` devuelve `sucursal_lat/lng` (`20261109b_mis_pedidos_driver_sucursal.sql`).
+- **Finanzas (mismo día):** NC Corte Argentino 06-nov (−$5,251.66, anula factura 01-oct) excluida con `gasto_categoria_override` → categoría nueva `excluido_finanzas` (grupo 'Pasivo' = fuera del P&L). Pan San Francisco = Flora Imelda Rodríguez Menéndez (catálogo id 270) → subcategoría Pan. PriceSmart cotización 2050887 ($2,728.01, 3-nov) NO llegó a freakiedogs@gmail.com: compra B2B a nombre de Francisco sin NIT; pedir CCF a Henry Espinal (bsa6701@pricesmart.com).
+
+## 9-Nov-2026 — Números equivocados: confirmación en el menú + botón «Llegué»
+
+- **Problema (Cesar):** clientes ponen un número mal, no se les puede contactar y el motorista espera. En 30 días: 0 números con formato inválido (el menú ya valida 8 dígitos 2/6/7) → el error es un dígito equivocado; ~50% de los pedidos son de números nuevos.
+- **Menú web (`MenuPublico.jsx` Checkout):** si `telefono_verificado(tel)` = false (nunca recibió un pedido), antes de enviar sale la hoja «¿Este es tu número?» en grande con «Sí» / «Corregir». Efectivo: al confirmar sigue solo. Tarjeta: `construirPedido` devuelve null, abre la hoja y luego pide tocar «Pagar» otra vez. Números conocidos pasan directo (check verde «Número verificado»).
+- **«Llegué»:** `driver_llegue()` marca `delivery_clientes.llego_at`; `DriverBeacon.jsx` botón «📍 Llegué — avisar al cliente» antes de «Entregado»; `TrackingPedido.jsx` `AvisoLlego`: banner amarillo «¡Tu motorista está afuera!», campana cada 20 s, vibración y título de pestaña parpadeando.
+- **También (8-nov):** `aviso_cliente`/`aviso_tel` en `delivery_clientes` → banner con Llamar/WhatsApp en el tracking (PR #459). Hoy se pone a mano desde aquí; falta botón en la torre y cargar teléfonos de motoristas (`empleados.telefono` casi siempre vacío).
+- Migración: `20261109_confirmar_numero_y_llegue.sql`.
+
+## 9-Nov-2026 — KPIs de Venta: rango de fechas, gráfico «¿llegamos a la meta?» y comparación justa contra el mes anterior
+
+Archivo: `KpisVentaDashboard.jsx` (sin cambios en la base).
+
+- **Rango de fechas:** el selector de mes ahora también ofrece Hoy, Ayer, Últimos 7 días, Últimos 30 días y «Elegir fechas…» (desde / hasta). El rango aplica a Resumen, Top Items y Por Empleado. Metas sigue siendo mensual y usa el mes de la fecha final, con un aviso en pantalla. Tendencia no cambia.
+- **Gráfico de últimos días (pestaña Metas):** muestra los 3 días cerrados y hoy. La barra es la venta sin eventos y la raya blanca es la meta de ese día; para hoy, una raya punteada marca lo que normalmente ya se vendió a esta hora. Abajo, ✅/❌ y % de la meta por canal. Si alguno de esos días cae en el mes anterior (días 1–3), se usa la meta de ese mes, que se carga solo en esos casos.
+- **Comparación contra el mes anterior:** antes se comparaba 1–N de este mes contra 1–N del anterior, sin importar que un mes arrancara en fin de semana o en quincena. Ahora el número principal es lo que se habría vendido esos mismos días al ritmo del mes anterior: venta del mes anterior ÷ Σ factores de sus días × Σ factores de los días cerrados de este mes. Los factores son los mismos de la meta diaria (día de la semana real, días de pago, asuetos). La cifra por calendario queda como dato secundario. Ejemplo 1–8 nov: por calendario +3.6%; ajustado +1.7%.
+- **Ojo:** en la cadena, los 3 días del 6 al 8 de noviembre quedaron entre 93% y 94% de la meta diaria. O la meta de noviembre está alta (65% octubre + 35% ago–oct), o el mes viene flojo.
+
+## 7-Nov-2026 — Encuesta de 1 toque + «Resultados delivery» para encargados
+
+- **Qué pidió Cesar:** que el cliente califique la entrega y que cada encargado vea día por día la nota, el pedido, por qué, quién lo llevó y cuánto se tardó en cocina, en asignarse y en ruta.
+- **BD (`20261107c_calificaciones_delivery.sql`, aplicada):** tabla `delivery_calificaciones` (nota 1–3, motivos[], comentario, quiere_contacto, contactado_*). `tracking_calificar(token, …)` (anon; solo entregados, 7 días, corregible 1 h). SIN Telegram: Cesar decidió que los resultados se vean solo en el ERP (privacidad); el trigger de aviso se creó y se quitó (`calificaciones_sin_telegram`). `fn_resultados_delivery(store|null, desde, hasta)`: resumen, motivos, días, cada calificación con min_confirmar / cocina / asignar / retirar / ruta / total. `fn_resultados_delivery_contactado(id, usuario, nota)`. `tracking_pedido` devuelve `calificacion`.
+- **Frontend:** `src/tracking/EncuestaEntrega.jsx` (en `TrackingPedido.jsx` al entregar), `src/components/delivery/ResultadosDeliveryView.jsx`, nav `resultados-delivery` en `config.js` (gerente, ejecutivo, admin, superadmin) + `App.jsx` (lazy, case, acceso rápido del gerente). El gerente ve solo su `store_code`.
+- **Alarma «pedido listo» (APK v11-alarma, versionCode 11):** `20261107d_alarma_pedido_listo.sql` (aplicada): `driver_alarma_estado(empleado)` suena cuando TODOS sus pedidos asignados de esa sucursal están listos o el primero lleva ≥ 8 min; `driver_recoger_listos(empleado)` los marca en camino. `LocationService.kt`: en el heartbeat (20 s) consulta el RPC; si suena → notificación alta prioridad (canal `freakie_pedido_listo_v1`, full-screen, se re-publica si la deslizan) + campana `res/raw/campana_pedido.wav` (opción A elegida por Cesar) por stream de ALARMA cada 10 s + vibración; acción «Ya los retiré». Manifest: VIBRATE, USE_FULL_SCREEN_INTENT. `DriverBeacon.jsx`: pantalla roja con el botón cuando la app está abierta; en PWA (sin APK) suena con WebAudio. `instalar-driver.html` pide v11-alarma. Kotlin NO compilado en el sandbox (sin SDK): compilar en Android Studio.
+
+## 7-Nov-2026 — Orden de entrega automático (torre + motorista + tracking)
+
+- **Qué pidió Cesar:** que el orden de entrega lo ponga el sistema (no Karina, no el motorista), con distancia + tiempo de espera. El motorista ve 1°/2°/3° bien marcado y no lo puede cambiar. Karina tiene un botón solo para emergencias. Y medir si la lógica acierta y cómo salen los viajes de 4.
+- **Por qué esta fórmula ("balance"):** prueba con 720 viajes reales de 2–4 pedidos (60 días). Modelo calibrado con 1,482 entregas solas: 2.14 min/km en línea recta + 6 min por parada (simulado 63.5 vs observado 62.9).
+  - Motoristas hoy: 63.5 min espera prom., 47.8% > 60 min, 7.97 km/viaje.
+  - Balance (Σ espera² — junta distancia y espera): 62.9 / 47.4% / 7.68 km, mejor peor-caso.
+  - Fórmula anterior de la torre (`rutaOrden.js`, espera − viaje, 40 min crítico): 65.4 / 53% / 8.84 km — peor que los motoristas (casi "el más viejo primero", zigzag).
+  - Hallazgo: lo que más pesa es la espera ANTES de salir (1er pedido de un viaje de 3 espera 52 min en tienda vs 26 solo; viajes de 4: 71% > 60 min).
+- **BD (`20261107_orden_entrega_automatico.sql`, aplicada):** columnas `orden_entrega`, `orden_origen`, `orden_eta_at`, `orden_fijado_at`, `ruta_id` en `delivery_clientes`; `fn_ruta_recalcular` + trigger `trg_ruta_delivery` (asignar/recoger/entregar/devolver). Se recalcula hasta la 1ª entrega del viaje; ahí se FIJA y lo que recoja después va al final. `torre_cambiar_orden` (Karina, queda en `delivery_orden_cambios` con motivo). `torre_rutas_activas` (panel + alerta pedido listo >10 min). `torre_rutas_resumen(token|null, días)` = seguimiento: espera, % > 60, error del ETA, % entregado en orden, cambios a mano, y cada viaje de 4+ con minutos por cliente. `mis_pedidos_driver`, `tracking_pedido` y `torre_mapa_vivo` usan el orden guardado.
+- **Candado (`20261107b_orden_entrega_candado_motorista.sql`, NO aplicado aún):** `driver_marcar_entregado` rechaza entregar fuera de orden. Se aplica DESPUÉS de que la app nueva del motorista esté en prod (con la vieja no ve el orden). Probado con rollback.
+- **Frontend:** `DriverBeacon.jsx` (parada actual en grande «2° AHORA», resto 🔒, ruta completa en Google Maps), `RutasEnCurso.jsx` nuevo en `TabPedidos.jsx`, `rutaOrden.js` respeta `orden_entrega`, mapas numeran con `orden_entrega`.
+
+## 7-Nov-2026 — Tracking: el cliente ve las entregas que el motorista hace antes que la suya
+
+- **Por qué:** ~33% de las entregas (536 de 1,633 en 30 días) tienen otra entrega antes. El cliente veía al motorista alejarse con el mismo ETA y lo tomaba como desvío.
+- **Decisión de Cesar:** sin explicar el porqué (nada de «para que llegue caliente», para no dar pie a quejas). Solo mostrar hacia dónde va y que después sigue él: «David va a dejar una orden antes y luego seguís vos, inmediatamente.»
+- **BD (`20261107_tracking_paradas_antes.sql`):** `tracking_pedido` devuelve `paradas_antes` [{lat,lng}]. El orden de paradas no se guarda, se asume vecino más cercano desde el GPS del motorista (o la sucursal). Solo salen las paradas ANTES de este cliente: el cliente 1 nunca sabe que hay otra después. Lat/lng redondeadas a 3 decimales (~100 m), sin nombre/dirección/orden. ETA = suma de tramos ×4 + 5 + 3 por parada. Helper `_km()`.
+- **Incidente:** la primera versión usaba `i` como variable del loop y chocaba con el alias `i` de items → `tracking_pedido` dio error ~1-2 min en prod. Corregido (`v_j`, alias `it`).
+- **Frontend:** `TrackingPedido.jsx` (texto, «sos la entrega 2 de 2», «¡Seguís vos!» cuando ya entregó la anterior) y `MapaEnVivo.jsx` (círculos numerados por parada y ruta motorista → paradas → casa).
+- **Pendiente posible:** botón en la app del motorista para fijar el orden si no va a la más cercana primero.
+
+
+## 7-Nov-2026 — Menú web: confirmación con pago en efectivo y seguimiento dentro del WhatsApp
+
+- **Qué pidió Cesar:** el cliente tiene que volver a ver con cuánto paga y su cambio, y el link de seguimiento tiene que ir dentro del mensaje de WhatsApp que el cliente nos manda, sin botón aparte.
+- **Cambios en `MenuPublico.jsx`:**
+  - `enviar()` pasa `metodoPago` y `pagaCon` a la confirmación.
+  - `PedidoEnviado` muestra «💵 Pago en efectivo con $X · cambio: $Y», o «Pago en efectivo al recibir» si no puso monto. Si el monto es menor que el total, sale un aviso en rojo.
+  - El mensaje de WhatsApp agrega esa línea y «🛵 Aquí puedo darle seguimiento a mi pedido: <link /track>».
+  - El botón «Seguir mi pedido en vivo» solo aparece si no hay número de WhatsApp configurado (respaldo).
+
+
+## 6-Nov-2026 — Mesas: personas visibles en el plano y editables después de abrir
+
+- **Qué pidió Cesar:** en los 3 restaurantes llegan clientes después de abrir la mesa, y el ticket por persona queda mal.
+- **Componente nuevo `PaxEditorModal.jsx`:** edita `pax_mujeres`, `pax_hombres` y `pax_ninos` de `pos_cuentas` (`pax_total` es columna generada).
+  - Muestra el ticket por persona en vivo, calculado como total ÷ (mujeres + hombres), igual que HistorialCobros.
+  - Si todavía no hay cuenta, solo corrige lo que se guardará al comandar.
+- **POSHome (plano):**
+  - Globo amarillo «👥 N» en cada mesa ocupada, y «$X/p» en la línea de metadatos.
+  - Al mantener presionada la mesa ocupada, el menú agrega «👥 Personas en la mesa».
+- **POSMain:** chip «👥 N · editar» en el encabezado de la orden cuando el tipo es mesa. `paxFields` ahora sale del estado `paxLocal`.
+- **Sin cambios en la base:** no hubo migración.
+
+## 5-Nov-2026 (noche) — Fix: cumplimiento comparaba días distintos
+
+- **Qué pasaba:** alguien guardó las metas sugeridas en producción (usuario «Super», vigentes desde el 5-nov): persona $75 / $110, equipo $300 / $500, domicilios 30 / 42. El logrado sumaba del 1 al 4 de noviembre (sin meta) contra la meta de un solo día, y cocina daba 534 %.
+- **Arreglo:** logrado y meta se toman sobre **los mismos días**, los que tienen meta, hasta ayer.
+  - En la base: `_propina_mes`, migración `20261105e_propina_mismos_dias.sql`.
+  - En las pantallas: ranking y meta de equipo en `DesempenoMeserosView`, y extras, equipo y domicilios en `MiDesempeno`.
+- **Al 5-nov:** todos siguen en «sin meta», con base 100 %. Desde el 6-nov se cuenta el 5.
+
+## 5-Nov-2026 — KPIs de Venta: venta real de hoy contra la meta del día, y arreglos de la pestaña Metas
+
+Migración `20261105_kpis_curva_venta_dia.sql` (función nueva `obtener_curva_venta_dia`, solo lectura). Archivo: `KpisVentaDashboard.jsx`.
+
+- **Qué pidió Jose:** que el gerente vea en el día cuánto lleva vendido contra la meta de hoy, para poder reaccionar.
+- **Hoy vs meta:** la tercera tarjeta de cada canal ahora muestra venta de hoy / meta de hoy, cuánto debería llevar a esta hora y si va adelante o atrás, y cuánto necesita por hora hasta la hora típica de cierre. El encabezado muestra lo mismo para la cadena o la sucursal. Se refresca solo cada 3 min.
+- **«A esta hora»:** `obtener_curva_venta_dia` calcula, por sucursal y para la cadena, qué % de la venta de ese día de la semana se hizo antes de la hora actual (cuentas cobradas del POS, últimas 8 semanas). También da la hora típica de la última venta.
+- **Errores que tenía:**
+  - La comparación contra el mes anterior metía el día de hoy a medias contra un día completo del mes anterior. Ahora compara solo días cerrados (1–4 nov vs 1–4 oct).
+  - Los factores por día de la semana eran fijos y no se parecían a la venta real (sábado 1.15 vs 1.59 real; domingo 1.05 vs 1.48). Eso inflaba la meta de lunes a jueves y la bajaba el fin de semana. Ahora salen de la venta real de los últimos 3 meses de la sucursal elegida (sin asuetos ni días de pago). Si falta historia, usa la tabla fija. La meta del jueves 5-nov de la cadena bajó de $8,564 a $6,996.
+  - La barra de «% alcanzado» del mes se pintaba en rojo siempre a inicio de mes (rojo debajo de 70%). Ahora se compara contra lo que debería llevar a esta altura del mes y tiene una marca blanca en ese punto.
+  - Decía «5 sucursales» con 6 activas, y «Mes en curso» en meses cerrados.
+  - «$/hora si abren 12h» asumía venta pareja; se cambió por lo que falta dividido entre las horas que quedan.
+- **PeYa incluido (migración `20261105_kpis_venta_incluye_peya.sql`, pedido de Jose):** PeYa entra como quinto canal (`pedidos_ya`) en la vista `v_kpis_venta_canal` y aparece en todas las pestañas. También entra en Top Items. PeYa siempre se registra con su propio tipo en el POS, así que no se mezcla con los otros canales. Siguen fuera Hifumi (`delivery_app`, ~$300 desde agosto) y eventos (EVT01), y PeYa no entra en «Por Empleado». La meta de la cadena de noviembre sube a $316k; la de PeYa sola es $52.8k.
+- **Fuente:** desde el 1-ago todo sale del POS interno (`pos_cuentas`). Se verificó que la vista cuadra al dólar con `pos_cuentas` por canal (ago–nov) y que Quanto no aporta ninguna fila desde agosto. Quanto solo se usa para meses anteriores a agosto (junio y julio en el selector, julio en Tendencia); antes de agosto Quanto no tenía PeYa. Las metas de noviembre usan solo meses del POS: ago–oct, y no hay noviembre 2025.
+- **Hifumi y Eventos (migración `20261105_kpis_venta_hifumi_eventos.sql`, pedido de Jose):** son el canal 6 (`delivery_app`) y el 7 (`evento`). Con eso la vista cuadra al dólar con todas las cuentas cobradas del POS de ago–nov, de todos los tipos. Eventos no tiene meta, porque su venta depende de que haya evento. El módulo aparte de eventos (`evento_ventas`) no registra ventas desde junio: hoy los eventos se cobran en el POS con `tipo = 'evento'` en la sucursal real. EVT01 sigue fuera porque no tiene ninguna cuenta cobrada. En Metas se esconden los canales sin meta y sin venta en la sucursal elegida (por ejemplo Drive Thru fuera de S003).
+- **Acceso por sucursal (migración `20261105_kpis_venta_por_sucursal.sql`, pedido de Jose):** admin, superadmin y ejecutivo ven todas las sucursales. Los ejecutivos no tienen sucursal asignada, y Jose decidió que vean todo. El gerente ve solo la sucursal de `usuarios_erp.store_code`, y si no tiene sucursal no ve nada. El filtro está en la base: `_kpis_sucursal_permitida()` (sin permiso de ejecución para anon/authenticated), y lo usan `obtener_kpis_venta_canal`, `obtener_top_items_venta`, `obtener_ventas_empleado` y `obtener_curva_venta_dia`. Los insights de IA hablan de toda la cadena, así que el gerente no los recibe. En la pantalla, el gerente no tiene selector de sucursal ni botón de Insights.
+- **No cambió:** la fórmula de la meta mensual (40/40/20, o 65/35 sin año anterior). Como no hay datos antes de enero 2026, en 2026 siempre se usa el 65/35.
+
+## 5-Nov-2026 (noche) — Propina del mes en %: faltas y premios
+
+- **Tabla `incentivo_ajustes`:** falta leve −2.5, moderada −5, grave −10 o premio de +0.5 a +20.
+  - El motivo es obligatorio, porque la persona lo ve.
+  - Se anula con motivo; no se borra.
+  - RLS sin policies: solo por RPC.
+- **`_propina_mes(store, mes)`:** % final = máx(0, base + premios − faltas).
+  - Base por tramo (`incentivo_tramos`): 100 % si cumple la meta del mes, 50 % si no; sin meta cargada, 100 %.
+  - Cada rol se mide contra su meta: meseros y cajeras contra la personal de extras, cocina contra la de equipo, domicilios contra la de pedidos.
+  - **Calcula hasta ayer:** el día en curso no terminó y su meta completa bajaba el % de todos (se vio al probar: todos daban 50 %).
+- **RPC:**
+  - `fn_propina_mes`, `fn_ajustes_mes`, `fn_ajuste_registrar` y `fn_ajuste_anular` son para admin y gerente. No dejan registrarse a uno mismo, ni registrar a quien no está en el reparto o en una fecha futura.
+  - `fn_mi_propina` es la de cada quien.
+  - Probado en una transacción revertida: 100 − 2.5 − 10 + 5 = 92.5; el premio anulado no cuenta; el mesero no puede registrar; un premio de más de 20 se rechaza. No quedó ningún registro.
+- **UI:**
+  - Pestaña «Propina y faltas» en Desempeño Meseros: registrar, tabla por grupo (Cocina, Meseros, Cajeras, Domicilios) y lista con «Anular».
+  - Tarjeta «Tu propina este mes» en Mi Desempeño, con el desglose y los motivos.
+- **Pendiente:** todavía no toca planilla ni `PropinasView` (fase 4).
+
+## 5-Nov-2026 (noche) — «Mi Desempeño»: cada persona ve solo sus métricas
+
+- **`fn_mi_desempeno(usuario, desde, hasta)`** (migración `20261105c_mi_desempeno.sql`):
+  - La persona y la sucursal salen del usuario, no de parámetros, así que no se puede pedir la de otro.
+  - Devuelve sus días (extras, meta, personas o tickets), sus ítems, la meta de equipo, el avance de domicilios (solo para el rol `domicilios`) y el **promedio de la sucursal** agregado, sin nombres, para compararse.
+  - Las vistas generales (`fn_extras_mesero`, `fn_items_mesero`) siguen bloqueadas para el personal (probado: un mesero queda bloqueado).
+- **Refactor:** los ítems pasan a `_items_cuentas` (interna), que comparten `fn_items_mesero` y `fn_mi_desempeno`.
+- **UI (`src/components/empleado/MiDesempeno.jsx`):** menú «Mi Desempeño» 🎯 para mesero, mesera, cajera, cajero, cocina y domicilios. Pensada para celular.
+  - Mesero o cajera: extras del mes contra la meta, hoy contra la meta del día, promedios por persona o por ticket contra la sucursal, «Qué vendiste» desglosado y día por día.
+  - Cocina: meta del equipo.
+  - Domicilios: pedidos del mes contra la meta.
+- **Accesos:** admin, ejecutivo y superadmin ven todo en «Desempeño Meseros»; el gerente, su sucursal.
+- **Verificado con Camila:** sus extras dan $2,844.24 en 30 días, el mismo número que en la vista de admin.
+
+## 5-Nov-2026 (noche) — Ticket por persona por sucursal + «qué vende» desglosado
+
+- **`fn_ticket_sucursales(usuario, desde, hasta)`** (migración `20261105b_ticket_por_sucursal.sql`):
+  - Usa `_extras_cuentas` en cada sucursal activa, así que excluye ventas a empleados.
+  - En mesas calcula ticket por persona (venta ÷ pax), ticket por mesa y extras por persona. En para llevar y drive thru, ticket y extras por ticket.
+  - admin, ejecutivo y superadmin ven todas las sucursales; el gerente solo la suya.
+- **Resultado a 30 días:**
+  - Ticket por persona en mesas: Cafetalón $10.90, Lourdes $11.38 y Venecia $10.75.
+  - Food courts por ticket: Soyapango $12.04, Usulután $10.23 y Metrocentro $11.96.
+- **UI:**
+  - Pestaña «Por sucursal», con barras y tabla.
+  - «Qué vende cada uno» arranca con todo desglosado (botones «Solo grupos» y «Desglosar todo»).
+  - El detalle por persona lista todos los productos con cantidad, tasa por cada 10 personas o tickets y monto, sin «+N más».
+
+## 5-Nov-2026 (tarde) — Desempeño Meseros v2: sin ventas a empleados, promedios por persona, «qué vende» y metas sugeridas
+
+- **Ventas a empleados fuera** (`_extras_cuentas`, la base común):
+  - Se excluye la cuenta con descuento `empleado` o `descuento_empleado_id`, y la cuenta que solo trae productos que matchean `patron_items_empleado` (por defecto `emplead`: Soda Empleados, Café empleado, Camisas).
+  - En M001 eran unas 640 en 30 días; solo a Miliana, 414. Su ticket pasó de $8.22 a $11.53.
+  - **Bug encontrado al probar:** `descuento_categoria = 'empleado'` con NULL daba NULL, `not NULL` filtraba todo y el ranking quedaba vacío. Se arregló con `coalesce`. También se calificó `p.tipo`, que era ambiguo contra el OUT param.
+- **Promedios:** los meseros se miden por persona atendida (pax de la mesa) y las cajeras por ticket. En para llevar y drive thru, 1 cuenta = 1 persona.
+- **`fn_items_mesero`:** qué vende cada uno, por categoría del menú más «Ingredientes extra» (modificadores con precio, de componentes y del ítem). El total de ingredientes cuadra al centavo con `precio_modificadores` ($1,321.47 en 30 días). Los nombres se normalizan con `initcap`.
+- **`fn_incentivo_sugerencias`** (últimos 30 días):
+  - Persona: percentil 60 de los extras por día-persona (días con 5 cuentas o más), redondeado a $5. En M001 da $75 / $110.
+  - Equipo: mediana × 1.05. En M001 da $300 / $500.
+  - Domicilios: promedio × 1.10. En M001 da 30 / 42.
+- **UI:**
+  - Pestaña «Qué vende cada uno»: matriz grupo × persona, por cada 10 personas o tickets, o en cantidad; resalta al mejor.
+  - Detalle por persona con «Qué vendió» y «Por día».
+  - «Usar sugeridos» y una tabla de cómo le iría a cada uno con la meta.
+
+## 5-Nov-2026 — Desempeño Meseros + Clientes Domicilio (fase «medir»; todavía no afecta propinas)
+
+- **Pedido de Jazz (M001).** Plan: `docs/planes/PLAN_desempeno_meseros_y_domicilios.md`.
+- **Base** (migración `20261104_incentivos_y_crm_domicilios.sql`, más `fn_extras_mesero_venta_mesa`):
+  - Tablas `incentivo_programas`, `incentivo_metas` (L–J / V–D, `ambito` persona o equipo, historial por `vigente_desde`), `incentivo_tramos` (0 % → 0.5, 100 % → 1.0) y `crm_plantillas` / `crm_contactos` / `crm_exclusiones`.
+  - Todas tienen RLS **sin policies**: solo se accede por RPC SECURITY DEFINER, que validan rol y sucursal con `_incentivo_acceso`. Un mesero queda bloqueado (probado).
+  - Semilla: programas `extras` y `domicilios` en M001, **sin metas cargadas**.
+- **Extra** = modificadores cobrados + subtotal de líneas de Extras, Fries & Sides, Cervezas y Bebidas.
+  - La bebida dentro de un combo vive en `componentes` y no cuenta. Cortesías y anulados, tampoco.
+  - Dueño de la cuenta = `coalesce(mesero_id, cajero_id)`. Canales: mesa, para llevar, drive thru.
+- **ERP:**
+  - `DesempenoMeserosView` («Desempeño Meseros» en Dashboards) para admin, gerente y ejecutivo. Tiene ranking, detalle por día, la meta de equipo para cocina y la pestaña «Metas y reglas».
+  - `ClientesDomicilioView` («Clientes Domicilio») para domicilios, gerente y admin. Tiene segmentos, el botón WhatsApp (registra el contacto y abre wa.me con la plantilla), «No escribir más» y la medición «volvió en 7 días». Sin exportar.
+  - Las RPC devuelven máximo 1000 filas: la vista de clientes pagina con `.range()`.
+- **POS (`POSMain`):** en una mesa abierta por alguien que no es mesero aparece «Atiende:», con quien la abre por defecto. `mesero_id` ya nunca queda NULL en mesas.
+- **Pendiente:**
+  - Jazz carga las metas tras dos semanas de medición.
+  - Chip de avance en el POS.
+  - Integración con `PropinasView` y planilla (fase 4).
+  - `metas_ventas` (meta de venta por sucursal) sigue apagada desde marzo; no tiene cron, se llenaba a mano o por Make.
+  - Los domicilios no guardan quién los tomó: la meta de Karina es por sucursal.
+
+## 2-Nov-2026 — Líneas de facturas de compra: backfill, extracción automática y fin del bucle de errores
+
+Fase 0 del plan Compras HQ (`~/Proyectos/_auditorias/COMPRAS-HQ-plan-2026-10-29.md`). Migración `20261029_compras_dte_items_reparar.sql`.
+
+- **Qué pasaba:** `compras_dte_items` no tenía líneas después del 30-ago. `extraer_items_dte()` solo corría con el botón del Kardex y nadie lo apretó. El JSON sí estaba completo.
+- **Backfill:** 1,979 líneas nuevas por $394k; 525 quedaron mapeadas solas por $211k. Quedan 31 CCF de ene–mar ($30k) con JSON truncado, sin `cuerpoDocumento`; sus líneas no se pueden sacar de la base.
+- **Automático:** pg_cron `extraer-items-dte` (jobid 85) cada hora en el minuto 38. Al final llama `aplicar_mapeos_dte()`, que mapea con `proveedor_item_mapa` y con el historial del mismo NIT + descripción, y copia el factor. Con eso mapeó también 69 líneas viejas.
+- **Montos exentos:** el monto de línea tomaba `ventaGravada`, que viene 0 en ítems exentos. Ahora `_dte_monto_linea()` suma gravada + exenta + no sujeta. Se corrigieron 108 líneas viejas que estaban en $0.
+- **Desmapear deja veto:** `desmapear_descripcion_dte` ahora pone `confianza_mapeo = 'desmapeado'` para que el cron no la vuelva a mapear. Mapearla a mano la libera.
+- **Bucle de errores:** `compras_dte_propias` no tenía UNIQUE en `codigo_generacion`, y `procesar_dte_json` hace ON CONFLICT ahí. Cada DTE propio que llegaba al inbox fallaba con 42P10 y el Apps Script lo reintentaba cada 30 min: ~1,500 filas por día en `dte_import_errors`. Con el índice, la corrida de las 05:24 UTC archivó 25 sin errores. Las filas viejas de error quedan sin marcar como resueltas.
+- **Ojo para la próxima:** el MCP de Supabase se queda colgado con DROP, DELETE o UPDATE sueltos, porque pide una confirmación que la sesión remota no muestra. Se aplicó todo con `execute_sql`, sin DROP, y con los UPDATE dentro de funciones. `idx_cdp_codigo` quedó redundante.
+- **Pendiente de Jose:** factores de conversión inconsistentes en `~/Proyectos/_auditorias/COMPRAS-factores-a-revisar-2026-11-02.md` (ligado a ALM-3).
+
+## 2-Nov-2026 — PLAN (no construido): desempeño de meseros, meta de extras, propina por cumplimiento y CRM de domicilios
+
+- **Qué pidió Jazz (M001):** una meta diaria de extras por mesero, que alimente la propina (si cumple la meta cobra el 100 %, si no, el 50 %). También la lista de clientes de domicilio de Santa Tecla para recontactarlos, y una meta de domicilios para Karina.
+- **Plan completo:** `docs/planes/PLAN_desempeno_meseros_y_domicilios.md`.
+- **Hallazgos de data (últimos 30 días):**
+  - Los extras ya se pueden medir con `precio_modificadores` y las categorías. Camila vende $36.6 de extras por día y Karla $18.4.
+  - Mesas sin `mesero_id`: 27 % en M001 y 66 % en S004.
+  - Delivery propio M001 tiene `cajero_id` NULL en el 100 % de las cuentas.
+  - `metas_ventas` no genera nada desde el 25-mar y `metas_delivery` está vacía.
+  - M001 tiene 2,023 clientes de delivery; el 73 % pidió una sola vez y unos 675 están «dormidos».
+- **Decisión de diseño:** un motor genérico `incentivo_*`, todo por `usuario_id` (no por nombre como `agrandado_config`). Se mide 2 semanas antes de pagar y la liquidación es mensual.
+- **Decisiones de Jose (mismo día):**
+  - Las bebidas cuentan como extra solo si van fuera de combo.
+  - El 50 % retenido se redistribuye entre los que cumplieron.
+  - La regla aplica a todos: cocina con meta de equipo.
+  - Karina es el usuario de domicilios de M001.
+  - El plan para Jazz se publicó como página.
+
+## 1-Nov-2026 — Porcionador de papas para Plaza Lourdes (S003)
+
+- **Qué pidió Cesar:** la misma app del medidor de papas de Metrocentro, habilitada para Lourdes.
+- **Código:** `PorcionadorApp.jsx` ahora toma la estación de la URL (`?estacion=papas-s003`). Sin parámetro sigue en Metrocentro (`papas-s006`), con sus mismas llaves de sesión en localStorage. Lourdes usa llaves con sufijo, para no mezclar sesiones.
+- **Base:** fila `papas-s003` en `porcion_estacion_config` (copia de `papas-s006`).
+- **Usuario:** «Estación Papas Lourdes» (rol despachador, S003) creado por Cesar en la pantalla de usuarios; el PIN lo definió él.
+- **Pendiente:** queso frito de Lourdes (pesos objetivo por definir).
+
+
+## 30-Oct-2026 — «Cebolla del día» con blanca y morada en una sola hoja
+
+- **Qué pidió Cesar:** la misma persona hace las dos, así que la comanda de la mañana tiene que traer también la morada (bolsa de 1 lb procesada).
+- **Base:** `fn_comanda_cebolla` agrega `morada` y `morada_agregar` por sucursal, y `total_morada` y `total_morada_agregar` en el total.
+- **Pantalla (`ComandaCebollaView`):** dos tarjetas (blanca en libras ×0.75, morada en violeta) y la tabla con columnas Blanca y Morada.
+- **Impresión:** una hoja carta con casillas para cada cebolla.
+- **Verificado el 30-oct:** blanca 6 y morada 15.
+
+## 30-Oct-2026 — Motoristas: David regresado a Venecia; cuenta de Lourdes reactivada como «Andrés Oswaldo»
+
+- **Cómo valida la app:** `driver_disponible` revisa la distancia contra la sucursal de `empleados.sucursal_id`.
+- **David González:** se movió a S004 el 7-oct, pero alguien lo regresó a S001 entre el 27 y el 28-oct, probablemente desde RRHH con `empleado_guardar`; no hay auditoría. Se volvió a poner en S004, en el empleado y en el usuario.
+- **Gustavo y Aldo:** seguían en S004 y entraron bien hasta el 29 y el 30-oct.
+- **Cuenta de Lourdes:** por pedido de Cesar, la cuenta inactiva de «Sergio Bryan Melara» (empleado 539af202, usuario d2052690, S003) se reactivó y se renombró «Andrés Oswaldo», con el mismo PIN. El historial anterior de esa cuenta es de Sergio.
+
+## 22-Oct-2026 — Coffee Mate, Rinso, stickers y jabón de manos en el pedido a Casa Matriz
+
+- **Productos nuevos** (mín 1 / máx 2 por sucursal):
+  - «Coffee Mate caja 530 g» y «Rollo de stickers para etiquetas», en Extras.
+  - «Rinso bolsa (detergente)», con la presentación por confirmar, y «Jabón para manos galón», en Utensilios de Limpieza.
+- **Aviso:** cuarto aviso en `avisos_pedido`, vigente hasta el 5-nov.
+
+## 22-Oct-2026 — Químicos LK, Pentaquat y cups de 1 oz en el pedido a Casa Matriz (migración `quimicos_lk_pentaquat_y_cups_1oz`)
+
+- **Renombres:** ALK MAX pasa a «LK Max galón (líquido para plancha)» y EXTRA CLEAN a «LK Kleen galón (para trastes)». Conservan su historial; ALK CLEAN de piso quedó igual.
+- **Productos nuevos:** «Pentaquat galón (sanitizante)» y «Cups 1 oz caja 1000», con mín 1 / máx 2 por sucursal.
+- **Aviso:** tercer aviso en `avisos_pedido`, vigente hasta el 5-nov.
+
+## 22-Oct-2026 — Ketchup McCormick + Ketchup El Negrito (migración `ketchup_mccormick_y_el_negrito`)
+
+- **Renombre:** la ketchup de bolsa (f731c1cd) ahora se llama «Ketchup McCormick».
+- **Producto nuevo:** «Ketchup El Negrito» (SA020, galón) para hot dogs. Se pide a Casa Matriz y tiene inventario en todas las sucursales activas (mín 1 / máx 2).
+- **Aviso:** segundo aviso en `avisos_pedido`, vigente hasta el 5-nov.
+- **Pendiente:**
+  - Pasar las recetas de hot dog a descontar El Negrito.
+  - Mapear el DTE del proveedor de El Negrito al producto.
+
+## 22-Oct-2026 — Cebolla blanca: la bolsa pasa de 2 lb a 0.75 lb (migración `cebolla_blanca_bolsa_075lb`)
+
+- **Qué pidió Cesar:** cambiar el peso y todo lo que dependa de él, y avisar de forma muy visible al pedir.
+- **Base:** se ajustaron el catálogo, la receta de producción (26.67 bolsas por 20 cebollas) y el factor del Freakie Dog (1 oz = 1/12 de bolsa).
+  - Mínimos y máximos de las sucursales: de 1/4 a 3/11.
+  - Stock de las sucursales convertido ×2.67, con kardex `ajuste_manual`.
+  - Pedidos pendientes: S002 y S006 pasaron de 2 a 5.
+  - Etiquetado `cebblanca`: 340 g.
+- **Aviso:** tabla `avisos_pedido`, reutilizable, y componente `AvisosPedido.jsx`.
+  - Se muestra en pantalla completa con «Entendido» la primera vez (localStorage por usuario), y después como franja amarilla.
+  - Va en MisPedidosView y ConteoNocturno (pantalla de conteo y de pedido sugerido). Vigente del 22-oct al 5-nov.
+- **En el conteo de esa semana:** las bolsas viejas de 2 lb se cuentan como 2.5 nuevas.
+
+## 21-Oct-2026 — Coca-Cola Combo XL sin componente Bebida en Local y Para Llevar
+
+- **Qué pidió Cesar:** el combo no lleva bebida, y en mesa y para llevar el POS la pedía como obligatoria.
+- **Cambio:** se borraron 2 filas de `pos_combo_componentes` (canal local y para_llevar). El respaldo quedó en `_respaldo_combo_componentes_20261021`.
+- **Lo que no cambió:** la receta del combo ya no descargaba bebida. Drive Thru, Delivery propio y PeYa siguen con el componente Bebida; quedan a confirmar.
+- **Corrección el mismo día:** `pos_contexto_servicio` define que el restaurante, en mesa y para llevar, usa el menú **Local** (sin bebida), y el food court usa el menú **Para Llevar** (con bebida).
+  - Por eso se devolvió la Bebida del XL en Para Llevar (la fila 4df7d431).
+  - Verificado: en el menú Local, solo el Coca-Cola Combo tiene componente Bebida. En Para Llevar, los 16 combos la tienen.
+  - `incluye_bebida` de `pos_contexto_servicio` no se usa en el front.
+
+## 20-Oct-2026 — Venta PeYa en KPI y Finanzas: respaldo con lo digitado en caja (migración `20261020_peya_ventas_respaldo_pos`)
+
+- **Problema:** la subida del CSV PeYa del 13-oct (3,190 pedidos, del 23-sep al 13-oct) guardó la comisión en `total_pedido` (3,132 filas). Desde el 14-oct no se subió CSV. El KPI Ventas Totales mostraba ~$4.5k de PeYa en octubre contra ~$30.8k reales al 17-oct.
+- **Arreglo:** la vista `v_peya_ventas_diario` elige la fuente por día.
+  - Usa el CSV si ese día el total supera 1.5 × la comisión.
+  - Si no, usa `pos_cuentas` con `tipo='pedidos_ya'` y estado cobrada.
+  - La usan `mv_finanzas_ventas_mensual` (recreada con índice único y grants) y `fn_ventas_totales_dashboard` (parcheada).
+- **Efecto:** PeYa sin IVA sube a $45.9k en septiembre (antes $36.7k) y a $29.2k en octubre al día de hoy (antes $4.0k).
+  - Food cost Finanzas: septiembre ~44.1%, octubre al 17 ~36.5%. El 46.3% anterior estaba inflado por la venta faltante.
+- **Pendiente:**
+  - El lector de CSV PeYa en `QuantoUploadView`: probablemente cambió el formato del portal.
+  - `import_peya_jsonb` hace `ON CONFLICT DO NOTHING`, así que una resubida no corrige montos malos.
+  - Pedir a Cesar el CSV del 23-sep en adelante.
+
+## 21-Oct-2026 — Imprimir las tablas de inventario (Kardex y vistas de stock) en hoja carta legible
+
+Jose pidió poder imprimir las tablas de inventario y que el papel sirva: letra legible, márgenes bien y en vertical. Imprimir la PWA tal cual salía en miniatura, en fondo oscuro y con las tarjetas partidas entre páginas.
+
+- **Utilidad nueva `src/lib/imprimirTabla.js`** (`imprimirTabla`, `htmlTabla`, `agruparFilas`, `fmtNum`): arma un documento aparte, blanco, carta vertical con `@page` de 15/13/16 mm, letra 11.5–12 px, encabezado de tabla **repetido en cada página**, filas que no se parten, grupos (categoría) que no quedan huérfanos, zebra suave, filas `alerta` en rosado y **casillas en blanco** (`blank: true`) con 30 px de alto para anotar a mano. Resumen + nota + firmas + pie van en un bloque indivisible para que las firmas no queden solas en otra hoja. Abre ventana nueva con el diálogo de impresión (mismo patrón que la hoja de despacho); si el navegador bloquea la ventana cae a un iframe oculto. `htmlTabla` está exportado para previsualizar/PDF sin abrir ventanas — se validó generando el PDF con Chromium (Playwright de `~/Proyectos/provia`) y revisando las páginas.
+- **Botón 🖨️ en seis lugares**, siempre sobre lo que está filtrado en pantalla: Kardex › Inventario (catálogo agrupado MP→SP→PT→Insumo), Kardex › Lista Conteo (**hoja de conteo nocturno** con "se cuenta en", casillas Cantidad / Sueltas / Obs. y firmas), Inventario Casa Matriz (`InventarioTab`), Stock Mín/Máx (con columna "Ajuste" en blanco; avisa si incluye cambios sin guardar), Inventario Físico (hoja de conteo en la pantalla de conteo + reporte de diferencias en la de revisión, junto al CSV) e Inventario por Sucursal (columna "Físico" en blanco).
+- Sin cambios de BD ni de permisos: imprime lo que la vista ya cargó.
+
+## 20-Oct-2026 — «Cebolla del día»: comanda de cebolla blanca para Kevin
+
+- **Qué pidió Cesar:** que la cebolla blanca se haga todos los días de 7:00 a 8:00, para que se use fresca en la tarde. Kevin imprime a las 7:00 la comanda en carta con las bolsas por sucursal y el total.
+- **Base:** `fn_comanda_cebolla(p_actor, p_fecha)` lee `pedidos_sucursal` y `pedido_items` de «Cebolla bolsa» y «Cebolla Blanca».
+  - Ventana: del mediodía de ayer a las 7:00 de hoy.
+  - Lo que llegue después de las 7:00 sale como «agregar».
+  - También marca las sucursales sin pedido.
+  - Verificado con el 20-oct: Lourdes 4, Usulután 2, Santa Tecla 1, total 7; Soyapango y Venecia sin pedido.
+- **UI:**
+  - `ComandaCebollaView.jsx`: nav `cebolla-dia` «Cebolla del día» 🧅, con `permisos_rol` para jefe_casa_matriz, admin, ejecutivo y superadmin.
+  - Imprime en carta con una ventana nueva y `window.print`; la hoja trae casillas y firmas.
+- **Decisiones de Cesar:** solo cebolla blanca (la morada no entra), impresora normal en carta y corte a las 7:00.
+
+
+## 18-Oct-2026 — FinanzasDashboard mostraba un food cost de ~30% en octubre: 3 proveedores de comida mal clasificados
+
+- **Causa:** al aparecer, los proveedores nuevos se dieron de alta solos en `catalogo_contable` como `insumo_venta / Varios`. Tres de ellos son comida:
+  - BELCA «S.A. DE C.V.» (id 266): papas, $12.4k.
+  - Embutidos de El Salvador (id 267): carne, $9.2k.
+  - Orantes Pineda (id 268): verduras, $2.1k.
+- **Corrección:** pasaron a `costo_comida` y se refrescó `mv_finanzas_gastos_mensual`. Octubre al 17 quedó en 46.3% (antes 29.1%); septiembre fue 45.7%.
+- **Pendiente (resuelto en parte, ver abajo):** el alta automática con default `insumo_venta` va a repetir este error con cada proveedor nuevo. También quedaron así IMEXCA y Supply Company, sin confirmar qué son.
+- **Causa de fondo:** desde el modal «Clasificar proveedor» de RecepcionDTE, `normalizar_proveedor` buscaba el nombre exacto. Como no lo encontró, creó un proveedor nuevo con la categoría elegida, y la vista prefería ese match exacto.
+- **Arreglo (migración `20261018_proveedores_match_por_clave`):**
+  - `_prov_clave()`: clave del nombre sin tildes, puntuación ni sufijos societarios.
+  - `normalizar_proveedor`: si existe un proveedor con la misma clave, devuelve el existente (`ya_existia`) y no duplica ni recategoriza.
+  - `v_gastos_consolidados`: también empareja por clave, con prioridad exacto > clave > contiene.
+  - Duplicados de la misma categoría → `duplicado_de`: 266→3 Belca, 213→1 Corte Argentino, 200→197 Banco Agrícola, 167→134 Plásticos Diversos.
+  - Verificado: los totales del MV de agosto a octubre no cambiaron. Prueba con «Belca El Salvador SA de CV» → devuelve id 3, costo_comida.
+- **UI (`RecepcionDTE`, pendiente de deploy):** el modal avisa cuando el proveedor ya existe y trae una ayuda que explica cada categoría.
+- **Duplicados con categorías distintas, para que decida Cesar:**
+  - Siman: insumo_venta / gastos_operativos.
+  - Hasgar: costo_fijo / gastos_operativos.
+  - Ice Corp: activo_fijo / gastos_operativos.
+  - Servicios Industriales Inoxidables: activo_fijo / gastos_operativos.
+
+## 14-Oct-2026 — La carne ahora se compra lista a Embutidos de El Salvador (dato de Cesar)
+
+- **Qué cambió:** desde octubre toda la carne de hamburguesa se compra a Embutidos de El Salvador. Es la «CAJA TORTA DE CARNE FREAKIE»: 135 tortas, 18.75 lb, $51 sin IVA ($2.72/lb, ~$0.38 por torta).
+- **Proveedores que salen:** Corte Argentino, PIMI y Alinsa. Corte Argentino no factura desde el 1-oct; PIMI tuvo una última compra de cortes el 6-oct.
+- **Food cost de octubre:** la carne bajó ~$8k en el 1–13 contra septiembre, y es real.
+- **Revisar:**
+  - **Peso:** la torta pesa 0.139 lb (63 g) contra 0.15 lb (68 g) de la bolita propia.
+  - **Recetas y kardex:** siguen descargando «Mezcla de Carne Smash» y sus cortes.
+  - **Recepción:** el 9-oct se recibieron 85 cajas contra el DTE 8969, que es de 65 cajas; el DTE 8939 (20 cajas) también aparece cruzado.
+
+
+
 ## 13-Oct-2026 — Estación de etiquetado: la unificación de pantalla se FRENÓ; dos sistemas conviven y ninguno mueve el kardex
 
 **Hallazgo al retomar.** Entre el 3 y el 11 de octubre Cesar mergeó a `main` (PRs #436–#446) una versión distinta de la estación: PIN al entrar (`PinModal`, `fn_prep_actor`), lote del día por persona (`prep_lotes`), cada impresión registrada en `etiqueta_impresiones` (`fn_etiqueta_registrar_v3`, idempotente), deuda de insumos que bloquea la salida en Mi Asistencia, estación `/preparacion.html` donde al final del turno la persona registra a mano (o pistoleando) qué insumos usó (`prep_lote_insumos`, validado contra los gramos impresos), «Equipo y PINs», etiqueta minimalista con ajuste de corrimiento, días obligatorios. **Esa es la pantalla en la que ya se capacitó a la gente.** La reescritura de `EtiquetadoApp.jsx` que estaba lista acá partía de la versión del 1-oct y la habría borrado completa, así que **no se mergeó**; quedó guardada fuera del repo como referencia.
@@ -35,7 +476,6 @@ Jose pidió que al pesar e imprimir en `/etiquetado.html` se descarguen insumos 
 - **Tabla estación vs recetas (plan §8):** cuadran Cheddar, Sal, Mil Islas, Chipotle, Cebolla Blanca, Salchicha; hay que pesar Chili (4 bolsas ERP vs 5 lb estación), Escabeche y Mermelada (receta compra 12 bolsas/tanda pero la equivalencia dice 8.7); están mal Truffa (rinde 0.2125 bolsa, mayo y Dijon sin factor) y Ranch (1 galón → 1 bote, descuenta 1 oz); Cebolla Morada se unifica (ojo: 66 lb → 30 bolsas = 54 % pérdida y 0.005 L vinagre, a confirmar).
 - **Datos de Jose (02-oct):** Chili = 4 bolsas de **5 lb**; Cebolla Morada 66 lb → 30 bolsas 1 lb confirmado y vinagre **0.5 L** (la receta dice 0.005); Mermelada bolsa de 5 lb (asumido, pesar); **Ranch ya no se porciona** (bote completo, sale de la estación); Truffa en bolsas de 1 lb (pesar).
 - Notion no estaba autorizado en esta sesión: no se marcó en EN_PROGRESO. Hacerlo antes de tocar `registrar_produccion` o `ProduccionDiaria.jsx`.
-
 ## 10-Oct-2026 — Etiquetado: productos sin días imprimían «vence = elaboración»
 
 **Causa:** Bote de jalapeño, Condimento para 100 lb y Pepinillo rebanado se crearon desde la tablet con `dias` null. `fechaSV(null)` da el mismo día, así que salieron 134 etiquetas así entre el 6 y el 9 de octubre.

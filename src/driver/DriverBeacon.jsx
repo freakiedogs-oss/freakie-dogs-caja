@@ -609,6 +609,126 @@ function useBeacon(yo) {
   return { activo, auto, ultima, error, iniciar, detener }
 }
 
+// Campana «pedido listo» (opción A elegida por Cesar): dos ding-dong.
+// Solo para la PWA (iPhone); en el APK suena el servicio nativo.
+let _audioCtx = null
+function campana() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+    const ctx = _audioCtx
+    ctx.resume?.()
+    const tono = (f, t0, dur, vol) => {
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      o.type = 'sine'; o.frequency.setValueAtTime(f, t0)
+      g.gain.setValueAtTime(0.0001, t0)
+      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.015)
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0 + dur + 0.05)
+    }
+    const t = ctx.currentTime + 0.05
+    for (let r = 0; r < 2; r++) {
+      const b = t + r * 0.9
+      tono(1318, b, 0.7, 0.5); tono(2636, b, 0.4, 0.12); tono(1046, b + 0.35, 0.9, 0.45); tono(2092, b + 0.35, 0.5, 0.1)
+    }
+    navigator.vibrate?.([400, 200, 400, 200, 700])
+  } catch { /* sin audio: queda la pantalla roja */ }
+}
+
+// Cobro de una parada aunque esté bloqueada: así prepara el vuelto antes.
+function CobroLinea({ p }) {
+  const efectivo = /efectivo/i.test(p.metodo_pago || 'efectivo')
+  const caja = (bg, bd, col) => ({ background: bg, border: `1px solid ${bd}`, color: col, borderRadius: 8,
+                                   padding: '5px 8px', fontSize: 12, marginTop: 6 })
+  if (p.pagado_online) return <div style={caja('#0e2a17', '#1f5a33', '#86efac')}>💳 Ya pagado con tarjeta — no cobrés nada</div>
+  if (efectivo && Number(p.paga_con) > 0) {
+    return (
+      <div style={caja('#2f2a10', '#5a4a12', '#fde68a')}>
+        💵 Cobrar <b>{fmt(p.total)}</b> · paga con {fmt(p.paga_con)} → vuelto <b>{fmt(Math.max(0, p.paga_con - p.total))}</b>
+      </div>
+    )
+  }
+  return <div style={caja('#26221d', '#3a342e', '#d6cdc3')}>💵 Cobrar <b>{fmt(p.total)}</b> en {p.metodo_pago || 'efectivo'}</div>
+}
+
+// Mapa del viaje (2+ paradas): vos, la sucursal y las paradas numeradas en
+// orden. La que toca va en amarillo; el resto en gris.
+function MapaViaje({ paradas, actualId, yo, vuelto }) {
+  const el = useRef(null)
+  const map = useRef(null)
+  const capa = useRef(null)
+  const encuadrado = useRef('')
+  const [gps, setGps] = useState(null)
+
+  // En el APK la ubicación la manda el servicio nativo; acá la pedimos al
+  // navegador solo para dibujar el punto «Vos».
+  useEffect(() => {
+    if (yo?.lat || !navigator.geolocation) return
+    const id = navigator.geolocation.watchPosition(
+      (pos) => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {}, { enableHighAccuracy: true, maximumAge: 20000, timeout: 20000 })
+    return () => navigator.geolocation.clearWatch(id)
+  }, [yo?.lat])
+  const yoPos = yo?.lat ? yo : gps
+
+  useEffect(() => {
+    if (map.current || !el.current) return
+    const m = L.map(el.current, { zoomControl: false, attributionControl: false }).setView([13.7, -89.2], 12)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m)
+    capa.current = L.layerGroup().addTo(m)
+    map.current = m
+    setTimeout(() => m.invalidateSize(), 150)
+    return () => { m.remove(); map.current = null }
+  }, [])
+
+  const clave = paradas.map(p => p.id + ':' + p.orden_entrega).join('|')
+  useEffect(() => {
+    const m = map.current
+    if (!m) return
+    capa.current.clearLayers()
+    const pts = []
+    const suc = paradas.find(p => p.sucursal_lat)
+    if (suc) {
+      L.marker([suc.sucursal_lat, suc.sucursal_lng], { icon: L.divIcon({ className: '', iconSize: [34, 18], iconAnchor: [17, 9],
+        html: `<div style="background:#1e40af;color:#fff;font:700 10px/18px system-ui;border-radius:4px;text-align:center;border:1px solid #fff">${suc.store_code || '🏪'}</div>` }) })
+        .addTo(capa.current)
+      pts.push([suc.sucursal_lat, suc.sucursal_lng])
+    }
+    if (yoPos?.lat) {
+      L.marker([yoPos.lat, yoPos.lng], { zIndexOffset: 1000, icon: L.divIcon({ className: '', iconSize: [30, 30], iconAnchor: [15, 15],
+        html: '<div style="font-size:24px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))">🛵</div>' }) }).addTo(capa.current)
+    }
+    const linea = [...(yoPos?.lat ? [[yoPos.lat, yoPos.lng]] : suc ? [[suc.sucursal_lat, suc.sucursal_lng]] : [])]
+    paradas.forEach((p, i) => {
+      const toca = p.id === actualId || (!actualId && i === 0)
+      const v = vuelto(p)
+      const etiqueta = p.pagado_online ? 'Pagado' : v > 0 ? `$${v.toFixed(2)} vuelto` : `Cobrar $${Number(p.total).toFixed(2)}`
+      L.marker([p.cliente_lat, p.cliente_lng], { zIndexOffset: toca ? 900 : 500, icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+        html: `<div style="width:26px;height:26px;border-radius:50%;background:${toca ? '#FFD900' : '#3a342e'};color:${toca ? '#1a1200' : '#eee'};font:800 13px/26px system-ui;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)">${p.orden_entrega ?? i + 1}</div>` }) })
+        .bindTooltip(`${String(p.cliente_nombre || '').split(' ')[0]} · ${etiqueta}`, { permanent: true, direction: 'bottom', offset: [0, 12] })
+        .addTo(capa.current)
+      linea.push([p.cliente_lat, p.cliente_lng])
+      pts.push([p.cliente_lat, p.cliente_lng])
+    })
+    if (linea.length > 1) L.polyline(linea, { color: '#E63946', weight: 3, dashArray: '6,7', opacity: .85 }).addTo(capa.current)
+    if (yoPos?.lat) pts.push([yoPos.lat, yoPos.lng])
+    // Encuadrar solo cuando cambian las paradas, no en cada lectura de GPS
+    if (pts.length && encuadrado.current !== clave) {
+      encuadrado.current = clave
+      try { m.fitBounds(L.latLngBounds(pts).pad(0.25)) } catch { /* noop */ }
+    }
+  }, [clave, actualId, yoPos?.lat, yoPos?.lng]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 14, padding: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>🗺️ Mapa de tu viaje</div>
+      <div ref={el} style={{ height: 260, borderRadius: 10, overflow: 'hidden', background: '#222' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#aaa', marginTop: 6 }}>
+        <span>🛵 vos · 🟡 te toca · ⚫ después</span><span>{paradas.length} paradas</span>
+      </div>
+    </div>
+  )
+}
+
 // ── 📦 Mis pedidos ──────────────────────────────────────────────────
 function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [ocupado, setOcupado] = useState(null)
@@ -616,6 +736,42 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const [devolviendo, setDevolviendo] = useState(null)
   const [confirmando, setConfirmando] = useState(null)   // evita marcar Entregado por accidente
   const [msg, setMsg] = useState('')
+
+  // ── Alarma «pedido listo» (7-nov-2026) ──
+  // En el APK suena el servicio nativo (aunque la app esté cerrada); acá se
+  // muestra la pantalla roja cuando la app está abierta, y en la PWA (iPhone)
+  // además suena la campana mientras la pantalla esté abierta.
+  const [alarma, setAlarma] = useState(null)
+  const hayPorRetirar = pedidos.some(x => ['preparando', 'lista'].includes(x.estado))
+  useEffect(() => {
+    if (!hayPorRetirar) { setAlarma(null); return }
+    let vivo = true
+    const revisar = async () => {
+      const { data } = await db.rpc('driver_alarma_estado', { p_empleado_id: yo.id })
+      if (vivo) setAlarma(data?.sonar ? data : null)
+    }
+    revisar()
+    const t = setInterval(revisar, 15000)
+    return () => { vivo = false; clearInterval(t) }
+  }, [yo.id, hayPorRetirar])
+  useEffect(() => {
+    if (!alarma || window.AndroidPrinter?.hasLocationNative?.()) return
+    campana()
+    const t = setInterval(campana, 10000)
+    return () => clearInterval(t)
+  }, [alarma])
+  const retirarListos = async () => {
+    setOcupado('alarma')
+    try {
+      const { data, error } = await db.rpc('driver_recoger_listos', { p_empleado_id: yo.id })
+      if (error) throw error
+      setAlarma(null)
+      if (!beacon.activo) beacon.iniciar()
+      setMsg(`🚀 Saliste con ${data?.recogidos || 0} pedido${data?.recogidos === 1 ? '' : 's'}. Tu ruta ya está ordenada.`)
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
 
   // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
   // que salgan a la calle con alguno sin marcar.
@@ -662,6 +818,43 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       if (error) throw error
       setMsg(`↩️ ${p.numero_orden} devuelto a la sucursal. La central lo va a reasignar.`)
       setDevolviendo(null)
+      await recargar()
+    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
+    finally { setOcupado(null) }
+  }
+
+  // «Llegué» (9-nov-2026): la página de seguimiento del cliente se pone en
+  // amarillo «¡Tu motorista está afuera!». Sirve aunque el teléfono que dejó
+  // el cliente esté mal: el aviso le llega por el link.
+  // Confirmación con GPS (9-nov-2026): si al tocar «Entregado» el motorista
+  // está a más de 300 m del cliente, se le pide confirmar en rojo. Hubo
+  // entregas marcadas por error con el pedido todavía en la moto.
+  const [distEnt, setDistEnt] = useState(null)   // { id, m, cargando }
+  const pedirConfirmacion = (p) => {
+    setConfirmando(p.id)
+    if (!p.cliente_lat) { setDistEnt(null); return }
+    setDistEnt({ id: p.id, m: null, cargando: true })
+    const medir = (lat, lng) => {
+      const R = 6371000, rad = (x) => x * Math.PI / 180
+      const dLat = rad(p.cliente_lat - lat), dLng = rad(p.cliente_lng - lng)
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat)) * Math.cos(rad(p.cliente_lat)) * Math.sin(dLng / 2) ** 2
+      setDistEnt({ id: p.id, m: Math.round(2 * R * Math.asin(Math.sqrt(h))), cargando: false })
+    }
+    const u = beacon.ultima
+    if (u?.lat && u.at && Date.now() - new Date(u.at).getTime() < 60000) { medir(u.lat, u.lng); return }
+    if (!navigator.geolocation) { setDistEnt(null); return }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => medir(pos.coords.latitude, pos.coords.longitude),
+      () => setDistEnt(null),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 7000 })
+  }
+
+  const llegue = async (p) => {
+    setOcupado('llegue-' + p.id)
+    try {
+      const { error } = await db.rpc('driver_llegue', { p_empleado_id: yo.id, p_delivery_id: p.id })
+      if (error) throw error
+      setMsg(`📍 Le avisamos a ${String(p.cliente_nombre || 'el cliente').split(' ')[0]} que estás afuera.`)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -781,8 +974,56 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
   const rodando = pedidos.filter(x => x.estado === 'en_camino').length
   const cocinando = pedidos.filter(x => !['lista', 'en_camino'].includes(x.estado)).length
 
+  // Orden de entrega (7-nov-2026): lo decide el sistema y el motorista lo
+  // respeta. Solo se puede entregar la parada que toca; las demás quedan
+  // bloqueadas hasta entregar la anterior. Si hay un problema, la central
+  // puede cambiar el orden.
+  const enRuta = pedidos
+    .filter(x => x.estado === 'en_camino' && x.orden_entrega != null)
+    .sort((a, b) => a.orden_entrega - b.orden_entrega)
+  const actual = enRuta[0] || null
+  const totalRuta = actual?.orden_total || enRuta.length
+  const entregadasRuta = actual ? actual.orden_entrega - 1 : 0
+  const rutaMaps = enRuta.filter(x => x.cliente_lat).length > 1
+    ? (() => {
+        const pts = enRuta.filter(x => x.cliente_lat).map(x => `${x.cliente_lat},${x.cliente_lng}`)
+        const destino = pts.pop()
+        return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${destino}&waypoints=${encodeURIComponent(pts.join('|'))}`
+      })()
+    : null
+  const ord = (n) => `${n}°`
+  // Viaje (9-nov-2026): cobros visibles en todas las paradas, cambio total a
+  // llevar y mapa con las paradas cuando son 2 o más.
+  const esEfectivo = (p) => /efectivo/i.test(p.metodo_pago || 'efectivo')
+  const vuelto = (p) => (!p.pagado_online && esEfectivo(p) && Number(p.paga_con) > Number(p.total))
+    ? Number(p.paga_con) - Number(p.total) : 0
+  // Si ya va en camino, el viaje es solo lo que lleva: lo asignado en la
+  // sucursal mientras tanto es el PRÓXIMO viaje (9-nov-2026, caso Gustavo).
+  const viaje = pedidos
+    .filter(x => enRuta.length > 0 ? x.estado === 'en_camino' : ['lista', 'en_camino'].includes(x.estado))
+    .sort((a, b) => (a.orden_entrega ?? 99) - (b.orden_entrega ?? 99))
+  const cambioTotal = viaje.reduce((s, p) => s + vuelto(p), 0)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {alarma && (
+        <div style={S.alarma}>
+          <div style={S.alarmaIc}>!</div>
+          <div style={{ fontSize: 26, fontWeight: 900 }}>
+            {alarma.listos > 1 ? '¡Pedidos listos!' : '¡Pedido listo!'}
+          </div>
+          <div style={{ fontSize: 15, marginTop: 8, opacity: .92, lineHeight: 1.5 }}>
+            {alarma.sucursal} · {alarma.listos} {alarma.listos === 1 ? 'pedido' : 'pedidos'}<br />
+            {(alarma.pedidos || []).filter(p => p.estado === 'lista').map(p => p.numero_orden).join(' · ')}<br />
+            {alarma.min_espera > 0 ? `Esperando hace ${alarma.min_espera} min` : 'Recién salido de cocina'}
+            {alarma.listos < alarma.total && <><br />El otro sigue en cocina, pero este ya no puede esperar.</>}
+          </div>
+          <button disabled={ocupado === 'alarma'} onClick={retirarListos} style={S.alarmaBtn}>
+            {ocupado === 'alarma' ? 'Marcando…' : alarma.listos > 1 ? 'Ya los retiré · salgo' : 'Ya lo retiré · salgo'}
+          </button>
+          <div style={{ fontSize: 12, opacity: .75, marginTop: 10 }}>Al tocarlo se marcan en camino y se arma tu ruta 1°, 2°.</div>
+        </div>
+      )}
       <Disponibilidad />
       {msg && <div style={S.banner}>{msg}</div>}
 
@@ -802,8 +1043,68 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           )}
         </div>
       )}
-      {pedidos.map(p => (
-        <div key={p.id} style={S.pedidoCard}>
+      {enRuta.length > 0 && (
+        <div style={S.rutaHead}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>🛵 Tu ruta · {totalRuta} {totalRuta === 1 ? 'entrega' : 'entregas'}</div>
+            <div style={{ fontSize: 11.5, color: '#bdb3a8', marginTop: 2 }}>
+              El orden lo pone el sistema. Entregá en este orden.
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            {entregadasRuta > 0 && <div style={{ fontSize: 12, color: '#4ade80', fontWeight: 700 }}>{entregadasRuta} de {totalRuta} ✓</div>}
+            {cambioTotal > 0 && (
+              <div style={{ fontSize: 11, color: '#bdb3a8', marginTop: 2 }}>
+                Llevá en cambio<br /><b style={{ color: '#fde68a', fontSize: 14 }}>{fmt(cambioTotal)}</b>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {enRuta.length === 0 && cambioTotal > 0 && (
+        <div style={{ ...S.rutaHead, justifyContent: 'center', color: '#fde68a', fontSize: 13 }}>
+          💵 Antes de salir, llevá <b style={{ margin: '0 4px' }}>{fmt(cambioTotal)}</b> en cambio para tus pedidos
+        </div>
+      )}
+      {pedidos.map(p => {
+        const bloqueado = p.estado === 'en_camino' && actual && p.orden_entrega != null && p.id !== actual.id
+        const esActual = actual && p.id === actual.id
+        if (bloqueado) {
+          const previo = enRuta[enRuta.findIndex(x => x.id === p.id) - 1]
+          return (
+            <div key={p.id} style={S.bloqueado}>
+              <span style={S.bloqNum}>{ord(p.orden_entrega)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#d6cdc3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.cliente_direccion || p.numero_orden}
+                </div>
+                <div style={{ fontSize: 11.5, color: '#8b807a', marginTop: 2 }}>
+                  🔒 {p.numero_orden} · se habilita cuando entregués el {ord(previo?.orden_entrega ?? p.orden_entrega - 1)}
+                </div>
+                <CobroLinea p={p} />
+              </div>
+            </div>
+          )
+        }
+        return (
+        <div key={p.id} style={esActual ? S.pedidoActual : S.pedidoCard}>
+          {esActual && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 34, fontWeight: 900, lineHeight: 1, color: '#FFD900' }}>{ord(p.orden_entrega)}</span>
+              <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: .5, color: '#FFD900' }}>AHORA · VAS A ENTREGAR ESTE</span>
+            </div>
+          )}
+          {enRuta.length > 0 && ['lista', 'preparando'].includes(p.estado) && (
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#7cc8f5', background: '#0f2b3d', border: '1px solid #1e4a66',
+                          borderRadius: 8, padding: '6px 9px', marginBottom: 8 }}>
+              🔜 Próximo viaje — recogelo cuando regreses a la sucursal
+            </div>
+          )}
+          {enRuta.length === 0 && p.estado === 'lista' && p.orden_entrega != null && listos + rodando > 1 && (
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: '#FFD900', marginBottom: 6 }}>
+              Va {ord(p.orden_entrega)} en tu ruta
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 800 }}>{p.numero_orden}</span>
             <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
@@ -899,15 +1200,33 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                 </>
               ) : confirmando === p.id ? (
                 <>
-                  <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
-                    ¿Confirmás la entrega de {p.numero_orden}?
-                  </div>
+                  {(() => {
+                    const d = distEnt?.id === p.id ? distEnt : null
+                    const lejos = d && d.m != null && d.m > 300
+                    const dist = d?.m != null ? (d.m >= 1000 ? `${(d.m / 1000).toFixed(1)} km` : `${d.m} m`) : ''
+                    return lejos ? (
+                      <div style={{ background: '#3b1416', border: '2px solid #ef4444', borderRadius: 10, padding: '10px 11px', marginBottom: 9 }}>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: '#fecaca' }}>⚠️ Estás a {dist} de la dirección del cliente</div>
+                        <div style={{ fontSize: 12.5, color: '#fecaca', marginTop: 4, lineHeight: 1.4 }}>
+                          ¿Seguro que ya le entregaste <b>{p.numero_orden}</b> a {String(p.cliente_nombre || 'el cliente').split(' ')[0]}? Si todavía lo llevás, tocá «No, todavía no».
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
+                        ¿Confirmás la entrega de {p.numero_orden}?
+                        {d?.cargando && <span style={{ display: 'block', fontSize: 11.5, color: '#8b807a', fontWeight: 400, marginTop: 3 }}>📍 Revisando tu ubicación…</span>}
+                        {d?.m != null && <span style={{ display: 'block', fontSize: 11.5, color: '#4ade80', fontWeight: 400, marginTop: 3 }}>📍 Estás en la dirección del cliente ({dist})</span>}
+                      </div>
+                    )
+                  })()}
                   <button disabled={ocupado === p.id}
-                          onClick={() => { setConfirmando(null); entregar(p, p.metodo_pago || 'efectivo') }}
-                          style={S.accion('#16a34a')}>
-                    {ocupado === p.id ? '…' : '✅ Sí, entregado'}
+                          onClick={() => { setConfirmando(null); setDistEnt(null); entregar(p, p.metodo_pago || 'efectivo') }}
+                          style={S.accion(distEnt?.id === p.id && distEnt.m > 300 ? '#b91c1c' : '#16a34a')}>
+                    {ocupado === p.id ? '…' : distEnt?.id === p.id && distEnt.m > 300 ? 'Sí, ya se lo entregué' : '✅ Sí, entregado'}
                   </button>
-                  <button onClick={() => setConfirmando(null)} style={S.linkChico}>No, volver</button>
+                  <button onClick={() => { setConfirmando(null); setDistEnt(null) }} style={S.linkChico}>
+                    {distEnt?.id === p.id && distEnt.m > 300 ? 'No, todavía no' : 'No, volver'}
+                  </button>
                 </>
               ) : (
                 <>
@@ -925,7 +1244,17 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
                       Cobrar <b style={{ color: '#f0f0f0' }}>{fmt(p.total)}</b> en <b style={{ color: '#f0f0f0' }}>{p.metodo_pago || 'efectivo'}</b>
                     </div>
                   )}
-                  <button disabled={ocupado === p.id} onClick={() => setConfirmando(p.id)}
+                  {p.llego_at ? (
+                    <div style={{ fontSize: 12.5, color: '#fbbf24', fontWeight: 700, marginBottom: 8 }}>
+                      📍 Le avisamos al cliente que llegaste ({new Date(p.llego_at).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit' })})
+                    </div>
+                  ) : (
+                    <button disabled={ocupado === 'llegue-' + p.id} onClick={() => llegue(p)}
+                            style={{ ...S.accion('#b45309'), marginBottom: 8 }}>
+                      {ocupado === 'llegue-' + p.id ? '…' : '📍 Llegué — avisar al cliente'}
+                    </button>
+                  )}
+                  <button disabled={ocupado === p.id} onClick={() => pedirConfirmacion(p)}
                           style={S.accion('#16a34a')}>
                     {ocupado === p.id ? '…' : '✅ Entregado'}
                   </button>
@@ -936,7 +1265,16 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
             </div>
           )}
         </div>
-      ))}
+        )
+      })}
+      {viaje.filter(x => x.cliente_lat).length >= 2 && (
+        <MapaViaje paradas={viaje.filter(x => x.cliente_lat)} actualId={actual?.id} yo={beacon.ultima} vuelto={vuelto} />
+      )}
+      {rutaMaps && (
+        <a href={rutaMaps} target="_blank" rel="noopener" style={S.rutaMaps}>
+          🗺️ Ver ruta completa en orden (Google Maps)
+        </a>
+      )}
       <div style={{ fontSize: 11, color: '#555', textAlign: 'center', marginTop: 4 }}>
         Al entregar se registra tu viaje y suma a tu bono. Después liquidás en caja.
       </div>
@@ -1205,6 +1543,23 @@ const S = {
   badge: { position: 'absolute', top: -4, right: -10, background: '#E63946', color: '#fff', fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '1px 5px' },
   card: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 18, padding: '28px 22px', width: '100%', maxWidth: 380, textAlign: 'center' },
   pedidoCard: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 14, padding: 16 },
+  // Alarma «pedido listo»
+  alarma: { position: 'fixed', inset: 0, zIndex: 9999, background: '#7f1d1d', color: '#fff', display: 'flex',
+            flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 },
+  alarmaIc: { width: 84, height: 84, borderRadius: '50%', background: '#fff', color: '#7f1d1d', fontSize: 44,
+              fontWeight: 900, lineHeight: '84px', marginBottom: 14 },
+  alarmaBtn: { marginTop: 22, width: '100%', maxWidth: 360, background: '#16a34a', color: '#fff', border: 0,
+               borderRadius: 16, padding: '17px 0', fontSize: 18, fontWeight: 900, cursor: 'pointer' },
+  // Orden de entrega
+  pedidoActual: { background: '#1f1b0c', border: '2px solid #FFD900', borderRadius: 14, padding: 16 },
+  bloqueado: { display: 'flex', alignItems: 'center', gap: 11, background: '#161412', border: '1px dashed #3a342e',
+               borderRadius: 12, padding: '11px 13px', opacity: .8 },
+  bloqNum: { width: 38, height: 38, borderRadius: '50%', border: '2px solid #555', color: '#aaa', fontWeight: 900,
+             fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  rutaHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+              background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '10px 13px' },
+  rutaMaps: { display: 'block', textAlign: 'center', border: '1px solid #3a342e', color: '#cfc6bc', borderRadius: 12,
+              padding: '11px 0', fontSize: 13, fontWeight: 700, textDecoration: 'none' },
   logo: { fontSize: 54, marginBottom: 6 },
   h1: { fontSize: 22, fontWeight: 800, margin: '0 0 6px', color: '#E63946' },
   sub: { fontSize: 14, color: '#aaa', margin: '0 0 16px' },

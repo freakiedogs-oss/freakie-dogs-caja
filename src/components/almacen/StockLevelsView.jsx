@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../supabase';
 import InfoTip from '../ui/InfoTip'
-import { STORES } from '../../config';
+import { STORES, fmtDate, today } from '../../config';
 import { useToast } from '../../hooks/useToast';
+import { imprimirTabla, agruparFilas, fmtNum } from '../../lib/imprimirTabla';
 
 export default function StockLevelsView({ user, onBack }) {
   const { show, Toast } = useToast();
@@ -144,6 +145,48 @@ export default function StockLevelsView({ user, onBack }) {
     return item[field] || 0;
   };
 
+  // Imprime lo filtrado, agrupado por categoría. Toma los valores que se ven
+  // en pantalla (incluye ediciones sin guardar, y lo avisa en el subtítulo).
+  const imprimir = () => {
+    const filas = filtrado.map(item => ({
+      nombre: item.catalogo_productos?.nombre || 'Producto',
+      categoria: item.catalogo_productos?.categoria || 'Sin categoría',
+      unidad: item.catalogo_productos?.unidad_medida || '',
+      stock: item.stock_actual || 0,
+      minimo: getVal(item, 'stock_minimo'),
+      maximo: getVal(item, 'stock_maximo'),
+      _class: (!item.stock_minimo || item.stock_minimo === 0) ? 'alerta' : '',
+    }));
+    const partes = [];
+    if (catFilter !== 'todas') partes.push(`Categoría: ${catFilter}`);
+    if (soloSinMin) partes.push('Solo sin mínimo');
+    if (busqueda.trim()) partes.push(`Filtro: "${busqueda.trim()}"`);
+    if (editCount > 0) partes.push(`incluye ${editCount} cambio(s) sin guardar`);
+    imprimirTabla({
+      titulo: 'Stock Mínimo / Máximo',
+      subtitulo: partes.join(' · ') || 'Niveles de reorden por producto',
+      meta: [
+        { label: 'Sucursal', value: `${store} — ${STORES[store] || store}` },
+        { label: 'Fecha', value: fmtDate(today()) },
+        { label: 'Generado por', value: user?.nombre },
+      ],
+      columnas: [
+        { key: 'nombre', label: 'Producto' },
+        { key: 'unidad', label: 'Unidad', width: '11%', align: 'center', muted: true },
+        { key: 'stock', label: 'Stock', width: '12%', align: 'right', tipo: 'num' },
+        { key: 'minimo', label: 'Mínimo', width: '12%', align: 'right', tipo: 'num', bold: true },
+        { key: 'maximo', label: 'Máximo', width: '12%', align: 'right', tipo: 'num', bold: true },
+        { key: 'nuevo', label: 'Ajuste', width: '15%', blank: true },
+      ],
+      grupos: agruparFilas(filas, 'categoria'),
+      resumen: [
+        { label: 'Productos', value: fmtNum(filas.length) },
+        { label: 'Sin mínimo', value: fmtNum(filas.filter(f => f._class).length) },
+      ],
+      nota: 'Resaltado = sin stock mínimo definido. La columna "Ajuste" queda en blanco para anotar el nuevo nivel a mano.',
+    });
+  };
+
   if (loading) return (
     <div style={{ minHeight: '100vh', padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="spin" />
@@ -157,7 +200,13 @@ export default function StockLevelsView({ user, onBack }) {
       {/* Header */}
       <div style={{ padding: '20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontWeight: 800, fontSize: 18 }}>📊 Stock Mín / Máx <InfoTip text="Niveles de stock mínimo y máximo por producto en cada sucursal. Definen cuándo reordenar y cuánto pedir." /></div>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#fff' }}>✕</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button onClick={imprimir} disabled={filtrado.length === 0} title="Imprimir tabla (hoja carta)"
+            style={{ background: '#222', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: filtrado.length === 0 ? 0.5 : 1 }}>
+            🖨️ Imprimir
+          </button>
+          <button onClick={onBack} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#fff' }}>✕</button>
+        </div>
       </div>
 
       {/* Store selector */}

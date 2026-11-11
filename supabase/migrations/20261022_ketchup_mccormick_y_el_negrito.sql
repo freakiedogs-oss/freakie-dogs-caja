@@ -1,0 +1,5 @@
+-- Aplicada vía MCP el 22-oct-2026 (migración `ketchup_mccormick_y_el_negrito`). Ver memoria.md.
+-- · «Salsa Ketchup galón caja de 4 bolsas» (f731c1cd…) se renombra «Ketchup McCormick».
+-- · Producto nuevo «Ketchup El Negrito» (SA020, galón, Aderezos y Salsas, incluir_conteo) para hot dogs,
+--   con filas de inventario en CM001 (0/999) y M001, S001–S006 (mín 1 / máx 2).
+-- · Aviso en avisos_pedido vigente 22-oct → 5-nov.

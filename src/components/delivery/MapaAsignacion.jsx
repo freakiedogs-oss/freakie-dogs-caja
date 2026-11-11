@@ -183,7 +183,7 @@ export default function MapaAsignacion({ onAsignar, ocupado, recargarPadre }) {
             className: '',
             html: `<div style="min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#111;
                                color:#fff;font-size:9.5px;font-weight:700;display:flex;align-items:center;
-                               justify-content:center;border:1.5px solid ${C.rojo};white-space:nowrap">${i + 1}º</div>`,
+                               justify-content:center;border:1.5px solid ${C.rojo};white-space:nowrap">${p.orden_entrega ?? i + 1}º</div>`,
             iconSize: [16, 16], iconAnchor: [-7, 15],
           }),
           interactive: false, zIndexOffset: 450,

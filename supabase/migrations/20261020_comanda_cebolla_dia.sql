@@ -1,0 +1,6 @@
+-- Aplicada vía MCP el 20-oct-2026 (migración `comanda_cebolla_dia`). Ver memoria.md.
+-- fn_comanda_cebolla(p_actor, p_fecha): bolsas de cebolla blanca («Cebolla bolsa» 9b7863ce… y
+-- «Cebolla Blanca» 39946903…) pedidas por cada sucursal desde el mediodía de ayer hasta las 7:00 de hoy;
+-- lo pedido después de las 7:00 sale como «agregar». Roles: jefe_casa_matriz, produccion, admin,
+-- superadmin, ejecutivo. Además: permisos_rol nav 'cebolla-dia' para jefe_casa_matriz, admin, ejecutivo
+-- y superadmin. Definición vigente: pg_get_functiondef('public.fn_comanda_cebolla(uuid,date)').

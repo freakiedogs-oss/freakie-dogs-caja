@@ -1,0 +1,21 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Viaje actual vs. próximo viaje (9-nov-2026, pedido de Cesar)
+--
+-- Caso: Gustavo iba a San Martín; Karina le asignó Sierra Morena para cuando
+-- regresara. Como todavía no había entregado nada, fn_ruta_recalcular juntaba
+-- lo que llevaba (en_camino) con lo asignado en la sucursal (lista) en la
+-- MISMA ruta → Sierra Morena quedaba como "parada 2" y el cliente vio al
+-- motorista "regresar a la sucursal".
+--
+-- Regla nueva:
+--  · Si el motorista tiene algo en_camino, el viaje es SOLO lo en_camino.
+--    Lo preparando/lista queda sin número (próximo viaje) hasta que lo recoja.
+--  · Si no lleva nada, se ordena lo asignado (como antes).
+--  · driver_alarma_estado: no suena mientras va en ruta ('en_ruta': true);
+--    suena cuando entrega lo último.
+--  · tracking_pedido: 'motorista_en_otra_entrega' para el cliente del próximo
+--    viaje («está terminando otra entrega y regresa por tu pedido»).
+-- Aplicadas: ruta_viaje_actual_vs_proximo, tracking_motorista_terminando_otra_entrega.
+-- Cuerpo completo en la base (pg_get_functiondef); acá queda el resumen.
+-- ════════════════════════════════════════════════════════════════════
+select 1;
