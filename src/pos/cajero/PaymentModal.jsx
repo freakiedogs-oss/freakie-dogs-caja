@@ -103,6 +103,8 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
   const [dteResult, setDteResult] = useState(null)
   const [dteError, setDteError]   = useState(null)
   const [processing, setProcessing] = useState(false)
+  // 11-nov-2026: motivo por el que el cobro NO se guardó (queda visible hasta reintentar).
+  const [cobroError, setCobroError] = useState(null)
 
   // Cliente seleccionado (para CCF)
   const [cliente, setCliente] = useState(null)
@@ -133,6 +135,7 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
   const handleConfirm = async (pagerValue = pager) => {
     setProcessing(true)
     setDteError(null)
+    setCobroError(null)
 
     // Construir referencia según método
     const refFinal = metodo === 'transferencia'
@@ -178,6 +181,19 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
 
     try {
       const result = await onConfirm(payData)
+      // 11-nov-2026: solo se confirma si volvió la cuenta guardada. Antes, si saveCuenta
+      // salía temprano (sin turno, aviso cancelado, doble toque) igual se mostraba
+      // "¡Pago confirmado!" sin cuenta, pago ni comanda en la base.
+      if (!result?.cuenta?.id) {
+        // Doble toque: el primer cobro sigue en curso y él decide; acá no se avisa nada.
+        if (result?.motivo === 'reentrada') return
+        setCobroError(
+          result?.motivo === 'sin_turno' ? 'No hay caja abierta. Abrí el turno antes de cobrar.'
+          : result?.motivo === 'cancelado' ? 'Cobro cancelado: no se cobró nada.'
+          : 'El cobro no se guardó. Intentá de nuevo.'
+        )
+        return
+      }
       setCuentaResult(result?.cuenta || result)
       setDteResult(result?.dte || null)
       setDteError(result?.dteError || null)
@@ -670,6 +686,16 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
             marginBottom: 8, fontSize: 11, color: '#d97706'
           }}>
             ⚠️ Agregá el correo de <b>{cliente.nombre}</b> arriba para poder enviarle la factura.
+          </div>
+        )}
+
+        {/* 11-nov-2026: el cobro no se guardó → se dice por qué y el modal sigue abierto */}
+        {cobroError && (
+          <div role="alert" style={{
+            background: '#58151c', border: '1px solid #dc3545', borderRadius: 6,
+            padding: '8px 10px', marginBottom: 8, fontSize: 13, fontWeight: 700, color: '#f8d7da'
+          }}>
+            ⚠️ {cobroError}
           </div>
         )}
 

@@ -256,6 +256,7 @@ export default function KDSScreen({ user, onBack }) {
   const [queue,       setQueue]       = useState([])         // rows de pos_cocina_queue
   const [historial,   setHistorial]   = useState([])         // rows de pos_cocina_queue completadas hoy
   const [loading,     setLoading]     = useState(true)
+  const [sinConexion, setSinConexion] = useState(false)      // 11-nov-2026: falló la última carga de la cola
   const [bumping,     setBumping]     = useState(null)       // cuenta_id+comanda en proceso
   const [confirmar,   setConfirmar]   = useState(null)       // comanda amarilla/roja esperando doble check antes de LISTA
   const [tab,         setTab]         = useState('activas')  // 'activas' | 'historial' | 'delivery'
@@ -312,12 +313,17 @@ export default function KDSScreen({ user, onBack }) {
 
   // ── Carga ──
   const load = useCallback(async () => {
-    const { data } = await db
+    const { data, error } = await db
       .from('pos_cocina_queue')
       .select('*')
       .eq('store_code', storeCode)
       .neq('estado', 'completado')
       .order('recibido_at', { ascending: true })
+
+    // 11-nov-2026: sin red la consulta falla y antes se vaciaba la cola ("cocina al
+    // día" con pedidos pendientes). Se conserva lo último recibido y se avisa.
+    if (error) { setSinConexion(true); return }
+    setSinConexion(false)
 
     const rows = data || []
     // Alarma si aparece alguna fila NUEVA (id no visto antes). La 1ª carga no suena.
@@ -763,6 +769,9 @@ export default function KDSScreen({ user, onBack }) {
           <button className="kds-mode-btn" style={{ background: '#7f1d1d', color: '#fff', borderColor: '#ef4444', fontWeight: 800 }} onClick={() => setAlarmOn(false)}>🔕 Silenciar</button>
         ) : (
           <span style={{ fontSize: 12, color: '#2dd4a8', fontWeight: 700 }}>🔔 Sonido activo</span>
+        )}
+        {sinConexion && (
+          <span role="status" style={{ fontSize: 12, color: '#fbbf24', fontWeight: 700 }}>⚠ Sin conexión — mostrando lo último recibido</span>
         )}
         <Clock />
       </header>

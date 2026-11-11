@@ -967,6 +967,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
     setShowTransferModal(false)
   }
 
+  // 11-nov-2026: aviso que NO se va solo (un toast dura 5 s) cuando el pedido no entró
+  // a la cola de cocina. No se espera la respuesta para no frenar comanda ni cobro.
+  const avisarCocinaSinPedido = () => {
+    confirmAsync(
+      '⚠️ El pedido NO llegó a la pantalla de cocina. Avisá a cocina de palabra.',
+      { title: 'Cocina no recibió el pedido', confirmText: 'Entendido', cancelText: 'Cerrar', danger: true }
+    )
+  }
+
   // ── COMANDAR ──
   const handleComandar = async () => {
     if (!hasNew || !perms.comandar) return
@@ -1054,10 +1063,24 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         currentCuentaId = cuenta.id
         setCuentaId(currentCuentaId)
       } else {
-        await db
+        // 11-nov-2026: no revivir una cuenta ya cobrada/cancelada. Si la cajera cobró y
+        // un mesero con la mesa abierta en otra tablet comandaba, la cuenta volvía a
+        // 'enviada_cocina' y se podía recobrar completa. El filtro va DENTRO del UPDATE
+        // (atómico, igual que el KDS) y si no tocó ninguna fila se aborta ANTES de
+        // insertar ítems o cola de cocina.
+        const { data: _vivas, error: _vivaErr } = await db
           .from('pos_cuentas')
           .update({ subtotal, total, estado: 'enviada_cocina', updated_at: new Date().toISOString() })
           .eq('id', currentCuentaId)
+          .neq('estado', 'cobrada')
+          .neq('estado', 'cancelada')
+          .select('id')
+        // Con error no se sabe si la cuenta sigue abierta: no se comanda a ciegas.
+        if (_vivaErr) throw new Error('No se pudo verificar la cuenta: ' + _vivaErr.message)
+        if (!_vivas?.length) {
+          toast.error('Esta cuenta ya fue cobrada o cancelada. Actualizá la pantalla.')
+          return
+        }
       }
 
       const toInsert = newItems.map((it, idx) => ({
@@ -1090,10 +1113,26 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
       const prioridadComanda = tipo === 'pedidos_ya' ? 8 : tipo === 'drive_through' ? 7 : 5
-      await db.from('pos_cocina_queue').upsert(
-        buildQueueRows(newItems, insertedItems, currentCuentaId, prioridadComanda, comandaUid),
-        { onConflict: 'comanda_uid,linea', ignoreDuplicates: true }
-      )
+      // 11-nov-2026: antes no se revisaba el error; si fallaba, los ítems quedaban
+      // comandados y el pedido nunca llegaba al KDS (hay sucursales sin comanda impresa).
+      // El upsert por (comanda_uid, linea) es idempotente → reintentar no duplica.
+      {
+        const _queueRows = buildQueueRows(newItems, insertedItems, currentCuentaId, prioridadComanda, comandaUid)
+        let _colaOk = false
+        for (let _i = 1; _i <= 3 && !_colaOk; _i++) {
+          try {
+            const { error: _colaErr } = await db.from('pos_cocina_queue').upsert(
+              _queueRows,
+              { onConflict: 'comanda_uid,linea', ignoreDuplicates: true }
+            )
+            if (!_colaErr) { _colaOk = true; break }
+            console.error('pos_cocina_queue (comandar) intento ' + _i + ' fallo:', _colaErr.message)
+          } catch (_e) { console.error('pos_cocina_queue (comandar) intento ' + _i + ' fallo:', _e) }
+          if (_i < 3) await new Promise(r => setTimeout(r, 400 * _i))
+        }
+        // Los ítems ya quedaron en la cuenta (se cobran igual): no se revierten; se avisa.
+        if (!_colaOk) avisarCocinaSinPedido()
+      }
 
       // Blindaje (incidente Metro Centro 3-Ago-2026): NUNCA imprimir una comanda
       // si la orden no quedó realmente guardada en BD. Si llegamos aquí sin
@@ -1144,11 +1183,13 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         `Si el cliente corrigió el pedido, continuá. Si no, verificá que NO estés en la orden de otro cliente.`,
         { title: '⚠️ El total no coincide con el pedido web', confirmText: `Cobrar $${total.toFixed(2)}`, danger: true }
       )
-      if (!ok) return
+      // 11-nov-2026: cada salida temprana devuelve el motivo; un `return` vacío hacía
+      // que PaymentModal mostrara "¡Pago confirmado!" sin haber guardado nada.
+      if (!ok) return { ok: false, motivo: 'cancelado' }
     }
     // Anti doble cobro (capa 1): reentrada en el mismo tick, antes de que `saving`
     // deshabilite el botón. 35 cuentas entre jul y sep-2026 se cobraron dos veces.
-    if (savingRef.current) return
+    if (savingRef.current) return { ok: false, motivo: 'reentrada' }
     savingRef.current = true
     setSaving(true)
     let dteResult = null
@@ -1171,7 +1212,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           if (_orf) { await db.from('pos_turnos').update({ caja }).eq('id', _orf.id); _t = _orf }
         }
         if (!_te) {
-          if (!_t) { toast.warning('No hay turno abierto. Abri el turno en Cierre de caja antes de cobrar.'); setSaving(false); return }
+          if (!_t) { toast.warning('No hay turno abierto. Abri el turno en Cierre de caja antes de cobrar.'); setSaving(false); return { ok: false, motivo: 'sin_turno' } }
           turnoId = _t.id
         }
       } catch (_e) { /* fail-open: no bloquear la venta por error de consulta */ }
@@ -1292,9 +1333,29 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         if (itemsErr) throw new Error('No se guardaron los ítems: ' + itemsErr.message)
 
         if (!esEvento) {
-          await db.from('pos_cocina_queue').insert(
-            buildQueueRows(itemsToSave, insertedItems, currentCuentaId, 5)
-          )
+          // 11-nov-2026: antes no se revisaba el error y el pedido podía no llegar al KDS.
+          // Este insert NO es idempotente (sin comanda_uid): antes de reintentar se
+          // consulta si el intento anterior sí entró, para no duplicar líneas en cocina.
+          const _queueRows = buildQueueRows(itemsToSave, insertedItems, currentCuentaId, 5)
+          const _itemIds = (insertedItems || []).map(r => r.id).filter(Boolean)
+          let _colaOk = false
+          for (let _i = 1; _i <= 3 && !_colaOk; _i++) {
+            try {
+              if (_i > 1) {
+                await new Promise(r => setTimeout(r, 400 * (_i - 1)))
+                if (!_itemIds.length) break
+                const { data: _ya, error: _yaErr } = await db.from('pos_cocina_queue')
+                  .select('id').in('cuenta_item_id', _itemIds).limit(1)
+                if (_yaErr) continue            // sin saber si entró, no se reinserta
+                if (_ya?.length) { _colaOk = true; break }
+              }
+              const { error: _colaErr } = await db.from('pos_cocina_queue').insert(_queueRows)
+              if (!_colaErr) { _colaOk = true; break }
+              console.error('pos_cocina_queue (cobro) intento ' + _i + ' fallo:', _colaErr.message)
+            } catch (_e) { console.error('pos_cocina_queue (cobro) intento ' + _i + ' fallo:', _e) }
+          }
+          // El cobro sigue (el pago debe registrarse); el aviso queda en pantalla.
+          if (!_colaOk) avisarCocinaSinPedido()
         }
       }
 
