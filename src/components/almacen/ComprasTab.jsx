@@ -260,7 +260,7 @@ function DetalleOC({oc,user,show,onBack}){
   const [estado,setEstado]=useState(oc.estado);
 
   useEffect(()=>{
-    db.from('ordenes_compra_items').select('id,orden_id,descripcion,cantidad_solicitada,cantidad_recibida,precio_unitario_estimado,nombre,unidad,stock_actual_al_crear').eq('orden_id',oc.id)
+    db.from('ordenes_compra_items').select('id,orden_id,descripcion,cantidad_solicitada,cantidad_recibida,precio_unitario_estimado,unidad,stock_actual_al_crear').eq('orden_id',oc.id)
       .order('created_at').then(({data})=>{setItems(data||[]);setLoading(false);});
   },[]);
 

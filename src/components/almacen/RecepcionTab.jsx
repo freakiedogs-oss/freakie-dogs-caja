@@ -157,7 +157,8 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
     if(ocs&&ocs.length>0){
       const oc=ocs[0];
       // Cargar items de la OC
-      const {data:ocItems}=await db.from('ordenes_compra_items').select('id,orden_id,descripcion,cantidad_solicitada,precio_unitario_estimado,nombre,unidad').eq('orden_id',oc.id);
+      const {data:ocItems}=await db.from('ordenes_compra_items').select('id,orden_id,producto_id,descripcion,cantidad_solicitada,precio_unitario_estimado,unidad').eq('orden_id',oc.id);
+      // 11-nov-2026: faltaba producto_id y se pedía 'nombre', columna que no existe (la consulta fallaba entera y la OC nunca se precargaba).
       if(ocItems&&ocItems.length>0){
         setOcVinculada(oc);
         setItems(ocItems.map(it=>({
@@ -223,6 +224,13 @@ function NuevaRecepcion({user,sucursales,show,onBack}){
     if(!proveedorId||!proveedorNombre.trim()){show('⚠️ Selecciona un proveedor');return;}
     const validItems=items.filter(i=>(i.prodId||i.desc.trim())&&n(i.qty)>0);
     if(validItems.length===0){show('⚠️ Agrega al menos un ítem con cantidad');return;}
+    // 11-nov-2026: un ítem con cantidad pero sin producto se guardaba sin entrar al stock ni a la OC
+    // (y aun así decía "inventario actualizado"). Se bloquea para no guardar a medias.
+    const sinProducto=items.map((it,idx)=>({it,idx})).filter(({it})=>!it.prodId&&n(it.qty)>0);
+    if(sinProducto.length>0){
+      show('⚠️ Ítems sin producto del catálogo: '+sinProducto.map(({it,idx})=>(it.desc||it.prodNombre||'').trim()||('Producto '+(idx+1))).join(', ')+'. Elegí el producto de la lista (o quitá el ítem) antes de guardar.');
+      return;
+    }
     if(!cmId){show('⚠️ Casa Matriz no encontrada en BD');return;}
     setLoading(true);
     try{

@@ -230,6 +230,11 @@ export default function FinanzasDashboard({ user }) {
   const [data2026, setData2026] = useState(null)
   const [conIva, setConIva] = useState(false)  // false = sin IVA (default)
   const [peyaLoading, setPeyaLoading] = useState(false)
+  // 11-nov-2026: fuentes (tabla/vista) que fallaron al cargar. Antes solo se
+  // logueaba y el P&L se armaba incompleto sin avisar; ahora se muestra un banner.
+  const [fuentesConError, setFuentesConError] = useState([])
+  const marcarFuenteConError = (nombre) =>
+    setFuentesConError(prev => prev.includes(nombre) ? prev : [...prev, nombre])
 
   // ── Access check ──
   useEffect(() => {
@@ -267,6 +272,7 @@ export default function FinanzasDashboard({ user }) {
         setData2026(prev => prev ? { ...prev, peyaOrders } : prev)
       } catch (e) {
         console.error('peyaOrders lazy load error:', e)
+        marcarFuenteConError('pedidos_peya')
       } finally {
         setPeyaLoading(false)
       }
@@ -284,7 +290,7 @@ export default function FinanzasDashboard({ user }) {
       let q = client.from(table).select(select).range(offset, offset + PAGE - 1)
       if (filter) q = filter(q)
       const { data, error } = await q
-      if (error) { console.error(`fetchAll ${table}:`, error); break }
+      if (error) { console.error(`fetchAll ${table}:`, error); marcarFuenteConError(table); break }
       if (!data || data.length === 0) { done = true; break }
       all = all.concat(data)
       if (data.length < PAGE) done = true
@@ -298,12 +304,13 @@ export default function FinanzasDashboard({ user }) {
     let q = client.from(table).select(select)
     if (filter) q = filter(q)
     const { data, error } = await q
-    if (error) { console.error(`fetchSimple ${table}:`, error); return [] }
+    if (error) { console.error(`fetchSimple ${table}:`, error); marcarFuenteConError(table); return [] }
     return data || []
   }
 
   async function loadData2026() {
     setLoading(true)
+    setFuentesConError([])
     try {
       // OLA 4 — 2026-05-08: Reduccion de 134 → 3 requests principales
       // Los 3 fetches pesados (ventas diarias row-by-row, gastos consolidados,
@@ -392,7 +399,8 @@ export default function FinanzasDashboard({ user }) {
       ])
       const bankSaldos = bankSaldosResp?.data
       const catData = catResp?.data
-      if (catResp?.error) console.warn('catalogo_contable:', catResp.error.message)
+      if (catResp?.error) { console.warn('catalogo_contable:', catResp.error.message); marcarFuenteConError('catalogo_contable') }
+      if (bankSaldosResp?.error) { console.warn('v_bank_saldos_consolidados:', bankSaldosResp.error.message); marcarFuenteConError('v_bank_saldos_consolidados') }
 
       // Separar ventas Quanto y PeYa desde la matview
       const ventasQuantoMV = ventasMV.filter(v => v.fuente === 'quanto')
@@ -475,6 +483,7 @@ export default function FinanzasDashboard({ user }) {
       })
     } catch (e) {
       console.error('FinanzasDashboard load error:', e)
+      marcarFuenteConError('carga general (' + (e?.message || 'error') + ')')
     }
     setLoading(false)
   }
@@ -761,6 +770,18 @@ export default function FinanzasDashboard({ user }) {
         </ErrorBoundary>
       </div>
 
+      {/* 11-nov-2026: aviso de carga parcial — mismo estilo que RentabilidadView */}
+      {fuentesConError.length > 0 && (
+        <div style={{ background: 'rgba(234,179,8,.08)', border: '1px solid #eab308', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12.5, color: '#eab308', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span>⚠️ <strong>Datos incompletos:</strong> no se pudo cargar {fuentesConError.join(', ')}. Los totales pueden estar mal.</span>
+          <button
+            onClick={() => { setData2026(prev => prev ? { ...prev, peyaOrders: null } : prev); loadData2026() }}
+            disabled={loading}
+            style={{ background: 'transparent', border: '1px solid #eab308', color: '#eab308', borderRadius: 6, padding: '4px 12px', fontSize: 12, fontWeight: 700, cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.5 : 1 }}
+          >Reintentar</button>
+        </div>
+      )}
+
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', padding: '4px 0' }}>
         {TABS.map(t => (
@@ -843,7 +864,8 @@ function VentasPorCanal({ ventasRaw, ventaspeya, months2026 }) {
       const tar = byMonth[m]?.tarjeta  || 0
       const peya = peyaByMonth[m] || 0
       // Total from months2026 (más preciso, ya incluye todo)
-      const m26 = months2026?.find(x => x.mes === m)
+      // 11-nov-2026: los meses de months2026 llevan `key` (no `mes`); nunca encontraba el mes.
+      const m26 = months2026?.find(x => x.key === m)
       const total = m26?.ventas || byMonth[m]?.total || 0
       const otros = Math.max(0, total - ef - tar - peya)
       return { mes: m, label: formatMonth(m), efectivo: ef, tarjeta: tar, peya, otros, total }
