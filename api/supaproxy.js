@@ -127,6 +127,31 @@ const BANCO_OBJETOS = new Set([
   'bank_comprobante_registrar',
   'bank_estado_cuenta_registrar',
   'bank_regla_set_activa',
+  // RPC de conciliación, revisión e ingesta que llaman esas mismas pantallas.
+  // La más lenta (`fn_banco_autoclasificar`) tarda ~4 s: entra en el techo
+  // de 25 s del proxy.
+  'bancoview_aplicar_aprendizaje',
+  'bancoview_aplicar_match_multiple',
+  'bancoview_aplicar_reglas',
+  'bancoview_aprender_match',
+  'bancoview_clasificar_movimiento_socio',
+  'bancoview_devengar_intereses_socios',
+  'bancoview_match_comprobantes',
+  'bancoview_sugerir_dtes_para_gasto',
+  'bancoview_vincular_gasto_a_dte',
+  'bank_match_crear',
+  'bank_match_eliminar',
+  'bank_match_eliminar_por_tx',
+  'bank_tx_marcar',
+  'fn_banco_autoclasificar',
+  'fn_banco_revisar',
+  'fn_banco_revisar_multi_dte',
+  'fn_banco_revision_auto',
+  'fn_banco_sugerir_dte',
+  'fn_import_bank_bac',
+  'fn_ingesta_candidatas',
+  'fn_ingesta_resolver',
+  'bancoview_registrar_pago_prestamo',
 ]);
 
 // Cuentas bancarias de terceros (empleados, proveedores, socios) y la lista de

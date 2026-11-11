@@ -84,7 +84,7 @@ export default function IngestaComprobantes() {
     if (abierto === c.id) { setAbierto(null); return }
     setAbierto(c.id); setCandidatas(null); setSeleccion({}); setBusqueda(''); setResultadosBusqueda([])
     if ((c.ccfs || []).length > 0) {
-      const { data, error } = await db.rpc('fn_ingesta_candidatas', { p_comprobante_id: c.id })
+      const { data, error } = await dbFin.rpc('fn_ingesta_candidatas', { p_comprobante_id: c.id })
       if (!error) setCandidatas(data)
     }
   }
@@ -103,7 +103,7 @@ export default function IngestaComprobantes() {
   const resolver = async (c, accion, aplicaciones = []) => {
     setTrabajando(true)
     try {
-      const { data, error } = await db.rpc('fn_ingesta_resolver', {
+      const { data, error } = await dbFin.rpc('fn_ingesta_resolver', {
         p_comprobante_id: c.id, p_accion: accion, p_aplicaciones: aplicaciones,
       })
       if (error) throw error
