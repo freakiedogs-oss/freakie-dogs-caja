@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '../../supabase'
+import { dbFin } from '../../supabaseFinanzas'
 import { useToast } from '../../hooks/useToast'
 import InfoTip from '../ui/InfoTip'
 
@@ -50,7 +51,7 @@ export default function IngestaComprobantes() {
   const cargarCounts = useCallback(async () => {
     const out = {}
     await Promise.all(ESTADOS.filter(e => e.key).map(async (e) => {
-      const { count } = await db.from('bank_comprobantes')
+      const { count } = await dbFin.from('bank_comprobantes')
         .select('id', { count: 'exact', head: true })
         .ilike('uploaded_by', 'ingesta%').eq('cxp_resultado', e.key)
       out[e.key] = count || 0
@@ -61,7 +62,7 @@ export default function IngestaComprobantes() {
   const cargar = useCallback(async (pag = 0) => {
     setLoading(true)
     try {
-      let q = db.from('bank_comprobantes')
+      let q = dbFin.from('bank_comprobantes')
         .select('id, foto_url, monto, fecha_extraida, beneficiario, concepto, numero_referencia, ccfs, cxp_resultado, cxp_confianza, pago_proveedor_id, created_at')
         .ilike('uploaded_by', 'ingesta%')
         .order('fecha_extraida', { ascending: false, nullsFirst: false })
