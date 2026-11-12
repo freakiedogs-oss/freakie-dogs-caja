@@ -172,6 +172,35 @@ function elapsed(isoStr) {
   return             { text: `${Math.floor(mins/60)}h${mins%60}m ‼️`, color: '#f87171', urgent: true  }
 }
 
+// Franja de la tarjeta de delivery: cuándo empezar para que salga recién hecho.
+// Verde = preparar ya · ámbar = empezar en X:XX · gris = en espera.
+function CuandoPreparar({ c }) {
+  if (!c) return null
+  const seg = Math.max(0, Math.round((new Date(c.empezar_at).getTime() - Date.now()) / 1000))
+  const min = Math.ceil(seg / 60)
+  const estado = min <= 2 ? 'ya' : min <= 10 ? 'pronto' : 'espera'
+  const st = {
+    ya:     { bg: '#14532d', bd: '#22c55e', fg: '#bbf7d0', t: 'PREPARÁ YA' },
+    pronto: { bg: '#422006', bd: '#f59e0b', fg: '#fde68a', t: `EMPEZÁ EN ${min} MIN` },
+    espera: { bg: '#27272a', bd: '#52525b', fg: '#d4d4d8', t: `EN ESPERA · empezá en ${min} min` },
+  }[estado]
+  const quien = c.motorista ? c.motorista : 'el motorista'
+  let det = ''
+  if (c.fuente === 'sin_motorista') det = 'No hay motorista conectado'
+  else if (c.fuente === 'sin_dato') det = `Sin GPS de ${quien}: se asume en tienda`
+  else if (c.llegada_min != null) det = c.llegada_min <= 1
+    ? `${quien} ya está en tienda`
+    : `${quien} llega en ~${c.llegada_min} min${c.asignado ? '' : ' (el primero que se libera)'} · cocina ~${c.cocina_min} min`
+  return (
+    <div style={{ background: st.bg, border: `1px solid ${st.bd}`, color: st.fg, borderRadius: 8,
+                  padding: '5px 10px', margin: '6px 0 2px', display: 'flex', alignItems: 'center',
+                  gap: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontWeight: 900, fontSize: 15, letterSpacing: '0.3px' }}>⏱ {st.t}</span>
+      {det && <span style={{ fontSize: 12, opacity: 0.9 }}>{det}</span>}
+    </div>
+  )
+}
+
 function Clock() {
   const [t, setT] = useState('')
   useEffect(() => {
@@ -274,6 +303,27 @@ export default function KDSScreen({ user, onBack }) {
   const [cajaDijo, setCajaDijo] = useState({})   // cuenta_item_id → respuesta_caja de lo anulado
   const wakeLockRef  = useRef(null)
   useTimer()  // fuerza re-render cada 10s para actualizar timers
+
+  // ── Cuándo preparar cada delivery (12-nov-2026, Cesar) ──
+  // El servidor estima cuándo llega el motorista (GPS → eventos de la app →
+  // sin dato) y resta lo que tarda la cocina + 2 min. Solo informa: no
+  // reordena ni bloquea. Si algo falla, no se muestra nada (= como antes).
+  const [cuando, setCuando] = useState({})   // cuenta_id → { empezar_at, estado, ... }
+  useEffect(() => {
+    let vivo = true
+    const cargar = async () => {
+      try {
+        const { data, error } = await db.rpc('kds_cuando_preparar', { p_store_code: storeCode })
+        if (!vivo || error || !Array.isArray(data)) return
+        const m = {}
+        data.forEach(x => { if (x.cuenta_id) m[x.cuenta_id] = x })
+        setCuando(m)
+      } catch (_) {}
+    }
+    cargar()
+    const t = setInterval(cargar, 60000)
+    return () => { vivo = false; clearInterval(t) }
+  }, [storeCode, queue.length])
 
   // Habilitar sonido con un toque (los navegadores exigen un gesto del usuario)
   const habilitarSonido = () => {
@@ -1002,6 +1052,11 @@ export default function KDSScreen({ user, onBack }) {
                         {timer.text}
                       </span>
                     </div>
+
+                    {comanda.canal === 'delivery_propio' && !todosListos &&
+                     comanda.nivel !== 'cancelado' && comanda.nivel !== 'anulado' && (
+                      <CuandoPreparar c={cuando[comanda.cuenta_id]} />
+                    )}
 
                     {comanda.nivel === 'cancelado' && (
                       <div className="kds-card-cancelada">

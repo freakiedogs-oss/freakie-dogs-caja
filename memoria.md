@@ -1,8 +1,16 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 12-Nov-2026 — KDS: «cuándo preparar» cada delivery
+- Por qué: 4 de cada 10 deliveries esperaban listos > 10 min al motorista (mediana 7 min, peor 10% ~25 min). Cesar aprobó cortes 2 / 10 min y tope 20 min. Objetivo: que salga recién hecho, no entregar más rápido.
+- BD `kds_cuando_preparar(p_store_code)` (migración `20261112b_kds_cuando_preparar.sql`): por cada delivery con comanda pendiente estima la llegada del motorista: GPS fresco (< 2 min, ruta por las paradas que faltan + regreso) → eventos (ETA de ruta `orden_eta_at` / Recogí) + regreso → sin dato = asume en tienda. Sin asignar: el primer motorista que se libera (y se le suma la ida y vuelta). Tiempos con `minutos_viaje` calibrado. Cocina típica = mediana recibido→completado de la sucursal/franja (14 días, 5–30 min, default 15).
+- empezar = llegada − cocina − 2 min; tope 20 min desde que entró. Sin motorista o sin dato → «Preparar ya» (igual que antes).
+- `KDSScreen.jsx` → `CuandoPreparar`: franja en tarjetas `delivery_propio` (verde PREPARÁ YA ≤ 2, ámbar EMPEZÁ EN X ≤ 10, gris EN ESPERA). Refresca cada 60 s y al cambiar la cola; cuenta regresiva local. Solo informa: NO reordena ni bloquea. Pickup/caja/PeYa no se tocan.
+- Pendiente: medir en 2 semanas si baja el tiempo «lista → en_camino».
+
 ## 12-Nov-2026 — GPS del motorista «siempre» (app v12) + tiempos de viaje calibrados
 - Por qué: Cesar quiere la ubicación del motorista SIEMPRE (pantalla bloqueada, app cerrada) para el indicador «cuándo preparar» del KDS y mejor servicio. Foto a las 3:45 pm del 12-nov: 7 conectados, 2 llevaban 11–13 min sin señal.
-- **App Android v12 (`android-driver`, versionCode 12, `v12-gps-siempre`) — FALTA COMPILAR (APK publicado es del 1-sep):**
+- **Publicado 12-nov (PR #473):** compilado por GitHub Actions (run 14) y publicado en `/apk/freakie-drivers.apk` (3.17 MB). El workflow `build-driver-apk.yml` fallaba desde la v11 (la acción setup-android pedía el paquete `tools`, retirado) → se fijaron los paquetes; además, corrido a mano en una rama deja el APK commiteado en `public/apk` de esa rama. APK debug: firma distinta en cada build → hay que desinstalar la vieja antes de instalar.
+- **App Android v12 (`android-driver`, versionCode 12, `v12-gps-siempre`):**
   - `Turno.kt`: el turno queda guardado; antes el reinicio automático (START_STICKY) volvía SIN empleadoId y no mandaba nada (bug).
   - `Vigilante.kt`: alarma cada 3 min + WorkManager cada 15 min reviven el servicio si el latido tiene > 90 s; `BootReceiver` (encendido / actualización de la app).
   - `Avisos.kt`: notificaciones altas «ubicación apagada», «falta permiso», «GPS detenido».
