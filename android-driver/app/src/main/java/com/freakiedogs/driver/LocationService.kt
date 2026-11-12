@@ -53,6 +53,7 @@ class LocationService : Service() {
         const val EXTRA_EMPLEADO_ID = "empleado_id"
         const val EXTRA_NOMBRE = "nombre"
         const val EXTRA_TIPO = "tipo"
+        const val EXTRA_MOTIVO = "motivo"
 
         private const val CHANNEL_ID = "freakie_gps"
         private const val CHANNEL_NAME = "Freakie GPS activo"
@@ -85,7 +86,12 @@ class LocationService : Service() {
 
         // Etiqueta visible en la notificación — sirve para confirmar de un vistazo
         // qué build está instalado en el celular. Subir en cada cambio.
-        private const val VERSION_APK = "v11-alarma"
+        const val VERSION_APK = "v12-gps-siempre"
+
+        // Cada cuántos ciclos (de 20 s) se reporta el estado de la app al servidor
+        private const val CICLOS_ESTADO = 3
+        // Puntos sin enviar que se mandan por tanda cuando vuelve el internet
+        private const val LOTE_COLA = 200
     }
 
     // Contadores de diagnóstico que se muestran en la notificación
@@ -116,9 +122,13 @@ class LocationService : Service() {
         override fun run() {
             if (!loopActivo) return
             ciclos++
+            Turno.latido(this@LocationService)          // el vigilante revisa este latido
             refrescarNotif()
+            revisarUbicacionYPermiso()
             forzarLecturaGps()
             revisarAlarma()
+            if (ciclos % CICLOS_ESTADO == 0) reportarEstado()
+            vaciarCola()
             handler.postDelayed(this, HEARTBEAT_MS)
         }
     }
@@ -139,6 +149,11 @@ class LocationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                // Solo el motorista termina el turno: se borra la memoria del turno
+                // y se apagan los vigilantes, así nada lo vuelve a prender.
+                Turno.terminar(this)
+                Vigilante.cancelar(this)
+                Avisos.gpsOk(this); Avisos.ubicacionOk(this); Avisos.permisoOk(this)
                 detenerHeartbeat()
                 stopSelf()
                 return START_NOT_STICKY
@@ -152,13 +167,30 @@ class LocationService : Service() {
                 return START_STICKY
             }
             ACTION_START, null -> {
-                empleadoId = intent?.getStringExtra(EXTRA_EMPLEADO_ID) ?: empleadoId
-                nombre = intent?.getStringExtra(EXTRA_NOMBRE) ?: nombre
+                empleadoId = intent?.getStringExtra(EXTRA_EMPLEADO_ID)?.takeIf { it.isNotBlank() } ?: empleadoId
+                nombre = intent?.getStringExtra(EXTRA_NOMBRE)?.takeIf { it.isNotBlank() } ?: nombre
                 tipo = intent?.getStringExtra(EXTRA_TIPO)?.takeIf { it.isNotBlank() } ?: tipo
+                // v12: si Android nos revivió solo (intent null) o nos arrancó el
+                // vigilante/encendido, el motorista sale de la memoria del turno.
+                if (empleadoId.isBlank() && Turno.activo(this)) {
+                    empleadoId = Turno.empleadoId(this)
+                    nombre = Turno.nombre(this)
+                    tipo = Turno.tipo(this)
+                }
                 startForeground(NOTIF_ID, buildNotif(nombre))
+                if (empleadoId.isBlank()) {
+                    // Sin motorista no hay nada que reportar: no quedarse prendido.
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                Turno.iniciar(this, empleadoId, nombre, tipo)
+                Vigilante.programar(this)
+                Avisos.gpsOk(this)
                 tomarWakeLock()
                 arrancarLocationUpdates()
                 arrancarHeartbeat()
+                escucharCambiosDeUbicacion()
+                reportarEstado()
             }
         }
         // START_STICKY = si Android nos mata, que nos reinicie automáticamente
@@ -348,7 +380,12 @@ class LocationService : Service() {
             var ok = postRpc("$PROXY_URL/rest/v1/rpc/actualizar_ubicacion_driver", body, "prx")
             if (!ok) ok = postRpc("$SUPABASE_URL/rest/v1/rpc/actualizar_ubicacion_driver", body, "dir")
 
-            if (ok) ultimoOkMs = System.currentTimeMillis() else fallos++
+            if (ok) ultimoOkMs = System.currentTimeMillis() else {
+                fallos++
+                // v12: sin internet el punto no se pierde; se guarda y se manda
+                // en cuanto vuelva la conexión (vaciarCola).
+                Turno.encolar(this, lat, lng, rumbo, precision)
+            }
             // Reflejar el resultado en la notificación (desde el hilo principal)
             handler.post { refrescarNotif() }
         }
@@ -567,7 +604,99 @@ class LocationService : Service() {
         return null
     }
 
+    // ── v12: ubicación apagada, permisos, estado y cola ────────────────
+
+    private var receptorUbicacion: android.content.BroadcastReceiver? = null
+    private var vaciando = false
+
+    /** Reacciona en el momento en que el motorista apaga o prende la ubicación. */
+    private fun escucharCambiosDeUbicacion() {
+        if (receptorUbicacion != null) return
+        receptorUbicacion = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                revisarUbicacionYPermiso()
+                reportarEstado()
+            }
+        }
+        try {
+            val f = android.content.IntentFilter(android.location.LocationManager.PROVIDERS_CHANGED_ACTION)
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(receptorUbicacion, f, Context.RECEIVER_NOT_EXPORTED)
+            else registerReceiver(receptorUbicacion, f)
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo escuchar cambios de ubicación: ${e.message}")
+        }
+    }
+
+    private fun ubicacionPrendida(): Boolean = try {
+        val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm.isLocationEnabled
+        else lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) ||
+             lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+    } catch (_: Exception) { true }
+
+    private fun permisoSiempre(): Boolean {
+        val fino = androidx.core.content.ContextCompat.checkSelfPermission(this,
+            android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!fino) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+        return androidx.core.content.ContextCompat.checkSelfPermission(this,
+            android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun bateriaSinRestriccion(): Boolean = try {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) true
+        else (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+    } catch (_: Exception) { false }
+
+    private fun bateriaPct(): Int = try {
+        (getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager)
+            .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    } catch (_: Exception) { -1 }
+
+    private fun revisarUbicacionYPermiso() {
+        if (ubicacionPrendida()) Avisos.ubicacionOk(this) else Avisos.ubicacionApagada(this)
+        if (permisoSiempre()) Avisos.permisoOk(this) else Avisos.permisoFaltante(this)
+    }
+
+    /** Le cuenta a la torre cómo está la app: versión, ubicación, permiso, batería. */
+    private fun reportarEstado() {
+        if (empleadoId.isBlank()) return
+        val gps = ubicacionPrendida(); val perm = permisoSiempre(); val bat = bateriaSinRestriccion()
+        val pct = bateriaPct(); val pend = Turno.pendientes(this)
+        thread(name = "gps-estado") {
+            val body = """{"p_empleado_id":"$empleadoId","p_version":"$VERSION_APK",""" +
+                """"p_gps_activo":$gps,"p_permiso_siempre":$perm,"p_bateria_sin_restriccion":$bat,""" +
+                """"p_bateria_pct":${if (pct >= 0) pct else "null"},"p_pendientes":$pend}"""
+            rpcJson("driver_reportar_estado", body)
+        }
+    }
+
+    /** Manda los puntos que quedaron guardados sin internet, en tandas. */
+    private fun vaciarCola() {
+        if (vaciando || empleadoId.isBlank() || Turno.pendientes(this) == 0) return
+        vaciando = true
+        thread(name = "gps-cola") {
+            try {
+                var vueltas = 0
+                while (Turno.pendientes(this) > 0 && vueltas < 10) {
+                    vueltas++
+                    val lote = Turno.verLote(this, LOTE_COLA)
+                    if (lote.length() == 0) break
+                    val body = """{"p_empleado_id":"$empleadoId","p_puntos":$lote}"""
+                    if (rpcJson("driver_puntos_lote", body) == null) break   // sigue sin internet
+                    Turno.descartar(this, lote.length())
+                }
+            } finally {
+                vaciando = false
+            }
+        }
+    }
+
     override fun onDestroy() {
+        try { receptorUbicacion?.let { unregisterReceiver(it) } } catch (_: Exception) { }
+        receptorUbicacion = null
+        // Si el turno sigue activo y Android nos mató, el vigilante nos revive.
+        if (Turno.activo(this)) Vigilante.programarAlarma(this)
         detenerAlarma()
         detenerLocationUpdates()
         detenerHeartbeat()
@@ -585,6 +714,8 @@ class LocationService : Service() {
      * Combinado con android:stopWithTask="false" en el Manifest, el GPS sigue.
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Intencionalmente vacío: el service continúa aunque el usuario cierre la app.
+        // No llamamos super: el service continúa aunque el usuario cierre la app.
+        // Por si la marca del teléfono igual lo mata, dejamos armado el vigilante.
+        if (Turno.activo(this)) Vigilante.programarAlarma(this)
     }
 }

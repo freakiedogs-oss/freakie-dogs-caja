@@ -612,6 +612,59 @@ function useBeacon(yo) {
 // Campana «pedido listo» (opción A elegida por Cesar): dos ding-dong.
 // Solo para la PWA (iPhone); en el APK suena el servicio nativo.
 let _audioCtx = null
+// Salud del GPS (12-nov-2026, Cesar): franja roja con lo que falta para que la
+// torre siempre vea al motorista. Dentro de la app nativa (v12+) lee el estado
+// real del teléfono; desde el navegador recomienda instalar la app.
+function SaludGps({ activo }) {
+  const nativo = typeof window !== 'undefined' && !!window.AndroidPrinter?.estadoGps
+  const [st, setSt] = useState(null)
+  useEffect(() => {
+    if (!nativo) return
+    const leer = () => { try { setSt(JSON.parse(window.AndroidPrinter.estadoGps())) } catch { /* noop */ } }
+    leer()
+    const t = setInterval(leer, 10000)
+    document.addEventListener('visibilitychange', leer)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', leer) }
+  }, [nativo])
+
+  const caja = (color, children) => (
+    <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.4,
+                  background: color === 'rojo' ? '#3b0d0d' : '#3b2f0a', border: `1px solid ${color === 'rojo' ? '#ef4444' : '#f59e0b'}`,
+                  color: color === 'rojo' ? '#fecaca' : '#fde68a' }}>{children}</div>
+  )
+  const boton = (txt, fn) => (
+    <button onClick={fn} style={{ marginTop: 6, marginRight: 6, background: '#fff', color: '#111', border: 'none',
+                                   borderRadius: 8, padding: '6px 10px', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>{txt}</button>
+  )
+
+  if (!nativo) {
+    // App antigua o navegador: no hay forma de garantizar el GPS con pantalla apagada
+    const esAppVieja = !!window.AndroidPrinter?.hasLocationNative
+    return caja('ambar', <>
+      <b>{esAppVieja ? 'Actualizá tu app Freakie Drivers' : 'Instalá la app Freakie Drivers'}</b><br />
+      Desde el navegador el GPS se corta cuando bloqueás el celular o abrís Waze.
+      <div><a href="/instalar-driver.html" style={{ color: '#fff', fontWeight: 800 }}>Descargar la app →</a></div>
+    </>)
+  }
+  if (!st) return null
+  const problemas = []
+  if (!st.gps) problemas.push(['Tu ubicación está apagada', 'Activar ubicación', () => window.AndroidPrinter.abrirAjustesUbicacion()])
+  if (!st.siempre) problemas.push(['Falta «Permitir todo el tiempo»', 'Dar permiso', () => window.AndroidPrinter.pedirPermisoSiempre()])
+  if (!st.bateria) problemas.push(['El ahorro de batería puede cortar tu GPS', 'Quitar restricción', () => window.AndroidPrinter.pedirBateriaSinRestriccion()])
+  if (activo && st.turno && st.latido_s > 90) problemas.push([`Tu GPS no responde hace ${Math.round(st.latido_s / 60)} min`, 'Inicio automático', () => window.AndroidPrinter.abrirInicioAutomatico()])
+  if (!problemas.length) {
+    return st.pendientes > 0
+      ? caja('ambar', <>📶 Sin internet: {st.pendientes} ubicaciones guardadas, se mandan solas al volver la señal.</>)
+      : null
+  }
+  return caja('rojo', <>
+    <b>📍 La torre no te puede ver bien</b>
+    {problemas.map(([txt, btn, fn]) => (
+      <div key={txt} style={{ marginTop: 6 }}>• {txt}<br />{boton(btn, fn)}</div>
+    ))}
+  </>)
+}
+
 function campana() {
   try {
     _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)()
@@ -946,6 +999,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       {beacon.error && dispo.disponible && (
         <div style={S.dispoErr}>⚠️ {beacon.error}</div>
       )}
+      {dispo.disponible && <SaludGps activo={beacon.activo} />}
 
       <div style={S.dispoPie}>
         {beacon.activo

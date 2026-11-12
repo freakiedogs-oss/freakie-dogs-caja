@@ -117,6 +117,82 @@ class MainActivity : Activity() {
         pedirPermisos()
     }
 
+    /**
+     * v12: cada vez que el motorista vuelve a la app, si estaba de turno y el GPS
+     * no late, se revive. Desde aquí Android SIEMPRE deja arrancar el servicio.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (Turno.activo(this) && Turno.msDesdeLatido(this) > 60_000L) {
+            Turno.arrancarServicio(this, "app-abierta")
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_PERMS) pedirUbicacionSiempre()
+    }
+
+    /**
+     * v12: «Permitir todo el tiempo». Android 10+ lo separa del permiso normal y
+     * desde Android 11 solo se concede en la pantalla de Ajustes. Sin él, la
+     * ubicación se corta con la pantalla apagada en muchos teléfonos.
+     */
+    private fun pedirUbicacionSiempre() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val fino = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val siempre = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!fino || siempre) return
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Ubicación: «Permitir todo el tiempo»")
+            .setMessage("Para que la torre te vea aunque tengás la pantalla apagada o estés en Waze, " +
+                "en la siguiente pantalla elegí «Permitir todo el tiempo».")
+            .setCancelable(false)
+            .setPositiveButton("Entendido") { _, _ ->
+                ActivityCompat.requestPermissions(this,
+                    arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_PERMS + 1)
+            }
+            .show()
+    }
+
+    /**
+     * Pantallas propias de cada marca donde se activa «Inicio automático» o se
+     * quitan las restricciones de batería. Si la marca no tiene, se abren los
+     * datos de la app. Devuelve el nombre de lo que abrió.
+     */
+    private fun abrirInicioAutomaticoMarca(): String {
+        val candidatos = listOf(
+            "com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity",          // Xiaomi / Redmi / POCO
+            "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity", // Huawei
+            "com.huawei.systemmanager" to "com.huawei.systemmanager.optimize.process.ProtectActivity",
+            "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",      // Oppo / Realme
+            "com.oppo.safe" to "com.oppo.safe.permission.startup.StartupAppListActivity",
+            "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",     // Vivo
+            "com.iqoo.secure" to "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity",
+            "com.samsung.android.lool" to "com.samsung.android.sm.battery.ui.BatteryActivity",                  // Samsung
+            "com.transsion.phonemaster" to "com.cyin.himgr.autostart.AutoStartActivity",                         // Tecno / Infinix
+            "com.asus.mobilemanager" to "com.asus.mobilemanager.autostart.AutoStartActivity"                     // Asus
+        )
+        for ((pkg, cls) in candidatos) {
+            try {
+                startActivity(Intent().apply {
+                    component = android.content.ComponentName(pkg, cls)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                return pkg
+            } catch (_: Exception) { /* no es esa marca */ }
+        }
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (_: Exception) { }
+        return "ajustes-app"
+    }
+
     override fun onBackPressed() {
         if (web.canGoBack()) web.goBack() else super.onBackPressed()
     }
@@ -252,6 +328,8 @@ class MainActivity : Activity() {
         }
         if (perms.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, perms.toTypedArray(), REQ_PERMS)
+        } else {
+            pedirUbicacionSiempre()
         }
     }
 
@@ -312,11 +390,56 @@ class MainActivity : Activity() {
         /** Detiene el servicio y remueve la notificación permanente. */
         @JavascriptInterface
         fun stopLocation() {
+            // v12: stopService() NO pasa por onStartCommand, así que el fin de turno
+            // se marca acá; si no, el vigilante volvería a prender el GPS solo.
+            Turno.terminar(this@MainActivity)
+            Vigilante.cancelar(this@MainActivity)
+            Avisos.gpsOk(this@MainActivity); Avisos.ubicacionOk(this@MainActivity); Avisos.permisoOk(this@MainActivity)
             val intent = Intent(this@MainActivity, LocationService::class.java).apply {
                 action = LocationService.ACTION_STOP
             }
             stopService(intent)
         }
+
+        /**
+         * v12: estado del GPS para que la app web muestre la franja roja.
+         * {"turno":bool,"gps":bool,"siempre":bool,"bateria":bool,"latido_s":n,"pendientes":n,"version":"…"}
+         */
+        @JavascriptInterface
+        fun estadoGps(): String {
+            val c = this@MainActivity
+            val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+            val gps = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm.isLocationEnabled
+                else lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+            } catch (_: Exception) { true }
+            val fino = ContextCompat.checkSelfPermission(c, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val siempre = fino && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                ContextCompat.checkSelfPermission(c, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED)
+            val bateria = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+            return org.json.JSONObject().apply {
+                put("turno", Turno.activo(c))
+                put("gps", gps); put("siempre", siempre); put("bateria", bateria)
+                put("latido_s", Turno.msDesdeLatido(c) / 1000)
+                put("pendientes", Turno.pendientes(c))
+                put("version", LocationService.VERSION_APK)
+            }.toString()
+        }
+
+        @JavascriptInterface
+        fun abrirAjustesUbicacion() {
+            try { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
+        }
+
+        @JavascriptInterface
+        fun pedirPermisoSiempre() { runOnUiThread { pedirUbicacionSiempre() } }
+
+        @JavascriptInterface
+        fun abrirInicioAutomatico(): String = abrirInicioAutomaticoMarca()
+
+        @JavascriptInterface
+        fun pedirBateriaSinRestriccion() { runOnUiThread { pedirExcepcionDoze() } }
 
         /** Compatibilidad con el bridge del POS (por si comparten código). */
         @JavascriptInterface
