@@ -1,5 +1,27 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 12-Nov-2026 — GPS del motorista «siempre» (app v12) + tiempos de viaje calibrados
+- Por qué: Cesar quiere la ubicación del motorista SIEMPRE (pantalla bloqueada, app cerrada) para el indicador «cuándo preparar» del KDS y mejor servicio. Foto a las 3:45 pm del 12-nov: 7 conectados, 2 llevaban 11–13 min sin señal.
+- **App Android v12 (`android-driver`, versionCode 12, `v12-gps-siempre`) — FALTA COMPILAR (APK publicado es del 1-sep):**
+  - `Turno.kt`: el turno queda guardado; antes el reinicio automático (START_STICKY) volvía SIN empleadoId y no mandaba nada (bug).
+  - `Vigilante.kt`: alarma cada 3 min + WorkManager cada 15 min reviven el servicio si el latido tiene > 90 s; `BootReceiver` (encendido / actualización de la app).
+  - `Avisos.kt`: notificaciones altas «ubicación apagada», «falta permiso», «GPS detenido».
+  - Cola de puntos sin internet → `driver_puntos_lote`. Estado cada 60 s → `driver_reportar_estado`.
+  - `MainActivity`: pide «Permitir todo el tiempo» (antes nunca se pedía), `onResume` revive el GPS, bridge `estadoGps/abrirAjustesUbicacion/pedirPermisoSiempre/abrirInicioAutomatico/pedirBateriaSinRestriccion`. **Fix:** `stopLocation` no pasaba por `onStartCommand` (stopService) → ahora marca fin de turno ahí.
+- `DriverBeacon.jsx` → `SaludGps`: franja roja con botones (ubicación, permiso, batería, inicio automático); desde navegador o app vieja pide instalar/actualizar.
+- Torre: `MotoristasSenal.jsx` en TabPedidos (sin señal ≥ 3 min, ubicación apagada, sin permiso, batería, sin app nueva) con WhatsApp/Llamar.
+- BD (`20261112_gps_motorista_siempre.sql`): `driver_estado_app`, `driver_puntos_lote`, recorrido graba también el regreso (45 min tras entregar), `motoristas_senal`, bloqueo de asignación sin señal **apagado** (`config_delivery.bloquear_sin_senal_min = 0`, prender cuando todos tengan v12).
+- Tiempos: `delivery_tiempos_calibrados` + `minutos_viaje(sucursal, km, ts)` + cron lunes 3:15 am. Real = ~4.5–7.2 min por km en línea recta + 3 min (Venecia la más lenta). La fórmula vieja de la ruta (2.14 min/km + 6/parada) se queda corta; `fn_ruta_recalcular` todavía usa la vieja (pendiente pasarla a la calibrada).
+- `driver_recorrido` ~963k filas / 185 MB sin limpieza: decidir retención con Cesar.
+- `instalar-driver.html`: novedades v12, «Permitir todo el tiempo» y guía por marca (Xiaomi, Huawei, Oppo/Realme, Vivo, Tecno/Infinix).
+
+## 10-Nov-2026 — Hoja de pedido/conteo: hielo 10 lbs y aceite Wesson (datos)
+- Pedido de Cesar: Casa Matriz ahora surte bolsas de hielo de 10 lbs y aceite Wesson para plancha.
+- Nuevo producto «Bolsa de hielo 10 lbs» (copia de la de 5 lbs; Congelado Papas, orden 33) con inventario en CM001 y todas las sucursales.
+- El existente «46369 Wesson Canol» (PriceSmart, MP-301) se renombró «Aceite Wesson Canola para plancha 4.73 L», unidad bote, Carnes y Complementos orden 5 (junto al Santa Clara); inventario creado en las 7 sucursales activas.
+- «Bolsa de hielo 5 lbs» sacada del conteo nocturno (incluir_conteo=false, sigue activa en el catálogo) a pedido de Cesar: ahora se pide la de 10 lbs.
+- Ojo: confirmar si el ítem 46369 de PriceSmart ($16.81) trae 1 o 2 botes; si son 2, la recepción debe sumar 2 por unidad comprada.
+
 ## 11-Nov-2026 — Banco y socios pasan por el gate de sesión de finanzas
 - Por qué: banco, comprobantes, socios y cuentas de terceros deben pedir sesión de finanzas, igual que planilla y DTEs emitidos.
 - Front (PR #471): `BancoView`, `IngestaComprobantes`, `DebitosPorClasificar`, `FinanzasDashboard` y la pestaña de cuentas de `RRHHView` leen esos objetos con `dbFin`. **Regla: una consulta nueva a `bank_*`, `socios`, `socio_*`, `movimientos_socios`, `prestamo_movimientos` o `cuentas_bancarias_terceros` va con `dbFin`, no con `db`** (con `db` devuelve `permission denied`).
@@ -19,6 +41,7 @@
 - `MenuPublico`: banner «Tenés $2 de descuento», barra para ganarlo en el carrito, «Cupón aplicado −$2» o «te faltan $X», y en el checkout la línea del cupón (tarjeta cobra el neto).
 - `TrackingPedido`: `CuponGanado` al entregar («Tenés N días para usarlo · vence el …», mínimo $20).
 - Probado en BD con rollback (aplica/no aplica, cuenta con descuento, no regenera, se libera al cancelar, gana al entregar) y en jsdom (barra, banner, descuento, checkout).
+- En producción con PR #470; trigger activado el 10-nov. Medición: `select * from reporte_cupon_regreso('2026-11-10')` (por semana: emitidos, usados, vencidos, vigentes, % canje, días hasta usarlo, ticket con cupón, $ descontado). Cesar quiere saber si la gente lo reclama: revisarlo en cada reporte semanal.
 
 ## 10-Nov-2026 — Menú web: «⭐ El favorito» / «⭐ Popular» en los extras
 - Por qué: subir extras con precio; datos 30 días (tocino hamburguesa 1,811; carne y queso extra 620; papas trufa 295…).

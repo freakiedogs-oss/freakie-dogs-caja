@@ -70,6 +70,21 @@
   </div></div>
 
   <div class="paso"><div class="num">✓</div><div>
+    <b>Si el GPS se cae, se vuelve a prender solo (v12)</b>
+    Un vigilante revisa cada pocos minutos. Si el celular apagó el GPS, lo prende otra vez. Si reiniciás el teléfono, arranca solo mientras estés de turno.
+  </div></div>
+
+  <div class="paso"><div class="num">✓</div><div>
+    <b>Sin señal no se pierde nada (v12)</b>
+    Si te quedás sin datos, la app guarda tu recorrido y lo manda solo cuando vuelve la señal.
+  </div></div>
+
+  <div class="paso"><div class="num">✓</div><div>
+    <b>Te avisa si algo está mal (v12)</b>
+    Si apagás la ubicación o falta un permiso, te sale una alerta roja con el botón para arreglarlo.
+  </div></div>
+
+  <div class="paso"><div class="num">✓</div><div>
     <b>Los botones de WhatsApp y llamada ya funcionan</b>
     Antes daban una pantalla de error. Ahora abren directo el chat o la llamada con el cliente.
   </div></div>
@@ -124,8 +139,9 @@
 <div class="card">
   <p style="margin:0 0 8px">La primera vez que toques <span class="btn b-green">🟢 Compartir mi GPS</span> el celular te va a preguntar dos cosas:</p>
   <ol>
-    <li><b>Ubicación</b> → elegí <b>“Permitir siempre”</b>. Si elegís “Solo mientras uso la app”, el GPS se apaga cuando salís y la central te pierde.</li>
+    <li><b>Ubicación</b> → primero elegí <b>“Mientras se usa la app”</b>. Enseguida la app te muestra un aviso y te lleva a Ajustes: ahí elegí <b>“Permitir todo el tiempo”</b>. Si te quedás en “Solo mientras uso la app”, el GPS se apaga cuando salís y la central te pierde.</li>
     <li><b>Notificaciones</b> → <b>Permitir</b>.</li>
+    <li><b>Batería</b> → si te pregunta “¿Permitir que se ejecute en segundo plano?”, tocá <b>Permitir</b>.</li>
   </ol>
   <div class="tip">✅ Vas a ver una notificación fija que dice <b>“Freakie GPS activo”</b>. <b>No la borres</b> — mientras esté ahí, el GPS está trabajando.</div>
 </div>
@@ -148,8 +164,30 @@
   <div class="marca">
     <b>Xiaomi / Redmi / Poco</b><br>
     Ajustes → Aplicaciones → Freakie Drivers → <b>Ahorro de batería</b> → <b>Sin restricciones</b>.<br>
-    Además: <b>Inicio automático</b> → activalo.
+    Además: <b>Inicio automático</b> → activalo. También en la pantalla de apps recientes, mantené presionada la app → tocá el <b>candado 🔒</b> para que no la cierre al limpiar memoria.
   </div>
+
+  <div class="marca">
+    <b>Huawei / Honor</b><br>
+    Ajustes → Batería → <b>Inicio de aplicaciones</b> → Freakie Drivers → apagá “Gestionar automáticamente” y dejá prendidos <b>los tres</b>: Inicio automático, Inicio secundario y Ejecutar en segundo plano.
+  </div>
+
+  <div class="marca">
+    <b>Oppo / Realme / OnePlus</b><br>
+    Ajustes → Batería → <b>Gestión de batería de apps</b> → Freakie Drivers → activá <b>Permitir actividad en segundo plano</b> y <b>Permitir inicio automático</b>.
+  </div>
+
+  <div class="marca">
+    <b>Vivo / iQOO</b><br>
+    Ajustes → Batería → <b>Consumo en segundo plano</b> → Freakie Drivers → <b>Permitir</b>. Además: i Manager → Gestión de apps → <b>Inicio automático</b> → activalo.
+  </div>
+
+  <div class="marca">
+    <b>Tecno / Infinix / itel</b><br>
+    Phone Master → <b>Gestión de inicio automático</b> → activá Freakie Drivers. Ajustes → Batería → Freakie Drivers → <b>Sin restricciones</b>.
+  </div>
+
+  <div class="tip">💡 Desde la app (v12) hay un botón <b>«Inicio automático»</b> que abre directo la pantalla correcta de tu marca cuando el GPS no responde.</div>
 
   <div class="stop">⚠️ Si te salta un aviso que dice “Freakie Drivers está consumiendo batería”, tocá <b>Permitir</b> o <b>Mantener</b>. Si tocás “Detener”, se apaga el GPS.</div>
 </div>
@@ -158,9 +196,9 @@
 
 <div class="card">
   <p style="margin:0 0 8px">Bajá la barra de notificaciones. Tenés que ver algo así:</p>
-  <div class="notif">🛵 Freakie GPS · v11-alarma<br>C:18 · OK hace 3s · F:0</div>
+  <div class="notif">🛵 Freakie GPS · v12-gps-siempre<br>C:18 · OK hace 3s · F:0</div>
   <ul style="margin:8px 0 0;padding-left:20px">
-    <li>Tiene que decir <b>v11-alarma</b>. Si dice otra cosa, quedó instalada la versión vieja</li>
+    <li>Tiene que decir <b>v12-gps-siempre</b>. Si dice otra cosa, quedó instalada la versión vieja</li>
     <li>El número después de <b>C:</b> tiene que ir subiendo</li>
     <li><b>OK hace</b> tiene que marcar pocos segundos</li>
     <li><b>F:</b> tiene que quedarse en <b>0</b></li>

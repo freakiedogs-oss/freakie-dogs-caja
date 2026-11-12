@@ -1,6 +1,12 @@
 name: Build Freakie Drivers APK
 
-# Se dispara cuando cambia algo del proyecto Android driver o manualmente
+# Se dispara cuando cambia algo del proyecto Android driver en main, o a mano
+# desde Actions → «Run workflow» eligiendo la rama.
+#
+# 12-nov-2026: corrida a mano en una rama que no es main → además de subir el
+# artifact, deja el APK compilado en public/apk/freakie-drivers.apk y hace commit
+# en ESA rama. Así el PR lleva el APK nuevo y nadie tiene que descargarlo y
+# copiarlo a mano. En main nunca escribe (main está protegida).
 on:
   push:
     branches: [main]
@@ -8,6 +14,9 @@ on:
       - 'android-driver/**'
       - '.github/workflows/build-driver-apk.yml'
   workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,8 +30,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # 12-nov-2026: la acción instalaba por defecto el paquete «tools», que
+      # Google retiró del SDK → la corrida #13 (v11) falló en este paso sin
+      # llegar a compilar. Se piden solo los paquetes que usa el proyecto.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       # Fijamos la versión de Gradle en vez de generar el wrapper en cada corrida.
       # El runner de GitHub trae Gradle 9.x, incompatible con Android Gradle Plugin
@@ -42,6 +56,18 @@ jobs:
           name: freakie-drivers-apk-debug
           path: android-driver/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Solo en corridas a mano sobre una rama de trabajo: el APK queda en la
+      # rama para que el PR lo publique en /apk/freakie-drivers.apk.
+      - name: Guardar APK en la rama (public/apk)
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          cp android-driver/app/build/outputs/apk/debug/app-debug.apk public/apk/freakie-drivers.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/apk/freakie-drivers.apk
+          git commit -m "APK driver compilado por Actions (run ${{ github.run_number }})" || echo "Sin cambios en el APK"
+          git push origin HEAD:${{ github.ref_name }}
 
       # Opcional: si el repo no tiene permisos de escritura para Actions esto
       # falla con 403. No debe marcar la corrida como fallida — el APK ya quedó
