@@ -22,6 +22,17 @@
 - «Bolsa de hielo 5 lbs» sacada del conteo nocturno (incluir_conteo=false, sigue activa en el catálogo) a pedido de Cesar: ahora se pide la de 10 lbs.
 - Ojo: confirmar si el ítem 46369 de PriceSmart ($16.81) trae 1 o 2 botes; si son 2, la recepción debe sumar 2 por unidad comprada.
 
+## 11-Nov-2026 — Banco y socios pasan por el gate de sesión de finanzas
+- Por qué: banco, comprobantes, socios y cuentas de terceros deben pedir sesión de finanzas, igual que planilla y DTEs emitidos.
+- Front (PR #471): `BancoView`, `IngestaComprobantes`, `DebitosPorClasificar`, `FinanzasDashboard` y la pestaña de cuentas de `RRHHView` leen esos objetos con `dbFin`. **Regla: una consulta nueva a `bank_*`, `socios`, `socio_*`, `movimientos_socios`, `prestamo_movimientos` o `cuentas_bancarias_terceros` va con `dbFin`, no con `db`** (con `db` devuelve `permission denied`).
+- Escrituras: ya no hay `insert`/`update` directo a esas tablas. Van por RPC con `dbFin.rpc(...)`: `bank_comprobante_registrar`, `bank_estado_cuenta_registrar`, `bank_regla_set_activa`, `cuenta_tercero_guardar`, `cuenta_tercero_set_activo`.
+- `api/supaproxy.js`: `BANCO_OBJETOS` (roles de finanzas) y `TERCEROS_OBJETOS` (roles de RRHH). Un objeto o RPC nuevo de banco hay que agregarlo ahí.
+- Efecto visible: Banco pide el PIN de sesión (30 min) al entrar, como el Dashboard Financiero. En DEV local estas pantallas no leen datos (no hay proxy).
+- RPC (PR #472): las de conciliación, revisión e ingesta (`bancoview_*`, `fn_banco_*`, `bank_match_*`, `bank_tx_marcar`, `fn_import_bank_bac`, `fn_ingesta_*`) también van con `dbFin.rpc(...)` y están en `BANCO_OBJETOS`. Con `db.rpc` devuelven `permission denied`. La más lenta tarda ~4 s (techo del proxy: 25 s).
+- Pendiente: `PagosProveedorView` (`pago_proveedor_*`, `pago_aplicacion_*`) sigue por `db`.
+- Ojo, ya existía: `bancoview_aplicar_reglas` falla en la regla R09 (inserta `target_id` nulo en `bank_match`).
+- Probado: build, lecturas y las 5 RPC con el rol del gate (transacción deshecha), gate en producción. Falta la prueba en pantalla con sesión real.
+
 ## 10-Nov-2026 — Cupón de regreso $2 (menú web + caja + DTE)
 - Por qué: subir ticket y traer de vuelta al cliente. **Cesar autorizó tocar el cobro del POS** (afecta el monto del DTE).
 - Regla: pedido WEB entregado con subtotal ≥ $19.99 («$20» en textos, para que cuente el Burger Box $19.99) y sin cupón usado → $2 para el próximo pedido ≥ $19.99, **21 días**, ligado al teléfono. Un cupón activo por teléfono; el pedido que usa cupón no genera otro; si se cancela (o queda sin pagar > 3 h) el cupón se libera.

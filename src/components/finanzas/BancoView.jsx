@@ -259,7 +259,7 @@ function TabResumen() {
     setLoading(true)
     try {
       const [txAll, cc] = await Promise.all([
-        fetchAllRows(db, 'bank_transacciones', q => q
+        fetchAllRows(dbFin, 'bank_transacciones', q => q
           .select('fecha,debito,credito,estado,codigo_bac,descripcion,id,centro_costo_id')
           .order('fecha', { ascending: false })
         ),
@@ -363,7 +363,7 @@ function TabWizard({ user, pushNotif }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchAllRows(db, 'bank_transacciones', q => q
+      const data = await fetchAllRows(dbFin, 'bank_transacciones', q => q
         .select('id,fecha,codigo_bac,descripcion,debito,credito,balance,estado,notas,referencia,direccion')
         .eq('estado', 'sin_clasificar')
         .order('debito', { ascending: false }).order('credito', { ascending: false })
@@ -388,8 +388,8 @@ function TabWizard({ user, pushNotif }) {
     (async () => {
       try {
         const [sug, comp] = await Promise.all([
-          db.from('v_bank_sugerencias').select('id,sugerencia_label,sugerencia_monto,sugerencia_fecha,confianza,dias_diff,target_id,target_tabla').eq('bank_id', actual.id).order('confianza', { ascending: false }).limit(5),
-          db.from('bank_comprobantes').select('id,banco_origen,beneficiario,concepto,foto_url').eq('bank_transaccion_id', actual.id).maybeSingle(),
+          dbFin.from('v_bank_sugerencias').select('id,sugerencia_label,sugerencia_monto,sugerencia_fecha,confianza,dias_diff,target_id,target_tabla').eq('bank_id', actual.id).order('confianza', { ascending: false }).limit(5),
+          dbFin.from('bank_comprobantes').select('id,banco_origen,beneficiario,concepto,foto_url').eq('bank_transaccion_id', actual.id).maybeSingle(),
         ])
         setSugerencias(sug.data || [])
         setComprobante(comp.data)
@@ -408,7 +408,7 @@ function TabWizard({ user, pushNotif }) {
     setSaving(true)
     try {
       // 1. Insertar bank_match
-      await db.rpc('bank_match_crear', { p_data: {
+      await dbFin.rpc('bank_match_crear', { p_data: {
         bank_transaccion_id: actual.id,
         target_tabla: sug.target_tabla,
         target_id: null,
@@ -418,10 +418,10 @@ function TabWizard({ user, pushNotif }) {
         created_by: user?.nombre || 'wizard',
       } })
       // 2. Update bank_transaccion → match_manual
-      await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'match_manual',
+      await dbFin.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'match_manual',
         p_notas: (actual.notas || '') + ` [wizard:${sug.target_tabla}/${sug.target_id}]` })
       // 3. Aprendizaje
-      const { data: aprData } = await db.rpc('bancoview_aprender_match', {
+      const { data: aprData } = await dbFin.rpc('bancoview_aprender_match', {
         p_bank_transaccion_id: actual.id,
         p_target_tabla: sug.target_tabla,
         p_target_id: sug.target_id,
@@ -442,7 +442,7 @@ function TabWizard({ user, pushNotif }) {
     if (!actual) return
     setSaving(true)
     try {
-      await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: estado,
+      await dbFin.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: estado,
         p_notas: (actual.notas || '') + ` [wizard:${estado}:${user?.rol || 'user'}]` })
       setPendientes(ps => ps.filter(p => p.id !== actual.id))
     } catch (e) { toast.error('Error: ' + e.message) } finally { setSaving(false) }
@@ -454,12 +454,12 @@ function TabWizard({ user, pushNotif }) {
     // Aquí marcamos la transacción.
     if (!actual) return
     try {
-      await db.rpc('bank_match_crear', { p_data: {
+      await dbFin.rpc('bank_match_crear', { p_data: {
         bank_transaccion_id: actual.id, target_tabla: 'sin_dte_clasificacion',
         target_id: null, monto_aplicado: actual.debito || actual.credito,
         confianza: 1.00, metodo: 'wizard_crear_gasto', created_by: user?.nombre || 'wizard',
       } })
-      await db.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'sin_dte', p_notas: (actual.notas || '') + ' [wizard:gasto_creado]' })
+      await dbFin.rpc('bank_tx_marcar', { p_ids: [actual.id], p_estado: 'sin_dte', p_notas: (actual.notas || '') + ' [wizard:gasto_creado]' })
       setPendientes(ps => ps.filter(p => p.id !== actual.id))
     } catch (e) { console.error(e) }
   }
@@ -973,7 +973,7 @@ function MultiDteSelector({ bankTx, user, pushNotif, onApplied }) {
         monto_aplicado: Number(f.monto_para_match),
         proveedor_nombre: f.proveedor_nombre,
       }))
-      const { data, error } = await db.rpc('bancoview_aplicar_match_multiple', {
+      const { data, error } = await dbFin.rpc('bancoview_aplicar_match_multiple', {
         p_bank_transaccion_id: bankTx.id,
         p_matches: matches,
         p_created_by: user?.nombre || 'wizard',
@@ -1111,7 +1111,7 @@ function TabComprobantes({ user }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('bank_comprobantes')
+      const { data } = await dbFin.from('bank_comprobantes')
         .select('*, bank_transacciones:bank_transaccion_id(fecha,codigo_bac,descripcion,debito)')
         .order('created_at', { ascending: false }).limit(100)
       setComprobantes(data || [])
@@ -1132,7 +1132,7 @@ function TabComprobantes({ user }) {
         setProgress({ done: i, total: files.length, currentMsg: `Procesando ${file.name || 'imagen ' + (i + 1)}…` })
         try {
           const hash = await sha256File(file)
-          const { data: existing } = await db.from('bank_comprobantes').select('id').eq('hash_imagen', hash).maybeSingle()
+          const { data: existing } = await dbFin.from('bank_comprobantes').select('id').eq('hash_imagen', hash).maybeSingle()
           if (existing) { dup++; continue }
 
           const { text, parsed } = await ocrComprobante(file)
@@ -1144,7 +1144,7 @@ function TabComprobantes({ user }) {
           if (upErr) throw upErr
           const { data: urlData } = db.storage.from('bank-comprobantes').getPublicUrl(path)
 
-          const { error: insErr } = await db.from('bank_comprobantes').insert({
+          const { error: insErr } = await dbFin.rpc('bank_comprobante_registrar', { p: {
             foto_url: urlData.publicUrl, storage_path: path, hash_imagen: hash,
             ocr_text: text.slice(0, 5000), ocr_data: parsed,
             monto: parsed.monto || null, fecha_extraida: parsed.fecha_extraida || null,
@@ -1153,12 +1153,12 @@ function TabComprobantes({ user }) {
             concepto: parsed.concepto || null, cuenta_origen: parsed.cuenta_origen || null,
             nombre_emisor: parsed.nombre_emisor || null,
             uploaded_by: user?.nombre || user?.rol || 'unknown',
-          })
+          } })
           if (insErr) { if (insErr.code === '23505') { dup++; continue } else throw insErr }
           ok++
         } catch (e) { console.error('Error procesando', file.name, e); err++ }
       }
-      const { data: mres } = await db.rpc('bancoview_match_comprobantes')
+      const { data: mres } = await dbFin.rpc('bancoview_match_comprobantes')
       const matched = mres?.[0]?.matches_creados ?? 0, sin_match = mres?.[0]?.sin_match ?? 0
       setLastBatch({ ok, dup, err, matched, sin_match })
       await load()
@@ -1292,7 +1292,7 @@ function TabColaManual({ user }) {
     setLoading(true)
     try {
       // Usa la vista enriquecida que incluye proveedores matcheados
-      const data = await fetchAllRows(db, 'v_bank_tx_con_match', q => {
+      const data = await fetchAllRows(dbFin, 'v_bank_tx_con_match', q => {
         let qq = q.select('id,fecha,codigo_bac,descripcion,debito,credito,estado,direccion,notas,referencia,categoria_efectiva,categoria_grupo,subcategoria,centro_costo_id,centro_costo_nombre,centro_costo_tipo,proveedores_matcheados,match_confianza,match_metodo,matches_count,monto_aplicado_total,sucursal_inferida,comprobante_info').order('fecha', { ascending: false })
         if (filtroEstado !== 'todos') qq = qq.eq('estado', filtroEstado)
         return qq
@@ -1335,7 +1335,7 @@ function TabColaManual({ user }) {
     if (seleccion.size === 0) { toast.warning('Selecciona al menos una'); return }
     if (!confirm(`Marcar ${seleccion.size} como "${bulkEstado}"?`)) return
     try {
-      const { error } = await db.rpc('bank_tx_marcar', { p_ids: Array.from(seleccion), p_estado: bulkEstado, p_notas: `[manual:${user?.rol || 'user'}_${today()}]` })
+      const { error } = await dbFin.rpc('bank_tx_marcar', { p_ids: Array.from(seleccion), p_estado: bulkEstado, p_notas: `[manual:${user?.rol || 'user'}_${today()}]` })
       if (error) throw error; await load()
     } catch (e) { toast.error('Error: ' + e.message) }
   }
@@ -1344,8 +1344,8 @@ function TabColaManual({ user }) {
     if (!confirm('Revertir a sin_clasificar?')) return
     try {
       // Eliminar bank_match asociados (si los hay)
-      await db.rpc('bank_match_eliminar_por_tx', { p_tx_ids: [id] })
-      await db.rpc('bank_tx_marcar', { p_ids: [id], p_estado: 'sin_clasificar',
+      await dbFin.rpc('bank_match_eliminar_por_tx', { p_tx_ids: [id] })
+      await dbFin.rpc('bank_tx_marcar', { p_ids: [id], p_estado: 'sin_clasificar',
         p_notas: `[reverted:${user?.rol || 'user'}_${today()}]` })
       await load()
     } catch (e) { toast.error('Error: ' + e.message) }
@@ -1356,8 +1356,8 @@ function TabColaManual({ user }) {
     if (!confirm(`Revertir ${seleccion.size} transacciones a sin_clasificar? (también borra sus matches)`)) return
     try {
       const ids = Array.from(seleccion)
-      await db.rpc('bank_match_eliminar_por_tx', { p_tx_ids: ids })
-      await db.rpc('bank_tx_marcar', { p_ids: ids, p_estado: 'sin_clasificar',
+      await dbFin.rpc('bank_match_eliminar_por_tx', { p_tx_ids: ids })
+      await dbFin.rpc('bank_tx_marcar', { p_ids: ids, p_estado: 'sin_clasificar',
         p_notas: `[reverted_bulk:${user?.rol || 'user'}_${today()}]` })
       await load()
     } catch (e) { toast.error('Error: ' + e.message) }
@@ -1534,8 +1534,8 @@ function TabReglas() {
     setLoading(true)
     try {
       const [reg, apr] = await Promise.all([
-        db.from('bank_reglas_clasificacion').select('id,nombre,prioridad,activa,hits,last_hit_at').order('prioridad', { ascending: true }),
-        db.from('bank_aprendizaje').select('id,patron_tipo,patron_valor,proveedor_nombre,confirmaciones,regla_creada_id').order('confirmaciones', { ascending: false }).limit(20),
+        dbFin.from('bank_reglas_clasificacion').select('id,nombre,prioridad,activa,hits,last_hit_at').order('prioridad', { ascending: true }),
+        dbFin.from('bank_aprendizaje').select('id,patron_tipo,patron_valor,proveedor_nombre,confirmaciones,regla_creada_id').order('confirmaciones', { ascending: false }).limit(20),
       ])
       setReglas(reg.data || []); setAprendizaje(apr.data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
@@ -1545,12 +1545,12 @@ function TabReglas() {
   const ejecutar = async () => {
     if (!confirm('Ejecutar motor ahora?')) return
     setRunning(true)
-    try { const { data } = await db.rpc('bancoview_aplicar_reglas'); setLastRun(data || []); await load() }
+    try { const { data } = await dbFin.rpc('bancoview_aplicar_reglas'); setLastRun(data || []); await load() }
     catch (e) { toast.error('Error: ' + e.message) } finally { setRunning(false) }
   }
 
   const toggleRegla = async (id, activa) => {
-    try { await db.from('bank_reglas_clasificacion').update({ activa: !activa }).eq('id', id); await load() }
+    try { await dbFin.rpc('bank_regla_set_activa', { p_id: id, p_activa: !activa }); await load() }
     catch (e) { toast.error('Error: ' + e.message) }
   }
 
@@ -1564,7 +1564,7 @@ function TabReglas() {
           if (!confirm('Aplicar TODAS las reglas aprendidas (AUTO—) a las tx pendientes que matcheen?')) return
           setRunning(true)
           try {
-            const { data, error } = await db.rpc('bancoview_aplicar_aprendizaje')
+            const { data, error } = await dbFin.rpc('bancoview_aplicar_aprendizaje')
             if (error) throw error
             const r = data?.[0]
             toast.success(`${r?.reglas_evaluadas || 0} reglas evaluadas · ${r?.transacciones_marcadas || 0} tx marcadas · ${r?.matches_creados || 0} matches creados`)
@@ -1843,7 +1843,7 @@ function TabAuditoria() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('bank_match')
+      const { data } = await dbFin.from('bank_match')
         .select('*, bank_transacciones:bank_transaccion_id(fecha,codigo_bac,descripcion,debito,credito)')
         .order('created_at', { ascending: false }).limit(200)
       setMatches(data || [])
@@ -1853,7 +1853,7 @@ function TabAuditoria() {
 
   const undo = async (id) => {
     if (!confirm('Eliminar match? La tx vuelve a sin_clasificar.')) return
-    try { await db.rpc('bank_match_eliminar', { p_id: id }); await load() }
+    try { await dbFin.rpc('bank_match_eliminar', { p_id: id }); await load() }
     catch (e) { toast.error('Error: ' + e.message) }
   }
 
@@ -1933,7 +1933,7 @@ function TabVincularDTE({ user, pushNotif }) {
     if (sugerencias[gastoId]) return // ya cargadas
     setLoadingSug(s => ({ ...s, [gastoId]: true }))
     try {
-      const { data, error } = await db.rpc('bancoview_sugerir_dtes_para_gasto', { p_gasto_id: gastoId })
+      const { data, error } = await dbFin.rpc('bancoview_sugerir_dtes_para_gasto', { p_gasto_id: gastoId })
       if (error) throw error
       setSugerencias(s => ({ ...s, [gastoId]: data || [] }))
     } catch (e) {
@@ -1948,7 +1948,7 @@ function TabVincularDTE({ user, pushNotif }) {
     if (!confirm(`Vincular este gasto al DTE seleccionado?\n\nScore: ${(score * 100).toFixed(0)}%\n\nEsto marcará el gasto como 'pagado_anticipado_con_dte' y actualizará el DTE como pagado.`)) return
     setSaving(s => ({ ...s, [gastoId]: true }))
     try {
-      const { error } = await db.rpc('bancoview_vincular_gasto_a_dte', {
+      const { error } = await dbFin.rpc('bancoview_vincular_gasto_a_dte', {
         p_gasto_id: gastoId,
         p_dte_id: dteId,
         p_usuario: user?.nombre || user?.pin || 'desconocido',
@@ -2194,10 +2194,10 @@ function SubColaSocios({ user, pushNotif }) {
     setLoading(true)
     try {
       const [pendData, sociosData] = await Promise.all([
-        fetchAllRows(db, 'v_bank_tx_socio_pendientes', q => q
+        fetchAllRows(dbFin, 'v_bank_tx_socio_pendientes', q => q
           .select('id,fecha,codigo_bac,descripcion,monto,direccion,socio_sugerido_id')
         ),
-        db.from('socios').select('id,nombre').eq('activo', true).order('nombre'),
+        dbFin.from('socios').select('id,nombre').eq('activo', true).order('nombre'),
       ])
       setPendientes(pendData || [])
       setSocios(sociosData.data || [])
@@ -2223,7 +2223,7 @@ function SubColaSocios({ user, pushNotif }) {
     }
     setSaving(s => ({ ...s, [tx.id]: true }))
     try {
-      const { data, error } = await db.rpc('bancoview_clasificar_movimiento_socio', {
+      const { data, error } = await dbFin.rpc('bancoview_clasificar_movimiento_socio', {
         p_bank_tx_id: tx.id,
         p_socio_id: socioId,
         p_tipo: tipo,
@@ -2330,7 +2330,7 @@ function SubBalanceSocios() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await db.from('v_socios_balance').select('socio_id,nombre,total_aportado,total_capital_repagado,capital_pendiente,intereses_acumulados,intereses_pagados,deuda_total,aportes_activos,total_salarios').order('deuda_total', { ascending: false })
+      const { data } = await dbFin.from('v_socios_balance').select('socio_id,nombre,total_aportado,total_capital_repagado,capital_pendiente,intereses_acumulados,intereses_pagados,deuda_total,aportes_activos,total_salarios').order('deuda_total', { ascending: false })
       setData(data || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }, [])
@@ -2340,7 +2340,7 @@ function SubBalanceSocios() {
     if (!confirm('Devengar intereses al día de hoy? Esto capitaliza intereses para todos los aportes activos con > 30 días sin repago.')) return
     setDevengando(true)
     try {
-      const { data, error } = await db.rpc('bancoview_devengar_intereses_socios', { p_fecha_corte: today() })
+      const { data, error } = await dbFin.rpc('bancoview_devengar_intereses_socios', { p_fecha_corte: today() })
       if (error) throw error
       const r = data?.[0]
       toast.success(r?.mensaje || 'OK')
@@ -2427,7 +2427,7 @@ function SubAportesFIFO() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await fetchAllRows(db, 'v_socio_aportes_detalle', q => q
+      const all = await fetchAllRows(dbFin, 'v_socio_aportes_detalle', q => q
         .select('id,socio_nombre,fecha_aporte,dias_antiguedad,monto_original,capital_repagado,capital_pendiente,interes_acumulado,interes_pagado,deuda_total,estado,fecha_ultimo_corte')
         .order('fecha_aporte', { ascending: false })
       )
@@ -2611,13 +2611,13 @@ function TabRevisionPL({ user }) {
     setLoading(true)
     try {
       const [txData, catRes, sucRes, cuadreRes, subcatRes] = await Promise.all([
-        fetchAllRows(db, 'v_banco_revision', q =>
+        fetchAllRows(dbFin, 'v_banco_revision', q =>
           q.select('id,fecha,codigo_bac,descripcion,referencia,debito,estado,categoria_gasto_id,sucursal_default,destino_pl,revisado,revisado_por,es_automatico,notas,dte_id,tercero_nombre,tercero_relacion,tercero_ambiguo,subcategoria_default,dte_proveedor,dte_monto,subcategoria,cuenta_origen,categoria_sugerida')
             .order('fecha', { ascending: false })),
         db.from('categorias_gasto').select('id,nombre,grupo').neq('grupo', 'Pasivo').order('orden'),
         db.from('sucursales').select('store_code,nombre').eq('activa', true).order('store_code'),
-        db.from('v_banco_cuadre_mensual').select('*').order('mes', { ascending: false }),
-        db.from('v_banco_subcategorias').select('subcategoria').limit(500),
+        dbFin.from('v_banco_cuadre_mensual').select('*').order('mes', { ascending: false }),
+        dbFin.from('v_banco_subcategorias').select('subcategoria').limit(500),
       ])
       setTx(txData)
       setCats(catRes.data || [])
@@ -2653,9 +2653,9 @@ function TabRevisionPL({ user }) {
   const autoClasificar = async () => {
     setSaving(true)
     try {
-      const r1 = await db.rpc('fn_banco_autoclasificar')
+      const r1 = await dbFin.rpc('fn_banco_autoclasificar')
       if (r1.error) throw r1.error
-      const r2 = await db.rpc('fn_banco_revision_auto', { p_usuario: usuario })
+      const r2 = await dbFin.rpc('fn_banco_revision_auto', { p_usuario: usuario })
       if (r2.error) throw r2.error
       const n = Array.isArray(r1.data) ? r1.data[0]?.actualizados : r1.data?.actualizados
       toast.success(`⚡ ${n ?? 0} clasificados por terceros · destinos propuestos: ${JSON.stringify(r2.data)}`)
@@ -2666,7 +2666,7 @@ function TabRevisionPL({ user }) {
   const revisar = async (t, patch = {}) => {
     setSaving(true)
     try {
-      const { error } = await db.rpc('fn_banco_revisar', {
+      const { error } = await dbFin.rpc('fn_banco_revisar', {
         p_id: t.id,
         p_destino: patch.destino ?? t.destino_pl,
         p_usuario: usuario,
@@ -2690,7 +2690,7 @@ function TabRevisionPL({ user }) {
     setSaving(true)
     try {
       for (const t of sel) {
-        const { error } = await db.rpc('fn_banco_revisar', { p_id: t.id, p_destino: t.destino_pl, p_usuario: usuario })
+        const { error } = await dbFin.rpc('fn_banco_revisar', { p_id: t.id, p_destino: t.destino_pl, p_usuario: usuario })
         if (error) throw error
       }
       toast.success(`✅ ${sel.length} aprobados`)
@@ -2700,7 +2700,7 @@ function TabRevisionPL({ user }) {
 
   const sugerirDte = async (t) => {
     try {
-      const { data, error } = await db.rpc('fn_banco_sugerir_dte', { p_id: t.id })
+      const { data, error } = await dbFin.rpc('fn_banco_sugerir_dte', { p_id: t.id })
       if (error) throw error
       setSugerencias(s => ({ ...s, [t.id]: data || [] }))
       if (!data || data.length === 0) toast.info('Sin DTEs por monto/fecha — busca por proveedor abajo')
@@ -2732,7 +2732,7 @@ function TabRevisionPL({ user }) {
     if (ids.length === 0) return
     setSaving(true)
     try {
-      const { error } = await db.rpc('fn_banco_revisar_multi_dte', { p_id: t.id, p_dtes: ids, p_usuario: usuario })
+      const { error } = await dbFin.rpc('fn_banco_revisar_multi_dte', { p_id: t.id, p_dtes: ids, p_usuario: usuario })
       if (error) throw error
       toast.success(`✅ ${ids.length} DTE(s) vinculados a este débito`)
       cerrarDte(t.id)
@@ -2971,7 +2971,7 @@ function TabEstadoCuenta({ user }) {
 
   const load = async () => {
     try {
-      const { data } = await db.from('bank_estados_cuenta').select('*').eq('banco', 'BAC').order('created_at', { ascending: false }).limit(24)
+      const { data } = await dbFin.from('bank_estados_cuenta').select('*').eq('banco', 'BAC').order('created_at', { ascending: false }).limit(24)
       setEstados(data || [])
     } catch (e) { /* la tabla puede no existir aun */ }
   }
@@ -3018,17 +3018,17 @@ function TabEstadoCuenta({ user }) {
     if (!preview) return
     setImporting(true)
     try {
-      const { data, error } = await db.rpc('fn_import_bank_bac', { p_cuenta_id: CUENTA_ID, p_movs: preview.movs })
+      const { data, error } = await dbFin.rpc('fn_import_bank_bac', { p_cuenta_id: CUENTA_ID, p_movs: preview.movs })
       if (error) throw error
       const res = data || {}
       try {
-        await db.from('bank_estados_cuenta').insert({
+        await dbFin.rpc('bank_estado_cuenta_registrar', { p: {
           banco: 'BAC', cuenta: '201500451', periodo: preview.periodo,
           fecha_desde: preview.fdesde, fecha_hasta: preview.fhasta,
           saldo_inicial: preview.saldoIni, saldo_final: preview.saldoFin,
           n_movimientos: preview.movs.length, n_nuevos: res.insertados || 0,
           archivo_nombre: preview.archivo, subido_por: user?.nombre || user?.rol || 'POS',
-        })
+        } })
       } catch (e) { /* registro opcional */ }
       setResult(res); setPreview(null); load()
       toast.success(`Importado: ${res.insertados || 0} nuevos - ${res.duplicados || 0} ya existian`)
