@@ -59,6 +59,9 @@ const MOTIVOS = [
   { v: 'CLOSED',                 t: 'Tienda cerrada' },
   { v: 'MENU_ACCOUNT_SETTINGS',  t: 'El menú no coincide' },
   { v: 'TECHNICAL_PROBLEM',      t: 'Problema técnico' },
+  // Pedido por PedidosYa en la homologación (13-nov): «no pudimos atenderlo a
+  // tiempo». Es el mismo código con el que ellos cancelan cuando nadie contesta.
+  { v: 'NO_RESPONSE',            t: 'No alcanzamos a atenderlo' },
   // Sólo tiene sentido cuando repartimos nosotros; en pickup no aplica.
   { v: 'OUTSIDE_DELIVERY_AREA',  t: 'Fuera de zona', soloDelivery: true },
   { v: 'MOV_NOT_REACHED',        t: 'No llega al mínimo', soloDelivery: true },
