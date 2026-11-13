@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 13-Nov-2026 — KPI Ventas Totales: la proyección solo usa días cerrados
+- Por qué: Jose vio la proyección baja a media mañana. `fn_ventas_totales_dashboard` tomaba el corte de `v_data_disponible_resumen` (= último día con alguna venta); con el POS en vivo, el día en curso contaba como día completo desde la primera venta. A las 11:30 del 13-nov: $320 de hoy divididos como un día entero → proyección $241,907 y utilidad −$2,453 en vez de $261,326 y +$8,138.
+- Fix (`20261113_ventas_totales_corte_dia_cerrado.sql`): en el mes en curso el corte nunca pasa de ayer (`LEAST(data_completa, hoy − 1, fin_mes)`). Todo el tablero (acumulado, BEP, utilidad, gráfica) queda al cierre de ayer; el encabezado ya dice «Data completa hasta …».
+- Caso borde: el día 1 del mes no hay día cerrado y se proyecta con el parcial de hoy.
+- Pendiente: `fn_ventas_comparativo_igualado` lee el mismo corte de la vista y tiene el mismo sesgo (compara el mes en curso con un día parcial). No se tocó la vista porque también la usan `fn_ai_agente_salud_datos` y `fn_ai_brief_freakie` para medir atraso.
+
 ## 12-Nov-2026 — KDS: «cuándo preparar» cada delivery
 - Por qué: 4 de cada 10 deliveries esperaban listos > 10 min al motorista (mediana 7 min, peor 10% ~25 min). Cesar aprobó cortes 2 / 10 min y tope 20 min. Objetivo: que salga recién hecho, no entregar más rápido.
 - BD `kds_cuando_preparar(p_store_code)` (migración `20261112b_kds_cuando_preparar.sql`): por cada delivery con comanda pendiente estima la llegada del motorista: GPS fresco (< 2 min, ruta por las paradas que faltan + regreso) → eventos (ETA de ruta `orden_eta_at` / Recogí) + regreso → sin dato = asume en tienda. Sin asignar: el primer motorista que se libera (y se le suma la ida y vuelta). Tiempos con `minutos_viaje` calibrado. Cocina típica = mediana recibido→completado de la sucursal/franja (14 días, 5–30 min, default 15).

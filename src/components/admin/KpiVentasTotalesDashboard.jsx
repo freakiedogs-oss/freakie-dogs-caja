@@ -564,9 +564,9 @@ function KpiVentasTotalesDashboardInner({ user }) {
           <div style={{ fontSize: 11, color: c.textDim }}>{canalSel.pedidos} pedidos · {canalDef.label}</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Proyección Lineal <InfoTip text="Estimación de cómo cerrará el mes si se mantiene el ritmo actual (promedio diario × días del mes)." /></div>
+          <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>Proyección Lineal <InfoTip text="Estimación de cómo cerrará el mes si se mantiene el ritmo actual (promedio diario de los días cerrados × días del mes). El día en curso no cuenta hasta que cierra." /></div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtUSD(proyActivo)}</div>
-          <div style={{ fontSize: 11, color: c.textDim }}>Promedio × días restantes</div>
+          <div style={{ fontSize: 11, color: c.textDim }}>Promedio de días cerrados × días del mes</div>
         </div>
         <div style={{ ...cardStyle, marginBottom: 0, textAlign: 'center', borderColor: semaforoBep }}>
           <div style={{ fontSize: 11, color: c.textDim, textTransform: 'uppercase' }}>⚖️ Avance BEP <InfoTip text="Punto de Equilibrio (BEP): ventas necesarias para cubrir todos los costos. El avance indica qué tan cerca estás de no perder ni ganar." /></div>
