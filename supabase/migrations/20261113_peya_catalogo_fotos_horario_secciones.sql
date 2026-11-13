@@ -3,9 +3,11 @@
 -- 13-nov-2026, homologación con PedidosYa. Pidieron ver:
 --   · «Cargar fotos para productos»: `pos_menu_items.imagen_url` existía pero el
 --     catálogo no lo mandaba. Ahora cada producto con foto lleva un item `Image`
---     (`IMG-<item>`) referenciado desde `images`. Si el ítem del menú PedidosYa
---     no tiene foto propia, se toma la del mismo producto (`producto_id`) en
---     otro menú del POS; es la misma hamburguesa.
+--     (`IMG-<item>`) referenciado desde `images`. Sólo la foto PROPIA del ítem
+--     del menú PedidosYa: se probó heredar la del mismo `producto_id` de otro
+--     menú del POS y DH rechazó exactamente esas 26 («Failed on 26 actions
+--     while creating images») mientras aceptaba las 22 propias; quedó afuera
+--     (aplicado en la base como `peya_catalogo_solo_fotos_propias`).
 --     Límites de DH: ≤ 20 MB, < 4000 px por lado, GIF/JPEG/PNG/SVG/TIFF/WebP.
 --   · «Cargar horarios a secciones»: en el contrato de DH el horario NO vive en
 --     la Category sino en el Menu (ScheduleEntry referenciada). Una sección con
@@ -56,13 +58,7 @@ begin
   select coalesce(jsonb_object_agg(f.item_id, f.url), '{}'::jsonb) into v_fotos
   from (
     select i.id::text as item_id,
-           coalesce(nullif(btrim(i.imagen_url), ''),
-                    (select nullif(btrim(x.imagen_url), '')
-                       from public.pos_menu_items x
-                      where i.producto_id is not null
-                        and x.producto_id = i.producto_id
-                        and nullif(btrim(x.imagen_url), '') is not null
-                      order by x.created_at desc limit 1)) as url
+           nullif(btrim(i.imagen_url), '') as url
       from public.pos_menu_items i
      where i.menu_id = v_menu.id and coalesce(i.precio, 0) > 0
   ) f
