@@ -27,6 +27,7 @@
 //   { "pin": "1234", "accion": "tienda", "abrir": false,
 //     "motivo": "TOO_BUSY_KITCHEN", "minutos": 30 }
 //   { "pin": "1234", "accion": "catalogo" }
+//   { "pin": "1234", "accion": "catalogo", "remoteIds": ["TIENDA-1", "TIENDA-2"] }  (menú unificado)
 //   { "pin": "1234", "accion": "catalogo_logs", "remoteId": "...", "limite": 10 }
 //   { "pin": "1234", "accion": "pedidos_dh", "remoteId": "...", "horas": 24 }
 //   { "pin": "1234", "accion": "item_disponible", "items": ["PROD-..."],
@@ -430,19 +431,40 @@ async function accionCatalogo(
   cuerpo: Record<string, any>,
   alcance: Alcance,
 ): Promise<Response> {
-  const remoteId = await resolverRemoteId(cuerpo, alcance);
-  if (remoteId instanceof Response) return remoteId;
+  // Una tienda (`remoteId`) o varias con el MISMO menú (`remoteIds`, «menú
+  // unificado»). Varias van en un solo PUT con `vendors: [...]` y comparten el
+  // catalogImportId. Nombrar varias es sólo para secreto de servidor o roles de
+  // todas las tiendas: una cajera sólo publica la suya.
+  let remoteIds: string[];
+  if (Array.isArray(cuerpo.remoteIds) && cuerpo.remoteIds.length > 0) {
+    if (!(alcance.porSecreto || alcance.actor?.todas)) {
+      return json({ error: "no_autorizado", message: "Varias tiendas a la vez sólo con rol de todas las tiendas." }, 403);
+    }
+    remoteIds = [...new Set(cuerpo.remoteIds.map((x: unknown) => String(x).trim()).filter(Boolean))] as string[];
+  } else {
+    const r1 = await resolverRemoteId(cuerpo, alcance);
+    if (r1 instanceof Response) return r1;
+    remoteIds = [r1];
+  }
 
-  const { data: mapa } = await svc.from("peya_vendor_map")
+  const { data: mapas } = await svc.from("peya_vendor_map")
     .select("remote_id, vendor_code, chain_code, platform_restaurant_id, global_entity_id")
-    .eq("remote_id", remoteId).eq("activo", true).maybeSingle();
+    .in("remote_id", remoteIds).eq("activo", true);
 
-  if (!mapa) return json({ error: "vendor_no_mapeado", remoteId }, 404);
-  if (!mapa.chain_code) {
+  const faltan = remoteIds.filter((id) => !(mapas ?? []).some((m) => m.remote_id === id));
+  if (faltan.length) return json({ error: "vendor_no_mapeado", remoteIds: faltan }, 404);
+  const sinCadena = (mapas ?? []).filter((m) => !m.chain_code).map((m) => m.remote_id);
+  if (sinCadena.length) {
     // Sin chainCode no hay URL posible. Es dato que da PedidosYa.
-    return json({ error: "sin_chain_code", remoteId,
+    return json({ error: "sin_chain_code", remoteIds: sinCadena,
       message: "La tienda no tiene chain_code en peya_vendor_map." }, 409);
   }
+  const cadenas = [...new Set((mapas ?? []).map((m) => m.chain_code))];
+  if (cadenas.length > 1) {
+    return json({ error: "cadenas_distintas", cadenas,
+      message: "Un mismo import sólo puede ir a tiendas de la misma cadena." }, 409);
+  }
+  const chainCode = cadenas[0] as string;
 
   // El catálogo sale de la base, no del request: que quien llame pueda mandar
   // items arbitrarios a PedidosYa sería una puerta abierta.
@@ -457,38 +479,44 @@ async function accionCatalogo(
   const nItems = Object.keys(items).length;
   if (nItems === 0) return json({ error: "catalogo_vacio" }, 409);
 
-  const { data: idImport } = await svc.rpc("peya_catalogo_import_abrir", {
-    p_remote_id: remoteId,
-    p_menu_id: c.menu_id ?? null,
-    p_items: nItems,
-    p_origen: String(cuerpo.origen ?? "manual"),
-    p_menu_import_id: cuerpo.menuImportId ?? null,
-    p_vendor_code: mapa.vendor_code ?? null,
-  });
+  // Una fila de registro por tienda; todas reciben el mismo catalogImportId.
+  const idsImport: number[] = [];
+  for (const m of mapas ?? []) {
+    const { data: idImport } = await svc.rpc("peya_catalogo_import_abrir", {
+      p_remote_id: m.remote_id,
+      p_menu_id: c.menu_id ?? null,
+      p_items: nItems,
+      p_origen: String(cuerpo.origen ?? "manual"),
+      p_menu_import_id: cuerpo.menuImportId ?? null,
+      p_vendor_code: m.vendor_code ?? null,
+    });
+    if (idImport != null) idsImport.push(Number(idImport));
+  }
 
   // El callback vuelve al plugin, que es el que valida el JWT de DH.
   const base = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
   const callbackUrl = `${base}/functions/v1/peya-plugin/catalog-import-callback`;
 
-  const url = `${BASE}/v2/chains/${encodeURIComponent(mapa.chain_code)}/catalog`;
+  const url = `${BASE}/v2/chains/${encodeURIComponent(chainCode)}/catalog`;
   let ruta = "pos_vendor";
   let r = await enviarADH(url, {
-    vendors: [mapa.vendor_code ?? remoteId],
+    vendors: (mapas ?? []).map((m) => m.vendor_code ?? m.remote_id),
     catalog: { items },
     callbackUrl,
   }, "PUT");
 
-  // La sandbox de homologación contesta 403 por posVendorId («Unauthorized to
-  // import catalog…»). El contrato tiene una segunda puerta para el mismo
-  // catálogo, por identificador de plataforma y global entity:
+  // Respaldo si la ruta estándar no está autorizada: la misma carga por
+  // identificador de plataforma y global entity
   //   PUT /v2/chains/{chain}/global-entity/{globalEntityId}/catalog
-  //   { platformVendors: [platformRestaurantId], catalog, callbackUrl }
-  // Se intenta sólo si la primera no estaba autorizada y tenemos ambos datos.
-  if (r.status === 403 && mapa.platform_restaurant_id && mapa.global_entity_id) {
-    const url2 = `${BASE}/v2/chains/${encodeURIComponent(mapa.chain_code)}` +
-      `/global-entity/${encodeURIComponent(mapa.global_entity_id)}/catalog`;
+  //   { platformVendors: [platformRestaurantId…], catalog, callbackUrl }
+  // Sólo si todas las tiendas tienen ambos datos y comparten global entity.
+  const geids = [...new Set((mapas ?? []).map((m) => m.global_entity_id))];
+  const todasConPlataforma = (mapas ?? []).every((m) => m.platform_restaurant_id && m.global_entity_id);
+  if (r.status === 403 && todasConPlataforma && geids.length === 1) {
+    const url2 = `${BASE}/v2/chains/${encodeURIComponent(chainCode)}` +
+      `/global-entity/${encodeURIComponent(String(geids[0]))}/catalog`;
     const r2 = await enviarADH(url2, {
-      platformVendors: [String(mapa.platform_restaurant_id)],
+      platformVendors: (mapas ?? []).map((m) => String(m.platform_restaurant_id)),
       catalog: { items },
       callbackUrl,
     }, "PUT");
@@ -500,9 +528,9 @@ async function accionCatalogo(
   let catalogImportId: string | null = null;
   try { catalogImportId = JSON.parse(r.texto)?.catalogImportId ?? null; } catch { /* sin cuerpo */ }
 
-  if (idImport != null) {
+  for (const id of idsImport) {
     await svc.rpc("peya_catalogo_import_enviado", {
-      p_id: idImport,
+      p_id: id,
       p_catalog_import_id: catalogImportId,
       p_estado: ok ? "aceptado" : "error_envio",
       p_mensaje: ok ? null : `HTTP ${r.status}: ${r.texto}`.slice(0, 2000),
@@ -512,7 +540,8 @@ async function accionCatalogo(
   return json({
     ok,
     ruta,
-    importId: idImport,
+    tiendas: (mapas ?? []).map((m) => m.remote_id),
+    importId: idsImport.length === 1 ? idsImport[0] : idsImport,
     catalogImportId,
     items: nItems,
     http: r.status,
