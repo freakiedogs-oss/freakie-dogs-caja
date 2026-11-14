@@ -56,10 +56,42 @@
   <div style="margin-top:8px;opacity:.85">Tranquilo: no perdés nada. Tu PIN y tus pedidos están en el sistema, no en el teléfono.</div>
 </div>
 
-<a class="descarga" href="/apk/freakie-drivers.apk" download>
+<!-- 13-nov-2026: si abren el link desde WhatsApp/Facebook/Instagram, ese
+     navegador interno no descarga nada (David: «le doy a descargar y no pasa
+     nada»). Detectamos el navegador interno y ofrecemos abrir en Chrome. -->
+<div id="enApp" class="stop" style="display:none">
+  <b>⚠️ Estás dentro de WhatsApp (o Facebook)</b>
+  <div style="margin-top:6px">Desde aquí la descarga no funciona. Tocá el botón para abrir esta página en <b>Chrome</b> y descargá desde allí.</div>
+  <a id="abrirChrome" class="descarga" style="background:#2563eb;margin:12px 0 4px" href="#">🌐 Abrir en Chrome</a>
+  <div style="font-size:13px;opacity:.85">Si no abre: tocá los 3 puntitos ⋮ arriba a la derecha → <b>Abrir en Chrome</b> / <b>Abrir en el navegador</b>.</div>
+</div>
+
+<a class="descarga" id="btnDescarga" href="/apk/freakie-drivers.apk?v=12" download="freakie-drivers-v12.apk">
   ⬇️ Descargar la app
   <small>Tocá acá desde tu celular Android</small>
 </a>
+
+<div class="warn" id="noPasaNada">
+  <b>¿Le das a descargar y no pasa nada?</b>
+  <ol style="margin:6px 0 0">
+    <li>Bajá la barra de notificaciones: muchas veces ya se descargó y está ahí (<b>freakie-drivers-v12.apk</b>). Tocala para instalar.</li>
+    <li>Si Chrome pregunta «¿Querés descargar el archivo de todas formas?» o «Este archivo puede ser dañino», tocá <b>Descargar de todas formas</b>.</li>
+    <li>Abrí la app <b>Archivos</b> (o «Mis archivos») → <b>Descargas</b> → tocá <b>freakie-drivers-v12.apk</b>.</li>
+    <li>Si abriste el link desde WhatsApp, abrilo en <b>Chrome</b> (3 puntitos ⋮ → Abrir en Chrome).</li>
+  </ol>
+</div>
+<script>
+(function(){
+  var ua = navigator.userAgent || '';
+  var interno = /WhatsApp|FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\/|; wv\)/i.test(ua);
+  if (interno && /Android/i.test(ua)) {
+    document.getElementById('enApp').style.display = 'block';
+    var url = location.host + location.pathname;
+    document.getElementById('abrirChrome').href =
+      'intent://' + url + '#Intent;scheme=https;package=com.android.chrome;end';
+  }
+})();
+</script>
 
 <h2>Qué trae esta actualización</h2>
 
