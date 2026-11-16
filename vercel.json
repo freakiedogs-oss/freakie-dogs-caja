@@ -17,6 +17,9 @@
     { "source": "/track/(.*)", "destination": "/track.html" },
     { "source": "/track", "destination": "/track.html" },
     { "source": "/instalar-driver", "destination": "/instalar-driver.html" },
+    { "source": "/flow/(.*)", "destination": "/flow.html" },
+    { "source": "/flow", "destination": "/flow.html" },
+    { "source": "/instalar-flow", "destination": "/instalar-flow.html" },
     { "source": "/((?!api/|sb/|sb$).*)", "destination": "/index.html" }
   ],
   "headers": [

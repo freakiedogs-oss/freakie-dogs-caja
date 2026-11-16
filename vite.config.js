@@ -60,6 +60,7 @@ export default defineConfig({
         foto:        resolve(__dirname, 'foto.html'),
         menu:        resolve(__dirname, 'menu.html'),
         driver:      resolve(__dirname, 'driver.html'),
+        flow:        resolve(__dirname, 'flow.html'),        // Freakie Flow en el teléfono
         track:       resolve(__dirname, 'track.html'),
         porcionador: resolve(__dirname, 'porcionador.html'),
         carne:       resolve(__dirname, 'carne.html'),

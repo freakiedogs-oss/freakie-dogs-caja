@@ -1,0 +1,17 @@
+{
+  "name": "Freakie Flow",
+  "short_name": "Flow",
+  "description": "Misiones y objetivos del equipo de Marketing — Freakie Dogs",
+  "id": "/flow",
+  "start_url": "/flow",
+  "scope": "/flow",
+  "display": "standalone",
+  "background_color": "#0e0e0f",
+  "theme_color": "#E32829",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/flow-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/flow-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/flow-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
