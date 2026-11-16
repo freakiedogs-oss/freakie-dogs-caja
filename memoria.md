@@ -4,6 +4,7 @@
 - Por qué: la torre ya podía apagar productos (TabDisponibilidad), pero quien se entera primero de que algo se acabó es la cajera. Ahora cada sucursal apaga lo suyo sin llamar a nadie.
 - POS: botón «Se acabó» (con contador) en la barra rápida del home para todos menos mesero/motorista/tablet/teléfono/marketing → `src/pos/SeAcaboCaja.jsx`: buscar producto, motivo (Se terminó hoy / No llegó el despacho / Equipo dañado), cambios para los combos (precargados con los últimos usados), «Apagar X en <sucursal>»; lista de apagados hoy con «✅ Ya hay».
 - BD (`caja_se_acabo_disponibilidad`): `caja_disponibilidad_listar` / `caja_disponibilidad_set` reusan `producto_bloqueo`. Solo SU sucursal (la RPC rechaza otro store_code salvo admin/ejecutivo/superadmin). Siempre «solo hoy»: vuelve mañana 6:00 a.m. Solo afecta el delivery propio web; caja y PeYa igual. Sin aviso por Telegram (la torre lo ve en Disponibilidad con quién lo apagó).
+- PR #483 + #484 (etiqueta «va en combos»: `en_combos` es booleano). BD `caja_se_acabo_nombre_bonito`: la lista usa `nombre_producto(clave)` (antes salía «Cambio por Queso Frito»). Tutorial: `Manuales/Tutorial_Se_acabo_Caja.mp4` (3:32, sin voz).
 
 ## 16-Nov-2026 — Horarios semanales (encargados arman, Cesar/RRHH aprueban)
 - Por qué: Cesar quiere que los encargados suban el horario de cada semana por persona (libre, sin puestos), con almuerzo y horas extra medibles (1, 1.5, 6 h…), y controlar que las extras sean reales.
