@@ -1,6 +1,7 @@
 -- ════════════════════════════════════════════════════════════════════
 -- «Se acabó» desde la caja (16-nov-2026, Cesar)
--- Aplicada en Supabase como: caja_se_acabo_disponibilidad
+-- Aplicada en Supabase como: caja_se_acabo_disponibilidad, caja_se_acabo_nombre_bonito
+-- (la lista usa nombre_producto(clave) en vez de min(nombre))
 --
 -- La cajera / gerente apaga en el delivery propio (menú web) un producto que se
 -- terminó, SOLO en su sucursal. Reusa producto_bloqueo / producto_bloqueo_cambio
