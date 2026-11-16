@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 16-Nov-2026 — «Esperá y ahorrá» en el checkout del menú web
+- Por qué: en horas saturadas (muchos pedidos, pocos motoristas) Cesar quiere que quien no tenga prisa elija esperar más con 10% de descuento, para dar prioridad a los demás. Descuento y no producto gratis: la cocina saturada no debe hacer más.
+- BD (migración `20261116_espera_y_ahorra.sql`): `_delivery_eta(suc, km)` = mediana real pedido→entregado (21 d, misma franja) + carga actual; `delivery_espera_estado(lat,lng,tel)` (checkout, cada 60 s); saturado si ETA ≥ max(50, típico+12) y hay motoristas. `delivery_saturacion` + `_log`, cron `delivery_saturacion_tick` cada 5 min (10 am–10 pm SV). Config en `config_delivery` (`espera_activa`, `_umbral_min`, `_pct`, `_tope`, `_extra_min`).
+- `crear_pedido_delivery`: `p.espera=true` → valida saturación (≤15 min), cliente NO nuevo, delivery → 10% tope $3, `descuento_motivo='Espera y ahorra'`, `espera_promesa_at`; el cupón no se consume. `_comanda_delivery` pasa el motivo a `pos_cuentas` (antes fijo «Cupón app»). Probado con rollback: 3 burgers $23.97 → −$2.40, cuenta POS con motivo correcto; cliente nuevo → rechazado.
+- Frontend: checkout (`MenuPublico.jsx`) bloque «¿Cuándo lo querés?» solo con saturación; torre (`TabPedidos.jsx`) etiqueta ⏳ con minutos a la promesa (rojo si quedan < 15); seguimiento muestra lo ahorrado y la hora límite. KDS los pone después de los normales.
+- Medir: `select reporte_espera_ahorra('2026-11-16')` (activaciones por sucursal, pedidos, descuento, cumplidos vs tarde, calificaciones).
+
 ## 16-Nov-2026 — Freakie Flow en el teléfono (/flow)
 - Por qué: Frank casi no usaba Flow porque solo estaba en la compu; el equipo de Marketing tiene que revisar las misiones de la semana desde el celular sin que Frank las cargue y empuje.
 - Qué: entrada propia **`/flow`** (`flow.html` + `src/flow/flow-main.jsx` + `src/flow/FlowApp.jsx`), igual que `/driver`: muestra la MISMA `FreakieFlowView` del ERP, sin el menú del ERP. PIN del ERP validado en el servidor (`erp_login`); solo roles marketing / ejecutivo / admin / superadmin. Sesión guardada en el teléfono 30 días (`localStorage freakie_flow_v1`, sin PIN); salir con `/flow?salir=1`.
