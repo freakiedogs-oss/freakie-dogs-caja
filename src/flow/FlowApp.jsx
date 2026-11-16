@@ -62,7 +62,7 @@ function Login({ onLogin }) {
   return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <form onSubmit={entrar} style={{ width: '100%', maxWidth: 340, textAlign: 'center' }}>
-        <img src="/flow-logo.png" alt="Flow" style={{ width: 220, maxWidth: '70%', margin: '0 auto 6px', display: 'block' }} />
+        <img src="/flow-logo.png?v=2" alt="Flow" style={{ width: 220, maxWidth: '70%', margin: '0 auto 6px', display: 'block' }} />
         <p style={{ color: MUTED, fontSize: 14, margin: '0 0 22px' }}>Misiones y objetivos del equipo de Marketing</p>
         <input
           ref={inputRef}
@@ -134,7 +134,7 @@ export default function FlowApp() {
         padding: 'calc(env(safe-area-inset-top) + 8px) 14px 8px', borderBottom: `1px solid ${LINE}`,
         position: 'sticky', top: 0, background: BG, zIndex: 20,
       }}>
-        <img src="/flow-logo.png" alt="Flow" style={{ height: 34 }} />
+        <img src="/flow-logo.png?v=2" alt="Flow" style={{ height: 34 }} />
         <div style={{ textAlign: 'right', fontSize: 12.5, color: MUTED, lineHeight: 1.3 }}>
           <div style={{ color: INK, fontWeight: 700 }}>{user.nombre}</div>
           <a href="/flow?salir=1" style={{ color: MUTED }}>Salir</a>
