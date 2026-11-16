@@ -156,7 +156,7 @@ export default function SeAcaboCaja({ user, storeCode, storeName, onClose, onCam
                   style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '10px 12px', background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, color: C.txt, cursor: 'pointer' }}>
                   <span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{p.nombre}</span>
                   <span style={{ fontSize: 11, color: C.mut }}>
-                    {[p.suelto && 'solo', p.extra && 'extra', p.en_combos > 0 && `${p.en_combos} combos`].filter(Boolean).join(' · ')}
+                    {[p.suelto && 'solo', p.extra && 'extra', p.en_combos && 'va en combos'].filter(Boolean).join(' · ')}
                   </span>
                   <span style={{ color: C.red, fontSize: 12, fontWeight: 800 }}>Se acabó</span>
                 </button>
@@ -171,7 +171,7 @@ export default function SeAcaboCaja({ user, storeCode, storeName, onClose, onCam
             <div style={{ color: C.txt, fontSize: 17, fontWeight: 800, marginBottom: 2 }}>🚫 {sel.nombre}</div>
             <div style={{ color: C.mut, fontSize: 12, marginBottom: 12 }}>
               Se quita del delivery web de {storeName}
-              {sel.en_combos > 0 && <> y de los {sel.en_combos} combos que lo llevan (el cliente elige el cambio)</>}.
+              {sel.en_combos && <> y de los combos que lo llevan (el cliente elige el cambio)</>}.
             </div>
 
             <div style={{ fontSize: 11, fontWeight: 800, color: C.mut, letterSpacing: 1, marginBottom: 6 }}>¿POR QUÉ?</div>
@@ -184,7 +184,7 @@ export default function SeAcaboCaja({ user, storeCode, storeName, onClose, onCam
               ))}
             </div>
 
-            {sel.en_combos > 0 && (
+            {sel.en_combos && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 800, color: C.mut, letterSpacing: 1, marginBottom: 6 }}>EN LOS COMBOS, OFRECER EN SU LUGAR</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
