@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 16-Nov-2026 — «Se acabó» desde la caja (apagar productos del delivery web por sucursal)
+- Por qué: la torre ya podía apagar productos (TabDisponibilidad), pero quien se entera primero de que algo se acabó es la cajera. Ahora cada sucursal apaga lo suyo sin llamar a nadie.
+- POS: botón «Se acabó» (con contador) en la barra rápida del home para todos menos mesero/motorista/tablet/teléfono/marketing → `src/pos/SeAcaboCaja.jsx`: buscar producto, motivo (Se terminó hoy / No llegó el despacho / Equipo dañado), cambios para los combos (precargados con los últimos usados), «Apagar X en <sucursal>»; lista de apagados hoy con «✅ Ya hay».
+- BD (`caja_se_acabo_disponibilidad`): `caja_disponibilidad_listar` / `caja_disponibilidad_set` reusan `producto_bloqueo`. Solo SU sucursal (la RPC rechaza otro store_code salvo admin/ejecutivo/superadmin). Siempre «solo hoy»: vuelve mañana 6:00 a.m. Solo afecta el delivery propio web; caja y PeYa igual. Sin aviso por Telegram (la torre lo ve en Disponibilidad con quién lo apagó).
+
 ## 16-Nov-2026 — Horarios semanales (encargados arman, Cesar/RRHH aprueban)
 - Por qué: Cesar quiere que los encargados suban el horario de cada semana por persona (libre, sin puestos), con almuerzo y horas extra medibles (1, 1.5, 6 h…), y controlar que las extras sean reales.
 - `HorariosView.jsx` reescrito (la versión por tramos estaba abandonada desde oct). Misma entrada de menú «Horarios» (no se tocó App.jsx ni config.js). Encargado: planilla persona × día (Trabaja/Libre/Vacación/Incapacidad/Permiso/Falta), entrada/salida, almuerzo, extras con motivo; costo vs ventas con meta 12–13%; asuetos; alertas (sin día libre, < 11 h de descanso); asistente con pedidos por hora (6 semanas, recomendado = máx(2, ⌈1 + pedidos/2.5⌉), provisional); «Semana pasada · ¿fue hora extra?» desde la marcación; copiar semana anterior; enviar. Aprobador: resumen de sucursales, aprobar/devolver con comentario, extras una por una con la salida marcada.
