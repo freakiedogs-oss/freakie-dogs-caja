@@ -33,7 +33,9 @@ const EST = {
   rechazado:    { t: 'Devuelto para corregir', col: '#fca5a5', bg: '#2a1414' },
   sin_entregar: { t: 'Sin entregar', col: '#fca5a5', bg: '#2a1414' },
 };
-const APRUEBAN = ['rrhh', 'ejecutivo', 'admin', 'superadmin'];
+// Aprueban RRHH, ejecutivos (Cesar) y superadmin. El rol «admin» no aprueba:
+// Jazmín Fuentes (admin) es encargada de Cafetalón (horarios_editores).
+const APRUEBAN = ['rrhh', 'ejecutivo', 'superadmin'];
 
 const iso = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
 const lunes = (d) => { const x = new Date(d); const w = (x.getDay() + 6) % 7; x.setDate(x.getDate() - w); x.setHours(12, 0, 0, 0); return x; };
