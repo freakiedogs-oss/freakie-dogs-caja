@@ -38,3 +38,5 @@
 -- horarios_ventas_proyectadas_semanas_futuras: _horario_costo usa las últimas
 -- 4 semanas cerradas (least(semana, hoy) - 28) — antes las semanas futuras daban $0.
 -- horarios_asistente_por_ventas: horario_cargar agrega ventas_dia y costo_hora.
+-- horarios_encargada_cafetalon: aprueban solo rrhh/ejecutivo/superadmin (admin ya
+-- no); Jazmín Fuentes (admin, M001) agregada a horarios_editores como encargada.
