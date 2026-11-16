@@ -2073,8 +2073,27 @@ function Checkout({ items, total, onClose, onEnviado,
     }, 300)
     return () => { vivo = false; clearTimeout(t) }
   }, [telDigitos])
-  const descCupon = cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
-  const totalConEnvio = Math.max(0, total + costoEnvio - descCupon)
+  // «Esperá y ahorrá» (16-nov-2026, Cesar): solo aparece cuando la sucursal
+  // que le toca está saturada. 10% con tope; no se combina con el cupón (el
+  // cupón queda guardado). El servidor revalida todo y decide el monto.
+  const [espEst, setEspEst] = useState(null)
+  const [espera, setEspera] = useState(false)
+  useEffect(() => {
+    if (tipo !== 'delivery' || !ubic?.lat || !ubic?.lng) { setEspEst(null); return }
+    let vivo = true
+    const consultar = () => db.rpc('delivery_espera_estado', { p_lat: ubic.lat, p_lng: ubic.lng, p_telefono: telDigitos || null })
+      .then(({ data }) => { if (vivo) setEspEst(data && data.mostrar ? data : null) })
+      .catch(() => {})
+    const t0 = setTimeout(consultar, 300)
+    const t = setInterval(consultar, 60000)
+    return () => { vivo = false; clearTimeout(t0); clearInterval(t) }
+  }, [tipo, ubic?.lat, ubic?.lng, telDigitos])
+  useEffect(() => { if (!espEst) setEspera(false) }, [espEst])
+  const esperaActiva = espera && !!espEst
+  const descEspera = esperaActiva
+    ? Math.min(Math.round(total * Number(espEst.pct || 10)) / 100, Number(espEst.tope || 3)) : 0
+  const descCupon = !esperaActiva && cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
+  const totalConEnvio = Math.max(0, total + costoEnvio - descCupon - descEspera)
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
   // Valida el formulario. Lo usan los dos caminos: el de efectivo y el del
@@ -2139,6 +2158,7 @@ function Checkout({ items, total, onClose, onEnviado,
           metodo_pago: metodoPago,
           paga_con: metodoPago === 'efectivo' ? (parseFloat(pagaCon) || null) : null,
           notas_cliente: notas.trim() || null,
+          espera: tipo === 'delivery' && esperaActiva ? true : undefined,
           items: items.map(i => ({
             menu_item_id: i.id,
             cantidad: i.qty,
@@ -2427,6 +2447,49 @@ function Checkout({ items, total, onClose, onEnviado,
             </>
           )}
 
+          {/* ESPERÁ Y AHORRÁ: solo con la sucursal saturada */}
+          {tipo === 'delivery' && espEst && (() => {
+            const pct = Number(espEst.pct || 10)
+            const conDesc = Math.max(0, total + costoEnvio - Math.min(Math.round(total * pct) / 100, Number(espEst.tope || 3)))
+            const opcion = (activa, titulo, sub, precio, tachado, onClick, verde) => (
+              <button type="button" onClick={onClick}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                         border: activa ? `2px solid ${verde ? '#2f9e44' : '#E63946'}` : '1.5px solid #ddd',
+                         background: activa ? (verde ? '#EEF8EC' : '#fff5f5') : '#fff', borderRadius: 12,
+                         padding: '11px 12px', marginBottom: 8, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', flex: 'none', background: '#fff',
+                               border: activa ? `5px solid ${verde ? '#2f9e44' : '#E63946'}` : '2px solid #bbb' }} />
+                <span style={{ flex: 1 }}>{titulo}<span style={{ display: 'block', fontSize: 12, color: verde ? '#3d6b34' : '#777' }}>{sub}</span></span>
+                <span style={{ textAlign: 'right', lineHeight: 1.2 }}>
+                  {tachado && <s style={{ fontSize: 11.5, color: '#999', display: 'block' }}>{tachado}</s>}
+                  <b style={{ fontSize: 14, color: verde ? '#2f7d16' : '#111' }}>{precio}</b>
+                </span>
+              </button>
+            )
+            return (
+              <div className="mp-field">
+                <label>¿Cuándo lo querés?</label>
+                <div style={{ background: '#FFF6E5', border: '1px solid #F2C46D', color: '#7a4a00', borderRadius: 10,
+                              padding: '7px 10px', fontSize: 12, marginBottom: 8 }}>
+                  🔥 Hay muchos pedidos en este momento
+                </div>
+                {opcion(!espera, <b style={{ fontSize: 14 }}>Lo antes posible</b>,
+                        `Llega en ${espEst.normal_min}–${espEst.normal_max} min`,
+                        fmt(total + costoEnvio - descCupon), null, () => setEspera(false), false)}
+                {opcion(espera,
+                        <><b style={{ fontSize: 14 }}>Esperá y ahorrá</b>{' '}
+                          <span style={{ background: '#2f9e44', color: '#fff', borderRadius: 6, padding: '1px 7px', fontSize: 11.5, fontWeight: 800 }}>−{pct}%</span></>,
+                        `Llega en ${espEst.espera_min}–${espEst.espera_max} min · ideal si no tenés prisa`,
+                        fmt(conDesc), fmt(total + costoEnvio), () => setEspera(true), true)}
+                {espera && cuponCk && (
+                  <div style={{ fontSize: 11.5, color: '#666', marginTop: -2 }}>
+                    No se combina con tu cupón de {fmt(cuponCk.monto)}: te queda guardado para otra compra 🎁
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* MÉTODO DE PAGO */}
           <div className="mp-field">
             <label>Método de pago</label>
@@ -2500,6 +2563,12 @@ function Checkout({ items, total, onClose, onEnviado,
               <div className="mp-resumen-row" style={{ color: '#27500A', fontWeight: 700 }}>
                 <span>🎁 Cupón de regreso</span>
                 <span>−{fmt(descCupon)}</span>
+              </div>
+            )}
+            {descEspera > 0 && (
+              <div className="mp-resumen-row" style={{ color: '#2f7d16', fontWeight: 700 }}>
+                <span>⏳ Esperá y ahorrá</span>
+                <span>−{fmt(descEspera)}</span>
               </div>
             )}
             <div className="mp-resumen-total">

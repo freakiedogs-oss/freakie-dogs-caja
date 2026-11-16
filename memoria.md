@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 16-Nov-2026 — «Esperá y ahorrá» en el checkout del menú web
+- Por qué: en horas saturadas (muchos pedidos, pocos motoristas) Cesar quiere que quien no tenga prisa elija esperar más con 10% de descuento, para dar prioridad a los demás. Descuento y no producto gratis: la cocina saturada no debe hacer más.
+- BD (migración `20261116_espera_y_ahorra.sql`): `_delivery_eta(suc, km)` = mediana real pedido→entregado (21 d, misma franja) + carga actual; `delivery_espera_estado(lat,lng,tel)` (checkout, cada 60 s); saturado si ETA ≥ max(50, típico+12) y hay motoristas. `delivery_saturacion` + `_log`, cron `delivery_saturacion_tick` cada 5 min (10 am–10 pm SV). Config en `config_delivery` (`espera_activa`, `_umbral_min`, `_pct`, `_tope`, `_extra_min`).
+- `crear_pedido_delivery`: `p.espera=true` → valida saturación (≤15 min), cliente NO nuevo, delivery → 10% tope $3, `descuento_motivo='Espera y ahorra'`, `espera_promesa_at`; el cupón no se consume. `_comanda_delivery` pasa el motivo a `pos_cuentas` (antes fijo «Cupón app»). Probado con rollback: 3 burgers $23.97 → −$2.40, cuenta POS con motivo correcto; cliente nuevo → rechazado.
+- Frontend: checkout (`MenuPublico.jsx`) bloque «¿Cuándo lo querés?» solo con saturación; torre (`TabPedidos.jsx`) etiqueta ⏳ con minutos a la promesa (rojo si quedan < 15); seguimiento muestra lo ahorrado y la hora límite. KDS los pone después de los normales.
+- Medir: `select reporte_espera_ahorra('2026-11-16')` (activaciones por sucursal, pedidos, descuento, cumplidos vs tarde, calificaciones).
+
 ## 13-Nov-2026 — KPI Ventas Totales: la proyección solo usa días cerrados
 - Por qué: Jose vio la proyección baja a media mañana. `fn_ventas_totales_dashboard` tomaba el corte de `v_data_disponible_resumen` (= último día con alguna venta); con el POS en vivo, el día en curso contaba como día completo desde la primera venta. A las 11:30 del 13-nov: $320 de hoy divididos como un día entero → proyección $241,907 y utilidad −$2,453 en vez de $261,326 y +$8,138.
 - Fix (`20261113_ventas_totales_corte_dia_cerrado.sql`): en el mes en curso el corte nunca pasa de ayer (`LEAST(data_completa, hoy − 1, fin_mes)`). Todo el tablero (acumulado, BEP, utilidad, gráfica) queda al cierre de ayer; el encabezado ya dice «Data completa hasta …».

@@ -200,6 +200,16 @@ export default function TrackingPedido() {
         </ul>
         {d.direccion && <div className="tk-dir">📍 {d.direccion}</div>}
         {d.sucursal && <div className="tk-dir">🏪 Sale de {d.sucursal}</div>}
+        {/* «Esperá y ahorrá» (16-nov-2026): le recordamos lo que eligió */}
+        {d.espera_ahorra && !entregado && (
+          <div style={{ marginTop: 8, background: '#EEF8EC', border: '1px solid #b7e4c4', color: '#2f5f27',
+                        borderRadius: 10, padding: '8px 10px', fontSize: 13 }}>
+            ⏳ Elegiste <b>Esperá y ahorrá</b>: ahorraste <b>{fmt(d.descuento)}</b>.
+            {d.espera_promesa_at && (
+              <> Llega a más tardar a las <b>{new Date(d.espera_promesa_at).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit' })}</b>.</>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Juego mientras espera (no cuando ya llegó) */}

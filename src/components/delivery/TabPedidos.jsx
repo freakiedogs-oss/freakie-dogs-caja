@@ -948,6 +948,19 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       {previas && (
         <div style={{ fontSize: 10, color: c.dim, marginTop: 2 }}>{previas}</div>
       )}
+      {/* «Esperá y ahorrá» (16-nov-2026): el cliente aceptó esperar más con
+          descuento. Va después de los normales, pero su promesa se cumple. */}
+      {p.espera_ahorra && (() => {
+        const minRest = p.espera_promesa_at ? Math.round((new Date(p.espera_promesa_at) - Date.now()) / 60000) : null;
+        const tarde = minRest != null && minRest < 15;
+        return (
+          <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, borderRadius: 6, padding: '3px 7px', display: 'inline-block',
+                        background: tarde ? '#2a1414' : '#0d2b18', color: tarde ? '#fca5a5' : '#86efac',
+                        border: `1px solid ${tarde ? c.red : '#166534'}` }}>
+            ⏳ Esperá y ahorrá{minRest != null && (minRest > 0 ? ` · prometido en ${minRest} min` : ' · ¡ya pasó la hora prometida!')}
+          </div>
+        );
+      })()}
 
       {reloj.etapa.min >= CONGELADO_MIN && (
         <div style={{ marginTop: 6, background: '#2a1414', border: `1px solid ${c.red}`,
