@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 16-Nov-2026 — Horarios semanales (encargados arman, Cesar/RRHH aprueban)
+- Por qué: Cesar quiere que los encargados suban el horario de cada semana por persona (libre, sin puestos), con almuerzo y horas extra medibles (1, 1.5, 6 h…), y controlar que las extras sean reales.
+- `HorariosView.jsx` reescrito (la versión por tramos estaba abandonada desde oct). Misma entrada de menú «Horarios» (no se tocó App.jsx ni config.js). Encargado: planilla persona × día (Trabaja/Libre/Vacación/Incapacidad/Permiso/Falta), entrada/salida, almuerzo, extras con motivo; costo vs ventas con meta 12–13%; asuetos; alertas (sin día libre, < 11 h de descanso); asistente con pedidos por hora (6 semanas, recomendado = máx(2, ⌈1 + pedidos/2.5⌉), provisional); «Semana pasada · ¿fue hora extra?» desde la marcación; copiar semana anterior; enviar. Aprobador: resumen de sucursales, aprobar/devolver con comentario, extras una por una con la salida marcada.
+- BD: migración `20261116b_horarios_semanales.sql` (tablas `horarios_semana`, `horarios_turno`, `feriados_sv`, `horarios_config` + RPCs `horario_*`, `mi_horario`). Valores de Cesar: meta 12–13%, hora extra $3, asueto $15/día. Aprueban Cesar o RRHH (cualquiera).
+- La sesión del ERP no guarda el PIN (`erp_login` lo quita): las RPC reciben el id del usuario en `p_pin` (acepta id o PIN).
+- `MiAsistencia.jsx` (tab Horario): primero `mi_horario` (nuevo); si esa semana no tiene, cae a las plantillas viejas.
+- 100 pruebas (60 planillas al azar + casos límite) → corregido: misma persona en 2 sucursales, entrada = salida (contaba 23.5 h), «trabaja» sin horas, «¿fue extra?» con medianoche, persona inexistente, anotar extra sin turno. Editan solo gerente/jefe_casa_matriz o los de `horarios_editores` (Cafetalón no tiene gerente: falta que Cesar diga quién).
+- Fase 2: escribir las extras aprobadas en `planilla_extra` (requiere `planilla_revision` del mes abierta), préstamos entre sucursales, propinas por horas.
+
 ## 16-Nov-2026 — «Esperá y ahorrá» en el checkout del menú web
 - Por qué: en horas saturadas (muchos pedidos, pocos motoristas) Cesar quiere que quien no tenga prisa elija esperar más con 10% de descuento, para dar prioridad a los demás. Descuento y no producto gratis: la cocina saturada no debe hacer más.
 - BD (migración `20261116_espera_y_ahorra.sql`): `_delivery_eta(suc, km)` = mediana real pedido→entregado (21 d, misma franja) + carga actual; `delivery_espera_estado(lat,lng,tel)` (checkout, cada 60 s); saturado si ETA ≥ max(50, típico+12) y hay motoristas. `delivery_saturacion` + `_log`, cron `delivery_saturacion_tick` cada 5 min (10 am–10 pm SV). Config en `config_delivery` (`espera_activa`, `_umbral_min`, `_pct`, `_tope`, `_extra_min`).
