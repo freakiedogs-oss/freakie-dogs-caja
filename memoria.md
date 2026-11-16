@@ -7,6 +7,8 @@
 - La sesión del ERP no guarda el PIN (`erp_login` lo quita): las RPC reciben el id del usuario en `p_pin` (acepta id o PIN).
 - `MiAsistencia.jsx` (tab Horario): primero `mi_horario` (nuevo); si esa semana no tiene, cae a las plantillas viejas.
 - 100 pruebas (60 planillas al azar + casos límite) → corregido: misma persona en 2 sucursales, entrada = salida (contaba 23.5 h), «trabaja» sin horas, «¿fue extra?» con medianoche, persona inexistente, anotar extra sin turno. Editan solo gerente/jefe_casa_matriz o los de `horarios_editores` (Cafetalón no tiene gerente: falta que Cesar diga quién).
+- Ajustes al grabar el tutorial (16-nov): ventas proyectadas usaban las 4 semanas ANTES de la semana elegida (semanas futuras daban $0) → ahora las últimas 4 semanas cerradas; el % del resumen solo promedia sucursales con horario; el asistente ya no usa «1 + pedidos/2.5» (decía «sobran 8» todo el día) sino que reparte la MISMA gente del encargado mitad parejo / mitad según la venta por hora, y solo avisa diferencias de 2+ personas.
+- Tutorial: `Manuales/Tutorial_Horarios_Encargados.mp4` (7:54, sin voz, con subtítulos) + `Manuales/Guia_rapida_Horarios_encargados.pdf`.
 - Fase 2: escribir las extras aprobadas en `planilla_extra` (requiere `planilla_revision` del mes abierta), préstamos entre sucursales, propinas por horas.
 
 ## 16-Nov-2026 — «Esperá y ahorrá» en el checkout del menú web

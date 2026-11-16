@@ -131,17 +131,27 @@ export default function HorariosView({ user }) {
       let a = mins(t.hora_entrada), b = mins(t.hora_salida); if (b <= a) b += 1440;
       return h * 60 + 30 >= a && h * 60 + 30 < b;
     }).length);
-    const rec = horas.map(h => { const v = Number(ped[h] || 0); return v ? Math.max(2, Math.ceil(1 + v / 2.5)) : 0; });
+    // Repartir LA MISMA gente que puso el encargado según la forma de la venta
+    // de ese día: no dice cuánta gente contratar (eso lo cuida el costo vs la
+    // meta), sino a qué hora sobra o falta. Mínimo 2 por hora abierta.
+    const totPed = horas.reduce((s, h) => s + Number(ped[h] || 0), 0);
+    const totGente = gente.reduce((s, g) => s + g, 0);
+    // Mitad pareja + mitad según la venta: la gente no se puede mover 100% a los
+    // picos (hay que abrir, limpiar, preparar), así que la sugerencia es moderada.
+    const abiertas = horas.filter(h => Number(ped[h] || 0) > 0).length || 1;
+    const rec = horas.map(h => { const v = Number(ped[h] || 0);
+      return v && totPed ? Math.max(2, Math.round(totGente / abiertas * 0.5 + totGente * v / totPed * 0.5)) : 0; });
     const sug = []; let i = 0;
+    const lejos = (k) => rec[k] && Math.abs(gente[k] - rec[k]) >= 2;
     while (i < horas.length) {
       const df = gente[i] - rec[i];
-      if (!rec[i] || df === 0 || Math.abs(df) < 1) { i++; continue; }
-      let j = i; while (j + 1 < horas.length && rec[j + 1] && Math.sign(gente[j + 1] - rec[j + 1]) === Math.sign(df)) j++;
+      if (!lejos(i)) { i++; continue; }
+      let j = i; while (j + 1 < horas.length && lejos(j + 1) && Math.sign(gente[j + 1] - rec[j + 1]) === Math.sign(df)) j++;
       const pk = Math.max(...horas.slice(i, j + 1).map(h => Number(ped[h] || 0)));
       const mx = Math.max(...horas.slice(i, j + 1).map((_, k) => Math.abs(gente[i + k] - rec[i + k])));
       sug.push(df < 0
-        ? { t: 'danger', m: `De ${f12(horas[i] + ':00')} a ${f12((horas[j] + 1) + ':00')} te faltan ${mx}`, s: `Llegan hasta ${pk.toFixed(1)} pedidos por hora.` }
-        : { t: 'warning', m: `De ${f12(horas[i] + ':00')} a ${f12((horas[j] + 1) + ':00')} te sobra${mx > 1 ? 'n' : ''} ${mx}`, s: `Hora tranquila (${pk.toFixed(1)} pedidos por hora): buen momento para almuerzos.` });
+        ? { t: 'danger', m: `De ${f12(horas[i] + ':00')} a ${f12((horas[j] + 1) + ':00')} te faltan ${mx}`, s: `Es de las horas con más pedidos del día: mové a alguien de una hora tranquila o adelantá una entrada.` }
+        : { t: 'warning', m: `De ${f12(horas[i] + ':00')} a ${f12((horas[j] + 1) + ':00')} te sobra${mx > 1 ? 'n' : ''} ${mx}`, s: `Hora tranquila: buen momento para almuerzos, o para que alguien entre más tarde.` });
       i = j + 1;
     }
     return { horas, ped, gente, rec, sug, maxPed: Math.max(1, ...horas.map(h => Number(ped[h] || 0))) };
@@ -294,7 +304,7 @@ export default function HorariosView({ user }) {
                   );
                 })}
               </div>
-              <div style={{ fontSize: 10.5, color: c.dim, margin: '6px 0' }}>Arriba: personas en tu horario / recomendadas (estimado). Barras: pedidos por hora.</div>
+              <div style={{ fontSize: 10.5, color: c.dim, margin: '6px 0' }}>Arriba: personas en tu horario / cómo quedarían repartidas según la venta de ese día. Barras: pedidos por hora.</div>
               {asistente.sug.length === 0
                 ? <Aviso t="success" m="Este día va de acuerdo a las ventas" s="No hay horas con gente de más ni de menos." />
                 : asistente.sug.map((a, i) => <Aviso key={i} {...a} />)}
@@ -431,7 +441,9 @@ function Resumen({ pin, semana, setSemana, irA }) {
   };
 
   const sucs = r?.sucursales || [];
-  const tot = sucs.reduce((a, s) => ({ costo: a.costo + Number(s.costo?.costo || 0), vta: a.vta + Number(s.costo?.ventas_proyectadas || 0), ext: a.ext + Number(s.costo?.extras || 0) }), { costo: 0, vta: 0, ext: 0 });
+  // % solo de las sucursales que ya tienen horario (si no, las vacías bajan el promedio)
+  const tot = sucs.filter(s => Number(s.costo?.costo || 0) > 0)
+    .reduce((a, s) => ({ costo: a.costo + Number(s.costo?.costo || 0), vta: a.vta + Number(s.costo?.ventas_proyectadas || 0), ext: a.ext + Number(s.costo?.extras || 0) }), { costo: 0, vta: 0, ext: 0 });
 
   return (
     <div style={{ padding: '16px 16px 100px', background: c.bg, minHeight: '100vh', color: c.text }}>
