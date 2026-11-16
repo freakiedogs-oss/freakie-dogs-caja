@@ -1,0 +1,36 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Horarios semanales por sucursal (16-nov-2026, Cesar)
+-- Aplicadas en Supabase como: horarios_semanales_base, horarios_semanales_rpcs,
+-- horarios_guardar_solo_extra, horarios_quien_por_usuario.
+--
+-- Tablas: horarios_semana (estado por sucursal y semana: borrador → enviado →
+-- aprobado | rechazado), horarios_turno (persona × día: tipo, entrada, salida,
+-- almuerzo_min, horas_extra, extra_estado), feriados_sv (asuetos dic-2026 a
+-- dic-2027 — revisar cada año), horarios_config ('TODAS': meta 12–13%,
+-- hora extra $3, asueto $15/día).
+--
+-- RPCs (p_pin acepta el id del usuario o su PIN; la sesión del ERP no guarda PIN):
+--   horario_cargar(p_pin, store, semana)       planilla + costo + asistente + por confirmar
+--   horario_guardar_dia(p_pin, store, usuario, fecha, datos)  tipo 'borrar' / 'solo_extra'
+--   horario_copiar_anterior / horario_enviar
+--   horario_revisar(p_pin, store, semana, aprobar, comentario)   solo rrhh/ejecutivo/admin/superadmin
+--   horario_extra_revisar(p_pin, turno, aprobar)
+--   horario_resumen(p_pin, semana)               aprobador: todas las sucursales + extras pendientes
+--   mi_horario(usuario, semana)                  empleado (Mi asistencia → Horario)
+--
+-- Permisos: editan gerente / cocina / jefe_casa_matriz de SU sucursal; aprueban
+-- rrhh, ejecutivo, admin, superadmin. Un cambio del encargado sobre una semana
+-- enviada o aprobada la vuelve a «enviado» (re-aprobación).
+-- Costo = sueldo semanal (salario_mensual × 12 / 52) de quien trabaja ≥ 1 día
+--       + horas extra × $3 + días de asueto trabajados × $15.
+-- Ventas proyectadas = promedio por día de la semana de las últimas 4 semanas
+-- (ventas_diarias: total_ventas_quanto + ventas_pedidos_ya).
+-- Las extras aprobadas NO se escriben solas en planilla_extra todavía (fase 2).
+--
+-- horarios_correcciones_pruebas (tras 100 pruebas): edita solo gerente /
+-- jefe_casa_matriz de su sucursal o quien esté en horarios_editores (rol cocina
+-- habilitado como encargado); bloquea a la misma persona en 2 sucursales el
+-- mismo día; «trabaja» exige entrada y salida distintas; persona tiene que
+-- existir y estar activa; «anotar extra» sin turno da error; «¿fue hora extra?»
+-- compara fecha+hora (turnos que pasan medianoche).
+-- ════════════════════════════════════════════════════════════════════
