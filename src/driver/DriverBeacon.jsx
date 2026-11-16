@@ -1068,7 +1068,16 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           </div>
           <div style={{ fontSize: 15, marginTop: 8, opacity: .92, lineHeight: 1.5 }}>
             {alarma.sucursal} · {alarma.listos} {alarma.listos === 1 ? 'pedido' : 'pedidos'}<br />
-            {(alarma.pedidos || []).filter(p => p.estado === 'lista').map(p => p.numero_orden).join(' · ')}<br />
+            {/* Nombre de cada bolsa a retirar (la alarma solo trae id y número;
+                el nombre y el orden salen de los pedidos que ya tiene la app). */}
+            {(alarma.pedidos || []).filter(a => a.estado === 'lista').map(a => {
+              const p = pedidos.find(x => x.id === a.id) || a
+              return (
+                <span key={a.id || a.numero_orden} style={{ display: 'block', fontWeight: 800 }}>
+                  {p.orden_entrega != null ? `${p.orden_entrega}° · ` : ''}{p.cliente_nombre || 'Cliente'} · {a.numero_orden}
+                </span>
+              )
+            })}
             {alarma.min_espera > 0 ? `Esperando hace ${alarma.min_espera} min` : 'Recién salido de cocina'}
             {alarma.listos < alarma.total && <><br />El otro sigue en cocina, pero este ya no puede esperar.</>}
           </div>
@@ -1129,7 +1138,14 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
             <div key={p.id} style={S.bloqueado}>
               <span style={S.bloqNum}>{ord(p.orden_entrega)}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#d6cdc3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {/* 14-nov-2026 (Cesar): el nombre se ve aunque la parada esté
+                    bloqueada — al retirar en la sucursal las bolsas van rotuladas
+                    con el nombre del cliente y el motorista tiene que saber cuáles
+                    llevar. Solo se bloquea el botón de entregar, no la info. */}
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#f3ece4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.cliente_nombre || 'Cliente'}
+                </div>
+                <div style={{ fontSize: 12.5, color: '#bdb3a8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
                   {p.cliente_direccion || p.numero_orden}
                 </div>
                 <div style={{ fontSize: 11.5, color: '#8b807a', marginTop: 2 }}>

@@ -8,10 +8,12 @@ import { useToast } from '../../hooks/useToast'
 const TEAM = {
   frank: { name: 'Frank', role: 'Director creativo · Marketing Lead', color: '#E32829', duty: 'Detecta necesidades, define prioridades y aprueba decisiones clave.' },
   adri: { name: 'Adriana', role: 'Marketing Project Manager + Diseño', color: '#FDDE10', duty: 'Convierte prioridades en proyectos, asigna responsables, controla fechas y coordina producción.' },
-  kenya: { name: 'Kenia', role: 'Content & Growth Creative', color: '#FFE3B3', duty: 'Da seguimiento a lo digital: pautas, nuevas estrategias, pilares de contenido y grabaciones.' },
-  sam: { name: 'Samantha', role: 'Video Editor', color: '#78C2CD', duty: 'Convierte el material grabado en piezas terminadas según calendario.' },
+  kenya: { name: 'Kenia', role: 'Content & Growth Creative', color: '#78C2CD', duty: 'Da seguimiento a lo digital: pautas, nuevas estrategias, pilares de contenido y grabaciones.' },
+  // Samantha salió del equipo (nov-2026). Puesto vacante hasta que entre el nuevo editor:
+  // cuando entre, se cambia `name` aquí (la clave `editor` se queda igual).
+  editor: { name: 'Vacante', role: 'Video Editor', color: '#FFE3B3', duty: 'Convierte el material grabado en piezas terminadas según calendario.' },
 }
-const TEAM_ORDER = ['frank', 'adri', 'kenya', 'sam']
+const TEAM_ORDER = ['frank', 'adri', 'kenya', 'editor']
 
 // ── Las 5 etapas del pipeline ──
 const ETAPAS = {

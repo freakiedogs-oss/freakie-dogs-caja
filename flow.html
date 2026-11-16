@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Freakie Flow</title>
+  <meta name="theme-color" content="#0e0e0f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Flow">
+  <link rel="icon" href="/flow-64.png?v=2">
+  <link rel="apple-touch-icon" href="/flow-180.png?v=2">
+  <link rel="manifest" href="/flow.webmanifest">
+  <script>
+    // Cerrar sesión con un enlace normal a /flow?salir=1: se limpia acá, antes
+    // de que cargue la app (mismo patrón que /driver).
+    try {
+      if (location.search.indexOf('salir=1') !== -1) {
+        localStorage.removeItem('freakie_flow_v1');
+        history.replaceState({}, '', '/flow');
+      }
+    } catch (e) { /* noop */ }
+
+    // Android/Chrome avisa cuando la app se puede instalar; el diálogo solo se
+    // puede abrir desde un toque, así que se guarda el evento para el botón.
+    window.__instalar = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      window.__instalar = e;
+      window.dispatchEvent(new Event('flow:instalable'));
+    });
+  </script>
+</head>
+<body style="margin:0;background:#0e0e0f;color:#f2f0ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div id="flow-root"></div>
+  <script>
+    // Si a los 8 s no arrancó (teléfono viejo o sin internet), se dice qué hacer
+    // en vez de dejar la pantalla negra.
+    setTimeout(function () {
+      var r = document.getElementById('flow-root');
+      if (r && r.childNodes.length > 0) return;
+      r.innerHTML =
+        '<div style="padding:28px 22px;max-width:420px;margin:0 auto;line-height:1.5">' +
+        '<h2 style="margin:8px 0 6px;font-size:20px">Flow no pudo arrancar</h2>' +
+        '<p>Revisá que el teléfono tenga internet, cerrá la app del todo y volvé a abrirla. ' +
+        'Si sigue igual, actualizá el navegador (Chrome o Safari).</p></div>';
+    }, 8000);
+  </script>
+  <script type="module" src="/src/flow/flow-main.jsx"></script>
+</body>
+</html>
