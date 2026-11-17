@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 16-Nov-2026 — Torre: cambiar pago, regresar entregado, copiar para WhatsApp, ruteo más cercano
+- Por qué: Cesar tenía que avisarle a la cajera a mano cuando un cliente pagaba por transferencia/link (tarjeta rechazada o sin efectivo); a veces se marca entregado por error; y cuando falla la app del motorista hay que mandarle el pedido por WhatsApp.
+- Torre (TabPedidos): «📋 Copiar para WhatsApp» (nombre, tel, productos con modificadores, pago y vuelto, dirección, link de Google Maps) y «💳 Cambiar pago» en cada tarjeta; en «Sin pagar», «Pagó por transferencia / con link» (pasa a Por cobrar); en «Entregados hoy», «◀ Regresar a En ruta» (torre_mover_etapa, borra el viaje del bono).
+- Decisiones de Cesar: solo se cambia el pago ANTES de que la caja cobre (si ya cobró, el servidor avisa); la caja abre el cobro con transferencia/link ya elegido (PaymentModal `metodoInicial`); motorista y caja lo ven como «ya pagó, no cobrar» (`pago_confirmado_at`).
+- Ruteo: fn_ruta_recalcular con antigüedad al 30% (simulación 129 viajes: km de más 4.8% → 0.9%). Pendiente ofrecido: revisar cómo se agrupan pedidos en un viaje (asignación), que es la otra causa de rutas raras.
+
 ## 16-Nov-2026 — «Se acabó» desde la caja (apagar productos del delivery web por sucursal)
 - Por qué: la torre ya podía apagar productos (TabDisponibilidad), pero quien se entera primero de que algo se acabó es la cajera. Ahora cada sucursal apaga lo suyo sin llamar a nadie.
 - POS: botón «Se acabó» (con contador) en la barra rápida del home para todos menos mesero/motorista/tablet/teléfono/marketing → `src/pos/SeAcaboCaja.jsx`: buscar producto, motivo (Se terminó hoy / No llegó el despacho / Equipo dañado), cambios para los combos (precargados con los últimos usados), «Apagar X en <sucursal>»; lista de apagados hoy con «✅ Ya hay».

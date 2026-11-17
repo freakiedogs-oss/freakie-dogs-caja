@@ -24,6 +24,51 @@ const c = {
 };
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
 
+// ── Copiar para WhatsApp (16-nov-2026) ───────────────────────────────
+// Cuando la app del motorista falla, Cesar/Karina le mandan el pedido por
+// WhatsApp. Junta lo que el motorista necesita en un solo texto.
+const NOMBRE_PAGO = { efectivo: 'EFECTIVO', tarjeta: 'TARJETA', transferencia: 'TRANSFERENCIA', link_pago: 'LINK DE PAGO' };
+const modsTxt = (ms) => (ms || []).map(m => m.nombre).filter(Boolean).join(', ');
+export function textoWhatsApp(p) {
+  const L = [];
+  const suc = p.sucursal_nombre || p.ruteo_sugerido?.nombre;
+  L.push(`*Pedido ${p.numero_orden}*${suc ? ` · sale de ${suc}` : ''}`);
+  L.push(`Cliente: ${p.cliente_nombre || '—'}`);
+  const tel = String(p.cliente_telefono || '').replace(/\D/g, '');
+  if (tel) L.push(`Tel: ${p.cliente_telefono} · wa.me/503${tel.slice(-8)}`);
+  for (const it of (Array.isArray(p.items) ? p.items : [])) {
+    const m = modsTxt(it.modificadores);
+    L.push(`${it.cantidad || 1}x ${it.nombre}${m ? ` (${m})` : ''}`);
+    for (const comp of (it.componentes || [])) {
+      const cm = modsTxt(comp.modificadores);
+      L.push(`   - ${comp.nombre}${cm ? ` (${cm})` : ''}`);
+    }
+    if (it.nota) L.push(`   Nota: ${it.nota}`);
+  }
+  L.push(`Total: ${fmt(p.total)}`);
+  const metodo = NOMBRE_PAGO[p.metodo_pago] || String(p.metodo_pago || 'efectivo').toUpperCase();
+  if (p.pagado_online) L.push(`Pago: ${metodo} · *YA PAGÓ, NO COBRAR*`);
+  else if (p.metodo_pago === 'efectivo' && Number(p.paga_con) > 0) {
+    const v = Math.max(0, Number(p.paga_con) - Number(p.total));
+    L.push(`Pago: EFECTIVO · paga con ${fmt(p.paga_con)} → *llevar ${fmt(v)} de vuelto*`);
+  } else L.push(`Pago: ${metodo} · cobrar ${fmt(p.total)}`);
+  if (p.cliente_direccion) L.push(`Dirección: ${p.cliente_direccion}`);
+  if (p.notas_cliente) L.push(`Notas: ${p.notas_cliente}`);
+  if (p.cliente_lat != null && p.cliente_lng != null) {
+    L.push(`Mapa: https://maps.google.com/?q=${Number(p.cliente_lat).toFixed(6)},${Number(p.cliente_lng).toFixed(6)}`);
+  }
+  return L.join('\n');
+}
+async function copiarTexto(t) {
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch {
+    const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'absolute'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch { /* nada */ }
+    document.body.removeChild(ta); return ok;
+  }
+}
+
 // ── Detalle de lo que pidió el cliente ───────────────────────────────
 // Karina necesita verlo sin salir de la Torre: para responder dudas por
 // WhatsApp, para avisarle a cocina de una nota, o para revisar un reclamo.
@@ -207,7 +252,7 @@ function useEsCompu() {
 // ── ENTREGADOS DE HOY ─────────────────────────────────────────────────
 // Cierra el ciclo: una vez entregado el pedido, muestra dónde se fue el tiempo.
 // Es la única vista que permite comparar cocina contra despacho contra calle.
-function FranjaEntregados({ entregados, abierto, onToggle }) {
+function FranjaEntregados({ entregados, abierto, onToggle, ocupado, onRegresar }) {
   const prom = (k) => {
     const vals = entregados.map(e => e.etapas?.[k]).filter(v => v != null);
     return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
@@ -273,6 +318,14 @@ function FranjaEntregados({ entregados, abierto, onToggle }) {
                         {e.total_min != null ? `${e.total_min} min` : '—'}
                       </span>
                       <span style={{ fontSize: 10.5, color: c.dim }}>entregado {hora(e.entregado_at)}</span>
+                      {/* Se marcó entregado por error (16-nov-2026): vuelve a En ruta
+                          con su motorista; se le borra el viaje del bono. */}
+                      {onRegresar && (
+                        <button disabled={ocupado === e.id} onClick={() => onRegresar(e)}
+                          style={{ ...btn('#242424'), color: '#ccc', fontSize: 11, padding: '4px 8px', border: '1px solid #3a3a3a' }}>
+                          {ocupado === e.id ? '…' : '◀ Regresar a En ruta'}
+                        </button>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 5 }}>
                       {ETAPAS.map(et => {
@@ -526,6 +579,25 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
 
+  // Cambiar cómo pagó el cliente (16-nov-2026). Transferencia / link = ya pagó:
+  // el motorista y la caja lo ven como «no cobrar» y la caja abre el cobro con
+  // ese método. Solo mientras la caja no lo haya cobrado (el servidor lo valida).
+  const cambiarPago = async (p, metodo) => {
+    const nom = NOMBRE_PAGO[metodo] || metodo;
+    const pagado = metodo === 'transferencia' || metodo === 'link_pago';
+    if (!window.confirm(`¿${p.numero_orden} se pagó con ${nom.toLowerCase()}?` +
+        (pagado ? '\n\nEl motorista y la caja lo van a ver como YA PAGADO (no cobrar).' : ''))) return false;
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_cambiar_pago', { p_token: token, p_delivery_id: p.id, p_metodo: metodo });
+      if (error) throw error;
+      show(`💳 ${p.numero_orden}: ${data?.nombre || nom}${data?.salio_de_sin_pagar ? ' — pasó a «Por cobrar», confirmalo para mandarlo a cocina' : ''}`);
+      await cargar();
+      return true;
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo cambiar el pago')); return false; }
+    finally { setOcupado(null); }
+  };
+
   const marcarEnCamino = async (p) => {
     setOcupado(p.id);
     try {
@@ -640,7 +712,7 @@ export default function TabPedidos({ show = () => {} }) {
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago,
                    // Traslado de sucursal: el estado vive en TabPedidos pero el boton
                    // se pinta dentro de <Tarjeta>, asi que tiene que viajar por props.
                    trasladando, setTrasladando, trasSel, setTrasSel,
@@ -831,6 +903,18 @@ export default function TabPedidos({ show = () => {} }) {
                             fontSize: 11.5, textDecoration: 'none' }}>
                   🔗 Link para que lo pague
                 </a>
+                {/* La tarjeta no pasó y el cliente pagó por otro lado: se marca
+                    pagado y pasa a «Por cobrar» para confirmarlo y mandarlo a cocina. */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
+                  <button disabled={ocupado === p.id} onClick={() => cambiarPago(p, 'transferencia')}
+                    style={{ ...btn('#0b2340', '#bfdbfe'), border: '1px solid #3b82f6', fontSize: 11, padding: 6 }}>
+                    🏦 Pagó por transferencia
+                  </button>
+                  <button disabled={ocupado === p.id} onClick={() => cambiarPago(p, 'link_pago')}
+                    style={{ ...btn('#222'), border: '1px solid #444', fontSize: 11, padding: 6 }}>
+                    🔗 Pagó con link
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -875,6 +959,8 @@ export default function TabPedidos({ show = () => {} }) {
 
       <FranjaEntregados
         entregados={entregados}
+        ocupado={ocupado}
+        onRegresar={(e) => moverEtapa({ ...e, estado: 'entregada' }, 'atras')}
         abierto={entregadosAbierto}
         onToggle={() => setEntregadosAbierto(v => {
           localStorage.setItem('torre_entregados_abierto', v ? '0' : '1');
@@ -916,11 +1002,50 @@ function Historial({ historial }) {
   );
 }
 
+// ── Copiar para WhatsApp + Cambiar pago (16-nov-2026) ──
+function PagoYCopiar({ p, ocupado, cambiarPago, show }) {
+  const [abierto, setAbierto] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const pagoWeb = p.pagado_online && !p.pago_confirmado_at;   // tarjeta n1co: no se toca
+  const OPS = [['transferencia', '🏦 Transferencia'], ['link_pago', '🔗 Link de pago'],
+               ['tarjeta', '💳 Tarjeta (POS)'], ['efectivo', '💵 Efectivo']];
+  const mini = { ...btn('#242424'), color: c.text, fontSize: 11.5, padding: '6px 9px', border: '1px solid #3a3a3a' };
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button style={mini} onClick={async () => {
+          const ok = await copiarTexto(textoWhatsApp(p));
+          if (ok) { setCopiado(true); setTimeout(() => setCopiado(false), 2000); } else show('❌ No se pudo copiar');
+        }}>{copiado ? '✓ Copiado' : '📋 Copiar para WhatsApp'}</button>
+        {!pagoWeb && (
+          <button style={mini} onClick={() => setAbierto(a => !a)}>💳 Cambiar pago {abierto ? '▴' : '▾'}</button>
+        )}
+      </div>
+      {abierto && !pagoWeb && (
+        <div style={{ marginTop: 6, background: '#181818', border: '1px solid #333', borderRadius: 8, padding: 8 }}>
+          <div style={{ fontSize: 11, color: c.dim, marginBottom: 6 }}>¿Cómo pagó el cliente? (solo antes de que la caja lo cobre)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {OPS.map(([k, t]) => (
+              <button key={k} disabled={ocupado === p.id || p.metodo_pago === k}
+                onClick={async () => { if (await cambiarPago(p, k)) setAbierto(false); }}
+                style={{ ...btn(p.metodo_pago === k ? '#0b2340' : '#222'), fontSize: 11.5, padding: 7,
+                         border: `1px solid ${p.metodo_pago === k ? '#3b82f6' : '#444'}`,
+                         color: p.metodo_pago === k ? '#bfdbfe' : c.text, opacity: p.metodo_pago === k ? .9 : 1 }}>
+                {t}{p.metodo_pago === k ? ' ✓' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tarjeta de pedido ──
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago,
                    trasladando, setTrasladando, trasSel, setTrasSel,
                    trasMotivo, setTrasMotivo, trasladar,
                    cancelaMotivo, setCancelaMotivo }) {
@@ -997,14 +1122,23 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
           Se mira `pagado_online`, NO `cobrado`: `cobrado` lo pone el trigger del
           POS cada vez que la caja cierra la cuenta, también en efectivo, y con
           eso el sello salía en pedidos que el motorista sí tiene que cobrar. */}
-      {p.pagado_online && (
+      {p.pagado_online && (p.pago_confirmado_at ? (
+        <div style={{ display: 'inline-block', marginTop: 5, padding: '2px 7px', borderRadius: 5,
+                      background: '#0b2340', border: '1px solid #3b82f6',
+                      fontSize: 10.5, fontWeight: 800, color: '#bfdbfe', letterSpacing: .3 }}>
+          {p.metodo_pago === 'link_pago' ? '🔗 PAGÓ CON LINK' : '🏦 PAGÓ POR TRANSFERENCIA'} · NO COBRAR
+          <span style={{ fontWeight: 500, color: '#93c5fd' }}> · {p.pago_confirmado_por || 'torre'} {new Date(p.pago_confirmado_at).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit' })}</span>
+        </div>
+      ) : (
         <div style={{ display: 'inline-block', marginTop: 5, padding: '2px 7px', borderRadius: 5,
                       background: '#0d2b18', border: `1px solid ${c.green}`,
                       fontSize: 10.5, fontWeight: 800, color: c.green, letterSpacing: .3 }}>
           💳 PAGADO ONLINE · NO COBRAR
         </div>
-      )}
+      ))}
       {p.motorista_nombre && <div style={{ fontSize: 11.5, color: c.green, marginTop: 3 }}>🛵 {p.motorista_nombre}</div>}
+
+      <PagoYCopiar p={p} ocupado={ocupado} cambiarPago={cambiarPago} show={show} />
 
       {/* Mover de columna en cualquier dirección. Va arriba de todo lo demás
           porque es lo que Karina busca cuando el tablero no refleja la calle. */}

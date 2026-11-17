@@ -242,6 +242,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
   // UI
   const [activeCat,         setActiveCat]         = useState(null)
   const [showPayModal,      setShowPayModal]       = useState(false)
+  // Delivery que la torre marcó como pagado por transferencia o link (16-nov-2026):
+  // el cobro abre con ese método ya elegido. Se lee al abrir el cobro, por si
+  // la torre lo cambió después de que la cajera abrió la cuenta.
+  const [metodoTorre,       setMetodoTorre]        = useState(null)
+  useEffect(() => {
+    if (!showPayModal || tipo !== 'delivery_propio' || !cuentaId) { setMetodoTorre(null); return }
+    db.from('pos_cuentas').select('delivery_metodo_pago').eq('id', cuentaId).maybeSingle()
+      .then(({ data }) => setMetodoTorre(['transferencia', 'link_pago'].includes(data?.delivery_metodo_pago) ? data.delivery_metodo_pago : null))
+  }, [showPayModal, tipo, cuentaId])
   const [showNoteModal,     setShowNoteModal]      = useState(null)
   const [pinAuth,           setPinAuth]            = useState(null)
   const [cortesiaModal,     setCortesiaModal]      = useState(null)  // {idx, auth, motivo}
@@ -1945,6 +1954,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           tipo={tipo}
           peyaRef={peyaRef}
           peyaIdObligatorio={peyaIdObligatorio}
+          metodoInicial={metodoTorre}
           onConfirm={handlePaymentConfirm}
           onComplete={handlePaymentComplete}
           onPrintFactura={handlePrintFactura}
