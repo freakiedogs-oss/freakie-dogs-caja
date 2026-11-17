@@ -1994,6 +1994,34 @@ const HT = {
         borderRadius: 14, padding: 12, fontSize: 14.5, cursor: 'pointer', fontFamily: 'inherit' },
 }
 
+// Franjas de 15 min para programar: hoy y mañana, dentro del horario del
+// delivery (BD) y desde 1 hora después de ahora. Hora de El Salvador (UTC-6).
+function franjasProgramables(semana) {
+  if (!Array.isArray(semana)) return []
+  const ahoraSV = new Date(Date.now() - 6 * 3600 * 1000)          // reloj SV en campos UTC
+  const minimo = Date.now() + 60 * 60000                         // mínimo 1 hora (Cesar)
+  const out = []
+  for (let k = 0; k < 2; k++) {
+    const base = new Date(Date.UTC(ahoraSV.getUTCFullYear(), ahoraSV.getUTCMonth(), ahoraSV.getUTCDate() + k))
+    const dia = semana.find(d => d.dia === base.getUTCDay())
+    const slots = []
+    if (dia?.abierto && dia.apertura && dia.cierre) {
+      const [ah, am] = dia.apertura.split(':').map(Number)
+      const [ch, cm] = dia.cierre.split(':').map(Number)
+      const ini = ah * 60 + am + 30, fin = (ch * 60 + cm) - 15
+      for (let m = Math.ceil(ini / 15) * 15; m <= fin; m += 15) {
+        const utc = base.getTime() + (m + 6 * 60) * 60000              // SV → UTC
+        if (utc < minimo) continue
+        const h = Math.floor(m / 60) % 24, mm = m % 60
+        slots.push({ iso: new Date(utc).toISOString(),
+                     txt: `${h % 12 || 12}:${String(mm).padStart(2, '0')} ${h >= 12 ? 'p. m.' : 'a. m.'}` })
+      }
+    }
+    out.push({ etiqueta: k === 0 ? 'Hoy' : 'Mañana', slots })
+  }
+  return out
+}
+
 function Checkout({ items, total, onClose, onEnviado,
                    lineasConProblema = [], dondeAgotado,
                    onCambiar = () => {}, onQuitarLinea = () => {},
@@ -2179,6 +2207,16 @@ function Checkout({ items, total, onClose, onEnviado,
   // cupón queda guardado). El servidor revalida todo y decide el monto.
   const [espEst, setEspEst] = useState(null)
   const [espera, setEspera] = useState(false)
+  // Pedido programado (17-nov-2026): hoy o mañana, en franjas de 15 min dentro
+  // del horario del delivery y con al menos 1 hora de anticipación.
+  const [programar, setProgramar] = useState(false)
+  const [progSlot, setProgSlot] = useState('')
+  const [progDia, setProgDia] = useState(0)
+  const [semanaHor, setSemanaHor] = useState(null)
+  useEffect(() => {
+    db.rpc('menu_publico_horario').then(({ data }) => setSemanaHor(data?.semana || null)).catch(() => {})
+  }, [])
+  const slotsProg = useMemo(() => franjasProgramables(semanaHor), [semanaHor])
   useEffect(() => {
     if (tipo !== 'delivery' || !ubic?.lat || !ubic?.lng) { setEspEst(null); return }
     let vivo = true
@@ -2190,7 +2228,7 @@ function Checkout({ items, total, onClose, onEnviado,
     return () => { vivo = false; clearTimeout(t0); clearInterval(t) }
   }, [tipo, ubic?.lat, ubic?.lng, telDigitos])
   useEffect(() => { if (!espEst) setEspera(false) }, [espEst])
-  const esperaActiva = espera && !!espEst
+  const esperaActiva = espera && !!espEst && !programar
   const descEspera = esperaActiva
     ? Math.min(Math.round(total * Number(espEst.pct || 10)) / 100, Number(espEst.tope || 3)) : 0
   const descCupon = !esperaActiva && !regaloAplicaCk && cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
@@ -2202,6 +2240,7 @@ function Checkout({ items, total, onClose, onEnviado,
   // los datos de la tarjeta en un solo request.
   const validar = () => {
     setError('')
+    if (programar && !progSlot) { setError('Elegí la hora para la que querés tu pedido'); return false }
     if (lineasConProblema.length) {
       const faltan = lineasConProblema.flatMap(x => x.problemas.map(p => p.deNombre))
       setError(`Hoy no hay ${[...new Set(faltan)].join(', ')}`
@@ -2260,6 +2299,7 @@ function Checkout({ items, total, onClose, onEnviado,
           paga_con: metodoPago === 'efectivo' ? (parseFloat(pagaCon) || null) : null,
           notas_cliente: notas.trim() || null,
           espera: tipo === 'delivery' && esperaActiva ? true : undefined,
+          programado_para: programar && progSlot ? progSlot : undefined,
           items: items.map(i => ({
             menu_item_id: i.id,
             cantidad: i.qty,
@@ -2549,7 +2589,50 @@ function Checkout({ items, total, onClose, onEnviado,
           )}
 
           {/* ESPERÁ Y AHORRÁ: solo con la sucursal saturada */}
-          {tipo === 'delivery' && espEst && (() => {
+          {/* ¿PARA CUÁNDO? Ahora o programado (hoy / mañana) */}
+          {slotsProg.some(d => d.slots.length) && (
+            <div className="mp-field">
+              <label>¿Para cuándo?</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[[false, 'Lo antes posible', tipo === 'delivery' ? 'Te lo mandamos ya' : 'Lo preparamos ya'],
+                  [true, 'Programarlo', 'Para más tarde']].map(([v, t, sub]) => (
+                  <button key={String(v)} type="button" onClick={() => { setProgramar(v); if (!v) setProgSlot('') }}
+                          style={{ border: programar === v ? '2px solid #E63946' : '1px solid #ddd', background: programar === v ? '#FCEBEB' : '#fff',
+                                   borderRadius: 12, padding: '10px 8px', cursor: 'pointer', fontFamily: 'inherit', color: '#222' }}>
+                    <b style={{ fontSize: 14 }}>{t}</b><span style={{ display: 'block', fontSize: 11.5, color: '#777' }}>{sub}</span>
+                  </button>
+                ))}
+              </div>
+              {programar && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    {slotsProg.map((d, i) => d.slots.length > 0 && (
+                      <button key={d.etiqueta} type="button" onClick={() => { setProgDia(i); setProgSlot('') }}
+                              style={{ border: progDia === i ? '1.5px solid #111' : '1px solid #ddd', background: progDia === i ? '#111' : '#fff',
+                                       color: progDia === i ? '#fff' : '#222', borderRadius: 20, padding: '5px 14px', fontSize: 13,
+                                       fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{d.etiqueta}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {(slotsProg[progDia]?.slots || []).map(sl => (
+                      <button key={sl.iso} type="button" onClick={() => setProgSlot(sl.iso)}
+                              style={{ border: progSlot === sl.iso ? '2px solid #E63946' : '1px solid #ddd',
+                                       background: progSlot === sl.iso ? '#E63946' : '#fff', color: progSlot === sl.iso ? '#fff' : '#222',
+                                       borderRadius: 9, padding: '6px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{sl.txt}</button>
+                    ))}
+                  </div>
+                  {progSlot && (
+                    <div style={{ background: '#FAEEDA', color: '#633806', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, marginTop: 10 }}>
+                      🕧 {tipo === 'delivery' ? 'Te llega' : 'Lo tenés listo'} {slotsProg[progDia]?.etiqueta.toLowerCase()} a las <b>{(slotsProg[progDia]?.slots.find(x => x.iso === progSlot) || {}).txt}</b>.
+                      {' '}Lo empezamos a preparar a la hora justa para que llegue recién hecho.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tipo === 'delivery' && espEst && !programar && (() => {
             const pct = Number(espEst.pct || 10)
             const conDesc = Math.max(0, total + costoEnvio - Math.min(Math.round(total * pct) / 100, Number(espEst.tope || 3)))
             const opcion = (activa, titulo, sub, precio, tachado, onClick, verde) => (
