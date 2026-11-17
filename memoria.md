@@ -1,5 +1,20 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 17-Nov-2026 — PedidosYa: pendientes de catálogo de la homologación (notas de Marcos, 13-nov)
+- **Qué se hizo.** Se corrieron los 5 puntos pendientes sobre la tienda sandbox AR-PRUEBAS-INTEGRACION-0001 (PRID 478876). Se mandaron con su ImportID en el hilo «Resultados de homologación 13/11» a Marcos Mendez (cc Mónica y soporteintegraciones).
+  1. **Horario de sección** (Bebidas 12–15): `…-1794889544898`.
+  2. **Pausar/reactivar Freakie Fries** solo con `/catalog/items/availability`: 204/204.
+  3. **Editar 3 ítems** con «PRUEBA»: `…-1794889694104`.
+  4. **Borrar 2 SKUs**: `…-1794889936083`.
+  5. **Precio del Combo Fancy Duo** 10.99→12.99: `…-1794890082489`.
+  - Todos los imports quedaron en `done_with_errors`, y los errores son solo de imágenes (fotos ya validadas en la llamada).
+- **Cómo, sin tocar el menú real.** Las ediciones, borrados y el precio viven en `peya_item_prueba`. `peya_catalogo(p_pruebas=true)` los aplica solo cuando todas las tiendas del envío son `es_pruebas`. Para volver al catálogo real basta borrar esas filas.
+- **Bloqueo, del lado de PeYa.** Desde el 13-nov a las 21:11 UTC, cualquier import que incluya SV-PRUEBA-INTEGRACION-FREAKIE0001 (PRID 165324) falla en DataFridge con «vendor IDs are different from those existing within the PedidosYa inventory».
+  - Falla por las dos rutas.
+  - El endpoint de Availability devuelve 400 para esa tienda.
+  - Se le pidió a Marcos que lo revise; el menú unificado se repite cuando respondan.
+- **peya-responder v17.** Se agregó `ruta: "platform_vendor"`, que fuerza `PUT /v2/chains/{chain}/global-entity/{gEID}/catalog` con `platformVendors: [PRID…]`. Sin ese parámetro va la ruta estándar y la de plataforma queda de respaldo ante un 403.
+
 ## 16-Nov-2026 — Torre: cambiar pago, regresar entregado, copiar para WhatsApp, ruteo más cercano
 - Por qué: Cesar tenía que avisarle a la cajera a mano cuando un cliente pagaba por transferencia/link (tarjeta rechazada o sin efectivo); a veces se marca entregado por error; y cuando falla la app del motorista hay que mandarle el pedido por WhatsApp.
 - Torre (TabPedidos): «📋 Copiar para WhatsApp» (nombre, tel, productos con modificadores, pago y vuelto, dirección, link de Google Maps) y «💳 Cambiar pago» en cada tarjeta; en «Sin pagar», «Pagó por transferencia / con link» (pasa a Por cobrar); en «Entregados hoy», «◀ Regresar a En ruta» (torre_mover_etapa, borra el viaje del bono).
