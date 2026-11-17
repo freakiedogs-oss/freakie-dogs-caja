@@ -221,6 +221,7 @@ export default function TrackingPedido() {
         </div>
       )}
 
+      <RegaloBienvenida token={token} estado={d.estado} />
       {entregado && <CuponGanado token={token} />}
 
       {entregado && <EncuestaEntrega token={token} inicial={d.calificacion} />}
@@ -278,6 +279,74 @@ function CuponGanado({ token }) {
                            padding: '9px 16px', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
         Pedir otra vez
       </a>
+    </div>
+  )
+}
+
+// Regalo de bienvenida (17-nov-2026): primer pedido → Queso Frito gratis en el
+// siguiente. Antes de entregar se promete; al entregar se muestra ganado con
+// la opción de que le avisemos por WhatsApp antes de que venza.
+function RegaloBienvenida({ token, estado }) {
+  const [r, setR] = useState(null)
+  const [aviso, setAviso] = useState(true)
+  useEffect(() => {
+    let vivo = true
+    db.rpc('regalo_de_pedido', { p_token: token })
+      .then(({ data }) => { if (vivo && data) { setR(data); if (data.aviso_ok != null) setAviso(!!data.aviso_ok) } })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [token, estado])
+  if (!r) return null
+  const valor = `$${Number(r.valor).toFixed(2)}`
+  const img = r.imagen_url
+    ? <img src={r.imagen_url} alt="" style={{ width: 120, height: 90, objectFit: 'cover', borderRadius: 12, margin: '6px auto' }} />
+    : <div style={{ fontSize: 46 }}>🧀</div>
+  if (r.estado === 'usado_aqui') {
+    return (
+      <div style={{ margin: '14px 12px 4px', border: '1px solid #F09595', background: '#FCEBEB', color: '#501313',
+                    borderRadius: 14, padding: 12, textAlign: 'center', fontSize: 13.5 }}>
+        🎁 Tu <b>{r.nombre}</b> de regalo va en este pedido · ahorraste <b>{valor}</b> 🧀
+      </div>
+    )
+  }
+  if (r.estado === 'pendiente') {
+    return (
+      <div style={{ margin: '14px 12px 4px', border: '1px dashed #E63946', background: '#FCEBEB', color: '#501313',
+                    borderRadius: 14, padding: 12, textAlign: 'center', fontSize: 13 }}>
+        🎁 <b>¡Es tu primer pedido!</b> Cuando te llegue, te regalamos un <b>{r.nombre}</b> para tu próxima compra
+        <div style={{ fontSize: 11.5, opacity: .85, marginTop: 3 }}>Válido {r.dias_validez} días en pedidos desde ${Number(r.minimo).toFixed(2)}</div>
+      </div>
+    )
+  }
+  if (r.estado !== 'ganado') return null
+  const vence = new Date(r.vence_at)
+  const fecha = `${vence.getDate()} de ${MESES[vence.getMonth()]}`
+  const cambiarAviso = (v) => {
+    setAviso(v)
+    db.rpc('regalo_aviso', { p_token: token, p_ok: v }).then(() => {}, () => {})
+  }
+  return (
+    <div style={{ margin: '14px 12px 4px', border: '2px dashed #E63946', background: '#fff', color: '#2C2C2A',
+                  borderRadius: 16, padding: 16, textAlign: 'center' }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: '#E63946', letterSpacing: .5 }}>🎁 REGALO DE BIENVENIDA</div>
+      {img}
+      <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.25 }}>Tu próximo {r.nombre}<br />va por nuestra cuenta</div>
+      <div style={{ fontSize: 12.5, color: '#666', marginTop: 4 }}>
+        Valorado en <b>{valor}</b> · en tu siguiente pedido desde ${Number(r.minimo).toFixed(2)}
+      </div>
+      <div style={{ display: 'inline-block', marginTop: 8, background: '#FAEEDA', color: '#633806', borderRadius: 8,
+                    padding: '4px 10px', fontSize: 12.5, fontWeight: 700 }}>
+        ⏳ Válido {r.dias} días · hasta el {fecha}
+      </div>
+      <a href="/" style={{ display: 'block', marginTop: 12, background: '#E63946', color: '#fff', borderRadius: 12,
+                           padding: '12px 16px', fontWeight: 800, fontSize: 15, textDecoration: 'none' }}>
+        Pedir otra vez 🍔
+      </a>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, fontSize: 12.5, color: '#444', cursor: 'pointer' }}>
+        <input type="checkbox" checked={aviso} onChange={e => cambiarAviso(e.target.checked)} />
+        Avisame por WhatsApp antes de que venza
+      </label>
+      <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>Queda guardado con tu número: se agrega solito a tu próximo pedido.</div>
     </div>
   )
 }

@@ -432,6 +432,16 @@ export default function MenuPublico() {
       .catch(() => {})
   }, [pedidoOk])
 
+  // Regalo de bienvenida (17-nov-2026): Queso Frito gratis en el 2º pedido.
+  // Sin teléfono guardado igual se consulta: trae el programa (precio, mínimo)
+  // para el aviso «¿Es tu primer pedido?».
+  const [regalo, setRegalo] = useState(null)
+  useEffect(() => {
+    db.rpc('regalo_estado', { p_telefono: leerPerfil().telefono || '' })
+      .then(({ data }) => setRegalo(data && data.programa ? data : null))
+      .catch(() => {})
+  }, [pedidoOk])
+
   useEffect(() => {
     const tel = leerPerfil().telefono
     if (!tel) return
@@ -448,6 +458,7 @@ export default function MenuPublico() {
     for (const cat of menu) for (const it of (cat.items || [])) porId[it.id] = it
     const nuevo = []; let fuera = 0
     for (const it of (pedido.items || [])) {
+      if (it.origen === 'regalo') continue   // el regalo de bienvenida no se repite
       const prod = porId[it.menu_item_id]
       if (!prod) { fuera += Number(it.cantidad) || 1; continue }
       // Las opciones pueden estar en los grupos del ítem o en los de cada componente del combo.
@@ -558,6 +569,23 @@ export default function MenuPublico() {
           <div className="mp-cargando">😕 No pudimos cargar el menú. Recargá la página o intentá en un momento.</div>
         )}
 
+        {/* REGALO DE BIENVENIDA: arriba de todo */}
+        {regalo?.regalo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 16px 0', padding: '12px 14px', borderRadius: 12,
+                        background: '#FCEBEB', border: '1.5px solid #E63946', color: '#501313' }}>
+            {regalo.regalo.imagen_url
+              ? <img src={regalo.regalo.imagen_url} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: 'cover', flex: 'none' }} />
+              : <span style={{ fontSize: 30 }}>🎁</span>}
+            <span style={{ flex: 1, fontSize: 14, lineHeight: 1.35 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#E63946', letterSpacing: .4 }}>TU REGALO DE BIENVENIDA</span><br />
+              <b>{(leerPerfil().nombre || '').split(' ')[0] ? `${(leerPerfil().nombre || '').split(' ')[0]}, tenés` : 'Tenés'} un {regalo.regalo.nombre} gratis 🧀</b><br />
+              <span style={{ fontSize: 12 }}>
+                Se agrega solo a tu pedido desde {fmt(regalo.regalo.minimo)} · {Number(regalo.regalo.dias) <= 1 ? 'vence hoy' : `vence en ${regalo.regalo.dias} días`}
+              </span>
+            </span>
+          </div>
+        )}
+
         {/* CUPÓN DE REGRESO: recordatorio arriba del menú */}
         {cupon && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 16px 0', padding: '12px 14px', borderRadius: 12,
@@ -660,6 +688,8 @@ export default function MenuPublico() {
           sugerencias={sugerencias}
           onSugerencia={agregarSugerencia}
           cupon={cupon}
+          regalo={regalo}
+          regaloBloqueado={!!(regalo?.item_id && bloq.items[regalo.item_id])}
           ofertaDuo={ofertaDuo}
           onAceptarDuo={aceptarDuo}
           onClose={() => setCarritoAbierto(false)}
@@ -678,6 +708,7 @@ export default function MenuPublico() {
           onCambiar={aplicarCambio}
           onQuitarLinea={quitarLinea}
           onSucursal={setSucRuteada}
+          regaloBloqueado={!!(regalo?.item_id && bloq.items[regalo.item_id])}
           onClose={() => setCheckoutOpen(false)}
           onEnviado={(datos) => {
             setCarrito([])
@@ -1558,10 +1589,15 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                         problemasDe = () => [], dondeAgotado,
                         onCambiar = () => {}, onQuitarLinea = () => {},
                         sugerencias = [], onSugerencia = () => {},
-                        ofertaDuo = null, onAceptarDuo = () => {}, cupon = null }) {
+                        ofertaDuo = null, onAceptarDuo = () => {}, cupon = null,
+                        regalo = null, regaloBloqueado = false }) {
   // Cupón de regreso: se aplica desde $19.99 («$20» en los textos, así el Burger Box cuenta).
   const MINIMO_CUPON = 19.99
-  const cuponAplica = !!cupon && total >= Number(cupon.minimo || MINIMO_CUPON)
+  // Regalo de bienvenida: Queso Frito gratis desde el mínimo. No se combina con
+  // el cupón de $2 (que queda guardado). El servidor lo agrega y descuenta igual.
+  const reg = regalo?.regalo || null
+  const regaloAplica = !!reg && !regaloBloqueado && total >= Number(reg.minimo || 7.99)
+  const cuponAplica = !regaloAplica && !!cupon && total >= Number(cupon.minimo || MINIMO_CUPON)
   const descCupon = cuponAplica ? Number(cupon.monto) || 0 : 0
   const totalNeto = Math.max(0, total - descCupon)
   const problemas = items.map(i => ({ linea: i, p: problemasDe(i) })).filter(x => x.p.length)
@@ -1630,6 +1666,48 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                 </div>
               </div>
             ))
+          )}
+
+          {/* Regalo de bienvenida: la línea gratis (o cuánto falta para usarlo) */}
+          {items.length > 0 && reg && (regaloAplica ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1.5px solid #E63946', background: '#FCEBEB',
+                          borderRadius: 12, padding: 10, margin: '12px 0 4px', color: '#501313' }}>
+              {reg.imagen_url
+                ? <img src={reg.imagen_url} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flex: 'none' }} />
+                : <span style={{ fontSize: 26 }}>🧀</span>}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>{reg.nombre}</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#E63946', letterSpacing: .3 }}>🎁 TU REGALO DE BIENVENIDA</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 12, color: '#999', textDecoration: 'line-through' }}>{fmt(reg.valor)}</div>
+                <div style={{ fontWeight: 900, color: '#1D9E75', fontSize: 15 }}>GRATIS</div>
+              </div>
+            </div>
+          ) : regaloBloqueado ? (
+            <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: '10px 12px', margin: '12px 0 4px', color: '#633806', fontSize: 13 }}>
+              😔 Hoy se nos terminó el {reg.nombre}{dondeAgotado ? ` en ${dondeAgotado}` : ''}. Tu regalo te queda guardado para otro pedido 🎁
+            </div>
+          ) : (
+            <div style={{ background: '#FCEBEB', border: '1px dashed #E63946', borderRadius: 12, padding: '10px 12px', margin: '12px 0 4px', color: '#501313', fontSize: 13.5 }}>
+              Agregá <b>{fmt(Math.max(0, Number(reg.minimo) - total))}</b> más y tu <b>{reg.nombre}</b> va <b>gratis</b> 🎁
+            </div>
+          ))}
+
+          {/* Primer pedido: le contamos del regalo que viene */}
+          {items.length > 0 && !reg && regalo?.programa && regalo.primera_vez !== false && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#FCEBEB', border: '1px solid #F09595',
+                          borderRadius: 12, padding: 10, margin: '12px 0 4px', color: '#501313' }}>
+              {regalo.imagen_url
+                ? <img src={regalo.imagen_url} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flex: 'none' }} />
+                : <span style={{ fontSize: 26 }}>🎁</span>}
+              <div style={{ fontSize: 13, lineHeight: 1.4 }}>
+                🎁 <b>{regalo.primera_vez ? '¡Es tu primer pedido!' : '¿Es tu primer pedido?'}</b> Te regalamos un <b>{regalo.nombre}</b> para tu próxima compra
+                <div style={{ fontSize: 11.5, opacity: .85, marginTop: 2 }}>
+                  Te llega al entregar este pedido · válido {regalo.dias_validez} días en pedidos desde {fmt(regalo.minimo)}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* «¿Son dos?» → Burger Duo */}
@@ -1711,7 +1789,12 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                 </div>
               )
             })()}
-            {faltaMinimo === 0 && cupon && (cuponAplica ? (
+            {faltaMinimo === 0 && cupon && regaloAplica && (
+              <div style={{ fontSize: 12, color: '#633806', background: '#FAEEDA', borderRadius: 10, padding: '7px 10px', marginBottom: 8 }}>
+                Tus {fmt(cupon.monto)} de descuento no se combinan con el regalo: te quedan guardados para otra compra 🎁
+              </div>
+            )}
+            {faltaMinimo === 0 && cupon && !regaloAplica && (cuponAplica ? (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#EAF3DE', border: '1px solid #97C459',
                               borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#27500A', fontSize: 14 }}>
@@ -1735,6 +1818,11 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
               <span>Total</span>
               <span className="mp-drawer-total-num">{fmt(totalNeto)}</span>
             </div>
+            {regaloAplica && (
+              <div style={{ textAlign: 'right', fontSize: 12.5, color: '#1D9E75', fontWeight: 700, marginTop: -4, marginBottom: 8 }}>
+                Te estás ahorrando {fmt(reg.valor)} 🧀
+              </div>
+            )}
             {problemas.map(({ linea, p }) => (
               <AvisoCambio key={linea.lineaId} problemas={p} dondeAgotado={dondeAgotado}
                            onCambiar={(prob, op) => onCambiar(linea.lineaId, prob, op)}
@@ -1909,7 +1997,7 @@ const HT = {
 function Checkout({ items, total, onClose, onEnviado,
                    lineasConProblema = [], dondeAgotado,
                    onCambiar = () => {}, onQuitarLinea = () => {},
-                   onSucursal = () => {} }) {
+                   onSucursal = () => {}, regaloBloqueado = false }) {
   const perfil = useMemo(leerPerfil, [])
   const clienteConocido = !!(perfil.nombre || perfil.telefono)
   const [tipo, setTipo] = useState('delivery') // 'delivery' | 'pickup'
@@ -2073,6 +2161,19 @@ function Checkout({ items, total, onClose, onEnviado,
     }, 300)
     return () => { vivo = false; clearTimeout(t) }
   }, [telDigitos])
+  // Regalo de bienvenida del teléfono que se está usando (el servidor decide).
+  const [regaloCk, setRegaloCk] = useState(null)
+  useEffect(() => {
+    if (telDigitos.length < 8) { setRegaloCk(null); return }
+    let vivo = true
+    const t = setTimeout(() => {
+      db.rpc('regalo_estado', { p_telefono: telDigitos })
+        .then(({ data }) => vivo && setRegaloCk(data?.regalo || null))
+        .catch(() => {})
+    }, 300)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [telDigitos])
+  const regaloAplicaCk = !!regaloCk && !regaloBloqueado && total >= Number(regaloCk.minimo || 7.99)
   // «Esperá y ahorrá» (16-nov-2026, Cesar): solo aparece cuando la sucursal
   // que le toca está saturada. 10% con tope; no se combina con el cupón (el
   // cupón queda guardado). El servidor revalida todo y decide el monto.
@@ -2092,7 +2193,7 @@ function Checkout({ items, total, onClose, onEnviado,
   const esperaActiva = espera && !!espEst
   const descEspera = esperaActiva
     ? Math.min(Math.round(total * Number(espEst.pct || 10)) / 100, Number(espEst.tope || 3)) : 0
-  const descCupon = !esperaActiva && cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
+  const descCupon = !esperaActiva && !regaloAplicaCk && cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
   const totalConEnvio = Math.max(0, total + costoEnvio - descCupon - descEspera)
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
@@ -2557,6 +2658,12 @@ function Checkout({ items, total, onClose, onEnviado,
             {tipo === 'delivery' && envio && !envio.gratis && Number(envio.falta_para_gratis) > 0 && (
               <div className="mp-envio-tip">
                 Agregá {fmt(envio.falta_para_gratis)} más y el envío te sale gratis 🚀
+              </div>
+            )}
+            {regaloAplicaCk && (
+              <div className="mp-resumen-row" style={{ color: '#E63946', fontWeight: 700 }}>
+                <span>🎁 {regaloCk.nombre} de regalo</span>
+                <span>GRATIS</span>
               </div>
             )}
             {descCupon > 0 && (
