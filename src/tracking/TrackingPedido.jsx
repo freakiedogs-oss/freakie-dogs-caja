@@ -126,6 +126,28 @@ export default function TrackingPedido() {
           )}
         </div>
       )}
+      {/* Pedido programado (17-nov-2026): todavía no es hora de cocinarlo */}
+      {d.programado_para && ['recibida', 'programado'].includes(d.estado) && (() => {
+        const hm = (t) => new Date(t).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' })
+        const dia = new Date(d.programado_para).toLocaleDateString('es-SV', { timeZone: 'America/El_Salvador' })
+          === new Date().toLocaleDateString('es-SV', { timeZone: 'America/El_Salvador' }) ? 'hoy' : 'mañana'
+        const faltan = Math.max(0, Math.round((new Date(d.programado_para) - Date.now()) / 60000))
+        return (
+          <div style={{ margin: '12px 12px 0', background: '#EEEDFE', border: '1px solid #AFA9EC', color: '#26215C',
+                        borderRadius: 16, padding: 16, textAlign: 'center' }}>
+            <div style={{ fontSize: 32 }}>🕧</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>Pedido programado para {dia} a las {hm(d.programado_para)}</div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              {d.programado_libera_at
+                ? `Lo empezamos a preparar a las ${hm(d.programado_libera_at)} para que te llegue recién hecho.`
+                : 'Lo empezamos a preparar a la hora justa para que te llegue recién hecho.'}
+            </div>
+            <div style={{ display: 'inline-block', marginTop: 8, background: '#fff', borderRadius: 8, padding: '4px 10px', fontSize: 12.5, fontWeight: 700 }}>
+              Faltan {faltan >= 60 ? `${Math.floor(faltan / 60)} h ${faltan % 60} min` : `${faltan} min`}
+            </div>
+          </div>
+        )
+      })()}
       <div className="tk-hero">
         <div className="tk-hero-ic">{PASOS[paso].ic}</div>
         <h1 className="tk-hero-t">{PASOS[paso].t}</h1>

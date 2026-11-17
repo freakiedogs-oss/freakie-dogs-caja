@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 17-Nov-2026 — FIX «No pudimos cargar el menú» (menú web)
+- Causa: `menu_publico_delivery()` tardaba ~0.85 s promedio con picos de 3 s; el rol anon corta a los 3 s → 500 intermitente y el menú no cargaba.
+- Fix (migración `menu_publico_cache`): la función original pasó a `_menu_publico_delivery_calc()`; `menu_publico_cache_refrescar()` la guarda en `menu_publico_cache` cada minuto (pg_cron) y `menu_publico_delivery()` sirve lo guardado (7 ms). Si el caché tiene más de 10 min, calcula en vivo. Cambios de menú/disponibilidad tardan hasta 1 min en verse.
+
+## 17-Nov-2026 — Pedidos programados (para una hora más tarde)
+- Por qué: un cliente pidió a las 11 para las 12:30; Cesar no podía mandarlo a cocina y dejarlo en «Por cobrar» lo confundía.
+- Estado nuevo `programado`. Menú web: «¿Para cuándo? Lo antes posible / Programarlo», hoy o mañana, franjas de 15 min dentro del horario, mínimo 1 hora después de ahora (también desde la torre). Torre: franja «🗓️ Programados» fuera de las columnas (confirmar → queda programado; mandar a cocina ya; cambiar hora; quitar) y botón «🗓️ Programar» en «Por cobrar» para los que piden la hora por WhatsApp. Pasa solo a cocina (pg_cron cada minuto) a la hora de entrega menos la ETA de la sucursal. KDS: «🗓️ PROGRAMADO · entregar a las X · no antes». Seguimiento: «Pedido programado para…».
+- `torre_confirmar_pago` ahora delega en `_confirmar_pago_interno` (mismo cuerpo de antes). Migración `20261117b_pedidos_programados.sql`.
+
 ## 17-Nov-2026 — Regalo de bienvenida: Queso Frito gratis en el 2º pedido
 - Por qué: la recompra de clientes nuevos es baja; Cesar aprobó las previsualizaciones (Previsualizaciones/Regalo queso frito) y pidió construirlo «con todo».
 - Cómo: el regalo es un registro de `delivery_cupones` con `tipo='queso_frito'`; se gana al entregar el PRIMER pedido web del teléfono; dura 21 días; mínimo $7.99. En el 2º pedido `crear_pedido_delivery` agrega la línea Queso Frito y descuenta su precio (motivo «Regalo bienvenida»), igual que el cupón → la caja/DTE no cambió. No se combina con el cupón de $2.

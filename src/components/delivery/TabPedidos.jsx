@@ -478,11 +478,13 @@ export default function TabPedidos({ show = () => {} }) {
     if (!suc) { show('⚠️ Elegí de qué sucursal sale el pedido'); return; }
     setOcupado(p.id);
     try {
-      const { error } = await db.rpc('torre_confirmar_pago', {
+      const { data, error } = await db.rpc('torre_confirmar_pago', {
         p_token: token, p_delivery_id: p.id, p_sucursal_id: suc, p_metodo: p.metodo_pago || 'efectivo',
       });
       if (error) throw error;
-      show('✅ Pago confirmado — va a cocina');
+      show(data?.programado
+        ? `🗓️ Confirmado — pasa solo a cocina a las ${horaSV(data.libera_at)}`
+        : '✅ Pago confirmado — va a cocina');
       await cargar(token);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
     finally { setOcupado(null); }
@@ -598,6 +600,31 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
 
+  // Pedidos programados (17-nov-2026): para una hora más tarde. No van a
+  // «Por cobrar» sino a su franja; pasan solos a cocina a la hora calculada.
+  const programar = async (p, iso) => {
+    setOcupado(p.id);
+    try {
+      const { error } = await db.rpc('torre_programar', { p_token: token, p_delivery_id: p.id, p_para: iso });
+      if (error) throw error;
+      show(iso ? `🗓️ ${p.numero_orden} programado para las ${horaSV(iso)}` : `${p.numero_orden} ya no está programado`);
+      await cargar();
+      return true;
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo programar')); return false; }
+    finally { setOcupado(null); }
+  };
+  const programadoACocina = async (p) => {
+    if (!window.confirm(`¿Mandar ${p.numero_orden} a cocina ya?\n\nEstaba programado para las ${horaSV(p.programado_para)}.`)) return;
+    setOcupado(p.id);
+    try {
+      const { error } = await db.rpc('torre_programado_a_cocina', { p_token: token, p_delivery_id: p.id });
+      if (error) throw error;
+      show(`🍳 ${p.numero_orden} va a cocina`);
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
   const marcarEnCamino = async (p) => {
     setOcupado(p.id);
     try {
@@ -706,13 +733,15 @@ export default function TabPedidos({ show = () => {} }) {
   // minutos en pasar a retirar no es un problema que ella tenga que resolver.
   // El retiro IMPAGO sí se queda: ese hay que cobrarlo.
   const esRetiroPagado = (p) => p.tipo === 'para_llevar' && p.pagado_online;
-  const porEstado = (k) => pedidos.filter(p => p.estado === k && !esRetiroPagado(p));
+  const esProgramado = (p) => !!p.programado_para && ['recibida', 'programado'].includes(p.estado);
+  const porEstado = (k) => pedidos.filter(p => p.estado === k && !esRetiroPagado(p) && !esProgramado(p));
+  const programados = pedidos.filter(esProgramado).sort((a, b) => new Date(a.programado_para) - new Date(b.programado_para));
   const retirosPagados = pedidos.filter(esRetiroPagado);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago,
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago, programar,
                    // Traslado de sucursal: el estado vive en TabPedidos pero el boton
                    // se pinta dentro de <Tarjeta>, asi que tiene que viajar por props.
                    trasladando, setTrasladando, trasSel, setTrasSel,
@@ -774,6 +803,11 @@ export default function TabPedidos({ show = () => {} }) {
             <button onClick={asignarMandado} style={{ ...btn('#f97316'), marginLeft: 'auto' }}>Asignar</button>
           </div>
         </div>
+      )}
+
+      {!verHistorial && programados.length > 0 && (
+        <FranjaProgramados lista={programados} ocupado={ocupado} confirmar={confirmar} programar={programar}
+                           aCocina={programadoACocina} sucursalDe={sucursalDe} />
       )}
 
       {verHistorial ? (
@@ -1002,9 +1036,110 @@ function Historial({ historial }) {
   );
 }
 
+// ── Pedidos programados (17-nov-2026) ──
+const horaSV = (t) => t ? new Date(t).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' }) : '';
+const diaSV = (t) => {
+  const f = (x) => new Date(x).toLocaleDateString('es-SV', { timeZone: 'America/El_Salvador' });
+  return f(t) === f(Date.now()) ? 'hoy' : f(t) === f(Date.now() + 86400000) ? 'mañana' : f(t);
+};
+const faltaTxt = (t) => {
+  const m = Math.round((new Date(t) - Date.now()) / 60000);
+  if (m <= 0) return 'ya';
+  return m >= 60 ? `en ${Math.floor(m / 60)} h ${m % 60} min` : `en ${m} min`;
+};
+// Selector simple: día (hoy/mañana/pasado) + hora. Devuelve ISO.
+function ElegirHora({ onListo, ocupado, inicial }) {
+  const sv = new Date(Date.now() - 6 * 3600 * 1000);
+  const ini = inicial ? new Date(new Date(inicial).getTime() - 6 * 3600 * 1000) : null;
+  const [dia, setDia] = useState(() => ini ? Math.round((Date.UTC(ini.getUTCFullYear(), ini.getUTCMonth(), ini.getUTCDate()) - Date.UTC(sv.getUTCFullYear(), sv.getUTCMonth(), sv.getUTCDate())) / 86400000) : 0);
+  const [hora, setHora] = useState(() => ini ? `${String(ini.getUTCHours()).padStart(2, '0')}:${String(ini.getUTCMinutes()).padStart(2, '0')}` : '');
+  const iso = () => {
+    if (!/^\d{2}:\d{2}$/.test(hora)) return null;
+    const [h, m] = hora.split(':').map(Number);
+    return new Date(Date.UTC(sv.getUTCFullYear(), sv.getUTCMonth(), sv.getUTCDate() + dia, h + 6, m)).toISOString();
+  };
+  return (
+    <div style={{ marginTop: 6, background: '#181818', border: '1px solid #333', borderRadius: 8, padding: 8 }}>
+      <div style={{ fontSize: 11, color: c.dim, marginBottom: 6 }}>¿Para qué hora lo quiere el cliente?</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {['Hoy', 'Mañana', 'Pasado'].map((t, i) => (
+          <button key={t} onClick={() => setDia(i)}
+            style={{ ...btn(dia === i ? '#4c3d8f' : '#222'), fontSize: 11.5, padding: '6px 9px', border: '1px solid #444' }}>{t}</button>
+        ))}
+        <input type="time" value={hora} onChange={e => setHora(e.target.value)} step={300}
+               style={{ background: '#1e1e1e', border: '1px solid #444', color: c.text, borderRadius: 7, padding: '5px 7px', fontSize: 13 }} />
+        <button disabled={ocupado || !iso()} onClick={() => onListo(iso())}
+          style={{ ...btn('#7c3aed'), fontSize: 11.5, padding: '6px 10px', opacity: iso() ? 1 : .5 }}>Programar</button>
+      </div>
+    </div>
+  );
+}
+function FranjaProgramados({ lista, ocupado, confirmar, programar, aCocina, sucursalDe }) {
+  const [editando, setEditando] = useState(null);
+  return (
+    <div style={{ marginBottom: 14, background: c.panel, border: `1px solid ${c.border}`, borderTop: '2px solid #a78bfa', borderRadius: 12, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 14 }}>🗓️</span>
+        <span style={{ fontWeight: 800, fontSize: 13.5 }}>Programados</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{lista.length}</span>
+        <span style={{ fontSize: 11.5, color: c.dim }}>· pasan solos a cocina a la hora justa · no cuentan como atrasados</span>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {lista.map(p => {
+          const porConfirmar = p.estado === 'recibida';
+          return (
+            <div key={p.id} style={{ ...tarjeta, minWidth: 230, flex: '0 1 280px', borderLeft: '3px solid #a78bfa' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <b style={{ fontSize: 12.5 }}>{p.numero_orden}</b>
+                <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, color: '#c4b5fd' }}>
+                  para {diaSV(p.programado_para) === 'hoy' ? '' : diaSV(p.programado_para) + ' '}{horaSV(p.programado_para)}
+                </span>
+              </div>
+              <div style={{ fontSize: 13.5, marginTop: 3 }}>{p.cliente_nombre || 'Cliente'}</div>
+              <div style={{ fontSize: 11.5, color: c.dim }}>
+                {fmt(p.total)} · {p.pagado_online ? 'pagado' : p.metodo_pago}{p.sucursal_nombre ? ` · ${p.sucursal_nombre}` : ''}{p.tipo === 'para_llevar' ? ' · retira en local' : ''}
+              </div>
+              {porConfirmar ? (
+                <>
+                  <div style={{ marginTop: 6, background: '#2a2208', border: '1px solid #6b5412', color: '#fde68a', borderRadius: 6, padding: '5px 7px', fontSize: 11.5 }}>
+                    Falta confirmar el pedido{sucursalDe(p) ? '' : ' (y la sucursal)'} · queda guardado hasta la hora
+                  </div>
+                  <button disabled={ocupado === p.id} onClick={() => confirmar(p)}
+                    style={{ ...btn(c.green, '#04210f'), width: '100%', marginTop: 6, fontSize: 12 }}>
+                    {ocupado === p.id ? '…' : '✅ Confirmar (queda programado)'}
+                  </button>
+                </>
+              ) : (
+                <div style={{ marginTop: 6, background: '#221b38', border: '1px solid #4c3d8f', color: '#ddd6fe', borderRadius: 6, padding: '5px 7px', fontSize: 11.5 }}>
+                  Pasa solo a cocina a las <b>{horaSV(p.programado_libera_at)}</b> · {faltaTxt(p.programado_libera_at)}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                {!porConfirmar && (
+                  <button disabled={ocupado === p.id} onClick={() => aCocina(p)}
+                    style={{ ...btn('#242424'), color: c.text, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>🍳 Mandar a cocina ya</button>
+                )}
+                <button onClick={() => setEditando(editando === p.id ? null : p.id)}
+                  style={{ ...btn('#242424'), color: c.text, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>🕒 Cambiar hora</button>
+                <button disabled={ocupado === p.id} onClick={() => window.confirm(`¿Quitar la programación de ${p.numero_orden}?`) && programar(p, null)}
+                  style={{ ...btn('#242424'), color: c.dim, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>Quitar</button>
+              </div>
+              {editando === p.id && (
+                <ElegirHora ocupado={ocupado === p.id} inicial={p.programado_para}
+                            onListo={async (iso) => { if (await programar(p, iso)) setEditando(null); }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Copiar para WhatsApp + Cambiar pago (16-nov-2026) ──
-function PagoYCopiar({ p, ocupado, cambiarPago, show }) {
+function PagoYCopiar({ p, ocupado, cambiarPago, show, programar }) {
   const [abierto, setAbierto] = useState(false);
+  const [progAbierto, setProgAbierto] = useState(false);
   const [copiado, setCopiado] = useState(false);
   const pagoWeb = p.pagado_online && !p.pago_confirmado_at;   // tarjeta n1co: no se toca
   const OPS = [['transferencia', '🏦 Transferencia'], ['link_pago', '🔗 Link de pago'],
@@ -1020,7 +1155,11 @@ function PagoYCopiar({ p, ocupado, cambiarPago, show }) {
         {!pagoWeb && (
           <button style={mini} onClick={() => setAbierto(a => !a)}>💳 Cambiar pago {abierto ? '▴' : '▾'}</button>
         )}
+        {programar && p.estado === 'recibida' && !p.programado_para && (
+          <button style={mini} onClick={() => setProgAbierto(a => !a)}>🗓️ Programar {progAbierto ? '▴' : '▾'}</button>
+        )}
       </div>
+      {progAbierto && <ElegirHora ocupado={ocupado === p.id} onListo={async (iso) => { if (await programar(p, iso)) setProgAbierto(false); }} />}
       {abierto && !pagoWeb && (
         <div style={{ marginTop: 6, background: '#181818', border: '1px solid #333', borderRadius: 8, padding: 8 }}>
           <div style={{ fontSize: 11, color: c.dim, marginBottom: 6 }}>¿Cómo pagó el cliente? (solo antes de que la caja lo cobre)</div>
@@ -1045,7 +1184,7 @@ function PagoYCopiar({ p, ocupado, cambiarPago, show }) {
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago,
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago, programar,
                    trasladando, setTrasladando, trasSel, setTrasSel,
                    trasMotivo, setTrasMotivo, trasladar,
                    cancelaMotivo, setCancelaMotivo }) {
@@ -1138,7 +1277,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       ))}
       {p.motorista_nombre && <div style={{ fontSize: 11.5, color: c.green, marginTop: 3 }}>🛵 {p.motorista_nombre}</div>}
 
-      <PagoYCopiar p={p} ocupado={ocupado} cambiarPago={cambiarPago} show={show} />
+      <PagoYCopiar p={p} ocupado={ocupado} cambiarPago={cambiarPago} show={show} programar={programar} />
 
       {/* Mover de columna en cualquier dirección. Va arriba de todo lo demás
           porque es lo que Karina busca cuando el tablero no refleja la calle. */}
