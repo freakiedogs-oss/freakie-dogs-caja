@@ -448,7 +448,7 @@ async function accionCatalogo(
   }
 
   const { data: mapas } = await svc.from("peya_vendor_map")
-    .select("remote_id, vendor_code, chain_code, platform_restaurant_id, global_entity_id")
+    .select("remote_id, vendor_code, chain_code, platform_restaurant_id, global_entity_id, es_pruebas")
     .in("remote_id", remoteIds).eq("activo", true);
 
   const faltan = remoteIds.filter((id) => !(mapas ?? []).some((m) => m.remote_id === id));
@@ -468,8 +468,15 @@ async function accionCatalogo(
 
   // El catálogo sale de la base, no del request: que quien llame pueda mandar
   // items arbitrarios a PedidosYa sería una puerta abierta.
-  const { data: cat, error: errCat } = await svc.rpc("peya_catalogo",
-    cuerpo.menuId ? { p_menu_id: cuerpo.menuId } : {});
+  //
+  // `p_pruebas` aplica los overrides de homologación (peya_item_prueba,
+  // horarios solo_pruebas) SÓLO si todas las tiendas del envío son de prueba:
+  // una tienda real nunca recibe un «PRUEBA» en el nombre ni un precio de test.
+  const pruebas = (mapas ?? []).length > 0 && (mapas ?? []).every((m) => m.es_pruebas === true);
+  const { data: cat, error: errCat } = await svc.rpc("peya_catalogo", {
+    ...(cuerpo.menuId ? { p_menu_id: cuerpo.menuId } : {}),
+    p_pruebas: pruebas,
+  });
   if (errCat) return json({ error: "catalogo_no_generado", message: errCat.message }, 500);
 
   const c = cat as Record<string, any> | null;
@@ -540,6 +547,7 @@ async function accionCatalogo(
   return json({
     ok,
     ruta,
+    pruebas,
     tiendas: (mapas ?? []).map((m) => m.remote_id),
     importId: idsImport.length === 1 ? idsImport[0] : idsImport,
     catalogImportId,
