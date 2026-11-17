@@ -6,6 +6,7 @@ import { useToast } from '../../hooks/useToast';
 import { Badge } from '../ui/Badge';
 import { MOTIVOS_SOS, MOTIVO_SOS_LABEL } from './sos';
 import AvisosPedido from './AvisosPedido';
+import PedidoAntesAbrirModal from './PedidoAntesAbrirModal';
 
 // ── MIS PEDIDOS (view-only, gerente/cocina de sucursal) ─────────
 // Historial de pedidos de la sucursal del usuario + estado del proceso:
@@ -394,6 +395,7 @@ export default function MisPedidosView({ user, onBack }) {
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [showEmerg, setShowEmerg] = useState(false);
+  const [showAntes, setShowAntes] = useState(false);   // 🌅 pedido antes de abrir (17-nov-2026)
   const [editPedido, setEditPedido] = useState(null); // pedido 'enviado' en edición
   const [cancelando, setCancelando] = useState(null);
 
@@ -404,11 +406,11 @@ export default function MisPedidosView({ user, onBack }) {
   function despachosEstado(pid) { return despachos.find(d => d.pedido_id === pid)?.estado; }
 
   const cancelarSos = async (p) => {
-    if (!window.confirm('¿Cancelar este SOS? Casa Matriz ya no lo va a preparar.')) return;
+    if (!window.confirm(p.tipo === 'urgente' ? '¿Cancelar este pedido antes de abrir? Casa Matriz ya no lo va a preparar y se te devuelve el cupo.' : '¿Cancelar este SOS? Casa Matriz ya no lo va a preparar.')) return;
     setCancelando(p.id);
     const { data, error } = await db.rpc('cancelar_pedido_sos', { p_pedido_id: p.id, p_usuario_id: user.id, p_motivo: 'Cancelado por la sucursal' });
     setCancelando(null);
-    if (!error && data?.ok) { show('SOS cancelado'); cargar(); }
+    if (!error && data?.ok) { show(p.tipo === 'urgente' ? 'Pedido cancelado · se devolvió el cupo' : 'SOS cancelado'); cargar(); }
     else show('❌ ' + (error?.message || data?.error || 'No se pudo cancelar'));
   };
 
@@ -441,7 +443,7 @@ export default function MisPedidosView({ user, onBack }) {
     try {
       // Pedidos en rango para esta sucursal
       const { data: peds, error: eP } = await db.from('pedidos_sucursal')
-        .select('id,fecha_pedido,sucursal_id,estado,solicitado_por,fecha_entrega_estimada,notas,created_at,tipo,motivo,pedido_origen_id,motivo_cancelacion')
+        .select('id,fecha_pedido,sucursal_id,estado,solicitado_por,fecha_entrega_estimada,notas,created_at,tipo,motivo,pedido_origen_id,motivo_cancelacion,urgente_para,viaje_plataforma,viaje_link,viaje_costo,viaje_salida_at')
         .eq('sucursal_id', sucursalId)
         .gte('fecha_pedido', desde)
         .lte('fecha_pedido', hasta)
@@ -611,8 +613,12 @@ export default function MisPedidosView({ user, onBack }) {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {sucursalId && (
-            <button className="btn btn-sm" style={{ background: '#7f1d1d', color: '#fff', fontWeight: 700 }}
-              onClick={() => setShowEmerg(true)}>🚨 Pedido SOS</button>
+            <>
+              <button className="btn btn-sm" style={{ background: '#b45309', color: '#fff', fontWeight: 700 }}
+                onClick={() => setShowAntes(true)}>🌅 Antes de abrir</button>
+              <button className="btn btn-sm" style={{ background: '#7f1d1d', color: '#fff', fontWeight: 700 }}
+                onClick={() => setShowEmerg(true)}>🚨 Pedido SOS</button>
+            </>
           )}
           {canViewAll && sucursales.length > 0 && (
             <select className="input" value={sucursalId || ''} onChange={e => {
@@ -630,6 +636,13 @@ export default function MisPedidosView({ user, onBack }) {
           sucursalId={sucursalId} sucursalNombre={sucursalNombre} user={user} sosAbiertos={sosAbiertos}
           onClose={() => setShowEmerg(false)}
           onDone={(msg) => { setShowEmerg(false); show(msg); cargar(); }}
+        />
+      )}
+      {showAntes && (
+        <PedidoAntesAbrirModal
+          sucursalId={sucursalId} sucursalNombre={sucursalNombre} user={user}
+          onClose={() => setShowAntes(false)}
+          onDone={(msg) => { setShowAntes(false); show(msg); cargar(); }}
         />
       )}
       {editPedido && (
@@ -685,14 +698,17 @@ export default function MisPedidosView({ user, onBack }) {
         const totalUnidades = pItems.reduce((s, it) => s + n(it.cantidad_solicitada), 0);
         const isOpen = expanded === p.id;
         const esSos = p.tipo === 'sos';
+        const esAntes = p.tipo === 'urgente';
 
         return (
-          <div key={p.id} className="card" style={{ marginBottom: 10, cursor: 'pointer', ...(esSos ? { borderLeft: '4px solid #dc2626' } : {}) }}
+          <div key={p.id} className="card" style={{ marginBottom: 10, cursor: 'pointer', ...(esSos ? { borderLeft: '4px solid #dc2626' } : esAntes ? { borderLeft: '4px solid #d97706' } : {}) }}
                onClick={() => setExpanded(isOpen ? null : p.id)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  {esSos
+                  {esAntes
+                    ? <>🌅 Antes de abrir{p.urgente_para ? <span style={{ fontWeight: 500, fontSize: 12, color: '#fcd34d' }}> · para las {new Date(p.urgente_para).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' })}</span> : null}</>
+                    : esSos
                     ? <>{p.motivo === 'pendiente' ? '⏳ Pendiente SOS' : '🚨 SOS'} {fmtDate(p.fecha_pedido)} <span style={{ fontWeight: 500, fontSize: 12, color: '#aaa' }}>{new Date(p.created_at).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit', timeZone: 'America/El_Salvador' })}</span></>
                     : <>Pedido {fmtDate(p.fecha_pedido)}</>}
                 </div>
@@ -717,6 +733,20 @@ export default function MisPedidosView({ user, onBack }) {
             {p.estado === 'cancelado'
               ? <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>🚫 Cancelado{p.motivo_cancelacion ? ` · ${p.motivo_cancelacion}` : ''}</div>
               : <Timeline estado={p.estado} despacho={d} />}
+
+            {/* 🌅 Antes de abrir: el viaje de InDrive/Uber que pegó Casa Matriz */}
+            {esAntes && p.viaje_link && (
+              <div onClick={e => e.stopPropagation()} style={{ marginTop: 10, background: '#1f1a0d', border: '1px solid #4a3410', borderRadius: 10, padding: '9px 11px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 160px', fontSize: 12.5, color: '#fde68a' }}>
+                  🚗 Salió {p.viaje_salida_at ? new Date(p.viaje_salida_at).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' }) : ''} por <b>{p.viaje_plataforma}</b>{p.viaje_costo ? ` · $${Number(p.viaje_costo).toFixed(2)}` : ''}
+                </div>
+                <a href={p.viaje_link} target="_blank" rel="noopener noreferrer" className="btn btn-sm"
+                   style={{ background: '#16a34a', color: '#fff', fontWeight: 700, textDecoration: 'none' }}>📍 Ver viaje en {p.viaje_plataforma}</a>
+              </div>
+            )}
+            {esAntes && !p.viaje_link && p.estado !== 'cancelado' && d && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#fcd34d' }}>📦 Casa Matriz lo está preparando · el link del viaje aparece aquí cuando salga</div>
+            )}
 
             {/* Meta estados */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, fontSize: 11, color: '#888' }}>
@@ -746,17 +776,17 @@ export default function MisPedidosView({ user, onBack }) {
             )}
 
             {/* Editar: solo mientras la orden esté viva ('enviado' y almacén aún no la preparó) */}
-            {!d && p.estado === 'enviado' && !esSos && (
+            {!d && p.estado === 'enviado' && !esSos && !esAntes && (
               <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
                 <button className="btn btn-sm btn-ghost" style={{ borderLeft: '3px solid #fbbf24' }}
                   onClick={() => setEditPedido(p)}>✏️ Editar pedido</button>
               </div>
             )}
             {/* SOS: no se edita (se pide otro); se puede cancelar mientras Casa Matriz no lo prepara */}
-            {!d && p.estado === 'enviado' && esSos && (
+            {!d && p.estado === 'enviado' && (esSos || esAntes) && (
               <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
-                <button className="btn btn-sm btn-ghost" style={{ borderLeft: '3px solid #dc2626' }} disabled={cancelando === p.id}
-                  onClick={() => cancelarSos(p)}>{cancelando === p.id ? 'Cancelando…' : '🚫 Cancelar SOS'}</button>
+                <button className="btn btn-sm btn-ghost" style={{ borderLeft: `3px solid ${esAntes ? '#d97706' : '#dc2626'}` }} disabled={cancelando === p.id}
+                  onClick={() => cancelarSos(p)}>{cancelando === p.id ? 'Cancelando…' : esAntes ? '🚫 Cancelar (se te devuelve el cupo)' : '🚫 Cancelar SOS'}</button>
               </div>
             )}
 
