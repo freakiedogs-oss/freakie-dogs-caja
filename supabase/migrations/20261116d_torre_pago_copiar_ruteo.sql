@@ -1,0 +1,26 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Torre: cambiar pago · regresar entregado · copiar para WhatsApp · ruteo (16-nov-2026, Cesar)
+-- Aplicadas en Supabase como: torre_cambiar_pago, delivery_metodo_link_pago
+--
+-- delivery_clientes: + pago_confirmado_at, pago_confirmado_por; el check de
+-- metodo_pago acepta 'link_pago'.
+--
+-- torre_cambiar_pago(p_token, p_delivery_id, p_metodo)  efectivo|tarjeta|transferencia|link_pago
+--   · rechaza si ya pagó con tarjeta en la web (pagos_online aprobado)
+--   · rechaza si la caja ya cobró la cuenta («pedile a la cajera que corrija el cobro»)
+--   · transferencia/link → pago_confirmado_at (= pagado, NO COBRAR)
+--   · pendiente_pago (la tarjeta no pasó) → recibida (Por cobrar)
+--   · pos_cuentas.delivery_metodo_pago + rastro en notas_internas
+-- torre_listar_pedidos y mis_pedidos_driver: pagado_online también es true si
+-- pago_confirmado_at no es null. torre_listar_pedidos trae pago_confirmado_*.
+--
+-- fn_ruta_recalcular: la antigüedad pesa 30% (v_tot := 0.3 * v_w + v_t).
+-- Simulación con 129 viajes reales (21 días), viajes de 3+ paradas:
+-- km de más 4.8% → 0.9%, km/viaje 11.9 → 11.3, espera prom 46.3 → 44.7 min,
+-- espera del último +2 min, % > 60 min igual.
+--
+-- Frontend: TabPedidos (Copiar para WhatsApp, Cambiar pago, botones en «Sin
+-- pagar», «◀ Regresar a En ruta» en Entregados hoy → torre_mover_etapa),
+-- PaymentModal/POSMain (abre el cobro con transferencia/link ya elegido),
+-- POSHome (etiqueta «ya pagó»), DriverBeacon (texto «ya pagado por transferencia»).
+-- ════════════════════════════════════════════════════════════════════

@@ -692,7 +692,7 @@ function CobroLinea({ p }) {
   const efectivo = /efectivo/i.test(p.metodo_pago || 'efectivo')
   const caja = (bg, bd, col) => ({ background: bg, border: `1px solid ${bd}`, color: col, borderRadius: 8,
                                    padding: '5px 8px', fontSize: 12, marginTop: 6 })
-  if (p.pagado_online) return <div style={caja('#0e2a17', '#1f5a33', '#86efac')}>💳 Ya pagado con tarjeta — no cobrés nada</div>
+  if (p.pagado_online) return <div style={caja('#0e2a17', '#1f5a33', '#86efac')}>💳 Ya pagado {p.metodo_pago === 'transferencia' ? 'por transferencia' : p.metodo_pago === 'link_pago' ? 'con link' : 'con tarjeta'} — no cobrés nada</div>
   if (efectivo && Number(p.paga_con) > 0) {
     return (
       <div style={caja('#2f2a10', '#5a4a12', '#fde68a')}>

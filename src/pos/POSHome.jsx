@@ -552,7 +552,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                             el motorista le dice que cambió. */}
                         {(() => {
                           const m = { efectivo: '💵 Efectivo', tarjeta: '💳 Tarjeta',
-                                      transferencia: '🏦 Transferencia', link: '🔗 Link' };
+                                      transferencia: '🏦 Transferencia · ya pagó', link: '🔗 Link',
+                                      link_pago: '🔗 Link de pago · ya pagó' };
                           return c.delivery_metodo_pago
                             ? <> · <b style={{ color: '#4ade80' }}>
                                 {m[c.delivery_metodo_pago] || c.delivery_metodo_pago}
