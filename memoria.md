@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 17-Nov-2026 — Regalo de bienvenida: Queso Frito gratis en el 2º pedido
+- Por qué: la recompra de clientes nuevos es baja; Cesar aprobó las previsualizaciones (Previsualizaciones/Regalo queso frito) y pidió construirlo «con todo».
+- Cómo: el regalo es un registro de `delivery_cupones` con `tipo='queso_frito'`; se gana al entregar el PRIMER pedido web del teléfono; dura 21 días; mínimo $7.99. En el 2º pedido `crear_pedido_delivery` agrega la línea Queso Frito y descuenta su precio (motivo «Regalo bienvenida»), igual que el cupón → la caja/DTE no cambió. No se combina con el cupón de $2.
+- Menú (MenuPublico): banner «Tu regalo de bienvenida», línea GRATIS en el carrito o «Agregá $X más», aviso «¡Es tu primer pedido!» y fila en el resumen del checkout; «Volver a pedir» no repite la línea del regalo.
+- Seguimiento (TrackingPedido): «Cuando te llegue te regalamos…» (1er pedido), tarjeta «Tu próximo Queso Frito va por nuestra cuenta» con «Pedir otra vez» y checkbox de aviso por WhatsApp.
+- Torre: pestaña nueva «🎁 Recordatorios» (TabRecordatorios): día 12 y faltando 2 días, botón que abre WhatsApp con el mensaje listo y marca enviado; Omitir; KPIs.
+- Migración `20261117_regalo_bienvenida_queso_frito.sql`. No se dio regalo retroactivo a los primeros pedidos anteriores al lanzamiento.
+
 ## 16-Nov-2026 — Torre: cambiar pago, regresar entregado, copiar para WhatsApp, ruteo más cercano
 - Por qué: Cesar tenía que avisarle a la cajera a mano cuando un cliente pagaba por transferencia/link (tarjeta rechazada o sin efectivo); a veces se marca entregado por error; y cuando falla la app del motorista hay que mandarle el pedido por WhatsApp.
 - Torre (TabPedidos): «📋 Copiar para WhatsApp» (nombre, tel, productos con modificadores, pago y vuelto, dirección, link de Google Maps) y «💳 Cambiar pago» en cada tarjeta; en «Sin pagar», «Pagó por transferencia / con link» (pasa a Por cobrar); en «Entregados hoy», «◀ Regresar a En ruta» (torre_mover_etapa, borra el viaje del bono).

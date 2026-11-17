@@ -1,0 +1,29 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Regalo de bienvenida: Queso Frito gratis en el 2º pedido (17-nov-2026, Cesar)
+-- Aplicadas en Supabase como: regalo_bienvenida_queso_frito,
+--   regalo_reporte_cupon_solo_descuento, regalo_espera_sin_regalo_y_item_id
+--
+-- delivery_cupones: + tipo ('descuento' | 'queso_frito'), aviso_ok, rec1_at,
+--   rec2_at, rec_omitido_at; unique(origen_delivery_id, tipo) (un pedido puede
+--   ganar el cupón de $2 Y el regalo). delivery_clientes: + regalo_id.
+-- config_delivery: regalo_activo 1 · regalo_item 'Queso Frito' · regalo_minimo 7.99 · regalo_dias 21
+--
+-- trg_regalo_al_entregar: al ENTREGAR el primer pedido web de un teléfono (nunca
+--   antes entregado ni con regalo) → regalo tipo queso_frito, valor = precio del
+--   Queso Frito del menú delivery, mínimo $7.99, vence en 21 días, aviso_ok = true.
+-- crear_pedido_delivery: si el teléfono tiene regalo libre y el subtotal llega al
+--   mínimo, agrega la línea «Queso Frito» (origen 'regalo', nota 🎁) con su precio
+--   y descuenta el mismo monto (descuento_motivo 'Regalo bienvenida'); la caja/DTE
+--   lo prorratea igual que el cupón — no se tocó facturación. No se combina con el
+--   cupón de $2 (queda guardado). Sí con «Esperá y ahorrá» (10% sobre el pedido sin el regalo).
+--   Si el Queso Frito está apagado («Se acabó») en esa sucursal, no se aplica y queda guardado.
+-- cupon_activo / cupon_de_pedido / trg_cupon_al_entregar / reporte_cupon_regreso:
+--   solo tipo 'descuento'.
+-- RPCs: regalo_estado(tel) (menú/checkout), regalo_de_pedido(token) (seguimiento:
+--   pendiente | ganado | usado_aqui), regalo_aviso(token, ok), torre_regalo_recordatorios(token)
+--   (día 12 y faltando 2 días), torre_regalo_marcar(token, id, enviado1|enviado2|omitir),
+--   reporte_regalo_bienvenida(desde).
+-- Pruebas (rollback): 1er pedido → pendiente; entregado → regalo $3.99/21 días;
+--   pedido < $7.99 no aplica; 2º pedido $7.99 → línea Queso Frito $3.99, descuento 3.99,
+--   total 7.99, cuenta POS igual; cliente viejo no gana; pedido ≥ $20 gana cupón + regalo.
+-- ════════════════════════════════════════════════════════════════════
