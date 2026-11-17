@@ -191,13 +191,24 @@ function CuandoPreparar({ c }) {
   else if (c.llegada_min != null) det = c.llegada_min <= 1
     ? `${quien} ya está en tienda`
     : `${quien} llega en ~${c.llegada_min} min${c.asignado ? '' : ' (el primero que se libera)'} · cocina ~${c.cocina_min} min`
+  const prog = c.programado_para
+    ? new Date(c.programado_para).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' })
+    : null
   return (
-    <div style={{ background: st.bg, border: `1px solid ${st.bd}`, color: st.fg, borderRadius: 8,
-                  padding: '5px 10px', margin: '6px 0 2px', display: 'flex', alignItems: 'center',
-                  gap: 8, flexWrap: 'wrap' }}>
-      <span style={{ fontWeight: 900, fontSize: 15, letterSpacing: '0.3px' }}>⏱ {st.t}</span>
-      {det && <span style={{ fontSize: 12, opacity: 0.9 }}>{det}</span>}
-    </div>
+    <>
+      {prog && (
+        <div style={{ background: '#2e1065', border: '1px solid #7c3aed', color: '#ede9fe', borderRadius: 8,
+                      padding: '5px 10px', margin: '6px 0 2px', fontWeight: 900, fontSize: 14 }}>
+          🗓️ PROGRAMADO · entregar a las {prog} · no antes
+        </div>
+      )}
+      <div style={{ background: st.bg, border: `1px solid ${st.bd}`, color: st.fg, borderRadius: 8,
+                    padding: '5px 10px', margin: '6px 0 2px', display: 'flex', alignItems: 'center',
+                    gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 900, fontSize: 15, letterSpacing: '0.3px' }}>⏱ {st.t}</span>
+        {det && <span style={{ fontSize: 12, opacity: 0.9 }}>{det}</span>}
+      </div>
+    </>
   )
 }
 
