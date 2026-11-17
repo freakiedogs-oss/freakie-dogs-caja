@@ -43,14 +43,17 @@ export default function DespachoTab({user,show}){
       ]);
       // SOS primero (el más viejo arriba), después la orden del día como antes
       const lista=(ped||[]).slice().sort((a,b)=>{
-        const sa=a.tipo==='sos'?0:1, sb=b.tipo==='sos'?0:1;
+        // SOS, después 🌅 antes de abrir (por la hora que lo necesitan), después la orden del día
+        const rk=(p)=>p.tipo==='sos'?0:p.tipo==='urgente'?1:2;
+        const sa=rk(a), sb=rk(b);
         if(sa!==sb) return sa-sb;
+        if(sa===1) return new Date(a.urgente_para||a.created_at)-new Date(b.urgente_para||b.created_at);
         return sa===0 ? new Date(a.created_at)-new Date(b.created_at) : new Date(b.created_at)-new Date(a.created_at);
       });
-      const idsSos=lista.filter(p=>p.tipo==='sos'&&p.estado==='enviado').map(p=>p.id);
+      const idsSos=lista.filter(p=>(p.tipo==='sos'||p.tipo==='urgente')&&p.estado==='enviado').map(p=>p.id);
       if(sosVistos.current&&idsSos.some(id=>!sosVistos.current.has(id))){
-        const nuevo=lista.find(p=>p.tipo==='sos'&&!sosVistos.current.has(p.id));
-        show(`🚨 Nuevo SOS de ${nuevo?.sucursales?.nombre||'una sucursal'}`);
+        const nuevo=lista.find(p=>(p.tipo==='sos'||p.tipo==='urgente')&&p.estado==='enviado'&&!sosVistos.current.has(p.id));
+        show(nuevo?.tipo==='urgente'?`🌅 Nuevo pedido antes de abrir de ${nuevo?.sucursales?.nombre||'una sucursal'}`:`🚨 Nuevo SOS de ${nuevo?.sucursales?.nombre||'una sucursal'}`);
       }
       sosVistos.current=new Set(idsSos);
       setPedidos(lista);
@@ -78,7 +81,7 @@ export default function DespachoTab({user,show}){
   return(
     <div style={{padding:'16px 16px 100px'}}>
       <div style={{display:'flex',gap:6,marginBottom:16,overflowX:'auto',flexWrap:'nowrap'}}>
-        <button className={`btn btn-sm ${tab==='pendientes'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('pendientes')}>📋 Pendientes{pedidos.some(p=>p.tipo==='sos'&&p.estado==='enviado')?` · 🚨 ${pedidos.filter(p=>p.tipo==='sos'&&p.estado==='enviado').length}`:''}</button>
+        <button className={`btn btn-sm ${tab==='pendientes'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('pendientes')}>📋 Pendientes{pedidos.some(p=>p.tipo==='sos'&&p.estado==='enviado')?` · 🚨 ${pedidos.filter(p=>p.tipo==='sos'&&p.estado==='enviado').length}`:''}{pedidos.some(p=>p.tipo==='urgente'&&p.estado==='enviado')?` · 🌅 ${pedidos.filter(p=>p.tipo==='urgente'&&p.estado==='enviado').length}`:''}</button>
         <button className={`btn btn-sm ${tab==='proceso'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('proceso')}>⚙️ En proceso</button>
         <button className={`btn btn-sm ${tab==='historial'?'btn-red':'btn-ghost'}`} onClick={()=>setTab('historial')}>✅ Historial</button>
       </div>
@@ -87,7 +90,22 @@ export default function DespachoTab({user,show}){
       {!loading&&tab==='pendientes'&&<>
         {pedidos.filter(p=>p.estado==='enviado').length===0&&pedidos.filter(p=>p.estado==='preparando').length===0&&
           <div className="empty"><div className="empty-icon">📋</div><div className="empty-text">No hay pedidos pendientes</div></div>}
-        {pedidos.filter(p=>p.estado==='enviado').map(p=>p.tipo==='sos'?(
+        <ResumenAntesAbrir user={user}/>
+        {pedidos.filter(p=>p.estado==='enviado').map(p=>p.tipo==='urgente'?(
+          <div key={p.id} className="card" style={{borderLeft:'4px solid #d97706',background:'#1f1a0d'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6,gap:8}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:'#fde68a'}}>🌅 Antes de abrir · {p.sucursales?.nombre||p.sucursal_id}</div>
+                <div style={{color:'#ddd',fontSize:12.5,marginTop:2}}>Pedido {new Date(p.created_at).toLocaleTimeString('es-SV',{hour:'numeric',minute:'2-digit',timeZone:'America/El_Salvador'})}{p.urgente_para&&<> · lo necesitan a las <b>{new Date(p.urgente_para).toLocaleTimeString('es-SV',{hour:'numeric',minute:'2-digit',timeZone:'America/El_Salvador'})}</b></>}</div>
+              </div>
+              <span style={{fontSize:12,padding:'4px 10px',borderRadius:999,background:'#78350f',color:'#fff',fontWeight:700,whiteSpace:'nowrap'}}>{haceTexto(p.created_at,ahora)}</span>
+            </div>
+            {(p.notas||'').split(' · ').slice(2).join(' · ')&&<div style={{fontSize:12.5,color:'#aaa',marginBottom:8}}>📝 {(p.notas||'').split(' · ').slice(2).join(' · ')}</div>}
+            <button className="btn btn-sm" style={{background:'#d97706',color:'#fff',fontWeight:700}} onClick={()=>{setSel(p);setView('preparar');}}>
+              📦 Preparar · va por InDrive/Uber
+            </button>
+          </div>
+        ):p.tipo==='sos'?(
           <div key={p.id} className="card" style={{borderLeft:'4px solid #dc2626',background:'#1f1111'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6,gap:8}}>
               <div>
@@ -165,6 +183,10 @@ export default function DespachoTab({user,show}){
 // ── DESPACHO EN PROCESO CARD ──────────────────────────────────
 function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
   const [expand,setExpand]=useState(false);
+  const esAntes=despacho.notas_despacho==='🚕 URGENTE';
+  const [plat,setPlat]=useState(['InDrive','Uber'].includes(despacho.motorista_nombre)?despacho.motorista_nombre:'InDrive');
+  const [link,setLink]=useState('');
+  const [costo,setCosto]=useState('');
   const [items,setItems]=useState([]);
   const [loadingItems,setLoadingItems]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -194,6 +216,18 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
       setExpand(false);
     }catch(e){show('❌ '+e.message);}
     setSaving(false);
+  };
+
+  // 🌅 Antes de abrir: anota el viaje de InDrive/Uber y marca que salió
+  const yaSalio=async()=>{
+    if(!/^https?:\/\//i.test(link.trim())){show('⚠️ Pegá el link completo del viaje (empieza con https://)');return;}
+    if(!(Number(costo)>0)){show('⚠️ Anotá el costo del viaje');return;}
+    setSaving(true);
+    const {data,error}=await db.rpc('antes_abrir_viaje',{p_pedido_id:despacho.pedido_id,p_usuario_id:user?.id||null,p_plataforma:plat,p_link:link.trim(),p_costo:Number(costo)});
+    setSaving(false);
+    if(error||!data?.ok){show('❌ '+(error?.message||data?.error||'No se pudo'));return;}
+    show(`🚗 Salió por ${plat} — la sucursal ya ve el link`);
+    onUpdate(); setExpand(false);
   };
 
   const handleToggle=()=>{
@@ -227,7 +261,7 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
     <div className="card" style={{cursor:'pointer'}} onClick={handleToggle}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
         <div>
-          <div style={{fontWeight:700}}>{despacho.notas_despacho==='🚨 SOS'?'🚨 SOS · ':''}{despacho.sucursales?.nombre}</div>
+          <div style={{fontWeight:700}}>{despacho.notas_despacho==='🚨 SOS'?'🚨 SOS · ':esAntes?'🌅 Antes de abrir · ':''}{despacho.sucursales?.nombre}</div>
           <div style={{color:'#666',fontSize:12,marginTop:2}}>{fmtDate(despacho.fecha_despacho)}</div>
           {despacho.motorista_nombre&&<div style={{fontSize:12,color:'#60a5fa',marginTop:2}}>🚚 {despacho.motorista_nombre}</div>}
         </div>
@@ -250,8 +284,23 @@ function DespachoEnProcesoCard({despacho,user,show,onUpdate}){
               </div>
             </div>
           ))}
+          {esAntes&&despacho.estado==='preparando'&&(
+            <div style={{marginTop:12,background:'#1f1a0d',border:'1px solid #4a3410',borderRadius:10,padding:10}}>
+              <div style={{fontSize:12,color:'#fde68a',fontWeight:700,marginBottom:6}}>🚗 ¿Por dónde va?</div>
+              <div style={{display:'flex',gap:6,marginBottom:8}}>
+                {['InDrive','Uber'].map(x=>(
+                  <button key={x} type="button" onClick={()=>setPlat(x)} style={{padding:'6px 14px',borderRadius:999,fontSize:13,fontWeight:700,cursor:'pointer',border:plat===x?'1px solid #16a34a':'1px solid #333',background:plat===x?'#16a34a':'#111',color:'#fff'}}>{x}</button>
+                ))}
+              </div>
+              <input value={link} onChange={e=>setLink(e.target.value)} placeholder="🔗 Pegá el link del viaje" style={{width:'100%',boxSizing:'border-box',background:'#111',border:'1px solid #333',borderRadius:8,padding:'9px 10px',color:'#fff',fontSize:13,marginBottom:6}}/>
+              <input value={costo} onChange={e=>setCosto(e.target.value.replace(/[^\d.]/g,''))} inputMode="decimal" placeholder="$ costo del viaje" style={{width:140,boxSizing:'border-box',background:'#111',border:'1px solid #333',borderRadius:8,padding:'9px 10px',color:'#fff',fontSize:13}}/>
+              <button className="btn btn-sm" style={{width:'100%',marginTop:8,background:'#d97706',color:'#fff',fontWeight:700}} onClick={yaSalio} disabled={saving}>
+                {saving?'Guardando…':'🚗 Ya salió · avisar a la sucursal'}
+              </button>
+            </div>
+          )}
           <div style={{display:'flex',gap:8,marginTop:12}}>
-            {despacho.estado==='preparando'&&(
+            {despacho.estado==='preparando'&&!esAntes&&(
               <button className="btn btn-green" style={{flex:1}} onClick={marcarDespachado} disabled={saving}>
                 {saving?'Marcando...':'🚚 Marcar Despachado'}
               </button>
@@ -371,7 +420,7 @@ function PrepararDespacho({pedido,user,show,onBack}){
   // si la sucursal cambió el pedido desde que se abrió esta pantalla, se rechaza y
   // se recarga (simulación 23-sep, E07: antes salía lo viejo y la orden se cerraba).
   const despachar=async()=>{
-    if(!motorista.trim()){show('⚠️ Ingresa el nombre del motorista');return;}
+    if(!motorista.trim()){show(pedido.tipo==='urgente'?'⚠️ Elegí InDrive o Uber':'⚠️ Ingresa el nombre del motorista');return;}
     setSaving(true);
     try{
       const motoObj=motoristas.find(m=>m.nombre===motorista.trim());
@@ -434,6 +483,13 @@ function PrepararDespacho({pedido,user,show,onBack}){
         </div>
       </div>
       <div style={{padding:'16px 16px 100px'}}>
+        {pedido.tipo==='urgente'&&(
+          <div style={{marginBottom:12,padding:'10px 12px',background:'#1f1a0d',borderRadius:8,borderLeft:'4px solid #d97706',fontSize:13}}>
+            <div style={{fontWeight:800,color:'#fde68a'}}>🌅 Antes de abrir{pedido.urgente_para?` · lo necesitan a las ${new Date(pedido.urgente_para).toLocaleTimeString('es-SV',{hour:'numeric',minute:'2-digit',timeZone:'America/El_Salvador'})}`:''}</div>
+            {pedido.notas&&<div style={{color:'#bbb',fontSize:12,marginTop:2}}>{pedido.notas}</div>}
+            <div style={{color:'#ddd',fontSize:12,marginTop:4}}>Va por <b>InDrive o Uber</b>. Después de crear el despacho, en «En proceso» pegás el link del viaje y el costo.</div>
+          </div>
+        )}
         {pedido.tipo==='sos'&&(
           <div style={{marginBottom:12,padding:'10px 12px',background:'#2a1111',borderRadius:8,borderLeft:'4px solid #dc2626',fontSize:13}}>
             <div style={{fontWeight:800,color:'#fca5a5'}}>{pedido.motivo==='pendiente'?'⏳ Pendiente de un SOS anterior':'🚨 SOS · '+(MOTIVO_SOS_LABEL[pedido.motivo]||'')}</div>
@@ -508,6 +564,16 @@ function PrepararDespacho({pedido,user,show,onBack}){
         ))}
 
         {!loading&&pitems.length>0&&<>
+          {pedido.tipo==='urgente'?(
+            <div className="field" style={{marginTop:16}}>
+              <label>🚗 Va por</label>
+              <div style={{display:'flex',gap:8}}>
+                {['InDrive','Uber'].map(x=>(
+                  <button key={x} type="button" onClick={()=>setMotorista(x)} style={{flex:1,padding:'12px',borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer',border:motorista===x?'1px solid #16a34a':'1px solid #333',background:motorista===x?'#16a34a':'#1a1a1a',color:'#fff'}}>{x}</button>
+                ))}
+              </div>
+            </div>
+          ):(
           <div className="field" style={{marginTop:16}}>
             <label>🚚 Motorista asignado</label>
             <select value={motorista} onChange={e=>setMotorista(e.target.value)} style={{width:'100%',padding:'12px',background:'#1a1a1a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:14}}>
@@ -515,11 +581,12 @@ function PrepararDespacho({pedido,user,show,onBack}){
               {motoristas.map(m=><option key={m.id} value={m.nombre}>{m.nombre}</option>)}
             </select>
           </div>
+          )}
           <div ref={bottomRef} style={{display:'flex',gap:8}}>
             <button className="btn btn-orange" style={{flex:1}} onClick={despachar} disabled={saving||!motorista.trim()}>
               {saving?'Creando despacho...':'📦 Crear Despacho'}
             </button>
-            {pedido.tipo==='sos'&&(
+            {(pedido.tipo==='sos'||pedido.tipo==='urgente')&&(
               <button className="btn btn-ghost" style={{flex:'0 0 auto',width:'auto',padding:'14px 14px',color:'#f87171'}} onClick={cancelarSos} disabled={saving} title="No hay nada de este SOS">🚫</button>
             )}
             <button className="btn btn-ghost" style={{flex:'0 0 auto',width:'auto',padding:'14px 18px'}} onClick={()=>{
@@ -548,5 +615,28 @@ function PrepararDespacho({pedido,user,show,onBack}){
         </>}
       </div>
     </div>
+  );
+}
+
+// ── 🌅 Antes de abrir: uso del mes por sucursal (17-nov-2026) ──
+function ResumenAntesAbrir({user}){
+  const [r,setR]=useState(null);
+  const ve=['admin','ejecutivo','superadmin','jefe_casa_matriz'].includes(user?.rol);
+  useEffect(()=>{ if(ve) db.rpc('antes_abrir_resumen').then(({data})=>setR(Array.isArray(data)?data:[])); },[ve]);
+  if(!ve||!r) return null;
+  const usados=r.reduce((s,x)=>s+n(x.usados),0), costo=r.reduce((s,x)=>s+n(x.costo),0);
+  return(
+    <details className="card" style={{borderLeft:'3px solid #d97706',marginBottom:12}}>
+      <summary style={{cursor:'pointer',fontWeight:700,fontSize:14}}>🌅 Antes de abrir este mes · {usados} pedido{usados===1?'':'s'} · ${costo.toFixed(2)} en viajes</summary>
+      <div style={{marginTop:8}}>
+        {r.map(x=>(
+          <div key={x.sucursal} style={{display:'flex',gap:8,padding:'6px 0',borderTop:'1px solid #222',fontSize:13}}>
+            <span style={{flex:1}}>{x.sucursal}</span>
+            <span style={{color:n(x.usados)>=n(x.limite)?'#f87171':'#ddd'}}>{x.usados} / {x.limite}</span>
+            <span style={{width:70,textAlign:'right'}}>${n(x.costo).toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }

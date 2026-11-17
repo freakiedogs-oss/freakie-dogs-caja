@@ -1,0 +1,20 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Soyapango → Paseo Venecia + asignación automática de motoristas (17-nov-2026, Cesar)
+-- Aplicada en Supabase como: soyapango_despacha_venecia_y_auto_asignar
+--
+-- 1) sucursales.delivery_despacha_desde: Plaza Mundo Soyapango → Paseo Venecia.
+--    sucursal_mas_cercana() devuelve la sucursal que despacha (queda en cobertura).
+--    Motivo: simulación de noviembre — la sugerencia mandaba 311 de 1,003 pedidos
+--    a Soyapango (que no despacha) y la torre los corregía a mano (acierto 67%).
+--    Con la regla «más cercana entre las que despachan» coincide 90% con la torre.
+-- 2) delivery_auto_asignar_tick() (pg_cron cada minuto, activa hasta
+--    config_delivery.auto_asignar_hasta): pedidos delivery en preparando/lista sin
+--    motorista →
+--      a) motorista de esa sucursal con 1–2 pedidos aún sin salir a ≤ 3 km → juntarlos;
+--      b) si no, el libre en tienda que lleva más tiempo esperando;
+--      c) si todos van en ruta y el pedido ya está listo → el que regresa primero.
+--    Excluye almuerzo y sin GPS > 20 min. Deja bitácora en delivery_asignaciones_log
+--    (auto = true, razon, candidatos). La torre puede reasignar como siempre.
+--    Simulación con 969 entregas de noviembre: pedido→entregado −3 a −6 min,
+--    > 60 min de 21.5% a 14–16%; a cambio ~9% más km (junta menos pedidos).
+-- ════════════════════════════════════════════════════════════════════

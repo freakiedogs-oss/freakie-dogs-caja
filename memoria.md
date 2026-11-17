@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 17-Nov-2026 — 🌅 Pedido antes de abrir (InDrive/Uber)
+- Por qué: las sucursales necesitan a veces producto antes de abrir; Casa Matriz lo prepara y lo manda por InDrive o Uber, y la sucursal quiere seguir el viaje.
+- Reglas de Cesar: de 9 p. m. a 11 a. m., 2 por sucursal por mes, cualquier producto, link + costo del viaje. Piden gerente/encargado y cocina (igual que SOS).
+- Implementado sobre `pedidos_sucursal.tipo='urgente'` (la «entrega urgente» del 11-oct quedó sin uso; `crear_entrega_urgente` sigue en la BD pero ya no es el camino). Ver `20261117d_pedido_antes_de_abrir.sql`.
+
+## 17-Nov-2026 — Horarios: Jazmín y Mónica no salían en la planilla
+- `horario_cargar` excluía por rol a admin y tablet. Jazmín Fuentes (admin, encargada Cafetalón) y Mónica Contreras (tablet, encargada PeYa) quedaban fuera. Migración `horarios_incluir_admin_tablet_con_empleado`: entran si su usuario está ligado a un empleado activo. Probado (rollback): salen las dos y se les puede guardar turno.
+
+## 17-Nov-2026 — Soyapango despacha desde Venecia + prueba de asignación automática
+- Simulación de noviembre (1,003 pedidos): la sugerencia de sucursal acertaba 67% porque mandaba 311 a Soyapango (no despacha); «más cercana entre las que despachan» = 90%. Las diferencias restantes son del centro de SS que la torre manda a Cafetalón aunque Venecia queda ~2.6 km más cerca (preguntado a Cesar).
+- Fix: `sucursales.delivery_despacha_desde` (Soyapango → Venecia) leído por `sucursal_mas_cercana`.
+- Prueba de un día: `delivery_auto_asignar_tick()` asigna motorista solo (juntar ≤3 km / libre que más espera / el que regresa primero), bitácora en `delivery_asignaciones_log` (auto, razon). Se apaga con `config_delivery.auto_asignar_hasta`. Análisis de cierre pendiente con Cesar. Migración `20261117c_soyapango_venecia_auto_asignar.sql`.
+
 ## 17-Nov-2026 — FIX «No pudimos cargar el menú» (menú web)
 - Causa: `menu_publico_delivery()` tardaba ~0.85 s promedio con picos de 3 s; el rol anon corta a los 3 s → 500 intermitente y el menú no cargaba.
 - Fix (migración `menu_publico_cache`): la función original pasó a `_menu_publico_delivery_calc()`; `menu_publico_cache_refrescar()` la guarda en `menu_publico_cache` cada minuto (pg_cron) y `menu_publico_delivery()` sirve lo guardado (7 ms). Si el caché tiene más de 10 min, calcula en vivo. Cambios de menú/disponibilidad tardan hasta 1 min en verse.

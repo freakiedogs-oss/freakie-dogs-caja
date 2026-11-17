@@ -1,0 +1,27 @@
+-- ════════════════════════════════════════════════════════════════════
+-- 🌅 Pedido antes de abrir (17-nov-2026, Cesar)
+-- Aplicada en Supabase como: pedido_antes_de_abrir
+--
+-- Reusa pedidos_sucursal.tipo = 'urgente' (ya conectado a despacho_crear,
+-- cancelar_pedido_sos y a los pendientes; la «entrega urgente» del 11-oct nunca se usó).
+-- pedidos_sucursal: + viaje_plataforma, viaje_link, viaje_costo, viaje_salida_at.
+-- config_delivery: antes_abrir_limite_mes 2 · antes_abrir_desde 21:00 · antes_abrir_hasta 11:00.
+--
+-- antes_abrir_estado(sucursal)  → abierto, desde/hasta, limite, usados, quedan (mes SV;
+--                                  no cuentan los cancelados ni los pendientes que genera despacho)
+-- antes_abrir_catalogo()        → cualquier producto activo (empaque del conteo si tiene)
+-- crear_pedido_antes_abrir(sucursal, usuario, items[{producto_id, empaques}], para, nota, token)
+--     gerente / cocina / admin / ejecutivo / superadmin / jefe_casa_matriz; de su sucursal;
+--     dentro del horario; con cupo; hora «para» ≥ 30 min; token anti-duplicado.
+-- antes_abrir_viaje(pedido, usuario, 'InDrive'|'Uber', link https, costo)
+--     solo Casa Matriz (bodeguero, jefe_casa_matriz, despachador, admin…); requiere
+--     despacho creado; marca pedido y despacho como despachados con hora de salida.
+-- antes_abrir_resumen(mes)      → por sucursal: usados / límite, costo de viajes, notas.
+-- Pruebas (rollback): 2 pedidos ok y el 3º rechazado («ya usaste tus 2»); link sin
+--   https rechazado; gerente no puede anotar el viaje; despacho → viaje → despachado;
+--   resumen con $4.50.
+-- Frontend: PedidoAntesAbrirModal (Mis Pedidos), MisPedidosView (botón, tarjeta con
+--   «Ver viaje», cancelar devuelve el cupo), SosAlertaGlobal (píldora naranja),
+--   DespachoTab (orden SOS → antes de abrir → normal; InDrive/Uber en vez de motorista;
+--   link + costo + «Ya salió»; resumen del mes para admin/ejecutivo/jefe).
+-- ════════════════════════════════════════════════════════════════════
