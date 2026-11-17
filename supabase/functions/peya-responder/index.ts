@@ -504,29 +504,42 @@ async function accionCatalogo(
   const base = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
   const callbackUrl = `${base}/functions/v1/peya-plugin/catalog-import-callback`;
 
-  const url = `${BASE}/v2/chains/${encodeURIComponent(chainCode)}/catalog`;
-  let ruta = "pos_vendor";
-  let r = await enviarADH(url, {
-    vendors: (mapas ?? []).map((m) => m.vendor_code ?? m.remote_id),
-    catalog: { items },
-    callbackUrl,
-  }, "PUT");
-
-  // Respaldo si la ruta estándar no está autorizada: la misma carga por
-  // identificador de plataforma y global entity
-  //   PUT /v2/chains/{chain}/global-entity/{globalEntityId}/catalog
-  //   { platformVendors: [platformRestaurantId…], catalog, callbackUrl }
-  // Sólo si todas las tiendas tienen ambos datos y comparten global entity.
+  // Dos rutas para el mismo catálogo:
+  //   · estándar (pos_vendor): PUT /v2/chains/{chain}/catalog { vendors: [remoteId…] }
+  //   · por plataforma: PUT /v2/chains/{chain}/global-entity/{gEID}/catalog
+  //       { platformVendors: [platformRestaurantId…] }
+  // La de plataforma es la que PedidosYa pidió para el menú unificado (homologación
+  // 13-nov: «menú unificado mediante remote ID y platforms»); después de esa
+  // sesión la estándar empezó a fallar con «vendor IDs are different from those
+  // existing within the PedidosYa inventory». `cuerpo.ruta = "platform_vendor"`
+  // la fuerza; si no, va la estándar y la de plataforma queda de respaldo ante 403.
   const geids = [...new Set((mapas ?? []).map((m) => m.global_entity_id))];
   const todasConPlataforma = (mapas ?? []).every((m) => m.platform_restaurant_id && m.global_entity_id);
-  if (r.status === 403 && todasConPlataforma && geids.length === 1) {
-    const url2 = `${BASE}/v2/chains/${encodeURIComponent(chainCode)}` +
-      `/global-entity/${encodeURIComponent(String(geids[0]))}/catalog`;
-    const r2 = await enviarADH(url2, {
+  const forzarPlataforma = cuerpo.ruta === "platform_vendor";
+  if (forzarPlataforma && !(todasConPlataforma && geids.length === 1)) {
+    return json({ error: "sin_datos_de_plataforma",
+      message: "Para la ruta por plataforma todas las tiendas necesitan platform_restaurant_id y el mismo global_entity_id." }, 409);
+  }
+
+  const enviarPorPlataforma = () => enviarADH(
+    `${BASE}/v2/chains/${encodeURIComponent(chainCode)}` +
+      `/global-entity/${encodeURIComponent(String(geids[0]))}/catalog`,
+    {
       platformVendors: (mapas ?? []).map((m) => String(m.platform_restaurant_id)),
       catalog: { items },
       callbackUrl,
     }, "PUT");
+
+  let ruta = forzarPlataforma ? "platform_vendor" : "pos_vendor";
+  let r = forzarPlataforma ? await enviarPorPlataforma() : await enviarADH(
+    `${BASE}/v2/chains/${encodeURIComponent(chainCode)}/catalog`, {
+      vendors: (mapas ?? []).map((m) => m.vendor_code ?? m.remote_id),
+      catalog: { items },
+      callbackUrl,
+    }, "PUT");
+
+  if (!forzarPlataforma && r.status === 403 && todasConPlataforma && geids.length === 1) {
+    const r2 = await enviarPorPlataforma();
     if (r2.status >= 200 && r2.status < 300) { r = r2; ruta = "platform_vendor"; }
     else r = { ...r, texto: `${r.texto} || platform-vendor: HTTP ${r2.status}: ${r2.texto}`.slice(0, 1000) };
   }
