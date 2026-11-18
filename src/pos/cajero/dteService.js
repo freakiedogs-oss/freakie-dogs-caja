@@ -15,6 +15,7 @@
  */
 
 import { STORE_ESTABLECIMIENTO } from '../../config'
+import { preciosNetos, totalesNetos } from '../../lib/dteNeto'
 
 const DTE_PROXY_BASE = '/api/dte-proxy'
 
@@ -91,11 +92,13 @@ function mapFormaPago(metodo) {
  * @param {string} tipoDte - 'factura' o 'ccf'
  */
 function buildDteItems(items, tipoDte) {
-  return items.map(it => {
-    // Factura: precio CON IVA (tal cual). CCF: precio SIN IVA (extraer)
-    const precio = tipoDte === 'ccf'
-      ? Math.round((it.precio / 1.13) * 100) / 100
-      : it.precio
+  // Factura: precio CON IVA (tal cual). CCF: precio SIN IVA, calculado desde
+  // el total para que el documento cierre en lo que se cobró (ver lib/dteNeto).
+  const netos = tipoDte === 'ccf'
+    ? preciosNetos(items.map(it => ({ precio: it.precio, cantidad: it.qty })))
+    : null
+  return items.map((it, i) => {
+    const precio = netos ? netos[i] : it.precio
 
     return {
       descripcion: it.nombre,
@@ -170,9 +173,7 @@ export async function emitCCF({ items, receptor, metodo, propina }) {
   }
 
   // Calcular total para pagos
-  const totalCCF = items.reduce((s, it) => s + (it.precio / 1.13 * it.qty), 0)
-  const ivaCCF = Math.round(totalCCF * 0.13 * 100) / 100
-  const totalPagarCCF = Math.round((totalCCF + ivaCCF) * 100) / 100
+  const totalPagarCCF = totalesNetos(items.map(it => ({ precio: it.precio, cantidad: it.qty }))).total
   body.pagos = [{ codigo: mapFormaPago(metodo), montoPago: Math.round((totalPagarCCF + propinaNG) * 100) / 100, referencia: null, plazo: null, periodo: null }]
 
   return callProxy('emit-ccf', body)
