@@ -67,6 +67,11 @@
 - Equipo: Samantha salió; su tarjeta en Flow pasa a «Vacante · Video Editor» (clave `editor`, no tenía tareas). Cuando entre el nuevo editor, cambiar `name` en `TEAM`. Su usuario del ERP ya estaba inactivo y se deja así (historial y planilla).
 - Pendiente (fase 2): avisos push de Flow (misiones del lunes, tarea asignada, fecha por vencer) reusando el push del `sw.js`.
 
+## 17-Nov-2026 — CCF de evento salió por $223.88 en vez de $224.00 (redondeo del precio unitario)
+- Por qué: Edgar facturó desde el ERP 100 × $1.99 + transporte $25 = $224.00 (precios con IVA). `itemsParaDte` (`dteErpService.js`) pasa el neto del CCF redondeado a 2 decimales: 1.99/1.13 = 1.7611 → **1.76**; × 100 se pierden $0.11 de neto y el total cae a $223.88. El `pagos.montoPago` del mismo DTE sí decía 224 (incoherente con `totalPagar`).
+- Corrección fiscal (pedida por Jose): se emitió el reemplazo `A816F4D7-99A2-43E5-83B9-53E800010CFA` con `precioUni` 1.7611 (gravado 198.23 + IVA 25.77 = 224.00, PROCESADO) y **después** se invalidó el original `46545207-591F-48E3-9200-4837249C1232` con `tipoAnulacion: 1` + `codigoGeneracionR`. Key temporal `fdk_tmp_512d`, ya desactivada. `pos_dte_standalone` apunta al DTE nuevo.
+- **Pendiente (código, sin tocar — es facturación):** el mismo `r2(precio/1.13)` está en `dteErpService.js` (emisión y NC) y en `src/pos/cajero/dteService.js:97`. Cualquier CCF con cantidad grande descuadra centavos. Fix propuesto: mandar el `precioUni` neto con 4+ decimales (Hacienda acepta hasta 8) y dejar el redondeo a 2 solo en la línea.
+
 ## 13-Nov-2026 — KPI Ventas Totales: la proyección solo usa días cerrados
 - Por qué: Jose vio la proyección baja a media mañana. `fn_ventas_totales_dashboard` tomaba el corte de `v_data_disponible_resumen` (= último día con alguna venta); con el POS en vivo, el día en curso contaba como día completo desde la primera venta. A las 11:30 del 13-nov: $320 de hoy divididos como un día entero → proyección $241,907 y utilidad −$2,453 en vez de $261,326 y +$8,138.
 - Fix (`20261113_ventas_totales_corte_dia_cerrado.sql`): en el mes en curso el corte nunca pasa de ayer (`LEAST(data_completa, hoy − 1, fin_mes)`). Todo el tablero (acumulado, BEP, utilidad, gráfica) queda al cierre de ayer; el encabezado ya dice «Data completa hasta …».
