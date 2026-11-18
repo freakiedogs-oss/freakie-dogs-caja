@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 17-Nov-2026 — CCF a Equipos de Alquiler por $1,457.12 (canje por publicidad)
+- Por qué: Jose lo pidió. Equipos de Alquiler facturó $3,057.12; se pactó pagar $1,600 y el resto en servicios publicitarios, así que Freakie les factura ese saldo. Concepto «Servicios generales», neto 1,289.49 + IVA 167.63.
+- DTE `EC9F90CB-E532-4F8D-88DD-492A7E93A95B` (PROCESADO), emitido directo contra `dte-service/emit-ccf` con key temporal `fdk_tmp_1202` (desactivada). Forma de pago 99 (Otros) por ser compensación, no efectivo. Registrado en `pos_dte_standalone`.
+- Cliente dado de alta en `pos_clientes` desde la tarjeta de IVA: actividad 77300, municipio 06/22 (San Salvador Este, catálogo nuevo — Hacienda lo aceptó). **Sin correo ni teléfono**: el DTE salió con `sin-correo@freakiedogs.com`; el PDF se le pasa a mano.
+
 ## 17-Nov-2026 — 🌅 Pedido antes de abrir (InDrive/Uber)
 - Por qué: las sucursales necesitan a veces producto antes de abrir; Casa Matriz lo prepara y lo manda por InDrive o Uber, y la sucursal quiere seguir el viaje.
 - Reglas de Cesar: de 9 p. m. a 11 a. m., 2 por sucursal por mes, cualquier producto, link + costo del viaje. Piden gerente/encargado y cocina (igual que SOS).
