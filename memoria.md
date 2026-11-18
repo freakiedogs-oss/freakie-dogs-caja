@@ -1,9 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 18-Nov-2026 — Horarios: hora del almuerzo opcional y hasta 600 min
+- Los encargados no podían guardar sin hora ni poner más de 180 min (turnos partidos, ej. 179 min). Ahora la hora es opcional (si se pone, se valida dentro del turno) y el máximo es 600 min. Ver `20261118b_horarios_almuerzo_opcional.sql`.
+
 ## 18-Nov-2026 — 📈 Proyección y ventas para el pedido
 - Por qué: en la reunión de pedidos los encargados dijeron que no podían proyectar 1–4 días sin historial de venta por producto.
 - Pantalla nueva «Proyección y Ventas» (Supply Chain): insumos por día (promedio de los últimos 4 días iguales de la semana, con rango), necesitás − tenés = pedir en empaques; y ventas por producto del menú (promedio por día de la semana / día por día). Sin colchón, por pedido de Cesar.
 - En el Conteo Nocturno → Pedido sugerido: botones Mín/Máx | 1–4 días que llenan las cantidades con (proyección − contado). Por defecto sigue Mín/Máx.
+- Ojo: el menú lateral lee los permisos de la tabla `permisos_rol` (no de `config.js`): una pantalla nueva no aparece hasta insertar sus filas. Se agregaron para `proyeccion` (gerente, cocina, admin, ejecutivo, jefe_casa_matriz) cuando Rosa (Metro Centro) no la veía.
 - Ojo: muchas `pos_cuentas` traen `store_code` y `sucursal_id` NULL; filtrar por ambos. Ver `20261118_proyeccion_consumo_ventas.sql`.
 
 ## 17-Nov-2026 — 🍽️ Horarios: almuerzo con hora fija
