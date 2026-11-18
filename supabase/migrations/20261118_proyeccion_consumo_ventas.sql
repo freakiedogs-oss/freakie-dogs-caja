@@ -1,0 +1,23 @@
+-- ════════════════════════════════════════════════════════════════════
+-- 📈 Proyección y ventas (18-nov-2026, Cesar + reunión con encargados)
+-- Aplicadas en Supabase como: proyeccion_consumo_ventas + historial_ventas_menu_store_code
+--
+-- Los encargados no tenían historial de venta por producto para proyectar el
+-- pedido de 1 a 4 días. Sin colchón (pedido de Cesar).
+--
+-- proyeccion_consumo(sucursal, dias=4) → jsonb
+--   desde = mañana (o hoy si es antes de las 6 a. m.), dias[] con asueto y
+--   cuántas semanas se usaron; productos{id: nombre, unidad, conteo_unidad,
+--   conteo_factor, categoria, por_dia[{prom,min,max,n,hist[]}]} en UNIDAD DE
+--   STOCK (kardex tipo venta / pos_cuenta = ventas explotadas por receta);
+--   cada día = promedio de los mismos 4 días de la semana anteriores, sin contar
+--   días sin ventas (cerrado); stock{id: inventario.stock_actual}; ultimo_conteo.
+--   ~0.3 s por sucursal.
+-- historial_ventas_menu(sucursal, desde, hasta) → jsonb {fechas[], productos[{nombre,
+--   total, monto, dias{fecha: cantidad}}]} de pos_cuentas cobradas (por sucursal_id
+--   o store_code: la mayoría de cuentas solo traen store_code), sin ítems anulados.
+--
+-- Frontend: ProyeccionView («Proyección y Ventas», Supply Chain) con dos pestañas;
+-- ConteoNocturno → Pedido sugerido: «Calcular el pedido con las ventas»
+-- [Mín/Máx | 1–4 días] llena las cantidades = ceil((proyección − contado) / empaque).
+-- ════════════════════════════════════════════════════════════════════

@@ -142,6 +142,19 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
   const [isEdit,setIsEdit]=useState(false);        // editando conteo existente
   const [editExpira,setEditExpira]=useState(null);  // Date cuando expira la ventana de edición
   const [ocultarCero,setOcultarCero]=useState(false); // toggle para ocultar pedido=0 en Screen 2
+  // 📈 Proyección por ventas (18-nov-2026): el encargado elige 1–4 días y el
+  // pedido se llena con lo que se gastó esos días de la semana (últimas 4 semanas)
+  // menos lo que contó. 0 = criterio de siempre (mínimo/máximo).
+  const [proy,setProy]=useState(null);
+  const [diasProy,setDiasProy]=useState(0);
+  const necProy=(p,k)=>(proy?.productos?.[p.producto_id]?.por_dia||[]).slice(0,k).reduce((s,x)=>s+Number(x.prom||0),0);
+  const aplicarDias=(k)=>{
+    setDiasProy(k);
+    setPedidoQtys(Object.fromEntries(pedidoItems.map(p=>{
+      if(k===0||!proy?.productos?.[p.producto_id]) return [p.producto_id,p.cantidad_sugerida];
+      return [p.producto_id,Math.max(0,Math.ceil((necProy(p,k)-n(p.cantidad_real))/facCerrado(p)-1e-9))];
+    })));
+  };
   const [gruposAbiertos,setGruposAbiertos]=useState({}); // {cat: bool} — todos cerrados al inicio
   const toggleGrupo=(cat)=>setGruposAbiertos(prev=>({...prev,[cat]:!prev[cat]}));
   const [tiempoRestante,setTiempoRestante]=useState('');
@@ -158,6 +171,10 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
   // conteo_fisico, referencia `conteo_bebidas`). Las entregas de La Constancia
   // se registran en Recepción BEES → «Registrar entrega».
   const [modo,setModo]=useState(null);           // 'normal' | 'bebidas'
+  useEffect(()=>{  // 📈 proyección por ventas para el pedido sugerido
+    if(screen!==2||modo==='bebidas'||!sucursalId)return;
+    db.rpc('proyeccion_consumo',{p_sucursal_id:sucursalId,p_dias:4}).then(({data})=>{ if(data)setProy(data); });
+  },[screen,sucursalId,modo]);
   const [storeCodeSel,setStoreCodeSel]=useState(user.store_code||null);
   const [descargandoPdf,setDescargandoPdf]=useState(false);
   // ── Autoguardado del conteo de BEBIDAS (24-sep-2026, reporte de Cesar) ──
@@ -2212,6 +2229,26 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
         </div>
       </div>
 
+      {modo!=='bebidas'&&pedidoItems.length>0&&(
+        <div style={{padding:'10px 12px',marginBottom:12,borderRadius:10,background:'#13131f',border:'1px solid #333'}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>📈 Calcular el pedido con las ventas</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {[0,1,2,3,4].map(k=>(
+              <button key={k} disabled={k>0&&!proy} onClick={()=>aplicarDias(k)}
+                style={{padding:'7px 12px',borderRadius:999,fontSize:13,fontWeight:700,cursor:'pointer',
+                  background:diasProy===k?'#1e3a5f':'#1a1a1a',color:diasProy===k?'#bfdbfe':'#ccc',border:`1px solid ${diasProy===k?'#60a5fa':'#333'}`}}>
+                {k===0?'Mín/Máx':`${k} día${k>1?'s':''}`}
+              </button>
+            ))}
+          </div>
+          <div style={{fontSize:11.5,color:'#888',marginTop:6}}>
+            {!proy?'Cargando ventas…'
+              :diasProy===0?'Elegí para cuántos días querés pedir: el pedido se llena con lo que se gastó esos mismos días de la semana (promedio de las últimas 4 semanas) menos lo que contaste.'
+              :`Pedido para ${(proy.dias||[]).slice(0,diasProy).map(x=>{const d=new Date(x.fecha+'T12:00:00');return ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.getDay()]+' '+d.getDate();}).join(', ')}: lo que se gastará − lo que contaste. Revisá y ajustá antes de enviar.`}
+          </div>
+        </div>
+      )}
+
       {pedidoItems.length===0?(
         <div className="card" style={{textAlign:'center',padding:40}}>
           <div style={{fontSize:18,marginBottom:8}}>✓ Stock OK</div>
@@ -2286,6 +2323,13 @@ export default function ConteoNocturno({user,onBack,onNavigate}){
                         <span>Máx: <b style={{color:'#4ade80'}}>{p.stock_maximo}</b></span>
                         <span style={{width:'100%',color:'#666',fontSize:11}}>en {unidadStock(p)}</span>
                       </div>
+                      {diasProy>0&&modo!=='bebidas'&&(
+                        <div style={{fontSize:12,color:'#93c5fd',marginBottom:8}}>
+                          {proy?.productos?.[p.producto_id]
+                            ?<>📈 Se gastarán ~<b>{redondear(necProy(p,diasProy)/facCerrado(p))}</b> {labelCerrado(p)} en {diasProy} día{diasProy>1?'s':''} · contaste {redondear(n(p.cantidad_real)/facCerrado(p))}</>
+                            :<span style={{color:'#666'}}>Sin ventas registradas: queda con mínimo/máximo</span>}
+                        </div>
+                      )}
                       {/* Mismo criterio que en el conteo: el rótulo dice qué se
                           digita, pegado a la casilla. Se pide en empaques. */}
                       <div style={{fontSize:13,fontWeight:700,color:'#60a5fa',background:'#60a5fa14',
