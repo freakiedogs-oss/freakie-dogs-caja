@@ -1,0 +1,11 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Horarios: hora del almuerzo OPCIONAL y almuerzo de hasta 600 min (18-nov-2026, Cesar)
+-- Aplicadas en Supabase como: horarios_almuerzo_hora_opcional + horarios_almuerzo_hasta_600
+--
+-- Los encargados necesitan guardar sin poner hora y descansos largos (ej. 179 min, turno partido).
+-- horario_guardar_dia: ya no exige almuerzo_inicio; si viene, valida que quede dentro del turno.
+-- horarios_turno_almuerzo_min_check: 0–180 → 0–600.
+-- Frontend: «Hora del almuerzo (opcional)» vacía por defecto, botón «Poner a la mitad del turno»
+-- / «Quitar hora»; casilla «alm 179′» sin aviso; sin alerta de «falta la hora».
+-- Pruebas (rollback): 179 min sin hora → ok (null); 240 min a las 2 p. m. → ok; 60 min a las 6 p. m. en turno a 6:30 → rechazado.
+-- ════════════════════════════════════════════════════════════════════

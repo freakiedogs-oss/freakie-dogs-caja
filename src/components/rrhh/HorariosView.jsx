@@ -116,8 +116,6 @@ export default function HorariosView({ user }) {
       const ts = fechas.map(f => turno(p.id, f));
       if (ts.every(t => !t)) return;
       if (!ts.some(t => !t || t.tipo !== 'trabaja')) out.push({ t: 'danger', m: `${p.nombre} no tiene día libre`, s: 'Necesita un día de descanso en la semana. Si trabaja su día libre, va con recargo.' });
-      const sinHora = fechas.filter((f, i) => ts[i]?.tipo === 'trabaja' && ts[i].almuerzo_min > 0 && !ts[i].almuerzo_inicio).map(fechaCorta);
-      if (sinHora.length) out.push({ t: 'warning', m: `${p.nombre}: falta la hora del almuerzo (${sinHora.join(', ')})`, s: 'Tocá la casilla y poné a qué hora sale a almorzar, para que cada quien sepa y se organice.' });
       let seg = 0, max = 0; ts.forEach(t => { if (t?.tipo === 'trabaja') { seg++; max = Math.max(max, seg); } else seg = 0; });
       for (let i = 0; i < 6; i++) {
         const a = ts[i], b = ts[i + 1];
@@ -261,8 +259,8 @@ export default function HorariosView({ user }) {
                                 : t.tipo === 'trabaja' ? (
                                   <>
                                     <div>{f12(t.hora_entrada)}–{f12(t.hora_salida)}</div>
-                                    <div style={{ fontSize: 9.5, color: t.almuerzo_min && !t.almuerzo_inicio ? c.yellow : c.dim }}>
-                                      {!t.almuerzo_min ? 'sin alm' : t.almuerzo_inicio ? `alm ${f12(t.almuerzo_inicio)}–${f12(finAlm(t.almuerzo_inicio, t.almuerzo_min))}` : `alm ${t.almuerzo_min}′ · ¿hora?`}
+                                    <div style={{ fontSize: 9.5, color: c.dim }}>
+                                      {!t.almuerzo_min ? 'sin alm' : t.almuerzo_inicio ? `alm ${f12(t.almuerzo_inicio)}–${f12(finAlm(t.almuerzo_inicio, t.almuerzo_min))}` : `alm ${t.almuerzo_min}′`}
                                     </div>
                                     {Number(t.horas_extra) > 0 && (
                                       <div style={{ fontSize: 9.5, fontWeight: 800, color: t.extra_estado === 'rechazada' ? '#fca5a5' : c.yellow }}>
@@ -377,9 +375,8 @@ function Editor({ persona, fecha, t, asueto, onCerrar, onGuardar }) {
   const [ent, setEnt] = useState(t?.hora_entrada?.slice(0, 5) || '10:00');
   const [sal, setSal] = useState(t?.hora_salida?.slice(0, 5) || '18:30');
   const [alm, setAlm] = useState(t?.almuerzo_min ?? 30);
-  // Hora del almuerzo: si nunca se tocó, se sugiere a la mitad del turno y se mueve con la entrada/salida
-  const [almIniTocado, setAlmIniTocado] = useState(t?.almuerzo_inicio?.slice(0, 5) || null);
-  const almIni = almIniTocado || sugAlm(ent, sal, alm);
+  // Hora del almuerzo: OPCIONAL (18-nov-2026, Cesar). Vacía = sin hora fija.
+  const [almIni, setAlmIni] = useState(t?.almuerzo_inicio?.slice(0, 5) || '');
   const [ext, setExt] = useState(Number(t?.horas_extra || 0));
   const [mot, setMot] = useState(t?.extra_motivo || '');
   const [nota, setNota] = useState(t?.nota || '');
@@ -391,13 +388,12 @@ function Editor({ persona, fecha, t, asueto, onCerrar, onGuardar }) {
     if (tipo === 'trabaja' && (!ent || !sal)) { setErr('Poné la hora de entrada y de salida'); return; }
     if (tipo === 'trabaja' && ent === sal) { setErr('La salida tiene que ser distinta a la entrada'); return; }
     if (ext < 0 || ext > 16) { setErr('Las horas extra van de 0 a 16'); return; }
-    if (tipo === 'trabaja' && alm > 0) {
+    if (tipo === 'trabaja' && alm > 0 && almIni) {
       const a = mins(ent); let b = mins(sal); if (b <= a) b += 1440; let l = mins(almIni); if (l < a) l += 1440;
-      if (!almIni) { setErr('Poné a qué hora sale a almorzar'); return; }
       if (l + alm > b) { setErr('El almuerzo tiene que quedar dentro del turno (entre la entrada y la salida)'); return; }
     }
     setGuardando(true); setErr('');
-    const r = await onGuardar({ tipo, hora_entrada: ent, hora_salida: sal, almuerzo_min: alm, almuerzo_inicio: alm > 0 ? almIni : null, horas_extra: tipo === 'trabaja' ? ext : 0, extra_motivo: mot, nota });
+    const r = await onGuardar({ tipo, hora_entrada: ent, hora_salida: sal, almuerzo_min: alm, almuerzo_inicio: alm > 0 && almIni ? almIni : null, horas_extra: tipo === 'trabaja' ? ext : 0, extra_motivo: mot, nota });
     setGuardando(false); if (r === true) onCerrar(); else setErr(String(r));
   };
 
@@ -421,14 +417,17 @@ function Editor({ persona, fecha, t, asueto, onCerrar, onGuardar }) {
           <div style={{ fontSize: 12, color: c.dim, marginBottom: 3 }}>Almuerzo</div>
           <div>
             {[0, 30, 45, 60].map(m => <button key={m} onClick={() => setAlm(m)} style={chip(alm === m)}>{m ? `${m} min` : 'Sin almuerzo'}</button>)}
-            <input type="number" min="0" max="180" step="5" value={[0, 30, 45, 60].includes(alm) ? '' : alm} placeholder="Otro"
-                   onChange={e => setAlm(Math.max(0, Math.min(180, Number(e.target.value) || 0)))} style={{ ...inp, width: 70 }} /> <span style={{ fontSize: 12, color: c.dim }}>min</span>
+            <input type="number" min="0" max="600" step="5" value={[0, 30, 45, 60].includes(alm) ? '' : alm} placeholder="Otro"
+                   onChange={e => setAlm(Math.max(0, Math.min(600, Number(e.target.value) || 0)))} style={{ ...inp, width: 80 }} /> <span style={{ fontSize: 12, color: c.dim }}>min</span>
           </div>
           {alm > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 13, marginTop: 6 }}>
-              Sale a almorzar a las <input type="time" step="900" value={almIni} onChange={e => setAlmIniTocado(e.target.value)} style={inp} />
-              <span style={{ color: c.dim }}>→ de <b style={{ color: c.text }}>{f12(almIni)}</b> a <b style={{ color: c.text }}>{f12(finAlm(almIni, alm))}</b></span>
-              {!almIniTocado && <span style={{ fontSize: 11, color: c.yellow }}>sugerida: a la mitad del turno</span>}
+              Hora del almuerzo <span style={{ color: c.dim, fontSize: 12 }}>(opcional)</span>
+              <input type="time" step="900" value={almIni} onChange={e => setAlmIni(e.target.value)} style={inp} />
+              {almIni
+                ? <><span style={{ color: c.dim }}>→ de <b style={{ color: c.text }}>{f12(almIni)}</b> a <b style={{ color: c.text }}>{f12(finAlm(almIni, alm))}</b></span>
+                    <button onClick={() => setAlmIni('')} style={btn('#222', { padding: '4px 10px', fontSize: 12 })}>Quitar hora</button></>
+                : <button onClick={() => setAlmIni(sugAlm(ent, sal, alm))} style={btn('#222', { padding: '4px 10px', fontSize: 12 })}>Poner a la mitad del turno</button>}
             </div>
           )}
           <div style={{ fontSize: 12, color: c.dim, margin: '8px 0 3px' }}>Horas extra de este día</div>

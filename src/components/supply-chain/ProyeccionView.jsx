@@ -114,7 +114,7 @@ function Proyeccion({ suc }) {
           {diasSel.some(x => x.asueto) && <span style={{ color: c.yellow }}> · ⚠️ {diasSel.filter(x => x.asueto).map(x => `${fCorta(x.fecha)} es asueto (${x.asueto})`).join(', ')}: ese día puede vender distinto</span>}
         </div>
         <div style={{ fontSize: 11.5, color: c.dim, marginTop: 6 }}>
-          Cada día = promedio de los últimos {Math.min(...diasSel.map(x => x.semanas))}–4 iguales (ej. los últimos 4 jueves). Abajo, en gris, el día más bajo y el más alto.
+          Cada día = promedio de los últimos {Math.min(...diasSel.map(x => x.semanas)) < 4 ? `${Math.min(...diasSel.map(x => x.semanas))}–4` : 4} días iguales (ej. los últimos 4 jueves). Abajo, en gris, el día más bajo y el más alto.
           «Tenés» = inventario del sistema ahora{d.ultimo_conteo ? ` (último conteo nocturno: ${fCorta(d.ultimo_conteo)})` : ''}. Todo va en empaques.
         </div>
       </div>
