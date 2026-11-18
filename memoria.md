@@ -1,5 +1,15 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 18-Nov-2026 — 📈 Proyección y ventas para el pedido
+- Por qué: en la reunión de pedidos los encargados dijeron que no podían proyectar 1–4 días sin historial de venta por producto.
+- Pantalla nueva «Proyección y Ventas» (Supply Chain): insumos por día (promedio de los últimos 4 días iguales de la semana, con rango), necesitás − tenés = pedir en empaques; y ventas por producto del menú (promedio por día de la semana / día por día). Sin colchón, por pedido de Cesar.
+- En el Conteo Nocturno → Pedido sugerido: botones Mín/Máx | 1–4 días que llenan las cantidades con (proyección − contado). Por defecto sigue Mín/Máx.
+- Ojo: muchas `pos_cuentas` traen `store_code` y `sucursal_id` NULL; filtrar por ambos. Ver `20261118_proyeccion_consumo_ventas.sql`.
+
+## 17-Nov-2026 — 🍽️ Horarios: almuerzo con hora fija
+- Por qué: los encargados querían asignar el almuerzo a una hora concreta (ej. 60 min de 2 a 3) para que cada quien se organice.
+- `horarios_turno.almuerzo_inicio`; `horario_guardar_dia` la exige si hay almuerzo y valida que quede dentro del turno; copiar semana y `mi_horario` la incluyen. Editor la sugiere a la mitad del turno; casilla muestra «alm 2p–3p»; alerta si falta; el asistente no cuenta a quien almuerza. Ver `20261117e_horarios_hora_almuerzo.sql`.
+
 ## 17-Nov-2026 — CCF a Equipos de Alquiler por $1,457.12 (canje por publicidad)
 - Por qué: Jose lo pidió. Equipos de Alquiler facturó $3,057.12; se pactó pagar $1,600 y el resto en servicios publicitarios, así que Freakie les factura ese saldo. Concepto «Servicios generales», neto 1,289.49 + IVA 167.63.
 - DTE `EC9F90CB-E532-4F8D-88DD-492A7E93A95B` (PROCESADO), emitido directo contra `dte-service/emit-ccf` con key temporal `fdk_tmp_1202` (desactivada). Forma de pago 99 (Otros) por ser compensación, no efectivo. Registrado en `pos_dte_standalone`.

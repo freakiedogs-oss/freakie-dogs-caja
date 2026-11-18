@@ -27,6 +27,7 @@ const VegetalesView = lazy(() => import('./components/caja/VegetalesView'))
 const ConteoNocturno     = lazy(() => import('./components/supply-chain/ConteoNocturno'))
 const ConfirmarEntrega   = lazy(() => import('./components/supply-chain/ConfirmarEntrega'))
 const MisPedidosView     = lazy(() => import('./components/supply-chain/MisPedidosView'))
+const ProyeccionView     = lazy(() => import('./components/supply-chain/ProyeccionView'))
 const InventarioSucursal = lazy(() => import('./components/supply-chain/InventarioSucursal'))
 const RecepcionTab       = lazy(() => import('./components/almacen/RecepcionTab'))
 const DespachoTab        = lazy(() => import('./components/almacen/DespachoTab'))
@@ -368,6 +369,8 @@ export default function App() {
         return <ConfirmarEntrega user={user} onBack={() => setScreen('home')} />
       case 'mis-pedidos':
         return <MisPedidosView user={user} onBack={() => setScreen('home')} />
+      case 'proyeccion':
+        return <ProyeccionView user={user} />
       case 'inventario-sucursal':
         return <InventarioSucursal user={user} />
 
