@@ -1,5 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 17-Nov-2026 — PedidosYa: homologación APROBADA; pase a producción del piloto el lun 23-nov 9:00 a.m.
+- Marcos (soporteintegraciones) dio por exitosas todas las pruebas de catálogo y órdenes.
+  - Los errores de imagen son esperables en sandbox.
+  - Lo de SV-PRUEBA-INTEGRACION-FREAKIE0001 fue de su lado: la sacaron del menú unificado después de la llamada.
+- **Regla de producción.** Las tiendas de un menú unificado deben estar en nuestro JSON **y** configuradas como unificadas por PeYa. Si no coinciden: «vendor IDs are different…».
+- **Piloto.** Tienda 224235 (en `peya_vendor_map` es M001 Plaza Cafetalón).
+  - Al pasar a la API queda con menú individual. Justo después del pase hay que mandar una **carga individual**.
+  - Las tiendas siguientes se piden por mail a soporteintegraciones, pidiendo que se unifiquen al menú de la 224235 (la «padre»). Desde ahí las cargas van unificadas.
+- **Fecha confirmada por Jose: lunes 23-nov 9:00 a.m. SV.** Se les pidió el remote ID de producción de la 224235, el chain code y el gEID (¿PY_SV?).
+- **Pendiente para el pase:**
+  - Completar `vendor_code` y `global_entity_id` de M001 (hoy `PENDIENTE-M001` / null).
+  - Prender `auto_aceptar` (se acordó solo autoconfirmación).
+  - Primera carga individual con el menú real (los overrides de prueba no aplican a tiendas reales).
+
 ## 17-Nov-2026 — PedidosYa: pendientes de catálogo de la homologación (notas de Marcos, 13-nov)
 - **Qué se hizo.** Se corrieron los 5 puntos pendientes sobre la tienda sandbox AR-PRUEBAS-INTEGRACION-0001 (PRID 478876). Se mandaron con su ImportID en el hilo «Resultados de homologación 13/11» a Marcos Mendez (cc Mónica y soporteintegraciones).
   1. **Horario de sección** (Bebidas 12–15): `…-1794889544898`.
