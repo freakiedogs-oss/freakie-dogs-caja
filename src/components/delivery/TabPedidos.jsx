@@ -659,9 +659,12 @@ export default function TabPedidos({ show = () => {} }) {
         p_token: token, p_delivery_id: p.id, p_motorista_id: mid });
       if (error) throw error;
       // El servidor dice si fue un cambio, para que quede claro qué pasó
-      show(data?.reasignado
+      const dsel = drivers.find(x => x.id === mid);
+      const sinSenal = dsel && dsel.sin_senal_min >= 10;
+      show((data?.reasignado
         ? `🔄 ${p.numero_orden}: pasó de ${data.anterior} a ${data.motorista}`
-        : `🛵 ${data?.motorista || 'Motorista'} asignado`);
+        : `🛵 ${data?.motorista || 'Motorista'} asignado`)
+        + (sinSenal ? ` · 📵 está sin señal: lo verá cuando se reconecte` : ''));
       setAsignSel(s => ({ ...s, [p.id]: '' }));
       await cargar(token);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
@@ -1420,6 +1423,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                   ? ` · lleva ${d.pedidos}${d.en_ruta > 0 ? ` (${d.en_ruta} en ruta)` : ''}`
                   : ' · libre'}
                 {d.almorzando ? ` · 🍽️ almorzando${d.almuerzo_min ? ` ${d.almuerzo_min}m` : ''}` : ''}
+                {d.sin_senal_min >= 10 ? ` · 📵 sin señal ${d.sin_senal_min}m` : ''}
               </option>
             ))}
           </select>
@@ -1474,6 +1478,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                     {d.nombre}{d.sucursal ? ` · ${d.sucursal}` : ''}
                     {d.pedidos > 0 ? ` · lleva ${d.pedidos}` : ' · libre'}
                     {d.almorzando ? ' · 🍽️ almorzando' : ''}
+                    {d.sin_senal_min >= 10 ? ` · 📵 sin señal ${d.sin_senal_min}m` : ''}
                   </option>
                 ))}
               </select>

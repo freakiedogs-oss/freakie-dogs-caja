@@ -1,0 +1,15 @@
+-- ════════════════════════════════════════════════════════════════════
+-- 📵 Motorista sin señal sigue asignable (19-nov-2026, Cesar)
+-- Aplicada en Supabase como: motorista_sin_senal_sigue_asignable
+--
+-- Problema: el cron «driver-offline-stale» apagaba en_linea a los 10 min sin ubicación
+-- y el motorista desaparecía de la torre (no se le podía asignar). Le pasaba sobre todo a
+-- Kevin (iPhone/Safari corta el GPS al bloquear la pantalla) y a David.
+-- Ahora:
+--   · driver-offline-stale: solo apaga tras 3 HORAS sin señal (más «Terminar turno» y el
+--     autocierre nocturno, que no cambian). Al reconectarse ve los pedidos asignados.
+--   · drivers_en_linea(): nueva columna sin_senal_min (minutos desde la última ubicación).
+--   · sugerir_motoristas: −30 puntos y razón «sin señal» si lleva >10 min sin ubicación.
+-- Frontend (TabPedidos): las listas de motoristas muestran «📵 sin señal 12m» y al asignar
+--   avisa «lo verá cuando se reconecte».
+-- ════════════════════════════════════════════════════════════════════
