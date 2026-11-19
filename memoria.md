@@ -1,5 +1,9 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 19-Nov-2026 — 🏃 Recoger en tienda: «llego en 20/30/45/60 min»
+- Por qué: con los pedidos para recoger no se sabía a qué hora llegaba el cliente y Cesar tenía que decidir cuándo mandarlos a cocina.
+- El checkout de pickup pregunta «¿A qué hora pasás?» (lo antes posible / 20 / 30 / 45 / 60 min / más tarde). Reusa Programados: `llega_en_min` → `programado_para`, pasa solo a cocina con el tiempo de cocina + 3 min; botón «Ya llegó · a cocina» en la torre. Ver `20261119_pickup_llego_en.sql`.
+
 ## 18-Nov-2026 — Horarios: hora del almuerzo opcional y hasta 600 min
 - Los encargados no podían guardar sin hora ni poner más de 180 min (turnos partidos, ej. 179 min). Ahora la hora es opcional (si se pone, se valida dentro del turno) y el máximo es 600 min. Ver `20261118b_horarios_almuerzo_opcional.sql`.
 
