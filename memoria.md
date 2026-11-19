@@ -1,5 +1,8 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 19-Nov-2026 — 📵 Motorista sin señal sigue asignable
+- El cron `driver-offline-stale` apagaba `en_linea` a los 10 min sin ubicación y el motorista desaparecía de la torre. Ahora solo tras 3 h. `drivers_en_linea()` trae `sin_senal_min` y la torre lo muestra; `sugerir_motoristas` le resta 30 puntos. Kevin usa iPhone con Safari (sin app nativa): su GPS se corta al bloquear la pantalla. Ver `20261119b_motorista_sin_senal_asignable.sql`.
+
 ## 19-Nov-2026 — 🏃 Recoger en tienda: «llego en 20/30/45/60 min»
 - Por qué: con los pedidos para recoger no se sabía a qué hora llegaba el cliente y Cesar tenía que decidir cuándo mandarlos a cocina.
 - El checkout de pickup pregunta «¿A qué hora pasás?» (lo antes posible / 20 / 30 / 45 / 60 min / más tarde). Reusa Programados: `llega_en_min` → `programado_para`, pasa solo a cocina con el tiempo de cocina + 3 min; botón «Ya llegó · a cocina» en la torre. Ver `20261119_pickup_llego_en.sql`.
