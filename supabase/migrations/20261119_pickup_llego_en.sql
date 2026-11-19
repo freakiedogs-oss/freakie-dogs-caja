@@ -1,0 +1,16 @@
+-- ════════════════════════════════════════════════════════════════════
+-- 🏃 Recoger en tienda: «¿a qué hora pasás?» (19-nov-2026, Cesar)
+-- Aplicadas en Supabase como: pickup_llego_en_min + pickup_nota_hora_llegada
+--
+-- Para no adivinar cuándo llega el cliente que pasa a recoger.
+-- crear_pedido_delivery: si tipo = 'pickup' y llega_en_min ∈ {20,30,45,60},
+--   programado_para = now() + esos minutos (sin el mínimo de 1 hora del programado normal).
+--   Así entra al flujo de Programados: se confirma en la torre, queda en estado
+--   'programado' y pasa solo a cocina (tiempo de cocina + 3 min) antes de que llegue.
+--   «Lo antes posible» = sin llega_en_min (igual que antes). «Más tarde…» = programado normal.
+-- Nota en la comanda: «🏃 Pasa a recoger a las 12:41 PM · <nota del cliente>».
+-- Frontend: MenuPublico (checkout pickup), TabPedidos (Programados: «El cliente pasa a las…»
+--   y botón «🏃 Ya llegó · a cocina» = torre_programado_a_cocina).
+-- Pruebas (rollback): pickup +20 → recibida con programado_para +20 y libera ~+1 min;
+--   pickup sin opción → sin programar; delivery con llega_en_min → sigue exigiendo 1 hora.
+-- ════════════════════════════════════════════════════════════════════

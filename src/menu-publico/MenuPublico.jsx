@@ -2212,6 +2212,8 @@ function Checkout({ items, total, onClose, onEnviado,
   const [programar, setProgramar] = useState(false)
   const [progSlot, setProgSlot] = useState('')
   const [progDia, setProgDia] = useState(0)
+  // Recoger en tienda (19-nov-2026): «llego en 20/30/45/60 min». 0 = lo antes posible.
+  const [llegaEn, setLlegaEn] = useState(0)
   const [semanaHor, setSemanaHor] = useState(null)
   useEffect(() => {
     db.rpc('menu_publico_horario').then(({ data }) => setSemanaHor(data?.semana || null)).catch(() => {})
@@ -2300,6 +2302,7 @@ function Checkout({ items, total, onClose, onEnviado,
           notas_cliente: notas.trim() || null,
           espera: tipo === 'delivery' && esperaActiva ? true : undefined,
           programado_para: programar && progSlot ? progSlot : undefined,
+          llega_en_min: tipo === 'pickup' && !programar && llegaEn > 0 ? String(llegaEn) : undefined,
           items: items.map(i => ({
             menu_item_id: i.id,
             cantidad: i.qty,
@@ -2589,11 +2592,40 @@ function Checkout({ items, total, onClose, onEnviado,
           )}
 
           {/* ESPERÁ Y AHORRÁ: solo con la sucursal saturada */}
-          {/* ¿PARA CUÁNDO? Ahora o programado (hoy / mañana) */}
-          {slotsProg.some(d => d.slots.length) && (
+          {/* RECOGER: ¿a qué hora pasás? (19-nov-2026) */}
+          {tipo === 'pickup' && (
             <div className="mp-field">
-              <label>¿Para cuándo?</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <label>¿A qué hora pasás por tu pedido?</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                {[[0, 'Lo antes posible'], [20, 'Llego en 20 min'], [30, 'Llego en 30 min'], [45, 'Llego en 45 min'], [60, 'Llego en 1 hora'], [-1, 'Más tarde…']]
+                  .filter(([m]) => m !== -1 || slotsProg.some(d => d.slots.length))
+                  .map(([m, t]) => {
+                    const on = m === -1 ? programar : (!programar && llegaEn === m)
+                    return (
+                      <button key={m} type="button" onClick={() => { if (m === -1) { setProgramar(true) } else { setProgramar(false); setProgSlot(''); setLlegaEn(m) } }}
+                              style={{ border: on ? '2px solid #E63946' : '1px solid #ddd', background: on ? '#FCEBEB' : '#fff',
+                                       borderRadius: 10, padding: '9px 4px', cursor: 'pointer', fontFamily: 'inherit', color: '#222', fontSize: 12.5, fontWeight: on ? 700 : 500 }}>{t}</button>
+                    )
+                  })}
+              </div>
+              {!programar && (() => {
+                const hora = new Date(Date.now() + llegaEn * 60000).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' })
+                return (
+                  <div style={{ background: '#FAEEDA', color: '#633806', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, marginTop: 10 }}>
+                    {llegaEn === 0
+                      ? <>🔥 Lo empezamos a preparar ya. Estará listo en unos 15 minutos.</>
+                      : <>🕧 Te esperamos como a las <b>{hora}</b>. Lo preparamos para que esté recién hecho cuando llegués.</>}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* ¿PARA CUÁNDO? Ahora o programado (hoy / mañana) */}
+          {slotsProg.some(d => d.slots.length) && (tipo === 'delivery' || programar) && (
+            <div className="mp-field">
+              <label>{tipo === 'pickup' ? '¿Para qué día y hora?' : '¿Para cuándo?'}</label>
+              <div style={{ display: tipo === 'pickup' ? 'none' : 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {[[false, 'Lo antes posible', tipo === 'delivery' ? 'Te lo mandamos ya' : 'Lo preparamos ya'],
                   [true, 'Programarlo', 'Para más tarde']].map(([v, t, sub]) => (
                   <button key={String(v)} type="button" onClick={() => { setProgramar(v); if (!v) setProgSlot('') }}

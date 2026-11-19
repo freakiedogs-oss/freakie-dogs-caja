@@ -614,7 +614,9 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
   const programadoACocina = async (p) => {
-    if (!window.confirm(`¿Mandar ${p.numero_orden} a cocina ya?\n\nEstaba programado para las ${horaSV(p.programado_para)}.`)) return;
+    if (!window.confirm(p.tipo === 'para_llevar'
+      ? `¿${p.cliente_nombre || 'El cliente'} ya llegó?\n\nSe manda ${p.numero_orden} a cocina ahora (iba a pasar a las ${horaSV(p.programado_para)}).`
+      : `¿Mandar ${p.numero_orden} a cocina ya?\n\nEstaba programado para las ${horaSV(p.programado_para)}.`)) return;
     setOcupado(p.id);
     try {
       const { error } = await db.rpc('torre_programado_a_cocina', { p_token: token, p_delivery_id: p.id });
@@ -1111,13 +1113,17 @@ function FranjaProgramados({ lista, ocupado, confirmar, programar, aCocina, sucu
                 </>
               ) : (
                 <div style={{ marginTop: 6, background: '#221b38', border: '1px solid #4c3d8f', color: '#ddd6fe', borderRadius: 6, padding: '5px 7px', fontSize: 11.5 }}>
+                  {p.tipo === 'para_llevar' && <>🏃 El cliente pasa a las <b>{horaSV(p.programado_para)}</b><br /></>}
                   Pasa solo a cocina a las <b>{horaSV(p.programado_libera_at)}</b> · {faltaTxt(p.programado_libera_at)}
                 </div>
               )}
               <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                 {!porConfirmar && (
                   <button disabled={ocupado === p.id} onClick={() => aCocina(p)}
-                    style={{ ...btn('#242424'), color: c.text, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>🍳 Mandar a cocina ya</button>
+                    style={p.tipo === 'para_llevar'
+                      ? { ...btn(c.green, '#04210f'), fontSize: 11.5, padding: '5px 10px' }
+                      : { ...btn('#242424'), color: c.text, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>
+                    {p.tipo === 'para_llevar' ? '🏃 Ya llegó · a cocina' : '🍳 Mandar a cocina ya'}</button>
                 )}
                 <button onClick={() => setEditando(editando === p.id ? null : p.id)}
                   style={{ ...btn('#242424'), color: c.text, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>🕒 Cambiar hora</button>
