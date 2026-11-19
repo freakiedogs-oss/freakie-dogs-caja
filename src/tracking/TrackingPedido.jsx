@@ -7,7 +7,8 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { db } from '../supabase'
 import EncuestaEntrega from './EncuestaEntrega'
 
-const MapaEnVivo = lazy(() => import('./MapaEnVivo'))
+// Mapa 3D (por defecto) + mapa normal de calles, con selector (19-nov-2026)
+const MapaSeguimiento = lazy(() => import('./MapaSeguimiento'))
 const Juego = lazy(() => import('./Juego'))
 // El bloque de pago del menú sirve igual acá: con un pedido ya creado cobra ese
 // en vez de crear uno nuevo.
@@ -32,6 +33,7 @@ export default function TrackingPedido() {
   const [token] = useState(() => new URLSearchParams(location.search).get('t') || '')
   const juegoRef = useRef(null)
   const tuvoParadas = useRef(false)
+  const estadoRef = useRef('')
   const [d, setD] = useState(null)
   const [error, setError] = useState('')
 
@@ -43,11 +45,19 @@ export default function TrackingPedido() {
       if (!vivo) return
       if (e) { setError('No pudimos cargar tu pedido'); return }
       if (!data?.ok) { setError('No encontramos ese pedido'); return }
+      estadoRef.current = data.estado
       setD(data)
     }
-    cargar()
-    const t = setInterval(cargar, 15000)
-    return () => { vivo = false; clearInterval(t) }
+    // En camino se refresca cada 5 s (el motorista manda señal cada ~4 s) para
+    // que el mapa se mueva fluido; el resto del tiempo, cada 15 s.
+    let t = null
+    const ciclo = async () => {
+      await cargar()
+      if (!vivo) return
+      t = setTimeout(ciclo, estadoRef.current === 'en_camino' ? 5000 : 15000)
+    }
+    ciclo()
+    return () => { vivo = false; clearTimeout(t) }
   }, [token])
 
   if (error) return <Marco><div className="tk-error">😕 {error}</div></Marco>
@@ -181,10 +191,12 @@ export default function TrackingPedido() {
       {/* Mapa en vivo mientras va en camino */}
       {enCamino && d.driver_lat && (
         <Suspense fallback={<div className="tk-mapa-ph">Cargando mapa…</div>}>
-          <MapaEnVivo
+          <MapaSeguimiento
             driver={{ lat: d.driver_lat, lng: d.driver_lng }}
             cliente={d.cliente_lat ? { lat: d.cliente_lat, lng: d.cliente_lng } : null}
+            tienda={d.sucursal_lat ? { lat: d.sucursal_lat, lng: d.sucursal_lng } : null}
             nombre={d.motorista}
+            sucursal={d.sucursal}
             paradas={paradas}
           />
         </Suspense>

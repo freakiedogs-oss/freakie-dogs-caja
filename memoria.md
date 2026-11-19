@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 19-Nov-2026 — 🧊 Seguimiento con mapa 3D (por defecto) + Mapa normal
+- Por qué: Cesar quería un seguimiento que sorprenda (ciudad isométrica tipo maqueta, motorista con uniforme rojo en moto negra, movimiento continuo) pero que el cliente igual se ubique: nombres de lugares conocidos, zoom y la opción de ver el mapa normal de calles.
+- `src/tracking/MapaSeguimiento.jsx`: selector «🧊 3D | 🗺️ Mapa» (se recuerda en `localStorage fd_track_vista`). Si no hay WebGL, falla el CDN o no arranca en 25 s → cae solo al Mapa (Leaflet, `MapaEnVivo`).
+- `src/tracking/mapa3d/motor.js` (JS puro): Three.js r128 desde esm.sh (no entra al bundle), teselas vectoriales OpenFreeMap z14 (edificios, calles, parques, POIs, nombres de calles), ruta OSRM sucursal→paradas→casa, reruta si el motorista se sale >90 m dos señales seguidas. Etiquetas: centros comerciales/supers/estadios primero, clínicas y labs al fondo. Línea «Aldo va por <calle> · cerca de <lugar>». Gestos: pellizco/rueda = zoom, arrastrar = mover; botones Seguir / Dron / Toda la ruta y +/−. Noche automática de 6 pm a 5 am.
+- `TrackingPedido.jsx`: refresca cada 5 s mientras va en camino (antes 15 s). `MapaEnVivo` ahora con botones +/− y ya no re-encuadra en cada refresco (le quitaba el zoom al cliente).
+
 ## 19-Nov-2026 — 📵 Motorista sin señal sigue asignable
 - El cron `driver-offline-stale` apagaba `en_linea` a los 10 min sin ubicación y el motorista desaparecía de la torre. Ahora solo tras 3 h. `drivers_en_linea()` trae `sin_senal_min` y la torre lo muestra; `sugerir_motoristas` le resta 30 puntos. Kevin usa iPhone con Safari (sin app nativa): su GPS se corta al bloquear la pantalla. Ver `20261119b_motorista_sin_senal_asignable.sql`.
 
