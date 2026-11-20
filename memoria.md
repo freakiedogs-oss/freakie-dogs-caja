@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 19-Nov-2026 — 💬 WhatsApp por Kapso (número de prueba)
+- Por qué: automatizar avisos al cliente (en camino, pago no completado, recordatorios) sin construir la integración con Meta desde cero. Kapso = capa sobre la API oficial de WhatsApp; gratis hasta 2,000 msgs/mes.
+- Cuenta Kapso de Cesar, proyecto «Default project». Número **sandbox** (phone_number_id 597907523413541): solo manda texto a números con sesión activa, sin plantillas. Cuando Meta verifique, se conecta el número real y solo cambia `KAPSO_PHONE_NUMBER_ID`.
+- `api/wa.js` (Vercel edge): `op=enviar` (header `x-fd-secret`) y `op=webhook` (firma HMAC de Kapso). Todo queda en `whatsapp_mensajes`. Desde la BD: `select wa_enviar('7xxxxxxx','texto','motivo', pedido_id)`.
+- No se usaron Edge Functions de Supabase porque la herramienta de deploy no estaba disponible en la sesión; Vercel sigue el patrón de `api/n1co.js`.
+
 ## 19-Nov-2026 — 🧊 Seguimiento con mapa 3D (por defecto) + Mapa normal
 - Por qué: Cesar quería un seguimiento que sorprenda (ciudad isométrica tipo maqueta, motorista con uniforme rojo en moto negra, movimiento continuo) pero que el cliente igual se ubique: nombres de lugares conocidos, zoom y la opción de ver el mapa normal de calles.
 - `src/tracking/MapaSeguimiento.jsx`: selector «🧊 3D | 🗺️ Mapa» (se recuerda en `localStorage fd_track_vista`). Si no hay WebGL, falla el CDN o no arranca en 25 s → cae solo al Mapa (Leaflet, `MapaEnVivo`).
