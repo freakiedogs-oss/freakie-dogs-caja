@@ -152,17 +152,33 @@ async function ia(req) {
     const modelo = (await cfg('wa_ia_modelo')) || 'claude-haiku-5-5';
     const rc = await sb('rpc/wa_ia_contexto', { method: 'POST', body: JSON.stringify({ p_tel: b.tel }), headers: { Prefer: '' } });
     const ctx = rc.ok ? await rc.json() : {};
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: modelo, max_tokens: 400,   // sin temperature: los modelos nuevos ya no la aceptan
-        system: [{ type: 'text', text: ESTILO }, { type: 'text', text: 'CONTEXTO (datos reales de hoy):\n' + JSON.stringify(ctx) }],
-        tools: [HERRAMIENTA], tool_choice: { type: 'tool', name: 'responder' },
-        messages: [{ role: 'user', content: `Mensaje nuevo del cliente: «${String(b.texto || '').slice(0, 1500)}»\n(El historial de la conversación está en el CONTEXTO.)` }],
-      }),
+    // Lo que casi no cambia (menú, sucursales, FAQ) va en el system con caché: cuesta ~10% y no
+    // gasta el límite por minuto. Lo que cambia (hora, pedido, historial) va en el mensaje.
+    const { ahora, saludo, pedido_activo, historial, ...fijo } = ctx || {};
+    const peticion = JSON.stringify({
+      model: modelo, max_tokens: 400,   // sin temperature: los modelos nuevos ya no la aceptan
+      system: [
+        { type: 'text', text: ESTILO },
+        { type: 'text', text: 'CONTEXTO (datos reales de hoy):\n' + JSON.stringify(fijo), cache_control: { type: 'ephemeral' } },
+      ],
+      tools: [HERRAMIENTA], tool_choice: { type: 'tool', name: 'responder' },
+      messages: [{ role: 'user', content:
+        `Ahora: ${ahora || ''} (saludo: ${saludo || ''})\n` +
+        `Pedido activo del cliente: ${pedido_activo ? JSON.stringify(pedido_activo) : 'ninguno'}\n` +
+        `Conversación reciente: ${historial ? JSON.stringify(historial) : 'ninguna'}\n\n` +
+        `Mensaje nuevo del cliente: «${String(b.texto || '').slice(0, 1500)}»` }],
     });
-    const resp = await r.json().catch(() => ({}));
+    let r, resp;
+    for (let intento = 0; intento < 2; intento++) {   // un reintento si Anthropic está saturado
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: peticion,
+      });
+      resp = await r.json().catch(() => ({}));
+      if (r.ok || ![429, 529, 500].includes(r.status)) break;
+      await new Promise(res => setTimeout(res, 2500));
+    }
     if (!r.ok) throw new Error(String(resp?.error?.message || `HTTP ${r.status}`).slice(0, 300));
     const j = (resp.content || []).find(c => c.type === 'tool_use' && c.name === 'responder')?.input;
     if (!j || typeof j.texto !== 'string' || !j.texto.trim()) {
@@ -177,7 +193,8 @@ async function ia(req) {
   const usoIA = !!texto;
   if (!usoIA) { texto = b.respaldo || null; escalar = !!b.respaldo_escalar; }
   await marcar({ ia_sugerencia: usoIA ? texto : null, ia_info: { ...info, usada: usoIA && b.modo !== 'borrador' }, ...(b.modo !== 'borrador' && escalar ? { requiere_cesar: true } : {}) });
-  if (b.modo === 'borrador' || !texto) return json(200, { ok: true, borrador: b.modo === 'borrador', usoIA });
+  // En borrador (pruebas) se devuelve lo que habría contestado; esta ruta solo la llama la BD con el secreto.
+  if (b.modo === 'borrador' || !texto) return json(200, { ok: true, borrador: b.modo === 'borrador', usoIA, texto, escalar, info });
   const s = await mandarTexto(b.tel, texto, usoIA ? 'bot_ia' : 'bot', null);
   return json(s.status, { ok: s.ok, usoIA, error: s.error });
 }
