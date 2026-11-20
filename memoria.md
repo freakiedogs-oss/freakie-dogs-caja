@@ -1,6 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 20-Nov-2026 — ⚡ Combos Monster (solo Menú Delivery) + banner animado «Freak City»
+- Migración `20261120a_combos_monster` (aplicada): **Combo Freakie Dog Monster $3.99** y **Combo Freakie Burger Monster $7.99** (mismos precios que los originales, decisión de Cesar). Bebida fija Monster Energy verde original 473 ml, sin elegir y sin agrandado.
+- Inventario: productos terminados PT-023 / PT-024 con receta = BOM del combo original + 1 lata (insumo nuevo «Bebida Energizante Monster Energy Original Lata 473ml», La Constancia, factor 6 — **confirmar con Cesar si el paquete es de 6 o 24**). La Monster va en la receta, no como modificador (no hay doble descuento).
+- Componentes nuevos (Componentes, sin producto): «Hamburguesa» (Complementos + Pan, sin grupos de bebida) y «Fries» con copia de Salsas Papas **sin** «Agrandado Papa y Bebida». El hot dog reutiliza 71c1f6e1 (sin bebida).
+- Fotos subidas por `menu-foto`; orden -2/-1 para salir primeros en Combos.
+- Banner animado: `public/banners/freak-city-monster.webp` (WebP animado 1200×675, ~1.7 MB, 36 cuadros), primero en `BANNERS` con `ms: 8000`; `HeroBanner` ahora respeta `ms` por banner. Estilo atardecer neón inspirado en GTA pero **sin marcas de Rockstar** (logo/tipografía/nombre).
+
 ## 19-Nov-2026 — 💬 WhatsApp por Kapso (número de prueba)
+- Entrenamiento del bot (19-nov): reglas en `wa_bot_responder` + preguntas frecuentes editables en `wa_faq` + banco de regresión `wa_bot_pruebas` (10,000 msgs, 99.6%). Políticas confirmadas por Cesar: mascotas y reservas solo en Venecia/Lourdes/Cafetalón; Usulután cierra 8 pm lun–mié y 9 pm jue–dom; Drive Thru = misma ubicación que Lourdes; postre de cumpleaños a domicilio y en local; último pedido 5 min antes del cierre; feriados → consultar a Cesar; sin Pepsi (solo Coca-Cola); papas congeladas; sin opciones vegetarianas; hay parqueo. Historial completo en `supabase/migrations/20261119f_wa_bot_basico.sql`.
 - Bot con el estilo de Cesar (`wa_bot_responder`, trigger `wa_bot_auto`): reglas por palabras clave + datos reales del pedido; burbujas con '¶'. Lo delicado y lo que no entiende queda `requiere_cesar=true` (todavía sin alerta en torre/Telegram). Las llaves de Kapso viven en `app_secretos` (kapso_api_key, kapso_webhook_secret, kapso_phone_number_id, wa_internal_secret).
 - Por qué: automatizar avisos al cliente (en camino, pago no completado, recordatorios) sin construir la integración con Meta desde cero. Kapso = capa sobre la API oficial de WhatsApp; gratis hasta 2,000 msgs/mes.
 - Cuenta Kapso de Cesar, proyecto «Default project». Número **sandbox** (phone_number_id 597907523413541): solo manda texto a números con sesión activa, sin plantillas. Cuando Meta verifique, se conecta el número real y solo cambia `KAPSO_PHONE_NUMBER_ID`.

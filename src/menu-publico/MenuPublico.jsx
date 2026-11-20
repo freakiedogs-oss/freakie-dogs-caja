@@ -824,12 +824,12 @@ function MisPedidosModal({ datos, onClose, onVolverAPedir }) {
 
 function HeroBanner() {
   const [idx, setIdx] = useState(0)
-  // Auto-slide cada 4s
+  // Auto-slide: 4 s por banner, o lo que diga `ms` (los animados se quedan más)
   useEffect(() => {
     if (BANNERS.length <= 1) return
-    const t = setInterval(() => setIdx(i => (i + 1) % BANNERS.length), 4000)
-    return () => clearInterval(t)
-  }, [])
+    const t = setTimeout(() => setIdx(i => (i + 1) % BANNERS.length), BANNERS[idx]?.ms || 4000)
+    return () => clearTimeout(t)
+  }, [idx])
 
   return (
     <div className="mp-hero">
