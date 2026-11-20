@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 20-Nov-2026 — 🧠 Asistente WhatsApp: cerebro con Claude (API de Anthropic)
+- Por qué: el bot de reglas solo entiende palabras clave; lo que no reconocía terminaba en «permítame consulto». Cesar tiene Claude Max (incluye $100/mes de crédito de API en la org «Freakie Dogs» de Console).
+- Cómo: las reglas siguen siendo el guardarraíl. Solo las ramas suaves (saludo genérico y «no entendí») pasan a `/api/wa?op=ia`, que llama a Claude (`wa_ia_modelo`, Haiku) con `wa_ia_contexto(tel)` (horarios de hoy, sucursales, FAQ, menú con precios, pedido activo, historial). Responde JSON {texto, escalar}; si falla, sale la respuesta de la regla. Lo delicado nunca pasa por Claude.
+- Interruptor: `app_secretos.wa_ia_modo` = auto | borrador | off. Trazas en `whatsapp_mensajes.ia_sugerencia` / `ia_info`.
+- La API key la pega Cesar en `app_secretos.anthropic_api_key` (Claude nunca la ve). Sin key, todo funciona como antes.
+
 ## 20-Nov-2026 — ⚡ Combos Monster (solo Menú Delivery) + banner animado «Freak City»
 - Migración `20261120a_combos_monster` (aplicada): **Combo Freakie Dog Monster $3.99** y **Combo Freakie Burger Monster $7.99** (mismos precios que los originales, decisión de Cesar). Bebida fija Monster Energy verde original 473 ml, sin elegir y sin agrandado.
 - Inventario: productos terminados PT-023 / PT-024 con receta = BOM del combo original + 1 lata (insumo nuevo «Bebida Energizante Monster Energy Original Lata 473ml», La Constancia, factor 6 — **confirmar con Cesar si el paquete es de 6 o 24**). La Monster va en la receta, no como modificador (no hay doble descuento).
