@@ -1,0 +1,14 @@
+-- Bot básico de WhatsApp (19-nov-2026). Aplicada con apply_migration:
+--   20261119e_whatsapp_grants (grant insert/update a service_role en whatsapp_mensajes)
+--   20261119f_wa_bot_basico: wa_bot_responder(tel, texto) + trigger wa_bot_auto AFTER INSERT
+--   en whatsapp_mensajes (direccion='entra') → wa_enviar(). Palabras clave:
+--   1/pedido/dónde/estado → estado del último pedido (2 días) del mismo teléfono + link /track
+--   2/menú/precio → link /menu · 3/persona/queja → «ya le avisamos al equipo» (PENDIENTE: avisar de verdad a la torre)
+--   gracias → despedida · hola → bienvenida con opciones · otro → «no te entendí» + opciones
+-- Ver la definición completa en la BD (pg_get_functiondef('public.wa_bot_responder(text,text)'::regprocedure)).
+
+-- 20261119g..j (19-nov-2026): reemplazo por el bot con el ESTILO DE CESAR
+-- (Previsualizaciones/WhatsApp IA/Perfil_estilo_Cesar_WhatsApp.md): usted, vocal alargada, ☺️🫶🏼, saludo según la hora,
+-- varias burbujas separadas por '¶' (api/wa.js las manda en orden con 1.3 s de pausa).
+-- wa_bot_responder ahora devuelve jsonb {texto, escalar}. Columna whatsapp_mensajes.requiere_cesar.
+-- Delicado (falta/llegó mal/devolución/factura/empleo/proveedor) y lo que no entiende → «permítame ya verifico/ahorita consulto» + requiere_cesar.

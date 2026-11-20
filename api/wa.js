@@ -72,16 +72,23 @@ async function enviar(req) {
   const to = normalizarTel(b.to), texto = String(b.texto || '').slice(0, 4000);
   if (to.length < 10 || !texto) return json(400, { ok: false, error: 'falta_to_o_texto' });
 
-  const r = await fetch(`https://api.kapso.ai/meta/whatsapp/v24.0/${PNID}/messages`, {
-    method: 'POST',
-    headers: { 'X-API-Key': KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: texto, preview_url: true } }),
-  });
-  const resp = await r.json().catch(() => ({}));
-  const kid = resp?.messages?.[0]?.id || null;
-  const err = r.ok ? null : String(resp?.error?.message || resp?.error || `HTTP ${r.status}`).slice(0, 500);
-  await registrar({ direccion: 'sale', telefono: to, texto, motivo: b.motivo || null, pedido_id: b.pedido_id || null, kapso_message_id: kid, estado: r.ok ? 'enviado' : 'fallo', error: err });
-  return json(r.ok ? 200 : 502, { ok: r.ok, id: kid, error: err });
+  // Varias burbujas cortas (como contesta Cesar): separadas por '¶', en orden y con pausa.
+  const partes = texto.split('¶').map(x => x.trim()).filter(Boolean);
+  let ok = true, ids = [], errores = [];
+  for (let i = 0; i < partes.length; i++) {
+    if (i > 0) await new Promise(res => setTimeout(res, 1300));
+    const r = await fetch(`https://api.kapso.ai/meta/whatsapp/v24.0/${PNID}/messages`, {
+      method: 'POST',
+      headers: { 'X-API-Key': KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: partes[i], preview_url: true } }),
+    });
+    const resp = await r.json().catch(() => ({}));
+    const kid = resp?.messages?.[0]?.id || null;
+    const err = r.ok ? null : String(resp?.error?.message || resp?.error || `HTTP ${r.status}`).slice(0, 500);
+    await registrar({ direccion: 'sale', telefono: to, texto: partes[i], motivo: b.motivo || null, pedido_id: b.pedido_id || null, kapso_message_id: kid, estado: r.ok ? 'enviado' : 'fallo', error: err });
+    ids.push(kid); if (!r.ok) { ok = false; errores.push(err); break; }
+  }
+  return json(ok ? 200 : 502, { ok, ids, error: errores[0] || null });
 }
 
 async function webhook(req) {

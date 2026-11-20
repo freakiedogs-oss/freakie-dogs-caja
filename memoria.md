@@ -1,6 +1,7 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
 ## 19-Nov-2026 — 💬 WhatsApp por Kapso (número de prueba)
+- Bot con el estilo de Cesar (`wa_bot_responder`, trigger `wa_bot_auto`): reglas por palabras clave + datos reales del pedido; burbujas con '¶'. Lo delicado y lo que no entiende queda `requiere_cesar=true` (todavía sin alerta en torre/Telegram). Las llaves de Kapso viven en `app_secretos` (kapso_api_key, kapso_webhook_secret, kapso_phone_number_id, wa_internal_secret).
 - Por qué: automatizar avisos al cliente (en camino, pago no completado, recordatorios) sin construir la integración con Meta desde cero. Kapso = capa sobre la API oficial de WhatsApp; gratis hasta 2,000 msgs/mes.
 - Cuenta Kapso de Cesar, proyecto «Default project». Número **sandbox** (phone_number_id 597907523413541): solo manda texto a números con sesión activa, sin plantillas. Cuando Meta verifique, se conecta el número real y solo cambia `KAPSO_PHONE_NUMBER_ID`.
 - `api/wa.js` (Vercel edge): `op=enviar` (header `x-fd-secret`) y `op=webhook` (firma HMAC de Kapso). Todo queda en `whatsapp_mensajes`. Desde la BD: `select wa_enviar('7xxxxxxx','texto','motivo', pedido_id)`.
