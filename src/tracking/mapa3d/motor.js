@@ -359,7 +359,8 @@ export async function crearMapa3D(cont, o) {
     // mover en el plano según el giro de la cámara
     const az = Math.PI / 4 + (modo === 'dron' ? orbit : 0), s = 1 / zoomV
     const rx = -Math.sin(az), rz = Math.cos(az), fx = -Math.cos(az), fz = -Math.sin(az)
-    libre.x -= (dx * rx - dy * fx / Math.sin(0.62)) * s; libre.z -= (dx * rz - dy * fz / Math.sin(0.62)) * s
+    // El mapa sigue al dedo: arrastrar a la derecha muestra lo que está a la izquierda (fix 19-nov: estaba invertido).
+    libre.x -= (-dx * rx - dy * fx / Math.sin(0.62)) * s; libre.z -= (-dx * rz - dy * fz / Math.sin(0.62)) * s
   })
   const soltar = (e) => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch0 = 0 }
   cv.addEventListener('pointerup', soltar); cv.addEventListener('pointercancel', soltar)
