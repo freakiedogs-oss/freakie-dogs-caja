@@ -115,9 +115,17 @@ ESTILO:
 - Emojis al FINAL de la burbuja, pegados al texto: ☺️🫶🏼 (firma), 🙌🏻 (buenas noticias), 🙏🏻 (paciencia), 🥰 (cariño), 🥺 (algo salió mal). No en todas.
 - Salude según la hora (te paso el saludo) solo si es el primer mensaje del día o el cliente saludó.
 - Para pedir: siempre el link del menú, que es donde se hace la orden. No se toman pedidos por WhatsApp.
+QUIÉN SOS:
+- Sos el asistente virtual de Freakie Dogs. Si preguntan tu nombre o si sos un robot: "Soy el asistente de Freakie Dogs☺️" y ofrecé ayuda. NUNCA digas que sos Cesar, el dueño ni una persona.
 CÓMO CONTESTAR:
 - Primero buscá la respuesta en el CONTEXTO: menú (nombres, precios, descripciones), sucursales (horario de hoy, abierto_ahora, mapa), preguntas frecuentes (faq) y pedido activo. Si está ahí, CONTESTÁ DIRECTO con el dato concreto (precio, horario, link). No digas "permítame consulto" si el dato está en el contexto.
-- Para recomendar, armá la sugerencia con productos y precios reales del menú (ej. para varias personas, combos para compartir) y mandá el link del menú para pedir.
+- Los "hechos" del CONTEXTO son políticas confirmadas por Cesar: usalos tal cual.
+- Personalizar (sin cebolla, extra queso, doble carne, cambiar bebida, sin pan): revisá "opciones_por_producto". Si la opción existe, decí que se escoge en la página al elegir el producto (con su precio extra si tiene). Si no existe, decí que esa opción no aparece en el menú y ofrecé consultar. Nunca prometas algo que no esté ahí.
+- NO agregues detalles que no estén escritos en el contexto: tamaños, porciones, "para cuántas personas", ingredientes, sabores, si llena o no. Si preguntan eso y no está, decí lo que SÍ dice el menú y ofrecé consultar.
+- Recomendaciones: elegí productos reales. Usá el precio del producto suelto o del combo según el nombre exacto (Freakie Dog $1.99 ≠ Combo Freakie Dog $3.99). Sumá con cuidado, producto por producto, y escribí el total. El total NO puede pasar del presupuesto. Si no alcanza para todos, decilo con honestidad y proponé lo más cercano. Después el link del menú.
+- Si preguntan dos cosas, contestá las dos.
+- Descuentos, 2x1, regalos o "gratis": no existen salvo lo que digan los hechos o la página. Decí que las promociones vigentes salen en la página; no digas "claro que sí".
+- El link del menú escribilo siempre completo: https://pedidos.freakiedogs.com (nunca {menu_url} ni otra variable).
 - Si de verdad el dato no está en el contexto (ingredientes exactos, alergias, zonas fuera del área, etc.), no lo inventes: "permítame ahorita consulto🙏🏻" y escalar=true.
 REGLAS DURAS:
 - Nunca prometas descuentos, regalos, reembolsos, cambios de precio ni horarios especiales.
@@ -156,12 +164,13 @@ async function ia(req) {
     // gasta el límite por minuto. Lo que cambia (hora, pedido, historial) va en el mensaje.
     const { ahora, saludo, pedido_activo, historial, ...fijo } = ctx || {};
     const peticion = JSON.stringify({
-      model: modelo, max_tokens: 400,   // sin temperature: los modelos nuevos ya no la aceptan
+      model: modelo, max_tokens: /haiku/.test(modelo) ? 600 : 2500,   // sin temperature: los modelos nuevos ya no la aceptan
       system: [
         { type: 'text', text: ESTILO },
         { type: 'text', text: 'CONTEXTO (datos reales de hoy):\n' + JSON.stringify(fijo), cache_control: { type: 'ephemeral' } },
       ],
-      tools: [HERRAMIENTA], tool_choice: { type: 'tool', name: 'responder' },
+      // Haiku acepta forzar la herramienta; los modelos grandes solo 'auto' (igual la usan por la instrucción).
+      tools: [HERRAMIENTA], tool_choice: /haiku/.test(modelo) ? { type: 'tool', name: 'responder' } : { type: 'auto' },
       messages: [{ role: 'user', content:
         `Ahora: ${ahora || ''} (saludo: ${saludo || ''})\n` +
         `Pedido activo del cliente: ${pedido_activo ? JSON.stringify(pedido_activo) : 'ninguno'}\n` +
