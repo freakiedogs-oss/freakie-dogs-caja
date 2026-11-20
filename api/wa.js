@@ -140,7 +140,7 @@ async function ia(req) {
       method: 'POST',
       headers: { 'x-api-key': KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: modelo, max_tokens: 400, temperature: 0.4,
+        model: modelo, max_tokens: 400,   // sin temperature: los modelos nuevos ya no la aceptan
         system: [{ type: 'text', text: ESTILO }, { type: 'text', text: 'CONTEXTO (datos reales de hoy):\n' + JSON.stringify(ctx) }],
         messages: [{ role: 'user', content: `Mensaje nuevo del cliente: «${String(b.texto || '').slice(0, 1500)}»\n(El historial de la conversación está en el CONTEXTO.)` }],
       }),
