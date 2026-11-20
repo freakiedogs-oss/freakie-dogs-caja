@@ -115,14 +115,30 @@ ESTILO:
 - Emojis al FINAL de la burbuja, pegados al texto: ☺️🫶🏼 (firma), 🙌🏻 (buenas noticias), 🙏🏻 (paciencia), 🥰 (cariño), 🥺 (algo salió mal). No en todas.
 - Salude según la hora (te paso el saludo) solo si es el primer mensaje del día o el cliente saludó.
 - Para pedir: siempre el link del menú, que es donde se hace la orden. No se toman pedidos por WhatsApp.
+CÓMO CONTESTAR:
+- Primero buscá la respuesta en el CONTEXTO: menú (nombres, precios, descripciones), sucursales (horario de hoy, abierto_ahora, mapa), preguntas frecuentes (faq) y pedido activo. Si está ahí, CONTESTÁ DIRECTO con el dato concreto (precio, horario, link). No digas "permítame consulto" si el dato está en el contexto.
+- Para recomendar, armá la sugerencia con productos y precios reales del menú (ej. para varias personas, combos para compartir) y mandá el link del menú para pedir.
+- Si de verdad el dato no está en el contexto (ingredientes exactos, alergias, zonas fuera del área, etc.), no lo inventes: "permítame ahorita consulto🙏🏻" y escalar=true.
 REGLAS DURAS:
-- Usá SOLO los datos del CONTEXTO (horarios de hoy, sucursales, menú y precios, preguntas frecuentes, pedido activo). Si un dato no está, no lo inventes: decí "permítame ahorita consulto🙏🏻" y poné escalar=true.
 - Nunca prometas descuentos, regalos, reembolsos, cambios de precio ni horarios especiales.
 - Quejas, faltantes, devoluciones, facturas, empleo, eventos, reservas, cancelaciones, datos bancarios, feriados → solo "permítame ya verifico🙏🏻" y escalar=true.
 - Si preguntan si están abiertos, usá "abierto_ahora" de cada sucursal. Se puede pedir hasta 5 minutos antes del cierre.
 - Envío gratis. Solo productos Coca-Cola (no Pepsi). Efectivo, tarjeta y transferencia (no bitcoin).
 - Si el mensaje es ofensivo, spam o no tiene que ver con Freakie Dogs, contestá corto y amable o escalá.
-Respondé SOLO un JSON: {"texto": "...", "escalar": true|false}`;
+Respondé siempre usando la herramienta "responder".`;
+
+const HERRAMIENTA = {
+  name: 'responder',
+  description: 'Envía la respuesta de WhatsApp al cliente.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      texto: { type: 'string', description: 'Mensaje para el cliente; burbujas separadas por ¶' },
+      escalar: { type: 'boolean', description: 'true si Cesar tiene que revisar o contestar esto' },
+    },
+    required: ['texto', 'escalar'],
+  },
+};
 
 async function ia(req) {
   if (!(await autorizado(req))) return json(403, { ok: false, error: 'no_autorizado' });
@@ -142,15 +158,16 @@ async function ia(req) {
       body: JSON.stringify({
         model: modelo, max_tokens: 400,   // sin temperature: los modelos nuevos ya no la aceptan
         system: [{ type: 'text', text: ESTILO }, { type: 'text', text: 'CONTEXTO (datos reales de hoy):\n' + JSON.stringify(ctx) }],
+        tools: [HERRAMIENTA], tool_choice: { type: 'tool', name: 'responder' },
         messages: [{ role: 'user', content: `Mensaje nuevo del cliente: «${String(b.texto || '').slice(0, 1500)}»\n(El historial de la conversación está en el CONTEXTO.)` }],
       }),
     });
     const resp = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(String(resp?.error?.message || `HTTP ${r.status}`).slice(0, 300));
-    const crudo = (resp.content || []).map(c => c.text || '').join('').trim();
-    const m = crudo.match(/\{[\s\S]*\}/);
-    const j = m ? JSON.parse(m[0]) : null;
-    if (!j || typeof j.texto !== 'string' || !j.texto.trim()) throw new Error('respuesta_sin_json');
+    const j = (resp.content || []).find(c => c.type === 'tool_use' && c.name === 'responder')?.input;
+    if (!j || typeof j.texto !== 'string' || !j.texto.trim()) {
+      throw new Error('respuesta_sin_herramienta: ' + JSON.stringify(resp.content || []).slice(0, 200));
+    }
     texto = j.texto.trim().slice(0, 1200); escalar = !!j.escalar;
     info = { modelo, ms: Date.now() - t0, tokens: resp.usage || null };
   } catch (e) {
