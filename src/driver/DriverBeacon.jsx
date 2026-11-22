@@ -826,23 +826,6 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
     finally { setOcupado(null) }
   }
 
-  // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
-  // que salgan a la calle con alguno sin marcar.
-  const recogerTodos = async () => {
-    const listos = pedidos.filter(x => x.estado === 'lista')
-    if (!listos.length) return
-    setOcupado('todos')
-    try {
-      for (const x of listos) {
-        await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: x.id })
-      }
-      if (!beacon.activo) beacon.iniciar()
-      setMsg(`🚀 Saliste con ${listos.length} pedidos.${beacon.activo ? '' : ' Encendimos tu GPS automáticamente.'}`)
-      await recargar()
-    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
-    finally { setOcupado(null) }
-  }
-
   const recoger = async (p) => {
     setOcupado(p.id)
     try {
@@ -1053,8 +1036,13 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
     ? Number(p.paga_con) - Number(p.total) : 0
   // Si ya va en camino, el viaje es solo lo que lleva: lo asignado en la
   // sucursal mientras tanto es el PRÓXIMO viaje (9-nov-2026, caso Gustavo).
+  // Ruta fija (22-nov-2026, Cesar): antes de salir, la ruta son TODOS los pedidos
+  // asignados, listos o en cocina. Se sale solo cuando están todos (lo valida el
+  // servidor en _driver_salir) y el orden 1°, 2°… ya no cambia al salir.
+  const enCocina = enRuta.length === 0 ? pedidos.filter(x => !['lista', 'en_camino'].includes(x.estado)) : []
+  const puedeSalir = enRuta.length === 0 && listos > 0 && enCocina.length === 0
   const viaje = pedidos
-    .filter(x => enRuta.length > 0 ? x.estado === 'en_camino' : ['lista', 'en_camino'].includes(x.estado))
+    .filter(x => enRuta.length > 0 ? x.estado === 'en_camino' : x.estado !== 'en_camino')
     .sort((a, b) => (a.orden_entrega ?? 99) - (b.orden_entrega ?? 99))
   const cambioTotal = viaje.reduce((s, p) => s + vuelto(p), 0)
 
@@ -1079,7 +1067,6 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               )
             })}
             {alarma.min_espera > 0 ? `Esperando hace ${alarma.min_espera} min` : 'Recién salido de cocina'}
-            {alarma.listos < alarma.total && <><br />El otro sigue en cocina, pero este ya no puede esperar.</>}
           </div>
           <button disabled={ocupado === 'alarma'} onClick={retirarListos} style={S.alarmaBtn}>
             {ocupado === 'alarma' ? 'Marcando…' : alarma.listos > 1 ? 'Ya los retiré · salgo' : 'Ya lo retiré · salgo'}
@@ -1099,9 +1086,19 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
             {[rodando && `${rodando} en ruta`, listos && `${listos} por recoger`,
               cocinando && `${cocinando} todavía en cocina`].filter(Boolean).join(' · ')}
           </div>
-          {listos > 1 && (
-            <button disabled={ocupado === 'todos'} onClick={recogerTodos} style={S.resumenBtn}>
-              {ocupado === 'todos' ? 'Marcando…' : `📦 Salgo con los ${listos}`}
+          {enRuta.length === 0 && enCocina.length > 0 && listos > 0 && (
+            <div style={{ fontSize: 12.5, color: '#fde68a', background: '#3b2a10', border: '1px solid #7a5a1c',
+                          borderRadius: 8, padding: '7px 9px', marginTop: 8, lineHeight: 1.4 }}>
+              ⏳ <b>Esperá:</b> tu ruta tiene {pedidos.length} pedidos y falta{enCocina.length > 1 ? 'n' : ''}{' '}
+              <b>{enCocina.map(x => x.cliente_nombre || x.numero_orden).join(', ')}</b> (en cocina). Salís con todos cuando estén listos.
+            </div>
+          )}
+          {enRuta.length === 0 && pedidos.length > 1 && listos > 0 && (
+            <button disabled={!puedeSalir || ocupado === 'alarma'} onClick={retirarListos}
+                    style={{ ...S.resumenBtn, ...(puedeSalir ? {} : { opacity: .45, cursor: 'not-allowed' }) }}>
+              {ocupado === 'alarma' ? 'Marcando…'
+                : puedeSalir ? `📦 Salgo con los ${pedidos.length}`
+                : `📦 Salgo con los ${pedidos.length} · esperando ${enCocina.length}`}
             </button>
           )}
         </div>
@@ -1170,7 +1167,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               🔜 Próximo viaje — recogelo cuando regreses a la sucursal
             </div>
           )}
-          {enRuta.length === 0 && p.estado === 'lista' && p.orden_entrega != null && listos + rodando > 1 && (
+          {enRuta.length === 0 && p.estado !== 'en_camino' && p.orden_entrega != null && pedidos.length > 1 && (
             <div style={{ fontSize: 11.5, fontWeight: 800, color: '#FFD900', marginBottom: 6 }}>
               Va {ord(p.orden_entrega)} en tu ruta
             </div>
@@ -1232,9 +1229,15 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               Este ya es tuyo. Te avisamos apenas cocina lo termine.
             </div>
           ) : p.estado === 'lista' ? (
-            <button disabled={ocupado === p.id} onClick={() => recoger(p)} style={{ ...S.accion('#E63946'), marginTop: 10 }}>
-              {ocupado === p.id ? '…' : '📦 Ya lo recogí — salgo'}
-            </button>
+            enRuta.length === 0 && enCocina.length > 0 ? (
+              <div style={S.esperando}>
+                ✅ Listo. Esperá a que salga{enCocina.length > 1 ? 'n' : ''} de cocina {enCocina.map(x => x.cliente_nombre || x.numero_orden).join(', ')} y salís con todos.
+              </div>
+            ) : (
+              <button disabled={ocupado === p.id} onClick={() => recoger(p)} style={{ ...S.accion('#E63946'), marginTop: 10 }}>
+                {ocupado === p.id ? '…' : enRuta.length === 0 && pedidos.length > 1 ? `📦 Ya los recogí — salgo con los ${pedidos.length}` : '📦 Ya lo recogí — salgo'}
+              </button>
+            )
           ) : (
             <div style={{ marginTop: 10 }}>
               {/* El método ya viene definido desde el pedido (y confirmado por

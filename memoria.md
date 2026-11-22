@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 22-Nov-2026 — 🛵 Ruta fija: el motorista sale con todos sus pedidos y el orden no cambia
+- Por qué: los motoristas llamaban a Cesar porque la app les cambiaba la ruta. Caso Andrés: Natalia (cerca, en cocina) y Bryan (lejos, listo); la alarma de 8 min («este ya no puede esperar») lo hizo salir solo con Bryan, la ruta se rehizo y Natalia quedó esperando. Cesar: casi siempre esperan a tener todos.
+- Ahora (migraciones 20261122a/b): `_driver_salir` exige que todo lo asignado esté listo y congela el orden planeado al salir; la alarma suena solo con todo listo; si uno espera 8+ min, aviso en la torre (`MotoristasEsperando.jsx`, arriba de Rutas en curso) con «Dejarlo esperar» / «Quitar a X de su ruta» (`torre_quitar_de_ruta`).
+- App del motorista: aviso «Esperá: falta X (en cocina)», botón «Salgo con los N · esperando M» deshabilitado hasta que estén todos; «Va N° en tu ruta» también para los que siguen en cocina.
+
 ## 20-Nov-2026 — 🧠 Asistente WhatsApp: cerebro con Claude (API de Anthropic)
 - Por qué: el bot de reglas solo entiende palabras clave; lo que no reconocía terminaba en «permítame consulto». Cesar tiene Claude Max (incluye $100/mes de crédito de API en la org «Freakie Dogs» de Console).
 - Cómo: las reglas siguen siendo el guardarraíl. Solo las ramas suaves (saludo genérico y «no entendí») pasan a `/api/wa?op=ia`, que llama a Claude (`wa_ia_modelo`, Haiku) con `wa_ia_contexto(tel)` (horarios de hoy, sucursales, FAQ, menú con precios, pedido activo, historial). Responde JSON {texto, escalar}; si falla, sale la respuesta de la regla. Lo delicado nunca pasa por Claude.
@@ -11,6 +16,8 @@
 - 20261120h: la rama «no entendí» y «ya le aviso a cocina» sin pedido abierto vuelven a Claude. 20261120i: contexto compacto (grupos de opciones una sola vez; 45k → 14k caracteres) para bajar costo con Sonnet.
 - Prueba final de 950 preguntas «particulares» (`wa_ia_pruebas_generar2`: cuentas exactas, trampas de precio, productos/sucursales inexistentes, hora exacta, manipulación, jerga, logística, salud, quejas, mínimos, triples, presupuesto): 88% (8.7). 100% trampas de precio, 98% jerga/salud/comparar/triple, 96% cuentas. Fallas: sucursales falsas (30%), «¿hola?» con «perdón estábamos ocupados» sin contexto, «consulto» para datos internos. Arreglos 20261120k/l + prompt (sucursales cerradas, no-existe, datos internos, reintentos 3x).
 - 21-nov: banco de preguntas REALES `wa_preguntas_reales` (3,640 turnos de 656 chats del WhatsApp Business, ~6 meses), extraídas con WAWebCollections + `loadEarlierMsgs({chat})`, anonimizadas y clasificadas por Haiku (cliente/staff, útil, categoría; nombres/direcciones → [nombre]/[direccion]). Pruebas con contexto (`wa_ia_pruebas.tel/contexto`, teléfono ficticio por prueba).
+- Prueba con 2,306 preguntas reales (corrida 7): 91% correctas de las 1,928 evaluables. Arreglo 20261121l: si hay conversación en curso (Freakie escribió en la última hora) o la regla es una FAQ que escala, contesta Claude (ve el historial); fijo solo lo delicado y los datos del pedido. Más instrucciones en `wa_ia_instrucciones` («cancelado» = pagado, horarios de todas, disculpa en quejas, cobertura por la página).
+- ⚠️ Las pruebas (Sonnet respondiendo + Sonnet juez + clasificación) consumieron TODO el crédito de API (~$100) el 21-nov ~13:18 SV: desde ahí la API responde «credit balance too low» y el asistente cae a las reglas (respaldo). La corrida 8 (verificar arreglos) quedó sin correr. Antes de más pruebas: cargar crédito y poner límite de gasto en Console.
 - Instrucciones editables SIN deploy: `app_secretos.wa_ia_instrucciones` (una por línea) → viajan como `instrucciones_de_cesar` en el contexto.
 - Pendiente menor: a veces suma mal centavos (5×3.99) y se autocorrige a mitad de mensaje («21:00… perdón 22:00»).
 
