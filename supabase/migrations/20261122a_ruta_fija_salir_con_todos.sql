@@ -1,0 +1,14 @@
+-- 20261122a_ruta_fija_salir_con_todos + 20261122b (aplicadas con apply_migration el 22-nov-2026)
+-- Pedido de Cesar: la ruta se arma con los pedidos asignados, estén listos o no, y no cambia.
+-- Caso real: Andrés con Natalia (cerca, en cocina) y Bryan (lejos, listo). La alarma de 8 min lo
+-- hizo salir solo con Bryan, la ruta se rehízo y Natalia quedó «próximo viaje».
+--
+--  · _driver_salir(motorista): si hay algo en cocina → error «Esperá: …». Si todo está listo,
+--    marca todos en_camino y CONGELA el orden planeado (orden_entrega, ruta_id, orden_fijado_at).
+--  · driver_recoger_listos y driver_marcar_recogido usan _driver_salir cuando el motorista no
+--    va en camino (si ya va en camino, todo sigue como antes: lo nuevo es próximo viaje).
+--  · driver_alarma_estado: suena solo cuando está TODO listo (se quitó la regla de 8 min).
+--  · torre_motoristas_esperando(token, 8): motoristas con algo listo hace 8+ min y otro en cocina.
+--  · torre_quitar_de_ruta(token, pedido): deja el pedido sin motorista (también en pos_cuentas).
+-- Probado en transacción revertida: plan Natalia 1 / Bryan 2 → alarma no suena con uno en cocina →
+-- salir con uno da «Esperá…» → al estar ambos: en_camino Natalia #1 fijo, Bryan #2 fijo.

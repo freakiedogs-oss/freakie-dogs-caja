@@ -14,6 +14,7 @@ import { URL_DELIVERY } from '../../config';
 const MapaAsignacion = lazy(() => import('./MapaAsignacion'));
 import RutasEnCurso from './RutasEnCurso';
 import MotoristasSenal from './MotoristasSenal';
+import MotoristasEsperando from './MotoristasEsperando';
 import AvisoClienteBoton from './AvisoClienteBoton';
 
 const TOKEN_KEY = 'freakie_torre_token';
@@ -900,6 +901,7 @@ export default function TabPedidos({ show = () => {} }) {
 
       {/* Viajes con su orden de entrega automático (7-nov-2026) */}
       <MotoristasSenal token={token} />
+      <MotoristasEsperando token={token} onCambio={() => cargar(token)} />
       <RutasEnCurso token={token} show={show} />
 
       {/* Mapa para asignar viendo dónde está cada cosa. Carga Leaflet solo
