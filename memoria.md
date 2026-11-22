@@ -10,6 +10,8 @@
 - Ronda 2 (Haiku): 72%. Ronda 3 (Sonnet, las 276 que fallaron): 92%. Muestra de 84 de todos los tipos con Sonnet: 93% (9.1/10). Quedó `wa_ia_modelo = claude-sonnet-5-5` (cambiable sin deploy en `app_secretos`).
 - 20261120h: la rama «no entendí» y «ya le aviso a cocina» sin pedido abierto vuelven a Claude. 20261120i: contexto compacto (grupos de opciones una sola vez; 45k → 14k caracteres) para bajar costo con Sonnet.
 - Prueba final de 950 preguntas «particulares» (`wa_ia_pruebas_generar2`: cuentas exactas, trampas de precio, productos/sucursales inexistentes, hora exacta, manipulación, jerga, logística, salud, quejas, mínimos, triples, presupuesto): 88% (8.7). 100% trampas de precio, 98% jerga/salud/comparar/triple, 96% cuentas. Fallas: sucursales falsas (30%), «¿hola?» con «perdón estábamos ocupados» sin contexto, «consulto» para datos internos. Arreglos 20261120k/l + prompt (sucursales cerradas, no-existe, datos internos, reintentos 3x).
+- 21-nov: banco de preguntas REALES `wa_preguntas_reales` (3,640 turnos de 656 chats del WhatsApp Business, ~6 meses), extraídas con WAWebCollections + `loadEarlierMsgs({chat})`, anonimizadas y clasificadas por Haiku (cliente/staff, útil, categoría; nombres/direcciones → [nombre]/[direccion]). Pruebas con contexto (`wa_ia_pruebas.tel/contexto`, teléfono ficticio por prueba).
+- Instrucciones editables SIN deploy: `app_secretos.wa_ia_instrucciones` (una por línea) → viajan como `instrucciones_de_cesar` en el contexto.
 - Pendiente menor: a veces suma mal centavos (5×3.99) y se autocorrige a mitad de mensaje («21:00… perdón 22:00»).
 
 ## 20-Nov-2026 — ⚡ Combos Monster (solo Menú Delivery) + banner animado «Freak City»
