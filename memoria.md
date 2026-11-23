@@ -1,5 +1,36 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Nov-2026 (tarde) — PedidosYa: primeros pedidos reales del piloto y dos fallas del cierre corregidas
+- **Apertura:** Santa Tecla / Cafetalón (SV-FREAKIE-DOGS-0001) abierta a las 1:40 p.m. con el menú de Metro Centro.
+- **Pedidos que llegaron:**
+
+  | Pedido | Producto | Monto |
+  |---|---|---|
+  | #5812 | 2 Mega Promos | $9.99 |
+  | #5813 | La Freakie Burger | $7.99 |
+  | #5814 | (recién entrado) | |
+
+- **Lo que funcionó con datos reales:**
+  - Ruteo a Plaza Cafetalón por el `remote_id`.
+  - Aceptación automática en 1 s, con HTTP 200 de PeYa.
+  - Cuenta tipo `pedidos_ya` en el turno abierto.
+  - Comanda al KDS con las opciones por unidad del combo (Freakie Dog 1/2, papas 1/2, bebida 1/2) y nada en `peya_sin_mapear`.
+  - Avance de estados desde la UI de cocina.
+  - Avisos del motorista (COURIER_ARRIVED_AT_VENDOR, ORDER_PICKED_UP).
+- **Falla 1: botón de cierre invertido** en `PeyaInboxView.jsx`.
+  - En el contrato de DH, `own_delivery` es un rider de PedidosYa (el pedido trae `riderPickupTime` y no trae dirección) y `vendor_delivery` es reparto propio. La UI los tenía al revés.
+  - Efecto: con rider de PeYa salía «Salió con el motorista» (mandaba `order_picked_up`) y nunca «Listo para el driver» (`preparado`).
+  - Arreglado. Tras «Listo para el driver», la tarjeta muestra «esperando al motorista de PedidosYa».
+  - Publicado directo en `main` (`89fbfe1`, Vercel READY) con solo ese archivo. La rama tiene más cambios de PeyaInboxView sin liberar.
+- **Falla 2: la cuenta no se cerraba con ORDER_PICKED_UP.** El estado pasaba a `retirado`, pero la cuenta quedaba «lista» hasta el cierre de turno.
+  - `peya-plugin` v14 llama ahora a `peya_cerrar_cuenta` (idempotente) en segundo plano. Ignora `sin_cuenta`, que son los pedidos de prueba.
+  - La cuenta #23 (#5812) se cerró a mano con autorización de Jose: pago `pedidos_ya` de $9.99.
+- **Pendiente:**
+  - Confirmar con #5813/#5814 el cierre automático y el «Listo para el driver».
+  - Que Cafetalón recargue la PWA.
+  - Foto de Fancy fries (pedir un JPG).
+  - Que Mónica reaplique las promos.
+
 ## 23-Nov-2026 (tarde) — PedidosYa: menú de la API igualado al de Metro Centro
 - **Contexto:** el menú mandado en el pase (106 productos del POS, extras sueltos y fotos que fallaban) no gustó. Jose pidió que quedara igual al que Metro Centro tiene en el portal de PeYa, menú 228124, compartido por 5 locales.
   - El menú de Metro Centro se extrajo con Claude in Chrome a un JSON.
