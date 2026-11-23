@@ -1,5 +1,13 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 22-Nov-2026 — Plan de mejora: corte de estado + RLS + panel de agrandados
+- Estado completo en `docs/planes/ESTADO_PLAN_2026-11-23.md` (indicadores re-medidos y paquete por paquete).
+- **La rama `claude/eager-brown-tuyddo` sigue sin fusionar**: los arreglos de POS, proxies y limpieza de PINs del 11-Nov no están en producción. Ya incluye `main` al día.
+- **Aplicado en la base (producción):**
+  - RLS activado en las 29 tablas de `public` que no lo tenían, con una política `acceso_previo_a_rls` por tabla que conserva exactamente los accesos de antes (`erp_finanzas_ro`, `francisco_freakies` y, en 3 tablas, `anon`/`authenticated`). Nadie pierde ni gana acceso.
+  - `fn_agrandados_panel()` ahora lee de `agrandados_panel_cache`, que `agrandados_panel_refrescar()` recalcula cada minuto en horario de servicio (cron `agrandados-panel-refrescar`) y cada hora el resto. El cálculo original quedó como `fn_agrandados_panel_calc()` (sin acceso para `anon`). Mismas columnas y orden; verificado que devuelve lo mismo. **Si se cambia la lógica del panel, editar `fn_agrandados_panel_calc`, y si cambian las columnas, también la tabla y la función envoltorio.**
+- Pendiente de decisión: `delivery_traslados` (el KDS la consulta sin permiso; hay 63 traslados sin responder desde sep) y el permiso por defecto de funciones nuevas para `anon` (pasaron de 564 a 611).
+
 ## 22-Nov-2026 — 🛵 Ruta fija: el motorista sale con todos sus pedidos y el orden no cambia
 - Por qué: los motoristas llamaban a Cesar porque la app les cambiaba la ruta. Caso Andrés: Natalia (cerca, en cocina) y Bryan (lejos, listo); la alarma de 8 min («este ya no puede esperar») lo hizo salir solo con Bryan, la ruta se rehizo y Natalia quedó esperando. Cesar: casi siempre esperan a tener todos.
 - Ahora (migraciones 20261122a/b): `_driver_salir` exige que todo lo asignado esté listo y congela el orden planeado al salir; la alarma suena solo con todo listo; si uno espera 8+ min, aviso en la torre (`MotoristasEsperando.jsx`, arriba de Rutas en curso) con «Dejarlo esperar» / «Quitar a X de su ruta» (`torre_quitar_de_ruta`).
