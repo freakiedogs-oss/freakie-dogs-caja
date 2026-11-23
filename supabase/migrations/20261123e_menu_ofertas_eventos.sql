@@ -1,0 +1,6 @@
+-- Aplicada con apply_migration (23-nov-2026). Registro de las hojas de oferta del menú web.
+-- Tabla menu_ofertas_eventos (mostrada / si / no por oferta 'agrandar' | 'combo'), RLS sin políticas.
+-- RPC menu_oferta_evento(p_sesion, p_oferta, p_evento, p_producto_id, p_producto_nombre, p_unidades, p_cantidad, p_extra)
+--   SECURITY DEFINER, grant a anon/authenticated; valida oferta/evento y acota valores.
+-- Vista v_menu_ofertas_tasa (security_invoker): por día SV y oferta → mostradas, aceptadas, rechazadas, tasa_pct, extra_aceptado.
+-- Consulta: select * from v_menu_ofertas_tasa order by dia desc;

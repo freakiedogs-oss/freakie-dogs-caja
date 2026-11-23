@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Nov-2026 — 📊 Medir la tasa real de las hojas de oferta
+- Antes solo se sabía cuántos aceptaban (`agrandado_via='pregunta'`, `origen='oferta_combo'`), no cuántas veces se mostró la hoja.
+- Nuevo: tabla `menu_ofertas_eventos` + RPC `menu_oferta_evento` (anon) + vista `v_menu_ofertas_tasa` (migración 20261123e). En MenuPublico.jsx, `useRegistroOferta` registra «mostrada» al abrir `HojaAgrandar` / `HojaOferta` y luego «si» o «no» (una vez). Fire-and-forget: si falla, el cliente no se entera.
+- Primer dato (antes del registro): 23-nov tarde, 3 agrandados por la hoja (2 Burger Duo + 1 Sweet Burger Duo, +$7.50).
+
 ## 24-Nov-2026 — 🍟 «¿Lo agrandamos?» con fotos reales (antes → después)
 - La hoja de agrandar deja de usar `HojaOferta` y pasa a `HojaAgrandar` (MenuPublico.jsx): dos tarjetas «Tu combo» (papa + Coca 300 ml) → «Agrandado» (doble papa + Coca lata), flecha, animación de entrada una vez, botón «Agrandar + $X» y «No, gracias». En combos dobles (Burger Box/Duo) muestra ×N.
 - Imágenes en `public/ofertas/agr-{papas,botella,lata}.webp`: papas y botella recortadas de las fotos del menú; la lata es una foto de Google (Cesar autorizó usarla). Recorte con matte suave para evitar bordes blancos. Diseño revisado en 4 rondas (9/10).

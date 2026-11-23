@@ -1537,6 +1537,8 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
           <HojaAgrandar
             n={sinAgrandar.length}
             extra={precioAgrandado * sinAgrandar.length * qty}
+            registro={{ oferta: 'agrandar', producto: producto, unidades: sinAgrandar.length, cantidad: qty,
+              extra: precioAgrandado * sinAgrandar.length * qty }}
             onSi={aceptarUpsell}
             onNo={() => { setUpsell('visto'); confirmar(true) }}
           />
@@ -1552,6 +1554,8 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
             extra={(Number(ofertaCombo.precio) - Number(producto.precio)) * qty}
             si={`Sí, hacelo combo · ${fmt(Number(ofertaCombo.precio) * qty)}`}
             no={`No, solo ${qty > 1 ? 'los' : 'el'} ${producto.nombre}`}
+            registro={{ oferta: 'combo', producto: producto, unidades: 1, cantidad: qty,
+              extra: (Number(ofertaCombo.precio) - Number(producto.precio)) * qty }}
             onSi={() => onCambiarA(ofertaCombo, qty)}
             onNo={() => { setOfertaVista('visto'); confirmar(true) }}
           />
@@ -1559,6 +1563,36 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
       </div>
     </div>
   )
+}
+
+// ── Registro de las hojas de oferta (23-nov-2026) ─────────────────
+// Guarda cuándo se muestra cada hoja y qué responde el cliente, para medir la
+// tasa real de aceptación (vista v_menu_ofertas_tasa). Nunca bloquea al cliente.
+function sesionOfertas() {
+  try {
+    let id = sessionStorage.getItem('fd_ofertas_sesion')
+    if (!id) { id = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('fd_ofertas_sesion', id) }
+    return id
+  } catch { return null }
+}
+function registrarOferta(registro, evento) {
+  if (!registro) return
+  try {
+    db.rpc('menu_oferta_evento', {
+      p_sesion: sesionOfertas(), p_oferta: registro.oferta, p_evento: evento,
+      p_producto_id: registro.producto?.id || null, p_producto_nombre: registro.producto?.nombre || null,
+      p_unidades: registro.unidades ?? null, p_cantidad: registro.cantidad ?? null,
+      p_extra: Math.round(Number(registro.extra || 0) * 100) / 100,
+    }).then(() => {}, () => {})
+  } catch { /* sin registro no pasa nada */ }
+}
+// Envuelve las respuestas: registra 'mostrada' una vez y luego 'si' / 'no'.
+function useRegistroOferta(registro, onSi, onNo) {
+  const contestada = useRef(false)
+  useEffect(() => { registrarOferta(registro, 'mostrada') }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const si = () => { if (!contestada.current) { contestada.current = true; registrarOferta(registro, 'si') } onSi && onSi() }
+  const no = () => { if (!contestada.current) { contestada.current = true; registrarOferta(registro, 'no') } onNo && onNo() }
+  return [si, no]
 }
 
 // ── «¿Lo agrandamos?» con fotos reales (Cesar, 24-nov-2026) ─────────
@@ -1592,7 +1626,8 @@ const AGR_CSS = `
 @keyframes agrIn{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
 @keyframes agrNudge{0%{transform:translateX(-4px);opacity:0}100%{transform:none;opacity:1}}
 `
-function HojaAgrandar({ n = 1, extra, onSi, onNo }) {
+function HojaAgrandar({ n = 1, extra, registro, onSi: onSiProp, onNo: onNoProp }) {
+  const [onSi, onNo] = useRegistroOferta(registro, onSiProp, onNoProp)
   const x2 = n > 1 ? <span className="agr-x2">×{n}</span> : null
   return (
     <div className="agr-velo" onClick={onNo}>
@@ -1629,7 +1664,8 @@ function HojaAgrandar({ n = 1, extra, onSi, onNo }) {
 // ── Hoja de oferta al añadir (agrandar / hacer combo) ───────────────
 // Sube desde abajo justo cuando el cliente ya decidió. Un toque para aceptar,
 // otro para seguir igual; tocar afuera cuenta como «no».
-function HojaOferta({ titulo, texto, imagen, etiqueta, nombre, detalle, extra, si, no, onSi, onNo }) {
+function HojaOferta({ titulo, texto, imagen, etiqueta, nombre, detalle, extra, si, no, registro, onSi: onSiProp, onNo: onNoProp }) {
+  const [onSi, onNo] = useRegistroOferta(registro, onSiProp, onNoProp)
   return (
     <div onClick={onNo}
          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 5000,
