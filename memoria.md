@@ -1,5 +1,30 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Nov-2026 (tarde) — PedidosYa: menú de la API igualado al de Metro Centro
+- **Contexto:** el menú mandado en el pase (106 productos del POS, extras sueltos y fotos que fallaban) no gustó. Jose pidió que quedara igual al que Metro Centro tiene en el portal de PeYa, menú 228124, compartido por 5 locales.
+  - El menú de Metro Centro se extrajo con Claude in Chrome a un JSON.
+  - Son 4 categorías (EconoYa, Promo Mania, Lo nuevo, Menú) y 17 productos.
+- **Cambios, solo en «Menú PedidosYa» (`db0f8d05…`).** Los demás menús y los grupos de modificadores compartidos no se tocaron.
+  - Se renombraron 15 productos existentes y se crearon 2 apagados (Monster Combo, Green Freak).
+  - Cada producto lleva la descripción, el precio y la foto de Metro Centro. Las fotos vienen del CDN de PeYa, `pedidosya.dhmedia.io`.
+  - Se desactivaron las categorías viejas y se ocultaron los demás productos.
+  - Se crearon 9 grupos exclusivos de PeYa: Complemento de tu Freakie Dog (presets Con todo, Solo salsas…), Complementos de tu Freakie Dog (Fancy Dúo), Complemento para tus papas, Escoge tu Bebida, Escoge tu Bebida (Super Freak), Complementos (Super Freak), dos variantes de Extras para tu hamburguesa y Adicionales gratis.
+  - Los insumos de inventario se copiaron de las opciones equivalentes del POS.
+  - Se conectaron a los componentes de combo de PeYa (Hot Dog, Fries, Bebida, Super Freak, Hamburguesa, Freakie Burger). Así el traductor de pedidos sigue repartiendo cada opción por unidad del combo.
+  - Se crearon dos componentes nuevos, «Hot Dog (Fancy Dúo)» y «Bebida (Super Freak)», porque esos combos usan grupos distintos.
+- **Precios de extras:** se usan los de PeYa Metro Centro, que difieren del POS de tienda: jalapeño $0.75, tocino $1, costra $1.25 y Golden Cheese $3.
+- **Diferencia con Metro Centro:** en los combos de 2 a 4 se elige una bebida por cada soda, no una sola para todo el combo.
+- **Respaldo:** tablas `bak_peya_menu_20261123_*` (ítems, categorías, links de modificadores y componentes de combo).
+- **Migraciones:**
+  - `peya_catalogo_solo_categorias_activas`: un producto sin categoría activa hacía fallar el import completo con 91 errores «does not belong to a category».
+  - `peya_catalogo_codigo_imagen_por_url`: el código de imagen pasa a ser `IMG-<item>-<md5 url>`, porque PeYa no reemplaza la foto de un código ya existente.
+- **Imports:**
+  - 32 falló por los productos sin categoría.
+  - 33 quedó `done_with_errors`, con 3 fotos fallidas.
+  - Desde el 37, 14 de 15 fotos OK. Combo Fancy Dúo y Freakie Chilli entraron pidiendo al CDN 800×600.
+  - Fancy fries (PNG transparente) sigue fallando en todos los tamaños y queda pendiente.
+- **Causa probable de las fotos fallidas:** PeYa rechaza fotos verticales, muy grandes o PNG pesados. Las fotos horizontales tipo 4:3 en JPG entran bien.
+
 ## 23-Nov-2026 — PedidosYa: tienda piloto EN PRODUCCIÓN vía API (SV-FREAKIE-DOGS-0001 / 224235)
 - PeYa (Adrián Satriani) hizo el pase antes de lo acordado: a las 6:07 a.m. SV avisó, en un hilo nuevo («Continuación Integración… 23/11»), que la tienda quedó en Flujo Directo.
 - `auto_aceptar=true` desde el 22-nov por decisión de Jose: el piloto acepta solo desde el primer pedido.
