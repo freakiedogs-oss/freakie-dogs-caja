@@ -457,8 +457,10 @@ Deno.serve(async (req) => {
             p_orden_id: data[0].id,
             p_por: "PedidosYa (motorista retiró)",
           }).then(async ({ data: c, error: e }) => {
-            const falla = e?.message ?? ((c as Record<string, any> | null)?.ok === false
-              ? String((c as Record<string, any>).mensaje ?? (c as Record<string, any>).motivo) : null);
+            // `sin_cuenta` = pedido de prueba de DH (no baja a cocina): nada que cerrar.
+            const r = c as Record<string, any> | null;
+            const falla = e?.message ?? (r?.ok === false && r?.motivo !== "sin_cuenta"
+              ? String(r.mensaje ?? r.motivo) : null);
             if (falla) {
               console.error("retirado por PeYa pero la cuenta NO cerró", remoteOrderId, falla);
               await svc.from("peya_ordenes").update({
