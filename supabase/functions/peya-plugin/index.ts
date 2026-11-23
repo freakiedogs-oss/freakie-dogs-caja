@@ -445,6 +445,32 @@ Deno.serve(async (req) => {
         if (typeof er2?.waitUntil === "function") er2.waitUntil(propagar()); else await propagar();
       }
 
+      // Con rider de PedidosYa el retiro no lo marca nadie en la tienda: lo avisa
+      // PeYa con ORDER_PICKED_UP. Ese es el momento en que la venta pasa a cuenta
+      // por cobrar, igual que con el botón «retirado» del responder. Sin esto la
+      // cuenta quedaba abierta en «lista» hasta el cierre de turno (primer pedido
+      // real del piloto, Cafetalón #5812, 23-nov). `peya_cerrar_cuenta` es
+      // idempotente: si la tienda ya la cerró, o DH repite el aviso, no duplica.
+      if (status === "ORDER_PICKED_UP") {
+        const cerrar = () =>
+          svc.rpc("peya_cerrar_cuenta", {
+            p_orden_id: data[0].id,
+            p_por: "PedidosYa (motorista retiró)",
+          }).then(async ({ data: c, error: e }) => {
+            const falla = e?.message ?? ((c as Record<string, any> | null)?.ok === false
+              ? String((c as Record<string, any>).mensaje ?? (c as Record<string, any>).motivo) : null);
+            if (falla) {
+              console.error("retirado por PeYa pero la cuenta NO cerró", remoteOrderId, falla);
+              await svc.from("peya_ordenes").update({
+                notas: `retirado en PeYa pero la cuenta no cerró: ${falla}`.slice(0, 500),
+              }).eq("id", data[0].id);
+            }
+          }).catch((e) => console.error("cierre NO ejecutado", remoteOrderId, String(e)));
+
+        const er3 = (globalThis as Record<string, any>).EdgeRuntime;
+        if (typeof er3?.waitUntil === "function") er3.waitUntil(cerrar()); else await cerrar();
+      }
+
       return json({ ok: true }, 200);
     }
 
