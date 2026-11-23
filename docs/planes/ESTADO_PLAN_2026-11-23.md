@@ -77,7 +77,7 @@ Sin empezar, salvo W2-01 parcial: banco, socios y cuentas de terceros ya usan se
 ## Superficie nueva desde el 10-Nov
 
 - **WhatsApp (`api/wa.js`, Kapso, respuestas con Claude):** revisado. El webhook verifica firma HMAC y el envío interno pide secreto; las llaves viven en `app_secretos` (sin políticas, solo `service_role`). Bien hecho.
-- **4 Edge Functions nuevas de KWA** (`kwa-reservas-sitio`, `kwa-web-reservas`), fuera del repo.
+- **2 Edge Functions nuevas de KWA** (`kwa-reservas-sitio`, `kwa-web-reservas`), fuera del repo.
 - 47 funciones privilegiadas nuevas abiertas a `anon`: por defecto toda función nueva queda ejecutable sin sesión. Conviene cambiar el permiso por defecto (decisión 3).
 
 ## Decisiones que necesito
