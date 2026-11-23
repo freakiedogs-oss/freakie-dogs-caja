@@ -111,6 +111,160 @@ function timbre() {
   } catch { /* sin sonido, la pantalla igual avisa en color */ }
 }
 
+// ── Entrega al motorista (anti-robo) ──
+// PedidosYa no nos dice quién es el motorista: lo único que tenemos es el aviso de
+// que apretó «pedido en camino» (ORDER_PICKED_UP). Si se lleva la bolsa sin
+// apretarlo, el pedido sigue «esperando» y después viene otro a reclamarlo. Por
+// eso la cajera registra la entrega y, si a los 2 minutos PedidosYa no confirmó el
+// retiro, la caja suena hasta que el motorista lo marque.
+const ALARMA_SEG = 120
+
+const hora = (iso) => (iso
+  ? new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })
+  : '')
+
+function tonos(notas, tipo = 'sine', vol = 0.3) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    let fin = 0
+    notas.forEach(([frec, desde, dura]) => {
+      const osc = ctx.createOscillator(), gan = ctx.createGain()
+      osc.type = tipo
+      osc.connect(gan); gan.connect(ctx.destination)
+      osc.frequency.value = frec
+      const t0 = ctx.currentTime + desde
+      gan.gain.setValueAtTime(0.001, t0)
+      gan.gain.exponentialRampToValueAtTime(vol, t0 + 0.02)
+      gan.gain.exponentialRampToValueAtTime(0.001, t0 + dura)
+      osc.start(t0); osc.stop(t0 + dura)
+      fin = Math.max(fin, desde + dura)
+    })
+    setTimeout(() => ctx.close(), (fin + 0.3) * 1000)
+  } catch { /* sin sonido, la pantalla igual avisa en color */ }
+}
+// Alarma: no se parece al timbre de pedido nuevo a propósito.
+const sirena = () => tonos([[880, 0, .25], [587, .3, .25], [880, .6, .25], [587, .9, .25]], 'square', 0.25)
+const campanita = () => tonos([[660, 0, .25], [990, .18, .45]])
+
+function comprimir(file, max = 1000, q = 0.72) {
+  return new Promise((res, rej) => {
+    const img = new Image()
+    const src = window.URL.createObjectURL(file)
+    img.onload = () => {
+      const e = Math.min(1, max / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * e)
+      c.height = Math.round(img.height * e)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      window.URL.revokeObjectURL(src)
+      c.toBlob((b) => (b ? res(b) : rej(new Error('no se pudo comprimir'))), 'image/jpeg', q)
+    }
+    img.onerror = () => { window.URL.revokeObjectURL(src); rej(new Error('no se pudo leer la imagen')) }
+    img.src = src
+  })
+}
+
+// Segundos desde la entrega, contados en vivo a partir de lo que dijo el servidor.
+const segEntrega = (p, ahoraBase) =>
+  (p.entregado_segundos ?? 0) + Math.floor((Date.now() - ahoraBase) / 1000)
+
+const esperandoRetiro = (p) =>
+  p.tipo_orden === 'own_delivery' && p.estado === 'preparado' && !!p.entregado_at
+
+function EntregaMotorista({ p, ahoraBase, onEntregar, ocupado }) {
+  const [, setTick] = useState(0)
+  const fotoRef = useRef(null)
+  useEffect(() => {
+    if (!p.entregado_at) return
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [p.entregado_at])
+
+  if (!p.entregado_at) {
+    return (
+      <div style={{ padding: '12px 15px 14px', borderTop: `1px solid ${C.borde}`, background: '#14202e' }}>
+        <div style={{ color: C.azul, fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
+          {p.motorista_llego_at
+            ? `🛵 El motorista llegó ${hora(p.motorista_llego_at)}`
+            : '🛵 Listo · esperando al motorista de PedidosYa'}
+        </div>
+        <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', margin: '4px 0 10px' }}>
+          Al darle la bolsa, registralo. Si no marca «en camino» en su app, te avisamos.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button disabled={ocupado} onClick={() => fotoRef.current?.click()} style={{
+            flex: 1, padding: '14px 8px', borderRadius: 11, border: `1px solid ${C.azul}`,
+            background: 'transparent', color: C.azul, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+          }}>📷 Con foto</button>
+          <button disabled={ocupado} onClick={() => onEntregar(p, null)} style={{
+            flex: 2, padding: '14px 8px', borderRadius: 11, border: 'none',
+            background: ocupado ? '#2a3a30' : C.verde, color: '#06210f',
+            fontSize: 15, fontWeight: 800, cursor: 'pointer',
+          }}>{ocupado ? 'Registrando…' : 'Entregué al motorista'}</button>
+        </div>
+        <input ref={fotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0]; e.target.value = ''
+            if (f) onEntregar(p, f)
+          }} />
+      </div>
+    )
+  }
+
+  const seg = segEntrega(p, ahoraBase)
+  const alarma = seg >= ALARMA_SEG
+  return (
+    <div style={{
+      padding: '13px 15px', borderTop: `1px solid ${C.borde}`,
+      background: alarma ? '#3a0d14' : '#2a2207',
+      animation: alarma ? 'peyaLatido 1s ease-in-out infinite' : 'none',
+    }}>
+      {alarma ? (
+        <div style={{ color: '#ffd9dd', fontSize: 15, fontWeight: 800, textAlign: 'center', lineHeight: 1.3 }}>
+          🚨 El motorista NO marcó el retiro del #{p.short_code}
+          <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3 }}>
+            No lo dejes salir hasta que apriete «pedido en camino» en su app
+          </div>
+        </div>
+      ) : (
+        <div style={{ color: '#ffe9b0', fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
+          📦 Entregado · esperando que el motorista marque el retiro
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {' '}({dosDig(Math.floor(seg / 60))}:{dosDig(seg % 60)})
+          </span>
+        </div>
+      )}
+      <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', marginTop: 5 }}>
+        Entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
+        {p.entrega_foto_url && (
+          <> · <a href={p.entrega_foto_url} target="_blank" rel="noreferrer" style={{ color: C.azul }}>ver foto</a></>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Constancia en «Cerrados hoy»: para pelear un reclamo con PedidosYa.
+function ConstanciaRetiro({ p }) {
+  if (p.tipo_orden !== 'own_delivery' || p.estado !== 'retirado') return null
+  return (
+    <div style={{
+      padding: '9px 15px', borderTop: `1px solid ${C.borde}`, background: '#0d2018',
+      fontSize: 12, color: '#bff3d4',
+    }}>
+      ✅ Motorista confirmó retiro {hora(p.retirado_at) || ''}
+      {p.entregado_at && (
+        <span style={{ color: C.dim }}>
+          {' · '}entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
+        </span>
+      )}
+      {p.entrega_foto_url && (
+        <> · <a href={p.entrega_foto_url} target="_blank" rel="noreferrer" style={{ color: C.azul }}>📷 foto</a></>
+      )}
+    </div>
+  )
+}
+
 // Reloj sólo para lo que sigue sin contestar. Con la aceptación automática esto
 // casi no aparece — cuando aparece, es que algo falló y hay que mirarlo.
 function Reloj({ segundosBase, desde }) {
@@ -193,7 +347,7 @@ function HojaRechazo({ pedido, onCerrar, onConfirmar, enviando }) {
 
 // ── Tarjeta ──
 // El número manda. Todo lo demás está para confirmar que es el pedido correcto.
-function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
+function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
   const [abierto, setAbierto] = useState(false)
   const tipo = TIPO[p.tipo_orden] || TIPO.desconocido
   const est = ESTADO[p.estado] || { label: p.estado, col: C.dim }
@@ -299,11 +453,18 @@ function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
           El retiro lo confirma PedidosYa (ORDER_PICKED_UP) y con eso el servidor
           cierra la cuenta. Volver a mostrar el botón sólo invitaría a repetirlo. */}
       {p.estado === 'preparado' && tipo.cierre === 'preparado' && (
-        <div style={{
-          padding: '14px 15px', borderTop: `1px solid ${C.borde}`,
-          background: '#14202e', color: C.azul, fontSize: 14, fontWeight: 700, textAlign: 'center',
-        }}>🛵 Listo · esperando al motorista de PedidosYa</div>
+        <EntregaMotorista p={p} ahoraBase={ahoraBase} onEntregar={onEntregar} ocupado={ocupado} />
       )}
+
+      {/* El motorista llegó y la comida todavía no está: que la cajera lo sepa. */}
+      {p.estado === 'aceptado' && tipo.cierre === 'preparado' && p.motorista_llego_at && (
+        <div style={{
+          padding: '9px 15px', borderTop: `1px solid ${C.borde}`,
+          background: '#14202e', color: C.azul, fontSize: 12.5, fontWeight: 700,
+        }}>🛵 El motorista llegó {hora(p.motorista_llego_at)} · está esperando</div>
+      )}
+
+      <ConstanciaRetiro p={p} />
 
       {enCocina && !(p.estado === 'preparado' && tipo.cierre === 'preparado') && (
         <>
@@ -352,6 +513,8 @@ export default function PeyaInboxView({ user, onBack }) {
   const [ahoraBase, setAhoraBase] = useState(Date.now())
   const [sonido, setSonido] = useState(() => localStorage.getItem('peya_sonido') !== '0')
   const idsVistos = useRef(null)
+  // Pedidos entregados al motorista que PedidosYa todavía no confirmó.
+  const entregadosSinRetiro = useRef(new Set())
 
   const cargar = useCallback(async () => {
     if (!user?.pin) { setError('Sin PIN de sesión'); return }
@@ -367,15 +530,64 @@ export default function PeyaInboxView({ user, onBack }) {
         if (nuevos.length && sonido) timbre()
       }
       idsVistos.current = ids
+
+      // Retiro confirmado de algo que la cajera ya había entregado: se avisa.
+      const confirmados = (r?.pedidos || []).filter((p) =>
+        entregadosSinRetiro.current.has(p.id) && p.estado === 'retirado')
+      if (confirmados.length) {
+        campanita()
+        setAviso(`Motorista confirmó el retiro del PeYa #${confirmados.map((p) => p.short_code).join(', #')}`)
+      }
+      entregadosSinRetiro.current = new Set((r?.pedidos || []).filter(esperandoRetiro).map((p) => p.id))
+
       setData(r); setAhoraBase(Date.now()); setError('')
     } catch (e) { setError(e.message || 'No se pudo cargar') }
   }, [user?.pin, sonido])
 
+  // Mientras haya una bolsa entregada sin retiro confirmado se consulta más seguido.
+  const hayEsperaRetiro = (data?.pedidos || []).some(esperandoRetiro)
   useEffect(() => {
     cargar()
-    const t = setInterval(cargar, REFRESH_MS)
+    const t = setInterval(cargar, hayEsperaRetiro ? 5000 : REFRESH_MS)
     return () => clearInterval(t)
-  }, [cargar])
+  }, [cargar, hayEsperaRetiro])
+
+  // La alarma suena aunque el timbre de pedidos nuevos esté apagado: es plata.
+  useEffect(() => {
+    if (!hayEsperaRetiro) return
+    const t = setInterval(() => {
+      const enAlarma = (data?.pedidos || []).some((p) =>
+        esperandoRetiro(p) && segEntrega(p, ahoraBase) >= ALARMA_SEG)
+      if (enAlarma) sirena()
+    }, 6000)
+    return () => clearInterval(t)
+  }, [hayEsperaRetiro, data, ahoraBase])
+
+  // La foto es opcional y no frena nada: si no sube, la entrega se registra igual.
+  const onEntregar = async (p, foto) => {
+    setOcupado(p.remote_order_id); setError(''); setAviso('')
+    let fotoUrl = null, fotoFallo = false
+    try {
+      if (foto) {
+        try {
+          const blob = await comprimir(foto)
+          const path = `peya/${p.short_code || p.id}-${Date.now()}.jpg`
+          const { error: upErr } = await db.storage.from('despachos-fotos')
+            .upload(path, blob, { cacheControl: '3600', upsert: false, contentType: 'image/jpeg' })
+          if (upErr) throw upErr
+          fotoUrl = db.storage.from('despachos-fotos').getPublicUrl(path).data?.publicUrl || null
+        } catch { fotoFallo = true }
+      }
+      const { error: e } = await db.rpc('peya_registrar_entrega', {
+        p_pin: String(user.pin), p_orden_id: p.id, p_foto_url: fotoUrl,
+      })
+      if (e) throw e
+      if (fotoFallo) setError(`Entrega del #${p.short_code} registrada, pero la foto no se pudo subir`)
+      else setAviso(`Entrega del #${p.short_code} registrada${fotoUrl ? ' con foto' : ''}. Que el motorista marque «en camino».`)
+      await cargar()
+    } catch (e) { setError(e.message || 'No se pudo registrar la entrega') }
+    finally { setOcupado(null) }
+  }
 
   // Abrir o cerrar la tienda EN PEDIDOSYA, no sólo acá. La diferencia importa: si
   // sólo cambiáramos nuestro estado, la caja creería que está cerrada y los pedidos
@@ -602,7 +814,7 @@ export default function PeyaInboxView({ user, onBack }) {
             <Seccion titulo="Sin contestar"
               nota="Con la aceptación automática esto no debería aparecer. Si está acá, revisalo." />
             {sinContestar.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -612,7 +824,7 @@ export default function PeyaInboxView({ user, onBack }) {
           <>
             <Seccion titulo="Esperando al driver" nota="Buscá el número que te dice y cerralo." />
             {enCocina.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -622,7 +834,7 @@ export default function PeyaInboxView({ user, onBack }) {
           <>
             <Seccion titulo="Cerrados hoy" />
             {cerrados.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>

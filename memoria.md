@@ -1,5 +1,22 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Nov-2026 (noche) — PedidosYa: constancia de entrega al motorista (anti-robo) y bebidas en el KDS
+- **Problema que resuelve:** motoristas de PeYa que se llevan la bolsa sin apretar «pedido en camino». El pedido sigue «esperando», viene otro motorista a reclamarlo y PeYa nos lo cobra. PeYa no manda nombre ni ID del motorista; lo único confiable es el webhook `ORDER_PICKED_UP`.
+- **Flujo nuevo en la bandeja PeYa (rider de PedidosYa, después de «Listo para el driver»):**
+  - Muestra «El motorista llegó hh:mm» con `COURIER_ARRIVED_AT_VENDOR`, también mientras sigue en cocina.
+  - Botones «Entregué al motorista» y «📷 Con foto». La foto es opcional, se comprime a 1000 px y va al bucket `despachos-fotos/peya/`. Si no sube, la entrega se registra igual.
+  - Al registrar, cuenta en ámbar. A los **2 min sin `ORDER_PICKED_UP`** la tarjeta se pone roja con la leyenda «El motorista NO marcó el retiro del #XXXX — no lo dejes salir». Suena una sirena cada 6 s aunque el timbre de pedidos nuevos esté apagado. El panel refresca cada 5 s mientras haya una entrega pendiente.
+  - Cuando llega el retiro suena una campanita y aparece el aviso. En «Cerrados hoy» queda la constancia: hora del retiro, quién entregó y a qué hora, y la foto.
+- **DB** (`20261123_peya_entrega_motorista.sql`):
+  - `peya_ordenes` + `entregado_at`, `entregado_por`, `entrega_foto_url`, `retirado_at`. El trigger `trg_peya_marca_retirado` sella `retirado_at` al pasar a `retirado`.
+  - RPC `peya_registrar_entrega(pin, orden_id, foto_url)`, con el mismo control de PIN, rol y sucursal que `peya_panel`.
+  - `peya_panel` devuelve los campos nuevos y `entregado_segundos`.
+  - Probado con rollback sobre un pedido real.
+- **Bebidas que no salían en el KDS (#5814):** el grupo «Escoge tu Bebida» del menú PeYa era opcional y el cliente no eligió.
+  - Los grupos `86cfbd07…` y `d7237f1c…` (Super Freak) pasan a min 1 / obligatorio, solo en el menú PeYa. Catálogo reenviado (import 39 aplicado; solo falla la foto de Fancy fries).
+  - #5814 parchado con «Coca Cola (el cliente no eligió)».
+- **Cuentas 345 y 953:** `peya_ordenes` pasadas a `retirado` a pedido de Jose.
+
 ## 23-Nov-2026 (tarde) — PedidosYa: primeros pedidos reales del piloto y dos fallas del cierre corregidas
 - **Apertura:** Santa Tecla / Cafetalón (SV-FREAKIE-DOGS-0001) abierta a las 1:40 p.m. con el menú de Metro Centro.
 - **Pedidos que llegaron:**
