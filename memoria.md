@@ -1,6 +1,24 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
-## 17-Nov-2026 — PedidosYa: homologación APROBADA; pase a producción del piloto el lun 23-nov 9:00 a.m.
+## 22-Nov-2026 — PedidosYa: datos de producción cargados en M001 (pase lun 23-nov 12:15 p.m. SV)
+- **Hora real del pase: lunes 23-nov 12:15 p.m. SV.** Jose pidió 9:00 a.m., PeYa la movió a las 12:15 y Jose confirmó.
+- PeYa cerró el caso de soporte el 21-nov. Cualquier consulta nueva va en un correo nuevo a soporteintegraciones.
+- **`peya_vendor_map`, fila M001 (Plaza Cafetalón):**
+  - `vendor_code` y `remote_id` pasaron de `PENDIENTE-M001` / `M001` a `SV-FREAKIE-DOGS-0001`.
+  - `global_entity_id` pasó a `PY_SV`. `chain_code` sigue `SVFREAKIEDOGSPROD0001` y `platform_restaurant_id` sigue 224235.
+  - Sin cambios: `auto_aceptar=false`, `disponible=true`, `es_pruebas=false`.
+  - **Por qué:** `peya-plugin` asigna cada pedido a una sucursal por el `remote_id` de la URL. Sin este cambio, los pedidos reales entrarían sin sucursal.
+- **Verificación:** `peya_catalogo(null, false)` arma el menú real sin errores.
+  - 304 ítems: 242 productos, 31 toppings, 7 categorías, 1 menú.
+  - Ningún override de `peya_item_prueba`.
+- **Pendiente el lunes, cuando PeYa avise que vinculó las credenciales:**
+  1. Primera carga **individual** del catálogo a SV-FREAKIE-DOGS-0001 y verificar que termine bien.
+  2. Prender `auto_aceptar` del piloto, si Jose lo decide.
+  3. Abrir la tienda con Open (acción tienda `abrir=true`).
+  4. Mandar el ImportID a PeYa en un correo nuevo.
+  5. Avisar a Mónica que reaplique las promos (PeYa las borra al eliminar el menú).
+
+## 17-Nov-2026 — PedidosYa: homologación APROBADA; pase a producción del piloto el lun 23-nov (luego movido a 12:15 p.m.)
 - Marcos (soporteintegraciones) dio por exitosas todas las pruebas de catálogo y órdenes.
   - Los errores de imagen son esperables en sandbox.
   - Lo de SV-PRUEBA-INTEGRACION-FREAKIE0001 fue de su lado: la sacaron del menú unificado después de la llamada.
