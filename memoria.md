@@ -1,5 +1,20 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Nov-2026 — PedidosYa: tienda piloto EN PRODUCCIÓN vía API (SV-FREAKIE-DOGS-0001 / 224235)
+- PeYa (Adrián Satriani) hizo el pase antes de lo acordado: a las 6:07 a.m. SV avisó, en un hilo nuevo («Continuación Integración… 23/11»), que la tienda quedó en Flujo Directo.
+- `auto_aceptar=true` desde el 22-nov por decisión de Jose: el piloto acepta solo desde el primer pedido.
+- **Primera carga individual** (11:59 a.m. SV), ruta estándar `pos_vendor`:
+  - ImportID `SVFREAKIEDOGSPROD0001-1795456762602`, `peya_catalogo_import` id 29, 304 ítems.
+  - Resultado `done_with_errors`: solo fallaron 15 imágenes. Productos, categorías y precios entraron.
+  - Algunas de las imágenes que fallaron: Chilli Dog, Chili, Chili con carne, Combo Hamburguesa, Combo Freakie Dog, COMBO FREAKIE BURGER, Fancys XL, Mini Fancys, Kolashanpan, Té Frambuesa.
+- **Open** enviado a las 12:04 p.m. SV con la acción tienda (`abrir=true`, `remoteId`): PeYa respondió HTTP 200 y la disponibilidad marca OPEN.
+  - El espejo local respondió `sin_vendor` porque el PIN de superadmin no tiene sucursal propia y no se le pasó el `remote_id`. `disponible` ya estaba en true, así que no afectó. Queda pendiente revisar ese caso.
+- Se respondió a PeYa con el ImportID, con copia a Marcos y Mónica, y se le pidió a Mónica reaplicar las promos.
+- **Pendiente:**
+  - Revisar por qué fallaron esas imágenes en producción.
+  - Vigilar los primeros pedidos reales: que entren a Plaza Cafetalón y se acepten solos.
+  - Después, pedir por correo unificar las demás tiendas al menú de la 224235.
+
 ## 22-Nov-2026 — PedidosYa: datos de producción cargados en M001 (pase lun 23-nov 12:15 p.m. SV)
 - **Hora real del pase: lunes 23-nov 12:15 p.m. SV.** Jose pidió 9:00 a.m., PeYa la movió a las 12:15 y Jose confirmó.
 - PeYa cerró el caso de soporte el 21-nov. Cualquier consulta nueva va en un correo nuevo a soporteintegraciones.
