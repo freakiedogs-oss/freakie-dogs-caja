@@ -116,6 +116,7 @@ export default function MenuPublico() {
   const [categoriaActiva, setCategoriaActiva] = useState('')
   const [carrito, setCarrito] = useState([])
   const [productoModal, setProductoModal] = useState(null)
+  const [qtyModal, setQtyModal] = useState(1)   // al pasar de hot dog suelto a combo se conserva la cantidad
   const [reglasChoque, setReglasChoque] = useState([])   // [{a, b, item}]
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
@@ -361,6 +362,8 @@ export default function MenuPublico() {
   // Los nombres de abajo son de productos del Menú Delivery; si uno no está
   // visible o está agotado, simplemente no se muestra.
   const PARA_COMPARTIR = ['Burger Box', 'Combpleto', 'Freakie Family']
+  // «¿Lo hacés combo?» (23-nov-2026): producto suelto → su combo. Por nombre, igual que las filas destacadas.
+  const COMBO_DE_SUELTO = { 'Freakie Dog': 'Combo Freakie Dog', 'Chilli Dog': 'Combo Chilli Dog' }
   const SUGERIDOS_CARRITO = ['Queso Frito', 'Mini Fancys', 'Freakie Dog']   // el postre se suma acá cuando tenga foto
   const porNombre = useMemo(() => {
     const m = {}
@@ -658,14 +661,23 @@ export default function MenuPublico() {
       {/* MODAL PRODUCTO */}
       {productoModal && (
         <ProductoModal
+          key={productoModal.id}
           producto={productoModal}
+          qtyInicial={qtyModal}
+          ofertaCombo={(() => {
+            // Hot dog suelto → su combo (Cesar, 23-nov-2026). Solo si el combo existe,
+            // está visible y no está agotado en la zona, y no es un reemplazo desde el carrito.
+            const combo = COMBO_DE_SUELTO[productoModal.nombre] && porNombre[COMBO_DE_SUELTO[productoModal.nombre]]
+            return combo && !bloq.items[combo.id] && !reemplazo ? combo : null
+          })()}
+          onCambiarA={(combo, q) => { setQtyModal(q || 1); setOrigenModal('oferta_combo'); setProductoModal(combo) }}
           onClose={() => {
-            setProductoModal(null)
+            setProductoModal(null); setQtyModal(1)
             if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
           }}
           onAgregar={(qty, nota, mods, comps, agrandadoVia) => {
             agregarAlCarrito(productoModal, qty, nota, mods, comps, origenModal, agrandadoVia || null)
-            setProductoModal(null)
+            setProductoModal(null); setQtyModal(1)
             if (reemplazo) quitarUnidades(reemplazo.nombre, reemplazo.quitar)
             if (volverAlCarrito || reemplazo) { setCarritoAbierto(true); setVolverAlCarrito(false); setReemplazo(null) }
           }}
@@ -823,18 +835,23 @@ function MisPedidosModal({ datos, onClose, onVolverAPedir }) {
 }
 
 function HeroBanner() {
+  // Banners con vigencia opcional (`desde` / `hasta`, ISO con zona): los vencidos no se muestran.
+  const lista = useMemo(() => {
+    const ahora = Date.now()
+    return BANNERS.filter(b => (!b.desde || ahora >= Date.parse(b.desde)) && (!b.hasta || ahora < Date.parse(b.hasta)))
+  }, [])
   const [idx, setIdx] = useState(0)
   // Auto-slide: 4 s por banner, o lo que diga `ms` (los animados se quedan más)
   useEffect(() => {
-    if (BANNERS.length <= 1) return
-    const t = setTimeout(() => setIdx(i => (i + 1) % BANNERS.length), BANNERS[idx]?.ms || 4000)
+    if (lista.length <= 1) return
+    const t = setTimeout(() => setIdx(i => (i + 1) % lista.length), lista[idx]?.ms || 4000)
     return () => clearTimeout(t)
   }, [idx])
 
   return (
     <div className="mp-hero">
       <div className="mp-hero-slider">
-        {BANNERS.map((b, i) => (
+        {lista.map((b, i) => (
           <div
             key={b.id}
             className={`mp-hero-slide ${i === idx ? 'active' : ''}`}
@@ -842,9 +859,9 @@ function HeroBanner() {
           />
         ))}
       </div>
-      {BANNERS.length > 1 && (
+      {lista.length > 1 && (
         <div className="mp-hero-dots">
-          {BANNERS.map((b, i) => (
+          {lista.map((b, i) => (
             <button
               key={b.id}
               className={`mp-hero-dot ${i === idx ? 'active' : ''}`}
@@ -990,8 +1007,11 @@ function ProductoCard({ producto, onClick, agotado = false, dondeAgotado }) {
   )
 }
 
-function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [], extrasFav = {} }) {
-  const [qty, setQty] = useState(1)
+function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [], extrasFav = {}, ofertaCombo = null, onCambiarA = null, qtyInicial = 1 }) {
+  const [qty, setQty] = useState(qtyInicial)
+  // «¿Lo hacés combo?» (Cesar, 23-nov-2026): al añadir un hot dog suelto que
+  // tiene su combo, se ofrece UNA vez pasar al combo (papas + bebida).
+  const [ofertaVista, setOfertaVista] = useState(false)
   const [nota, setNota] = useState('')
   // sel: { [grupoId]: [ {id,nombre,precio_extra}, ... ] }
   const [sel, setSel] = useState({})
@@ -1292,6 +1312,10 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
       setUpsell('abierto')
       return
     }
+    if (!saltarUpsell && ofertaCombo && onCambiarA && !ofertaVista) {
+      setOfertaVista('abierta')
+      return
+    }
     // Se separan: las opciones del ítem van en `mods`; las de cada unidad del combo viajan
     // agrupadas por componente. Si se mandaran en los dos lados, el servidor cobraría doble.
     const comps = (producto.componentes || []).map((c, i) => ({
@@ -1510,30 +1534,77 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
           </div>
         </div>
         {upsell === 'abierto' && (
-          <div onClick={() => { setUpsell('visto'); confirmar(true) }}
-               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 5000,
-                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-            <div onClick={e => e.stopPropagation()}
-                 style={{ background: '#fff', width: 'min(520px, 100%)', borderRadius: '18px 18px 0 0',
-                          padding: '18px 16px 22px', boxSizing: 'border-box' }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#1f1a16' }}>¿Agrandamos tu combo?</div>
-              <div style={{ fontSize: 14, color: '#6b5a48', margin: '4px 0 14px', lineHeight: 1.4 }}>
-                Papa grande + bebida premium (Coca lata, Coca Zero, Té Lipton o Kinley) por solo {fmt(precioAgrandado)} más
-                {sinAgrandar.length > 1 ? ' cada uno' : ''}.
-              </div>
-              <button type="button" onClick={aceptarUpsell}
-                      style={{ width: '100%', padding: 14, border: 'none', borderRadius: 14, background: '#E24B4A',
-                               color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' }}>
-                Sí, agrandar · +{fmt(precioAgrandado * sinAgrandar.length * qty)}
-              </button>
-              <button type="button" onClick={() => { setUpsell('visto'); confirmar(true) }}
-                      style={{ width: '100%', padding: 10, marginTop: 6, border: 'none', background: 'none',
-                               color: '#6b5a48', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
-                No, gracias
-              </button>
-            </div>
-          </div>
+          <HojaOferta
+            titulo="¿Lo agrandamos? 🔥"
+            texto={sinAgrandar.length > 1
+              ? `Papas grandes y bebida premium para ${sinAgrandar.length === 2 ? 'las dos' : `las ${sinAgrandar.length}`} (${fmt(precioAgrandado)} cada una).`
+              : 'Papas grandes y bebida premium (Coca lata, Coca Zero, Té Lipton o Kinley).'}
+            imagen={producto.imagen_url}
+            nombre={`Agrandado papa y bebida${sinAgrandar.length > 1 ? ` ×${sinAgrandar.length}` : ''}`}
+            detalle={producto.nombre}
+            extra={precioAgrandado * sinAgrandar.length * qty}
+            si={`Sí, agrandalo · ${fmt(precioTotal + precioAgrandado * sinAgrandar.length * qty)}`}
+            no="No, así está bien"
+            onSi={aceptarUpsell}
+            onNo={() => { setUpsell('visto'); confirmar(true) }}
+          />
         )}
+        {ofertaVista === 'abierta' && ofertaCombo && (
+          <HojaOferta
+            titulo="¿Lo hacés combo? 🍟🥤"
+            texto="Con papas y bebida sale mejor."
+            imagen={ofertaCombo.imagen_url}
+            etiqueta="MÁS PEDIDO"
+            nombre={ofertaCombo.nombre}
+            detalle={ofertaCombo.descripcion}
+            extra={(Number(ofertaCombo.precio) - Number(producto.precio)) * qty}
+            si={`Sí, hacelo combo · ${fmt(Number(ofertaCombo.precio) * qty)}`}
+            no={`No, solo ${qty > 1 ? 'los' : 'el'} ${producto.nombre}`}
+            onSi={() => onCambiarA(ofertaCombo, qty)}
+            onNo={() => { setOfertaVista('visto'); confirmar(true) }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Hoja de oferta al añadir (agrandar / hacer combo) ───────────────
+// Sube desde abajo justo cuando el cliente ya decidió. Un toque para aceptar,
+// otro para seguir igual; tocar afuera cuenta como «no».
+function HojaOferta({ titulo, texto, imagen, etiqueta, nombre, detalle, extra, si, no, onSi, onNo }) {
+  return (
+    <div onClick={onNo}
+         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 5000,
+                  display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()}
+           style={{ background: '#fff', width: 'min(520px, 100%)', borderRadius: '20px 20px 0 0',
+                    padding: '18px 16px 22px', boxSizing: 'border-box', boxShadow: '0 -6px 20px rgba(0,0,0,.2)' }}>
+        <div style={{ fontSize: 19, fontWeight: 800, color: '#1f1a16' }}>{titulo}</div>
+        <div style={{ fontSize: 13.5, color: '#6b5a48', margin: '4px 0 12px', lineHeight: 1.4 }}>{texto}</div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', border: '2px solid #E24B4A', borderRadius: 14,
+                      padding: 10, background: '#fff5f5' }}>
+          {imagen
+            ? <img src={imagen} alt="" style={{ width: 76, height: 76, objectFit: 'cover', borderRadius: 10, flex: '0 0 76px' }} />
+            : <div style={{ width: 76, height: 76, borderRadius: 10, background: '#f3f3f3', display: 'grid', placeItems: 'center', fontSize: 30 }}>🍟</div>}
+          <div style={{ minWidth: 0 }}>
+            {etiqueta && <span style={{ display: 'inline-block', background: '#E24B4A', color: '#fff', fontSize: 10.5, fontWeight: 800,
+                                        borderRadius: 999, padding: '2px 8px', marginBottom: 4 }}>{etiqueta}</span>}
+            <div style={{ fontWeight: 800, fontSize: 14.5, color: '#1f1a16' }}>{nombre}</div>
+            {detalle && <div style={{ fontSize: 12, color: '#6b5a48', marginTop: 2 }}>{detalle}</div>}
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#E24B4A', marginTop: 4 }}>+ {fmt(extra)}</div>
+          </div>
+        </div>
+        <button type="button" onClick={onSi}
+                style={{ width: '100%', padding: 14, marginTop: 12, border: 'none', borderRadius: 14, background: '#E24B4A',
+                         color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {si}
+        </button>
+        <button type="button" onClick={onNo}
+                style={{ width: '100%', padding: 10, marginTop: 4, border: 'none', background: 'none',
+                         color: '#6b5a48', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {no}
+        </button>
       </div>
     </div>
   )

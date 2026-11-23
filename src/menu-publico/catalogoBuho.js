@@ -398,6 +398,8 @@ export const NEGOCIO = {
 // ── Banner hero (slider superior) — imágenes reales BuhoPay ──
 const BANNER_IMG = 'https://admin.buhopay.com/media/'
 export const BANNERS = [
+  // Fiesta navideña 23-nov-2026: todas cierran 15:00. Solo se muestra ese día (`hasta`).
+  { id: 'fiesta-navidena-2026', imagen: '/banners/fiesta-navidena-2026.webp', ms: 6000, hasta: '2026-11-24T00:00:00-06:00' },
   // Combos Monster (20-nov-2026, Cesar): banner animado (WebP) estilo atardecer neón «Freak City».
   // `ms`: cuánto se queda en pantalla (la animación dura ~4 s, se deja correr completa 2 veces).
   { id: 'freak-city-monster', imagen: '/banners/freak-city-monster.webp?v=2', ms: 8000 },  // v2: logo neón oficial «freak city COMBO»

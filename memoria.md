@@ -1,8 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 23-Nov-2026 — 🎄 Cierre temporal por fiesta navideña + Usulután cerrado
+- Todas las sucursales cierran a las 15:00 el lunes 23-nov: `horarios_sucursal` (dia_semana=1) → `hora_cierre = 15:00`. Respaldo en `_cierre_fiesta_20261123`; el cron `restaurar_cierre_fiesta_20261123` lo devuelve a las 23:30 SV y se borra solo. (Se puede dropear la tabla de respaldo después.)
+- Usulután (S002) cerrado todo el día: `activa=false, tiene_delivery=false`. El cron `reabrir_usulutan_20261124` lo regresa a «con domicilio» el 24-nov a las 06:00 SV.
+- Ojo: no existe un «cierre por fecha» en el sistema (solo horario semanal); por eso se hizo con cron. Idea pendiente: tabla de excepciones por fecha.
+
+## 23-Nov-2026 — 🍟 Ofertas al añadir: «¿Lo hacés combo?» + hoja nueva de «¿Lo agrandamos?»
+- Por qué: el ticket web no se movió con los upsells del 9-nov ($16.48 → $16.55). La pregunta de agrandar ya existía desde el 9-nov (cubre todos los combos; en Burger Box/Duo ofrece agrandar las 2 = $2.50): 24 líneas aceptadas por la pregunta + 136 por el botón, de ~840 combos.
+- Cambios (MenuPublico.jsx): componente `HojaOferta` (foto, «+ $X», «Sí… · total», «No…»), usado por el agrandado y por la oferta nueva hot dog suelto → combo (`COMBO_DE_SUELTO`: Freakie Dog → Combo Freakie Dog +$2.00, Chilli Dog → Combo Chilli Dog +$3.00; conserva la cantidad, `origen = 'oferta_combo'`). Una sola vez por producto; no sale en reemplazos desde el carrito ni si el combo está agotado en la zona.
+- Medir a mediados de diciembre: líneas con `agrandado_via = 'pregunta'` y `origen = 'oferta_combo'`, y ticket promedio web.
+
 ## 22-Nov-2026 — 🛵 Ruta fija: el motorista sale con todos sus pedidos y el orden no cambia
 - Por qué: los motoristas llamaban a Cesar porque la app les cambiaba la ruta. Caso Andrés: Natalia (cerca, en cocina) y Bryan (lejos, listo); la alarma de 8 min («este ya no puede esperar») lo hizo salir solo con Bryan, la ruta se rehizo y Natalia quedó esperando. Cesar: casi siempre esperan a tener todos.
 - Ahora (migraciones 20261122a/b): `_driver_salir` exige que todo lo asignado esté listo y congela el orden planeado al salir; la alarma suena solo con todo listo; si uno espera 8+ min, aviso en la torre (`MotoristasEsperando.jsx`, arriba de Rutas en curso) con «Dejarlo esperar» / «Quitar a X de su ruta» (`torre_quitar_de_ruta`).
+- ⚠️ Hotfix 20261122c (14:30): desde la app el botón «Ya lo retiré · salgo» no hacía nada porque pg_safeupdate (activo en las sesiones de PostgREST, NO en execute_sql) rechazaba `delete from _plan` sin WHERE. Lección: probar los RPC nuevos llamándolos por `/sb/rest/v1/rpc/...` con la anon key, no solo con execute_sql. Además, el error quedaba tapado por la pantalla roja de la alarma (pendiente: mostrar errores dentro de la alarma).
 - App del motorista: aviso «Esperá: falta X (en cocina)», botón «Salgo con los N · esperando M» deshabilitado hasta que estén todos; «Va N° en tu ruta» también para los que siguen en cocina.
 
 ## 20-Nov-2026 — 🧠 Asistente WhatsApp: cerebro con Claude (API de Anthropic)
