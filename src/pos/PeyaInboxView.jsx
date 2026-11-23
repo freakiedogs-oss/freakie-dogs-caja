@@ -30,10 +30,16 @@ const C = {
 
 // Los tres tipos del contrato. Cambian quién se lleva la comida y, por lo tanto,
 // cuál es el botón de cierre.
+//
+// En el contrato de DH «own delivery» es la logística PROPIA DE LA PLATAFORMA (un
+// rider de PedidosYa: el pedido trae riderPickupTime y no trae dirección) y
+// «vendor delivery» es el comercio repartiendo con su gente. Hasta el 23-nov
+// estaban al revés acá: el primer pedido real del piloto (Cafetalón, #5812, rider
+// de PeYa) mostró «Salió con el motorista» y nunca se avisó «listo para el driver».
 const TIPO = {
   pickup:          { et: '🛍️', label: 'Lo retira el cliente', cierre: 'retirado',  boton: 'Cliente lo retiró' },
-  vendor_delivery: { et: '🛵', label: 'Lo lleva PedidosYa',    cierre: 'preparado', boton: 'Listo para el driver' },
-  own_delivery:    { et: '🚗', label: 'Lo llevamos nosotros',  cierre: 'retirado',  boton: 'Salió con el motorista' },
+  own_delivery:    { et: '🛵', label: 'Lo lleva PedidosYa',    cierre: 'preparado', boton: 'Listo para el driver' },
+  vendor_delivery: { et: '🚗', label: 'Lo llevamos nosotros',  cierre: 'retirado',  boton: 'Salió con el motorista' },
   desconocido:     { et: '❓', label: 'Tipo desconocido',      cierre: 'retirado',  boton: 'Marcar retirado' },
 }
 
@@ -257,7 +263,17 @@ function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
           marcar retirado le manda `order_picked_up` a PedidosYa y eso no se
           revierte. El candado de verdad está en el servidor; esto es para que la
           cajera entienda la espera en vez de pelearse con un botón muerto. */}
-      {enCocina && (
+      {/* Rider de PeYa: después de «Listo para el driver» no queda nada que apretar.
+          El retiro lo confirma PedidosYa (ORDER_PICKED_UP) y con eso el servidor
+          cierra la cuenta. Volver a mostrar el botón sólo invitaría a repetirlo. */}
+      {p.estado === 'preparado' && tipo.cierre === 'preparado' && (
+        <div style={{
+          padding: '14px 15px', borderTop: `1px solid ${C.borde}`,
+          background: '#14202e', color: C.azul, fontSize: 14, fontWeight: 700, textAlign: 'center',
+        }}>🛵 Listo · esperando al motorista de PedidosYa</div>
+      )}
+
+      {enCocina && !(p.estado === 'preparado' && tipo.cierre === 'preparado') && (
         <>
           {!listoCocina && (
             <div style={{
