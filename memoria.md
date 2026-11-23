@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 24-Nov-2026 — 🍟 «¿Lo agrandamos?» con fotos reales (antes → después)
+- La hoja de agrandar deja de usar `HojaOferta` y pasa a `HojaAgrandar` (MenuPublico.jsx): dos tarjetas «Tu combo» (papa + Coca 300 ml) → «Agrandado» (doble papa + Coca lata), flecha, animación de entrada una vez, botón «Agrandar + $X» y «No, gracias». En combos dobles (Burger Box/Duo) muestra ×N.
+- Imágenes en `public/ofertas/agr-{papas,botella,lata}.webp`: papas y botella recortadas de las fotos del menú; la lata es una foto de Google (Cesar autorizó usarla). Recorte con matte suave para evitar bordes blancos. Diseño revisado en 4 rondas (9/10).
+- Misma lógica de antes (una vez por producto, `aceptarUpsell`); solo cambia lo visual.
+
 ## 23-Nov-2026 — 🎄 Cierre temporal por fiesta navideña + Usulután cerrado
 - Todas las sucursales cierran a las 15:00 el lunes 23-nov: `horarios_sucursal` (dia_semana=1) → `hora_cierre = 15:00`. Respaldo en `_cierre_fiesta_20261123`; el cron `restaurar_cierre_fiesta_20261123` lo devuelve a las 23:30 SV y se borra solo. (Se puede dropear la tabla de respaldo después.)
 - Usulután (S002) cerrado todo el día: `activa=false, tiene_delivery=false`. El cron `reabrir_usulutan_20261124` lo regresa a «con domicilio» el 24-nov a las 06:00 SV.

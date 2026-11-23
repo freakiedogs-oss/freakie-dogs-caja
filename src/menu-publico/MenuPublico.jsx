@@ -1534,17 +1534,9 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
           </div>
         </div>
         {upsell === 'abierto' && (
-          <HojaOferta
-            titulo="¿Lo agrandamos? 🔥"
-            texto={sinAgrandar.length > 1
-              ? `Papas grandes y bebida premium para ${sinAgrandar.length === 2 ? 'las dos' : `las ${sinAgrandar.length}`} (${fmt(precioAgrandado)} cada una).`
-              : 'Papas grandes y bebida premium (Coca lata, Coca Zero, Té Lipton o Kinley).'}
-            imagen={producto.imagen_url}
-            nombre={`Agrandado papa y bebida${sinAgrandar.length > 1 ? ` ×${sinAgrandar.length}` : ''}`}
-            detalle={producto.nombre}
+          <HojaAgrandar
+            n={sinAgrandar.length}
             extra={precioAgrandado * sinAgrandar.length * qty}
-            si={`Sí, agrandalo · ${fmt(precioTotal + precioAgrandado * sinAgrandar.length * qty)}`}
-            no="No, así está bien"
             onSi={aceptarUpsell}
             onNo={() => { setUpsell('visto'); confirmar(true) }}
           />
@@ -1564,6 +1556,71 @@ function ProductoModal({ producto, onClose, onAgregar, abierto, reglasChoque = [
             onNo={() => { setOfertaVista('visto'); confirmar(true) }}
           />
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── «¿Lo agrandamos?» con fotos reales (Cesar, 24-nov-2026) ─────────
+// Antes → después: papa + Coca 300 ml  →  doble papa + Coca lata.
+// Imágenes recortadas sin fondo en /public/ofertas (agr-*.webp).
+const AGR_CSS = `
+.agr-velo{position:fixed;inset:0;background:rgba(17,12,8,.5);z-index:5000;display:flex;align-items:flex-end;justify-content:center}
+.agr-sh{background:#fff;width:min(520px,100%);border-radius:24px 24px 0 0;padding:10px 20px 22px;box-sizing:border-box;box-shadow:0 -6px 20px rgba(0,0,0,.2)}
+.agr-grab{width:36px;height:4px;border-radius:2px;background:#E2DED8;margin:0 auto 16px}
+.agr-sh h3{margin:0;font-size:22px;line-height:1.2;font-weight:800;letter-spacing:-.4px;color:#1A1410}
+.agr-sh p{margin:4px 0 16px;font-size:14px;color:#7A6F66}
+.agr-cmp,.agr-cap{display:grid;grid-template-columns:1fr 1.75fr;gap:10px;position:relative}
+.agr-t{position:relative;height:128px;border-radius:18px;background:#F5F2EE;display:flex;align-items:flex-end;justify-content:center;padding:0 12px 14px;overflow:hidden}
+.agr-t.up{background:#FFF3EF;box-shadow:inset 0 0 0 1.5px #E24B4A}
+.agr-t img{display:block;filter:drop-shadow(0 5px 5px rgba(60,30,10,.16))}
+.agr-a .pa{height:44px;margin-right:4px}.agr-a .bo{height:80px}
+.agr-b .pa1{height:50px;position:relative;z-index:1}.agr-b .pa2{height:50px;margin-left:-26px;transform:translateY(-6px)}.agr-b .la{height:90px;margin-left:8px;position:relative;z-index:2}
+.agr-cap{margin-top:8px}
+.agr-cap div{font-size:12.5px;line-height:1.3;color:#1A1410;font-weight:600}
+.agr-cap span{display:block;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:#A39A92;font-weight:700;margin-bottom:1px}
+.agr-cap .r span{color:#E24B4A}
+.agr-arr{position:absolute;left:calc((100% - 10px) * 0.3636 + 5px - 14px);top:50px;width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.14);display:grid;place-items:center;z-index:2}
+.agr-x2{position:absolute;top:10px;left:10px;font-size:11px;font-weight:800;color:#7A6F66;background:#fff;border-radius:999px;padding:2px 7px}
+.up .agr-x2{color:#E24B4A}
+.agr-cta{margin-top:18px;width:100%;height:54px;border:0;border-radius:16px;background:#E24B4A;color:#fff;font-family:inherit;font-size:16px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:space-between;padding:0 18px;cursor:pointer}
+.agr-cta b{font-weight:800;letter-spacing:-.2px}
+.agr-no{display:block;width:100%;margin-top:6px;height:40px;border:0;background:none;color:#7A6F66;font-family:inherit;font-size:14px;font-weight:500;cursor:pointer}
+.agr-b img{opacity:0;animation:agrIn .5s cubic-bezier(.2,.8,.2,1) forwards}
+.agr-b .pa2{animation-delay:.25s}.agr-b .pa1{animation-delay:.38s}.agr-b .la{animation-delay:.5s}
+.agr-arr svg{animation:agrNudge .6s ease .1s both}
+@keyframes agrIn{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
+@keyframes agrNudge{0%{transform:translateX(-4px);opacity:0}100%{transform:none;opacity:1}}
+`
+function HojaAgrandar({ n = 1, extra, onSi, onNo }) {
+  const x2 = n > 1 ? <span className="agr-x2">×{n}</span> : null
+  return (
+    <div className="agr-velo" onClick={onNo}>
+      <style>{AGR_CSS}</style>
+      <div className="agr-sh" onClick={e => e.stopPropagation()}>
+        <div className="agr-grab" />
+        <h3>¿Lo agrandamos?</h3>
+        <p>{n > 1 ? `Doble papa y lata fría para los ${n} combos.` : 'Te lo dejamos con el doble de papa y lata fría.'}</p>
+        <div className="agr-cmp">
+          <div className="agr-t agr-a">{x2}
+            <img className="pa" src="/ofertas/agr-papas.webp" alt="Papa" />
+            <img className="bo" src="/ofertas/agr-botella.webp" alt="Coca 300 ml" />
+          </div>
+          <div className="agr-arr">
+            <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 7h9M7.5 3l4 4-4 4" fill="none" stroke="#E24B4A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </div>
+          <div className="agr-t agr-b up">{x2}
+            <img className="pa1" src="/ofertas/agr-papas.webp" alt="Papa" />
+            <img className="pa2" src="/ofertas/agr-papas.webp" alt="" />
+            <img className="la" src="/ofertas/agr-lata.webp" alt="Coca lata" />
+          </div>
+        </div>
+        <div className="agr-cap">
+          <div><span>Tu combo</span>Papa · Coca 300 ml</div>
+          <div className="r"><span>Agrandado</span>Doble papa · Coca lata</div>
+        </div>
+        <button type="button" className="agr-cta" onClick={onSi}><span>Agrandar</span><b>+ {fmt(extra)}</b></button>
+        <button type="button" className="agr-no" onClick={onNo}>No, gracias</button>
       </div>
     </div>
   )
