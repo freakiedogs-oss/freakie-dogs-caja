@@ -1,0 +1,28 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Pedidos programados (17-nov-2026, Cesar)
+-- Aplicadas en Supabase como: pedidos_programados, pedidos_programados_crear_pedido,
+--   pedidos_programados_kds
+--
+-- delivery_clientes: + programado_para, programado_libera_at; estado nuevo 'programado'.
+-- Decisiones de Cesar: el cliente programa hoy o mañana (la torre hasta 7 días);
+-- pasa SOLO a cocina a la hora calculada; el efectivo se confirma igual que hoy.
+--
+-- crear_pedido_delivery(p): acepta p.programado_para (mínimo 1 hora — pedido de Cesar; el servidor
+--   acepta desde 55 min por el desfase del reloj —, hoy o mañana SV); torre_programar igual;
+--   no se combina con «Esperá y ahorrá».
+-- _programado_libera(id): programado_para − (ETA de _delivery_eta de la sucursal + 3 min)
+--   (para retiro en local: solo el tiempo de cocina).
+-- _confirmar_pago_interno(id, suc, metodo): el cuerpo de siempre de «Confirmar pago»
+--   (comanda, cobro online, descarga) sin sesión; agrega a la cuenta POS la nota
+--   «PROGRAMADO: entregar a las HH:MM · no antes».
+-- torre_confirmar_pago: si el pedido está programado y falta para su hora →
+--   estado 'programado' (sin comanda) y devuelve {programado, libera_at}.
+-- torre_programar(token, id, para|null), torre_programado_a_cocina(token, id).
+-- delivery_programados_tick(): pg_cron cada minuto; recalcula la hora de salida
+--   y manda a cocina lo que toca.
+-- torre_listar_pedidos / tracking_pedido / kds_cuando_preparar: traen programado_*.
+-- Pruebas (rollback): crear +2 h → recibida; confirmar → programado (sale 52 min
+--   antes); tick no lo suelta; con la hora cerca → preparando + nota en la cuenta;
+--   no se reprograma en cocina; 20 min y 3 días rechazados; programar manual desde
+--   la torre + «Mandar a cocina ya».
+-- ════════════════════════════════════════════════════════════════════

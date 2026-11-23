@@ -7,6 +7,7 @@ import PlanoEditor from './cajero/PlanoEditor'
 import PaxEditorModal from './cajero/PaxEditorModal'
 import { confirmAsync } from './confirmDialog'
 import { usePeyaIdObligatorio, normalizarIdPeya, PEYA_ID_MAX } from './peyaId'
+import SeAcaboCaja, { useSeAcaboConteo } from './SeAcaboCaja'
 
 // ──────────────────────────────────────────────
 // Constantes
@@ -100,6 +101,10 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
   // como siempre.
   const peyaIdObligatorio = usePeyaIdObligatorio(storeCode)
   const [peyaModal,    setPeyaModal]    = useState(null)      // { id, cliente } mientras se digita
+  // «Se acabó»: apagar productos del delivery web solo en esta sucursal (16-nov-2026)
+  const puedeSeAcabo = !MESERO_ROLES.includes(user.rol) && !['motorista', 'tablet', 'telefono', 'marketing'].includes(user.rol)
+  const [showSeAcabo,  setShowSeAcabo]  = useState(false)
+  const [seAcaboN,     setSeAcaboN]     = useSeAcaboConteo(puedeSeAcabo ? user : null, storeCode)
   const longPressRef   = useRef(null)
   const firstLoadRef   = useRef(true)   // el spinner solo en la 1ª carga; los refrescos son silenciosos
 
@@ -547,7 +552,8 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
                             el motorista le dice que cambió. */}
                         {(() => {
                           const m = { efectivo: '💵 Efectivo', tarjeta: '💳 Tarjeta',
-                                      transferencia: '🏦 Transferencia', link: '🔗 Link' };
+                                      transferencia: '🏦 Transferencia · ya pagó', link: '🔗 Link',
+                                      link_pago: '🔗 Link de pago · ya pagó' };
                           return c.delivery_metodo_pago
                             ? <> · <b style={{ color: '#4ade80' }}>
                                 {m[c.delivery_metodo_pago] || c.delivery_metodo_pago}
@@ -689,6 +695,20 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </button>
         )}
 
+        {puedeSeAcabo && (
+          <button className="poshome-quick-btn" style={{ '--qt-color': '#E62329', position: 'relative' }} onClick={() => setShowSeAcabo(true)}>
+            <span className="poshome-quick-icon"><Icon name="ban" size={22} /></span>
+            <span className="poshome-quick-label">Se acabó</span>
+            {seAcaboN > 0 && (
+              <span style={{
+                position: 'absolute', top: 4, right: 8, minWidth: 19, height: 19, padding: '0 5px',
+                borderRadius: 10, background: '#e63946', color: '#fff', fontSize: 11, fontWeight: 800,
+                display: 'grid', placeItems: 'center',
+              }}>{seAcaboN}</span>
+            )}
+          </button>
+        )}
+
         {!MESERO_ROLES.includes(user.rol) && onGoToHistorial && (
           <button className="poshome-quick-btn" style={{ '--qt-color': '#2dd4a8' }} onClick={onGoToHistorial}>
             <span className="poshome-quick-icon"><Icon name="list" size={22} /></span><span className="poshome-quick-label">Órdenes</span>
@@ -717,6 +737,11 @@ export default function POSHome({ user, onStartOrder, onLogout, onGoToKDS, onGoT
           </button>
         )}
       </div>
+
+      {showSeAcabo && (
+        <SeAcaboCaja user={user} storeCode={storeCode} storeName={storeName}
+          onClose={() => setShowSeAcabo(false)} onCambio={setSeAcaboN} />
+      )}
 
       {/* ── MODAL COBRO DE EVENTO ── */}
       {eventoModal && (

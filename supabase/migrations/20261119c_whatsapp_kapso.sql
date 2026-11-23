@@ -1,0 +1,8 @@
+-- WhatsApp vía Kapso (19-nov-2026). Aplicada con apply_migration (20261119c_whatsapp_kapso + 20261119d_wa_enviar).
+-- 1) whatsapp_mensajes: bitácora de mensajes que salen ('sale') y entran ('entra').
+--    Escribe /api/wa (Vercel) con service_role; lectura para authenticated.
+-- 2) wa_enviar(to, texto, motivo, pedido_id): pg_net → POST /api/wa?op=enviar con
+--    header x-fd-secret = app_secretos.wa_internal_secret (generado en la BD, nunca en el repo).
+--    Revocada a anon/authenticated.
+-- Ver api/wa.js para las variables de Vercel (KAPSO_API_KEY, KAPSO_PHONE_NUMBER_ID,
+-- KAPSO_WEBHOOK_SECRET, WA_INTERNAL_SECRET).

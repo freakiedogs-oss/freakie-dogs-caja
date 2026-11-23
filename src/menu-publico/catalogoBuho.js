@@ -398,6 +398,9 @@ export const NEGOCIO = {
 // ── Banner hero (slider superior) — imágenes reales BuhoPay ──
 const BANNER_IMG = 'https://admin.buhopay.com/media/'
 export const BANNERS = [
+  // Combos Monster (20-nov-2026, Cesar): banner animado (WebP) estilo atardecer neón «Freak City».
+  // `ms`: cuánto se queda en pantalla (la animación dura ~4 s, se deja correr completa 2 veces).
+  { id: 'freak-city-monster', imagen: '/banners/freak-city-monster.webp?v=2', ms: 8000 },  // v2: logo neón oficial «freak city COMBO»
   { id: 'banner-1', imagen: BANNER_IMG + '690fa882d99cf967162707.jpeg' },
   { id: 'banner-2', imagen: BANNER_IMG + '690fa88c23aa0765573933.jpeg' },
   { id: 'banner-3', imagen: BANNER_IMG + '690fa89539d09414957364.jpeg' },

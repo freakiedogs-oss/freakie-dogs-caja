@@ -17,10 +17,13 @@ export default function MapaEnVivo({ driver, cliente, nombre, paradas = [] }) {
   const mkCliente = useRef(null)
   const mkParadas = useRef([])
   const linea = useRef(null)
+  // Solo se encuadra solo al inicio: si el cliente hace zoom o mueve el mapa,
+  // las actualizaciones (cada 5 s) no le deben quitar la vista.
+  const encuadrado = useRef(false)
 
   useEffect(() => {
     if (map.current || !el.current) return
-    const m = L.map(el.current, { zoomControl: false, attributionControl: false })
+    const m = L.map(el.current, { zoomControl: true, attributionControl: false })
       .setView([driver.lat, driver.lng], 14)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m)
     map.current = m
@@ -56,9 +59,9 @@ export default function MapaEnVivo({ driver, cliente, nombre, paradas = [] }) {
       if (linea.current) linea.current.setLatLngs(pts)
       else linea.current = L.polyline(pts, { color: '#E63946', weight: 3, dashArray: '6,8', opacity: 0.7 }).addTo(m)
 
-      try { m.fitBounds(L.latLngBounds(pts).pad(0.3)) } catch { /* noop */ }
+      if (!encuadrado.current) { try { m.fitBounds(L.latLngBounds(pts).pad(0.3)); encuadrado.current = true } catch { /* noop */ } }
     } else {
-      m.setView([driver.lat, driver.lng], 15)
+      if (!encuadrado.current) { m.setView([driver.lat, driver.lng], 15); encuadrado.current = true }
     }
   }, [driver?.lat, driver?.lng, cliente?.lat, cliente?.lng, nombre, clave]) // eslint-disable-line react-hooks/exhaustive-deps
 

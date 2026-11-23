@@ -1,0 +1,14 @@
+-- 20261120b_wa_cerebro_claude (aplicada vía apply_migration el 20-nov-2026) + 20261120c (excluye bodega/Eventos)
+-- Resumen (el SQL completo vive en supabase_migrations del proyecto):
+--  * whatsapp_mensajes: + ia_sugerencia text, + ia_info jsonb (modelo, ms, tokens, error, usada).
+--  * app_secretos: wa_ia_modo ('auto' | 'borrador' | 'off'), wa_ia_modelo ('claude-haiku-5-5'),
+--    anthropic_api_key (la pega Cesar; nunca en el repo).
+--  * wa_bot_responder: las ramas 12 (saludo/menú genérico) y 13 («no entendí → consulto») devuelven 'ia': true.
+--    Todas las demás (quejas, reembolsos, facturas, estado del pedido, vuelto, horarios, FAQ...) siguen
+--    siendo reglas fijas: Claude NUNCA decide lo delicado.
+--  * wa_ia_contexto(tel) → jsonb (solo service_role): hora y saludo, sucursales con horario de hoy y
+--    abierto_ahora, wa_faq, menú con precios (menu_publico_cache), pedido activo y últimos 14 mensajes.
+--  * _wa_bot_trigger: si la rama es 'ia', el modo no es 'off' y hay API key → pg_net a /api/wa?op=ia
+--    (con la respuesta de la regla como respaldo). En 'borrador' la regla contesta y Claude solo deja
+--    su sugerencia en ia_sugerencia. Sin API key todo sigue exactamente como antes.
+-- Apagar el cerebro: update app_secretos set valor='off' where clave='wa_ia_modo';

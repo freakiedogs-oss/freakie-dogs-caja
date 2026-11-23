@@ -1,0 +1,23 @@
+-- ════════════════════════════════════════════════════════════════════
+-- «Se acabó» desde la caja (16-nov-2026, Cesar)
+-- Aplicada en Supabase como: caja_se_acabo_disponibilidad, caja_se_acabo_nombre_bonito
+-- (la lista usa nombre_producto(clave) en vez de min(nombre))
+--
+-- La cajera / gerente apaga en el delivery propio (menú web) un producto que se
+-- terminó, SOLO en su sucursal. Reusa producto_bloqueo / producto_bloqueo_cambio
+-- (los mismos de la torre → TabDisponibilidad). Caja y PedidosYa no cambian.
+--
+--   _caja_quien(p_usuario, p_store)            valida usuario activo; bloquea
+--        mesero/mesera/motorista/tablet/telefono/marketing; quien no sea
+--        superadmin/ejecutivo/admin solo puede su propio store_code.
+--   caja_disponibilidad_listar(p_usuario, p_store)
+--        → {sucursal, productos[clave,nombre,suelto,extra,en_combos,ultimos_cambios],
+--           bloqueos[clave,nombre,motivo,hasta,bloqueado_at,quien,cambios]}
+--   caja_disponibilidad_set(p_usuario, p_store, p_clave, p_bloquear,
+--        p_motivo default null, p_cambios jsonb default '[]')
+--        siempre «solo hoy»: vuelve mañana 6:00 a.m. SV.
+--
+-- Pruebas (rollback): apagar Queso Frito en M001 → M001 bloqueado, S003 no;
+-- otra sucursal rechazada; mesero rechazado; torre ve quién lo apagó; «Ya hay» lo prende.
+-- Frontend: src/pos/SeAcaboCaja.jsx + botón «Se acabó» en POSHome (con contador).
+-- ════════════════════════════════════════════════════════════════════

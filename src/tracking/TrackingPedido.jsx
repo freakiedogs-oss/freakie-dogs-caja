@@ -7,7 +7,8 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { db } from '../supabase'
 import EncuestaEntrega from './EncuestaEntrega'
 
-const MapaEnVivo = lazy(() => import('./MapaEnVivo'))
+// Mapa 3D (por defecto) + mapa normal de calles, con selector (19-nov-2026)
+const MapaSeguimiento = lazy(() => import('./MapaSeguimiento'))
 const Juego = lazy(() => import('./Juego'))
 // El bloque de pago del menú sirve igual acá: con un pedido ya creado cobra ese
 // en vez de crear uno nuevo.
@@ -32,6 +33,7 @@ export default function TrackingPedido() {
   const [token] = useState(() => new URLSearchParams(location.search).get('t') || '')
   const juegoRef = useRef(null)
   const tuvoParadas = useRef(false)
+  const estadoRef = useRef('')
   const [d, setD] = useState(null)
   const [error, setError] = useState('')
 
@@ -43,11 +45,19 @@ export default function TrackingPedido() {
       if (!vivo) return
       if (e) { setError('No pudimos cargar tu pedido'); return }
       if (!data?.ok) { setError('No encontramos ese pedido'); return }
+      estadoRef.current = data.estado
       setD(data)
     }
-    cargar()
-    const t = setInterval(cargar, 15000)
-    return () => { vivo = false; clearInterval(t) }
+    // En camino se refresca cada 5 s (el motorista manda señal cada ~4 s) para
+    // que el mapa se mueva fluido; el resto del tiempo, cada 15 s.
+    let t = null
+    const ciclo = async () => {
+      await cargar()
+      if (!vivo) return
+      t = setTimeout(ciclo, estadoRef.current === 'en_camino' ? 5000 : 15000)
+    }
+    ciclo()
+    return () => { vivo = false; clearTimeout(t) }
   }, [token])
 
   if (error) return <Marco><div className="tk-error">😕 {error}</div></Marco>
@@ -126,6 +136,28 @@ export default function TrackingPedido() {
           )}
         </div>
       )}
+      {/* Pedido programado (17-nov-2026): todavía no es hora de cocinarlo */}
+      {d.programado_para && ['recibida', 'programado'].includes(d.estado) && (() => {
+        const hm = (t) => new Date(t).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' })
+        const dia = new Date(d.programado_para).toLocaleDateString('es-SV', { timeZone: 'America/El_Salvador' })
+          === new Date().toLocaleDateString('es-SV', { timeZone: 'America/El_Salvador' }) ? 'hoy' : 'mañana'
+        const faltan = Math.max(0, Math.round((new Date(d.programado_para) - Date.now()) / 60000))
+        return (
+          <div style={{ margin: '12px 12px 0', background: '#EEEDFE', border: '1px solid #AFA9EC', color: '#26215C',
+                        borderRadius: 16, padding: 16, textAlign: 'center' }}>
+            <div style={{ fontSize: 32 }}>🕧</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>Pedido programado para {dia} a las {hm(d.programado_para)}</div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              {d.programado_libera_at
+                ? `Lo empezamos a preparar a las ${hm(d.programado_libera_at)} para que te llegue recién hecho.`
+                : 'Lo empezamos a preparar a la hora justa para que te llegue recién hecho.'}
+            </div>
+            <div style={{ display: 'inline-block', marginTop: 8, background: '#fff', borderRadius: 8, padding: '4px 10px', fontSize: 12.5, fontWeight: 700 }}>
+              Faltan {faltan >= 60 ? `${Math.floor(faltan / 60)} h ${faltan % 60} min` : `${faltan} min`}
+            </div>
+          </div>
+        )
+      })()}
       <div className="tk-hero">
         <div className="tk-hero-ic">{PASOS[paso].ic}</div>
         <h1 className="tk-hero-t">{PASOS[paso].t}</h1>
@@ -159,10 +191,12 @@ export default function TrackingPedido() {
       {/* Mapa en vivo mientras va en camino */}
       {enCamino && d.driver_lat && (
         <Suspense fallback={<div className="tk-mapa-ph">Cargando mapa…</div>}>
-          <MapaEnVivo
+          <MapaSeguimiento
             driver={{ lat: d.driver_lat, lng: d.driver_lng }}
             cliente={d.cliente_lat ? { lat: d.cliente_lat, lng: d.cliente_lng } : null}
+            tienda={d.sucursal_lat ? { lat: d.sucursal_lat, lng: d.sucursal_lng } : null}
             nombre={d.motorista}
+            sucursal={d.sucursal}
             paradas={paradas}
           />
         </Suspense>
@@ -200,6 +234,16 @@ export default function TrackingPedido() {
         </ul>
         {d.direccion && <div className="tk-dir">📍 {d.direccion}</div>}
         {d.sucursal && <div className="tk-dir">🏪 Sale de {d.sucursal}</div>}
+        {/* «Esperá y ahorrá» (16-nov-2026): le recordamos lo que eligió */}
+        {d.espera_ahorra && !entregado && (
+          <div style={{ marginTop: 8, background: '#EEF8EC', border: '1px solid #b7e4c4', color: '#2f5f27',
+                        borderRadius: 10, padding: '8px 10px', fontSize: 13 }}>
+            ⏳ Elegiste <b>Esperá y ahorrá</b>: ahorraste <b>{fmt(d.descuento)}</b>.
+            {d.espera_promesa_at && (
+              <> Llega a más tardar a las <b>{new Date(d.espera_promesa_at).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit' })}</b>.</>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Juego mientras espera (no cuando ya llegó) */}
@@ -211,6 +255,7 @@ export default function TrackingPedido() {
         </div>
       )}
 
+      <RegaloBienvenida token={token} estado={d.estado} />
       {entregado && <CuponGanado token={token} />}
 
       {entregado && <EncuestaEntrega token={token} inicial={d.calificacion} />}
@@ -268,6 +313,74 @@ function CuponGanado({ token }) {
                            padding: '9px 16px', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
         Pedir otra vez
       </a>
+    </div>
+  )
+}
+
+// Regalo de bienvenida (17-nov-2026): primer pedido → Queso Frito gratis en el
+// siguiente. Antes de entregar se promete; al entregar se muestra ganado con
+// la opción de que le avisemos por WhatsApp antes de que venza.
+function RegaloBienvenida({ token, estado }) {
+  const [r, setR] = useState(null)
+  const [aviso, setAviso] = useState(true)
+  useEffect(() => {
+    let vivo = true
+    db.rpc('regalo_de_pedido', { p_token: token })
+      .then(({ data }) => { if (vivo && data) { setR(data); if (data.aviso_ok != null) setAviso(!!data.aviso_ok) } })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [token, estado])
+  if (!r) return null
+  const valor = `$${Number(r.valor).toFixed(2)}`
+  const img = r.imagen_url
+    ? <img src={r.imagen_url} alt="" style={{ width: 120, height: 90, objectFit: 'cover', borderRadius: 12, margin: '6px auto' }} />
+    : <div style={{ fontSize: 46 }}>🧀</div>
+  if (r.estado === 'usado_aqui') {
+    return (
+      <div style={{ margin: '14px 12px 4px', border: '1px solid #F09595', background: '#FCEBEB', color: '#501313',
+                    borderRadius: 14, padding: 12, textAlign: 'center', fontSize: 13.5 }}>
+        🎁 Tu <b>{r.nombre}</b> de regalo va en este pedido · ahorraste <b>{valor}</b> 🧀
+      </div>
+    )
+  }
+  if (r.estado === 'pendiente') {
+    return (
+      <div style={{ margin: '14px 12px 4px', border: '1px dashed #E63946', background: '#FCEBEB', color: '#501313',
+                    borderRadius: 14, padding: 12, textAlign: 'center', fontSize: 13 }}>
+        🎁 <b>¡Es tu primer pedido!</b> Cuando te llegue, te regalamos un <b>{r.nombre}</b> para tu próxima compra
+        <div style={{ fontSize: 11.5, opacity: .85, marginTop: 3 }}>Válido {r.dias_validez} días en pedidos desde ${Number(r.minimo).toFixed(2)}</div>
+      </div>
+    )
+  }
+  if (r.estado !== 'ganado') return null
+  const vence = new Date(r.vence_at)
+  const fecha = `${vence.getDate()} de ${MESES[vence.getMonth()]}`
+  const cambiarAviso = (v) => {
+    setAviso(v)
+    db.rpc('regalo_aviso', { p_token: token, p_ok: v }).then(() => {}, () => {})
+  }
+  return (
+    <div style={{ margin: '14px 12px 4px', border: '2px dashed #E63946', background: '#fff', color: '#2C2C2A',
+                  borderRadius: 16, padding: 16, textAlign: 'center' }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: '#E63946', letterSpacing: .5 }}>🎁 REGALO DE BIENVENIDA</div>
+      {img}
+      <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.25 }}>Tu próximo {r.nombre}<br />va por nuestra cuenta</div>
+      <div style={{ fontSize: 12.5, color: '#666', marginTop: 4 }}>
+        Valorado en <b>{valor}</b> · en tu siguiente pedido desde ${Number(r.minimo).toFixed(2)}
+      </div>
+      <div style={{ display: 'inline-block', marginTop: 8, background: '#FAEEDA', color: '#633806', borderRadius: 8,
+                    padding: '4px 10px', fontSize: 12.5, fontWeight: 700 }}>
+        ⏳ Válido {r.dias} días · hasta el {fecha}
+      </div>
+      <a href="/" style={{ display: 'block', marginTop: 12, background: '#E63946', color: '#fff', borderRadius: 12,
+                           padding: '12px 16px', fontWeight: 800, fontSize: 15, textDecoration: 'none' }}>
+        Pedir otra vez 🍔
+      </a>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, fontSize: 12.5, color: '#444', cursor: 'pointer' }}>
+        <input type="checkbox" checked={aviso} onChange={e => cambiarAviso(e.target.checked)} />
+        Avisame por WhatsApp antes de que venza
+      </label>
+      <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>Queda guardado con tu número: se agrega solito a tu próximo pedido.</div>
     </div>
   )
 }

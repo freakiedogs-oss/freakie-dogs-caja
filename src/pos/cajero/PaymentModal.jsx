@@ -35,12 +35,14 @@ const DOC_MH = { 'DUI': '13', 'NIT': '36', 'Pasaporte': '03', 'Carnet de residen
 const validEmail = s => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(
   (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''))
 
-export default function PaymentModal({ items, total, storeCode, tipo, onConfirm, onComplete, onPrintFactura, onClose, saving, peyaRef = null, peyaIdObligatorio = false }) {
+export default function PaymentModal({ items, total, storeCode, tipo, onConfirm, onComplete, onPrintFactura, onClose, saving, peyaRef = null, peyaIdObligatorio = false, metodoInicial = null }) {
   const toast = useToast()
   // Hifumi (tipo 'delivery_app'): el cliente le paga a Hifumi y Hifumi liquida por
   // depósito. Es cuenta por cobrar como PeYa: no entra dinero a la caja, sin DTE.
   const esHifumi = tipo === 'delivery_app'
-  const [metodo, setMetodo]     = useState(esHifumi ? 'hifumi' : 'efectivo')
+  const [metodo, setMetodo]     = useState(esHifumi ? 'hifumi' : (metodoInicial || 'efectivo'))
+  // La torre ya confirmó transferencia/link (llega un instante después de abrir).
+  useEffect(() => { if (metodoInicial && !esHifumi) setMetodo(metodoInicial) }, [metodoInicial, esHifumi])
   const [hifumiId, setHifumiId] = useState(esHifumi ? (peyaRef || '') : '')
   const hifumiIdNorm = (hifumiId || '').trim().toUpperCase().replace(/^#/, '')
   const faltaHifumiId = metodo === 'hifumi' && !hifumiIdNorm
@@ -333,6 +335,12 @@ export default function PaymentModal({ items, total, storeCode, tipo, onConfirm,
           )}
         </div>
 
+        {metodoInicial && !esHifumi && (
+          <div style={{ background: '#0b2340', border: '1px solid #1d4ed8', color: '#bfdbfe', borderRadius: 8,
+                        padding: '7px 10px', fontSize: 12, marginBottom: 8 }}>
+            La central confirmó que el cliente ya pagó por {metodoInicial === 'link_pago' ? 'link de pago' : 'transferencia'}.
+          </div>
+        )}
         {/* Método de pago */}
         <div className="pos-method-tabs" style={{ flexWrap: 'wrap' }}>
           {(esHifumi ? ['hifumi'] : tipo === 'evento' ? ['link_pago','transferencia','tarjeta','efectivo','mixto'] : ['efectivo','tarjeta','link_pago','transferencia','mixto','pedidos_ya']).map(m => (

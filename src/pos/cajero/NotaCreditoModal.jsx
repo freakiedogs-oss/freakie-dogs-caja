@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { db } from '../../supabase'
 import { useToast } from '../../hooks/useToast'
+import { totalesNetos } from '../../lib/dteNeto'
 
 /**
  * NotaCreditoModal — Emitir NC (tipo 05) contra un DTE existente
@@ -66,10 +67,11 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
 
     try {
       // Build NC items — precios netos (sin IVA) porque NC tipo 05 es como CCF
-      const ncItems = itemsSeleccionados.map(it => ({
+      const netos = totalesNetos(itemsSeleccionados.map(it => ({ precio: precioCobrado(it), cantidad: it.cantidadNC })))
+      const ncItems = itemsSeleccionados.map((it, i) => ({
         descripcion: it.nombre,
         cantidad: it.cantidadNC,
-        precioUni: Math.round((precioCobrado(it) / 1.13) * 100) / 100,
+        precioUni: netos.precios[i],
         codigo: it.menu_item_id || null,
       }))
 
@@ -112,7 +114,7 @@ export default function NotaCreditoModal({ cuenta, onClose, onSuccess }) {
         documentoRelacionado: docRel,
         receptor,
         condicionOperacion: 1,
-        pagos: [{ codigo: '01', montoPago: Math.round(totalNC / 1.13 * 100) / 100 + Math.round(totalNC / 1.13 * 0.13 * 100) / 100, referencia: null, plazo: null, periodo: null }],
+        pagos: [{ codigo: '01', montoPago: netos.total, referencia: null, plazo: null, periodo: null }],
       }
 
       const res = await fetch(`${DTE_PROXY_BASE}/emit-nota-credito`, {

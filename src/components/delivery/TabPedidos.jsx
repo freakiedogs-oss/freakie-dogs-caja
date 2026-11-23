@@ -13,6 +13,8 @@ import { URL_DELIVERY } from '../../config';
 // Leaflet pesa ~150 KB: se descarga solo si Karina abre el mapa de asignación.
 const MapaAsignacion = lazy(() => import('./MapaAsignacion'));
 import RutasEnCurso from './RutasEnCurso';
+import MotoristasSenal from './MotoristasSenal';
+import MotoristasEsperando from './MotoristasEsperando';
 import AvisoClienteBoton from './AvisoClienteBoton';
 
 const TOKEN_KEY = 'freakie_torre_token';
@@ -22,6 +24,51 @@ const c = {
   blue: '#60a5fa', text: '#f0f0f0', dim: '#8a8a8a',
 };
 const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
+
+// ── Copiar para WhatsApp (16-nov-2026) ───────────────────────────────
+// Cuando la app del motorista falla, Cesar/Karina le mandan el pedido por
+// WhatsApp. Junta lo que el motorista necesita en un solo texto.
+const NOMBRE_PAGO = { efectivo: 'EFECTIVO', tarjeta: 'TARJETA', transferencia: 'TRANSFERENCIA', link_pago: 'LINK DE PAGO' };
+const modsTxt = (ms) => (ms || []).map(m => m.nombre).filter(Boolean).join(', ');
+export function textoWhatsApp(p) {
+  const L = [];
+  const suc = p.sucursal_nombre || p.ruteo_sugerido?.nombre;
+  L.push(`*Pedido ${p.numero_orden}*${suc ? ` · sale de ${suc}` : ''}`);
+  L.push(`Cliente: ${p.cliente_nombre || '—'}`);
+  const tel = String(p.cliente_telefono || '').replace(/\D/g, '');
+  if (tel) L.push(`Tel: ${p.cliente_telefono} · wa.me/503${tel.slice(-8)}`);
+  for (const it of (Array.isArray(p.items) ? p.items : [])) {
+    const m = modsTxt(it.modificadores);
+    L.push(`${it.cantidad || 1}x ${it.nombre}${m ? ` (${m})` : ''}`);
+    for (const comp of (it.componentes || [])) {
+      const cm = modsTxt(comp.modificadores);
+      L.push(`   - ${comp.nombre}${cm ? ` (${cm})` : ''}`);
+    }
+    if (it.nota) L.push(`   Nota: ${it.nota}`);
+  }
+  L.push(`Total: ${fmt(p.total)}`);
+  const metodo = NOMBRE_PAGO[p.metodo_pago] || String(p.metodo_pago || 'efectivo').toUpperCase();
+  if (p.pagado_online) L.push(`Pago: ${metodo} · *YA PAGÓ, NO COBRAR*`);
+  else if (p.metodo_pago === 'efectivo' && Number(p.paga_con) > 0) {
+    const v = Math.max(0, Number(p.paga_con) - Number(p.total));
+    L.push(`Pago: EFECTIVO · paga con ${fmt(p.paga_con)} → *llevar ${fmt(v)} de vuelto*`);
+  } else L.push(`Pago: ${metodo} · cobrar ${fmt(p.total)}`);
+  if (p.cliente_direccion) L.push(`Dirección: ${p.cliente_direccion}`);
+  if (p.notas_cliente) L.push(`Notas: ${p.notas_cliente}`);
+  if (p.cliente_lat != null && p.cliente_lng != null) {
+    L.push(`Mapa: https://maps.google.com/?q=${Number(p.cliente_lat).toFixed(6)},${Number(p.cliente_lng).toFixed(6)}`);
+  }
+  return L.join('\n');
+}
+async function copiarTexto(t) {
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch {
+    const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'absolute'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch { /* nada */ }
+    document.body.removeChild(ta); return ok;
+  }
+}
 
 // ── Detalle de lo que pidió el cliente ───────────────────────────────
 // Karina necesita verlo sin salir de la Torre: para responder dudas por
@@ -206,7 +253,7 @@ function useEsCompu() {
 // ── ENTREGADOS DE HOY ─────────────────────────────────────────────────
 // Cierra el ciclo: una vez entregado el pedido, muestra dónde se fue el tiempo.
 // Es la única vista que permite comparar cocina contra despacho contra calle.
-function FranjaEntregados({ entregados, abierto, onToggle }) {
+function FranjaEntregados({ entregados, abierto, onToggle, ocupado, onRegresar }) {
   const prom = (k) => {
     const vals = entregados.map(e => e.etapas?.[k]).filter(v => v != null);
     return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
@@ -272,6 +319,14 @@ function FranjaEntregados({ entregados, abierto, onToggle }) {
                         {e.total_min != null ? `${e.total_min} min` : '—'}
                       </span>
                       <span style={{ fontSize: 10.5, color: c.dim }}>entregado {hora(e.entregado_at)}</span>
+                      {/* Se marcó entregado por error (16-nov-2026): vuelve a En ruta
+                          con su motorista; se le borra el viaje del bono. */}
+                      {onRegresar && (
+                        <button disabled={ocupado === e.id} onClick={() => onRegresar(e)}
+                          style={{ ...btn('#242424'), color: '#ccc', fontSize: 11, padding: '4px 8px', border: '1px solid #3a3a3a' }}>
+                          {ocupado === e.id ? '…' : '◀ Regresar a En ruta'}
+                        </button>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 5 }}>
                       {ETAPAS.map(et => {
@@ -424,11 +479,13 @@ export default function TabPedidos({ show = () => {} }) {
     if (!suc) { show('⚠️ Elegí de qué sucursal sale el pedido'); return; }
     setOcupado(p.id);
     try {
-      const { error } = await db.rpc('torre_confirmar_pago', {
+      const { data, error } = await db.rpc('torre_confirmar_pago', {
         p_token: token, p_delivery_id: p.id, p_sucursal_id: suc, p_metodo: p.metodo_pago || 'efectivo',
       });
       if (error) throw error;
-      show('✅ Pago confirmado — va a cocina');
+      show(data?.programado
+        ? `🗓️ Confirmado — pasa solo a cocina a las ${horaSV(data.libera_at)}`
+        : '✅ Pago confirmado — va a cocina');
       await cargar(token);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
     finally { setOcupado(null); }
@@ -525,6 +582,52 @@ export default function TabPedidos({ show = () => {} }) {
     finally { setOcupado(null); }
   };
 
+  // Cambiar cómo pagó el cliente (16-nov-2026). Transferencia / link = ya pagó:
+  // el motorista y la caja lo ven como «no cobrar» y la caja abre el cobro con
+  // ese método. Solo mientras la caja no lo haya cobrado (el servidor lo valida).
+  const cambiarPago = async (p, metodo) => {
+    const nom = NOMBRE_PAGO[metodo] || metodo;
+    const pagado = metodo === 'transferencia' || metodo === 'link_pago';
+    if (!window.confirm(`¿${p.numero_orden} se pagó con ${nom.toLowerCase()}?` +
+        (pagado ? '\n\nEl motorista y la caja lo van a ver como YA PAGADO (no cobrar).' : ''))) return false;
+    setOcupado(p.id);
+    try {
+      const { data, error } = await db.rpc('torre_cambiar_pago', { p_token: token, p_delivery_id: p.id, p_metodo: metodo });
+      if (error) throw error;
+      show(`💳 ${p.numero_orden}: ${data?.nombre || nom}${data?.salio_de_sin_pagar ? ' — pasó a «Por cobrar», confirmalo para mandarlo a cocina' : ''}`);
+      await cargar();
+      return true;
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo cambiar el pago')); return false; }
+    finally { setOcupado(null); }
+  };
+
+  // Pedidos programados (17-nov-2026): para una hora más tarde. No van a
+  // «Por cobrar» sino a su franja; pasan solos a cocina a la hora calculada.
+  const programar = async (p, iso) => {
+    setOcupado(p.id);
+    try {
+      const { error } = await db.rpc('torre_programar', { p_token: token, p_delivery_id: p.id, p_para: iso });
+      if (error) throw error;
+      show(iso ? `🗓️ ${p.numero_orden} programado para las ${horaSV(iso)}` : `${p.numero_orden} ya no está programado`);
+      await cargar();
+      return true;
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo programar')); return false; }
+    finally { setOcupado(null); }
+  };
+  const programadoACocina = async (p) => {
+    if (!window.confirm(p.tipo === 'para_llevar'
+      ? `¿${p.cliente_nombre || 'El cliente'} ya llegó?\n\nSe manda ${p.numero_orden} a cocina ahora (iba a pasar a las ${horaSV(p.programado_para)}).`
+      : `¿Mandar ${p.numero_orden} a cocina ya?\n\nEstaba programado para las ${horaSV(p.programado_para)}.`)) return;
+    setOcupado(p.id);
+    try {
+      const { error } = await db.rpc('torre_programado_a_cocina', { p_token: token, p_delivery_id: p.id });
+      if (error) throw error;
+      show(`🍳 ${p.numero_orden} va a cocina`);
+      await cargar();
+    } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
+    finally { setOcupado(null); }
+  };
+
   const marcarEnCamino = async (p) => {
     setOcupado(p.id);
     try {
@@ -557,9 +660,12 @@ export default function TabPedidos({ show = () => {} }) {
         p_token: token, p_delivery_id: p.id, p_motorista_id: mid });
       if (error) throw error;
       // El servidor dice si fue un cambio, para que quede claro qué pasó
-      show(data?.reasignado
+      const dsel = drivers.find(x => x.id === mid);
+      const sinSenal = dsel && dsel.sin_senal_min >= 10;
+      show((data?.reasignado
         ? `🔄 ${p.numero_orden}: pasó de ${data.anterior} a ${data.motorista}`
-        : `🛵 ${data?.motorista || 'Motorista'} asignado`);
+        : `🛵 ${data?.motorista || 'Motorista'} asignado`)
+        + (sinSenal ? ` · 📵 está sin señal: lo verá cuando se reconecte` : ''));
       setAsignSel(s => ({ ...s, [p.id]: '' }));
       await cargar(token);
     } catch (e) { show('❌ ' + (e.message || 'No se pudo')); }
@@ -633,13 +739,15 @@ export default function TabPedidos({ show = () => {} }) {
   // minutos en pasar a retirar no es un problema que ella tenga que resolver.
   // El retiro IMPAGO sí se queda: ese hay que cobrarlo.
   const esRetiroPagado = (p) => p.tipo === 'para_llevar' && p.pagado_online;
-  const porEstado = (k) => pedidos.filter(p => p.estado === k && !esRetiroPagado(p));
+  const esProgramado = (p) => !!p.programado_para && ['recibida', 'programado'].includes(p.estado);
+  const porEstado = (k) => pedidos.filter(p => p.estado === k && !esRetiroPagado(p) && !esProgramado(p));
+  const programados = pedidos.filter(esProgramado).sort((a, b) => new Date(a.programado_para) - new Date(b.programado_para));
   const retirosPagados = pedidos.filter(esRetiroPagado);
   const totalCol = (k) => porEstado(k).reduce((s, p) => s + Number(p.total || 0), 0);
   const accesorios = { ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                        reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                        asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago, programar,
                    // Traslado de sucursal: el estado vive en TabPedidos pero el boton
                    // se pinta dentro de <Tarjeta>, asi que tiene que viajar por props.
                    trasladando, setTrasladando, trasSel, setTrasSel,
@@ -701,6 +809,11 @@ export default function TabPedidos({ show = () => {} }) {
             <button onClick={asignarMandado} style={{ ...btn('#f97316'), marginLeft: 'auto' }}>Asignar</button>
           </div>
         </div>
+      )}
+
+      {!verHistorial && programados.length > 0 && (
+        <FranjaProgramados lista={programados} ocupado={ocupado} confirmar={confirmar} programar={programar}
+                           aCocina={programadoACocina} sucursalDe={sucursalDe} />
       )}
 
       {verHistorial ? (
@@ -787,6 +900,8 @@ export default function TabPedidos({ show = () => {} }) {
       )}
 
       {/* Viajes con su orden de entrega automático (7-nov-2026) */}
+      <MotoristasSenal token={token} />
+      <MotoristasEsperando token={token} onCambio={() => cargar(token)} />
       <RutasEnCurso token={token} show={show} />
 
       {/* Mapa para asignar viendo dónde está cada cosa. Carga Leaflet solo
@@ -829,6 +944,18 @@ export default function TabPedidos({ show = () => {} }) {
                             fontSize: 11.5, textDecoration: 'none' }}>
                   🔗 Link para que lo pague
                 </a>
+                {/* La tarjeta no pasó y el cliente pagó por otro lado: se marca
+                    pagado y pasa a «Por cobrar» para confirmarlo y mandarlo a cocina. */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
+                  <button disabled={ocupado === p.id} onClick={() => cambiarPago(p, 'transferencia')}
+                    style={{ ...btn('#0b2340', '#bfdbfe'), border: '1px solid #3b82f6', fontSize: 11, padding: 6 }}>
+                    🏦 Pagó por transferencia
+                  </button>
+                  <button disabled={ocupado === p.id} onClick={() => cambiarPago(p, 'link_pago')}
+                    style={{ ...btn('#222'), border: '1px solid #444', fontSize: 11, padding: 6 }}>
+                    🔗 Pagó con link
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -873,6 +1000,8 @@ export default function TabPedidos({ show = () => {} }) {
 
       <FranjaEntregados
         entregados={entregados}
+        ocupado={ocupado}
+        onRegresar={(e) => moverEtapa({ ...e, estado: 'entregada' }, 'atras')}
         abierto={entregadosAbierto}
         onToggle={() => setEntregadosAbierto(v => {
           localStorage.setItem('torre_entregados_abierto', v ? '0' : '1');
@@ -914,11 +1043,159 @@ function Historial({ historial }) {
   );
 }
 
+// ── Pedidos programados (17-nov-2026) ──
+const horaSV = (t) => t ? new Date(t).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' }) : '';
+const diaSV = (t) => {
+  const f = (x) => new Date(x).toLocaleDateString('es-SV', { timeZone: 'America/El_Salvador' });
+  return f(t) === f(Date.now()) ? 'hoy' : f(t) === f(Date.now() + 86400000) ? 'mañana' : f(t);
+};
+const faltaTxt = (t) => {
+  const m = Math.round((new Date(t) - Date.now()) / 60000);
+  if (m <= 0) return 'ya';
+  return m >= 60 ? `en ${Math.floor(m / 60)} h ${m % 60} min` : `en ${m} min`;
+};
+// Selector simple: día (hoy/mañana/pasado) + hora. Devuelve ISO.
+function ElegirHora({ onListo, ocupado, inicial }) {
+  const sv = new Date(Date.now() - 6 * 3600 * 1000);
+  const ini = inicial ? new Date(new Date(inicial).getTime() - 6 * 3600 * 1000) : null;
+  const [dia, setDia] = useState(() => ini ? Math.round((Date.UTC(ini.getUTCFullYear(), ini.getUTCMonth(), ini.getUTCDate()) - Date.UTC(sv.getUTCFullYear(), sv.getUTCMonth(), sv.getUTCDate())) / 86400000) : 0);
+  const [hora, setHora] = useState(() => ini ? `${String(ini.getUTCHours()).padStart(2, '0')}:${String(ini.getUTCMinutes()).padStart(2, '0')}` : '');
+  const iso = () => {
+    if (!/^\d{2}:\d{2}$/.test(hora)) return null;
+    const [h, m] = hora.split(':').map(Number);
+    return new Date(Date.UTC(sv.getUTCFullYear(), sv.getUTCMonth(), sv.getUTCDate() + dia, h + 6, m)).toISOString();
+  };
+  return (
+    <div style={{ marginTop: 6, background: '#181818', border: '1px solid #333', borderRadius: 8, padding: 8 }}>
+      <div style={{ fontSize: 11, color: c.dim, marginBottom: 6 }}>¿Para qué hora lo quiere el cliente?</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {['Hoy', 'Mañana', 'Pasado'].map((t, i) => (
+          <button key={t} onClick={() => setDia(i)}
+            style={{ ...btn(dia === i ? '#4c3d8f' : '#222'), fontSize: 11.5, padding: '6px 9px', border: '1px solid #444' }}>{t}</button>
+        ))}
+        <input type="time" value={hora} onChange={e => setHora(e.target.value)} step={300}
+               style={{ background: '#1e1e1e', border: '1px solid #444', color: c.text, borderRadius: 7, padding: '5px 7px', fontSize: 13 }} />
+        <button disabled={ocupado || !iso()} onClick={() => onListo(iso())}
+          style={{ ...btn('#7c3aed'), fontSize: 11.5, padding: '6px 10px', opacity: iso() ? 1 : .5 }}>Programar</button>
+      </div>
+    </div>
+  );
+}
+function FranjaProgramados({ lista, ocupado, confirmar, programar, aCocina, sucursalDe }) {
+  const [editando, setEditando] = useState(null);
+  return (
+    <div style={{ marginBottom: 14, background: c.panel, border: `1px solid ${c.border}`, borderTop: '2px solid #a78bfa', borderRadius: 12, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 14 }}>🗓️</span>
+        <span style={{ fontWeight: 800, fontSize: 13.5 }}>Programados</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{lista.length}</span>
+        <span style={{ fontSize: 11.5, color: c.dim }}>· pasan solos a cocina a la hora justa · no cuentan como atrasados</span>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {lista.map(p => {
+          const porConfirmar = p.estado === 'recibida';
+          return (
+            <div key={p.id} style={{ ...tarjeta, minWidth: 230, flex: '0 1 280px', borderLeft: '3px solid #a78bfa' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <b style={{ fontSize: 12.5 }}>{p.numero_orden}</b>
+                <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, color: '#c4b5fd' }}>
+                  para {diaSV(p.programado_para) === 'hoy' ? '' : diaSV(p.programado_para) + ' '}{horaSV(p.programado_para)}
+                </span>
+              </div>
+              <div style={{ fontSize: 13.5, marginTop: 3 }}>{p.cliente_nombre || 'Cliente'}</div>
+              <div style={{ fontSize: 11.5, color: c.dim }}>
+                {fmt(p.total)} · {p.pagado_online ? 'pagado' : p.metodo_pago}{p.sucursal_nombre ? ` · ${p.sucursal_nombre}` : ''}{p.tipo === 'para_llevar' ? ' · retira en local' : ''}
+              </div>
+              {porConfirmar ? (
+                <>
+                  <div style={{ marginTop: 6, background: '#2a2208', border: '1px solid #6b5412', color: '#fde68a', borderRadius: 6, padding: '5px 7px', fontSize: 11.5 }}>
+                    Falta confirmar el pedido{sucursalDe(p) ? '' : ' (y la sucursal)'} · queda guardado hasta la hora
+                  </div>
+                  <button disabled={ocupado === p.id} onClick={() => confirmar(p)}
+                    style={{ ...btn(c.green, '#04210f'), width: '100%', marginTop: 6, fontSize: 12 }}>
+                    {ocupado === p.id ? '…' : '✅ Confirmar (queda programado)'}
+                  </button>
+                </>
+              ) : (
+                <div style={{ marginTop: 6, background: '#221b38', border: '1px solid #4c3d8f', color: '#ddd6fe', borderRadius: 6, padding: '5px 7px', fontSize: 11.5 }}>
+                  {p.tipo === 'para_llevar' && <>🏃 El cliente pasa a las <b>{horaSV(p.programado_para)}</b><br /></>}
+                  Pasa solo a cocina a las <b>{horaSV(p.programado_libera_at)}</b> · {faltaTxt(p.programado_libera_at)}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                {!porConfirmar && (
+                  <button disabled={ocupado === p.id} onClick={() => aCocina(p)}
+                    style={p.tipo === 'para_llevar'
+                      ? { ...btn(c.green, '#04210f'), fontSize: 11.5, padding: '5px 10px' }
+                      : { ...btn('#242424'), color: c.text, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>
+                    {p.tipo === 'para_llevar' ? '🏃 Ya llegó · a cocina' : '🍳 Mandar a cocina ya'}</button>
+                )}
+                <button onClick={() => setEditando(editando === p.id ? null : p.id)}
+                  style={{ ...btn('#242424'), color: c.text, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>🕒 Cambiar hora</button>
+                <button disabled={ocupado === p.id} onClick={() => window.confirm(`¿Quitar la programación de ${p.numero_orden}?`) && programar(p, null)}
+                  style={{ ...btn('#242424'), color: c.dim, fontSize: 11, padding: '5px 8px', border: '1px solid #444' }}>Quitar</button>
+              </div>
+              {editando === p.id && (
+                <ElegirHora ocupado={ocupado === p.id} inicial={p.programado_para}
+                            onListo={async (iso) => { if (await programar(p, iso)) setEditando(null); }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Copiar para WhatsApp + Cambiar pago (16-nov-2026) ──
+function PagoYCopiar({ p, ocupado, cambiarPago, show, programar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [progAbierto, setProgAbierto] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const pagoWeb = p.pagado_online && !p.pago_confirmado_at;   // tarjeta n1co: no se toca
+  const OPS = [['transferencia', '🏦 Transferencia'], ['link_pago', '🔗 Link de pago'],
+               ['tarjeta', '💳 Tarjeta (POS)'], ['efectivo', '💵 Efectivo']];
+  const mini = { ...btn('#242424'), color: c.text, fontSize: 11.5, padding: '6px 9px', border: '1px solid #3a3a3a' };
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button style={mini} onClick={async () => {
+          const ok = await copiarTexto(textoWhatsApp(p));
+          if (ok) { setCopiado(true); setTimeout(() => setCopiado(false), 2000); } else show('❌ No se pudo copiar');
+        }}>{copiado ? '✓ Copiado' : '📋 Copiar para WhatsApp'}</button>
+        {!pagoWeb && (
+          <button style={mini} onClick={() => setAbierto(a => !a)}>💳 Cambiar pago {abierto ? '▴' : '▾'}</button>
+        )}
+        {programar && p.estado === 'recibida' && !p.programado_para && (
+          <button style={mini} onClick={() => setProgAbierto(a => !a)}>🗓️ Programar {progAbierto ? '▴' : '▾'}</button>
+        )}
+      </div>
+      {progAbierto && <ElegirHora ocupado={ocupado === p.id} onListo={async (iso) => { if (await programar(p, iso)) setProgAbierto(false); }} />}
+      {abierto && !pagoWeb && (
+        <div style={{ marginTop: 6, background: '#181818', border: '1px solid #333', borderRadius: 8, padding: 8 }}>
+          <div style={{ fontSize: 11, color: c.dim, marginBottom: 6 }}>¿Cómo pagó el cliente? (solo antes de que la caja lo cobre)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {OPS.map(([k, t]) => (
+              <button key={k} disabled={ocupado === p.id || p.metodo_pago === k}
+                onClick={async () => { if (await cambiarPago(p, k)) setAbierto(false); }}
+                style={{ ...btn(p.metodo_pago === k ? '#0b2340' : '#222'), fontSize: 11.5, padding: 7,
+                         border: `1px solid ${p.metodo_pago === k ? '#3b82f6' : '#444'}`,
+                         color: p.metodo_pago === k ? '#bfdbfe' : c.text, opacity: p.metodo_pago === k ? .9 : 1 }}>
+                {t}{p.metodo_pago === k ? ' ✓' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tarjeta de pedido ──
 function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, sucursalSugerida, sucSel, setSucSel,
                    reasignando, setReasignando, cancelando, setCancelando, cancelar, MOTIVOS_CANCELA,
                    asignSel, setAsignSel, drivers, sucursales, waLink, trackUrl, show,
-                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa,
+                   marcarEnCamino, marcarEntregado, marcarParaLlevar, moverEtapa, cambiarPago, programar,
                    trasladando, setTrasladando, trasSel, setTrasSel,
                    trasMotivo, setTrasMotivo, trasladar,
                    cancelaMotivo, setCancelaMotivo }) {
@@ -946,6 +1223,19 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
       {previas && (
         <div style={{ fontSize: 10, color: c.dim, marginTop: 2 }}>{previas}</div>
       )}
+      {/* «Esperá y ahorrá» (16-nov-2026): el cliente aceptó esperar más con
+          descuento. Va después de los normales, pero su promesa se cumple. */}
+      {p.espera_ahorra && (() => {
+        const minRest = p.espera_promesa_at ? Math.round((new Date(p.espera_promesa_at) - Date.now()) / 60000) : null;
+        const tarde = minRest != null && minRest < 15;
+        return (
+          <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, borderRadius: 6, padding: '3px 7px', display: 'inline-block',
+                        background: tarde ? '#2a1414' : '#0d2b18', color: tarde ? '#fca5a5' : '#86efac',
+                        border: `1px solid ${tarde ? c.red : '#166534'}` }}>
+            ⏳ Esperá y ahorrá{minRest != null && (minRest > 0 ? ` · prometido en ${minRest} min` : ' · ¡ya pasó la hora prometida!')}
+          </div>
+        );
+      })()}
 
       {reloj.etapa.min >= CONGELADO_MIN && (
         <div style={{ marginTop: 6, background: '#2a1414', border: `1px solid ${c.red}`,
@@ -982,14 +1272,23 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
           Se mira `pagado_online`, NO `cobrado`: `cobrado` lo pone el trigger del
           POS cada vez que la caja cierra la cuenta, también en efectivo, y con
           eso el sello salía en pedidos que el motorista sí tiene que cobrar. */}
-      {p.pagado_online && (
+      {p.pagado_online && (p.pago_confirmado_at ? (
+        <div style={{ display: 'inline-block', marginTop: 5, padding: '2px 7px', borderRadius: 5,
+                      background: '#0b2340', border: '1px solid #3b82f6',
+                      fontSize: 10.5, fontWeight: 800, color: '#bfdbfe', letterSpacing: .3 }}>
+          {p.metodo_pago === 'link_pago' ? '🔗 PAGÓ CON LINK' : '🏦 PAGÓ POR TRANSFERENCIA'} · NO COBRAR
+          <span style={{ fontWeight: 500, color: '#93c5fd' }}> · {p.pago_confirmado_por || 'torre'} {new Date(p.pago_confirmado_at).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit' })}</span>
+        </div>
+      ) : (
         <div style={{ display: 'inline-block', marginTop: 5, padding: '2px 7px', borderRadius: 5,
                       background: '#0d2b18', border: `1px solid ${c.green}`,
                       fontSize: 10.5, fontWeight: 800, color: c.green, letterSpacing: .3 }}>
           💳 PAGADO ONLINE · NO COBRAR
         </div>
-      )}
+      ))}
       {p.motorista_nombre && <div style={{ fontSize: 11.5, color: c.green, marginTop: 3 }}>🛵 {p.motorista_nombre}</div>}
+
+      <PagoYCopiar p={p} ocupado={ocupado} cambiarPago={cambiarPago} show={show} programar={programar} />
 
       {/* Mover de columna en cualquier dirección. Va arriba de todo lo demás
           porque es lo que Karina busca cuando el tablero no refleja la calle. */}
@@ -1126,6 +1425,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                   ? ` · lleva ${d.pedidos}${d.en_ruta > 0 ? ` (${d.en_ruta} en ruta)` : ''}`
                   : ' · libre'}
                 {d.almorzando ? ` · 🍽️ almorzando${d.almuerzo_min ? ` ${d.almuerzo_min}m` : ''}` : ''}
+                {d.sin_senal_min >= 10 ? ` · 📵 sin señal ${d.sin_senal_min}m` : ''}
               </option>
             ))}
           </select>
@@ -1180,6 +1480,7 @@ function Tarjeta({ p, col, compacta, ocupado, confirmar, asignar, sucursalDe, su
                     {d.nombre}{d.sucursal ? ` · ${d.sucursal}` : ''}
                     {d.pedidos > 0 ? ` · lleva ${d.pedidos}` : ' · libre'}
                     {d.almorzando ? ' · 🍽️ almorzando' : ''}
+                    {d.sin_senal_min >= 10 ? ` · 📵 sin señal ${d.sin_senal_min}m` : ''}
                   </option>
                 ))}
               </select>

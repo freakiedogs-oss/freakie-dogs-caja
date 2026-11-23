@@ -1086,10 +1086,10 @@ function TabCuentasBancarias({ canEdit, show }) {
     setLoading(true);
     try {
       const [c, e, p, s, cat] = await Promise.all([
-        db.from('cuentas_bancarias_terceros').select('id,nombre_titular,relacion_tipo,banco,alias,cuenta_numero,categoria_gasto_id_default,subcategoria_default,activo').order('relacion_tipo').order('nombre_titular'),
+        dbFin.from('cuentas_bancarias_terceros').select('id,nombre_titular,relacion_tipo,banco,alias,cuenta_numero,categoria_gasto_id_default,subcategoria_default,activo').order('relacion_tipo').order('nombre_titular'),
         db.from('empleados').select('id,codigo_empleado,nombre_completo').eq('activo', true).order('nombre_completo'),
         db.from('proveedores').select('id,nombre').order('nombre'),
-        db.from('socios').select('id,nombre').order('nombre'),
+        dbFin.from('socios').select('id,nombre').order('nombre'),
         db.from('categorias_gasto').select('id,nombre,grupo').order('orden'),
       ]);
       setCuentas(c.data || []);
@@ -1141,9 +1141,7 @@ function TabCuentasBancarias({ canEdit, show }) {
         activo: item.activo ?? true,
         updated_at: new Date().toISOString(),
       };
-      const { error } = item.id
-        ? await db.from('cuentas_bancarias_terceros').update(payload).eq('id', item.id)
-        : await db.from('cuentas_bancarias_terceros').insert(payload);
+      const { error } = await dbFin.rpc('cuenta_tercero_guardar', { p_id: item.id || null, p: payload });
       if (error) { show('Error: ' + error.message, false); setSaving(false); return; }
       show('✓ Cuenta guardada');
       setEditando(null); setShowNueva(false);
@@ -1153,7 +1151,7 @@ function TabCuentasBancarias({ canEdit, show }) {
   };
 
   const toggleActivo = async (item) => {
-    const { error } = await db.from('cuentas_bancarias_terceros').update({ activo: !item.activo }).eq('id', item.id);
+    const { error } = await dbFin.rpc('cuenta_tercero_set_activo', { p_id: item.id, p_activo: !item.activo });
     if (error) { show(error.message, false); return; }
     await cargar();
   };

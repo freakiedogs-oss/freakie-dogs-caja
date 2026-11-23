@@ -1,0 +1,22 @@
+-- ════════════════════════════════════════════════════════════════════
+-- 🍽️ Horarios: el almuerzo lleva hora fija (17-nov-2026, Cesar / encargados)
+-- Aplicada en Supabase como: horarios_hora_almuerzo
+--
+-- Los encargados querían asignar el almuerzo a una hora concreta (ej. 60 min
+-- de 2:00 a 3:00 p. m.) para que cada quien se organice (mandado, casa, quedarse).
+--
+-- horarios_turno.almuerzo_inicio time (null = sin almuerzo o turno viejo)
+-- horario_guardar_dia: si almuerzo_min > 0 exige almuerzo_inicio y que
+--   inicio + minutos quede dentro del turno (soporta turnos que cruzan medianoche).
+--   «Poné a qué hora sale a almorzar» / «El almuerzo tiene que quedar dentro del turno…»
+-- horario_copiar_anterior: copia también la hora del almuerzo.
+-- mi_horario: devuelve almuerzo_inicio (el empleado lo ve en Mi Asistencia).
+-- horario_cargar ya devolvía to_jsonb(h), así que no cambia.
+--
+-- Pruebas (rollback): sin hora → error; 6:00 p. m. en turno 10–6:30 → error;
+--   14:00 ok; turno 5 p. m.–2 a. m. con almuerzo 0:30 ok; sin almuerzo → null;
+--   mi_horario la devuelve; copiar semana la copia.
+-- Frontend (HorariosView): editor con «Sale a almorzar a las…» (sugerida a la
+--   mitad del turno), casilla «alm 2p–3p», alerta si falta la hora, y el asistente
+--   no cuenta como gente en piso a quien está almorzando. MiAsistencia: «Almuerzo de 2:00 pm a 3:00».
+-- ════════════════════════════════════════════════════════════════════

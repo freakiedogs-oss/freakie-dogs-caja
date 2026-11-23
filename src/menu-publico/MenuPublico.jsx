@@ -432,6 +432,16 @@ export default function MenuPublico() {
       .catch(() => {})
   }, [pedidoOk])
 
+  // Regalo de bienvenida (17-nov-2026): Queso Frito gratis en el 2º pedido.
+  // Sin teléfono guardado igual se consulta: trae el programa (precio, mínimo)
+  // para el aviso «¿Es tu primer pedido?».
+  const [regalo, setRegalo] = useState(null)
+  useEffect(() => {
+    db.rpc('regalo_estado', { p_telefono: leerPerfil().telefono || '' })
+      .then(({ data }) => setRegalo(data && data.programa ? data : null))
+      .catch(() => {})
+  }, [pedidoOk])
+
   useEffect(() => {
     const tel = leerPerfil().telefono
     if (!tel) return
@@ -448,6 +458,7 @@ export default function MenuPublico() {
     for (const cat of menu) for (const it of (cat.items || [])) porId[it.id] = it
     const nuevo = []; let fuera = 0
     for (const it of (pedido.items || [])) {
+      if (it.origen === 'regalo') continue   // el regalo de bienvenida no se repite
       const prod = porId[it.menu_item_id]
       if (!prod) { fuera += Number(it.cantidad) || 1; continue }
       // Las opciones pueden estar en los grupos del ítem o en los de cada componente del combo.
@@ -558,6 +569,23 @@ export default function MenuPublico() {
           <div className="mp-cargando">😕 No pudimos cargar el menú. Recargá la página o intentá en un momento.</div>
         )}
 
+        {/* REGALO DE BIENVENIDA: arriba de todo */}
+        {regalo?.regalo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 16px 0', padding: '12px 14px', borderRadius: 12,
+                        background: '#FCEBEB', border: '1.5px solid #E63946', color: '#501313' }}>
+            {regalo.regalo.imagen_url
+              ? <img src={regalo.regalo.imagen_url} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: 'cover', flex: 'none' }} />
+              : <span style={{ fontSize: 30 }}>🎁</span>}
+            <span style={{ flex: 1, fontSize: 14, lineHeight: 1.35 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#E63946', letterSpacing: .4 }}>TU REGALO DE BIENVENIDA</span><br />
+              <b>{(leerPerfil().nombre || '').split(' ')[0] ? `${(leerPerfil().nombre || '').split(' ')[0]}, tenés` : 'Tenés'} un {regalo.regalo.nombre} gratis 🧀</b><br />
+              <span style={{ fontSize: 12 }}>
+                Se agrega solo a tu pedido desde {fmt(regalo.regalo.minimo)} · {Number(regalo.regalo.dias) <= 1 ? 'vence hoy' : `vence en ${regalo.regalo.dias} días`}
+              </span>
+            </span>
+          </div>
+        )}
+
         {/* CUPÓN DE REGRESO: recordatorio arriba del menú */}
         {cupon && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 16px 0', padding: '12px 14px', borderRadius: 12,
@@ -660,6 +688,8 @@ export default function MenuPublico() {
           sugerencias={sugerencias}
           onSugerencia={agregarSugerencia}
           cupon={cupon}
+          regalo={regalo}
+          regaloBloqueado={!!(regalo?.item_id && bloq.items[regalo.item_id])}
           ofertaDuo={ofertaDuo}
           onAceptarDuo={aceptarDuo}
           onClose={() => setCarritoAbierto(false)}
@@ -678,6 +708,7 @@ export default function MenuPublico() {
           onCambiar={aplicarCambio}
           onQuitarLinea={quitarLinea}
           onSucursal={setSucRuteada}
+          regaloBloqueado={!!(regalo?.item_id && bloq.items[regalo.item_id])}
           onClose={() => setCheckoutOpen(false)}
           onEnviado={(datos) => {
             setCarrito([])
@@ -793,12 +824,12 @@ function MisPedidosModal({ datos, onClose, onVolverAPedir }) {
 
 function HeroBanner() {
   const [idx, setIdx] = useState(0)
-  // Auto-slide cada 4s
+  // Auto-slide: 4 s por banner, o lo que diga `ms` (los animados se quedan más)
   useEffect(() => {
     if (BANNERS.length <= 1) return
-    const t = setInterval(() => setIdx(i => (i + 1) % BANNERS.length), 4000)
-    return () => clearInterval(t)
-  }, [])
+    const t = setTimeout(() => setIdx(i => (i + 1) % BANNERS.length), BANNERS[idx]?.ms || 4000)
+    return () => clearTimeout(t)
+  }, [idx])
 
   return (
     <div className="mp-hero">
@@ -1558,10 +1589,15 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                         problemasDe = () => [], dondeAgotado,
                         onCambiar = () => {}, onQuitarLinea = () => {},
                         sugerencias = [], onSugerencia = () => {},
-                        ofertaDuo = null, onAceptarDuo = () => {}, cupon = null }) {
+                        ofertaDuo = null, onAceptarDuo = () => {}, cupon = null,
+                        regalo = null, regaloBloqueado = false }) {
   // Cupón de regreso: se aplica desde $19.99 («$20» en los textos, así el Burger Box cuenta).
   const MINIMO_CUPON = 19.99
-  const cuponAplica = !!cupon && total >= Number(cupon.minimo || MINIMO_CUPON)
+  // Regalo de bienvenida: Queso Frito gratis desde el mínimo. No se combina con
+  // el cupón de $2 (que queda guardado). El servidor lo agrega y descuenta igual.
+  const reg = regalo?.regalo || null
+  const regaloAplica = !!reg && !regaloBloqueado && total >= Number(reg.minimo || 7.99)
+  const cuponAplica = !regaloAplica && !!cupon && total >= Number(cupon.minimo || MINIMO_CUPON)
   const descCupon = cuponAplica ? Number(cupon.monto) || 0 : 0
   const totalNeto = Math.max(0, total - descCupon)
   const problemas = items.map(i => ({ linea: i, p: problemasDe(i) })).filter(x => x.p.length)
@@ -1630,6 +1666,48 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                 </div>
               </div>
             ))
+          )}
+
+          {/* Regalo de bienvenida: la línea gratis (o cuánto falta para usarlo) */}
+          {items.length > 0 && reg && (regaloAplica ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1.5px solid #E63946', background: '#FCEBEB',
+                          borderRadius: 12, padding: 10, margin: '12px 0 4px', color: '#501313' }}>
+              {reg.imagen_url
+                ? <img src={reg.imagen_url} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flex: 'none' }} />
+                : <span style={{ fontSize: 26 }}>🧀</span>}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>{reg.nombre}</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#E63946', letterSpacing: .3 }}>🎁 TU REGALO DE BIENVENIDA</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 12, color: '#999', textDecoration: 'line-through' }}>{fmt(reg.valor)}</div>
+                <div style={{ fontWeight: 900, color: '#1D9E75', fontSize: 15 }}>GRATIS</div>
+              </div>
+            </div>
+          ) : regaloBloqueado ? (
+            <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 12, padding: '10px 12px', margin: '12px 0 4px', color: '#633806', fontSize: 13 }}>
+              😔 Hoy se nos terminó el {reg.nombre}{dondeAgotado ? ` en ${dondeAgotado}` : ''}. Tu regalo te queda guardado para otro pedido 🎁
+            </div>
+          ) : (
+            <div style={{ background: '#FCEBEB', border: '1px dashed #E63946', borderRadius: 12, padding: '10px 12px', margin: '12px 0 4px', color: '#501313', fontSize: 13.5 }}>
+              Agregá <b>{fmt(Math.max(0, Number(reg.minimo) - total))}</b> más y tu <b>{reg.nombre}</b> va <b>gratis</b> 🎁
+            </div>
+          ))}
+
+          {/* Primer pedido: le contamos del regalo que viene */}
+          {items.length > 0 && !reg && regalo?.programa && regalo.primera_vez !== false && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#FCEBEB', border: '1px solid #F09595',
+                          borderRadius: 12, padding: 10, margin: '12px 0 4px', color: '#501313' }}>
+              {regalo.imagen_url
+                ? <img src={regalo.imagen_url} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flex: 'none' }} />
+                : <span style={{ fontSize: 26 }}>🎁</span>}
+              <div style={{ fontSize: 13, lineHeight: 1.4 }}>
+                🎁 <b>{regalo.primera_vez ? '¡Es tu primer pedido!' : '¿Es tu primer pedido?'}</b> Te regalamos un <b>{regalo.nombre}</b> para tu próxima compra
+                <div style={{ fontSize: 11.5, opacity: .85, marginTop: 2 }}>
+                  Te llega al entregar este pedido · válido {regalo.dias_validez} días en pedidos desde {fmt(regalo.minimo)}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* «¿Son dos?» → Burger Duo */}
@@ -1711,7 +1789,12 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
                 </div>
               )
             })()}
-            {faltaMinimo === 0 && cupon && (cuponAplica ? (
+            {faltaMinimo === 0 && cupon && regaloAplica && (
+              <div style={{ fontSize: 12, color: '#633806', background: '#FAEEDA', borderRadius: 10, padding: '7px 10px', marginBottom: 8 }}>
+                Tus {fmt(cupon.monto)} de descuento no se combinan con el regalo: te quedan guardados para otra compra 🎁
+              </div>
+            )}
+            {faltaMinimo === 0 && cupon && !regaloAplica && (cuponAplica ? (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#EAF3DE', border: '1px solid #97C459',
                               borderRadius: 12, padding: '10px 12px', marginBottom: 10, color: '#27500A', fontSize: 14 }}>
@@ -1735,6 +1818,11 @@ function CarritoDrawer({ items, total, onClose, onUpdate, onCheckout, reglas,
               <span>Total</span>
               <span className="mp-drawer-total-num">{fmt(totalNeto)}</span>
             </div>
+            {regaloAplica && (
+              <div style={{ textAlign: 'right', fontSize: 12.5, color: '#1D9E75', fontWeight: 700, marginTop: -4, marginBottom: 8 }}>
+                Te estás ahorrando {fmt(reg.valor)} 🧀
+              </div>
+            )}
             {problemas.map(({ linea, p }) => (
               <AvisoCambio key={linea.lineaId} problemas={p} dondeAgotado={dondeAgotado}
                            onCambiar={(prob, op) => onCambiar(linea.lineaId, prob, op)}
@@ -1906,10 +1994,38 @@ const HT = {
         borderRadius: 14, padding: 12, fontSize: 14.5, cursor: 'pointer', fontFamily: 'inherit' },
 }
 
+// Franjas de 15 min para programar: hoy y mañana, dentro del horario del
+// delivery (BD) y desde 1 hora después de ahora. Hora de El Salvador (UTC-6).
+function franjasProgramables(semana) {
+  if (!Array.isArray(semana)) return []
+  const ahoraSV = new Date(Date.now() - 6 * 3600 * 1000)          // reloj SV en campos UTC
+  const minimo = Date.now() + 60 * 60000                         // mínimo 1 hora (Cesar)
+  const out = []
+  for (let k = 0; k < 2; k++) {
+    const base = new Date(Date.UTC(ahoraSV.getUTCFullYear(), ahoraSV.getUTCMonth(), ahoraSV.getUTCDate() + k))
+    const dia = semana.find(d => d.dia === base.getUTCDay())
+    const slots = []
+    if (dia?.abierto && dia.apertura && dia.cierre) {
+      const [ah, am] = dia.apertura.split(':').map(Number)
+      const [ch, cm] = dia.cierre.split(':').map(Number)
+      const ini = ah * 60 + am + 30, fin = (ch * 60 + cm) - 15
+      for (let m = Math.ceil(ini / 15) * 15; m <= fin; m += 15) {
+        const utc = base.getTime() + (m + 6 * 60) * 60000              // SV → UTC
+        if (utc < minimo) continue
+        const h = Math.floor(m / 60) % 24, mm = m % 60
+        slots.push({ iso: new Date(utc).toISOString(),
+                     txt: `${h % 12 || 12}:${String(mm).padStart(2, '0')} ${h >= 12 ? 'p. m.' : 'a. m.'}` })
+      }
+    }
+    out.push({ etiqueta: k === 0 ? 'Hoy' : 'Mañana', slots })
+  }
+  return out
+}
+
 function Checkout({ items, total, onClose, onEnviado,
                    lineasConProblema = [], dondeAgotado,
                    onCambiar = () => {}, onQuitarLinea = () => {},
-                   onSucursal = () => {} }) {
+                   onSucursal = () => {}, regaloBloqueado = false }) {
   const perfil = useMemo(leerPerfil, [])
   const clienteConocido = !!(perfil.nombre || perfil.telefono)
   const [tipo, setTipo] = useState('delivery') // 'delivery' | 'pickup'
@@ -2073,8 +2189,52 @@ function Checkout({ items, total, onClose, onEnviado,
     }, 300)
     return () => { vivo = false; clearTimeout(t) }
   }, [telDigitos])
-  const descCupon = cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
-  const totalConEnvio = Math.max(0, total + costoEnvio - descCupon)
+  // Regalo de bienvenida del teléfono que se está usando (el servidor decide).
+  const [regaloCk, setRegaloCk] = useState(null)
+  useEffect(() => {
+    if (telDigitos.length < 8) { setRegaloCk(null); return }
+    let vivo = true
+    const t = setTimeout(() => {
+      db.rpc('regalo_estado', { p_telefono: telDigitos })
+        .then(({ data }) => vivo && setRegaloCk(data?.regalo || null))
+        .catch(() => {})
+    }, 300)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [telDigitos])
+  const regaloAplicaCk = !!regaloCk && !regaloBloqueado && total >= Number(regaloCk.minimo || 7.99)
+  // «Esperá y ahorrá» (16-nov-2026, Cesar): solo aparece cuando la sucursal
+  // que le toca está saturada. 10% con tope; no se combina con el cupón (el
+  // cupón queda guardado). El servidor revalida todo y decide el monto.
+  const [espEst, setEspEst] = useState(null)
+  const [espera, setEspera] = useState(false)
+  // Pedido programado (17-nov-2026): hoy o mañana, en franjas de 15 min dentro
+  // del horario del delivery y con al menos 1 hora de anticipación.
+  const [programar, setProgramar] = useState(false)
+  const [progSlot, setProgSlot] = useState('')
+  const [progDia, setProgDia] = useState(0)
+  // Recoger en tienda (19-nov-2026): «llego en 20/30/45/60 min». 0 = lo antes posible.
+  const [llegaEn, setLlegaEn] = useState(0)
+  const [semanaHor, setSemanaHor] = useState(null)
+  useEffect(() => {
+    db.rpc('menu_publico_horario').then(({ data }) => setSemanaHor(data?.semana || null)).catch(() => {})
+  }, [])
+  const slotsProg = useMemo(() => franjasProgramables(semanaHor), [semanaHor])
+  useEffect(() => {
+    if (tipo !== 'delivery' || !ubic?.lat || !ubic?.lng) { setEspEst(null); return }
+    let vivo = true
+    const consultar = () => db.rpc('delivery_espera_estado', { p_lat: ubic.lat, p_lng: ubic.lng, p_telefono: telDigitos || null })
+      .then(({ data }) => { if (vivo) setEspEst(data && data.mostrar ? data : null) })
+      .catch(() => {})
+    const t0 = setTimeout(consultar, 300)
+    const t = setInterval(consultar, 60000)
+    return () => { vivo = false; clearTimeout(t0); clearInterval(t) }
+  }, [tipo, ubic?.lat, ubic?.lng, telDigitos])
+  useEffect(() => { if (!espEst) setEspera(false) }, [espEst])
+  const esperaActiva = espera && !!espEst && !programar
+  const descEspera = esperaActiva
+    ? Math.min(Math.round(total * Number(espEst.pct || 10)) / 100, Number(espEst.tope || 3)) : 0
+  const descCupon = !esperaActiva && !regaloAplicaCk && cuponCk && total >= Number(cuponCk.minimo || 19.99) ? Number(cuponCk.monto) || 0 : 0
+  const totalConEnvio = Math.max(0, total + costoEnvio - descCupon - descEspera)
   const cumpleMinimo = envio ? (envio.cumple_minimo ?? true) : (total >= NEGOCIO.consumoMinimo || tipo === 'pickup')
 
   // Valida el formulario. Lo usan los dos caminos: el de efectivo y el del
@@ -2082,6 +2242,7 @@ function Checkout({ items, total, onClose, onEnviado,
   // los datos de la tarjeta en un solo request.
   const validar = () => {
     setError('')
+    if (programar && !progSlot) { setError('Elegí la hora para la que querés tu pedido'); return false }
     if (lineasConProblema.length) {
       const faltan = lineasConProblema.flatMap(x => x.problemas.map(p => p.deNombre))
       setError(`Hoy no hay ${[...new Set(faltan)].join(', ')}`
@@ -2139,6 +2300,9 @@ function Checkout({ items, total, onClose, onEnviado,
           metodo_pago: metodoPago,
           paga_con: metodoPago === 'efectivo' ? (parseFloat(pagaCon) || null) : null,
           notas_cliente: notas.trim() || null,
+          espera: tipo === 'delivery' && esperaActiva ? true : undefined,
+          programado_para: programar && progSlot ? progSlot : undefined,
+          llega_en_min: tipo === 'pickup' && !programar && llegaEn > 0 ? String(llegaEn) : undefined,
           items: items.map(i => ({
             menu_item_id: i.id,
             cantidad: i.qty,
@@ -2427,6 +2591,121 @@ function Checkout({ items, total, onClose, onEnviado,
             </>
           )}
 
+          {/* ESPERÁ Y AHORRÁ: solo con la sucursal saturada */}
+          {/* RECOGER: ¿a qué hora pasás? (19-nov-2026) */}
+          {tipo === 'pickup' && (
+            <div className="mp-field">
+              <label>¿A qué hora pasás por tu pedido?</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                {[[0, 'Lo antes posible'], [20, 'Llego en 20 min'], [30, 'Llego en 30 min'], [45, 'Llego en 45 min'], [60, 'Llego en 1 hora'], [-1, 'Más tarde…']]
+                  .filter(([m]) => m !== -1 || slotsProg.some(d => d.slots.length))
+                  .map(([m, t]) => {
+                    const on = m === -1 ? programar : (!programar && llegaEn === m)
+                    return (
+                      <button key={m} type="button" onClick={() => { if (m === -1) { setProgramar(true) } else { setProgramar(false); setProgSlot(''); setLlegaEn(m) } }}
+                              style={{ border: on ? '2px solid #E63946' : '1px solid #ddd', background: on ? '#FCEBEB' : '#fff',
+                                       borderRadius: 10, padding: '9px 4px', cursor: 'pointer', fontFamily: 'inherit', color: '#222', fontSize: 12.5, fontWeight: on ? 700 : 500 }}>{t}</button>
+                    )
+                  })}
+              </div>
+              {!programar && (() => {
+                const hora = new Date(Date.now() + llegaEn * 60000).toLocaleTimeString('es-SV', { hour: 'numeric', minute: '2-digit', timeZone: 'America/El_Salvador' })
+                return (
+                  <div style={{ background: '#FAEEDA', color: '#633806', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, marginTop: 10 }}>
+                    {llegaEn === 0
+                      ? <>🔥 Lo empezamos a preparar ya. Estará listo en unos 15 minutos.</>
+                      : <>🕧 Te esperamos como a las <b>{hora}</b>. Lo preparamos para que esté recién hecho cuando llegués.</>}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* ¿PARA CUÁNDO? Ahora o programado (hoy / mañana) */}
+          {slotsProg.some(d => d.slots.length) && (tipo === 'delivery' || programar) && (
+            <div className="mp-field">
+              <label>{tipo === 'pickup' ? '¿Para qué día y hora?' : '¿Para cuándo?'}</label>
+              <div style={{ display: tipo === 'pickup' ? 'none' : 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[[false, 'Lo antes posible', tipo === 'delivery' ? 'Te lo mandamos ya' : 'Lo preparamos ya'],
+                  [true, 'Programarlo', 'Para más tarde']].map(([v, t, sub]) => (
+                  <button key={String(v)} type="button" onClick={() => { setProgramar(v); if (!v) setProgSlot('') }}
+                          style={{ border: programar === v ? '2px solid #E63946' : '1px solid #ddd', background: programar === v ? '#FCEBEB' : '#fff',
+                                   borderRadius: 12, padding: '10px 8px', cursor: 'pointer', fontFamily: 'inherit', color: '#222' }}>
+                    <b style={{ fontSize: 14 }}>{t}</b><span style={{ display: 'block', fontSize: 11.5, color: '#777' }}>{sub}</span>
+                  </button>
+                ))}
+              </div>
+              {programar && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    {slotsProg.map((d, i) => d.slots.length > 0 && (
+                      <button key={d.etiqueta} type="button" onClick={() => { setProgDia(i); setProgSlot('') }}
+                              style={{ border: progDia === i ? '1.5px solid #111' : '1px solid #ddd', background: progDia === i ? '#111' : '#fff',
+                                       color: progDia === i ? '#fff' : '#222', borderRadius: 20, padding: '5px 14px', fontSize: 13,
+                                       fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{d.etiqueta}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {(slotsProg[progDia]?.slots || []).map(sl => (
+                      <button key={sl.iso} type="button" onClick={() => setProgSlot(sl.iso)}
+                              style={{ border: progSlot === sl.iso ? '2px solid #E63946' : '1px solid #ddd',
+                                       background: progSlot === sl.iso ? '#E63946' : '#fff', color: progSlot === sl.iso ? '#fff' : '#222',
+                                       borderRadius: 9, padding: '6px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{sl.txt}</button>
+                    ))}
+                  </div>
+                  {progSlot && (
+                    <div style={{ background: '#FAEEDA', color: '#633806', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, marginTop: 10 }}>
+                      🕧 {tipo === 'delivery' ? 'Te llega' : 'Lo tenés listo'} {slotsProg[progDia]?.etiqueta.toLowerCase()} a las <b>{(slotsProg[progDia]?.slots.find(x => x.iso === progSlot) || {}).txt}</b>.
+                      {' '}Lo empezamos a preparar a la hora justa para que llegue recién hecho.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tipo === 'delivery' && espEst && !programar && (() => {
+            const pct = Number(espEst.pct || 10)
+            const conDesc = Math.max(0, total + costoEnvio - Math.min(Math.round(total * pct) / 100, Number(espEst.tope || 3)))
+            const opcion = (activa, titulo, sub, precio, tachado, onClick, verde) => (
+              <button type="button" onClick={onClick}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                         border: activa ? `2px solid ${verde ? '#2f9e44' : '#E63946'}` : '1.5px solid #ddd',
+                         background: activa ? (verde ? '#EEF8EC' : '#fff5f5') : '#fff', borderRadius: 12,
+                         padding: '11px 12px', marginBottom: 8, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', flex: 'none', background: '#fff',
+                               border: activa ? `5px solid ${verde ? '#2f9e44' : '#E63946'}` : '2px solid #bbb' }} />
+                <span style={{ flex: 1 }}>{titulo}<span style={{ display: 'block', fontSize: 12, color: verde ? '#3d6b34' : '#777' }}>{sub}</span></span>
+                <span style={{ textAlign: 'right', lineHeight: 1.2 }}>
+                  {tachado && <s style={{ fontSize: 11.5, color: '#999', display: 'block' }}>{tachado}</s>}
+                  <b style={{ fontSize: 14, color: verde ? '#2f7d16' : '#111' }}>{precio}</b>
+                </span>
+              </button>
+            )
+            return (
+              <div className="mp-field">
+                <label>¿Cuándo lo querés?</label>
+                <div style={{ background: '#FFF6E5', border: '1px solid #F2C46D', color: '#7a4a00', borderRadius: 10,
+                              padding: '7px 10px', fontSize: 12, marginBottom: 8 }}>
+                  🔥 Hay muchos pedidos en este momento
+                </div>
+                {opcion(!espera, <b style={{ fontSize: 14 }}>Lo antes posible</b>,
+                        `Llega en ${espEst.normal_min}–${espEst.normal_max} min`,
+                        fmt(total + costoEnvio - descCupon), null, () => setEspera(false), false)}
+                {opcion(espera,
+                        <><b style={{ fontSize: 14 }}>Esperá y ahorrá</b>{' '}
+                          <span style={{ background: '#2f9e44', color: '#fff', borderRadius: 6, padding: '1px 7px', fontSize: 11.5, fontWeight: 800 }}>−{pct}%</span></>,
+                        `Llega en ${espEst.espera_min}–${espEst.espera_max} min · ideal si no tenés prisa`,
+                        fmt(conDesc), fmt(total + costoEnvio), () => setEspera(true), true)}
+                {espera && cuponCk && (
+                  <div style={{ fontSize: 11.5, color: '#666', marginTop: -2 }}>
+                    No se combina con tu cupón de {fmt(cuponCk.monto)}: te queda guardado para otra compra 🎁
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* MÉTODO DE PAGO */}
           <div className="mp-field">
             <label>Método de pago</label>
@@ -2496,10 +2775,22 @@ function Checkout({ items, total, onClose, onEnviado,
                 Agregá {fmt(envio.falta_para_gratis)} más y el envío te sale gratis 🚀
               </div>
             )}
+            {regaloAplicaCk && (
+              <div className="mp-resumen-row" style={{ color: '#E63946', fontWeight: 700 }}>
+                <span>🎁 {regaloCk.nombre} de regalo</span>
+                <span>GRATIS</span>
+              </div>
+            )}
             {descCupon > 0 && (
               <div className="mp-resumen-row" style={{ color: '#27500A', fontWeight: 700 }}>
                 <span>🎁 Cupón de regreso</span>
                 <span>−{fmt(descCupon)}</span>
+              </div>
+            )}
+            {descEspera > 0 && (
+              <div className="mp-resumen-row" style={{ color: '#2f7d16', fontWeight: 700 }}>
+                <span>⏳ Esperá y ahorrá</span>
+                <span>−{fmt(descEspera)}</span>
               </div>
             )}
             <div className="mp-resumen-total">

@@ -99,9 +99,76 @@ const RRHH_OBJETOS = new Set([
 ]);
 const ROLES_RRHH = new Set(['admin', 'superadmin', 'ejecutivo', 'rrhh']);
 
+// ── Gate de banco y socios (SEG-2) ──
+// Agregadas 11-nov-2026. Tablas y vistas que leen BancoView, el Dashboard
+// Financiero y Débitos por clasificar, más los RPC por los que pasan sus
+// escrituras (`bank_comprobante_registrar`, `bank_estado_cuenta_registrar`,
+// `bank_regla_set_activa`): son SECURITY DEFINER y solo los ejecuta
+// `erp_finanzas_ro`, así que se llaman únicamente con sesión de finanzas.
+const BANCO_OBJETOS = new Set([
+  'bank_transacciones',
+  'bank_comprobantes',
+  'bank_match',
+  'bank_aprendizaje',
+  'bank_reglas_clasificacion',
+  'bank_estados_cuenta',
+  'movimientos_socios',
+  'prestamo_movimientos',
+  'mv_finanzas_banco_mensual',
+  'v_socio_aportes_detalle',
+  'v_socios_balance',
+  'v_bank_tx_socio_pendientes',
+  'v_bank_tx_con_match',
+  'v_bank_sugerencias',
+  'v_banco_por_clasificar',
+  'v_banco_subcategorias',
+  'v_banco_cuadre_mensual',
+  'v_banco_revision',
+  'bank_comprobante_registrar',
+  'bank_estado_cuenta_registrar',
+  'bank_regla_set_activa',
+  // RPC de conciliación, revisión e ingesta que llaman esas mismas pantallas.
+  // La más lenta (`fn_banco_autoclasificar`) tarda ~4 s: entra en el techo
+  // de 25 s del proxy.
+  'bancoview_aplicar_aprendizaje',
+  'bancoview_aplicar_match_multiple',
+  'bancoview_aplicar_reglas',
+  'bancoview_aprender_match',
+  'bancoview_clasificar_movimiento_socio',
+  'bancoview_devengar_intereses_socios',
+  'bancoview_match_comprobantes',
+  'bancoview_sugerir_dtes_para_gasto',
+  'bancoview_vincular_gasto_a_dte',
+  'bank_match_crear',
+  'bank_match_eliminar',
+  'bank_match_eliminar_por_tx',
+  'bank_tx_marcar',
+  'fn_banco_autoclasificar',
+  'fn_banco_revisar',
+  'fn_banco_revisar_multi_dte',
+  'fn_banco_revision_auto',
+  'fn_banco_sugerir_dte',
+  'fn_import_bank_bac',
+  'fn_ingesta_candidatas',
+  'fn_ingesta_resolver',
+  'bancoview_registrar_pago_prestamo',
+]);
+
+// Cuentas bancarias de terceros (empleados, proveedores, socios) y la lista de
+// socios: además de BancoView las usa la pestaña de cuentas de RRHH, por eso
+// llevan los roles de RRHH y no los de finanzas.
+const TERCEROS_OBJETOS = new Set([
+  'cuentas_bancarias_terceros',
+  'socios',
+  'cuenta_tercero_guardar',
+  'cuenta_tercero_set_activo',
+]);
+
 // Devuelve el set de roles con acceso a un objeto gateado, o null si es abierto.
 function rolesRequeridos(objeto) {
   if (FINANZAS_OBJETOS.has(objeto)) return ROLES_FINANZAS;
+  if (BANCO_OBJETOS.has(objeto)) return ROLES_FINANZAS;
+  if (TERCEROS_OBJETOS.has(objeto)) return ROLES_RRHH;
   if (DTE_OBJETOS.has(objeto)) return ROLES_DTE;
   if (RRHH_OBJETOS.has(objeto)) return ROLES_RRHH;
   return null;

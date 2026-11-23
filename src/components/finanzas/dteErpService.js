@@ -15,11 +15,13 @@
  * Precios de Freakie INCLUYEN IVA. La conversión por tipo de documento es la
  * misma regla que usa el POS y está centralizada acá abajo:
  *   - Factura (01) y Sujeto Excluido (14): el precio va tal cual.
- *   - CCF (03) y Nota de Crédito (05): se manda el neto (precio / 1.13),
- *     porque esos documentos suman el IVA encima.
+ *   - CCF (03) y Nota de Crédito (05): se manda el neto, porque esos
+ *     documentos suman el IVA encima. El neto lo calcula `lib/dteNeto.js`
+ *     partiendo del total con IVA, no redondeando cada precio por separado.
  */
 
 import { STORE_ESTABLECIMIENTO } from '../../config'
+import { preciosNetos, totalesNetos } from '../../lib/dteNeto'
 
 const DTE_PROXY_BASE = '/api/dte-proxy'
 
@@ -75,6 +77,12 @@ export function desglose(items, tipoId) {
   const total = totalConIva(items)
   const t = tipoPorId(tipoId)
   if (t.id === 'se') return { gravado: total, iva: 0, total }       // sin IVA
+  // CCF: lo que de verdad va a salir en el documento, para que la pantalla no
+  // prometa un total que Hacienda después sella con un centavo de diferencia.
+  if (!t.ivaIncluido) {
+    const n = totalesNetos(items)
+    return { gravado: n.gravado, iva: n.iva, total: n.total }
+  }
   const gravado = r2(total / 1.13)
   return { gravado, iva: r2(total - gravado), total }
 }
@@ -88,10 +96,11 @@ export function faltantesDeCliente(cliente, tipoId) {
 }
 
 function itemsParaDte(items, tipo) {
-  return (items || []).map(it => ({
+  const netos = tipo.ivaIncluido ? null : preciosNetos(items)
+  return (items || []).map((it, i) => ({
     descripcion: String(it.descripcion || '').trim(),
     cantidad: Number(it.cantidad) || 0,
-    precioUni: tipo.ivaIncluido ? r2(it.precio) : r2(Number(it.precio) / 1.13),
+    precioUni: netos ? netos[i] : r2(it.precio),
     codigo: it.codigo || null,
   }))
 }
@@ -225,15 +234,13 @@ export async function emitirNotaCredito({ dte, items, cliente, pin }) {
   const limpios = (items || []).filter(it => Number(it.cantidad) > 0 && String(it.descripcion || '').trim())
   if (!limpios.length) throw new Error('Seleccioná al menos un ítem para la Nota de Crédito')
 
-  const total = totalConIva(limpios)
-  const gravado = r2(total / 1.13)
-  const iva = r2(total - gravado)
+  const { precios, gravado, iva } = totalesNetos(limpios)
 
   const body = {
-    items: limpios.map(it => ({
+    items: limpios.map((it, i) => ({
       descripcion: it.descripcion,
       cantidad: Number(it.cantidad),
-      precioUni: r2(Number(it.precio) / 1.13),
+      precioUni: precios[i],
       codigo: it.codigo || null,
     })),
     documentoRelacionado: [{

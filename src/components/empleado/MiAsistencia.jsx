@@ -228,6 +228,27 @@ export default function MiAsistencia({ user }) {
   const loadHorarios = useCallback(async () => {
     setLoadingHorarios(true);
     try {
+      // 16-nov-2026: primero el horario semanal nuevo (horarios_turno, lo arma
+      // el encargado). Si esa semana no tiene, cae a las plantillas viejas.
+      const { data: nuevo } = await db.rpc('mi_horario', { p_usuario: user.id, p_semana: lunesVisible });
+      if (nuevo?.dias?.length) {
+        const ETQ = { vacacion: 'Vacación', incapacidad: 'Incapacidad', permiso: 'Permiso', falta: 'Falta' };
+        const h12 = (t) => { if (!t) return ''; let [h, m] = String(t).split(':').map(Number); const ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')} ${ap}`; };
+        const finAlmuerzo = (ini, min) => { const [h, m] = String(ini).split(':').map(Number); const t = (h * 60 + m + Number(min || 0)) % 1440; return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+        const mapaN = {};
+        nuevo.dias.forEach(x => {
+          const dn = ((new Date(x.fecha + 'T12:00:00').getDay() + 6) % 7) + 1;
+          if (x.tipo === 'libre') return;
+          const tr = x.tipo === 'trabaja'
+            ? [{ etiqueta: x.asueto ? `Asueto · ${x.asueto}` : (x.almuerzo ? (x.almuerzo_inicio ? `Almuerzo de ${h12(x.almuerzo_inicio)} a ${h12(finAlmuerzo(x.almuerzo_inicio, x.almuerzo))}` : `Almuerzo ${x.almuerzo} min`) : ''), hora_inicio: h12(x.entrada), hora_fin: h12(x.salida) }]
+            : [{ etiqueta: ETQ[x.tipo] || x.tipo, hora_inicio: 'Todo el día', hora_fin: '' }];
+          if (Number(x.extra) > 0) tr.push({ etiqueta: 'Extra', hora_inicio: `+${x.extra} h ${x.extra_estado === 'aprobada' ? 'aprobada' : x.extra_estado === 'rechazada' ? 'rechazada' : 'por aprobar'}`, hora_fin: '' });
+          mapaN[dn] = { tramos: tr };
+        });
+        setHorarios(mapaN);
+        setLoadingHorarios(false);
+        return;
+      }
       // Traer plantillas (semana_inicio IS NULL) + overrides de la semana visible
       const { data } = await db.from('horarios_empleados')
         .select('id,usuario_id,dia_semana,turno,hora_inicio,hora_fin,tramos,es_plantilla,semana_inicio')

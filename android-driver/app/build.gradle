@@ -11,8 +11,8 @@ android {
         applicationId "com.freakiedogs.driver"
         minSdk 24            // Android 7.0 — cubre >98% de celulares en El Salvador
         targetSdk 34         // Android 14
-        versionCode 11
-        versionName "1.1.0"
+        versionCode 12
+        versionName "1.2.0"
     }
 
     signingConfigs {
@@ -47,4 +47,7 @@ dependencies {
     // Google Play Services Location — provee FusedLocationProviderClient, el mejor
     // API de GPS de Android (combina GPS, WiFi y celular para máxima precisión y ahorro batería).
     implementation 'com.google.android.gms:play-services-location:21.3.0'
+    // v12: vigilante de respaldo cada 15 min que revive el GPS si una marca de
+    // celular (Xiaomi, Huawei, Samsung) mata el servicio o borra las alarmas.
+    implementation 'androidx.work:work-runtime-ktx:2.9.1'
 }

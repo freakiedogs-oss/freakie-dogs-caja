@@ -1,5 +1,192 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 22-Nov-2026 — 🛵 Ruta fija: el motorista sale con todos sus pedidos y el orden no cambia
+- Por qué: los motoristas llamaban a Cesar porque la app les cambiaba la ruta. Caso Andrés: Natalia (cerca, en cocina) y Bryan (lejos, listo); la alarma de 8 min («este ya no puede esperar») lo hizo salir solo con Bryan, la ruta se rehizo y Natalia quedó esperando. Cesar: casi siempre esperan a tener todos.
+- Ahora (migraciones 20261122a/b): `_driver_salir` exige que todo lo asignado esté listo y congela el orden planeado al salir; la alarma suena solo con todo listo; si uno espera 8+ min, aviso en la torre (`MotoristasEsperando.jsx`, arriba de Rutas en curso) con «Dejarlo esperar» / «Quitar a X de su ruta» (`torre_quitar_de_ruta`).
+- App del motorista: aviso «Esperá: falta X (en cocina)», botón «Salgo con los N · esperando M» deshabilitado hasta que estén todos; «Va N° en tu ruta» también para los que siguen en cocina.
+
+## 20-Nov-2026 — 🧠 Asistente WhatsApp: cerebro con Claude (API de Anthropic)
+- Por qué: el bot de reglas solo entiende palabras clave; lo que no reconocía terminaba en «permítame consulto». Cesar tiene Claude Max (incluye $100/mes de crédito de API en la org «Freakie Dogs» de Console).
+- Cómo: las reglas siguen siendo el guardarraíl. Solo las ramas suaves (saludo genérico y «no entendí») pasan a `/api/wa?op=ia`, que llama a Claude (`wa_ia_modelo`, Haiku) con `wa_ia_contexto(tel)` (horarios de hoy, sucursales, FAQ, menú con precios, pedido activo, historial). Responde JSON {texto, escalar}; si falla, sale la respuesta de la regla. Lo delicado nunca pasa por Claude.
+- Interruptor: `app_secretos.wa_ia_modo` = auto | borrador | off. Trazas en `whatsapp_mensajes.ia_sugerencia` / `ia_info`.
+- La API key la pega Cesar en `app_secretos.anthropic_api_key` (Claude nunca la ve). Sin key, todo funciona como antes.
+- Prueba de 1,000 preguntas (`wa_ia_pruebas`, generador `wa_ia_pruebas_generar`, runner `wa_ia_pruebas_paso` vía pg_cron, juez Sonnet por pg_net). Ronda 1: 61% correctas (7.3/10). 226 fallas eran de REGLAS que contestaban otra cosa (dos preguntas, «¿abiertos?», descuentos «claro que sí», otro día → horario de hoy, «trae bebida» → FAQ Pepsi) y 165 de Claude (sumas mal en recomendaciones, inventar porciones, decir que es Cesar).
+- Arreglo (20261120g): reglas viejas → `wa_bot_reglas`; `wa_bot_responder` ahora solo deja fijo lo delicado, lo del pedido, horario de hoy y ubicación; lo demás va a Claude con `hechos` + `opciones_por_producto` en el contexto. Prompt: identidad, no inventar detalles, sumar con cuidado, contestar las dos preguntas. Límite de concurrencia de la org (tier inicial): ~20-30 llamadas/min.
+- Ronda 2 (Haiku): 72%. Ronda 3 (Sonnet, las 276 que fallaron): 92%. Muestra de 84 de todos los tipos con Sonnet: 93% (9.1/10). Quedó `wa_ia_modelo = claude-sonnet-5-5` (cambiable sin deploy en `app_secretos`).
+- 20261120h: la rama «no entendí» y «ya le aviso a cocina» sin pedido abierto vuelven a Claude. 20261120i: contexto compacto (grupos de opciones una sola vez; 45k → 14k caracteres) para bajar costo con Sonnet.
+- Prueba final de 950 preguntas «particulares» (`wa_ia_pruebas_generar2`: cuentas exactas, trampas de precio, productos/sucursales inexistentes, hora exacta, manipulación, jerga, logística, salud, quejas, mínimos, triples, presupuesto): 88% (8.7). 100% trampas de precio, 98% jerga/salud/comparar/triple, 96% cuentas. Fallas: sucursales falsas (30%), «¿hola?» con «perdón estábamos ocupados» sin contexto, «consulto» para datos internos. Arreglos 20261120k/l + prompt (sucursales cerradas, no-existe, datos internos, reintentos 3x).
+- 21-nov: banco de preguntas REALES `wa_preguntas_reales` (3,640 turnos de 656 chats del WhatsApp Business, ~6 meses), extraídas con WAWebCollections + `loadEarlierMsgs({chat})`, anonimizadas y clasificadas por Haiku (cliente/staff, útil, categoría; nombres/direcciones → [nombre]/[direccion]). Pruebas con contexto (`wa_ia_pruebas.tel/contexto`, teléfono ficticio por prueba).
+- Prueba con 2,306 preguntas reales (corrida 7): 91% correctas de las 1,928 evaluables. Arreglo 20261121l: si hay conversación en curso (Freakie escribió en la última hora) o la regla es una FAQ que escala, contesta Claude (ve el historial); fijo solo lo delicado y los datos del pedido. Más instrucciones en `wa_ia_instrucciones` («cancelado» = pagado, horarios de todas, disculpa en quejas, cobertura por la página).
+- ⚠️ Las pruebas (Sonnet respondiendo + Sonnet juez + clasificación) consumieron TODO el crédito de API (~$100) el 21-nov ~13:18 SV: desde ahí la API responde «credit balance too low» y el asistente cae a las reglas (respaldo). La corrida 8 (verificar arreglos) quedó sin correr. Antes de más pruebas: cargar crédito y poner límite de gasto en Console.
+- Instrucciones editables SIN deploy: `app_secretos.wa_ia_instrucciones` (una por línea) → viajan como `instrucciones_de_cesar` en el contexto.
+- Pendiente menor: a veces suma mal centavos (5×3.99) y se autocorrige a mitad de mensaje («21:00… perdón 22:00»).
+
+## 20-Nov-2026 — ⚡ Combos Monster (solo Menú Delivery) + banner animado «Freak City»
+- Migración `20261120a_combos_monster` (aplicada): **Combo Freakie Dog Monster $3.99** y **Combo Freakie Burger Monster $7.99** (mismos precios que los originales, decisión de Cesar). Bebida fija Monster Energy verde original 473 ml, sin elegir y sin agrandado.
+- Inventario: productos terminados PT-023 / PT-024 con receta = BOM del combo original + 1 lata (insumo nuevo «Bebida Energizante Monster Energy Original Lata 473ml», La Constancia, factor 6 — **confirmar con Cesar si el paquete es de 6 o 24**). La Monster va en la receta, no como modificador (no hay doble descuento).
+- Componentes nuevos (Componentes, sin producto): «Hamburguesa» (Complementos + Pan, sin grupos de bebida) y «Fries» con copia de Salsas Papas **sin** «Agrandado Papa y Bebida». El hot dog reutiliza 71c1f6e1 (sin bebida).
+- Fotos subidas por `menu-foto`; orden -2/-1 para salir primeros en Combos.
+- Banner animado: `public/banners/freak-city-monster.webp` (WebP animado 1200×675, ~1.7 MB, 36 cuadros), primero en `BANNERS` con `ms: 8000`; `HeroBanner` ahora respeta `ms` por banner. Estilo atardecer neón inspirado en GTA pero **sin marcas de Rockstar** (logo/tipografía/nombre).
+
+## 19-Nov-2026 — 💬 WhatsApp por Kapso (número de prueba)
+- Entrenamiento del bot (19-nov): reglas en `wa_bot_responder` + preguntas frecuentes editables en `wa_faq` + banco de regresión `wa_bot_pruebas` (10,000 msgs, 99.6%). Políticas confirmadas por Cesar: mascotas y reservas solo en Venecia/Lourdes/Cafetalón; Usulután cierra 8 pm lun–mié y 9 pm jue–dom; Drive Thru = misma ubicación que Lourdes; postre de cumpleaños a domicilio y en local; último pedido 5 min antes del cierre; feriados → consultar a Cesar; sin Pepsi (solo Coca-Cola); papas congeladas; sin opciones vegetarianas; hay parqueo. Historial completo en `supabase/migrations/20261119f_wa_bot_basico.sql`.
+- Bot con el estilo de Cesar (`wa_bot_responder`, trigger `wa_bot_auto`): reglas por palabras clave + datos reales del pedido; burbujas con '¶'. Lo delicado y lo que no entiende queda `requiere_cesar=true` (todavía sin alerta en torre/Telegram). Las llaves de Kapso viven en `app_secretos` (kapso_api_key, kapso_webhook_secret, kapso_phone_number_id, wa_internal_secret).
+- Por qué: automatizar avisos al cliente (en camino, pago no completado, recordatorios) sin construir la integración con Meta desde cero. Kapso = capa sobre la API oficial de WhatsApp; gratis hasta 2,000 msgs/mes.
+- Cuenta Kapso de Cesar, proyecto «Default project». Número **sandbox** (phone_number_id 597907523413541): solo manda texto a números con sesión activa, sin plantillas. Cuando Meta verifique, se conecta el número real y solo cambia `KAPSO_PHONE_NUMBER_ID`.
+- `api/wa.js` (Vercel edge): `op=enviar` (header `x-fd-secret`) y `op=webhook` (firma HMAC de Kapso). Todo queda en `whatsapp_mensajes`. Desde la BD: `select wa_enviar('7xxxxxxx','texto','motivo', pedido_id)`.
+- No se usaron Edge Functions de Supabase porque la herramienta de deploy no estaba disponible en la sesión; Vercel sigue el patrón de `api/n1co.js`.
+
+## 19-Nov-2026 — 🧊 Seguimiento con mapa 3D (por defecto) + Mapa normal
+- Por qué: Cesar quería un seguimiento que sorprenda (ciudad isométrica tipo maqueta, motorista con uniforme rojo en moto negra, movimiento continuo) pero que el cliente igual se ubique: nombres de lugares conocidos, zoom y la opción de ver el mapa normal de calles.
+- `src/tracking/MapaSeguimiento.jsx`: selector «🧊 3D | 🗺️ Mapa» (se recuerda en `localStorage fd_track_vista`). Si no hay WebGL, falla el CDN o no arranca en 25 s → cae solo al Mapa (Leaflet, `MapaEnVivo`).
+- `src/tracking/mapa3d/motor.js` (JS puro): Three.js r128 desde esm.sh (no entra al bundle), teselas vectoriales OpenFreeMap z14 (edificios, calles, parques, POIs, nombres de calles), ruta OSRM sucursal→paradas→casa, reruta si el motorista se sale >90 m dos señales seguidas. Etiquetas: centros comerciales/supers/estadios primero, clínicas y labs al fondo. Línea «Aldo va por <calle> · cerca de <lugar>». Gestos: pellizco/rueda = zoom, arrastrar = mover; botones Seguir / Dron / Toda la ruta y +/−. Noche automática de 6 pm a 5 am.
+- `TrackingPedido.jsx`: refresca cada 5 s mientras va en camino (antes 15 s). `MapaEnVivo` ahora con botones +/− y ya no re-encuadra en cada refresco (le quitaba el zoom al cliente).
+
+## 19-Nov-2026 — 📵 Motorista sin señal sigue asignable
+- El cron `driver-offline-stale` apagaba `en_linea` a los 10 min sin ubicación y el motorista desaparecía de la torre. Ahora solo tras 3 h. `drivers_en_linea()` trae `sin_senal_min` y la torre lo muestra; `sugerir_motoristas` le resta 30 puntos. Kevin usa iPhone con Safari (sin app nativa): su GPS se corta al bloquear la pantalla. Ver `20261119b_motorista_sin_senal_asignable.sql`.
+
+## 19-Nov-2026 — 🏃 Recoger en tienda: «llego en 20/30/45/60 min»
+- Por qué: con los pedidos para recoger no se sabía a qué hora llegaba el cliente y Cesar tenía que decidir cuándo mandarlos a cocina.
+- El checkout de pickup pregunta «¿A qué hora pasás?» (lo antes posible / 20 / 30 / 45 / 60 min / más tarde). Reusa Programados: `llega_en_min` → `programado_para`, pasa solo a cocina con el tiempo de cocina + 3 min; botón «Ya llegó · a cocina» en la torre. Ver `20261119_pickup_llego_en.sql`.
+
+## 18-Nov-2026 — Horarios: hora del almuerzo opcional y hasta 600 min
+- Los encargados no podían guardar sin hora ni poner más de 180 min (turnos partidos, ej. 179 min). Ahora la hora es opcional (si se pone, se valida dentro del turno) y el máximo es 600 min. Ver `20261118b_horarios_almuerzo_opcional.sql`.
+
+## 18-Nov-2026 — 📈 Proyección y ventas para el pedido
+- Por qué: en la reunión de pedidos los encargados dijeron que no podían proyectar 1–4 días sin historial de venta por producto.
+- Pantalla nueva «Proyección y Ventas» (Supply Chain): insumos por día (promedio de los últimos 4 días iguales de la semana, con rango), necesitás − tenés = pedir en empaques; y ventas por producto del menú (promedio por día de la semana / día por día). Sin colchón, por pedido de Cesar.
+- En el Conteo Nocturno → Pedido sugerido: botones Mín/Máx | 1–4 días que llenan las cantidades con (proyección − contado). Por defecto sigue Mín/Máx.
+- Ojo: el menú lateral lee los permisos de la tabla `permisos_rol` (no de `config.js`): una pantalla nueva no aparece hasta insertar sus filas. Se agregaron para `proyeccion` (gerente, cocina, admin, ejecutivo, jefe_casa_matriz) cuando Rosa (Metro Centro) no la veía.
+- Ojo: muchas `pos_cuentas` traen `store_code` y `sucursal_id` NULL; filtrar por ambos. Ver `20261118_proyeccion_consumo_ventas.sql`.
+
+## 17-Nov-2026 — 🍽️ Horarios: almuerzo con hora fija
+- Por qué: los encargados querían asignar el almuerzo a una hora concreta (ej. 60 min de 2 a 3) para que cada quien se organice.
+- `horarios_turno.almuerzo_inicio`; `horario_guardar_dia` la exige si hay almuerzo y valida que quede dentro del turno; copiar semana y `mi_horario` la incluyen. Editor la sugiere a la mitad del turno; casilla muestra «alm 2p–3p»; alerta si falta; el asistente no cuenta a quien almuerza. Ver `20261117e_horarios_hora_almuerzo.sql`.
+
+## 17-Nov-2026 — CCF a Equipos de Alquiler por $1,457.12 (canje por publicidad)
+- Por qué: Jose lo pidió. Equipos de Alquiler facturó $3,057.12; se pactó pagar $1,600 y el resto en servicios publicitarios, así que Freakie les factura ese saldo. Concepto «Servicios generales», neto 1,289.49 + IVA 167.63.
+- DTE `EC9F90CB-E532-4F8D-88DD-492A7E93A95B` (PROCESADO), emitido directo contra `dte-service/emit-ccf` con key temporal `fdk_tmp_1202` (desactivada). Forma de pago 99 (Otros) por ser compensación, no efectivo. Registrado en `pos_dte_standalone`.
+- Cliente dado de alta en `pos_clientes` desde la tarjeta de IVA: actividad 77300, municipio 06/22 (San Salvador Este, catálogo nuevo — Hacienda lo aceptó). **Sin correo ni teléfono**: el DTE salió con `sin-correo@freakiedogs.com`; el PDF se le pasa a mano.
+
+## 17-Nov-2026 — 🌅 Pedido antes de abrir (InDrive/Uber)
+- Por qué: las sucursales necesitan a veces producto antes de abrir; Casa Matriz lo prepara y lo manda por InDrive o Uber, y la sucursal quiere seguir el viaje.
+- Reglas de Cesar: de 9 p. m. a 11 a. m., 2 por sucursal por mes, cualquier producto, link + costo del viaje. Piden gerente/encargado y cocina (igual que SOS).
+- Implementado sobre `pedidos_sucursal.tipo='urgente'` (la «entrega urgente» del 11-oct quedó sin uso; `crear_entrega_urgente` sigue en la BD pero ya no es el camino). Ver `20261117d_pedido_antes_de_abrir.sql`.
+
+## 17-Nov-2026 — Horarios: Jazmín y Mónica no salían en la planilla
+- `horario_cargar` excluía por rol a admin y tablet. Jazmín Fuentes (admin, encargada Cafetalón) y Mónica Contreras (tablet, encargada PeYa) quedaban fuera. Migración `horarios_incluir_admin_tablet_con_empleado`: entran si su usuario está ligado a un empleado activo. Probado (rollback): salen las dos y se les puede guardar turno.
+
+## 17-Nov-2026 — Soyapango despacha desde Venecia + prueba de asignación automática
+- Simulación de noviembre (1,003 pedidos): la sugerencia de sucursal acertaba 67% porque mandaba 311 a Soyapango (no despacha); «más cercana entre las que despachan» = 90%. Las diferencias restantes son del centro de SS que la torre manda a Cafetalón aunque Venecia queda ~2.6 km más cerca (preguntado a Cesar).
+- Fix: `sucursales.delivery_despacha_desde` (Soyapango → Venecia) leído por `sucursal_mas_cercana`.
+- Prueba de un día: `delivery_auto_asignar_tick()` asigna motorista solo (juntar ≤3 km / libre que más espera / el que regresa primero), bitácora en `delivery_asignaciones_log` (auto, razon). Se apaga con `config_delivery.auto_asignar_hasta`. Análisis de cierre pendiente con Cesar. Migración `20261117c_soyapango_venecia_auto_asignar.sql`.
+
+## 17-Nov-2026 — FIX «No pudimos cargar el menú» (menú web)
+- Causa: `menu_publico_delivery()` tardaba ~0.85 s promedio con picos de 3 s; el rol anon corta a los 3 s → 500 intermitente y el menú no cargaba.
+- Fix (migración `menu_publico_cache`): la función original pasó a `_menu_publico_delivery_calc()`; `menu_publico_cache_refrescar()` la guarda en `menu_publico_cache` cada minuto (pg_cron) y `menu_publico_delivery()` sirve lo guardado (7 ms). Si el caché tiene más de 10 min, calcula en vivo. Cambios de menú/disponibilidad tardan hasta 1 min en verse.
+
+## 17-Nov-2026 — Pedidos programados (para una hora más tarde)
+- Por qué: un cliente pidió a las 11 para las 12:30; Cesar no podía mandarlo a cocina y dejarlo en «Por cobrar» lo confundía.
+- Estado nuevo `programado`. Menú web: «¿Para cuándo? Lo antes posible / Programarlo», hoy o mañana, franjas de 15 min dentro del horario, mínimo 1 hora después de ahora (también desde la torre). Torre: franja «🗓️ Programados» fuera de las columnas (confirmar → queda programado; mandar a cocina ya; cambiar hora; quitar) y botón «🗓️ Programar» en «Por cobrar» para los que piden la hora por WhatsApp. Pasa solo a cocina (pg_cron cada minuto) a la hora de entrega menos la ETA de la sucursal. KDS: «🗓️ PROGRAMADO · entregar a las X · no antes». Seguimiento: «Pedido programado para…».
+- `torre_confirmar_pago` ahora delega en `_confirmar_pago_interno` (mismo cuerpo de antes). Migración `20261117b_pedidos_programados.sql`.
+
+## 17-Nov-2026 — Regalo de bienvenida: Queso Frito gratis en el 2º pedido
+- Por qué: la recompra de clientes nuevos es baja; Cesar aprobó las previsualizaciones (Previsualizaciones/Regalo queso frito) y pidió construirlo «con todo».
+- Cómo: el regalo es un registro de `delivery_cupones` con `tipo='queso_frito'`; se gana al entregar el PRIMER pedido web del teléfono; dura 21 días; mínimo $7.99. En el 2º pedido `crear_pedido_delivery` agrega la línea Queso Frito y descuenta su precio (motivo «Regalo bienvenida»), igual que el cupón → la caja/DTE no cambió. No se combina con el cupón de $2.
+- Menú (MenuPublico): banner «Tu regalo de bienvenida», línea GRATIS en el carrito o «Agregá $X más», aviso «¡Es tu primer pedido!» y fila en el resumen del checkout; «Volver a pedir» no repite la línea del regalo.
+- Seguimiento (TrackingPedido): «Cuando te llegue te regalamos…» (1er pedido), tarjeta «Tu próximo Queso Frito va por nuestra cuenta» con «Pedir otra vez» y checkbox de aviso por WhatsApp.
+- Torre: pestaña nueva «🎁 Recordatorios» (TabRecordatorios): día 12 y faltando 2 días, botón que abre WhatsApp con el mensaje listo y marca enviado; Omitir; KPIs.
+- Migración `20261117_regalo_bienvenida_queso_frito.sql`. No se dio regalo retroactivo a los primeros pedidos anteriores al lanzamiento.
+
+## 16-Nov-2026 — Torre: cambiar pago, regresar entregado, copiar para WhatsApp, ruteo más cercano
+- Por qué: Cesar tenía que avisarle a la cajera a mano cuando un cliente pagaba por transferencia/link (tarjeta rechazada o sin efectivo); a veces se marca entregado por error; y cuando falla la app del motorista hay que mandarle el pedido por WhatsApp.
+- Torre (TabPedidos): «📋 Copiar para WhatsApp» (nombre, tel, productos con modificadores, pago y vuelto, dirección, link de Google Maps) y «💳 Cambiar pago» en cada tarjeta; en «Sin pagar», «Pagó por transferencia / con link» (pasa a Por cobrar); en «Entregados hoy», «◀ Regresar a En ruta» (torre_mover_etapa, borra el viaje del bono).
+- Decisiones de Cesar: solo se cambia el pago ANTES de que la caja cobre (si ya cobró, el servidor avisa); la caja abre el cobro con transferencia/link ya elegido (PaymentModal `metodoInicial`); motorista y caja lo ven como «ya pagó, no cobrar» (`pago_confirmado_at`).
+- Ruteo: fn_ruta_recalcular con antigüedad al 30% (simulación 129 viajes: km de más 4.8% → 0.9%). Pendiente ofrecido: revisar cómo se agrupan pedidos en un viaje (asignación), que es la otra causa de rutas raras.
+
+## 16-Nov-2026 — «Se acabó» desde la caja (apagar productos del delivery web por sucursal)
+- Por qué: la torre ya podía apagar productos (TabDisponibilidad), pero quien se entera primero de que algo se acabó es la cajera. Ahora cada sucursal apaga lo suyo sin llamar a nadie.
+- POS: botón «Se acabó» (con contador) en la barra rápida del home para todos menos mesero/motorista/tablet/teléfono/marketing → `src/pos/SeAcaboCaja.jsx`: buscar producto, motivo (Se terminó hoy / No llegó el despacho / Equipo dañado), cambios para los combos (precargados con los últimos usados), «Apagar X en <sucursal>»; lista de apagados hoy con «✅ Ya hay».
+- BD (`caja_se_acabo_disponibilidad`): `caja_disponibilidad_listar` / `caja_disponibilidad_set` reusan `producto_bloqueo`. Solo SU sucursal (la RPC rechaza otro store_code salvo admin/ejecutivo/superadmin). Siempre «solo hoy»: vuelve mañana 6:00 a.m. Solo afecta el delivery propio web; caja y PeYa igual. Sin aviso por Telegram (la torre lo ve en Disponibilidad con quién lo apagó).
+- PR #483 + #484 (etiqueta «va en combos»: `en_combos` es booleano). BD `caja_se_acabo_nombre_bonito`: la lista usa `nombre_producto(clave)` (antes salía «Cambio por Queso Frito»). Tutorial: `Manuales/Tutorial_Se_acabo_Caja.mp4` (3:32, sin voz).
+
+## 16-Nov-2026 — Horarios semanales (encargados arman, Cesar/RRHH aprueban)
+- Por qué: Cesar quiere que los encargados suban el horario de cada semana por persona (libre, sin puestos), con almuerzo y horas extra medibles (1, 1.5, 6 h…), y controlar que las extras sean reales.
+- `HorariosView.jsx` reescrito (la versión por tramos estaba abandonada desde oct). Misma entrada de menú «Horarios» (no se tocó App.jsx ni config.js). Encargado: planilla persona × día (Trabaja/Libre/Vacación/Incapacidad/Permiso/Falta), entrada/salida, almuerzo, extras con motivo; costo vs ventas con meta 12–13%; asuetos; alertas (sin día libre, < 11 h de descanso); asistente con pedidos por hora (6 semanas, recomendado = máx(2, ⌈1 + pedidos/2.5⌉), provisional); «Semana pasada · ¿fue hora extra?» desde la marcación; copiar semana anterior; enviar. Aprobador: resumen de sucursales, aprobar/devolver con comentario, extras una por una con la salida marcada.
+- BD: migración `20261116b_horarios_semanales.sql` (tablas `horarios_semana`, `horarios_turno`, `feriados_sv`, `horarios_config` + RPCs `horario_*`, `mi_horario`). Valores de Cesar: meta 12–13%, hora extra $3, asueto $15/día. Aprueban Cesar o RRHH (cualquiera).
+- La sesión del ERP no guarda el PIN (`erp_login` lo quita): las RPC reciben el id del usuario en `p_pin` (acepta id o PIN).
+- `MiAsistencia.jsx` (tab Horario): primero `mi_horario` (nuevo); si esa semana no tiene, cae a las plantillas viejas.
+- 100 pruebas (60 planillas al azar + casos límite) → corregido: misma persona en 2 sucursales, entrada = salida (contaba 23.5 h), «trabaja» sin horas, «¿fue extra?» con medianoche, persona inexistente, anotar extra sin turno. Editan solo gerente/jefe_casa_matriz o los de `horarios_editores` (Cafetalón no tiene gerente: falta que Cesar diga quién).
+- Ajustes al grabar el tutorial (16-nov): ventas proyectadas usaban las 4 semanas ANTES de la semana elegida (semanas futuras daban $0) → ahora las últimas 4 semanas cerradas; el % del resumen solo promedia sucursales con horario; el asistente ya no usa «1 + pedidos/2.5» (decía «sobran 8» todo el día) sino que reparte la MISMA gente del encargado mitad parejo / mitad según la venta por hora, y solo avisa diferencias de 2+ personas.
+- Tutorial: `Manuales/Tutorial_Horarios_Encargados.mp4` (7:54, sin voz, con subtítulos) + `Manuales/Guia_rapida_Horarios_encargados.pdf`.
+- Fase 2: escribir las extras aprobadas en `planilla_extra` (requiere `planilla_revision` del mes abierta), préstamos entre sucursales, propinas por horas.
+
+## 16-Nov-2026 — «Esperá y ahorrá» en el checkout del menú web
+- Por qué: en horas saturadas (muchos pedidos, pocos motoristas) Cesar quiere que quien no tenga prisa elija esperar más con 10% de descuento, para dar prioridad a los demás. Descuento y no producto gratis: la cocina saturada no debe hacer más.
+- BD (migración `20261116_espera_y_ahorra.sql`): `_delivery_eta(suc, km)` = mediana real pedido→entregado (21 d, misma franja) + carga actual; `delivery_espera_estado(lat,lng,tel)` (checkout, cada 60 s); saturado si ETA ≥ max(50, típico+12) y hay motoristas. `delivery_saturacion` + `_log`, cron `delivery_saturacion_tick` cada 5 min (10 am–10 pm SV). Config en `config_delivery` (`espera_activa`, `_umbral_min`, `_pct`, `_tope`, `_extra_min`).
+- `crear_pedido_delivery`: `p.espera=true` → valida saturación (≤15 min), cliente NO nuevo, delivery → 10% tope $3, `descuento_motivo='Espera y ahorra'`, `espera_promesa_at`; el cupón no se consume. `_comanda_delivery` pasa el motivo a `pos_cuentas` (antes fijo «Cupón app»). Probado con rollback: 3 burgers $23.97 → −$2.40, cuenta POS con motivo correcto; cliente nuevo → rechazado.
+- Frontend: checkout (`MenuPublico.jsx`) bloque «¿Cuándo lo querés?» solo con saturación; torre (`TabPedidos.jsx`) etiqueta ⏳ con minutos a la promesa (rojo si quedan < 15); seguimiento muestra lo ahorrado y la hora límite. KDS los pone después de los normales.
+- Medir: `select reporte_espera_ahorra('2026-11-16')` (activaciones por sucursal, pedidos, descuento, cumplidos vs tarde, calificaciones).
+
+## 16-Nov-2026 — Freakie Flow en el teléfono (/flow)
+- Por qué: Frank casi no usaba Flow porque solo estaba en la compu; el equipo de Marketing tiene que revisar las misiones de la semana desde el celular sin que Frank las cargue y empuje.
+- Qué: entrada propia **`/flow`** (`flow.html` + `src/flow/flow-main.jsx` + `src/flow/FlowApp.jsx`), igual que `/driver`: muestra la MISMA `FreakieFlowView` del ERP, sin el menú del ERP. PIN del ERP validado en el servidor (`erp_login`); solo roles marketing / ejecutivo / admin / superadmin. Sesión guardada en el teléfono 30 días (`localStorage freakie_flow_v1`, sin PIN); salir con `/flow?salir=1`.
+- Instalable como app (PWA, sin APK: no necesita GPS y así funciona también en iPhone): `public/flow.webmanifest` (start_url/scope `/flow`), íconos `public/flow-*.png` y logo `flow-logo.png` hechos con la tipografía del logo de Freakie Dogs (Sancreek, Google Fonts OFL; plano en un solo amarillo #F7C600, con la F 1.45 veces más grande que el resto para que quede más alta que la l, sin contorno ni sombra, a pedido de Frank el 16-nov; las rutas llevan `?v=2` para que no quede el ícono viejo en caché). Página de instalación **`/instalar-flow`** (pasos iPhone/Android) para mandar por WhatsApp. Rutas en `vercel.json`, entrada en `vite.config.js`.
+- Equipo: Samantha salió; su tarjeta en Flow pasa a «Vacante · Video Editor» (clave `editor`, no tenía tareas). Cuando entre el nuevo editor, cambiar `name` en `TEAM`. Su usuario del ERP ya estaba inactivo y se deja así (historial y planilla).
+- Pendiente (fase 2): avisos push de Flow (misiones del lunes, tarea asignada, fecha por vencer) reusando el push del `sw.js`.
+
+## 17-Nov-2026 — CCF de evento salió por $223.88 en vez de $224.00 (redondeo del precio unitario)
+- Por qué: Edgar facturó desde el ERP 100 × $1.99 + transporte $25 = $224.00 (precios con IVA). `itemsParaDte` (`dteErpService.js`) pasa el neto del CCF redondeado a 2 decimales: 1.99/1.13 = 1.7611 → **1.76**; × 100 se pierden $0.11 de neto y el total cae a $223.88. El `pagos.montoPago` del mismo DTE sí decía 224 (incoherente con `totalPagar`).
+- Corrección fiscal (pedida por Jose): se emitió el reemplazo `A816F4D7-99A2-43E5-83B9-53E800010CFA` con `precioUni` 1.7611 (gravado 198.23 + IVA 25.77 = 224.00, PROCESADO) y **después** se invalidó el original `46545207-591F-48E3-9200-4837249C1232` con `tipoAnulacion: 1` + `codigoGeneracionR`. Key temporal `fdk_tmp_512d`, ya desactivada. `pos_dte_standalone` apunta al DTE nuevo.
+- **Fix de código (17-nov, con OK de Jose):** `src/lib/dteNeto.js` (`preciosNetos` / `totalesNetos`) reemplaza los cuatro `r2(precio/1.13)`: emisión de CCF y NC del ERP (`dteErpService.js`), CCF del POS (`dteService.js`) y `NotaCreditoModal.jsx`. Parte del total con IVA, busca el neto cuyo neto + IVA da ese total, lo reparte por línea al centavo y saca el unitario con 8 decimales (máximo de MH). Replica el redondeo de `dte-service`; la Edge Function no se tocó. Simulado con 200k combinaciones: 87% cierra exacto (antes 13%) y el resto queda a 1 centavo — esos totales no existen como neto + 13% con 2 decimales. El `desglose` del modal del ERP ahora muestra el total que realmente va a salir. Falta verlo en un CCF real.
+
+## 13-Nov-2026 — KPI Ventas Totales: la proyección solo usa días cerrados
+- Por qué: Jose vio la proyección baja a media mañana. `fn_ventas_totales_dashboard` tomaba el corte de `v_data_disponible_resumen` (= último día con alguna venta); con el POS en vivo, el día en curso contaba como día completo desde la primera venta. A las 11:30 del 13-nov: $320 de hoy divididos como un día entero → proyección $241,907 y utilidad −$2,453 en vez de $261,326 y +$8,138.
+- Fix (`20261113_ventas_totales_corte_dia_cerrado.sql`): en el mes en curso el corte nunca pasa de ayer (`LEAST(data_completa, hoy − 1, fin_mes)`). Todo el tablero (acumulado, BEP, utilidad, gráfica) queda al cierre de ayer; el encabezado ya dice «Data completa hasta …».
+- Caso borde: el día 1 del mes no hay día cerrado y se proyecta con el parcial de hoy.
+- Pendiente: `fn_ventas_comparativo_igualado` lee el mismo corte de la vista y tiene el mismo sesgo (compara el mes en curso con un día parcial). No se tocó la vista porque también la usan `fn_ai_agente_salud_datos` y `fn_ai_brief_freakie` para medir atraso.
+
+## 12-Nov-2026 — KDS: «cuándo preparar» cada delivery
+- Por qué: 4 de cada 10 deliveries esperaban listos > 10 min al motorista (mediana 7 min, peor 10% ~25 min). Cesar aprobó cortes 2 / 10 min y tope 20 min. Objetivo: que salga recién hecho, no entregar más rápido.
+- BD `kds_cuando_preparar(p_store_code)` (migración `20261112b_kds_cuando_preparar.sql`): por cada delivery con comanda pendiente estima la llegada del motorista: GPS fresco (< 2 min, ruta por las paradas que faltan + regreso) → eventos (ETA de ruta `orden_eta_at` / Recogí) + regreso → sin dato = asume en tienda. Sin asignar: el primer motorista que se libera (y se le suma la ida y vuelta). Tiempos con `minutos_viaje` calibrado. Cocina típica = mediana recibido→completado de la sucursal/franja (14 días, 5–30 min, default 15).
+- empezar = llegada − cocina − 2 min; tope 20 min desde que entró. Sin motorista o sin dato → «Preparar ya» (igual que antes).
+- `KDSScreen.jsx` → `CuandoPreparar`: franja en tarjetas `delivery_propio` (verde PREPARÁ YA ≤ 2, ámbar EMPEZÁ EN X ≤ 10, gris EN ESPERA). Refresca cada 60 s y al cambiar la cola; cuenta regresiva local. Solo informa: NO reordena ni bloquea. Pickup/caja/PeYa no se tocan.
+- Pendiente: medir en 2 semanas si baja el tiempo «lista → en_camino».
+
+## 12-Nov-2026 — GPS del motorista «siempre» (app v12) + tiempos de viaje calibrados
+- Por qué: Cesar quiere la ubicación del motorista SIEMPRE (pantalla bloqueada, app cerrada) para el indicador «cuándo preparar» del KDS y mejor servicio. Foto a las 3:45 pm del 12-nov: 7 conectados, 2 llevaban 11–13 min sin señal.
+- **Publicado 12-nov (PR #473):** compilado por GitHub Actions (run 14) y publicado en `/apk/freakie-drivers.apk` (3.17 MB). El workflow `build-driver-apk.yml` fallaba desde la v11 (la acción setup-android pedía el paquete `tools`, retirado) → se fijaron los paquetes; además, corrido a mano en una rama deja el APK commiteado en `public/apk` de esa rama. APK debug: firma distinta en cada build → hay que desinstalar la vieja antes de instalar.
+- **App Android v12 (`android-driver`, versionCode 12, `v12-gps-siempre`):**
+  - `Turno.kt`: el turno queda guardado; antes el reinicio automático (START_STICKY) volvía SIN empleadoId y no mandaba nada (bug).
+  - `Vigilante.kt`: alarma cada 3 min + WorkManager cada 15 min reviven el servicio si el latido tiene > 90 s; `BootReceiver` (encendido / actualización de la app).
+  - `Avisos.kt`: notificaciones altas «ubicación apagada», «falta permiso», «GPS detenido».
+  - Cola de puntos sin internet → `driver_puntos_lote`. Estado cada 60 s → `driver_reportar_estado`.
+  - `MainActivity`: pide «Permitir todo el tiempo» (antes nunca se pedía), `onResume` revive el GPS, bridge `estadoGps/abrirAjustesUbicacion/pedirPermisoSiempre/abrirInicioAutomatico/pedirBateriaSinRestriccion`. **Fix:** `stopLocation` no pasaba por `onStartCommand` (stopService) → ahora marca fin de turno ahí.
+- `DriverBeacon.jsx` → `SaludGps`: franja roja con botones (ubicación, permiso, batería, inicio automático); desde navegador o app vieja pide instalar/actualizar.
+- Torre: `MotoristasSenal.jsx` en TabPedidos (sin señal ≥ 3 min, ubicación apagada, sin permiso, batería, sin app nueva) con WhatsApp/Llamar.
+- BD (`20261112_gps_motorista_siempre.sql`): `driver_estado_app`, `driver_puntos_lote`, recorrido graba también el regreso (45 min tras entregar), `motoristas_senal`, bloqueo de asignación sin señal **apagado** (`config_delivery.bloquear_sin_senal_min = 0`, prender cuando todos tengan v12).
+- Tiempos: `delivery_tiempos_calibrados` + `minutos_viaje(sucursal, km, ts)` + cron lunes 3:15 am. Real = ~4.5–7.2 min por km en línea recta + 3 min (Venecia la más lenta). La fórmula vieja de la ruta (2.14 min/km + 6/parada) se queda corta; `fn_ruta_recalcular` todavía usa la vieja (pendiente pasarla a la calibrada).
+- `driver_recorrido` ~963k filas / 185 MB sin limpieza: decidir retención con Cesar.
+- `instalar-driver.html`: novedades v12, «Permitir todo el tiempo» y guía por marca (Xiaomi, Huawei, Oppo/Realme, Vivo, Tecno/Infinix).
+
+## 10-Nov-2026 — Hoja de pedido/conteo: hielo 10 lbs y aceite Wesson (datos)
+- Pedido de Cesar: Casa Matriz ahora surte bolsas de hielo de 10 lbs y aceite Wesson para plancha.
+- Nuevo producto «Bolsa de hielo 10 lbs» (copia de la de 5 lbs; Congelado Papas, orden 33) con inventario en CM001 y todas las sucursales.
+- El existente «46369 Wesson Canol» (PriceSmart, MP-301) se renombró «Aceite Wesson Canola para plancha 4.73 L», unidad bote, Carnes y Complementos orden 5 (junto al Santa Clara); inventario creado en las 7 sucursales activas.
+- «Bolsa de hielo 5 lbs» sacada del conteo nocturno (incluir_conteo=false, sigue activa en el catálogo) a pedido de Cesar: ahora se pide la de 10 lbs.
+- Ojo: confirmar si el ítem 46369 de PriceSmart ($16.81) trae 1 o 2 botes; si son 2, la recepción debe sumar 2 por unidad comprada.
+
+## 11-Nov-2026 — Banco y socios pasan por el gate de sesión de finanzas
+- Por qué: banco, comprobantes, socios y cuentas de terceros deben pedir sesión de finanzas, igual que planilla y DTEs emitidos.
+- Front (PR #471): `BancoView`, `IngestaComprobantes`, `DebitosPorClasificar`, `FinanzasDashboard` y la pestaña de cuentas de `RRHHView` leen esos objetos con `dbFin`. **Regla: una consulta nueva a `bank_*`, `socios`, `socio_*`, `movimientos_socios`, `prestamo_movimientos` o `cuentas_bancarias_terceros` va con `dbFin`, no con `db`** (con `db` devuelve `permission denied`).
+- Escrituras: ya no hay `insert`/`update` directo a esas tablas. Van por RPC con `dbFin.rpc(...)`: `bank_comprobante_registrar`, `bank_estado_cuenta_registrar`, `bank_regla_set_activa`, `cuenta_tercero_guardar`, `cuenta_tercero_set_activo`.
+- `api/supaproxy.js`: `BANCO_OBJETOS` (roles de finanzas) y `TERCEROS_OBJETOS` (roles de RRHH). Un objeto o RPC nuevo de banco hay que agregarlo ahí.
+- Efecto visible: Banco pide el PIN de sesión (30 min) al entrar, como el Dashboard Financiero. En DEV local estas pantallas no leen datos (no hay proxy).
+- RPC (PR #472): las de conciliación, revisión e ingesta (`bancoview_*`, `fn_banco_*`, `bank_match_*`, `bank_tx_marcar`, `fn_import_bank_bac`, `fn_ingesta_*`) también van con `dbFin.rpc(...)` y están en `BANCO_OBJETOS`. Con `db.rpc` devuelven `permission denied`. La más lenta tarda ~4 s (techo del proxy: 25 s).
+- Pendiente: `PagosProveedorView` (`pago_proveedor_*`, `pago_aplicacion_*`) sigue por `db`.
+- Ojo, ya existía: `bancoview_aplicar_reglas` falla en la regla R09 (inserta `target_id` nulo en `bank_match`).
+- Probado: build, lecturas y las 5 RPC con el rol del gate (transacción deshecha), gate en producción. Falta la prueba en pantalla con sesión real.
+
 ## 11-Nov-2026 — Ejecución Ola 0 (parte 1): DTE, proxies, POS, recepción
 - Por qué: Jose dio visto bueno a los paquetes DTE del plan (`docs/planes/PLAN_EJECUCION_2026-11-10.md`). Kaeru, Kako y Eatalia los ejecuta él.
 - **Aplicado en la base (ya en producción):**
@@ -40,6 +227,7 @@
 - `MenuPublico`: banner «Tenés $2 de descuento», barra para ganarlo en el carrito, «Cupón aplicado −$2» o «te faltan $X», y en el checkout la línea del cupón (tarjeta cobra el neto).
 - `TrackingPedido`: `CuponGanado` al entregar («Tenés N días para usarlo · vence el …», mínimo $20).
 - Probado en BD con rollback (aplica/no aplica, cuenta con descuento, no regenera, se libera al cancelar, gana al entregar) y en jsdom (barra, banner, descuento, checkout).
+- En producción con PR #470; trigger activado el 10-nov. Medición: `select * from reporte_cupon_regreso('2026-11-10')` (por semana: emitidos, usados, vencidos, vigentes, % canje, días hasta usarlo, ticket con cupón, $ descontado). Cesar quiere saber si la gente lo reclama: revisarlo en cada reporte semanal.
 
 ## 10-Nov-2026 — Menú web: «⭐ El favorito» / «⭐ Popular» en los extras
 - Por qué: subir extras con precio; datos 30 días (tocino hamburguesa 1,811; carne y queso extra 620; papas trufa 295…).

@@ -612,6 +612,59 @@ function useBeacon(yo) {
 // Campana «pedido listo» (opción A elegida por Cesar): dos ding-dong.
 // Solo para la PWA (iPhone); en el APK suena el servicio nativo.
 let _audioCtx = null
+// Salud del GPS (12-nov-2026, Cesar): franja roja con lo que falta para que la
+// torre siempre vea al motorista. Dentro de la app nativa (v12+) lee el estado
+// real del teléfono; desde el navegador recomienda instalar la app.
+function SaludGps({ activo }) {
+  const nativo = typeof window !== 'undefined' && !!window.AndroidPrinter?.estadoGps
+  const [st, setSt] = useState(null)
+  useEffect(() => {
+    if (!nativo) return
+    const leer = () => { try { setSt(JSON.parse(window.AndroidPrinter.estadoGps())) } catch { /* noop */ } }
+    leer()
+    const t = setInterval(leer, 10000)
+    document.addEventListener('visibilitychange', leer)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', leer) }
+  }, [nativo])
+
+  const caja = (color, children) => (
+    <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.4,
+                  background: color === 'rojo' ? '#3b0d0d' : '#3b2f0a', border: `1px solid ${color === 'rojo' ? '#ef4444' : '#f59e0b'}`,
+                  color: color === 'rojo' ? '#fecaca' : '#fde68a' }}>{children}</div>
+  )
+  const boton = (txt, fn) => (
+    <button onClick={fn} style={{ marginTop: 6, marginRight: 6, background: '#fff', color: '#111', border: 'none',
+                                   borderRadius: 8, padding: '6px 10px', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>{txt}</button>
+  )
+
+  if (!nativo) {
+    // App antigua o navegador: no hay forma de garantizar el GPS con pantalla apagada
+    const esAppVieja = !!window.AndroidPrinter?.hasLocationNative
+    return caja('ambar', <>
+      <b>{esAppVieja ? 'Actualizá tu app Freakie Drivers' : 'Instalá la app Freakie Drivers'}</b><br />
+      Desde el navegador el GPS se corta cuando bloqueás el celular o abrís Waze.
+      <div><a href="/instalar-driver.html" style={{ color: '#fff', fontWeight: 800 }}>Descargar la app →</a></div>
+    </>)
+  }
+  if (!st) return null
+  const problemas = []
+  if (!st.gps) problemas.push(['Tu ubicación está apagada', 'Activar ubicación', () => window.AndroidPrinter.abrirAjustesUbicacion()])
+  if (!st.siempre) problemas.push(['Falta «Permitir todo el tiempo»', 'Dar permiso', () => window.AndroidPrinter.pedirPermisoSiempre()])
+  if (!st.bateria) problemas.push(['El ahorro de batería puede cortar tu GPS', 'Quitar restricción', () => window.AndroidPrinter.pedirBateriaSinRestriccion()])
+  if (activo && st.turno && st.latido_s > 90) problemas.push([`Tu GPS no responde hace ${Math.round(st.latido_s / 60)} min`, 'Inicio automático', () => window.AndroidPrinter.abrirInicioAutomatico()])
+  if (!problemas.length) {
+    return st.pendientes > 0
+      ? caja('ambar', <>📶 Sin internet: {st.pendientes} ubicaciones guardadas, se mandan solas al volver la señal.</>)
+      : null
+  }
+  return caja('rojo', <>
+    <b>📍 La torre no te puede ver bien</b>
+    {problemas.map(([txt, btn, fn]) => (
+      <div key={txt} style={{ marginTop: 6 }}>• {txt}<br />{boton(btn, fn)}</div>
+    ))}
+  </>)
+}
+
 function campana() {
   try {
     _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)()
@@ -639,7 +692,7 @@ function CobroLinea({ p }) {
   const efectivo = /efectivo/i.test(p.metodo_pago || 'efectivo')
   const caja = (bg, bd, col) => ({ background: bg, border: `1px solid ${bd}`, color: col, borderRadius: 8,
                                    padding: '5px 8px', fontSize: 12, marginTop: 6 })
-  if (p.pagado_online) return <div style={caja('#0e2a17', '#1f5a33', '#86efac')}>💳 Ya pagado con tarjeta — no cobrés nada</div>
+  if (p.pagado_online) return <div style={caja('#0e2a17', '#1f5a33', '#86efac')}>💳 Ya pagado {p.metodo_pago === 'transferencia' ? 'por transferencia' : p.metodo_pago === 'link_pago' ? 'con link' : 'con tarjeta'} — no cobrés nada</div>
   if (efectivo && Number(p.paga_con) > 0) {
     return (
       <div style={caja('#2f2a10', '#5a4a12', '#fde68a')}>
@@ -768,23 +821,6 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       setAlarma(null)
       if (!beacon.activo) beacon.iniciar()
       setMsg(`🚀 Saliste con ${data?.recogidos || 0} pedido${data?.recogidos === 1 ? '' : 's'}. Tu ruta ya está ordenada.`)
-      await recargar()
-    } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
-    finally { setOcupado(null) }
-  }
-
-  // Con varios pedidos a la vez, marcar uno por uno es tedioso y se presta a
-  // que salgan a la calle con alguno sin marcar.
-  const recogerTodos = async () => {
-    const listos = pedidos.filter(x => x.estado === 'lista')
-    if (!listos.length) return
-    setOcupado('todos')
-    try {
-      for (const x of listos) {
-        await db.rpc('driver_marcar_recogido', { p_empleado_id: yo.id, p_delivery_id: x.id })
-      }
-      if (!beacon.activo) beacon.iniciar()
-      setMsg(`🚀 Saliste con ${listos.length} pedidos.${beacon.activo ? '' : ' Encendimos tu GPS automáticamente.'}`)
       await recargar()
     } catch (e) { setMsg('❌ ' + (e.message || 'No se pudo')) }
     finally { setOcupado(null) }
@@ -946,6 +982,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
       {beacon.error && dispo.disponible && (
         <div style={S.dispoErr}>⚠️ {beacon.error}</div>
       )}
+      {dispo.disponible && <SaludGps activo={beacon.activo} />}
 
       <div style={S.dispoPie}>
         {beacon.activo
@@ -999,8 +1036,13 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
     ? Number(p.paga_con) - Number(p.total) : 0
   // Si ya va en camino, el viaje es solo lo que lleva: lo asignado en la
   // sucursal mientras tanto es el PRÓXIMO viaje (9-nov-2026, caso Gustavo).
+  // Ruta fija (22-nov-2026, Cesar): antes de salir, la ruta son TODOS los pedidos
+  // asignados, listos o en cocina. Se sale solo cuando están todos (lo valida el
+  // servidor en _driver_salir) y el orden 1°, 2°… ya no cambia al salir.
+  const enCocina = enRuta.length === 0 ? pedidos.filter(x => !['lista', 'en_camino'].includes(x.estado)) : []
+  const puedeSalir = enRuta.length === 0 && listos > 0 && enCocina.length === 0
   const viaje = pedidos
-    .filter(x => enRuta.length > 0 ? x.estado === 'en_camino' : ['lista', 'en_camino'].includes(x.estado))
+    .filter(x => enRuta.length > 0 ? x.estado === 'en_camino' : x.estado !== 'en_camino')
     .sort((a, b) => (a.orden_entrega ?? 99) - (b.orden_entrega ?? 99))
   const cambioTotal = viaje.reduce((s, p) => s + vuelto(p), 0)
 
@@ -1014,9 +1056,17 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
           </div>
           <div style={{ fontSize: 15, marginTop: 8, opacity: .92, lineHeight: 1.5 }}>
             {alarma.sucursal} · {alarma.listos} {alarma.listos === 1 ? 'pedido' : 'pedidos'}<br />
-            {(alarma.pedidos || []).filter(p => p.estado === 'lista').map(p => p.numero_orden).join(' · ')}<br />
+            {/* Nombre de cada bolsa a retirar (la alarma solo trae id y número;
+                el nombre y el orden salen de los pedidos que ya tiene la app). */}
+            {(alarma.pedidos || []).filter(a => a.estado === 'lista').map(a => {
+              const p = pedidos.find(x => x.id === a.id) || a
+              return (
+                <span key={a.id || a.numero_orden} style={{ display: 'block', fontWeight: 800 }}>
+                  {p.orden_entrega != null ? `${p.orden_entrega}° · ` : ''}{p.cliente_nombre || 'Cliente'} · {a.numero_orden}
+                </span>
+              )
+            })}
             {alarma.min_espera > 0 ? `Esperando hace ${alarma.min_espera} min` : 'Recién salido de cocina'}
-            {alarma.listos < alarma.total && <><br />El otro sigue en cocina, pero este ya no puede esperar.</>}
           </div>
           <button disabled={ocupado === 'alarma'} onClick={retirarListos} style={S.alarmaBtn}>
             {ocupado === 'alarma' ? 'Marcando…' : alarma.listos > 1 ? 'Ya los retiré · salgo' : 'Ya lo retiré · salgo'}
@@ -1036,9 +1086,19 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
             {[rodando && `${rodando} en ruta`, listos && `${listos} por recoger`,
               cocinando && `${cocinando} todavía en cocina`].filter(Boolean).join(' · ')}
           </div>
-          {listos > 1 && (
-            <button disabled={ocupado === 'todos'} onClick={recogerTodos} style={S.resumenBtn}>
-              {ocupado === 'todos' ? 'Marcando…' : `📦 Salgo con los ${listos}`}
+          {enRuta.length === 0 && enCocina.length > 0 && listos > 0 && (
+            <div style={{ fontSize: 12.5, color: '#fde68a', background: '#3b2a10', border: '1px solid #7a5a1c',
+                          borderRadius: 8, padding: '7px 9px', marginTop: 8, lineHeight: 1.4 }}>
+              ⏳ <b>Esperá:</b> tu ruta tiene {pedidos.length} pedidos y falta{enCocina.length > 1 ? 'n' : ''}{' '}
+              <b>{enCocina.map(x => x.cliente_nombre || x.numero_orden).join(', ')}</b> (en cocina). Salís con todos cuando estén listos.
+            </div>
+          )}
+          {enRuta.length === 0 && pedidos.length > 1 && listos > 0 && (
+            <button disabled={!puedeSalir || ocupado === 'alarma'} onClick={retirarListos}
+                    style={{ ...S.resumenBtn, ...(puedeSalir ? {} : { opacity: .45, cursor: 'not-allowed' }) }}>
+              {ocupado === 'alarma' ? 'Marcando…'
+                : puedeSalir ? `📦 Salgo con los ${pedidos.length}`
+                : `📦 Salgo con los ${pedidos.length} · esperando ${enCocina.length}`}
             </button>
           )}
         </div>
@@ -1075,7 +1135,14 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
             <div key={p.id} style={S.bloqueado}>
               <span style={S.bloqNum}>{ord(p.orden_entrega)}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#d6cdc3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {/* 14-nov-2026 (Cesar): el nombre se ve aunque la parada esté
+                    bloqueada — al retirar en la sucursal las bolsas van rotuladas
+                    con el nombre del cliente y el motorista tiene que saber cuáles
+                    llevar. Solo se bloquea el botón de entregar, no la info. */}
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#f3ece4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.cliente_nombre || 'Cliente'}
+                </div>
+                <div style={{ fontSize: 12.5, color: '#bdb3a8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
                   {p.cliente_direccion || p.numero_orden}
                 </div>
                 <div style={{ fontSize: 11.5, color: '#8b807a', marginTop: 2 }}>
@@ -1100,7 +1167,7 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               🔜 Próximo viaje — recogelo cuando regreses a la sucursal
             </div>
           )}
-          {enRuta.length === 0 && p.estado === 'lista' && p.orden_entrega != null && listos + rodando > 1 && (
+          {enRuta.length === 0 && p.estado !== 'en_camino' && p.orden_entrega != null && pedidos.length > 1 && (
             <div style={{ fontSize: 11.5, fontWeight: 800, color: '#FFD900', marginBottom: 6 }}>
               Va {ord(p.orden_entrega)} en tu ruta
             </div>
@@ -1162,9 +1229,15 @@ function Pedidos({ yo, pedidos, recargar, beacon, dispo }) {
               Este ya es tuyo. Te avisamos apenas cocina lo termine.
             </div>
           ) : p.estado === 'lista' ? (
-            <button disabled={ocupado === p.id} onClick={() => recoger(p)} style={{ ...S.accion('#E63946'), marginTop: 10 }}>
-              {ocupado === p.id ? '…' : '📦 Ya lo recogí — salgo'}
-            </button>
+            enRuta.length === 0 && enCocina.length > 0 ? (
+              <div style={S.esperando}>
+                ✅ Listo. Esperá a que salga{enCocina.length > 1 ? 'n' : ''} de cocina {enCocina.map(x => x.cliente_nombre || x.numero_orden).join(', ')} y salís con todos.
+              </div>
+            ) : (
+              <button disabled={ocupado === p.id} onClick={() => recoger(p)} style={{ ...S.accion('#E63946'), marginTop: 10 }}>
+                {ocupado === p.id ? '…' : enRuta.length === 0 && pedidos.length > 1 ? `📦 Ya los recogí — salgo con los ${pedidos.length}` : '📦 Ya lo recogí — salgo'}
+              </button>
+            )
           ) : (
             <div style={{ marginTop: 10 }}>
               {/* El método ya viene definido desde el pedido (y confirmado por
