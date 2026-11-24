@@ -16,6 +16,7 @@
   - Los grupos `86cfbd07…` y `d7237f1c…` (Super Freak) pasan a min 1 / obligatorio, solo en el menú PeYa. Catálogo reenviado (import 39 aplicado; solo falla la foto de Fancy fries).
   - #5814 parchado con «Coca Cola (el cliente no eligió)».
 - **Cuentas 345 y 953:** `peya_ordenes` pasadas a `retirado` a pedido de Jose.
+- **Producción (24-nov):** `PeyaInboxView.jsx` completo de la rama + la migración publicados en `main` (`7d25687`, Vercel READY). Junto con la entrega al motorista salieron el panel abrir/cerrar tienda y los motivos de rechazo oficiales de DH. Las cajas tienen que recargar la PWA.
 
 ## 23-Nov-2026 (tarde) — PedidosYa: primeros pedidos reales del piloto y dos fallas del cierre corregidas
 - **Apertura:** Santa Tecla / Cafetalón (SV-FREAKIE-DOGS-0001) abierta a las 1:40 p.m. con el menú de Metro Centro.
