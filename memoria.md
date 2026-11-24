@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 24-Nov-2026 — Críticos: presentaciones nuevas (carne 15, queso 5 lb, pan burger 6, pan tradicional 12) con vigencia por fecha
+- Por qué: Saúl avisó que la carne llega en bolsa de 15 bolitas; Jose pidió además queso para freír en bolsa de 5 lb (15 bolsitas), pan de hamburguesa en bolsa de 6 y pan hot dog tradicional en bolsa de 12 (el brioche sigue en 21). Aplica **desde la hoja del 22-nov**.
+- Problema de fondo: `fn_criticos_hoja` leía siempre el factor ACTUAL del ítem, así que cambiar la presentación reescribía las hojas viejas (el 5-nov se arregló convirtiendo a mano). Ahora hay `criticos_items_presentaciones` (presentación válida HASTA una fecha): hoja y guardar usan la de la fecha de la hoja, el CID arrastrado se convierte conservando piezas, y `fn_criticos_semana` usa el factor de ayer para el cierre de ayer. Para el próximo cambio: insertar la presentación vieja con su `hasta` y actualizar `criticos_items`.
+- Las hojas del 22 y 23-nov ya digitadas se leen ahora en la presentación nueva (los números no se tocaron): **Saúl debe revisarlas**, sobre todo queso (venía anotando bolsitas en la casilla de paquetes).
+- Recetas (decisión de Jose): queso frito 0.30 → 0.333333 lb por porción (5 lb / 15; costo $1.145 → $1.272) en Queso Frito, la bolsita porcionada y 3 combos; pan tradicional `factor_a_stock` 0.1 → 0.083333. Ventas del 22–23 ya se habían descargado con la receta vieja.
+- Catálogo: carne `conteo_factor` 15 (conteo nocturno, SOS, despacho); «Pan Hot Dog Berna bolsa 12 unidades» y «Queso para dorar bolsita 0.33 lb» renombrados. El costo de la bolsa de pan no se tocó: si la bolsa de 12 cuesta distinto, hay que actualizarlo.
+- Etiquetado: carne bolsa 15 bolitas = 1,021 g ±34; queso frito bolsita 151 g.
+- Pendiente: Jose vio decimales en «pedido solicitado» de papa sazonada; en críticos de Lourdes/Venecia no aparecen (entran 120 lb/día, a revisar si el despacho está en lb o en cajas de 30 lb). Migración `20261124_criticos_presentaciones_vigencia.sql`.
+
 ## 17-Nov-2026 — FIX «No pudimos cargar el menú» (menú web)
 - Causa: `menu_publico_delivery()` tardaba ~0.85 s promedio con picos de 3 s; el rol anon corta a los 3 s → 500 intermitente y el menú no cargaba.
 - Fix (migración `menu_publico_cache`): la función original pasó a `_menu_publico_delivery_calc()`; `menu_publico_cache_refrescar()` la guarda en `menu_publico_cache` cada minuto (pg_cron) y `menu_publico_delivery()` sirve lo guardado (7 ms). Si el caché tiene más de 10 min, calcula en vivo. Cambios de menú/disponibilidad tardan hasta 1 min en verse.

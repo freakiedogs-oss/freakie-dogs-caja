@@ -18,8 +18,8 @@
 import { db } from '../supabase'
 
 export const PRODUCTOS_RESPALDO = [
-  { id: 'carne',      nombre: 'Carne para hamburguesa',   unidad: 'bolsa 20 bolitas', gramos: 1361, banda: 34, tara: 12, dias: 5,   conserva: 'Mantener refrigerado' },
-  { id: 'quesofrito', nombre: 'Queso frito',              unidad: 'bolsita 0.30 lb',  gramos: 136,  banda: 8,  tara: 2,  dias: 30,  conserva: 'Mantener refrigerado' },
+  { id: 'carne',      nombre: 'Carne para hamburguesa',   unidad: 'bolsa 15 bolitas', gramos: 1021, banda: 34, tara: 12, dias: 5,   conserva: 'Mantener refrigerado' },
+  { id: 'quesofrito', nombre: 'Queso frito',              unidad: 'bolsita 0.33 lb',  gramos: 151,  banda: 8,  tara: 2,  dias: 30,  conserva: 'Mantener refrigerado' },
   { id: 'cheddar',    nombre: 'Cheddar Porcionado',       unidad: 'bolsa 2 lb',       gramos: 907,  banda: 50, dias: 30,  conserva: 'Mantener refrigerado' },
   { id: 'chili',      nombre: 'Chili con carne',          unidad: 'bolsa 5 lb',       gramos: 2268, banda: 50, dias: 90,  conserva: 'Mantener congelado' },
   { id: 'cebmorada',  nombre: 'Cebolla Morada encurtida', unidad: 'bolsa 1 lb',       gramos: 454,  banda: 30, dias: 30,  conserva: 'Mantener refrigerado' },
