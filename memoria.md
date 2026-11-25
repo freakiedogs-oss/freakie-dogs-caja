@@ -1,5 +1,14 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 25-Nov-2026 — PedidosYa: fotos con Coca-Cola y enlace de foto de entrega
+- **Fotos Pepsi → Coca-Cola** (pedido de Jose: solo trabajamos con Coca-Cola). Los productos eran 2 Mega Promos, Combo Fancy Dúo y Super Freak.
+  - Las fotos eran de Metro Centro con botellas Pepsi. Se editaron con un canvas: tapa y etiqueta azul pasadas a rojo, más la etiqueta Coca-Cola 300 ml recortada de la foto del Combo Dúo. Jose aprobó el antes/después.
+  - Las fotos están en `menu/items/peya-coca/*.jpg` (800×600). Para subirlas se creó una policy temporal de INSERT anon limitada a esa carpeta, que se borró apenas terminó la subida.
+  - Catálogo reenviado (import 40, `done_with_errors`): la única imagen que falló es Fancy fries, que ya fallaba antes.
+- **Bug: «ver foto» de la entrega al motorista.** El bucket `despachos-fotos` es privado, así que la URL pública devuelve 400. `VerFoto` ahora pide una URL firmada (1 h) al tocar el enlace.
+  - Está en la rama; falta publicarlo en main.
+  - Pasa lo mismo en `MiRutaDespacho.jsx` y `ConfirmarEntrega.jsx`, que también guardan `getPublicUrl` de ese bucket. No se tocaron.
+
 ## 23-Nov-2026 (noche) — PedidosYa: constancia de entrega al motorista (anti-robo) y bebidas en el KDS
 - **Problema que resuelve:** motoristas de PeYa que se llevan la bolsa sin apretar «pedido en camino». El pedido sigue «esperando», viene otro motorista a reclamarlo y PeYa nos lo cobra. PeYa no manda nombre ni ID del motorista; lo único confiable es el webhook `ORDER_PICKED_UP`.
 - **Flujo nuevo en la bandeja PeYa (rider de PedidosYa, después de «Listo para el driver»):**

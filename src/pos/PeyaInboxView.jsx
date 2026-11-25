@@ -164,6 +164,22 @@ function comprimir(file, max = 1000, q = 0.72) {
   })
 }
 
+// El bucket `despachos-fotos` es privado: la URL pública devuelve 400. Al tocar el
+// enlace se pide una URL firmada (anon tiene SELECT en el bucket) y se abre esa.
+function VerFoto({ url, children }) {
+  const abrir = async (e) => {
+    e.preventDefault(); e.stopPropagation()
+    const ventana = window.open('', '_blank')
+    try {
+      const ruta = decodeURIComponent(String(url).split('/despachos-fotos/')[1] || '').split('?')[0]
+      const { data, error } = await db.storage.from('despachos-fotos').createSignedUrl(ruta, 3600)
+      if (error || !data?.signedUrl) throw error || new Error('sin url')
+      if (ventana) ventana.location.href = data.signedUrl; else window.location.href = data.signedUrl
+    } catch { if (ventana) ventana.close(); alert('No se pudo abrir la foto') }
+  }
+  return <a href="#" onClick={abrir} style={{ color: C.azul }}>{children}</a>
+}
+
 // Segundos desde la entrega, contados en vivo a partir de lo que dijo el servidor.
 const segEntrega = (p, ahoraBase) =>
   (p.entregado_segundos ?? 0) + Math.floor((Date.now() - ahoraBase) / 1000)
@@ -237,7 +253,7 @@ function EntregaMotorista({ p, ahoraBase, onEntregar, ocupado }) {
       <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', marginTop: 5 }}>
         Entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
         {p.entrega_foto_url && (
-          <> · <a href={p.entrega_foto_url} target="_blank" rel="noreferrer" style={{ color: C.azul }}>ver foto</a></>
+          <> · <VerFoto url={p.entrega_foto_url}>ver foto</VerFoto></>
         )}
       </div>
     </div>
@@ -259,7 +275,7 @@ function ConstanciaRetiro({ p }) {
         </span>
       )}
       {p.entrega_foto_url && (
-        <> · <a href={p.entrega_foto_url} target="_blank" rel="noreferrer" style={{ color: C.azul }}>📷 foto</a></>
+        <> · <VerFoto url={p.entrega_foto_url}>📷 foto</VerFoto></>
       )}
     </div>
   )
