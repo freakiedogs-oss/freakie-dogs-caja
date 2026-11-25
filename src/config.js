@@ -223,6 +223,9 @@ export const NAV_SECTIONS = [
       { key: 'dte-mapeo', label: 'Mapeo DTE → Catálogo', icon: '🔗', roles: ['ejecutivo', 'admin'] },
       { key: 'rentabilidad', label: 'Rentabilidad x Sucursal', icon: '💹', roles: ['ejecutivo', 'admin'] },
       { key: 'pagos-proveedor', label: 'Pagos & CxP', icon: '💰', roles: ['ejecutivo', 'superadmin'] },
+      // Compras HQ (25-nov-2026): gasto, proveedores y sugerencias de ahorro.
+      // No confundir con 'compras' (Órdenes de Compra, en Almacén).
+      { key: 'compras-hq', label: 'Compras', icon: '🛒', roles: ['admin', 'ejecutivo', 'superadmin'] },
     ],
   },
   {

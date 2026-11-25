@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 25-Nov-2026 — 🛒 Pantalla «Compras» (Finanzas)
+- Por qué: Jose pidió en cada ERP de restaurante una vista con toda la información de compras, sugerencias basadas en datos y siempre lo más reciente (si ya se cambió de proveedor, se muestra como logro y no se vuelve a sugerir). Contrato: `hq-panel/supabase/compras_hq/CONTRATO_VISTA_COMPRAS.md`.
+- Pantalla nueva `src/components/finanzas/ComprasHQView.jsx`, nav key **`compras-hq`** (Finanzas, label «Compras», roles admin/ejecutivo/superadmin; filas en `permisos_rol` para los tres). No confundir con `compras` = Órdenes de Compra (Almacén), que no se tocó.
+- Datos: `db.rpc('compras_hq_freakie', { p_token })` con el token de la sesión de administración compartida (`freakie_torre_token`). La función (SECURITY DEFINER, ya desplegada) valida el rol con `fin_sesion_rol` y devuelve el JSON de `compras_hq.erp_payload('freakie')`. Si rechaza, el mensaje se muestra tal cual; si es de sesión, el banner pide el PIN ahí mismo (`abrirSesionFinanzas`, el mismo `erp_admin_sesion`) y recarga sin perder la pantalla.
+- Secciones en el orden del contrato: encabezado (datos al / última factura / Actualizar), KPIs, sugerencias por color (oportunidad, alerta, logro), items buscables con «ver inactivos» y marca «Cambió de… el…», gasto por mes (barras CSS; en el iPhone se toca una barra para ver el monto), proveedores, compras recientes y categorías 90 días. Tablas en pantalla ancha, tarjetas en el iPhone. Fechas formateadas como texto (sin `new Date('YYYY-MM-DD')`), hora en UTC-6.
+
 ## 23-Nov-2026 — 📊 Medir la tasa real de las hojas de oferta
 - Antes solo se sabía cuántos aceptaban (`agrandado_via='pregunta'`, `origen='oferta_combo'`), no cuántas veces se mostró la hoja.
 - Nuevo: tabla `menu_ofertas_eventos` + RPC `menu_oferta_evento` (anon) + vista `v_menu_ofertas_tasa` (migración 20261123e). En MenuPublico.jsx, `useRegistroOferta` registra «mostrada» al abrir `HojaAgrandar` / `HojaOferta` y luego «si» o «no» (una vez). Fire-and-forget: si falla, el cliente no se entera.
