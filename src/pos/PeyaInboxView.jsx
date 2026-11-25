@@ -19,6 +19,7 @@
 // ────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db, URL_SB } from '../supabase'
+import { abrirFotoPrivada } from '../lib/fotoPrivada'
 
 const REFRESH_MS = 15000
 
@@ -164,6 +165,12 @@ function comprimir(file, max = 1000, q = 0.72) {
   })
 }
 
+// El bucket `despachos-fotos` es privado: la URL pública devuelve 400. Al tocar el
+// enlace se pide una URL firmada (ver lib/fotoPrivada).
+function VerFoto({ url, children }) {
+  return <a href="#" onClick={(e) => abrirFotoPrivada(url, e)} style={{ color: C.azul }}>{children}</a>
+}
+
 // Segundos desde la entrega, contados en vivo a partir de lo que dijo el servidor.
 const segEntrega = (p, ahoraBase) =>
   (p.entregado_segundos ?? 0) + Math.floor((Date.now() - ahoraBase) / 1000)
@@ -237,7 +244,7 @@ function EntregaMotorista({ p, ahoraBase, onEntregar, ocupado }) {
       <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', marginTop: 5 }}>
         Entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
         {p.entrega_foto_url && (
-          <> · <a href={p.entrega_foto_url} target="_blank" rel="noreferrer" style={{ color: C.azul }}>ver foto</a></>
+          <> · <VerFoto url={p.entrega_foto_url}>ver foto</VerFoto></>
         )}
       </div>
     </div>
@@ -259,7 +266,7 @@ function ConstanciaRetiro({ p }) {
         </span>
       )}
       {p.entrega_foto_url && (
-        <> · <a href={p.entrega_foto_url} target="_blank" rel="noreferrer" style={{ color: C.azul }}>📷 foto</a></>
+        <> · <VerFoto url={p.entrega_foto_url}>📷 foto</VerFoto></>
       )}
     </div>
   )
