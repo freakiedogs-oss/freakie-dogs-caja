@@ -1,5 +1,24 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 25-Nov-2026 (tarde) — PedidosYa: pase de las 5 sucursales restantes al flujo directo
+- Piloto Cafetalón: 66 pedidos reales desde el 23-nov, aceptación en ~0.5 s, sin errores HTTP, nada sin mapear. Se le escribió a Integraciones y respondió Francis Sotero (soporte) con los remoteIds.
+- **Decisión de Jose:** las cinco sucursales juntas el **lunes 30-nov** lo más temprano posible, con el mismo menú y precios que Cafetalón. `peya_catalogo` es por cadena, así que es el mismo catálogo.
+- `peya_vendor_map` actualizado: `remote_id` = `vendor_code`, `PY_SV`, `auto_aceptar` = true.
+
+  | Sucursal | remoteId | ID PeYa |
+  |---|---|---|
+  | S001 | SV-FREAKIE-DOGS-PLAZA-MUNDO-SOYAPANGO-0001 | 519400 |
+  | S002 | SV-FREAKIE-DOGS-PLAZA-MUNDO-USULUTAN-0001 | 567479 |
+  | S003 | SV-FREAKIE-DOGS-LOURDES-0001 | 583558 |
+  | S004 | SV-FREAKIE-DOGS-PASEO-VENECIA-0001 | 593019 |
+  | S006 | SV-FREAKIE-DOGS-METROCENTRO-0001 | 629107 |
+
+- Respuesta enviada en el hilo «Piloto OK y pase a producción…» confirmando los IDs y la fecha. Se pidió a Mónica y Cristina volver a cargar las promos de cada tienda.
+- **Pendiente el lunes**, cuando PeYa confirme:
+  - Cargar el catálogo a las cinco tiendas en un solo import y enviar el Open de cada una.
+  - Cada sucursal tiene que tener **turno abierto antes de abrir en PeYa**; si no, el pedido se rechaza solo (pasó con el #5862 de Cafetalón).
+  - Recargar la PWA en las cajas.
+
 ## 25-Nov-2026 — PedidosYa: fotos con Coca-Cola y enlace de foto de entrega
 - **Fotos Pepsi → Coca-Cola** (pedido de Jose: solo trabajamos con Coca-Cola). Los productos eran 2 Mega Promos, Combo Fancy Dúo y Super Freak.
   - Las fotos eran de Metro Centro con botellas Pepsi. Se editaron con un canvas: tapa y etiqueta azul pasadas a rojo, más la etiqueta Coca-Cola 300 ml recortada de la foto del Combo Dúo. Jose aprobó el antes/después.
