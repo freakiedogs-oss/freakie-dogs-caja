@@ -6,8 +6,8 @@
   - Las fotos están en `menu/items/peya-coca/*.jpg` (800×600). Para subirlas se creó una policy temporal de INSERT anon limitada a esa carpeta, que se borró apenas terminó la subida.
   - Catálogo reenviado (import 40, `done_with_errors`): la única imagen que falló es Fancy fries, que ya fallaba antes.
 - **Bug: «ver foto» de la entrega al motorista.** El bucket `despachos-fotos` es privado, así que la URL pública devuelve 400. `VerFoto` ahora pide una URL firmada (1 h) al tocar el enlace.
-  - Está en la rama; falta publicarlo en main.
-  - Pasa lo mismo en `MiRutaDespacho.jsx` y `ConfirmarEntrega.jsx`, que también guardan `getPublicUrl` de ese bucket. No se tocaron.
+  - Se extendió a despachos con `src/lib/fotoPrivada.js`: saca bucket y ruta de la URL guardada (sirve con los hosts supabase.co, /sb y api.freakiedogs.com) y abre una URL firmada. Lo usan «Ver foto de recepción» en `MisPedidosView` (había 281 fotos guardadas sin poder abrirse) y la bandeja PeYa.
+  - Publicado en `main` (`9e89692`, Vercel READY) como parche de 3 archivos. Las URLs guardadas no se tocaron.
 
 ## 23-Nov-2026 (noche) — PedidosYa: constancia de entrega al motorista (anti-robo) y bebidas en el KDS
 - **Problema que resuelve:** motoristas de PeYa que se llevan la bolsa sin apretar «pedido en camino». El pedido sigue «esperando», viene otro motorista a reclamarlo y PeYa nos lo cobra. PeYa no manda nombre ni ID del motorista; lo único confiable es el webhook `ORDER_PICKED_UP`.
