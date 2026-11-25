@@ -46,6 +46,10 @@ const NOMBRE_TO_STORE_PEYA = {
   // pedidos entraron con store_code en nulo — 337 hasta el 12-sep — y por eso no
   // aparecían en ningún reporte por sucursal.
   'Freakie Dogs - Metrocentro': 'S006',
+  // Cafetalón pasó a la integración directa (23-nov-2026) y PedidosYa le cambió el
+  // nombre: sus 51 primeros pedidos entraron sin store_code. Ya corregidos.
+  'Freakie Dogs- Santa Tecla': 'M001',
+  'Freakie Dogs - Santa Tecla': 'M001',
 }
 
 // Helpers PeYa CSV (formato europeo: "9,50" → 9.50  |  "1.234,56" → 1234.56)
