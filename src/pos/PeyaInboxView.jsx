@@ -19,6 +19,7 @@
 // ────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db, URL_SB } from '../supabase'
+import { abrirFotoPrivada } from '../lib/fotoPrivada'
 
 const REFRESH_MS = 15000
 
@@ -165,19 +166,9 @@ function comprimir(file, max = 1000, q = 0.72) {
 }
 
 // El bucket `despachos-fotos` es privado: la URL pública devuelve 400. Al tocar el
-// enlace se pide una URL firmada (anon tiene SELECT en el bucket) y se abre esa.
+// enlace se pide una URL firmada (ver lib/fotoPrivada).
 function VerFoto({ url, children }) {
-  const abrir = async (e) => {
-    e.preventDefault(); e.stopPropagation()
-    const ventana = window.open('', '_blank')
-    try {
-      const ruta = decodeURIComponent(String(url).split('/despachos-fotos/')[1] || '').split('?')[0]
-      const { data, error } = await db.storage.from('despachos-fotos').createSignedUrl(ruta, 3600)
-      if (error || !data?.signedUrl) throw error || new Error('sin url')
-      if (ventana) ventana.location.href = data.signedUrl; else window.location.href = data.signedUrl
-    } catch { if (ventana) ventana.close(); alert('No se pudo abrir la foto') }
-  }
-  return <a href="#" onClick={abrir} style={{ color: C.azul }}>{children}</a>
+  return <a href="#" onClick={(e) => abrirFotoPrivada(url, e)} style={{ color: C.azul }}>{children}</a>
 }
 
 // Segundos desde la entrega, contados en vivo a partir de lo que dijo el servidor.
