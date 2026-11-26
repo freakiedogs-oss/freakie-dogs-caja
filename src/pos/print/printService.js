@@ -87,6 +87,15 @@ function horaSV(d = new Date()) {
     hour: '2-digit', minute: '2-digit',
   });
 }
+// Solo la hora del cobro, siempre en hora de El Salvador (aunque el dispositivo
+// tenga otra zona horaria configurada).
+function horaCobro(d = new Date()) {
+  // A mano (no toLocaleTimeString): algunos motores meten espacios Unicode en
+  // "p. m." que la impresora térmica saca como basura.
+  const sv = new Date(new Date(d || Date.now()).getTime() - 6 * 3600 * 1000);
+  const h = sv.getUTCHours(), m = String(sv.getUTCMinutes()).padStart(2, '0');
+  return `${h % 12 || 12}:${m} ${h < 12 ? 'AM' : 'PM'}`;
+}
 function fechaISO(d = new Date()) {
   // YYYY-MM-DD en hora local SV (UTC-6)
   return new Date(new Date(d).getTime() - 6 * 3600 * 1000).toISOString().slice(0, 10);
@@ -181,8 +190,11 @@ export function buildFactura(c, cols = 48) {
     if (dte.sello) { t.ln('Sello recepción:'); t.wrap(dte.sello); }
     t.row('Fecha emisión:', fechaISO(dte.fecha || c.fecha));
   } else {
-    t.row('Fecha:', horaSV(c.fecha));
+    t.row('Fecha:', fechaISO(c.fecha));
   }
+  // Hora del cobro y quién cobró (en reimpresiones: los del cobro ORIGINAL).
+  t.row('Hora de cobro:', horaCobro(c.fecha));
+  if (c.cajero) t.row('Cajero/a:', String(c.cajero).slice(0, cols - 11));
 
   // Canal de venta (y número de mesa si aplica)
   t.row('Canal:', c.tipoLabel || 'Para llevar');
@@ -315,7 +327,9 @@ function facturaHTML(c) {
   if (dte?.numeroControl) L.push({ text: `N° Control: ${dte.numeroControl}` });
   if (dte?.codigoGeneracion) L.push({ text: `Cód Gen: ${dte.codigoGeneracion}` });
   if (dte?.sello) L.push({ text: `Sello: ${dte.sello}` });
-  L.push({ row: 1, left: 'Fecha:', right: dte ? fechaISO(dte.fecha || c.fecha) : horaSV(c.fecha) });
+  L.push({ row: 1, left: 'Fecha:', right: fechaISO((dte && dte.fecha) || c.fecha) });
+  L.push({ row: 1, left: 'Hora de cobro:', right: horaCobro(c.fecha) });
+  if (c.cajero) L.push({ row: 1, left: 'Cajero/a:', right: c.cajero });
   if (c.cliente?.nombre) L.push({ hr: 1 }, { text: `Cliente: ${c.cliente.nombre}` });
   L.push({ hr: 1 });
   for (const it of c.items || []) {

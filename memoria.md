@@ -1,5 +1,10 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 26-Nov-2026 — 🧾 Ticket/factura impresa: cajera que cobró + hora del cobro
+- Por qué: Jose pidió que en todo ticket/factura impresa salga quién cobró y a qué hora (con DTE solo salía la fecha de emisión, y nunca el nombre).
+- `printService.js` (`buildFactura` y el fallback `facturaHTML`): después de la fecha van «Hora de cobro:» (h:mm AM/PM, siempre UTC-6, formateada a mano para no mandar espacios Unicode a la térmica) y «Cajero/a:». Solo cambia el papel impreso: no se tocó la emisión del DTE ni lo que se envía a Hacienda.
+- Reimpresión (`HistorialCobros.jsx`): sale la cajera y la hora del cobro ORIGINAL, no quien reimprime. Quién cobró = dueño del turno de caja de la cuenta (`pos_turnos.cajero_id` vía `turno_id`), con respaldo en `pos_cuentas.cajero_id` (que es quien ABRIÓ la cuenta, puede ser mesero). Se resuelve al cargar el historial, no al imprimir (un await antes de imprimir bloquea RawBT en Android).
+
 ## 25-Nov-2026 — 🛒 Pantalla «Compras» (Finanzas)
 - Por qué: Jose pidió en cada ERP de restaurante una vista con toda la información de compras, sugerencias basadas en datos y siempre lo más reciente (si ya se cambió de proveedor, se muestra como logro y no se vuelve a sugerir). Contrato: `hq-panel/supabase/compras_hq/CONTRATO_VISTA_COMPRAS.md`.
 - Pantalla nueva `src/components/finanzas/ComprasHQView.jsx`, nav key **`compras-hq`** (Finanzas, label «Compras», roles admin/ejecutivo/superadmin; filas en `permisos_rol` para los tres). No confundir con `compras` = Órdenes de Compra (Almacén), que no se tocó.
