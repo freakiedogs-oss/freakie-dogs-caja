@@ -1,5 +1,19 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 25-Nov-2026 (noche) — PedidosYa: la tienda cierra por horario de la sucursal, no por cierre de caja
+- **Pedido de Jose:** que la tienda de PeYa se cierre a la hora de cierre de cada sucursal, en hora de El Salvador, y no cuando se cierra la caja.
+- **Antes:** el catálogo manda horario 00:00–23:59 y lo único que cortaba era `peya_auto_decidir`, que rechaza si no hay turno abierto. Con la caja abierta después de hora podían seguir entrando pedidos (el 24-nov el último fue a las 20:59, cierre 21:00).
+- **Ahora** (migración `20261125_peya_cierre_por_horario.sql` y Edge Function nueva `peya-horario` v1, `verify_jwt` false):
+  - `peya_horario_pendientes()` usa `horarios_sucursal` (dow 0 = domingo) y `now() at time zone 'America/El_Salvador'`.
+  - A la hora de cierre: `CLOSED_TODAY`, motivo `CLOSED`.
+  - A la apertura del día siguiente: reabre solo si PeYa sigue `CLOSED_TODAY`/`CLOSED` con motivo `CLOSED`. Nunca toca un cierre del gerente ni de PeYa.
+  - Cron `peya_horario_tick`, cada minuto; llama a la función solo si hay pendientes. Reintento frenado a 2 min por tienda.
+  - Resultado en `peya_vendor_map.horario_ultimo`. Estado local: `cierre_origen='horario'`, `cerrada_hasta` = próxima apertura.
+- Sin PIN ni secreto a propósito: la función no toma tienda ni estado del request; solo ejecuta lo que la base dice para esa hora.
+- `peya-responder` no se tocó. Se separó para no redeployar la función que contesta pedidos en vivo.
+- Entran solo las tiendas con `plataformas` conocidas. Hoy es solo Cafetalón; las otras 5 entran el 30-nov tras su primer Open.
+- Bug encontrado y corregido: faltaba `grant execute` a `service_role`, porque el `revoke` de public se lo quitaba.
+
 ## 25-Nov-2026 (tarde) — PedidosYa: pase de las 5 sucursales restantes al flujo directo
 - Piloto Cafetalón: 66 pedidos reales desde el 23-nov, aceptación en ~0.5 s, sin errores HTTP, nada sin mapear. Se le escribió a Integraciones y respondió Francis Sotero (soporte) con los remoteIds.
 - **Decisión de Jose:** las cinco sucursales juntas el **lunes 30-nov** lo más temprano posible, con el mismo menú y precios que Cafetalón. `peya_catalogo` es por cadena, así que es el mismo catálogo.
