@@ -1,9 +1,17 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 26-Nov-2026 — 🎁 Ticket impreso: motivo de la cortesía + quién la autorizó
+- Por qué: Jose pidió que la nota que se escribe al dar una cortesía salga impresa, junto con el nombre de quien la autorizó (antes solo salía «*** CORTESIA ***»).
+- `printService.js`: bajo cada ítem de cortesía van «Motivo: …» (parte renglones si es largo) y «Autorizo: …», en pre-cuenta y factura (ESC/POS y fallback HTML). La comanda de cocina no cambia. Si la cuenta completa es cortesía (descuento tipo «cortesía»), el renglón dice CORTESIA en vez de DESCUENTO y debajo van motivo y quién autorizó (= quien aplicó el descuento, `descuento_autorizado_por`).
+- `POSMain.jsx`: el ítem guarda `cortesiaPorNombre` (del PIN que autorizó; al reabrir una cuenta guardada se busca por `cortesia_por` en `usuarios_erp`).
+- `HistorialCobros.jsx` (reimpresión): ahora marca los ítems de cortesía con su motivo y quién autorizó, e imprime el renglón de descuento/cortesía de la cuenta, que antes no salía en reimpresiones. Solo cambia el papel; la emisión del DTE no se tocó.
+- Estado: PR #513. Probado con tickets generados en build; falta confirmar en impresora real con una cortesía real.
+
 ## 26-Nov-2026 — 🧾 Ticket/factura impresa: cajera que cobró + hora del cobro
 - Por qué: Jose pidió que en todo ticket/factura impresa salga quién cobró y a qué hora (con DTE solo salía la fecha de emisión, y nunca el nombre).
 - `printService.js` (`buildFactura` y el fallback `facturaHTML`): después de la fecha van «Hora de cobro:» (h:mm AM/PM, siempre UTC-6, formateada a mano para no mandar espacios Unicode a la térmica) y «Cajero/a:». Solo cambia el papel impreso: no se tocó la emisión del DTE ni lo que se envía a Hacienda.
 - Reimpresión (`HistorialCobros.jsx`): sale la cajera y la hora del cobro ORIGINAL, no quien reimprime. Quién cobró = dueño del turno de caja de la cuenta (`pos_turnos.cajero_id` vía `turno_id`), con respaldo en `pos_cuentas.cajero_id` (que es quien ABRIÓ la cuenta, puede ser mesero). Se resuelve al cargar el historial, no al imprimir (un await antes de imprimir bloquea RawBT en Android).
+- Verificado: mergeado a `main` (PR #512) y Jose confirmó el 26-nov que el ticket imprimió bien en producción.
 
 ## 25-Nov-2026 — 🛒 Pantalla «Compras» (Finanzas)
 - Por qué: Jose pidió en cada ERP de restaurante una vista con toda la información de compras, sugerencias basadas en datos y siempre lo más reciente (si ya se cambió de proveedor, se muestra como logro y no se vuelve a sugerir). Contrato: `hq-panel/supabase/compras_hq/CONTRATO_VISTA_COMPRAS.md`.
