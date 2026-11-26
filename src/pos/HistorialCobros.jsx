@@ -132,6 +132,10 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
           created_at,
           cajero_id,
           turno_id,
+          descuento,
+          descuento_tipo,
+          descuento_motivo,
+          descuento_autorizado_por,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
             id,
             nombre,
@@ -143,7 +147,10 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             cantidad,
             notas,
             menu_item_id,
-            cancelado_motivo
+            cancelado_motivo,
+            cortesia,
+            cortesia_motivo,
+            cortesia_por
           ),
           pos_cuenta_pagos (
             metodo,
@@ -174,12 +181,20 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
           ;(ts || []).forEach(t => { turnoCajero[t.id] = t.cajero_id })
         }
         rows.forEach(c => { c._cobroUserId = turnoCajero[c.turno_id] || c.cajero_id || null })
-        const userIds = [...new Set(rows.map(c => c._cobroUserId).filter(Boolean))]
+        // Mismo viaje: nombres de quienes autorizaron cortesías (ítem o cuenta completa).
+        const userIds = [...new Set(rows.flatMap(c => [
+          c._cobroUserId, c.descuento_autorizado_por,
+          ...(c.pos_cuenta_items || []).map(i => i.cortesia_por),
+        ]).filter(Boolean))]
         if (userIds.length) {
           const { data: us } = await db.from('usuarios_erp').select('id,nombre').in('id', userIds)
           const nombres = {}
           ;(us || []).forEach(u => { nombres[u.id] = u.nombre })
-          rows.forEach(c => { c._cobroCajero = nombres[c._cobroUserId] || null })
+          rows.forEach(c => {
+            c._cobroCajero = nombres[c._cobroUserId] || null
+            c._descAutorizo = nombres[c.descuento_autorizado_por] || null
+            ;(c.pos_cuenta_items || []).forEach(i => { i._cortesiaAutorizo = nombres[i.cortesia_por] || null })
+          })
         }
       } catch (_e) { /* sin nombre no se bloquea el historial */ }
       setCuentas(rows)
@@ -276,6 +291,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             if (m?.nombre) mods.push('   ' + m.nombre + (Number(m.precio_extra) > 0 ? ` (+$${Number(m.precio_extra).toFixed(2)})` : ''))
           })
         })
+        if (i.cortesia) mods.push('*** CORTESIA ***')
         return {
           qty: i.cantidad,          // buildFactura lee it.qty (no it.cantidad)
           nombre: i.nombre,
@@ -284,6 +300,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                 + (parseFloat(i.precio_extras) || 0),
           modificadores: mods,
           nota: i.notas || null,
+          cortesia: i.cortesia ? { motivo: i.cortesia_motivo || null, autorizo: i._cortesiaAutorizo || null } : null,
         }
       })
 
@@ -308,6 +325,9 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
         cambio:   pagoEfectivo?.cambio != null ? parseFloat(pagoEfectivo.cambio) : null,
         items,
         subtotal: parseFloat(cuenta.subtotal || 0),
+        descuento: parseFloat(cuenta.descuento || 0),
+        cortesiaCuenta: cuenta.descuento_tipo === 'cortesia'
+          ? { motivo: cuenta.descuento_motivo || null, autorizo: cuenta._descAutorizo || null } : null,
         propina: parseFloat(cuenta.propina || 0),
         total: parseFloat(cuenta.total || 0),
         fecha: cuenta.cobrada_at ? new Date(cuenta.cobrada_at) : new Date(),
