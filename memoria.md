@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 26-Nov-2026 — PedidosYa cierre por horario: arreglo tras la primera corrida
+- **Qué pasó el 25-nov a las 21:00:** la función consultó a PeYa sin problema, y PeYa ya había cerrado Cafetalón por su propio horario (`CLOSED`, `changeable:false`). Pero `peya_horario_marcar` falló por el check `peya_vendor_map_cierre_origen_check`, que no aceptaba `'horario'`. Se deshizo la transacción y el cron reintentó cada 2 min hasta medianoche. No hubo daño: no entraron pedidos y PeYa ya estaba cerrada.
+- **Arreglo** (migración `20261126_peya_horario_fix_cierre_origen.sql`):
+  - El check ahora acepta `'horario'`.
+  - `marcar` solo pone el estado local en `horario` si un PUT fue aceptado. Si PeYa ya la había cerrado, solo anota `cierre_horario_fecha` (devuelve `cerramos:false`).
+- Probado con un bloque que se deshace solo: los dos casos (ya cerrada / cerrada por nosotros) dejan 0 pendientes.
+
 ## 25-Nov-2026 (noche) — PedidosYa: la tienda cierra por horario de la sucursal, no por cierre de caja
 - **Pedido de Jose:** que la tienda de PeYa se cierre a la hora de cierre de cada sucursal, en hora de El Salvador, y no cuando se cierra la caja.
 - **Antes:** el catálogo manda horario 00:00–23:59 y lo único que cortaba era `peya_auto_decidir`, que rechaza si no hay turno abierto. Con la caja abierta después de hora podían seguir entrando pedidos (el 24-nov el último fue a las 20:59, cierre 21:00).
