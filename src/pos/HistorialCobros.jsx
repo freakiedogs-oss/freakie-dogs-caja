@@ -130,6 +130,8 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
           referencia_puesta_por,
           referencia_puesta_at,
           created_at,
+          cajero_id,
+          turno_id,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
             id,
             nombre,
@@ -158,7 +160,29 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
         .order('cobrada_at', { ascending: false })
 
       if (error) throw error
-      setCuentas(cuentasData || [])
+      // Quién cobró cada cuenta, para que el ticket REIMPRESO muestre a la cajera
+      // original y no a quien reimprime. Cobró el dueño del turno de caja en que se
+      // cerró la cuenta (cajero_id de la cuenta es quien la ABRIÓ: puede ser un mesero).
+      // Se resuelve acá y no al reimprimir: un await antes de imprimir hace que
+      // Android bloquee el deep-link de RawBT.
+      const rows = cuentasData || []
+      try {
+        const turnoIds = [...new Set(rows.map(c => c.turno_id).filter(Boolean))]
+        const turnoCajero = {}
+        if (turnoIds.length) {
+          const { data: ts } = await db.from('pos_turnos').select('id,cajero_id').in('id', turnoIds)
+          ;(ts || []).forEach(t => { turnoCajero[t.id] = t.cajero_id })
+        }
+        rows.forEach(c => { c._cobroUserId = turnoCajero[c.turno_id] || c.cajero_id || null })
+        const userIds = [...new Set(rows.map(c => c._cobroUserId).filter(Boolean))]
+        if (userIds.length) {
+          const { data: us } = await db.from('usuarios_erp').select('id,nombre').in('id', userIds)
+          const nombres = {}
+          ;(us || []).forEach(u => { nombres[u.id] = u.nombre })
+          rows.forEach(c => { c._cobroCajero = nombres[c._cobroUserId] || null })
+        }
+      } catch (_e) { /* sin nombre no se bloquea el historial */ }
+      setCuentas(rows)
     } catch (err) {
       console.error('Error cargando historial:', err)
       toast.error('Error al cargar historial: ' + err.message)
@@ -277,7 +301,8 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
         caja: user?.caja || null,
         mesa: cuenta.mesa_ref || null,
         tipoLabel: (TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']).label,
-        cajero: user?.nombre || user?.name || null,
+        // Quien COBRÓ (no quien reimprime). Si no se pudo resolver, no se imprime nombre.
+        cajero: cuenta._cobroCajero || null,
         metodoPago,
         recibido: pagoEfectivo?.monto_recibido != null ? parseFloat(pagoEfectivo.monto_recibido) : null,
         cambio:   pagoEfectivo?.cambio != null ? parseFloat(pagoEfectivo.cambio) : null,
