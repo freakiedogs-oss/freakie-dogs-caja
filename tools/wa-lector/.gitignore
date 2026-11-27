@@ -1,0 +1,4 @@
+# Conversaciones, sesión de WhatsApp y configuración local: NUNCA al repo
+datos/
+config.json
+node_modules/

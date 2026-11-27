@@ -1,0 +1,12 @@
+{
+  "empresas": ["Freakie Dogs", "Kaeru", "Kako", "Personal"],
+  "chats": {
+    "Nombre exacto de un grupo": { "empresa": "Freakie Dogs" },
+    "Nombre de un chat que no se debe leer": { "ignorar": true }
+  },
+  "mensajesPorChat": 300,
+  "cadaMinutos": 60,
+  "navegadorVisible": true,
+  "ollamaUrl": "http://127.0.0.1:11434",
+  "modelo": "qwen3:8b"
+}

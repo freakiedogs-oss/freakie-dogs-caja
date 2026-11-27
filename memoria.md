@@ -1,5 +1,12 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 26-Nov-2026 — 📥 wa-lector: leer el WhatsApp de Jose en la Mac mini con AI local (prueba)
+- Por qué: Jose quiere que los ~20 chats con empleados (y sus demás conversaciones de varias empresas) alimenten el orden del día a día: reuniones, decisiones, cambios, pagos de facturas, pendientes. La API oficial (Kapso/Meta, lo de Cesar) no entra a grupos existentes (máx. 8 participantes, requiere cuenta oficial), y no quiere gastar créditos de Claude.
+- Decisión de Jose: empezar leyendo SU WhatsApp Web abierto en la mini; número dedicado después si la prueba sirve.
+- `tools/wa-lector/` (paquete Node aparte, no entra al build de la PWA): `leer.js` (whatsapp-web.js con Chrome real, solo lectura, en vivo + repaso cada hora) → SQLite local `datos/wa.sqlite` → `extraer.js` (Ollama, `qwen3:8b`, salida JSON con esquema; un lote = chat+día) → `reporte.js` (Markdown por empresa). `config.json` local: empresa por chat o `ignorar`.
+- Todo queda en la mini (`datos/` y `config.json` en .gitignore). **No toca Supabase ni el ERP todavía**: primero ver la calidad de lo que extrae el modelo local; después se decide qué tablas del ERP alimentar.
+- Probado: extracción/reporte con un Ollama simulado (`npm test`). **Sin probar: la lectura real de WhatsApp Web** (la sesión en la nube no tenía la mini conectada) y la calidad de `qwen3:8b` con chats reales.
+
 ## 25-Nov-2026 — 🛒 Pantalla «Compras» (Finanzas)
 - Por qué: Jose pidió en cada ERP de restaurante una vista con toda la información de compras, sugerencias basadas en datos y siempre lo más reciente (si ya se cambió de proveedor, se muestra como logro y no se vuelve a sugerir). Contrato: `hq-panel/supabase/compras_hq/CONTRATO_VISTA_COMPRAS.md`.
 - Pantalla nueva `src/components/finanzas/ComprasHQView.jsx`, nav key **`compras-hq`** (Finanzas, label «Compras», roles admin/ejecutivo/superadmin; filas en `permisos_rol` para los tres). No confundir con `compras` = Órdenes de Compra (Almacén), que no se tocó.
