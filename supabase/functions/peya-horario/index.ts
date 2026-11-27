@@ -234,12 +234,16 @@ Deno.serve(async (req) => {
           resultados.push({ ...base, omitida: "no_cambiable", actual, motivo: razon || null });
           continue;
         }
-        if (!permitidos.includes("CLOSED")) {
+        // Con la tienda abierta PedidosYa ofrece OPEN / CLOSED_UNTIL / CLOSED_TODAY:
+        // CLOSED_TODAY y a la hora `hasta` se reabre con OPEN.
+        const estadoCierre = permitidos.includes("CLOSED") ? "CLOSED"
+          : permitidos.includes("CLOSED_TODAY") ? "CLOSED_TODAY" : "";
+        if (!estadoCierre) {
           pendiente = true;
-          resultados.push({ ...base, ok: false, error: "no_acepta_CLOSED", permitidos });
+          resultados.push({ ...base, ok: false, error: "no_acepta_cierre", permitidos });
           continue;
         }
-        const cuerpo = { availabilityState: "CLOSED", ...base, closedReason: motivo };
+        const cuerpo = { availabilityState: estadoCierre, ...base, closedReason: motivo };
         const put = await llamar(urlDisp, cuerpo, "PUT");
         const okPut = put.status >= 200 && put.status < 300;
         if (okPut) motivoUsado = motivo; else pendiente = true;
