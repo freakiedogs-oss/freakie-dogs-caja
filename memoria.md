@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 27-Nov-2026 — 🖤 Black Freakie (programado por cron, migración 20261127a)
+- Solo menús de caja (local, para_llevar, drive_through); PeYa y delivery sin cambio de precio. Respaldo en `_bf_20261127_items` / `_bf_20261127_suc`; función `_bf_20261127(fase)`.
+- Cambio de Cesar (20261127b): ítem nuevo «Black Freakie Burger» $1 sin opciones (primero en Combos de local/para_llevar/drive, producto Freakie Burger); el resto del menú sigue normal.
+- 09:00 SV `cerrar_delivery` (todas «solo para llevar») · 10:45 `manana` (se muestra Black Freakie Burger) · 15:00 `tarde` (se oculta, Freakie Dog y Freakie Fries a $1, domicilio se reabre solo) · 23:30 `fin` (precios normales). Los cron se borran solos. Se pueden dropear las tablas de respaldo, la función y el ítem después.
+- Torre → Sucursales: interruptor grande «Domicilio encendido/apagado» para todas + un switch por sucursal (usa `torre_set_modo_sucursal`: apagar = solo para llevar). Al encender todas, recuerda cuáles se apagaron (localStorage); si no hay memoria, enciende todas menos el drive thru.
+
 ## 26-Nov-2026 — 🎁 Ticket impreso: motivo de la cortesía + quién la autorizó
 - Por qué: Jose pidió que la nota que se escribe al dar una cortesía salga impresa, junto con el nombre de quien la autorizó (antes solo salía «*** CORTESIA ***»).
 - `printService.js`: bajo cada ítem de cortesía van «Motivo: …» (parte renglones si es largo) y «Autorizo: …», en pre-cuenta y factura (ESC/POS y fallback HTML). La comanda de cocina no cambia. Si la cuenta completa es cortesía (descuento tipo «cortesía»), el renglón dice CORTESIA en vez de DESCUENTO y debajo van motivo y quién autorizó (= quien aplicó el descuento, `descuento_autorizado_por`).
