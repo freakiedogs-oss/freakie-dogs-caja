@@ -1,5 +1,26 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 27-Nov-2026 — PedidosYa: la bolsa se entrega DESPUÉS del «en camino» + horas en la bandeja
+- **Pedidos que no se cerraban (#5856, #5857, #5900 Cafetalón):**
+  - Causa: el motorista marcó «en camino» (estado `retirado`) antes de que la cajera apretara «Listo para el driver», y ese botón pisaba el estado con `preparado`. Las cuentas ya estaban cobradas; solo la bandeja seguía mostrándolos.
+  - Arreglo: `_peya_marca_retirado` ya no deja bajar un estado final (retirado/cancelado/rechazado) a uno anterior. Los 3 se corrigieron a `retirado`.
+- **Pasos 8 y 9 al revés (pedido de Jose):** el motorista marca «en camino» primero. Recién con ese aviso la tarjeta se pone verde («Entregá ahora»), suena la campanita (repite cada 20 s) y aparece «Entregué al motorista / Con foto».
+  - Antes de eso dice «🚫 Todavía NO le des la bolsa».
+  - `peya_registrar_entrega` lo exige en el servidor para `own_delivery`.
+  - Se quitó la alarma de 2 min post-entrega.
+- **Horas:** columna nueva `peya_ordenes.preparado_at` (la setea el trigger). `peya_panel` devuelve `preparado_at`, `actualizado_at`, `recibido_segundos` y `retirado_segundos`. Cada tarjeta muestra la hora del pedido, «hace X min» y la línea de pasos con hora.
+- Migración `20261127_peya_entrega_tras_en_camino.sql`. Front: `src/pos/PeyaInboxView.jsx`.
+
+## 26-Nov-2026 — Asistencia: salida automática si el empleado no la marca
+- Pedido de Jose. `asistencia_cerrar_olvidadas()` + cron `asistencia-salida-automatica` (09:00 UTC = 3:00 SV).
+- Cierra marcaciones de los últimos 7 días con entrada y sin salida:
+  - Con turno `trabaja` en `horarios_turno`: hora de salida del turno (cruza medianoche si corresponde).
+  - Sin turno (Jose eligió esto): entrada + 8 h.
+- Nunca pone una salida futura. Marca `alerta_rrhh` y anota en `notas` «Salida automática…» para que RRHH lo revise.
+- Cobertura de turnos hoy ~55% de los que marcan (Lourdes sin horarios cargados).
+- Ojo: el 35% de las salidas de octubre-noviembre tienen segundos en cero. Las cargó algo fuera del repo (no es cron, trigger ni Make); probablemente a mano.
+- Migración `20261126_asistencia_salida_automatica.sql`.
+
 ## 26-Nov-2026 — PedidosYa cierre por horario: arreglo tras la primera corrida
 - **Qué pasó el 25-nov a las 21:00:** la función consultó a PeYa sin problema, y PeYa ya había cerrado Cafetalón por su propio horario (`CLOSED`, `changeable:false`). Pero `peya_horario_marcar` falló por el check `peya_vendor_map_cierre_origen_check`, que no aceptaba `'horario'`. Se deshizo la transacción y el cron reintentó cada 2 min hasta medianoche. No hubo daño: no entraron pedidos y PeYa ya estaba cerrada.
 - **Arreglo** (migración `20261126_peya_horario_fix_cierre_origen.sql`):

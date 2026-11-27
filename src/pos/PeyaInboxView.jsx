@@ -115,14 +115,81 @@ function timbre() {
 // ── Entrega al motorista (anti-robo) ──
 // PedidosYa no nos dice quién es el motorista: lo único que tenemos es el aviso de
 // que apretó «pedido en camino» (ORDER_PICKED_UP). Si se lleva la bolsa sin
-// apretarlo, el pedido sigue «esperando» y después viene otro a reclamarlo. Por
-// eso la cajera registra la entrega y, si a los 2 minutos PedidosYa no confirmó el
-// retiro, la caja suena hasta que el motorista lo marque.
-const ALARMA_SEG = 120
+// apretarlo, el pedido sigue «esperando» y después viene otro a reclamarlo.
+//
+// Hasta el 26-nov la cajera entregaba primero y la caja sonaba si a los 2 minutos
+// no llegaba el «en camino». Jose pidió darlo vuelta para cerrar esa puerta: el
+// motorista marca «en camino» PRIMERO y recién cuando PedidosYa nos lo avisa la
+// tarjeta se pone verde y dice «entregá la bolsa». El servidor
+// (`peya_registrar_entrega`) tampoco deja registrar una entrega antes.
+const REPIQUE_MS = 20000
 
 const hora = (iso) => (iso
   ? new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })
   : '')
+
+// «hace 25 min» a partir de los segundos que calculó el servidor, corridos en vivo.
+const hace = (segBase, ahoraBase) => {
+  if (segBase == null) return ''
+  const s = segBase + Math.floor((Date.now() - ahoraBase) / 1000)
+  if (s < 60) return 'recién'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `hace ${m} min`
+  return `hace ${Math.floor(m / 60)} h ${dosDig(m % 60)} min`
+}
+
+// Motorista de PedidosYa que ya marcó «en camino» y todavía no le dimos la bolsa.
+const porEntregar = (p) =>
+  p.tipo_orden === 'own_delivery' && p.estado === 'retirado' && !p.entregado_at
+
+// Los pasos del pedido con su hora, para saber en qué va de un vistazo.
+function pasosDe(p) {
+  const cancel = p.estado === 'cancelado' || p.estado === 'rechazado'
+  const base = [
+    { k: 'recibido', t: 'Pedido', at: p.recibido_at },
+    { k: 'aceptado', t: 'En cocina', at: p.aceptado_at },
+  ]
+  if (p.tipo_orden === 'own_delivery') {
+    base.push(
+      { k: 'listo', t: 'Listo', at: p.preparado_at },
+      { k: 'llego', t: 'Llegó motorista', at: p.motorista_llego_at },
+      { k: 'camino', t: 'En camino', at: p.retirado_at },
+      { k: 'entregado', t: 'Bolsa entregada', at: p.entregado_at },
+    )
+  } else {
+    base.push({ k: 'retirado', t: p.tipo_orden === 'pickup' ? 'Lo retiró' : 'Salió', at: p.retirado_at })
+  }
+  if (cancel) base.push({ k: 'fin', t: p.estado === 'cancelado' ? 'Cancelado' : 'Rechazado', at: p.actualizado_at, malo: true })
+  return base
+}
+
+function Pasos({ p }) {
+  const pasos = pasosDe(p)
+  // El paso actual es el último que tiene hora.
+  let actual = -1
+  pasos.forEach((x, i) => { if (x.at) actual = i })
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 0', padding: '0 15px 12px', fontSize: 11.5 }}>
+      {pasos.map((x, i) => {
+        const hecho = !!x.at
+        const esActual = i === actual
+        const col = x.malo ? C.rojo : esActual ? C.verde : hecho ? C.texto : '#55555f'
+        return (
+          <span key={x.k} style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+            {i > 0 && <span style={{ color: '#44444e', margin: '0 5px' }}>›</span>}
+            <span style={{
+              color: col, fontWeight: esActual ? 800 : 600,
+              padding: esActual ? '2px 7px' : 0, borderRadius: 6,
+              background: esActual ? (x.malo ? '#2a1116' : '#0d2018') : 'transparent',
+            }}>
+              {x.t}{hecho ? ` ${hora(x.at)}` : ''}
+            </span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
 
 function tonos(notas, tipo = 'sine', vol = 0.3) {
   try {
@@ -143,8 +210,6 @@ function tonos(notas, tipo = 'sine', vol = 0.3) {
     setTimeout(() => ctx.close(), (fin + 0.3) * 1000)
   } catch { /* sin sonido, la pantalla igual avisa en color */ }
 }
-// Alarma: no se parece al timbre de pedido nuevo a propósito.
-const sirena = () => tonos([[880, 0, .25], [587, .3, .25], [880, .6, .25], [587, .9, .25]], 'square', 0.25)
 const campanita = () => tonos([[660, 0, .25], [990, .18, .45]])
 
 function comprimir(file, max = 1000, q = 0.72) {
@@ -171,98 +236,70 @@ function VerFoto({ url, children }) {
   return <a href="#" onClick={(e) => abrirFotoPrivada(url, e)} style={{ color: C.azul }}>{children}</a>
 }
 
-// Segundos desde la entrega, contados en vivo a partir de lo que dijo el servidor.
-const segEntrega = (p, ahoraBase) =>
-  (p.entregado_segundos ?? 0) + Math.floor((Date.now() - ahoraBase) / 1000)
-
-const esperandoRetiro = (p) =>
-  p.tipo_orden === 'own_delivery' && p.estado === 'preparado' && !!p.entregado_at
-
-function EntregaMotorista({ p, ahoraBase, onEntregar, ocupado }) {
-  const [, setTick] = useState(0)
-  const fotoRef = useRef(null)
-  useEffect(() => {
-    if (!p.entregado_at) return
-    const id = setInterval(() => setTick((t) => t + 1), 1000)
-    return () => clearInterval(id)
-  }, [p.entregado_at])
-
-  if (!p.entregado_at) {
-    return (
-      <div style={{ padding: '12px 15px 14px', borderTop: `1px solid ${C.borde}`, background: '#14202e' }}>
-        <div style={{ color: C.azul, fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
-          {p.motorista_llego_at
-            ? `🛵 El motorista llegó ${hora(p.motorista_llego_at)}`
-            : '🛵 Listo · esperando al motorista de PedidosYa'}
-        </div>
-        <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', margin: '4px 0 10px' }}>
-          Al darle la bolsa, registralo. Si no marca «en camino» en su app, te avisamos.
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button disabled={ocupado} onClick={() => fotoRef.current?.click()} style={{
-            flex: 1, padding: '14px 8px', borderRadius: 11, border: `1px solid ${C.azul}`,
-            background: 'transparent', color: C.azul, fontSize: 14, fontWeight: 700, cursor: 'pointer',
-          }}>📷 Con foto</button>
-          <button disabled={ocupado} onClick={() => onEntregar(p, null)} style={{
-            flex: 2, padding: '14px 8px', borderRadius: 11, border: 'none',
-            background: ocupado ? '#2a3a30' : C.verde, color: '#06210f',
-            fontSize: 15, fontWeight: 800, cursor: 'pointer',
-          }}>{ocupado ? 'Registrando…' : 'Entregué al motorista'}</button>
-        </div>
-        <input ref={fotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-          onChange={(e) => {
-            const f = e.target.files?.[0]; e.target.value = ''
-            if (f) onEntregar(p, f)
-          }} />
-      </div>
-    )
-  }
-
-  const seg = segEntrega(p, ahoraBase)
-  const alarma = seg >= ALARMA_SEG
+// Pedido listo y el motorista todavía no marcó «en camino»: NO se entrega.
+function EsperandoEnCamino({ p, ahoraBase }) {
   return (
-    <div style={{
-      padding: '13px 15px', borderTop: `1px solid ${C.borde}`,
-      background: alarma ? '#3a0d14' : '#2a2207',
-      animation: alarma ? 'peyaLatido 1s ease-in-out infinite' : 'none',
-    }}>
-      {alarma ? (
-        <div style={{ color: '#ffd9dd', fontSize: 15, fontWeight: 800, textAlign: 'center', lineHeight: 1.3 }}>
-          🚨 El motorista NO marcó el retiro del #{p.short_code}
-          <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3 }}>
-            No lo dejes salir hasta que apriete «pedido en camino» en su app
-          </div>
-        </div>
-      ) : (
-        <div style={{ color: '#ffe9b0', fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
-          📦 Entregado · esperando que el motorista marque el retiro
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {' '}({dosDig(Math.floor(seg / 60))}:{dosDig(seg % 60)})
-          </span>
-        </div>
-      )}
-      <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', marginTop: 5 }}>
-        Entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
-        {p.entrega_foto_url && (
-          <> · <VerFoto url={p.entrega_foto_url}>ver foto</VerFoto></>
-        )}
+    <div style={{ padding: '12px 15px 13px', borderTop: `1px solid ${C.borde}`, background: '#14202e' }}>
+      <div style={{ color: C.azul, fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
+        {p.motorista_llego_at
+          ? `🛵 El motorista llegó ${hora(p.motorista_llego_at)} (${hace(p.motorista_segundos, ahoraBase)})`
+          : '🛵 Listo · esperando al motorista de PedidosYa'}
       </div>
+      <div style={{ fontSize: 12.5, color: '#ffc9cf', fontWeight: 700, textAlign: 'center', marginTop: 5 }}>
+        🚫 Todavía NO le des la bolsa
+      </div>
+      <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', marginTop: 3 }}>
+        Pedile que marque «pedido en camino» en su app. Cuando lo marque, esta tarjeta se pone verde.
+      </div>
+    </div>
+  )
+}
+
+// El motorista ya marcó «en camino»: ahora sí, entregar y registrarlo.
+function EntregarAhora({ p, ahoraBase, onEntregar, ocupado }) {
+  const fotoRef = useRef(null)
+  const cocinaPendiente = p.cocina?.listo === false
+  return (
+    <div style={{ padding: '13px 15px 14px', borderTop: `1px solid ${C.verde}55`, background: '#0d2a1a' }}>
+      <div style={{ color: '#bff3d4', fontSize: 16, fontWeight: 800, textAlign: 'center' }}>
+        ✅ Ya podés entregar la bolsa del #{p.short_code}
+      </div>
+      <div style={{ fontSize: 12, color: C.dim, textAlign: 'center', margin: '3px 0 10px' }}>
+        El motorista marcó «en camino» {hora(p.retirado_at)} ({hace(p.retirado_segundos, ahoraBase)})
+        {cocinaPendiente ? ' · cocina todavía no marcó la comanda lista: entregala cuando esté' : ''}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button disabled={ocupado} onClick={() => fotoRef.current?.click()} style={{
+          flex: 1, padding: '14px 8px', borderRadius: 11, border: `1px solid ${C.verde}`,
+          background: 'transparent', color: C.verde, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+        }}>📷 Con foto</button>
+        <button disabled={ocupado} onClick={() => onEntregar(p, null)} style={{
+          flex: 2, padding: '14px 8px', borderRadius: 11, border: 'none',
+          background: ocupado ? '#2a3a30' : C.verde, color: '#06210f',
+          fontSize: 15, fontWeight: 800, cursor: 'pointer',
+        }}>{ocupado ? 'Registrando…' : 'Entregué al motorista'}</button>
+      </div>
+      <input ref={fotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0]; e.target.value = ''
+          if (f) onEntregar(p, f)
+        }} />
     </div>
   )
 }
 
 // Constancia en «Cerrados hoy»: para pelear un reclamo con PedidosYa.
 function ConstanciaRetiro({ p }) {
-  if (p.tipo_orden !== 'own_delivery' || p.estado !== 'retirado') return null
+  if (p.tipo_orden !== 'own_delivery' || p.estado !== 'retirado' || porEntregar(p)) return null
   return (
     <div style={{
       padding: '9px 15px', borderTop: `1px solid ${C.borde}`, background: '#0d2018',
       fontSize: 12, color: '#bff3d4',
     }}>
-      ✅ Motorista confirmó retiro {hora(p.retirado_at) || ''}
+      ✅ Motorista marcó «en camino» {hora(p.retirado_at) || ''}
       {p.entregado_at && (
         <span style={{ color: C.dim }}>
-          {' · '}entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
+          {' · '}bolsa entregada {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
         </span>
       )}
       {p.entrega_foto_url && (
@@ -363,7 +400,8 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
   const nota = p.comentarios?.customerComment
   const enCocina = p.estado === 'aceptado' || p.estado === 'preparado'
   const sinContestar = p.estado === 'recibido'
-  const cerrado = ['rechazado', 'retirado', 'cancelado'].includes(p.estado)
+  const entregar = porEntregar(p)
+  const cerrado = ['rechazado', 'retirado', 'cancelado'].includes(p.estado) && !entregar
   // `peya_panel` trae el estado de la comanda. Si no lo trae (panel viejo en un
   // navegador sin recargar), no se traba nada: manda el servidor.
   const listoCocina = p.cocina?.listo !== false
@@ -371,7 +409,7 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
   return (
     <div style={{
       background: C.card, borderRadius: 14, marginBottom: 12, overflow: 'hidden',
-      border: `1px solid ${enCocina ? C.verde + '55' : sinContestar ? C.amarillo : C.borde}`,
+      border: `${entregar ? 2 : 1}px solid ${entregar ? C.verde : enCocina ? C.verde + '55' : sinContestar ? C.amarillo : C.borde}`,
       opacity: cerrado ? .65 : 1,
     }}>
       <div onClick={() => setAbierto((v) => !v)}
@@ -391,8 +429,11 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{
               fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-              background: `${est.col}1e`, color: est.col,
-            }}>{est.label}</span>
+              background: `${entregar ? C.verde : est.col}1e`, color: entregar ? C.verde : est.col,
+            }}>{entregar ? 'En camino · entregá' : est.label}</span>
+            <span style={{ fontSize: 11.5, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>
+              🕐 {hora(p.recibido_at)} · {hace(p.recibido_segundos, ahoraBase)}
+            </span>
             {p.es_prueba && (
               <span style={{
                 fontSize: 9.5, fontWeight: 800, padding: '2px 6px', borderRadius: 5,
@@ -414,6 +455,8 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
           ? <Reloj segundosBase={p.segundos_restantes} desde={ahoraBase} />
           : <span style={{ color: C.dim, fontSize: 17 }}>{abierto ? '▾' : '▸'}</span>}
       </div>
+
+      <Pasos p={p} />
 
       {abierto && (
         <div style={{ padding: '0 15px 12px' }}>
@@ -460,7 +503,10 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
           El retiro lo confirma PedidosYa (ORDER_PICKED_UP) y con eso el servidor
           cierra la cuenta. Volver a mostrar el botón sólo invitaría a repetirlo. */}
       {p.estado === 'preparado' && tipo.cierre === 'preparado' && (
-        <EntregaMotorista p={p} ahoraBase={ahoraBase} onEntregar={onEntregar} ocupado={ocupado} />
+        <EsperandoEnCamino p={p} ahoraBase={ahoraBase} />
+      )}
+      {entregar && (
+        <EntregarAhora p={p} ahoraBase={ahoraBase} onEntregar={onEntregar} ocupado={ocupado} />
       )}
 
       {/* El motorista llegó y la comida todavía no está: que la cajera lo sepa. */}
@@ -520,8 +566,9 @@ export default function PeyaInboxView({ user, onBack }) {
   const [ahoraBase, setAhoraBase] = useState(Date.now())
   const [sonido, setSonido] = useState(() => localStorage.getItem('peya_sonido') !== '0')
   const idsVistos = useRef(null)
-  // Pedidos entregados al motorista que PedidosYa todavía no confirmó.
-  const entregadosSinRetiro = useRef(new Set())
+  // Pedidos cuyo motorista ya marcó «en camino» y esperan la bolsa (para avisar
+  // una sola vez cuando aparece uno nuevo).
+  const listosParaEntregar = useRef(null)
 
   const cargar = useCallback(async () => {
     if (!user?.pin) { setError('Sin PIN de sesión'); return }
@@ -538,37 +585,40 @@ export default function PeyaInboxView({ user, onBack }) {
       }
       idsVistos.current = ids
 
-      // Retiro confirmado de algo que la cajera ya había entregado: se avisa.
-      const confirmados = (r?.pedidos || []).filter((p) =>
-        entregadosSinRetiro.current.has(p.id) && p.estado === 'retirado')
-      if (confirmados.length) {
-        campanita()
-        setAviso(`Motorista confirmó el retiro del PeYa #${confirmados.map((p) => p.short_code).join(', #')}`)
+      // El motorista marcó «en camino»: recién ahora se le puede dar la bolsa.
+      const listos = (r?.pedidos || []).filter(porEntregar)
+      if (listosParaEntregar.current) {
+        const nuevos = listos.filter((p) => !listosParaEntregar.current.has(p.id))
+        if (nuevos.length) {
+          campanita()
+          setAviso(`El motorista del PeYa #${nuevos.map((p) => p.short_code).join(', #')} marcó «en camino»: ya podés entregarle la bolsa`)
+        }
       }
-      entregadosSinRetiro.current = new Set((r?.pedidos || []).filter(esperandoRetiro).map((p) => p.id))
+      listosParaEntregar.current = new Set(listos.map((p) => p.id))
 
       setData(r); setAhoraBase(Date.now()); setError('')
     } catch (e) { setError(e.message || 'No se pudo cargar') }
   }, [user?.pin, sonido])
 
-  // Mientras haya una bolsa entregada sin retiro confirmado se consulta más seguido.
-  const hayEsperaRetiro = (data?.pedidos || []).some(esperandoRetiro)
+  // Mientras haya una bolsa lista esperando el «en camino» del motorista se consulta
+  // más seguido: la cajera tiene que enterarse apenas lo marque.
+  const hayEsperaMotorista = (data?.pedidos || []).some((p) =>
+    porEntregar(p) || (p.tipo_orden === 'own_delivery' && p.estado === 'preparado'))
   useEffect(() => {
     cargar()
-    const t = setInterval(cargar, hayEsperaRetiro ? 5000 : REFRESH_MS)
+    const t = setInterval(cargar, hayEsperaMotorista ? 5000 : REFRESH_MS)
     return () => clearInterval(t)
-  }, [cargar, hayEsperaRetiro])
+  }, [cargar, hayEsperaMotorista])
 
-  // La alarma suena aunque el timbre de pedidos nuevos esté apagado: es plata.
+  // Un motorista con «en camino» marcado está parado en la caja esperando la bolsa:
+  // la campanita repite hasta que se registre la entrega, aunque el timbre de
+  // pedidos nuevos esté apagado.
+  const hayPorEntregar = (data?.pedidos || []).some(porEntregar)
   useEffect(() => {
-    if (!hayEsperaRetiro) return
-    const t = setInterval(() => {
-      const enAlarma = (data?.pedidos || []).some((p) =>
-        esperandoRetiro(p) && segEntrega(p, ahoraBase) >= ALARMA_SEG)
-      if (enAlarma) sirena()
-    }, 6000)
+    if (!hayPorEntregar) return
+    const t = setInterval(campanita, REPIQUE_MS)
     return () => clearInterval(t)
-  }, [hayEsperaRetiro, data, ahoraBase])
+  }, [hayPorEntregar])
 
   // La foto es opcional y no frena nada: si no sube, la entrega se registra igual.
   const onEntregar = async (p, foto) => {
@@ -590,7 +640,7 @@ export default function PeyaInboxView({ user, onBack }) {
       })
       if (e) throw e
       if (fotoFallo) setError(`Entrega del #${p.short_code} registrada, pero la foto no se pudo subir`)
-      else setAviso(`Entrega del #${p.short_code} registrada${fotoUrl ? ' con foto' : ''}. Que el motorista marque «en camino».`)
+      else setAviso(`Entrega del #${p.short_code} registrada${fotoUrl ? ' con foto' : ''}.`)
       await cargar()
     } catch (e) { setError(e.message || 'No se pudo registrar la entrega') }
     finally { setOcupado(null) }
@@ -726,8 +776,10 @@ export default function PeyaInboxView({ user, onBack }) {
 
   const pedidos = data?.pedidos || []
   const sinContestar = pedidos.filter((p) => p.estado === 'recibido')
+  const aEntregar = pedidos.filter(porEntregar)
   const enCocina = pedidos.filter((p) => ['aceptado', 'preparado'].includes(p.estado))
-  const cerrados = pedidos.filter((p) => ['rechazado', 'retirado', 'cancelado'].includes(p.estado))
+  const cerrados = pedidos.filter((p) =>
+    ['rechazado', 'retirado', 'cancelado'].includes(p.estado) && !porEntregar(p))
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
@@ -827,9 +879,21 @@ export default function PeyaInboxView({ user, onBack }) {
           </>
         )}
 
+        {aEntregar.length > 0 && (
+          <>
+            <Seccion titulo="Entregá ahora"
+              nota="El motorista ya marcó «en camino». Dale la bolsa y registralo." />
+            {aEntregar.map((p) => (
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
+                       ocupado={ocupado === p.remote_order_id} />
+            ))}
+          </>
+        )}
+
         {enCocina.length > 0 && (
           <>
-            <Seccion titulo="Esperando al driver" nota="Buscá el número que te dice y cerralo." />
+            <Seccion titulo="En cocina / esperando al motorista"
+              nota="No entregues ninguna bolsa hasta que su tarjeta se ponga verde." />
             {enCocina.map((p) => (
               <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
                        ocupado={ocupado === p.remote_order_id} />
