@@ -19,6 +19,7 @@
 // ────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { db, URL_SB } from '../supabase'
+import { abrirFotoPrivada } from '../lib/fotoPrivada'
 
 const REFRESH_MS = 15000
 
@@ -52,16 +53,48 @@ const ESTADO = {
   cancelado: { label: 'Cancelado',     col: C.rojo },
 }
 
-// Los 24 motivos los define Delivery Hero; éstos son los que usa la operación.
+// Los 24 motivos los define Delivery Hero (shared-components.yaml, schema
+// `order_rejected`). Éstos son los aplicables ANTES de aceptar, que es el único
+// momento en que la cajera rechaza.
+//
+// Un código que no esté en su lista lo rechazan con 400, y entonces el pedido se
+// queda sin contestar hasta que vence: cuenta como fallo nuestro y, si pasa
+// seguido, cierran la tienda sola. Por eso acá no se inventa ninguno.
 const MOTIVOS = [
-  { v: 'ITEM_UNAVAILABLE',             t: 'Se acabó un producto' },
-  { v: 'TOO_BUSY',                     t: 'Cocina saturada' },
-  { v: 'CLOSED',                       t: 'Tienda cerrada' },
-  { v: 'TECHNICAL_PROBLEM',            t: 'Problema técnico' },
-  { v: 'ADDRESS_OUT_OF_DELIVERY_AREA', t: 'Fuera de zona' },
-  { v: 'CUSTOMER_CALLED_TO_CANCEL',    t: 'El cliente canceló' },
-  { v: 'TEST_ORDER',                   t: 'Pedido de prueba' },
+  { v: 'ITEM_UNAVAILABLE',       t: 'Se acabó un producto' },
+  { v: 'TOO_BUSY',               t: 'Cocina saturada' },
+  { v: 'CLOSED',                 t: 'Tienda cerrada' },
+  { v: 'MENU_ACCOUNT_SETTINGS',  t: 'El menú no coincide' },
+  { v: 'TECHNICAL_PROBLEM',      t: 'Problema técnico' },
+  // Pedido por PedidosYa en la homologación (13-nov): «no pudimos atenderlo a
+  // tiempo». Es el mismo código con el que ellos cancelan cuando nadie contesta.
+  { v: 'NO_RESPONSE',            t: 'No alcanzamos a atenderlo' },
+  // Sólo tiene sentido cuando repartimos nosotros; en pickup no aplica.
+  { v: 'OUTSIDE_DELIVERY_AREA',  t: 'Fuera de zona', soloDelivery: true },
+  { v: 'MOV_NOT_REACHED',        t: 'No llega al mínimo', soloDelivery: true },
+  { v: 'TEST_ORDER',             t: 'Pedido de prueba' },
 ]
+
+// Los `reason` de cierre del contrato (pluginApi.yaml, schema Closures). La lista
+// completa son 26; acá van los que PedidosYa usa en la práctica, y el resto sale
+// con su código crudo en vez de esconderse.
+const MOTIVO_CIERRE = {
+  TOO_BUSY_KITCHEN:   'cocina saturada',
+  TOO_BUSY_NO_DRIVERS:'sin motoristas',
+  UPDATES_IN_MENU:    'cambios en el menú',
+  UNREACHABLE:        'no nos pudieron contactar',
+  TECHNICAL_PROBLEM:  'problema técnico',
+  CLOSED:             'local cerrado',
+  TOO_MANY_REJECTED_ORDERS: 'demasiados pedidos rechazados',
+  ORDER_FAILURE:      'fallas en los pedidos',
+  COURIER_DELAYED_AT_PICKUP: 'motoristas esperando mucho',
+  BAD_WEATHER:        'mal clima',
+  HOLIDAY_SPECIAL_DAY:'feriado',
+  FOOD_HYGIENE:       'higiene',
+  COMPLIANCE_ISSUES:  'cumplimiento',
+  FRAUD:              'fraude',
+  OTHER:              'otro',
+}
 
 const dosDig = (n) => String(n).padStart(2, '0')
 
@@ -77,6 +110,166 @@ function timbre() {
     osc.start(); osc.stop(ctx.currentTime + 0.5)
     setTimeout(() => ctx.close(), 800)
   } catch { /* sin sonido, la pantalla igual avisa en color */ }
+}
+
+// ── Entrega al motorista (anti-robo) ──
+// PedidosYa no nos dice quién es el motorista: lo único que tenemos es el aviso de
+// que apretó «pedido en camino» (ORDER_PICKED_UP). Si se lleva la bolsa sin
+// apretarlo, el pedido sigue «esperando» y después viene otro a reclamarlo. Por
+// eso la cajera registra la entrega y, si a los 2 minutos PedidosYa no confirmó el
+// retiro, la caja suena hasta que el motorista lo marque.
+const ALARMA_SEG = 120
+
+const hora = (iso) => (iso
+  ? new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })
+  : '')
+
+function tonos(notas, tipo = 'sine', vol = 0.3) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    let fin = 0
+    notas.forEach(([frec, desde, dura]) => {
+      const osc = ctx.createOscillator(), gan = ctx.createGain()
+      osc.type = tipo
+      osc.connect(gan); gan.connect(ctx.destination)
+      osc.frequency.value = frec
+      const t0 = ctx.currentTime + desde
+      gan.gain.setValueAtTime(0.001, t0)
+      gan.gain.exponentialRampToValueAtTime(vol, t0 + 0.02)
+      gan.gain.exponentialRampToValueAtTime(0.001, t0 + dura)
+      osc.start(t0); osc.stop(t0 + dura)
+      fin = Math.max(fin, desde + dura)
+    })
+    setTimeout(() => ctx.close(), (fin + 0.3) * 1000)
+  } catch { /* sin sonido, la pantalla igual avisa en color */ }
+}
+// Alarma: no se parece al timbre de pedido nuevo a propósito.
+const sirena = () => tonos([[880, 0, .25], [587, .3, .25], [880, .6, .25], [587, .9, .25]], 'square', 0.25)
+const campanita = () => tonos([[660, 0, .25], [990, .18, .45]])
+
+function comprimir(file, max = 1000, q = 0.72) {
+  return new Promise((res, rej) => {
+    const img = new Image()
+    const src = window.URL.createObjectURL(file)
+    img.onload = () => {
+      const e = Math.min(1, max / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * e)
+      c.height = Math.round(img.height * e)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      window.URL.revokeObjectURL(src)
+      c.toBlob((b) => (b ? res(b) : rej(new Error('no se pudo comprimir'))), 'image/jpeg', q)
+    }
+    img.onerror = () => { window.URL.revokeObjectURL(src); rej(new Error('no se pudo leer la imagen')) }
+    img.src = src
+  })
+}
+
+// El bucket `despachos-fotos` es privado: la URL pública devuelve 400. Al tocar el
+// enlace se pide una URL firmada (ver lib/fotoPrivada).
+function VerFoto({ url, children }) {
+  return <a href="#" onClick={(e) => abrirFotoPrivada(url, e)} style={{ color: C.azul }}>{children}</a>
+}
+
+// Segundos desde la entrega, contados en vivo a partir de lo que dijo el servidor.
+const segEntrega = (p, ahoraBase) =>
+  (p.entregado_segundos ?? 0) + Math.floor((Date.now() - ahoraBase) / 1000)
+
+const esperandoRetiro = (p) =>
+  p.tipo_orden === 'own_delivery' && p.estado === 'preparado' && !!p.entregado_at
+
+function EntregaMotorista({ p, ahoraBase, onEntregar, ocupado }) {
+  const [, setTick] = useState(0)
+  const fotoRef = useRef(null)
+  useEffect(() => {
+    if (!p.entregado_at) return
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [p.entregado_at])
+
+  if (!p.entregado_at) {
+    return (
+      <div style={{ padding: '12px 15px 14px', borderTop: `1px solid ${C.borde}`, background: '#14202e' }}>
+        <div style={{ color: C.azul, fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
+          {p.motorista_llego_at
+            ? `🛵 El motorista llegó ${hora(p.motorista_llego_at)}`
+            : '🛵 Listo · esperando al motorista de PedidosYa'}
+        </div>
+        <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', margin: '4px 0 10px' }}>
+          Al darle la bolsa, registralo. Si no marca «en camino» en su app, te avisamos.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button disabled={ocupado} onClick={() => fotoRef.current?.click()} style={{
+            flex: 1, padding: '14px 8px', borderRadius: 11, border: `1px solid ${C.azul}`,
+            background: 'transparent', color: C.azul, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+          }}>📷 Con foto</button>
+          <button disabled={ocupado} onClick={() => onEntregar(p, null)} style={{
+            flex: 2, padding: '14px 8px', borderRadius: 11, border: 'none',
+            background: ocupado ? '#2a3a30' : C.verde, color: '#06210f',
+            fontSize: 15, fontWeight: 800, cursor: 'pointer',
+          }}>{ocupado ? 'Registrando…' : 'Entregué al motorista'}</button>
+        </div>
+        <input ref={fotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0]; e.target.value = ''
+            if (f) onEntregar(p, f)
+          }} />
+      </div>
+    )
+  }
+
+  const seg = segEntrega(p, ahoraBase)
+  const alarma = seg >= ALARMA_SEG
+  return (
+    <div style={{
+      padding: '13px 15px', borderTop: `1px solid ${C.borde}`,
+      background: alarma ? '#3a0d14' : '#2a2207',
+      animation: alarma ? 'peyaLatido 1s ease-in-out infinite' : 'none',
+    }}>
+      {alarma ? (
+        <div style={{ color: '#ffd9dd', fontSize: 15, fontWeight: 800, textAlign: 'center', lineHeight: 1.3 }}>
+          🚨 El motorista NO marcó el retiro del #{p.short_code}
+          <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3 }}>
+            No lo dejes salir hasta que apriete «pedido en camino» en su app
+          </div>
+        </div>
+      ) : (
+        <div style={{ color: '#ffe9b0', fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
+          📦 Entregado · esperando que el motorista marque el retiro
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {' '}({dosDig(Math.floor(seg / 60))}:{dosDig(seg % 60)})
+          </span>
+        </div>
+      )}
+      <div style={{ fontSize: 11.5, color: C.dim, textAlign: 'center', marginTop: 5 }}>
+        Entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
+        {p.entrega_foto_url && (
+          <> · <VerFoto url={p.entrega_foto_url}>ver foto</VerFoto></>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Constancia en «Cerrados hoy»: para pelear un reclamo con PedidosYa.
+function ConstanciaRetiro({ p }) {
+  if (p.tipo_orden !== 'own_delivery' || p.estado !== 'retirado') return null
+  return (
+    <div style={{
+      padding: '9px 15px', borderTop: `1px solid ${C.borde}`, background: '#0d2018',
+      fontSize: 12, color: '#bff3d4',
+    }}>
+      ✅ Motorista confirmó retiro {hora(p.retirado_at) || ''}
+      {p.entregado_at && (
+        <span style={{ color: C.dim }}>
+          {' · '}entregado {hora(p.entregado_at)}{p.entregado_por ? ` por ${p.entregado_por}` : ''}
+        </span>
+      )}
+      {p.entrega_foto_url && (
+        <> · <VerFoto url={p.entrega_foto_url}>📷 foto</VerFoto></>
+      )}
+    </div>
+  )
 }
 
 // Reloj sólo para lo que sigue sin contestar. Con la aceptación automática esto
@@ -125,7 +318,7 @@ function HojaRechazo({ pedido, onCerrar, onConfirmar, enviando }) {
           El cliente recibe el aviso de PedidosYa. Elegí el motivo real: de esto salen sus reportes.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-          {MOTIVOS.map((m) => (
+          {MOTIVOS.filter((m) => !m.soloDelivery || pedido.tipo_orden !== 'pickup').map((m) => (
             <button key={m.v} onClick={() => setMotivo(m.v)} style={{
               padding: '13px 10px', borderRadius: 10, cursor: 'pointer', fontSize: 13.5,
               fontWeight: 600, textAlign: 'left', lineHeight: 1.25,
@@ -161,7 +354,7 @@ function HojaRechazo({ pedido, onCerrar, onConfirmar, enviando }) {
 
 // ── Tarjeta ──
 // El número manda. Todo lo demás está para confirmar que es el pedido correcto.
-function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
+function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
   const [abierto, setAbierto] = useState(false)
   const tipo = TIPO[p.tipo_orden] || TIPO.desconocido
   const est = ESTADO[p.estado] || { label: p.estado, col: C.dim }
@@ -267,11 +460,18 @@ function Tarjeta({ p, ahoraBase, onAccion, ocupado }) {
           El retiro lo confirma PedidosYa (ORDER_PICKED_UP) y con eso el servidor
           cierra la cuenta. Volver a mostrar el botón sólo invitaría a repetirlo. */}
       {p.estado === 'preparado' && tipo.cierre === 'preparado' && (
-        <div style={{
-          padding: '14px 15px', borderTop: `1px solid ${C.borde}`,
-          background: '#14202e', color: C.azul, fontSize: 14, fontWeight: 700, textAlign: 'center',
-        }}>🛵 Listo · esperando al motorista de PedidosYa</div>
+        <EntregaMotorista p={p} ahoraBase={ahoraBase} onEntregar={onEntregar} ocupado={ocupado} />
       )}
+
+      {/* El motorista llegó y la comida todavía no está: que la cajera lo sepa. */}
+      {p.estado === 'aceptado' && tipo.cierre === 'preparado' && p.motorista_llego_at && (
+        <div style={{
+          padding: '9px 15px', borderTop: `1px solid ${C.borde}`,
+          background: '#14202e', color: C.azul, fontSize: 12.5, fontWeight: 700,
+        }}>🛵 El motorista llegó {hora(p.motorista_llego_at)} · está esperando</div>
+      )}
+
+      <ConstanciaRetiro p={p} />
 
       {enCocina && !(p.estado === 'preparado' && tipo.cierre === 'preparado') && (
         <>
@@ -320,6 +520,8 @@ export default function PeyaInboxView({ user, onBack }) {
   const [ahoraBase, setAhoraBase] = useState(Date.now())
   const [sonido, setSonido] = useState(() => localStorage.getItem('peya_sonido') !== '0')
   const idsVistos = useRef(null)
+  // Pedidos entregados al motorista que PedidosYa todavía no confirmó.
+  const entregadosSinRetiro = useRef(new Set())
 
   const cargar = useCallback(async () => {
     if (!user?.pin) { setError('Sin PIN de sesión'); return }
@@ -335,15 +537,101 @@ export default function PeyaInboxView({ user, onBack }) {
         if (nuevos.length && sonido) timbre()
       }
       idsVistos.current = ids
+
+      // Retiro confirmado de algo que la cajera ya había entregado: se avisa.
+      const confirmados = (r?.pedidos || []).filter((p) =>
+        entregadosSinRetiro.current.has(p.id) && p.estado === 'retirado')
+      if (confirmados.length) {
+        campanita()
+        setAviso(`Motorista confirmó el retiro del PeYa #${confirmados.map((p) => p.short_code).join(', #')}`)
+      }
+      entregadosSinRetiro.current = new Set((r?.pedidos || []).filter(esperandoRetiro).map((p) => p.id))
+
       setData(r); setAhoraBase(Date.now()); setError('')
     } catch (e) { setError(e.message || 'No se pudo cargar') }
   }, [user?.pin, sonido])
 
+  // Mientras haya una bolsa entregada sin retiro confirmado se consulta más seguido.
+  const hayEsperaRetiro = (data?.pedidos || []).some(esperandoRetiro)
   useEffect(() => {
     cargar()
-    const t = setInterval(cargar, REFRESH_MS)
+    const t = setInterval(cargar, hayEsperaRetiro ? 5000 : REFRESH_MS)
     return () => clearInterval(t)
-  }, [cargar])
+  }, [cargar, hayEsperaRetiro])
+
+  // La alarma suena aunque el timbre de pedidos nuevos esté apagado: es plata.
+  useEffect(() => {
+    if (!hayEsperaRetiro) return
+    const t = setInterval(() => {
+      const enAlarma = (data?.pedidos || []).some((p) =>
+        esperandoRetiro(p) && segEntrega(p, ahoraBase) >= ALARMA_SEG)
+      if (enAlarma) sirena()
+    }, 6000)
+    return () => clearInterval(t)
+  }, [hayEsperaRetiro, data, ahoraBase])
+
+  // La foto es opcional y no frena nada: si no sube, la entrega se registra igual.
+  const onEntregar = async (p, foto) => {
+    setOcupado(p.remote_order_id); setError(''); setAviso('')
+    let fotoUrl = null, fotoFallo = false
+    try {
+      if (foto) {
+        try {
+          const blob = await comprimir(foto)
+          const path = `peya/${p.short_code || p.id}-${Date.now()}.jpg`
+          const { error: upErr } = await db.storage.from('despachos-fotos')
+            .upload(path, blob, { cacheControl: '3600', upsert: false, contentType: 'image/jpeg' })
+          if (upErr) throw upErr
+          fotoUrl = db.storage.from('despachos-fotos').getPublicUrl(path).data?.publicUrl || null
+        } catch { fotoFallo = true }
+      }
+      const { error: e } = await db.rpc('peya_registrar_entrega', {
+        p_pin: String(user.pin), p_orden_id: p.id, p_foto_url: fotoUrl,
+      })
+      if (e) throw e
+      if (fotoFallo) setError(`Entrega del #${p.short_code} registrada, pero la foto no se pudo subir`)
+      else setAviso(`Entrega del #${p.short_code} registrada${fotoUrl ? ' con foto' : ''}. Que el motorista marque «en camino».`)
+      await cargar()
+    } catch (e) { setError(e.message || 'No se pudo registrar la entrega') }
+    finally { setOcupado(null) }
+  }
+
+  // Abrir o cerrar la tienda EN PEDIDOSYA, no sólo acá. La diferencia importa: si
+  // sólo cambiáramos nuestro estado, la caja creería que está cerrada y los pedidos
+  // seguirían entrando igual. Por eso pasa por `peya-responder`, que consulta qué
+  // permite cada plataforma, escribe allá, y sólo entonces mueve el estado local.
+  //
+  // El cierre va con plazo (30 min) a propósito: uno indefinido que nadie recuerda
+  // reabrir es una sucursal apagada todo el día.
+  const onTienda = async (abrir) => {
+    setOcupado('__tienda__'); setError(''); setAviso('')
+    try {
+      const r = await fetch(`${URL_SB}/functions/v1/peya-responder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: String(user.pin), accion: 'tienda', abrir,
+          motivo: abrir ? null : 'TOO_BUSY_KITCHEN', minutos: abrir ? null : 30,
+        }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) {
+        throw new Error(
+          j.error === 'sin_vendor' || j.error === 'sin_chain_code' ? j.message
+          : j.error === 'rol_sin_permiso' ? j.message
+          : j.error === 'ninguna_plataforma_cambiable'
+            ? 'PedidosYa no permite cambiar el estado de esta tienda ahora'
+          : j.error === 'consulta_en_curso'
+            ? 'PedidosYa todavía no contesta el estado. Probá de nuevo en unos segundos.'
+          : j.error === 'no_se_pudo_consultar' ? `PedidosYa respondió ${j.http}`
+          : j.error || j.message || `HTTP ${r.status}`)
+      }
+      setAviso(abrir ? 'Tienda abierta en PedidosYa' : 'Tienda cerrada por 30 minutos')
+      if (j.aviso) setAviso(`${abrir ? 'Abierta' : 'Cerrada'}, pero ${j.aviso}`)
+      await cargar()
+    } catch (e) { setError(e.message || 'No se pudo cambiar el estado de la tienda') }
+    finally { setOcupado(null) }
+  }
 
   const enviar = async (p, accion, motivo, mensaje) => {
     setOcupado(p.remote_order_id); setError(''); setAviso('')
@@ -471,6 +759,51 @@ export default function PeyaInboxView({ user, onBack }) {
         </button>
       </div>
 
+      {/* Estado de la tienda en PedidosYa. Si está cerrada, la caja tiene que verlo
+          antes que nada: "no entran pedidos" sin explicación es una llamada a soporte
+          y media hora de ventas perdidas. Cerrar y abrir sólo lo puede quien manda. */}
+      {data?.tienda && (
+        <div style={{
+          margin: '12px 14px 0', padding: '11px 14px', borderRadius: 10, flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          background: data.tienda.disponible ? '#0d2018' : '#2a1116',
+          border: `1px solid ${data.tienda.disponible ? C.verde : C.rojo}66`,
+        }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800,
+                          color: data.tienda.disponible ? '#bff3d4' : '#ffc9cf' }}>
+              {data.tienda.disponible ? '🟢 Tienda abierta en PedidosYa' : '🔴 Tienda cerrada en PedidosYa'}
+            </div>
+            {!data.tienda.disponible && (
+              <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+                {data.tienda.origen === 'plataforma' ? 'La cerró PedidosYa' : 'La cerramos nosotros'}
+                {data.tienda.motivo ? ` · ${MOTIVO_CIERRE[data.tienda.motivo] || data.tienda.motivo}` : ''}
+                {data.tienda.cerrada_hasta
+                  ? ` · vuelve a abrir ${new Date(data.tienda.cerrada_hasta).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })}`
+                  : ' · sin fecha de reapertura'}
+                {/* `changeable: false` en el contrato: el local no puede levantarlo. */}
+                {data.tienda.levantable === false && ' · solo PedidosYa puede levantarlo'}
+              </div>
+            )}
+          </div>
+          {data.tienda.puede_cambiar && !(data.tienda.levantable === false && !data.tienda.disponible) && (
+            <button
+              onClick={() => onTienda(!data.tienda.disponible)}
+              disabled={ocupado === '__tienda__'}
+              style={{
+                background: data.tienda.disponible ? '#3a1a1f' : '#12301f',
+                border: `1px solid ${data.tienda.disponible ? C.rojo : C.verde}`,
+                color: data.tienda.disponible ? '#ffc9cf' : '#bff3d4',
+                borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 800,
+                cursor: ocupado === '__tienda__' ? 'wait' : 'pointer',
+                opacity: ocupado === '__tienda__' ? .6 : 1,
+              }}>
+              {data.tienda.disponible ? 'Cerrar 30 min' : 'Abrir ahora'}
+            </button>
+          )}
+        </div>
+      )}
+
       {(error || aviso) && (
         <div style={{
           margin: '12px 14px 0', padding: '12px 14px', borderRadius: 10, fontSize: 14,
@@ -488,7 +821,7 @@ export default function PeyaInboxView({ user, onBack }) {
             <Seccion titulo="Sin contestar"
               nota="Con la aceptación automática esto no debería aparecer. Si está acá, revisalo." />
             {sinContestar.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -498,7 +831,7 @@ export default function PeyaInboxView({ user, onBack }) {
           <>
             <Seccion titulo="Esperando al driver" nota="Buscá el número que te dice y cerralo." />
             {enCocina.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -508,7 +841,7 @@ export default function PeyaInboxView({ user, onBack }) {
           <>
             <Seccion titulo="Cerrados hoy" />
             {cerrados.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>

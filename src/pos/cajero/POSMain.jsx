@@ -538,6 +538,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
         .order('created_at')
 
       if (itemsData) {
+        // Nombre de quien autorizó cada cortesía (para imprimirlo en el ticket).
+        const cortNombres = {}
+        const cortIds = [...new Set(itemsData.map(it => it.cortesia_por).filter(Boolean))]
+        if (cortIds.length) {
+          try {
+            const { data: us } = await db.from('usuarios_erp').select('id,nombre').in('id', cortIds)
+            ;(us || []).forEach(u => { cortNombres[u.id] = u.nombre })
+          } catch { /* sin nombre el ticket sale igual, solo sin «Autorizó» */ }
+        }
         const loaded = itemsData.map(it => ({
           id:     it.menu_item_id,
           dbId:   it.id,
@@ -556,6 +565,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
           cortesia:      !!it.cortesia,
           cortesiaMotivo: it.cortesia_motivo || '',
           cortesiaPor:   it.cortesia_por || null,
+          cortesiaPorNombre: cortNombres[it.cortesia_por] || null,
           cortesiaValor: it.cortesia_valor != null ? parseFloat(it.cortesia_valor) : null,
         }))
         setItems(loaded)
@@ -764,6 +774,7 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       cortesia: true,
       cortesiaMotivo: motivo,
       cortesiaPor: auth?.id || null,
+      cortesiaPorNombre: auth?.nombre || null,
       cortesiaValor: valor,
     }
     try {
@@ -932,10 +943,15 @@ export default function POSMain({ user, cuentaCtx, onBack, onLogout, onReport })
       // La cortesía se imprime en $0 y con la marca, para que el cliente vea qué se le regaló
       if (i.cortesia) modificadores.push('*** CORTESIA ***')
       return { nombre: i.nombre, precio: i.cortesia ? 0 : (i.precio + (i.precioExtra || 0)), qty: i.qty,
-               nota: i.nota || null, modificadores, destino: i.destino || null }
+               nota: i.nota || null, modificadores, destino: i.destino || null,
+               // Motivo y quién autorizó: salen impresos en pre-cuenta y factura
+               cortesia: i.cortesia ? { motivo: i.cortesiaMotivo || null, autorizo: i.cortesiaPorNombre || null } : null }
     }),
     subtotal,
     descuento: descuentoMonto,
+    // Cortesía de la cuenta completa (descuento tipo «cortesía»): la autoriza quien la aplica
+    cortesiaCuenta: descuentoTipo === 'cortesia'
+      ? { motivo: descuentoMotivo || null, autorizo: user?.nombre || user?.name || null } : null,
     total,
     propinaSugerida: !!mesaActual,
   })

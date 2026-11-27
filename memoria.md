@@ -6,6 +6,25 @@
 - 09:00 SV `cerrar_delivery` (todas «solo para llevar») · 10:45 `manana` (se muestra Black Freakie Burger) · 15:00 `tarde` (se oculta, Freakie Dog y Freakie Fries a $1, domicilio se reabre solo) · 23:30 `fin` (precios normales). Los cron se borran solos. Se pueden dropear las tablas de respaldo, la función y el ítem después.
 - Torre → Sucursales: interruptor grande «Domicilio encendido/apagado» para todas + un switch por sucursal (usa `torre_set_modo_sucursal`: apagar = solo para llevar). Al encender todas, recuerda cuáles se apagaron (localStorage); si no hay memoria, enciende todas menos el drive thru.
 
+## 26-Nov-2026 — 🎁 Ticket impreso: motivo de la cortesía + quién la autorizó
+- Por qué: Jose pidió que la nota que se escribe al dar una cortesía salga impresa, junto con el nombre de quien la autorizó (antes solo salía «*** CORTESIA ***»).
+- `printService.js`: bajo cada ítem de cortesía van «Motivo: …» (parte renglones si es largo) y «Autorizo: …», en pre-cuenta y factura (ESC/POS y fallback HTML). La comanda de cocina no cambia. Si la cuenta completa es cortesía (descuento tipo «cortesía»), el renglón dice CORTESIA en vez de DESCUENTO y debajo van motivo y quién autorizó (= quien aplicó el descuento, `descuento_autorizado_por`).
+- `POSMain.jsx`: el ítem guarda `cortesiaPorNombre` (del PIN que autorizó; al reabrir una cuenta guardada se busca por `cortesia_por` en `usuarios_erp`).
+- `HistorialCobros.jsx` (reimpresión): ahora marca los ítems de cortesía con su motivo y quién autorizó, e imprime el renglón de descuento/cortesía de la cuenta, que antes no salía en reimpresiones. Solo cambia el papel; la emisión del DTE no se tocó.
+- Estado: PR #513. Probado con tickets generados en build; falta confirmar en impresora real con una cortesía real.
+
+## 26-Nov-2026 — 🧾 Ticket/factura impresa: cajera que cobró + hora del cobro
+- Por qué: Jose pidió que en todo ticket/factura impresa salga quién cobró y a qué hora (con DTE solo salía la fecha de emisión, y nunca el nombre).
+- `printService.js` (`buildFactura` y el fallback `facturaHTML`): después de la fecha van «Hora de cobro:» (h:mm AM/PM, siempre UTC-6, formateada a mano para no mandar espacios Unicode a la térmica) y «Cajero/a:». Solo cambia el papel impreso: no se tocó la emisión del DTE ni lo que se envía a Hacienda.
+- Reimpresión (`HistorialCobros.jsx`): sale la cajera y la hora del cobro ORIGINAL, no quien reimprime. Quién cobró = dueño del turno de caja de la cuenta (`pos_turnos.cajero_id` vía `turno_id`), con respaldo en `pos_cuentas.cajero_id` (que es quien ABRIÓ la cuenta, puede ser mesero). Se resuelve al cargar el historial, no al imprimir (un await antes de imprimir bloquea RawBT en Android).
+- Verificado: mergeado a `main` (PR #512) y Jose confirmó el 26-nov que el ticket imprimió bien en producción.
+
+## 25-Nov-2026 — 🛒 Pantalla «Compras» (Finanzas)
+- Por qué: Jose pidió en cada ERP de restaurante una vista con toda la información de compras, sugerencias basadas en datos y siempre lo más reciente (si ya se cambió de proveedor, se muestra como logro y no se vuelve a sugerir). Contrato: `hq-panel/supabase/compras_hq/CONTRATO_VISTA_COMPRAS.md`.
+- Pantalla nueva `src/components/finanzas/ComprasHQView.jsx`, nav key **`compras-hq`** (Finanzas, label «Compras», roles admin/ejecutivo/superadmin; filas en `permisos_rol` para los tres). No confundir con `compras` = Órdenes de Compra (Almacén), que no se tocó.
+- Datos: `db.rpc('compras_hq_freakie', { p_token })` con el token de la sesión de administración compartida (`freakie_torre_token`). La función (SECURITY DEFINER, ya desplegada) valida el rol con `fin_sesion_rol` y devuelve el JSON de `compras_hq.erp_payload('freakie')`. Si rechaza, el mensaje se muestra tal cual; si es de sesión, el banner pide el PIN ahí mismo (`abrirSesionFinanzas`, el mismo `erp_admin_sesion`) y recarga sin perder la pantalla.
+- Secciones en el orden del contrato: encabezado (datos al / última factura / Actualizar), KPIs, sugerencias por color (oportunidad, alerta, logro), items buscables con «ver inactivos» y marca «Cambió de… el…», gasto por mes (barras CSS; en el iPhone se toca una barra para ver el monto), proveedores, compras recientes y categorías 90 días. Tablas en pantalla ancha, tarjetas en el iPhone. Fechas formateadas como texto (sin `new Date('YYYY-MM-DD')`), hora en UTC-6.
+
 ## 23-Nov-2026 — 📊 Medir la tasa real de las hojas de oferta
 - Antes solo se sabía cuántos aceptaban (`agrandado_via='pregunta'`, `origen='oferta_combo'`), no cuántas veces se mostró la hoja.
 - Nuevo: tabla `menu_ofertas_eventos` + RPC `menu_oferta_evento` (anon) + vista `v_menu_ofertas_tasa` (migración 20261123e). En MenuPublico.jsx, `useRegistroOferta` registra «mostrada» al abrir `HojaAgrandar` / `HojaOferta` y luego «si» o «no» (una vez). Fire-and-forget: si falla, el cliente no se entera.

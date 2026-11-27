@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../../supabase';
+import { abrirFotoPrivada } from '../../lib/fotoPrivada';
 import InfoTip from '../ui/InfoTip'
 import { STORES, fmtDate, n } from '../../config';
 import { useToast } from '../../hooks/useToast';
@@ -766,9 +767,9 @@ export default function MisPedidosView({ user, onBack }) {
                   </div>
                 )}
                 {d?.foto_recepcion_url && (
-                  <a href={d.foto_recepcion_url} target="_blank" rel="noreferrer"
+                  <a href="#"
                      style={{ display: 'inline-block', marginTop: 8, fontSize: 12, color: '#3b82f6' }}
-                     onClick={e => e.stopPropagation()}>
+                     onClick={e => abrirFotoPrivada(d.foto_recepcion_url, e)}>
                     📸 Ver foto de recepción
                   </a>
                 )}

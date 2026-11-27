@@ -130,6 +130,12 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
           referencia_puesta_por,
           referencia_puesta_at,
           created_at,
+          cajero_id,
+          turno_id,
+          descuento,
+          descuento_tipo,
+          descuento_motivo,
+          descuento_autorizado_por,
           pos_cuenta_items!pos_cuenta_items_cuenta_id_fkey (
             id,
             nombre,
@@ -141,7 +147,10 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             cantidad,
             notas,
             menu_item_id,
-            cancelado_motivo
+            cancelado_motivo,
+            cortesia,
+            cortesia_motivo,
+            cortesia_por
           ),
           pos_cuenta_pagos (
             metodo,
@@ -158,7 +167,37 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
         .order('cobrada_at', { ascending: false })
 
       if (error) throw error
-      setCuentas(cuentasData || [])
+      // Quién cobró cada cuenta, para que el ticket REIMPRESO muestre a la cajera
+      // original y no a quien reimprime. Cobró el dueño del turno de caja en que se
+      // cerró la cuenta (cajero_id de la cuenta es quien la ABRIÓ: puede ser un mesero).
+      // Se resuelve acá y no al reimprimir: un await antes de imprimir hace que
+      // Android bloquee el deep-link de RawBT.
+      const rows = cuentasData || []
+      try {
+        const turnoIds = [...new Set(rows.map(c => c.turno_id).filter(Boolean))]
+        const turnoCajero = {}
+        if (turnoIds.length) {
+          const { data: ts } = await db.from('pos_turnos').select('id,cajero_id').in('id', turnoIds)
+          ;(ts || []).forEach(t => { turnoCajero[t.id] = t.cajero_id })
+        }
+        rows.forEach(c => { c._cobroUserId = turnoCajero[c.turno_id] || c.cajero_id || null })
+        // Mismo viaje: nombres de quienes autorizaron cortesías (ítem o cuenta completa).
+        const userIds = [...new Set(rows.flatMap(c => [
+          c._cobroUserId, c.descuento_autorizado_por,
+          ...(c.pos_cuenta_items || []).map(i => i.cortesia_por),
+        ]).filter(Boolean))]
+        if (userIds.length) {
+          const { data: us } = await db.from('usuarios_erp').select('id,nombre').in('id', userIds)
+          const nombres = {}
+          ;(us || []).forEach(u => { nombres[u.id] = u.nombre })
+          rows.forEach(c => {
+            c._cobroCajero = nombres[c._cobroUserId] || null
+            c._descAutorizo = nombres[c.descuento_autorizado_por] || null
+            ;(c.pos_cuenta_items || []).forEach(i => { i._cortesiaAutorizo = nombres[i.cortesia_por] || null })
+          })
+        }
+      } catch (_e) { /* sin nombre no se bloquea el historial */ }
+      setCuentas(rows)
     } catch (err) {
       console.error('Error cargando historial:', err)
       toast.error('Error al cargar historial: ' + err.message)
@@ -252,6 +291,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
             if (m?.nombre) mods.push('   ' + m.nombre + (Number(m.precio_extra) > 0 ? ` (+$${Number(m.precio_extra).toFixed(2)})` : ''))
           })
         })
+        if (i.cortesia) mods.push('*** CORTESIA ***')
         return {
           qty: i.cantidad,          // buildFactura lee it.qty (no it.cantidad)
           nombre: i.nombre,
@@ -260,6 +300,7 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
                 + (parseFloat(i.precio_extras) || 0),
           modificadores: mods,
           nota: i.notas || null,
+          cortesia: i.cortesia ? { motivo: i.cortesia_motivo || null, autorizo: i._cortesiaAutorizo || null } : null,
         }
       })
 
@@ -277,12 +318,16 @@ export default function HistorialCobros({ user, onBack, embedded = false }) {
         caja: user?.caja || null,
         mesa: cuenta.mesa_ref || null,
         tipoLabel: (TIPO_INFO[cuenta.tipo] || TIPO_INFO['para_llevar']).label,
-        cajero: user?.nombre || user?.name || null,
+        // Quien COBRÓ (no quien reimprime). Si no se pudo resolver, no se imprime nombre.
+        cajero: cuenta._cobroCajero || null,
         metodoPago,
         recibido: pagoEfectivo?.monto_recibido != null ? parseFloat(pagoEfectivo.monto_recibido) : null,
         cambio:   pagoEfectivo?.cambio != null ? parseFloat(pagoEfectivo.cambio) : null,
         items,
         subtotal: parseFloat(cuenta.subtotal || 0),
+        descuento: parseFloat(cuenta.descuento || 0),
+        cortesiaCuenta: cuenta.descuento_tipo === 'cortesia'
+          ? { motivo: cuenta.descuento_motivo || null, autorizo: cuenta._descAutorizo || null } : null,
         propina: parseFloat(cuenta.propina || 0),
         total: parseFloat(cuenta.total || 0),
         fecha: cuenta.cobrada_at ? new Date(cuenta.cobrada_at) : new Date(),

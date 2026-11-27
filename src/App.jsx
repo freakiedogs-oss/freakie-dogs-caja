@@ -93,6 +93,7 @@ const DTEsView           = lazy(() => import('./components/finanzas/DTEsView'))
 const DTEsEmitidosView   = lazy(() => import('./components/finanzas/DTEsEmitidosView'))
 const ClientesView       = lazy(() => import('./pos/ClientesView'))
 const LibrosContablesView = lazy(() => import('./components/finanzas/LibrosContablesView'))
+const ComprasHQView      = lazy(() => import('./components/finanzas/ComprasHQView'))
 const EventosView        = lazy(() => import('./components/eventos/EventosView'))
 const EventosMapaView    = lazy(() => import('./components/eventos/EventosMapaView'))
 const MiDespacho            = lazy(() => import('./components/empleado/MiDespacho'))
@@ -470,6 +471,9 @@ export default function App() {
         return <ClientesView user={user} onBack={() => setScreen('home')} />
       case 'libros-contables':
         return <LibrosContablesView user={user} />
+      // Compras HQ: gasto, proveedores y sugerencias de ahorro (puente compras_hq_freakie)
+      case 'compras-hq':
+        return <ComprasHQView user={user} />
       case 'eventos-mapa':
         return <EventosMapaView user={user} />
       case 'eventos':

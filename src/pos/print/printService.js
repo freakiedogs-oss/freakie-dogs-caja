@@ -87,9 +87,40 @@ function horaSV(d = new Date()) {
     hour: '2-digit', minute: '2-digit',
   });
 }
+// Solo la hora del cobro, siempre en hora de El Salvador (aunque el dispositivo
+// tenga otra zona horaria configurada).
+function horaCobro(d = new Date()) {
+  // A mano (no toLocaleTimeString): algunos motores meten espacios Unicode en
+  // "p. m." que la impresora térmica saca como basura.
+  const sv = new Date(new Date(d || Date.now()).getTime() - 6 * 3600 * 1000);
+  const h = sv.getUTCHours(), m = String(sv.getUTCMinutes()).padStart(2, '0');
+  return `${h % 12 || 12}:${m} ${h < 12 ? 'AM' : 'PM'}`;
+}
 function fechaISO(d = new Date()) {
   // YYYY-MM-DD en hora local SV (UTC-6)
   return new Date(new Date(d).getTime() - 6 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+// Cortesía: motivo (la nota que escribe quien la da) y quién la autorizó.
+// `k` = { motivo, autorizo }; sirve para un ítem o para la cuenta completa.
+function cortesiaLineas(k) {
+  if (!k) return [];
+  const out = [];
+  if (k.motivo) out.push(`Motivo: ${k.motivo}`);
+  if (k.autorizo) out.push(`Autorizo: ${k.autorizo}`);
+  return out;
+}
+
+// Imprime `text` partido en renglones, TODOS con la misma sangría
+// (Ticket.wrap solo sangra del segundo renglón en adelante).
+function lnSangria(t, text, ind, cols) {
+  const pad = ' '.repeat(ind), max = Math.max(8, cols - ind);
+  let line = '';
+  for (const w of String(text).split(/\s+/).filter(Boolean)) {
+    const cand = line ? line + ' ' + w : w;
+    if (cand.length > max && line) { t.ln(pad + line); line = w; } else line = cand;
+  }
+  if (line) t.ln(pad + line);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -140,11 +171,13 @@ export function buildPreCuenta(c, cols = 48) {
   for (const it of c.items || []) {
     t.row(`${it.qty}x ${it.nombre}`.slice(0, cols - 9), money(it.precio * it.qty));
     for (const m of it.modificadores || []) t.ln(`   + ${m}`);
+    for (const l of cortesiaLineas(it.cortesia)) lnSangria(t, l, 5, cols);
     if (it.nota) t.ln(`   (${it.nota})`);
   }
   t.hr();
   t.row('SUBTOTAL', money(c.subtotal));
-  if (c.descuento > 0) t.row('DESCUENTO', `-${money(c.descuento)}`);
+  if (c.descuento > 0) t.row(c.cortesiaCuenta ? 'CORTESIA' : 'DESCUENTO', `-${money(c.descuento)}`);
+  for (const l of cortesiaLineas(c.cortesiaCuenta)) lnSangria(t, l, 3, cols);
   if (c.propinaSugerida) {
     const propina = Math.round(c.subtotal * 0.10 * 100) / 100;
     t.row('PROPINA (10%)', money(propina));
@@ -181,8 +214,11 @@ export function buildFactura(c, cols = 48) {
     if (dte.sello) { t.ln('Sello recepción:'); t.wrap(dte.sello); }
     t.row('Fecha emisión:', fechaISO(dte.fecha || c.fecha));
   } else {
-    t.row('Fecha:', horaSV(c.fecha));
+    t.row('Fecha:', fechaISO(c.fecha));
   }
+  // Hora del cobro y quién cobró (en reimpresiones: los del cobro ORIGINAL).
+  t.row('Hora de cobro:', horaCobro(c.fecha));
+  if (c.cajero) t.row('Cajero/a:', String(c.cajero).slice(0, cols - 11));
 
   // Canal de venta (y número de mesa si aplica)
   t.row('Canal:', c.tipoLabel || 'Para llevar');
@@ -198,10 +234,12 @@ export function buildFactura(c, cols = 48) {
   for (const it of c.items || []) {
     t.row(`${it.qty}x ${it.nombre}`.slice(0, cols - 9), money(it.precio * it.qty));
     for (const m of it.modificadores || []) t.ln(`   + ${m}`);
+    for (const l of cortesiaLineas(it.cortesia)) lnSangria(t, l, 5, cols);
   }
   t.hr();
   t.row('SUBTOTAL', money(c.subtotal));
-  if (c.descuento > 0) t.row('DESCUENTO', `-${money(c.descuento)}`);
+  if (c.descuento > 0) t.row(c.cortesiaCuenta ? 'CORTESIA' : 'DESCUENTO', `-${money(c.descuento)}`);
+  for (const l of cortesiaLineas(c.cortesiaCuenta)) lnSangria(t, l, 3, cols);
   if (dte?.tipo === 'ccf' && c.iva != null) t.row('IVA 13%', money(c.iva));
   t.bold(true).size(1, 2).row('TOTAL', money(c.total)).normal();
   if (c.propina > 0) t.row('Propina', money(c.propina));
@@ -285,10 +323,12 @@ function preCuentaHTML(c) {
   for (const it of c.items || []) {
     L.push({ row: 1, left: `${it.qty}x ${it.nombre}`, right: money(it.precio * it.qty) });
     for (const m of it.modificadores || []) L.push({ text: `&nbsp;&nbsp;&nbsp;+ ${m}` });
+    for (const l of cortesiaLineas(it.cortesia)) L.push({ text: `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${l}` });
     if (it.nota) L.push({ text: `&nbsp;&nbsp;&nbsp;(${it.nota})` });
   }
   L.push({ hr: 1 }, { row: 1, left: 'SUBTOTAL', right: money(c.subtotal) });
-  if (c.descuento > 0) L.push({ row: 1, left: 'DESCUENTO', right: `-${money(c.descuento)}` });
+  if (c.descuento > 0) L.push({ row: 1, left: c.cortesiaCuenta ? 'CORTESIA' : 'DESCUENTO', right: `-${money(c.descuento)}` });
+  for (const l of cortesiaLineas(c.cortesiaCuenta)) L.push({ text: `&nbsp;&nbsp;&nbsp;${l}` });
   if (c.propinaSugerida) {
     const propina = Math.round(c.subtotal * 0.10 * 100) / 100;
     L.push({ row: 1, left: 'PROPINA (10%)', right: money(propina) });
@@ -315,15 +355,19 @@ function facturaHTML(c) {
   if (dte?.numeroControl) L.push({ text: `N° Control: ${dte.numeroControl}` });
   if (dte?.codigoGeneracion) L.push({ text: `Cód Gen: ${dte.codigoGeneracion}` });
   if (dte?.sello) L.push({ text: `Sello: ${dte.sello}` });
-  L.push({ row: 1, left: 'Fecha:', right: dte ? fechaISO(dte.fecha || c.fecha) : horaSV(c.fecha) });
+  L.push({ row: 1, left: 'Fecha:', right: fechaISO((dte && dte.fecha) || c.fecha) });
+  L.push({ row: 1, left: 'Hora de cobro:', right: horaCobro(c.fecha) });
+  if (c.cajero) L.push({ row: 1, left: 'Cajero/a:', right: c.cajero });
   if (c.cliente?.nombre) L.push({ hr: 1 }, { text: `Cliente: ${c.cliente.nombre}` });
   L.push({ hr: 1 });
   for (const it of c.items || []) {
     L.push({ row: 1, left: `${it.qty}x ${it.nombre}`, right: money(it.precio * it.qty) });
     for (const m of it.modificadores || []) L.push({ text: `&nbsp;&nbsp;&nbsp;+ ${m}` });
+    for (const l of cortesiaLineas(it.cortesia)) L.push({ text: `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${l}` });
   }
   L.push({ hr: 1 }, { row: 1, left: 'SUBTOTAL', right: money(c.subtotal) });
-  if (c.descuento > 0) L.push({ row: 1, left: 'DESCUENTO', right: `-${money(c.descuento)}` });
+  if (c.descuento > 0) L.push({ row: 1, left: c.cortesiaCuenta ? 'CORTESIA' : 'DESCUENTO', right: `-${money(c.descuento)}` });
+  for (const l of cortesiaLineas(c.cortesiaCuenta)) L.push({ text: `&nbsp;&nbsp;&nbsp;${l}` });
   L.push({ row: 1, bold: 1, left: 'TOTAL', right: money(c.total) });
   if (c.propina > 0) L.push({ row: 1, left: 'Propina', right: money(c.propina) });
   if (dte?.codigoGeneracion) {
