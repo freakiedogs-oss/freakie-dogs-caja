@@ -108,8 +108,67 @@ export default function TabSucursales({ show = () => {} }) {
     finally { setGuardando(null); }
   };
 
+  // ── Interruptor de domicilio (27-nov-2026, Cesar) ─────────────────
+  // Un solo botón para apagar/encender el domicilio en todas, y uno por tienda.
+  // Apagar = «solo para llevar» (la tienda sigue activa para caja y retiro).
+  const activas = sucs.filter(s => s.activa);
+  const conDom = activas.filter(s => s.tiene_delivery);
+  const domEncendido = conDom.length > 0;
+  const MEM = 'freakie_dom_apagadas';
+  const domTodas = async (encender) => {
+    let objetivo;
+    if (encender) {
+      let mem = []; try { mem = JSON.parse(localStorage.getItem(MEM) || '[]'); } catch { /* */ }
+      objetivo = activas.filter(s => !s.tiene_delivery && (mem.length ? mem.includes(s.id) : !/drive/i.test(s.nombre)));
+    } else {
+      objetivo = conDom;
+      try { localStorage.setItem(MEM, JSON.stringify(conDom.map(s => s.id))); } catch { /* */ }
+    }
+    if (!objetivo.length) return;
+    if (!window.confirm(encender ? `¿Encender el domicilio en ${objetivo.length} sucursales?` : `¿Apagar el domicilio en todas (${objetivo.length})?`)) return;
+    setGuardando('todas');
+    let ok = 0;
+    for (const s of objetivo) {
+      const { error } = await db.rpc('torre_set_modo_sucursal', { p_token: token, p_sucursal_id: s.id, p_modo: encender ? 'con_delivery' : 'solo_llevar' });
+      if (!error) { ok++; setSucs(prev => prev.map(x => x.id === s.id ? { ...x, tiene_delivery: encender } : x)); }
+    }
+    setGuardando(null);
+    show(encender ? `🛵 Domicilio encendido en ${ok} sucursales` : `⛔ Domicilio apagado en ${ok} sucursales`);
+  };
+  const Switch = ({ on, onClick, grande }) => (
+    <button onClick={onClick} disabled={!!guardando} aria-label={on ? 'Apagar' : 'Encender'}
+      style={{ width: grande ? 64 : 48, height: grande ? 34 : 26, borderRadius: 999, border: 'none', cursor: 'pointer', flex: '0 0 auto',
+               background: on ? c.green : '#444', position: 'relative', transition: 'background .15s' }}>
+      <span style={{ position: 'absolute', top: 3, left: on ? (grande ? 33 : 25) : 3, width: grande ? 28 : 20, height: grande ? 28 : 20,
+                     borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+    </button>
+  );
+
   return (
     <div>
+      <div style={{ background: c.card, border: `2px solid ${domEncendido ? c.green : c.red}`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: domEncendido ? c.green : c.red }}>
+              {domEncendido ? '🛵 Domicilio ENCENDIDO' : '⛔ Domicilio APAGADO'}
+            </div>
+            <div style={{ fontSize: 12, color: c.dim, marginTop: 2 }}>
+              {domEncendido ? `${conDom.length} de ${activas.length} sucursales reciben domicilios` : 'Nadie recibe domicilios. Caja y para llevar siguen normal.'}
+            </div>
+          </div>
+          <Switch grande on={domEncendido} onClick={() => domTodas(!domEncendido)} />
+        </div>
+        <div style={{ borderTop: `1px solid ${c.border}`, marginTop: 12, paddingTop: 6 }}>
+          {activas.map(s => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+              <span style={{ flex: 1, fontSize: 14, color: s.tiene_delivery ? c.text : c.dim }}>{s.nombre}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: s.tiene_delivery ? c.green : c.dim }}>{s.tiene_delivery ? 'Encendido' : 'Apagado'}</span>
+              <Switch on={s.tiene_delivery} onClick={() => setModo(s, s.tiene_delivery ? 'solo_llevar' : 'con_delivery')} />
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div style={{ fontSize: 13, color: c.dim, marginBottom: 14, lineHeight: 1.5 }}>
         Horario y estado de cada tienda. <b>Con delivery</b> reparte a domicilio; <b>Solo para llevar</b>
         recibe pedidos pero solo para retirar en el local (sin motoristas); <b>Inactiva</b> no recibe pedidos.
