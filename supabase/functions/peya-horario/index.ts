@@ -165,5 +165,108 @@ Deno.serve(async (req) => {
     await marcar(ok, { resultados, reabierta });
     salida.push({ remoteId: p.remote_id, accion: p.accion, ok, reabierta, resultados });
   }
-  return json({ ok: true, procesadas: salida });
+
+  // ── Cierres puntuales (`peya_cierres_especiales`, p. ej. Black Freaky 27-nov) ──
+  // Cerrar: CLOSED con un motivo distinto de CLOSED, para que el cierre por horario
+  // no lo tome como suyo y lo reabra. Si PedidosYa la tiene cerrada por su propio
+  // horario (changeable:false) no se puede tocar: se reintenta al minuto siguiente,
+  // hasta que PedidosYa la abra. Abrir: sólo si sigue cerrada con nuestro motivo.
+  const { data: esp, error: errEsp } = await svc.rpc("peya_especial_pendientes");
+  if (errEsp) return json({ ok: false, procesadas: salida, error_especiales: errEsp.message }, 500);
+
+  const especiales: Record<string, unknown>[] = [];
+  for (const e of (esp ?? []) as Record<string, any>[]) {
+    const marcarE = (resultado: string, motivoUsado: string | null, detalle: unknown) =>
+      svc.rpc("peya_especial_marcar", {
+        p_id: e.id, p_accion: e.accion, p_resultado: resultado,
+        p_motivo_usado: motivoUsado, p_detalle: detalle,
+      });
+
+    const { data: vm } = await svc.from("peya_vendor_map")
+      .select("remote_id, chain_code").eq("remote_id", e.remote_id).maybeSingle();
+    if (!vm?.chain_code) {
+      await marcarE("fallo", null, { error: "sin_chain_code" });
+      especiales.push({ id: e.id, remoteId: e.remote_id, resultado: "fallo", error: "sin_chain_code" });
+      continue;
+    }
+    const urlDisp = `${BASE}/v2/chains/${encodeURIComponent(vm.chain_code)}` +
+      `/remoteVendors/${encodeURIComponent(vm.remote_id)}/availability`;
+
+    const get = await llamar(urlDisp, null, "GET");
+    if (get.status < 200 || get.status >= 300) {
+      // 401/403/404: la tienda no está integrada con nosotros; no tiene sentido insistir.
+      const fatal = [401, 403, 404].includes(get.status);
+      await marcarE(fatal ? "fallo" : "reintentar", null, { error: "get", http: get.status, texto: get.texto.slice(0, 300) });
+      especiales.push({ id: e.id, remoteId: e.remote_id, resultado: fatal ? "fallo" : "reintentar", http: get.status });
+      continue;
+    }
+    let plataformas: Record<string, any>[] = [];
+    try {
+      const d = JSON.parse(get.texto);
+      plataformas = Array.isArray(d) ? d : [d];
+    } catch {
+      await marcarE("reintentar", null, { error: "get_no_json", texto: get.texto.slice(0, 300) });
+      continue;
+    }
+
+    const resultados: Record<string, unknown>[] = [];
+    let motivoUsado: string | null = e.motivo_usado ?? null;
+    let pendiente = false; // algo quedó sin hacer → reintentar
+    for (const pl of plataformas) {
+      const permitidos: string[] = Array.isArray(pl.availabilityStates) ? pl.availabilityStates : [];
+      const motivos: string[] = Array.isArray(pl.closingReasons) ? pl.closingReasons : [];
+      const actual = String(pl.availabilityState ?? "");
+      const razon = String(pl.closedReason ?? "");
+      const cerrada = actual.startsWith("CLOSED");
+      const base = { platformKey: pl.platformKey, platformRestaurantId: String(pl.platformRestaurantId) };
+
+      if (e.accion === "cerrar") {
+        const motivo = motivos.includes(e.motivo) ? e.motivo
+          : motivos.includes("OTHER") ? "OTHER"
+          : (motivos.find((m) => m !== "CLOSED") ?? e.motivo);
+        if (cerrada && razon === motivo) {
+          motivoUsado = motivo;
+          resultados.push({ ...base, omitida: "ya_cerrada_por_nosotros", actual });
+          continue;
+        }
+        if (pl.changeable !== true) {
+          pendiente = true;
+          resultados.push({ ...base, omitida: "no_cambiable", actual, motivo: razon || null });
+          continue;
+        }
+        if (!permitidos.includes("CLOSED")) {
+          pendiente = true;
+          resultados.push({ ...base, ok: false, error: "no_acepta_CLOSED", permitidos });
+          continue;
+        }
+        const cuerpo = { availabilityState: "CLOSED", ...base, closedReason: motivo };
+        const put = await llamar(urlDisp, cuerpo, "PUT");
+        const okPut = put.status >= 200 && put.status < 300;
+        if (okPut) motivoUsado = motivo; else pendiente = true;
+        resultados.push({ ...base, enviado: cuerpo, http: put.status, ok: okPut, respuesta: okPut ? undefined : put.texto });
+      } else {
+        const nuestro = cerrada && motivoUsado != null && razon === motivoUsado;
+        if (!nuestro) {
+          resultados.push({ ...base, omitida: "no_es_nuestro_cierre", actual, motivo: razon || null });
+          continue;
+        }
+        if (pl.changeable !== true || !permitidos.includes("OPEN")) {
+          pendiente = true;
+          resultados.push({ ...base, omitida: "no_se_puede_abrir", actual });
+          continue;
+        }
+        const cuerpo = { availabilityState: "OPEN", ...base };
+        const put = await llamar(urlDisp, cuerpo, "PUT");
+        const okPut = put.status >= 200 && put.status < 300;
+        if (!okPut) pendiente = true;
+        resultados.push({ ...base, enviado: cuerpo, http: put.status, ok: okPut, respuesta: okPut ? undefined : put.texto });
+      }
+    }
+    if (!plataformas.length) pendiente = true;
+    const resultado = pendiente ? "reintentar" : "hecho";
+    await marcarE(resultado, motivoUsado, { resultados });
+    especiales.push({ id: e.id, remoteId: e.remote_id, accion: e.accion, resultado, resultados });
+  }
+
+  return json({ ok: true, procesadas: salida, especiales });
 });
