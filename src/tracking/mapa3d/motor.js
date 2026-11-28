@@ -326,7 +326,7 @@ export async function crearMapa3D(cont, o) {
   }
 
   // ── posición del motorista: continua entre señales ──
-  let tObj = 0, tDisp = 0, vEst = 6, ultSenal = performance.now(), fueraRuta = 0, rerruteando = false
+  let tObj = 0, tDisp = 0, vEst = 6, ultSenal = performance.now(), fueraRuta = 0, rerruteando = false, rutaGoogleClave = ''
   function senal(ll) {
     driverLL = ll; const p = xy(...ll); const pr = proyectar(p, tObj)
     if (pr.d > 90 && !rerruteando) {
@@ -403,7 +403,14 @@ export async function crearMapa3D(cont, o) {
   return {
     modo: (m) => { setModo(m); if (m !== 'libre') zoomU = 1 },
     zoom: (f) => { zoomU = Math.max(0.3, Math.min(4, zoomU * f)) },
-    update({ driver, paradas }) {
+    update({ driver, paradas, ruta }) {
+      // 27-nov-2026: ruta real con tráfico de Google ([lon,lat] desde el motorista).
+      // Reemplaza la de OSRM igual que un re-ruteo; solo cuando cambia.
+      if (ruta && ruta.length > 1 && JSON.stringify(ruta[ruta.length - 1]) + ruta.length !== rutaGoogleClave) {
+        rutaGoogleClave = JSON.stringify(ruta[ruta.length - 1]) + ruta.length
+        ponerRuta(ruta); pintarRutaG(); tObj = tDisp = 0
+        rutaHecha.geometry.dispose(); rutaHecha.geometry = new THREE.BufferGeometry()
+      }
       if (paradas && JSON.stringify(paradas) !== JSON.stringify(paradasLL)) {
         paradasLL = paradas; ponerParadas()
         pedirRuta(puntosRuta()).then(c => { ponerRuta(c); pintarRutaG(); tObj = tDisp = 0 })

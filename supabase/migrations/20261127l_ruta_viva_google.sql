@@ -1,0 +1,4 @@
+-- Aplicada vía apply_migration (20261127l + 20261127m). Ver memoria.md 27-nov «Seguimiento con tráfico real».
+-- delivery_clientes.ruta_{visto_at,consultas,calc_at,llegada_at,polyline,error}; tabla google_maps_uso(mes, sku, n);
+-- ruta_viva_pendientes() / ruta_viva_guardar(id, seg, polyline, error) / ruta_viva_tick() + cron cada minuto;
+-- tracking_pedido(uuid) → VOLATILE, marca ruta_visto_at y devuelve eta_trafico + ruta_polyline.

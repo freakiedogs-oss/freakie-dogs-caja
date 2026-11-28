@@ -5,12 +5,13 @@
 // La elección del cliente se recuerda en este teléfono.
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { crearMapa3D, soportaWebGL } from './mapa3d/motor'
+import { decodificarPolyline } from './polyline'
 
 const MapaEnVivo = lazy(() => import('./MapaEnVivo'))
 
 const leerVista = () => { try { return localStorage.getItem('fd_track_vista') || '3d' } catch { return '3d' } }
 
-export default function MapaSeguimiento({ driver, cliente, tienda, nombre, sucursal, paradas = [] }) {
+export default function MapaSeguimiento({ driver, cliente, tienda, nombre, sucursal, paradas = [], polyline = null }) {
   const puede3D = !!(cliente?.lat && soportaWebGL())
   const [vista, setVista] = useState(() => (puede3D ? leerVista() : 'mapa'))
   const [falla3D, setFalla3D] = useState(false)
@@ -26,17 +27,17 @@ export default function MapaSeguimiento({ driver, cliente, tienda, nombre, sucur
         </div>
       )}
       {v === '3d'
-        ? <Vista3D driver={driver} cliente={cliente} tienda={tienda} nombre={nombre} sucursal={sucursal} paradas={paradas} onFalla={() => setFalla3D(true)} />
+        ? <Vista3D driver={driver} cliente={cliente} tienda={tienda} nombre={nombre} sucursal={sucursal} paradas={paradas} polyline={polyline} onFalla={() => setFalla3D(true)} />
         : (
           <Suspense fallback={<div className="tk-mapa-ph">Cargando mapa…</div>}>
-            <MapaEnVivo driver={driver} cliente={cliente} nombre={nombre} paradas={paradas} />
+            <MapaEnVivo driver={driver} cliente={cliente} nombre={nombre} paradas={paradas} polyline={polyline} />
           </Suspense>
         )}
     </div>
   )
 }
 
-function Vista3D({ driver, cliente, tienda, nombre, sucursal, paradas, onFalla }) {
+function Vista3D({ driver, cliente, tienda, nombre, sucursal, paradas, polyline, onFalla }) {
   const el = useRef(null)
   const motor = useRef(null)
   const pend = useRef(null)
@@ -69,9 +70,11 @@ function Vista3D({ driver, cliente, tienda, nombre, sucursal, paradas, onFalla }
 
   const clave = pars.map(p => p.join(',')).join('|')
   useEffect(() => {
-    const u = { driver: ll(driver), paradas: pars }
+    // Ruta de Google con tráfico (si hay): el motor la usa en vez de la de OSRM
+    const ruta = polyline ? decodificarPolyline(polyline).map(([la, lo]) => [lo, la]) : null
+    const u = { driver: ll(driver), paradas: pars, ruta }
     if (motor.current) motor.current.update(u); else pend.current = u
-  }, [driver?.lat, driver?.lng, clave]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [driver?.lat, driver?.lng, clave, polyline]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const ir = (m) => { setModo(m); motor.current?.modo(m) }
 

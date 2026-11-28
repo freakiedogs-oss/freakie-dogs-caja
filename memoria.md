@@ -1,5 +1,11 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 27-Nov-2026 — 🚦 Seguimiento: llegada con tráfico real + ruta por calles (Google)
+- Edge `ruta-viva` (cron `ruta_viva_tick` cada minuto): GPS del motorista → entregas previas (orden_entrega) → cliente, Google Routes `TRAFFIC_AWARE` (SKU «Compute Routes Pro», 5,000 gratis/mes). Guarda en `delivery_clientes`: `ruta_llegada_at` (ahora + duración + 3 min por parada previa), `ruta_polyline`, `ruta_calc_at`, `ruta_consultas`.
+- Cuota gratis: `ruta_viva_pendientes` solo toma pedidos `en_camino` con el seguimiento abierto (`ruta_visto_at` < 2 min, lo marca `tracking_pedido` cada 45 s), cada ≥ 8 min, máx. 3 por pedido y tope 4,500/mes (`google_maps_uso`, sku `routes_pro`). Pasado el tope vuelve al cálculo viejo.
+- `tracking_pedido` (ahora VOLATILE): si hay consulta < 15 min, `eta_min` sale de Google y devuelve `eta_trafico` + `ruta_polyline`. Front: «Llega en ~X min (con tráfico)»; mapa 2D dibuja la ruta sólida (antes línea punteada recta); 3D usa la ruta de Google en vez de OSRM (`motor.update({ruta})`). Decoder en `src/tracking/polyline.js`.
+- Migraciones 20261127l/m. Sin probar con un pedido real (se activó de noche): validar el primer día.
+
 ## 27-Nov-2026 — 🎯 Torre → pestaña «Metas» de motoristas
 - `TabMetas.jsx` (DeliveryView, entre Recordatorios y Bonos): mes en curso, por motorista: bono llevado vs meta en $ (barra + % + «le faltan»), proyección a fin de mes (bono/día × días del mes, marca blanca en la barra), viajes, normales, dobles (≥ `km_umbral_doble` por calle), mandados, fuera de horario, km y viajes de hoy. Filtro por sucursal. Se refresca cada 2 min.
 - BD (migraciones 20261127i/j/k): `config_delivery.meta_bono_mes` = 150 (una meta para todos); RPC `torre_metas_motoristas(p_token uuid)` (admin/superadmin/ejecutivo/gerente/jefe_casa_matriz) y `torre_set_meta_bono(p_token, p_valor)` (solo admin/superadmin/ejecutivo, botón «Cambiar meta»). El bono usa `_tarifa_viaje`, igual que la app del motorista.
