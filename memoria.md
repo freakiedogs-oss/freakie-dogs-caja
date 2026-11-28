@@ -1,5 +1,21 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 28-Nov-2026 — PedidosYa: mejoras de la reunión con empleados (aprobadas por Jose)
+- **Sin botón «Entregué al motorista».** El «en camino» de PedidosYa cierra el pedido y la cuenta. La tarjeta queda verde 3 min («Ya podés entregar la bolsa») y pasa sola a «Cerrados hoy».
+  - Motivo: el botón «a veces salía y a veces no», porque dependía de cuándo marcaba el motorista.
+- **Sólo gerencia rechaza o cierra a mano:** la bandeja pide el PIN del gerente (`peya_es_gerente`) y la acción sale firmada con ese PIN.
+  - Abrir/cerrar la tienda ya era sólo de gerencia.
+  - Pendiente: el candado en `peya-responder` para rechazar/retirado. Hoy es en pantalla; el responder en vivo no se redeployó por eso.
+- **Devolución PeYa:** botón en «Cerrados hoy» (pedidos retirados o cancelados).
+  - Requiere motivo, foto OBLIGATORIA del motorista con el combo (`despachos-fotos/peya-devoluciones/`) y PIN de gerente.
+  - RPC `peya_registrar_devolucion` (valida rol en el servidor). Columnas `peya_ordenes.devuelto_*`, más una nota en `pos_cuentas.notas_internas`.
+  - Vista `v_peya_devoluciones` para el reclamo y la liquidación: cruza con `pedidos_peya`, que trae estado y resarcimientos.
+  - La API de DH no tiene estado «devuelto»; el reclamo se hace en el portal con esta evidencia.
+- **Lourdes:** `peya_vendor_map.horario_peya = {"cierre":"22:00"}`, porque el drive thru sigue después de la caja general (el turno drive cierra 22:20–23:15). `peya_horario_pendientes` usa ese override (por día o general).
+  - La aceptación automática ya usa cualquier turno abierto (general o drive).
+- El panel ahora trae todos los pedidos de hoy, para poder registrar una devolución horas después.
+- Migración `20261128_peya_devolucion_gerente_lourdes.sql`. Front: `src/pos/PeyaInboxView.jsx`.
+
 ## 27-Nov-2026 — PedidosYa: la bolsa se entrega DESPUÉS del «en camino» + horas en la bandeja
 - **Pedidos que no se cerraban (#5856, #5857, #5900 Cafetalón):**
   - Causa: el motorista marcó «en camino» (estado `retirado`) antes de que la cajera apretara «Listo para el driver», y ese botón pisaba el estado con `preparado`. Las cuentas ya estaban cobradas; solo la bandeja seguía mostrándolos.
