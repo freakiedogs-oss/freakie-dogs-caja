@@ -1,5 +1,9 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 27-Nov-2026 (noche) — Seguimiento SIN minutos estimados
+- Cesar: viendo el mapa cerca, «Llega en ~14 min» se siente eterno; las apps no lo ponen. El píldora ahora dice solo «🛵 {motorista} lleva tu pedido» (TrackingPedido.jsx). `tracking_pedido` sigue devolviendo `eta_min`/`eta_trafico` pero el front no los muestra.
+- `ruta-viva` v2 pasa a `TRAFFIC_UNAWARE` (SKU Essentials, 10,000 gratis/mes, compartido con `distancia-ruta`); el contador en `google_maps_uso` ahora es sku `routes_essentials` (migración 20261127n). La ruta por calles en el mapa se mantiene.
+
 ## 27-Nov-2026 — 🚦 Seguimiento: llegada con tráfico real + ruta por calles (Google)
 - Edge `ruta-viva` (cron `ruta_viva_tick` cada minuto): GPS del motorista → entregas previas (orden_entrega) → cliente, Google Routes `TRAFFIC_AWARE` (SKU «Compute Routes Pro», 5,000 gratis/mes). Guarda en `delivery_clientes`: `ruta_llegada_at` (ahora + duración + 3 min por parada previa), `ruta_polyline`, `ruta_calc_at`, `ruta_consultas`.
 - Cuota gratis: `ruta_viva_pendientes` solo toma pedidos `en_camino` con el seguimiento abierto (`ruta_visto_at` < 2 min, lo marca `tracking_pedido` cada 45 s), cada ≥ 8 min, máx. 3 por pedido y tope 4,500/mes (`google_maps_uso`, sku `routes_pro`). Pasado el tope vuelve al cálculo viejo.

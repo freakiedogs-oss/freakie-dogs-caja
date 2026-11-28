@@ -166,11 +166,10 @@ export default function TrackingPedido() {
             || (d.motorista_en_otra_entrega && `${d.motorista || 'Tu motorista'} está terminando otra entrega y regresa a la tienda por tu pedido.`)
             || PASOS[paso].sub}
         </p>
-        {enCamino && d.eta_min && (
-          <div className="tk-eta">
-            Llega en ~{d.eta_min} min{d.eta_trafico ? ' (con tráfico)' : ''}
-            {nAntes > 0 ? ` · sos la entrega ${nAntes + 1} de ${nAntes + 1}` : d.motorista ? ` · ${d.motorista} lo lleva` : ''}
-          </div>
+        {/* 27-nov-2026 (Cesar): sin minutos estimados. Viendo el mapa cerca,
+            "14 min" se siente eterno; solo quién lleva el pedido. */}
+        {enCamino && d.motorista && (
+          <div className="tk-eta">🛵 {d.motorista} lleva tu pedido</div>
         )}
       </div>
 
