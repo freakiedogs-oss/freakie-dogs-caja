@@ -122,7 +122,11 @@ function timbre() {
 // motorista marca «en camino» PRIMERO y recién cuando PedidosYa nos lo avisa la
 // tarjeta se pone verde y dice «entregá la bolsa». El servidor
 // (`peya_registrar_entrega`) tampoco deja registrar una entrega antes.
-const REPIQUE_MS = 20000
+//
+// 28-nov (reunión con empleados): sin botón «Entregué al motorista». El aviso de
+// PedidosYa ya cierra el pedido y la cuenta; la tarjeta queda verde unos minutos
+// como señal de «ya podés dar la bolsa» y pasa sola a «Cerrados hoy».
+const AVISO_SEG = 180
 
 const hora = (iso) => (iso
   ? new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' })
@@ -138,9 +142,10 @@ const hace = (segBase, ahoraBase) => {
   return `hace ${Math.floor(m / 60)} h ${dosDig(m % 60)} min`
 }
 
-// Motorista de PedidosYa que ya marcó «en camino» y todavía no le dimos la bolsa.
+// Motorista de PedidosYa que acaba de marcar «en camino»: se le puede dar la bolsa.
 const porEntregar = (p) =>
-  p.tipo_orden === 'own_delivery' && p.estado === 'retirado' && !p.entregado_at
+  p.tipo_orden === 'own_delivery' && p.estado === 'retirado' && !p.entregado_at &&
+  !p.devuelto_at && (p.retirado_segundos ?? Infinity) < AVISO_SEG
 
 // Los pasos del pedido con su hora, para saber en qué va de un vistazo.
 function pasosDe(p) {
@@ -154,11 +159,13 @@ function pasosDe(p) {
       { k: 'listo', t: 'Listo', at: p.preparado_at },
       { k: 'llego', t: 'Llegó motorista', at: p.motorista_llego_at },
       { k: 'camino', t: 'En camino', at: p.retirado_at },
-      { k: 'entregado', t: 'Bolsa entregada', at: p.entregado_at },
     )
+    // Desde el 28-nov ya no se registra la entrega a mano; sólo pedidos viejos la tienen.
+    if (p.entregado_at) base.push({ k: 'entregado', t: 'Bolsa entregada', at: p.entregado_at })
   } else {
     base.push({ k: 'retirado', t: p.tipo_orden === 'pickup' ? 'Lo retiró' : 'Salió', at: p.retirado_at })
   }
+  if (p.devuelto_at) base.push({ k: 'devuelto', t: 'Devuelto', at: p.devuelto_at, malo: true })
   if (cancel) base.push({ k: 'fin', t: p.estado === 'cancelado' ? 'Cancelado' : 'Rechazado', at: p.actualizado_at, malo: true })
   return base
 }
@@ -255,35 +262,188 @@ function EsperandoEnCamino({ p, ahoraBase }) {
   )
 }
 
-// El motorista ya marcó «en camino»: ahora sí, entregar y registrarlo.
-function EntregarAhora({ p, ahoraBase, onEntregar, ocupado }) {
-  const fotoRef = useRef(null)
+// El motorista ya marcó «en camino»: ahora sí se le da la bolsa. Sin botón: el
+// pedido ya quedó cerrado con el aviso de PedidosYa.
+function AvisoEntregar({ p, ahoraBase }) {
   const cocinaPendiente = p.cocina?.listo === false
   return (
     <div style={{ padding: '13px 15px 14px', borderTop: `1px solid ${C.verde}55`, background: '#0d2a1a' }}>
       <div style={{ color: '#bff3d4', fontSize: 16, fontWeight: 800, textAlign: 'center' }}>
         ✅ Ya podés entregar la bolsa del #{p.short_code}
       </div>
-      <div style={{ fontSize: 12, color: C.dim, textAlign: 'center', margin: '3px 0 10px' }}>
+      <div style={{ fontSize: 12, color: C.dim, textAlign: 'center', marginTop: 3 }}>
         El motorista marcó «en camino» {hora(p.retirado_at)} ({hace(p.retirado_segundos, ahoraBase)})
         {cocinaPendiente ? ' · cocina todavía no marcó la comanda lista: entregala cuando esté' : ''}
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button disabled={ocupado} onClick={() => fotoRef.current?.click()} style={{
-          flex: 1, padding: '14px 8px', borderRadius: 11, border: `1px solid ${C.verde}`,
-          background: 'transparent', color: C.verde, fontSize: 14, fontWeight: 700, cursor: 'pointer',
-        }}>📷 Con foto</button>
-        <button disabled={ocupado} onClick={() => onEntregar(p, null)} style={{
-          flex: 2, padding: '14px 8px', borderRadius: 11, border: 'none',
-          background: ocupado ? '#2a3a30' : C.verde, color: '#06210f',
-          fontSize: 15, fontWeight: 800, cursor: 'pointer',
-        }}>{ocupado ? 'Registrando…' : 'Entregué al motorista'}</button>
+    </div>
+  )
+}
+
+// La devolución registrada: lo que se ve en la tarjeta y sirve para el reclamo.
+function ConstanciaDevolucion({ p }) {
+  if (!p.devuelto_at) return null
+  return (
+    <div style={{
+      padding: '9px 15px', borderTop: `1px solid ${C.borde}`, background: '#2a1a07',
+      fontSize: 12, color: '#ffe0a3',
+    }}>
+      ↩️ Devuelto a la sucursal {hora(p.devuelto_at)} · {p.devolucion_motivo}
+      {p.devuelto_por ? ` · registró ${p.devuelto_por}` : ''}
+      {p.devolucion_nota ? ` · ${p.devolucion_nota}` : ''}
+      {p.devolucion_foto_url && (
+        <> · <VerFoto url={p.devolucion_foto_url}>📷 foto</VerFoto></>
+      )}
+    </div>
+  )
+}
+
+// PIN del gerente: rechazar, cerrar a mano y registrar devoluciones son sólo de
+// gerencia (reunión con empleados, 28-nov). Se valida contra el servidor y la
+// acción sale firmada con ese PIN, no con el de la cajera.
+function HojaPinGerente({ titulo, detalle, onCerrar, onOk }) {
+  const [pin, setPin] = useState('')
+  const [err, setErr] = useState('')
+  const [verificando, setVerificando] = useState(false)
+  const confirmar = async () => {
+    if (!pin.trim()) return
+    setVerificando(true); setErr('')
+    try {
+      const { data, error } = await db.rpc('peya_es_gerente', { p_pin: pin.trim() })
+      if (error) throw error
+      if (!data?.ok) { setErr('Ese PIN no es de un gerente'); return }
+      onOk(pin.trim(), data.nombre)
+    } catch (e) { setErr(e.message || 'No se pudo verificar el PIN') }
+    finally { setVerificando(false) }
+  }
+  return (
+    <div onClick={onCerrar} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 70,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: C.card, border: `1px solid ${C.borde}`, borderRadius: 16,
+        padding: '20px 18px', width: '100%', maxWidth: 360,
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>🔐 {titulo}</div>
+        <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 14 }}>
+          {detalle || 'Sólo el gerente puede hacer esto. Pedile que ingrese su PIN.'}
+        </div>
+        <input autoFocus type="password" inputMode="numeric" value={pin}
+          onChange={(e) => setPin(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') confirmar() }}
+          placeholder="PIN del gerente"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '14px', borderRadius: 10,
+            border: `1px solid ${err ? C.rojo : C.borde}`, background: '#141418', color: C.texto,
+            fontSize: 20, letterSpacing: 6, textAlign: 'center', marginBottom: 8,
+          }} />
+        {err && <div style={{ color: C.rojo, fontSize: 12.5, marginBottom: 8 }}>{err}</div>}
+        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+          <button onClick={onCerrar} style={{
+            flex: 1, padding: '13px', borderRadius: 11, border: `1px solid ${C.borde}`,
+            background: 'transparent', color: C.dim, fontSize: 14.5, fontWeight: 600, cursor: 'pointer',
+          }}>Cancelar</button>
+          <button disabled={!pin.trim() || verificando} onClick={confirmar} style={{
+            flex: 2, padding: '13px', borderRadius: 11, border: 'none',
+            background: pin.trim() ? C.verde : '#33333c', color: pin.trim() ? '#06210f' : C.dim,
+            fontSize: 14.5, fontWeight: 800, cursor: pin.trim() ? 'pointer' : 'not-allowed',
+          }}>{verificando ? 'Verificando…' : 'Confirmar'}</button>
+        </div>
       </div>
-      <input ref={fotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-        onChange={(e) => {
-          const f = e.target.files?.[0]; e.target.value = ''
-          if (f) onEntregar(p, f)
-        }} />
+    </div>
+  )
+}
+
+// Devolución: el combo volvió a la sucursal. Foto del motorista con el combo
+// OBLIGATORIA y PIN del gerente. PedidosYa no tiene un estado «devuelto» en su API:
+// esto queda como evidencia para el reclamo y para cuadrar la liquidación.
+const MOTIVOS_DEVOLUCION = [
+  'El cliente canceló',
+  'No encontraron al cliente',
+  'Dirección equivocada',
+  'Pedido equivocado o incompleto',
+  'Otro',
+]
+
+function HojaDevolucion({ pedido, onCerrar, onConfirmar, enviando }) {
+  const [motivo, setMotivo] = useState('')
+  const [nota, setNota] = useState('')
+  const [foto, setFoto] = useState(null)
+  const [vista, setVista] = useState(null)
+  const [pin, setPin] = useState('')
+  const fotoRef = useRef(null)
+  useEffect(() => () => { if (vista) window.URL.revokeObjectURL(vista) }, [vista])
+  const listo = motivo && foto && pin.trim() && (motivo !== 'Otro' || nota.trim())
+  return (
+    <div onClick={onCerrar} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 60,
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: C.card, borderTop: `2px solid ${C.amarillo}`, borderRadius: '18px 18px 0 0',
+        padding: '20px 18px 28px', width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto',
+      }}>
+        <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>
+          ↩️ Devolución PeYa #{pedido.short_code}
+        </div>
+        <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 14 }}>
+          El combo volvió a la sucursal. La foto del motorista con el combo es obligatoria: es la prueba para el reclamo a PedidosYa.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+          {MOTIVOS_DEVOLUCION.map((m) => (
+            <button key={m} onClick={() => setMotivo(m)} style={{
+              padding: '12px 10px', borderRadius: 10, cursor: 'pointer', fontSize: 13.5,
+              fontWeight: 600, textAlign: 'left', lineHeight: 1.25,
+              border: `1px solid ${motivo === m ? C.amarillo : C.borde}`,
+              background: motivo === m ? '#2a2207' : '#141418',
+              color: motivo === m ? '#ffe9b0' : C.texto,
+            }}>{m}</button>
+          ))}
+        </div>
+        <button onClick={() => fotoRef.current?.click()} style={{
+          width: '100%', padding: vista ? 6 : '16px', borderRadius: 11, marginBottom: 12,
+          border: `1px dashed ${foto ? C.verde : C.amarillo}`, background: '#141418',
+          color: foto ? C.verde : C.amarillo, fontSize: 14.5, fontWeight: 700, cursor: 'pointer',
+        }}>
+          {vista
+            ? <img src={vista} alt="Foto de la devolución" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
+            : '📷 Tomar foto del motorista con el combo (obligatoria)'}
+        </button>
+        <input ref={fotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0]; e.target.value = ''
+            if (!f) return
+            if (vista) window.URL.revokeObjectURL(vista)
+            setFoto(f); setVista(window.URL.createObjectURL(f))
+          }} />
+        <input value={nota} onChange={(e) => setNota(e.target.value)}
+          placeholder={motivo === 'Otro' ? 'Contá qué pasó (obligatorio)' : 'Detalle opcional'}
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '13px 14px', borderRadius: 10,
+            border: `1px solid ${C.borde}`, background: '#141418', color: C.texto,
+            fontSize: 14, marginBottom: 12,
+          }} />
+        <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)}
+          placeholder="🔐 PIN del gerente"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '13px 14px', borderRadius: 10,
+            border: `1px solid ${C.borde}`, background: '#141418', color: C.texto,
+            fontSize: 16, letterSpacing: 4, textAlign: 'center', marginBottom: 16,
+          }} />
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onCerrar} style={{
+            flex: 1, padding: '15px', borderRadius: 11, border: `1px solid ${C.borde}`,
+            background: 'transparent', color: C.dim, fontSize: 15, fontWeight: 600, cursor: 'pointer',
+          }}>Cancelar</button>
+          <button disabled={!listo || enviando}
+            onClick={() => onConfirmar({ motivo, nota: nota.trim(), foto, pin: pin.trim() })} style={{
+              flex: 2, padding: '15px', borderRadius: 11, border: 'none',
+              background: listo ? C.amarillo : '#33333c', color: listo ? '#2a1a00' : C.dim,
+              fontSize: 15, fontWeight: 800, cursor: listo ? 'pointer' : 'not-allowed',
+              opacity: enviando ? .6 : 1,
+            }}>{enviando ? 'Registrando…' : 'Registrar devolución'}</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -391,7 +551,7 @@ function HojaRechazo({ pedido, onCerrar, onConfirmar, enviando }) {
 
 // ── Tarjeta ──
 // El número manda. Todo lo demás está para confirmar que es el pedido correcto.
-function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
+function Tarjeta({ p, ahoraBase, onAccion, onDevolucion, ocupado }) {
   const [abierto, setAbierto] = useState(false)
   const tipo = TIPO[p.tipo_orden] || TIPO.desconocido
   const est = ESTADO[p.estado] || { label: p.estado, col: C.dim }
@@ -402,6 +562,8 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
   const sinContestar = p.estado === 'recibido'
   const entregar = porEntregar(p)
   const cerrado = ['rechazado', 'retirado', 'cancelado'].includes(p.estado) && !entregar
+  // Devolución: sólo lo que salió de la tienda (retirado) o PedidosYa canceló.
+  const puedeDevolver = !p.devuelto_at && !entregar && ['retirado', 'cancelado'].includes(p.estado)
   // `peya_panel` trae el estado de la comanda. Si no lo trae (panel viejo en un
   // navegador sin recargar), no se traba nada: manda el servidor.
   const listoCocina = p.cocina?.listo !== false
@@ -505,9 +667,7 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
       {p.estado === 'preparado' && tipo.cierre === 'preparado' && (
         <EsperandoEnCamino p={p} ahoraBase={ahoraBase} />
       )}
-      {entregar && (
-        <EntregarAhora p={p} ahoraBase={ahoraBase} onEntregar={onEntregar} ocupado={ocupado} />
-      )}
+      {entregar && <AvisoEntregar p={p} ahoraBase={ahoraBase} />}
 
       {/* El motorista llegó y la comida todavía no está: que la cajera lo sepa. */}
       {p.estado === 'aceptado' && tipo.cierre === 'preparado' && p.motorista_llego_at && (
@@ -518,6 +678,13 @@ function Tarjeta({ p, ahoraBase, onAccion, onEntregar, ocupado }) {
       )}
 
       <ConstanciaRetiro p={p} />
+      <ConstanciaDevolucion p={p} />
+      {puedeDevolver && (
+        <button onClick={() => onDevolucion(p)} style={{
+          width: '100%', padding: '10px', border: 'none', borderTop: `1px solid ${C.borde}`,
+          background: 'transparent', color: C.amarillo, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+        }}>↩️ Registrar devolución (el combo volvió a la sucursal)</button>
+      )}
 
       {enCocina && !(p.estado === 'preparado' && tipo.cierre === 'preparado') && (
         <>
@@ -563,6 +730,9 @@ export default function PeyaInboxView({ user, onBack }) {
   const [aviso, setAviso] = useState('')
   const [ocupado, setOcupado] = useState(null)
   const [rechazando, setRechazando] = useState(null)
+  // { titulo, detalle, ejecutar(pinGerente) } mientras se pide el PIN del gerente.
+  const [pidePin, setPidePin] = useState(null)
+  const [devolviendo, setDevolviendo] = useState(null)
   const [ahoraBase, setAhoraBase] = useState(Date.now())
   const [sonido, setSonido] = useState(() => localStorage.getItem('peya_sonido') !== '0')
   const idsVistos = useRef(null)
@@ -610,39 +780,27 @@ export default function PeyaInboxView({ user, onBack }) {
     return () => clearInterval(t)
   }, [cargar, hayEsperaMotorista])
 
-  // Un motorista con «en camino» marcado está parado en la caja esperando la bolsa:
-  // la campanita repite hasta que se registre la entrega, aunque el timbre de
-  // pedidos nuevos esté apagado.
-  const hayPorEntregar = (data?.pedidos || []).some(porEntregar)
-  useEffect(() => {
-    if (!hayPorEntregar) return
-    const t = setInterval(campanita, REPIQUE_MS)
-    return () => clearInterval(t)
-  }, [hayPorEntregar])
-
-  // La foto es opcional y no frena nada: si no sube, la entrega se registra igual.
-  const onEntregar = async (p, foto) => {
+  // Devolución: la foto es obligatoria, así que si no sube no se registra nada.
+  const onDevolver = async (p, { motivo, nota, foto, pin }) => {
     setOcupado(p.remote_order_id); setError(''); setAviso('')
-    let fotoUrl = null, fotoFallo = false
     try {
-      if (foto) {
-        try {
-          const blob = await comprimir(foto)
-          const path = `peya/${p.short_code || p.id}-${Date.now()}.jpg`
-          const { error: upErr } = await db.storage.from('despachos-fotos')
-            .upload(path, blob, { cacheControl: '3600', upsert: false, contentType: 'image/jpeg' })
-          if (upErr) throw upErr
-          fotoUrl = db.storage.from('despachos-fotos').getPublicUrl(path).data?.publicUrl || null
-        } catch { fotoFallo = true }
-      }
-      const { error: e } = await db.rpc('peya_registrar_entrega', {
-        p_pin: String(user.pin), p_orden_id: p.id, p_foto_url: fotoUrl,
+      const { data: g, error: eg } = await db.rpc('peya_es_gerente', { p_pin: pin })
+      if (eg) throw eg
+      if (!g?.ok) throw new Error('Ese PIN no es de un gerente')
+      const blob = await comprimir(foto)
+      const path = `peya-devoluciones/${p.short_code || p.id}-${Date.now()}.jpg`
+      const { error: upErr } = await db.storage.from('despachos-fotos')
+        .upload(path, blob, { cacheControl: '3600', upsert: false, contentType: 'image/jpeg' })
+      if (upErr) throw new Error(`No se pudo subir la foto: ${upErr.message}`)
+      const fotoUrl = db.storage.from('despachos-fotos').getPublicUrl(path).data?.publicUrl
+      const { error: e } = await db.rpc('peya_registrar_devolucion', {
+        p_pin: pin, p_orden_id: p.id, p_foto_url: fotoUrl, p_motivo: motivo, p_nota: nota || null,
       })
       if (e) throw e
-      if (fotoFallo) setError(`Entrega del #${p.short_code} registrada, pero la foto no se pudo subir`)
-      else setAviso(`Entrega del #${p.short_code} registrada${fotoUrl ? ' con foto' : ''}.`)
+      setAviso(`Devolución del PeYa #${p.short_code} registrada con foto`)
+      setDevolviendo(null)
       await cargar()
-    } catch (e) { setError(e.message || 'No se pudo registrar la entrega') }
+    } catch (e) { setError(e.message || 'No se pudo registrar la devolución') }
     finally { setOcupado(null) }
   }
 
@@ -683,14 +841,15 @@ export default function PeyaInboxView({ user, onBack }) {
     finally { setOcupado(null) }
   }
 
-  const enviar = async (p, accion, motivo, mensaje) => {
+  // `pinGerente`: rechazar y cerrar a mano salen firmados por el gerente.
+  const enviar = async (p, accion, motivo, mensaje, pinGerente) => {
     setOcupado(p.remote_order_id); setError(''); setAviso('')
     try {
       const r = await fetch(`${URL_SB}/functions/v1/peya-responder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pin: String(user.pin), remoteOrderId: p.remote_order_id, accion, motivo, mensaje,
+          pin: String(pinGerente || user.pin), remoteOrderId: p.remote_order_id, accion, motivo, mensaje,
         }),
       })
       const j = await r.json().catch(() => ({}))
@@ -716,8 +875,23 @@ export default function PeyaInboxView({ user, onBack }) {
     finally { setOcupado(null) }
   }
 
+  // Rechazar y cerrar un pedido a mano son sólo de gerencia (reunión 28-nov).
   const onAccion = (p, accion) => {
-    if (accion === 'rechazar') { setRechazando(p); return }
+    if (accion === 'rechazar') {
+      setPidePin({
+        titulo: `Rechazar PeYa #${p.short_code}`,
+        ejecutar: (pin) => { setPidePin(null); setRechazando({ ...p, _pinGerente: pin }) },
+      })
+      return
+    }
+    if (accion === 'retirado') {
+      setPidePin({
+        titulo: `Cerrar PeYa #${p.short_code}`,
+        detalle: 'Cerrar un pedido a mano es sólo del gerente. Pedile que ingrese su PIN.',
+        ejecutar: (pin) => { setPidePin(null); enviar(p, 'retirado', null, null, pin) },
+      })
+      return
+    }
     enviar(p, accion)
   }
 
@@ -873,7 +1047,7 @@ export default function PeyaInboxView({ user, onBack }) {
             <Seccion titulo="Sin contestar"
               nota="Con la aceptación automática esto no debería aparecer. Si está acá, revisalo." />
             {sinContestar.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onDevolucion={setDevolviendo}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -882,9 +1056,9 @@ export default function PeyaInboxView({ user, onBack }) {
         {aEntregar.length > 0 && (
           <>
             <Seccion titulo="Entregá ahora"
-              nota="El motorista ya marcó «en camino». Dale la bolsa y registralo." />
+              nota="El motorista ya marcó «en camino»: dale la bolsa. El pedido ya quedó cerrado." />
             {aEntregar.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onDevolucion={setDevolviendo}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -895,7 +1069,7 @@ export default function PeyaInboxView({ user, onBack }) {
             <Seccion titulo="En cocina / esperando al motorista"
               nota="No entregues ninguna bolsa hasta que su tarjeta se ponga verde." />
             {enCocina.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onDevolucion={setDevolviendo}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -905,7 +1079,7 @@ export default function PeyaInboxView({ user, onBack }) {
           <>
             <Seccion titulo="Cerrados hoy" />
             {cerrados.map((p) => (
-              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onEntregar={onEntregar}
+              <Tarjeta key={p.id} p={p} ahoraBase={ahoraBase} onAccion={onAccion} onDevolucion={setDevolviendo}
                        ocupado={ocupado === p.remote_order_id} />
             ))}
           </>
@@ -965,7 +1139,21 @@ export default function PeyaInboxView({ user, onBack }) {
           pedido={rechazando}
           enviando={ocupado === rechazando.remote_order_id}
           onCerrar={() => setRechazando(null)}
-          onConfirmar={(motivo, nota) => enviar(rechazando, 'rechazar', motivo, nota)}
+          onConfirmar={(motivo, nota) => enviar(rechazando, 'rechazar', motivo, nota, rechazando._pinGerente)}
+        />
+      )}
+
+      {pidePin && (
+        <HojaPinGerente titulo={pidePin.titulo} detalle={pidePin.detalle}
+          onCerrar={() => setPidePin(null)} onOk={(pin) => pidePin.ejecutar(pin)} />
+      )}
+
+      {devolviendo && (
+        <HojaDevolucion
+          pedido={devolviendo}
+          enviando={ocupado === devolviendo.remote_order_id}
+          onCerrar={() => setDevolviendo(null)}
+          onConfirmar={(d) => onDevolver(devolviendo, d)}
         />
       )}
     </div>
