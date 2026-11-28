@@ -168,7 +168,7 @@ export default function TrackingPedido() {
         </p>
         {enCamino && d.eta_min && (
           <div className="tk-eta">
-            Llega en ~{d.eta_min} min
+            Llega en ~{d.eta_min} min{d.eta_trafico ? ' (con tráfico)' : ''}
             {nAntes > 0 ? ` · sos la entrega ${nAntes + 1} de ${nAntes + 1}` : d.motorista ? ` · ${d.motorista} lo lleva` : ''}
           </div>
         )}
@@ -198,6 +198,7 @@ export default function TrackingPedido() {
             nombre={d.motorista}
             sucursal={d.sucursal}
             paradas={paradas}
+            polyline={d.ruta_polyline || null}
           />
         </Suspense>
       )}

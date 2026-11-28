@@ -7,10 +7,11 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { decodificarPolyline } from './polyline'
 
 const ico = (html, size) => L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2], html })
 
-export default function MapaEnVivo({ driver, cliente, nombre, paradas = [] }) {
+export default function MapaEnVivo({ driver, cliente, nombre, paradas = [], polyline = null }) {
   const el = useRef(null)
   const map = useRef(null)
   const mkDriver = useRef(null)
@@ -55,15 +56,22 @@ export default function MapaEnVivo({ driver, cliente, nombre, paradas = [] }) {
         icon: ico('<div style="font-size:22px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))">🏠</div>', 30),
       }).addTo(m).bindTooltip(paradas.length ? 'Vos' : 'Tu dirección', { direction: 'top', permanent: paradas.length > 0 })
 
-      const pts = [[driver.lat, driver.lng], ...paradas.map(p => [p.lat, p.lng]), [cliente.lat, cliente.lng]]
-      if (linea.current) linea.current.setLatLngs(pts)
-      else linea.current = L.polyline(pts, { color: '#E63946', weight: 3, dashArray: '6,8', opacity: 0.7 }).addTo(m)
+      // Con ruta de Google: el camino real por calles (línea sólida). Sin ella:
+      // la línea recta punteada de siempre.
+      const ruta = polyline ? decodificarPolyline(polyline) : []
+      const real = ruta.length > 1
+      const pts = real ? ruta : [[driver.lat, driver.lng], ...paradas.map(p => [p.lat, p.lng]), [cliente.lat, cliente.lng]]
+      const estilo = real
+        ? { color: '#E63946', weight: 5, opacity: 0.85, dashArray: null, lineJoin: 'round' }
+        : { color: '#E63946', weight: 3, opacity: 0.7, dashArray: '6,8' }
+      if (linea.current) { linea.current.setLatLngs(pts); linea.current.setStyle(estilo) }
+      else linea.current = L.polyline(pts, estilo).addTo(m)
 
       if (!encuadrado.current) { try { m.fitBounds(L.latLngBounds(pts).pad(0.3)); encuadrado.current = true } catch { /* noop */ } }
     } else {
       if (!encuadrado.current) { m.setView([driver.lat, driver.lng], 15); encuadrado.current = true }
     }
-  }, [driver?.lat, driver?.lng, cliente?.lat, cliente?.lng, nombre, clave]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [driver?.lat, driver?.lng, cliente?.lat, cliente?.lng, nombre, clave, polyline]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={el} className="tk-mapa" />
 }
