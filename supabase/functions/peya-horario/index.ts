@@ -272,5 +272,58 @@ Deno.serve(async (req) => {
     especiales.push({ id: e.id, remoteId: e.remote_id, accion: e.accion, resultado, resultados });
   }
 
-  return json({ ok: true, procesadas: salida, especiales });
+  // ── «Se acabó» de la caja → disponibilidad de ítems en PedidosYa (28-nov) ──
+  // `peya_item_cola` la llena un trigger sobre `producto_bloqueo`. Apagar va con
+  // AT_TIMESTAMP = la misma hora en que el ERP lo vuelve a prender (mañana 6:00);
+  // prender va sin fecha. Opciones/extras van como TOPPING; si PedidosYa rechaza ese
+  // tipo (400), se reintenta como ITEM, que es como están en nuestro catálogo.
+  const { data: itemsPend, error: errIt } = await svc.rpc("peya_item_pendientes");
+  const items: Record<string, unknown>[] = [];
+  if (errIt) return json({ ok: false, procesadas: salida, especiales, error_items: errIt.message }, 500);
+  for (const it of (itemsPend ?? []) as Record<string, any>[]) {
+    const marcarI = (resultado: string, detalle: unknown) =>
+      svc.rpc("peya_item_marcar", { p_id: it.id, p_resultado: resultado, p_detalle: detalle });
+
+    const { data: vm } = await svc.from("peya_vendor_map")
+      .select("remote_id, chain_code, vendor_code, global_entity_id")
+      .eq("remote_id", it.remote_id).maybeSingle();
+    if (!vm?.chain_code || !vm?.global_entity_id) {
+      await marcarI("fallo", { error: "sin_chain_code_o_global_entity_id" });
+      items.push({ id: it.id, resultado: "fallo" });
+      continue;
+    }
+    const url = `${BASE}/v2/chains/${encodeURIComponent(vm.chain_code)}` +
+      `/vendors/${encodeURIComponent(vm.vendor_code ?? vm.remote_id)}/catalog/items/availability`;
+
+    const grupos: Record<string, string[]> = { ITEM: [], TOPPING: [] };
+    for (const x of (Array.isArray(it.items) ? it.items : []) as Record<string, any>[]) {
+      grupos[x.tipo === "TOPPING" ? "TOPPING" : "ITEM"].push(String(x.id));
+    }
+    const resultados: Record<string, unknown>[] = [];
+    let reintentar = false, fallo = false;
+    for (const [tipo, ids] of Object.entries(grupos)) {
+      if (!ids.length) continue;
+      const cuerpo = (t: string) => ({
+        globalEntityId: vm.global_entity_id, items: ids, type: t, isAvailable: it.disponible === true,
+        ...(it.disponible !== true && it.hasta
+          ? { willBeAvailable: "AT_TIMESTAMP", atTimeStamp: new Date(it.hasta).toISOString() } : {}),
+      });
+      let r = await llamar(url, cuerpo(tipo), "PUT");
+      let tipoUsado = tipo;
+      if (r.status === 400 && tipo === "TOPPING") {
+        const r2 = await llamar(url, cuerpo("ITEM"), "PUT");
+        if (r2.status === 200 || r2.status === 204) { r = r2; tipoUsado = "ITEM (TOPPING rechazado)"; }
+      }
+      const ok = r.status === 200 || r.status === 204;
+      resultados.push({ tipo: tipoUsado, ids, http: r.status, respuesta: r.texto ? r.texto.slice(0, 500) : undefined });
+      if (!ok) {
+        if (r.status >= 400 && r.status < 500) fallo = true; else reintentar = true;
+      }
+    }
+    const resultado = fallo ? "fallo" : reintentar ? "reintentar" : "hecho";
+    await marcarI(resultado, { resultados });
+    items.push({ id: it.id, remoteId: it.remote_id, disponible: it.disponible, resultado, resultados });
+  }
+
+  return json({ ok: true, procesadas: salida, especiales, items });
 });

@@ -1,5 +1,18 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 28-Nov-2026 — «Se acabó» de la caja también apaga en PedidosYa
+- Pedido de Jose: la pestaña «Se acabó» (`producto_bloqueo`) es el único lugar por sucursal. Ahora el trigger `trg_peya_item_bloqueo` encola en `peya_item_cola`, y `peya-horario` (cron por minuto) llama a `PUT …/catalog/items/availability` para la tienda PeYa de esa sucursal.
+- Mapeo con `peya_items_de_clave` (por `clave_producto` del título en el catálogo PeYa):
+  - Producto suelto → `ITEM`.
+  - Opción/extra (`pos_modificadores`) → `TOPPING`.
+  - **Combos no** (Jose eligió la opción B).
+- Apagar va con `AT_TIMESTAMP` = `hasta` del bloqueo (mañana 6:00), así PeYa lo prende solo. «✅ Ya hay» lo prende al toque.
+- La caja muestra el estado PeYa por producto (`peya_estado_se_acabo`): enviando / apagado / no está en su menú / no se pudo.
+- Probado en Cafetalón: ITEM y TOPPING → 204. Apagar con fecha → 204 y re-encender → 204 (el Jalapeño quedó apagado 7 s).
+- La tienda de prueba SV no sirve para esto: nunca recibió catálogo.
+- Las 5 sucursales entran solas el 30-nov (requiere `chain_code`; un 404 queda como «no se pudo»).
+- Migración `20261128_peya_se_acabo_sync.sql`. Front: `src/pos/SeAcaboCaja.jsx`.
+
 ## 28-Nov-2026 — PedidosYa: mejoras de la reunión con empleados (aprobadas por Jose)
 - **Sin botón «Entregué al motorista».** El «en camino» de PedidosYa cierra el pedido y la cuenta. La tarjeta queda verde 3 min («Ya podés entregar la bolsa») y pasa sola a «Cerrados hoy».
   - Motivo: el botón «a veces salía y a veces no», porque dependía de cuándo marcaba el motorista.
