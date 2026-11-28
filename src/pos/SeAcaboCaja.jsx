@@ -7,6 +7,19 @@ import Icon from './Icon'
 // sucursal. Solo afecta a esta sucursal; las demás siguen vendiendo. Caja y
 // PedidosYa no se tocan. Todo apagado vuelve solo mañana 6:00 a.m.
 // RPCs: caja_disponibilidad_listar / caja_disponibilidad_set (validan rol y sucursal).
+//
+// 28-nov-2026: también apaga en PEDIDOSYA (tiendas con integración directa) el
+// producto suelto y la opción/extra con ese nombre; los combos no (decisión de Jose).
+// Lo hace el servidor (trigger + cola `peya_item_cola`); acá sólo se muestra el
+// estado con `peya_estado_se_acabo`.
+
+const ESTADO_PEYA = {
+  pendiente:  { t: '⏳ PedidosYa: enviando…', c: '#FFD900' },
+  hecho:      { t: '✅ PedidosYa: apagado', c: '#2dd4a8' },
+  no_en_peya: { t: 'PedidosYa: no está en su menú', c: '#8b8997' },
+  fallo:      { t: '⚠️ PedidosYa: no se pudo apagar', c: '#fca5a5' },
+  error:      { t: '⚠️ PedidosYa: no se pudo apagar', c: '#fca5a5' },
+}
 
 const MOTIVOS = ['Se terminó hoy', 'No llegó el despacho', 'Equipo dañado']
 
@@ -50,15 +63,28 @@ export default function SeAcaboCaja({ user, storeCode, storeName, onClose, onCam
   const [cambios, setCambios] = useState([])    // [{clave,nombre}]
   const [buscarCambio, setBuscarCambio] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [peya, setPeya] = useState({})          // clave → estado en PedidosYa
 
   const cargar = useCallback(async () => {
     const { data: r, error: e } = await db.rpc('caja_disponibilidad_listar', { p_usuario: user.id, p_store: storeCode })
     if (e) { setError(e.message); return }
     setError(''); setData(r)
     onCambio?.((r?.bloqueos || []).length)
+    try {
+      const { data: e2 } = await db.rpc('peya_estado_se_acabo', { p_usuario: user.id, p_store: storeCode })
+      setPeya(e2 || {})
+    } catch { /* el estado de PedidosYa es informativo */ }
   }, [user.id, storeCode, onCambio])
 
   useEffect(() => { cargar() }, [cargar])
+
+  // Mientras PedidosYa tenga algo «enviando…», se vuelve a mirar cada 10 s.
+  const hayPendientePeya = Object.values(peya).includes('pendiente')
+  useEffect(() => {
+    if (!hayPendientePeya) return
+    const t = setInterval(cargar, 10000)
+    return () => clearInterval(t)
+  }, [hayPendientePeya, cargar])
 
   const bloqueadas = useMemo(() => new Set((data?.bloqueos || []).map(b => b.clave)), [data])
   const productos = useMemo(() => {
@@ -115,7 +141,8 @@ export default function SeAcaboCaja({ user, storeCode, storeName, onClose, onCam
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.mut, cursor: 'pointer' }}><Icon name="x" size={20} /></button>
         </div>
         <div style={{ color: C.mut, fontSize: 12, lineHeight: 1.45, marginBottom: 12 }}>
-          Apaga un producto en el <b style={{ color: C.txt }}>delivery de la página web</b> solo en <b style={{ color: C.txt }}>{storeName}</b>.
+          Apaga un producto en el <b style={{ color: C.txt }}>delivery de la página web</b> y en <b style={{ color: C.txt }}>PedidosYa</b>, solo en <b style={{ color: C.txt }}>{storeName}</b>.
+          En PedidosYa se apaga el producto suelto y como opción; los combos siguen.
           Las otras sucursales lo siguen vendiendo. Vuelve solo <b style={{ color: C.txt }}>mañana 6:00 a.m.</b>
         </div>
 
@@ -133,6 +160,11 @@ export default function SeAcaboCaja({ user, storeCode, storeName, onClose, onCam
                     {b.motivo || 'Sin motivo'} · {b.quien || '—'} {horaSV(b.bloqueado_at)}
                     {(b.cambios || []).length > 0 && <> · Ofrece: {b.cambios.map(c => c.nombre || c).join(', ')}</>}
                   </div>
+                  {ESTADO_PEYA[peya[b.clave]] && (
+                    <div style={{ color: ESTADO_PEYA[peya[b.clave]].c, fontSize: 11, fontWeight: 700, marginTop: 2 }}>
+                      {ESTADO_PEYA[peya[b.clave]].t}
+                    </div>
+                  )}
                 </div>
                 <button disabled={guardando} onClick={() => prender(b)}
                   style={{ background: C.green, color: '#04221b', border: 'none', borderRadius: 8, padding: '8px 12px', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
