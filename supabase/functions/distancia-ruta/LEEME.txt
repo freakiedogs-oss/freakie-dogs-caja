@@ -1,0 +1,1 @@
+// Desplegada 27-nov-2026 (v1). Ver código en Supabase: edge distancia-ruta. Migración 20261127g_distancia_ruta_google.

@@ -1,0 +1,5 @@
+-- Aplicada vía apply_migration (20261127i/j/k + 20261127g/h distancia por calle).
+-- config_delivery.meta_bono_mes (150); torre_metas_motoristas(p_token uuid) → jsonb
+-- {mes, hoy, dias_mes, dias_pasados, meta, umbral_km, puede_editar, motoristas[{empleado_id,
+-- nombre, sucursal, viajes, normales, dobles, mandados, fuera_horario, viajes_hoy, km, bono, proyeccion}]};
+-- torre_set_meta_bono(p_token uuid, p_valor numeric) solo admin/superadmin/ejecutivo.

@@ -1,5 +1,23 @@
 # Memoria — Freakie Dogs ERP (caja / POS)
 
+## 27-Nov-2026 — 🎯 Torre → pestaña «Metas» de motoristas
+- `TabMetas.jsx` (DeliveryView, entre Recordatorios y Bonos): mes en curso, por motorista: bono llevado vs meta en $ (barra + % + «le faltan»), proyección a fin de mes (bono/día × días del mes, marca blanca en la barra), viajes, normales, dobles (≥ `km_umbral_doble` por calle), mandados, fuera de horario, km y viajes de hoy. Filtro por sucursal. Se refresca cada 2 min.
+- BD (migraciones 20261127i/j/k): `config_delivery.meta_bono_mes` = 150 (una meta para todos); RPC `torre_metas_motoristas(p_token uuid)` (admin/superadmin/ejecutivo/gerente/jefe_casa_matriz) y `torre_set_meta_bono(p_token, p_valor)` (solo admin/superadmin/ejecutivo, botón «Cambiar meta»). El bono usa `_tarifa_viaje`, igual que la app del motorista.
+
+## 27-Nov-2026 — 🗺️ Km por calle (Google Routes) para el pago doble del motorista
+- Antes: `distancia_km` del viaje = línea recta (haversine en driver/torre_marcar_entregado); umbral `km_umbral_doble` = 17 → 3 dobles de 1,524 en noviembre.
+- Nuevo (migración 20261127g + edge `distancia-ruta`): cron `distancia_ruta_tick` cada minuto → edge consulta Google Routes (DRIVE, sin tráfico) sucursal→cliente y guarda `delivery_clientes.distancia_ruta_km`. `distancia_ruta_guardar` corrige `viajes_delivery.distancia_km` (deja la recta en `distancia_recta_km`, `distancia_fuente='google'`); trigger `trg_viaje_usa_km_ruta` lo aplica si el km ya existía al registrar el viaje. El bono sale de `distancia_km`, así que se corrige solo.
+- ✅ Activo desde 27-nov 15:35 SV: Routes API habilitada en Google Cloud («My First Project», clave restringida a Routes API) + secreto `GOOGLE_MAPS_API_KEY` en Supabase. `km_umbral_doble` = 14. Migración 20261127h: grant a service_role (sin eso la edge daba «permission denied»).
+- Factor real calle/recta visto en las primeras 25: 1.05–1.94 (por eso no sirve un factor fijo). Pendiente: decidir si se recalcula todo noviembre (hoy solo últimos 3 días).
+
+## 27-Nov-2026 — 🛵 KDS: «regresa en X min» ahora cuenta las entregas pendientes
+- Problema (Cesar): en la pestaña Delivery de la KDS (`sucursal_panel_delivery`), el regreso del motorista era línea recta motorista→tienda a 2.4 min/km. Saliendo con un pedido marcaba «1 min» y el número subía a medida que se alejaba.
+- Arreglo (migraciones 20261127e/f, solo BD): función nueva `_motorista_min_regreso(empleado, sucursal)` = desde su GPS → cada parada `en_camino` (orden_entrega) → tienda, con `minutos_viaje` (tiempos calibrados por sucursal y franja, el mismo modelo que `kds_cuando_preparar`). Sin entregas y a <300 m = 0. Se usa en `min_regreso_motorista` (pedidos) y `min_regreso` (motoristas). Sin cambios de frontend.
+- Ojo: `minutos_viaje` da tiempos más altos que el 2.4 min/km viejo (es lo medido real, ~4.5–7 min por km en línea recta).
+
+## 27-Nov-2026 — PedidosYa: cierres puntuales no cerraban (peya-horario v3)
+- `peya_cierres_especiales` (cierre Black Freaky de Jose) fallaba cada minuto con `no_acepta_CLOSED`: PeYa SV solo ofrece OPEN / CLOSED_UNTIL / CLOSED_TODAY. Edge `peya-horario` ahora cae a CLOSED_TODAY (motivo OTHER) y reabre con OPEN al llegar `hasta`. Cafetalón cerró 11:17. **Jose: el código de `peya-horario` no está en este repo; hay que bajarlo de Supabase y commitearlo.**
+
 ## 27-Nov-2026 — 🖤 Black Freakie (programado por cron, migración 20261127a)
 - Solo menús de caja (local, para_llevar, drive_through); PeYa y delivery sin cambio de precio. Respaldo en `_bf_20261127_items` / `_bf_20261127_suc`; función `_bf_20261127(fase)`.
 - Cambio de Cesar (20261127b): ítem nuevo «Black Freakie Burger» $1 sin opciones (primero en Combos de local/para_llevar/drive, producto Freakie Burger); el resto del menú sigue normal.

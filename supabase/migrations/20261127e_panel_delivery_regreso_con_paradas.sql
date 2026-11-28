@@ -1,0 +1,4 @@
+-- Aplicada vía apply_migration (20261127e + 20261127f).
+-- `_motorista_min_regreso(empleado, sucursal)`: GPS → paradas en_camino (orden_entrega) → tienda,
+-- con minutos_viaje; sin paradas y a <300 m = 0. Usada por sucursal_panel_delivery
+-- (min_regreso_motorista en pedidos y min_regreso en motoristas). Antes: línea recta a 2.4 min/km.
